@@ -1,7 +1,8 @@
 /**
  * The agent tool list drops a tool whose optional service is off
  * (@mantle/config `toolService`). That mapping is by slug: every sandbox verb
- * starts with `sandbox_`, and video_ingest is the one media tool. These pins
+ * starts with `sandbox_` (video_ingest needs no service of its own: the
+ * parser, core on every box, extracts its audio). These pins
  * keep the mapping true as tools are added: a sandbox tool without the prefix
  * would stay listed on a box without sandboxes, and a non-sandbox tool WITH
  * it would vanish there.
@@ -37,13 +38,12 @@ describe('tool slugs map to their optional service', () => {
     for (const s of slugs) expect(toolService(s), s).toBe('sandboxes');
   });
 
-  it('no tool outside src/sandbox/ is mistaken for a sandbox or media tool', () => {
+  it('no tool outside src/sandbox/ is mistaken for a sandbox tool', () => {
     const outside = allSources(SRC).filter((f) => !f.startsWith(join(SRC, 'sandbox') + '/'));
     for (const f of outside) {
       for (const s of slugsIn(f)) {
         const svc = toolService(s);
-        if (s === 'video_ingest') expect(svc).toBe('media');
-        else expect(svc, `${s} in ${f}`).toBeNull();
+        expect(svc, `${s} in ${f}`).toBeNull();
       }
     }
   });

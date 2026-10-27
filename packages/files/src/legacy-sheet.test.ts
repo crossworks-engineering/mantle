@@ -84,6 +84,8 @@ describe('convertLegacySheetToXlsx', () => {
     const xls = biffXls([{ name: 'Sparse', rows }]);
     const err = await convertLegacySheetToXlsx(xls).catch((e: unknown) => e);
     expect(isDocumentTooLarge(err)).toBe(true);
-    expect((err as Error).message).toMatch(/Sparse/);
+    // One sheet comes without its name from anydoc (no heading), so the
+    // refusal names it by position; the rectangle is what it reports.
+    expect((err as Error).message).toMatch(/sheet "Sheet1" \([\d,]+ rows x 200 columns\)/);
   });
 });

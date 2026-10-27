@@ -1,13 +1,26 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { isThumbable, thumbnailFor, deleteThumbnailsFor, thumbsRoot } from './thumbnail';
 
+// The render runs in the parser (POST /image/thumbnail); here its job
+// function stands in for the exchange, a refused image answering null as
+// the parser's `failed` does.
+vi.mock('./parser-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./parser-client')>();
+  const { thumbnailJpeg } = await import('./image-read');
+  return {
+    ...actual,
+    parserThumbnail: (bytes: Buffer, mimeType: string, maxDim: number) =>
+      thumbnailJpeg(bytes, mimeType === 'image/heic', maxDim).catch(() => null),
+  };
+});
+
 /**
- * Real renders against a temp root — @napi-rs/canvas is a direct dep, so the
- * whole pipeline (decode → scale → JPEG → disk cache) runs in-process without
- * a database or a server. The cache-hit case is proven by making the second
+ * Real renders against a temp root: the parser's render function stands in
+ * for the parser exchange, so the whole pipeline (decode, scale, JPEG, disk
+ * cache) runs without a database or a server. The cache-hit case is proven by making the second
  * call's loadBytes explode: if it still answers, the bytes came from disk.
  */
 let tmpRoot: string;

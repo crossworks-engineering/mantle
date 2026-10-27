@@ -13,6 +13,7 @@ import path from 'node:path';
 import { PARSER_JOB_TIMEOUT_MS, type ParserJob } from '@mantle/files/parser-wire';
 import { isDocumentTooLarge } from '@mantle/files/readers/read-limit';
 import { dwfRenderer, dwgCrop, dwgRender, extractAudio } from './cad';
+import { errorMessage } from '@mantle/std';
 import { JobFailure } from './job-failure';
 
 export type JobPaths = {
@@ -202,6 +203,6 @@ export function failureOf(err: unknown): JobFailure {
       `the document needs more memory than a job may use (${err.message})`,
     );
   }
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err);
   return new JobFailure('failed', message.slice(0, 2000) || 'the reader failed');
 }

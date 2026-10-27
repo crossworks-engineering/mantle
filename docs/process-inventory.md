@@ -41,6 +41,7 @@ interval server/web/workers/events-reminders.ts system(worker:events-reminders)
 interval server/web/workers/telegram-poll.ts system(worker:channel-poll)
 listen server/api/src/agent/runtime.ts system(listen:<channel>) per channel (listenAs); the turn it starts binds its own
 listen server/api/src/turn-cancel.ts none: aborts a turn in memory, no database
+listen server/parser/src/main.ts none: the parser service has no brain database
 listen server/sandboxd/src/egress.ts none: a network listener, no brain database
 listen server/sandboxd/src/main.ts none: a network listener, no brain database
 listen server/web/lib/realtime.ts system(listen:realtime)
