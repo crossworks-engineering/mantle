@@ -14,6 +14,11 @@ import type {
 } from '../types';
 import { errorMessage } from '@mantle/std';
 
+/** The largest message fetched in full (its source and its attachments). A
+ *  larger one lands with its headers and a note instead: its source would
+ *  sit whole in the sync process, then once more parsed. */
+const MAX_MESSAGE_BYTES = 64 * 1024 * 1024;
+
 /**
  * Headers fetched on the cheap listSince path so `classifyDelivery` can
  * decide direct/list/automated/marketing without ever pulling a body. These
@@ -589,9 +594,32 @@ export const imap: EmailProvider = {
             `uidvalidity changed for ${folder}: expected ${uidvalidity}, got ${mbox.uidValidity}`,
           );
         }
+        // The size first: a message past the cap is never downloaded (its
+        // source would sit whole in this process, then once more parsed).
+        // It lands with its headers and a note, so the sync does not ask
+        // for it again.
+        const head = await client.fetchOne(
+          String(uid),
+          { size: true, envelope: true },
+          { uid: true },
+        );
+        if (!head) throw new Error(`message ${providerMsgId} not found`);
+        if (typeof head.size === 'number' && head.size > MAX_MESSAGE_BYTES) {
+          return {
+            bodyText: `(This message is ${Math.round(head.size / 1024 / 1024)} MB, past the ${MAX_MESSAGE_BYTES / 1024 / 1024} MB the brain fetches in full. Read it in your mail client.)`,
+            attachments: [],
+            clientCodeMail: touchesClientCodeMail({
+              rfcMessageId: head.envelope?.messageId ?? null,
+              inReplyTo: head.envelope?.inReplyTo ?? null,
+            }),
+          };
+        }
         const msg = await client.fetchOne(String(uid), { source: true }, { uid: true });
         if (!msg || !msg.source) throw new Error(`message ${providerMsgId} not found`);
-        const parsed = await simpleParser(msg.source);
+        // No HTML-to-text here: an HTML-only mail keeps its HTML, and the
+        // parser service reads it (the extractor, email_get), never this
+        // process.
+        const parsed = await simpleParser(msg.source, { skipHtmlToText: true });
         const attachments: RawAttachment[] = parsed.attachments.map((a, i) => ({
           // mailparser exposes `cid` but not a stable part id; index is fine
           // since we re-fetchFull only on demand and never reference the

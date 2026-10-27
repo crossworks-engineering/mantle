@@ -16,11 +16,13 @@
  *    job: the first is retryable (a loaded box can be slow once; a restart
  *    can drop one connection), the second is terminal. A job already
  *    terminal for these bytes is refused at once, without asking the parser
- *    again, so one bomb costs the parser at most two jobs of each kind per
- *    brain process. Counted per job, a document that fails only one job (the
+ *    again. Counted per job, a document that fails only one job (the
  *    pictures of a 100-sheet drawing set run out of time) still has its text
- *    read. The count lives in this process: a restart in between gives the
- *    bytes one more try, never a loop.
+ *    read. Where the count lives is the caller's: the extractor keeps it on
+ *    the node (`data.parser_failures`, see {@link withParserScope}), so it
+ *    survives a restart or a roll and a bomb is terminal after two real
+ *    failures whatever happens in between; anything else counts in this
+ *    process's memory.
  *  - `failed`, `unsupported` and `bad_request` are verdicts on the request:
  *    neither retried nor terminal here; each caller decides (the extractor
  *    indexes the title, a chat turn says the file could not be read).
@@ -32,12 +34,14 @@
  * Never sends a byte anywhere but PARSER_URL, the service on the stack's
  * internal network.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { env, envNum } from '@mantle/config';
 import { errorMessage, timeoutSignal, withRetry } from '@mantle/std';
 import {
   META_HEADER,
   OPTS_LENGTH_HEADER,
+  PARSER_ANSWER_MAX_BYTES,
   PARSER_COUNTED_CODES,
   PARSER_DEFAULT_PORT,
   PARSER_ERROR_CODES,
@@ -111,30 +115,75 @@ function config(): { url: string; token: string } {
 
 // ── the bytes' failure count ────────────────────────────────────────────────
 
-type Failure = { count: number; code: ParserErrorCode; message: string };
+/** A counted failure as it is kept: how many, and the last code. */
+export type ParserFailureCount = { n: number; code: ParserErrorCode };
+
+/**
+ * Where the count of a file's counted failures lives, per `<job>:<sha256>`
+ * key. The extractor's is the node (server/api/src/agent/extract/
+ * parser-failures.ts); the default is this process's memory.
+ */
+export type ParserFailureLedger = {
+  get(key: string): Promise<ParserFailureCount | null>;
+  /** Count one more failure; the count after it. */
+  add(key: string, code: ParserErrorCode): Promise<number>;
+};
+
+/** What a caller says about its exchanges, for everything under it. */
+export type ParserScope = {
+  /** Where the failures are counted (the process's memory without one). */
+  failures?: ParserFailureLedger;
+  /** A person is waiting (a chat turn): a `busy` parser is said at once,
+   *  never waited out. */
+  interactive?: boolean;
+};
+
+const scope = new AsyncLocalStorage<ParserScope>();
+
+/** Run `fn` with every parser exchange under it in `s` (nested scopes
+ *  merge, the inner one winning). */
+export function withParserScope<T>(s: ParserScope, fn: () => Promise<T>): Promise<T> {
+  return scope.run({ ...scope.getStore(), ...s }, fn);
+}
+
+/** The scope the current exchange runs in, if any: an identity a memo can
+ *  key on (packages/files/src/dwg.ts keeps a failed render for the rest of
+ *  one extract). */
+export function currentParserScope(): ParserScope | undefined {
+  return scope.getStore();
+}
+
 const FAILURES_MAX = 512;
-const failures = new Map<string, Failure>();
+const memoryFailures = new Map<string, ParserFailureCount>();
+
+/** The default ledger: this process's memory, a bounded LRU. A restart in
+ *  between gives the bytes one more try, never a loop. */
+const memoryLedger: ParserFailureLedger = {
+  get: (key) => Promise.resolve(memoryFailures.get(key) ?? null),
+  add: (key, code) => {
+    const n = (memoryFailures.get(key)?.n ?? 0) + 1;
+    memoryFailures.delete(key);
+    memoryFailures.set(key, { n, code });
+    if (memoryFailures.size > FAILURES_MAX) {
+      const oldest = memoryFailures.keys().next().value;
+      if (oldest !== undefined) memoryFailures.delete(oldest);
+    }
+    return Promise.resolve(n);
+  },
+};
 
 function bytesKey(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-/** Record a counted failure; true when it made the bytes terminal. */
-function countFailure(key: string, code: ParserErrorCode, message: string): boolean {
-  const prior = failures.get(key);
-  const count = (prior?.count ?? 0) + 1;
-  failures.delete(key);
-  failures.set(key, { count, code, message });
-  if (failures.size > FAILURES_MAX) {
-    const oldest = failures.keys().next().value;
-    if (oldest !== undefined) failures.delete(oldest);
-  }
-  return count >= 2;
+/** The ledger key of one job on these bytes. */
+export function parserFailureKey(job: ParserJob, bytes: Buffer): string {
+  return `${job}:${bytesKey(bytes)}`;
 }
 
-/** Tests only: forget every count. */
+/** Tests only: forget every count kept in memory. */
 export function resetParserFailures(): void {
-  failures.clear();
+  memoryFailures.clear();
 }
 
 // ── the per-process slots ───────────────────────────────────────────────────
@@ -192,23 +241,42 @@ function bodyOf(head: Buffer, bytes: Buffer): ReadableStream<Uint8Array> {
 }
 
 async function readCapped(res: Response, maxBytes: number): Promise<Buffer> {
+  const tooLarge = () =>
+    new ParserError('too_large', `the parser's answer was past ${maxBytes} bytes`, {
+      retryable: false,
+      terminal: false,
+    });
+  const declared = Number(res.headers.get('content-length') ?? NaN);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel().catch(() => {});
+    throw tooLarge();
+  }
   const reader = res.body?.getReader();
   if (!reader) return Buffer.alloc(0);
+  // The parser always says the length: one buffer of that size, filled as
+  // the answer streams in, instead of a list of chunks copied once more.
+  const known = Number.isFinite(declared) && declared >= 0;
+  const out = known ? Buffer.allocUnsafe(declared) : null;
   const chunks: Buffer[] = [];
   let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
+    if (total + value.byteLength > (out ? out.length : maxBytes)) {
       await reader.cancel().catch(() => {});
-      throw new ParserError('too_large', `the parser's answer was past ${maxBytes} bytes`, {
-        retryable: false,
-        terminal: false,
-      });
+      if (out) {
+        throw new ParserError('crashed', 'the parser sent more than the length it declared', {
+          retryable: false,
+          terminal: false,
+        });
+      }
+      throw tooLarge();
     }
-    chunks.push(Buffer.from(value));
+    if (out) out.set(value, total);
+    else chunks.push(Buffer.from(value));
+    total += value.byteLength;
   }
+  if (out) return total === out.length ? out : out.subarray(0, total);
   return Buffer.concat(chunks);
 }
 
@@ -264,9 +332,9 @@ async function attempt(
 }
 
 /**
- * One job: the request (retried while the parser answers `busy`), every
- * failure typed, the bytes' count kept. Throws a {@link ParserError}; never
- * anything else.
+ * One job: the request (retried while the parser answers `busy`, unless a
+ * person is waiting), every failure typed, the bytes' count kept. Throws a
+ * {@link ParserError}; never anything else.
  */
 async function exchange(
   job: ParserJob,
@@ -274,25 +342,28 @@ async function exchange(
   opts: Record<string, unknown>,
   maxAnswerBytes: number,
 ): Promise<Answer> {
+  const current = scope.getStore();
+  const ledger = current?.failures ?? memoryLedger;
   // Counted per job: the pictures pass failing on a document never makes its
   // text read terminal, nor the other way round.
-  const jobKey = `${bytesKey(bytes)}:${job}`;
-  const known = failures.get(jobKey);
-  if (known && known.count >= 2) {
+  const jobKey = parserFailureKey(job, bytes);
+  const known = await ledger.get(jobKey);
+  if (known && known.n >= 2) {
     throw new ParserError(
       known.code,
-      `${known.message} (this file failed the same way twice; it is not sent again)`,
+      `the parser refused this file twice (${known.code}); it is not sent again until the file changes`,
       { retryable: false, terminal: true },
     );
   }
   const head = Buffer.from(JSON.stringify(opts), 'utf8');
+  const busyWaits = current?.interactive ? [] : BUSY_WAITS_MS;
   await acquire();
   let result: Attempt;
   try {
     result = await withRetry(() => attempt(job, bytes, head, maxAnswerBytes), {
-      retries: BUSY_WAITS_MS.length,
+      retries: busyWaits.length,
       isFailure: (r) => !r.ok && r.code === 'busy',
-      delayMs: (retry) => BUSY_WAITS_MS[retry - 1] ?? null,
+      delayMs: (retry) => busyWaits[retry - 1] ?? null,
     });
   } finally {
     release();
@@ -300,7 +371,7 @@ async function exchange(
   if (result.ok) return result.answer;
   const { code, message } = result;
   if (PARSER_COUNTED_CODES.has(code)) {
-    const terminal = countFailure(jobKey, code, message);
+    const terminal = (await ledger.add(jobKey, code)) >= 2;
     throw new ParserError(code, message, { retryable: !terminal, terminal });
   }
   throw new ParserError(code, message, {
@@ -387,19 +458,11 @@ export async function parserJson(
 
 // ── documents ───────────────────────────────────────────────────────────────
 
-/** A document's text never comes back longer than this (the extractor stores
- *  at most a few MB of any document). */
-const TEXT_ANSWER_MAX = 96 * 1024 * 1024;
-
 /** Document → plain text ('' when it holds none). Throws a ParserError. */
 export async function parserText(bytes: Buffer, ext: string): Promise<string> {
-  const body = jsonOf(await exchange('text', bytes, { ext }, TEXT_ANSWER_MAX));
+  const body = jsonOf(await exchange('text', bytes, { ext }, PARSER_ANSWER_MAX_BYTES));
   return typeof body.text === 'string' ? body.text : '';
 }
-
-/** Pictures: at most the per-document cap of images, each at most 32 MB
- *  raw, as base64. */
-const IMAGES_ANSWER_MAX = 400 * 1024 * 1024;
 
 /** A document's embedded pictures, gated and capped in the parser. */
 export async function parserImages(
@@ -412,7 +475,7 @@ export async function parserImages(
       'images',
       bytes,
       { ext, maxImages: opts.maxImages, ...(opts.dpi ? { dpi: opts.dpi } : {}) },
-      IMAGES_ANSWER_MAX,
+      PARSER_ANSWER_MAX_BYTES,
     ),
   );
   const { describeImageBytes } = await import('./embedded-images');
@@ -457,8 +520,6 @@ export async function parserImages(
   };
 }
 
-const GRID_ANSWER_MAX = 256 * 1024 * 1024;
-
 /** What a grid read gives: the sheets, and for an MSPDI plan its facts. */
 export type ParserGrid = {
   sheets: import('./sheet-to-grid').ParsedSheet[];
@@ -468,7 +529,7 @@ export type ParserGrid = {
 /** Workbook (.xlsx/.xlsm/.xls/.xlsb), MSPDI plan (.xml) or DWF registry
  *  (.dwf) → grids. Throws a ParserError. */
 export async function parserGrid(bytes: Buffer, ext: string): Promise<ParserGrid> {
-  const body = jsonOf(await exchange('grid', bytes, { ext }, GRID_ANSWER_MAX));
+  const body = jsonOf(await exchange('grid', bytes, { ext }, PARSER_ANSWER_MAX_BYTES));
   const sheets = Array.isArray(body.sheets)
     ? (body.sheets as import('./sheet-to-grid').ParsedSheet[])
     : [];
@@ -487,22 +548,25 @@ export async function parserGrid(bytes: Buffer, ext: string): Promise<ParserGrid
 
 // ── PDF ─────────────────────────────────────────────────────────────────────
 
-const PDF_PAGES_ANSWER_MAX = 400 * 1024 * 1024;
-
-/** PDF → PNG pages for OCR, at most `maxPages`. Throws a ParserError; a
+/** PDF → page images for OCR, at most `maxPages`, PNG (JPEG for a page
+ *  whose PNG would be very large: `mime`). Throws a ParserError; a
  *  password-protected PDF is `failed` with "password" in the message. */
 export async function parserRasterizePdf(
   bytes: Buffer,
   opts: { maxPages: number },
-): Promise<Array<{ pageNumber: number; png: Buffer }>> {
+): Promise<Array<{ pageNumber: number; png: Buffer; mime: 'image/png' | 'image/jpeg' }>> {
   const body = jsonOf(
-    await exchange('pdfRasterize', bytes, { maxPages: opts.maxPages }, PDF_PAGES_ANSWER_MAX),
+    await exchange('pdfRasterize', bytes, { maxPages: opts.maxPages }, PARSER_ANSWER_MAX_BYTES),
   );
-  const out: Array<{ pageNumber: number; png: Buffer }> = [];
+  const out: Array<{ pageNumber: number; png: Buffer; mime: 'image/png' | 'image/jpeg' }> = [];
   for (const raw of Array.isArray(body.pages) ? body.pages : []) {
     const o = raw as Record<string, unknown>;
     if (typeof o.pageNumber !== 'number' || typeof o.png_base64 !== 'string') continue;
-    out.push({ pageNumber: o.pageNumber, png: Buffer.from(o.png_base64, 'base64') });
+    out.push({
+      pageNumber: o.pageNumber,
+      png: Buffer.from(o.png_base64, 'base64'),
+      mime: o.mime === 'image/jpeg' ? 'image/jpeg' : 'image/png',
+    });
   }
   return out;
 }
@@ -517,7 +581,7 @@ export async function parserPdfPageCount(bytes: Buffer): Promise<number | null> 
  *  password travels in the request body to the parser on the internal
  *  network, never in a header or a log. */
 export async function parserPdfUnlock(bytes: Buffer, password: string): Promise<PdfPasswordResult> {
-  const body = jsonOf(await exchange('pdfUnlock', bytes, { password }, TEXT_ANSWER_MAX));
+  const body = jsonOf(await exchange('pdfUnlock', bytes, { password }, PARSER_ANSWER_MAX_BYTES));
   if (body.ok === true && typeof body.text === 'string') {
     return {
       ok: true,
@@ -557,7 +621,7 @@ export async function parserImageForVision(
   bytes: Buffer,
   mimeType: string,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
-  const answer = await exchange('visionImage', bytes, { mimeType }, 128 * 1024 * 1024);
+  const answer = await exchange('visionImage', bytes, { mimeType }, 64 * 1024 * 1024);
   const meta = metaOf(answer);
   return {
     bytes: answer.body,
@@ -604,11 +668,19 @@ export type ParserHealth = {
   queued: number | null;
 };
 
-/** GET /healthz. Never throws. */
+/** GET /healthz, with this process's token. Never throws. Up means the
+ *  parser answers AND takes this process's token: a parser that wants a
+ *  token this process lacks or has wrong (every job refused), or that
+ *  asks none though this process has one (a parser not recreated with the
+ *  token), is reported down. */
 export async function parserHealth(timeoutMs: number): Promise<ParserHealth> {
   const down: ParserHealth = { up: false, versions: {}, running: null, queued: null };
   try {
-    const res = await fetch(`${config().url}/healthz`, { signal: timeoutSignal(timeoutMs) });
+    const cfg = config();
+    const res = await fetch(`${cfg.url}/healthz`, {
+      signal: timeoutSignal(timeoutMs),
+      ...(cfg.token ? { headers: { authorization: `Bearer ${cfg.token}` } } : {}),
+    });
     if (!res.ok) return down;
     const body = (await res.json()) as Record<string, unknown>;
     const versions: Record<string, string> = {};
@@ -617,8 +689,10 @@ export async function parserHealth(timeoutMs: number): Promise<ParserHealth> {
         if (typeof v === 'string' && v) versions[k] = v;
       }
     }
+    // A parser from before these fields says neither: taken as it was.
+    const tokenOk = body.authorized !== false && !(cfg.token && body.auth === 'none');
     return {
-      up: body.ok === true,
+      up: body.ok === true && tokenOk,
       versions,
       running: typeof body.running === 'number' ? body.running : null,
       queued: typeof body.queued === 'number' ? body.queued : null,

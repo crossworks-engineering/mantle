@@ -27,12 +27,16 @@ export function isHeic(mimeType?: string | null, filename?: string | null): bool
 
 /**
  * If the bytes are HEIC/HEIF, transcode to JPEG; otherwise return them
- * unchanged. Best-effort: on any failure returns the ORIGINAL bytes so the
- * caller degrades exactly as it would have (the vision call may then fail,
- * which is handled upstream).
+ * unchanged.
  *
  * The decode runs in the parser service (./image-read.ts), never in this
- * process: only HEIC bytes are sent, everything else returns at once.
+ * process: only HEIC bytes are sent, everything else returns at once. A
+ * retryable parser failure (busy, restarting, the first timeout or crash)
+ * is THROWN: sending the HEIC on to a vision model would pay for a call
+ * that cannot read it. The extractor's job fails and is retried; a chat
+ * turn says to try again. A verdict on the image (corrupt, unsupported,
+ * the second failure) returns the original bytes, and the vision call's
+ * own failure is handled upstream as before.
  */
 export async function transcodeImageForVision(
   bytes: Buffer,
@@ -40,12 +44,13 @@ export async function transcodeImageForVision(
   filename?: string | null,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
   if (!isHeic(mimeType, filename)) return { bytes, mimeType };
+  const { isParserError, parserImageForVision } = await import('./parser-client');
   try {
-    const { parserImageForVision } = await import('./parser-client');
     return await parserImageForVision(bytes, mimeType.match(/heif/i) ? 'image/heif' : 'image/heic');
   } catch (err) {
+    if (isParserError(err) && err.retryable) throw err;
     console.warn(
-      '[files] HEIC→JPEG transcode failed; passing original bytes through:',
+      '[files] HEIC to JPEG transcode failed; passing original bytes through:',
       err instanceof Error ? err.message : err,
     );
     return { bytes, mimeType };

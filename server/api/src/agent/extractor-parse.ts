@@ -316,7 +316,14 @@ export function isHollowFilenameBody(opts: {
   // `image/vnd.dwg` / `image/vnd.dxf` for these, and a client-supplied mime
   // must not shield a routed CAD sniff-miss from its honest skip (extension
   // routing wins over claimed mime throughout).
-  if (opts.parserRoute === 'dwf' || opts.parserRoute === 'dwg' || opts.parserRoute === 'dxf') {
+  // The legacy sheets too: a .xls/.xlsb anydoc cannot convert reads as ''
+  // (legacy-sheet.ts), and the filename must not index as the workbook.
+  if (
+    opts.parserRoute === 'dwf' ||
+    opts.parserRoute === 'dwg' ||
+    opts.parserRoute === 'dxf' ||
+    opts.parserRoute === 'legacy-sheet'
+  ) {
     return opts.rawBody.trim() === opts.title.trim();
   }
   if (opts.parserRoute !== 'none') return false;

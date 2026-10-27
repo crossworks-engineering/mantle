@@ -9,7 +9,7 @@ import {
   sniffDwg,
 } from './dwg';
 import { parseDocumentBytes } from './parse';
-import { isParserError, resetParserFailures } from './parser-client';
+import { isParserError, resetParserFailures, withParserScope } from './parser-client';
 
 /** Synthesized header-only fixture — never real drawing bytes (public repo).
  *  The render memo is keyed by CONTENT HASH now, so each test that stubs its
@@ -844,6 +844,43 @@ describe('extractDwgImages', () => {
     } finally {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();
+      resetParserFailures();
+    }
+  });
+});
+
+describe('a failed render is kept for the rest of its extract', () => {
+  it('one ask per extract: later passes reuse the failure; the next extract asks again', async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { ok: false, error: { code: 'timeout', message: 'too slow' } },
+        { status: 504 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const bytes = dwgFixture(31);
+      const extract = () =>
+        withParserScope({}, async () => {
+          // The auto-table pass, then the image pass, of one extract.
+          const first = await parseDocumentBytes(bytes, 'dwg').catch((e: unknown) => e);
+          const second = await extractDwgImages(bytes).catch((e: unknown) => e);
+          return [first, second];
+        });
+      const [a, b] = await extract();
+      expect(isParserError(a) && a.code).toBe('timeout');
+      expect(isParserError(a) && a.retryable).toBe(true);
+      // The image pass met the same failure without a second exchange (and
+      // without counting it twice).
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(b).toBeDefined();
+      // The retry is a new extract: it asks again, and that second counted
+      // failure is terminal.
+      const [c] = await extract();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(isParserError(c) && c.terminal).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
       resetParserFailures();
     }
   });

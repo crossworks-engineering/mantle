@@ -501,6 +501,25 @@ describe('isHollowFilenameBody (the filename-only false-success guard)', () => {
     ).toBe(false);
   });
 
+  it("catches the 'legacy-sheet' route: a workbook anydoc cannot convert reads as ''", () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/vnd.ms-excel',
+        parserRoute: 'legacy-sheet',
+        rawBody: 'quarterly-maintenance-budget.xls',
+        title: 'quarterly-maintenance-budget.xls',
+      }),
+    ).toBe(true);
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/vnd.ms-excel',
+        parserRoute: 'legacy-sheet',
+        rawBody: '## Sheet1\n| Tag | Service |',
+        title: 'quarterly-maintenance-budget.xls',
+      }),
+    ).toBe(false);
+  });
+
   it("catches the 'dwg' route: a sniff miss parses to '' by design, same as dwf", () => {
     expect(
       isHollowFilenameBody({

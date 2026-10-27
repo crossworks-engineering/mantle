@@ -448,7 +448,10 @@ const MAX_OCR_PAGES = 10;
 /** The PDFs (by sha256) whose native read ran in this process and found no
  *  text, so a retry of the same bytes does not pay for that model call
  *  again. Small: the retry follows within minutes. A restart forgets it, so
- *  the most a document pays is one extra read per process. */
+ *  the most a document pays is one extra read per api restart between two
+ *  runs. A timeout or crash of the render ends after two runs (the count on
+ *  the node, parser-failures.ts); a busy or unavailable parser is retried
+ *  within minutes, in this process, where this set holds. */
 const NATIVE_EMPTY_MAX = 256;
 const nativeFoundNothing = new Set<string>();
 function rememberNativeEmpty(sha: string): void {
@@ -604,22 +607,27 @@ export async function ocrIngestPdfNode(
             h.setMeta({ pages: r.length });
             return r;
           } catch (err) {
-            // These bytes refused by the parser for the second time: the
-            // caller records document_unreadable. Anything else, the parser
-            // busy or a first refusal included, stays the pdf_unreadable skip
-            // below, which the drain retries; that retry finds the native
-            // read's empty answer remembered (nativeFoundNothing) and does
-            // not pay for it again.
-            if (isParserError(err) && err.terminal) {
-              h.setMeta({ pages: 0, error: err.message, parser_code: err.code });
+            const msg = errorMessage(err);
+            // The parser's PDF caps (declared pixels, size): a verdict on the
+            // document, recorded as the terminal pdf_too_large.
+            if (isParserError(err) && err.code === 'too_large') {
+              tooLarge = msg;
+              h.setMeta({ pages: 0, error: msg, parser_code: err.code });
+              return [];
+            }
+            // The parser busy or unavailable, or the first time these bytes
+            // timed out or crashed it: the extract fails and pg-boss retries
+            // it. The second time (counted on the node, parser-failures.ts)
+            // is terminal: the caller records document_unreadable. Either
+            // way the native read's empty answer is remembered
+            // (nativeFoundNothing), so the retry does not pay for it again
+            // in this process.
+            if (isParserError(err) && (err.retryable || err.terminal)) {
+              h.setMeta({ pages: 0, error: msg, parser_code: err.code });
               throw err;
             }
-            // Unrenderable / corrupt / encrypted PDF — record and give up.
-            const msg = errorMessage(err);
+            // Unrenderable / corrupt / encrypted PDF: record and give up.
             if (/password/i.test(msg)) encrypted = true;
-            // The parser's PDF caps (declared pixels, size): a verdict on the
-            // document, recorded as pdf_too_large.
-            else if (isParserError(err) && err.code === 'too_large') tooLarge = msg;
             else rasterizeError = msg;
             h.setMeta({ pages: 0, error: msg });
             return [];
@@ -643,14 +651,14 @@ export async function ocrIngestPdfNode(
           {
             name: 'extract_vision',
             kind: 'llm_call',
-            input: { page: pg.pageNumber, mime: 'image/png', bytes: pg.png.length },
+            input: { page: pg.pageNumber, mime: pg.mime, bytes: pg.png.length },
           },
           async (h) => {
             const r = await runVisionWorker({
               ownerId,
               bytes: pg.png,
-              mimeType: 'image/png',
-              filename: `${filename}#page-${pg.pageNumber}.png`,
+              mimeType: pg.mime,
+              filename: `${filename}#page-${pg.pageNumber}.${pg.mime === 'image/jpeg' ? 'jpg' : 'png'}`,
             });
             h.setMeta({
               ran: r.ran,

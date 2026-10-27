@@ -26,6 +26,7 @@ import {
   parseDocumentBytes,
   isParserError,
   parserRasterizePdf,
+  withParserScope,
   transcodeImageForVision,
   INGESTABLE_EXTS,
   parserRouteForExt,
@@ -268,14 +269,14 @@ async function ocrPdfForTurn(opts: {
       {
         name: 'extract_vision',
         kind: 'llm_call',
-        input: { page: pg.pageNumber, mime: 'image/png', bytes: pg.png.length },
+        input: { page: pg.pageNumber, mime: pg.mime, bytes: pg.png.length },
       },
       async (h) => {
         const r = await runVisionWorker({
           ownerId: opts.ownerId,
           bytes: pg.png,
-          mimeType: 'image/png',
-          filename: `${opts.filename}#page-${pg.pageNumber}.png`,
+          mimeType: pg.mime,
+          filename: `${opts.filename}#page-${pg.pageNumber}.${pg.mime === 'image/jpeg' ? 'jpg' : 'png'}`,
         });
         h.setMeta({
           ran: r.ran,
@@ -336,6 +337,18 @@ export async function extractAttachmentForTurn(opts: {
   filename: string;
   question?: string;
 }): Promise<AttachmentExtract> {
+  // A person is waiting: a busy parser is said at once, not waited out (the
+  // background extract keeps its retries).
+  return withParserScope({ interactive: true }, () => extractForTurn(opts));
+}
+
+async function extractForTurn(opts: {
+  ownerId: string;
+  bytes: Buffer;
+  mimeType: string;
+  filename: string;
+  question?: string;
+}): Promise<AttachmentExtract> {
   const ext = extOf(opts.filename);
   // EXT routing beats the client-supplied mime: uploaders send `image/vnd.dwg`
   // for DWGs, and the old mime-first gate shipped the CAD binary to the vision
@@ -344,14 +357,25 @@ export async function extractAttachmentForTurn(opts: {
 
   if (isImage) {
     const question = opts.question?.trim();
-    const r = await runVisionWorker({
-      ownerId: opts.ownerId,
-      bytes: opts.bytes,
-      mimeType: opts.mimeType,
-      filename: opts.filename,
-      prompt: question ? questionAwareVisionPrompt(question) : undefined,
-    });
-    return { kind: 'image', text: r.text, note: r.note };
+    try {
+      const r = await runVisionWorker({
+        ownerId: opts.ownerId,
+        bytes: opts.bytes,
+        mimeType: opts.mimeType,
+        filename: opts.filename,
+        prompt: question ? questionAwareVisionPrompt(question) : undefined,
+      });
+      return { kind: 'image', text: r.text, note: r.note };
+    } catch (err) {
+      // A HEIC photo the parser could not convert just now (busy,
+      // restarting): never sent on unconverted.
+      if (!isParserError(err)) throw err;
+      return {
+        kind: 'image',
+        text: '',
+        note: `${opts.filename} could not be read just now (the image reader is busy or restarting): try again in a moment.`,
+      };
+    }
   }
 
   if (INGESTABLE_EXTS.has(ext)) {
@@ -368,7 +392,7 @@ export async function extractAttachmentForTurn(opts: {
     }
 
     // DWG/DXF parsing is a CAD-tier round trip in the parser (convert/read +
-    // parse + render) — never inline work for a live turn, whatever the size.
+    // parse + render): never inline work for a live turn, whatever the size.
     // The durable extractor pays it once in the background.
     if (ext === 'dwg' || ext === 'dxf') {
       return {
@@ -474,7 +498,7 @@ export async function extractAttachmentForTurn(opts: {
         text: '',
         note:
           isParserError(err) && err.retryable && !PARSER_COUNTED.has(err.code)
-            ? `${opts.filename} could not be read just now (the document reader is busy or restarting); it is stored and will be indexed in the background.`
+            ? `${opts.filename} could not be read just now (the document reader is busy or restarting): try again in a moment. It is stored and will be indexed in the background.`
             : `Couldn't parse the ${ext.toUpperCase()} (scanned, encrypted, too large, or corrupt?): ${errorMessage(err)}`,
       };
     }
