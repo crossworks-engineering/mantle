@@ -90,7 +90,11 @@ login's own even outside a scope. A non-participant hears "not found", never
 "forbidden".
 
 **Who may start a chat** (the directory): logins that share a live workspace
-with the caller; an Admin user reaches every usable login. The agents a login
+with the caller; an Admin user reaches every usable login. This is one part
+of the one gate of every person-to-person read ("Who may see whom" in the
+content module): `peopleVisibleTo(caller)` is the directory,
+`loginVisibleTo(caller, loginId)` the whole rule for one login (itself, the
+directory, or a person of a chat the caller is in as it sees the room). The agents a login
 may chat with are the assistants of its workspaces; for an Admin user, every
 chat-capable agent except the assistants of non-Admin workspaces it is not
 in (the rule of `listChatAgents`).
@@ -169,7 +173,7 @@ the bytes with the headers of `/api/profile/photo` (`private`,
 `immutable` only when `v` is the photo served) to a login that may see
 that one: itself, a login of its directory, or a person of a chat it is
 in as it sees the room. Anything else, a login with no photo and an id
-that is no uuid answer the one 404, never a 403. As with the caller's
+that is no uuid answer the one 404, never a 403 (`loginVisibleTo`). As with the caller's
 own photo, a browser keeps a photo it fetched at its `v` (`private`,
 `immutable`) after the access that opened it ends; a new photo is a new
 `v`. The route takes a
@@ -267,6 +271,9 @@ a login's message that tags the group's agent, never by an agent's message.
   two member logins, one budget with the route, an outsider refused.
 - `packages/mcp-core/src/gate-policy.test.ts`: a read-only key reads and
   waits, and is refused the writes.
+- `packages/content/src/messenger-people.db.test.ts`: who may see whom
+  (`loginVisibleTo`, `peopleVisibleTo`), each answer asked in the caller's
+  scope and outside one.
 - `server/web/app/api/messenger/messenger-avatars.db.test.ts`: the faces
   of a participant (in the brain's style, with the photo version) and of
   a directory entry (a login, an agent, no seed), and who the photo route

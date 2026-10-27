@@ -426,14 +426,34 @@ export async function messengerIsAdmin(loginId: string): Promise<boolean> {
   return row?.admin === true;
 }
 
-// ── The directory (plan section 4, decision 19.1 A) ──────────────────────────
+// ── Who may see whom (plan section 4, decision 19.1 A) ───────────────────────
+//
+// The one gate of every person-to-person read: another login's card (its
+// name, avatar, photo and presence), here and, later, /api/people and the
+// people tools. A caller sees a login when:
+//
+//  - it is the caller itself;
+//  - it is in the caller's directory (peopleVisibleTo): a usable login (a
+//    mailbox, not disabled) that shares a live (not archived) workspace
+//    with the caller; an Admin user's directory is every usable login. Who
+//    may start a chat or be added to a group is this list;
+//  - or it is a person of a chat the caller is in, as the caller may see
+//    that room (PEOPLE): never one who left before the caller joined, and
+//    for a chat the caller left or was removed from, only those added
+//    before it left. A disabled login stays visible there.
+//
+// Agents are not logins: an agent's card is the agents the login may chat
+// with (messengerChatAgents). There is no client login kind (LOGIN_ROLES is
+// admin and member), so no client rule. loginVisibleTo answers the whole
+// rule for one login (the photo route); the lists apply its parts in their
+// own one query (the directory reads peopleVisibleTo, a room's people
+// PEOPLE), and their faces are filled only for the logins those return.
 
-/** The logins `loginId` may start a chat with or add to a group: those
- *  that share a live workspace with it, or every usable login for an Admin
- *  user. Never itself. One query over workspace_users. */
-async function reachableLogins(
-  ownerId: string,
-  loginId: string,
+/** The caller's directory: the usable logins that share a live workspace
+ *  with it, or every usable login for an Admin user (the rule above).
+ *  Never itself. One query over workspace_users, with each login's face. */
+export async function peopleVisibleTo(
+  caller: { ownerId: string; loginId: string },
   opts: { only?: readonly string[]; q?: string; limit?: number } = {},
 ): Promise<
   {
@@ -444,6 +464,7 @@ async function reachableLogins(
     photoVersion: string | null;
   }[]
 > {
+  const { ownerId, loginId } = caller;
   const admin = await messengerIsAdmin(loginId);
   const only = opts.only ? sql`and u.id = any(${uuidArray(opts.only)})` : sql``;
   const like = opts.q
@@ -481,6 +502,30 @@ async function reachableLogins(
 
 function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Whether `caller` may see `loginId` (the rule above): itself, a login of
+ * its directory (peopleVisibleTo), or a person of a chat it is in as it may
+ * see the room (PEOPLE). false for an id that is no uuid. The room is read
+ * on `db`, the caller's scope inside a request.
+ */
+export async function loginVisibleTo(caller: MessengerActor, loginId: string): Promise<boolean> {
+  if (!isUuid(loginId)) return false;
+  const target = loginId.toLowerCase();
+  if (target === caller.loginId.toLowerCase()) return true;
+  const reach = await peopleVisibleTo(caller, { only: [target], limit: 1 });
+  if (reach.length > 0) return true;
+  const mine = sql`array(select me.conversation_id from ${MINE(caller, null)} me
+                           join messenger_conversations c on c.id = me.conversation_id
+                          where c.owner_id = ${caller.ownerId}::uuid)`;
+  const [hit] = await q<{ ok: number }>(
+    db,
+    sql`select 1 as ok from ${PEOPLE(caller, mine)} x
+         where x.kind = 'login' and x.id = ${target}::uuid
+         limit 1`,
+  );
+  return !!hit;
 }
 
 /**
@@ -524,7 +569,7 @@ export async function messengerDirectory(
   const term = query.trim().slice(0, 100);
   const now = Date.now();
   const [people, chatAgents] = await Promise.all([
-    reachableLogins(actor.ownerId, actor.loginId, { q: term || undefined }),
+    peopleVisibleTo(actor, { q: term || undefined }),
     messengerChatAgents(actor.ownerId, actor.loginId),
   ]);
   const t = term.toLowerCase();
@@ -709,7 +754,7 @@ export async function createMessengerConversation(
     throw new InputError(`A title is at most ${MESSENGER_TITLE_MAX} characters.`);
   }
   if (others.length > 0) {
-    const reach = await reachableLogins(actor.ownerId, actor.loginId, { only: others, limit: 500 });
+    const reach = await peopleVisibleTo(actor, { only: others, limit: 500 });
     if (reach.length !== others.length) {
       throw new MessengerRefusedError(
         'You can only start a chat with people who share a workspace with you.',
@@ -1209,7 +1254,7 @@ export async function addMessengerParticipants(
     (l) => l !== self,
   );
   if (ids.length === 0) throw new InputError('Name at least one login to add (pass logins).');
-  const reach = await reachableLogins(actor.ownerId, actor.loginId, { only: ids, limit: 500 });
+  const reach = await peopleVisibleTo(actor, { only: ids, limit: 500 });
   if (reach.length !== ids.length) {
     throw new MessengerRefusedError('You can only add people who share a workspace with you.');
   }
@@ -1626,7 +1671,7 @@ type ParticipantReadRow = {
  * 0336); outside one the same rows inline.
  */
 function PEOPLE(actor: MessengerActor, conversationIds: readonly string[] | SQL): SQL {
-  // The ids, or a uuid[] expression (messengerSeesLogin: every chat I am in).
+  // The ids, or a uuid[] expression (loginVisibleTo: every chat I am in).
   const cs = Array.isArray(conversationIds) ? uuidArray(conversationIds) : (conversationIds as SQL);
   if (currentWorkspaceScope()) return sql`mantle_messenger_people(${cs})`;
   return sql`(select p.conversation_id, p.kind, coalesce(p.login_id, p.agent_id) as id, p.admin,
@@ -1941,32 +1986,9 @@ export async function messengerUnread(
 // ── A login's photo (GET /api/messenger/photo/:loginId) ──────────────────────
 
 /**
- * Whether `actor` may see `loginId`'s face: itself; a login of its
- * directory (a live workspace shared, or every usable login for an Admin
- * user: reachableLogins); or a person of a chat it is in, as it may see the
- * room's people (PEOPLE: never one who left before it joined, nobody added
- * after it left). The room is read in the actor's scope.
- */
-async function messengerSeesLogin(actor: MessengerActor, loginId: string): Promise<boolean> {
-  if (loginId === actor.loginId) return true;
-  const reach = await reachableLogins(actor.ownerId, actor.loginId, { only: [loginId], limit: 1 });
-  if (reach.length > 0) return true;
-  const mine = sql`array(select me.conversation_id from ${MINE(actor, null)} me
-                           join messenger_conversations c on c.id = me.conversation_id
-                          where c.owner_id = ${actor.ownerId}::uuid)`;
-  const [hit] = await q<{ ok: number }>(
-    db,
-    sql`select 1 as ok from ${PEOPLE(actor, mine)} x
-         where x.kind = 'login' and x.id = ${loginId}::uuid
-         limit 1`,
-  );
-  return !!hit;
-}
-
-/**
  * The uploaded photo of `loginId` as `actor` may fetch it: the stored
  * pointer (a content key and a raster type, both projected) when the actor
- * sees that login (messengerSeesLogin) and it has a photo; null otherwise,
+ * sees that login (loginVisibleTo) and it has a photo; null otherwise,
  * with no difference between "no such login", "not yours to see" and "no
  * photo" (the route answers each with the one 404). The profile row is
  * read on the system pool (loginFaceRows), only after the check.
@@ -1975,9 +1997,8 @@ export async function messengerLoginPhoto(
   actor: MessengerActor,
   loginId: string,
 ): Promise<{ key: string; type: string; version: string } | null> {
-  if (!isUuid(loginId)) return null;
+  if (!(await loginVisibleTo(actor, loginId))) return null;
   const target = loginId.toLowerCase();
-  if (!(await messengerSeesLogin(actor, target))) return null;
   const [row] = await loginFaceRows(actor.ownerId, [target]);
   const key = projectLogoKey(row?.photo_key);
   const type = projectAvatarPhotoType(row?.photo_type);
