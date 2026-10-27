@@ -393,16 +393,16 @@ function changeKind(cell: string, main: string, now: string): string | null {
     return 'desk-version (Desk saving v2: the 400 names the version the save is checked on)';
   }
   // Desk saving v2 fix round: the body names the login the desk belongs to,
-  // and a save for another login is a 401. The kept valid body names the
+  // and a save for another login is a 403. The kept valid body names the
   // owner's login (its cell still reaches the save), so the member's names
   // another login. The real answers: home-desk-route.db.test.ts.
   if (
     cell === 'PUT /api/profile/home-desk member valid' &&
     main === OPAQUE &&
     now ===
-      '401 application/json {"error":"loginId is not the login of this session","code":"login-mismatch"}'
+      '403 application/json {"error":"loginId is not the login of this session","code":"login-mismatch"}'
   ) {
-    return 'desk-login (Desk saving v2 fix round: a save naming another login is a 401)';
+    return 'desk-login (Desk saving v2 fix round: a save naming another login is a 403)';
   }
   // F4 fix round 2 (item 4): a bulk delete checks every id it names first,
   // by @mantle/db's own client (itemWriteVerdicts), which the database

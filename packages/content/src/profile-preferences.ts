@@ -344,17 +344,12 @@ export async function updateProfilePreferences(
     patch = { ...patch, teamHubTags: projectTeamHubTags(patch.teamHubTags) ?? [] };
   }
 
-  // Revisioned values are written ONLY by savePreferenceIfRev: a plain merge
-  // here would clobber whatever another client saved since this one loaded.
-  for (const k of REVISIONED_PREFERENCE_KEYS) {
-    if (patch[k] !== undefined) {
-      throw new Error(`${k} is written through savePreferenceIfRev, not a preference patch.`);
-    }
-  }
-  // The Desk and its version likewise, through saveHomeDeskIfVersion only.
-  for (const k of HOME_DESK_KEYS) {
+  // Never through a patch: the Desk and its version (saveHomeDeskIfVersion
+  // only, compare-and-set), and appNav (the apps tree's now, read once to
+  // migrate: tree/apps-nav.ts).
+  for (const k of [...HOME_DESK_KEYS, 'appNav']) {
     if ((patch as Record<string, unknown>)[k] !== undefined) {
-      throw new Error(`${k} is written through saveHomeDeskIfVersion, not a preference patch.`);
+      throw new Error(`${k} is not written by a preference patch.`);
     }
   }
   // Canonical forms; [] is the deliberate "clear" write for both lists.
@@ -597,76 +592,8 @@ export async function savePreferencesFor(
 // `savePreferencesFor` merges a patch blindly (`preferences || patch`): the
 // last write wins, which is right for a theme or a timezone. Two kinds of
 // value need more, and both live here so feature code never hand-writes SQL
-// against the preferences column.
-
-/**
- * Preferences whose value is one structure edited from several clients at
- * once (a whole tree, say), so a blind merge would silently drop one client's
- * work. Each carries a `rev` and is written only by `savePreferenceIfRev`;
- * `updateProfilePreferences` refuses them.
- */
-export const REVISIONED_PREFERENCE_KEYS = ['appNav'] as const satisfies ReadonlyArray<
-  keyof ProfilePreferences
->;
-export type RevisionedPreferenceKey = (typeof REVISIONED_PREFERENCE_KEYS)[number];
-type RevisionedValue<K extends RevisionedPreferenceKey> = NonNullable<ProfilePreferences[K]>;
-
-export type RevSaveResult<K extends RevisionedPreferenceKey> =
-  { ok: true; value: RevisionedValue<K> } | { ok: false; current: RevisionedValue<K> | undefined };
-
-/**
- * Save a revisioned preference compare-and-set: it lands, stamped
- * `rev: expectedRev + 1`, only while the stored value's rev still equals
- * `expectedRev` (an unset value counts as rev 0). Otherwise nothing is written
- * and the CURRENT value comes back, so the caller can reapply its edit on top
- * and retry. Brain-level keys go to the anchor row, like savePreferencesFor.
- *
- * The caller validates `value`; this only guarantees no lost update.
- */
-export async function savePreferenceIfRev<K extends RevisionedPreferenceKey>(
-  userId: string,
-  key: K,
-  value: Omit<RevisionedValue<K>, 'rev'>,
-  expectedRev: number,
-): Promise<RevSaveResult<K>> {
-  const rowId = isBrainKey(key) ? await brandRowId(userId) : userId;
-  const next = { ...value, rev: expectedRev + 1 } as RevisionedValue<K>;
-  const landed = await mergePreferencesIf(
-    rowId,
-    { [key]: next },
-    sql`coalesce((${profiles.preferences}->${key}->>'rev')::int, 0) = ${expectedRev}`,
-  );
-  if (landed) return { ok: true, value: next };
-  const current = (await loadProfilePreferences(rowId))[key] as RevisionedValue<K> | undefined;
-  return { ok: false, current };
-}
-
-/**
- * The one compare-and-set write of the preferences column: merge `patch`
- * into row `rowId` in ONE conditional UPDATE, only while `when` holds of the
- * stored preferences. True when it landed. A concurrent writer of the same
- * row waits on the row lock and then sees the merged value, so of two writes
- * checked against the same stored value exactly one lands.
- */
-async function mergePreferencesIf(
-  rowId: string,
-  patch: Record<string, unknown>,
-  when: SQL,
-): Promise<boolean> {
-  // Materialise the row so the conditional UPDATE has one to match.
-  await loadProfilePreferences(rowId);
-  const updated = await profileWrite(() =>
-    db
-      .update(profiles)
-      .set({
-        preferences: sql`${profiles.preferences} || ${JSON.stringify(patch)}::jsonb`,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(profiles.userId, rowId), when))
-      .returning({ userId: profiles.userId }),
-  );
-  return updated.length > 0;
-}
+// against the preferences column: the Desk (compare-and-set on a version)
+// and per-id counters (one atomic bump).
 
 /** Where the login's Desk lives on its own profile row: the desk, and the
  *  version beside it (the count of saves that landed). */
@@ -732,12 +659,17 @@ export async function saveHomeDeskIfVersion(
   version: number,
 ): Promise<HomeDeskSaveResult> {
   const next = version + 1;
-  const landed = await mergePreferencesIf(
-    loginId,
-    { homeDesk, homeDeskVersion: next },
-    sql`${storedHomeDeskVersion()} = ${version}`,
+  // Materialise the row so the conditional UPDATE has one to match.
+  await loadProfilePreferences(loginId);
+  const patch = JSON.stringify({ homeDesk, homeDeskVersion: next });
+  const landed = await profileWrite(() =>
+    db
+      .update(profiles)
+      .set({ preferences: sql`${profiles.preferences} || ${patch}::jsonb`, updatedAt: new Date() })
+      .where(and(eq(profiles.userId, loginId), sql`${storedHomeDeskVersion()} = ${version}`))
+      .returning({ userId: profiles.userId }),
   );
-  if (landed) return { ok: true, homeDesk, version: next };
+  if (landed.length > 0) return { ok: true, homeDesk, version: next };
   return { ok: false, ...(await loadHomeDesk(loginId)) };
 }
 

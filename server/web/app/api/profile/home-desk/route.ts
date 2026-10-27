@@ -28,7 +28,7 @@ export const policy = routePolicy({
  *                                                  equals the one sent
  *       -> 409 { homeDesk, version }               the stored desk, when
  *                                                  another device saved since
- *       -> 401 { error, code: 'login-mismatch' }   when `loginId` is not the
+ *       -> 403 { error, code: 'login-mismatch' }   when `loginId` is not the
  *                                                  login of this session
  *
  * The save is one conditional UPDATE on the version (saveHomeDeskIfVersion),
@@ -42,9 +42,9 @@ export const policy = routePolicy({
  * for any other login is refused, so a desk is never saved over another
  * login's. A browser holding several logins can switch the one in use from
  * another tab; the desk on screen here still belongs to the first, and its
- * next save carries that login's id under the other's credential. A 401
- * (the client stops saving for the visit), with a code of its own, so a
- * client tells it from a session that ended and does not sign anyone out.
+ * next save carries that login's id under the other's credential. A 403
+ * with a code of its own: the client stops saving for the visit, and
+ * nobody's session ended.
  *
  * Open to every login (`open: 'any'`, anyLoginCaller), a member as an Admin
  * user: the desk is the login's own. Both run in the login's scope, where
@@ -62,7 +62,7 @@ export async function GET() {
 
 const Body = z.object({
   homeDesk: z.unknown(),
-  // Optional here so a body naming no login is the 401 below, as one
+  // Optional here so a body naming no login is the 403 below, as one
   // naming another is.
   loginId: z.unknown().optional(),
   version: z
@@ -86,7 +86,7 @@ export async function PUT(req: Request) {
   if (parsed.data.loginId !== login.loginId) {
     return NextResponse.json(
       { error: 'loginId is not the login of this session', code: 'login-mismatch' },
-      { status: 401 },
+      { status: 403 },
     );
   }
   const saved = await saveHomeDeskIfVersion(login.loginId, homeDesk, parsed.data.version);

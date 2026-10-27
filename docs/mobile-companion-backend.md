@@ -372,7 +372,7 @@ saves it compare-and-set: 200 `{ homeDesk, version: version + 1 }` when the
 stored version equals the one sent, else 409 with the stored
 `{ homeDesk, version }` (another device saved since; the client adopts it).
 `loginId` names the login the desk belongs to (the shell's `loginId`); a
-save naming any other login is a 401 `{ error, code: "login-mismatch" }`,
+save naming any other login is a 403 `{ error, code: "login-mismatch" }`,
 which a client takes as "stop saving", not as a session that ended. Both are any-login rows
 (`open: 'any'`): every login, a member as an Admin user, keeps its own desk
 on its own profile row, so the Desk follows the login across browsers and

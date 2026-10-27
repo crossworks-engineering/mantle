@@ -9,7 +9,7 @@
  *    number from 0, takes a save sent with version 0 (200, version 1): the
  *    save checks the version as the read projects it;
  *  - the body names the login (`loginId`): a save naming another login, or
- *    none, is a 401 (code login-mismatch), and nothing is written;
+ *    none, is a 403 (code login-mismatch), and nothing is written;
  *  - every login saves its OWN desk compare-and-set: a PUT with the stored
  *    version lands (200, version + 1), one with any other version is a 409
  *    with the stored desk and version, and nothing is written;
@@ -242,13 +242,13 @@ describe.skipIf(!DB_URL)(
         expect(m.takeActorMisses(), 'no actor miss').toEqual([]);
       });
 
-      it(`${mode}: a save naming another login, or none, is a 401, and nothing is written`, async () => {
+      it(`${mode}: a save naming another login, or none, is a 403, and nothing is written`, async () => {
         await setMode(mode);
         const before = await Promise.all(Object.values(L).map(prefsOf));
         const version = await versionOf(L.member);
         for (const loginId of [L.other, L.owner, undefined, '', 7]) {
           const res = await put(L.member, { homeDesk: desk(777), version, loginId });
-          expect(res.status, `${String(loginId)}: ${res.text}`).toBe(401);
+          expect(res.status, `${String(loginId)}: ${res.text}`).toBe(403);
           expect(res.json).toEqual({
             error: 'loginId is not the login of this session',
             code: 'login-mismatch',

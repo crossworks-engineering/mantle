@@ -22,19 +22,20 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   `{ homeDesk, version }` (another device saved since). One conditional
   update of the login's row (`saveHomeDeskIfVersion`, the version stored
   beside the desk as `homeDeskVersion`), so of two saves sent with the same
-  version exactly one lands. It and `savePreferenceIfRev` share the one
-  compare-and-set write of the preferences column (`mergePreferencesIf`).
-  `homeDesk` and `homeDeskVersion` are written through it only: a
-  preference patch naming either is refused. The save reads the stored
+  version exactly one lands. `savePreferenceIfRev` (no caller since the
+  apps moved to the tree) is gone, so this is the one compare-and-set write
+  of the preferences column. `homeDesk` and `homeDeskVersion` are written
+  through it only: a preference patch naming either is refused. The save reads the stored
   version as GET projects it: one that is unset or not a whole number from
   0 counts as 0, so a desk saved before the version takes a save sent with
   version 0.
 - **A save names its login:** the PUT body carries `loginId` (the shell's
   `loginId`, `HomeDeskPutBody`); a save naming any other login, or none, is
-  a 401 `{ error, code: "login-mismatch" }` and nothing is written. A
+  a 403 `{ error, code: "login-mismatch" }` and nothing is written. A
   browser holding several logins can switch the one in use from another
   tab; the desk on screen still belongs to the first and is never saved
-  over the second's. The code tells it from a session that ended.
+  over the second's. A 403, not a 401: the client stops saving, and
+  nobody is signed out.
 - **The shell does not carry the desk:** `homeDesk` is gone from
   `GET /api/shell` and the `Shell` DTO, so the shell's periodic reads no longer
   race the Desk's saves. `HomeDesk`, `HomeDeskItem`, `HomeDeskState` and

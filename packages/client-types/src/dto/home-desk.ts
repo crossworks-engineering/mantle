@@ -29,7 +29,7 @@ export type HomeDeskState = { homeDesk: HomeDesk | null; version: number };
  * is the one this client last read or saved; the save lands (and the
  * version goes up by one) only while the stored version still equals it.
  * `loginId` is the login the desk belongs to (the shell's `loginId`): a save
- * for any login but the session's is a 401 `{ error, code:
+ * for any login but the session's is a 403 `{ error, code:
  * 'login-mismatch' }`, so a desk is never saved over another login's.
  */
 export type HomeDeskPutBody = { homeDesk: HomeDesk; version: number; loginId: string };
