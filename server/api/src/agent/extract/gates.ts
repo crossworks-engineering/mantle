@@ -18,11 +18,13 @@
  *  - The two SIDE passes (auto-table, embedded images) run mid-chain, after
  *    the hard skips and before the type allowlist, because a spreadsheet
  *    should still reach /tables when `file` is not in target_types. They are
- *    best-effort and deliberately not gates, with one exception: a parser
- *    read that is retryable (the parser busy or restarting, or a first
- *    refusal of these bytes, packages/files/src/parser-client.ts) fails the
- *    whole job, before any model call, so pg-boss retries it. A terminal
- *    refusal is logged like any failure; the text pass then records it.
+ *    best-effort and deliberately not gates, with one exception: the parser
+ *    itself unavailable (busy or restarting, packages/files/src/
+ *    parser-client.ts) fails the whole job, before any model call, so
+ *    pg-boss retries it. A verdict on the document (too large, a timeout, a
+ *    crash, a corrupt file) is logged and the text pass goes on: a picture
+ *    pass that times out never keeps the text from being indexed, and a
+ *    crash counts against the bytes for the text pass too.
  *  - Metadata-only runs BEFORE the key pre-flight (it needs no LLM) and
  *    BEFORE the already-extracted guard (it carries its own idempotency, and
  *    a mode flip must re-run).
@@ -64,7 +66,7 @@ import {
 import { digestEmbedText, embed } from '@mantle/embeddings';
 import {
   effectiveBrainDepth,
-  isParserError,
+  isParserUnavailable,
   resolveEffectiveIndexing,
   metadataSpineText,
 } from '@mantle/files';
@@ -78,9 +80,10 @@ import { recordTerminalSkip, type SkipInit } from './terminal';
 import { readNodeBodyLocal } from './load-body';
 import { writeRetrievalChunks } from './index-writes';
 
-/** A parser read worth retrying: the job fails so pg-boss tries again. */
+/** The parser could not take a side pass's job: the extract fails so
+ *  pg-boss tries again. */
 function retryableRead(err: unknown): boolean {
-  return isParserError(err) && err.retryable;
+  return isParserUnavailable(err);
 }
 
 /**
@@ -532,7 +535,10 @@ export async function admitForExtraction(
   await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch(
     (err) => {
       if (retryableRead(err)) throw err;
-      console.error('[extractor] embedded images failed:', err instanceof Error ? err.message : err);
+      console.error(
+        '[extractor] embedded images failed:',
+        err instanceof Error ? err.message : err,
+      );
     },
   );
 

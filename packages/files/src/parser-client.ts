@@ -12,13 +12,15 @@
  *
  *  - `busy` and `unavailable` are about the parser, not the document: always
  *    retryable, never counted against the bytes.
- *  - `too_large`, `timeout` and `crashed` count against the BYTES: the first
- *    for given bytes is retryable (a loaded box can be slow once; a restart
- *    can drop one connection), the second is terminal. A document already
- *    terminal here is refused at once, without asking the parser again, so
- *    one bomb costs the parser at most two jobs per brain process. The count
- *    lives in this process: a restart in between gives the bytes one more
- *    try, never a loop.
+ *  - `too_large`, `timeout` and `crashed` count against the bytes in that
+ *    job: the first is retryable (a loaded box can be slow once; a restart
+ *    can drop one connection), the second is terminal. A job already
+ *    terminal for these bytes is refused at once, without asking the parser
+ *    again, so one bomb costs the parser at most two jobs of each kind per
+ *    brain process. Counted per job, a document that fails only one job (the
+ *    pictures of a 100-sheet drawing set run out of time) still has its text
+ *    read. The count lives in this process: a restart in between gives the
+ *    bytes one more try, never a loop.
  *  - `failed`, `unsupported` and `bad_request` are verdicts on the request:
  *    neither retried nor terminal here; each caller decides (the extractor
  *    indexes the title, a chat turn says the file could not be read).
@@ -71,6 +73,13 @@ export class ParserError extends Error {
     this.retryable = opts.retryable;
     this.terminal = opts.terminal;
   }
+}
+
+/** The parser itself could not take the job (busy, restarting, not
+ *  reachable): never a verdict on the document. A side pass fails the job
+ *  for this (pg-boss retries it) and logs anything else. */
+export function isParserUnavailable(err: unknown): boolean {
+  return isParserError(err) && (err.code === 'busy' || err.code === 'unavailable');
 }
 
 /** True for a {@link ParserError}, also one loaded twice. */
@@ -265,8 +274,10 @@ async function exchange(
   opts: Record<string, unknown>,
   maxAnswerBytes: number,
 ): Promise<Answer> {
-  const key = bytesKey(bytes);
-  const known = failures.get(key);
+  // Counted per job: the pictures pass failing on a document never makes its
+  // text read terminal, nor the other way round.
+  const jobKey = `${bytesKey(bytes)}:${job}`;
+  const known = failures.get(jobKey);
   if (known && known.count >= 2) {
     throw new ParserError(
       known.code,
@@ -289,7 +300,7 @@ async function exchange(
   if (result.ok) return result.answer;
   const { code, message } = result;
   if (PARSER_COUNTED_CODES.has(code)) {
-    const terminal = countFailure(key, code, message);
+    const terminal = countFailure(jobKey, code, message);
     throw new ParserError(code, message, { retryable: !terminal, terminal });
   }
   throw new ParserError(code, message, {

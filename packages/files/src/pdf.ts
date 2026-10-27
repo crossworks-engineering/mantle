@@ -35,7 +35,7 @@ export async function parsePdf(buf: Buffer): Promise<string> {
   // left to tear itself down leaked its worker-side document on every call.
   // `withPdf` destroys the loading task instead. Verbosity 0 (errors only) is
   // pdf-parse's own default.
-  return withPdf(buf, { mode: 'text', verbosity: 0 }, async ({ doc }) => {
+  return withPdf(buf, { verbosity: 0 }, async ({ doc }) => {
     const parser = new PDFParse({ data: new Uint8Array(0) });
     (parser as unknown as { doc: typeof doc }).doc = doc;
     const result = await parser.getText();
@@ -56,7 +56,7 @@ export async function parsePdf(buf: Buffer): Promise<string> {
  *  (maintain `ocr-rescan`). */
 export async function pdfPageCount(bytes: Buffer): Promise<number | null> {
   try {
-    return await withPdf(bytes, { mode: 'text', useSystemFonts: true }, async ({ doc }) => {
+    return await withPdf(bytes, { useSystemFonts: true }, async ({ doc }) => {
       return doc.numPages;
     });
   } catch {
@@ -204,17 +204,17 @@ function resolveImage(page: PdfPage, name: string): Promise<PdfImageData | null>
  *
  * It stops once `maxImages` images have passed the gate (the caller's
  * per-document cap; decorations do not count toward it), so a long document
- * is not decoded past what will be kept. Holds the process-wide decode slot
- * (`withPdf`), waiting at most `waitMs` for it.
+ * is not decoded past what will be kept. Each page's operator list and
+ * objects are released (`page.cleanup()`) before the next.
  */
 export async function extractPdfImages(
   bytes: Buffer,
-  opts?: { maxImages?: number; waitMs?: number },
+  opts?: { maxImages?: number },
 ): Promise<EmbeddedImage[]> {
   const maxImages = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
   return withPdf(
     bytes,
-    { useSystemFonts: true, maxImagePixels: MAX_IMAGE_PIXELS, waitMs: opts?.waitMs },
+    { useSystemFonts: true, maxImagePixels: MAX_IMAGE_PIXELS },
     async ({ pdfjs, doc }) => {
       const pageCount = Math.min(doc.numPages, MAX_PDF_PAGES_SCANNED);
       const out: EmbeddedImage[] = [];

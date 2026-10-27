@@ -813,9 +813,9 @@ export async function explainDxfImageMiss(bytes: Buffer): Promise<string> {
 async function extractCadImages(bytes: Buffer, format: CadFormat): Promise<EmbeddedImage[]> {
   if (!sniffFor(format, bytes)) return [];
   const res = await fetchDwgRender(bytes);
-  // The parser busy or restarting (or a first refusal of these bytes): the
-  // extract retries, rather than completing a drawing with no picture.
-  if (!res.ok && res.retryable) {
+  // The parser busy or restarting: the extract retries, rather than
+  // completing a drawing with no picture.
+  if (!res.ok && (res.code === 'busy' || res.code === 'unavailable')) {
     throw new ParserError(res.code, `${format} render failed (${res.code}): ${res.message}`, {
       retryable: true,
       terminal: false,
