@@ -338,6 +338,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'last_read_seq',
       'mention_seq',
       'cleared_before_seq',
+      'from_seq',
       'muted',
       'left_at',
       'left_seq',

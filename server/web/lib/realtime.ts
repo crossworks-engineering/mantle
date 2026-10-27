@@ -73,7 +73,9 @@ type Bridge = {
    *  logins (with the seq a left one reads up to), filled on first use and
    *  dropped on a participants event. A stale entry can at worst send an id
    *  to a login that then gets 404 on the fetch; never text. */
-  msgRooms: Map<string, { loginId: string; leftSeq: number | null }[]>;
+  msgRooms: Map<string, { loginId: string; leftSeq: number | null; fromSeq: number }[]>;
+  /** Bumped on every drop of msgRooms (fanoutMessenger). */
+  msgRoomsGen: number;
   starting: Promise<void> | null;
   stop: (() => Promise<void>) | null;
 };
@@ -88,7 +90,8 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
   convSubs: new Set<ConvSubscriber>(),
   turnSubs: new Set<TurnStreamSubscriber>(),
   msgSubs: new Map<string, Set<MessengerSubscriber>>(),
-  msgRooms: new Map<string, { loginId: string; leftSeq: number | null }[]>(),
+  msgRooms: new Map<string, { loginId: string; leftSeq: number | null; fromSeq: number }[]>(),
+  msgRoomsGen: 0,
   starting: null,
   stop: null,
 };
@@ -97,7 +100,11 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
 bridge.convSubs ??= new Set<ConvSubscriber>();
 bridge.turnSubs ??= new Set<TurnStreamSubscriber>();
 bridge.msgSubs ??= new Map<string, Set<MessengerSubscriber>>();
-bridge.msgRooms ??= new Map<string, { loginId: string; leftSeq: number | null }[]>();
+bridge.msgRooms ??= new Map<
+  string,
+  { loginId: string; leftSeq: number | null; fromSeq: number }[]
+>();
+bridge.msgRoomsGen ??= 0;
 globalThis.__mantleRealtime = bridge;
 
 async function ensureListening(): Promise<void> {
@@ -306,21 +313,33 @@ const MESSENGER_ROOMS_MAX = 5000;
  *  'self' only the actor; 'typing' everyone live but the typist. */
 async function fanoutMessenger(c: MessengerChange): Promise<void> {
   if (bridge.msgSubs.size === 0) return;
-  if (c.kind === 'participants') bridge.msgRooms.delete(c.c);
+  if (c.kind === 'participants') {
+    bridge.msgRooms.delete(c.c);
+    bridge.msgRoomsGen += 1;
+  }
   let to: string[];
   if (c.kind === 'self') {
     to = c.actor ? [c.actor] : [];
   } else {
     let rows = bridge.msgRooms.get(c.c);
     if (!rows) {
+      // A participants event that lands during this lookup must not see its
+      // drop undone by the older list: keep it only when no drop
+      // happened meanwhile.
+      const gen = bridge.msgRoomsGen;
       rows = await messengerParticipantLogins(c.c);
-      if (bridge.msgRooms.size >= MESSENGER_ROOMS_MAX) bridge.msgRooms.clear();
-      bridge.msgRooms.set(c.c, rows);
+      if (gen === bridge.msgRoomsGen) {
+        if (bridge.msgRooms.size >= MESSENGER_ROOMS_MAX) bridge.msgRooms.clear();
+        bridge.msgRooms.set(c.c, rows);
+      }
     }
     const seq = c.seq;
+    const message = seq !== null && c.kind !== 'read' && c.kind !== 'typing';
     to = rows
-      .filter(
-        (r) => r.leftSeq === null || (seq !== null && c.kind !== 'typing' && r.leftSeq >= seq),
+      .filter((r) =>
+        message
+          ? seq > r.fromSeq && (r.leftSeq === null || r.leftSeq >= seq)
+          : r.leftSeq === null || (seq !== null && c.kind !== 'typing' && r.leftSeq >= seq),
       )
       .map((r) => r.loginId);
     if (c.kind === 'typing') to = to.filter((l) => l !== c.actor);

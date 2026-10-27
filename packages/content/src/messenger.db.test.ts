@@ -179,6 +179,47 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
     );
   });
 
+  it('after a leave the list shows no newer line; an added login reads from its add line, never the gap', async () => {
+    const { conversationId: g } = await ms.createMessengerConversation(actor(A), {
+      kind: 'group',
+      participants: [B],
+      title: 'Gap',
+    });
+    await ms.sendMessengerMessage(actor(A), g, { body: 'old history' });
+    await ms.removeMessengerParticipant(actor(A), g, B);
+    const secret = `after-${randomUUID()}`;
+    await ms.sendMessengerMessage(actor(A), g, { body: secret });
+    // Removed: the list row carries no preview, time or seq past the removal.
+    const row = (await as(B, () => ms.listMessengerConversations(actor(B)))).find(
+      (r) => r.id === g,
+    )!;
+    expect(JSON.stringify(row)).not.toContain(secret);
+    expect(row.preview).toBeNull();
+    const conv = await as(B, () => ms.getMessengerConversation(actor(B), g));
+    expect(conv.lastSeq).toBe(conv.me.leftSeq);
+    // D, added now, and B, added back: both read from the add line only.
+    await ms.addMessengerParticipants(actor(A), g, [B, D]);
+    await ms.sendMessengerMessage(actor(A), g, { body: 'welcome' });
+    for (const who of [B, D]) {
+      const page = await as(who, () => ms.listMessengerMessages(actor(who), g, { limit: 100 }));
+      const bodies = page.messages.map((m) => m.body);
+      expect(bodies, who).not.toContain(secret);
+      expect(bodies[0], who).toMatch(/ added /);
+      expect(bodies, who).toContain('welcome');
+      // Row security agrees, with no WHERE of the module's own.
+      const rawBodies = (await raw(who, 'messenger_messages', g)).map((r) => String(r.body));
+      expect(rawBodies, who).not.toContain(secret);
+    }
+    expect((await raw(D, 'messenger_messages', g)).map((r) => String(r.body))).not.toContain(
+      'old history',
+    );
+    // Their unread starts at the add line, not the whole history.
+    const dRow = (await as(D, () => ms.listMessengerConversations(actor(D)))).find(
+      (r) => r.id === g,
+    )!;
+    expect(dRow.unread).toBe(2);
+  });
+
   it("favourites are the login's own rows", async () => {
     const c = await ms.createMessengerConversation(actor(A), { kind: 'group', participants: [B] });
     await ms.setMessengerFavourite(actor(A), 'conversation', c.conversationId);

@@ -22,18 +22,29 @@ import {
   waitForMessengerMessages,
   MESSENGER_WAIT_MAX_MS,
   MessengerNotFoundError,
+  MessengerRefusedError,
   type MessengerActor,
 } from '@mantle/content/messenger';
-import { domainErrorAnswer, errorMessage } from '@mantle/std';
+import { itemErrorText } from '@mantle/std';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 import { ownerSurfaceLoginId } from './surface';
 import { CS } from './client-sourced-rule';
 
-/** The caller as the messenger sees it: the connection's login (the brain
- *  owner on stdio), and the credential of its MCP connection as via. */
+/** The caller as the messenger sees it: the connection's login, and the
+ *  credential of its MCP connection as via. A connection that names no
+ *  login is the brain owner only on the local stdio server (no MCP
+ *  channel); any other one (a peer bound to an Admin user the owner did not
+ *  register) is refused, never the owner. */
 async function actorOf(ctx: ToolHandlerContext): Promise<MessengerActor> {
-  const loginId = ownerSurfaceLoginId(ctx.surface) ?? ctx.ownerId;
   const mcp = ctx.surface?.kind === 'owner' ? ctx.surface.mcp : undefined;
+  const named = ownerSurfaceLoginId(ctx.surface);
+  const stdio = ctx.surface?.kind === 'owner' && ctx.surface.via === 'mcp' && !mcp;
+  if (!named && !stdio) {
+    throw new MessengerRefusedError(
+      'The messenger needs a connection that acts as one login: connect with your own login (OAuth or an API key).',
+    );
+  }
+  const loginId = named ?? ctx.ownerId;
   const via = mcp
     ? await messengerViaFor({
         oauthClientId: mcp.oauthClientId ?? null,
@@ -47,11 +58,10 @@ async function actorOf(ctx: ToolHandlerContext): Promise<MessengerActor> {
 /** A refusal the caller should read (not found, not allowed, a bad value)
  *  as its own text; anything else the safe message. */
 function fail(err: unknown): { ok: false; error: string } {
-  const domain = domainErrorAnswer(err);
-  if (!domain) return { ok: false, error: errorMessage(err) };
+  const text = itemErrorText(err, 'messenger', 'The messenger could not do that; try again.');
   const hint =
     err instanceof MessengerNotFoundError ? ' Find your chats with `messenger_list`.' : '';
-  return { ok: false, error: `${domain.toolText}${hint}` };
+  return { ok: false, error: `${text}${hint}` };
 }
 
 function int(v: unknown): number | null {

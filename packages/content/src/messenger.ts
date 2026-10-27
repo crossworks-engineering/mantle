@@ -1000,7 +1000,9 @@ export async function addMessengerParticipants(
     }
     if (added.length === 0) return { added: [] };
     const names = await loginNames([self, ...added], tx);
-    await systemLine(
+    // An added login reads from this line on (from_seq), never the history
+    // before it or the gap while it was out.
+    const line = await systemLine(
       tx,
       conv,
       `${names.get(self) ?? 'Someone'} added ${added.map((a) => names.get(a) ?? 'someone').join(', ')}.`,
@@ -1013,6 +1015,8 @@ export async function addMessengerParticipants(
           kind: 'login' as const,
           loginId: id,
           addedBy: self,
+          fromSeq: line - 1,
+          lastReadSeq: line - 1,
         })),
       )
       .onConflictDoUpdate({
@@ -1024,6 +1028,8 @@ export async function addMessengerParticipants(
           admin: false,
           joinedAt: sql`now()`,
           addedBy: self,
+          fromSeq: line - 1,
+          lastReadSeq: line - 1,
         },
       });
     return { added };
@@ -1115,7 +1121,9 @@ export async function setMessengerFavourite(
   if (kind !== 'conversation' && kind !== 'agent') {
     throw new InputError('kind must be "conversation" or "agent".');
   }
-  if (!Number.isSafeInteger(rank)) throw new InputError('rank must be a whole number.');
+  if (!Number.isSafeInteger(rank) || rank < 0 || rank > 1_000_000) {
+    throw new InputError('rank must be a whole number from 0 to 1000000.');
+  }
   if (kind === 'conversation') {
     const [p] = await q<{ ok: number }>(
       systemDb,
@@ -1187,6 +1195,7 @@ const MY_WINDOW = (loginId: string) => sql`
   join messenger_participants me
     on me.conversation_id = m.conversation_id and me.kind = 'login' and me.login_id = ${loginId}::uuid
    and m.seq > me.cleared_before_seq
+   and m.seq > me.from_seq
    and (me.left_at is null or m.seq <= me.left_seq)`;
 
 async function decorate(
@@ -1281,7 +1290,8 @@ export async function listMessengerMessages(
   );
   const [conv] = await q<{ last_seq: string | number }>(
     db,
-    sql`select c.last_seq from messenger_conversations c
+    sql`select least(c.last_seq, coalesce(me.left_seq, c.last_seq)) as last_seq
+          from messenger_conversations c
           join messenger_participants me on me.conversation_id = c.id and me.kind = 'login'
                                         and me.login_id = ${actor.loginId}::uuid
          where c.id = ${c}::uuid and c.owner_id = ${actor.ownerId}::uuid`,
@@ -1328,18 +1338,25 @@ type ParticipantReadRow = {
   left_at: Date | null;
 };
 
+/** The people of each conversation as `actor` may see them: for a
+ *  conversation it left, only those who joined before it left. */
 async function participantsOf(
+  actor: MessengerActor,
   conversationIds: readonly string[],
 ): Promise<Map<string, MessengerParticipantView[]>> {
   const out = new Map<string, MessengerParticipantView[]>();
   if (conversationIds.length === 0) return out;
   const rows = await q<ParticipantReadRow>(
     db,
-    sql`select conversation_id::text as conversation_id, kind,
-               coalesce(login_id, agent_id)::text as id, admin, left_at
-          from messenger_participants
-         where conversation_id = any(${uuidArray(conversationIds)})
-         order by joined_at, id`,
+    sql`select p.conversation_id::text as conversation_id, p.kind,
+               coalesce(p.login_id, p.agent_id)::text as id, p.admin, p.left_at
+          from messenger_participants p
+          join messenger_participants me
+            on me.conversation_id = p.conversation_id and me.kind = 'login'
+           and me.login_id = ${actor.loginId}::uuid
+         where p.conversation_id = any(${uuidArray(conversationIds)})
+           and (me.left_at is null or p.joined_at <= me.left_at)
+         order by p.joined_at, p.id`,
   );
   const [ln, an] = await Promise.all([
     loginNames([...new Set(rows.filter((r) => r.kind === 'login').map((r) => r.id))]),
@@ -1384,7 +1401,9 @@ export async function getMessengerConversation(
   }>(
     db,
     sql`select c.id::text as id, c.kind, c.title, c.created_by::text as created_by, c.created_at,
-               c.archived_at, c.last_seq, c.last_message_at, c.workspace_id::text as workspace_id,
+               c.archived_at, least(c.last_seq, coalesce(me.left_seq, c.last_seq)) as last_seq,
+               case when me.left_at is null then c.last_message_at end as last_message_at,
+               c.workspace_id::text as workspace_id,
                c.agent_id::text as agent_id, me.admin, me.last_read_seq, me.cleared_before_seq, me.muted,
                me.left_seq
           from messenger_conversations c
@@ -1393,7 +1412,7 @@ export async function getMessengerConversation(
          where c.id = ${c}::uuid and c.owner_id = ${actor.ownerId}::uuid`,
   );
   if (!row) throw new MessengerNotFoundError();
-  const parts = (await participantsOf([row.id])).get(row.id) ?? [];
+  const parts = (await participantsOf(actor, [row.id])).get(row.id) ?? [];
   return {
     id: row.id,
     kind: row.kind,
@@ -1449,7 +1468,10 @@ type ListRow = {
 async function myConversationRows(actor: MessengerActor, unreadOnly = false): Promise<ListRow[]> {
   return q<ListRow>(
     db,
-    sql`select c.id::text as id, c.kind, c.title, c.last_seq, c.last_message_at, c.last_preview, me.muted,
+    sql`select c.id::text as id, c.kind, c.title,
+               least(c.last_seq, coalesce(me.left_seq, c.last_seq)) as last_seq,
+               case when me.left_at is null then c.last_message_at end as last_message_at,
+               case when me.left_at is null then c.last_preview end as last_preview, me.muted,
                greatest(0, least(c.last_seq, coalesce(me.left_seq, c.last_seq))
                            - greatest(me.last_read_seq, me.cleared_before_seq)) as unread,
                me.mention_seq > greatest(me.last_read_seq, me.cleared_before_seq) as mention,
@@ -1538,7 +1560,10 @@ export async function listMessengerConversations(
     myConversationRows(actor, opts.unreadOnly === true),
     myAgentThreadRows(actor),
   ]);
-  const parts = await participantsOf(convs.map((c) => c.id));
+  const parts = await participantsOf(
+    actor,
+    convs.map((c) => c.id),
+  );
   const rows: (MessengerListRowView & { rank: number | null })[] = [
     ...convs.map((c) => {
       const ps = parts.get(c.id) ?? [];
@@ -1622,14 +1647,22 @@ export async function messengerUnread(
  *  pool: the stream's listener holds no scope. */
 export async function messengerParticipantLogins(
   conversationId: string,
-): Promise<{ loginId: string; leftSeq: number | null }[]> {
+): Promise<{ loginId: string; leftSeq: number | null; fromSeq: number }[]> {
   if (!isUuid(conversationId)) return [];
-  const rows = await q<{ login_id: string; left_seq: string | number | null }>(
+  const rows = await q<{
+    login_id: string;
+    left_seq: string | number | null;
+    from_seq: string | number;
+  }>(
     systemDb,
-    sql`select login_id::text as login_id, left_seq from messenger_participants
+    sql`select login_id::text as login_id, left_seq, from_seq from messenger_participants
          where conversation_id = ${conversationId}::uuid and kind = 'login'`,
   );
-  return rows.map((r) => ({ loginId: r.login_id, leftSeq: numOrNull(r.left_seq) }));
+  return rows.map((r) => ({
+    loginId: r.login_id,
+    leftSeq: numOrNull(r.left_seq),
+    fromSeq: num(r.from_seq),
+  }));
 }
 
 /** Whether a login may still use the messenger: it exists, has a mailbox

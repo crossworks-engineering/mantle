@@ -13,7 +13,8 @@
 --  - Who reads what is row security keyed by the participant row: a login
 --    reads a conversation, its participants and its messages while it has a
 --    participant row, and a participant who left reads up to left_seq and
---    nothing after. There is no Admin exception: an Admin user reads no chat
+--    nothing after; a login added later reads from the line that added it
+--    (from_seq). There is no Admin exception: an Admin user reads no chat
 --    it is not in. mantle_messenger_seq_cap() answers the cap; it is a
 --    security definer so the participants policy does not read itself.
 --  - Writes go through packages/content/src/messenger.ts on the system pool
@@ -76,6 +77,10 @@ CREATE TABLE IF NOT EXISTS "messenger_participants" (
   "last_read_seq" bigint NOT NULL DEFAULT 0,
   "mention_seq" bigint NOT NULL DEFAULT 0,
   "cleared_before_seq" bigint NOT NULL DEFAULT 0,
+  -- The floor of what the login reads: a login added to a group (or added
+  -- back) reads from the line that added it, never the history before it or
+  -- the gap while it was out. 0 for the people a chat starts with.
+  "from_seq" bigint NOT NULL DEFAULT 0,
   "muted" boolean NOT NULL DEFAULT false,
   CONSTRAINT "messenger_participants_kind_ck" CHECK (
     ("kind" = 'login' AND "login_id" IS NOT NULL AND "agent_id" IS NULL)
@@ -239,6 +244,22 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_messenger_seq_cap"(uuid) FROM PUBLIC
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION "public"."mantle_messenger_seq_cap"(uuid) TO mantle_view_user;
 --> statement-breakpoint
+-- The floor: the acting login reads only the seqs above its from_seq (null:
+-- not a participant, which the cap already refuses).
+CREATE OR REPLACE FUNCTION "public"."mantle_messenger_seq_floor"(c uuid)
+  RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT p."from_seq"
+    FROM "public"."messenger_participants" p
+   WHERE p."conversation_id" = c
+     AND p."kind" = 'login'
+     AND p."login_id" = (SELECT "public"."mantle_login_id"())
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_messenger_seq_floor"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_messenger_seq_floor"(uuid) TO mantle_view_user;
+--> statement-breakpoint
 
 ALTER TABLE "public"."messenger_conversations" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
@@ -262,7 +283,8 @@ DROP POLICY IF EXISTS "messenger_messages_user_read" ON "public"."messenger_mess
 --> statement-breakpoint
 CREATE POLICY "messenger_messages_user_read" ON "public"."messenger_messages"
   FOR SELECT TO mantle_view_user
-  USING ("seq" <= "public"."mantle_messenger_seq_cap"("conversation_id"));
+  USING ("seq" <= "public"."mantle_messenger_seq_cap"("conversation_id")
+         AND "seq" > "public"."mantle_messenger_seq_floor"("conversation_id"));
 --> statement-breakpoint
 ALTER TABLE "public"."messenger_attachments" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint

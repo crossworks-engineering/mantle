@@ -66,6 +66,8 @@ export const messengerParticipants = pgTable('messenger_participants', {
   lastReadSeq: bigint('last_read_seq', { mode: 'number' }).default(0).notNull(),
   mentionSeq: bigint('mention_seq', { mode: 'number' }).default(0).notNull(),
   clearedBeforeSeq: bigint('cleared_before_seq', { mode: 'number' }).default(0).notNull(),
+  /** A login added later reads only the seqs above this (its add line on). */
+  fromSeq: bigint('from_seq', { mode: 'number' }).default(0).notNull(),
   muted: boolean('muted').default(false).notNull(),
 });
 

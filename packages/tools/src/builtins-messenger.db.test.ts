@@ -147,6 +147,25 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     expect((dir.output!.entries as { id: string }[]).some((e) => e.id === B)).toBe(true);
   }, 30_000);
 
+  it('a connection that names no login is refused, never the owner (a peer of an Admin user)', async () => {
+    const peerCtx = {
+      ownerId: owner,
+      surface: {
+        kind: 'owner' as const,
+        via: 'federation' as const,
+        mcp: { via: 'peer' as const, write: true, peerId: randomUUID() },
+      },
+    };
+    for (const slug of ['messenger_list', 'messenger_directory', 'messenger_create']) {
+      const out = (await tool(slug).handler(
+        slug === 'messenger_create' ? { kind: 'group', participants: [] } : {},
+        peerCtx as never,
+      )) as { ok: boolean; error?: string };
+      expect(out.ok, slug).toBe(false);
+      expect(out.error, slug).toMatch(/one login/);
+    }
+  });
+
   it('two member logins chat through send and wait', async () => {
     const made = await call('messenger_create', A, randomUUID(), {
       kind: 'direct',
