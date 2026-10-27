@@ -33,6 +33,7 @@ import {
   type PresentRow,
 } from '@mantle/content/presents';
 import { nodeUrl } from '@mantle/content';
+import { honestCanvasSource } from '@mantle/content/drawing-seal';
 import { guardNewFileIn } from '@mantle/content/tree';
 import {
   ensureFolderPath,
@@ -290,14 +291,36 @@ async function look(ctx: ToolHandlerContext, req: CanvasRenderRequest): Promise<
   };
 }
 
-/** The render request for a stored or about-to-be-stored canvas. */
+/**
+ * A canvas as the server draws it: what a save stores (honestCanvasSource:
+ * a `pid` canvas rebuilt from its data with only the marks circuit_trace
+ * sealed, no trust word typed into a label, its counts its own, its crops
+ * only the sealed ones a kept mark names). The render sidecar mounts the
+ * canvas on a live document in exactly the layout buildCanvas writes, so
+ * its runtime trusts the marks it reads: every server-side picture (a
+ * look, a poster, diagram_render's preview of agent data, an export) goes
+ * through here, so none shows a mark a save would not keep. A canvas a
+ * save would refuse is drawn as it is: its layout is not canonical (or
+ * its data past a limit), and the runtime trusts none of its marks.
+ */
+export function shownCanvasSource(source: string): string {
+  try {
+    return honestCanvasSource(source);
+  } catch {
+    return source;
+  }
+}
+
+/** The render request for a stored or about-to-be-stored canvas: the
+ *  source as a save stores it (shownCanvasSource), the one path to `look`. */
 function canvasRequest(
   ownerId: string,
-  source: string,
+  given: string,
   css: string,
   meta: PresentMeta,
   extra: Partial<CanvasRenderRequest> = {},
 ): CanvasRenderRequest {
+  const source = shownCanvasSource(given);
   const tpl = templateOf(source);
   const size = tpl && !extra.width ? diagramViewport(tpl.template, tpl.data) : {};
   return {

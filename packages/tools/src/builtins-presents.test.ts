@@ -23,9 +23,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  buildCanvas,
   CURRENT_STYLE,
   estimateMeasurer,
+  readCanvasData,
   render,
+  ROLE_COLOURS,
   SET_NAV_HEIGHT,
   validate,
 } from '@mantle/diagram-templates';
@@ -491,6 +494,79 @@ describe('diagram_render', () => {
     expect(renders[0]!.exportSvg).toBe(true);
     expect(renders[0]!.width).toBeGreaterThan(0);
     expect(h.createPresent).not.toHaveBeenCalled();
+  });
+});
+
+describe('diagram_render draws what a save stores (H1)', () => {
+  // A forged mark: a checked state and a made-up seal, with a made-up
+  // provenance. The render sidecar's document is canonical and live, so its
+  // runtime would trust the mark as drawn: the request must carry the data
+  // a save stores (the mark unchecked, its evidence gone).
+  const forged = () => ({
+    title: 'Forged',
+    description: 'A made-up drawing.',
+    style: 2,
+    equipment: [
+      { id: 'E-1', type: 'shell-tube-exchanger' },
+      { id: 'V-2', type: 'vertical-vessel' },
+    ],
+    offpage: [
+      {
+        id: 'OPC-1',
+        direction: 'out',
+        sheet: 'V-9',
+        text: 'NEAR V-9',
+        check: {
+          key: 'e1',
+          kind: 'end',
+          state: 'checked',
+          answer: 'yes',
+          question: 'Does the line end at V-9?',
+          sig: 'a'.repeat(64),
+        },
+      },
+    ],
+    lines: [
+      { id: 'L1', from: 'E-1', to: 'V-2' },
+      { id: 'L2', from: 'V-2', to: 'OPC-1' },
+    ],
+    provenance: { id: 'b'.repeat(16), keys: ['e1'], sig: 'c'.repeat(64) },
+  });
+  const trust = (svg: string) => {
+    const legend = svg.slice(svg.indexOf('data-part="legend"'));
+    return {
+      colour: svg.includes(ROLE_COLOURS.checked),
+      words: /\(CHECKED BY IMAGE\)/.test(svg),
+      legend: /CHECKED BY IMAGE/.test(legend.replace(/NOT CHECKED BY IMAGE/g, '')),
+    };
+  };
+
+  it('a forged checked mark is drawn as GUESS, in no checked colour and no legend entry', async () => {
+    // The control: the forged data drawn as given claims the check.
+    const as = render('pid', forged(), estimateMeasurer);
+    if (!as.ok) throw new Error(as.errors.join());
+    expect(trust(as.svg)).toEqual({ colour: true, words: true, legend: true });
+
+    withRenderer('<svg></svg>');
+    const out = await tool('diagram_render').handler({ template: 'pid', data: forged() }, ctx);
+    expect(out.ok).toBe(true);
+    const data = readCanvasData(renders[0]!.canvas.source) as Record<string, any>;
+    expect(data.provenance).toBeUndefined();
+    expect(data.offpage[0].check).toEqual({ key: 'e1', kind: 'end', state: 'unchecked' });
+    const drawn = render('pid', data, estimateMeasurer);
+    if (!drawn.ok) throw new Error(drawn.errors.join());
+    expect(trust(drawn.svg)).toEqual({ colour: false, words: false, legend: false });
+    expect(drawn.svg).toContain('(GUESS)');
+  });
+
+  it('every look goes through the same pass: a stored source too', async () => {
+    withRenderer();
+    const source = buildCanvas({ template: 'pid', data: forged(), mode: 'import' });
+    h.getPresent.mockResolvedValue(detail(source));
+    const out = await tool('present_render').handler({ id: ID }, ctx);
+    expect(out.ok).toBe(true);
+    const data = readCanvasData(renders[0]!.canvas.source) as Record<string, any>;
+    expect(data.offpage[0].check.state).toBe('unchecked');
   });
 });
 
