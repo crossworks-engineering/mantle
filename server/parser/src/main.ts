@@ -6,18 +6,23 @@
  * audio out of uploaded video (ffmpeg). The brain talks to it through one
  * client (packages/files/src/parser-client.ts).
  *
- * The safety guarantee is the container: an OS memory limit (`mem_limit`),
- * a CPU share, and a network with no route out (compose network `parser`,
+ * The safety guarantee is the container: an OS memory limit (`mem_limit`,
+ * with no swap beyond it), a CPU share, a size-limited scratch space (a
+ * tmpfs) and a network with no route out (compose network `parser`,
  * `internal: true`). Inside it, cheap bounds only:
  *
+ *  - PARSER_MAX_JOBS jobs at a time (default 1, so one job has the whole
+ *    memory), up to PARSER_QUEUE_MAX waiting at most PARSER_QUEUE_WAIT_MS
+ *    each, then `busy`. A request takes its slot BEFORE its body is read:
+ *    a refused one leaves nothing on disk;
  *  - a request-body cap (PARSER_MAX_UPLOAD_MB), enforced while the body
  *    streams to disk, never after it sat in memory;
- *  - PARSER_MAX_JOBS jobs at a time (default 2), up to PARSER_QUEUE_MAX
- *    waiting at most PARSER_QUEUE_WAIT_MS each, then `busy`;
  *  - each job in its own process (./job.ts) and process group, killed at
  *    the job's deadline (PARSER_JOB_TIMEOUT_MS); the kernel's OOM kill
- *    lands on the job process, and the server answers `crashed`;
- *  - the readers' own caps (zip parts, sheet cells, image pixels).
+ *    lands on the job process, and the server answers `crashed`; what a job
+ *    left running is killed when it ends (./proc.ts `reapOrphans`);
+ *  - an answer cap (PARSER_ANSWER_MAX_BYTES), and the readers' own caps
+ *    (zip parts, sheet cells, image pixels, pictures per answer).
  *
  * If the server itself dies, compose restarts it (`restart: unless-stopped`)
  * and the brain reads the dropped connection as `crashed`.
@@ -38,6 +43,7 @@ import {
   MAX_OPTS_BYTES,
   META_HEADER,
   OPTS_LENGTH_HEADER,
+  PARSER_ANSWER_MAX_BYTES,
   PARSER_DEFAULT_PORT,
   PARSER_ERROR_STATUS,
   PARSER_JOB_TIMEOUT_MS,
@@ -46,7 +52,9 @@ import {
   type ParserErrorCode,
   type ParserJob,
 } from '@mantle/files/parser-wire';
-import { runGroup } from './proc';
+import { JobFailure } from './job-failure';
+import { reapOrphans, runGroup } from './proc';
+import { Slots } from './slots';
 import { probeVersions } from './versions';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -55,15 +63,6 @@ const JOB_ENTRY = path.join(HERE, 'job.ts');
 const JOB_BY_PATH = new Map<string, ParserJob>(
   (Object.entries(PARSER_ROUTES) as Array<[ParserJob, string]>).map(([job, route]) => [route, job]),
 );
-
-class Refusal extends Error {
-  constructor(
-    readonly code: ParserErrorCode,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 // ── config ──────────────────────────────────────────────────────────────────
 
@@ -79,43 +78,7 @@ const WORKDIR = env('PARSER_WORKDIR') ?? path.join(os.tmpdir(), 'mantle-parser')
 
 // ── slots ───────────────────────────────────────────────────────────────────
 
-let running = 0;
-const queue: Array<{ resolve: () => void; timer: NodeJS.Timeout }> = [];
-
-/** A job slot, or a `busy` refusal: the queue is full, or the wait passed. */
-function acquireSlot(): Promise<void> {
-  if (running < MAX_JOBS) {
-    running++;
-    return Promise.resolve();
-  }
-  if (queue.length >= QUEUE_MAX) {
-    return Promise.reject(
-      new Refusal('busy', `every job slot is taken and ${QUEUE_MAX} wait already`),
-    );
-  }
-  return new Promise((resolve, reject) => {
-    const entry = {
-      resolve: () => {
-        clearTimeout(entry.timer);
-        running++;
-        resolve();
-      },
-      timer: setTimeout(() => {
-        const i = queue.indexOf(entry);
-        if (i >= 0) queue.splice(i, 1);
-        reject(
-          new Refusal('busy', `no job slot came free within ${PARSER_QUEUE_WAIT_MS / 1000} s`),
-        );
-      }, PARSER_QUEUE_WAIT_MS),
-    };
-    queue.push(entry);
-  });
-}
-
-function releaseSlot(): void {
-  running--;
-  queue.shift()?.resolve();
-}
+const slots = new Slots(MAX_JOBS, QUEUE_MAX, PARSER_QUEUE_WAIT_MS);
 
 // ── one request ─────────────────────────────────────────────────────────────
 
@@ -136,13 +99,44 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown, close
   res.end(data);
 }
 
-function sendFailure(res: http.ServerResponse, code: ParserErrorCode, message: string): void {
+/** How long a refused request's unread body is read (and dropped) before
+ *  the answer goes. */
+const DRAIN_MS = 60_000;
+
+/**
+ * Read the rest of a request's body and drop it: nothing is written. A
+ * refusal sent while the client is still sending a large body reaches the
+ * client as a reset connection (which it reads as `crashed`, counted against
+ * the file), not as the refusal; once the body is read, the answer arrives
+ * as sent.
+ */
+function drainBody(req: http.IncomingMessage): Promise<void> {
+  if (req.complete || req.destroyed) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(done, DRAIN_MS);
+    req.once('end', done);
+    req.once('close', done);
+    req.once('error', done);
+    req.resume();
+  });
+}
+
+async function sendFailure(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  code: ParserErrorCode,
+  message: string,
+): Promise<void> {
   if (res.headersSent) {
     res.destroy();
     return;
   }
-  // Close: the request body may be unread, and on keep-alive it would be
-  // read as the next request.
+  await drainBody(req);
+  // Close: one request per connection after a refusal.
   sendJson(res, PARSER_ERROR_STATUS[code], { ok: false, error: { code, message } }, true);
 }
 
@@ -151,11 +145,11 @@ function sendFailure(res: http.ServerResponse, code: ParserErrorCode, message: s
 async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number> {
   const optsLen = Number(req.headers[OPTS_LENGTH_HEADER] ?? 0);
   if (!Number.isInteger(optsLen) || optsLen < 0 || optsLen > MAX_OPTS_BYTES) {
-    throw new Refusal('bad_request', `${OPTS_LENGTH_HEADER} must be 0 to ${MAX_OPTS_BYTES}`);
+    throw new JobFailure('bad_request', `${OPTS_LENGTH_HEADER} must be 0 to ${MAX_OPTS_BYTES}`);
   }
   const declared = Number(req.headers['content-length'] ?? NaN);
   if (Number.isFinite(declared) && declared - optsLen > MAX_BODY_BYTES) {
-    throw new Refusal(
+    throw new JobFailure(
       'too_large',
       `the file is past the ${MAX_BODY_BYTES / 1024 / 1024} MB the parser takes`,
     );
@@ -164,6 +158,10 @@ async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number
   let headLen = 0;
   let size = 0;
   const file = createWriteStream(path.join(dir, 'in.bin'));
+  let writeError: NodeJS.ErrnoException | null = null;
+  file.on('error', (err) => {
+    writeError = err;
+  });
   try {
     for await (const chunk of req as AsyncIterable<Buffer>) {
       let rest = chunk;
@@ -175,26 +173,52 @@ async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number
       }
       if (rest.length === 0) continue;
       size += rest.length;
-      if (size > MAX_BODY_BYTES) {
-        throw new Refusal(
-          'too_large',
-          `the file is past the ${MAX_BODY_BYTES / 1024 / 1024} MB the parser takes`,
-        );
-      }
-      if (!file.write(rest)) await new Promise((r) => file.once('drain', r));
+      // Past the cap, or the scratch space full: the rest is read and
+      // dropped (never written), and the refusal follows the whole body
+      // (see drainBody).
+      if (size > MAX_BODY_BYTES || writeError) continue;
+      if (!file.write(rest)) await new Promise((r) => file.once('drain', r).once('error', r));
     }
   } finally {
-    await new Promise<void>((resolve) => file.end(() => resolve()));
+    await new Promise<void>((resolve) => {
+      if (file.destroyed) resolve();
+      else file.end(() => resolve());
+    });
   }
-  if (headLen < optsLen) throw new Refusal('bad_request', 'the body ended inside the options');
+  if (size > MAX_BODY_BYTES) {
+    throw new JobFailure(
+      'too_large',
+      `the file is past the ${MAX_BODY_BYTES / 1024 / 1024} MB the parser takes`,
+    );
+  }
+  if (writeError) throw scratchFailure(writeError);
+  if (headLen < optsLen) throw new JobFailure('bad_request', 'the body ended inside the options');
   const opts = Buffer.concat(head).toString('utf8');
   try {
     if (opts) JSON.parse(opts);
   } catch {
-    throw new Refusal('bad_request', 'the options are not JSON');
+    throw new JobFailure('bad_request', 'the options are not JSON');
   }
   await fs.writeFile(path.join(dir, 'opts.json'), opts || '{}');
   return size;
+}
+
+/** A write to the scratch space failed. Full (ENOSPC): the file does not
+ *  fit beside what the running jobs hold, a verdict on its size. */
+function scratchFailure(err: NodeJS.ErrnoException): JobFailure {
+  if (err.code === 'ENOSPC') {
+    return new JobFailure('too_large', "the file does not fit in the parser's scratch space");
+  }
+  return new JobFailure('failed', `the parser could not write the file: ${err.message}`);
+}
+
+/** The job process's environment: the parser's own, less its bearer token
+ *  (a job never talks to anything; a reader broken out of its document
+ *  must not find the token). */
+function jobEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.PARSER_TOKEN;
+  return env;
 }
 
 type Outcome = 'ok' | ParserErrorCode;
@@ -205,6 +229,7 @@ async function runJobProcess(job: ParserJob, dir: string, abort: AbortSignal): P
   const ended = await runGroup(process.execPath, [...process.execArgv, JOB_ENTRY, job, dir], {
     timeoutMs,
     abort,
+    env: jobEnv(),
   });
   if (ended.code === 0) return 'ok';
   if (ended.timedOut) {
@@ -245,19 +270,24 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     sendJson(res, 200, {
       ok: true,
       versions: await probeVersions(),
-      running,
-      queued: queue.length,
+      running: slots.running,
+      queued: slots.queued,
       maxJobs: MAX_JOBS,
+      // Whether this parser asks for a token, and whether the caller sent
+      // the right one: the brain's health screen reads a mismatch as down.
+      auth: TOKEN ? 'token' : 'none',
+      authorized: authorized(req),
     });
     return;
   }
   const job = req.method === 'POST' ? JOB_BY_PATH.get(url) : undefined;
   if (!job) {
-    sendFailure(res, 'bad_request', `no route ${req.method} ${url}`);
+    await sendFailure(req, res, 'bad_request', `no route ${req.method} ${url}`);
     return;
   }
   if (!authorized(req)) {
     // `unavailable` to the brain: a wrong token is configuration, not the file.
+    await drainBody(req);
     res.writeHead(401, { 'content-type': 'application/json', connection: 'close' });
     res.end(
       JSON.stringify({
@@ -268,43 +298,55 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     return;
   }
   const started = Date.now();
-  const dir = await fs.mkdtemp(path.join(WORKDIR, `${job}-`));
   const abort = new AbortController();
   res.on('close', () => {
     if (!res.writableFinished) abort.abort();
   });
   let slot = false;
+  let dir: string | null = null;
   let outcome: Outcome = 'failed';
   let size = 0;
   try {
-    size = await spoolBody(req, dir);
-    await acquireSlot();
+    // The slot first: a request that cannot run soon is refused before a
+    // byte of its body is read, and the scratch space only ever holds the
+    // files of the jobs that run.
+    await slots.acquire();
     slot = true;
+    dir = await fs.mkdtemp(path.join(WORKDIR, `${job}-`));
+    size = await spoolBody(req, dir);
     outcome = await runJobProcess(job, dir, abort.signal);
     if (outcome !== 'ok') {
       const e = JSON.parse(await fs.readFile(path.join(dir, 'error.json'), 'utf8')) as {
         message?: string;
       };
-      sendFailure(res, outcome, e.message ?? outcome);
+      await sendFailure(req, res, outcome, e.message ?? outcome);
       return;
     }
     await sendAnswer(job, dir, res);
   } catch (err) {
-    if (err instanceof Refusal) {
+    if (err instanceof JobFailure) {
       outcome = err.code;
-      sendFailure(res, err.code, err.message);
+      await sendFailure(req, res, err.code, err.message);
     } else {
       outcome = 'failed';
-      sendFailure(res, 'failed', errorMessage(err));
+      await sendFailure(req, res, 'failed', errorMessage(err));
     }
   } finally {
-    if (slot) releaseSlot();
+    // The job's files go before its slot does: the next job gets the whole
+    // scratch space. Then whatever the job left running.
+    if (dir) await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    if (slot) {
+      slots.release();
+      if (slots.running === 0) {
+        const killed = await reapOrphans();
+        if (killed > 0)
+          process.stderr.write(`[parser] ${job}: killed ${killed} left-behind process(es)\n`);
+      }
+    }
     // Log the job, never its content.
     process.stdout.write(
-      `[parser] ${job} ${outcome} ${size} B ${Date.now() - started} ms (running ${running}, queued ${queue.length})\n`,
+      `[parser] ${job} ${outcome} ${size} B ${Date.now() - started} ms (running ${slots.running}, queued ${slots.queued})\n`,
     );
-    // The answer is sent (or the client is gone): the job's files go.
-    void fs.rm(dir, { recursive: true, force: true });
   }
 }
 
@@ -314,6 +356,14 @@ async function sendAnswer(job: ParserJob, dir: string, res: http.ServerResponse)
   const byteJob = BYTE_JOBS.has(job);
   const file = path.join(dir, byteJob ? 'out.bin' : 'out.json');
   const { size } = await fs.stat(file);
+  // An answer the brain would refuse is not sent: it holds every answer in
+  // memory (packages/files/src/parser-client.ts).
+  if (size > PARSER_ANSWER_MAX_BYTES) {
+    throw new JobFailure(
+      'too_large',
+      `the answer is ${Math.round(size / 1024 / 1024)} MB, past the ${PARSER_ANSWER_MAX_BYTES / 1024 / 1024} MB an answer may be`,
+    );
+  }
   const headers: Record<string, string> = {
     'content-type': byteJob ? 'application/octet-stream' : 'application/json',
     'content-length': String(size),
@@ -347,7 +397,9 @@ async function main(): Promise<void> {
     );
   }
   const server = http.createServer((req, res) => {
-    handle(req, res).catch((err: unknown) => sendFailure(res, 'failed', errorMessage(err)));
+    handle(req, res).catch(
+      (err: unknown) => void sendFailure(req, res, 'failed', errorMessage(err)),
+    );
   });
   // A request is the transfer of one file: no long idle sockets.
   server.requestTimeout = 0;

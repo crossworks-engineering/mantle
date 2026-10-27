@@ -11,9 +11,10 @@
 import { createWriteStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { env } from '@mantle/config';
+import { env, envDynamic } from '@mantle/config';
 import type { DwfRender, DwfRenderFn } from '@mantle/files/readers/dwf';
-import { runGroup, type Ended } from './proc';
+import { PARSER_ANSWER_MAX_BYTES, PARSER_PICTURES_BUDGET_BYTES } from '@mantle/files/parser-wire';
+import { childEnv, runGroup, type Ended } from './proc';
 import { JobFailure } from './job-failure';
 
 /** Where cad.py, dwg_bones.py and dwg_crop.py sit. */
@@ -50,10 +51,24 @@ function childFailure(ended: Ended, what: string): JobFailure {
   );
 }
 
-async function runCad(args: string[], jobTimeoutMs: number, what: string): Promise<void> {
+async function runCad(
+  args: string[],
+  workdir: string,
+  jobTimeoutMs: number,
+  what: string,
+): Promise<void> {
   const ended = await runGroup(python(), [path.join(CAD_DIR, 'cad.py'), ...args], {
     timeoutMs: childTimeout(jobTimeoutMs),
-    env: { ...process.env, MPLBACKEND: 'Agg', PYTHONDONTWRITEBYTECODE: '1' },
+    cwd: workdir,
+    // Its own environment, nothing of the parser's; its temp files in the
+    // job's directory, which goes with the job.
+    env: childEnv(workdir, {
+      MPLBACKEND: 'Agg',
+      // matplotlib's font cache: the image's shared one when it names it
+      // (built once, not per job), else the job's own.
+      MPLCONFIGDIR: envDynamic('MPLCONFIGDIR') ?? path.join(workdir, '.mpl'),
+      PYTHONDONTWRITEBYTECODE: '1',
+    }),
   });
   if (ended.code !== 0) throw childFailure(ended, what);
 }
@@ -100,6 +115,7 @@ export function dwfRenderer(workdir: string, jobTimeoutMs: number): DwfRenderFn 
       await fs.mkdir(outdir);
       await runCad(
         ['--dwf-render', src, outdir, String(dpi), String(maxSheets)],
+        dir,
         jobTimeoutMs,
         'the DWF render',
       );
@@ -177,7 +193,12 @@ export async function dwgRender(
   const dpi = clampInt(opts.dpi, 300, 50, 600, 'dpi');
   const outdir = path.join(workdir, 'cad-out');
   await fs.mkdir(outdir, { recursive: true });
-  await runCad(['--dwg-render', input, outdir, String(dpi)], jobTimeoutMs, 'the DWG render');
+  await runCad(
+    ['--dwg-render', input, outdir, String(dpi)],
+    workdir,
+    jobTimeoutMs,
+    'the DWG render',
+  );
   const index = await readIndex(outdir, 'the DWG render');
   let png: Buffer | null = null;
   try {
@@ -206,19 +227,37 @@ export async function dwgCrop(
   await fs.writeFile(specPath, JSON.stringify(opts.spec));
   const outdir = path.join(workdir, 'cad-out');
   await fs.mkdir(outdir, { recursive: true });
-  await runCad(['--dwg-crop', input, outdir, specPath], jobTimeoutMs, 'the DWG crops');
+  await runCad(['--dwg-crop', input, outdir, specPath], workdir, jobTimeoutMs, 'the DWG crops');
   const index = await readIndex(outdir, 'the DWG crops');
-  const b64 = async (name: unknown) =>
-    (await fs.readFile(path.join(outdir, path.basename(String(name))))).toString('base64');
-  for (const c of Array.isArray(index.crops) ? index.crops : []) {
-    const crop = c as Record<string, unknown>;
-    crop.png_base64 = await b64(crop.file);
-    delete crop.file;
-  }
+  const read = (name: unknown) => fs.readFile(path.join(outdir, path.basename(String(name))));
+  // The answer's budget: the overview first, then the crops in order until
+  // it is spent; a crop past it is left out and named in `capped`.
+  let total = 0;
   const ov = index.overview as Record<string, unknown> | null | undefined;
   if (ov && typeof ov === 'object') {
-    ov.png_base64 = await b64(ov.file);
+    const png = await read(ov.file);
+    total += png.length;
+    ov.png_base64 = png.toString('base64');
     delete ov.file;
+  }
+  const kept: Record<string, unknown>[] = [];
+  let leftOut = 0;
+  for (const c of Array.isArray(index.crops) ? index.crops : []) {
+    const crop = c as Record<string, unknown>;
+    const png = await read(crop.file);
+    delete crop.file;
+    if (total + png.length > PARSER_PICTURES_BUDGET_BYTES) {
+      leftOut++;
+      continue;
+    }
+    total += png.length;
+    crop.png_base64 = png.toString('base64');
+    kept.push(crop);
+  }
+  index.crops = kept;
+  if (leftOut > 0) {
+    const capped = Array.isArray(index.capped) ? index.capped : [];
+    index.capped = [...capped, `${leftOut} crops left out: the answer's picture budget is spent`];
   }
   index.ok = true;
   await fs.writeFile(out, JSON.stringify(index));
@@ -226,19 +265,34 @@ export async function dwgCrop(
 
 // ── audio ───────────────────────────────────────────────────────────────────
 
-async function ffprobeDuration(input: string): Promise<number | null> {
+/**
+ * What ffmpeg and ffprobe may open: local files only (no network protocol,
+ * a no-op behind the parser's network anyway), read by the demuxers of the
+ * media formats the brain stores (MEDIA_EXTS in packages/files/src/slug.ts).
+ * Never a playlist or concat demuxer, which would read other files named
+ * inside the upload.
+ */
+const MEDIA_INPUT_GUARDS = [
+  '-protocol_whitelist',
+  'file',
+  '-format_whitelist',
+  'mov,mp4,m4a,3gp,matroska,webm,avi,mp3,wav,ogg,flac,aac',
+];
+
+async function ffprobeDuration(input: string, workdir: string): Promise<number | null> {
   const ended = await runGroup(
     'ffprobe',
     [
       '-v',
       'error',
+      ...MEDIA_INPUT_GUARDS,
       '-show_entries',
       'format=duration',
       '-of',
       'default=noprint_wrappers=1:nokey=1',
       input,
     ],
-    { timeoutMs: 60_000, stdout: true },
+    { timeoutMs: 60_000, stdout: true, cwd: workdir, env: childEnv(workdir) },
   );
   if (ended.code !== 0) return null;
   const n = Number(ended.stdout.trim());
@@ -255,8 +309,12 @@ export async function extractAudio(
   jobTimeoutMs: number,
 ): Promise<Record<string, unknown>> {
   const maxDuration = clampInt(opts.maxDurationSeconds, 3600, 1, 86_400, 'maxDurationSeconds');
-  const maxAudio = clampInt(opts.maxAudioBytes, 20_000_000, 1, 2 * 1024 ** 3, 'maxAudioBytes');
-  const duration = await ffprobeDuration(input);
+  // The track comes back in the answer, so it is bounded by the answer's cap.
+  const maxAudio = Math.min(
+    clampInt(opts.maxAudioBytes, 20_000_000, 1, 2 * 1024 ** 3, 'maxAudioBytes'),
+    PARSER_ANSWER_MAX_BYTES - 1024,
+  );
+  const duration = await ffprobeDuration(input, workdir);
   if (duration != null && duration > maxDuration) {
     throw new JobFailure(
       'too_large',
@@ -266,8 +324,29 @@ export async function extractAudio(
   const mp3 = path.join(workdir, 'out.mp3');
   const ended = await runGroup(
     'ffmpeg',
-    ['-nostdin', '-y', '-i', input, '-vn', '-ac', '1', '-b:a', '32k', '-f', 'mp3', mp3],
-    { timeoutMs: childTimeout(jobTimeoutMs) },
+    [
+      '-nostdin',
+      '-y',
+      ...MEDIA_INPUT_GUARDS,
+      '-i',
+      input,
+      '-vn',
+      '-ac',
+      '1',
+      '-b:a',
+      '32k',
+      // Bounded whatever the input claims: the duration limit, and one byte
+      // past the size limit (so a track that reaches it is refused below,
+      // never cut short silently).
+      '-t',
+      String(maxDuration),
+      '-fs',
+      String(maxAudio + 1),
+      '-f',
+      'mp3',
+      mp3,
+    ],
+    { timeoutMs: childTimeout(jobTimeoutMs), cwd: workdir, env: childEnv(workdir) },
   );
   if (ended.code !== 0) throw childFailure(ended, 'ffmpeg');
   const size = (await fs.stat(mp3)).size;
