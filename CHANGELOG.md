@@ -20,6 +20,16 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   so two Claude clients on one login can wait for each other. No agent in a
   group, no attachment bytes and no phone push yet: those are Phases 3 to
   5. An Admin user's OAuth MCP connection now carries its client id.
+- **Fix round 2 (two outside reviews):** one per-login budget in the store
+  (60 sends, 120 other writes a minute), so an MCP client and the routes
+  share it; migration 0336: the workspace role reads no conversation tail
+  and no participant cursor or mute (its own rows through
+  `mantle_messenger_mine`, the tail capped at its leave), a leaver sees only
+  the people who were there when it left; a history delete moves every
+  cursor up and raises a `history` event; a clear raises `self` and `read`;
+  the fan-out map is right after an add or a remove with no stream open;
+  `after_seq` and `messenger_wait` page without loss (`hasMore`); the
+  messenger stream takes slots apart from the member stream's.
 
 ## Unreleased: workspace delegation
 
