@@ -19,35 +19,48 @@
  * guesses again (docs/scripts.md, rotate:master-key). A key rotated out is
  * never kept to vouch for rows: it may be the reason for the rotation.
  *
+ * The alternative a no names (phase 6, the Alternative column) is sealed
+ * with the row when it has one: appended to the sealed list, so a row with
+ * no alternative (every row written before phase 6) seals exactly as it
+ * did, and its seal still holds. Adding an alternative to such a row by
+ * hand, or taking one off a sealed row, breaks the seal. The By column
+ * (who ran the call, a kind and a keyed hash, which the guard against a
+ * second call reads) is sealed the same way, after it, tagged.
+ *
  * Known limit: a seal vouches for one row, not for the tab's history. A
  * table editor who deletes a newer sealed row brings back the older sealed
  * answer of the same key and revision (a real model answer, superseded);
  * no anchor outside the table records which row was the latest.
  *
  * A seal proves who wrote the row (this brain's circuit_verify), not that
- * the model was right: CHECKED BY IMAGE stays "a vision model saw it",
- * never certain. Without a master key nothing is sealed or trusted.
+ * the model was right: CHECKED BY IMAGE stays "a vision model saw it", a
+ * help and not a guarantee. Without a master key nothing is sealed or
+ * trusted.
  */
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { env } from '@mantle/config';
 
 const SEAL_INFO = 'mantle drawing check seal v1';
+/** The key the By column's hash is made under: its own label, so it is
+ *  never a row's seal. */
+const BY_INFO = 'mantle drawing check by v1';
 const derived = new Map<string, Buffer>();
 
 /** The seal keys, the one new rows are sealed under first: the staged
  *  MANTLE_MASTER_KEY_NEXT during a rotation, then MANTLE_MASTER_KEY. */
-function sealKeys(): Buffer[] {
+function sealKeys(info: string = SEAL_INFO): Buffer[] {
   const masters = [env('MANTLE_MASTER_KEY_NEXT'), env('MANTLE_MASTER_KEY')].filter(
     (m): m is string => !!m,
   );
   const out: Buffer[] = [];
   for (const m of [...new Set(masters)]) {
-    // Two derived keys stay cached at most (current and staged).
-    let k = derived.get(m);
+    // Four derived keys stay cached at most (current and staged, per label).
+    const at = `${info}\n${m}`;
+    let k = derived.get(at);
     if (!k) {
-      k = Buffer.from(hkdfSync('sha256', Buffer.from(m, 'utf8'), Buffer.alloc(0), SEAL_INFO, 32));
-      if (derived.size >= 2) derived.clear();
-      derived.set(m, k);
+      k = Buffer.from(hkdfSync('sha256', Buffer.from(m, 'utf8'), Buffer.alloc(0), info, 32));
+      if (derived.size >= 4) derived.clear();
+      derived.set(at, k);
     }
     out.push(k);
   }
@@ -65,8 +78,14 @@ export type SealedFields = {
   model: string;
   revision: string;
   checkedAt: string;
-  /** The Crops cell as written (the overview's and the crops' file ids). */
+  /** The Crops cell as written (the overview's and the crops' file ids,
+   *  each crop's followed by the sha256 of its bytes). */
   crops: string;
+  /** The Alternative cell; '' or absent when the row has none. */
+  alt?: string;
+  /** The By cell (who ran the call, never a raw id: builtins-circuits.ts
+   *  callerOf); '' or absent on rows filed before it was sealed. */
+  by?: string;
 };
 
 function hmac(k: Buffer, f: SealedFields): string {
@@ -81,6 +100,12 @@ function hmac(k: Buffer, f: SealedFields): string {
     f.revision,
     f.checkedAt,
     f.crops,
+    // Only when there is one: a row without it seals as before phase 6.
+    ...(f.alt ? [f.alt] : []),
+    // Only when there is one, and tagged (a list, never a string), so it
+    // never reads as an alternative: a row filed before By was sealed
+    // seals as it did, and blanking a sealed row's By breaks its seal.
+    ...(f.by ? [['by', f.by]] : []),
   ]);
   return createHmac('sha256', k).update(body, 'utf8').digest('hex');
 }
@@ -98,4 +123,18 @@ export function sealHolds(f: SealedFields, seal: string): boolean {
   if (!/^[0-9a-f]{64}$/.test(seal)) return false;
   const got = Buffer.from(seal, 'hex');
   return sealKeys().some((k) => timingSafeEqual(Buffer.from(hmac(k, f), 'hex'), got));
+}
+
+/** A keyed hash of who runs a call (the By column: builtins-circuits.ts
+ *  callerOf), 24 hex characters, under a key derived from the master key
+ *  with its own label: the table never holds a login or agent id, and no
+ *  one without the key can tell whose it is. '' without a master key. */
+export function callerHash(kind: string, id: string): string {
+  const k = sealKeys(BY_INFO)[0];
+  return k
+    ? createHmac('sha256', k)
+        .update(JSON.stringify([kind, id]), 'utf8')
+        .digest('hex')
+        .slice(0, 24)
+    : '';
 }

@@ -200,6 +200,9 @@ export {
 // The files store's overwrite steps (A3b part 2: flipThenPlace), for the
 // broker's DB tests to drive a race between two writers.
 export { overwriteSteps } from './ops/files';
+// A drawing check's crop (circuit_verify's evidence files): outside the
+// ops barrel's pinned surface.
+export { DRAWING_CHECK_PROVENANCE, isDrawingCheckCrop } from './ops/files';
 export {
   ownIndexingMode,
   resolveEffectiveIndexing,

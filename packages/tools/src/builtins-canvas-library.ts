@@ -33,6 +33,7 @@ import {
 } from '@mantle/app-build';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { str } from './coerce';
+import { ZOOMABLE_HOWTO } from '@mantle/diagram-templates/zoom-howto';
 
 export const CANVAS_LIBRARY_DIR = 'canvas-libraries';
 
@@ -78,6 +79,67 @@ export const APP_ONLY_LIBRARIES: readonly CanvasLibrary[] = [
     aliases: ['diagram', 'diagrams', 'templates', 'flow', 'pid'],
   },
 ];
+
+/**
+ * `zoom`: zoom and pan for any canvas's SVG (`zoomable` from the diagram
+ * runtime). Its guide is the canvas_authoring skill's own section
+ * (ZOOMABLE_HOWTO, one text for the in-app agents and an MCP client), with
+ * its snippet set in a whole canvas.
+ */
+export const CANVAS_ZOOM_GUIDE: CanvasLibrary = {
+  name: 'zoom',
+  pkg: '@mantle/diagram-templates',
+  useFor: 'zoom and pan for a big SVG (`zoomable`)',
+  aliases: ['zoomable', 'pan', 'zoom-pan'],
+};
+
+/** The zoom guide: the shared section, then a whole example canvas. */
+export function canvasZoomGuide(): string {
+  const example = [
+    '<!doctype html>',
+    '<html>',
+    '  <head>',
+    '    <title>Floor plan</title>',
+    '    <meta name="description" content="A made-up floor plan of forty rooms, with zoom and pan." />',
+    '    <meta name="canvas:size" content="fill" />',
+    '  </head>',
+    '  <body class="bg-background p-4 text-foreground">',
+    '    <div id="plan">',
+    '      <svg viewBox="0 0 4000 2400" width="4000" height="2400" style="max-width:100%;height:auto"></svg>',
+    '    </div>',
+    '    <script type="module">',
+    "      import { zoomable } from '@mantle/diagram-templates/browser';",
+    "      const svg = document.querySelector('#plan svg');",
+    "      const ns = 'http://www.w3.org/2000/svg';",
+    '      for (let i = 0; i < 40; i++) {',
+    '        const x = 100 + (i % 10) * 380, y = 120 + Math.floor(i / 10) * 520;',
+    "        const r = document.createElementNS(ns, 'rect');",
+    "        for (const [k, v] of Object.entries({ x, y, width: 300, height: 360, rx: 12, fill: 'none', stroke: 'currentColor', 'stroke-width': 3 })) r.setAttribute(k, v);",
+    "        const t = document.createElementNS(ns, 'text');",
+    "        for (const [k, v] of Object.entries({ x: x + 150, y: y + 190, 'font-size': 12, 'text-anchor': 'middle', fill: 'currentColor' })) t.setAttribute(k, v);",
+    '        t.textContent = `Room ${i + 1}`;',
+    '        svg.append(r, t);',
+    '      }',
+    "      zoomable(document.getElementById('plan'), { mode: 'auto' });",
+    '    </script>',
+    '  </body>',
+    '</html>',
+  ].join('\n');
+  return [
+    '# Zoom and pan (`zoomable`)',
+    '',
+    'Served with the diagram templates: one import, no version to pick.',
+    '',
+    ZOOMABLE_HOWTO,
+    '',
+    '## Example',
+    '',
+    '```html',
+    example,
+    '```',
+    '',
+  ].join('\n');
+}
 
 export const APP_LIBRARY_DIR = `${CANVAS_LIBRARY_DIR}/app`;
 
@@ -204,8 +266,11 @@ export async function canvasLibraryHandler(
   if (!lib && find(APP_ONLY_LIBRARIES, asked)) {
     return {
       ok: false,
-      error: `'${asked}' has no canvas guide: a template canvas is written for you by \`diagram_render\` and \`present_create\` (get the data contract with \`diagram_guide\`). In a mini app, call canvas_library with for: 'app'.`,
+      error: `'${asked}' has no canvas guide: a template canvas is written for you by \`diagram_render\` and \`present_create\` (get the data contract with \`diagram_guide\`). In a mini app, call canvas_library with for: 'app'. For zoom and pan in a canvas ask for 'zoom'.`,
     };
+  }
+  if (!lib && find([CANVAS_ZOOM_GUIDE], asked)) {
+    return { ok: true, output: { library: 'zoom', version: null, guide: canvasZoomGuide() } };
   }
   if (!lib) {
     return {
@@ -235,7 +300,7 @@ const canvas_library: BuiltinToolDef = {
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Read a canvas library guide',
   description:
-    "Return the guide to one library a Present canvas can import, for the exact version this brain serves: the import line, the core API, what changed from versions you may know, the canvas rules (no network, theme tokens, reduced motion) and one complete example canvas that renders. Call it before writing a canvas that uses that library; plain SVG and JS need none. For a mini app pass `for: 'app'`: the import as an app writes it, the React pattern (mount in an effect, clean up, resize, theme) and one complete App.tsx; a library apps cannot use says why. Reads only; changes nothing.",
+    "Return the guide to one library a Present canvas can import, for the exact version this brain serves: the import line, the core API, what changed from versions you may know, the canvas rules (no network, theme tokens, reduced motion) and one complete example canvas that renders. Call it before writing a canvas that uses that library; plain SVG and JS need none, and `zoom` gives zoom and pan for a big SVG. For a mini app pass `for: 'app'`: the import as an app writes it, the React pattern (mount in an effect, clean up, resize, theme) and one complete App.tsx; a library apps cannot use says why. Reads only; changes nothing.",
   inputSchema: {
     type: 'object',
     properties: {

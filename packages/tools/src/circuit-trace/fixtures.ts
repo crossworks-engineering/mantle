@@ -122,6 +122,66 @@ export function sheetTwo(): SheetInput {
   };
 }
 
+/** Sheet one with its valve read only from a generic block name (a guess
+ *  the check asks about). */
+export const genericValveSheet = (): SheetInput => {
+  const s = JSON.parse(
+    JSON.stringify(sheetOne()).replaceAll('GATE_VALVE', 'VALVE-GENERIC'),
+  ) as SheetInput;
+  s.revision = 'rev1';
+  return s;
+};
+
+/**
+ * Two sheets whose main line starts at a reading: on PID-1001 the start
+ * end (node 1) meets nothing drawn and E-101 is written 7 units off (past
+ * the near distance, 5), and a second main-layer branch off the tee ends
+ * at node 7 with E-101 written 9 units off; PID-1002 ends at V-201. The
+ * closer reading (node 1) takes the main line first.
+ */
+export function readingSheets(): SheetInput[] {
+  const one = sheetOne();
+  one.revision = 'rev1';
+  one.texts = [
+    { text: 'E-101', layer: 'EQUIP', x: -7, y: 0 },
+    { text: 'P-150', layer: 'EQUIP', x: -6, y: -6 },
+    { text: 'E-101', layer: 'EQUIP', x: 59, y: -30 },
+    { text: 'CONT. ON PID-1002', layer: 'TEXT', x: 101, y: 2 },
+  ];
+  one.segments.push({
+    layer: MAIN,
+    handle: 'G1',
+    x1: 50,
+    y1: 0,
+    x2: 50,
+    y2: -30,
+    length: 30,
+    n1: 4,
+    n2: 7,
+  });
+  one.nodes = one.nodes.map((n) => (n.id === 4 ? { ...n, degree: 4 } : n));
+  one.nodes.push({
+    id: 7,
+    x: 50,
+    y: -30,
+    degree: 1,
+    kind: 'end',
+    block: '',
+    blockHandle: '',
+    layers: [MAIN],
+  });
+  const two = sheetTwo();
+  two.revision = 'rev1';
+  two.circuitLayers = [MAIN];
+  two.segments = two.segments.filter((g) => g.layer === MAIN);
+  two.nodes = [
+    two.nodes[0]!,
+    { id: 2, x: 40, y: 0, degree: 1, kind: 'end', block: '', blockHandle: '', layers: [MAIN] },
+  ];
+  two.texts.push({ text: 'V-201', layer: 'EQUIP', x: 42, y: 1 });
+  return [one, two];
+}
+
 /** The first drawing of a trace: the overview page of a drawing set, or
  *  the drawing itself when one page holds the circuit. */
 export function overviewOf(pid: unknown): Record<string, unknown> {

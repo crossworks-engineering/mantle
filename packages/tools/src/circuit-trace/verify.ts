@@ -37,6 +37,7 @@ import {
   parseAnswers,
   questionsFor,
   quoted,
+  sealedRow,
   TRUST,
   VERIFY_MAX,
   type CheckKind,
@@ -44,7 +45,9 @@ import {
   type Verdict,
 } from './check';
 import type { ChainRole } from './pid';
+import { VERIFY_GUARD, VERIFY_NEXT, VERIFY_ONCE } from './workflow';
 import { traceCircuit, type RegisterInput, type SheetInput } from './walk';
+import { circuitKey } from './check-keys';
 
 export type VerifyWorker = {
   slug: string;
@@ -56,6 +59,8 @@ export type VerifyWorker = {
 export type CheckAnswer = {
   q: CheckQuestion;
   verdict: Verdict;
+  /** After a no: what the image named instead, one of `q.alts`. */
+  alt?: string;
   reason: string;
   /** The model that answered (the provider's id when it names one). */
   model: string;
@@ -104,7 +109,43 @@ export type VerifyDeps = {
     overview: Buffer | null,
     checkedAt: string,
   ) => Promise<StoreResult>;
+  /**
+   * Claim this call before its first vision request (VERIFY_ONCE, held by
+   * the server): under a lock on the owner's circuit, the calls already
+   * claimed on it (`runs`, from every sheet's table) go to `refusal`; when
+   * it says nothing, `claim` is recorded on the sheets it asks about and
+   * null comes back, else the refusal. A claimed call counts for the guard
+   * whatever comes of it (a reply with nothing usable spent too), and two
+   * calls at once cannot both pass it (checks-store.ts claimVerifyRun).
+   */
+  claim: (
+    ownerId: string,
+    claim: VerifyClaim,
+    refusal: (runs: readonly VerifyRun[]) => string | null,
+  ) => Promise<string | null>;
   now: () => Date;
+};
+
+/** One claimed circuit_verify call on one sheet's table. */
+export type VerifyRun = {
+  tableId: string;
+  circuit: string;
+  /** Who ran it (VerifyInput.by); '' when unknown. */
+  by: string;
+  /** When it was claimed (ISO): its rows' `Checked at` too. */
+  at: string;
+  /** The sheet's revision when it was claimed. */
+  revision: string;
+};
+
+/** A call to claim: the sheets it asks about (where it is recorded) and
+ *  every sheet of the circuit (whose claims the guard reads). */
+export type VerifyClaim = {
+  circuit: string;
+  by: string;
+  at: string;
+  sheets: { tableId: string; revision: string }[];
+  readFrom: string[];
 };
 
 export type VerifyInput = {
@@ -115,7 +156,69 @@ export type VerifyInput = {
   dryRun?: boolean;
   /** Ask again guesses already answered at the drawing's current revision. */
   recheck?: boolean;
+  /** Who calls (callerOf in builtins-circuits.ts: a kind and a keyed
+   *  hash): the guard against a second call reads it off the calls claimed
+   *  on the circuit and the Checks rows' By column. */
+  by?: string;
 };
+
+const MINUTE = 60_000;
+
+/**
+ * Why this call may not run now (VERIFY_ONCE, held by the server), or
+ * null: read off the calls claimed on the circuit (`runs`: every call is
+ * claimed before its first vision request, under a lock, and counts
+ * whatever came of it) and its sealed Checks rows (each call files its
+ * rows under its claim's time; rows filed before claims are read too).
+ * Without `recheck`, a call within VERIFY_GUARD.againMinutes of one by the
+ * same caller on the same circuit at the same revision of a sheet is
+ * refused; with it, a call is refused once VERIFY_GUARD.perHour calls on
+ * the circuit ran in the last hour, whoever ran them. Rows without the
+ * seal (typed by hand) never count. A dry run is never refused.
+ */
+export function verifyAgainRefusal(
+  sheets: readonly SheetInput[],
+  circuit: string,
+  opts: { by?: string; recheck?: boolean; now: Date; runs?: readonly VerifyRun[] },
+): string | null {
+  const now = opts.now.getTime();
+  // One circuit however its name is written (case, spacing): circuitKey.
+  const asked = circuitKey(circuit);
+  const calls = new Set<string>();
+  let recent: string | null = null;
+  const seen = (at: string, by: string | undefined, sameRevision: boolean) => {
+    const t = Date.parse(at);
+    if (!Number.isFinite(t) || t > now + MINUTE) return;
+    if (now - t < 60 * MINUTE) calls.add(at);
+    if (
+      opts.by &&
+      by === opts.by &&
+      sameRevision &&
+      now - t < VERIFY_GUARD.againMinutes * MINUTE &&
+      (recent === null || at > recent)
+    )
+      recent = at;
+  };
+  const revisionOf = new Map(sheets.map((s) => [s.tableId, s.revision ?? '']));
+  for (const s of sheets) {
+    for (const r of s.checks ?? []) {
+      if (circuitKey(r.circuit ?? '') !== asked || !sealedRow(s.tableId, r)) continue;
+      seen(r.checkedAt, r.by, r.revision === (s.revision ?? ''));
+    }
+  }
+  for (const r of opts.runs ?? []) {
+    if (circuitKey(r.circuit) !== asked || !revisionOf.has(r.tableId)) continue;
+    seen(r.at, r.by, r.revision === revisionOf.get(r.tableId));
+  }
+  if (!opts.recheck && recent !== null) {
+    const ago = Math.max(0, Math.round((now - Date.parse(recent)) / MINUTE));
+    return `circuit_verify asked nothing and spent nothing: you checked circuit ${circuit} ${ago} minute${ago === 1 ? '' : 's'} ago at this revision of its drawings. ${VERIFY_ONCE} Call circuit_trace and save its pid; pass recheck: true only to ask again on purpose.`;
+  }
+  if (opts.recheck && calls.size >= VERIFY_GUARD.perHour) {
+    return `circuit_verify asked nothing and spent nothing: circuit ${circuit} was checked ${calls.size} times in the last hour, and a recheck runs at most ${VERIFY_GUARD.perHour} times an hour on a circuit. Save the drawing and report how many guesses are unchecked; try again later.`;
+  }
+  return null;
+}
 
 /** The trace's own limits (a sheet's capped tab, a partial read, a
  *  missing column) as the result carries them: each once, each clipped,
@@ -181,6 +284,7 @@ export async function verifyCircuit(
     kinds: input.kinds,
     max: input.maxQuestions,
     ...(input.recheck ? {} : { answered: (q) => currentAnswer(latest, q) !== undefined }),
+    ...(input.register ? { register: input.register } : {}),
   });
   if (answered) {
     limits.push(
@@ -200,6 +304,7 @@ export async function verifyCircuit(
       ...(q.node !== null ? { node: q.node } : {}),
       guess: q.guess,
       question: q.question,
+      if_no: q.altAsk,
     }));
   if (!picked.length) {
     return {
@@ -253,6 +358,14 @@ export async function verifyCircuit(
       error: `circuit_verify asked nothing and spent nothing: no sheet of circuit ${circuit} can be checked now. ${refusedLines.join(' ')} Use dry_run to list the questions.`,
     };
   }
+  // VERIFY_ONCE, held by the server: before the worker is resolved or
+  // anything is cropped.
+  const again = verifyAgainRefusal(read.sheets, circuit, {
+    ...(input.by ? { by: input.by } : {}),
+    ...(input.recheck ? { recheck: true } : {}),
+    now: deps.now(),
+  });
+  if (again) return { ok: false, error: again };
 
   const resolved = await deps.worker(ownerId);
   if (!resolved.ok) return { ok: false, error: resolved.error };
@@ -298,6 +411,34 @@ export async function verifyCircuit(
   // @mantle/voice vision-images.ts).
   const usage = { tokensIn: 0, tokensOut: 0 };
   let unanswered = 0;
+  /** When this call was claimed (its rows' `Checked at`): before its first
+   *  vision request, under the lock (VerifyDeps.claim). */
+  let claimedAt: string | null = null;
+  const claimCall = async (): Promise<string | null> => {
+    const at = deps.now().toISOString();
+    const why = await deps.claim(
+      ownerId,
+      {
+        circuit,
+        by: input.by ?? '',
+        at,
+        sheets: sheetOrder.map((tableId) => ({
+          tableId,
+          revision: inputOf.get(tableId)!.revision ?? '',
+        })),
+        readFrom: read.sheets.map((s) => s.tableId),
+      },
+      (runs) =>
+        verifyAgainRefusal(read.sheets, circuit, {
+          ...(input.by ? { by: input.by } : {}),
+          ...(input.recheck ? { recheck: true } : {}),
+          now: deps.now(),
+          runs,
+        }),
+    );
+    if (!why) claimedAt = at;
+    return why;
+  };
   const sheetOrder = [...new Set(asking.map((q) => q.tableId))];
 
   for (const tableId of sheetOrder) {
@@ -420,6 +561,10 @@ export async function verifyCircuit(
         }
       }
       const prompt = promptFor(batch, overview !== null);
+      if (claimedAt === null) {
+        const why = await claimCall();
+        if (why) return { ok: false, error: why };
+      }
       requests += 1;
       let reply: ImagesResult;
       try {
@@ -449,6 +594,7 @@ export async function verifyCircuit(
         reply.text,
         batch.questions.map((b) => b.q.id),
         truncated ? 'cut' : empty ? 'empty' : undefined,
+        new Map(batch.questions.map((b) => [b.q.id, b.q.alts])),
       );
       for (const { q } of batch.questions) {
         const a = parsed.answers.get(q.id);
@@ -462,6 +608,7 @@ export async function verifyCircuit(
         answers.push({
           q,
           verdict: a.verdict,
+          ...(a.alt ? { alt: a.alt } : {}),
           reason: a.reason,
           model: reply.model || worker.model,
           crops: cropsOf.get(q.id)!.map((c) => ({
@@ -492,7 +639,7 @@ export async function verifyCircuit(
   }
 
   // File the answers, sheet by sheet: the evidence stays with the drawing.
-  const checkedAt = deps.now().toISOString();
+  const checkedAt = claimedAt ?? deps.now().toISOString();
   let stored = 0;
   let pending = 0;
   for (const tableId of sheetOrder) {
@@ -520,7 +667,7 @@ export async function verifyCircuit(
     ok: true,
     output: {
       summary:
-        `Circuit ${circuit}: ${plural(answers.length, 'guess')} checked by image in ${plural(requests, 'request')} (${plural(cropsUsed, 'crop')}): ${n('yes')} confirmed, ${n('no')} contradicted, ${n('unsure')} unsure` +
+        `Circuit ${circuit}: ${plural(answers.length, 'guess')} checked by image in ${plural(requests, 'request')} (${plural(cropsUsed, 'crop')}): ${n('yes')} confirmed, ${n('no')} contradicted (${answers.filter((a) => a.alt).length} naming what it is instead), ${n('unsure')} unsure` +
         (notAsked.length ? `; ${notAsked.length} not asked (see not_asked)` : '') +
         `. ${
           [
@@ -540,6 +687,7 @@ export async function verifyCircuit(
         ...(a.q.node !== null ? { node: a.q.node } : {}),
         guess: a.q.guess,
         answer: a.verdict,
+        ...(a.alt ? { alt: a.alt } : {}),
         trust: TRUST[a.verdict],
         reason: a.reason,
         model: a.model,
@@ -554,7 +702,7 @@ export async function verifyCircuit(
         ...(timedOut ? { timed_out: timedOut } : {}),
       },
       limits: [...limits, ...traceLimits(trace.limits)],
-      next: 'circuit_trace now marks these on the drawing: CHECKED BY IMAGE for a confirmed guess; a contradicted or unsure one stays GUESS.',
+      next: VERIFY_NEXT,
     },
   };
 }

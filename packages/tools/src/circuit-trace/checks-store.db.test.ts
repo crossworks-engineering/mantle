@@ -104,6 +104,8 @@ describe.skipIf(!URL)('the image check store', () => {
       question: 'Does the pipe end connect to "V-201"?',
       item: { id: 'q1', kind: 'point' as const, at: [1, 0] as [number, number], pad: 4 },
       pidKey: 'x:2',
+      alts: ['V-202', 'break', 'continues', 'open', 'other'],
+      altAsk: 'If no, give "alt".',
     },
     verdict: 'yes' as const,
     reason: 'into its nozzle',
@@ -254,6 +256,7 @@ describe.skipIf(!URL)('the image check store', () => {
         };
       },
       storable: s.storeRefusal,
+      claim: s.claimVerifyRun,
       store: s.storeChecks,
       now: () => new Date('2026-10-25T12:00:00.000Z'),
       ...over,
@@ -359,7 +362,10 @@ describe.skipIf(!URL)('the image check store', () => {
     // The row as the read maps it holds its seal (every field it covers).
     expect(check.sealedRow(t, check.storedCheckOf(row))).toBe(true);
     expect(check.sealedRow(t, check.storedCheckOf({ ...row, Reason: 'typed' }))).toBe(false);
-    const cropIds = String(row.Crops).split(' ');
+    // Each crop's id with the sha256 of the bytes stored, sealed with the row.
+    const cell = check.cropIdsOf(String(row.Crops));
+    const cropIds = cell.crops;
+    expect(cell.cropSha).toEqual([createHash('sha256').update(Buffer.from('png-1')).digest('hex')]);
     const crops = await admin`select data from nodes where id = any(${cropIds}::uuid[])`;
     expect(crops).toHaveLength(1);
     expect(crops[0]!.data).toMatchObject({
@@ -538,6 +544,145 @@ describe.skipIf(!URL)('the image check store', () => {
     }
     expect(await foldersAt(path)).toBe(0);
     expect(counter.n).toBe(0);
+  });
+
+  it('a claim is taken under a lock: of two at once on one circuit one passes, and it is kept', async () => {
+    const t = await makeTable(`${tag} claim`);
+    const circuit = `${tag}-CLAIM`;
+    const at = '2026-10-25T12:00:00.000Z';
+    const claimOf = (by: string) => ({
+      circuit,
+      by,
+      at,
+      sheets: [{ tableId: t, revision: 'r1' }],
+      readFrom: [t],
+    });
+    const seen: number[] = [];
+    const refusal = (runs: readonly import('./verify').VerifyRun[]) => {
+      seen.push(runs.length);
+      return runs.some((r) => r.circuit === circuit) ? 'already claimed' : null;
+    };
+    const both = await Promise.all([
+      s.claimVerifyRun(anchor, claimOf('login:a'), refusal),
+      s.claimVerifyRun(anchor, claimOf('login:b'), refusal),
+    ]);
+    expect(both.filter((r) => r === null)).toHaveLength(1);
+    expect(both.filter((r) => r === 'already claimed')).toHaveLength(1);
+    // The second saw the first's claim: the lock made them take turns.
+    expect(seen.sort()).toEqual([0, 1]);
+    const [row] = await admin`select data->${s.VERIFY_RUNS_KEY} as runs from nodes where id = ${t}`;
+    expect(row!.runs).toEqual([
+      { circuit, by: expect.stringMatching(/^login:[ab]$/), at, revision: 'r1' },
+    ]);
+    // Claims past an hour are dropped when the next is kept.
+    const later = { ...claimOf('login:c'), at: '2026-10-25T14:00:00.000Z' };
+    expect(await s.claimVerifyRun(anchor, later, () => null)).toBeNull();
+    const [after] =
+      await admin`select data->${s.VERIFY_RUNS_KEY} as runs from nodes where id = ${t}`;
+    expect(after!.runs).toEqual([{ circuit, by: 'login:c', at: later.at, revision: 'r1' }]);
+  });
+
+  it('one circuit however its name is written: the lock and the claims read it alike', async () => {
+    const t = await makeTable(`${tag} claim case`);
+    const at = '2026-10-25T12:00:00.000Z';
+    const claimOf = (circuit: string, by: string, when = at) => ({
+      circuit,
+      by,
+      at: when,
+      sheets: [{ tableId: t, revision: 'r1' }],
+      readFrom: [t],
+    });
+    const { circuitKey } = await import('./check-keys');
+    const refusal = (asked: string) => (runs: readonly import('./verify').VerifyRun[]) =>
+      runs.some((r) => circuitKey(r.circuit) === circuitKey(asked)) ? 'already claimed' : null;
+    const names = [`${tag}-ABC`, `${tag}-abc`, ` ${tag}-Abc `];
+    const all = await Promise.all(
+      names.map((n, i) => s.claimVerifyRun(anchor, claimOf(n, `login:${i}`), refusal(n))),
+    );
+    expect(all.filter((r) => r === null)).toHaveLength(1);
+    expect(all.filter((r) => r === 'already claimed')).toHaveLength(2);
+  });
+
+  it('claims are kept per circuit, each pruned to the hour; a table rename keeps them', async () => {
+    const t = await makeTable(`${tag} claim bound`);
+    const base = Date.parse('2026-10-25T12:00:00.000Z');
+    const claim = (circuit: string, i: number) => ({
+      circuit,
+      by: `login:${i}`,
+      at: new Date(base + i * 1000).toISOString(),
+      sheets: [{ tableId: t, revision: 'r1' }],
+      readFrom: [t],
+    });
+    const other = `${tag}-OTHER`;
+    expect(await s.claimVerifyRun(anchor, claim(other, 0), () => null)).toBeNull();
+    for (let i = 1; i <= 20; i++)
+      expect(await s.claimVerifyRun(anchor, claim(`${tag}-BUSY`, i), () => null)).toBeNull();
+    const read = async () =>
+      (await admin`select data->${s.VERIFY_RUNS_KEY} as runs from nodes where id = ${t}`)[0]!
+        .runs as { circuit: string; by: string }[];
+    const runs = await read();
+    // The busy circuit's newest 16; the other circuit's one is kept.
+    expect(runs.filter((r) => r.circuit === other)).toHaveLength(1);
+    const busy = runs.filter((r) => r.circuit === `${tag}-BUSY`);
+    expect(busy.map((r) => r.by)).toEqual(Array.from({ length: 16 }, (_, k) => `login:${k + 5}`));
+    // A rename or an icon change merges its keys: the claims stay.
+    await c.updateTable(anchor, t, { title: `${tag} renamed`, icon: 'x' });
+    expect(await read()).toEqual(runs);
+  });
+
+  it('a crop is never replaced, and only a caller that may file crops deletes one', async () => {
+    const files = await import('@mantle/files');
+    const t = await makeTable(`${tag} crop guard`);
+    const r = await s.storeChecks(
+      anchor,
+      sheetOf(t),
+      'C-9',
+      [answerOf('end:L3@1.0,0.0')],
+      null,
+      'z',
+    );
+    expect(r).toEqual({ stored: 1 });
+    const [row] = await checksRows(t);
+    const cropId = check.cropIdsOf(String(row!.Crops)).crops[0]!;
+    const [crop] = await admin`select path::text as path, data from nodes where id = ${cropId}`;
+    const filename = String((crop!.data as Row).filename);
+    expect((crop!.data as Row).provenance).toBe(files.DRAWING_CHECK_PROVENANCE);
+    // Replace: refused for everyone, the owner included; the bytes stay.
+    await expect(
+      files.upsertFile({
+        ownerId: anchor,
+        parentPath: String(crop!.path),
+        filename,
+        bytes: Buffer.from('swapped'),
+        overwrite: true,
+      }),
+    ).rejects.toThrow(/drawing check's evidence/);
+    const kept = await files.readFileById({ ownerId: anchor, fileId: cropId });
+    expect(kept?.bytes.toString('utf8')).toBe('png-1');
+    // Delete: a scope that manages the crop but may not change the Files
+    // root is refused (403), alone or in a bulk delete.
+    await admin`delete from item_grants where node_id = ${cropId}`;
+    await m.withHeads([cropId], 'update', (tx) =>
+      tx.execute(
+        sqlTag`insert into item_grants (node_id, workspace_id, is_home) values (${cropId}, ${wsId}, true)`,
+      ),
+    );
+    const scope = { kind: 'assistant' as const, loginId: null, ws: [wsId], modWs: [wsId] };
+    const refused = await m
+      .withScope(scope, () => files.deleteFileById({ ownerId: anchor, fileId: cropId }))
+      .then(
+        () => null,
+        (e: unknown) => e as { code?: string; message?: string },
+      );
+    expect(refused?.code).toBe('42501');
+    expect(refused?.message).toMatch(/drawing check's evidence/);
+    const gate = await m.withScope(scope, () => files.bulkDeleteGate([cropId]));
+    expect(gate).toEqual({ allowed: [], refused: [{ fileId: cropId, reason: 'forbidden' }] });
+    expect((await admin`select 1 from nodes where id = ${cropId}`).length).toBe(1);
+    // The owner (system work here) deletes it.
+    expect(
+      await files.deleteFileById({ ownerId: anchor, fileId: cropId, deleteDerived: true }),
+    ).toEqual({ ok: true });
   });
 
   it('the revision is the stamp; a file replaced in place reads stale', async () => {

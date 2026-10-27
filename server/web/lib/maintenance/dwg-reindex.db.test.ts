@@ -408,6 +408,8 @@ describe.skipIf(!URL)('dwg-reindex', () => {
             question,
             item: { id: 'q1', kind: 'point', at: [1, 0], pad: 4 },
             pidKey: 'x:2',
+            alts: ['break', 'continues', 'open', 'other'],
+            altAsk: 'If no, give "alt".',
           },
           verdict: 'yes',
           reason: 'into its nozzle',

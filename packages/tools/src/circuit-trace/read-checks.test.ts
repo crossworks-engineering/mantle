@@ -91,14 +91,16 @@ describe('the Checks tab read', () => {
       Handles: 'A',
       Guess: 'the pipe end #2 belongs to "V-201"',
       Question: 'Does the pipe end connect to "V-201"?',
-      Answer: 'yes',
-      Reason: 'into its nozzle',
+      Answer: 'no',
+      Alternative: 'break',
+      Reason: 'stops at a break symbol',
       Trust: 'CHECKED BY IMAGE',
       Model: 'test/vision-model',
       'Checked at': '2026-10-25T12:00:00.000Z',
       Revision: 'rev1',
       File: 'f-1',
       Crops: 'overview c0 c1',
+      By: 'login:11111111-1111-4111-8111-111111111111',
     };
     const seal = sealOf(sealFieldsOf(table.id, storedCheckOf({ ...fields, Seal: '' })));
     const { deps, statements } = fakeRead({ ...fields, Seal: seal });

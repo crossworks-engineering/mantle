@@ -7403,7 +7403,7 @@
  },
  {
   "name": "circuit_trace",
-  "description": "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); inferred joins and unconfirmed equipment in `guesses`, marked GUESS on the drawing; `pid`, the drawing (a linked set past one page; past 40 pages the rest is counted in `limits`) to save as one canvas with `present_create`; and, with `register`, every difference against it. Reads only. For one drawing's raw tabs use `table_sql` instead.",
+  "description": "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); guesses marked GUESS on the drawing; `pid`, the drawing (a linked set past one page), with the image check's answers in plain words; and, with `register`, every difference against it. Reads only. Then `circuit_verify`, trace again, and save that `pid` with `present_create`. For one drawing's raw tabs use `table_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7483,7 +7483,7 @@
  },
  {
   "name": "circuit_verify",
-  "description": "Check the guesses `circuit_trace` made on one circuit with a vision model: each inferred join, end only near equipment, guessed sheet link and valve type read from a block name becomes a yes/no question on a close-up crop of the drawing, the trace drawn over it in colour. Returns per-guess answers (yes, no or unsure, a reason, the model). **Spends the owner's vision key**: call only when asked to check a trace; `dry_run` lists the questions for free. Stores each answer with its crops in the Checks tab of the drawing's table; `circuit_trace` then marks a confirmed guess CHECKED BY IMAGE, never certain. To trace without checking use `circuit_trace`.",
+  "description": "Ask a vision model about each guess of `circuit_trace` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers and crops go to the drawing table's Checks tab; trace again to write them on the drawing (a help, not a guarantee). **Spends the owner's vision key**, never automatic; `dry_run` is free. Call `circuit_verify` at most once per trace in a turn, never again in the same turn for guesses it left out (not_asked, a cap, a time limit); save the drawing and say how many guesses are not checked by image. A second call within 10 minutes is refused unless `recheck`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7929,7 +7929,7 @@
  },
  {
   "name": "canvas_library",
-  "description": "Return the guide to one library a Present canvas can import, for the exact version this brain serves: the import line, the core API, what changed from versions you may know, the canvas rules (no network, theme tokens, reduced motion) and one complete example canvas that renders. Call it before writing a canvas that uses that library; plain SVG and JS need none. For a mini app pass `for: 'app'`: the import as an app writes it, the React pattern (mount in an effect, clean up, resize, theme) and one complete App.tsx; a library apps cannot use says why. Reads only; changes nothing.",
+  "description": "Return the guide to one library a Present canvas can import, for the exact version this brain serves: the import line, the core API, what changed from versions you may know, the canvas rules (no network, theme tokens, reduced motion) and one complete example canvas that renders. Call it before writing a canvas that uses that library; plain SVG and JS need none, and `zoom` gives zoom and pan for a big SVG. For a mini app pass `for: 'app'`: the import as an app writes it, the React pattern (mount in an effect, clean up, resize, theme) and one complete App.tsx; a library apps cannot use says why. Reads only; changes nothing.",
   "inputSchema": {
    "type": "object",
    "properties": {
