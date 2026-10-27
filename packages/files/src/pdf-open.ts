@@ -40,10 +40,10 @@
  * The largest embedded image pdfjs will decode, in pixels (width x height, as
  * the image's dictionary declares them).
  *
- * 75 M keeps a 600 dpi scan of an A3 page (about 70 M pixels) readable, and
- * an A4 or US Letter one (about 35 M) with room to spare: real scanner
- * settings. With one decode at a time, it is also the largest round value
- * whose render stays under a 1.2 GB rise in an api container capped at 3 GB.
+ * 75 M keeps a 600 dpi scan readable, a real scanner setting: about 70 M
+ * pixels for a 297 x 420 mm sheet, 35 M for A4 paper or US Letter. With one
+ * decode at a time, it is also the largest round value whose render stays
+ * under a 1.2 GB rise in an api container capped at 3 GB.
  * Measured on Linux, rendering a one-page scan holding one image, peak RSS
  * rise: 70 M +1.05 GB, 75 M +1.13 GB, 80 M +1.19 to +1.21 GB (Flate; JPEG is
  * lower, +0.87 GB at 75 M), and two renders racing for the slot cost no more
