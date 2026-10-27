@@ -94,6 +94,7 @@ export const TERMINAL_EXTRACT_SKIPS: readonly string[] = [
   'no_parser',
   'body_too_short',
   'encrypted_pdf',
+  'pdf_too_large',
   'bytes_unavailable',
   'type_not_in_allowlist',
   'conversation_digest',

@@ -445,6 +445,10 @@ export async function ocrIngestPdfNode(
    *  the document is what went wrong. Null when rasterize wasn't reached or
    *  didn't throw. */
   rasterizeError: string | null;
+  /** Every page asked for was too large to render (`PdfLimitError`): a
+   *  verdict on the document, so the caller records a terminal
+   *  `pdf_too_large` skip rather than the retryable `pdf_unreadable`. */
+  tooLarge?: string;
   /** A document or vision worker really read the PDF (native or any page).
    *  With no text, that is a blank scan: a verdict on the content. */
   ran: boolean;
@@ -536,18 +540,20 @@ export async function ocrIngestPdfNode(
       // configure a vision worker. Carry the message out so the caller can be
       // honest about which of the two happened.
       let rasterizeError: string | null = null;
+      let tooLarge: string | undefined;
       const pages = await step(
         { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: MAX_OCR_PAGES } },
         async (h) => {
+          const { rasterizePdfToPngs, isPdfLimitError } = await import('@mantle/files/rasterize');
           try {
-            const { rasterizePdfToPngs } = await import('@mantle/files/rasterize');
             const r = await rasterizePdfToPngs(buf, { maxPages: MAX_OCR_PAGES });
             h.setMeta({ pages: r.length });
             return r;
           } catch (err) {
-            // Unrenderable / corrupt / encrypted PDF — record and give up.
+            // Unrenderable / corrupt / encrypted / oversized PDF: record and give up.
             const msg = errorMessage(err);
             if (/password/i.test(msg)) encrypted = true;
+            else if (isPdfLimitError(err)) tooLarge = msg;
             else rasterizeError = msg;
             h.setMeta({ pages: 0, error: msg });
             return [];
@@ -555,7 +561,14 @@ export async function ocrIngestPdfNode(
         },
       );
       if (pages.length === 0)
-        return { text: null, encrypted, bytesMissing: false, rasterizeError, ran };
+        return {
+          text: null,
+          encrypted,
+          bytesMissing: false,
+          rasterizeError,
+          ran,
+          ...(tooLarge ? { tooLarge } : {}),
+        };
 
       const parts: string[] = [];
       let model: string | null = null;

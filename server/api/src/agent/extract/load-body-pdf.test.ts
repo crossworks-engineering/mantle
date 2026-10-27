@@ -10,6 +10,7 @@
  *   encrypted_pdf   — locked; add the password
  *   bytes_unavailable — we never had the file; re-fetch it
  *   pdf_unreadable  — the rasterizer threw; the PIPELINE is broken, not the file
+ *   pdf_too_large     every page is past the render limit (terminal)
  *   no_text_layer   — genuinely nothing to read, or no vision worker wired up
  *
  * `pdf_unreadable` is the one this file was added for. A throw inside the
@@ -123,6 +124,9 @@ describe('loadExtractableBody — PDF dead-ends', () => {
     // the operator is back to guessing which of the four things went wrong.
     expect(details.error).toContain('does not match the Worker version');
     expect(String(details.hint)).toMatch(/not a verdict on the document/i);
+    // Machinery, so retryable: no terminal stamp.
+    const { db } = await import('@mantle/db');
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it('does not blame the document: a rasterize failure is never no_text_layer', async () => {
@@ -139,6 +143,29 @@ describe('loadExtractableBody — PDF dead-ends', () => {
     // The old hint sent people to the vision-worker settings page for a fault
     // that has nothing to do with the vision worker.
     expect(String(details.hint)).not.toMatch(/settings\/ai-workers/);
+  });
+
+  it('reports pages too large to render as a terminal pdf_too_large', async () => {
+    // A verdict on the document, unlike pdf_unreadable: the same bytes give
+    // the same answer, so the node is stamped and the drain stops re-queuing
+    // it (before the limits, one such upload OOM-killed the api and looped).
+    h.ocrIngestPdfNode.mockResolvedValue({
+      text: null,
+      encrypted: false,
+      bytesMissing: false,
+      rasterizeError: null,
+      tooLarge: 'PDF pages too large to render (page 1 is 100000x100000 pt)',
+      ran: false,
+    });
+
+    const res = await run();
+    expect(res.ok).toBe(false);
+    const [disposition, details] = skip();
+    expect(disposition).toBe('pdf_too_large');
+    expect(details.error).toContain('page 1 is 100000x100000 pt');
+    // recordTerminalSkip, not recordSkippedTrace alone: the stamp is written.
+    const { db } = await import('@mantle/db');
+    expect(db.update).toHaveBeenCalled();
   });
 
   it('still reports a genuinely blank scan as no_text_layer', async () => {

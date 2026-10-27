@@ -44,9 +44,9 @@ const CONSUMERS: Record<string, string> = {
   // anything ever loads pdf-parse through the `require` condition, this test is
   // what says so.
   'pdf-parse': path.dirname(require_.resolve('pdf-parse')),
-  // Scanned-PDF OCR fallback. Declares `pdfjs-dist` ~6.0.227.
-  'pdf-to-png-converter': path.dirname(require_.resolve('pdf-to-png-converter')),
-  // Our own direct use: embedded figures and the password path.
+  // Our own direct use: embedded figures, the password path, and the
+  // scanned-PDF render (which used pdf-to-png-converter, with its own pdfjs
+  // pin, until 2026-10-27).
   '@mantle/files': import.meta.dirname,
 };
 
