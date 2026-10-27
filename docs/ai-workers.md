@@ -558,7 +558,8 @@ per-image vision default is far too small), and `prefer_native`.
 Two ways to turn a PDF into text for a vision model:
 
 1. **Rasterize → page OCR** (the original path): render each page to PNG
-   (`rasterizePdfToPngs`, `@mantle/files/rasterize`, `@napi-rs/canvas`) and run
+   (`parserRasterizePdf`: the parser service renders with `@napi-rs/canvas`,
+   [parser.md](parser.md)) and run
    the vision worker per page. Works anywhere, but loses cross-page table
    coherence, repeats page headers/footers, and costs N calls.
 2. **Native PDF** (the upgrade): hand the *whole* PDF to a document-capable

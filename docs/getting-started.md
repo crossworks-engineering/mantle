@@ -29,8 +29,8 @@ mantle/
 │   └── sandboxd/        # CLI-sandbox daemon (standalone image, holds the Docker socket)
 ├── packages/            # the shared logic: db, content, search, embeddings, runtime, tools, email, telegram, …
 ├── scripts/             # dev + operator scripts (up.sh, install.sh, db-dump.sh, …)
-├── docker-compose.dev.yml    # Postgres + RustFS + Tika for local dev (the apps run on the host)
-├── docker-compose.yml        # the production brain stack (26 services)
+├── docker-compose.dev.yml    # Postgres + RustFS + the PDF browser for local dev (the apps run on the host)
+├── docker-compose.yml        # the production brain stack (25 services)
 ├── docker-compose.client.yml # the owner UI stack (image built by jackdaw)
 └── docker-compose.core.yml   # override that shrinks the brain to the 4 GB core shape
 ```
@@ -40,7 +40,10 @@ mantle/
 Prereqs: **Node.js 26+**, **pnpm 11.28.5** (the version pinned in
 `package.json`'s `packageManager`, installed in step 1), and **Docker** (Desktop
 or engine) running; `pnpm start` boots Postgres, RustFS (the S3 object store)
-and Tika in containers.
+and the PDF-export browser in containers. The parser service, which reads
+uploaded files, runs on the host with `pnpm dev`; its CAD and audio jobs want
+python3 (ezdxf, ezdwf, matplotlib), `dwg2dxf` and ffmpeg on the machine, and
+without them only those jobs fail ([parser.md](./parser.md)).
 
 ```bash
 # 1. Install pnpm at the pinned version
@@ -93,7 +96,7 @@ https://ollama.com/install.sh | sh`.
 
 `pnpm start` runs `scripts/up.sh`, which:
 
-1. Brings up Postgres + RustFS + Tika via `docker-compose.dev.yml` (an existing
+1. Brings up Postgres + RustFS + the PDF browser via `docker-compose.dev.yml` (an existing
    `data/minio` is copied to `data/rustfs` once, on first start)
 2. Ensures the `mantle` bucket exists (`pnpm -C packages/storage objectstore:ensure`)
 3. Runs Drizzle migrations against the fresh DB
@@ -133,7 +136,7 @@ The scripts in the root `package.json`:
 | `pnpm stop`                                                              | Stop infra (keeps the data)                                                          |
 | `pnpm reset`                                                             | Wipe the dev brain + rebuild from scratch (asks for confirmation, backs up first)    |
 | `pnpm infra:up`                                                          | Bring infra up without dev servers                                                   |
-| `pnpm infra:logs`                                                        | Tail the infra logs (postgres, object store, tika)                                   |
+| `pnpm infra:logs`                                                        | Tail the infra logs (postgres, object store, browser)                                |
 | `pnpm infra:psql`                                                        | Open psql in the postgres container                                                  |
 | `pnpm db:migrate`                                                        | Apply Drizzle migrations                                                             |
 | `pnpm db:studio`                                                         | Drizzle Studio (browse the DB)                                                       |

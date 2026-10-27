@@ -64,4 +64,4 @@ cd mantle && bash scripts/install.sh --check
 ## Next
 
 - [Create your account](../02-first-steps/01-create-account.md)
-- [Install options](07-options.md): silent installs, sandboxes, the local embedder, media, no UI.
+- [Install options](07-options.md): silent installs, sandboxes, the local embedder, video and CAD, no UI.

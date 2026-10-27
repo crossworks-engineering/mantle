@@ -7,7 +7,8 @@ This repo is the brain only: it serves the API on `http://localhost:3000` and ha
 ## Before you start
 
 - Node.js 26 or newer
-- Docker, running (the database, object store and Tika run in containers)
+- Docker, running (the database, object store and PDF-export browser run in containers)
+- For CAD drawings and video transcripts: python3 with ezdxf, `dwg2dxf` and ffmpeg on the machine (everything else reads without them)
 - Git
 
 ## Start the brain

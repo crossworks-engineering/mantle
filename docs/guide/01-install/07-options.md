@@ -5,13 +5,12 @@ Each optional part can be chosen at install time or changed later with the confi
 | Option | Default | Change later | One-liner variable |
 |---|---|---|---|
 | Small core shape | Off (offered under 6 GB RAM) | `--core`, `--no-core` | `MANTLE_CORE=1` |
-| Doc helpers (core only) | Off | `--helpers`, `--no-helpers` | `MANTLE_HELPERS=1` |
+| Doc helpers: the PDF-export browser (core only) | Off | `--helpers`, `--no-helpers` | `MANTLE_HELPERS=1` |
 | CLI sandboxes | On (off on core) | `--sandboxes`, `--no-sandboxes` | `MANTLE_SANDBOXES=0` or `1` |
 | Local embedder | Off | `--local-embedder`, `--no-local-embedder` | `MANTLE_LOCAL_EMBEDDER=1` |
 | Owner web UI | On | `--client`, `--no-client` | `MANTLE_CLIENT=0` |
-| Media (video and CAD) | Off | see below | none |
 
-Run the flags from the install directory. For example: `cd mantle && bash scripts/install.sh --no-sandboxes`. The installer keeps how the brain is reached (domain, this machine only, or the network) and every component you do not name. On a running brain, **Settings > Services** switches sandboxes, media, the local embedder and the doc helpers without the terminal. See [Optional services](../05-admin/04-services.md).
+Run the flags from the install directory. For example: `cd mantle && bash scripts/install.sh --no-sandboxes`. The installer keeps how the brain is reached (domain, this machine only, or the network) and every component you do not name. On a running brain, **Settings > Services** switches sandboxes, the local embedder and the doc helpers without the terminal. See [Optional services](../05-admin/04-services.md).
 
 ## Silent install
 
@@ -39,17 +38,9 @@ Isolated containers where the coder agent runs code and builds apps. Nothing is 
 
 Indexes your text on the server instead of through an online model. It needs a large server: it slows a 16 GB, 8-core box under heavy ingest. After you turn it on, choose the `local` provider in **Settings > Embedding**. See [Local models](../05-admin/06-local-models.md).
 
-## Media
+## Video and CAD drawings
 
-Turns on transcripts from video and audio links, and CAD drawings (DWF, DWG, DXF). Switch it on in **Settings > Services**, or by hand:
-
-1. In `mantle/.env`, add `media` to `COMPOSE_PROFILES`, keeping what is already there (for example `COMPOSE_PROFILES=sandboxes,media`).
-2. If `.env` has no `MEDIA_SIDECAR_TOKEN`, add one made with `openssl rand -hex 32`.
-3. Start it:
-
-   ```bash
-   cd mantle && docker compose --profile media up -d --wait
-   ```
+Nothing to switch on. Transcripts of uploaded video and audio, and CAD drawings (DWF, DWG, DXF), are read by the parser service, which runs on every box. Transcripts are of uploaded files: to transcribe a video from the web, download it and upload the file.
 
 ## No owner UI (headless)
 

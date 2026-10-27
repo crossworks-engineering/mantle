@@ -49,10 +49,10 @@ hand-written `.env`:
 | `MANTLE_CADDY_SHAPE` | installer (`same-origin`) | which `infra/caddy/shapes/*.caddy` the front door imports; `split` needs a second hostname |
 | `MANTLE_CLIENT_ENABLED` | `--no-client` writes `0` | whether the owner UI stack runs; missing means on |
 | `MANTLE_CLIENT_IMAGE_TAG` | updater (`client-tag.auto`) or a hand pin | the `mantle-client` image tag, on its own stream since the repo split |
-| `COMPOSE_PROFILES` | installer flags | opt-in services: `sandboxes`, `media`, `local-embedder`, `helpers` |
-| `COMPOSE_FILE` | `--core` | adds `docker-compose.core.yml` as an override (absolute paths, the updater needs them). Compose also hands it, with `COMPOSE_PROFILES`, to web as `MANTLE_COMPOSE_FILE` / `MANTLE_COMPOSE_PROFILES`, so the onboarding check knows a core box without `helpers` sheds Tika on purpose |
+| `COMPOSE_PROFILES` | installer flags | opt-in services: `sandboxes`, `local-embedder`, `helpers` (a leftover `media` names no service and is ignored) |
+| `COMPOSE_FILE` | `--core` | adds `docker-compose.core.yml` as an override (absolute paths, the updater needs them). Compose also hands it, with `COMPOSE_PROFILES`, to web as `MANTLE_COMPOSE_FILE` / `MANTLE_COMPOSE_PROFILES`, so the onboarding check knows a core box without `helpers` sheds the PDF-export browser on purpose |
 | `MANTLE_SETUP_CODE` | installer (generated once, never rotated) | the code first-run signup asks for until the first account exists; web only. `scripts/install.sh --setup-code` prints it; unset means no code is asked for ([onboarding.md](./onboarding.md) section 8) |
-| `MEDIA_SIDECAR_TOKEN` | you (`openssl rand -hex 32`) | bearer between the app and the media sidecar; the installer never sets it |
+| `PARSER_TOKEN` | installer, or a roll when missing | bearer between the app services and the parser service ([parser.md](./parser.md)); never rotated on a re-run |
 | `SANDBOXD_TOKEN` | installer when sandboxes are on | bearer between web/api and `sandboxd`; never rotated on a re-run |
 | `MANTLE_SANDBOXES_HOST_DIR` | installer (`<data-dir>/sandboxes`) | host-absolute bind source `sandboxd` hands to the Docker daemon |
 
@@ -129,9 +129,8 @@ as `env()` does) and the three profile readers in
 | `remoteMcp` | `profile.remoteMcpEnabled` | off | the remote MCP connector and its OAuth endpoints answer |
 | `teamPrivateReads` | `profile.teamPrivateReads` | off | the team responder may read the owner's email and journal |
 | `sandboxes` | `service sandboxes` | Settings > Services | the sandboxes service (sandboxd) |
-| `media` | `service media` | Settings > Services | the media sidecar (video_ingest, CAD renders) |
 | `localEmbedder` | `service local-embedder` | Settings > Services | the bundled local embedder |
-| `docHelpers` | `service helpers` | Settings > Services | Tika and the PDF browser (always on a full box) |
+| `docHelpers` | `service helpers` | Settings > Services | the PDF-export browser (always on a full box) |
 
 A profile feature is read with the owner's preferences:
 `feature('streamThoughts', { prefs })`. `mcpTerminal` takes its default from
@@ -185,9 +184,14 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `TOOL_RESULT_SPILL_MAX` | 1048576 | whole, above 0 | a stored result is cut at this many bytes |
 | `TOOL_RESULT_MAX_CHUNKS` | 200 | whole, above 0 | chunks embedded per stored result |
 | `TOOL_RESULT_TTL_DAYS` | 7 | whole, above 0 | days a stored result is kept |
-| `MEDIA_MAX_STT_DURATION_S` | 3600 | whole, above 0 | longest video transcribed by video_ingest, seconds |
-| `MEDIA_MAX_AUDIO_BYTES` | 20000000 | whole, above 0 | largest audio track video_ingest sends to speech to text |
-| `MEDIA_MAX_VIDEO_BYTES` | 1073741824 | whole, above 0 | largest video video_ingest downloads |
+| `VIDEO_INGEST_MAX_STT_DURATION_S` | 3600 | whole, above 0 | longest recording video_ingest transcribes, seconds (old name `MEDIA_MAX_STT_DURATION_S` still read) |
+| `VIDEO_INGEST_MAX_AUDIO_BYTES` | 20000000 | whole, above 0 | largest audio track video_ingest sends to speech to text (old name `MEDIA_MAX_AUDIO_BYTES`) |
+| `VIDEO_INGEST_MAX_FILE_BYTES` | 1073741824 | whole, above 0 | largest uploaded recording video_ingest reads (old name `MEDIA_MAX_VIDEO_BYTES`) |
+| `PARSER_PORT` | 8095 | whole, min 1, max 65535 | the parser listens here |
+| `PARSER_MAX_JOBS` | 2 | whole, at least 1 | parse jobs the parser runs at once |
+| `PARSER_QUEUE_MAX` | 16 | whole, min 0 | requests that may wait for a parser job slot |
+| `PARSER_MAX_UPLOAD_MB` | 1024 | whole, at least 1 | largest file the parser takes, MB |
+| `PARSER_CLIENT_CONCURRENCY` | 2 | whole, at least 1 | parser jobs one brain process sends at once |
 | `MANTLE_LOCAL_EMBED_BATCH` | 16 | whole, at least 1 | texts per request to the local embedder |
 | `MANTLE_LOCAL_EMBED_TIMEOUT_MS` | the caller | whole, at least 1000 | local embedder request timeout, ms (default PROVIDER_TIMEOUTS.localEmbed, @mantle/std) |
 

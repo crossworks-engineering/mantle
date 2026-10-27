@@ -69,7 +69,7 @@ terminal wizard calls directly, so the two cannot drift; the stepper is
 
 | # | Step | What it does |
 |---|------|--------------|
-| 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences`, plus a **System status** panel that probes the infrastructure vitals, Postgres, the pg-boss schema, the object store + the bucket, Tika, the required secrets, and Domain & HTTPS, and **blocks Continue on failure** (so a broken stack surfaces on screen one, not mid-wizard) |
+| 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences`, plus a **System status** panel that probes the infrastructure vitals, Postgres, the pg-boss schema, the object store + the bucket, the document parser, the required secrets, and Domain & HTTPS, and **blocks Continue on failure** (so a broken stack surfaces on screen one, not mid-wizard) |
 | 2 | **Your key** (required) | the one required key, OpenRouter. **Save & test** genuinely validates the key against OpenRouter's `/api/v1/key`; with a key already saved the button reads **Test saved key** |
 | 3 | **Models** | curated model cards. Assistant (top-tier): **Claude Sonnet 5** (recommended, $2/$10 per M tokens, 1M ctx), Claude Opus 4.8, GPT-5.5 (Azure-capable), Grok 4.20. Worker (fast): **Gemini 3.1 Flash Lite** (recommended), GPT-5.4 Nano/Mini (Azure-capable), Claude Haiku 4.5. Route: **OpenRouter**, or **Azure OpenAI** via the `custom` provider (endpoint + key) |
 | 4 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |
@@ -317,13 +317,12 @@ container on stdin as `password=...` and `openrouter_key=...` lines
 failing key stops the run with exit 1 instead of finishing half way. Inside a
 checkout the same wizard is `pnpm -C server/web onboard`.
 
-A brain-core box sheds Tika on purpose. Compose passes the box's
-`COMPOSE_FILE` and `COMPOSE_PROFILES` to web (as `MANTLE_COMPOSE_FILE` and
-`MANTLE_COMPOSE_PROFILES`), and web derives the shape from them on every
-start (`server/web/lib/compose-shape.ts`): on a core box WITHOUT the
-`helpers` profile, the wizard's stack check (both wizards) reports a missing
-Tika as optional instead of blocking. Everywhere else a missing Tika still
-fails the check.
+The **Document parser** row asks the parser service's `/healthz`
+(`server/web/lib/onboarding-steps.ts`) and shows the anydoc and ezdxf
+versions it reports. The parser is core on every deploy shape, a brain-core
+box included, so a parser that does not answer fails the check: no uploaded
+file can be read until it runs ([parser.md](parser.md)). (Tika, which a core
+box used to shed, is gone, and with it the shape-dependent rule.)
 
 Not covered: the mobile app has no wizard screens; a lost headless owner
 password has no terminal reset yet.
@@ -338,4 +337,3 @@ that jackdaw release or later. `server/web/lib/client-pair-setup-code.test.ts`
 enforces it: it fails (and with it `pnpm verify` and the pre-push gate) until
 its `FIRST_CLIENT_WITH_SETUP_CODE_FIELD` names that jackdaw tag and
 `client-pair.tag` is at least that.
-

@@ -1,10 +1,11 @@
 # Deploying Mantle to production (Docker Hub → VPS)
 
 The production stack is `docker-compose.yml` plus `docker-compose.client.yml`:
-published images, a migrate gate, healthchecks, restart policies, Tika and a
-headless browser for documents, an always-on Tailscale sidecar (idle until you
+published images, a migrate gate, healthchecks, restart policies, the parser
+service that reads every uploaded file ([parser.md](parser.md)) and a headless
+browser for PDF export, an always-on Tailscale sidecar (idle until you
 activate it from Settings → Network), and opt-in profiles for the local
-embedder (Ollama), CLI sandboxes and the media sidecar. This runbook covers the **build → push → deploy**
+embedder (Ollama) and CLI sandboxes. This runbook covers the **build → push → deploy**
 loop and the **one-time data migration** from your dev brain.
 
 Companion: [`docker-compose.yml`](../docker-compose.yml) header comments,
@@ -42,10 +43,10 @@ is in the backup set; the only named volume is the Tailscale IPC socket.
 
 Numbers from the author's production box (Contabo, **6 vCPU / 12 GB RAM /
 96 GB disk**, 2026-06-11, when the stack was 13 containers; a full install today
-runs 23 of the 26 defined services plus the client container): it idled at
+runs 23 of the 25 defined services plus the client container): it idled at
 **~2.5 GB RAM** total and **<5% CPU**; Ollama loads the embedder on demand (idle
 ~40 MB, ~1 GB while embedding); the `mantle-server` image is ~1.7 GB plus the infra
-images (Postgres, RustFS, Tika, the browser, Caddy; Ollama only with the
+images (the parser, Postgres, RustFS, the browser, Caddy; Ollama only with the
 `local-embedder` profile). What actually spikes a small
 box is not steady state; it's two specific events:
 
@@ -58,7 +59,7 @@ box is not steady state; it's two specific events:
 | Profile                                                                             | vCPU | RAM   | Disk  | Notes                                                                                                                                                                                                                |
 | ----------------------------------------------------------------------------------- | ---- | ----- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Minimum** (registry-pull deploys)                                                 | 2    | 4 GB  | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong.                                                                                                         |
-| **Brain-core** (`install.sh --core`, online embeddings)                             | 2    | 4 GB  | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + doc helpers (8 of the 26 defined services; `--helpers` re-adds tika + the PDF browser). See docs/self-hosting.md "Brain-core shape". |
+| **Brain-core** (`install.sh --core`, online embeddings) | 2 | 4 GB | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + the PDF browser (7 of the 25 defined services; `--helpers` re-adds the PDF browser). See docs/self-hosting.md "Brain-core shape". |
 | **Recommended** (build-on-VPS, only if you build your own image on the box; see §2) | 4    | 8 GB  | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache, run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB).                                             |
 | **Reference** (author's prod)                                                       | 6    | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes).                                                                                                                 |
 
@@ -70,7 +71,7 @@ matter are per-box settings in the stack's `.env`:
 | ----------------- | ------------ | ------- | ----------------------------------------------------------------------------------------------- |
 | `WEB_MEM_LIMIT`   | `mantle_web` | `3g`    | the box has RAM to spare (16 GB: `6g`); every `pnpm maintain` run executes inside this container |
 | `API_MEM_LIMIT`   | `mantle_api` | `3g`    | large Tables workbooks next to heavy extraction (16 GB: `4g`)                                    |
-| `MEDIA_MEM_LIMIT` | `mantle_media` | `1g`  | big media parses (`3g`)                                                                          |
+| `PARSER_MEM_LIMIT` | `mantle_parser` | `2g`    | big drawing sets or very large documents; a document past it is killed inside the parser and recorded, never a brain process (`PARSER_CPUS`, default 2, sets its CPU share) |
 
 Until 2026-09-24 the web cap was a fixed 1.5g: four maintenance runs at once
 OOM-restarted a pilot's web tier. On a 4 GB box the higher defaults move a
@@ -219,15 +220,16 @@ MANTLE_IMAGE_NAMESPACE=youruser MANTLE_IMAGE_TAG=v1 scripts/docker-build-push.sh
 
 Builds + pushes the **server image**, `<youruser>/mantle-server:v1`. Every
 brain service (web, api, sandboxd, the workers, migrate) runs from that same
-image, differing only in the compose `command:`. The media sidecar is a
-separate image (`<ns>/mantle-media`, from `infra/media-sidecar`), and the owner
+image, differing only in the compose `command:`. The parser service is a
+second image (`<ns>/mantle-parser`, the root Dockerfile's `parser` stage; the
+script builds and pushes both), and the owner
 UI image (`<ns>/mantle-client`) is built by the mantle-client repo, not here. Use a real tag (`v1`, a date, or a git sha), `latest`
 is fine but harder to roll back from.
 
 > **Automated alternative (the official images).** A push of a `v*` tag runs
 > [`.github/workflows/release.yml`](../.github/workflows/release.yml): it builds
 > the images **multi-arch** (amd64 + arm64), pushes `titanwest/mantle-server:<tag>`
-> + `:latest` (and `titanwest/mantle-media` alongside), and cuts a GitHub Release
+> and `:latest` (and `titanwest/mantle-parser` alongside), and cuts a GitHub Release
 > with the deploy bundle. So for the
 > published images you never run the script by hand; you
 > `git tag vX.Y.Z && git push --tags`. Needs the `DOCKERHUB_USERNAME` /
@@ -316,12 +318,6 @@ docker compose up -d --force-recreate caddy
 #     already up (it is not a profile); paste an auth key under
 #     Settings → Network and click Activate. See docs/tailscale.md.
 
-# 3g. (optional) video ingest — yt-dlp/ffmpeg sidecar for the video_ingest
-#     tool. Needs v0.232.34+ (the mantle-media image ships from that release;
-#     enabling earlier breaks `docker compose pull` for the whole stack).
-#     Full guide: docs/video-ingest.md
-MEDIA_SIDECAR_TOKEN=$(openssl rand -hex 32)   # persist it in .env
-docker compose --profile media up -d --wait
 ```
 
 Verify: `https://<MANTLE_PUBLIC_URL>` loads, `/debug` shows your traces, and the

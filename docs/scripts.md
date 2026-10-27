@@ -38,7 +38,7 @@ stack:
 2. checks `server/web/.env.local` exists (and prints the exact `cp .env.example …`
    fix if not),
 3. `docker compose -f docker-compose.dev.yml up -d --wait` (postgres + rustfs +
-   tika; an existing `data/minio` is copied to `data/rustfs` once, on first
+   the PDF browser; an existing `data/minio` is copied to `data/rustfs` once, on first
    start),
 4. ensures the `mantle` bucket (`pnpm -C packages/storage objectstore:ensure`),
 5. `pnpm -C packages/db migrate`,
@@ -116,8 +116,8 @@ same no matter which directory you run it from:
 
 | File                           | Project         | Containers                                                                                                         | What it is                                                                                     |
 | ------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `docker-compose.dev.yml`       | `mantle-dev`    | `mantle_dev_pg`, `mantle_dev_objectstore`, `mantle_dev_tika`, `mantle_dev_browser`                                 | Local dev **infra only**: the app runs on your host under `pnpm dev`                           |
-| `docker-compose.yml`           | `mantle`        | `mantle_pg`, `mantle_objectstore`, `mantle_tika`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
+| `docker-compose.dev.yml` | `mantle-dev` | `mantle_dev_pg`, `mantle_dev_objectstore`, `mantle_dev_browser` (the parser runs on the host under `pnpm dev`) | Local dev **infra only**: the app runs on your host under `pnpm dev` |
+| `docker-compose.yml` | `mantle` | `mantle_pg`, `mantle_objectstore`, `mantle_parser`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
 | `docker-compose.client.yml`    | `mantle-client` | `mantle_client_web`, `mantle_client_caddy`                                                                         | The zero-secret owner UI (split out at v0.200)                                                 |
 | `e2e/stack/docker-compose.yml` | `mantle-e2e`    | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser`                                                          | Throwaway stack for the Playwright suite                                                       |
 
@@ -147,7 +147,8 @@ docker compose -f docker-compose.dev.yml down -v                 # + named volum
 ```
 
 Ports (all bound to `127.0.0.1`): Postgres `54323`, RustFS `9000` (S3 API) and
-`9001` (console), Tika `9998`, headless Chromium `9222`.
+`9001` (console), headless Chromium `9222`; the parser, on the host under
+`pnpm dev`, listens on `8095`.
 
 `down -v` is safe for data: since v0.103 Postgres and the object store are **bind mounts**
 under `MANTLE_DATA_DIR`, not named volumes, which is exactly why `reset.sh` has
