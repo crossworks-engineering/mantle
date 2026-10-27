@@ -139,7 +139,8 @@ describe('the later tranches of fold 2: each class answers as its route did', ()
     expect(answer(big)).toEqual({
       status: 413,
       body: {
-        error: 'file too large (>250 MB). For video, ask the assistant to ingest the link instead.',
+        error:
+          'file too large (>250 MB). For a recording, upload a file under the cap (the audio track alone is much smaller), then ask the assistant to transcribe it (video_ingest with its file id).',
         maxUploadBytes: 250 * 1024 * 1024,
       },
     });
