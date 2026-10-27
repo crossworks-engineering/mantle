@@ -32,7 +32,7 @@
  */
 import { createHash } from 'node:crypto';
 import { env, envNum } from '@mantle/config';
-import { errorMessage, sleep, timeoutSignal } from '@mantle/std';
+import { errorMessage, timeoutSignal, withRetry } from '@mantle/std';
 import {
   META_HEADER,
   OPTS_LENGTH_HEADER,
@@ -46,6 +46,12 @@ import {
 } from './parser-wire';
 
 export type { ParserErrorCode } from './parser-wire';
+
+/** A password-protected PDF's read with one candidate password (the shape
+ *  of packages/files/src/pdf-password.ts, the parser's reader). */
+export type PdfPasswordResult =
+  | { ok: true; text: string; numPages: number }
+  | { ok: false; reason: 'password' | 'no_text' | 'error'; message?: string };
 
 /** A typed failure of a parser exchange (see the module note). */
 export class ParserError extends Error {
@@ -202,9 +208,56 @@ type Answer = { body: Buffer; headers: Headers };
 /** Busy answers are retried this many times, after these waits. */
 const BUSY_WAITS_MS = [2_000, 5_000, 10_000];
 
+/** One attempt's outcome: the answer, or the typed failure. */
+type Attempt = { ok: true; answer: Answer } | { ok: false; code: ParserErrorCode; message: string };
+
+/** One request: never throws, every failure typed. */
+async function attempt(
+  job: ParserJob,
+  bytes: Buffer,
+  head: Buffer,
+  maxAnswerBytes: number,
+): Promise<Attempt> {
+  const cfg = config();
+  try {
+    const res = await fetch(`${cfg.url}${PARSER_ROUTES[job]}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/octet-stream',
+        [OPTS_LENGTH_HEADER]: String(head.length),
+        ...(cfg.token ? { authorization: `Bearer ${cfg.token}` } : {}),
+      },
+      body: bodyOf(head, bytes),
+      duplex: 'half',
+      signal: timeoutSignal(parserClientTimeoutMs(job)),
+    } as RequestInit);
+    if (res.ok) {
+      return {
+        ok: true,
+        answer: { body: await readCapped(res, maxAnswerBytes), headers: res.headers },
+      };
+    }
+    return { ok: false, ...(await envelopeOf(res)) };
+  } catch (err) {
+    if (isParserError(err)) return { ok: false, code: err.code, message: err.message };
+    const code = transportCode(err);
+    return {
+      ok: false,
+      code,
+      message:
+        code === 'unavailable'
+          ? `the parser service could not be reached (${errorMessage(err)})`
+          : code === 'timeout'
+            ? `the parser did not answer within ${Math.round(parserClientTimeoutMs(job) / 1000)} s`
+            : `the connection to the parser dropped mid-job (${errorMessage(err)}): the parser most likely ran out of memory and restarted`,
+    };
+  }
+}
+
 /**
- * One job: the request with its retries on `busy`, every failure typed, the
- * bytes' count kept. Throws a {@link ParserError}; never anything else.
+ * One job: the request (retried while the parser answers `busy`), every
+ * failure typed, the bytes' count kept. Throws a {@link ParserError}; never
+ * anything else.
  */
 async function exchange(
   job: ParserJob,
@@ -222,52 +275,27 @@ async function exchange(
     );
   }
   const head = Buffer.from(JSON.stringify(opts), 'utf8');
-  const cfg = config();
   await acquire();
+  let result: Attempt;
   try {
-    for (let attempt = 0; ; attempt++) {
-      let code: ParserErrorCode;
-      let message: string;
-      try {
-        const res = await fetch(`${cfg.url}${PARSER_ROUTES[job]}`, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/octet-stream',
-            [OPTS_LENGTH_HEADER]: String(head.length),
-            ...(cfg.token ? { authorization: `Bearer ${cfg.token}` } : {}),
-          },
-          body: bodyOf(head, bytes),
-          duplex: 'half',
-          signal: timeoutSignal(parserClientTimeoutMs(job)),
-        } as RequestInit);
-        if (res.ok) return { body: await readCapped(res, maxAnswerBytes), headers: res.headers };
-        ({ code, message } = await envelopeOf(res));
-      } catch (err) {
-        if (isParserError(err)) throw err;
-        code = transportCode(err);
-        message =
-          code === 'unavailable'
-            ? `the parser service could not be reached (${errorMessage(err)})`
-            : code === 'timeout'
-              ? `the parser did not answer within ${Math.round(parserClientTimeoutMs(job) / 1000)} s`
-              : `the connection to the parser dropped mid-job (${errorMessage(err)}): the parser most likely ran out of memory and restarted`;
-      }
-      if (code === 'busy' && attempt < BUSY_WAITS_MS.length) {
-        await sleep(BUSY_WAITS_MS[attempt]!);
-        continue;
-      }
-      if (PARSER_COUNTED_CODES.has(code)) {
-        const terminal = countFailure(key, code, message);
-        throw new ParserError(code, message, { retryable: !terminal, terminal });
-      }
-      throw new ParserError(code, message, {
-        retryable: code === 'busy' || code === 'unavailable',
-        terminal: false,
-      });
-    }
+    result = await withRetry(() => attempt(job, bytes, head, maxAnswerBytes), {
+      retries: BUSY_WAITS_MS.length,
+      isFailure: (r) => !r.ok && r.code === 'busy',
+      delayMs: (retry) => BUSY_WAITS_MS[retry - 1] ?? null,
+    });
   } finally {
     release();
   }
+  if (result.ok) return result.answer;
+  const { code, message } = result;
+  if (PARSER_COUNTED_CODES.has(code)) {
+    const terminal = countFailure(key, code, message);
+    throw new ParserError(code, message, { retryable: !terminal, terminal });
+  }
+  throw new ParserError(code, message, {
+    retryable: code === 'busy' || code === 'unavailable',
+    terminal: false,
+  });
 }
 
 async function envelopeOf(res: Response): Promise<{ code: ParserErrorCode; message: string }> {
@@ -464,10 +492,7 @@ export async function parserPdfPageCount(bytes: Buffer): Promise<number | null> 
 /** A password-protected PDF's text with one candidate password. The
  *  password travels in the request body to the parser on the internal
  *  network, never in a header or a log. */
-export async function parserPdfUnlock(
-  bytes: Buffer,
-  password: string,
-): Promise<import('./pdf-password').PdfPasswordResult> {
+export async function parserPdfUnlock(bytes: Buffer, password: string): Promise<PdfPasswordResult> {
   const body = jsonOf(await exchange('pdfUnlock', bytes, { password }, TEXT_ANSWER_MAX));
   if (body.ok === true && typeof body.text === 'string') {
     return {

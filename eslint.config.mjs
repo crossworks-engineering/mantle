@@ -36,6 +36,7 @@ import mantleStdHelpersPlugin from './eslint-rules/std-helpers.mjs';
 import mantleSpendPlugin from './eslint-rules/spend-recording.mjs';
 import mantleRolesPlugin from './eslint-rules/no-hand-role-lists.mjs';
 import mantleReindexPlugin from './eslint-rules/no-hand-reindex.mjs';
+import mantleReadersPlugin from './eslint-rules/readers-in-parser.mjs';
 import { GATEWAY_MAX_LINES } from './eslint-rules/gateway-counts.mjs';
 
 export default tseslint.config(
@@ -475,6 +476,15 @@ export default tseslint.config(
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     plugins: { 'mantle-reindex': mantleReindexPlugin },
     rules: { 'mantle-reindex/no-hand-reindex': 'error' },
+  },
+  {
+    // An untrusted file is read only in the parser service (docs/parser.md):
+    // outside server/parser and the reader modules, no import of
+    // @mantle/files/readers/* or of a parsing library.
+    files: ['packages/**/*.{ts,tsx,mts,mjs,js}', 'server/**/*.{ts,tsx,mts,mjs,js}'],
+    ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    plugins: { 'mantle-readers': mantleReadersPlugin },
+    rules: { 'mantle-readers/readers-in-parser': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.
