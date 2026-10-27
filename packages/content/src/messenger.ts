@@ -25,6 +25,7 @@
 import { and, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import {
   db,
+  liveWorkspaceSql,
   loginPresence,
   messengerConversations,
   messengerFavourites,
@@ -33,7 +34,7 @@ import {
   messengerReactions,
   systemDb,
 } from '@mantle/db';
-import { InputError, defineDomainError } from '@mantle/std';
+import { InputError, defineDomainError, isUuid } from '@mantle/std';
 import { workspaceAssistants } from './team-assistant';
 
 // ── Limits (plan section 14) ─────────────────────────────────────────────────
@@ -198,10 +199,8 @@ function isoOrNull(v: unknown): string | null {
   return v === null || v === undefined ? null : iso(v);
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 function uuidOr(v: string, what: string): string {
-  if (!UUID.test(v)) throw new InputError(`${what} is not an id.`);
+  if (!isUuid(v)) throw new InputError(`${what} is not an id.`);
   return v.toLowerCase();
 }
 
@@ -273,7 +272,7 @@ async function reachableLogins(
     : sql`and exists (
             select 1 from workspace_users mine
               join workspace_users theirs on theirs.workspace_id = mine.workspace_id
-              join workspaces w on w.id = mine.workspace_id and w.archived_at is null
+              join workspaces w on w.id = mine.workspace_id and ${liveWorkspaceSql('w')}
              where mine.login_id = ${loginId}::uuid and theirs.login_id = u.id)`;
   const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
   const rows = await q<{ id: string; name: string; last_active_at: Date | null }>(
@@ -1599,7 +1598,7 @@ export async function messengerUnread(
 export async function messengerParticipantLogins(
   conversationId: string,
 ): Promise<{ loginId: string; leftSeq: number | null }[]> {
-  if (!UUID.test(conversationId)) return [];
+  if (!isUuid(conversationId)) return [];
   const rows = await q<{ login_id: string; left_seq: string | number | null }>(
     systemDb,
     sql`select login_id::text as login_id, left_seq from messenger_participants
@@ -1613,7 +1612,7 @@ export async function messengerParticipantLogins(
  *  login's stream closes). On the system pool: a viewer role reads no
  *  auth.users row. */
 export async function messengerLoginUsable(loginId: string): Promise<boolean> {
-  if (!UUID.test(loginId)) return false;
+  if (!isUuid(loginId)) return false;
   const [r] = await q<{ ok: boolean }>(
     systemDb,
     sql`select (email is not null and disabled_at is null) as ok from auth.users where id = ${loginId}::uuid`,
@@ -1670,14 +1669,14 @@ export async function messengerViaFor(cred: {
   keyId?: string | null;
   peerId?: string | null;
 }): Promise<MessengerVia | null> {
-  if (cred.keyId && UUID.test(cred.keyId)) {
+  if (cred.keyId && isUuid(cred.keyId)) {
     const [r] = await q<{ name: string | null }>(
       systemDb,
       sql`select name from access_keys where id = ${cred.keyId}::uuid`,
     );
     return { label: r?.name ?? 'API key', ref: `key:${cred.keyId}` };
   }
-  if (cred.peerId && UUID.test(cred.peerId)) {
+  if (cred.peerId && isUuid(cred.peerId)) {
     const [r] = await q<{ name: string | null }>(
       systemDb,
       sql`select display_name as name from mantle_peers where id = ${cred.peerId}::uuid`,
@@ -1725,9 +1724,10 @@ function ensureWaitListener(): Promise<void> {
         /* a malformed payload: drop it */
       }
     });
-  })().catch((err: unknown) => {
+  })().catch(() => {
+    // No LISTEN (a database that refused it): every wait polls every 5 s,
+    // and the next wait tries the LISTEN again.
     listening = null;
-    console.error('[messenger] wait LISTEN failed, waits poll:', err);
   });
   return listening;
 }

@@ -298,29 +298,21 @@ ALTER TABLE "public"."login_presence" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 
 -- ── messenger_changed: the live stream (ids and seq, never text) ─────────────
--- Payload {c, seq, kind, actor}. kind: new, edit, delete (a message);
+-- Payload {c, seq, kind, actor}, raised by each trigger with pg_notify. kind: new, edit, delete (a message);
 -- read (a cursor moved); self (my clear or mute: only the actor refetches);
 -- participants (someone joined or left, an admin or the title changed);
 -- reaction. The typing event is raised by its route and stored nowhere.
-CREATE OR REPLACE FUNCTION "public"."mantle_messenger_notify"(c uuid, s bigint, k text, actor uuid)
-  RETURNS void LANGUAGE sql AS $$
-  SELECT pg_notify('messenger_changed',
-    json_build_object('c', c, 'seq', s, 'kind', k, 'actor', actor)::text)
-$$;
---> statement-breakpoint
-REVOKE EXECUTE ON FUNCTION "public"."mantle_messenger_notify"(uuid, bigint, text, uuid) FROM PUBLIC;
---> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_messenger_messages_changed"()
   RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    PERFORM "public"."mantle_messenger_notify"(new."conversation_id", new."seq", 'new', new."author_login_id");
+    PERFORM pg_notify('messenger_changed', json_build_object('c', new."conversation_id", 'seq', new."seq", 'kind', 'new', 'actor', new."author_login_id")::text);
   ELSIF new."deleted_at" IS NOT NULL AND old."deleted_at" IS NULL THEN
-    PERFORM "public"."mantle_messenger_notify"(new."conversation_id", new."seq", 'delete', NULL);
+    PERFORM pg_notify('messenger_changed', json_build_object('c', new."conversation_id", 'seq', new."seq", 'kind', 'delete', 'actor', NULL)::text);
   ELSIF new."body" IS DISTINCT FROM old."body"
      OR new."status" IS DISTINCT FROM old."status"
      OR new."edited_at" IS DISTINCT FROM old."edited_at" THEN
-    PERFORM "public"."mantle_messenger_notify"(new."conversation_id", new."seq", 'edit', NULL);
+    PERFORM pg_notify('messenger_changed', json_build_object('c', new."conversation_id", 'seq', new."seq", 'kind', 'edit', 'actor', NULL)::text);
   END IF;
   RETURN NULL;
 END
@@ -335,16 +327,16 @@ CREATE OR REPLACE FUNCTION "public"."mantle_messenger_participants_changed"()
   RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    PERFORM "public"."mantle_messenger_notify"(old."conversation_id", NULL, 'participants', old."login_id");
+    PERFORM pg_notify('messenger_changed', json_build_object('c', old."conversation_id", 'seq', NULL, 'kind', 'participants', 'actor', old."login_id")::text);
   ELSIF TG_OP = 'INSERT'
      OR new."left_at" IS DISTINCT FROM old."left_at"
      OR new."admin" IS DISTINCT FROM old."admin" THEN
-    PERFORM "public"."mantle_messenger_notify"(new."conversation_id", NULL, 'participants', new."login_id");
+    PERFORM pg_notify('messenger_changed', json_build_object('c', new."conversation_id", 'seq', NULL, 'kind', 'participants', 'actor', new."login_id")::text);
   ELSIF new."last_read_seq" IS DISTINCT FROM old."last_read_seq" THEN
-    PERFORM "public"."mantle_messenger_notify"(new."conversation_id", new."last_read_seq", 'read', new."login_id");
+    PERFORM pg_notify('messenger_changed', json_build_object('c', new."conversation_id", 'seq', new."last_read_seq", 'kind', 'read', 'actor', new."login_id")::text);
   ELSIF new."cleared_before_seq" IS DISTINCT FROM old."cleared_before_seq"
      OR new."muted" IS DISTINCT FROM old."muted" THEN
-    PERFORM "public"."mantle_messenger_notify"(new."conversation_id", NULL, 'self', new."login_id");
+    PERFORM pg_notify('messenger_changed', json_build_object('c', new."conversation_id", 'seq', NULL, 'kind', 'self', 'actor', new."login_id")::text);
   END IF;
   RETURN NULL;
 END
@@ -366,7 +358,7 @@ BEGIN
      OR new."workspace_id" IS DISTINCT FROM old."workspace_id"
      OR new."agent_id" IS DISTINCT FROM old."agent_id"
      OR new."archived_at" IS DISTINCT FROM old."archived_at" THEN
-    PERFORM "public"."mantle_messenger_notify"(new."id", NULL, 'participants', NULL);
+    PERFORM pg_notify('messenger_changed', json_build_object('c', new."id", 'seq', NULL, 'kind', 'participants', 'actor', NULL)::text);
   END IF;
   RETURN NULL;
 END
@@ -386,7 +378,7 @@ BEGIN
     FROM "public"."messenger_messages" m
    WHERE m."id" = coalesce(new."message_id", old."message_id");
   IF FOUND THEN
-    PERFORM "public"."mantle_messenger_notify"(r.c, r.s, 'reaction', coalesce(new."login_id", old."login_id"));
+    PERFORM pg_notify('messenger_changed', json_build_object('c', r.c, 'seq', r.s, 'kind', 'reaction', 'actor', coalesce(new."login_id", old."login_id"))::text);
   END IF;
   RETURN NULL;
 END

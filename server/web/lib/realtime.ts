@@ -9,6 +9,7 @@ import {
 } from '@mantle/content';
 import { TREE_CHANGED_CHANNEL } from '@mantle/content/tree';
 import { messengerParticipantLogins } from '@mantle/content/messenger';
+import { log } from '@mantle/tracing';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
@@ -294,6 +295,8 @@ export async function subscribeRealtime(cb: Subscriber): Promise<() => void> {
   };
 }
 
+const realtimeLog = log('realtime');
+
 /** The cap of the fan-out map: past it the map starts again (each entry is
  *  one indexed read to refill). */
 const MESSENGER_ROOMS_MAX = 5000;
@@ -316,7 +319,9 @@ async function fanoutMessenger(c: MessengerChange): Promise<void> {
     }
     const seq = c.seq;
     to = rows
-      .filter((r) => r.leftSeq === null || (seq !== null && c.kind !== 'typing' && r.leftSeq >= seq))
+      .filter(
+        (r) => r.leftSeq === null || (seq !== null && c.kind !== 'typing' && r.leftSeq >= seq),
+      )
       .map((r) => r.loginId);
     if (c.kind === 'typing') to = to.filter((l) => l !== c.actor);
     if (c.kind === 'participants' && c.actor && !to.includes(c.actor)) to.push(c.actor);
@@ -326,7 +331,7 @@ async function fanoutMessenger(c: MessengerChange): Promise<void> {
       try {
         cb(c);
       } catch (err) {
-        console.error('[realtime] messenger subscriber threw:', err);
+        realtimeLog.error('messenger subscriber threw:', err);
       }
     }
   }
@@ -350,7 +355,7 @@ export async function subscribeMessenger(
   try {
     await ensureListening();
   } catch (err) {
-    console.error('[realtime] listener start failed:', err);
+    realtimeLog.error('listener start failed:', err);
   }
   return () => {
     const s = bridge.msgSubs.get(loginId);
