@@ -19,6 +19,8 @@ import {
   type Checked,
   type Issues,
   type Obj,
+  said,
+  pathKey,
 } from '../../runtime/validate.ts';
 import { isColour, isTrustColour, STYLE_EDITIONS, type StyleEdition } from '../../runtime/style.ts';
 import {
@@ -38,6 +40,8 @@ import {
   type PidChecksSummary,
   type PidProvenance,
 } from './check.ts';
+import { PID_LIMITS } from './sizes.ts';
+import { overLimitError, pidLimitsProblem } from './limits.ts';
 
 export const PID_VERSION = 1;
 
@@ -134,9 +138,11 @@ export const LINE_ENDS = ['open', 'cap'] as const;
 export const TOWARD = ['up', 'down', 'left', 'right'] as const;
 
 /** Why a drawing's own colour (a circuit's, a service's) is refused: it is
- *  one the image check's marks wear (style.ts isTrustColour). */
+ *  one the image check's marks wear, or close to one (style.ts
+ *  isTrustColour). The words of the marks are not repeated: the error
+ *  panel never shows them. */
 const TRUST_COLOUR_ERROR = (path: string, colour: string) =>
-  `${path}: '${colour}' is a colour the drawing keeps for the image check (GUESS, CHECKED BY IMAGE, IMAGE: NO, FROM IMAGE), so a line would wear a check no image gave it. Pick another (series-1..series-5 or another #rrggbb).`;
+  `${path}: ${said(colour)} is, or is close to, a colour the drawing keeps for the image check's marks, so a line would look checked when no image checked it. Pick another (series-1..series-5 or a #rrggbb further from it).`;
 export type Toward = (typeof TOWARD)[number];
 
 export type Line = {
@@ -228,42 +234,7 @@ export type PidData = {
   provenance?: PidProvenance;
 };
 
-/** Hard limits (errors) and the guide's complexity budget (warnings). */
-export const PID_LIMITS = {
-  equipment: 30,
-  lines: 60,
-  instruments: 60,
-  offpage: 20,
-  tees: 30,
-  signals: 60,
-  circuits: 12,
-  /** Valves and reducers drawn on one line. */
-  inline: 6,
-  /** The longest text a field takes, in characters. */
-  text: {
-    title: 80,
-    description: 300,
-    /** An off-page connector's text. */
-    connector: 40,
-    /** A line's "+N" marker. */
-    marker: 32,
-    /** A line's number. */
-    lineNumber: 40,
-    /** A line's note. */
-    note: 32,
-    /** A circuit's label. */
-    circuitLabel: 40,
-  },
-  budget: {
-    equipment: 8,
-    instruments: 16,
-    valves: 20,
-    loops: 5,
-    lines: 12,
-    lineTypes: 4,
-    accents: 2,
-  },
-};
+export { PID_LIMITS };
 
 const TOP_KEYS = [
   'template',
@@ -307,10 +278,10 @@ export function tagLettersProblem(
 ): string | null {
   const first = letters[0]!;
   if (!(first in firstLetters)) {
-    return `the first letter '${first}' is not a measured variable (${Object.keys(firstLetters).join(' ')})`;
+    return `the first letter ${said(first)} is not a measured variable (${Object.keys(firstLetters).join(' ')})`;
   }
   for (const ch of letters.slice(1)) {
-    if (!FOLLOWING_LETTERS.has(ch)) return `'${ch}' is not a function letter`;
+    if (!FOLLOWING_LETTERS.has(ch)) return `${said(ch)} is not a function letter`;
   }
   if (letters.length === 1)
     return 'a tag needs a function letter after the variable (for example LT, not L)';
@@ -349,7 +320,7 @@ function checkProfile(raw: unknown, issues: Issues): SiteProfile | undefined {
           const re = new RegExp(pattern);
           if (example && !re.test(example))
             issues.errors.push(
-              `profile.lineNumber.example: '${example}' does not match the pattern.`,
+              `profile.lineNumber.example: ${said(example)} does not match the pattern.`,
             );
           out.lineNumber = {
             pattern,
@@ -372,10 +343,10 @@ function checkProfile(raw: unknown, issues: Issues): SiteProfile | undefined {
       for (const [k, v] of Object.entries(raw.serviceColours)) {
         if (typeof v !== 'string' || !isColour(v)) {
           issues.errors.push(
-            `profile.serviceColours.${k}: '${String(v)}' is not a colour (series-1..series-5, ink, muted, or #rrggbb).`,
+            `profile.serviceColours.${pathKey(k)}: ${said(v)} is not a colour (series-1..series-5, ink, muted, or #rrggbb).`,
           );
         } else if (isTrustColour(v)) {
-          issues.errors.push(TRUST_COLOUR_ERROR(`profile.serviceColours.${k}`, v));
+          issues.errors.push(TRUST_COLOUR_ERROR(`profile.serviceColours.${pathKey(k)}`, v));
         } else out.serviceColours[k] = v;
       }
     }
@@ -388,7 +359,7 @@ function checkProfile(raw: unknown, issues: Issues): SiteProfile | undefined {
       for (const [k, v] of Object.entries(raw.instrumentFirstLetters)) {
         if (!/^[A-Z]$/.test(k) || typeof v !== 'string')
           issues.errors.push(
-            `profile.instrumentFirstLetters.${k}: one capital letter mapped to its meaning.`,
+            `profile.instrumentFirstLetters.${pathKey(k)}: one capital letter mapped to its meaning.`,
           );
         else out.instrumentFirstLetters[k] = v;
       }
@@ -424,13 +395,13 @@ function checkProfile(raw: unknown, issues: Issues): SiteProfile | undefined {
     else {
       out.customSymbols = {};
       for (const [k, v] of Object.entries(raw.customSymbols)) {
-        const p = `profile.customSymbols.${k}`;
+        const p = `profile.customSymbols.${pathKey(k)}`;
         if (
           !(EQUIPMENT_TYPES as readonly string[]).includes(k) &&
           !(VALVE_TYPES as readonly string[]).includes(k)
         ) {
           issues.errors.push(
-            `${p}: '${k}' is not an equipment or valve type${suggest(k, [...EQUIPMENT_TYPES, ...VALVE_TYPES]) ? ` (did you mean '${suggest(k, [...EQUIPMENT_TYPES, ...VALVE_TYPES])}'?)` : ''}.`,
+            `${p}: ${said(k)} is not an equipment or valve type${suggest(k, [...EQUIPMENT_TYPES, ...VALVE_TYPES]) ? ` (did you mean ${said(suggest(k, [...EQUIPMENT_TYPES, ...VALVE_TYPES]))}?)` : ''}.`,
           );
           continue;
         }
@@ -484,11 +455,11 @@ function linkOf(o: Obj, p: string, issues: Issues, opts: PidCheckOptions): PageL
   });
   const focus = str(o, 'focus', p, issues, { max: 40 });
   if (focus && !page)
-    issues.errors.push(`${p}.focus: only with 'link' (the page to show '${focus}' on).`);
+    issues.errors.push(`${p}.focus: only with 'link' (the page to show ${said(focus)} on).`);
   if (!page) return undefined;
   if (!opts.links) {
     issues.errors.push(
-      `${p}.link: '${page}' is another page, and this drawing has no pages. Put the drawings in a set ({ title, pages: [{ id, title, data }] }) or drop 'link'.`,
+      `${p}.link: ${said(page)} is another page, and this drawing has no pages. Put the drawings in a set ({ title, pages: [{ id, title, data }] }) or drop 'link'.`,
     );
     return undefined;
   }
@@ -523,12 +494,14 @@ export function drawingFields(d: Obj, issues: Issues): { style: StyleEdition; vi
 export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked<PidData> {
   const issues = newIssues();
   if (!isObj(input)) return { ok: false, errors: ['data: must be a JSON object.'], warnings: [] };
+  // The sizes first (limits.ts): data past one is refused whole, so what
+  // this check takes is exactly what a save's honest pass takes.
+  const tooLarge = pidLimitsProblem(input);
+  if (tooLarge !== null) return { ok: false, errors: [overLimitError(tooLarge)], warnings: [] };
   const d = input as Obj;
   checkKeys(d, TOP_KEYS, '', issues);
   if (d.template !== undefined && d.template !== 'pid') {
-    issues.errors.push(
-      `template: this is the 'pid' template, the data says '${String(d.template)}'.`,
-    );
+    issues.errors.push(`template: this is the 'pid' template, the data says ${said(d.template)}.`);
   }
   const title = str(d, 'title', '', issues, { required: true, max: PID_LIMITS.text.title }) ?? '';
   const description = str(d, 'description', '', issues, {
@@ -572,7 +545,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
   const tags = new Map<string, string>();
   const claim = (tag: string, path: string) => {
     const prev = tags.get(tag);
-    if (prev) issues.errors.push(`${path}: tag '${tag}' is already used by ${prev}.`);
+    if (prev) issues.errors.push(`${path}: tag ${said(tag)} is already used by ${prev}.`);
     else tags.set(tag, path);
   };
   const tagRule = {
@@ -676,7 +649,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     : 'equipment or off-page connector';
   const endHint = (v: string, more: string[] = []) => {
     const s = suggest(v, [...ends, ...teeIds, ...more]);
-    return s ? ` (did you mean '${s}'?)` : '';
+    return s ? ` (did you mean ${said(s)}?)` : '';
   };
 
   const lines: Line[] = [];
@@ -710,7 +683,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
       const number = str(l, 'number', p, issues, { max: PID_LIMITS.text.lineNumber });
       const id = str(l, 'id', p, issues, { max: 40 }) ?? number ?? `L${i + 1}`;
       if (lineIds.has(id) && l.id !== undefined)
-        issues.errors.push(`${p}.id: line id '${id}' is already used by ${lineIds.get(id)}.`);
+        issues.errors.push(`${p}.id: line id ${said(id)} is already used by ${lineIds.get(id)}.`);
       // A line that stops short (`end`, or a dead leg with no `to`) has no `to`.
       const stops = l.end !== undefined || (l.deadleg === true && l.to === undefined);
       const from = str(l, 'from', p, issues, { required: true });
@@ -727,29 +700,31 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
               : undefined;
       if (from && !fromOk)
         issues.errors.push(
-          `${p}.from: no ${endNoun} '${from}'${endHint(from)}.${instrumentTags.has(from) ? ' A line cannot start at an instrument: start it at a tee or equipment and end it at the bubble.' : ''}`,
+          `${p}.from: no ${endNoun} ${said(from)}${endHint(from)}.${instrumentTags.has(from) ? ' A line cannot start at an instrument: start it at a tee or equipment and end it at the bubble.' : ''}`,
         );
       if (to && !toKind)
-        issues.errors.push(`${p}.to: no ${endNoun} '${to}'${endHint(to, [...instrumentTags])}.`);
+        issues.errors.push(
+          `${p}.to: no ${endNoun} ${said(to)}${endHint(to, [...instrumentTags])}.`,
+        );
       if (from && to && from === to)
-        issues.errors.push(`${p}: a line from '${from}' back to itself is not drawn.`);
+        issues.errors.push(`${p}: a line from ${said(from)} back to itself is not drawn.`);
       const end = oneOf(l, 'end', LINE_ENDS, p, issues);
       const deadleg = bool(l, 'deadleg', p, issues) ?? false;
       const toward = oneOf(l, 'toward', TOWARD, p, issues);
       if (to && end)
         issues.errors.push(
-          `${p}.end: a line with 'end' stops short and has no 'to'; drop 'to' for a stub or a cap, or drop 'end' to run it to '${to}'.`,
+          `${p}.end: a line with 'end' stops short and has no 'to'; drop 'to' for a stub or a cap, or drop 'end' to run it to ${said(to)}.`,
         );
       const stub = !to || toKind === 'instrument';
       if (toward && !stub)
         issues.errors.push(
-          `${p}.toward: only for a line that stops ('end') or ends at an instrument; a line to '${to}' is routed (set fromPort or toPort instead).`,
+          `${p}.toward: only for a line that stops ('end') or ends at an instrument; a line to ${said(to)} is routed (set fromPort or toPort instead).`,
         );
       const fromPort = oneOf(l, 'fromPort', PORTS, p, issues);
       const toPort = oneOf(l, 'toPort', PORTS, p, issues);
       if (fromPort && from && teeIds.has(from))
         issues.errors.push(
-          `${p}.fromPort: '${from}' is a tee; a branch leaves its parent line square, so drop fromPort (use toward on a stub).`,
+          `${p}.fromPort: ${said(from)} is a tee; a branch leaves its parent line square, so drop fromPort (use toward on a stub).`,
         );
       if (toPort && (stub || toKind === 'tee'))
         issues.errors.push(
@@ -784,7 +759,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
       if (number) {
         const parts = parseLineNumber(profile, number);
         if (!parts) {
-          const msg = `${p}.number: '${number}' does not match the site's line number format${profile.lineExample ? ` (for example ${profile.lineExample})` : ''}. Use the user's line number exactly; never make one up.`;
+          const msg = `${p}.number: ${said(number)} does not match the site's line number format${profile.lineExample ? ` (for example ${profile.lineExample})` : ''}. Use the user's line number exactly; never make one up.`;
           (profile.enforce === 'error' ? issues.errors : issues.warnings).push(msg);
         } else if (!service && parts.service) service = parts.service;
       }
@@ -864,7 +839,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     const m = TAG_PATTERN.exec(tag);
     if (!m) {
       issues.errors.push(
-        `${p}.tag: '${tag}' is not an instrument tag (letters, then the loop number: LT-101, FIC-2001).`,
+        `${p}.tag: ${said(tag)} is not an instrument tag (letters, then the loop number: LT-101, FIC-2001).`,
       );
       continue;
     }
@@ -872,7 +847,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     const problem = tagLettersProblem(letters, profile.firstLetters);
     if (problem)
       issues.errors.push(
-        `${p}.tag: '${tag}' does not read: ${problem}. ISA-5.1 order is variable, then functions (FIC, not CIF).`,
+        `${p}.tag: ${said(tag)} does not read: ${problem}. ISA-5.1 order is variable, then functions (FIC, not CIF).`,
       );
     claim(tag, p);
     let on: Instrument['on'];
@@ -884,7 +859,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
       else {
         const s = suggest(onRaw, [...equipment.map((e) => e.id), ...lineIds.keys()]);
         issues.errors.push(
-          `${p}.on: '${onRaw}' is neither an equipment id nor a line id or number${s ? ` (did you mean '${s}'?)` : ''}.`,
+          `${p}.on: ${said(onRaw)} is neither an equipment id nor a line id or number${s ? ` (did you mean ${said(s)}?)` : ''}.`,
         );
       }
     }
@@ -914,11 +889,11 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     if (!inst) continue; // its own error is above
     if (inst.on)
       issues.errors.push(
-        `${lp}.to: instrument '${inst.tag}' also has 'on' ('${inst.on.id}'). A bubble at the end of a branch is drawn there; drop its 'on', or end the line elsewhere.`,
+        `${lp}.to: instrument ${said(inst.tag)} also has 'on' (${said(inst.on.id)}). A bubble at the end of a branch is drawn there; drop its 'on', or end the line elsewhere.`,
       );
     if (endsAtBubble.has(inst.tag))
       issues.errors.push(
-        `${lp}.to: instrument '${inst.tag}' already ends ${endsAtBubble.get(inst.tag)}; a bubble ends one line. Tee off that line instead.`,
+        `${lp}.to: instrument ${said(inst.tag)} already ends ${endsAtBubble.get(inst.tag)}; a bubble ends one line. Tee off that line instead.`,
       );
     else endsAtBubble.set(inst.tag, lp);
   }
@@ -932,7 +907,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     if (!lineIds.has(t.on)) {
       const sg = suggest(t.on, [...lineIds.keys()]);
       issues.errors.push(
-        `${t.p}.on: no line '${t.on}'${sg ? ` (did you mean '${sg}'?)` : ''}. A tee sits on a line: give that line's id, or its number exactly.`,
+        `${t.p}.on: no line ${said(t.on)}${sg ? ` (did you mean ${said(sg)}?)` : ''}. A tee sits on a line: give that line's id, or its number exactly.`,
       );
       continue;
     }
@@ -962,11 +937,11 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     const tp = teeRaw.find((x) => x.id === t.id)!.p;
     if (ancestors(t.on).has(t.id))
       issues.errors.push(
-        `${tp}.on: tee '${t.id}' sits on line '${t.on}', which itself starts or ends at '${t.id}' (directly or through other tees). Put the tee on the line its branch leaves.`,
+        `${tp}.on: tee ${said(t.id)} sits on line ${said(t.on)}, which itself starts or ends at ${said(t.id)} (directly or through other tees). Put the tee on the line its branch leaves.`,
       );
     if (!lines.some((l) => l.from === t.id || l.to === t.id))
       issues.warnings.push(
-        `${tp}: tee '${t.id}' has no branch (no line starts or ends at it), so it is not drawn.`,
+        `${tp}: tee ${said(t.id)} has no branch (no line starts or ends at it), so it is not drawn.`,
       );
   }
   // A line that names a tee whose own entry failed is dropped with it.
@@ -994,7 +969,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
       if (v && !signalEnds.has(v)) {
         const sg = suggest(v, [...signalEnds]);
         issues.errors.push(
-          `${p}.${k}: no instrument or tagged valve '${v}'${sg ? ` (did you mean '${sg}'?)` : ''}.`,
+          `${p}.${k}: no instrument or tagged valve ${said(v)}${sg ? ` (did you mean ${said(sg)}?)` : ''}.`,
         );
       }
     }
@@ -1014,19 +989,19 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     const colour = str(c, 'colour', p, issues);
     if (colour && !isColour(colour))
       issues.errors.push(
-        `${p}.colour: '${colour}' is not a colour (series-1..series-5 or #rrggbb).`,
+        `${p}.colour: ${said(colour)} is not a colour (series-1..series-5 or #rrggbb).`,
       );
     else if (colour && isTrustColour(colour))
       issues.errors.push(TRUST_COLOUR_ERROR(`${p}.colour`, colour));
     const cl: string[] = [];
     list(c, 'lines', p, issues).forEach((v, i) => {
       if (typeof v !== 'string' || !lineIds.has(v)) {
-        issues.errors.push(`${p}.lines[${i}]: no line '${String(v)}'.`);
+        issues.errors.push(`${p}.lines[${i}]: no line ${said(v)}.`);
         return;
       }
       if (lineOwner.has(v))
         issues.errors.push(
-          `${p}.lines[${i}]: line '${v}' is already in circuit '${lineOwner.get(v)}'; a line belongs to one circuit.`,
+          `${p}.lines[${i}]: line ${said(v)} is already in circuit ${said(lineOwner.get(v))}; a line belongs to one circuit.`,
         );
       else if (id) lineOwner.set(v, id);
       cl.push(v);
@@ -1034,7 +1009,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     const ce: string[] = [];
     list(c, 'equipment', p, issues).forEach((v, i) => {
       if (typeof v !== 'string' || !equipment.some((e) => e.id === v))
-        issues.errors.push(`${p}.equipment[${i}]: no equipment '${String(v)}'.`);
+        issues.errors.push(`${p}.equipment[${i}]: no equipment ${said(v)}.`);
       else ce.push(v);
     });
     if (id)
@@ -1077,7 +1052,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
       !signals.some((s) => s.from === i.tag || s.to === i.tag)
     ) {
       issues.warnings.push(
-        `instruments '${i.tag}': connected to nothing (no 'on' and no signal); a bubble should not float.`,
+        `instruments ${said(i.tag)}: connected to nothing (no 'on' and no signal); a bubble should not float.`,
       );
     }
   }

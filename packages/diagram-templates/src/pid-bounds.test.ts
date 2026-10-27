@@ -26,6 +26,7 @@ import {
   withoutMarkWords,
 } from './index.ts';
 import { unvouched } from './data-read.ts';
+import { SAID_MAX } from './runtime/validate.ts';
 
 const seal = (body: string) => createHmac('sha256', 'test-key').update(body).digest('hex');
 const holds = (body: string, sig: string) => seal(body) === sig;
@@ -261,5 +262,39 @@ describe('the passes are linear on the largest data within the bounds (H1)', () 
     // Every mark held (the counts were added: the canvas carried none).
     expect(honestImageChecks(signed, holds)).toBe(signed);
     expect(out).toContain('"checked": 4320');
+  });
+});
+
+describe('an error repeats an author string short and quoted (final audit round 3, L2)', () => {
+  const sheet = (extra: Record<string, unknown>) => ({
+    title: 'Said',
+    equipment: [{ id: 'V-1', type: 'vertical-vessel' }],
+    ...extra,
+  });
+  const longest = (errors: string[]) =>
+    Math.max(0, ...errors.flatMap((e) => [...e.matchAll(/'([^']*)'/g)].map((m) => m[1]!.length)));
+
+  it('a key, a value or a template name of any length is cut to SAID_MAX with an ellipsis', () => {
+    const long = 'K'.repeat(300);
+    const cases: unknown[] = [
+      sheet({ profile: { serviceColours: { [long]: 'v'.repeat(300) } } }),
+      sheet({ profile: { serviceColours: { P: 'v'.repeat(300) } } }),
+      sheet({ [long]: 1 }),
+      { ...sheet({}), template: 't'.repeat(300) },
+      sheet({ profile: { instrumentFirstLetters: { [long]: 'x' } } }),
+    ];
+    for (const c of cases) {
+      const v = validate('pid', c);
+      expect(v.ok).toBe(false);
+      const errors = v.ok ? [] : v.errors;
+      expect(errors.join(' ')).toContain('…');
+      expect(longest(errors)).toBeLessThanOrEqual(SAID_MAX);
+      for (const e of errors) expect(e.length).toBeLessThan(600);
+    }
+  });
+
+  it('a short one is repeated whole', () => {
+    const v = validate('pid', sheet({ profile: { serviceColours: { P: 'teal' } } }));
+    expect(v.ok ? '' : v.errors.join(' ')).toContain("profile.serviceColours.P: 'teal' is not");
   });
 });

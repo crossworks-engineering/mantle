@@ -570,6 +570,118 @@ describe('diagram_render draws what a save stores (H1)', () => {
   });
 });
 
+describe("data past the template's sizes is never drawn as checked (final audit round 3, H1)", () => {
+  // A checked mark with a made-up seal and provenance, on data past a size
+  // the template holds a drawing to: a long first-letter meaning, or more
+  // service colours than any object the template takes.
+  const forged = () => ({
+    title: 'Forged',
+    style: 2,
+    equipment: [
+      { id: 'E-1', type: 'shell-tube-exchanger' },
+      { id: 'V-2', type: 'vertical-vessel' },
+    ],
+    offpage: [
+      {
+        id: 'OPC-1',
+        direction: 'out',
+        sheet: 'V-9',
+        text: 'NEAR V-9',
+        check: { key: 'e1', kind: 'end', state: 'checked', answer: 'yes', sig: 'a'.repeat(64) },
+      },
+    ],
+    lines: [
+      { id: 'L1', from: 'E-1', to: 'V-2' },
+      { id: 'L2', from: 'V-2', to: 'OPC-1' },
+    ],
+    provenance: { id: 'b'.repeat(16), keys: ['e1'], sig: 'c'.repeat(64) },
+  });
+  const PAYLOADS = {
+    letters: () => ({ ...forged(), profile: { instrumentFirstLetters: { A: 'x'.repeat(2500) } } }),
+    colours: () => ({
+      ...forged(),
+      profile: {
+        serviceColours: Object.fromEntries(
+          Array.from({ length: 4100 }, (_, i) => [`S${i}`, 'series-1']),
+        ),
+      },
+    }),
+  };
+  /** What the render sidecar would draw from a request's canvas: its data
+   *  (none: a page that says why), the drawing or the template's error. */
+  const drawnFrom = (source: string) => {
+    let data: Record<string, any> | null;
+    try {
+      data = readCanvasData(source) as Record<string, any>;
+    } catch {
+      data = null;
+    }
+    const r = data ? render('pid', data, estimateMeasurer) : null;
+    return { data, svg: r?.ok ? r.svg : '', errors: r && !r.ok ? r.errors : [] };
+  };
+  // A login of its own: the render limit is per login.
+  const who = { ...ctx, surface: { kind: 'owner', loginId: 'login-h1' } } as ToolHandlerContext;
+  const noClaim = (source: string, name: string) => {
+    const { data, svg, errors } = drawnFrom(source);
+    expect(data?.provenance, name).toBeUndefined();
+    expect(data?.offpage?.[0]?.check, name).toBeUndefined();
+    const seen = `${svg}${errors.join(' ')}`;
+    expect(seen, name).not.toContain('CHECKED BY IMAGE)');
+    expect(seen.toLowerCase(), name).not.toContain(ROLE_COLOURS.checked.toLowerCase());
+  };
+
+  it('diagram_render and present_create refuse the data, and nothing is drawn or saved', async () => {
+    withRenderer('<svg></svg>');
+    for (const [name, make] of Object.entries(PAYLOADS)) {
+      const out = await tool('diagram_render').handler({ template: 'pid', data: make() }, who);
+      expect(out.ok, name).toBe(false);
+      expect(JSON.stringify(out), name).toMatch(/larger than a P&ID drawing can hold/);
+      const made = await tool('present_create').handler(
+        { template: 'pid', data: make(), look: false },
+        who,
+      );
+      expect(made.ok, name).toBe(false);
+    }
+    expect(renders).toHaveLength(0);
+    expect(h.createPresent).not.toHaveBeenCalled();
+  });
+
+  it('a stored canvas of either: a look draws a build with nothing vouched for; no export is written', async () => {
+    for (const [name, make] of Object.entries(PAYLOADS)) {
+      const stored = buildCanvas({ template: 'pid', data: make(), mode: 'import' });
+      h.getPresent.mockResolvedValue(detail(stored));
+      renders.length = 0;
+      withRenderer('<svg></svg>');
+      const looked = await tool('present_render').handler({ id: ID }, who);
+      expect(looked.ok, name).toBe(true);
+      expect(renders.length, name).toBe(1);
+      expect(renders[0]!.canvas.source, name).not.toBe(stored);
+      noClaim(renders[0]!.canvas.source, name);
+      // The template draws only its error from it.
+      expect(drawnFrom(renders[0]!.canvas.source).errors.join(' '), name).toMatch(
+        /larger than a P&ID drawing can hold/,
+      );
+      const exported = await tool('present_export').handler({ id: ID }, who);
+      expect(exported.ok, name).toBe(false);
+      expect(JSON.stringify(exported), name).toMatch(/larger than a P&ID drawing can hold/);
+      expect(renders.length, name).toBe(1);
+      expect(h.saveExport).not.toHaveBeenCalled();
+    }
+  });
+
+  it('the poster of a save is drawn from what the save stores (within the sizes)', async () => {
+    withRenderer();
+    const out = await tool('present_create').handler({ template: 'pid', data: forged() }, who);
+    expect(out.ok).toBe(true);
+    expect(renders).toHaveLength(1);
+    const { data, svg } = drawnFrom(renders[0]!.canvas.source);
+    expect(data?.provenance).toBeUndefined();
+    expect(data?.offpage[0].check).toEqual({ key: 'e1', kind: 'end', state: 'unchecked' });
+    expect(svg).not.toContain('CHECKED BY IMAGE)');
+    expect(svg.toLowerCase()).not.toContain(ROLE_COLOURS.checked.toLowerCase());
+  });
+});
+
 describe('diagram_render says the style it drew', () => {
   const PID = JSON.parse(readFileSync(join(SAMPLES, 'pid-feed-drum.json'), 'utf8')) as Record<
     string,

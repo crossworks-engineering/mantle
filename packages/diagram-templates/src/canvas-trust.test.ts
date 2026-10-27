@@ -8,7 +8,7 @@
  */
 import { createHmac } from 'node:crypto';
 import { JSDOM } from 'jsdom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   assetsBlockCount,
   buildCanvas,
@@ -20,11 +20,16 @@ import {
   isPidData,
   provenanceSealBody,
   readCanvasData,
+  pidLimitsProblem,
+  ROLE_COLOURS,
   signImageChecks,
+  unvouchedCanvas,
+  validate,
   withHonestImageChecks,
   withoutMarkWords,
 } from './index.ts';
 import { mount, type DiagramApi } from './browser.ts';
+import { marksTrusted } from './data-read.ts';
 
 type Obj = Record<string, any>;
 
@@ -388,5 +393,99 @@ describe('the runtime trusts marks only under its own import, on the live docume
       expect(svg).not.toContain('CHECKED BY IMAGE)');
       expect(svg).not.toContain('FROM IMAGE)');
     }
+  });
+});
+
+describe("data past the template's sizes is never drawn as checked (final audit round 3, H1)", () => {
+  // A drawing that fails also throws its first error, uncaught, on a timer
+  // (the Present frame reports it to the host): held here, never run.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+  // The two shapes the audit drew CHECKED BY IMAGE with: a profile field
+  // the template took at any length, and one it took at any count.
+  const letters = (): Obj => ({
+    ...marked(),
+    profile: { instrumentFirstLetters: { A: 'x'.repeat(2500) } },
+  });
+  const colours = (): Obj => ({
+    ...marked(),
+    profile: {
+      serviceColours: Object.fromEntries(
+        Array.from({ length: 4100 }, (_, i) => [`S${i}`, 'series-1']),
+      ),
+    },
+  });
+  const PAYLOADS = { letters, colours };
+  const TRUST = [
+    ROLE_COLOURS.checked,
+    ROLE_COLOURS.corrected,
+    ROLE_COLOURS.contradicted,
+    ROLE_COLOURS.guess,
+  ].map((c) => c.toLowerCase());
+  /** What a viewer sees: the drawing and the error panel. */
+  const shown = (doc: Document) =>
+    `${live(doc)}${doc.getElementById('diagram-errors')?.textContent ?? ''}`.toLowerCase();
+  const claims = (text: string) =>
+    ['checked by image', 'from image', 'image: no']
+      .filter((w) => text.includes(w))
+      .concat(TRUST.filter((c) => text.includes(c)));
+
+  it('the template refuses both whole, with the one size error, as the save does', () => {
+    for (const [name, make] of Object.entries(PAYLOADS)) {
+      const d = make();
+      expect(pidLimitsProblem(d), name).not.toBeNull();
+      const v = validate('pid', d);
+      expect(v.ok, name).toBe(false);
+      expect(v.ok ? [] : v.errors, name).toHaveLength(1);
+      expect(v.ok ? '' : v.errors[0], name).toMatch(/larger than a P&ID drawing can hold/);
+      // A set holding it as a page's data: refused the same way.
+      const set = validate('pid', { title: 'Set', pages: [{ id: 'p1', title: 'P1', data: d }] });
+      expect(set.ok, name).toBe(false);
+    }
+  });
+
+  it('stored as it is, in the frame: no mark, no trust word, no trust colour', async () => {
+    for (const [name, make] of Object.entries(PAYLOADS)) {
+      const { api, doc } = await mounted(canvas(make()));
+      expect(api.errors.length, name).toBeGreaterThan(0);
+      expect(claims(shown(doc)), name).toEqual([]);
+    }
+  });
+
+  it("the runtime's trust asks the sizes too (defence in depth)", () => {
+    const read = { text: null, canonical: true, assets: null };
+    expect(marksTrusted(read, { template: 'pid', ...marked() }, true)).toBe(true);
+    for (const make of Object.values(PAYLOADS))
+      expect(marksTrusted(read, { template: 'pid', ...make() }, true)).toBe(false);
+  });
+
+  it('the server draws a build with nothing vouched for in its place, never its source', async () => {
+    for (const [name, make] of Object.entries(PAYLOADS)) {
+      const raw = canvas(make());
+      const out = unvouchedCanvas(raw, 'refused');
+      expect(out, name).not.toBe(raw);
+      const data = readCanvasData(out) as Obj;
+      expect(data.provenance, name).toBeUndefined();
+      expect(data.offpage[0].check, name).toBeUndefined();
+      expect(data.lines[0].checks, name).toBeUndefined();
+      const { api, doc } = await mounted(out);
+      expect(api.errors.length, name).toBeGreaterThan(0);
+      expect(claims(shown(doc)), name).toEqual([]);
+    }
+    // Within the sizes: the drawing, every mark unchecked.
+    const { doc } = await mounted(unvouchedCanvas(canvas(marked()), 'refused'));
+    expect(claims(shown(doc).replace(/not checked by image/g, ''))).toEqual([
+      ROLE_COLOURS.guess.toLowerCase(),
+    ]);
+    // Not a pid drawing: a page that says why, and nothing of the source.
+    const page = unvouchedCanvas('<p id="x">author <b>markup</b></p>', 'Not <saved>.');
+    expect(page).toContain('<p>Not &lt;saved&gt;.</p>');
+    expect(page).not.toContain('author');
+    expect(page).not.toContain('<script');
   });
 });

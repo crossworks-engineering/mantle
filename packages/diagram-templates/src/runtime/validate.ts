@@ -25,7 +25,29 @@ export function isObj(v: unknown): v is Obj {
 
 export function at(path: string, key: string | number): string {
   if (typeof key === 'number') return `${path}[${key}]`;
-  return path ? `${path}.${key}` : key;
+  return path ? `${path}.${pathKey(key)}` : pathKey(key);
+}
+
+/** The longest piece of an author's text an error repeats, in characters:
+ *  an error names what is wrong, it never carries the data back whole
+ *  (the browser's error panel shows it as it is). */
+export const SAID_MAX = 40;
+
+/** An author's text as an error repeats it: control characters and line
+ *  breaks out, cut to SAID_MAX characters with an ellipsis. */
+export function clipSaid(v: unknown): string {
+  const s = cleanText(String(v)).replace(/[\t\r\n]+/g, ' ');
+  return s.length > SAID_MAX ? `${s.slice(0, SAID_MAX - 1)}\u2026` : s;
+}
+
+/** An author's text quoted in an error: `'text'`, clipped (clipSaid). */
+export function said(v: unknown): string {
+  return `'${clipSaid(v)}'`;
+}
+
+/** An author's key as one step of an error's path, clipped (clipSaid). */
+export function pathKey(key: string): string {
+  return clipSaid(key);
 }
 
 function editDistance(a: string, b: string): number {
@@ -60,7 +82,7 @@ export function suggest(value: string, options: readonly string[]): string | nul
 
 function hint(value: string, options: readonly string[]): string {
   const s = suggest(value, options);
-  return s ? ` (did you mean '${s}'?)` : '';
+  return s ? ` (did you mean ${said(s)}?)` : '';
 }
 
 /** Unknown fields are errors: a typo must never be silently ignored. */
@@ -68,7 +90,7 @@ export function checkKeys(o: Obj, allowed: readonly string[], path: string, issu
   for (const k of Object.keys(o)) {
     if (!allowed.includes(k)) {
       issues.errors.push(
-        `${path || 'data'}: unknown field '${k}'${hint(k, allowed)}. Allowed: ${allowed.join(', ')}.`,
+        `${path || 'data'}: unknown field ${said(k)}${hint(k, allowed)}. Allowed: ${allowed.join(', ')}.`,
       );
     }
   }
@@ -117,7 +139,9 @@ export function str(
     issues.errors.push(`${p}: at most ${opts.max} characters, got ${v.length}. Shorten it.`);
   }
   if (opts.pattern && !opts.pattern.test(v)) {
-    issues.errors.push(`${p}: '${v}' is not ${opts.patternText ?? `in the form ${opts.pattern}`}.`);
+    issues.errors.push(
+      `${p}: ${said(v)} is not ${opts.patternText ?? `in the form ${opts.pattern}`}.`,
+    );
   }
   return v;
 }
@@ -132,7 +156,7 @@ export function oneOf<T extends string>(
   const v = o[key];
   if (v === undefined || v === null) return undefined;
   if (typeof v !== 'string' || !values.includes(v as T)) {
-    const shown = typeof v === 'string' ? `'${v}'` : typeof v;
+    const shown = typeof v === 'string' ? said(v) : typeof v;
     issues.errors.push(
       `${at(path, key)}: ${shown} is not one of ${values.join(', ')}${typeof v === 'string' ? hint(v, values) : ''}.`,
     );
@@ -222,7 +246,7 @@ export function idOf(
   });
   if (id === undefined) return undefined;
   const prev = seen.get(id);
-  if (prev) issues.errors.push(`${at(path, key)}: id '${id}' is already used by ${prev}.`);
+  if (prev) issues.errors.push(`${at(path, key)}: id ${said(id)} is already used by ${prev}.`);
   else seen.set(id, path);
   return id;
 }
@@ -239,7 +263,9 @@ export function ref(
   const v = str(o, key, path, issues, { required: true });
   if (v === undefined) return undefined;
   if (!known.has(v)) {
-    issues.errors.push(`${at(path, key)}: no ${what} with id '${v}'${hint(v, [...known.keys()])}.`);
+    issues.errors.push(
+      `${at(path, key)}: no ${what} with id ${said(v)}${hint(v, [...known.keys()])}.`,
+    );
     return undefined;
   }
   return v;

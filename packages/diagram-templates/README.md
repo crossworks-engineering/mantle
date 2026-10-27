@@ -300,7 +300,9 @@ checkedAt, crops, overview }`. Each marked element gets
   and takes the contradicted colour); the label before them keeps its own
   style, so letters typed to look like a word never look like one. The
   badge and the legend take the same colour. The trust colours and the
-  legend's check entries come only from marks: an unmarked label wears its
+  legend's check entries come only from marks (a drawing's own colour, a
+  circuit's or a service's, within 24 per channel of a trust colour is
+  refused by the template's check): an unmarked label wears its
   own colour, or the guess colour when it says `(GUESS)`, whatever other
   words it holds; a typed bracketed claim on an element with no mark draws
   as `(GUESS)` (`withoutMarkWords`, on every drawing, so a canvas saved

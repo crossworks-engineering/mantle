@@ -9,7 +9,15 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { PALETTE, ROLE_COLOURS, ROLE_STROKES, contrastRatio, luminance } from './runtime/style.ts';
+import {
+  PALETTE,
+  ROLE_COLOURS,
+  ROLE_STROKES,
+  TRUST_COLOUR_DISTANCE,
+  contrastRatio,
+  isTrustColour,
+  luminance,
+} from './runtime/style.ts';
 import { THEME_ROLE_COLOURS } from './runtime/theme.ts';
 import { lineNoteSuffix, markSuffix } from './templates/pid/check.ts';
 import { wordColour } from './templates/pid/render.ts';
@@ -359,7 +367,7 @@ describe("a drawing's own colours are never a check's", () => {
       );
       expect(circuit.ok, hex).toBe(false);
       expect(circuit.ok ? '' : circuit.errors.join(' ')).toMatch(
-        /circuits\[0\]\.colour: .* keeps for the image check .* Pick another/,
+        /circuits\[0\]\.colour: .* keeps for the image check's marks.* Pick another/,
       );
       const service = validate('pid', drawing({ profile: { serviceColours: { P: hex } } }));
       expect(service.ok, hex).toBe(false);
@@ -367,6 +375,32 @@ describe("a drawing's own colours are never a check's", () => {
         /profile\.serviceColours\.P: .* image check/,
       );
     }
+  });
+
+  it('a colour close to a trust colour is refused too, and the error says no trust word', () => {
+    const shade = (hex: string, d: number) =>
+      '#' +
+      [1, 3, 5]
+        .map((i) => Math.max(0, Math.min(255, parseInt(hex.slice(i, i + 2), 16) + d)))
+        .map((v) => v.toString(16).padStart(2, '0'))
+        .join('');
+    for (const t of trust) {
+      for (const d of [1, -1, TRUST_COLOUR_DISTANCE, -TRUST_COLOUR_DISTANCE]) {
+        const hex = shade(t, d);
+        expect(isTrustColour(hex), `${t} ${d}`).toBe(true);
+        const r = validate('pid', drawing({ profile: { serviceColours: { P: hex } } }));
+        expect(r.ok, hex).toBe(false);
+        const said = r.ok ? '' : r.errors.join(' ');
+        for (const w of ['GUESS', 'CHECKED BY IMAGE', 'IMAGE: NO', 'FROM IMAGE'])
+          expect(said).not.toContain(w);
+      }
+      // Past the distance on one channel: a colour of its own.
+      const far = shade(t, TRUST_COLOUR_DISTANCE + 8);
+      expect(isTrustColour(far), far).toBe(false);
+    }
+    // Every palette and series colour stays usable.
+    for (const name of ['series-1', 'series-2', 'series-3', 'series-4', 'series-5', 'ink', 'muted'])
+      expect(isTrustColour(name), name).toBe(false);
   });
 
   it('any other colour, a role colour of a line included, is kept', () => {

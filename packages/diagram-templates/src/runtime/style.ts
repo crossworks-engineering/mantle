@@ -231,17 +231,33 @@ export function resolveColour(value: string | undefined, fallback: string): stri
 
 /** The colours the image check's marks wear (GUESS, CHECKED BY IMAGE,
  *  IMAGE: NO, FROM IMAGE): a drawing's own colour (a circuit's, a
- *  service's) may never be one of them, or a line would wear a check's
- *  colour no mark gave it. */
-const TRUST_COLOURS: ReadonlySet<string> = new Set(
-  [ROLE_COLOURS.guess, ROLE_COLOURS.checked, ROLE_COLOURS.contradicted, ROLE_COLOURS.corrected].map(
-    (c) => c.toLowerCase(),
-  ),
-);
+ *  service's) may never be one of them, nor one a reader could take for
+ *  one, or a line would wear a check's colour no mark gave it. */
+const TRUST_COLOURS: readonly (readonly [number, number, number])[] = [
+  ROLE_COLOURS.guess,
+  ROLE_COLOURS.checked,
+  ROLE_COLOURS.contradicted,
+  ROLE_COLOURS.corrected,
+].map((c) => rgbOf(c));
+
+/** How far apart, per channel (0 to 255), a drawing's own colour must be
+ *  from every trust colour: closer on all three is refused. Far enough
+ *  that no near shade passes for a mark, near enough that every palette
+ *  and series colour stays usable (the closest, branch blue to FROM
+ *  IMAGE, is 39 apart). */
+export const TRUST_COLOUR_DISTANCE = 24;
+
+function rgbOf(hex: string): [number, number, number] {
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+}
+
 /** Whether `value` (a colour `isColour` accepts) resolves to a trust
- *  colour. */
+ *  colour or one within TRUST_COLOUR_DISTANCE of it on every channel. */
 export function isTrustColour(value: string): boolean {
-  return TRUST_COLOURS.has(resolveColour(value, '').toLowerCase());
+  const hex = resolveColour(value, '');
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return false;
+  const c = rgbOf(hex);
+  return TRUST_COLOURS.some((t) => t.every((v, i) => Math.abs(v - c[i]!) <= TRUST_COLOUR_DISTANCE));
 }
 
 /** True for a colour `resolveColour` accepts. */

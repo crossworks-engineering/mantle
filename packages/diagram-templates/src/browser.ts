@@ -45,8 +45,7 @@
  */
 import { render as renderTemplate, type RenderOptions, type RenderOutcome } from './index.ts';
 import { domMeasurer, type Measurer } from './runtime/text.ts';
-import { readDataBlock, unvouched } from './data-read.ts';
-import { isPidData } from './canvas.ts';
+import { marksTrusted, readDataBlock, unvouched } from './data-read.ts';
 export { domMeasurer };
 export type { RenderOutcome };
 
@@ -322,6 +321,7 @@ export function mount(doc: Document = document): DiagramApi {
   const run = async () => {
     let outcome: RenderOutcome;
     let data: unknown;
+    let trusted = false;
     try {
       data = JSON.parse(read.text ?? '');
     } catch (err) {
@@ -342,9 +342,10 @@ export function mount(doc: Document = document): DiagramApi {
       // Marks only from data that names the template itself (isPidData,
       // what a save holds to buildCanvas's shape; the head's meta only
       // picks what to draw, never what to trust) in a block where
-      // buildCanvas puts it: any other document is the author's own, and
-      // draws every mark unchecked.
-      const trusted = onLive && read.canonical && isPidData(data);
+      // buildCanvas puts it, within the template's sizes (data-read.ts
+      // marksTrusted): any other document is the author's own, and draws
+      // every mark unchecked.
+      trusted = marksTrusted(read, data, onLive);
       const own = template === 'pid' && !trusted ? unvouched(data) : data;
       outcome = renderTemplate(template, own, domMeasurer(doc));
     }
@@ -361,10 +362,10 @@ export function mount(doc: Document = document): DiagramApi {
         ...(pages ?? []).flatMap((p) => p.checks ?? []),
       ];
       // The evidence first: its keys come before the zoom's and the bar's.
-      // Only on data read where buildCanvas puts it (data-read.ts): any
-      // other document is the author's own, and shows no evidence.
+      // Only on data whose marks are trusted (data-read.ts marksTrusted):
+      // any other document is the author's own, and shows no evidence.
       const evidence =
-        target && onLive && read.canonical && isPidData(data) && allChecks.length
+        target && trusted && allChecks.length
           ? mountEvidence(doc, target, readCrops(read.assets))
           : undefined;
       let zoom: ZoomController | undefined;

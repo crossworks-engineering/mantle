@@ -2,14 +2,19 @@
  * The bounds of raw `pid` data, checked before anything walks it (DWG bones
  * phase 6). A save normalizes a canvas's marks (check.ts
  * honestImageChecks) and the runtime does the same for data it cannot
- * vouch for (data-read.ts unvouched); both read raw data, before the
+ * vouch for (unvouched.ts); both read raw data, before the
  * template's check. So the sizes that check holds a drawing to are checked
  * first, cheaply, and data past one is refused whole (a save says why; the
  * runtime drops its marks): no normalizing pass ever runs on a label, a
  * list or a nesting larger than a drawing can hold.
  *
+ * The template's own check runs this first (schema.ts validatePid, set.ts
+ * validatePidSet) and refuses data past a bound whole, so the check, a
+ * save's honest pass and the runtime agree, by construction, on which data
+ * is too large: no drawing past a bound is drawn, stored or trusted.
+ *
  * The bounds are the template's own (PID_LIMITS, SET_LIMITS, CHECK_LIMITS,
- * LINE_CHECKS_MAX), so data the template draws is never refused here; and,
+ * LINE_CHECKS_MAX), so no drawing within them is refused here; and,
  * for any field the template bounds only by what it must name, the largest
  * the template takes anywhere: a string of RAW_LIMITS.string characters
  * (a custom symbol's path data), a list or an object of RAW_LIMITS.list
@@ -17,9 +22,8 @@
  *
  * One walk over the data, linear in its size (the canvas is at most 1 MB).
  */
-import { isObj, type Obj } from '../../runtime/validate.ts';
-import { PID_LIMITS } from './schema.ts';
-import { SET_LIMITS } from './set.ts';
+import { isObj, pathKey, type Obj } from '../../runtime/validate.ts';
+import { PID_LIMITS, SET_LIMITS } from './sizes.ts';
 import { CHECK_LIMITS, LINE_CHECKS_MAX } from './check.ts';
 
 /** The bounds of any value in raw `pid` data the named limits leave open. */
@@ -60,6 +64,13 @@ const DRAWING_LISTS: Readonly<Record<string, number>> = {
   circuits: PID_LIMITS.circuits,
 };
 
+/** The template's error for data past a bound (`problem`, by its path):
+ *  the one error its check gives such data (schema.ts validatePid,
+ *  set.ts validatePidSet run this check before any other). */
+export function overLimitError(problem: string): string {
+  return `data: larger than a P&ID drawing can hold (${problem}). Make it smaller: split it into pages, or shorten the text.`;
+}
+
 /**
  * Why raw `pid` data (one drawing or a set) is past a bound the template
  * holds it to, or null when it is within all of them. Only sizes: a value
@@ -91,7 +102,8 @@ function rawProblem(data: unknown): string | null {
     const keys = Object.keys(v);
     if (keys.length > RAW_LIMITS.list)
       return `${path || 'data'}: ${keys.length} members, at most ${RAW_LIMITS.list}`;
-    for (const k of keys) stack.push([(v as Obj)[k], path ? `${path}.${k}` : k, depth + 1]);
+    for (const k of keys)
+      stack.push([(v as Obj)[k], path ? `${path}.${pathKey(k)}` : pathKey(k), depth + 1]);
   }
   return null;
 }

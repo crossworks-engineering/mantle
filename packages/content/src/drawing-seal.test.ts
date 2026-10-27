@@ -16,6 +16,7 @@ import {
 import {
   drawingSeal,
   drawingSealHolds,
+  honestCanvasOutcome,
   honestCanvasSource,
   sealPayload,
   sealPayloadHolds,
@@ -285,5 +286,79 @@ describe('a pid canvas past a size the template holds a drawing to is refused fi
     const t = performance.now();
     expect(() => storedCanvasSource(html)).toThrow(/larger than a P&ID drawing can hold/);
     expect(performance.now() - t).toBeLessThan(200);
+  });
+});
+
+describe('one honest-source gateway: a save and a picture agree (final audit round 3, H1)', () => {
+  // Data the template once took past a raw bound: a long first-letter
+  // meaning, more service colours than any object may hold. A checked
+  // mark with a made-up seal on it.
+  const forged = (profile: Record<string, unknown>) =>
+    buildCanvas({
+      template: 'pid',
+      mode: 'import',
+      data: {
+        title: 'Over',
+        equipment: [{ id: 'V-1', type: 'vertical-vessel' }],
+        offpage: [
+          {
+            id: 'OPC-1',
+            direction: 'out',
+            sheet: 'S2',
+            text: 'TO S2',
+            check: { key: 'e1', kind: 'end', state: 'checked', sig: 'a'.repeat(64) },
+          },
+        ],
+        lines: [{ id: 'L1', from: 'V-1', to: 'OPC-1' }],
+        provenance: { id: PROV, keys: ['e1'], sig: 'b'.repeat(64) },
+        profile,
+      },
+    });
+  const PAYLOADS = {
+    letters: forged({ instrumentFirstLetters: { A: 'x'.repeat(2500) } }),
+    colours: forged({
+      serviceColours: Object.fromEntries(
+        Array.from({ length: 4100 }, (_, i) => [`S${i}`, 'series-1']),
+      ),
+    }),
+  };
+
+  it('a save refuses it, and the picture is a build with nothing vouched for, never the source', () => {
+    for (const [name, html] of Object.entries(PAYLOADS)) {
+      expect(() => storedCanvasSource(html), name).toThrow(/larger than a P&ID drawing can hold/);
+      const out = honestCanvasOutcome(html);
+      expect(out.ok, name).toBe(false);
+      if (out.ok) continue;
+      const shown = out.shown();
+      expect(shown, name).not.toBe(html);
+      const data = readCanvasData(shown) as Record<string, any>;
+      expect(data.provenance, name).toBeUndefined();
+      expect(data.offpage[0].check, name).toBeUndefined();
+    }
+  });
+
+  it('a source the check cannot read: a pid build with nothing vouched for, else a page that says why', () => {
+    const second = '<script type="application/json" id="diagram-data">{}</script>';
+    const pid = honestCanvasOutcome(`${PAYLOADS.letters}${second}`);
+    expect(pid.ok).toBe(false);
+    if (!pid.ok) {
+      const data = readCanvasData(pid.shown()) as Record<string, any>;
+      expect(data.provenance).toBeUndefined();
+      expect(data.offpage[0].check).toBeUndefined();
+    }
+    const own = `<!doctype html><html><body><p>mine</p>${second}${second}</body></html>`;
+    const page = honestCanvasOutcome(own);
+    expect(page.ok).toBe(false);
+    if (!page.ok) {
+      const shown = page.shown();
+      expect(shown).not.toContain('<script');
+      expect(shown).not.toContain('mine');
+      expect(shown).toContain('was not saved');
+    }
+  });
+
+  it('a source a save keeps is the one shown', () => {
+    const html = buildCanvas({ template: 'flow', data: { nodes: [] }, mode: 'import' });
+    expect(honestCanvasOutcome(html)).toEqual({ ok: true, source: storedCanvasSource(html) });
   });
 });

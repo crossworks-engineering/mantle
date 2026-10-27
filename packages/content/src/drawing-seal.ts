@@ -40,6 +40,7 @@ import {
   CROP_SEAL_PURPOSE,
   cropSealPayload,
   dataBlockCount,
+  unvouchedCanvas,
   withHonestImageChecks,
   withSealedCanvasAssets,
 } from '@mantle/diagram-templates';
@@ -249,9 +250,40 @@ export function assertCanvasSize(source: string): void {
   }
 }
 
+/** What the honest pass makes of a canvas source: the source a save
+ *  stores, or why a save refuses it and what the server draws in its place
+ *  (`shown`: @mantle/diagram-templates unvouchedCanvas, a build with
+ *  nothing vouched for or a page that says why, never the source itself). */
+export type HonestCanvasOutcome =
+  { ok: true; source: string } | { ok: false; error: unknown; shown: () => string };
+
+/** Why the server draws no picture of a canvas the check could not read. */
+const NOT_CHECKED =
+  'This canvas could not be checked, so it is not drawn. Save it again to see why.';
+
+/**
+ * The one honest-source gateway: a save (storedCanvasSource) and every
+ * server-side picture of a canvas (@mantle/tools shownCanvasSource: a
+ * look, a poster, diagram_render's preview, an export) go through it, so
+ * what a picture shows is what a save stores, and a canvas a save refuses
+ * is never drawn from its own source (its layout may be the canonical one
+ * the runtime trusts while its data is not what a save would keep).
+ */
+export function honestCanvasOutcome(source: string): HonestCanvasOutcome {
+  try {
+    return { ok: true, source: honestCanvasSource(source) };
+  } catch (error) {
+    const reason = error instanceof InputError ? error.message : NOT_CHECKED;
+    return { ok: false, error, shown: () => unvouchedCanvas(source, reason) };
+  }
+}
+
 /** The source a save stores (createPresent, savePresentSource): the size
- *  limit first, before any check reads the source, then honestCanvasSource. */
+ *  limit first, before any check reads the source, then the honest pass
+ *  (honestCanvasOutcome); a source it refuses is refused with its words. */
 export function storedCanvasSource(source: string): string {
   assertCanvasSize(source);
-  return honestCanvasSource(source);
+  const out = honestCanvasOutcome(source);
+  if (!out.ok) throw out.error;
+  return out.source;
 }

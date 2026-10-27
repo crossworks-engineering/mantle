@@ -12,7 +12,7 @@
  */
 import { validateFlow, renderFlow, FLOW_VERSION } from './templates/flow.ts';
 import { validatePidInput, renderPidInput, PID_VERSION } from './templates/pid/index.ts';
-import { messageOf, type Checked } from './runtime/validate.ts';
+import { messageOf, said, type Checked } from './runtime/validate.ts';
 import type { Measurer } from './runtime/text.ts';
 import type { RenderResult } from './types.ts';
 import { themeSvg } from './runtime/theme.ts';
@@ -73,7 +73,7 @@ export function render(
       ok: false,
       template,
       errors: [
-        `template: '${template}' is not a template. Known: ${Object.keys(TEMPLATES).join(', ')}.`,
+        `template: ${said(template)} is not a template. Known: ${Object.keys(TEMPLATES).join(', ')}.`,
       ],
       warnings: [],
     };
@@ -120,7 +120,7 @@ function styleOf(data: unknown): number {
 
 export function validate(template: string, data: unknown): Checked<unknown> {
   if (!isTemplateName(template)) {
-    return { ok: false, errors: [`template: '${template}' is not a template.`], warnings: [] };
+    return { ok: false, errors: [`template: ${said(template)} is not a template.`], warnings: [] };
   }
   return TEMPLATES[template].validate(data);
 }
@@ -152,6 +152,7 @@ export {
   CanvasLimitsError,
   safeCropUrl,
   withHonestImageChecks,
+  unvouchedCanvas,
   withSealedCanvasAssets,
   type CanvasAssets,
   type CanvasCrop,

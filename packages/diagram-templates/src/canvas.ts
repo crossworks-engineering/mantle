@@ -33,6 +33,7 @@ import {
   type SealCheck,
 } from './templates/pid/check.ts';
 import { pidLimitsProblem } from './templates/pid/limits.ts';
+import { unvouched } from './templates/pid/unvouched.ts';
 
 /** `inline`: the runtime is inside the file (works anywhere, offline, from
  *  file://; about 110 KB). `import`: the file imports the runtime by name
@@ -683,6 +684,48 @@ export function withHonestImageChecks(html: string, holds: SealCheck): string {
   const out = canonicalPidCanvas(html, own);
   if (out === null) throw new CanvasShapeError();
   return out;
+}
+
+/**
+ * A canvas a save refuses, as the server draws it (a look, a poster, an
+ * export: @mantle/content drawing-seal shownCanvasSource), never its own
+ * source. One that claims the `pid` template and whose data reads as an
+ * object is built again as buildCanvas writes it from that data with
+ * nothing vouched for (templates/pid/unvouched.ts: every mark unchecked,
+ * no evidence, no provenance, no trust word in a label, no crops; data
+ * past a size the template holds a drawing to has its marks taken off and
+ * draws the template's error). Any other is a page that says `reason`
+ * and nothing else: no script, no data, no markup of the author's.
+ */
+export function unvouchedCanvas(html: string, reason: string): string {
+  if (claimsPidTemplate(html)) {
+    let data: unknown;
+    try {
+      data = readCanvasData(html);
+    } catch {
+      data = null;
+    }
+    if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+      return buildCanvas({
+        template: 'pid',
+        data: unvouched(data) as Record<string, unknown>,
+        mode: 'import',
+      });
+    }
+  }
+  return [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="utf-8">',
+    '<title>Not drawn</title>',
+    '</head>',
+    '<body>',
+    `<p>${esc(reason)}</p>`,
+    '</body>',
+    '</html>',
+    '',
+  ].join('\n');
 }
 
 /** Every assets block as this package writes it: as the data block, its
