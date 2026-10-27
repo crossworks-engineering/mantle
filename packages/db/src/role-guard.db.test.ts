@@ -636,7 +636,9 @@ describe.skipIf(!URL)('mantle_bridge_login demoted only (0330) until 0334 droppe
              and p.proname <> 'mantle_bridge_login'`
       )[0]!;
     const rest = await others();
-    await scratch!.migrateRest();
+    // 0334 alone: a later migration may change another function (0335 the
+    // presentation keys), which is not this one's to answer for.
+    await scratch!.migrateRest('0335_tree_rank_presentation');
     expect(await fact()).toBeNull();
     expect(await others()).toEqual(rest);
     // No function body calls it (its comments aside).
