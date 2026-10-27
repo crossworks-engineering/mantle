@@ -222,7 +222,7 @@ describe('extractDwfImages (sheet thumbnails)', () => {
     expect(images[0]!.essential).toBe(true);
 
     // A PARTIAL render (skipped sheet) must NOT replace the complete
-    // thumbnail set — completeness gate falls back.
+    // thumbnail set: completeness gate falls back.
     render.mockResolvedValueOnce({
       ok: true,
       value: {

@@ -126,9 +126,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Saskia's agency to a configured ai_workers row — TTS, vision,
   // summarizer.
   ...WORKER_DELEGATION_TOOLS,
-  // video_ingest — link (or stored video file) → audio clip + timestamped
-  // transcript page, via the media sidecar (compose profile `media`).
-  // Captions-first, STT fallback. Owner-only (`video-ingest` tool group).
+  // video_ingest: an uploaded video or audio file (its file id) to a
+  // timestamped transcript page; the parser service takes the audio out,
+  // speech to text does the rest. Uploads only, no links. Owner-only
+  // (`video-ingest` tool group).
   ...VIDEO_TOOLS,
   // Showing a stored image back to the user — the one image tool that turns
   // pixels into pixels rather than into words. The display half of the

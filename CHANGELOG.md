@@ -4,6 +4,36 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the parser service (Tika and the media sidecar go)
+
+- **Feature:** one core container, the parser (`mantle-parser`,
+  `server/parser`, [docs/parser.md](docs/parser.md)), reads every
+  untrusted file the brain receives: documents, spreadsheets and plans, CAD
+  drawings, images for thumbnails and vision, the audio of an uploaded
+  video. The web, api and worker processes never open such a file; they ask
+  through one client (`packages/files/src/parser-client.ts`) and get typed
+  errors. The guarantee is the container: one job at a time with the whole
+  memory (`PARSER_MAX_JOBS` 1, `PARSER_MEM_LIMIT` 2g, no swap past it), 1
+  CPU (`PARSER_CPUS`), a 1g tmpfs scratch space (`PARSER_TMP_SIZE`), an
+  internal network with no route out and no DNS past the stack.
+- **Removed:** Apache Tika (`mantle_tika`) and the media sidecar
+  (`mantle_media`, yt-dlp, ffmpeg), with their settings. anydoc in the
+  parser reads what Tika read (.doc, .ppt, .odt, .ods, .odp, .rtf, .epub,
+  the legacy sheets).
+- **`video_ingest` takes uploads only:** no links. Upload the file, then
+  `video_ingest` with its file id.
+- **A file the parser fails twice is terminal, across restarts and rolls:**
+  the count is kept on the node (`data.parser_failures`, migration 0337),
+  and the extractor records `document_unreadable`. Nothing re-drives it.
+- **Gaps:** legacy Visio `.vsd` text is no longer read (the extractor asks
+  for a `.vsdx` export); pictures inside `.xlsb` workbooks are no longer
+  extracted (`.xls` pictures never were).
+- **Rolling to it:** see [docs/update-prod.md](docs/update-prod.md),
+  "Rolling to the parser service": `PARSER_TOKEN` is written on the second
+  roll, `data/media/` (an operator's `cookies.txt`) is to be removed by
+  hand, and a hand-edited compose without the parser is refused before any
+  container changes.
+
 ## Unreleased: the Desk follows the login
 
 - **Feature:** the login's Desk (where each widget and desk icon sits, the

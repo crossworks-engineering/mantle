@@ -23,7 +23,8 @@ import { assertZipWithinLimits } from './zip-guard';
 /** Pictures from anydoc's document model: the formats it reads, less
  *  OpenDocument, whose zip is read directly (./ooxml-media.ts). The legacy
  *  sheets are not among them: anydoc's sheet reader carries no pictures, so a
- *  binary `.xls` gives none (Tika's /unpack did; docs/file-ingestion.md). */
+ *  binary `.xlsb` gives none (Tika's /unpack did; `.xls` pictures never came
+ *  out; docs/file-ingestion.md). */
 const ANYDOC_IMAGE_EXTS = new Set<string>([...ANYDOC_EXTS].filter((ext) => !ODF_EXTS.has(ext)));
 
 const ZIP_IMAGE_EXTS = new Set(['docx', 'pptx', 'xlsx', 'xlsm', 'epub', 'vsdx', ...ODF_EXTS]);

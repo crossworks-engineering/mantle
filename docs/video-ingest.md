@@ -44,7 +44,7 @@ text, no segments), and the reply says the text is machine-transcribed.
 
 The old names (`MEDIA_MAX_STT_DURATION_S`, `MEDIA_MAX_AUDIO_BYTES`,
 `MEDIA_MAX_VIDEO_BYTES`) are still read on a box that sets them and not the
-new ones. The parser's own body cap (`PARSER_MAX_UPLOAD_MB`, default 1024)
+new ones. The parser's own body cap (`PARSER_MAX_UPLOAD_MB`, default 512)
 bounds what it accepts.
 
 ## Failure honesty

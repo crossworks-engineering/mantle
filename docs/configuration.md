@@ -188,9 +188,9 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `VIDEO_INGEST_MAX_AUDIO_BYTES` | 20000000 | whole, above 0 | largest audio track video_ingest sends to speech to text (old name `MEDIA_MAX_AUDIO_BYTES`) |
 | `VIDEO_INGEST_MAX_FILE_BYTES` | 1073741824 | whole, above 0 | largest uploaded recording video_ingest reads (old name `MEDIA_MAX_VIDEO_BYTES`) |
 | `PARSER_PORT` | 8095 | whole, min 1, max 65535 | the parser listens here |
-| `PARSER_MAX_JOBS` | 2 | whole, at least 1 | parse jobs the parser runs at once |
+| `PARSER_MAX_JOBS` | 1 | whole, at least 1 | parse jobs the parser runs at once (each has the whole memory at 1) |
 | `PARSER_QUEUE_MAX` | 16 | whole, min 0 | requests that may wait for a parser job slot |
-| `PARSER_MAX_UPLOAD_MB` | 1024 | whole, at least 1 | largest file the parser takes, MB |
+| `PARSER_MAX_UPLOAD_MB` | 512 | whole, at least 1 | largest file the parser takes, MB (the streamed upload cap, MANTLE_MAX_UPLOAD_MB) |
 | `PARSER_CLIENT_CONCURRENCY` | 2 | whole, at least 1 | parser jobs one brain process sends at once |
 | `MANTLE_LOCAL_EMBED_BATCH` | 16 | whole, at least 1 | texts per request to the local embedder |
 | `MANTLE_LOCAL_EMBED_TIMEOUT_MS` | the caller | whole, at least 1000 | local embedder request timeout, ms (default PROVIDER_TIMEOUTS.localEmbed, @mantle/std) |

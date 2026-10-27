@@ -99,10 +99,6 @@ export const NET_TIMEOUTS = {
   openRouterData: 25_000,
   /** The toolsmith's web fetch. */
   webFetch: 25_000,
-  /** A Tika parse. */
-  tika: 60_000,
-  /** Tika's /version, the up probe. */
-  tikaProbe: 2_000,
   /** A simulated turn (Agent Studio sandbox, eval runs). */
   simTurn: 300_000,
   /** One nightly maintenance sweep. */

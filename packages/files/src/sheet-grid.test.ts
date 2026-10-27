@@ -23,7 +23,7 @@ describe('parseSheetToGrid', () => {
     expect(sheet!.rows[0]).toEqual(['Widget', 2, 9.5, true, '2026-01-15']);
   });
 
-  it('emits big sheets WHOLE — part-splitting is dead (Tables v2)', async () => {
+  it('emits big sheets WHOLE: part-splitting is dead (Tables v2)', async () => {
     const n = 10_005; // over the old 10k pagination ceiling
     const aoa: unknown[][] = [['Name', 'Value']];
     for (let i = 0; i < n; i++) aoa.push([`row-${i}`, i]);

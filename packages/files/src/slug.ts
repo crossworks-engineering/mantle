@@ -140,7 +140,7 @@ export const INGESTABLE_EXTS = new Set<string>([
   // AutoCAD DWG drawings: the parser's CAD tier converts and reads them
   // (packages/files/src/dwg.ts).
   'dwg',
-  // AutoCAD DXF drawings (the DWG interchange twin). Same CAD route — see
+  // AutoCAD DXF drawings (the DWG interchange twin). Same CAD route: see
   // ./dxf.ts. Deliberately NOT in TEXT_EXTS even though ASCII DXF is text:
   // raw group codes would index as garbage.
   'dxf',
@@ -157,7 +157,8 @@ export const INGESTABLE_EXTS = new Set<string>([
  *   - the extractor records an honest `unsupported_media` terminal skip
  *     instead of indexing the filename as if it were the document;
  *   - the disk-sync watcher stores these instead of silently skipping them;
- *   - the upload-cap rejections point media at link ingestion.
+ *   - the upload-cap rejections point a recording at a smaller upload, then
+ *     video_ingest with its file id (it takes uploaded files only).
  */
 export const MEDIA_EXTS = new Set<string>([
   // video
@@ -231,7 +232,7 @@ export function exportHintForExt(ext: string): string | undefined {
 
 /** Which reader handles a given file extension. Every route but `utf8` and
  *  `none` is a reader in the parser service. Used by the `parse_document`
- *  trace step's `parser` meta — pulled out as a pure helper so both call
+ *  trace step's `parser` meta: pulled out as a pure helper so both call
  *  sites (extractor + live conversational attachment) read from one source
  *  and the routing is unit-testable. `none` = no reader will try this ext
  *  (the caller will fall through to title fallback / `no_text_layer` skip). */

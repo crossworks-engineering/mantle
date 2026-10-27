@@ -23,16 +23,16 @@ private/internal/metadata addresses.
 ```
 user prompt ("read <docs url>, build me routing tools")
    └─→ Toolsmith
-         ├─ web_fetch        — read the API docs (parser HTML→text, paged)
-         ├─ api_key_refs     — find the {{secret:service/label}} vault ref
-         ├─ tool_group_ensure        — the INTEGRATION: service + base URL +
+         ├─ web_fetch        : read the API docs (parser HTML→text, paged)
+         ├─ api_key_refs     : find the {{secret:service/label}} vault ref
+         ├─ tool_group_ensure        : the INTEGRATION: service + base URL +
          │                            vault ref + where the credential goes
-         ├─ api_docs_set     — store the docs on the group (searchable file)
-         ├─ api_tool_create  — templates + input schema, with group_slug so the
+         ├─ api_docs_set     : store the docs on the group (searchable file)
+         ├─ api_tool_create  : templates + input schema, with group_slug so the
          │                     base URL + credential are inherited
-         ├─ api_tool_test    — real call through the agents' dispatcher
-         ├─ api_skill_set    — distil the usage know-how into the group's skill
-         └─ agent_grant_tool_group   — hand it to the assistant
+         ├─ api_tool_test    : real call through the agents' dispatcher
+         ├─ api_skill_set    : distil the usage know-how into the group's skill
+         └─ agent_grant_tool_group   : hand it to the assistant
 ```
 
 ## 0. The integration lives on the group

@@ -121,7 +121,7 @@ export type DwgGeometry = {
 };
 
 export type DwgRender = {
-  /** Which converter produced the DXF the registry and render came from —
+  /** Which converter produced the DXF the registry and render came from:
    *  'none' when the upload already WAS a DXF and ezdxf read it natively. */
   converter: 'dwg2dxf' | 'ezdwg' | 'none';
   /** DXF version of the converted document ("AC1027"). */
@@ -154,7 +154,7 @@ export type DwgRender = {
   geometryError: string | null;
   /** Model-space raster; null when the render step failed (registry-only). */
   png: Buffer | null;
-  /** Why the render step failed, when it did — the reply is still ok:true
+  /** Why the render step failed, when it did: the reply is still ok:true
    *  (the registry shipped), but the missing image is explainable. */
   renderError: string | null;
   /** Set when the PIXELS came from a different converter than the registry:
