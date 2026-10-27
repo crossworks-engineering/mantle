@@ -12,7 +12,7 @@ const MSPDI_NS = 'schemas.microsoft.com/project';
 /**
  * Does this look like a Project export?
  *
- * `.xml` is a container, like `.zip` — most XML is not a plan, and a false
+ * `.xml` is a container, like `.zip`: most XML is not a plan, and a false
  * positive would push an unrelated document through a task-grid mapper. So two
  * signals are required: a root element named `Project`, **and** either the MSPDI
  * namespace or a `<Tasks>` element. A bare `<Project>` root is not unique to
@@ -31,14 +31,14 @@ export function sniffMspdi(head: Buffer | string): boolean {
 }
 
 /**
- * Is the root element `Project`? A **decisive negative** — cheap to answer from
+ * Is the root element `Project`? A **decisive negative**: cheap to answer from
  * the first few hundred bytes, and a document whose root is not `Project` cannot
  * be MSPDI no matter what follows.
  *
  * Exists so a caller can rule a file out before paying to read it. The full
  * {@link sniffMspdi} cannot be used that way: its second signal is the MSPDI
  * namespace OR a `<Tasks>` element, and while the namespace sits on the root,
- * `<Tasks>` does not — in a real 25 MB export it appeared at byte 114,966.
+ * `<Tasks>` does not: in a real 25 MB export it appeared at byte 114,966.
  * Sniffing a head would therefore answer *false* for a namespace-less plan with
  * a long header, and the file would be skipped rather than parsed. A negative
  * here is safe to act on; a positive means "read the file and ask properly".
@@ -54,7 +54,7 @@ export function mspdiRootPresent(head: Buffer | string): boolean {
 const ROOT_RE = /<([A-Za-z_][\w.-]*:)?Project(\s|>|\/)/;
 const TASKS_RE = /<([A-Za-z_][\w.-]*:)?Tasks(\s|>)/;
 
-/** Bounded decode — never walks past the head, whatever the caller passes. */
+/** Bounded decode: never walks past the head, whatever the caller passes. */
 function text(head: Buffer | string): string {
   return (typeof head === 'string' ? head : head.subarray(0, 8192).toString('utf8')).slice(0, 8192);
 }

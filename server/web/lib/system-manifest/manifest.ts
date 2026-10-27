@@ -1143,9 +1143,10 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'video-ingest',
     name: 'Video ingest',
     description:
-      'Fetch a video by URL (or read a stored video file), extract the audio and produce a ' +
-      'searchable transcript page via the media sidecar. Owner-only: this is an outbound ' +
-      'fetch of an arbitrary URL — NEVER granted to the team responder.',
+      'Transcribe an uploaded video or audio file (by its file id): the parser service takes ' +
+      'its audio out, speech to text writes a searchable transcript page. No links: upload ' +
+      'the file first. Owner-only: every run is a paid transcription; never granted to the ' +
+      'team responder.',
     toolSlugs: ['video_ingest'],
   },
   {

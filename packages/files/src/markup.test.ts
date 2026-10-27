@@ -18,7 +18,7 @@ describe('htmlToText', () => {
 
   it('decodes named and numeric references, and leaves unknown names alone', () => {
     expect(htmlToText('<p>A &amp; B &#8211; C &#x2014; D &nbsp;E &bogus;</p>')).toBe(
-      'A & B – C — D E &bogus;',
+      'A & B \u2013 C \u2014 D E &bogus;',
     );
   });
 

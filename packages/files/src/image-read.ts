@@ -50,7 +50,7 @@ export async function thumbnailJpeg(bytes: Buffer, heic: boolean, maxDim: number
   const th = Math.max(1, Math.round(h * scale));
   const canvas = createCanvas(tw, th);
   const ctx = canvas.getContext('2d');
-  // JPEG has no alpha — composite transparent PNGs onto white rather than
+  // JPEG has no alpha: composite transparent PNGs onto white rather than
   // letting the encoder pick black.
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, tw, th);

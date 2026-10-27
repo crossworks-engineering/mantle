@@ -223,9 +223,11 @@ ssh mantle-prod 'cd ~/mantle && MANTLE_DUMP_STRICT=1 bash scripts/db-dump.sh'   
 ssh mantle-prod 'cd ~/mantle && docker compose pull'
 
 # ── 3. (VPS) roll the stack — migrate runs first, then app services recreate ──
-ssh mantle-prod 'cd ~/mantle && docker compose up -d --wait'
-#   Do NOT stop worker_telegram (see Gotchas). For a service rename/add/remove,
-#   see the topology-change gotcha — you need the bundle's compose + --remove-orphans.
+ssh mantle-prod 'cd ~/mantle && docker compose up -d --wait --remove-orphans'
+#   Do NOT stop worker_telegram (see Gotchas). --remove-orphans removes a
+#   container whose service the compose no longer defines (mantle_tika and
+#   mantle_media at the parser release). For a service rename/add/remove,
+#   see the topology-change gotcha: you need the bundle's compose too.
 
 # ── 3b. (VPS) roll the CLIENT stack — a SEPARATE compose file, easily missed ──
 ssh mantle-prod 'cd ~/mantle && docker compose -f docker-compose.client.yml --project-directory . pull \
@@ -1387,7 +1389,11 @@ This release replaces two sidecars with one core service: the parser
 (`mantle-parser`, container `mantle_parser`, [parser.md](parser.md)) reads
 every file the brain receives, in its own container with a memory limit and
 no route out. Apache Tika (`mantle_tika`) and the media sidecar
-(`mantle_media`, yt-dlp) are gone. No migration.
+(`mantle_media`, yt-dlp) are gone. One migration, 0337: the extractor keeps
+the parser's failure count on a file node (`data.parser_failures`), so a
+document that fails the parser twice stays terminal across restarts and
+rolls; its rollback is `packages/db/rollback/0337_parser_failures_key.revert.sql`
+(optional: the older image never writes the key).
 
 - **The roll pulls `<ns>/mantle-parser`** with the server image (every box
   runs it, no profile) and no longer pulls `apache/tika` or
@@ -1406,27 +1412,46 @@ no route out. Apache Tika (`mantle_tika`) and the media sidecar
   the `apache/tika` image is not this product's repository and stays until
   you remove it (`docker image ls apache/tika`, then `docker rmi` by name).
 
-- **`PARSER_TOKEN`.** The first roll to this release is run by the updater
-  of the release before it, which does not know the token: the parser
-  serves without one on its internal network until the next roll, whose
-  updater writes it into `.env` (`ensure_parser_token`) and recreates the
-  parser and the app containers with it. To have it at once, set it by
-  hand before the roll: `PARSER_TOKEN=$(openssl rand -hex 32)` in `.env`.
-  A fresh install (`scripts/install.sh`) writes one.
+- **Remove `data/media/`.** The media sidecar read `cookies.txt` there (its
+  link fetches' sign-in cookies, an operator credential). Nothing reads it
+  now; delete the directory by name so the credential does not linger on
+  the box (and in its backups):
+
+  ```bash
+  rm -r ~/mantle/data/media
+  ```
+
+- **A hand-edited compose is refused, not half-rolled.** The release reads
+  every file through the parser. A box whose `docker-compose.yml` the roll
+  cannot refresh (local edits, no baseline) and that does not define the
+  parser is refused before any container changes, with the old image tag
+  back in `.env` (`parser_compose_refusal` in the updater). Move the edits to
+  `docker-compose.override.yml`, run `scripts/compose-adopt.sh`, then roll.
+
+- **`PARSER_TOKEN` is written on the SECOND roll.** The first roll to this
+  release is run by the updater of the release before it, which does not
+  know the token: the parser serves without one on its internal network
+  until the next roll, whose updater writes it into `.env`
+  (`ensure_parser_token`) and recreates the parser and the app containers
+  with it. To have it on the first roll, set it by hand before it:
+  `PARSER_TOKEN=$(openssl rand -hex 32)` in `.env`. A fresh install
+  (`scripts/install.sh`) writes one.
 - **Settings that changed.** `MEDIA_SIDECAR_TOKEN`, `MEDIA_MEM_LIMIT`,
   `MEDIA_MAX_CONCURRENT`, `MEDIA_MAX_UPLOAD_BYTES` and `TIKA_URL` are no
   longer read; leave them or delete them. `MEDIA_MAX_STT_DURATION_S`,
   `MEDIA_MAX_AUDIO_BYTES` and `MEDIA_MAX_VIDEO_BYTES` are still read, as the
   old names of `VIDEO_INGEST_MAX_*`. A `media` left in `COMPOSE_PROFILES`
   names no service any more and is harmless. Settings > Services no longer
-  lists Media, and Helpers (a core box) is the PDF-export browser alone. New, all optional: `PARSER_MEM_LIMIT` (default
-  `2g`), `PARSER_CPUS` (default 2), `PARSER_MAX_JOBS`, `PARSER_QUEUE_MAX`,
-  `PARSER_MAX_UPLOAD_MB`, `PARSER_CLIENT_CONCURRENCY`.
+  lists Media, and Helpers (a core box) is the PDF-export browser alone.
+  New, all optional: `PARSER_MEM_LIMIT` (default `2g`, no swap past it),
+  `PARSER_CPUS` (default 1), `PARSER_MAX_JOBS` (default 1),
+  `PARSER_TMP_SIZE` (default `1g`), `PARSER_QUEUE_MAX`,
+  `PARSER_MAX_UPLOAD_MB` (default 512), `PARSER_CLIENT_CONCURRENCY`.
 - **What reads less than before.** Legacy Visio `.vsd` files are no longer
   read (Tika did): the extractor asks for a `.vsdx` export. Pictures inside
-  `.xls` and `.xlsb` workbooks are no longer extracted (their text and
-  grids still read). `video_ingest` no longer fetches links: download the
-  video and upload the file. Everything else Tika read (.doc, .ppt, .odt,
+  `.xlsb` workbooks are no longer extracted (their text and grids still
+  read; `.xls` pictures never were). `video_ingest` no longer fetches
+  links: upload the file, then `video_ingest` with its file id. Everything else Tika read (.doc, .ppt, .odt,
   .ods, .odp, .rtf, .epub, the legacy sheets) is read by anydoc in the
   parser.
 - **After the roll:** the health screen (with an owner UI release that
@@ -1436,13 +1461,14 @@ no route out. Apache Tika (`mantle_tika`) and the media sidecar
   parser twice records `document_unreadable` rather than looping.
 - **Rolling back below it:** the older compose brings Tika (and the media
   sidecar, if its profile is still set) back; `PARSER_TOKEN` in `.env` is
-  ignored, and a `mantle_parser` container is removed as an orphan.
+  ignored, and a `mantle_parser` container is removed as an orphan (the
+  rollback command below carries `--remove-orphans`).
 
 ## Rollback
 
 ```bash
 # (VPS) pin MANTLE_IMAGE_TAG to the previous version in .env, then:
-ssh mantle-prod 'cd ~/mantle && docker compose pull && docker compose up -d --wait'
+ssh mantle-prod 'cd ~/mantle && docker compose pull && docker compose up -d --wait --remove-orphans'
 # …and set it back to `latest` once a forward fix ships.
 ```
 

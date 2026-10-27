@@ -603,16 +603,16 @@ export class UploadTooLargeError extends Error {
 }
 
 // The one error answer (A10 part 2, @mantle/std domain-errors.ts): what the
-// upload route answered by hand. A rejected video gets a pointer to the path
-// that DOES work: media is meant to enter by link (video_ingest), not by
-// upload.
+// upload route answered by hand. A rejected recording gets the path that
+// works: a file under the cap (the audio track alone is far smaller), then
+// video_ingest with its file id. video_ingest takes uploaded files only.
 defineDomainError(UploadTooLargeError, {
   reason: 'the upload is over its cap; the message says the cap',
   status: 413,
   body: (e) => {
     const mediaHint =
       e.filename && MEDIA_EXTS.has(extOf(e.filename))
-        ? ' For video, ask the assistant to ingest the link instead.'
+        ? ' For a recording, upload a file under the cap (the audio track alone is much smaller), then ask the assistant to transcribe it (video_ingest with its file id).'
         : '';
     return { error: `${e.message}.${mediaHint}`, maxUploadBytes: e.maxBytes };
   },

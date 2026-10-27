@@ -52,12 +52,12 @@ CROP_BUDGET_S = 150
 
 # ── CAD render page ──────────────────────────────────────────────────────
 # BOTH CAD renderers (ezdxf for DWG/DXF, ezdwf for DWF) floor every stroke at
-# a minimum width in POINTS — 1/72 inch of the FIGURE. So the page size, not
+# a minimum width in POINTS: 1/72 inch of the FIGURE. So the page size, not
 # the dpi, sets how heavy a line looks relative to the drawing: dpi adds
 # pixels to the same picture, and a bold blob at 600 dpi is a sharper bold
 # blob. On the libraries' small default pages a real hairline came out around
 # 5x too heavy and small text (line numbers, title-block dates, general notes)
-# filled in solid and unreadable — the whole reason a drawing goes to a vision
+# filled in solid and unreadable: the whole reason a drawing goes to a vision
 # model. 33 inches on the long edge (about A0) puts the floor back under a
 # real pen width. SQUARE so the same page serves landscape and portrait
 # sheets alike; `bbox_inches="tight"` then crops it to the drawing's own
@@ -72,10 +72,10 @@ SAVEFIG_OPTS = {"facecolor": "white", "bbox_inches": "tight", "pad_inches": 0.0}
 def cad_page_inches(layout) -> tuple[float, float]:
     """Figure size for a DXF layout: the drawing's own aspect, with its long
     edge at RENDER_PAGE_INCHES. Falls back to a square when the extents cannot
-    be read — a rendered drawing with wasted margin beats no drawing."""
+    be read: a rendered drawing with wasted margin beats no drawing."""
     ratio = 1.0
     try:
-        from ezdxf import bbox  # noqa: PLC0415 — child-only import
+        from ezdxf import bbox  # noqa: PLC0415 (child-only import)
 
         ext = bbox.extents(layout, fast=True)
         if ext.has_data and ext.size.x > 0 and ext.size.y > 0:
@@ -96,17 +96,17 @@ def png_is_blank(path: str) -> bool:
     A renderer that paints nothing does not raise: matplotlib saves an empty
     canvas exactly like a full one, so "success" alone never meant the drawing
     is actually IN the image. This is the only cheap check that can tell the
-    difference, and a blank page is worse than no page — it looks like content
+    difference, and a blank page is worse than no page: it looks like content
     to every surface downstream and answers no question.
 
     Measured on a thumbnail, so a 30 MP render costs a fixed fraction of a
     second. The threshold is deliberately far from both observed extremes: a
     real P&ID renders 8-14% ink, and the blank one that started this had a
     single non-white pixel out of three million (0.00003%). A probe that
-    cannot run returns False — never fail a good render on a broken probe.
+    cannot run returns False: never fail a good render on a broken probe.
     """
     try:
-        from PIL import Image  # noqa: PLC0415 — probe-only import
+        from PIL import Image  # noqa: PLC0415 (probe-only import)
 
         with Image.open(path) as im:
             grey = im.convert("L")
@@ -129,7 +129,7 @@ def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
       - files and fallback names are keyed to the sheet's TRUE index in the
         set, so a failed sheet shifts nothing and no path is ever reused;
       - the sheet is drawn on OUR page (RENDER_PAGE_INCHES), not ezdwf's own
-        small figure — the stroke floor is a width in points, so the page is
+        small figure: the stroke floor is a width in points, so the page is
         what decides legibility (see the constant);
       - the output is pixel-capped: when page × dpi would exceed
         MAX_RENDER_PIXELS the dpi is scaled down for that sheet instead of
@@ -141,7 +141,7 @@ def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
 
     Exits non-zero only when the whole file is unreadable; a single bad sheet
     is counted in `skipped` and the rest of the set still ships."""
-    import ezdwf  # noqa: PLC0415 — child-only import; absent on pre-CAD images
+    import ezdwf  # noqa: PLC0415 (child-only import; absent on pre-CAD images)
 
     import matplotlib  # noqa: PLC0415
 
@@ -177,7 +177,7 @@ def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
             # POINTS, so on that page a hairline landed ~5x too fat and small
             # text went solid. Proved it is the floor and not the resolution:
             # rendering the same sheet with linewidth_scale 1.0, 0.35 and 0.2
-            # gave BYTE-IDENTICAL output — every stroke already sits on the
+            # gave BYTE-IDENTICAL output: every stroke already sits on the
             # floor, so scaling them cannot thin anything. RENDER_PAGE_INCHES
             # is the fix; `plot(ax=...)` is ezdwf's supported seam for it.
             #
@@ -238,13 +238,13 @@ def open_cad(src: str, outdir: str):
     with open(src, "rb") as f:
         head = f.read(6)
     if not re.match(rb"^AC1\d{3}$", head):
-        # Not DWG bytes — try native DXF. ezdxf.readfile handles both ASCII
+        # Not DWG bytes: try native DXF. ezdxf.readfile handles both ASCII
         # and binary DXF; recover.readfile mops up files a strict parse
         # rejects (the common state of hand-edited or third-party exports).
         doc = _try_parse(src)
         if doc is None:
             try:
-                from ezdxf import recover  # noqa: PLC0415 — child-only import
+                from ezdxf import recover  # noqa: PLC0415 (child-only import)
 
                 doc, _auditor = recover.readfile(src)
             except Exception:
@@ -270,10 +270,10 @@ def open_cad(src: str, outdir: str):
             pass  # tier 2 decides
     if doc is None:
         # Tier 2 guarded too: the import (pre-DWG image), read() (unsupported
-        # file) and export_dxf() can all raise — every failure takes the ONE
+        # file) and export_dxf() can all raise: every failure takes the ONE
         # curated exit instead of a raw traceback.
         try:
-            import ezdwg  # noqa: PLC0415 — fallback tier; absent on pre-DWG images
+            import ezdwg  # noqa: PLC0415 (fallback tier; absent on pre-DWG images)
 
             dxf_b = os.path.join(outdir, "b.dxf")
             ezdwg.read(src).export_dxf(dxf_b)
@@ -299,25 +299,25 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     Input sniff decides the road in:
       - DWG magic (AC1xxx) → the conversion chain, decided by the 2026-08-31
         bake-off on real drawings:
-          1. `dwg2dxf` (LibreDWG) — a subprocess call, never a linked library
+          1. `dwg2dxf` (LibreDWG): a subprocess call, never a linked library
              (GPLv3; the process boundary is the licence boundary);
           2. `ezdwg.export_dxf` (MIT) when dwg2dxf's output fails ezdxf's
-             parse — dwg2dxf 0.13.3 emits structurally invalid DXF on some
+             parse: dwg2dxf 0.13.3 emits structurally invalid DXF on some
              real files, and ezdwg reads exactly those.
-      - anything else → tried as native DXF (ASCII or binary — ezdxf reads
+      - anything else → tried as native DXF (ASCII or binary: ezdxf reads
         both; `recover` mops up malformed files) and reported as converter
         "none". No format gate beyond "ezdxf can read it": a junk upload
         fails the read and takes the same curated exit as a DWG no converter
         can crack.
     Downstream of DXF there is ONE path: ezdxf for both registry and render
-    (its drawing add-on expands INSERT blocks — ezdwg's own plot() does not,
+    (its drawing add-on expands INSERT blocks: ezdwg's own plot() does not,
     which is why it renders nothing usable on block-heavy drawings).
 
     The registry is capped (texts/layers/text length) so the reply stays a
     few MB whatever the drawing holds; the render carries the same measured
     output-pixel guard as the DWF worker. Exits non-zero only when no road
     produces a parseable DXF document."""
-    import ezdxf  # noqa: PLC0415 — child-only import; absent on pre-DWG images
+    import ezdxf  # noqa: PLC0415 (child-only import; absent on pre-DWG images)
 
     import matplotlib  # noqa: PLC0415
 
@@ -342,14 +342,14 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
         success, the error string on failure (with any partial PNG removed).
 
         A BLANK output counts as a failure. Nothing here raises when a drawing
-        paints nothing — matplotlib saves an empty canvas as happily as a full
-        one — so without the ink probe the worker reported success, the app
+        paints nothing (matplotlib saves an empty canvas as happily as a full
+        one), so without the ink probe the worker reported success, the app
         stored a white rectangle, and the only clue was its byte size."""
         try:
             msp_layout = document.modelspace()
             # Page shaped to the DRAWING, long edge pinned to the page size.
-            # A square page would work — equal aspect centres the drawing in it
-            # — but a landscape P&ID would then carry ~35% white margin into
+            # A square page would work (equal aspect centres the drawing in it),
+            # but a landscape P&ID would then carry ~35% white margin into
             # every vision call. `bbox.extents(fast=True)` is ~0.6s on a 9.7k
             # entity drawing and uses cached bounding boxes; any failure falls
             # back to the square, which is wasteful but never wrong.
@@ -358,7 +358,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
             ax.set_axis_off()
             # ACI colour 7 has NO fixed colour: ezdxf resolves it against the
             # layout BACKGROUND, and the default layout is dark, so 7 comes out
-            # WHITE — invisible on matplotlib's white page. Overriding the
+            # WHITE: invisible on matplotlib's white page. Overriding the
             # RenderContext's own properties does not help either: draw_layout()
             # rebuilds them from the layout unless they are passed in, which
             # silently discards the override. Drawings whose entities carry
@@ -370,14 +370,14 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
             # `adjust_figure=False` keeps the page we asked for: the backend
             # otherwise rescales the figure to the drawing's aspect, which on
             # the old 16×10 page left ~7×4.8in. Page size is what decides
-            # stroke weight — ezdxf floors every stroke at a width in POINTS,
+            # stroke weight: ezdxf floors every stroke at a width in POINTS,
             # so a small page makes hairlines ~5× too heavy and fills small
             # text in solid. dpi cannot fix that; only a bigger page can.
             Frontend(
                 RenderContext(document), MatplotlibBackend(ax, adjust_figure=False)
             ).draw_layout(msp_layout, finalize=True, layout_properties=lp)
             # The page is fixed, so the output-pixel cap maps straight to a dpi
-            # ceiling — clamp BEFORE the first savefig instead of paying an
+            # ceiling: clamp BEFORE the first savefig instead of paying an
             # over-budget render only to redo it smaller. Conservative: it
             # assumes the full square page, while the tight bbox below crops to
             # the drawing's own aspect. The measured guard stays as backstop.
@@ -389,7 +389,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
                 pixels = int.from_bytes(head[16:20], "big") * int.from_bytes(head[20:24], "big")
                 if pixels > max_pixels:
                     # Nested guard: a failed DOWNSCALE must not delete the good
-                    # first render — only a genuinely unusable output is removed.
+                    # first render: only a genuinely unusable output is removed.
                     try:
                         fig.savefig(
                             png,
@@ -423,11 +423,11 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
         # The registry parsed but the RENDER failed: dwg2dxf can emit a DXF
         # that parses yet is missing block DEFINITIONS the renderer needs
         # (anonymous "*U" blocks on real drawings). ezdwg's own export keeps
-        # them — retry the render ONCE from its DXF. The registry above stays
+        # them: retry the render ONCE from its DXF. The registry above stays
         # from the first parse (already extracted, caps applied); only the
         # pixels change provenance, recorded as `render_converter`.
         try:
-            import ezdwg  # noqa: PLC0415 — fallback tier; absent on pre-DWG images
+            import ezdwg  # noqa: PLC0415 (fallback tier; absent on pre-DWG images)
 
             dxf_b = os.path.join(outdir, "b.dxf")
             if not os.path.isfile(dxf_b):
@@ -441,7 +441,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
                 else:
                     render_error = f"{render_error} (ezdwg render retry: {retry_error})"[:500]
         except Exception:
-            pass  # keep the original render_error — the retry is best-effort
+            pass  # keep the original render_error: the retry is best-effort
 
     index["render_error"] = render_error
 
@@ -576,7 +576,7 @@ def dwg_registry(doc, converter) -> dict:
                 continue
         elif etype == "INSERT":
             # Block ATTRIBs carry the real content on attribute-driven
-            # drawings (title blocks, circuit/line-number tags) — a top-level
+            # drawings (title blocks, circuit/line-number tags): a top-level
             # TEXT/MTEXT sweep alone misses hundreds of values per file.
             # Each attrib also lands in `blocks` keyed by its TAG, one record
             # per INSERT: on circuitized P&IDs a LineNumber block holds

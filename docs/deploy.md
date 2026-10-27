@@ -71,7 +71,7 @@ matter are per-box settings in the stack's `.env`:
 | ----------------- | ------------ | ------- | ----------------------------------------------------------------------------------------------- |
 | `WEB_MEM_LIMIT`   | `mantle_web` | `3g`    | the box has RAM to spare (16 GB: `6g`); every `pnpm maintain` run executes inside this container |
 | `API_MEM_LIMIT`   | `mantle_api` | `3g`    | large Tables workbooks next to heavy extraction (16 GB: `4g`)                                    |
-| `PARSER_MEM_LIMIT` | `mantle_parser` | `2g`    | big drawing sets or very large documents; a document past it is killed inside the parser and recorded, never a brain process (`PARSER_CPUS`, default 2, sets its CPU share) |
+| `PARSER_MEM_LIMIT` | `mantle_parser` | `2g`    | big drawing sets or very large documents; a document past it is killed inside the parser and recorded, never a brain process (`PARSER_CPUS`, default 1, sets its CPU share; one job at a time, no swap past the limit) |
 
 Until 2026-09-24 the web cap was a fixed 1.5g: four maintenance runs at once
 OOM-restarted a pilot's web tier. On a 4 GB box the higher defaults move a
