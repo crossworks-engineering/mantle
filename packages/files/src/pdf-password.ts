@@ -6,8 +6,7 @@
  * with each vaulted password until one opens the document.
  *
  * pdfjs is the tool here that takes a password; it is a direct dep, opened
- * through `withPdf` like every other pdfjs read in this package (a text-only
- * read, so it does not take the decode slot).
+ * through `withPdf` like every other pdfjs read in this package.
  *
  * Returns:
  *  - { ok: true, text }              — opened and got a text layer
@@ -37,7 +36,7 @@ export async function extractPdfTextWithPassword(
     // function's most common outcome, and it used to leak a worker each time.
     return await withPdf(
       bytes,
-      { mode: 'text', password, useSystemFonts: true },
+      { password, useSystemFonts: true },
       async ({ doc }): Promise<PdfPasswordResult> => {
         const numPages = doc.numPages;
         const parts: string[] = [];

@@ -29,6 +29,7 @@ export { parseDocumentBytes } from './parse';
 export {
   ParserError,
   isParserError,
+  isParserUnavailable,
   parserText,
   parserImages,
   parserGrid,

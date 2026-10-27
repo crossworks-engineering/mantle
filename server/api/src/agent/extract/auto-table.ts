@@ -7,7 +7,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { extOf, isParserError, parserGrid } from '@mantle/files';
+import { extOf, isParserError, isParserUnavailable, parserGrid } from '@mantle/files';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
 import { recordIngest, step } from '@mantle/tracing';
 import { createTable, tableDocFromGrid } from '@mantle/content';
@@ -147,16 +147,13 @@ export async function maybeAutoTableSpreadsheet(
     // (`return`), the text pass then succeeded against a recovered service,
     // and the node completed WITHOUT its registry table, permanently and
     // silently. Rethrow (flagged for the call site) so the whole extract
-    // errors and the pg-boss retry heals all passes together. A terminal
-    // parser refusal (the same bytes refused twice) is not retried: the text
-    // pass records it as document_unreadable.
-    if (isParserError(err) && err.terminal) return;
-    // The parser busy or restarting, or a first refusal of these bytes: the
-    // whole extract is retried (gates.ts), any format.
-    if (isParserError(err) && err.retryable) throw err;
-    // The reader's own verdict (`failed`: no DXF came out of the drawing, a
-    // workbook that is not one): the same every time, so no retry; the text
-    // pass records it.
+    // errors and the pg-boss retry heals all passes together.
+    // The parser busy or restarting: the whole extract is retried (gates.ts),
+    // any format.
+    if (isParserUnavailable(err)) throw err;
+    // A verdict on the document (too large, a timeout, a crash, a reader's
+    // `failed`): no retry from here. A crash or a size refusal counts
+    // against the bytes, so the text pass meets it too and records it.
     if (isParserError(err)) return;
     if (fileExt === 'dwg' || fileExt === 'dxf') {
       const e = err instanceof Error ? err : new Error(String(err));

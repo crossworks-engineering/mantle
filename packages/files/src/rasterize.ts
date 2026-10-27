@@ -9,8 +9,8 @@
  *
  * Bounded on every axis that can blow the process up: the document is opened
  * through `withPdf`, so pdfjs drops an embedded image that declares more than
- * `PDF_MAX_IMAGE_PIXELS` instead of decoding it and only one PDF decodes in
- * the process at a time, and each page's canvas is held to
+ * `PDF_MAX_IMAGE_PIXELS` instead of decoding it, and each page's canvas is
+ * held to
  * `MAX_RENDER_PIXELS` by lowering that page's scale. One page renders at a
  * time, so one canvas is alive at a time.
  *
@@ -19,9 +19,8 @@
  * too large, like a page past the canvas cap. (A page with other content
  * beside the dropped image still renders, without it.)
  *
- * Kept as a separate entry point (`@mantle/files/rasterize`) with the heavy
- * deps behind dynamic imports, so they load only when a textless PDF actually
- * shows up, and the native dep stays out of the Next.js (server/web) graph.
+ * Runs in the parser service (server/parser) only, whose container memory
+ * limit and job deadline stand behind these bounds.
  */
 
 import { createRequire } from 'node:module';
@@ -29,7 +28,6 @@ import path from 'node:path';
 import {
   declaresOversizeImage,
   isPdfLimitError,
-  PDF_JOB_WAIT_MS,
   PDF_MAX_IMAGE_PIXELS,
   PdfLimitError,
   withPdf,
@@ -150,20 +148,18 @@ function drawsSomething(ops: OperatorList, OPS: Record<string, number>): boolean
  * `MAX_RENDER_PIXELS` at that scale renders at the largest scale that fits.
  * Throws on an unrenderable / corrupt PDF, a `PdfLimitError` when the file is
  * over `PDF_MAX_BYTES` or every page asked for was too large to render (past
- * the canvas cap, or holding an image past `PDF_MAX_IMAGE_PIXELS`), and a
- * `PdfBusyError` (retryable) when another PDF held the decode slot past
- * `waitMs`. Callers wrap this in a trace step and treat a throw or an empty
- * result as "couldn't OCR".
+ * the canvas cap, or holding an image past `PDF_MAX_IMAGE_PIXELS`). Callers
+ * wrap this in a trace step and treat a throw or an empty result as
+ * "couldn't OCR".
  */
 export async function rasterizePdfToPngs(
   bytes: Buffer,
-  opts?: { maxPages?: number; viewportScale?: number; waitMs?: number },
+  opts?: { maxPages?: number; viewportScale?: number },
 ): Promise<RasterPage[]> {
   const maxPages = Math.max(1, opts?.maxPages ?? DEFAULT_MAX_OCR_PAGES);
   const wanted = opts?.viewportScale ?? 2.0;
-  const waitMs = opts?.waitMs ?? PDF_JOB_WAIT_MS;
   const { createCanvas } = await import('@napi-rs/canvas');
-  return withPdf(bytes, { ...renderParams(), waitMs }, async ({ pdfjs, doc }) => {
+  return withPdf(bytes, renderParams(), async ({ pdfjs, doc }) => {
     // Only a file that declares an over-cap image pays for the extra operator
     // list below; every other PDF renders exactly as before. Read here, after
     // `withPdf` has refused a file over `PDF_MAX_BYTES`, so such a file is

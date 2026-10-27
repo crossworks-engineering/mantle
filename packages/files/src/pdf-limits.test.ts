@@ -25,14 +25,7 @@ import {
   type FixtureImage,
 } from './pdf-fixtures.test-helper';
 import { extractPdfImages, parsePdf, pdfPageCount } from './pdf';
-import { extractPdfTextWithPassword } from './pdf-password';
-import {
-  countOversizeImages,
-  isPdfBusyError,
-  PDF_MAX_BYTES,
-  PDF_MAX_IMAGE_PIXELS,
-  withPdf,
-} from './pdf-open';
+import { countOversizeImages, PDF_MAX_BYTES, PDF_MAX_IMAGE_PIXELS, withPdf } from './pdf-open';
 import {
   declaresOversizeImage,
   isPdfLimitError,
@@ -290,6 +283,25 @@ describe('a page whose only content is an image over the cap', () => {
     expect(declaresOversizeImage(onlyMid)).toBe(false);
     expect(declaresOversizeImage(onlyMid, 30_000_000)).toBe(true);
   });
+
+  it("does not count an image's soft mask as an image of its own", () => {
+    // One big transparent photo: the photo (object 3) and its alpha, an
+    // image of the same size that only the photo's /SMask names (object 4).
+    // Counted twice, a brochure with one such photo read as a scan.
+    const pdf = assemblePdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [] /Count 0 >>',
+      [
+        '<< /Type /XObject /Subtype /Image /Width 6000 /Height 6000 /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask 4 0 R /Length 1 >>',
+        Buffer.alloc(1),
+      ],
+      [
+        '<< /Type /XObject /Subtype /Image /Width 6000 /Height 6000 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>',
+        Buffer.alloc(1),
+      ],
+    ]);
+    expect(countOversizeImages(pdf, 30_000_000)).toBe(1);
+  });
 });
 
 describe('the pictures pass and a scan page over its own cap', () => {
@@ -343,73 +355,17 @@ describe('the size limit', () => {
   });
 });
 
-describe('one decode at a time', () => {
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  it('serialises two concurrent decodes, in arrival order', async () => {
-    const pdf = helveticaPdf();
-    let inside = 0;
-    let most = 0;
-    const order: string[] = [];
-    const hold = (name: string) =>
-      withPdf(pdf, {}, async () => {
-        inside++;
-        most = Math.max(most, inside);
-        order.push(`${name} in`);
-        await sleep(40);
-        order.push(`${name} out`);
-        inside--;
-      });
-    await Promise.all([hold('a'), hold('b'), hold('c')]);
-    expect(most).toBe(1);
-    expect(order).toEqual(['a in', 'a out', 'b in', 'b out', 'c in', 'c out']);
-  });
-
-  it('serialises the real passes too, and both still read', async () => {
+describe('the passes side by side', () => {
+  // One job per process in the parser: no process-wide decode slot any more
+  // (the container's memory limit is the bound). Two passes on one document
+  // in one process still both read.
+  it('reads the pictures and renders the pages at once', async () => {
     const pdf = imagePagePdf({ caption: 'Figure 9: both', images: [gradient(320, 240)] });
     const [images, pages] = await Promise.all([extractPdfImages(pdf), rasterizePdfToPngs(pdf)]);
     expect(images).toHaveLength(1);
     expect(pages).toHaveLength(1);
-  });
-
-  it('gives up with a retryable PdfBusyError past the wait, and lets the slot go after', async () => {
-    const pdf = helveticaPdf();
-    let let_go!: () => void;
-    const held = withPdf(pdf, {}, () => new Promise<void>((r) => (let_go = r)));
-    await sleep(20);
-    const err = await withPdf(pdf, { waitMs: 30 }, async () => 'ran').catch((e: unknown) => e);
-    expect(isPdfBusyError(err)).toBe(true);
-    expect(isPdfLimitError(err)).toBe(false);
-    expect(await rasterizePdfToPngs(pdf, { waitMs: 30 }).catch(isPdfBusyError)).toBe(true);
-    // Text-only reads do not take the slot, so they are not held up.
-    expect(await parsePdf(pdf)).toContain('Hello Mantle');
+    expect(await parsePdf(pdf)).toContain('Figure 9');
     expect(await pdfPageCount(pdf)).toBe(1);
-    expect(await extractPdfTextWithPassword(pdf, '')).toMatchObject({ ok: true });
-    let_go();
-    await held;
-    expect(await withPdf(pdf, { waitMs: 30 }, async () => 'ran')).toBe('ran');
-  });
-
-  it('stops a decode that holds the slot past its limit, and lets the slot go', async () => {
-    const pdf = helveticaPdf();
-    let opened: { getPage(n: number): Promise<unknown> } | undefined;
-    const err = await withPdf(pdf, { holdMs: 50 }, ({ doc }) => {
-      opened = doc;
-      return new Promise<never>(() => {}); // never settles
-    }).catch((e: unknown) => e);
-    expect(isPdfBusyError(err)).toBe(true);
-    expect((err as Error).message).toMatch(/ran past/);
-    // The loading task was destroyed under the stuck caller (pdfjs then
-    // throws on any use of the document, synchronously or not).
-    const use = Promise.resolve().then(() => opened!.getPage(1));
-    expect(
-      await use.then(
-        () => 'open',
-        () => 'destroyed',
-      ),
-    ).toBe('destroyed');
-    // And the slot is free for the next decode at once.
-    expect(await withPdf(pdf, { waitMs: 30 }, async () => 'ran')).toBe('ran');
   });
 });
 

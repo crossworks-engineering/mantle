@@ -186,6 +186,11 @@ export async function runJob(
 export function failureOf(err: unknown): JobFailure {
   if (err instanceof JobFailure) return err;
   if (isDocumentTooLarge(err)) return new JobFailure('too_large', err.message);
+  // The PDF readers' size verdict (pdf-open.ts: over 256 MB, or every page
+  // too large to render).
+  if (err instanceof Error && err.name === 'PdfLimitError') {
+    return new JobFailure('too_large', err.message);
+  }
   const e = err as { code?: unknown; name?: unknown; message?: unknown } | null;
   if (e?.code === 'unsupported' || e?.name === 'UnsupportedFormatError') {
     return new JobFailure('unsupported', String(e?.message ?? 'unsupported format'));
