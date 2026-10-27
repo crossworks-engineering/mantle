@@ -137,6 +137,13 @@ describe('parser client', () => {
     }
   });
 
+  it('reads a bare 503 (a stand-in or proxy, no envelope) as unavailable', async () => {
+    reply = { status: 503 };
+    const err = await failure(parserText(doc(), 'docx'));
+    expect(err).toMatchObject({ code: 'unavailable', retryable: true, terminal: false });
+    expect(err.message).toContain('(parser, HTTP 503)');
+  });
+
   it('reads a refused connection as unavailable', async () => {
     const url = process.env.PARSER_URL;
     // A port nothing listens on: bind one, take its number, close it.

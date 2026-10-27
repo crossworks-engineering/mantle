@@ -516,7 +516,10 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
         const o = await viaMcp('member', 'sheet_build', sheet(rows));
         const home = own ?? (await privateWs(mem));
         const fileId = await landsFor(mode, 'sheet_build mcp member', o, home!);
-        const text = await f.parseDocumentBytes(await fileBytes(fileId), 'xlsx');
+        // The test reads the workbook with the parser's own reader: no
+        // parser service runs here.
+        const { readDocumentText } = await import('@mantle/files/readers/document');
+        const text = await readDocumentText(await fileBytes(fileId), 'xlsx');
         for (const r of rows) expect(text).toContain(r.item);
         expect(text.match(new RegExp(`${tag}-\\w+`, 'g'))?.sort()).toEqual(
           rows.map((r) => r.item).sort(),
