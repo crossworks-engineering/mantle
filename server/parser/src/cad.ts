@@ -283,6 +283,7 @@ async function ffprobeDuration(input: string, workdir: string): Promise<number |
   const ended = await runGroup(
     'ffprobe',
     [
+      '-hide_banner',
       '-v',
       'error',
       ...MEDIA_INPUT_GUARDS,
@@ -325,6 +326,7 @@ export async function extractAudio(
   const ended = await runGroup(
     'ffmpeg',
     [
+      '-hide_banner',
       '-nostdin',
       '-y',
       ...MEDIA_INPUT_GUARDS,
