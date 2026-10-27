@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "b9b6a5d80f9202888c245d4d274b195a388060f0ece431956d4960199bdaa65c",
+  "sha256": "f859bcb73ddb15e2c6215da4ed992974c33f80172458b754a22d991f709a8708",
   "names": [
    "tree_list",
    "search",
@@ -189,6 +189,13 @@
    "present_export",
    "present_delete",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -202,7 +209,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "10e950920ca64061a4144e378e5ce6d4b161f138e9677249ad11790d0f1a93eb",
+  "sha256": "c6ed7a5322ff40bb6a0f7934cc83e1b6440f9f7bf0db9bb1e44973750c3342c7",
   "names": [
    "tree_list",
    "search",
@@ -449,6 +456,13 @@
    "present_export",
    "present_delete",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -507,7 +521,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "51f18e64d618998981b01e095c30c2ff430061944fe75e43c909a06dbdf13d4a",
+  "sha256": "55c4d29148b712bc02ff15ca4d7190b0118db00af18923a58b84cfdd78a8baba",
   "names": [
    "tree_list",
    "search",
@@ -736,6 +750,13 @@
    "present_export",
    "present_delete",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -775,7 +796,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "4e55aaf8d7672697763695f4f306c9b388e718e522d46fca6e145a47df6b5dd9",
+  "sha256": "cbb7b289ab78c9d292908cb1abb7946f90c6a0885bbba999b35cbf991e1d045a",
   "names": [
    "tree_list",
    "search",
@@ -991,6 +1012,13 @@
    "present_export",
    "present_delete",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1026,7 +1054,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "626301d5154f42e17dc3d5485bc771ff2cb450eca1e0bff48d925010b79ca857",
+  "sha256": "163ca4fdfd85e3995a2fed33edf5528a9b08dfb8f54fe2f6c26125aac4031fca",
   "names": [
    "tree_list",
    "search",
@@ -1184,6 +1212,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -1195,7 +1230,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "42efd635ff5b93b047a45e28a7344143082747fe5672d416073efefe91581764",
+  "sha256": "d6b8133ebde782aa36e260ac2bef74eb35e8e38bb2efb5f764ea39d45361a5f0",
   "names": [
    "tree_list",
    "search",
@@ -1373,6 +1408,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1405,7 +1447,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "687c42f5c909deed41b18a00fd300b1b871d3467724d4d6b61f3fde0f3e298d2",
+  "sha256": "adc0d0c3d9427868a676ea7bcb9540ee68a75cbf306ada770f1e1b47838c1c71",
   "names": [
    "tree_list",
    "search",
@@ -1579,6 +1621,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1605,7 +1654,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "19939077c7869a928c8fb22df26916738bd379297f49eb24105a98207c037526",
+  "sha256": "1ca896659f6f15f5d631dc447d1188d04185042280e9788cddca82ee256e19b3",
   "names": [
    "tree_list",
    "search",
@@ -1778,6 +1827,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1978,7 +2034,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "626301d5154f42e17dc3d5485bc771ff2cb450eca1e0bff48d925010b79ca857",
+  "sha256": "163ca4fdfd85e3995a2fed33edf5528a9b08dfb8f54fe2f6c26125aac4031fca",
   "names": [
    "tree_list",
    "search",
@@ -2136,6 +2192,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -2147,7 +2210,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "42efd635ff5b93b047a45e28a7344143082747fe5672d416073efefe91581764",
+  "sha256": "d6b8133ebde782aa36e260ac2bef74eb35e8e38bb2efb5f764ea39d45361a5f0",
   "names": [
    "tree_list",
    "search",
@@ -2325,6 +2388,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -2357,7 +2427,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "687c42f5c909deed41b18a00fd300b1b871d3467724d4d6b61f3fde0f3e298d2",
+  "sha256": "adc0d0c3d9427868a676ea7bcb9540ee68a75cbf306ada770f1e1b47838c1c71",
   "names": [
    "tree_list",
    "search",
@@ -2531,6 +2601,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -2557,7 +2634,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "19939077c7869a928c8fb22df26916738bd379297f49eb24105a98207c037526",
+  "sha256": "1ca896659f6f15f5d631dc447d1188d04185042280e9788cddca82ee256e19b3",
   "names": [
    "tree_list",
    "search",
@@ -2730,6 +2807,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -2754,7 +2838,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "626301d5154f42e17dc3d5485bc771ff2cb450eca1e0bff48d925010b79ca857",
+  "sha256": "163ca4fdfd85e3995a2fed33edf5528a9b08dfb8f54fe2f6c26125aac4031fca",
   "names": [
    "tree_list",
    "search",
@@ -2912,6 +2996,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -2923,7 +3014,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "8d37319a8f7bfec006a2881afa82b33e9053fd628ac99fb1afa6e8b300b9035d",
+  "sha256": "75c0b7245158357a08f3c58a295c682c983ce6137c94a10a47de6a99be768cbd",
   "names": [
    "tree_list",
    "search",
@@ -3103,6 +3194,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -3136,7 +3234,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "33886788dddcb6dd787952dd10656994ede37879c12bfe96c36cdf8b993ebce9",
+  "sha256": "6c351f8b3e18d68550c8e5b7032f44171e49df5f7dbce1cd9aa464e6cafa4d16",
   "names": [
    "tree_list",
    "search",
@@ -3310,6 +3408,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -3337,7 +3442,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "af3550a2d2ae0da4ba7dd98648ee4d3d8df208ff979d9b89247070dd5dff8e1c",
+  "sha256": "b3f97974650f6ab786d9137084dd117c6a5bcdb0b3f1e3f5a6c3365ddadf7959",
   "names": [
    "tree_list",
    "search",
@@ -3510,6 +3615,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -3535,7 +3647,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/false:": {
-  "sha256": "f797dc11bd5d1fa6a09711c67d541f6c6daf84b7e4a743e6e4ebbbdffdcb02a7",
+  "sha256": "83a8f3f56eec7a5d4f58f987a7d0c5e340f9b82ca6db6bbc8108fcaaacbdf27c",
   "names": [
    "tree_list",
    "search",
@@ -3608,6 +3720,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -3616,7 +3732,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d95fcc15df8ec02746082c255ad5e55d41afcd6ade99aeba86601eed7226214f",
+  "sha256": "af357209bfce867db3c1015179f69f3a6d771631cce61db5730ef1e728c9c467",
   "names": [
    "tree_list",
    "search",
@@ -3710,6 +3826,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -3727,7 +3847,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "ac94f9da758c49cc5ae1cc5464841a2bea268b1f1140facb7ba99ea44f139715",
+  "sha256": "3b19e4d99eb09ed156821c06a29949c8ce27eb5d5dfe5c03e100e5e34a346448",
   "names": [
    "tree_list",
    "search",
@@ -3812,6 +3932,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -3823,7 +3947,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:": {
-  "sha256": "5c3cec4dbd7e16e9ae2853702d8776388e617cd03344004df235929f31c10c00",
+  "sha256": "fcf0c21f0e3ff8dfabf1b86f3013e35718da903f62bf650d252a0eae762b1ead",
   "names": [
    "tree_list",
    "search",
@@ -3904,6 +4028,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -3915,7 +4043,7 @@
   ]
  },
  "admin/key/ro/null/[]/false:": {
-  "sha256": "3950c6849c2bf0c764129d980de88d8e6ded69d4ca5925c9f70d49f1b68fefb5",
+  "sha256": "183936f30338d79193f0432d8adc12f9ee08e86fdfbcac158804e7407e84f825",
   "names": [
    "tree_list",
    "search",
@@ -3987,6 +4115,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -3995,7 +4127,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "842b08a5e4c0d247f1ae7b48e75da65cf83012adabde8a0107f1735139f6da05",
+  "sha256": "fa4f0d17d625ec04b8bda81198abb5a4eb742b0d0f1cd3383b3c79fd9df841e9",
   "names": [
    "tree_list",
    "search",
@@ -4077,6 +4209,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4094,7 +4230,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "d5f6419df6bf192d5fc8a6210423242c439323be1ee7f6bc9195ad011b62d60a",
+  "sha256": "6c389ca24126d918dc37b3190a898a49d278490de14872077a8d4fa0996efd6b",
   "names": [
    "tree_list",
    "search",
@@ -4173,6 +4309,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4184,7 +4324,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:": {
-  "sha256": "7a7d2f8b98d6b599aa0b576fb1dfa255c45e65c04631876ff9234ec2fc98d68c",
+  "sha256": "5ed675526c9e297553274a396a93a59304792fcfd0158052824f779b41571c69",
   "names": [
    "tree_list",
    "search",
@@ -4262,6 +4402,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4381,7 +4525,7 @@
   "names": []
  },
  "admin/peer/ro/null/[]/false:": {
-  "sha256": "3950c6849c2bf0c764129d980de88d8e6ded69d4ca5925c9f70d49f1b68fefb5",
+  "sha256": "183936f30338d79193f0432d8adc12f9ee08e86fdfbcac158804e7407e84f825",
   "names": [
    "tree_list",
    "search",
@@ -4453,6 +4597,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -4461,7 +4609,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "842b08a5e4c0d247f1ae7b48e75da65cf83012adabde8a0107f1735139f6da05",
+  "sha256": "fa4f0d17d625ec04b8bda81198abb5a4eb742b0d0f1cd3383b3c79fd9df841e9",
   "names": [
    "tree_list",
    "search",
@@ -4543,6 +4691,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4560,7 +4712,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "d5f6419df6bf192d5fc8a6210423242c439323be1ee7f6bc9195ad011b62d60a",
+  "sha256": "6c389ca24126d918dc37b3190a898a49d278490de14872077a8d4fa0996efd6b",
   "names": [
    "tree_list",
    "search",
@@ -4639,6 +4791,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4650,7 +4806,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:": {
-  "sha256": "7a7d2f8b98d6b599aa0b576fb1dfa255c45e65c04631876ff9234ec2fc98d68c",
+  "sha256": "5ed675526c9e297553274a396a93a59304792fcfd0158052824f779b41571c69",
   "names": [
    "tree_list",
    "search",
@@ -4728,6 +4884,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4739,7 +4899,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "3950c6849c2bf0c764129d980de88d8e6ded69d4ca5925c9f70d49f1b68fefb5",
+  "sha256": "183936f30338d79193f0432d8adc12f9ee08e86fdfbcac158804e7407e84f825",
   "names": [
    "tree_list",
    "search",
@@ -4811,6 +4971,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -4819,7 +4983,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "842b08a5e4c0d247f1ae7b48e75da65cf83012adabde8a0107f1735139f6da05",
+  "sha256": "fa4f0d17d625ec04b8bda81198abb5a4eb742b0d0f1cd3383b3c79fd9df841e9",
   "names": [
    "tree_list",
    "search",
@@ -4901,6 +5065,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4918,7 +5086,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "d5f6419df6bf192d5fc8a6210423242c439323be1ee7f6bc9195ad011b62d60a",
+  "sha256": "6c389ca24126d918dc37b3190a898a49d278490de14872077a8d4fa0996efd6b",
   "names": [
    "tree_list",
    "search",
@@ -4997,6 +5165,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -5008,7 +5180,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "7a7d2f8b98d6b599aa0b576fb1dfa255c45e65c04631876ff9234ec2fc98d68c",
+  "sha256": "5ed675526c9e297553274a396a93a59304792fcfd0158052824f779b41571c69",
   "names": [
    "tree_list",
    "search",
@@ -5086,6 +5258,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -5097,7 +5273,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "b9b6a5d80f9202888c245d4d274b195a388060f0ece431956d4960199bdaa65c",
+  "sha256": "f859bcb73ddb15e2c6215da4ed992974c33f80172458b754a22d991f709a8708",
   "names": [
    "tree_list",
    "search",
@@ -5286,6 +5462,13 @@
    "present_export",
    "present_delete",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -5299,7 +5482,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "10e950920ca64061a4144e378e5ce6d4b161f138e9677249ad11790d0f1a93eb",
+  "sha256": "c6ed7a5322ff40bb6a0f7934cc83e1b6440f9f7bf0db9bb1e44973750c3342c7",
   "names": [
    "tree_list",
    "search",
@@ -5546,6 +5729,13 @@
    "present_export",
    "present_delete",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -5604,7 +5794,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "51f18e64d618998981b01e095c30c2ff430061944fe75e43c909a06dbdf13d4a",
+  "sha256": "55c4d29148b712bc02ff15ca4d7190b0118db00af18923a58b84cfdd78a8baba",
   "names": [
    "tree_list",
    "search",
@@ -5833,6 +6023,13 @@
    "present_export",
    "present_delete",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -5872,7 +6069,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "4e55aaf8d7672697763695f4f306c9b388e718e522d46fca6e145a47df6b5dd9",
+  "sha256": "cbb7b289ab78c9d292908cb1abb7946f90c6a0885bbba999b35cbf991e1d045a",
   "names": [
    "tree_list",
    "search",
@@ -6088,6 +6285,13 @@
    "present_export",
    "present_delete",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6123,7 +6327,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "626301d5154f42e17dc3d5485bc771ff2cb450eca1e0bff48d925010b79ca857",
+  "sha256": "163ca4fdfd85e3995a2fed33edf5528a9b08dfb8f54fe2f6c26125aac4031fca",
   "names": [
    "tree_list",
    "search",
@@ -6281,6 +6485,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -6292,7 +6503,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "42efd635ff5b93b047a45e28a7344143082747fe5672d416073efefe91581764",
+  "sha256": "d6b8133ebde782aa36e260ac2bef74eb35e8e38bb2efb5f764ea39d45361a5f0",
   "names": [
    "tree_list",
    "search",
@@ -6470,6 +6681,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6502,7 +6720,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "687c42f5c909deed41b18a00fd300b1b871d3467724d4d6b61f3fde0f3e298d2",
+  "sha256": "adc0d0c3d9427868a676ea7bcb9540ee68a75cbf306ada770f1e1b47838c1c71",
   "names": [
    "tree_list",
    "search",
@@ -6676,6 +6894,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6702,7 +6927,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "19939077c7869a928c8fb22df26916738bd379297f49eb24105a98207c037526",
+  "sha256": "1ca896659f6f15f5d631dc447d1188d04185042280e9788cddca82ee256e19b3",
   "names": [
    "tree_list",
    "search",
@@ -6875,6 +7100,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -7075,7 +7307,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "626301d5154f42e17dc3d5485bc771ff2cb450eca1e0bff48d925010b79ca857",
+  "sha256": "163ca4fdfd85e3995a2fed33edf5528a9b08dfb8f54fe2f6c26125aac4031fca",
   "names": [
    "tree_list",
    "search",
@@ -7233,6 +7465,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -7244,7 +7483,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "42efd635ff5b93b047a45e28a7344143082747fe5672d416073efefe91581764",
+  "sha256": "d6b8133ebde782aa36e260ac2bef74eb35e8e38bb2efb5f764ea39d45361a5f0",
   "names": [
    "tree_list",
    "search",
@@ -7422,6 +7661,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -7454,7 +7700,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "687c42f5c909deed41b18a00fd300b1b871d3467724d4d6b61f3fde0f3e298d2",
+  "sha256": "adc0d0c3d9427868a676ea7bcb9540ee68a75cbf306ada770f1e1b47838c1c71",
   "names": [
    "tree_list",
    "search",
@@ -7628,6 +7874,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -7654,7 +7907,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "19939077c7869a928c8fb22df26916738bd379297f49eb24105a98207c037526",
+  "sha256": "1ca896659f6f15f5d631dc447d1188d04185042280e9788cddca82ee256e19b3",
   "names": [
    "tree_list",
    "search",
@@ -7827,6 +8080,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -7851,7 +8111,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "626301d5154f42e17dc3d5485bc771ff2cb450eca1e0bff48d925010b79ca857",
+  "sha256": "163ca4fdfd85e3995a2fed33edf5528a9b08dfb8f54fe2f6c26125aac4031fca",
   "names": [
    "tree_list",
    "search",
@@ -8009,6 +8269,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -8020,7 +8287,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "8d37319a8f7bfec006a2881afa82b33e9053fd628ac99fb1afa6e8b300b9035d",
+  "sha256": "75c0b7245158357a08f3c58a295c682c983ce6137c94a10a47de6a99be768cbd",
   "names": [
    "tree_list",
    "search",
@@ -8200,6 +8467,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -8233,7 +8507,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "33886788dddcb6dd787952dd10656994ede37879c12bfe96c36cdf8b993ebce9",
+  "sha256": "6c351f8b3e18d68550c8e5b7032f44171e49df5f7dbce1cd9aa464e6cafa4d16",
   "names": [
    "tree_list",
    "search",
@@ -8407,6 +8681,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -8434,7 +8715,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "af3550a2d2ae0da4ba7dd98648ee4d3d8df208ff979d9b89247070dd5dff8e1c",
+  "sha256": "b3f97974650f6ab786d9137084dd117c6a5bcdb0b3f1e3f5a6c3365ddadf7959",
   "names": [
    "tree_list",
    "search",
@@ -8607,6 +8888,13 @@
    "present_restore",
    "present_export",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_send",
+   "messenger_create",
+   "messenger_wait",
+   "messenger_mark_read",
+   "messenger_directory",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -8632,7 +8920,7 @@
   ]
  },
  "member/oauth/ro/null/[]/false:": {
-  "sha256": "f797dc11bd5d1fa6a09711c67d541f6c6daf84b7e4a743e6e4ebbbdffdcb02a7",
+  "sha256": "83a8f3f56eec7a5d4f58f987a7d0c5e340f9b82ca6db6bbc8108fcaaacbdf27c",
   "names": [
    "tree_list",
    "search",
@@ -8705,6 +8993,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -8713,7 +9005,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d95fcc15df8ec02746082c255ad5e55d41afcd6ade99aeba86601eed7226214f",
+  "sha256": "af357209bfce867db3c1015179f69f3a6d771631cce61db5730ef1e728c9c467",
   "names": [
    "tree_list",
    "search",
@@ -8807,6 +9099,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -8824,7 +9120,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "ac94f9da758c49cc5ae1cc5464841a2bea268b1f1140facb7ba99ea44f139715",
+  "sha256": "3b19e4d99eb09ed156821c06a29949c8ce27eb5d5dfe5c03e100e5e34a346448",
   "names": [
    "tree_list",
    "search",
@@ -8909,6 +9205,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -8920,7 +9220,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:": {
-  "sha256": "5c3cec4dbd7e16e9ae2853702d8776388e617cd03344004df235929f31c10c00",
+  "sha256": "fcf0c21f0e3ff8dfabf1b86f3013e35718da903f62bf650d252a0eae762b1ead",
   "names": [
    "tree_list",
    "search",
@@ -9001,6 +9301,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9012,7 +9316,7 @@
   ]
  },
  "member/key/ro/null/[]/false:": {
-  "sha256": "3950c6849c2bf0c764129d980de88d8e6ded69d4ca5925c9f70d49f1b68fefb5",
+  "sha256": "183936f30338d79193f0432d8adc12f9ee08e86fdfbcac158804e7407e84f825",
   "names": [
    "tree_list",
    "search",
@@ -9084,6 +9388,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -9092,7 +9400,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "842b08a5e4c0d247f1ae7b48e75da65cf83012adabde8a0107f1735139f6da05",
+  "sha256": "fa4f0d17d625ec04b8bda81198abb5a4eb742b0d0f1cd3383b3c79fd9df841e9",
   "names": [
    "tree_list",
    "search",
@@ -9174,6 +9482,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9191,7 +9503,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "d5f6419df6bf192d5fc8a6210423242c439323be1ee7f6bc9195ad011b62d60a",
+  "sha256": "6c389ca24126d918dc37b3190a898a49d278490de14872077a8d4fa0996efd6b",
   "names": [
    "tree_list",
    "search",
@@ -9270,6 +9582,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9281,7 +9597,7 @@
   ]
  },
  "member/key/ro/null/[]/true:": {
-  "sha256": "7a7d2f8b98d6b599aa0b576fb1dfa255c45e65c04631876ff9234ec2fc98d68c",
+  "sha256": "5ed675526c9e297553274a396a93a59304792fcfd0158052824f779b41571c69",
   "names": [
    "tree_list",
    "search",
@@ -9359,6 +9675,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9478,7 +9798,7 @@
   "names": []
  },
  "member/peer/ro/null/[]/false:": {
-  "sha256": "3950c6849c2bf0c764129d980de88d8e6ded69d4ca5925c9f70d49f1b68fefb5",
+  "sha256": "183936f30338d79193f0432d8adc12f9ee08e86fdfbcac158804e7407e84f825",
   "names": [
    "tree_list",
    "search",
@@ -9550,6 +9870,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -9558,7 +9882,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "842b08a5e4c0d247f1ae7b48e75da65cf83012adabde8a0107f1735139f6da05",
+  "sha256": "fa4f0d17d625ec04b8bda81198abb5a4eb742b0d0f1cd3383b3c79fd9df841e9",
   "names": [
    "tree_list",
    "search",
@@ -9640,6 +9964,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9657,7 +9985,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "d5f6419df6bf192d5fc8a6210423242c439323be1ee7f6bc9195ad011b62d60a",
+  "sha256": "6c389ca24126d918dc37b3190a898a49d278490de14872077a8d4fa0996efd6b",
   "names": [
    "tree_list",
    "search",
@@ -9736,6 +10064,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9747,7 +10079,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:": {
-  "sha256": "7a7d2f8b98d6b599aa0b576fb1dfa255c45e65c04631876ff9234ec2fc98d68c",
+  "sha256": "5ed675526c9e297553274a396a93a59304792fcfd0158052824f779b41571c69",
   "names": [
    "tree_list",
    "search",
@@ -9825,6 +10157,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9836,7 +10172,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "3950c6849c2bf0c764129d980de88d8e6ded69d4ca5925c9f70d49f1b68fefb5",
+  "sha256": "183936f30338d79193f0432d8adc12f9ee08e86fdfbcac158804e7407e84f825",
   "names": [
    "tree_list",
    "search",
@@ -9908,6 +10244,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -9916,7 +10256,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "842b08a5e4c0d247f1ae7b48e75da65cf83012adabde8a0107f1735139f6da05",
+  "sha256": "fa4f0d17d625ec04b8bda81198abb5a4eb742b0d0f1cd3383b3c79fd9df841e9",
   "names": [
    "tree_list",
    "search",
@@ -9998,6 +10338,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -10015,7 +10359,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "d5f6419df6bf192d5fc8a6210423242c439323be1ee7f6bc9195ad011b62d60a",
+  "sha256": "6c389ca24126d918dc37b3190a898a49d278490de14872077a8d4fa0996efd6b",
   "names": [
    "tree_list",
    "search",
@@ -10094,6 +10438,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -10105,7 +10453,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "7a7d2f8b98d6b599aa0b576fb1dfa255c45e65c04631876ff9234ec2fc98d68c",
+  "sha256": "5ed675526c9e297553274a396a93a59304792fcfd0158052824f779b41571c69",
   "names": [
    "tree_list",
    "search",
@@ -10183,6 +10531,10 @@
    "present_render",
    "present_revisions",
    "canvas_library",
+   "messenger_list",
+   "messenger_open",
+   "messenger_wait",
+   "messenger_directory",
    "folder_get_by_path",
    "find_window",
    "replay_window",

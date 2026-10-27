@@ -5,27 +5,35 @@
  * any number.
  */
 
-/** Open streams one login may hold. */
+/** Open streams one login may hold, of each kind. */
 export const MEMBER_STREAMS_PER_LOGIN = 5;
+/** The kinds of stream, each with its own slots: a client opens one of
+ *  each per tab, so one kind must not use up the other's. */
+export type MemberStreamKind = 'member' | 'messenger';
 /** A stream closes after this long, or when the session cookie expires if
  *  that is sooner; EventSource reconnects and so re-authenticates. */
 export const MEMBER_STREAM_MAX_MS = 60 * 60 * 1000;
 
 const open = new Map<string, number>();
 
-/** Take a stream slot for a login: the release function, or null when the
- *  login already holds MEMBER_STREAMS_PER_LOGIN. Release is idempotent. */
-export function takeMemberStream(loginId: string): (() => void) | null {
-  const held = open.get(loginId) ?? 0;
+/** Take a stream slot of one kind for a login: the release function, or
+ *  null when the login already holds MEMBER_STREAMS_PER_LOGIN of that
+ *  kind. Release is idempotent. */
+export function takeMemberStream(
+  loginId: string,
+  kind: MemberStreamKind = 'member',
+): (() => void) | null {
+  const key = `${kind}:${loginId}`;
+  const held = open.get(key) ?? 0;
   if (held >= MEMBER_STREAMS_PER_LOGIN) return null;
-  open.set(loginId, held + 1);
+  open.set(key, held + 1);
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    const n = (open.get(loginId) ?? 1) - 1;
-    if (n > 0) open.set(loginId, n);
-    else open.delete(loginId);
+    const n = (open.get(key) ?? 1) - 1;
+    if (n > 0) open.set(key, n);
+    else open.delete(key);
   };
 }
 

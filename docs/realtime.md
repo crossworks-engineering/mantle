@@ -64,6 +64,12 @@ useEffect(() => setRows(initialRows), [initialRows]);
   `task`) and `comments_changed` (migration 0149 triggers on `node_comments`).
   Since 2026-10-09 nothing listens on `comments_changed`: the brain has no
   comments, so no `comment` event is broadcast (the trigger stays, unheard).
+- **The messenger** (`messenger_changed`, migration 0335): ids and a seq,
+  never text, handed only to the streams of the conversation's participants
+  (`subscribeMessenger`, the fan-out map) and sent on its own SSE route,
+  `GET /api/messenger/stream`. The map drops a room on a participants
+  event, keeps an entry 60 s at most, and empties when the last messenger
+  stream closes and when the LISTEN comes back. See [messenger.md](messenger.md).
 
 ## Source of truth
 
@@ -74,6 +80,8 @@ useEffect(() => setRows(initialRows), [initialRows]);
 | The `comments_changed` triggers | `packages/db/migrations/0149_comments_changed_notify.sql` |
 | The `node_indexed` notify (extractor) | `packages/db/src/notify.ts` (`notifyNodeIndexed`) |
 | LISTEN bridge + fan-out (both channels) | `server/web/lib/realtime.ts` |
+| The `messenger_changed` triggers | `packages/db/migrations/0335_messenger.sql`, `0336_messenger_fix_round_2.sql` |
+| Messenger SSE endpoint | `server/web/app/api/messenger/stream/route.ts` |
 | SSE endpoint | `server/web/app/api/realtime/route.ts` |
 | Client hook | `jackdaw/components/realtime/use-realtime.ts` |
 | Reference consumer | `jackdaw/app/(app)/events/events-client.tsx` |

@@ -246,3 +246,37 @@ describe('one no-workspace refusal (fix round 2, L-a)', () => {
     );
   });
 });
+
+describe('the messenger on a read-only key (Messenger V1 fix round 2)', () => {
+  it('a read-only key reads and waits, and is refused a send, a create and a read cursor', async () => {
+    const ro: PreparedCallerTools = {
+      kind: 'owner',
+      caller: {
+        role: 'member',
+        anchorId: 'a',
+        loginId: LOGIN,
+        via: 'key',
+        write: false,
+        keyId: 'k',
+      },
+      view: { holdsAdmin: false, areas: new Set<ScopeArea>() },
+      privateWs: null,
+      connectors: [],
+    };
+    const caller = mcpGateCaller(ro);
+    for (const slug of [
+      'messenger_list',
+      'messenger_open',
+      'messenger_wait',
+      'messenger_directory',
+    ]) {
+      expect(gateLists(caller, mcpBuiltinToolRef(slug, slug)), slug).toBe(true);
+    }
+    for (const slug of ['messenger_send', 'messenger_create', 'messenger_mark_read']) {
+      const ref: PolicyRef = { kind: 'mcp-tool', name: slug };
+      expect(gateLists(caller, mcpBuiltinToolRef(slug, slug)), slug).toBe(false);
+      const called = await enterCall(caller, ref, async () => 'ran');
+      expect(called.ok, slug).toBe(false);
+    }
+  });
+});

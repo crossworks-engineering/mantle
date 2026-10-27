@@ -642,9 +642,10 @@ describe.skipIf(!URL)('mantle_bridge_login demoted only (0330) until 0334 droppe
              and p.oid::regprocedure::text = any(${names}::text[])`
       )[0]!;
     const rest = await others();
-    // 0334 alone: a later migration may change another function (0335 the
-    // presentation keys), which is not this one's to answer for.
-    await scratch!.migrateRest('0335_tree_rank_presentation');
+    // 0334 alone: a later migration may change another function (0337 the
+    // presentation keys) or add functions of its own (0335 the messenger),
+    // which is not this one's to answer for.
+    await scratch!.migrateRest('0335_messenger');
     expect(await fact()).toBeNull();
     expect(await others()).toEqual(rest);
     // No function body calls it (its comments aside).

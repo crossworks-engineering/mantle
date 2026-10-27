@@ -4,6 +4,9 @@
 # as the GET does. Only the actor and the request outcome noted after the
 # login's answer changed; status, headers and body are as recorded. Every other
 # cell is as recorded on main.
+# 2026-10-27 (Messenger V1 Phase 1): the /api/messenger GET rows had no route on
+# main; each of their HEAD cells is held to the main answer of the same shape
+# (the any-login HEAD rows above, actor= and out= masked).
 # answers
 h1 401 content-type=application/json cache-control=no-store 
 h2 500 content-type=application/json cache-control=no-store  [getLoginOr401 ok {"email":"admin-3333@example.invalid","kind":"admin","loginId":"33333333-3333-4333-8333-333333333333","sessionEpoch":0,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:false]
@@ -52,7 +55,7 @@ o22 401 content-type=application/json  [getLoginOr401 R401 {"error":"unauthorize
 o23 500 content-type=application/json  [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:login-self]
 o24 500 content-type=application/json  [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=system:rule-in-query out=system:login-self]
 
-# cells: 340
+# cells: 460
 first HEAD /api/access-keys none=h1 main=o1
 first HEAD /api/access-keys owner-cookie=h2 main=o2
 first HEAD /api/access-keys admin-cookie=h3 main=o3
@@ -170,6 +173,84 @@ first HEAD /api/grants/:nodeId/preview key-write=h1 main=o1
 first HEAD /api/grants/:nodeId/preview key-read-area=h1 main=o1
 first HEAD /api/grants/:nodeId/preview key-write-area=h1 main=o1
 first HEAD /api/grants/:nodeId/preview key-member=h1 main=o1
+first HEAD /api/messenger/c/:id none=h1 main=o1
+first HEAD /api/messenger/c/:id owner-cookie=h2 main=o2
+first HEAD /api/messenger/c/:id admin-cookie=h3 main=o3
+first HEAD /api/messenger/c/:id limited-cookie=h4 main=o4
+first HEAD /api/messenger/c/:id member-cookie=h5 main=o5
+first HEAD /api/messenger/c/:id admin-bearer=h6 main=o6
+first HEAD /api/messenger/c/:id member-bearer=h7 main=o7
+first HEAD /api/messenger/c/:id revoked-bearer=h8 main=o8
+first HEAD /api/messenger/c/:id key-read=h1 main=o1
+first HEAD /api/messenger/c/:id key-write=h1 main=o1
+first HEAD /api/messenger/c/:id key-read-area=h1 main=o1
+first HEAD /api/messenger/c/:id key-write-area=h1 main=o1
+first HEAD /api/messenger/c/:id key-member=h1 main=o1
+first HEAD /api/messenger/c/:id/messages none=h1 main=o1
+first HEAD /api/messenger/c/:id/messages owner-cookie=h2 main=o2
+first HEAD /api/messenger/c/:id/messages admin-cookie=h3 main=o3
+first HEAD /api/messenger/c/:id/messages limited-cookie=h4 main=o4
+first HEAD /api/messenger/c/:id/messages member-cookie=h5 main=o5
+first HEAD /api/messenger/c/:id/messages admin-bearer=h6 main=o6
+first HEAD /api/messenger/c/:id/messages member-bearer=h7 main=o7
+first HEAD /api/messenger/c/:id/messages revoked-bearer=h8 main=o8
+first HEAD /api/messenger/c/:id/messages key-read=h1 main=o1
+first HEAD /api/messenger/c/:id/messages key-write=h1 main=o1
+first HEAD /api/messenger/c/:id/messages key-read-area=h1 main=o1
+first HEAD /api/messenger/c/:id/messages key-write-area=h1 main=o1
+first HEAD /api/messenger/c/:id/messages key-member=h1 main=o1
+first HEAD /api/messenger/conversations none=h1 main=o1
+first HEAD /api/messenger/conversations owner-cookie=h2 main=o2
+first HEAD /api/messenger/conversations admin-cookie=h3 main=o3
+first HEAD /api/messenger/conversations limited-cookie=h4 main=o4
+first HEAD /api/messenger/conversations member-cookie=h5 main=o5
+first HEAD /api/messenger/conversations admin-bearer=h6 main=o6
+first HEAD /api/messenger/conversations member-bearer=h7 main=o7
+first HEAD /api/messenger/conversations revoked-bearer=h8 main=o8
+first HEAD /api/messenger/conversations key-read=h1 main=o1
+first HEAD /api/messenger/conversations key-write=h1 main=o1
+first HEAD /api/messenger/conversations key-read-area=h1 main=o1
+first HEAD /api/messenger/conversations key-write-area=h1 main=o1
+first HEAD /api/messenger/conversations key-member=h1 main=o1
+first HEAD /api/messenger/directory none=h1 main=o1
+first HEAD /api/messenger/directory owner-cookie=h2 main=o2
+first HEAD /api/messenger/directory admin-cookie=h3 main=o3
+first HEAD /api/messenger/directory limited-cookie=h4 main=o4
+first HEAD /api/messenger/directory member-cookie=h5 main=o5
+first HEAD /api/messenger/directory admin-bearer=h6 main=o6
+first HEAD /api/messenger/directory member-bearer=h7 main=o7
+first HEAD /api/messenger/directory revoked-bearer=h8 main=o8
+first HEAD /api/messenger/directory key-read=h1 main=o1
+first HEAD /api/messenger/directory key-write=h1 main=o1
+first HEAD /api/messenger/directory key-read-area=h1 main=o1
+first HEAD /api/messenger/directory key-write-area=h1 main=o1
+first HEAD /api/messenger/directory key-member=h1 main=o1
+first HEAD /api/messenger/stream none=h1 main=o1
+first HEAD /api/messenger/stream owner-cookie=h2 main=o2
+first HEAD /api/messenger/stream admin-cookie=h3 main=o3
+first HEAD /api/messenger/stream limited-cookie=h4 main=o4
+first HEAD /api/messenger/stream member-cookie=h5 main=o5
+first HEAD /api/messenger/stream admin-bearer=h6 main=o6
+first HEAD /api/messenger/stream member-bearer=h7 main=o7
+first HEAD /api/messenger/stream revoked-bearer=h8 main=o8
+first HEAD /api/messenger/stream key-read=h1 main=o1
+first HEAD /api/messenger/stream key-write=h1 main=o1
+first HEAD /api/messenger/stream key-read-area=h1 main=o1
+first HEAD /api/messenger/stream key-write-area=h1 main=o1
+first HEAD /api/messenger/stream key-member=h1 main=o1
+first HEAD /api/messenger/unread none=h1 main=o1
+first HEAD /api/messenger/unread owner-cookie=h2 main=o2
+first HEAD /api/messenger/unread admin-cookie=h3 main=o3
+first HEAD /api/messenger/unread limited-cookie=h4 main=o4
+first HEAD /api/messenger/unread member-cookie=h5 main=o5
+first HEAD /api/messenger/unread admin-bearer=h6 main=o6
+first HEAD /api/messenger/unread member-bearer=h7 main=o7
+first HEAD /api/messenger/unread revoked-bearer=h8 main=o8
+first HEAD /api/messenger/unread key-read=h1 main=o1
+first HEAD /api/messenger/unread key-write=h1 main=o1
+first HEAD /api/messenger/unread key-read-area=h1 main=o1
+first HEAD /api/messenger/unread key-write-area=h1 main=o1
+first HEAD /api/messenger/unread key-member=h1 main=o1
 first HEAD /api/shell none=h1 main=o1
 first HEAD /api/shell owner-cookie=h2 main=o2
 first HEAD /api/shell admin-cookie=h3 main=o3
@@ -337,6 +418,48 @@ more HEAD /api/grants/:nodeId/preview rotated-bearer=h8 main=o22
 more HEAD /api/grants/:nodeId/preview expired-bearer=h8 main=o22
 more HEAD /api/grants/:nodeId/preview key-unknown=h1 main=o1
 more HEAD /api/grants/:nodeId/preview key-revoked=h1 main=o1
+more HEAD /api/messenger/c/:id disabled-cookie=h8 main=o8
+more HEAD /api/messenger/c/:id bumped-cookie=h8 main=o8
+more HEAD /api/messenger/c/:id gone-cookie=h8 main=o8
+more HEAD /api/messenger/c/:id rotated-bearer=h8 main=o8
+more HEAD /api/messenger/c/:id expired-bearer=h8 main=o8
+more HEAD /api/messenger/c/:id key-unknown=h1 main=o1
+more HEAD /api/messenger/c/:id key-revoked=h1 main=o1
+more HEAD /api/messenger/c/:id/messages disabled-cookie=h8 main=o8
+more HEAD /api/messenger/c/:id/messages bumped-cookie=h8 main=o8
+more HEAD /api/messenger/c/:id/messages gone-cookie=h8 main=o8
+more HEAD /api/messenger/c/:id/messages rotated-bearer=h8 main=o8
+more HEAD /api/messenger/c/:id/messages expired-bearer=h8 main=o8
+more HEAD /api/messenger/c/:id/messages key-unknown=h1 main=o1
+more HEAD /api/messenger/c/:id/messages key-revoked=h1 main=o1
+more HEAD /api/messenger/conversations disabled-cookie=h8 main=o8
+more HEAD /api/messenger/conversations bumped-cookie=h8 main=o8
+more HEAD /api/messenger/conversations gone-cookie=h8 main=o8
+more HEAD /api/messenger/conversations rotated-bearer=h8 main=o8
+more HEAD /api/messenger/conversations expired-bearer=h8 main=o8
+more HEAD /api/messenger/conversations key-unknown=h1 main=o1
+more HEAD /api/messenger/conversations key-revoked=h1 main=o1
+more HEAD /api/messenger/directory disabled-cookie=h8 main=o8
+more HEAD /api/messenger/directory bumped-cookie=h8 main=o8
+more HEAD /api/messenger/directory gone-cookie=h8 main=o8
+more HEAD /api/messenger/directory rotated-bearer=h8 main=o8
+more HEAD /api/messenger/directory expired-bearer=h8 main=o8
+more HEAD /api/messenger/directory key-unknown=h1 main=o1
+more HEAD /api/messenger/directory key-revoked=h1 main=o1
+more HEAD /api/messenger/stream disabled-cookie=h8 main=o8
+more HEAD /api/messenger/stream bumped-cookie=h8 main=o8
+more HEAD /api/messenger/stream gone-cookie=h8 main=o8
+more HEAD /api/messenger/stream rotated-bearer=h8 main=o8
+more HEAD /api/messenger/stream expired-bearer=h8 main=o8
+more HEAD /api/messenger/stream key-unknown=h1 main=o1
+more HEAD /api/messenger/stream key-revoked=h1 main=o1
+more HEAD /api/messenger/unread disabled-cookie=h8 main=o8
+more HEAD /api/messenger/unread bumped-cookie=h8 main=o8
+more HEAD /api/messenger/unread gone-cookie=h8 main=o8
+more HEAD /api/messenger/unread rotated-bearer=h8 main=o8
+more HEAD /api/messenger/unread expired-bearer=h8 main=o8
+more HEAD /api/messenger/unread key-unknown=h1 main=o1
+more HEAD /api/messenger/unread key-revoked=h1 main=o1
 more HEAD /api/shell disabled-cookie=h8 main=o8
 more HEAD /api/shell bumped-cookie=h8 main=o8
 more HEAD /api/shell gone-cookie=h8 main=o8

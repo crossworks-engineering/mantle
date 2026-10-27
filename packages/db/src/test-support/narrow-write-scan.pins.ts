@@ -587,6 +587,10 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in loginDefinerCall, the system pool in the login's own scope (systemPoolTxInScope), never a narrow statement",
   mantle_member_turn_settle:
     "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in loginDefinerCall (a team turn's close, 0327), the system pool in the login's own scope, never a narrow statement",
+  mantle_messenger_mine:
+    'a read or write definer granted to the viewer roles: called in a login scope (the messenger module asks it only inside a workspace scope; outside one it reads inline on the system pool)',
+  mantle_messenger_people:
+    'a read or write definer granted to the viewer roles: called in a login scope (the messenger module asks it only inside a workspace scope; outside one it reads inline on the system pool)',
   mantle_name_taken:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_page_folder_id:
@@ -731,6 +735,8 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/content/src/member-turn-ledger.ts mantle_member_turn_claim': 1,
   'packages/content/src/member-turn-ledger.ts mantle_member_turn_release': 1,
   'packages/content/src/member-turn-ledger.ts mantle_member_turn_settle': 1,
+  'packages/content/src/messenger.ts mantle_messenger_mine': 1,
+  'packages/content/src/messenger.ts mantle_messenger_people': 1,
   'packages/content/src/pages/read.ts mantle_page_folder_id': 1,
   'packages/content/src/profile-preferences.ts mantle_profile_writable': 1,
   'packages/content/src/recall-native.ts mantle_recall_retarget': 1,

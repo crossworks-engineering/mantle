@@ -476,8 +476,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // overview with its HEAD (owner).
     // Desk saving v2 (+2, both with a caller): GET /api/profile/home-desk
     // with its HEAD (self, any login).
-    expect(rows.filter((r) => r.caller).length).toBe(785);
-    expect(rows.length).toBe(845);
+    // Messenger V1 Phase 1 (+27, every one with a caller): the /api/messenger
+    // rows, their HEADs included (the attachments upload is Phase 4's).
+    expect(rows.filter((r) => r.caller).length).toBe(812);
+    expect(rows.length).toBe(872);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

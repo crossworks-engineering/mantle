@@ -67,6 +67,33 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   version or with a bad one, a save naming another login, the own row
   only, API keys 401, and the 400 and 413 paths.
 
+## Unreleased: Messenger V1 Phase 1
+
+- **Feature (plan decision 2026-10-27):** the messenger's core store, API
+  and MCP tools (docs/messenger.md). Direct chats and groups between the
+  logins of one brain (migration 0335), each message a seq taken under the
+  conversation's row lock, row security keyed by the participant row (no
+  Admin exception; a left participant reads up to its leave), the routes
+  under `/api/messenger` with per-login limits, the SSE stream
+  `/api/messenger/stream` on the member stream's guards, the unread badge
+  with the assistant threads, and the MCP tools `messenger_list`,
+  `messenger_open`, `messenger_send`, `messenger_create`, `messenger_wait`,
+  `messenger_mark_read` and `messenger_directory`. A message records the
+  credential it came through, and `messenger_wait` skips the caller's own,
+  so two Claude clients on one login can wait for each other. No agent in a
+  group, no attachment bytes and no phone push yet: those are Phases 3 to
+  5. An Admin user's OAuth MCP connection now carries its client id.
+- **Fix round 2 (two outside reviews):** one per-login budget in the store
+  (60 sends, 120 other writes a minute), so an MCP client and the routes
+  share it; migration 0336: the workspace role reads no conversation tail
+  and no participant cursor or mute (its own rows through
+  `mantle_messenger_mine`, the tail capped at its leave), a leaver sees only
+  the people who were there when it left; a history delete moves every
+  cursor up and raises a `history` event; a clear raises `self` and `read`;
+  the fan-out map is right after an add or a remove with no stream open;
+  `after_seq` and `messenger_wait` page without loss (`hasMore`); the
+  messenger stream takes slots apart from the member stream's.
+
 ## Unreleased: workspace delegation
 
 - **Feature (owner decision 2026-10-26):** the assistant of a workspace

@@ -44,6 +44,7 @@ import {
   DIAGRAM_RENDER_TOOLS,
   PRESENT_TOOLS,
   CANVAS_LIBRARY_TOOLS,
+  MESSENGER_TOOLS,
   WORKSPACE_TOOLS,
   LOGIN_APP_DATA_TOOLS,
   TOOLSMITH_TOOLS,
@@ -376,6 +377,9 @@ export function registerMantleTools(
   registerBuiltinTools(DIAGRAM_RENDER_TOOLS);
   registerBuiltinTools(PRESENT_TOOLS);
   registerBuiltinTools(CANVAS_LIBRARY_TOOLS);
+  // The messenger (Messenger V1, plan page d8954876 section 12): every
+  // login's chats, as the caller; messenger_wait long-polls up to 60 s.
+  registerBuiltinTools(MESSENGER_TOOLS);
 
   // Files: create-from-text and resolve-a-folder-by-path, the two the
   // hand-written file surface never had.

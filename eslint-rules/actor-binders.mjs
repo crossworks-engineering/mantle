@@ -86,7 +86,8 @@ export const ACTOR_BINDER_PINS = {
   'server/web/lib/auth/session.ts': 2,
   'server/web/lib/contact-share-gate.ts': 2,
   'server/web/lib/journey.ts': 1,
-  'server/web/lib/realtime.ts': 2,
+  // + the messenger_changed fan-out (Messenger V1): its participant lookup.
+  'server/web/lib/realtime.ts': 3,
   'server/web/lib/runs/execute-item.ts': 1,
   // A7: the snapshot copies, the manifest reconcile and the app table
   // exports run as binder calls; the workspaces step is systemWork since

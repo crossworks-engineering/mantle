@@ -323,6 +323,56 @@ export type NarrowWrite = {
 };
 
 export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freeze({
+  // The messenger (0335): @mantle/content/messenger writes its own tables
+  // on systemDb in the login's request or MCP call, each statement under
+  // the participant rule it checked in the same transaction (lockForActor).
+  'public.messenger_conversations': {
+    insert: true,
+    update: ['title', 'last_seq', 'last_message_at', 'last_preview', 'archived_at'],
+    delete: false,
+    why: 'a chat made (create), its counters moved by a send, its title, its archive when the last person leaves',
+  },
+  'public.messenger_participants': {
+    insert: true,
+    update: [
+      'last_read_seq',
+      'mention_seq',
+      'cleared_before_seq',
+      'from_seq',
+      'muted',
+      'left_at',
+      'left_seq',
+      'admin',
+      'joined_at',
+      'added_by',
+    ],
+    delete: false,
+    why: "a chat's people: added, removed, leaving, admin handed on; a login's own cursor, clear and mute",
+  },
+  'public.messenger_messages': {
+    insert: true,
+    update: ['body', 'edited_at', 'deleted_at', 'mentions', 'attachments'],
+    delete: true,
+    why: "a send, an edit or a delete by its author, a group admin's delete; a group admin's history delete removes rows",
+  },
+  'public.messenger_reactions': {
+    insert: true,
+    update: [],
+    delete: true,
+    why: "a login's own reaction toggled on and off",
+  },
+  'public.messenger_favourites': {
+    insert: true,
+    update: ['rank'],
+    delete: true,
+    why: "a login's own pins of its chat list",
+  },
+  'public.login_presence': {
+    insert: true,
+    update: ['last_active_at'],
+    delete: false,
+    why: "the messenger stream's heartbeat marks its own login online",
+  },
   'auth.users': {
     update: ['disabled_at', 'session_epoch'],
     delete: false,
@@ -849,6 +899,10 @@ export const NARROW_NEVER_INSERT: readonly string[] = Object.freeze([
  * runtime-role.test.ts fails on one not listed.
  */
 export const NARROW_REINSERT_HELD: Readonly<Record<string, string>> = Object.freeze({
+  'public.messenger_reactions':
+    "a login's own reaction on a message of a chat it is in (the messenger module checks the participant row first); a delete and reinsert gives nothing a plain insert does not: a reaction opens no chat and grants no right (row security keys every read on the participant row)",
+  'public.messenger_favourites':
+    "a login's own pin of its chat list (a conversation it is in, an agent it may chat with, checked by the messenger module); a delete and reinsert gives nothing a plain insert does not: a pin opens no chat and grants no right",
   'public.tailscale_config':
     "its sealed auth key and every other column were already the narrow login's to update (the settings area sets the key); a delete and insert again gives nothing an update does not",
   'public.calendar_accounts':
@@ -1250,6 +1304,48 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.push_prefs', 'system'),
   none('public.push_subscriptions', 'system'),
   none('public.push_login_prefs', 'system'),
+  // The messenger (0335): written by @mantle/content/messenger on the system
+  // pool, read by the role under the participant rule
+  // (mantle_messenger_seq_cap): no Admin exception, a left participant up to
+  // left_seq. Favourites are the login's own. Not the conversation's tail
+  // nor anyone's cursors, mute or leave (0336): a login reads its own rows,
+  // with the tail capped at its leave, through mantle_messenger_mine, and
+  // the room's people as it may see them through mantle_messenger_people.
+  {
+    ...none('public.messenger_conversations', 'system'),
+    user: [
+      'id',
+      'owner_id',
+      'kind',
+      'title',
+      'picture_attachment_id',
+      'workspace_id',
+      'agent_id',
+      'direct_key',
+      'created_by',
+      'created_at',
+      'archived_at',
+    ],
+  },
+  {
+    ...none('public.messenger_participants', 'system'),
+    user: [
+      'id',
+      'conversation_id',
+      'kind',
+      'login_id',
+      'agent_id',
+      'admin',
+      'joined_at',
+      'added_by',
+    ],
+  },
+  { ...none('public.messenger_messages', 'system'), user: 'all' },
+  { ...none('public.messenger_attachments', 'system'), user: 'all' },
+  { ...none('public.messenger_reactions', 'system'), user: 'all' },
+  { ...none('public.messenger_favourites', 'system'), user: 'all' },
+  // "Online" (0335): the messenger stream's heartbeat, read on the system pool.
+  none('public.login_presence', 'system'),
   // A public link (A3a, plan 5.2): edit of its item, an app's manage;
   // closing it (revoked_at, or the row deleted) also an Admin user with the
   // users area. Its view counter is the brain's (a named read-path write).
@@ -1504,6 +1600,13 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.presents', // 0332
   'public.present_revisions', // 0332
   'public.canvas_data', // 0336
+  'public.messenger_conversations', // 0335
+  'public.messenger_participants', // 0335
+  'public.messenger_messages', // 0335
+  'public.messenger_attachments', // 0335
+  'public.messenger_reactions', // 0335
+  'public.messenger_favourites', // 0335
+  'public.login_presence', // 0335
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as
@@ -1554,7 +1657,9 @@ export function userGrantStatements(
   for (const t of ACCESS_MATRIX) {
     const read = userReadFor(t);
     if (read === 'none') continue;
-    if (read === 'all' && !has(t.table, '*')) continue;
+    // The table first, named columns or not: a late table not there yet is
+    // skipped whole (TABLES_ADDED_LATE), before any column of it is asked.
+    if (!has(t.table, '*')) continue;
     const named = read === 'all' ? null : read.filter((c) => has(t.table, c));
     if (named && named.length === 0) continue;
     const cols = named === null ? '' : ` (${named.map((c) => `"${c}"`).join(', ')})`;

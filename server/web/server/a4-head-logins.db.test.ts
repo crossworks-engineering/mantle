@@ -54,7 +54,9 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
       .replace(/^\/api\/workspaces\/:id/, `/api/workspaces/${teamWs}`)
       .replace(/^\/api\/grants\/:nodeId/, `/api/grants/${page}`)
       .replace(/^\/api\/assistant\/threads\/:id/, `/api/assistant/threads/${thread}`)
-      .replace(/\/api\/workspaces\/user-search$/, '/api/workspaces/user-search?q=a');
+      .replace(/\/api\/workspaces\/user-search$/, '/api/workspaces/user-search?q=a')
+      // A conversation nobody is in: every login hears not found, GET and HEAD.
+      .replace(/^\/api\/messenger\/c\/:id/, `/api/messenger/c/${randomUUID()}`);
 
   /** One request: its status, every header, its body. A stream is read no
    *  further than its headers and closed (the abort runs the handler's
@@ -146,8 +148,9 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  it('the 17 rows 2a changed, and the two added since: HEAD has the status and the headers of GET, and no body', async () => {
-    expect(rows).toHaveLength(19);
+  it('the 17 rows 2a changed, and the ones added since: HEAD has the status and the headers of GET, and no body', async () => {
+    // 19, and the six messenger GET rows of Messenger V1 Phase 1.
+    expect(rows).toHaveLength(25);
     const logins: Array<[string, string | null]> = [
       ['owner', owner],
       ['admin', admin],

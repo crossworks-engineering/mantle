@@ -230,6 +230,12 @@ const NO_WRITE_FOUND: readonly string[] = [
   'tree_list',
   'worker_group_list',
   'workspaces_list',
+  // The messenger's reads (0335): its login's rows only; messenger_wait
+  // holds a LISTEN and writes nothing.
+  'messenger_list',
+  'messenger_open',
+  'messenger_wait',
+  'messenger_directory',
 ];
 
 /** Every read builtin the lists above classify. */

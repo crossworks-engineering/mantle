@@ -22,6 +22,12 @@ const DECIDED: Readonly<Record<string, string>> = {
   'public.assistant_messages.external_ref':
     "insert only: the transport's ids of the turn's own new row (reply threading), no prompt",
   'public.app_access_log.detail': 'insert only: an access log line, read by no model',
+  'public.messenger_conversations.last_preview':
+    "insert and update: a chat's last line (author name, 140 characters), shown to its participants, read by no model in V1",
+  'public.messenger_messages.attachments':
+    'insert and update: attachment ids of a message (Phase 4), no prompt and no limit key',
+  'public.messenger_messages.mentions':
+    'insert and update: the login and agent ids a message mentions, no prompt and no limit key; a mention starts no turn in V1 Phase 1',
   'public.audit_log.detail': 'insert only: an audit line, read by no model',
   'public.team_access_log.detail': 'insert only: a member access log line, read by no model',
   'public.calendar_accounts.sync_state':

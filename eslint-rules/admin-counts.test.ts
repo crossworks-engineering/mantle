@@ -540,6 +540,9 @@ describe('the repo', () => {
     expect(
       Object.fromEntries(inParts(d.adminDecisionFlags).map((p) => [p, d.adminDecisionFlags[p]])),
     ).toEqual({
+      // The workspace's own flag again: an Admin user's chat agents leave
+      // out the assistants of non-Admin workspaces (messengerChatAgents).
+      'packages/content/src/messenger.ts': 2,
       'packages/content/src/team-assistant.ts': 5,
       'server/api/src/agent/reflector.ts': 1,
       'server/api/src/agent/summarizer.ts': 1,

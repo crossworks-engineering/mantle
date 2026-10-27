@@ -25,6 +25,11 @@ export const SYSTEM_DB_ALLOWLIST = [
   // The member chat traces' token sums (audit F09); the ledger itself is
   // written through its definers (0326, login-definer.ts).
   'packages/content/src/member-turn-ledger.ts',
+  // The messenger (0335): its own tables (writer system), written in the
+  // content module's transactions with the participant rule in each
+  // statement; and the names, workspaces and agents it reads for ids a
+  // scoped read returned. Never nodes or any content table.
+  'packages/content/src/messenger.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
 ];
@@ -85,6 +90,8 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   'packages/api-keys/src/index.ts': 'narrow',
   'packages/content/src/app-access-log.ts': 'narrow',
   'packages/content/src/member-turn-ledger.ts': 'narrow',
+  // The messenger's writes and lookups, in the login's request or MCP call.
+  'packages/content/src/messenger.ts': 'narrow',
   'packages/content/src/share-access-log.ts': 'narrow',
   'packages/content/src/team-access-log.ts': 'narrow',
   'packages/content/src/team-messages.ts': 'narrow',

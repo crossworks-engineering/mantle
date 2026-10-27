@@ -8,6 +8,9 @@ import {
   TASKS_CHANGED_CHANNEL,
 } from '@mantle/content';
 import { TREE_CHANGED_CHANNEL } from '@mantle/content/tree';
+import { messengerParticipantLogins } from '@mantle/content/messenger';
+import { TtlCache } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
@@ -50,10 +53,54 @@ type ConvSubscriber = (c: ConversationChange) => void;
  *  owner id is used to filter per subscriber and never reaches the browser. */
 type TurnStreamSubscriber = (env: TurnStreamEnvelope) => void;
 
+/** A messenger change (Messenger V1, migration 0335): ids and seq, never
+ *  text. Payload of the `messenger_changed` NOTIFY. */
+export const MESSENGER_CHANGED_CHANNEL = 'messenger_changed';
+export type MessengerChange = {
+  c: string;
+  seq: number | null;
+  kind:
+    | 'new'
+    | 'edit'
+    | 'delete'
+    | 'read'
+    | 'self'
+    | 'participants'
+    | 'reaction'
+    | 'typing'
+    | 'history';
+  actor: string | null;
+};
+type MessengerSubscriber = (c: MessengerChange) => void;
+type MessengerRoom = { loginId: string; leftSeq: number | null; fromSeq: number }[];
+
+/** The bound of the fan-out map: past it the least recently used room goes
+ *  (each entry is one indexed read to refill). */
+const MESSENGER_ROOMS_MAX = 5000;
+/** How long one entry of the fan-out map is kept: a change the map missed
+ *  (an add while no stream was open) is right again within this. */
+export const MESSENGER_ROOM_TTL_MS = 60_000;
+const newMessengerRooms = () =>
+  new TtlCache<string, MessengerRoom>({
+    ttlMs: MESSENGER_ROOM_TTL_MS,
+    maxEntries: MESSENGER_ROOMS_MAX,
+  });
+
 type Bridge = {
   subs: Set<Subscriber>;
   convSubs: Set<ConvSubscriber>;
   turnSubs: Set<TurnStreamSubscriber>;
+  /** Messenger streams by login id (each stream is one login's). */
+  msgSubs: Map<string, Set<MessengerSubscriber>>;
+  /** The fan-out map of plan section 7: conversation id to its participant
+   *  logins (with the seq a left one reads up to), filled on first use,
+   *  dropped on a participants event (with or without a stream open), and
+   *  each entry kept at most MESSENGER_ROOM_TTL_MS. The whole map goes when
+   *  the last messenger stream closes and when the LISTEN (re)connects (a
+   *  NOTIFY lost while it was down cannot leave an entry stale). */
+  msgRoomCache: TtlCache<string, MessengerRoom>;
+  /** Bumped on every drop of msgRoomCache (fanoutMessenger). */
+  msgRoomsGen: number;
   starting: Promise<void> | null;
   stop: (() => Promise<void>) | null;
 };
@@ -67,6 +114,9 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
   subs: new Set<Subscriber>(),
   convSubs: new Set<ConvSubscriber>(),
   turnSubs: new Set<TurnStreamSubscriber>(),
+  msgSubs: new Map<string, Set<MessengerSubscriber>>(),
+  msgRoomCache: newMessengerRooms(),
+  msgRoomsGen: 0,
   starting: null,
   stop: null,
 };
@@ -74,6 +124,9 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
 // it — backfill so subscribe* can't hit `undefined`.
 bridge.convSubs ??= new Set<ConvSubscriber>();
 bridge.turnSubs ??= new Set<TurnStreamSubscriber>();
+bridge.msgSubs ??= new Map<string, Set<MessengerSubscriber>>();
+bridge.msgRoomCache ??= newMessengerRooms();
+bridge.msgRoomsGen ??= 0;
 globalThis.__mantleRealtime = bridge;
 
 async function ensureListening(): Promise<void> {
@@ -168,8 +221,27 @@ async function ensureListening(): Promise<void> {
         /* malformed payload — drop it rather than crash the listener */
       }
     });
+    // Messenger changes (0335): fanned out to the streams of the logins
+    // that are participants of the conversation (fanoutMessenger).
+    const subMessenger = await sql.listen(
+      MESSENGER_CHANGED_CHANNEL,
+      (payload) => {
+        try {
+          const c = JSON.parse(payload) as MessengerChange;
+          if (c && typeof c.c === 'string' && typeof c.kind === 'string') {
+            void runAsSystem('listen:realtime', () => fanoutMessenger(c));
+          }
+        } catch {
+          /* malformed payload: drop it rather than crash the listener */
+        }
+      },
+      // On every (re)connect of the LISTEN: what changed while it was down
+      // raised no event here, so the map starts again.
+      () => dropMessengerRooms(),
+    );
     bridge.stop = async () => {
       try {
+        await subMessenger.unlisten();
         await subIngested.unlisten();
         await subIndexed.unlisten();
         await subPending.unlisten();
@@ -255,6 +327,95 @@ export async function subscribeRealtime(cb: Subscriber): Promise<() => void> {
   }
   return () => {
     bridge.subs.delete(cb);
+  };
+}
+
+const realtimeLog = log('realtime');
+
+/** Drop the whole fan-out map (the last stream closed, the LISTEN came
+ *  back): a lookup in flight keeps nothing it read before. */
+function dropMessengerRooms(): void {
+  bridge.msgRoomCache.clear();
+  bridge.msgRoomsGen += 1;
+}
+
+/** Who hears a messenger change: a room event every live participant (and
+ *  the actor); a message event every participant that may read its seq;
+ *  'self' only the actor; 'typing' everyone live but the typist; 'history'
+ *  everyone whose window held a deleted seq (a reload). */
+async function fanoutMessenger(c: MessengerChange): Promise<void> {
+  // The drop first: an add or a remove while no stream is open must not
+  // leave the older list for the next stream.
+  if (c.kind === 'participants') {
+    bridge.msgRoomCache.delete(c.c);
+    bridge.msgRoomsGen += 1;
+  }
+  if (bridge.msgSubs.size === 0) return;
+  let to: string[];
+  if (c.kind === 'self') {
+    to = c.actor ? [c.actor] : [];
+  } else {
+    let rows = bridge.msgRoomCache.get(c.c);
+    if (!rows) {
+      // A participants event that lands during this lookup must not see its
+      // drop undone by the older list: keep it only when no drop
+      // happened meanwhile.
+      const gen = bridge.msgRoomsGen;
+      rows = await messengerParticipantLogins(c.c);
+      if (gen === bridge.msgRoomsGen) bridge.msgRoomCache.set(c.c, rows);
+    }
+    const seq = c.seq;
+    const message =
+      seq !== null && c.kind !== 'read' && c.kind !== 'typing' && c.kind !== 'history';
+    to = rows
+      .filter((r) =>
+        c.kind === 'history'
+          ? seq !== null && r.fromSeq < seq
+          : message
+            ? seq > r.fromSeq && (r.leftSeq === null || r.leftSeq >= seq)
+            : r.leftSeq === null || (seq !== null && c.kind !== 'typing' && r.leftSeq >= seq),
+      )
+      .map((r) => r.loginId);
+    if (c.kind === 'typing') to = to.filter((l) => l !== c.actor);
+    if (c.kind === 'participants' && c.actor && !to.includes(c.actor)) to.push(c.actor);
+  }
+  for (const loginId of to) {
+    for (const cb of bridge.msgSubs.get(loginId) ?? []) {
+      try {
+        cb(c);
+      } catch (err) {
+        realtimeLog.error('messenger subscriber threw:', err);
+      }
+    }
+  }
+}
+
+/**
+ * Subscribe ONE login's stream to the messenger changes it may hear: only
+ * those of conversations it is a participant of (the fan-out map). Shares
+ * the one LISTEN connection; returns an unsubscribe fn.
+ */
+export async function subscribeMessenger(
+  loginId: string,
+  cb: MessengerSubscriber,
+): Promise<() => void> {
+  let set = bridge.msgSubs.get(loginId);
+  if (!set) {
+    set = new Set();
+    bridge.msgSubs.set(loginId, set);
+  }
+  set.add(cb);
+  try {
+    await ensureListening();
+  } catch (err) {
+    realtimeLog.error('listener start failed:', err);
+  }
+  return () => {
+    const s = bridge.msgSubs.get(loginId);
+    s?.delete(cb);
+    if (s && s.size === 0) bridge.msgSubs.delete(loginId);
+    // No messenger stream left: nothing keeps the map right from here on.
+    if (bridge.msgSubs.size === 0) dropMessengerRooms();
   };
 }
 

@@ -681,6 +681,14 @@ and nothing else.
 | `chat`   | the agent's name; for an admin's note the brain's site name, else `New message` | the reply, pictures removed, 140 chars (`New message` when it is a picture only) | `/portal/chat`                                      |                                                    |
 | `review` | `Accepted`, `Returned`, or `With an admin`                                      | the item's title; for `Accepted`, the title it was accepted under                | `/portal/items/<id>`, or `/portal/items` when taken | `itemId`, `state`: `accepted`, `returned`, `taken` |
 
+The `message` kind (the messenger, migration 0335) is raised by the
+database for every live login of a chat that is not the author and not
+muted (`login_notice` `{kind: 'message', loginId, c, seq}`), and the push
+handler skips it until Messenger Phase 5 sends it: an older app could not
+open it. `push_login_prefs` already holds its two preferences, `messages`
+(`all`, `mentions`, `off`) and `message_preview`. See
+[messenger.md](messenger.md).
+
 The `comment` kind is no longer sent (the brain has no comments since
 2026-10-09), and no `review` push is sent now either: review went in
 workspaces W5c (no Accept, Return or Take over since), though the kind and

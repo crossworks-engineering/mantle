@@ -268,11 +268,14 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       'mantle_notify_login_chat',
       'mantle_notify_login_review',
       'mantle_notify_login_comment',
+      // The messenger's kind 'message' (0335): one notice per live, unmuted
+      // participant that is not the author; sent from Messenger Phase 5.
+      'mantle_messenger_login_notice',
     ];
     const fns = await exec<{ proname: string; src: string }>(sqlTag`
       select proname, prosrc as src from pg_proc
        where proname in ('mantle_notify_login_chat', 'mantle_notify_login_review',
-                         'mantle_notify_login_comment')`);
+                         'mantle_notify_login_comment', 'mantle_messenger_login_notice')`);
     expect(fns.map((f) => f.proname).sort()).toEqual([...names].sort());
     for (const f of fns) {
       expect(f.src).toMatch(/pg_notify\(\s*'login_notice'/);
@@ -284,7 +287,7 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       select count(*)::int as n from pg_proc
        where prosrc like '%login_notice%'
          and proname not in ('mantle_notify_login_chat', 'mantle_notify_login_review',
-                             'mantle_notify_login_comment')`);
+                             'mantle_notify_login_comment', 'mantle_messenger_login_notice')`);
     expect(other!.n).toBe(0);
   });
 });
