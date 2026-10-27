@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { WorkbookTabRef } from '@mantle/tabledb';
 import { CHECK_COLUMNS, CHECK_FIELD, sealedRow, sealFieldsOf, storedCheckOf } from './check';
 import { sealOf } from './check-seal';
-import { FILE_SHA, readSheet, sourceStateOf, type CandidateTable } from './read';
+import { FILE_SHA, readCircuitChecks, readSheet, sourceStateOf, type CandidateTable } from './read';
 import { QueryBuilder } from 'drizzle-orm/pg-core';
 import { nodes } from '@mantle/db/schema';
 
@@ -117,6 +117,15 @@ describe('the Checks tab read', () => {
     // Every column was asked for.
     const ask = statements.find((s) => s.includes('"v_Checks"'))!;
     for (const c of CHECK_COLUMNS) expect(ask).toContain(`"${c}"`);
+  });
+
+  it('the overview read pages the newest rows first, so a cut keeps the latest answers', async () => {
+    const { deps, statements } = fakeRead({ Key: 'end:A', Circuit: C });
+    const r = await readCircuitChecks('o', table, C, deps);
+    expect(r).toMatchObject({ cut: false });
+    const pages = statements.filter((q) => q.includes('"v_Checks"'));
+    expect(pages.length).toBeGreaterThan(0);
+    for (const q of pages) expect(q).toMatch(/ORDER BY "_rid" DESC LIMIT/);
   });
 });
 

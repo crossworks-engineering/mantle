@@ -575,6 +575,7 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
           });
         return null;
       },
+      runs: async () => claimed,
       store: async (_o, _s, _c, answers) => {
         filed.push(...answers);
         return { stored: answers.length };
@@ -1431,13 +1432,23 @@ describe('an end the register names is no question', () => {
 describe('circuit_verify, held to once', () => {
   const NOW = new Date('2026-10-25T12:00:00.000Z');
   const ME = 'login:11111111-1111-4111-8111-111111111111';
+  const sheets = [nearSheet()];
+  const T = sheets[0]!.tableId;
+  /** A call claimed `ago` minutes before NOW (checks-store.ts claimVerifyRun). */
+  const ran = (ago: number, by: string, revision = 'rev1', circuit = C): VerifyRun => ({
+    tableId: T,
+    circuit,
+    by,
+    at: new Date(NOW.getTime() - ago * 60_000).toISOString(),
+    revision,
+  });
   /** A sealed row as circuit_verify files it, `ago` minutes before NOW. */
-  const filed = (s: SheetInput, ago: number, by: string, revision = 'rev1'): StoredCheck => {
+  const filed = (s: SheetInput, ago: number, by: string): StoredCheck => {
     const r: StoredCheck = {
       key: 'end:A@20.0,0.0',
       kind: 'end',
       answer: 'yes',
-      revision,
+      revision: 'rev1',
       checkedAt: new Date(NOW.getTime() - ago * 60_000).toISOString(),
       model: 'm',
       reason: 'r',
@@ -1449,77 +1460,68 @@ describe('circuit_verify, held to once', () => {
     };
     return { ...r, seal: sealOf(sealFieldsOf(s.tableId, r)) };
   };
-  const withRows = (rows: (s: SheetInput) => StoredCheck[]) => {
-    const s = nearSheet();
-    return [{ ...s, checks: rows(s) }];
-  };
 
   it('a second call by the same caller within 10 minutes is refused unless recheck', () => {
-    const sheets = withRows((s) => [filed(s, 4, ME)]);
-    expect(verifyAgainRefusal(sheets, C, { by: ME, now: NOW })).toMatch(
+    const runs = [ran(4, ME)];
+    expect(verifyAgainRefusal(sheets, C, { by: ME, now: NOW, runs })).toMatch(
       /4 minutes ago .* refused unless `recheck`/,
     );
-    expect(verifyAgainRefusal(sheets, C, { by: ME, recheck: true, now: NOW })).toBeNull();
+    expect(verifyAgainRefusal(sheets, C, { by: ME, recheck: true, now: NOW, runs })).toBeNull();
     // Another caller, another revision, an older call, another circuit, or
-    // a row typed by hand (no seal): not refused.
-    expect(verifyAgainRefusal(sheets, C, { by: 'login:other', now: NOW })).toBeNull();
+    // a table the trace does not read: not refused.
+    expect(verifyAgainRefusal(sheets, C, { by: 'login:other', now: NOW, runs })).toBeNull();
     expect(
-      verifyAgainRefusal(
-        withRows((s) => [filed(s, 4, ME, 'rev0')]),
-        C,
-        { by: ME, now: NOW },
-      ),
+      verifyAgainRefusal(sheets, C, { by: ME, now: NOW, runs: [ran(4, ME, 'rev0')] }),
     ).toBeNull();
+    expect(verifyAgainRefusal(sheets, C, { by: ME, now: NOW, runs: [ran(11, ME)] })).toBeNull();
+    expect(verifyAgainRefusal(sheets, 'C-OTHER', { by: ME, now: NOW, runs })).toBeNull();
     expect(
-      verifyAgainRefusal(
-        withRows((s) => [filed(s, 11, ME)]),
-        C,
-        { by: ME, now: NOW },
-      ),
+      verifyAgainRefusal(sheets, C, { by: ME, now: NOW, runs: [{ ...ran(4, ME), tableId: 'x' }] }),
     ).toBeNull();
-    expect(verifyAgainRefusal(sheets, 'C-OTHER', { by: ME, now: NOW })).toBeNull();
-    const typed = withRows((s) => [{ ...filed(s, 4, ME), seal: '' }]);
-    expect(verifyAgainRefusal(typed, C, { by: ME, now: NOW })).toBeNull();
+  });
+
+  it('only the claims count: a sealed Checks row with no claim refuses nothing', () => {
+    const withRow = [{ ...sheets[0]!, checks: [filed(sheets[0]!, 4, ME)] }];
+    expect(verifyAgainRefusal(withRow, C, { by: ME, now: NOW, runs: [] })).toBeNull();
+    const three = [
+      filed(sheets[0]!, 50, 'a'),
+      filed(sheets[0]!, 30, 'b'),
+      filed(sheets[0]!, 20, ME),
+    ];
+    const rows = [{ ...sheets[0]!, checks: three }];
+    expect(verifyAgainRefusal(rows, C, { by: ME, recheck: true, now: NOW, runs: [] })).toBeNull();
   });
 
   it('one circuit however its name is written: ABC, abc, Abc', () => {
-    const named = (s: SheetInput, circuit: string, ago: number): StoredCheck => {
-      const r = { ...filed(s, ago, ME), circuit };
-      return { ...r, seal: sealOf(sealFieldsOf(s.tableId, r)) };
-    };
-    const sheets = withRows((s) => [named(s, 'ABC', 4)]);
+    const runs = [ran(4, ME, 'rev1', 'ABC')];
     for (const asked of ['ABC', 'abc', ' Abc ', 'aBc']) {
-      expect(verifyAgainRefusal(sheets, asked, { by: ME, now: NOW }), asked).toMatch(
+      expect(verifyAgainRefusal(sheets, asked, { by: ME, now: NOW, runs }), asked).toMatch(
         /refused unless `recheck`/,
       );
     }
-    expect(verifyAgainRefusal(sheets, 'ABD', { by: ME, now: NOW })).toBeNull();
+    expect(verifyAgainRefusal(sheets, 'ABD', { by: ME, now: NOW, runs })).toBeNull();
     // The calls claimed count alike whatever case they were made in.
-    const s0 = withRows(() => []);
-    const runs = ['ABC', 'abc', 'Abc'].map((circuit, i) => ({
-      tableId: s0[0]!.tableId,
-      circuit,
-      by: `login:${i}`,
-      at: new Date(NOW.getTime() - (10 + i) * 60_000).toISOString(),
-      revision: s0[0]!.revision ?? '',
-    }));
-    expect(verifyAgainRefusal(s0, 'aBC', { by: ME, recheck: true, now: NOW, runs })).toMatch(
-      /3 times in the last hour/,
+    const cased = ['ABC', 'abc', 'Abc'].map((circuit, i) =>
+      ran(10 + i, `login:${i}`, 'rev1', circuit),
     );
+    expect(
+      verifyAgainRefusal(sheets, 'aBC', { by: ME, recheck: true, now: NOW, runs: cased }),
+    ).toMatch(/3 times in the last hour/);
     expect(circuitKey('  Line  10\t A ')).toBe('line 10 a');
   });
 
   it('a recheck runs at most 3 times an hour on a circuit, whoever ran the calls', () => {
-    const three = withRows((s) => [filed(s, 50, 'a'), filed(s, 30, 'b'), filed(s, 20, ME)]);
-    expect(verifyAgainRefusal(three, C, { by: ME, recheck: true, now: NOW })).toMatch(
+    const three = [ran(50, 'a'), ran(30, 'b'), ran(20, ME)];
+    expect(verifyAgainRefusal(sheets, C, { by: ME, recheck: true, now: NOW, runs: three })).toMatch(
       /3 times in the last hour/,
     );
-    const two = withRows((s) => [filed(s, 70, 'a'), filed(s, 30, 'b'), filed(s, 20, ME)]);
-    expect(verifyAgainRefusal(two, C, { by: ME, recheck: true, now: NOW })).toBeNull();
+    const two = [ran(70, 'a'), ran(30, 'b'), ran(20, ME)];
+    expect(
+      verifyAgainRefusal(sheets, C, { by: ME, recheck: true, now: NOW, runs: two }),
+    ).toBeNull();
   });
 
   it('verifyCircuit refuses before any crop or model call; a dry run is never refused', async () => {
-    const sheets = withRows((s) => [filed(s, 2, ME)]);
     let asked = 0;
     const deps: VerifyDeps = {
       readSheets: async () => ({ sheets, limits: [] }),
@@ -1538,6 +1540,7 @@ describe('circuit_verify, held to once', () => {
       },
       storable: async () => null,
       claim: async (_o, _c, refusal) => refusal([]),
+      runs: async () => [ran(2, ME)],
       store: async () => ({ stored: 0 }),
       now: () => NOW,
     };

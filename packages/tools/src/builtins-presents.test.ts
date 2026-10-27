@@ -95,6 +95,7 @@ vi.mock('@mantle/app-build', () => ({
 }));
 
 import { PRESENT_TOOLS, DIAGRAM_RENDER_TOOLS } from './builtins-presents';
+import { readCircuitChecks } from './circuit-trace/read';
 import { registerCanvasRenderer, type CanvasRenderRequest } from './canvas-render-bridge';
 import type { ToolHandlerContext } from './types';
 
@@ -587,7 +588,7 @@ describe('the reads and the restore', () => {
     expect((none as { error: string }).error).toContain('present_list');
   });
 
-  it('present_get of a traced P&ID adds its image check overview; any other canvas none', async () => {
+  it('present_get of a traced P&ID adds its image check overview on checks: true; otherwise none', async () => {
     const T1 = '22222222-2222-4222-8222-222222222222';
     const data = {
       template: 'pid',
@@ -596,10 +597,17 @@ describe('the reads and the restore', () => {
       equipment: [{ id: 'V-1', type: 'vertical-vessel' }],
     };
     const { buildCanvas } = await import('@mantle/diagram-templates');
-    h.getPresent.mockResolvedValueOnce(
-      detail(buildCanvas({ template: 'pid', data, mode: 'import' })),
-    );
-    const out = (await tool('present_get').handler({ id: ID }, ctx)) as {
+    const traced = detail(buildCanvas({ template: 'pid', data, mode: 'import' }));
+    // Not asked: no table is read, no overview.
+    const reads = vi.mocked(readCircuitChecks).mock.calls.length;
+    h.getPresent.mockResolvedValueOnce(traced);
+    const unasked = (await tool('present_get').handler({ id: ID }, ctx)) as {
+      output: Record<string, unknown>;
+    };
+    expect(unasked.output).not.toHaveProperty('image_checks');
+    expect(vi.mocked(readCircuitChecks).mock.calls.length).toBe(reads);
+    h.getPresent.mockResolvedValueOnce(traced);
+    const out = (await tool('present_get').handler({ id: ID, checks: true }, ctx)) as {
       output: { image_checks?: { traced: boolean; note: string; circuits: unknown[] } };
     };
     expect(out.output.image_checks).toMatchObject({
@@ -608,7 +616,7 @@ describe('the reads and the restore', () => {
       circuits: [{ circuit: '10000-001-01', counts: { checked: 0, no: 0, unsure: 0 } }],
     });
     h.getPresent.mockResolvedValueOnce(detail(CANVAS));
-    const plain = (await tool('present_get').handler({ id: ID }, ctx)) as {
+    const plain = (await tool('present_get').handler({ id: ID, checks: true }, ctx)) as {
       output: Record<string, unknown>;
     };
     expect(plain.output).not.toHaveProperty('image_checks');

@@ -37,7 +37,6 @@ import {
   parseAnswers,
   questionsFor,
   quoted,
-  sealedRow,
   TRUST,
   VERIFY_MAX,
   type CheckKind,
@@ -123,6 +122,11 @@ export type VerifyDeps = {
     claim: VerifyClaim,
     refusal: (runs: readonly VerifyRun[]) => string | null,
   ) => Promise<string | null>;
+  /** The calls already claimed on these tables (read only, no lock): the
+   *  guard's early look, before the worker is resolved or anything is
+   *  cropped (checks-store.ts readVerifyRuns). The claim reads them again
+   *  under its lock. */
+  runs: (ownerId: string, tableIds: readonly string[]) => Promise<VerifyRun[]>;
   now: () => Date;
 };
 
@@ -157,8 +161,8 @@ export type VerifyInput = {
   /** Ask again guesses already answered at the drawing's current revision. */
   recheck?: boolean;
   /** Who calls (callerOf in builtins-circuits.ts: a kind and a keyed
-   *  hash): the guard against a second call reads it off the calls claimed
-   *  on the circuit and the Checks rows' By column. */
+   *  hash): filed in the Checks rows' By column and the call's claim; the
+   *  guard against a second call reads it off the claims only. */
   by?: string;
 };
 
@@ -168,47 +172,37 @@ const MINUTE = 60_000;
  * Why this call may not run now (VERIFY_ONCE, held by the server), or
  * null: read off the calls claimed on the circuit (`runs`: every call is
  * claimed before its first vision request, under a lock, and counts
- * whatever came of it) and its sealed Checks rows (each call files its
- * rows under its claim's time; rows filed before claims are read too).
+ * whatever came of it), and only those; the Checks rows are not read.
  * Without `recheck`, a call within VERIFY_GUARD.againMinutes of one by the
- * same caller on the same circuit at the same revision of a sheet is
- * refused; with it, a call is refused once VERIFY_GUARD.perHour calls on
- * the circuit ran in the last hour, whoever ran them. Rows without the
- * seal (typed by hand) never count. A dry run is never refused.
+ * same caller on the same circuit (circuitKey) at the same revision of a
+ * sheet is refused; with it, a call is refused once VERIFY_GUARD.perHour
+ * calls on the circuit ran in the last hour, whoever ran them. `sheets`
+ * gives each table's current revision. A dry run is never refused.
  */
 export function verifyAgainRefusal(
   sheets: readonly SheetInput[],
   circuit: string,
-  opts: { by?: string; recheck?: boolean; now: Date; runs?: readonly VerifyRun[] },
+  opts: { by?: string; recheck?: boolean; now: Date; runs: readonly VerifyRun[] },
 ): string | null {
   const now = opts.now.getTime();
   // One circuit however its name is written (case, spacing): circuitKey.
   const asked = circuitKey(circuit);
   const calls = new Set<string>();
   let recent: string | null = null;
-  const seen = (at: string, by: string | undefined, sameRevision: boolean) => {
-    const t = Date.parse(at);
-    if (!Number.isFinite(t) || t > now + MINUTE) return;
-    if (now - t < 60 * MINUTE) calls.add(at);
+  const revisionOf = new Map(sheets.map((s) => [s.tableId, s.revision ?? '']));
+  for (const r of opts.runs) {
+    if (circuitKey(r.circuit) !== asked || !revisionOf.has(r.tableId)) continue;
+    const t = Date.parse(r.at);
+    if (!Number.isFinite(t) || t > now + MINUTE) continue;
+    if (now - t < 60 * MINUTE) calls.add(r.at);
     if (
       opts.by &&
-      by === opts.by &&
-      sameRevision &&
+      r.by === opts.by &&
+      r.revision === revisionOf.get(r.tableId) &&
       now - t < VERIFY_GUARD.againMinutes * MINUTE &&
-      (recent === null || at > recent)
+      (recent === null || r.at > recent)
     )
-      recent = at;
-  };
-  const revisionOf = new Map(sheets.map((s) => [s.tableId, s.revision ?? '']));
-  for (const s of sheets) {
-    for (const r of s.checks ?? []) {
-      if (circuitKey(r.circuit ?? '') !== asked || !sealedRow(s.tableId, r)) continue;
-      seen(r.checkedAt, r.by, r.revision === (s.revision ?? ''));
-    }
-  }
-  for (const r of opts.runs ?? []) {
-    if (circuitKey(r.circuit) !== asked || !revisionOf.has(r.tableId)) continue;
-    seen(r.at, r.by, r.revision === revisionOf.get(r.tableId));
+      recent = r.at;
   }
   if (!opts.recheck && recent !== null) {
     const ago = Math.max(0, Math.round((now - Date.parse(recent)) / MINUTE));
@@ -364,6 +358,10 @@ export async function verifyCircuit(
     ...(input.by ? { by: input.by } : {}),
     ...(input.recheck ? { recheck: true } : {}),
     now: deps.now(),
+    runs: await deps.runs(
+      ownerId,
+      read.sheets.map((s) => s.tableId),
+    ),
   });
   if (again) return { ok: false, error: again };
 

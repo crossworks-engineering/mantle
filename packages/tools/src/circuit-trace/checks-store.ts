@@ -213,8 +213,8 @@ export async function storeChecks(
     return id;
   };
   /** Per question, its crops' cell words: each file id with the sha256 of
-   *  the bytes stored (sealed with the row: a crop file replaced later is
-   *  never embedded as this answer's evidence, present-crops.ts). */
+   *  the bytes stored, sealed with the row (a drawing check's crop file is
+   *  never replaced; the hash says which bytes the answer saw). */
   const cropIds = new Map<string, string[]>();
   let overviewId: string | null = null;
   try {
@@ -416,6 +416,22 @@ function runsOf(tableId: string, v: unknown): VerifyRun[] {
         ]
       : [];
   });
+}
+
+/** The calls claimed on these tables (verify.ts VerifyDeps.runs): read
+ *  only, no lock, for the guard's early look; the claim reads them again
+ *  under its lock. */
+export async function readVerifyRuns(
+  ownerId: string,
+  tableIds: readonly string[],
+): Promise<VerifyRun[]> {
+  const ids = [...new Set(tableIds)];
+  if (!ids.length) return [];
+  const rows = await db
+    .select({ id: nodes.id, runs: sql<unknown>`${nodes.data}->${VERIFY_RUNS_KEY}` })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids)));
+  return rows.flatMap((r) => runsOf(r.id, r.runs));
 }
 
 /**
