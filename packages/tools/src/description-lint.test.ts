@@ -55,6 +55,7 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'dimension_issues', // formula_get result field (declared unit vs computed dimension)
   'ask_human', // a run STEP kind (docs/runs.md), not a tool — what pending_* decides
   'page_embed', // present_get / present_create / present_update result field (a canvas's page line)
+  'image_checks', // present_get result field (a traced P&ID's image check overview)
 ]);
 
 /**

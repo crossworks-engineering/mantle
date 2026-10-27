@@ -212,6 +212,7 @@ GET /api/pending class=area scope=area:settings caller=owner gone=false
 GET /api/pending/:id class=area scope=area:settings caller=owner gone=false
 GET /api/presents class=content scope=content caller=owner gone=false
 GET /api/presents/:id class=content scope=content caller=owner gone=false
+GET /api/presents/:id/checks class=content scope=content caller=owner gone=false
 GET /api/presents/:id/data class=content scope=content caller=owner gone=false
 GET /api/presents/:id/frame class=content scope=content caller=frame gone=false
 GET /api/presents/:id/poster class=content scope=content caller=readerAsset gone=false
@@ -466,6 +467,7 @@ HEAD /api/pending class=area scope=area:settings caller=owner gone=false
 HEAD /api/pending/:id class=area scope=area:settings caller=owner gone=false
 HEAD /api/presents class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id class=content scope=content caller=owner gone=false
+HEAD /api/presents/:id/checks class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id/data class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id/frame class=content scope=content caller=frame gone=false
 HEAD /api/presents/:id/poster class=content scope=content caller=readerAsset gone=false

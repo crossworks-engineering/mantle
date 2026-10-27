@@ -516,7 +516,7 @@ const circuit_verify: BuiltinToolDef = {
     clientSourced: CS.always("spends the owner's vision key and writes check rows"),
   },
   name: 'Check a traced circuit with an image model',
-  description: `Ask a vision model about each guess of \`circuit_trace\` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers and crops go to the drawing table's Checks tab; trace again to write them on the drawing (a help, not a guarantee). **Spends the owner's vision key**, never automatic; \`dry_run\` is free. ${VERIFY_ONCE}`,
+  description: `Ask a vision model about each guess of \`circuit_trace\` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers and crops go to the drawing table's Checks tab; trace again to write them on the drawing. **Spends the owner's vision key**, never automatic; \`dry_run\` is free. ${VERIFY_ONCE}`,
   inputSchema: {
     type: 'object',
     properties: {

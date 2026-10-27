@@ -43,15 +43,24 @@ import {
   PID_LIMITS,
   PID_VERSION,
   drawingFields,
+  traceOf,
   validatePid,
   type LinkSite,
   type PidData,
+  type TraceSource,
 } from './schema.ts';
 import { SET_LIMITS } from './sizes.ts';
 import { overLimitError, pidLimitsProblem } from './limits.ts';
 
 export type PidPage = { id: string; title: string; data: PidData };
-export type PidSet = { set: true; title: string; description?: string; pages: PidPage[] };
+export type PidSet = {
+  set: true;
+  title: string;
+  description?: string;
+  pages: PidPage[];
+  /** circuit_trace's source of the set (schema.ts TraceSource). */
+  trace?: TraceSource;
+};
 /** What the `pid` template takes: one drawing, or a set of them. */
 export type PidInput = PidData | PidSet;
 
@@ -70,6 +79,7 @@ const SET_KEYS = [
   'pages',
   'style',
   'view',
+  'trace',
 ];
 /** Page defaults the set gives every page that does not set its own: the
  *  style edition too, so every page draws in one style. */
@@ -127,6 +137,7 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
   // The set's view (the live canvas's zoom); its style is checked as every
   // page's default below.
   if (d.view !== undefined) drawingFields({ view: d.view }, issues);
+  const trace = traceOf(d, issues);
   const rawPages = objects(
     list(d, 'pages', '', issues, { required: true, max: SET_LIMITS.pages }),
     'pages',
@@ -239,6 +250,7 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
     title,
     ...(description ? { description } : {}),
     pages: read.map((r) => ({ id: r.id, title: r.title, data: r.data! })),
+    ...(trace ? { trace } : {}),
   });
 }
 

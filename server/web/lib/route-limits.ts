@@ -200,6 +200,9 @@ export const RATE_LIMITS = {
   // marks or suggestions; writes save them (a meeting's markup, a vote).
   canvasData: perLogin('canvas-data', 600),
   canvasDataWrite: perLogin('canvas-data-write', 120),
+  // A traced canvas's image check overview (the panel beside it): one
+  // read of the drawing tables' Checks tabs per open.
+  presentChecks: perLogin('present-checks', 120),
   shareEvaluate: perIp('share-evaluate', 60),
   shareFrameTicket: perIp('share-frame-ticket', 30),
   shareRows: perIp('share-rows', 120),

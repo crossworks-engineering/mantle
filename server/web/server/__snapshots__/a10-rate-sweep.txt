@@ -9,7 +9,8 @@
 # 2026-10-27 (tree custom order): POST /api/tree/:kind/place, a place in a folder's custom order, takes tree-place (120 a minute per login, an Admin user's too); its probes are the branch's own answers (no route on main).
 # 2026-10-27 (tree custom order, fix round): PATCH /api/tree/:kind/folders/:id, which places a folder (`after`), takes tree-place too, shared with the item place; its probes and the two shared ones are the branch's own answers (no limit on main).
 # 2026-10-26 (DWG phase 7a): GET, HEAD, PUT and DELETE /api/presents/:id/data, a canvas's data store, take canvas-data (600 a minute per login) and canvas-data-write (120, PUT and DELETE share it); their probes are the branch's own answers (no route on main).
-# probes: 295
+# 2026-10-27 (DWG phase 6): GET and HEAD /api/presents/:id/checks, a traced canvas's image check overview, take present-checks (120 a minute per login); its probes are the branch's own answers (no route on main).
+# probes: 303
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
 POST /api/auth/login none auth:login scope => other address 401
@@ -127,6 +128,14 @@ HEAD /api/presents/:id/poster member present-poster count (login 600/60s) => fir
 HEAD /api/presents/:id/poster member present-poster window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
 HEAD /api/presents/:id/poster member present-poster scope => other address 429; other login 404; other login, other address 404
 HEAD /api/presents/:id/poster member present-poster order: no login => first 429 at 0; answer 401; then 404
+GET /api/presents/:id/checks member present-checks count (login 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+GET /api/presents/:id/checks member present-checks window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+GET /api/presents/:id/checks member present-checks scope => other address 429; other login 404; other login, other address 404
+GET /api/presents/:id/checks member present-checks order: no login => first 429 at 0; answer 401; then 404
+HEAD /api/presents/:id/checks member present-checks count (login 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /api/presents/:id/checks member present-checks window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /api/presents/:id/checks member present-checks scope => other address 429; other login 404; other login, other address 404
+HEAD /api/presents/:id/checks member present-checks order: no login => first 429 at 0; answer 401; then 404
 POST /api/presents/:id/frame-ticket member member-canvas-frame-ticket count (login 30/60s) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 POST /api/presents/:id/frame-ticket member member-canvas-frame-ticket window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
 POST /api/presents/:id/frame-ticket member member-canvas-frame-ticket scope => other address 429; other login 404; other login, other address 404
