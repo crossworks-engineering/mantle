@@ -4,9 +4,9 @@ render on synthetic DXF files this test writes with ezdxf (never a real
 drawing: the repo is public).
 
 Run (stdlib unittest; the render cases skip when ezdxf or matplotlib is
-missing, unless MEDIA_TESTS_REQUIRE_EZDXF is set):
+missing, unless PARSER_TESTS_REQUIRE_CAD is set):
     /tmp/dwgvenv/bin/pip install "ezdxf==1.4.5" "matplotlib==3.11.2"
-    /tmp/dwgvenv/bin/python -m unittest discover -s infra/media-sidecar/tests -v
+    /tmp/dwgvenv/bin/python -m unittest discover -s server/parser/cad/tests -v
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ try:
     HAVE_RENDER = True
 except Exception:  # pragma: no cover - the venv case
     HAVE_RENDER = False
-    if os.environ.get("MEDIA_TESTS_REQUIRE_EZDXF"):
+    if os.environ.get("PARSER_TESTS_REQUIRE_CAD"):
         raise
 
 
@@ -167,7 +167,7 @@ class RenderTests(unittest.TestCase):
         }
 
     def test_the_child_writes_crops_and_an_overview(self):
-        app = os.path.join(os.path.dirname(HERE), "app.py")
+        app = os.path.join(os.path.dirname(HERE), "cad.py")
         with tempfile.TemporaryDirectory() as tmp:
             src = self.drawing(tmp)
             spec_path = os.path.join(tmp, "spec.json")

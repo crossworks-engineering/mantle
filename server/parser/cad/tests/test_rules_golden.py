@@ -5,10 +5,10 @@ The two sides used to copy the rules by hand; this file and its TypeScript
 twin are what keeps them one rule.
 
 Run (stdlib unittest, no ezdxf needed):
-    python3 -m unittest discover -s infra/media-sidecar/tests -v
+    python3 -m unittest discover -s server/parser/cad/tests -v
 
-The golden file lives in the repo, outside the sidecar folder: in a copy of
-the sidecar alone (an image build) it is not there and the cases skip.
+The golden file lives in the repo, outside the CAD folder: in a copy of the
+CAD folder alone it is not there and the cases skip.
 """
 
 from __future__ import annotations
@@ -24,7 +24,9 @@ sys.path.insert(0, os.path.dirname(HERE))
 import dwg_bones  # noqa: E402
 
 GOLDEN = os.path.normpath(
-    os.path.join(HERE, "..", "..", "..", "packages", "files", "src", "dwg-circuit-rules.golden.json")
+    os.path.join(
+        HERE, "..", "..", "..", "..", "packages", "files", "src", "dwg-circuit-rules.golden.json"
+    )
 )
 
 

@@ -1,0 +1,21 @@
+{
+  "name": "@mantle/parser",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mantle/config": "workspace:*",
+    "@mantle/files": "workspace:*",
+    "@mantle/std": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

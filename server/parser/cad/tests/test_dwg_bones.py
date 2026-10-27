@@ -4,7 +4,7 @@ drawing: the repo is public).
 
 Run (stdlib unittest; the ezdxf cases skip when ezdxf is not installed):
     python3 -m venv /tmp/dwgvenv && /tmp/dwgvenv/bin/pip install "ezdxf==1.4.5"
-    /tmp/dwgvenv/bin/python -m unittest discover -s infra/media-sidecar/tests -v
+    /tmp/dwgvenv/bin/python -m unittest discover -s server/parser/cad/tests -v
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ try:
     HAVE_EZDXF = True
 except Exception:  # pragma: no cover - the venv case
     HAVE_EZDXF = False
-    if os.environ.get("MEDIA_TESTS_REQUIRE_EZDXF"):
+    if os.environ.get("PARSER_TESTS_REQUIRE_CAD"):
         raise  # CI: the registry cases must run, never skip
 
 
@@ -479,9 +479,9 @@ class RegistryTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import app  # noqa: PLC0415 - imports nothing heavy at module level
+        import cad  # noqa: PLC0415 - imports nothing heavy at module level
 
-        cls.app = app
+        cls.app = cad
 
     def roundtrip(self, doc):
         with tempfile.TemporaryDirectory() as tmp:
@@ -530,7 +530,7 @@ class RegistryTests(unittest.TestCase):
             self.assertIn(key, index)
         self.assertIsNone(index["geometry_error"])
         self.assertEqual([b["block"] for b in index["blocks"]], ["LineNumber"])
-        # No NaN anywhere: the app side parses this with JSON.parse.
+        # No NaN anywhere: the brain parses this with JSON.parse.
         json.dumps(index, allow_nan=False)
 
         geo = index["geometry"]
