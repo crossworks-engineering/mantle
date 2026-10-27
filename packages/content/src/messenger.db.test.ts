@@ -16,14 +16,19 @@
  *  - favourites (a pin needs a participant row or an agent the login may
  *    chat with; favourites first);
  *  - the triggers' payloads are ids only; the author and a muted
- *    participant get no notice.
+ *    participant get no notice;
+ *  - fix round 2: the budget (60 sends, 120 writes a minute per login); a
+ *    leaver's raw rows (no tail, no cursor columns, no later people); the
+ *    history delete (cursors and the history event); the clear's events;
+ *    after_seq paging without loss; every write path (edit, delete,
+ *    react, remove, rename, hand-off, archive, concurrent client_msg_id).
  *
  * The MCP tools and messenger_wait: packages/tools/src/builtins-messenger.db.test.ts.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/messenger.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -59,12 +64,18 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
     via: via ?? null,
   });
   const as = <T>(loginId: string, fn: () => Promise<T>) => m.withViewer({ login: loginId }, fn);
-  /** Rows the workspace role reads, with no WHERE of the module's own. */
+  /** Rows the workspace role reads, with no WHERE of the module's own (the
+   *  columns it may read: 0336 keeps the tail and the cursors from it). */
+  const RAW_COLUMNS: Record<string, string> = {
+    messenger_conversations: 'id, kind, title, archived_at',
+    messenger_participants: 'id, login_id, admin, joined_at, left_at',
+    messenger_messages: '*',
+  };
   const raw = async (loginId: string, table: string, c: string) =>
     as(loginId, async () => {
       const col = table === 'messenger_conversations' ? 'id' : 'conversation_id';
       const rows = (await m.db.execute(
-        sqlTag.raw(`select * from ${table} where ${col} = '${c}'`),
+        sqlTag.raw(`select ${RAW_COLUMNS[table] ?? '*'} from ${table} where ${col} = '${c}'`),
       )) as unknown as Record<string, unknown>[];
       return rows;
     });
@@ -107,6 +118,9 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
     await su(sqlTag`insert into workspace_resources (workspace_id, type, ref_id)
       values (${W}, 'assistant', ${agent})`);
   }, 180_000);
+
+  // Each test starts with a fresh budget (the budget's own test spends it).
+  beforeEach(() => ms?.resetMessengerBudgetsForTests());
 
   afterAll(async () => {
     for (const u of unlistens) await u().catch(() => {});
@@ -432,5 +446,309 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
     expect(Object.keys(ch[0]!).sort()).toEqual(['actor', 'c', 'kind', 'seq']);
     const ln = notices.map((p) => JSON.parse(p)).filter((p) => p.c === c);
     expect(ln).toEqual([{ kind: 'message', loginId: B, c, seq: message.seq }]);
+  });
+
+  // ── Fix round 2 (plan page d8954876 section 21) ────────────────────────
+
+  const send = (who: string, c: string, body: string, clientMsgId?: string) =>
+    ms.sendMessengerMessage(actor(who), c, { body, ...(clientMsgId ? { clientMsgId } : {}) });
+  const group = async (who: string, others: string[], title?: string) =>
+    (
+      await ms.createMessengerConversation(actor(who), {
+        kind: 'group',
+        participants: others,
+        title,
+      })
+    ).conversationId;
+  /** Whether the workspace role is refused a statement (a column it may
+   *  not read). */
+  const denied = async (who: string, q: string) => {
+    try {
+      await as(who, () => m.db.execute(sqlTag.raw(q)));
+      return false;
+    } catch (e) {
+      const err = e as { message?: string; cause?: { message?: string } };
+      return /permission denied/.test(`${err.message} ${err.cause?.message ?? ''}`);
+    }
+  };
+
+  it('the budget: the 61st send in a minute is refused, other writes stop at 120', async () => {
+    const { domainErrorAnswer } = await import('@mantle/std');
+    const c = await group(D, []); // one write
+    for (let i = 0; i < 60; i++) await send(D, c, `b${i}`);
+    const over = await send(D, c, 'one too many').catch((e: unknown) => e);
+    expect(over).toBeInstanceOf(ms.MessengerRateLimitedError);
+    expect(
+      (over as InstanceType<typeof ms.MessengerRateLimitedError>).retryAfterSec,
+    ).toBeGreaterThan(0);
+    expect(domainErrorAnswer(over)?.status).toBe(429);
+    // Another login's budget is its own.
+    await send(A, await group(A, []), 'mine');
+    // The other writes: 119 after the create, then refused, a create too.
+    for (let i = 0; i < 119; i++) await ms.markMessengerRead(actor(D), c, 1);
+    await expect(ms.markMessengerRead(actor(D), c, 1)).rejects.toThrow(
+      ms.MessengerRateLimitedError,
+    );
+    await expect(group(D, [])).rejects.toThrow(ms.MessengerRateLimitedError);
+  }, 60_000);
+
+  it('a leaver reads no tail, no cursor and nobody who came later (raw row security)', async () => {
+    const g = await group(A, [B], 'Tail');
+    await send(A, g, 'before');
+    await ms.leaveMessengerConversation(actor(B), g);
+    const secret = `tail-${randomUUID()}`;
+    await send(A, g, secret);
+    await ms.addMessengerParticipants(actor(A), g, [D]);
+    // The tail and the cursors are no column the workspace role reads, for
+    // anyone: a leaver, a live participant.
+    for (const who of [A, B]) {
+      for (const q of [
+        `select last_preview from messenger_conversations where id = '${g}'`,
+        `select last_seq from messenger_conversations where id = '${g}'`,
+        `select last_message_at from messenger_conversations where id = '${g}'`,
+        `select last_read_seq from messenger_participants where conversation_id = '${g}'`,
+        `select left_seq from messenger_participants where conversation_id = '${g}'`,
+        `select cleared_before_seq, mention_seq, from_seq, muted from messenger_participants where conversation_id = '${g}'`,
+      ]) {
+        expect(await denied(who, q), `${who}: ${q}`).toBe(true);
+      }
+    }
+    // B, who left, sees the people of the room as it left: not D.
+    const bPeople = (await raw(B, 'messenger_participants', g)).map((r) => String(r.login_id));
+    expect(bPeople.sort()).toEqual([A, B].sort());
+    // D, added later, does not see B, who left before D joined.
+    const dPeople = (await raw(D, 'messenger_participants', g)).map((r) => String(r.login_id));
+    expect(dPeople.sort()).toEqual([A, D].sort());
+    // B still reads the conversation row itself (its list keeps the chat).
+    expect((await raw(B, 'messenger_conversations', g)).length).toBe(1);
+    // My own row through mantle_messenger_mine: B's tail is its leave, no
+    // time and no line; never another login's row.
+    const [mine] = (await as(B, () =>
+      m.db.execute(sqlTag`select last_seq::int as last_seq, left_seq::int as left_seq,
+                                 last_message_at, last_preview
+                            from mantle_messenger_mine(${g}::uuid)`),
+    )) as unknown as Record<string, unknown>[];
+    expect(mine).toMatchObject({ last_message_at: null, last_preview: null });
+    expect(mine!.last_seq).toBe(mine!.left_seq);
+    const notMine = await as(B, () =>
+      m.db.execute(sqlTag`select 1 from mantle_messenger_mine(null) where login_id <> ${B}::uuid`),
+    );
+    expect(notMine).toEqual([]);
+    // The module answers the same.
+    const conv = await as(B, () => ms.getMessengerConversation(actor(B), g));
+    expect(conv.lastSeq).toBe(conv.me.leftSeq);
+    expect(conv.lastMessageAt).toBeNull();
+    expect(conv.participants.map((p) => p.id).sort()).toEqual([A, B].sort());
+    const row = (await as(B, () => ms.listMessengerConversations(actor(B)))).find(
+      (r) => r.id === g,
+    )!;
+    expect(JSON.stringify(row)).not.toContain(secret);
+    expect(row.lastSeq).toBe(conv.me.leftSeq);
+    // A live participant reads its tail: the newest line.
+    const aRow = (await as(A, () => ms.listMessengerConversations(actor(A)))).find(
+      (r) => r.id === g,
+    )!;
+    expect(aRow.preview?.text).toMatch(/added/);
+    expect(aRow.lastSeq).toBeGreaterThan(conv.me.leftSeq!);
+  });
+
+  it('history delete: only what is left counts, every cursor moves up, one history event', async () => {
+    const g = await group(A, [B, D]);
+    for (const t of ['h1', 'h2', 'h3', 'h4']) await send(A, g, t);
+    await ms.sendMessengerMessage(actor(A), g, {
+      body: '@Ben h5',
+      mentions: [{ kind: 'login', id: B }],
+    });
+    await ms.markMessengerRead(actor(D), g, 3);
+    await expect(ms.deleteMessengerHistory(actor(B), g)).rejects.toThrow(ms.MessengerRefusedError);
+    changed.length = 0;
+    expect(await ms.deleteMessengerHistory(actor(A), g)).toEqual({ deleted: 5 });
+    for (const who of [B, D]) {
+      const row = (await as(who, () => ms.listMessengerConversations(actor(who)))).find(
+        (r) => r.id === g,
+      )!;
+      // The system line that says so, and nothing deleted.
+      expect(row, who).toMatchObject({ unread: 1, mention: false });
+      const page = await as(who, () => ms.listMessengerMessages(actor(who), g));
+      expect(
+        page.messages.map((x) => x.seq),
+        who,
+      ).toEqual([6]);
+    }
+    expect((await as(B, () => ms.messengerUnread(actor(B)))).messenger).toBeGreaterThanOrEqual(1);
+    await ts.pollUntil(() => changed.some((p) => p.includes(g) && p.includes('"history"')), {
+      what: 'the history event',
+    });
+    const h = changed.map((p) => JSON.parse(p)).filter((p) => p.c === g && p.kind === 'history');
+    expect(h).toEqual([{ c: g, seq: 5, kind: 'history', actor: A }]);
+
+    // Older than a date: the seqs up to the newest older one go.
+    const g2 = await group(A, [B]);
+    await send(A, g2, 'old 1');
+    await send(A, g2, 'old 2');
+    await new Promise((r) => setTimeout(r, 60));
+    const cut = new Date();
+    await new Promise((r) => setTimeout(r, 60));
+    await send(A, g2, 'new 3');
+    await send(A, g2, 'new 4');
+    expect(await ms.deleteMessengerHistory(actor(A), g2, cut)).toEqual({ deleted: 2 });
+    const left = await as(B, () => ms.listMessengerMessages(actor(B), g2));
+    expect(left.messages.map((x) => x.seq)).toEqual([3, 4, 5]);
+    const bRow = (await as(B, () => ms.listMessengerConversations(actor(B)))).find(
+      (r) => r.id === g2,
+    )!;
+    expect(bRow.unread).toBe(3);
+  });
+
+  it('a clear tells the clearer "self" and everyone its read cursor', async () => {
+    const g = await group(A, [B]);
+    await send(A, g, 'one');
+    await send(A, g, 'two');
+    changed.length = 0;
+    await ms.clearMessengerForMe(actor(B), g);
+    await ts.pollUntil(() => changed.some((p) => p.includes(g) && p.includes('"self"')), {
+      what: 'the self event',
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    const got = changed
+      .map((p) => JSON.parse(p))
+      .filter((p) => p.c === g)
+      .map((p) => `${p.kind}:${p.actor}:${p.seq}`);
+    expect(got.sort()).toEqual([`read:${B}:2`, `self:${B}:null`].sort());
+  });
+
+  it('after_seq pages 100 at a time without losing a message; the wait too', async () => {
+    const g = await group(A, [B]);
+    // 150 messages straight in (the paging, not the send, is under test).
+    await su(sqlTag`insert into messenger_messages
+        (conversation_id, seq, author_kind, author_login_id, author_name, body)
+      select ${g}, n, 'login', ${A}, 'Ann', 'm' || n from generate_series(1, 150) n`);
+    await su(sqlTag`update messenger_conversations set last_seq = 150 where id = ${g}`);
+    const seen: number[] = [];
+    let after = 0;
+    let pages = 0;
+    for (;;) {
+      const p = await as(B, () =>
+        ms.listMessengerMessages(actor(B), g, { afterSeq: after, limit: 100 }),
+      );
+      seen.push(...p.messages.map((x) => x.seq));
+      after = p.lastSeq;
+      pages += 1;
+      if (!p.hasMore) break;
+    }
+    expect(seen).toEqual(Array.from({ length: 150 }, (_, i) => i + 1));
+    expect([pages, after]).toEqual([2, 150]);
+    const w = await as(B, () => ms.waitForMessengerMessages(actor(B), g, 0, 0));
+    expect([w.messages.length, w.hasMore, w.lastSeq]).toEqual([100, true, 100]);
+    const w2 = await as(B, () => ms.waitForMessengerMessages(actor(B), g, w.lastSeq, 0));
+    expect(w2.messages.map((x) => x.seq)).toEqual(Array.from({ length: 50 }, (_, i) => i + 101));
+    expect([w2.hasMore, w2.lastSeq]).toEqual([false, 150]);
+  });
+
+  it('edit and delete: my own; a group admin deletes any; a direct chat has no admin', async () => {
+    const g = await group(A, [B]);
+    const a1 = (await send(A, g, 'a1')).message.seq;
+    const b1 = (await send(B, g, 'b1')).message.seq;
+    const b2 = (await send(B, g, 'b2')).message.seq;
+    const edited = await ms.editMessengerMessage(actor(A), g, a1, 'a1 edited');
+    expect(edited.body).toBe('a1 edited');
+    expect(edited.editedAt).not.toBeNull();
+    await expect(ms.editMessengerMessage(actor(A), g, b1, 'not mine')).rejects.toThrow(
+      ms.MessengerRefusedError,
+    );
+    // B (no admin) may not delete A's; B deletes its own; A (admin) deletes B's.
+    await expect(ms.deleteMessengerMessage(actor(B), g, a1)).rejects.toThrow(
+      ms.MessengerRefusedError,
+    );
+    await ms.deleteMessengerMessage(actor(B), g, b1);
+    await ms.deleteMessengerMessage(actor(A), g, b2);
+    const page = await as(A, () => ms.listMessengerMessages(actor(A), g));
+    for (const s of [b1, b2]) {
+      const x = page.messages.find((y) => y.seq === s)!;
+      expect(x.body).toBe('');
+      expect(x.deletedAt).not.toBeNull();
+    }
+    expect(page.messages.find((y) => y.seq === a1)!.body).toBe('a1 edited');
+    await expect(ms.editMessengerMessage(actor(B), g, b1, 'back')).rejects.toThrow(
+      ms.MessengerRefusedError,
+    );
+    // The list's line follows a delete of the last message.
+    const row = (await as(A, () => ms.listMessengerConversations(actor(A)))).find(
+      (r) => r.id === g,
+    )!;
+    expect(row.preview?.text).toBe('');
+    // A direct chat: nobody deletes the other's message.
+    const { conversationId: d } = await ms.createMessengerConversation(actor(A), {
+      kind: 'direct',
+      participants: [B],
+    });
+    const theirs = (await send(B, d, 'direct')).message.seq;
+    await expect(ms.deleteMessengerMessage(actor(A), d, theirs)).rejects.toThrow(
+      ms.MessengerRefusedError,
+    );
+  });
+
+  it('a reaction toggles on and off; a deleted message takes none', async () => {
+    const g = await group(A, [B]);
+    const s = (await send(A, g, 'react to me')).message.seq;
+    expect(await ms.toggleMessengerReaction(actor(B), g, s, '👍')).toEqual({ on: true });
+    expect(await ms.toggleMessengerReaction(actor(A), g, s, '👍')).toEqual({ on: true });
+    const reactions = async (who: string) =>
+      (await as(who, () => ms.listMessengerMessages(actor(who), g))).messages.find(
+        (x) => x.seq === s,
+      )!.reactions;
+    expect(await reactions(A)).toEqual([{ emoji: '👍', count: 2, mine: true }]);
+    expect(await ms.toggleMessengerReaction(actor(B), g, s, '👍')).toEqual({ on: false });
+    expect(await reactions(B)).toEqual([{ emoji: '👍', count: 1, mine: false }]);
+    await expect(ms.toggleMessengerReaction(actor(B), g, s, 'two words')).rejects.toThrow();
+    await ms.deleteMessengerMessage(actor(A), g, s);
+    expect(await reactions(A)).toEqual([]);
+    await expect(ms.toggleMessengerReaction(actor(B), g, s, '👍')).rejects.toThrow(
+      ms.MessengerRefusedError,
+    );
+  });
+
+  it('remove, rename, the last admin hands over, the last leave archives', async () => {
+    const g = await group(A, [B, D], 'Crew');
+    await expect(ms.removeMessengerParticipant(actor(B), g, D)).rejects.toThrow(
+      ms.MessengerRefusedError,
+    );
+    await expect(ms.removeMessengerParticipant(actor(A), g, A)).rejects.toThrow(/leave/);
+    await ms.removeMessengerParticipant(actor(A), g, D);
+    await expect(send(D, g, 'still here?')).rejects.toThrow(ms.MessengerRefusedError);
+    await expect(ms.removeMessengerParticipant(actor(A), g, D)).rejects.toThrow(
+      ms.MessengerNotFoundError,
+    );
+    // Rename: an admin only, with a line that says so.
+    await expect(ms.patchMessengerConversation(actor(B), g, { title: 'Mine' })).rejects.toThrow(
+      ms.MessengerRefusedError,
+    );
+    await ms.patchMessengerConversation(actor(A), g, { title: 'Crew 2' });
+    const renamed = await as(B, () => ms.getMessengerConversation(actor(B), g));
+    expect(renamed.title).toBe('Crew 2');
+    const last = (await as(B, () => ms.listMessengerMessages(actor(B), g))).messages.at(-1)!;
+    expect(last).toMatchObject({ authorKind: 'system' });
+    expect(last.body).toMatch(/renamed the group to "Crew 2"/);
+    // The last admin leaves: B, the longest-standing member, is admin now.
+    await ms.leaveMessengerConversation(actor(A), g);
+    expect((await as(B, () => ms.getMessengerConversation(actor(B), g))).me.admin).toBe(true);
+    // The last login leaves: the group is archived.
+    await ms.leaveMessengerConversation(actor(B), g);
+    const [row] = (await su(
+      sqlTag`select archived_at from messenger_conversations where id = ${g}`,
+    )) as { archived_at: Date | null }[];
+    expect(row!.archived_at).not.toBeNull();
+    expect((await as(B, () => ms.getMessengerConversation(actor(B), g))).archivedAt).not.toBeNull();
+  });
+
+  it('two concurrent sends with one client_msg_id store one row', async () => {
+    const g = await group(A, []);
+    const [x, y] = await Promise.all([send(A, g, 'same', 'k-c'), send(A, g, 'same', 'k-c')]);
+    expect([x.created, y.created].sort()).toEqual([false, true]);
+    expect(x.message.seq).toBe(y.message.seq);
+    const [n] = (await su(
+      sqlTag`select count(*)::int as n from messenger_messages where conversation_id = ${g}`,
+    )) as { n: number }[];
+    expect(n!.n).toBe(1);
   });
 });

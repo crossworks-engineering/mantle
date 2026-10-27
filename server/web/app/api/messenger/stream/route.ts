@@ -19,13 +19,13 @@ export const policy = routePolicy({
  *
  * The guards of /api/member/realtime: the login is checked again on every
  * heartbeat (a disabled login's stream closes), a stream lives at most an
- * hour, and one login holds at most MEMBER_STREAMS_PER_LOGIN at once (429
- * beyond). The heartbeat also marks the login active ("online").
+ * hour, and one login holds at most MEMBER_STREAMS_PER_LOGIN messenger
+ * streams at once (429 beyond), apart from its member streams. The heartbeat also marks the login active ("online").
  */
 export async function GET(req: Request): Promise<Response> {
   const login = anyLoginCaller();
   const maxLifetimeMs = memberStreamLifetimeMs(await sessionCookieExpiryMs());
-  const release = takeMemberStream(login.loginId);
+  const release = takeMemberStream(login.loginId, 'messenger');
   if (!release) return rateLimitedResponse(30);
   void touchLoginPresence(login.loginId).catch(() => {});
   return sseResponse(req, {
@@ -65,6 +65,8 @@ function toEvent(c: {
       return c.seq === null ? null : { type: 'reaction', c: c.c, seq: c.seq };
     case 'typing':
       return c.actor ? { type: 'typing', c: c.c, loginId: c.actor } : null;
+    case 'history':
+      return c.seq === null ? null : { type: 'history', c: c.c, seq: c.seq };
     case 'participants':
     case 'self':
       return { type: 'participants', c: c.c };

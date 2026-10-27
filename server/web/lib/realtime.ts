@@ -58,10 +58,24 @@ export const MESSENGER_CHANGED_CHANNEL = 'messenger_changed';
 export type MessengerChange = {
   c: string;
   seq: number | null;
-  kind: 'new' | 'edit' | 'delete' | 'read' | 'self' | 'participants' | 'reaction' | 'typing';
+  kind:
+    | 'new'
+    | 'edit'
+    | 'delete'
+    | 'read'
+    | 'self'
+    | 'participants'
+    | 'reaction'
+    | 'typing'
+    | 'history';
   actor: string | null;
 };
 type MessengerSubscriber = (c: MessengerChange) => void;
+type MessengerRoom = {
+  rows: { loginId: string; leftSeq: number | null; fromSeq: number }[];
+  /** When it was read (Date.now()): an entry lives MESSENGER_ROOM_TTL_MS. */
+  at: number;
+};
 
 type Bridge = {
   subs: Set<Subscriber>;
@@ -70,10 +84,12 @@ type Bridge = {
   /** Messenger streams by login id (each stream is one login's). */
   msgSubs: Map<string, Set<MessengerSubscriber>>;
   /** The fan-out map of plan section 7: conversation id to its participant
-   *  logins (with the seq a left one reads up to), filled on first use and
-   *  dropped on a participants event. A stale entry can at worst send an id
-   *  to a login that then gets 404 on the fetch; never text. */
-  msgRooms: Map<string, { loginId: string; leftSeq: number | null; fromSeq: number }[]>;
+   *  logins (with the seq a left one reads up to), filled on first use,
+   *  dropped on a participants event (with or without a stream open), and
+   *  each entry kept at most MESSENGER_ROOM_TTL_MS. The whole map goes when
+   *  the last messenger stream closes and when the LISTEN (re)connects (a
+   *  NOTIFY lost while it was down cannot leave an entry stale). */
+  msgRooms: Map<string, MessengerRoom>;
   /** Bumped on every drop of msgRooms (fanoutMessenger). */
   msgRoomsGen: number;
   starting: Promise<void> | null;
@@ -90,7 +106,7 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
   convSubs: new Set<ConvSubscriber>(),
   turnSubs: new Set<TurnStreamSubscriber>(),
   msgSubs: new Map<string, Set<MessengerSubscriber>>(),
-  msgRooms: new Map<string, { loginId: string; leftSeq: number | null; fromSeq: number }[]>(),
+  msgRooms: new Map<string, MessengerRoom>(),
   msgRoomsGen: 0,
   starting: null,
   stop: null,
@@ -100,10 +116,7 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
 bridge.convSubs ??= new Set<ConvSubscriber>();
 bridge.turnSubs ??= new Set<TurnStreamSubscriber>();
 bridge.msgSubs ??= new Map<string, Set<MessengerSubscriber>>();
-bridge.msgRooms ??= new Map<
-  string,
-  { loginId: string; leftSeq: number | null; fromSeq: number }[]
->();
+bridge.msgRooms ??= new Map<string, MessengerRoom>();
 bridge.msgRoomsGen ??= 0;
 globalThis.__mantleRealtime = bridge;
 
@@ -201,16 +214,22 @@ async function ensureListening(): Promise<void> {
     });
     // Messenger changes (0335): fanned out to the streams of the logins
     // that are participants of the conversation (fanoutMessenger).
-    const subMessenger = await sql.listen(MESSENGER_CHANGED_CHANNEL, (payload) => {
-      try {
-        const c = JSON.parse(payload) as MessengerChange;
-        if (c && typeof c.c === 'string' && typeof c.kind === 'string') {
-          void runAsSystem('listen:realtime', () => fanoutMessenger(c));
+    const subMessenger = await sql.listen(
+      MESSENGER_CHANGED_CHANNEL,
+      (payload) => {
+        try {
+          const c = JSON.parse(payload) as MessengerChange;
+          if (c && typeof c.c === 'string' && typeof c.kind === 'string') {
+            void runAsSystem('listen:realtime', () => fanoutMessenger(c));
+          }
+        } catch {
+          /* malformed payload: drop it rather than crash the listener */
         }
-      } catch {
-        /* malformed payload: drop it rather than crash the listener */
-      }
-    });
+      },
+      // On every (re)connect of the LISTEN: what changed while it was down
+      // raised no event here, so the map starts again.
+      () => dropMessengerRooms(),
+    );
     bridge.stop = async () => {
       try {
         await subMessenger.unlisten();
@@ -307,21 +326,40 @@ const realtimeLog = log('realtime');
 /** The cap of the fan-out map: past it the map starts again (each entry is
  *  one indexed read to refill). */
 const MESSENGER_ROOMS_MAX = 5000;
+/** How long one entry of the fan-out map is kept: a change the map missed
+ *  (an add while no stream was open) is right again within this. */
+export const MESSENGER_ROOM_TTL_MS = 60_000;
+
+/** Drop the whole fan-out map (the last stream closed, the LISTEN came
+ *  back): a lookup in flight keeps nothing it read before. */
+function dropMessengerRooms(): void {
+  bridge.msgRooms.clear();
+  bridge.msgRoomsGen += 1;
+}
 
 /** Who hears a messenger change: a room event every live participant (and
  *  the actor); a message event every participant that may read its seq;
- *  'self' only the actor; 'typing' everyone live but the typist. */
+ *  'self' only the actor; 'typing' everyone live but the typist; 'history'
+ *  everyone whose window held a deleted seq (a reload). */
 async function fanoutMessenger(c: MessengerChange): Promise<void> {
-  if (bridge.msgSubs.size === 0) return;
+  // The drop first: an add or a remove while no stream is open must not
+  // leave the older list for the next stream.
   if (c.kind === 'participants') {
     bridge.msgRooms.delete(c.c);
     bridge.msgRoomsGen += 1;
   }
+  if (bridge.msgSubs.size === 0) return;
   let to: string[];
   if (c.kind === 'self') {
     to = c.actor ? [c.actor] : [];
   } else {
-    let rows = bridge.msgRooms.get(c.c);
+    const now = Date.now();
+    let room = bridge.msgRooms.get(c.c);
+    if (room && now - room.at >= MESSENGER_ROOM_TTL_MS) {
+      bridge.msgRooms.delete(c.c);
+      room = undefined;
+    }
+    let rows = room?.rows;
     if (!rows) {
       // A participants event that lands during this lookup must not see its
       // drop undone by the older list: keep it only when no drop
@@ -330,16 +368,19 @@ async function fanoutMessenger(c: MessengerChange): Promise<void> {
       rows = await messengerParticipantLogins(c.c);
       if (gen === bridge.msgRoomsGen) {
         if (bridge.msgRooms.size >= MESSENGER_ROOMS_MAX) bridge.msgRooms.clear();
-        bridge.msgRooms.set(c.c, rows);
+        bridge.msgRooms.set(c.c, { rows, at: now });
       }
     }
     const seq = c.seq;
-    const message = seq !== null && c.kind !== 'read' && c.kind !== 'typing';
+    const message =
+      seq !== null && c.kind !== 'read' && c.kind !== 'typing' && c.kind !== 'history';
     to = rows
       .filter((r) =>
-        message
-          ? seq > r.fromSeq && (r.leftSeq === null || r.leftSeq >= seq)
-          : r.leftSeq === null || (seq !== null && c.kind !== 'typing' && r.leftSeq >= seq),
+        c.kind === 'history'
+          ? seq !== null && r.fromSeq < seq
+          : message
+            ? seq > r.fromSeq && (r.leftSeq === null || r.leftSeq >= seq)
+            : r.leftSeq === null || (seq !== null && c.kind !== 'typing' && r.leftSeq >= seq),
       )
       .map((r) => r.loginId);
     if (c.kind === 'typing') to = to.filter((l) => l !== c.actor);
@@ -380,6 +421,8 @@ export async function subscribeMessenger(
     const s = bridge.msgSubs.get(loginId);
     s?.delete(cb);
     if (s && s.size === 0) bridge.msgSubs.delete(loginId);
+    // No messenger stream left: nothing keeps the map right from here on.
+    if (bridge.msgSubs.size === 0) dropMessengerRooms();
   };
 }
 

@@ -21,9 +21,14 @@
  *    existence is not told to an outsider. There is no Admin exception.
  *  - Nothing here starts LLM work: a mention is stored and enqueues nothing
  *    (Phase 3 adds the group turn), and no trigger spends.
+ *  - Every write takes the login's budget here (takeBudget), where the
+ *    routes and the MCP tools meet: one bucket per login, whichever path
+ *    the call came by.
  */
-import { and, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, lt, lte, sql, type SQL } from 'drizzle-orm';
+import { envNum } from '@mantle/config';
 import {
+  currentWorkspaceScope,
   db,
   liveWorkspaceSql,
   loginPresence,
@@ -52,6 +57,15 @@ export const MESSENGER_ONLINE_MS = 2 * 60 * 1000;
 /** Roles that hold a back-and-forth chat (mirrors listAssistantAgents). */
 const CHATTABLE_ROLES = ['assistant', 'responder', 'custom'] as const;
 
+/** A login's budget a minute (plan section 14): sends, and every other
+ *  write (a create, a read cursor, an edit, membership, pins). The routes'
+ *  gate takes its own limits as well (server/web/lib/route-limits.ts,
+ *  the same numbers); this one is the bucket an MCP call and a route
+ *  share. */
+export const MESSENGER_SENDS_PER_MIN = 60;
+export const MESSENGER_WRITES_PER_MIN = 120;
+const BUDGET_WINDOW_MS = 60_000;
+
 // ── Errors ───────────────────────────────────────────────────────────────────
 
 /** No such conversation or message for this login: also what a
@@ -79,6 +93,53 @@ defineDomainError(MessengerRefusedError, {
   reason: 'a participant asked for what the chat does not allow it; the message says which',
   status: 403,
 });
+
+/** A login spent its messenger budget for this minute (sends or writes). */
+export class MessengerRateLimitedError extends Error {
+  constructor(readonly retryAfterSec: number) {
+    super(`Too many messenger writes from this login. Try again in ${retryAfterSec} s.`);
+    this.name = 'MessengerRateLimitedError';
+  }
+}
+defineDomainError(MessengerRateLimitedError, {
+  reason: 'a login spent its messenger budget for the minute; the message says when to try again',
+  status: 429,
+});
+
+// ── The budget (plan section 14) ─────────────────────────────────────────────
+
+type BudgetKind = 'send' | 'write';
+/** A fixed window per login and kind, in this process (as the routes' own
+ *  limiter, server/web/lib/rate-limit.ts). Its keys are login ids, so the
+ *  map is bounded by the logins of the brain. */
+const budgets = new Map<string, { count: number; start: number }>();
+/** The e2e stack's factor (MANTLE_RATE_LIMIT_SCALE), as the routes'. */
+const BUDGET_SCALE = envNum('MANTLE_RATE_LIMIT_SCALE');
+
+function takeBudget(actor: MessengerActor, kind: BudgetKind): void {
+  const max = (kind === 'send' ? MESSENGER_SENDS_PER_MIN : MESSENGER_WRITES_PER_MIN) * BUDGET_SCALE;
+  const key = `${kind}:${actor.loginId.toLowerCase()}`;
+  const now = Date.now();
+  let b = budgets.get(key);
+  if (!b || now - b.start >= BUDGET_WINDOW_MS) {
+    if (budgets.size >= 10_000) {
+      for (const [k, v] of budgets) if (now - v.start >= BUDGET_WINDOW_MS) budgets.delete(k);
+    }
+    b = { count: 0, start: now };
+    budgets.set(key, b);
+  }
+  b.count += 1;
+  if (b.count > max) {
+    throw new MessengerRateLimitedError(
+      Math.max(1, Math.ceil((b.start + BUDGET_WINDOW_MS - now) / 1000)),
+    );
+  }
+}
+
+/** Tests only: start every login's budget again. */
+export function resetMessengerBudgetsForTests(): void {
+  budgets.clear();
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -504,6 +565,7 @@ export async function createMessengerConversation(
   actor: MessengerActor,
   input: MessengerCreateInput,
 ): Promise<{ conversationId: string; created: boolean }> {
+  takeBudget(actor, 'write');
   if (input.kind !== 'direct' && input.kind !== 'group') {
     throw new InputError('kind must be "direct" or "group".');
   }
@@ -600,6 +662,7 @@ export async function sendMessengerMessage(
   conversationId: string,
   input: MessengerSendInput,
 ): Promise<{ message: MessengerMessageView; created: boolean }> {
+  takeBudget(actor, 'send');
   const body = typeof input.body === 'string' ? input.body : '';
   if (body.trim() === '') throw new InputError('A message must have some text.');
   if (body.length > MESSENGER_BODY_MAX) {
@@ -750,6 +813,7 @@ export async function editMessengerMessage(
   seq: number,
   body: string,
 ): Promise<MessengerMessageView> {
+  takeBudget(actor, 'write');
   const s = seqOr(seq, 'seq');
   if (typeof body !== 'string' || body.trim() === '') {
     throw new InputError('A message must have some text.');
@@ -784,6 +848,7 @@ export async function deleteMessengerMessage(
   conversationId: string,
   seq: number,
 ): Promise<void> {
+  takeBudget(actor, 'write');
   const s = seqOr(seq, 'seq');
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
@@ -813,6 +878,7 @@ export async function toggleMessengerReaction(
   seq: number,
   emoji: string,
 ): Promise<{ on: boolean }> {
+  takeBudget(actor, 'write');
   const s = seqOr(seq, 'seq');
   const e = typeof emoji === 'string' ? emoji.trim() : '';
   if (e === '' || e.length > MESSENGER_EMOJI_MAX || /\s/.test(e)) {
@@ -844,24 +910,37 @@ export async function toggleMessengerReaction(
 // ── Cursors, clear, mute ─────────────────────────────────────────────────────
 
 /** Move my read cursor forward to `seq` (never back, never past the last
- *  seq I may read). Answers the cursor. */
+ *  seq I may read). Answers the cursor. One update of my own row with
+ *  greatest(): it takes no lock on the conversation, so a read never waits
+ *  for the sends. */
 export async function markMessengerRead(
   actor: MessengerActor,
   conversationId: string,
   seq: number,
 ): Promise<{ lastReadSeq: number }> {
+  takeBudget(actor, 'write');
   const s = seqOr(seq, 'seq');
-  return systemDb.transaction(async (tx) => {
-    const { conv, me } = await lockForActor(tx, actor, conversationId, { live: false });
-    const cap = me.left_at ? num(me.left_seq) : num(conv.last_seq);
-    const next = Math.max(num(me.last_read_seq), Math.min(s, cap));
-    if (next !== num(me.last_read_seq))
-      await tx
-        .update(messengerParticipants)
-        .set({ lastReadSeq: next })
-        .where(eq(messengerParticipants.id, me.id));
-    return { lastReadSeq: next };
-  });
+  const c = uuidOr(conversationId, 'The conversation');
+  const mine = sql`p.conversation_id = ${c}::uuid and p.kind = 'login'
+           and p.login_id = ${actor.loginId}::uuid
+           and k.id = p.conversation_id and k.owner_id = ${actor.ownerId}::uuid`;
+  const [moved] = await q<{ last_read_seq: string | number }>(
+    systemDb,
+    sql`update messenger_participants p
+           set last_read_seq = least(${s}::bigint, coalesce(p.left_seq, k.last_seq))
+          from messenger_conversations k
+         where ${mine}
+           and p.last_read_seq < least(${s}::bigint, coalesce(p.left_seq, k.last_seq))
+        returning p.last_read_seq`,
+  );
+  if (moved) return { lastReadSeq: num(moved.last_read_seq) };
+  const [kept] = await q<{ last_read_seq: string | number }>(
+    systemDb,
+    sql`select p.last_read_seq from messenger_participants p, messenger_conversations k
+         where ${mine}`,
+  );
+  if (!kept) throw new MessengerNotFoundError();
+  return { lastReadSeq: num(kept.last_read_seq) };
 }
 
 /** Clear for me (plan section 10): I see nothing up to the last seq;
@@ -870,6 +949,7 @@ export async function clearMessengerForMe(
   actor: MessengerActor,
   conversationId: string,
 ): Promise<{ clearedBeforeSeq: number }> {
+  takeBudget(actor, 'write');
   return systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId, { live: false });
     const upTo = Math.max(
@@ -896,6 +976,7 @@ export async function patchMessengerConversation(
   conversationId: string,
   input: MessengerPatchInput,
 ): Promise<void> {
+  takeBudget(actor, 'write');
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId, {
       live: input.title !== undefined,
@@ -930,25 +1011,52 @@ export async function patchMessengerConversation(
 
 /** Delete history for everyone (plan section 10): a group admin removes
  *  every message of the group, or those older than `before`. A system line
- *  records it. A direct chat has no delete-for-everyone in V1. */
+ *  records it. A direct chat has no delete-for-everyone in V1.
+ *
+ *  The deleted part is every seq up to a ceiling (the newest older than
+ *  `before`), so what is left is one run of seqs. In the same transaction
+ *  every participant's clear moves up to the ceiling (the unread and the
+ *  mention count only what is left), and a `history` event tells each
+ *  stream to load the chat again: a deleted row raises no message event. */
 export async function deleteMessengerHistory(
   actor: MessengerActor,
   conversationId: string,
   before?: Date | null,
 ): Promise<{ deleted: number }> {
+  takeBudget(actor, 'write');
   if (before && Number.isNaN(before.getTime())) throw new InputError('before must be a date.');
   return systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
     requireGroupAdmin(conv, me);
-    const gone = await tx
-      .delete(messengerMessages)
-      .where(
-        and(
-          eq(messengerMessages.conversationId, conv.id),
-          before ? lt(messengerMessages.createdAt, before) : undefined,
-        ),
-      )
-      .returning({ id: messengerMessages.id });
+    const [top] = await q<{ ceiling: string | number | null }>(
+      tx,
+      sql`select max(seq) as ceiling from messenger_messages
+           where conversation_id = ${conv.id}::uuid
+             ${before ? sql`and created_at < ${before.toISOString()}::timestamptz` : sql``}`,
+    );
+    const ceiling = numOrNull(top?.ceiling);
+    let deleted = 0;
+    if (ceiling !== null) {
+      const gone = await tx
+        .delete(messengerMessages)
+        .where(
+          and(eq(messengerMessages.conversationId, conv.id), lte(messengerMessages.seq, ceiling)),
+        )
+        .returning({ id: messengerMessages.id });
+      deleted = gone.length;
+      await tx
+        .update(messengerParticipants)
+        .set({ clearedBeforeSeq: ceiling })
+        .where(
+          and(
+            eq(messengerParticipants.conversationId, conv.id),
+            lt(messengerParticipants.clearedBeforeSeq, ceiling),
+          ),
+        );
+      await tx.execute(
+        sql`select pg_notify('messenger_changed', ${JSON.stringify({ c: conv.id, seq: ceiling, kind: 'history', actor: actor.loginId.toLowerCase() })})`,
+      );
+    }
     const names = await loginNames([actor.loginId], tx);
     await systemLine(
       tx,
@@ -957,7 +1065,7 @@ export async function deleteMessengerHistory(
         before ? ` before ${before.toISOString().slice(0, 10)}` : ''
       }.`,
     );
-    return { deleted: gone.length };
+    return { deleted };
   });
 }
 
@@ -970,6 +1078,7 @@ export async function addMessengerParticipants(
   conversationId: string,
   loginIds: readonly string[],
 ): Promise<{ added: string[] }> {
+  takeBudget(actor, 'write');
   const self = actor.loginId.toLowerCase();
   const ids = [...new Set(loginIds.map((l) => uuidOr(l, 'A participant')))].filter(
     (l) => l !== self,
@@ -1044,6 +1153,7 @@ export async function removeMessengerParticipant(
   conversationId: string,
   loginId: string,
 ): Promise<void> {
+  takeBudget(actor, 'write');
   const target = uuidOr(loginId, 'The participant');
   if (target === actor.loginId.toLowerCase()) {
     throw new InputError('To go yourself, leave the chat: you must not remove yourself.');
@@ -1077,6 +1187,7 @@ export async function leaveMessengerConversation(
   actor: MessengerActor,
   conversationId: string,
 ): Promise<void> {
+  takeBudget(actor, 'write');
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
     if (conv.kind !== 'group') {
@@ -1118,6 +1229,7 @@ export async function setMessengerFavourite(
   refId: string,
   rank = 0,
 ): Promise<void> {
+  takeBudget(actor, 'write');
   const ref = uuidOr(refId, 'The pin');
   if (kind !== 'conversation' && kind !== 'agent') {
     throw new InputError('kind must be "conversation" or "agent".');
@@ -1153,6 +1265,7 @@ export async function removeMessengerFavourite(
   kind: 'conversation' | 'agent',
   refId: string,
 ): Promise<void> {
+  takeBudget(actor, 'write');
   const ref = uuidOr(refId, 'The pin');
   if (kind !== 'conversation' && kind !== 'agent') {
     throw new InputError('kind must be "conversation" or "agent".');
@@ -1190,11 +1303,38 @@ type MessageRow = {
   created_at: Date;
 };
 
-/** The window of seqs a login may see in a conversation: after its clear,
- *  up to its leave. The participant row, read in the login's scope. */
-const MY_WINDOW = (loginId: string) => sql`
-  join messenger_participants me
-    on me.conversation_id = m.conversation_id and me.kind = 'login' and me.login_id = ${loginId}::uuid
+/**
+ * My participant rows (of one conversation, or all with `c` null), each
+ * with the conversation's tail as I may see it: `last_seq` capped at my
+ * leave, and for a leaver no `last_message_at` and no `last_preview`. In a
+ * scope the workspace role reads neither the tail nor any cursor column
+ * (migration 0336): mantle_messenger_mine answers them, for the scope's own
+ * login. Outside a scope (the admin pool) the same rows inline. Both name
+ * the login again.
+ */
+function MINE(actor: MessengerActor, c: string | null): SQL {
+  const one = c === null ? sql`null::uuid` : sql`${c}::uuid`;
+  if (currentWorkspaceScope()) {
+    return sql`(select * from mantle_messenger_mine(${one}) x
+                 where x.login_id = ${actor.loginId}::uuid)`;
+  }
+  return sql`(select p.conversation_id, p.login_id, p.admin, p.joined_at, p.left_at, p.left_seq,
+                     p.last_read_seq, p.mention_seq, p.cleared_before_seq, p.from_seq, p.muted,
+                     case when p.left_at is null then k.last_seq
+                          else least(k.last_seq, p.left_seq) end as last_seq,
+                     case when p.left_at is null then k.last_message_at end as last_message_at,
+                     case when p.left_at is null then k.last_preview end as last_preview
+                from messenger_participants p
+                join messenger_conversations k on k.id = p.conversation_id
+               where p.kind = 'login' and p.login_id = ${actor.loginId}::uuid
+                 and (${one} is null or p.conversation_id = ${one}))`;
+}
+
+/** The window of seqs a login may see in a conversation: after its clear
+ *  and its add line, up to its leave. */
+const MY_WINDOW = (actor: MessengerActor, c: string) => sql`
+  join ${MINE(actor, c)} me
+    on me.conversation_id = m.conversation_id
    and m.seq > me.cleared_before_seq
    and m.seq > me.from_seq
    and (me.left_at is null or m.seq <= me.left_seq)`;
@@ -1256,7 +1396,7 @@ async function readMessagesBySeq(
 ): Promise<MessengerMessageView[]> {
   const rows = await q<MessageRow>(
     db,
-    sql`select ${MESSAGE_COLUMNS} from messenger_messages m ${MY_WINDOW(actor.loginId)}
+    sql`select ${MESSAGE_COLUMNS} from messenger_messages m ${MY_WINDOW(actor, conversationId)}
          where m.conversation_id = ${conversationId}::uuid
            and m.seq = any(${`{${seqs.join(',')}}`}::bigint[])
          order by m.seq`,
@@ -1274,10 +1414,15 @@ export type MessengerPageInput = {
 };
 
 /**
- * GET /api/messenger/c/:id/messages: oldest first in the window.
- *  - neither cursor: the last `limit` (default 20);
- *  - before_seq: the `limit` below it (scrolling up);
- *  - after_seq: everything after it, `limit` at a time (the catch-up).
+ * GET /api/messenger/c/:id/messages: oldest first in the window, `limit`
+ * (default 20, at most 100) at a time.
+ *  - neither cursor: the last `limit`;
+ *  - before_seq: the `limit` below it (scrolling up); `hasMore`: there are
+ *    older ones;
+ *  - after_seq: the `limit` after it (the catch-up). `hasMore`: there are
+ *    newer ones, and `lastSeq` is then the highest seq of this page, so the
+ *    next after_seq misses nothing; without more, `lastSeq` is the last seq
+ *    I may read.
  */
 export async function listMessengerMessages(
   actor: MessengerActor,
@@ -1291,10 +1436,9 @@ export async function listMessengerMessages(
   );
   const [conv] = await q<{ last_seq: string | number }>(
     db,
-    sql`select least(c.last_seq, coalesce(me.left_seq, c.last_seq)) as last_seq
+    sql`select me.last_seq
           from messenger_conversations c
-          join messenger_participants me on me.conversation_id = c.id and me.kind = 'login'
-                                        and me.login_id = ${actor.loginId}::uuid
+          join ${MINE(actor, c)} me on me.conversation_id = c.id
          where c.id = ${c}::uuid and c.owner_id = ${actor.ownerId}::uuid`,
   );
   if (!conv) throw new MessengerNotFoundError();
@@ -1308,21 +1452,22 @@ export async function listMessengerMessages(
         : sql``;
     rows = await q<MessageRow>(
       db,
-      sql`select ${MESSAGE_COLUMNS} from messenger_messages m ${MY_WINDOW(actor.loginId)}
+      sql`select ${MESSAGE_COLUMNS} from messenger_messages m ${MY_WINDOW(actor, c)}
            where m.conversation_id = ${c}::uuid and m.seq > ${after} ${skip}
            order by m.seq asc limit ${limit + 1}`,
     );
     const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit);
     return {
-      messages: await decorate(actor, rows.slice(0, limit)),
-      lastSeq: num(conv.last_seq),
+      messages: await decorate(actor, page),
+      lastSeq: hasMore ? num(page[page.length - 1]!.seq) : num(conv.last_seq),
       hasMore,
     };
   }
   const before = input.beforeSeq != null ? seqOr(input.beforeSeq, 'before_seq') : null;
   rows = await q<MessageRow>(
     db,
-    sql`select ${MESSAGE_COLUMNS} from messenger_messages m ${MY_WINDOW(actor.loginId)}
+    sql`select ${MESSAGE_COLUMNS} from messenger_messages m ${MY_WINDOW(actor, c)}
          where m.conversation_id = ${c}::uuid ${before !== null ? sql`and m.seq < ${before}` : sql``}
          order by m.seq desc limit ${limit + 1}`,
   );
@@ -1355,9 +1500,8 @@ async function participantsOf(
                coalesce(p.login_id, p.agent_id)::text as id, p.admin,
                case when me.left_at is null or p.left_at <= me.left_at then p.left_at end as left_at
           from messenger_participants p
-          join messenger_participants me
-            on me.conversation_id = p.conversation_id and me.kind = 'login'
-           and me.login_id = ${actor.loginId}::uuid
+          join ${MINE(actor, conversationIds.length === 1 ? conversationIds[0]! : null)} me
+            on me.conversation_id = p.conversation_id
          where p.conversation_id = any(${uuidArray(conversationIds)})
            and (me.left_at is null or p.joined_at <= me.left_at)
            and (p.left_at is null or p.left_at >= me.joined_at)
@@ -1406,14 +1550,12 @@ export async function getMessengerConversation(
   }>(
     db,
     sql`select c.id::text as id, c.kind, c.title, c.created_by::text as created_by, c.created_at,
-               c.archived_at, least(c.last_seq, coalesce(me.left_seq, c.last_seq)) as last_seq,
-               case when me.left_at is null then c.last_message_at end as last_message_at,
+               c.archived_at, me.last_seq, me.last_message_at,
                c.workspace_id::text as workspace_id,
                c.agent_id::text as agent_id, me.admin, me.last_read_seq, me.cleared_before_seq, me.muted,
                me.left_seq
           from messenger_conversations c
-          join messenger_participants me on me.conversation_id = c.id and me.kind = 'login'
-                                        and me.login_id = ${actor.loginId}::uuid
+          join ${MINE(actor, c)} me on me.conversation_id = c.id
          where c.id = ${c}::uuid and c.owner_id = ${actor.ownerId}::uuid`,
   );
   if (!row) throw new MessengerNotFoundError();
@@ -1473,21 +1615,17 @@ type ListRow = {
 async function myConversationRows(actor: MessengerActor, unreadOnly = false): Promise<ListRow[]> {
   return q<ListRow>(
     db,
-    sql`select c.id::text as id, c.kind, c.title,
-               least(c.last_seq, coalesce(me.left_seq, c.last_seq)) as last_seq,
-               case when me.left_at is null then c.last_message_at end as last_message_at,
-               case when me.left_at is null then c.last_preview end as last_preview, me.muted,
-               greatest(0, least(c.last_seq, coalesce(me.left_seq, c.last_seq))
-                           - greatest(me.last_read_seq, me.cleared_before_seq)) as unread,
+    sql`select c.id::text as id, c.kind, c.title, me.last_seq, me.last_message_at,
+               me.last_preview, me.muted,
+               greatest(0, me.last_seq - greatest(me.last_read_seq, me.cleared_before_seq)) as unread,
                me.mention_seq > greatest(me.last_read_seq, me.cleared_before_seq) as mention,
                f.login_id is not null as favourite, f.rank as fav_rank
-          from messenger_participants me
+          from ${MINE(actor, null)} me
           join messenger_conversations c on c.id = me.conversation_id
           left join messenger_favourites f
             on f.login_id = me.login_id and f.kind = 'conversation' and f.ref_id = c.id
-         where me.kind = 'login' and me.login_id = ${actor.loginId}::uuid
-           and c.owner_id = ${actor.ownerId}::uuid
-           ${unreadOnly ? sql`and least(c.last_seq, coalesce(me.left_seq, c.last_seq)) > greatest(me.last_read_seq, me.cleared_before_seq)` : sql``}`,
+         where c.owner_id = ${actor.ownerId}::uuid
+           ${unreadOnly ? sql`and me.last_seq > greatest(me.last_read_seq, me.cleared_before_seq)` : sql``}`,
   );
 }
 
@@ -1631,12 +1769,10 @@ export async function messengerUnread(
 ): Promise<{ total: number; messenger: number; agents: number }> {
   const [row] = await q<{ n: string | number | null }>(
     db,
-    sql`select sum(greatest(0, least(c.last_seq, coalesce(me.left_seq, c.last_seq))
-                               - greatest(me.last_read_seq, me.cleared_before_seq))) as n
-          from messenger_participants me
+    sql`select sum(greatest(0, me.last_seq - greatest(me.last_read_seq, me.cleared_before_seq))) as n
+          from ${MINE(actor, null)} me
           join messenger_conversations c on c.id = me.conversation_id
-         where me.kind = 'login' and me.login_id = ${actor.loginId}::uuid
-           and c.owner_id = ${actor.ownerId}::uuid`,
+         where c.owner_id = ${actor.ownerId}::uuid`,
   );
   const messenger = num(row?.n ?? 0);
   const threads = await myAgentThreadRows(actor);
@@ -1799,7 +1935,9 @@ function ensureWaitListener(): Promise<void> {
  * Wait for new messages in a conversation after `afterSeq` (messenger_wait).
  * Answers at once when there are some, else on the first new message (a
  * NOTIFY, checked again every 5 s), else empty at the timeout (60 s at
- * most). Messages sent through the caller's own credential (via_ref; a
+ * most), at most 100 at a time: `hasMore` says there are more, and
+ * `lastSeq` is then the highest seq answered (the next after_seq). Messages
+ * sent through the caller's own credential (via_ref; a
  * session's own null) are skipped: two clients on one login wait for each
  * other (decision 19.3). Every check runs here, in the caller's own scope:
  * the LISTEN callback only wakes it.
@@ -1809,7 +1947,12 @@ export async function waitForMessengerMessages(
   conversationId: string,
   afterSeq: number,
   timeoutMs: number,
-): Promise<{ messages: MessengerMessageView[]; lastSeq: number; timedOut: boolean }> {
+): Promise<{
+  messages: MessengerMessageView[];
+  lastSeq: number;
+  hasMore: boolean;
+  timedOut: boolean;
+}> {
   const c = uuidOr(conversationId, 'The conversation');
   const after = seqOr(afterSeq, 'after_seq');
   const wait = Math.min(Math.max(Math.trunc(timeoutMs), 0), MESSENGER_WAIT_MAX_MS);
@@ -1825,6 +1968,7 @@ export async function waitForMessengerMessages(
     return {
       messages: first.messages,
       lastSeq: first.lastSeq,
+      hasMore: first.hasMore,
       timedOut: first.messages.length === 0,
     };
   }
@@ -1860,9 +2004,10 @@ export async function waitForMessengerMessages(
       if (cancelled) break;
       const got = await check();
       lastSeq = got.lastSeq;
-      if (got.messages.length > 0) return { messages: got.messages, lastSeq, timedOut: false };
+      if (got.messages.length > 0)
+        return { messages: got.messages, lastSeq, hasMore: got.hasMore, timedOut: false };
     }
-    return { messages: [], lastSeq, timedOut: true };
+    return { messages: [], lastSeq, hasMore: false, timedOut: true };
   } finally {
     waitListeners.delete(onEvent);
     if (openWaits.get(key) === cancel) openWaits.delete(key);

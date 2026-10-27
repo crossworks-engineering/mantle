@@ -4,12 +4,14 @@
  * scope; messenger_wait answers on a NOTIFY and empty at the timeout; a
  * message sent through the caller's own credential (via) is no answer to its
  * wait; a group with one human works; two member logins chat with send and
- * wait.
+ * wait; fix round 2: a route's send and the tool's take one budget (the
+ * 61st in a minute is refused either way); an outsider is refused send,
+ * wait and mark read.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/builtins-messenger.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -19,6 +21,7 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
   let tools: typeof import('./builtins-messenger');
+  let ms: typeof import('@mantle/content/messenger');
   let sqlTag: typeof import('drizzle-orm').sql;
   let su: (q: ReturnType<typeof import('drizzle-orm').sql>) => Promise<unknown[]>;
   let pool: {
@@ -47,6 +50,7 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     tools = await import('./builtins-messenger');
+    ms = await import('@mantle/content/messenger');
     sqlTag = (await import('drizzle-orm')).sql;
     await ts.ensureTestViewerRoles(URL!, process.env.MANTLE_MASTER_KEY);
     su = (q) => ts.superuserExec(scratch!.url, q);
@@ -78,6 +82,8 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     await su(sqlTag`insert into workspace_resources (workspace_id, type, ref_id)
       values (${W}, 'assistant', ${agent})`);
   }, 180_000);
+
+  beforeEach(() => ms?.resetMessengerBudgetsForTests());
 
   afterAll(async () => {
     for (const u of unlistens) await u().catch(() => {});
@@ -187,4 +193,51 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
       author: 'Ann',
     });
   }, 30_000);
+
+  it('a route and the tools take one budget: the 61st send in a minute is refused either way', async () => {
+    const k = randomUUID();
+    const made = await call('messenger_create', D, k, { kind: 'group', participants: [] });
+    expect(made.ok, made.error).toBe(true);
+    const c = made.output!.conversation as string;
+    // POST /api/messenger/c/:id/messages calls the store as this does.
+    const routeSend = (body: string) =>
+      as(D, () => ms.sendMessengerMessage({ ownerId: owner, loginId: D }, c, { body }));
+    for (let i = 0; i < 30; i++) await routeSend(`route ${i}`);
+    for (let i = 0; i < 30; i++) {
+      const out = await call('messenger_send', D, k, { conversation: c, text: `tool ${i}` });
+      expect(out.ok, out.error).toBe(true);
+    }
+    const over = await call('messenger_send', D, k, { conversation: c, text: 'one too many' });
+    expect(over.ok).toBe(false);
+    expect(over.error).toMatch(/Try again in \d+ s/);
+    await expect(routeSend('and by the route')).rejects.toThrow(ms.MessengerRateLimitedError);
+    const [n] = (await su(
+      sqlTag`select count(*)::int as n from messenger_messages where conversation_id = ${c}`,
+    )) as { n: number }[];
+    expect(n!.n).toBe(60);
+  }, 60_000);
+
+  it('an outsider is refused send, wait and mark read with "not found"', async () => {
+    const made = await call('messenger_create', A, randomUUID(), {
+      kind: 'group',
+      participants: [B],
+    });
+    const c = made.output!.conversation as string;
+    await call('messenger_send', A, randomUUID(), { conversation: c, text: 'members only' });
+    for (const [slug, input] of [
+      ['messenger_send', { conversation: c, text: 'let me in' }],
+      ['messenger_wait', { conversation: c, after_seq: 0, timeout_s: 0 }],
+      ['messenger_mark_read', { conversation: c, seq: 1 }],
+      ['messenger_open', { conversation: c }],
+    ] as const) {
+      const out = await call(slug, C, randomUUID(), input);
+      expect(out.ok, slug).toBe(false);
+      expect(out.error, slug).toMatch(/not found/i);
+      expect(JSON.stringify(out), slug).not.toContain('members only');
+    }
+    const [n] = (await su(
+      sqlTag`select count(*)::int as n from messenger_messages where conversation_id = ${c}`,
+    )) as { n: number }[];
+    expect(n!.n).toBe(1);
+  });
 });

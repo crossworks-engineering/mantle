@@ -121,12 +121,15 @@ export type MessengerMessage = {
   reactions: MessengerReaction[];
 };
 
-/** GET /api/messenger/c/:id/messages: oldest first in the window. */
+/** GET /api/messenger/c/:id/messages: oldest first in the window, `limit`
+ *  (default 20, at most 100) at a time. */
 export type MessengerMessagesResponse = {
   messages: MessengerMessage[];
-  /** The conversation's last seq when read. */
+  /** The last seq I may read; with after_seq and `hasMore`, the highest seq
+   *  of this page instead (the next after_seq). */
   lastSeq: number;
-  /** More messages exist below the lowest seq returned. */
+  /** More messages exist past this page: below the lowest seq returned
+   *  (no cursor, or before_seq), or above the highest (after_seq). */
   hasMore: boolean;
 };
 
@@ -190,4 +193,7 @@ export type MessengerStreamEvent =
   | { type: 'read'; c: string; seq: number; loginId: string }
   | { type: 'participants'; c: string }
   | { type: 'reaction'; c: string; seq: number }
-  | { type: 'typing'; c: string; loginId: string };
+  | { type: 'typing'; c: string; loginId: string }
+  /** A group's history was deleted (up to `seq`): load the chat again, a
+   *  deleted message raises no message event. */
+  | { type: 'history'; c: string; seq: number };

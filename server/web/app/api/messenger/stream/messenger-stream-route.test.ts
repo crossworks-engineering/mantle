@@ -70,6 +70,14 @@ describe('GET /api/messenger/stream', () => {
       seq: 7,
       kind: 'new',
     });
+    // A history delete: load the chat again (fix round 2).
+    h.emit!({ c: 'c1', seq: 9, kind: 'history', actor: 'someone' });
+    const hist = new TextDecoder().decode((await reader.read()).value);
+    expect(JSON.parse(hist.replace(/^data: /, '').trim())).toEqual({
+      type: 'history',
+      c: 'c1',
+      seq: 9,
+    });
 
     // The cap: the first stream holds one; the rest up to the cap open, then 429.
     const extra: AbortController[] = [];
@@ -79,6 +87,11 @@ describe('GET /api/messenger/stream', () => {
       expect((await GET(new Request('http://x', { signal: a.signal }))).status).toBe(200);
     }
     expect((await GET(new Request('http://x'))).status).toBe(429);
+    // At the messenger cap, a member stream of the same login still opens.
+    const { takeMemberStream } = await import('@/lib/member-streams');
+    const memberSlot = takeMemberStream(LOGIN);
+    expect(memberSlot).not.toBeNull();
+    memberSlot!();
     for (const a of extra) a.abort();
     await reader.cancel();
     ac.abort();

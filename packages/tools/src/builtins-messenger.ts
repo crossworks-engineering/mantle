@@ -123,7 +123,7 @@ export const messenger_open: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Read a chat',
   description:
-    'Messages of one chat, oldest first, with who is in it. With no cursor: the last messages. before_seq: the ones below it (older). after_seq: everything after it (what is new since you last looked). Each message has its seq; pass the highest one to `messenger_wait` or `messenger_mark_read`. To find a chat use `messenger_list`.',
+    "Messages of one chat, oldest first, with who is in it. With no cursor: the last messages. before_seq: the ones below it (older). after_seq: the ones after it (what is new since you last looked); when hasMore is true, pass the answer's lastSeq as the next after_seq for the rest. Each message has its seq; pass the highest one to `messenger_wait` or `messenger_mark_read`. To find a chat use `messenger_list`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -295,7 +295,7 @@ export const messenger_wait: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Wait for chat messages',
   description:
-    "Wait for new messages in a chat after after_seq, instead of polling. Answers at once if there are some, else the moment one lands, else empty at the timeout. Messages you sent through this same connection are left out, so two clients on one login wait for each other. Pass the answer's lastSeq as the next after_seq; to read older messages use `messenger_open`.",
+    "Wait for new messages in a chat after after_seq, instead of polling. Answers at once if there are some, else the moment one lands, else empty at the timeout. Messages you sent through this same connection are left out, so two clients on one login wait for each other. Pass the answer's lastSeq as the next after_seq: when hasMore is true, call again at once for the rest. To read older messages use `messenger_open`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -327,7 +327,12 @@ export const messenger_wait: BuiltinToolDef = {
       );
       return {
         ok: true,
-        output: { messages: out.messages.map(slim), lastSeq: out.lastSeq, timedOut: out.timedOut },
+        output: {
+          messages: out.messages.map(slim),
+          lastSeq: out.lastSeq,
+          hasMore: out.hasMore,
+          timedOut: out.timedOut,
+        },
       };
     } catch (err) {
       return fail(err);

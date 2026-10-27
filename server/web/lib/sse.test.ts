@@ -86,6 +86,21 @@ describe('member stream limits (audit S8)', () => {
     expect(takeMemberStream('login-a')).toBeNull();
   });
 
+  it("a messenger stream takes slots of its own, never a member stream's (Messenger fix round 2)", () => {
+    const member = Array.from({ length: MEMBER_STREAMS_PER_LOGIN }, () =>
+      takeMemberStream('login-m'),
+    );
+    expect(takeMemberStream('login-m')).toBeNull();
+    const messenger = Array.from({ length: MEMBER_STREAMS_PER_LOGIN }, () =>
+      takeMemberStream('login-m', 'messenger'),
+    );
+    expect(messenger.every(Boolean)).toBe(true);
+    expect(takeMemberStream('login-m', 'messenger')).toBeNull();
+    member[0]!();
+    expect(takeMemberStream('login-m', 'messenger')).toBeNull();
+    expect(takeMemberStream('login-m')).not.toBeNull();
+  });
+
   it('lives an hour at most, or until the session expires', () => {
     const now = 1_000_000;
     expect(memberStreamLifetimeMs(null, now)).toBe(MEMBER_STREAM_MAX_MS);
