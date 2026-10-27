@@ -6,7 +6,8 @@
  * with each vaulted password until one opens the document.
  *
  * pdfjs is the tool here that takes a password; it is a direct dep, opened
- * through `openPdf` like every other pdfjs read in this package.
+ * through `withPdf` like every other pdfjs read in this package (a text-only
+ * read, so it does not take the decode slot).
  *
  * Returns:
  *  - { ok: true, text }              — opened and got a text layer
@@ -16,7 +17,7 @@
  *    later enhancement)
  *  - { ok: false, reason: 'error' }    — corrupt / unreadable
  */
-import { openPdf } from './pdf-open';
+import { withPdf } from './pdf-open';
 
 export type PdfPasswordResult =
   | { ok: true; text: string; numPages: number }
@@ -30,30 +31,27 @@ export async function extractPdfTextWithPassword(
   opts?: { maxPages?: number },
 ): Promise<PdfPasswordResult> {
   const maxPages = Math.max(1, opts?.maxPages ?? DEFAULT_MAX_PAGES);
-  // pdfjs 6 moved destroy() off PDFDocumentProxy onto the loading task, so the
-  // task is what must be held and torn down: it owns the worker. The `finally`
-  // below reaches it on the failure path too: the wrong-password case is this
-  // function's most common outcome, and it used to leak a worker every time
-  // (the old doc.destroy() only ran on success).
-  let loadingTask: Awaited<ReturnType<typeof openPdf>>['task'];
   try {
-    ({ task: loadingTask } = await openPdf(bytes, { password, useSystemFonts: true }));
-  } catch (err) {
-    return { ok: false, reason: 'error', message: `pdfjs load failed: ${(err as Error).message}` };
-  }
-  try {
-    const doc = await loadingTask.promise;
-    const numPages = doc.numPages;
-    const parts: string[] = [];
-    const n = Math.min(numPages, maxPages);
-    for (let i = 1; i <= n; i++) {
-      const page = await doc.getPage(i);
-      const tc = await page.getTextContent();
-      parts.push(tc.items.map((it) => ('str' in it ? it.str : '')).join(' '));
-    }
-    const text = parts.join('\n').trim();
-    if (!text) return { ok: false, reason: 'no_text' };
-    return { ok: true, text, numPages };
+    // `withPdf` destroys the loading task (which owns the worker side since
+    // pdfjs 6) on every path, the wrong-password one included: that is this
+    // function's most common outcome, and it used to leak a worker each time.
+    return await withPdf(
+      bytes,
+      { mode: 'text', password, useSystemFonts: true },
+      async ({ doc }): Promise<PdfPasswordResult> => {
+        const numPages = doc.numPages;
+        const parts: string[] = [];
+        const n = Math.min(numPages, maxPages);
+        for (let i = 1; i <= n; i++) {
+          const page = await doc.getPage(i);
+          const tc = await page.getTextContent();
+          parts.push(tc.items.map((it) => ('str' in it ? it.str : '')).join(' '));
+        }
+        const text = parts.join('\n').trim();
+        if (!text) return { ok: false, reason: 'no_text' };
+        return { ok: true, text, numPages };
+      },
+    );
   } catch (err) {
     // pdfjs throws a PasswordException (name) for wrong/missing passwords.
     const name = (err as { name?: string }).name ?? '';
@@ -62,7 +60,5 @@ export async function extractPdfTextWithPassword(
       return { ok: false, reason: 'password', message };
     }
     return { ok: false, reason: 'error', message };
-  } finally {
-    await loadingTask.destroy().catch(() => {});
   }
 }

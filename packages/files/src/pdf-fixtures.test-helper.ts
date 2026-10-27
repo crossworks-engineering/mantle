@@ -89,6 +89,53 @@ export function imagePagePdf(opts: {
 }
 
 /**
+ * A many-page PDF (US Letter) drawing from one shared set of images: each
+ * page draws the images whose indexes it lists, so an image listed on several
+ * pages is ONE object referenced from each (pdfjs then caches it across
+ * pages, in the document-wide store). A page carries a caption line unless
+ * its `caption` is null.
+ */
+export function imagePagesPdf(opts: {
+  images: FixtureImage[];
+  /** `caption: null` leaves the page without text: a scan's page. */
+  pages: { draw: number[]; caption?: string | null }[];
+}): Buffer {
+  const { images, pages } = opts;
+  // 1 catalog, 2 page tree, 3 font, then the images, then page + content
+  // pairs.
+  const imageObj = (i: number) => 4 + i;
+  const pageObj = (p: number) => 4 + images.length + p * 2;
+  const objs: (string | [string, Buffer])[] = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    `<< /Type /Pages /Kids [${pages.map((_, p) => `${pageObj(p)} 0 R`).join(' ')}] /Count ${pages.length} >>`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    ...images.map((img): [string, Buffer] => [
+      `<< /Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height} ` +
+        `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${img.flate.length} >>`,
+      img.flate,
+    ]),
+  ];
+  pages.forEach((page, p) => {
+    const draws = page.draw
+      .map((i, k) => `q 200 0 0 150 50 ${542 - k * 170} cm /Im${i + 1} Do Q`)
+      .join(' ');
+    const text =
+      page.caption === null
+        ? ''
+        : `BT /F1 12 Tf 50 732 Td (${page.caption ?? `Page ${p + 1}`}) Tj ET `;
+    const content = `${text}${draws}`;
+    const xobjects = [...new Set(page.draw)].map((i) => `/Im${i + 1} ${imageObj(i)} 0 R`);
+    objs.push(
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] ' +
+        `/Resources << /Font << /F1 3 0 R >> /XObject << ${xobjects.join(' ')} >> >> ` +
+        `/Contents ${pageObj(p) + 1} 0 R >>`,
+      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    );
+  });
+  return assemblePdf(objs);
+}
+
+/**
  * True once any pdf-stack test file has loaded THIS module instance.
  *
  * Module scope, so its lifetime is the module registry's — which is exactly

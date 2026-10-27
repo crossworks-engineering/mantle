@@ -15,16 +15,29 @@
  */
 
 import { PDFParse } from 'pdf-parse';
-import { describeImageBytes, type EmbeddedImage } from './embedded-images';
-import { openPdf, SAFE_PDF_PARAMS } from './pdf-open';
+import {
+  describeImageBytes,
+  MAX_EMBEDDED_IMAGES_PER_DOC,
+  passesGate,
+  type EmbeddedImage,
+} from './embedded-images';
+import { type PdfDocument, withPdf } from './pdf-open';
 
 /** pdf-parse (v2) ends every page with a `-- N of M --` marker line, text or
  *  no text. */
 const PAGE_MARKER_LINE = /^[ \t]*-- \d+ of \d+ --[ \t]*$/gm;
 
 export async function parsePdf(buf: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: new Uint8Array(buf), ...SAFE_PDF_PARAMS });
-  try {
+  // A text-only read (see pdf-open.ts), so no decode slot. pdf-parse is
+  // handed the document `withPdf` opened rather than opening its own: its
+  // `load()` reuses a document already set on the parser, and its own
+  // `destroy()` calls `doc.destroy()`, which pdfjs 6 removed, so a parser
+  // left to tear itself down leaked its worker-side document on every call.
+  // `withPdf` destroys the loading task instead. Verbosity 0 (errors only) is
+  // pdf-parse's own default.
+  return withPdf(buf, { mode: 'text', verbosity: 0 }, async ({ doc }) => {
+    const parser = new PDFParse({ data: new Uint8Array(0) });
+    (parser as unknown as { doc: typeof doc }).doc = doc;
     const result = await parser.getText();
     const text = (result.text ?? '').trim();
     // A scan has no text layer, but its markers are still there: a 1-page
@@ -34,23 +47,20 @@ export async function parsePdf(buf: Buffer): Promise<string> {
     // '' so the extractor takes the OCR path, as the header above promises.
     // A PDF with real text keeps its markers (page boundaries) unchanged.
     return text.replace(PAGE_MARKER_LINE, '').trim() ? text : '';
-  } finally {
-    await parser.destroy().catch(() => {});
-  }
+  });
 }
 
 /** Page count of a PDF, or null when pdfjs cannot open it (corrupt,
- *  encrypted). Reads the page tree only: no text, no rendering. Used to price
- *  an OCR pass before it runs (maintain `ocr-rescan`). */
+ *  encrypted, over the size limit). Reads the page tree only: no text, no
+ *  rendering, so no decode slot. Used to price an OCR pass before it runs
+ *  (maintain `ocr-rescan`). */
 export async function pdfPageCount(bytes: Buffer): Promise<number | null> {
-  const { task } = await openPdf(bytes, { useSystemFonts: true });
   try {
-    const doc = await task.promise;
-    return doc.numPages;
+    return await withPdf(bytes, { mode: 'text', useSystemFonts: true }, async ({ doc }) => {
+      return doc.numPages;
+    });
   } catch {
     return null;
-  } finally {
-    await task.destroy().catch(() => {});
   }
 }
 
@@ -62,7 +72,9 @@ const MAX_PDF_PAGES_SCANNED = 100;
 
 /** Refuse to materialise an image beyond this many pixels. RGBA expansion is
  *  4 bytes a pixel, so 30 MP is already a 120 MB buffer — past this we're
- *  looking at a full-bleed scan, which the OCR path owns anyway. */
+ *  looking at a full-bleed scan, which the OCR path owns anyway. The pass
+ *  opens the document with this as pdfjs's own image cap, so a bigger image
+ *  is dropped before it is decoded, not decoded and then refused. */
 const MAX_IMAGE_PIXELS = 30_000_000;
 
 /** pdfjs `ImageKind`. Only the two colour kinds are handled — see the note
@@ -109,7 +121,10 @@ async function toPngBytes(img: PdfImageData): Promise<Buffer | null> {
   }
   const canvas = createCanvas(width, height);
   canvas.getContext('2d').putImageData(new ImageData(rgba, width, height), 0, 0);
-  return canvas.toBuffer('image/png');
+  const png = canvas.toBuffer('image/png');
+  // Let go of the canvas's pixels now rather than whenever the GC gets to it.
+  canvas.width = 0;
+  return png;
 }
 
 /** A figure caption on the page, when there is exactly one and it is
@@ -120,6 +135,38 @@ function soleFigureCaption(lines: string[]): string | undefined {
   return hits.length === 1 ? hits[0]!.trim() : undefined;
 }
 
+type PdfPage = Awaited<ReturnType<PdfDocument['getPage']>>;
+
+/**
+ * The decoded data of one image the operator list names, or null if it never
+ * arrives. pdfjs keeps an image it caches across pages in the document-wide
+ * store (`commonObjs`, ids starting `g_`) and every other one in the page's
+ * own (`objs`); asking the wrong store with a callback never throws, it just
+ * waits for ever, so the store is picked by id the way pdfjs's own canvas
+ * does. Do NOT gate this on `has(name)`: that reports whether the object is
+ * ALREADY resolved, which right after the operator list is routinely false
+ * though the callback fires a moment later.
+ *
+ * The timeout is the safety net that makes the callback form usable in an
+ * ingest worker: a malformed XObject that never resolves would otherwise
+ * wedge this promise, and with it the extract queue, for ever.
+ */
+function resolveImage(page: PdfPage, name: string): Promise<PdfImageData | null> {
+  const store = name.startsWith('g_') ? page.commonObjs : page.objs;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), IMAGE_RESOLVE_TIMEOUT_MS);
+    const done = (v: PdfImageData | null) => {
+      clearTimeout(timer);
+      resolve(v ?? null);
+    };
+    try {
+      store.get(name, done as (data: unknown) => void);
+    } catch {
+      done(null);
+    }
+  });
+}
+
 /**
  * Every figure embedded in the PDF's pages, in page order.
  *
@@ -127,94 +174,136 @@ function soleFigureCaption(lines: string[]): string | undefined {
  * every page is a single full-bleed image, and extracting them would produce
  * a pile of "figures" that are really just pages — duplicating the OCR path
  * and burying any real content. We detect that shape (one image per page,
- * across the whole document) and return nothing, leaving scans to
+ * across every page read) and return nothing, leaving scans to
  * `rasterizePdfToPngs` + the vision worker where they belong.
+ *
+ * **One page at a time.** pdfjs keeps a page's decoded images until that page
+ * is cleaned up, so the pass reads a page's operator list, fetches and
+ * encodes that page's images, cleans the page up, and only then moves on:
+ * what is alive at once is one page's pictures plus the PNGs kept so far,
+ * never the whole document's pixels. The order matters: every image fetched
+ * is awaited before `cleanup()` (which clears the page's objects, so a fetch
+ * still pending would wait out its timeout), and an image the pass skips may
+ * finish decoding after the cleanup, which pdfjs then drops.
+ *
+ * While every page read so far holds exactly one image the document may be a
+ * scan, so those pages are only counted, not fetched: a scan then costs one
+ * operator list a page and no encoding. The first page that breaks the shape
+ * sends the pass back over the deferred pages (reading each again, in order)
+ * before it carries on, so the output is exactly what reading every page
+ * fully would give.
+ *
+ * It stops once `maxImages` images have passed the gate (the caller's
+ * per-document cap; decorations do not count toward it), so a long document
+ * is not decoded past what will be kept. Holds the process-wide decode slot
+ * (`withPdf`), waiting at most `waitMs` for it.
  */
-export async function extractPdfImages(bytes: Buffer): Promise<EmbeddedImage[]> {
-  const { pdfjs, task: loadingTask } = await openPdf(bytes, { useSystemFonts: true });
-  try {
-    const doc = await loadingTask.promise;
-    const pageCount = Math.min(doc.numPages, MAX_PDF_PAGES_SCANNED);
+export async function extractPdfImages(
+  bytes: Buffer,
+  opts?: { maxImages?: number; waitMs?: number },
+): Promise<EmbeddedImage[]> {
+  const maxImages = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
+  return withPdf(
+    bytes,
+    { useSystemFonts: true, maxImagePixels: MAX_IMAGE_PIXELS, waitMs: opts?.waitMs },
+    async ({ pdfjs, doc }) => {
+      const pageCount = Math.min(doc.numPages, MAX_PDF_PAGES_SCANNED);
+      const out: EmbeddedImage[] = [];
+      const seen = new Set<string>();
+      let kept = 0;
 
-    type Candidate = { page: number; name: string };
-    const candidates: Candidate[] = [];
-    const perPageCount = new Map<number, number>();
-    const captionByPage = new Map<number, string>();
-    const pages = new Map<number, Awaited<ReturnType<typeof doc.getPage>>>();
+      /** Read page `p`: count its image candidates and, when `fetch`, turn
+       *  them into PNGs. Cleans the page up before returning, whatever
+       *  happens. Returns the candidate count. */
+      const readPage = async (p: number, fetch: boolean): Promise<number> => {
+        const page = await doc.getPage(p);
+        try {
+          const ops = await page.getOperatorList();
+          let candidates = 0;
+          const wanted: string[] = [];
+          for (let i = 0; i < ops.fnArray.length; i++) {
+            const fn = ops.fnArray[i];
+            // Stencil masks (paintImageMaskXObject) are excluded — they're
+            // clipping shapes, not pictures.
+            if (fn !== pdfjs.OPS.paintImageXObject && fn !== pdfjs.OPS.paintInlineImageXObject) {
+              continue;
+            }
+            // [name, width, height] for an XObject, the size as its
+            // dictionary declares it; an inline image carries its data
+            // instead of a name and is not a candidate.
+            const [name, width, height] = (ops.argsArray[i] ?? []) as unknown[];
+            if (typeof name !== 'string') continue;
+            candidates++;
+            // Never fetch what `toPngBytes` would refuse. pdfjs's own cap for
+            // this pass already dropped such an image, so this only guards a
+            // size pdfjs did not check.
+            if (typeof width === 'number' && typeof height === 'number') {
+              if (width * height > MAX_IMAGE_PIXELS) continue;
+            }
+            wanted.push(name);
+          }
+          if (!fetch) return candidates;
 
-    for (let p = 1; p <= pageCount; p++) {
-      const page = await doc.getPage(p);
-      pages.set(p, page);
-      const ops = await page.getOperatorList();
-      for (let i = 0; i < ops.fnArray.length; i++) {
-        const fn = ops.fnArray[i];
-        // Stencil masks (paintImageMaskXObject) are excluded — they're
-        // clipping shapes, not pictures.
-        if (fn !== pdfjs.OPS.paintImageXObject && fn !== pdfjs.OPS.paintInlineImageXObject) {
+          // A caption is only ever attached to a page's sole picture.
+          let caption: string | undefined;
+          if (candidates === 1 && wanted.length === 1) {
+            const text = await page.getTextContent();
+            const lines = text.items
+              .map((it) => ('str' in it ? it.str : ''))
+              .filter((t) => t.trim());
+            caption = soleFigureCaption(lines);
+          }
+
+          for (const name of wanted) {
+            if (kept >= maxImages) break;
+            const raw = await resolveImage(page, name);
+            if (!raw) continue;
+            const png = await toPngBytes(raw).catch(() => null);
+            if (!png || png.length === 0) continue;
+            const img: EmbeddedImage = {
+              bytes: png,
+              ordinal: out.length + 1,
+              location: { page: p },
+              caption,
+              ...describeImageBytes(png, 'png'),
+            };
+            out.push(img);
+            // The caller gates again (and owns the counts it reports); this
+            // only decides when enough real pictures are in hand to stop.
+            if (passesGate(img, seen).keep) {
+              seen.add(img.sha256);
+              kept++;
+            }
+          }
+          return candidates;
+        } finally {
+          page.cleanup();
+        }
+      };
+
+      // Pages read while the document is still scan-shaped (one image on
+      // every page so far), counted but not yet fetched.
+      let deferred: number[] | null = pageCount >= 2 ? [] : null;
+      for (let p = 1; p <= pageCount && kept < maxImages; p++) {
+        if (!deferred) {
+          await readPage(p, true);
           continue;
         }
-        const name = ops.argsArray[i]?.[0];
-        if (typeof name !== 'string') continue;
-        candidates.push({ page: p, name });
-        perPageCount.set(p, (perPageCount.get(p) ?? 0) + 1);
-      }
-      const text = await page.getTextContent();
-      const lines = text.items.map((it) => ('str' in it ? it.str : '')).filter((s) => s.trim());
-      const caption = soleFigureCaption(lines);
-      if (caption) captionByPage.set(p, caption);
-    }
-
-    // Scanned-document shape: every scanned page carries exactly one image.
-    const looksScanned =
-      pageCount >= 2 &&
-      candidates.length === pageCount &&
-      [...perPageCount.values()].every((n) => n === 1);
-    if (looksScanned) return [];
-
-    const out: EmbeddedImage[] = [];
-    for (const { page, name } of candidates) {
-      const pageProxy = pages.get(page)!;
-      // `objs.get(name, cb)` registers a listener and fires once the image is
-      // decoded. Do NOT gate this on `objs.has(name)` — `has` reports whether
-      // the object is ALREADY resolved, which for a freshly-walked operator
-      // list is routinely false even though the callback would fire
-      // immediately after (verified against pdfjs 6.1.200: `has` returned
-      // false for an image `get` then resolved fine). Gating on it silently
-      // extracts nothing.
-      //
-      // The timeout is the safety net that makes the callback form usable in
-      // an ingest worker: a malformed XObject that never resolves would
-      // otherwise wedge this promise — and with it the extract queue — for
-      // ever.
-      const raw = await new Promise<PdfImageData | null>((resolve) => {
-        const timer = setTimeout(() => resolve(null), IMAGE_RESOLVE_TIMEOUT_MS);
-        const done = (v: PdfImageData | null) => {
-          clearTimeout(timer);
-          resolve(v);
-        };
-        try {
-          pageProxy.objs.get(name, done);
-        } catch {
-          try {
-            pageProxy.commonObjs.get(name, done);
-          } catch {
-            done(null);
-          }
+        if ((await readPage(p, false)) === 1) {
+          deferred.push(p);
+          continue;
         }
-      });
-      if (!raw) continue;
-      const png = await toPngBytes(raw).catch(() => null);
-      if (!png || png.length === 0) continue;
-      out.push({
-        bytes: png,
-        ordinal: out.length + 1,
-        location: { page },
-        caption: perPageCount.get(page) === 1 ? captionByPage.get(page) : undefined,
-        ...describeImageBytes(png, 'png'),
-      });
-    }
-    return out;
-  } finally {
-    await loadingTask.destroy().catch(() => {});
-  }
+        // Not a scan after all: fetch what was deferred, then this page.
+        const earlier = deferred;
+        deferred = null;
+        for (const d of earlier) {
+          if (kept >= maxImages) break;
+          await readPage(d, true);
+        }
+        if (kept < maxImages) await readPage(p, true);
+      }
+      // Every page held exactly one image: a scan, left to the OCR path.
+      return deferred ? [] : out;
+    },
+  );
 }
