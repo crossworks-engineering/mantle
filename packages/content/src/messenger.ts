@@ -921,26 +921,26 @@ export async function markMessengerRead(
   takeBudget(actor, 'write');
   const s = seqOr(seq, 'seq');
   const c = uuidOr(conversationId, 'The conversation');
-  const mine = sql`p.conversation_id = ${c}::uuid and p.kind = 'login'
-           and p.login_id = ${actor.loginId}::uuid
-           and k.id = p.conversation_id and k.owner_id = ${actor.ownerId}::uuid`;
-  const [moved] = await q<{ last_read_seq: string | number }>(
-    systemDb,
-    sql`update messenger_participants p
-           set last_read_seq = least(${s}::bigint, coalesce(p.left_seq, k.last_seq))
-          from messenger_conversations k
-         where ${mine}
-           and p.last_read_seq < least(${s}::bigint, coalesce(p.left_seq, k.last_seq))
-        returning p.last_read_seq`,
+  const P = messengerParticipants;
+  const mine = and(
+    eq(P.conversationId, c),
+    eq(P.kind, 'login'),
+    eq(P.loginId, actor.loginId),
+    sql`exists (select 1 from messenger_conversations k
+                 where k.id = ${P.conversationId} and k.owner_id = ${actor.ownerId}::uuid)`,
   );
-  if (moved) return { lastReadSeq: num(moved.last_read_seq) };
-  const [kept] = await q<{ last_read_seq: string | number }>(
-    systemDb,
-    sql`select p.last_read_seq from messenger_participants p, messenger_conversations k
-         where ${mine}`,
-  );
+  // The furthest I may read: my leave, else the conversation's last seq.
+  const cap = sql`least(${s}::bigint, coalesce(${P.leftSeq},
+    (select k.last_seq from messenger_conversations k where k.id = ${P.conversationId})))`;
+  const [moved] = await systemDb
+    .update(P)
+    .set({ lastReadSeq: cap })
+    .where(and(mine, sql`${P.lastReadSeq} < ${cap}`))
+    .returning({ lastReadSeq: P.lastReadSeq });
+  if (moved) return { lastReadSeq: num(moved.lastReadSeq) };
+  const [kept] = await systemDb.select({ lastReadSeq: P.lastReadSeq }).from(P).where(mine);
   if (!kept) throw new MessengerNotFoundError();
-  return { lastReadSeq: num(kept.last_read_seq) };
+  return { lastReadSeq: num(kept.lastReadSeq) };
 }
 
 /** Clear for me (plan section 10): I see nothing up to the last seq;

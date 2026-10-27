@@ -9,6 +9,7 @@ import {
 } from '@mantle/content';
 import { TREE_CHANGED_CHANNEL } from '@mantle/content/tree';
 import { messengerParticipantLogins } from '@mantle/content/messenger';
+import { TtlCache } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
@@ -71,11 +72,19 @@ export type MessengerChange = {
   actor: string | null;
 };
 type MessengerSubscriber = (c: MessengerChange) => void;
-type MessengerRoom = {
-  rows: { loginId: string; leftSeq: number | null; fromSeq: number }[];
-  /** When it was read (Date.now()): an entry lives MESSENGER_ROOM_TTL_MS. */
-  at: number;
-};
+type MessengerRoom = { loginId: string; leftSeq: number | null; fromSeq: number }[];
+
+/** The bound of the fan-out map: past it the least recently used room goes
+ *  (each entry is one indexed read to refill). */
+const MESSENGER_ROOMS_MAX = 5000;
+/** How long one entry of the fan-out map is kept: a change the map missed
+ *  (an add while no stream was open) is right again within this. */
+export const MESSENGER_ROOM_TTL_MS = 60_000;
+const newMessengerRooms = () =>
+  new TtlCache<string, MessengerRoom>({
+    ttlMs: MESSENGER_ROOM_TTL_MS,
+    maxEntries: MESSENGER_ROOMS_MAX,
+  });
 
 type Bridge = {
   subs: Set<Subscriber>;
@@ -89,8 +98,8 @@ type Bridge = {
    *  each entry kept at most MESSENGER_ROOM_TTL_MS. The whole map goes when
    *  the last messenger stream closes and when the LISTEN (re)connects (a
    *  NOTIFY lost while it was down cannot leave an entry stale). */
-  msgRooms: Map<string, MessengerRoom>;
-  /** Bumped on every drop of msgRooms (fanoutMessenger). */
+  msgRoomCache: TtlCache<string, MessengerRoom>;
+  /** Bumped on every drop of msgRoomCache (fanoutMessenger). */
   msgRoomsGen: number;
   starting: Promise<void> | null;
   stop: (() => Promise<void>) | null;
@@ -106,7 +115,7 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
   convSubs: new Set<ConvSubscriber>(),
   turnSubs: new Set<TurnStreamSubscriber>(),
   msgSubs: new Map<string, Set<MessengerSubscriber>>(),
-  msgRooms: new Map<string, MessengerRoom>(),
+  msgRoomCache: newMessengerRooms(),
   msgRoomsGen: 0,
   starting: null,
   stop: null,
@@ -116,7 +125,7 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
 bridge.convSubs ??= new Set<ConvSubscriber>();
 bridge.turnSubs ??= new Set<TurnStreamSubscriber>();
 bridge.msgSubs ??= new Map<string, Set<MessengerSubscriber>>();
-bridge.msgRooms ??= new Map<string, MessengerRoom>();
+bridge.msgRoomCache ??= newMessengerRooms();
 bridge.msgRoomsGen ??= 0;
 globalThis.__mantleRealtime = bridge;
 
@@ -323,17 +332,10 @@ export async function subscribeRealtime(cb: Subscriber): Promise<() => void> {
 
 const realtimeLog = log('realtime');
 
-/** The cap of the fan-out map: past it the map starts again (each entry is
- *  one indexed read to refill). */
-const MESSENGER_ROOMS_MAX = 5000;
-/** How long one entry of the fan-out map is kept: a change the map missed
- *  (an add while no stream was open) is right again within this. */
-export const MESSENGER_ROOM_TTL_MS = 60_000;
-
 /** Drop the whole fan-out map (the last stream closed, the LISTEN came
  *  back): a lookup in flight keeps nothing it read before. */
 function dropMessengerRooms(): void {
-  bridge.msgRooms.clear();
+  bridge.msgRoomCache.clear();
   bridge.msgRoomsGen += 1;
 }
 
@@ -345,7 +347,7 @@ async function fanoutMessenger(c: MessengerChange): Promise<void> {
   // The drop first: an add or a remove while no stream is open must not
   // leave the older list for the next stream.
   if (c.kind === 'participants') {
-    bridge.msgRooms.delete(c.c);
+    bridge.msgRoomCache.delete(c.c);
     bridge.msgRoomsGen += 1;
   }
   if (bridge.msgSubs.size === 0) return;
@@ -353,23 +355,14 @@ async function fanoutMessenger(c: MessengerChange): Promise<void> {
   if (c.kind === 'self') {
     to = c.actor ? [c.actor] : [];
   } else {
-    const now = Date.now();
-    let room = bridge.msgRooms.get(c.c);
-    if (room && now - room.at >= MESSENGER_ROOM_TTL_MS) {
-      bridge.msgRooms.delete(c.c);
-      room = undefined;
-    }
-    let rows = room?.rows;
+    let rows = bridge.msgRoomCache.get(c.c);
     if (!rows) {
       // A participants event that lands during this lookup must not see its
       // drop undone by the older list: keep it only when no drop
       // happened meanwhile.
       const gen = bridge.msgRoomsGen;
       rows = await messengerParticipantLogins(c.c);
-      if (gen === bridge.msgRoomsGen) {
-        if (bridge.msgRooms.size >= MESSENGER_ROOMS_MAX) bridge.msgRooms.clear();
-        bridge.msgRooms.set(c.c, { rows, at: now });
-      }
+      if (gen === bridge.msgRoomsGen) bridge.msgRoomCache.set(c.c, rows);
     }
     const seq = c.seq;
     const message =
