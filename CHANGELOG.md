@@ -23,7 +23,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **`video_ingest` takes uploads only:** no links. Upload the file, then
   `video_ingest` with its file id.
 - **A file the parser fails twice is terminal, across restarts and rolls:**
-  the count is kept on the node (`data.parser_failures`, migration 0337),
+  the count is kept on the node (`data.parser_failures`, migration 0339),
   and the extractor records `document_unreadable`. Nothing re-drives it.
 - **Gaps:** legacy Visio `.vsd` text is no longer read (the extractor asks
   for a `.vsdx` export); pictures inside `.xlsb` workbooks are no longer

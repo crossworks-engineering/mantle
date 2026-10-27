@@ -12,7 +12,7 @@
 -- others. Only the list changes (CREATE OR REPLACE, the same signature):
 -- every check that reads it is untouched. Re-runnable.
 --
--- Rollback: packages/db/rollback/0337_parser_failures_key.revert.sql puts
+-- Rollback: packages/db/rollback/0339_parser_failures_key.revert.sql puts
 -- 0281's list back; the older image never writes the key.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint

@@ -1371,6 +1371,42 @@ nothing). Nothing to do before the roll.
   Going below 0330 as well: this revert first (0330's reads the bridge's
   owner), then 0330's (below).
 
+## Going up to 0335 and 0336 (Messenger V1 Phase 1)
+
+Migration 0335 adds the Messenger's core store: direct chats and groups
+between the logins of one brain (`messenger_conversations`,
+`messenger_participants`, `messenger_messages`), `login_presence`, two
+columns on `push_login_prefs` (`messages`, `message_preview`) and two
+NOTIFY triggers that carry ids only. Who reads what is row security keyed
+by the participant row; there is no Admin exception. Writes go through the
+system pool; the workspace role reads. 0336 is its audit fix round: the
+workspace role reads fewer columns (its own cursors come from
+`mantle_messenger_mine()`, the room as it may see it from
+`mantle_messenger_people()`), the participants trigger's order is fixed
+and one unused index goes. Nothing to do before the roll: both only add or
+narrow, and neither queues work or starts a turn.
+
+- **What it changes for readers:** nothing until a login opens a chat;
+  the assistant chat stays where it was (`assistant_messages`).
+- **Rolling back below them:** optional; the older image never reads the
+  messenger tables. The reverts
+  (`packages/db/rollback/0336_messenger_fix_round_2.revert.sql`, then
+  `0335_messenger.revert.sql`) only take the two off the ledger and keep
+  every chat, so going up again picks them up as they were.
+
+## Going up to 0337 (the tree's custom order)
+
+Migration 0337 adds `tree_rank` to the presentation keys (an item's place
+in its folder's custom order, [folder-tree.md](folder-tree.md)), so Write
+on a folder may order what it holds. Only the list changes. Nothing to do
+before the roll.
+
+- **What it changes for readers:** nothing.
+- **Rolling back below it:** optional; the older image never writes
+  `tree_rank`. The revert
+  (`packages/db/rollback/0337_tree_rank_presentation.revert.sql`) puts
+  0281's list back and takes 0337 off the ledger.
+
 ## Going up to 0338 (the canvas data store, DWG phase 7a)
 
 Migration 0338 adds `canvas_data`: the small JSON values a Present canvas
@@ -1390,16 +1426,16 @@ Nothing to do before the roll.
   (`packages/db/rollback/0338_canvas_data.revert.sql`) takes 0338 off the
   ledger and keeps every stored value, the indexes and both functions.
 
-## Rolling to the parser service (Tika and the media sidecar go)
+## Rolling to the parser service (migration 0339; Tika and the media sidecar go)
 
 This release replaces two sidecars with one core service: the parser
 (`mantle-parser`, container `mantle_parser`, [parser.md](parser.md)) reads
 every file the brain receives, in its own container with a memory limit and
 no route out. Apache Tika (`mantle_tika`) and the media sidecar
-(`mantle_media`, yt-dlp) are gone. One migration, 0337: the extractor keeps
+(`mantle_media`, yt-dlp) are gone. One migration, 0339: the extractor keeps
 the parser's failure count on a file node (`data.parser_failures`), so a
 document that fails the parser twice stays terminal across restarts and
-rolls; its rollback is `packages/db/rollback/0337_parser_failures_key.revert.sql`
+rolls; its rollback is `packages/db/rollback/0339_parser_failures_key.revert.sql`
 (optional: the older image never writes the key).
 
 - **The roll pulls `<ns>/mantle-parser`** with the server image (every box

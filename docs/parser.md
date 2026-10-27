@@ -196,7 +196,7 @@ connection), the second is terminal, and a terminal job is refused at once
 without asking the parser again. A final refusal (a fixed cap, above) is
 terminal the first time. The extractor keeps the count on the node
 (`data.parser_failures`, keyed by the job and the bytes' sha256, written by
-`server/api/src/agent/extract/parser-failures.ts`; migration 0337), so it
+`server/api/src/agent/extract/parser-failures.ts`; migration 0339), so it
 survives a restart or a roll: one bomb costs the parser at most two jobs of
 each kind, whatever happens in between. A content change drops the key
 with the other byte keys. Anything else (a chat turn, a thumbnail) counts
