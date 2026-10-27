@@ -18,13 +18,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@dagrejs/dagre": "3.1.1"
+    "@dagrejs/dagre": "3.1.2"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "esbuild": "^0.28.2",
-    "puppeteer-core": "^25.12.0",
+    "puppeteer-core": "^25.16.0",
     "typescript": "^5.9.3",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }
