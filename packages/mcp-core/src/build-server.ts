@@ -101,7 +101,7 @@ import { registerPageTools } from './register/pages';
 import { registerTableTools } from './register/tables';
 import { registerResponderTools } from './register/responder';
 import { listBuiltins } from '@mantle/tools';
-import { CIRCUIT_DRAWING_STEPS } from '@mantle/tools/circuit-workflow';
+import { CIRCUIT_STEPS_POINTER } from '@mantle/tools/circuit-workflow';
 import { defaultMcpGate } from './gate-policy';
 import type { McpGate } from './gated-tools';
 
@@ -469,9 +469,10 @@ export const MANTLE_MCP_INSTRUCTIONS = [
   'When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind.',
   "Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it.",
   'Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules.',
-  // The same steps the internal agents' skills give (diagram_design,
-  // canvas_authoring): one text, @mantle/tools circuit-trace/workflow.ts.
-  CIRCUIT_DRAWING_STEPS,
+  // Loaded on every connection, so a pointer: circuit_trace's result
+  // carries the steps the internal agents' skills give (`workflow`, one
+  // text: @mantle/tools circuit-trace/workflow.ts).
+  CIRCUIT_STEPS_POINTER,
 ].join(' ');
 
 /** Create a fresh `McpServer` with the full Mantle tool surface, scoped to

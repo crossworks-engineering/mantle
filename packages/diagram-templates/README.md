@@ -214,6 +214,22 @@ What the template does with it:
 Budget (warnings, from the guide): 8 equipment, 16 bubbles, 20 valves, 5
 loops, 12 lines, 4 line types, 2 accents. Over budget: split the sheet.
 
+Limits (errors, `PID_LIMITS` in `src/templates/pid/schema.ts`): 30
+equipment, 60 lines, 60 instruments, 20 connectors, 30 tees, 60 signals,
+12 circuits, 6 inline items and 24 join marks (`LINE_CHECKS_MAX`) a line;
+text up to 80 characters for the title, 300 the description, 40 a
+connector's text or a line number, 32 a note or a marker, 40 a circuit
+label; a set up to 40 pages (`SET_LIMITS`). A site profile's
+`customSymbols` replaces at most one drawing per equipment or valve type
+(22), each `w` and `h` 8 to 320, at most 24 paths of up to 2000
+characters of path data. The image check marks' fields are in
+`CHECK_LIMITS` (`src/templates/pid/check.ts`). A save, and the runtime for
+data it cannot vouch for, checks these sizes on the raw data before any
+pass normalizes it (`pidLimitsProblem`, `src/templates/pid/limits.ts`;
+for a value with no limit of its own, the largest the template takes: a
+2000-character string, a 4000-item list, a nesting 16 deep): a save
+refuses data past one in plain words, the runtime drops its marks.
+
 ### Drawing sets
 
 A `pid` input with `pages` is a set: several sheets in one canvas that link
@@ -283,8 +299,14 @@ checkedAt, crops, overview }`. Each marked element gets
   (`wordColour`: a corrected mark that names no alternative says IMAGE: NO
   and takes the contradicted colour); the label before them keeps its own
   style, so letters typed to look like a word never look like one. The
-  badge and the legend take the same colour. A drawing with no mark draws
-  byte for byte as before. In the canvas each item is one tab stop: its
+  badge and the legend take the same colour. The trust colours and the
+  legend's check entries come only from marks: an unmarked label wears its
+  own colour, or the guess colour when it says `(GUESS)`, whatever other
+  words it holds; a typed bracketed claim on an element with no mark draws
+  as `(GUESS)` (`withoutMarkWords`, on every drawing, so a canvas saved
+  before the marks is honest on view; `pnpm maintain pid-canvas-resave`
+  rewrites the stored sources). A drawing with no mark and no typed claim
+  draws byte for byte as before. In the canvas each item is one tab stop: its
   badge, else its first element.
   The drawing prints `N GUESSES NOT CHECKED BY IMAGE` under its title,
   counted at render time from the marks (`imageCheckSummary`), never from a
@@ -292,14 +314,16 @@ checkedAt, crops, overview }`. Each marked element gets
   crops, guess, question, answer and model (`src/evidence.ts`). The crops
   (file ids) are embedded when the canvas is saved, in an assets block
   right after the data block (`<script type="application/json"
-  id="diagram-assets">`, written with `scriptJson`'s escapes,
+id="diagram-assets">`, written with `scriptJson`'s escapes,
   `readCanvasAssets` / `replaceCanvasAssets`, one reader
   `parseCanvasAssets`; part of the shape a `pid` canvas is held to, so it
   survives a save's canonical rebuild): the frame loads nothing, and shows
   only a base64 PNG, JPEG or WebP data URL. The runtime reads the assets
   block with the data block, once at mount and only from where
-  `buildCanvas` puts it (`src/data-read.ts`); in any other document the
-  evidence view does not run. Each crop is `{ src, sig }`: the
+  `buildCanvas` puts it, under exactly the import runtime it writes
+  (`IMPORT_RUNTIME_TEXT`), on the live document (`src/data-read.ts`); in
+  any other document the marks draw unchecked and the evidence view does
+  not run. Each crop is `{ src, sig }`: the
   server seals its file id and the sha256 of its bytes (`cropSealPayload`,
   CROP_SEAL_PURPOSE) when it embeds it, and every save keeps a crop only
   when that seal holds and a kept mark still names it

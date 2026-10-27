@@ -4,12 +4,15 @@
  * again, save) are ONE text (@mantle/tools circuit-trace/workflow.ts), and
  * every author reads it: the internal agents through their skills
  * (Draftsman: diagram_design; Presenter: canvas_authoring) and a client
- * over MCP through the server instructions. The unchecked-guess count is
- * the tools' own (packages/tools/src/circuit-parity.test.ts).
+ * over MCP in circuit_trace's result (`workflow`, which
+ * packages/tools/src/circuit-parity.test.ts pins), pointed to by the
+ * server instructions. The unchecked-guess count is the tools' own (the
+ * same test).
  */
 import { describe, expect, it } from 'vitest';
 import {
   CIRCUIT_DRAWING_STEPS,
+  CIRCUIT_STEPS_POINTER,
   imageCheckReport,
   VERIFY_NEXT,
   VERIFY_ONCE,
@@ -38,10 +41,16 @@ describe('the circuit drawing steps reach every author the same', () => {
       expect(SKILL_INSTRUCTIONS[skill], skill).toContain(CIRCUIT_DRAWING_STEPS);
   });
 
-  it('a client over MCP reads the same text in the server instructions', () => {
-    expect(MANTLE_MCP_INSTRUCTIONS).toContain(CIRCUIT_DRAWING_STEPS);
-    const login = mcpInstructionsFor({} as never);
-    expect(login).toContain(CIRCUIT_DRAWING_STEPS);
+  it('a client over MCP is pointed to them by the server instructions, short', () => {
+    // Loaded on every connection: the pointer, never the steps themselves
+    // (circuit_trace's result carries them, `workflow`).
+    for (const text of [MANTLE_MCP_INSTRUCTIONS, mcpInstructionsFor({} as never)]) {
+      expect(text).toContain(CIRCUIT_STEPS_POINTER);
+      expect(text).not.toContain(CIRCUIT_DRAWING_STEPS);
+    }
+    expect(CIRCUIT_STEPS_POINTER.length).toBeLessThan(300);
+    for (const t of ['circuit_trace', 'circuit_verify', 'at most once per trace in a turn'])
+      expect(CIRCUIT_STEPS_POINTER).toContain(t);
   });
 
   it('says circuit_verify runs at most once per trace in a turn, to every author', () => {
@@ -51,12 +60,12 @@ describe('the circuit drawing steps reach every author the same', () => {
     expect(VERIFY_ONCE).toMatch(/never again in the same turn/);
     expect(VERIFY_ONCE).toMatch(/not_asked/);
     expect(VERIFY_ONCE).toMatch(/save the drawing and report how many are unchecked/);
-    // In the steps, so in both skills and the MCP server instructions.
+    // In the steps, so in both skills and circuit_trace's result; the MCP
+    // server instructions' pointer says it in short.
     expect(CIRCUIT_DRAWING_STEPS).toContain(VERIFY_ONCE);
     for (const skill of ['diagram_design', 'canvas_authoring'])
       expect(SKILL_INSTRUCTIONS[skill], skill).toContain(VERIFY_ONCE);
-    expect(MANTLE_MCP_INSTRUCTIONS).toContain(VERIFY_ONCE);
-    expect(mcpInstructionsFor({} as never)).toContain(VERIFY_ONCE);
+    expect(MANTLE_MCP_INSTRUCTIONS).toMatch(/at most once per trace in a turn/);
     // And in the hints a result carries after a trace or a check.
     expect(VERIFY_NEXT).toContain(VERIFY_ONCE);
     const unchecked = imageCheckReport({

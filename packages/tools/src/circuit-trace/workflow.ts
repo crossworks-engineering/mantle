@@ -3,9 +3,10 @@
  * author (DWG bones phase 6, "same check for every author"): an internal
  * agent (Draftsman, Presenter) and a client over MCP read the same steps,
  * from this file: the skills (server/web prompts.ts diagram_design and
- * canvas_authoring), the MCP server instructions (@mantle/mcp-core), and
- * the `next` hints of circuit_trace, circuit_verify, present_create and
- * present_update. The count of guesses no image has checked is the same
+ * canvas_authoring), circuit_trace's result (`workflow`, which a client
+ * over MCP reads; the MCP server instructions, loaded on every connection,
+ * carry only CIRCUIT_STEPS_POINTER to it), and the `next` hints of
+ * circuit_trace, circuit_verify, present_create and present_update. The count of guesses no image has checked is the same
  * function for all of them (`imageCheckReport`, over the drawing's own
  * marks: @mantle/diagram-templates imageCheckSummary).
  *
@@ -32,6 +33,12 @@ export const VERIFY_ONCE = `Call \`circuit_verify\` at most once per trace in a 
 export const CIRCUIT_DRAWING_STEPS =
   "A circuit drawn from the uploaded P&IDs is made the same way by every author, an agent here or a client over MCP: 1. `circuit_trace` with the circuit's name; 2. `circuit_verify` on the same circuit: each guess the trace made is asked about on a close-up crop of the drawing by the default vision model, which spends the owner's vision key (a few cents a circuit; dry_run lists the questions for free; it never runs on its own); 3. `circuit_trace` again, so the drawing carries the answers (CHECKED BY IMAGE, or FROM IMAGE where the image named what a guess really is); 4. save that `pid` object, unchanged, with `present_create` (or `present_update` for a saved drawing), once its pid_check is ok. `circuit_trace`, `present_create` and `present_update` report image_check: how many guesses on the drawing no image has checked, and the drawing shows that count until they are. Never drop or relabel a GUESS, CHECKED BY IMAGE or FROM IMAGE mark. " +
   VERIFY_ONCE;
+
+/** What the MCP server instructions say of it (loaded by every client on
+ *  every connection, so a pointer, not the steps): circuit_trace's result
+ *  carries the steps (`workflow`: CIRCUIT_DRAWING_STEPS) and its `next`. */
+export const CIRCUIT_STEPS_POINTER =
+  'A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged.';
 
 /** circuit_verify's `next`. */
 export const VERIFY_NEXT =
