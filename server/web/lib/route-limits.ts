@@ -178,6 +178,14 @@ export const RATE_LIMITS = {
   memberBytes: { ...perMember('member-bytes', 240), when: BYTES_ASKED },
   memberThumbs: { ...perMember('member-thumbs', 60), when: THUMB_ASKED },
   wsUserSearch: perLogin('ws-user-search', 60),
+  // The messenger (plan page d8954876 section 14), per login: sends, the
+  // other writes (edit, delete, react, read, clear, membership, pins),
+  // typing (one per 3 s; stored nowhere) and the reads (the list, a
+  // window, the catch-up a client runs on every event).
+  messengerSend: perLogin('messenger-send', 60),
+  messengerWrite: perLogin('messenger-write', 120),
+  messengerTyping: perLogin('messenger-typing', 20),
+  messengerRead: perLogin('messenger-read', 600),
   // The /s link routes, per address: a stranger's requests.
   shareAggregate: perIp('share-aggregate', 120),
   shareBundle: perIp('share-bundle', 30),

@@ -1488,19 +1488,33 @@ export async function messengerUnread(
 
 // ── The stream's fan-out (system pool) ───────────────────────────────────────
 
-/** The logins that hold a participant row in a conversation and may read
- *  `seq` (every live one; a left one only up to its left_seq), for the SSE
- *  fan-out of section 7. On the system pool: the stream holds no scope.
- *  A null seq (a room event) reaches the live participants and the actor. */
-export async function messengerAudience(conversationId: string, seq: number | null): Promise<string[]> {
+/** The logins that hold a participant row in a conversation, with the seq
+ *  a left one reads up to (null: live), for the SSE fan-out of section 7
+ *  (server/web/lib/realtime.ts filters each event by it). On the system
+ *  pool: the stream's listener holds no scope. */
+export async function messengerAudienceRows(
+  conversationId: string,
+): Promise<{ loginId: string; leftSeq: number | null }[]> {
   if (!UUID.test(conversationId)) return [];
-  const rows = await q<{ login_id: string }>(
+  const rows = await q<{ login_id: string; left_seq: string | number | null }>(
     systemDb,
-    sql`select login_id::text as login_id from messenger_participants
-         where conversation_id = ${conversationId}::uuid and kind = 'login'
-           and (left_at is null ${seq !== null ? sql`or left_seq >= ${seq}` : sql``})`,
+    sql`select login_id::text as login_id, left_seq from messenger_participants
+         where conversation_id = ${conversationId}::uuid and kind = 'login'`,
   );
-  return rows.map((r) => r.login_id);
+  return rows.map((r) => ({ loginId: r.login_id, leftSeq: numOrNull(r.left_seq) }));
+}
+
+/** Whether a login may still use the messenger: it exists, has a mailbox
+ *  and is not disabled. The stream asks on every heartbeat (a disabled
+ *  login's stream closes). On the system pool: a viewer role reads no
+ *  auth.users row. */
+export async function messengerLoginUsable(loginId: string): Promise<boolean> {
+  if (!UUID.test(loginId)) return false;
+  const [r] = await q<{ ok: boolean }>(
+    systemDb,
+    sql`select (email is not null and disabled_at is null) as ok from auth.users where id = ${loginId}::uuid`,
+  );
+  return r?.ok === true;
 }
 
 /** Mark a login active for "online" (the stream's heartbeat): at most one

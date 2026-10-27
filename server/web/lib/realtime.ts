@@ -8,6 +8,7 @@ import {
   TASKS_CHANGED_CHANNEL,
 } from '@mantle/content';
 import { TREE_CHANGED_CHANNEL } from '@mantle/content/tree';
+import { messengerAudienceRows } from '@mantle/content/messenger';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
@@ -50,10 +51,28 @@ type ConvSubscriber = (c: ConversationChange) => void;
  *  owner id is used to filter per subscriber and never reaches the browser. */
 type TurnStreamSubscriber = (env: TurnStreamEnvelope) => void;
 
+/** A messenger change (Messenger V1, migration 0335): ids and seq, never
+ *  text. Payload of the `messenger_changed` NOTIFY. */
+export const MESSENGER_CHANGED_CHANNEL = 'messenger_changed';
+export type MessengerChange = {
+  c: string;
+  seq: number | null;
+  kind: 'new' | 'edit' | 'delete' | 'read' | 'self' | 'participants' | 'reaction' | 'typing';
+  actor: string | null;
+};
+type MessengerSubscriber = (c: MessengerChange) => void;
+
 type Bridge = {
   subs: Set<Subscriber>;
   convSubs: Set<ConvSubscriber>;
   turnSubs: Set<TurnStreamSubscriber>;
+  /** Messenger streams by login id (each stream is one login's). */
+  msgSubs: Map<string, Set<MessengerSubscriber>>;
+  /** The fan-out map of plan section 7: conversation id to its participant
+   *  logins (with the seq a left one reads up to), filled on first use and
+   *  dropped on a participants event. A stale entry can at worst send an id
+   *  to a login that then gets 404 on the fetch; never text. */
+  msgAudience: Map<string, { loginId: string; leftSeq: number | null }[]>;
   starting: Promise<void> | null;
   stop: (() => Promise<void>) | null;
 };
@@ -67,6 +86,8 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
   subs: new Set<Subscriber>(),
   convSubs: new Set<ConvSubscriber>(),
   turnSubs: new Set<TurnStreamSubscriber>(),
+  msgSubs: new Map<string, Set<MessengerSubscriber>>(),
+  msgAudience: new Map<string, { loginId: string; leftSeq: number | null }[]>(),
   starting: null,
   stop: null,
 };
@@ -74,6 +95,8 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
 // it — backfill so subscribe* can't hit `undefined`.
 bridge.convSubs ??= new Set<ConvSubscriber>();
 bridge.turnSubs ??= new Set<TurnStreamSubscriber>();
+bridge.msgSubs ??= new Map<string, Set<MessengerSubscriber>>();
+bridge.msgAudience ??= new Map<string, { loginId: string; leftSeq: number | null }[]>();
 globalThis.__mantleRealtime = bridge;
 
 async function ensureListening(): Promise<void> {
@@ -168,8 +191,21 @@ async function ensureListening(): Promise<void> {
         /* malformed payload — drop it rather than crash the listener */
       }
     });
+    // Messenger changes (0335): fanned out to the streams of the logins
+    // that are participants of the conversation (fanoutMessenger).
+    const subMessenger = await sql.listen(MESSENGER_CHANGED_CHANNEL, (payload) => {
+      try {
+        const c = JSON.parse(payload) as MessengerChange;
+        if (c && typeof c.c === 'string' && typeof c.kind === 'string') {
+          void runAsSystem('listen:realtime', () => fanoutMessenger(c));
+        }
+      } catch {
+        /* malformed payload: drop it rather than crash the listener */
+      }
+    });
     bridge.stop = async () => {
       try {
+        await subMessenger.unlisten();
         await subIngested.unlisten();
         await subIndexed.unlisten();
         await subPending.unlisten();
@@ -255,6 +291,71 @@ export async function subscribeRealtime(cb: Subscriber): Promise<() => void> {
   }
   return () => {
     bridge.subs.delete(cb);
+  };
+}
+
+/** The cap of the fan-out map: past it the map starts again (each entry is
+ *  one indexed read to refill). */
+const MESSENGER_AUDIENCE_MAX = 5000;
+
+/** Who hears a messenger change: a room event every live participant (and
+ *  the actor); a message event every participant that may read its seq;
+ *  'self' only the actor; 'typing' everyone live but the typist. */
+async function fanoutMessenger(c: MessengerChange): Promise<void> {
+  if (bridge.msgSubs.size === 0) return;
+  if (c.kind === 'participants') bridge.msgAudience.delete(c.c);
+  let audience: string[];
+  if (c.kind === 'self') {
+    audience = c.actor ? [c.actor] : [];
+  } else {
+    let rows = bridge.msgAudience.get(c.c);
+    if (!rows) {
+      rows = await messengerAudienceRows(c.c);
+      if (bridge.msgAudience.size >= MESSENGER_AUDIENCE_MAX) bridge.msgAudience.clear();
+      bridge.msgAudience.set(c.c, rows);
+    }
+    const seq = c.seq;
+    audience = rows
+      .filter((r) => r.leftSeq === null || (seq !== null && c.kind !== 'typing' && r.leftSeq >= seq))
+      .map((r) => r.loginId);
+    if (c.kind === 'typing') audience = audience.filter((l) => l !== c.actor);
+    if (c.kind === 'participants' && c.actor && !audience.includes(c.actor)) audience.push(c.actor);
+  }
+  for (const loginId of audience) {
+    for (const cb of bridge.msgSubs.get(loginId) ?? []) {
+      try {
+        cb(c);
+      } catch (err) {
+        console.error('[realtime] messenger subscriber threw:', err);
+      }
+    }
+  }
+}
+
+/**
+ * Subscribe ONE login's stream to the messenger changes it may hear: only
+ * those of conversations it is a participant of (the fan-out map). Shares
+ * the one LISTEN connection; returns an unsubscribe fn.
+ */
+export async function subscribeMessenger(
+  loginId: string,
+  cb: MessengerSubscriber,
+): Promise<() => void> {
+  let set = bridge.msgSubs.get(loginId);
+  if (!set) {
+    set = new Set();
+    bridge.msgSubs.set(loginId, set);
+  }
+  set.add(cb);
+  try {
+    await ensureListening();
+  } catch (err) {
+    console.error('[realtime] listener start failed:', err);
+  }
+  return () => {
+    const s = bridge.msgSubs.get(loginId);
+    s?.delete(cb);
+    if (s && s.size === 0) bridge.msgSubs.delete(loginId);
   };
 }
 

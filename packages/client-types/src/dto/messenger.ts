@@ -187,7 +187,7 @@ export type MessengerFavouriteKind = 'conversation' | 'agent';
 
 /** The events of GET /api/messenger/stream (ids and seq, never text). */
 export type MessengerStreamEvent =
-  | { type: 'message'; c: string; seq: number; kind: 'new' | 'edit' | 'delete' | 'clear' }
+  | { type: 'message'; c: string; seq: number; kind: 'new' | 'edit' | 'delete' }
   | { type: 'read'; c: string; seq: number; loginId: string }
   | { type: 'participants'; c: string }
   | { type: 'reaction'; c: string; seq: number }
