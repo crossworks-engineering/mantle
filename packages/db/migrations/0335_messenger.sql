@@ -144,8 +144,8 @@ CREATE INDEX IF NOT EXISTS "messenger_messages_created_idx"
   ON "messenger_messages" ("conversation_id", "created_at");
 --> statement-breakpoint
 
--- The bytes come in Phase 4 (POST /api/messenger/attachments answers 501
--- until then); the table lands now so the message's attachment list has a
+-- The bytes come in Phase 4 (with the upload route,
+-- POST /api/messenger/attachments); the table lands now so the message's attachment list has a
 -- target. An orphan (message_id null after 24 h) is the files worker's to
 -- reap, from Phase 4.
 CREATE TABLE IF NOT EXISTS "messenger_attachments" (

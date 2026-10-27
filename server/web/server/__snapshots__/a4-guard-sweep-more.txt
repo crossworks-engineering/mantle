@@ -442,7 +442,6 @@ GET /api/member/realtime: disabled-cookie=a29 bumped-cookie=a29 gone-cookie=a29 
 HEAD /api/member/realtime: disabled-cookie=a30 bumped-cookie=a30 gone-cookie=a30 rotated-bearer=a30 expired-bearer=a30 key-unknown=a5 key-revoked=a5
 GET /api/mentions/search: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/mentions/search: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
-POST /api/messenger/attachments: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-bearer=a2 expired-bearer=a2 key-unknown=a3 key-revoked=a3
 GET /api/messenger/c/:id: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-bearer=a2 expired-bearer=a2 key-unknown=a3 key-revoked=a3
 PATCH /api/messenger/c/:id: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-bearer=a2 expired-bearer=a2 key-unknown=a3 key-revoked=a3
 HEAD /api/messenger/c/:id: disabled-cookie=a4 bumped-cookie=a4 gone-cookie=a4 rotated-bearer=a4 expired-bearer=a4 key-unknown=a5 key-revoked=a5

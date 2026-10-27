@@ -367,10 +367,6 @@ POST /api/messenger/c/:id/history/delete member messenger-write count (login 120
 POST /api/messenger/c/:id/history/delete member messenger-write window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 500
 POST /api/messenger/c/:id/history/delete member messenger-write scope => other address 429; other login 500; other login, other address 500
 POST /api/messenger/c/:id/history/delete member messenger-write order: no login => first 429 at 0; answer 401; then 500
-POST /api/messenger/attachments member messenger-write count (login 120/60s) => first 429 at 121; #120 501; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
-POST /api/messenger/attachments member messenger-write window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 501
-POST /api/messenger/attachments member messenger-write scope => other address 429; other login 501; other login, other address 501
-POST /api/messenger/attachments member messenger-write order: no login => first 429 at 0; answer 401; then 501
 PUT /api/messenger/favourites/:kind/:id member messenger-write count (login 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 PUT /api/messenger/favourites/:kind/:id member messenger-write window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
 PUT /api/messenger/favourites/:kind/:id member messenger-write scope => other address 429; other login 404; other login, other address 404

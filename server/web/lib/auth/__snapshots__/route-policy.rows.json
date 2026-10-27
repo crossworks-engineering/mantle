@@ -741,7 +741,6 @@
 "POST /api/mcp-status": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/member/push/connect": {"class":"self","scope":{"kind":"self"},"open":"login","logins":"member","effect":"write","caller":"member","rateLimit":["pushEnrol"]},
 "POST /api/member/push/subscriptions": {"class":"self","scope":{"kind":"self"},"open":"login","logins":"member","effect":"write","caller":"member","rateLimit":["pushEnrol"]},
-"POST /api/messenger/attachments": {"class":"self","scope":null,"open":"login","logins":"any","effect":"write","caller":"login","rateLimit":["messengerWrite"]},
 "POST /api/messenger/c/:id/clear": {"class":"self","scope":null,"open":"login","logins":"any","effect":"write","caller":"login","rateLimit":["messengerWrite"]},
 "POST /api/messenger/c/:id/history/delete": {"class":"self","scope":null,"open":"login","logins":"any","effect":"write","caller":"login","rateLimit":["messengerWrite"]},
 "POST /api/messenger/c/:id/leave": {"class":"self","scope":null,"open":"login","logins":"any","effect":"write","caller":"login","rateLimit":["messengerWrite"]},

@@ -740,7 +740,6 @@ POST /api/mcp-connectors/:slug/sync class=area scope=area:connectors caller=owne
 POST /api/mcp-status class=area scope=area:settings caller=owner gone=false
 POST /api/member/push/connect class=self scope=self caller=member gone=false
 POST /api/member/push/subscriptions class=self scope=self caller=member gone=false
-POST /api/messenger/attachments class=self scope=- caller=login gone=false
 POST /api/messenger/c/:id/clear class=self scope=- caller=login gone=false
 POST /api/messenger/c/:id/history/delete class=self scope=- caller=login gone=false
 POST /api/messenger/c/:id/leave class=self scope=- caller=login gone=false

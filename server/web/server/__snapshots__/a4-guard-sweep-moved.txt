@@ -224,7 +224,7 @@ m222 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m223 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m224 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 9793
+# cells whose guard entry moved to the pipeline: 9781
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -2846,13 +2846,6 @@ first HEAD /api/mentions/search member-cookie=m58
 first HEAD /api/mentions/search admin-bearer=m32
 first HEAD /api/mentions/search member-bearer=m59
 first HEAD /api/mentions/search revoked-bearer=m34
-first POST /api/messenger/attachments owner-cookie=m8
-first POST /api/messenger/attachments admin-cookie=m9
-first POST /api/messenger/attachments limited-cookie=m10
-first POST /api/messenger/attachments member-cookie=m11
-first POST /api/messenger/attachments admin-bearer=m12
-first POST /api/messenger/attachments member-bearer=m13
-first POST /api/messenger/attachments revoked-bearer=m7
 first GET /api/messenger/c/:id owner-cookie=m1
 first GET /api/messenger/c/:id admin-cookie=m2
 first GET /api/messenger/c/:id limited-cookie=m3
@@ -7863,11 +7856,6 @@ more HEAD /api/mentions/search bumped-cookie=m34
 more HEAD /api/mentions/search gone-cookie=m34
 more HEAD /api/mentions/search rotated-bearer=m34
 more HEAD /api/mentions/search expired-bearer=m34
-more POST /api/messenger/attachments disabled-cookie=m7
-more POST /api/messenger/attachments bumped-cookie=m7
-more POST /api/messenger/attachments gone-cookie=m7
-more POST /api/messenger/attachments rotated-bearer=m7
-more POST /api/messenger/attachments expired-bearer=m7
 more GET /api/messenger/c/:id disabled-cookie=m7
 more GET /api/messenger/c/:id bumped-cookie=m7
 more GET /api/messenger/c/:id gone-cookie=m7

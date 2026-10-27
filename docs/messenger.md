@@ -121,7 +121,6 @@ limit (`server/web/lib/route-limits.ts`): `messengerRead` 600, `messengerWrite`
 | `GET /directory?q=` | who I may chat with, with "online" |
 | `GET /stream` | the SSE stream (below) |
 | `GET /unread` | the badge |
-| `POST /attachments` | answers 501 until Phase 4 |
 
 The DTOs are in `packages/client-types/src/dto/messenger.ts`. A mention is
 stored and starts nothing in Phase 1: no agent turn exists yet.

@@ -518,12 +518,6 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     limits: [login('messenger-write', 120)],
   },
   {
-    row: 'POST /api/messenger/attachments',
-    cred: 'member',
-    body: JSON_BODY,
-    limits: [login('messenger-write', 120)],
-  },
-  {
     row: 'PUT /api/messenger/favourites/:kind/:id',
     cred: 'member',
     body: JSON_BODY,
