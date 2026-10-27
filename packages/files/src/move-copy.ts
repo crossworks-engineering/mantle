@@ -197,8 +197,13 @@ export async function moveFileById(args: {
               const rows = await tx
                 .update(nodes)
                 // Filing is not editing: the file keeps its updated_at
-                // (node-ops.ts).
-                .set({ path: args.destPath })
+                // (node-ops.ts). Its place in the folder it leaves
+                // (`tree_rank`, the tree's custom order) does not come
+                // along: it lands unranked (node-ops.ts moveNodeItem).
+                .set({
+                  path: args.destPath,
+                  data: sql`coalesce(${nodes.data}, '{}'::jsonb) - 'tree_rank'`,
+                })
                 .where(eq(nodes.id, node.id))
                 .returning({ id: nodes.id });
               oneRow('files', rows, 'file');
@@ -343,9 +348,14 @@ export async function moveFolderById(args: {
                 sql`select mantle_subtree_rewrite(${args.ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
               );
               // Filing is not editing: only the folder itself is stamped.
+              // Its place among the folders it leaves (`rank`, the tree's
+              // order) does not come along (node-ops.ts moveNodeFolder).
               const rows = await tx
                 .update(nodes)
-                .set({ updatedAt: sql`now()` })
+                .set({
+                  data: sql`coalesce(${nodes.data}, '{}'::jsonb) - 'rank'`,
+                  updatedAt: sql`now()`,
+                })
                 .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, args.ownerId)))
                 .returning({ id: nodes.id });
               oneRow('files', rows, 'folder');

@@ -177,9 +177,15 @@ login (owner decision 2026-10-26).
   then, not on every place). A folder of more than 5,000 children
   (`TREE_ORDER_MAX`) is refused a place that needs a ranking (409: sort it
   another way, or split it); a place between ranked neighbours works at
-  any size. The route is limited per login (`treePlace`, 120 a minute). A
-  move to another folder keeps the item's rank, so it lands by it there
-  until someone places it.
+  any size: it reads only the two neighbours, and a ranking counts the
+  folder before it reads it. The route is limited per login (`treePlace`,
+  120 a minute), and so is the folder PATCH, which places folders. A place
+  is a place in one folder: a move to another folder drops the item's rank
+  (a folder's `rank`), as does the lift of a deleted folder's contents into
+  its parent (a subfolder that moves up whole keeps the order inside it),
+  and a copy (Files' copy, an app's duplicate) never carries one. What
+  lands so is unranked there, after the ranked ones, and never ties with
+  them or orders a folder that had no order.
 
 ## Pins, Recent and Most used
 
@@ -201,6 +207,11 @@ open folders are still remembered per browser.
   or an empty icon is none).
 - `PATCH /api/tree/:kind/folders/:id` renames, restyles (`icon`, `color`),
   moves (`parentId`) or reorders (`after`: the sibling to follow, null = first).
+  The route asks read of the folder; an `after` alone needs no more of it
+  (the order right is of the folder that holds it), every other change
+  asks edit, a move manage. An `after` that is no folder where the folder
+  lands is refused (400) before anything moves. Limited per login
+  (`treePlace`, shared with the item place).
 - `DELETE /api/tree/:kind/folders/:id` deletes a folder after moving what it
   holds up to its parent; nothing inside is deleted. Everything lands one
   level up (`P.rest` goes to `Q.rest`, `Q` the parent), so a clash is a

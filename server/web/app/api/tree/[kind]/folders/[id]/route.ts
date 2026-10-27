@@ -19,10 +19,15 @@ export const policy = routePolicy({
   PATCH: {
     class: 'content',
     open: 'owner',
-    // A patch of `after` alone asks no right of the folder beyond its read:
-    // the order right of the folder that holds it (Write there, an Admin
-    // scope at the top level; tree-custom-order.db.test.ts pins it).
-    item: { param: 'id', need: 'edit' },
+    // Limited per login with the item place (treePlace): a place may rank
+    // the folder's siblings whole.
+    limits: { rateLimit: ['treePlace'] },
+    // The lowest right the handler accepts: a patch of `after` alone asks
+    // no right of the folder beyond its read, but the order right of the
+    // folder that holds it (Write there, an Admin scope at the top level;
+    // tree-custom-order.db.test.ts pins it). Any other change asks edit (a
+    // move manage): the A8 route cells run those as its higher requests.
+    item: { param: 'id', need: 'read' },
   },
   DELETE: {
     class: 'content',

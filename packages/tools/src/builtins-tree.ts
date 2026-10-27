@@ -214,7 +214,10 @@ export const tree_folder_update: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     itemArgs: [
-      { param: 'folder_id' },
+      // An `after` alone asks the folder's read only (the order right is of
+      // the folder that holds it): the queue asks no more, and the run's own
+      // checks refuse a rename, a look or a move without edit or manage.
+      { param: 'folder_id', least: 'read' },
       { param: 'parent_id', least: 'none' },
       { param: 'after', least: 'read' },
     ],

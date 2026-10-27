@@ -160,9 +160,12 @@ type ScopeRights = { edit: boolean; manage: boolean; copy: boolean };
 
 /** What the current scope may do to each of `ids` (canonical uuids): an id
  *  it does not read is absent. */
-async function scopeRightsOf(ids: readonly string[]): Promise<Map<string, ScopeRights>> {
+async function scopeRightsOf(
+  ids: readonly string[],
+  conn: Pick<typeof db, 'execute'> = db,
+): Promise<Map<string, ScopeRights>> {
   const arr = `{${ids.join(',')}}`;
-  const rows = (await db.execute(sql`
+  const rows = (await conn.execute(sql`
     select n.id::text as id,
            coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false) as edit,
            coalesce("public"."mantle_may_manage"(n.home_ws), false) as manage,
@@ -198,6 +201,9 @@ function verdictOf(
 export async function itemWriteVerdicts(
   ids: readonly string[],
   need: ItemNeed,
+  /** The connection to ask on: a write's own transaction, when it asks
+   *  while holding it (a whole folder's order, tree write.ts). */
+  conn: Pick<typeof db, 'execute'> = db,
 ): Promise<Map<string, 'ok' | 'no_read' | 'no_edit'>> {
   const out = new Map<string, 'ok' | 'no_read' | 'no_edit'>();
   if (!currentWorkspaceScope()) {
@@ -206,7 +212,9 @@ export async function itemWriteVerdicts(
   }
   const key = (id: string) => id.trim().toLowerCase();
   const canonical = [...new Set(ids.map(key).filter((i) => UUID_RE.test(i)))];
-  const byId = canonical.length ? await scopeRightsOf(canonical) : new Map<string, ScopeRights>();
+  const byId = canonical.length
+    ? await scopeRightsOf(canonical, conn)
+    : new Map<string, ScopeRights>();
   for (const id of ids) {
     const v = UUID_RE.test(key(id)) ? verdictOf(byId.get(key(id)), need) : 'no_read';
     out.set(id, v === 'copy' ? 'no_edit' : v);

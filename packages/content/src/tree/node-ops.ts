@@ -329,9 +329,11 @@ export async function moveNodeFolder(
       await takeShareWriteLock(tx, ownerId);
       await lockAndRecheck(tx, ownerId, folder, { destParentPath, newPath });
       await rewriteSubtree(tx, ownerId, folder.path, newPath);
+      // Its place among the folders it leaves (`rank`) goes with the move,
+      // as an item's does (moveNodeItem).
       await tx
         .update(nodes)
-        .set({ updatedAt: new Date() })
+        .set({ data: sql`coalesce(${nodes.data}, '{}'::jsonb) - 'rank'`, updatedAt: new Date() })
         .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
     }),
   );
@@ -359,9 +361,16 @@ export async function moveNodeItem(
       // The share lock (shared) before the row: see takeShareReadLock.
       await takeShareReadLock(tx, ownerId);
       if (guard) await guard(tx, itemId);
+      // Its place in the folder it leaves means nothing where it lands: a
+      // move to another folder drops it (`tree_rank`), so it lands unranked
+      // there and never ties with, nor orders, that folder's own.
       return tx
         .update(nodes)
-        .set({ path: destPath })
+        .set({
+          path: destPath,
+          data: sql`case when ${nodes.path} = ${destPath}::ltree then ${nodes.data}
+                         else coalesce(${nodes.data}, '{}'::jsonb) - 'tree_rank' end`,
+        })
         .where(
           and(
             eq(nodes.id, itemId),
@@ -420,6 +429,27 @@ export async function deleteNodeFolderMerging(ownerId: string, folderId: string)
       // (the write role's row rules): refused (409), never orphaned. The one
       // rule, in the database (arch A3a fix round 2); nothing for the brain.
       await tx.execute(sql`select mantle_subtree_refuse_hidden(${ownerId}, ${p}::ltree)`);
+      // 0. What lands in another folder than its own drops its place there
+      //    (an item's `tree_rank`, a folder's `rank`), as a move does: what
+      //    sat in the deleted folder, and what sat in a subfolder that
+      //    merges. A subfolder that moves up whole keeps its children's.
+      const folderOf = sql`(case when ${nodes.type} = 'branch'
+                                 then subpath(${nodes.path}, 0, nlevel(${nodes.path}) - 1)
+                                 else ${nodes.path} end)`;
+      await tx
+        .update(nodes)
+        .set({
+          data: sql`coalesce(${nodes.data}, '{}'::jsonb)
+                    - (case when ${nodes.type} = 'branch' then 'rank' else 'tree_rank' end)`,
+        })
+        .where(
+          sql`${nodes.ownerId} = ${ownerId} and ${nodes.path} <@ ${p}::ltree and ${nodes.id} <> ${folderId}
+           and (case when ${nodes.type} = 'branch' then ${nodes.data} ? 'rank'
+                     else ${nodes.data} ? 'tree_rank' end)
+           and exists (select 1 from nodes b
+                        where b.owner_id = ${ownerId} and b.type = 'branch'
+                          and b.path = ${landingOf(folderOf)} and not (b.path <@ ${p}::ltree))`,
+        );
       // 1. Subfolders that merge: a folder is already at their landing path,
       //    outside the deleted one. Their contents land in it below.
       await tx.delete(nodes).where(

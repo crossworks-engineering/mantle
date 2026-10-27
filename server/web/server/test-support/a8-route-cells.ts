@@ -144,8 +144,10 @@ export type A8RouteSpec = {
   /** An allowed request answers this status, with why: the right passed,
    *  and what follows needs content the cells do not make. */
   allowedStatus?: { status: number; why: string };
-  /** The request that asks the higher right of the route, its own cells. */
-  higher?: A8RouteHigher;
+  /** The request that asks the higher right of the route, its own cells;
+   *  a list when the route takes more than one right above its lowest
+   *  (each over the one before it: read, then edit, then manage). */
+  higher?: A8RouteHigher | readonly A8RouteHigher[];
   /** A refusal may answer this status as well as a 403 or a 404, with why
    *  (still changing nothing): the caller's right passed, and what the
    *  request names beside the item is one it does not read. */
@@ -490,17 +492,31 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     body: () => ({ copy_to: '/' }),
     refusedOnly: COPY,
   },
+  // An `after` alone asks the folder's read (the order right is of the
+  // folder that holds it, tree-custom-order.db.test.ts): the route declares
+  // read, and a rename (edit) and a move (manage) run as its higher cells.
   'PATCH /api/tree/:kind/folders/:id': {
     kind: 'branch',
-    action: 'edit',
+    action: 'read',
     params: () => ({ kind: treeKind }),
-    body: (c) => ({ name: `a8 ${c.id.slice(0, 8)}` }),
-    higher: {
-      why: 'a move asks manage, and its destination’s Moderator (the guide’s move, H to T)',
-      action: 'move',
-      seed: 'tree_folder_move',
-      body: (c) => ({ parentId: String(c.input.parent_id), confirm: true }),
+    body: (c) => ({ after: c.id }),
+    allowedStatus: {
+      status: 400,
+      why: 'the folder’s read passed; an `after` naming the folder itself is the 400 that follows, before the order right of the folder that holds it (which the cells do not grant)',
     },
+    higher: [
+      {
+        why: 'a rename asks edit of the folder',
+        action: 'edit',
+        body: (c) => ({ name: `a8 ${c.id.slice(0, 8)}` }),
+      },
+      {
+        why: 'a move asks manage, and its destination’s Moderator (the guide’s move, H to T)',
+        action: 'move',
+        seed: 'tree_folder_move',
+        body: (c) => ({ parentId: String(c.input.parent_id), confirm: true }),
+      },
+    ],
   },
   'DELETE /api/tree/:kind/folders/:id': {
     kind: 'branch',
@@ -634,8 +650,9 @@ export type A8RouteCell = {
   /** A deny the oracle cannot see, why: the route is open to Admin users
    *  only, or its handler leaves the act to one. */
   narrowed?: string;
-  /** The request that asks the route's higher right (its spec's `higher`). */
-  higher?: true;
+  /** The request that asks a higher right of the route: its place in the
+   *  spec's `higher` list, from 1. */
+  higher?: number;
   key: string;
   method: string;
   pattern: string;
@@ -686,11 +703,18 @@ export function a8RouteWant(
   );
 }
 
+/** A spec's higher requests, as a list (none, one or more). */
+export function a8Highers(spec: Pick<A8RouteSpec, 'higher'>): readonly A8RouteHigher[] {
+  if (!spec.higher) return [];
+  return Array.isArray(spec.higher) ? spec.higher : [spec.higher as A8RouteHigher];
+}
+
 /** A cell's spec: the route's, or its higher request's over it. */
 export function a8CellSpec(cell: Pick<A8RouteCell, 'key' | 'higher'>): A8RouteSpec {
   const spec = A8_ROUTE_SPECS[cell.key]!;
-  if (!cell.higher || !spec.higher) return spec;
-  const { why: _why, ...h } = spec.higher;
+  const higher = cell.higher ? a8Highers(spec)[cell.higher - 1] : undefined;
+  if (!higher) return spec;
+  const { why: _why, ...h } = higher;
   const { allowedStatus: _a, higher: _h, ...base } = spec;
   return { ...base, body: undefined, ...h };
 }
@@ -738,18 +762,22 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
     if (r.none !== undefined && asked !== null) {
       plan.mismatched[r.key] = `declares none, its cells ask ${spec.action}: declare ${asked}`;
     }
-    if (spec.higher) {
-      const higher = a8NeedOf(spec.kind, spec.higher.action);
-      if (r.need === undefined || higher === null || NEED_RANK[higher] <= NEED_RANK[r.need]) {
+    const highers = a8Highers(spec);
+    let below: ItemNeed | undefined = r.need;
+    for (const h of highers) {
+      const higher = a8NeedOf(spec.kind, h.action);
+      if (below === undefined || higher === null || NEED_RANK[higher] <= NEED_RANK[below]) {
         plan.mismatched[r.key] =
-          `its higher request asks ${spec.higher.action}, no right above ${r.need ?? 'none'}`;
+          `its higher request asks ${h.action}, no right above ${below ?? 'none'}`;
+        break;
       }
+      below = higher;
     }
     const open = memberOpen(r.key);
     const roles: A8RouteRole[] = [...A8_ROUTE_ROLES, ...(open ? [] : [A8_ADMIN_WRITE_GRANT])];
     const cells: A8RouteCell[] = [];
-    for (const higher of spec.higher ? [false, true] : [false]) {
-      const action = higher ? spec.higher!.action : spec.action;
+    for (let higher = 0; higher <= highers.length; higher++) {
+      const action = higher ? highers[higher - 1]!.action : spec.action;
       for (const role of roles) {
         for (const placement of GUIDE_PLACEMENTS) {
           if (role === A8_ADMIN_WRITE_GRANT && !ADMIN_WRITE_GRANT_PLACEMENTS.includes(placement)) {
@@ -768,7 +796,7 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
           const read = a8RouteWant({ ...spec, action: 'read' }, role, placement);
           cells.push({
             ...(narrowed ? { narrowed } : {}),
-            ...(higher ? { higher: true as const } : {}),
+            ...(higher ? { higher } : {}),
             key: r.key,
             method: r.method,
             pattern: r.pattern,
@@ -793,16 +821,15 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
     } else {
       plan.uncovered[r.key] = allowed ? 'no refused cell' : 'no allowed cell';
     }
-    // Where edit and manage part (an edit route that a Moderator alone may
-    // not be told from), a cell allows the one and refuses the other.
-    if (spec.higher) {
-      const parts = (h: boolean) => cells.filter((c) => !!c.higher === h);
-      const tells = parts(false).some(
+    // Where each right and the one above it part (an edit route that a
+    // Moderator alone may not be told from), a cell allows the one and
+    // refuses the other.
+    for (let h = 1; h <= highers.length; h++) {
+      const parts = (k: number) => cells.filter((c) => (c.higher ?? 0) === k);
+      const tells = parts(h - 1).some(
         (c) =>
           allows(c.want) &&
-          parts(true).some(
-            (d) => d.role === c.role && d.placement === c.placement && !allows(d.want),
-          ),
+          parts(h).some((d) => d.role === c.role && d.placement === c.placement && !allows(d.want)),
       );
       if (!tells) plan.uncovered[r.key] = 'no cell where its right and its higher right part';
     }
@@ -812,7 +839,7 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
 
 /** A route cell's name: `route:<METHOD pattern>[ (higher)] <role> <placement>`. */
 export const a8RouteCellName = (c: A8RouteCell) =>
-  `route:${c.key}${c.higher ? ' (higher)' : ''} ${c.role} ${c.placement}`;
+  `route:${c.key}${c.higher ? (c.higher === 1 ? ' (higher)' : ` (higher ${c.higher})`) : ''} ${c.role} ${c.placement}`;
 
 /** The path of a cell's request: the item's id in its param, the spec's
  *  other params, an id in place of the item's for the random uuid's. */
