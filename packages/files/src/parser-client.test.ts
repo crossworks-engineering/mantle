@@ -10,13 +10,28 @@
  *    time;
  *  - failed is neither retryable nor terminal; unavailable (a refused
  *    connection, a wrong token) is retryable and never counted;
- *  - an interactive exchange asks for the head of the parser's queue and
- *    skips this process's own.
+ *  - an interactive exchange asks for the head of the parser's queue; only
+ *    a chat turn's attachment (uncapped) skips this process's own cap, a
+ *    thumbnail takes its turn under it;
+ *  - the client's deadline is never shorter than the parser's worst
+ *    legitimate time for the job.
  */
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { PARSER_ERROR_STATUS, type ParserErrorCode } from './parser-wire';
+import {
+  PARSER_ANSWER_DEADLINE_MS,
+  PARSER_ERROR_STATUS,
+  PARSER_INTERACTIVE_WAIT_MS,
+  PARSER_JOB_TIMEOUT_MS,
+  PARSER_QUEUE_WAIT_MS,
+  PARSER_SPOOL_DEADLINE_MS,
+  parserClientTimeoutMs,
+  parserSlotHoldMaxMs,
+  parserSlotHoldMs,
+  type ParserErrorCode,
+  type ParserJob,
+} from './parser-wire';
 import {
   ParserError,
   isParserUnavailable,
@@ -248,7 +263,7 @@ describe('parser client', () => {
     expect(second).toMatchObject({ code: 'too_large', retryable: false, terminal: true });
   });
 
-  it('asks for the head of the queue on the interactive path, and skips this process’s queue', async () => {
+  it('asks for the head of the queue on the interactive path; only an attachment skips this process’s cap', async () => {
     const saved = process.env.PARSER_CLIENT_CONCURRENCY;
     process.env.PARSER_CLIENT_CONCURRENCY = '1';
     let release!: () => void;
@@ -261,13 +276,30 @@ describe('parser client', () => {
       }
       expect(hits).toContain('/images');
       reply = { text: 'now' };
-      // A person waiting does not queue behind it.
-      const text = await withParserScope({ interactive: true }, () => parserText(doc(), 'docx'));
+      // A chat turn's attachment does not queue behind it.
+      const text = await withParserScope({ interactive: true, uncapped: true }, () =>
+        parserText(doc(), 'docx'),
+      );
       expect(text).toBe('now');
       expect(priorities.at(-1)).toBe('interactive');
       expect(priorities[0]).toBe('');
+      // A thumbnail (interactive, capped) takes its turn under the cap: it
+      // is not sent while the background job holds the only slot.
+      const sentBefore = hits.length;
+      let thumbDone = false;
+      const thumb = withParserScope({ interactive: true }, () => parserText(doc(), 'docx')).then(
+        (t) => {
+          thumbDone = true;
+          return t;
+        },
+      );
+      await new Promise((r) => setTimeout(r, 200));
+      expect(thumbDone).toBe(false);
+      expect(hits.length).toBe(sentBefore);
       release();
       await background;
+      expect(await thumb).toBe('now');
+      expect(priorities.at(-1)).toBe('interactive');
     } finally {
       release?.();
       if (saved === undefined) delete process.env.PARSER_CLIENT_CONCURRENCY;
@@ -306,5 +338,23 @@ describe('parser client', () => {
     // A parser from before these fields: as it says.
     reply = { health: {} };
     expect((await parserHealth(2_000)).up).toBe(true);
+  });
+});
+
+describe('the deadlines, one rule on both sides', () => {
+  it('the client waits at least the parser’s worst legitimate time for every route', () => {
+    for (const job of Object.keys(PARSER_JOB_TIMEOUT_MS) as ParserJob[]) {
+      const hold =
+        PARSER_SPOOL_DEADLINE_MS + PARSER_JOB_TIMEOUT_MS[job] + PARSER_ANSWER_DEADLINE_MS;
+      expect(parserSlotHoldMs(job), job).toBeGreaterThan(hold);
+      expect(parserClientTimeoutMs(job), job).toBeGreaterThanOrEqual(
+        PARSER_QUEUE_WAIT_MS + parserSlotHoldMs(job),
+      );
+      expect(parserClientTimeoutMs(job, true), job).toBeGreaterThanOrEqual(
+        PARSER_INTERACTIVE_WAIT_MS + parserSlotHoldMs(job),
+      );
+      // The watchdog never fires on a job inside its own deadlines.
+      expect(parserSlotHoldMaxMs()).toBeGreaterThanOrEqual(parserSlotHoldMs(job));
+    }
   });
 });

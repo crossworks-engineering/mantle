@@ -140,7 +140,8 @@ async function renderThumbnail(
     const { parserThumbnail, withParserScope } = await import('./parser-client');
     // A person is waiting for the picture: the head of the parser's queue,
     // and a busy parser is the answer (the type icon now, the picture on the
-    // next request), never a wait behind the background extracts.
+    // next request). It takes its turn under this process's cap, as a
+    // background extract does: a gallery cannot take every slot.
     const jpeg = await withParserScope({ interactive: true }, () =>
       parserThumbnail(original, isHeic(mimeType) ? 'image/heic' : mimeType, dim),
     );

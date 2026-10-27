@@ -45,8 +45,8 @@ export type ParserJob = keyof typeof PARSER_ROUTES;
 
 /**
  * How long one job may run in the parser before it is killed (SIGKILL of
- * the job's process group), in ms. The client waits this long plus
- * {@link PARSER_QUEUE_WAIT_MS} plus {@link PARSER_BACKSTOP_MS}.
+ * the job's process group), in ms. Both sides' deadlines are built on it
+ * ({@link parserSlotHoldMs}, {@link parserClientTimeoutMs}).
  */
 export const PARSER_JOB_TIMEOUT_MS: Record<ParserJob, number> = {
   text: 120_000,
@@ -65,7 +65,7 @@ export const PARSER_JOB_TIMEOUT_MS: Record<ParserJob, number> = {
   visionImage: 60_000,
 };
 
-/** The longest a request waits in the parser for a free job slot before it
+/** The longest a request waits in the parser for its job slot before it
  *  is answered `busy`. */
 export const PARSER_QUEUE_WAIT_MS = 30_000;
 
@@ -76,7 +76,7 @@ export const PARSER_QUEUE_WAIT_MS = 30_000;
 export const PRIORITY_HEADER = 'x-parser-priority';
 export const PRIORITY_INTERACTIVE = 'interactive';
 
-/** The longest an interactive request waits for a slot before `busy`. */
+/** The longest an interactive request waits for the slot before `busy`. */
 export const PARSER_INTERACTIVE_WAIT_MS = 10_000;
 
 /** How long the parser waits for a request's whole body, once its slot is
@@ -85,12 +85,40 @@ export const PARSER_INTERACTIVE_WAIT_MS = 10_000;
 export const PARSER_SPOOL_DEADLINE_MS = 60_000;
 export const PARSER_ANSWER_DEADLINE_MS = 60_000;
 
-/** Slack on top of the job and queue limits for the transfer itself. */
-export const PARSER_BACKSTOP_MS = 30_000;
+/** Slack on top of the parser's own deadlines: the job's kill and the
+ *  cleanup after it, the network, a loaded box. */
+export const PARSER_MARGIN_MS = 30_000;
 
-/** The client's whole-exchange deadline for one job. */
-export function parserClientTimeoutMs(job: ParserJob): number {
-  return PARSER_JOB_TIMEOUT_MS[job] + PARSER_QUEUE_WAIT_MS + PARSER_BACKSTOP_MS;
+/**
+ * The longest one request may legitimately hold the parser's job slot: its
+ * body's arrival, the job, the answer's transfer, and the margin. Past it
+ * the parser is wedged: its /healthz answers 503 (main.ts), so autoheal
+ * restarts it.
+ */
+export function parserSlotHoldMs(job: ParserJob): number {
+  return (
+    PARSER_SPOOL_DEADLINE_MS +
+    PARSER_JOB_TIMEOUT_MS[job] +
+    PARSER_ANSWER_DEADLINE_MS +
+    PARSER_MARGIN_MS
+  );
+}
+
+/** The longest any request may hold the slot ({@link parserSlotHoldMs} of
+ *  the slowest job): the parser's watchdog. */
+export function parserSlotHoldMaxMs(): number {
+  return Math.max(...(Object.keys(PARSER_JOB_TIMEOUT_MS) as ParserJob[]).map(parserSlotHoldMs));
+}
+
+/**
+ * The client's whole-exchange deadline for one job: the parser's worst
+ * legitimate time for it, the wait for the slot (the interactive wait for
+ * a request at the head of the queue) plus {@link parserSlotHoldMs}. Never
+ * shorter, so the client never gives up on an answer the parser is still
+ * entitled to send (and counts a `timeout` against bytes the parser read).
+ */
+export function parserClientTimeoutMs(job: ParserJob, interactive = false): number {
+  return (interactive ? PARSER_INTERACTIVE_WAIT_MS : PARSER_QUEUE_WAIT_MS) + parserSlotHoldMs(job);
 }
 
 /**

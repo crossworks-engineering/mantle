@@ -338,8 +338,9 @@ export async function extractAttachmentForTurn(opts: {
   question?: string;
 }): Promise<AttachmentExtract> {
   // A person is waiting: a busy parser is said at once, not waited out (the
-  // background extract keeps its retries).
-  return withParserScope({ interactive: true }, () => extractForTurn(opts));
+  // background extract keeps its retries), and the turn's one file does not
+  // queue behind this process's background exchanges.
+  return withParserScope({ interactive: true, uncapped: true }, () => extractForTurn(opts));
 }
 
 async function extractForTurn(opts: {

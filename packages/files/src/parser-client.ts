@@ -32,10 +32,12 @@
  *
  * A small concurrency cap per process (PARSER_CLIENT_CONCURRENCY, default 2)
  * keeps one busy brain process from filling the parser's queue alone. The
- * parser's own slots and queue are the real bound. An interactive exchange
- * (a person is waiting, {@link withParserScope}) skips this cap, asks the
- * parser for the head of its queue (PRIORITY_HEADER) and takes its `busy`
- * after a short wait there as the answer, never retried.
+ * parser's own slot and queue are the real bound. An interactive exchange
+ * (a person is waiting, {@link withParserScope}) asks the parser for the
+ * head of its queue (PRIORITY_HEADER) and takes its `busy` after a short
+ * wait there as the answer, never retried. Only a chat turn's attachment
+ * also skips this process's cap (`uncapped`): a thumbnail takes its turn
+ * under it, so a gallery of them cannot starve the background extracts.
  *
  * Never sends a byte anywhere but PARSER_URL, the service on the stack's
  * internal network.
@@ -147,11 +149,14 @@ export function nextFailureCount(prior: number, final: boolean): number {
 export type ParserScope = {
   /** Where the failures are counted (the process's memory without one). */
   failures?: ParserFailureLedger;
-  /** A person is waiting (a chat turn, a thumbnail): the exchange skips
-   *  this process's queue, the parser puts it at the head of its own and
-   *  answers `busy` after a short wait (about 10 s), and that `busy` is the
-   *  answer, never retried. */
+  /** A person is waiting (a chat turn, a thumbnail): the parser puts the
+   *  exchange at the head of its queue and answers `busy` after a short
+   *  wait (about 10 s), and that `busy` is the answer, never retried. */
   interactive?: boolean;
+  /** A chat turn's attachment: one per turn, so it also skips this
+   *  process's cap. Nothing else does (a thumbnail does not: a gallery
+   *  would take every slot from the background extracts). */
+  uncapped?: boolean;
 };
 
 const scope = new AsyncLocalStorage<ParserScope>();
@@ -332,7 +337,7 @@ async function attempt(
       },
       body: bodyOf(head, bytes),
       duplex: 'half',
-      signal: timeoutSignal(parserClientTimeoutMs(job)),
+      signal: timeoutSignal(parserClientTimeoutMs(job, interactive)),
     } as RequestInit);
     if (res.ok) {
       return {
@@ -358,7 +363,7 @@ async function attempt(
         code === 'unavailable'
           ? `the parser service could not be reached (${errorMessage(err)})`
           : code === 'timeout'
-            ? `the parser did not answer within ${Math.round(parserClientTimeoutMs(job) / 1000)} s`
+            ? `the parser did not answer within ${Math.round(parserClientTimeoutMs(job, interactive) / 1000)} s`
             : `the connection to the parser dropped mid-job (${errorMessage(err)}): the parser most likely ran out of memory and restarted`,
     };
   }
@@ -389,11 +394,13 @@ async function exchange(
     );
   }
   const head = Buffer.from(JSON.stringify(opts), 'utf8');
-  // A person waiting skips this process's queue and the busy retries: the
-  // parser's short interactive wait is the only one.
+  // A person waiting skips the busy retries: the parser's short interactive
+  // wait is the only one. Only a chat turn's attachment skips this
+  // process's cap as well.
   const interactive = current?.interactive === true;
+  const capped = current?.uncapped !== true;
   const busyWaits = interactive ? [] : BUSY_WAITS_MS;
-  if (!interactive) await acquire();
+  if (capped) await acquire();
   let result: Attempt;
   try {
     result = await withRetry(() => attempt(job, bytes, head, maxAnswerBytes, interactive), {
@@ -402,7 +409,7 @@ async function exchange(
       delayMs: (retry) => busyWaits[retry - 1] ?? null,
     });
   } finally {
-    if (!interactive) release();
+    if (capped) release();
   }
   if (result.ok) return result.answer;
   const { code, message } = result;
