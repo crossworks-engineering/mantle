@@ -482,15 +482,6 @@ async function systemLine(tx: Tx, conv: ConversationRow, body: string): Promise<
   });
 }
 
-/** One participant row's own columns, by its id. */
-function updateParticipant(
-  tx: Tx,
-  id: string,
-  set: Partial<typeof messengerParticipants.$inferInsert>,
-) {
-  return tx.update(messengerParticipants).set(set).where(eq(messengerParticipants.id, id));
-}
-
 // ── Create ───────────────────────────────────────────────────────────────────
 
 export type MessengerCreateInput = {
@@ -675,7 +666,11 @@ export async function sendMessengerMessage(
           ),
         );
     }
-    if (num(me.last_read_seq) < seq) await updateParticipant(tx, me.id, { lastReadSeq: seq });
+    if (num(me.last_read_seq) < seq)
+      await tx
+        .update(messengerParticipants)
+        .set({ lastReadSeq: seq })
+        .where(eq(messengerParticipants.id, me.id));
     return { seq, created: true };
   });
   const [message] = await readMessagesBySeq(actor, conversationId, [out.seq]);
@@ -854,7 +849,11 @@ export async function markMessengerRead(
     const { conv, me } = await lockForActor(tx, actor, conversationId, { live: false });
     const cap = me.left_at ? num(me.left_seq) : num(conv.last_seq);
     const next = Math.max(num(me.last_read_seq), Math.min(s, cap));
-    if (next !== num(me.last_read_seq)) await updateParticipant(tx, me.id, { lastReadSeq: next });
+    if (next !== num(me.last_read_seq))
+      await tx
+        .update(messengerParticipants)
+        .set({ lastReadSeq: next })
+        .where(eq(messengerParticipants.id, me.id));
     return { lastReadSeq: next };
   });
 }
@@ -871,10 +870,13 @@ export async function clearMessengerForMe(
       me.left_at ? num(me.left_seq) : num(conv.last_seq),
       num(me.cleared_before_seq),
     );
-    await updateParticipant(tx, me.id, {
-      clearedBeforeSeq: upTo,
-      lastReadSeq: Math.max(upTo, num(me.last_read_seq)),
-    });
+    await tx
+      .update(messengerParticipants)
+      .set({
+        clearedBeforeSeq: upTo,
+        lastReadSeq: Math.max(upTo, num(me.last_read_seq)),
+      })
+      .where(eq(messengerParticipants.id, me.id));
     return { clearedBeforeSeq: upTo };
   });
 }
@@ -912,7 +914,10 @@ export async function patchMessengerConversation(
       }
     }
     if (input.muted !== undefined && input.muted !== me.muted) {
-      await updateParticipant(tx, me.id, { muted: input.muted === true });
+      await tx
+        .update(messengerParticipants)
+        .set({ muted: input.muted === true })
+        .where(eq(messengerParticipants.id, me.id));
     }
   });
 }
@@ -1046,7 +1051,10 @@ export async function removeMessengerParticipant(
       conv,
       `${names.get(actor.loginId) ?? 'Someone'} removed ${names.get(target) ?? 'someone'}.`,
     );
-    await updateParticipant(tx, p.id, { leftAt: new Date(), leftSeq: seq, admin: false });
+    await tx
+      .update(messengerParticipants)
+      .set({ leftAt: new Date(), leftSeq: seq, admin: false })
+      .where(eq(messengerParticipants.id, p.id));
   });
 }
 
@@ -1064,7 +1072,10 @@ export async function leaveMessengerConversation(
     }
     const names = await loginNames([actor.loginId], tx);
     const seq = await systemLine(tx, conv, `${names.get(actor.loginId) ?? 'Someone'} left.`);
-    await updateParticipant(tx, me.id, { leftAt: new Date(), leftSeq: seq, admin: false });
+    await tx
+      .update(messengerParticipants)
+      .set({ leftAt: new Date(), leftSeq: seq, admin: false })
+      .where(eq(messengerParticipants.id, me.id));
     const rest = await q<{ id: string; admin: boolean }>(
       tx,
       sql`select id::text as id, admin from messenger_participants
@@ -1077,7 +1088,10 @@ export async function leaveMessengerConversation(
         .set({ archivedAt: sql`now()` })
         .where(eq(messengerConversations.id, conv.id));
     } else if (!rest.some((p) => p.admin)) {
-      await updateParticipant(tx, rest[0]!.id, { admin: true });
+      await tx
+        .update(messengerParticipants)
+        .set({ admin: true })
+        .where(eq(messengerParticipants.id, rest[0]!.id));
     }
   });
 }
