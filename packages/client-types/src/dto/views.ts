@@ -662,16 +662,27 @@ export type SystemHealth = {
     attachmentBytes: number | null;
     filesDisk: DiskInfo | null;
   };
-  /** Tier-2 document parser fallback (.odt / .pptx / .doc / .rtf / .epub /
-   *  …) — sibling docker service. `up: false` means the fallback path
-   *  degrades cleanly to `no_text_layer` on every new ingest of those
-   *  formats; in-process parsers (pdf/docx/xlsx/text) keep working. */
+  /** The parser service: the one container that reads every untrusted file
+   *  (documents, CAD drawings, images for thumbnails and vision, audio out
+   *  of uploaded video). Core, always on, no switch. `up: false` means file
+   *  reading fails for now: ingest retries, a chat attachment says it could
+   *  not be read. `versions` are the readers and tools its image carries;
+   *  `running` / `queued` its jobs at the time of the probe. */
+  parser: {
+    up: boolean;
+    versions: Record<string, string>;
+    running: number | null;
+    queued: number | null;
+  };
+  /** @deprecated The parser service replaced Apache Tika (2026-10). Mirrors
+   *  `parser.up` so a client built before it still renders; remove once the
+   *  paired client reads `parser`. */
   tika: {
     up: boolean;
     version: string | null;
   };
   /** The browser sidecar (browserless/chromium) — the Pages → PDF export
-   *  engine, a sibling docker service like Tika. `up: false` means PDF
+   *  engine, a sibling docker service. `up: false` means PDF
    *  downloads 503 until it's back (Markdown/Word unaffected); `up: null`
    *  means BROWSER_WS_ENDPOINT isn't configured (e.g. detached dev). */
   browser: {
@@ -705,21 +716,14 @@ export type SystemHealth = {
     running: number | null;
     disk: { usedBytes: number | null; budgetBytes: number } | null;
   };
-  /** Media sidecar (yt-dlp + ffmpeg) — the video_ingest fetch/transcode
-   *  engine, profile-gated like sandboxes, so `up: null` (muted pill) is the
-   *  resting state on a box without the `media` compose profile. Versions
-   *  come from its /healthz — that is what makes a stale or failed yt-dlp
-   *  self-update VISIBLE instead of silently breaking downloads. */
+  /** @deprecated The media sidecar was removed with the parser service
+   *  (2026-10): always `up: null` (a muted pill) so a client built before it
+   *  still renders; remove once the paired client reads `parser`. */
   media: {
     up: boolean | null;
     ytDlpVersion: string | null;
     ffmpegVersion: string | null;
-    /** null on images built before the CAD tier (v0.232.92) — DWF renders
-     *  fall back to embedded thumbnails without it. */
     ezdwfVersion: string | null;
-    /** null on images built before the DWG tier (v0.232.99) — with either of
-     *  these missing the UI should show "DWG tier missing" (DWG parsing and
-     *  rendering both need the sidecar; absence means the whole format). */
     dwg2dxfVersion: string | null;
     ezdxfVersion: string | null;
   };

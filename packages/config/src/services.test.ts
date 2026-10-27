@@ -19,8 +19,6 @@ const KEYS = [
   'MANTLE_COMPOSE_PROFILES',
   'SANDBOXD_URL',
   'SANDBOXD_TOKEN',
-  'MEDIA_SIDECAR_URL',
-  'MEDIA_SIDECAR_TOKEN',
   'MANTLE_COMPOSE_FILE',
 ] as const;
 
@@ -48,8 +46,6 @@ afterEach(() => {
 function wire(): void {
   process.env.SANDBOXD_URL = 'http://sandboxd:8090';
   process.env.SANDBOXD_TOKEN = 't1';
-  process.env.MEDIA_SIDECAR_URL = 'http://media:8095';
-  process.env.MEDIA_SIDECAR_TOKEN = 't2';
 }
 
 function servicesJson(profiles: string, core = false): void {
@@ -69,12 +65,14 @@ function servicesJson(profiles: string, core = false): void {
 describe('parseServicesFile', () => {
   it('reads the updater shape, a comma list or an array', () => {
     const f = parseServicesFile(
-      '{"profiles":"sandboxes, media","services":{"media":{"profile":true,"token":false,"container":"running","health":"healthy"}},"mem_total_kb":4000000,"mem_available_kb":1000,"disk_free_kb":5,"core":true,"verbs":["roll","service"],"checked_at":"2026-10-05T00:00:00Z"}',
+      '{"profiles":"sandboxes, local-embedder","services":{"local-embedder":{"profile":true,"token":false,"container":"running","health":"healthy"},"media":{"profile":true}},"mem_total_kb":4000000,"mem_available_kb":1000,"disk_free_kb":5,"core":true,"verbs":["roll","service"],"checked_at":"2026-10-05T00:00:00Z"}',
     );
+    // An entry for a service this brain no longer switches (an updater from
+    // before the media sidecar was removed) is left out.
     expect(f).toEqual({
-      profiles: ['sandboxes', 'media'],
+      profiles: ['sandboxes', 'local-embedder'],
       services: {
-        media: { profile: true, token: false, container: 'running', health: 'healthy' },
+        'local-embedder': { profile: true, token: false, container: 'running', health: 'healthy' },
       },
       memTotalKb: 4_000_000,
       memAvailableKb: 1000,
@@ -83,7 +81,7 @@ describe('parseServicesFile', () => {
       verbs: ['roll', 'service'],
       checkedAt: '2026-10-05T00:00:00Z',
     });
-    expect(parseServicesFile('{"profiles":["media"]}')?.profiles).toEqual(['media']);
+    expect(parseServicesFile('{"profiles":["helpers"]}')?.profiles).toEqual(['helpers']);
   });
 
   it('defaults a sparse entry and rejects what is not one', () => {
@@ -104,22 +102,22 @@ describe('serviceProfileOn: services.json, then compose env, then unknown', () =
   it('reads the compose env when there is no file', () => {
     process.env.MANTLE_COMPOSE_PROFILES = 'local-embedder,sandboxes';
     expect(serviceProfileOn('sandboxes')).toBe(true);
-    expect(serviceProfileOn('media')).toBe(false);
+    expect(serviceProfileOn('helpers')).toBe(false);
     process.env.MANTLE_COMPOSE_PROFILES = '';
     expect(serviceProfileOn('sandboxes')).toBe(false);
   });
 
   it('the live file wins over a stale compose env', () => {
     process.env.MANTLE_COMPOSE_PROFILES = 'sandboxes';
-    servicesJson('media');
+    servicesJson('local-embedder');
     expect(serviceProfileOn('sandboxes')).toBe(false);
-    expect(serviceProfileOn('media')).toBe(true);
+    expect(serviceProfileOn('local-embedder')).toBe(true);
   });
 });
 
 describe('serviceEnabled', () => {
   it('needs URL and token whatever the profile says', () => {
-    process.env.MANTLE_COMPOSE_PROFILES = 'sandboxes,media';
+    process.env.MANTLE_COMPOSE_PROFILES = 'sandboxes';
     expect(serviceEnabled('sandboxes')).toBe(false);
     wire();
     expect(serviceEnabled('sandboxes')).toBe(true);
@@ -127,9 +125,9 @@ describe('serviceEnabled', () => {
 
   it('a token with the profile OFF is off (a disable keeps the token)', () => {
     wire();
-    process.env.MANTLE_COMPOSE_PROFILES = 'media';
+    process.env.MANTLE_COMPOSE_PROFILES = 'local-embedder';
     expect(serviceEnabled('sandboxes')).toBe(false);
-    expect(serviceEnabled('media')).toBe(true);
+    expect(serviceEnabled('local-embedder')).toBe(true);
   });
 
   it('with no way to know the profile, the token alone decides (pre-switch behaviour)', () => {
@@ -185,13 +183,14 @@ describe('the token-less services: local embedder and helpers', () => {
 describe('tool gating', () => {
   it('maps tools to their service', () => {
     expect(toolService('sandbox_exec')).toBe('sandboxes');
-    expect(toolService('video_ingest')).toBe('media');
+    // video_ingest needs the parser, which is core: no switch gates it.
+    expect(toolService('video_ingest')).toBeNull();
     expect(toolService('note_create')).toBeNull();
   });
 
   it('drops only the tools whose service is off', () => {
     wire();
-    process.env.MANTLE_COMPOSE_PROFILES = 'media';
+    process.env.MANTLE_COMPOSE_PROFILES = 'local-embedder';
     expect(toolServiceAvailable('sandbox_exec')).toBe(false);
     expect(toolServiceAvailable('video_ingest')).toBe(true);
     expect(toolServiceAvailable('note_create')).toBe(true);

@@ -1,7 +1,7 @@
 /**
  * Brain-readiness probe — which optional services + workers are actually
  * available right now. Drives two things:
- *   1. Phase 2e hard-gating: a Tika/vision-routed fixture expects "indexed"
+ *   1. Phase 2e hard-gating: a parser/vision-routed fixture expects "indexed"
  *      when its service is up, and the correct skip when it's down.
  *   2. The readiness panel: surfaces the Dialog/voice machinery (summarizer,
  *      reflector, stt) that's too heavy/non-deterministic to synthesise in a
@@ -12,7 +12,7 @@
  * don't require a key, so those only check that a worker is configured.
  */
 import { db, sql, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
-import { mediaSidecarHealth, tikaIsUp } from '@mantle/files';
+import { parserHealth } from '@mantle/files';
 
 import type { Capability, Capabilities } from '@mantle/client-types/types/integrity';
 import { env } from '@mantle/config';
@@ -68,44 +68,34 @@ async function embeddingCap(ownerId: string): Promise<Capability> {
 }
 
 export async function resolveCapabilities(ownerId: string): Promise<Capabilities> {
-  const [tikaUp, vision, extractor, embedding, summarizer, reflector, stt, mediaH] =
-    await Promise.all([
-      tikaIsUp().catch(() => false),
-      workerCap(ownerId, 'vision', true),
-      workerCap(ownerId, 'extractor', false),
-      embeddingCap(ownerId),
-      workerCap(ownerId, 'summarizer', false),
-      workerCap(ownerId, 'reflector', false),
-      workerCap(ownerId, 'stt', false),
-      mediaSidecarHealth(1_500),
-    ]);
+  const [parserH, vision, extractor, embedding, summarizer, reflector, stt] = await Promise.all([
+    parserHealth(NET_TIMEOUTS.localProbe),
+    workerCap(ownerId, 'vision', true),
+    workerCap(ownerId, 'extractor', false),
+    embeddingCap(ownerId),
+    workerCap(ownerId, 'summarizer', false),
+    workerCap(ownerId, 'reflector', false),
+    workerCap(ownerId, 'stt', false),
+  ]);
+  const v = parserH.versions;
+  const parser: Capability = parserH.up
+    ? {
+        available: true,
+        detail:
+          `node ${v.node ?? '?'} · anydoc ${v.anydoc ?? '?'} · ` +
+          (v.ezdxf ? `ezdxf ${v.ezdxf}` : 'CAD tier missing (DWG/DXF files error at extract)') +
+          ` · ffmpeg ${v.ffmpeg ?? 'missing'}`,
+      }
+    : { available: false, detail: 'unreachable (is the parser container running? PARSER_URL)' };
   return {
-    tika: {
-      available: tikaUp,
-      detail: tikaUp ? 'reachable' : 'unreachable (set TIKA_URL / start the service)',
-    },
+    parser,
+    tika: parser,
     vision,
     extractor,
     embedding,
     summarizer,
     reflector,
     stt,
-    media:
-      mediaH.up === null
-        ? { available: false, detail: 'not enabled (media compose profile off)' }
-        : mediaH.up
-          ? {
-              available: true,
-              detail:
-                `yt-dlp ${mediaH.ytDlpVersion ?? '?'} · ffmpeg ${mediaH.ffmpegVersion ?? '?'} · ` +
-                (mediaH.ezdwfVersion
-                  ? `ezdwf ${mediaH.ezdwfVersion}`
-                  : 'ezdwf missing (image predates the CAD tier — DWF renders fall back to thumbnails)') +
-                ' · ' +
-                (mediaH.ezdxfVersion
-                  ? `dwg ${mediaH.dwg2dxfVersion ?? '?'}/ezdxf ${mediaH.ezdxfVersion}`
-                  : 'dwg tier missing (image predates v0.232.99 — DWG files error at extract)'),
-            }
-          : { available: false, detail: 'configured but unreachable' },
+    media: { available: false, detail: 'removed (the parser service reads uploaded video)' },
   };
 }

@@ -1,13 +1,15 @@
 /**
- * Optional services: is the sandboxes or media service switched on for this
- * box? The ONE answer every caller reads (the dashboard pills, /api/sandboxes,
- * the sandbox tools, video_ingest, the CAD render path, the agent tool list).
- * Two more services carry no token and gate no tool, but are switched the
- * same way from Settings > Services: the bundled local embedder (profile
- * `local-embedder`) and, on a core box only, the doc helpers (Tika and the
- * PDF browser, profile `helpers`). See the end of this module.
+ * Optional services: is the sandboxes service switched on for this box? The
+ * ONE answer every caller reads (the dashboard pills, /api/sandboxes, the
+ * sandbox tools, the agent tool list). Two more services carry no token and
+ * gate no tool, but are switched the same way from Settings > Services: the
+ * bundled local embedder (profile `local-embedder`) and, on a core box only,
+ * the PDF-export browser (profile `helpers`). See the end of this module.
  *
- * Sandboxes and media are compose PROFILES. Before this module, "on" meant "the
+ * The parser service (server/parser) is NOT here: it reads every file the
+ * brain receives, so it is core, always on, with no switch.
+ *
+ * Sandboxes are a compose PROFILE. Before this module, "on" meant "the
  * bearer token is in this container's env", which is wrong twice over: a
  * disable keeps the token (the pill turned red, "unreachable", instead of
  * grey), and a token pre-provisioned on every box would make every box look
@@ -35,14 +37,13 @@ import { env, type KnownEnvName } from './index';
 
 /** Every service Settings > Services can switch. Each name is also its
  *  compose profile. */
-export const OPTIONAL_SERVICES = ['sandboxes', 'media', 'local-embedder', 'helpers'] as const;
+export const OPTIONAL_SERVICES = ['sandboxes', 'local-embedder', 'helpers'] as const;
 export type OptionalService = (typeof OPTIONAL_SERVICES)[number];
 
 /** The services the app talks to with a bearer token. "On" needs the token
  *  too; the other two are on when their profile is. */
 const WIRING: Partial<Record<OptionalService, { url: KnownEnvName; token: KnownEnvName }>> = {
   sandboxes: { url: 'SANDBOXD_URL', token: 'SANDBOXD_TOKEN' },
-  media: { url: 'MEDIA_SIDECAR_URL', token: 'MEDIA_SIDECAR_TOKEN' },
 };
 
 /** One service as the updater saw it. `container` is docker's State.Status
@@ -196,7 +197,7 @@ function activeProfiles(): string[] | null {
   return fromCompose === undefined ? null : splitProfiles(fromCompose);
 }
 
-/** Do the doc helpers (Tika, the PDF browser) run? Always on the full shape:
+/** Does the PDF-export browser run? Always on the full shape:
  *  they have no profile there. On a core box only with the `helpers` profile
  *  (or `full`, which a core is not meant to use). */
 export function helpersRun(): boolean {
@@ -217,7 +218,6 @@ export function serviceSwitchable(name: OptionalService): boolean {
  *  prefix (pinned by a test against the sandbox tool list). */
 export function toolService(slug: string): OptionalService | null {
   if (slug.startsWith('sandbox_')) return 'sandboxes';
-  if (slug === 'video_ingest') return 'media';
   return null;
 }
 
