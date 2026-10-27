@@ -31,7 +31,7 @@ import { callerHash } from './circuit-trace/check-seal';
 import { verifyCircuit } from './circuit-trace/verify';
 import { bumpWorkerUsage, currentActor, type AiWorker } from '@mantle/db';
 import { resolveDefaultWorker } from '@mantle/api-keys';
-import { mediaDwgCrop, readFileById } from '@mantle/files';
+import { parserDwgCrop, readFileById } from '@mantle/files';
 import { extractImages, multiImageProvider, type ProviderCredential } from '@mantle/voice';
 import { CS } from './client-sourced-rule';
 import { traceCircuit, type RegisterInput, type SheetInput } from './circuit-trace/walk';
@@ -404,7 +404,7 @@ export async function circuitVerifyHandler(
         readSheets: readCircuitSheets,
         fileBytes: async (owner, fileId) =>
           (await readFileById({ ownerId: owner, fileId }))?.bytes ?? null,
-        crop: mediaDwgCrop,
+        crop: parserDwgCrop,
         worker: async (owner) => {
           // The one resolution (@mantle/api-keys, as runVisionWorker); a
           // provider that cannot take several images is refused by verify

@@ -3,7 +3,7 @@
  * imported before the bones tabs (Segments, Nodes, Inserts, Circuits) gains
  * them without losing its table. The SAME table node keeps its id, so
  * links, grants, workspace placement, title and tags all survive; only its
- * workbook tabs and its description are rebuilt, from a fresh sidecar pass
+ * workbook tabs and its description are rebuilt, from a fresh CAD pass
  * over the file's bytes (the same builder as the first import,
  * @mantle/files/dwg `cadRegistryWorkbook`).
  *
@@ -30,7 +30,7 @@
  * rebuild replaces the tabs. A table with an unsaved draft is always
  * refused: the rebuild would replace someone's working copy. The draft
  * state and the version are read again right before the write (a user may
- * open a draft or commit while the sidecar pass runs), and the draft is
+ * open a draft or commit while the CAD pass runs), and the draft is
  * saved against the draft revision that read saw, so a draft made in that
  * gap is never overwritten. A commit that fails after the draft is saved
  * discards that draft: no half-done replacement is left to commit by
@@ -355,10 +355,10 @@ export async function rebuildOne(
       return {
         tableId: c.tableId,
         result: 'failed',
-        reason: 'the sidecar pass gave no tabs (not a readable drawing); the table is unchanged',
+        reason: 'the CAD pass gave no tabs (not a readable drawing); the table is unchanged',
       };
     }
-    // Read again now: the sidecar pass took a while, and someone may have
+    // Read again now: the CAD pass took a while, and someone may have
     // opened a draft or committed meanwhile. The candidate read is stale.
     const now = await readFreshState(c.tableId);
     if (!now) return { tableId: c.tableId, result: 'failed', reason: 'the table is gone' };

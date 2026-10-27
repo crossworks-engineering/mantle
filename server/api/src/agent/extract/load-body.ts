@@ -11,11 +11,13 @@ import {
   extOf,
   mimeForExt,
   isVisionImage,
+  isParserError,
   parseDocumentBytes,
   INGESTABLE_EXTS,
   MEDIA_EXTS,
   parserRouteForExt,
   exportHintForExt,
+  type ParserError,
 } from '@mantle/files';
 import { recordSkippedTrace, step } from '@mantle/tracing';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
@@ -30,7 +32,14 @@ import { recordTerminalSkip, type SkipInit } from './terminal';
 /** The body of a node with no model call (no vision, no OCR worker): the typed
  *  dispatch below. The cost guard's local-only index reads this. */
 export async function readNodeBodyLocal(node: typeof nodes.$inferSelect): Promise<string> {
-  return readNodeBodyRaw(node);
+  try {
+    return await readNodeBodyRaw(node);
+  } catch (err) {
+    // A file the parser gave up on indexes by its title here, as any
+    // unreadable file does; the full pass records why (document_unreadable).
+    if (isParserError(err) && err.terminal) return node.title;
+    throw err;
+  }
 }
 
 async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string> {
@@ -264,12 +273,10 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     if (loaded && INGESTABLE_EXTS.has(loaded.ext)) {
       const route = parserRouteForExt(loaded.ext);
       try {
-        // Wrap the parse in a step so the trace shows WHICH tier ran
-        // (pdf-parse / mammoth / exceljs / legacy-sheet / utf8 / tika), how long it took,
-        // and how many chars came out. Particularly important for Tika
-        // since it's an HTTP call with its own failure modes (service down,
-        // timeout, unparseable bytes — all swallowed to '' by design); the
-        // step makes Tika invisible→visible without changing behaviour.
+        // Wrap the parse in a step so the trace shows WHICH reader ran, how
+        // long it took and how many chars came out. Every reader but the
+        // UTF-8 read is in the parser service, so the step is also where a
+        // parser failure (its typed code) shows.
         const text = await step(
           {
             name: 'parse_document',
@@ -289,18 +296,35 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
         );
         if (text.trim().length > 0) return cleanText(text);
       } catch (err) {
-        // DWG/DXF have NO local parser: a throw here means the media sidecar
-        // is missing or the exchange failed — a title fallback would record a
-        // terminal `no_parser` skip telling the user to convert the file,
-        // which is false (the fix is enabling the CAD tier). Rethrow so the
-        // extract errors for real and pg-boss retries heal the node.
-        if (route === 'dwg' || route === 'dxf') throw err;
-        // Parse / read failed. The step (if it opened) already recorded the
-        // error; fall through to the title.
+        // The parser's verdicts that are not about the document's content:
+        //  - retryable (the parser busy or restarting, or the FIRST time these
+        //    bytes were too large, timed out or crashed it): the extract fails
+        //    and pg-boss retries it; indexing the title now would be a false
+        //    success;
+        //  - terminal (the SECOND time for the same bytes): the caller
+        //    records the document_unreadable skip.
+        // DWG/DXF behave the same way: their CAD exchange is the parser's.
+        if (isParserError(err) && (err.retryable || err.terminal)) throw err;
+        // The reader refused the document (corrupt, encrypted, not what its
+        // name says) or no reader takes it: the step recorded the error; fall
+        // through to the title, as before.
       }
     }
   }
   return node.title;
+}
+
+/** The parser refused these bytes for the second time. */
+function isTerminalParserError(err: unknown): err is ParserError {
+  return isParserError(err) && err.terminal;
+}
+
+/** The owner-facing reason for a document_unreadable skip, by the parser's
+ *  code. */
+function unreadableHint(code: string): string {
+  if (code === 'too_large') return 'The document is too large to read (past a size limit of the parser).';
+  if (code === 'timeout') return 'Reading the document took longer than the parser allows, twice.';
+  return 'Reading the document ran the parser out of memory (or crashed it), twice.';
 }
 
 /**
@@ -348,6 +372,31 @@ export async function loadExtractableBody(
   // brain, nothing ever contradicts them, and the failure is discovered only
   // when an answer is quietly wrong. An honest terminal skip that names the
   // export is the whole point.
+  // The parser refused these bytes twice (parser-client.ts): terminal, so the
+  // drain does not re-queue the node until it changes.
+  const unreadable = async (err: ParserError): Promise<{ ok: false }> => {
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'document_unreadable',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          extension: fileExt,
+          parser_code: err.code,
+          hint: `${unreadableHint(err.code)} ${err.message}. The file stays stored and findable by its name.`,
+        },
+      },
+      node,
+    );
+    return { ok: false };
+  };
+
   const exportHint = node.type === 'file' ? exportHintForExt(fileExt) : undefined;
   if (exportHint) {
     await recordTerminalSkip(
@@ -403,7 +452,7 @@ export async function loadExtractableBody(
           filename: existingData.filename,
           extension: fileExt,
           mime: fileMime,
-          hint: "Audio/video files are stored and playable but not indexed yet. To get a searchable transcript, ask the assistant to ingest the video's link (video_ingest). The file stays findable by name.",
+          hint: 'Audio/video files are stored and playable but not indexed. To get a searchable transcript, ask the assistant to transcribe this file (video_ingest with its file id). The file stays findable by name.',
         },
       },
       node,
@@ -463,7 +512,12 @@ export async function loadExtractableBody(
     // which step this picture belongs to. A no-op for ordinary photos.
     rawBody = composeImageBody(existingData, vision.text);
   } else {
-    rawBody = await readNodeBodyRaw(node);
+    try {
+      rawBody = await readNodeBodyRaw(node);
+    } catch (err) {
+      if (!isTerminalParserError(err)) throw err;
+      return unreadable(err);
+    }
   }
 
   // Scanned / image-only PDF: readNodeBodyRaw found no text layer and fell back
@@ -492,12 +546,24 @@ export async function loadExtractableBody(
   const preferNativePdf = isPdfWithTextLayer && (await documentWorkerPrefersNative(ownerId));
 
   if (isPdfWithoutTextLayer) {
-    const ocr = await ocrIngestPdfNode(node, ownerId);
+    let ocr: Awaited<ReturnType<typeof ocrIngestPdfNode>>;
+    try {
+      ocr = await ocrIngestPdfNode(node, ownerId);
+    } catch (err) {
+      if (!isTerminalParserError(err)) throw err;
+      return unreadable(err);
+    }
     if (ocr.text && ocr.text.trim().length >= 20) {
       rawBody = ocr.text;
     } else if (ocr.encrypted) {
       // Password-protected PDF. Try the vaulted passwords before giving up.
-      const unlocked = await tryUnlockPdf(node, ownerId);
+      let unlocked: string | null;
+      try {
+        unlocked = await tryUnlockPdf(node, ownerId);
+      } catch (err) {
+        if (!isTerminalParserError(err)) throw err;
+        return unreadable(err);
+      }
       if (unlocked && unlocked.trim().length >= 20) {
         rawBody = unlocked;
       } else {
@@ -620,7 +686,13 @@ export async function loadExtractableBody(
       return { ok: false };
     }
   } else if (preferNativePdf) {
-    const native = await ocrIngestPdfNode(node, ownerId);
+    let native: Awaited<ReturnType<typeof ocrIngestPdfNode>>;
+    try {
+      native = await ocrIngestPdfNode(node, ownerId);
+    } catch (err) {
+      if (!isTerminalParserError(err)) throw err;
+      return unreadable(err);
+    }
     // Only replace the text-layer body if native produced something usable;
     // otherwise keep the text we already have (native is best-effort here).
     if (native.text && native.text.trim().length >= 20) rawBody = native.text;
@@ -658,7 +730,7 @@ export async function loadExtractableBody(
           extension: fileExt,
           // CAD routes land here only on a SNIFF MISS (the bytes are not that
           // format — a renamed DWFx, a mislabelled file); "no parser reads
-          // .dwg" would be false, and a sidecar failure never reaches this
+          // .dwg" would be false, and a parser failure never reaches this
           // guard (it throws upstream as a real, retryable extract error).
           hint:
             fileExt === 'dwg' || fileExt === 'dxf' || fileExt === 'dwf'

@@ -388,7 +388,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'dwg-reindex',
     title: 'Rebuild DWG/DXF auto-import tables in place',
     description:
-      'A DWG or DXF imported before the geometry tabs keeps its old table. This rebuilds the auto-import workbook of the files you name (--file=<id>[,<id>] or --folder=<id>, required) from a fresh sidecar pass: the SAME table node keeps its id, links, grants, placement, title and tags; only its tabs and description change. Dry run (default) lists each table and what would happen. --apply rebuilds at most --limit tables (default 10, at most 50). A table edited after its import is refused unless --keep-edits (a snapshot of the edited version first); a table with an unsaved draft is always refused. Never deletes a file or a table. Prints ids and counts only.',
+      'A DWG or DXF imported before the geometry tabs keeps its old table. This rebuilds the auto-import workbook of the files you name (--file=<id>[,<id>] or --folder=<id>, required) from a fresh CAD pass in the parser service: the SAME table node keeps its id, links, grants, placement, title and tags; only its tabs and description change. Dry run (default) lists each table and what would happen. --apply rebuilds at most --limit tables (default 10, at most 50). A table edited after its import is refused unless --keep-edits (a snapshot of the edited version first); a table with an unsaved draft is always refused. Never deletes a file or a table. Prints ids and counts only.',
     kind: 'remedy',
     status: 'live',
     cost: 'llm',
@@ -406,7 +406,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       '--again',
     ],
     notes:
-      'Keeps each table summary by default (the re-index rebuilds the vector and profile, no model pass), except a table whose old description said it has no vector geometry: its summary is rewritten (one model call each, at most --limit); --resummarize lets the commit run the extractor for every table. A table already rebuilt is skipped unless --again, so repeated runs reach the rest. Needs the media sidecar and the agent (server/api) running. Start with one --file. The old version stays in the table history when history is kept.',
+      'Keeps each table summary by default (the re-index rebuilds the vector and profile, no model pass), except a table whose old description said it has no vector geometry: its summary is rewritten (one model call each, at most --limit); --resummarize lets the commit run the extractor for every table. A table already rebuilt is skipped unless --again, so repeated runs reach the rest. Needs the parser service and the agent (server/api) running. Start with one --file. The old version stays in the table history when history is kept.',
   },
   {
     slug: 'doc-reindex',
