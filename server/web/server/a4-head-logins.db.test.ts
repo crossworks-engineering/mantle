@@ -3,8 +3,9 @@
  * a HEAD row has its GET row's logins. The 17 GET rows of the any-login,
  * chat and Telegram lists ran their HEAD on the system pool (login-self)
  * for every login; they run under the login's own rule now, as the GET
- * does. A GET row added to those lists since is held here the same way (18
- * rows with GET /api/workspaces/:id/connector-options, 0315). The guard sweep records the actor and outcome it notes; this test
+ * does. A GET row added to those lists since is held here the same way (19
+ * rows with GET /api/workspaces/:id/connector-options, 0315, and GET
+ * /api/profile/home-desk, desk saving v2). The guard sweep records the actor and outcome it notes; this test
  * runs the REAL handler bodies through the real app (createApp) on a
  * migrated scratch database and holds each HEAD to its GET: the same
  * status and the same headers, with no body, for every login kind (the
@@ -144,8 +145,8 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  it('the 17 rows 2a changed, and the one added since: HEAD has the status and the headers of GET, and no body', async () => {
-    expect(rows).toHaveLength(18);
+  it('the 17 rows 2a changed, and the two added since: HEAD has the status and the headers of GET, and no body', async () => {
+    expect(rows).toHaveLength(19);
     const logins: Array<[string, string | null]> = [
       ['owner', owner],
       ['admin', admin],
