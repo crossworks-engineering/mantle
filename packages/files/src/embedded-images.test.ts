@@ -304,3 +304,42 @@ describe('extractEmbeddedImages — the per-document cap', () => {
     expect(result.images.map((i) => i.ordinal)).toEqual([1, 2, 3]);
   });
 });
+
+describe('extractEmbeddedImages: anydoc and Visio pictures, without Tika', () => {
+  /** An RTF paragraph holding one PNG picture, hex as RTF writes it. */
+  const rtfPict = (bytes: Buffer) =>
+    `{\\*\\shppict{\\pict\\pngblip\\picw10\\pich10 ${bytes.toString('hex')}}}\\par `;
+
+  it('takes the pictures inside an RTF from anydoc, in order, through the gate', async () => {
+    const big = png(640, 480, 6_000);
+    const second = png(800, 600, 7_000);
+    const icon = png(16, 16, 2_000);
+    const rtf = `{\\rtf1\\ansi First.\\par ${rtfPict(big)}${rtfPict(icon)}${rtfPict(second)}Last.\\par}`;
+    const result = await extractEmbeddedImages(Buffer.from(rtf), 'rtf');
+    expect(result.candidates).toBe(3);
+    expect(result.rejected).toEqual({ too_small: 1 });
+    expect(result.images.map((i) => [i.ordinal, i.width, i.height])).toEqual([
+      [1, 640, 480],
+      [2, 800, 600],
+    ]);
+    expect(result.images[0]!.bytes.equals(big)).toBe(true);
+  });
+
+  it("takes a .vsdx's media parts in their numeric order", async () => {
+    const zip = new JSZip();
+    zip.file('visio/pages/page1.xml', '<PageContents/>');
+    zip.file('visio/media/image10.png', png(500, 500, 5_000));
+    zip.file('visio/media/image2.png', png(300, 300, 4_000));
+    const bytes = await zip.generateAsync({ type: 'nodebuffer' });
+    const result = await extractEmbeddedImages(bytes, 'vsdx');
+    expect(result.images.map((i) => i.width)).toEqual([300, 500]);
+  });
+
+  it('reads an .xlsx saved as .xls as the workbook it is', async () => {
+    const zip = new JSZip();
+    zip.file('xl/workbook.xml', '<workbook/>');
+    const bytes = await zip.generateAsync({ type: 'nodebuffer' });
+    const result = await extractEmbeddedImages(bytes, 'xls');
+    expect(result).toEqual({ images: [], rejected: {}, candidates: 0 });
+  });
+});

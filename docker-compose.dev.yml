@@ -6,7 +6,8 @@
 # 9000 / 9001 / 9998) are unchanged, so existing .env.local files keep working.
 name: mantle-dev
 
-# Mantle dev infra: Postgres + the object store (RustFS) + Tika.
+# Mantle dev infra: Postgres + the object store (RustFS), and Tika as an
+# opt-in add-on (`--profile tika`).
 # server/web, server/mcp, and workers run as native Node via `pnpm dev`.
 # Bring everything up with `pnpm up` (which runs scripts/up.sh).
 

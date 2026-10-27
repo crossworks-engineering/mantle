@@ -18,16 +18,24 @@
  * Throws on a failed conversion, like the other in-process parsers, so the
  * caller can tell a real failure (encrypted, malformed) apart from an empty
  * document. The error carries anydoc's `code` (`unsupported`, `malformed`,
- * `encrypted`, `resourceLimit`, `missingPart`).
+ * `encrypted`, `missingPart`), except `resourceLimit`, which becomes a
+ * {@link DocumentLimitError} so the extractor records why and stops retrying.
+ *
+ * Every read runs in a worker thread (./isolate.ts): the exported readers
+ * hand the bytes there, the `...InProcess` ones are what the thread runs.
  */
 
 import {
   toDocument,
   toMarkdownBytes,
+  type Asset,
   type Block,
   type Format,
   type Inline,
 } from '@firecrawl/anydoc';
+import { errorMessage } from '@mantle/std';
+import { DocumentLimitError } from './document-limit';
+import type { EmbeddedImage } from './embedded-images';
 
 /** Our extension → anydoc's format. Explicit rather than anydoc's own
  *  `formatFromExtension`, so a format we have not tested never reaches it.
@@ -53,9 +61,34 @@ function formatFor(ext: string): Format {
   return format as Format;
 }
 
-/** The document as Markdown. Throws on a failed conversion (see above). */
+/** anydoc's `resourceLimit` as a {@link DocumentLimitError}; any other
+ *  error unchanged. The embedded-media budget gets its own wording, because
+ *  the fix there is different (the text is fine, the pictures are not). */
+function limitOr(err: unknown): unknown {
+  if ((err as { code?: unknown } | null)?.code !== 'resourceLimit') return err;
+  const detail = errorMessage(err);
+  return new DocumentLimitError(
+    'reader_limit',
+    /asset/i.test(detail)
+      ? `The document's embedded pictures and objects are past the in-process reader's budget (${detail}), so its text could not be read. A box running the Tika add-on reads such files.`
+      : `The document is past one of the in-process reader's safety limits (${detail}).`,
+  );
+}
+
+/** The document as Markdown, read in a worker thread. Throws on a failed
+ *  conversion (see above). */
 export async function parseAnydocBytes(bytes: Buffer, ext: string): Promise<string> {
-  return (await toMarkdownBytes(bytes, formatFor(ext))).trim();
+  const { runIsolated } = await import('./isolate');
+  return runIsolated('anydocMarkdown', [bytes, ext]);
+}
+
+/** {@link parseAnydocBytes} on the calling thread: the parse worker's job. */
+export async function anydocMarkdownInProcess(bytes: Buffer, ext: string): Promise<string> {
+  try {
+    return (await toMarkdownBytes(bytes, formatFor(ext))).trim();
+  } catch (err) {
+    throw limitOr(err);
+  }
 }
 
 /** One sheet of a legacy workbook: its name and a rectangle of cell text. */
@@ -75,16 +108,35 @@ function blocksText(blocks: Block[]): string {
     .join('\n');
 }
 
+/** A sheet anydoc read but the caller refused for its size, by name, with
+ *  its rectangle: kept so the refusal can say which sheet and why. */
+export type RefusedSheet = { name: string; rows: number; cols: number };
+
 /**
  * The sheets of a legacy workbook, for ./legacy-sheet.ts to rebuild as a real
  * `.xlsx`. anydoc gives a heading (the sheet name) before each sheet's table;
  * a single-sheet workbook may come without one. A covered cell (inside a
  * merge) reads as empty, so columns never shift. Throws like
- * {@link parseAnydocBytes}.
+ * {@link parseAnydocBytes}. Called in the parse worker only.
+ *
+ * `maxCells` bounds each sheet's rectangle (rows x widest row) BEFORE any
+ * row is copied out: a sheet past it is listed in `refused`, not read. A
+ * workbook holding A1 and GR10000 is a 10,000 x 200 grid of empty strings
+ * otherwise, and the rebuild after it is where the time and memory went.
  */
-export async function anydocSheets(bytes: Buffer, ext: string): Promise<AnydocSheet[]> {
-  const doc = await toDocument(bytes, formatFor(ext));
+export async function anydocSheets(
+  bytes: Buffer,
+  ext: string,
+  maxCells = Number.POSITIVE_INFINITY,
+): Promise<{ sheets: AnydocSheet[]; refused: RefusedSheet[] }> {
+  let doc;
+  try {
+    doc = await toDocument(bytes, formatFor(ext));
+  } catch (err) {
+    throw limitOr(err);
+  }
   const sheets: AnydocSheet[] = [];
+  const refused: RefusedSheet[] = [];
   let pendingName: string | null = null;
   for (const block of doc.blocks) {
     const kind: string = block.kind;
@@ -93,14 +145,101 @@ export async function anydocSheets(bytes: Buffer, ext: string): Promise<AnydocSh
       continue;
     }
     if (kind !== 'table' || !block.table) continue;
-    const rows = block.table.grid.map((row) =>
+    const name = pendingName ?? `Sheet${sheets.length + refused.length + 1}`;
+    pendingName = null;
+    const grid = block.table.grid;
+    let cols = 0;
+    for (const row of grid) cols = Math.max(cols, row.length);
+    if (grid.length * cols > maxCells) {
+      refused.push({ name, rows: grid.length, cols });
+      continue;
+    }
+    const rows = grid.map((row) =>
       row.map((slot) => {
         const slotKind: string = slot.kind;
         return slotKind === 'origin' && slot.cell ? blocksText(slot.cell.blocks) : '';
       }),
     );
-    sheets.push({ name: pendingName ?? `Sheet${sheets.length + 1}`, rows });
-    pendingName = null;
+    sheets.push({ name, rows });
   }
-  return sheets;
+  return { sheets, refused };
+}
+
+/** Where anydoc found each image: walked in reading order so `ordinal`
+ *  follows the document, as the other image extractors do. */
+type AssetRef = { assetId: number; alt?: string; heading?: string };
+
+function collectImageRefs(blocks: Block[], refs: AssetRef[], ctx: { heading?: string }): void {
+  const fromInlines = (inlines: Inline[] | undefined) => {
+    for (const inline of inlines ?? []) {
+      const kind: string = inline.kind;
+      if (kind === 'image') {
+        const source = inline.source;
+        const sourceKind: string | undefined = source?.kind;
+        if (sourceKind === 'asset' && source?.assetId != null) {
+          refs.push({
+            assetId: source.assetId,
+            ...(inline.alt?.trim() ? { alt: inline.alt.trim() } : {}),
+            ...(ctx.heading ? { heading: ctx.heading } : {}),
+          });
+        }
+      }
+      if (inline.content) fromInlines(inline.content);
+    }
+  };
+  for (const block of blocks) {
+    const kind: string = block.kind;
+    if (kind === 'heading') {
+      const text = inlineText(block.content);
+      if (text) ctx.heading = text;
+    }
+    fromInlines(block.content);
+    if (block.blocks) collectImageRefs(block.blocks, refs, ctx);
+    for (const item of block.list?.items ?? []) collectImageRefs(item.blocks, refs, ctx);
+    for (const row of block.table?.grid ?? []) {
+      for (const slot of row) if (slot.cell) collectImageRefs(slot.cell.blocks, refs, ctx);
+    }
+  }
+}
+
+/**
+ * The pictures anydoc carries in its document model (`Document.assets`), in
+ * reading order: each image the text places, then any picture asset the text
+ * never places (a slide background, a picture in a part anydoc does not
+ * lay out). Alt text and the nearest heading come along for the titles.
+ * Non-image assets (OLE payloads) are left out. Throws like
+ * {@link parseAnydocBytes}. Called in the parse worker only.
+ */
+export async function anydocImagesInProcess(bytes: Buffer, ext: string): Promise<EmbeddedImage[]> {
+  let doc;
+  try {
+    doc = await toDocument(bytes, formatFor(ext));
+  } catch (err) {
+    throw limitOr(err);
+  }
+  const { describeImageBytes } = await import('./embedded-images');
+  const byId = new Map<number, Asset>(doc.assets.map((a) => [a.id, a]));
+  const refs: AssetRef[] = [];
+  collectImageRefs(doc.blocks, refs, {});
+  const placed = new Set(refs.map((r) => r.assetId));
+  for (const a of doc.assets) if (!placed.has(a.id)) refs.push({ assetId: a.id });
+
+  const out: EmbeddedImage[] = [];
+  const emitted = new Set<number>();
+  for (const ref of refs) {
+    const asset = byId.get(ref.assetId);
+    if (!asset || emitted.has(ref.assetId) || !asset.mediaType.startsWith('image/')) continue;
+    emitted.add(ref.assetId);
+    const data = Buffer.from(asset.data);
+    if (data.length === 0) continue;
+    const fallbackExt = asset.mediaType.slice('image/'.length).replace(/^(x-|vnd\.)/, '');
+    out.push({
+      bytes: data,
+      ordinal: out.length + 1,
+      ...describeImageBytes(data, fallbackExt),
+      ...(ref.alt ? { altText: ref.alt } : {}),
+      ...(ref.heading ? { heading: ref.heading } : {}),
+    });
+  }
+  return out;
 }

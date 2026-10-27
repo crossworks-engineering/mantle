@@ -15,10 +15,61 @@
  *
  * Throws on a container JSZip cannot open, like ./pptx.ts. A drawing with no
  * shape text returns `''`, the honest no-text skip.
+ *
+ * A `.vsdx` is untrusted zip: a page part can claim (or, lying, hold) far
+ * more than any drawing. Each part's size is checked from the zip directory
+ * before it is inflated, against a per-part and a total budget, and the
+ * read runs in a worker thread with a heap limit (./isolate.ts) for a part
+ * whose directory lies about its size.
  */
 
 import { SaxesParser } from 'saxes';
+import { DocumentLimitError } from './document-limit';
+import type { EmbeddedImage } from './embedded-images';
 import { loadZip, numericSuffix, relationshipsFor, type Zip } from './ooxml-media';
+
+/** Bytes one page part may inflate to. A real page with thousands of shapes
+ *  is a few MB of XML. */
+export const MAX_VSDX_PART_BYTES = 64 * 1024 * 1024;
+/** Bytes all the parts read from one drawing may inflate to together. */
+export const MAX_VSDX_TOTAL_BYTES = 256 * 1024 * 1024;
+/** Bytes one embedded picture may be. */
+const MAX_VSDX_IMAGE_BYTES = 32 * 1024 * 1024;
+
+/** The entry's uncompressed size from the zip directory, without inflating
+ *  (JSZip's internal `_data`, as ./sheet-read.ts and ./dwf.ts read it);
+ *  `null` when the field is missing. */
+function declaredSize(zip: Zip, path: string): number | null {
+  const entry = zip.file(path);
+  const size = (entry as unknown as { _data?: { uncompressedSize?: number } } | null)?._data
+    ?.uncompressedSize;
+  return typeof size === 'number' && Number.isFinite(size) ? size : null;
+}
+
+/** Reads parts of one drawing against the budgets above; a part past either
+ *  throws a {@link DocumentLimitError} before it is inflated. */
+function partReader(zip: Zip) {
+  let total = 0;
+  return async (path: string): Promise<string> => {
+    const entry = zip.file(path);
+    if (!entry) return '';
+    const size = declaredSize(zip, path) ?? 0;
+    if (size > MAX_VSDX_PART_BYTES) {
+      throw new DocumentLimitError(
+        'too_large',
+        `The drawing's part ${path} unpacks to ${Math.round(size / 1e6)} MB, past the ${MAX_VSDX_PART_BYTES / 1024 / 1024} MB a Visio page may use.`,
+      );
+    }
+    total += size;
+    if (total > MAX_VSDX_TOTAL_BYTES) {
+      throw new DocumentLimitError(
+        'too_large',
+        `The drawing unpacks to more than ${MAX_VSDX_TOTAL_BYTES / 1024 / 1024} MB of pages.`,
+      );
+    }
+    return entry.async('string');
+  };
+}
 
 const PAGES_PART = 'visio/pages/pages.xml';
 
@@ -32,8 +83,11 @@ type VisioPage = { name: string; path: string };
 
 /** Pages in Visio's order. Without a readable `pages.xml`, every page part
  *  in numeric order (`page2.xml` before `page10.xml`), named by position. */
-async function pagesInOrder(zip: Zip): Promise<VisioPage[]> {
-  const xml = await zip.file(PAGES_PART)?.async('string');
+async function pagesInOrder(
+  zip: Zip,
+  read: (path: string) => Promise<string>,
+): Promise<VisioPage[]> {
+  const xml = await read(PAGES_PART);
   if (xml) {
     const rels = await relationshipsFor(zip, PAGES_PART);
     const pages: VisioPage[] = [];
@@ -80,11 +134,19 @@ export function shapeTextsOf(xml: string): string[] {
   return out;
 }
 
+/** The drawing's shape text, read in a worker thread (./isolate.ts). */
 export async function parseVsdx(bytes: Buffer): Promise<string> {
+  const { runIsolated } = await import('./isolate');
+  return runIsolated('vsdx', [bytes]);
+}
+
+/** {@link parseVsdx} on the calling thread: the parse worker's job. */
+export async function parseVsdxInProcess(bytes: Buffer): Promise<string> {
   const zip = await loadZip(bytes);
+  const read = partReader(zip);
   const sections: string[] = [];
-  for (const page of await pagesInOrder(zip)) {
-    const xml = (await zip.file(page.path)?.async('string')) ?? '';
+  for (const page of await pagesInOrder(zip, read)) {
+    const xml = await read(page.path);
     let lines: string[];
     try {
       lines = shapeTextsOf(xml);
@@ -95,4 +157,40 @@ export async function parseVsdx(bytes: Buffer): Promise<string> {
     if (lines.length > 0) sections.push(`## ${page.name}\n\n${lines.join('\n')}`);
   }
   return sections.join('\n\n').trim();
+}
+
+/** The number in a media part's name (`image12.png` is 12). */
+function mediaNumber(path: string): number {
+  return Number(/(\d+)\.\w+$/.exec(path)?.[1] ?? 0);
+}
+
+/**
+ * Pictures placed in the drawing (`visio/media/*`), in their numeric order,
+ * each checked for size before it is inflated. Visio numbers media parts as
+ * they are added, which is close to page order for a drawing built page by
+ * page; the parts carry no position Visio's own order could be read from
+ * without laying out every page. Run in the parse worker.
+ */
+export async function vsdxImagesInProcess(bytes: Buffer): Promise<EmbeddedImage[]> {
+  const zip = await loadZip(bytes);
+  const { describeImageBytes } = await import('./embedded-images');
+  const paths = Object.keys(zip.files)
+    .filter((p) => /^visio\/media\/[^/]+\.\w+$/i.test(p))
+    .sort((a, b) => mediaNumber(a) - mediaNumber(b) || a.localeCompare(b));
+  const out: EmbeddedImage[] = [];
+  let total = 0;
+  for (const path of paths) {
+    const size = declaredSize(zip, path) ?? 0;
+    if (size > MAX_VSDX_IMAGE_BYTES) continue;
+    total += size;
+    if (total > MAX_VSDX_TOTAL_BYTES) break;
+    const data = Buffer.from((await zip.file(path)?.async('uint8array')) ?? new Uint8Array());
+    if (data.length === 0) continue;
+    out.push({
+      bytes: data,
+      ordinal: out.length + 1,
+      ...describeImageBytes(data, path.slice(path.lastIndexOf('.') + 1)),
+    });
+  }
+  return out;
 }

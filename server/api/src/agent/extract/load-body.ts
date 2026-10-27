@@ -16,6 +16,7 @@ import {
   MEDIA_EXTS,
   parserRouteForExt,
   exportHintForExt,
+  isDocumentLimitError,
 } from '@mantle/files';
 import { recordSkippedTrace, step } from '@mantle/tracing';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
@@ -30,7 +31,14 @@ import { recordTerminalSkip, type SkipInit } from './terminal';
 /** The body of a node with no model call (no vision, no OCR worker): the typed
  *  dispatch below. The cost guard's local-only index reads this. */
 export async function readNodeBodyLocal(node: typeof nodes.$inferSelect): Promise<string> {
-  return readNodeBodyRaw(node);
+  try {
+    return await readNodeBodyRaw(node);
+  } catch (err) {
+    // A document stopped by a size limit indexes by its title here, as any
+    // unreadable file does; the full pass records why (document_too_large).
+    if (isDocumentLimitError(err)) return node.title;
+    throw err;
+  }
 }
 
 async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string> {
@@ -295,6 +303,11 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
         // which is false (the fix is enabling the CAD tier). Rethrow so the
         // extract errors for real and pg-boss retries heal the node.
         if (route === 'dwg' || route === 'dxf') throw err;
+        // A document stopped by a size limit (a decompression bomb, a sheet
+        // of millions of empty cells, a read past its time or memory): the
+        // caller records the reason as a terminal skip, rather than this
+        // falling back to the title and reading as "no parser".
+        if (isDocumentLimitError(err)) throw err;
         // Parse / read failed. The step (if it opened) already recorded the
         // error; fall through to the title.
       }
@@ -463,7 +476,33 @@ export async function loadExtractableBody(
     // which step this picture belongs to. A no-op for ordinary photos.
     rawBody = composeImageBody(existingData, vision.text);
   } else {
-    rawBody = await readNodeBodyRaw(node);
+    try {
+      rawBody = await readNodeBodyRaw(node);
+    } catch (err) {
+      if (!isDocumentLimitError(err)) throw err;
+      // Terminal: the same bytes hit the same limit on every retry, so the
+      // drain must not re-queue the node until it changes.
+      await recordTerminalSkip(
+        {
+          kind: 'extractor_run',
+          ownerId,
+          subjectId: node.id,
+          subjectKind: 'node',
+          disposition: 'document_too_large',
+          details: {
+            worker_slug: worker.slug,
+            node_type: node.type,
+            title: node.title,
+            filename: existingData.filename,
+            extension: fileExt,
+            limit: err.reason,
+            hint: `${err.message} The file stays stored and findable by name.`,
+          },
+        },
+        node,
+      );
+      return { ok: false };
+    }
   }
 
   // Scanned / image-only PDF: readNodeBodyRaw found no text layer and fell back

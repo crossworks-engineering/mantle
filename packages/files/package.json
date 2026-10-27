@@ -25,7 +25,8 @@
     "./dwf": "./src/dwf.ts",
     "./dwg": "./src/dwg.ts",
     "./dxf": "./src/dxf.ts",
-    "./legacy-sheet": "./src/legacy-sheet.ts"
+    "./legacy-sheet": "./src/legacy-sheet.ts",
+    "./isolate": "./src/isolate.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -46,7 +47,8 @@
     "pdf-parse": "^2.4.5",
     "pdf-to-png-converter": "^4.2.1",
     "pdfjs-dist": "6.4.299",
-    "saxes": "^6.0.0"
+    "saxes": "^6.0.0",
+    "tsx": "^4.23.15"
   },
   "devDependencies": {
     "@types/heic-convert": "^2.1.1",

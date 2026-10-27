@@ -151,11 +151,21 @@ export async function parseSpreadsheetToGrid(buf: Buffer, ext: string): Promise<
   const converted = await convertLegacySheetToXlsx(buf, mimeForExt(ext));
   if (!converted) {
     throw new Error(
-      `could not convert legacy .${ext} workbook — the document service (Tika) is ` +
-        `unavailable or the file is not a readable spreadsheet`,
+      `could not convert legacy .${ext} workbook: the file is not a readable spreadsheet ` +
+        `(on a box with the Tika add-on, Tika could not read it either)`,
     );
   }
-  return parseSheetToGrid(converted);
+  // A grid import with a sheet left out would look complete and not be.
+  if (converted.refused.length > 0) {
+    const { DocumentLimitError } = await import('./document-limit');
+    const { describeRefused, MAX_LEGACY_CELLS } = await import('./legacy-sheet');
+    throw new DocumentLimitError(
+      'too_large',
+      `the workbook is too large to import: ${describeRefused(converted.refused)} past the ` +
+        `${MAX_LEGACY_CELLS.toLocaleString('en-US')}-cell limit for a legacy spreadsheet. Save it as .xlsx and import that.`,
+    );
+  }
+  return parseSheetToGrid(converted.xlsx);
 }
 
 /**

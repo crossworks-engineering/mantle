@@ -1,4 +1,4 @@
-import { env } from '@mantle/config';
+import { env, tikaRuns } from '@mantle/config';
 import { NET_TIMEOUTS, parseRetryAfterMs, timeoutSignal, withRetry } from '@mantle/std';
 /**
  * Apache Tika client — the third-tier document parser.
@@ -25,22 +25,14 @@ import { NET_TIMEOUTS, parseRetryAfterMs, timeoutSignal, withRetry } from '@mant
 
 /**
  * Tika is an opt-in add-on: anydoc and the in-process readers cover what it
- * used to (see ./parse.ts), so it now runs only on a box that asks for it.
- * The one switch is the `tika` compose profile. Compose gives every app
- * container TIKA_URL (`http://tika:9998`) and the box's COMPOSE_PROFILES as
- * MANTLE_COMPOSE_PROFILES, so a box without the profile is read as "Tika off"
- * and no call is made: no wait on a DNS miss, and an anydoc failure keeps its
- * own error instead of becoming Tika's empty answer. Outside compose (dev,
- * tests) TIKA_URL alone decides.
+ * used to (see ./parse.ts), so it runs only on a box that turned on the
+ * `tika` compose profile. The answer is @mantle/config's `tikaRuns`, the
+ * same source the dashboard and the onboarding checks read (services.json
+ * first, then the profiles compose gave the container; outside compose,
+ * TIKA_URL alone). Off means no call is made at all.
  */
 export function tikaConfigured(): boolean {
-  if (!env('TIKA_URL')?.trim()) return false;
-  const profiles = env('MANTLE_COMPOSE_PROFILES');
-  if (profiles === undefined) return true;
-  return profiles
-    .split(',')
-    .map((p) => p.trim())
-    .includes('tika');
+  return tikaRuns();
 }
 
 /** Per-request timeout (NET_TIMEOUTS.tika, 60 s). Tika's cold start can take a

@@ -109,7 +109,21 @@ the door** by [`packages/files/src/legacy-sheet.ts`](../packages/files/src/legac
 rebuild it with exceljs. A file anydoc cannot read goes to Tika's XHTML when
 the box runs the Tika add-on. The conversion loses boolean cells and cell
 comments, and turns dates into text (ISO from anydoc); the module comments say
-so in full.
+so in full. An `.xlsx` under a legacy name (a zip naming `xl/workbook.xml`)
+skips the conversion and is read as the `.xlsx` it is. A sheet whose
+rectangle passes 1,000,000 cells is refused by name before any grid is
+built, and the text ends with a note naming it.
+
+**Untrusted bytes are read off the main thread.** anydoc, the legacy-sheet
+rebuild, the Visio and markup readers and anydoc's pictures run in a worker
+thread (`packages/files/src/isolate.ts`) with a 768 MB heap limit, a 60 s
+time limit and two reads at once per process. A decompression bomb, a read
+past a limit or a reader's own safety limit throws a `DocumentLimitError`;
+the extractor records it as the terminal skip `document_too_large` with the
+reason as the hint, and does not retry the file until it changes. anydoc is
+native code: its own memory sits outside the thread's heap limit and is
+bounded by its fixed limits (2 million XML nodes a part, decompression and
+embedded-media budgets), which end in that same skip.
 
 The old caps existed because xlsx files routinely declare an inflated
 used-range (dimension out to row 1,048,576 / column XFD while the real data is
@@ -156,7 +170,8 @@ settings screen **is** the answer to "how do I configure this".
 | 1 (in-process) | `docx`                                      | mammoth's parsed document AST, the only entry point that honours `transformDocument` is `convertToHtml` (`extractRawText` silently ignores it)                                                                                                                                                                                                                                |
 | 1 (in-process) | `pptx`, `xlsx`, `xlsm`, `odt`, `ods`, `odp` | `@mantle/files/ooxml-media`, zip + relationship walk                                                                                                                                                                                                                                                                                                                          |
 | 1 (in-process) | `pdf`                                       | pdfjs `paintImageXObject`, encoded to PNG via `@napi-rs/canvas`                                                                                                                                                                                                                                                                                                               |
-| 2 (Tika add-on) | `doc`, `ppt`, `xlsb`, `rtf`, `vsd`   | Only when the box runs the Tika add-on (`tika` profile); without it these give no images. `unpackTikaImages` → `PUT /unpack/all` (a capability the Tika container always had and we never called). Reads both ZIP layouts: Tika 4's numbered entries with `.metadata.json` sidecars (the container itself, entry `0.<ext>`, is dropped; the thumbnail is found by its sidecar's part name) and Tika 3's named parts with `__TEXT__`/`__METADATA__`. Never-throws → `[]` |
+| 1 (worker)     | `doc`, `ppt`, `rtf`, `epub`, `xls`, `xlsb`, `vsdx` | In a worker thread (`isolate.ts`): the pictures anydoc carries in its document model (`Document.assets`), in reading order with alt text and the nearest heading, and the `visio/media/` parts of a `.vsdx`, each size-checked before it is inflated. Gated and capped in the worker, so only kept pictures cross back. |
+| 2 (Tika add-on) | the row above when it finds none, and `vsd` | Only when the box runs the Tika add-on (`tika` profile): the second try for the row above (no picture found, or the read refused) and the only reader for `.vsd`. `unpackTikaImages` → `PUT /unpack/all` (a capability the Tika container always had and we never called). Reads both ZIP layouts: Tika 4's numbered entries with `.metadata.json` sidecars (the container itself, entry `0.<ext>`, is dropped; the thumbnail is found by its sidecar's part name) and Tika 3's named parts with `__TEXT__`/`__METADATA__`. Never-throws → `[]` |
 | 3              | everything else                             | `[]`                                                                                                                                                                                                                                                                                                                                                                          |
 
 **Reading order is the product requirement.** A manual's screenshots are only

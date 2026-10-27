@@ -92,6 +92,9 @@ export const TERMINAL_EXTRACT_SKIPS: readonly string[] = [
   'needs_export',
   'unsupported_media',
   'no_parser',
+  // A document stopped by a size limit (a bomb, a huge sheet, embedded media
+  // past the reader's budget): the same bytes stop the same way every time.
+  'document_too_large',
   'body_too_short',
   'encrypted_pdf',
   'bytes_unavailable',

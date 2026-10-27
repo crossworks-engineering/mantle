@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const parseTikaBytes = vi.fn<(bytes: Buffer, opts?: unknown) => Promise<string>>();
 vi.mock('./tika', () => ({
   parseTikaBytes: (bytes: Buffer, opts?: unknown) => parseTikaBytes(bytes, opts),
+  // These tests are about the Tika route: the box runs the add-on.
+  tikaConfigured: () => true,
 }));
 
 const { convertLegacySheetToXlsx, isLegacySheetExt } = await import('./legacy-sheet');
@@ -66,7 +68,7 @@ describe('convertLegacySheetToXlsx', () => {
     const xlsx = await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel');
     expect(xlsx).not.toBeNull();
 
-    const text = await parseXlsx(xlsx!);
+    const text = await parseXlsx(xlsx!.xlsx);
     expect(text).toContain('# Sheet: Orders');
     expect(text).toContain('# Sheet: Notes');
     expect(text).toContain('Widget,3,12.5');
@@ -75,7 +77,7 @@ describe('convertLegacySheetToXlsx', () => {
   it('keeps numeric columns numeric through the round trip', async () => {
     parseTikaBytes.mockResolvedValue(TIKA_XHTML);
     const xlsx = await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel');
-    const [orders] = await parseSheetToGrid(xlsx!);
+    const [orders] = await parseSheetToGrid(xlsx!.xlsx);
     expect(orders!.name).toBe('Orders');
     expect(orders!.columns.map((c) => `${c.name}:${c.type}`)).toEqual([
       'Name:text',
@@ -99,7 +101,7 @@ describe('convertLegacySheetToXlsx', () => {
         `</tbody></table></div></body></html>`,
     );
     const xlsx = await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel');
-    const [sheet] = await parseSheetToGrid(xlsx!);
+    const [sheet] = await parseSheetToGrid(xlsx!.xlsx);
     expect(sheet!.rows).toEqual([['a1', null, 'c1']]);
   });
 
@@ -121,7 +123,7 @@ describe('convertLegacySheetToXlsx', () => {
         `<table><tbody><tr><td>x</td></tr></tbody></table></div></body></html>`,
     );
     const xlsx = await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel');
-    const [sheet] = await parseSheetToGrid(xlsx!);
+    const [sheet] = await parseSheetToGrid(xlsx!.xlsx);
     expect(sheet!.name).toBe('Q1 Q2  draft   a very long tab '); // no \ / ? * [ ] :
     expect(sheet!.name.length).toBe(31); // Excel's hard cap on a tab name
   });

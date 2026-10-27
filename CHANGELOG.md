@@ -25,18 +25,37 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   `.epub`, `.xls` and `.vsdx`, except page headers and footers, sheet cell
   comments and the name of a one-sheet `.xlsb`. anydoc parses in 0.1 to 2 ms
   a file; Tika took 50 to 260 ms warm and 10.5 s cold, and grew from 244 to
-  478 MB over 28 small parses. Without Tika, an Excel 2007 beta `.xlsb`, a
-  `.vsd`, and pictures inside `.doc`/`.ppt`/`.rtf` are not read.
+  478 MB over 28 small parses. Without Tika, an Excel 2007 beta `.xlsb` and
+  a `.vsd` are not read.
 - Fleet count before the change (six boxes, 2,359 files): 18 went to Tika,
   and by format none of them needs it once anydoc and the in-process readers
   are counted (no `.vsd` on any box).
 
-Deploy note: after the roll, `docker compose up -d` no longer starts Tika on
-a box without the `tika` profile. Check after the roll whether an old
-`mantle_tika` container is still running (not verified on a real roll); if
-it is, stop it with `docker compose stop tika && docker compose rm -f tika`.
-A box that keeps Tika adds `tika` to `COMPOSE_PROFILES` in `.env` and runs
-`docker compose up -d`.
+- Uploads cannot take the server down. anydoc, the legacy-sheet rebuild,
+  the Visio reader, the markup reader and anydoc's pictures run in a worker
+  thread with a heap limit (768 MB) and a time limit (60 s), two at a time
+  per process. A decompression bomb or a read past a limit costs the
+  thread; the extractor records a terminal `document_too_large` skip with
+  the reason and does not retry the file until it changes. anydoc's own
+  native memory is bounded by its fixed safety limits, not by the thread.
+- The HTML scanner is linear: 5 MB of hostile markup (unclosed `<?`,
+  comments, scripts) reads in milliseconds, where 128 KB of `<?` took 23 s.
+- An `.xlsx` saved under a legacy `.xls` name is read as the `.xlsx` it is.
+  A legacy sheet whose rectangle passes 1,000,000 cells is refused by name
+  (the note in the text says which), checked before any grid is built.
+  A Visio part is checked for size before it is inflated.
+- Pictures inside `.doc`, `.ppt`, `.rtf`, `.epub`, `.xlsb` and `.vsdx` come
+  from anydoc's document model and the Visio media parts, under the same
+  per-document gate and cap; Tika, when on, is the second try and reads
+  `.vsd`.
+- The dashboard's Tika status is `up: null` (off, grey) on a box without the
+  add-on, instead of red. The updater's `helpers` switch is the PDF browser
+  only.
+
+Deploy note: see "Rolling to anydoc: Tika becomes an opt-in add-on" in
+docs/update-prod.md. The roll leaves an existing `mantle_tika` running; keep
+it (add `tika` to `COMPOSE_PROFILES`) on a box with `.vsd` files or large
+picture-heavy legacy documents, else stop and remove it.
 
 ## Unreleased: workspace delegation
 

@@ -23,11 +23,20 @@ const h = vi.hoisted(() => ({
   loadFileBytes: vi.fn(),
   tryUnlockPdf: vi.fn(),
   documentWorkerPrefersNative: vi.fn(),
+  parseDocumentBytes: null as null | ((bytes: Buffer, ext: string) => Promise<string>),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
   return { ...actual, db: { ...actual.db, select: vi.fn(), update: vi.fn() } };
+});
+vi.mock('@mantle/files', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/files')>();
+  return {
+    ...actual,
+    parseDocumentBytes: (bytes: Buffer, ext: string) =>
+      (h.parseDocumentBytes ?? actual.parseDocumentBytes)(bytes, ext),
+  };
 });
 vi.mock('@mantle/tracing', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/tracing')>();
@@ -90,6 +99,7 @@ beforeEach(() => {
   h.loadFileBytes.mockResolvedValue(null);
   h.tryUnlockPdf.mockResolvedValue(null);
   h.documentWorkerPrefersNative.mockResolvedValue(false);
+  h.parseDocumentBytes = null;
 });
 
 describe('loadExtractableBody: terminal skips', () => {
@@ -164,6 +174,48 @@ describe('loadExtractableBody: terminal skips', () => {
     });
     await run(fileNode('scan.pdf', 'application/pdf'));
     expect(plain()).toBe('pdf_unreadable');
+    expect(h.recordTerminalSkip).not.toHaveBeenCalled();
+  });
+
+  it('stamps a document stopped by a size limit terminal, with the reason', async () => {
+    // The reader's verdict as @mantle/files throws it (its own tests run the
+    // real bombs through the worker): a Visio page part past its budget.
+    const { DocumentLimitError } = await import('@mantle/files');
+    h.parseDocumentBytes = async () => {
+      throw new DocumentLimitError(
+        'too_large',
+        "The drawing's part visio/pages/page1.xml unpacks to 1470 MB, past the 64 MB a Visio page may use.",
+      );
+    };
+    h.loadFileBytes.mockResolvedValue({
+      bytes: Buffer.from('PK'),
+      filename: 'site-plan-drawing.vsdx',
+      ext: 'vsdx',
+      mime: 'application/vnd.ms-visio.drawing',
+    });
+    const res = await run(fileNode('site-plan-drawing.vsdx', 'application/vnd.ms-visio.drawing'));
+    expect(res.ok).toBe(false);
+    expect(terminal()).toBe('document_too_large');
+    const details = (
+      h.recordTerminalSkip.mock.calls[0]?.[0] as { details?: Record<string, unknown> }
+    ).details;
+    expect(details?.limit).toBe('too_large');
+    expect(String(details?.hint)).toContain('visio/pages/page1.xml');
+    expect(h.recordSkippedTrace).not.toHaveBeenCalled();
+  });
+
+  it('leaves an ordinary parse failure on the old path (the title fallback, no skip)', async () => {
+    h.parseDocumentBytes = async () => {
+      throw Object.assign(new Error('malformed document'), { code: 'malformed' });
+    };
+    h.loadFileBytes.mockResolvedValue({
+      bytes: Buffer.from('junk'),
+      filename: 'old-maintenance-procedure.doc',
+      ext: 'doc',
+      mime: 'application/msword',
+    });
+    const res = await run(fileNode('old-maintenance-procedure.doc', 'application/msword'));
+    expect(res).toEqual({ ok: true, rawBody: 'old-maintenance-procedure.doc' });
     expect(h.recordTerminalSkip).not.toHaveBeenCalled();
   });
 });

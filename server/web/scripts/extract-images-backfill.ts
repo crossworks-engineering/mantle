@@ -51,6 +51,7 @@
 
 import postgres from 'postgres';
 import { env } from '@mantle/config';
+import { IMAGE_BEARING_EXTS } from '@mantle/files/embedded-images';
 import {
   closeDb,
   db,
@@ -67,27 +68,9 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-/** Must stay in step with IMAGE_BEARING_EXTS in the extractor — a doc listed
- *  here but not there just wastes a notify (harmless); the reverse means a
- *  format silently never gets backfilled. */
-const DEFAULT_EXTS = [
-  'docx',
-  'pdf',
-  'pptx',
-  'xlsx',
-  'xlsm',
-  'odt',
-  'ods',
-  'odp',
-  'doc',
-  'ppt',
-  'xls',
-  'xlsb',
-  'rtf',
-  'dwf',
-  'dwg',
-  'dxf',
-];
+/** The extractor's own list (it reads the same export), so a format can
+ *  never be extracted but not backfilled, or the reverse. */
+const DEFAULT_EXTS = [...IMAGE_BEARING_EXTS];
 
 /** Fallback worst case per document, mirroring MAX_EMBEDDED_IMAGES_PER_DOC in
  *  `@mantle/files/embedded-images`. Used only when the extractor worker has no

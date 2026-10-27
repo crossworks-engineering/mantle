@@ -10,6 +10,10 @@
  *      RTF, EPUB), the markup reader (HTML, XML), and the UTF-8 read for
  *      text files. Throws on a parser failure (encrypted / corrupt) so
  *      callers can tell a real failure apart from a genuinely-empty file.
+ *      anydoc, the legacy-sheet rebuild, the Visio and the markup readers
+ *      run in a worker thread with a heap and time limit (./isolate.ts); a
+ *      document stopped by a limit throws a DocumentLimitError, which the
+ *      extractor records as a terminal skip with the reason.
  *   2. Apache Tika, an OPT-IN add-on (the `tika` compose profile): the only
  *      reader for .vsd, and the second try for a file anydoc cannot read.
  *      Tika is **never-throws**: any failure (service off or down, timeout,
@@ -20,11 +24,14 @@
  *      "no_text_layer" skip.
  */
 
+import { isDocumentLimitError } from './document-limit';
 import { ANYDOC_EXTS, MARKUP_EXTS, TEXT_EXTS, TIKA_EXTS, mimeForExt } from './slug';
 
 /** anydoc first; when it fails or reads nothing, Tika if the box runs it.
  *  Without Tika, anydoc's own failure is the answer (it throws, so the
- *  extractor records a real error rather than an empty document). */
+ *  extractor records a real error rather than an empty document). A size
+ *  limit Tika cannot read past either stays the answer, so its reason is
+ *  recorded rather than an empty document. */
 async function anydocThenTika(bytes: Buffer, ext: string): Promise<string> {
   const { tikaConfigured, parseTikaBytes } = await import('./tika');
   let failure: unknown = null;
@@ -34,9 +41,29 @@ async function anydocThenTika(bytes: Buffer, ext: string): Promise<string> {
   } catch (err) {
     failure = err;
   }
-  if (tikaConfigured()) return parseTikaBytes(bytes, { mimeType: mimeForExt(ext) });
+  if (tikaConfigured()) {
+    const text = await parseTikaBytes(bytes, { mimeType: mimeForExt(ext) });
+    if (text || !isDocumentLimitError(failure)) return text;
+  }
   if (failure) throw failure;
   return '';
+}
+
+/** A legacy workbook's text: converted (./legacy-sheet.ts), then read as an
+ *  `.xlsx`. A sheet refused for its size is named in a closing note, so the
+ *  index says what is missing; when nothing else was read, the refusal is
+ *  the answer. Not converted at all: Tika's plain text when on, else ''. */
+async function legacySheetText(bytes: Buffer, ext: string): Promise<string> {
+  const { convertLegacySheetToXlsx, describeRefused, MAX_LEGACY_CELLS } =
+    await import('./legacy-sheet');
+  const converted = await convertLegacySheetToXlsx(bytes, mimeForExt(ext));
+  if (!converted) {
+    return (await import('./tika')).parseTikaBytes(bytes, { mimeType: mimeForExt(ext) });
+  }
+  const text = await (await import('./xlsx')).parseXlsx(converted.xlsx);
+  if (converted.refused.length === 0) return text;
+  const note = `[Left out for size: ${describeRefused(converted.refused)}, past the ${MAX_LEGACY_CELLS.toLocaleString('en-US')}-cell limit for a legacy spreadsheet.]`;
+  return text ? `${text}\n\n${note}` : note;
 }
 
 export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<string> {
@@ -56,13 +83,8 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
   // caps, one output shape. A conversion that fails falls through to Tika's
   // plain text when the box runs Tika, else ''.
   if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm' || ext === 'xlsb') {
-    const { isLegacySheetExt, convertLegacySheetToXlsx } = await import('./legacy-sheet');
-    if (isLegacySheetExt(ext)) {
-      const converted = await convertLegacySheetToXlsx(bytes, mimeForExt(ext));
-      if (!converted)
-        return (await import('./tika')).parseTikaBytes(bytes, { mimeType: mimeForExt(ext) });
-      return (await import('./xlsx')).parseXlsx(converted);
-    }
+    const { isLegacySheetExt } = await import('./legacy-sheet');
+    if (isLegacySheetExt(ext)) return legacySheetText(bytes, ext);
     return (await import('./xlsx')).parseXlsx(bytes);
   }
   if (TEXT_EXTS.has(ext)) return bytes.toString('utf8');
@@ -115,7 +137,7 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
       if (plan) return plan;
     }
   }
-  if (MARKUP_EXTS.has(ext)) return (await import('./markup')).parseMarkupBytes(bytes, ext);
+  if (MARKUP_EXTS.has(ext)) return (await import('./isolate')).runIsolated('markup', [bytes, ext]);
   if (ext === 'vsdx') return (await import('./vsdx')).parseVsdx(bytes);
   if (ANYDOC_EXTS.has(ext)) return anydocThenTika(bytes, ext);
   // Tier 2: what only Tika reads. Lazy import keeps the fetch +

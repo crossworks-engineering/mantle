@@ -1,10 +1,12 @@
 # Deploying Mantle to production (Docker Hub → VPS)
 
 The production stack is `docker-compose.yml` plus `docker-compose.client.yml`:
-published images, a migrate gate, healthchecks, restart policies, Tika and a
-headless browser for documents, an always-on Tailscale sidecar (idle until you
+published images, a migrate gate, healthchecks, restart policies, a headless
+browser for PDF export, an always-on Tailscale sidecar (idle until you
 activate it from Settings → Network), and opt-in profiles for the local
-embedder (Ollama), CLI sandboxes and the media sidecar. This runbook covers the **build → push → deploy**
+embedder (Ollama), CLI sandboxes, the media sidecar and the Tika add-on
+(documents are read in-process; Tika is only for old Visio `.vsd` files and
+as a second reader, see docs/file-ingestion.md). This runbook covers the **build → push → deploy**
 loop and the **one-time data migration** from your dev brain.
 
 Companion: [`docker-compose.yml`](../docker-compose.yml) header comments,
@@ -45,8 +47,8 @@ Numbers from the author's production box (Contabo, **6 vCPU / 12 GB RAM /
 runs 23 of the 26 defined services plus the client container): it idled at
 **~2.5 GB RAM** total and **<5% CPU**; Ollama loads the embedder on demand (idle
 ~40 MB, ~1 GB while embedding); the `mantle-server` image is ~1.7 GB plus the infra
-images (Postgres, RustFS, Tika, the browser, Caddy; Ollama only with the
-`local-embedder` profile). What actually spikes a small
+images (Postgres, RustFS, the browser, Caddy; Ollama only with the
+`local-embedder` profile, Tika only with the `tika` profile). What actually spikes a small
 box is not steady state; it's two specific events:
 
 1. **`next build`** during a **build-on-VPS** deploy (multi-GB RSS for
@@ -58,7 +60,7 @@ box is not steady state; it's two specific events:
 | Profile                                                                             | vCPU | RAM   | Disk  | Notes                                                                                                                                                                                                                |
 | ----------------------------------------------------------------------------------- | ---- | ----- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Minimum** (registry-pull deploys)                                                 | 2    | 4 GB  | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong.                                                                                                         |
-| **Brain-core** (`install.sh --core`, online embeddings)                             | 2    | 4 GB  | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + doc helpers (8 of the 26 defined services; `--helpers` re-adds tika + the PDF browser). See docs/self-hosting.md "Brain-core shape". |
+| **Brain-core** (`install.sh --core`, online embeddings)                             | 2    | 4 GB  | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + doc helpers (8 of the 26 defined services; `--helpers` re-adds the PDF browser). See docs/self-hosting.md "Brain-core shape". |
 | **Recommended** (build-on-VPS, only if you build your own image on the box; see §2) | 4    | 8 GB  | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache, run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB).                                             |
 | **Reference** (author's prod)                                                       | 6    | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes).                                                                                                                 |
 

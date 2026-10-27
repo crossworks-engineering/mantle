@@ -25,6 +25,48 @@ describe('htmlToText', () => {
   it('drops control characters from numeric references', () => {
     expect(htmlToText('<p>a&#0;b&#7;c</p>')).toBe('abc');
   });
+
+  it('keeps a stray < as text and drops CDATA markers, PIs and the doctype', () => {
+    expect(htmlToText('<!DOCTYPE html><?php x ?><p>a < b, 3<4</p><![CDATA[raw]]>')).toBe(
+      'a < b, 3<4\nraw',
+    );
+  });
+
+  it('drops an unclosed script to the end, as a browser does', () => {
+    expect(htmlToText('<p>kept</p><script>var x = "<p>gone</p>";')).toBe('kept');
+  });
+
+  it('keeps the text between scripts when each one closes', () => {
+    expect(htmlToText('<SCRIPT>a</script >one<script/>two<Script>b</SCRIPT>')).toBe('onetwo');
+  });
+});
+
+/** 5 MB of each shape that made the old lazy regexes rescan the rest of the
+ *  page per occurrence (128 KB of `<?` took 23.5 s). */
+describe('htmlToText on hostile input', () => {
+  const FIVE_MB = 5 * 1024 * 1024;
+  const fill = (unit: string) => unit.repeat(Math.ceil(FIVE_MB / unit.length));
+  const shapes: Record<string, string> = {
+    'unclosed processing instructions': fill('<?'),
+    'unclosed comments': fill('<!--'),
+    'unclosed CDATA': fill('<![CDATA['),
+    'scripts that never close': fill('<script>x'),
+    'styles that never close': `${fill('<style>')}`,
+    'tags that never end': fill('<a '),
+    'closing tags that never end': fill('</a'),
+    'nested unclosed drops': fill('<svg><head><iframe>'),
+    'entity-like runs': fill('&aaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+    'numeric entity runs': fill('&#99999999999999999999'),
+    'whitespace runs': fill(' \t\xa0'),
+    'many short tags': fill('<b>x</b>'),
+  };
+  for (const [name, html] of Object.entries(shapes)) {
+    it(`reads ${name} in well under 500 ms`, () => {
+      const start = performance.now();
+      htmlToText(html);
+      expect(performance.now() - start).toBeLessThan(500);
+    });
+  }
 });
 
 describe('xmlToText', () => {

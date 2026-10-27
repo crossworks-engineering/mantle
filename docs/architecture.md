@@ -1823,7 +1823,7 @@ mantle/
 ├── infra/postgres/init/ # SQL run at first container boot
 ├── scripts/             # up.sh — only script that ships now
 ├── docs/                # this file + memory.md + ai-workers.md + others
-├── docker-compose.dev.yml   # postgres + rustfs + tika (dev, used by `pnpm start`)
+├── docker-compose.dev.yml   # postgres + rustfs, tika opt-in (dev, used by `pnpm start`)
 └── docker-compose.yml       # full production stack (Linux): built app images + bundled embedder
 ```
 
@@ -1853,7 +1853,8 @@ package; `pnpm-workspace.yaml` declares them.
 2. Verifies `server/web/.env.local` exists. Bails with the env vars you need
    to fill in.
 3. `docker compose -f docker-compose.dev.yml up -d --wait`, postgres +
-   rustfs (the object store) + tika, health-checked.
+   rustfs (the object store), health-checked. Tika is an opt-in add-on
+   (`--profile tika`); documents are read in-process without it.
 4. `pnpm -C packages/storage objectstore:ensure`, creates the `mantle` bucket
    if it is missing, with the `.env.local` credentials (plain S3 CreateBucket,
    no vendor CLI). Idempotent.
@@ -1879,7 +1880,7 @@ Granular escape hatches in `package.json`:
 | `pnpm stop`       | Stop infra (keeps data)                                   |
 | `pnpm reset`      | Wipe the dev brain + rebuild from scratch (asks first)    |
 | `pnpm infra:up`   | Infra only                                                |
-| `pnpm infra:logs` | Tail postgres + object store + tika                       |
+| `pnpm infra:logs` | Tail postgres + object store (+ tika when on)             |
 | `pnpm infra:psql` | `docker exec -it mantle_dev_pg psql`                      |
 | `pnpm db:migrate` | Drizzle migrate                                           |
 | `pnpm db:studio`  | Drizzle Studio (DB browser at localhost:4983)             |

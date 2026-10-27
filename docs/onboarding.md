@@ -317,13 +317,15 @@ container on stdin as `password=...` and `openrouter_key=...` lines
 failing key stops the run with exit 1 instead of finishing half way. Inside a
 checkout the same wizard is `pnpm -C server/web onboard`.
 
-A brain-core box sheds Tika on purpose. Compose passes the box's
+Tika is an opt-in add-on on every shape (the `tika` compose profile):
+documents are read in-process without it. Compose passes the box's
 `COMPOSE_FILE` and `COMPOSE_PROFILES` to web (as `MANTLE_COMPOSE_FILE` and
-`MANTLE_COMPOSE_PROFILES`), and web derives the shape from them on every
-start (`server/web/lib/compose-shape.ts`): on a core box WITHOUT the
-`helpers` profile, the wizard's stack check (both wizards) reports a missing
-Tika as optional instead of blocking. Everywhere else a missing Tika still
-fails the check.
+`MANTLE_COMPOSE_PROFILES`), and the updater writes the live list to
+`services.json`; web reads that first (`@mantle/config` `tikaRuns`, and
+`server/web/lib/compose-shape.ts`). On a box WITHOUT the `tika` profile the
+wizard's stack check (both wizards) reports Tika as off and optional, never
+blocking. Only a box that turned the profile on fails the check when Tika
+does not answer.
 
 Not covered: the mobile app has no wizard screens; a lost headless owner
 password has no terminal reset yet.

@@ -4,8 +4,10 @@
  * the sandbox tools, video_ingest, the CAD render path, the agent tool list).
  * Two more services carry no token and gate no tool, but are switched the
  * same way from Settings > Services: the bundled local embedder (profile
- * `local-embedder`) and, on a core box only, the doc helpers (Tika and the
- * PDF browser, profile `helpers`). See the end of this module.
+ * `local-embedder`) and, on a core box only, the doc helpers (the PDF
+ * browser, profile `helpers`). See the end of this module. The Tika add-on
+ * is read from the same sources (its profile is `tika`, on every shape; see
+ * {@link tikaRuns}), but is switched in the box's .env, not on that screen.
  *
  * Sandboxes and media are compose PROFILES. Before this module, "on" meant "the
  * bearer token is in this container's env", which is wrong twice over: a
@@ -196,13 +198,27 @@ function activeProfiles(): string[] | null {
   return fromCompose === undefined ? null : splitProfiles(fromCompose);
 }
 
-/** Do the doc helpers (Tika, the PDF browser) run? Always on the full shape:
+/** Do the doc helpers (the PDF browser) run? Always on the full shape:
  *  they have no profile there. On a core box only with the `helpers` profile
  *  (or `full`, which a core is not meant to use). */
 export function helpersRun(): boolean {
   if (!coreShape()) return true;
   const profiles = activeProfiles() ?? [];
   return profiles.includes('helpers') || profiles.includes('full');
+}
+
+/**
+ * Does the Tika add-on run on this box? It is opt-in on every shape: the
+ * `tika` compose profile, read live from services.json, else from the
+ * profiles compose gave this container. A process outside compose (dev,
+ * tests) has neither, and TIKA_URL alone decides. Without TIKA_URL it never
+ * runs. No network call: an add-on that is off is never dialled, so an
+ * anydoc failure keeps its own error instead of waiting on a DNS miss.
+ */
+export function tikaRuns(): boolean {
+  if (!env('TIKA_URL')?.trim()) return false;
+  const profiles = activeProfiles();
+  return profiles === null || profiles.includes('tika');
 }
 
 /** Can Settings > Services switch this service on THIS box? The helpers only

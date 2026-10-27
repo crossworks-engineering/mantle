@@ -662,12 +662,13 @@ export type SystemHealth = {
     attachmentBytes: number | null;
     filesDisk: DiskInfo | null;
   };
-  /** Tier-2 document parser fallback (.odt / .pptx / .doc / .rtf / .epub /
-   *  …) — sibling docker service. `up: false` means the fallback path
-   *  degrades cleanly to `no_text_layer` on every new ingest of those
-   *  formats; in-process parsers (pdf/docx/xlsx/text) keep working. */
+  /** The Tika add-on: an opt-in sibling docker service (the `tika` compose
+   *  profile), the only reader for old Visio `.vsd` files and the second try
+   *  for a legacy document the in-process reader cannot open. `up: null`
+   *  means the add-on is off on this box, the normal state (render it as
+   *  off, not as a fault); `up: false` means it is on but not answering. */
   tika: {
-    up: boolean;
+    up: boolean | null;
     version: string | null;
   };
   /** The browser sidecar (browserless/chromium) — the Pages → PDF export

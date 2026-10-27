@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
-# Bring up Mantle dev infra (postgres + object store + tika), apply migrations, create
+# Bring up Mantle dev infra (postgres + object store), apply migrations, create
 # the pg-boss schema, then run the dev servers. Idempotent — safe to run on a
 # clean machine or against an already-running stack.
 #
@@ -64,7 +64,7 @@ EOF
   exit 1
 fi
 
-echo "→ Bringing up postgres + object store + tika (docker-compose.dev.yml)…"
+echo "→ Bringing up postgres + object store (docker-compose.dev.yml; Tika only with --profile tika)…"
 # Via the wrapper: the stack (and its data) belongs to the ORIGINAL clone,
 # even when this script is invoked from a worktree. The dev SERVERS below
 # still run from this tree — you want your branch's code against the one

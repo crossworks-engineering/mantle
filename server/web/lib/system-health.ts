@@ -2,7 +2,7 @@ import os from 'node:os';
 import { statfs } from 'node:fs/promises';
 import si from 'systeminformation';
 import { db, dbRoleMode, sql, systemPoolRole } from '@mantle/db';
-import { filesRoot, mediaSidecarHealth, tikaVersion } from '@mantle/files';
+import { filesRoot, mediaSidecarHealth, tikaConfigured, tikaVersion } from '@mantle/files';
 import { sandboxdHealth } from './sandboxd';
 import { bucketReachable } from '@mantle/storage';
 import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
@@ -221,7 +221,8 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       // tikaVersion is itself never-throws (returns null on any failure),
       // so the probe wrapper is mostly belt-and-braces here — the timeout
       // still applies if the wrapper hangs longer than expected.
-      probe('tika', () => tikaVersion(1_500)),
+      // Off (the add-on's profile is not on) is not probed: up is null.
+      probe('tika', () => (tikaConfigured() ? tikaVersion(1_500) : Promise.resolve(null))),
       // browserHealth (PDF sidecar) is likewise never-throws; wrapper bounds it.
       probe('browser', () => browserHealth(1_500)),
       // embedderHealth is likewise never-throws; the wrapper just bounds it. A
@@ -273,13 +274,17 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       attachmentBytes: attBytes,
       filesDisk: disk,
     },
-    tika: {
-      // tikaVersion returns null on down/timeout/non-2xx/empty; the probe
-      // wrapper also returns null on its own timeout. Either way, no version
-      // string ⇒ Tika is unreachable from the web process's point of view.
-      up: typeof tikaVer === 'string' && tikaVer.length > 0,
-      version: typeof tikaVer === 'string' ? tikaVer : null,
-    },
+    tika: tikaConfigured()
+      ? {
+          // tikaVersion returns null on down/timeout/non-2xx/empty; the probe
+          // wrapper also returns null on its own timeout. Either way, no
+          // version string means the add-on is on but not answering.
+          up: typeof tikaVer === 'string' && tikaVer.length > 0,
+          version: typeof tikaVer === 'string' ? tikaVer : null,
+        }
+      : // The add-on is off on this box (the usual case): neither up nor
+        // down, like sandboxes and media without their profiles.
+        { up: null, version: null },
     // probe() returns null on its own timeout — treat that as sidecar-down
     // (BROWSER_WS_ENDPOINT unset is reported by browserHealth itself as up:null).
     browser: browserH ?? { up: false, version: null },

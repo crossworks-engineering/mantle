@@ -40,17 +40,75 @@
  * `.xlsb` (the largest spreadsheet corpus is 60 `.xlsx` + 13 `.xlsm`). If a real
  * one ever lands, this comment is the record of exactly what degrades.
  *
- * Never-throws, matching `./tika.ts`: any failure — Tika down, unreadable
- * bytes, no tables in the output — returns `null`, and the caller degrades to
- * whatever it would have done for an unreadable file.
+ * ## Size: refused before anything is built, and read off the main thread
+ *
+ * A rendering is a full rectangle. A workbook holding only A1 and GR10000
+ * renders as 10,000 x 200 cells, almost all empty, and rebuilding that with
+ * exceljs took 18.7 s and 1.39 GB on the server's own thread. So:
+ *
+ *   - a file that is really OOXML (an `.xlsx` renamed `.xls`, which Excel
+ *     itself opens without complaint) is not converted at all: it goes to
+ *     the ordinary exceljs path, which reads only the cells present and
+ *     has its own caps;
+ *   - each sheet's rectangle is checked against {@link MAX_LEGACY_CELLS}
+ *     before a row is copied out, and a sheet past the budget is refused by
+ *     name (see {@link LegacyConversion});
+ *   - the anydoc read and the rebuild run in a worker thread with a heap and
+ *     time limit (./isolate.ts).
+ *
+ * Unreadable bytes, Tika down, no tables in the output: `null`, and the
+ * caller degrades to whatever it would have done for an unreadable file. A
+ * size limit throws a {@link DocumentLimitError} instead, so the reason is
+ * recorded rather than looking like an unreadable file.
  */
 
 import ExcelJS from 'exceljs';
 import { SaxesParser } from 'saxes';
-import { parseTikaBytes } from './tika';
+import type { RefusedSheet } from './anydoc';
+import { DocumentLimitError, isDocumentLimitError } from './document-limit';
+import { LEGACY_SHEET_EXTS } from './slug';
+import { parseTikaBytes, tikaConfigured } from './tika';
 
-/** Extensions exceljs cannot read, which this module converts first. */
-const LEGACY_SHEET_EXTS = new Set<string>(['xls', 'xlsb']);
+/** Cells (rows x widest row, empty ones included) a legacy workbook may
+ *  rebuild to, over all its sheets. 1,000,000 is 1,000 rows x 1,000 columns
+ *  or 100,000 x 10: past the 5,000-row text cap (./xlsx.ts) and past what
+ *  a person reviews as a table, and inside the read's heap limit with room
+ *  to spare (exceljs takes about 200 bytes a cell). */
+export const MAX_LEGACY_CELLS = 1_000_000;
+
+/** A converted workbook, and the sheets left out of it for their size. */
+export type LegacyConversion = { xlsx: Buffer; refused: RefusedSheet[] };
+
+/** True when the bytes are an OOXML workbook (`.xlsx`/`.xlsm`): a zip whose
+ *  directory names `xl/workbook.xml`. An `.xlsb` is a zip too, but its
+ *  workbook part is `xl/workbook.bin`, so it is not matched. */
+export function isOoxmlWorkbook(bytes: Buffer): boolean {
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === 0x50 &&
+    bytes[1] === 0x4b &&
+    bytes[2] === 0x03 &&
+    bytes[3] === 0x04 &&
+    bytes.includes('xl/workbook.xml')
+  );
+}
+
+/** One line per refused sheet, for the note and the skip reason. */
+export function describeRefused(refused: RefusedSheet[]): string {
+  return refused
+    .map(
+      (r) =>
+        `sheet "${r.name}" (${r.rows.toLocaleString('en-US')} rows x ${r.cols.toLocaleString('en-US')} columns)`,
+    )
+    .join(', ');
+}
+
+function refusedError(refused: RefusedSheet[]): DocumentLimitError {
+  return new DocumentLimitError(
+    'too_large',
+    `The workbook is too large to read: ${describeRefused(refused)} ${refused.length === 1 ? 'is' : 'are'} past the ${MAX_LEGACY_CELLS.toLocaleString('en-US')}-cell limit for a legacy spreadsheet. Save it as .xlsx to read it in full.`,
+  );
+}
 
 /** True when this extension needs converting before the exceljs path. */
 export function isLegacySheetExt(ext: string): boolean {
@@ -59,6 +117,28 @@ export function isLegacySheetExt(ext: string): boolean {
 
 /** One sheet lifted out of Tika's XHTML: a name and a rectangle of strings. */
 type LegacySheet = { name: string; rows: string[][] };
+
+/** Keep the sheets that fit the cell budget, in order; refuse the rest. */
+function withinBudget(
+  sheets: LegacySheet[],
+  refused: RefusedSheet[] = [],
+): { kept: LegacySheet[]; refused: RefusedSheet[] } {
+  let budget = MAX_LEGACY_CELLS;
+  const kept: LegacySheet[] = [];
+  const out = [...refused];
+  for (const sheet of sheets) {
+    let cols = 0;
+    for (const row of sheet.rows) cols = Math.max(cols, row.length);
+    const cells = sheet.rows.length * cols;
+    if (cells > budget) {
+      out.push({ name: sheet.name, rows: sheet.rows.length, cols });
+      continue;
+    }
+    budget -= cells;
+    kept.push(sheet);
+  }
+  return { kept, refused: out };
+}
 
 /**
  * Strip Tika's `<head>` and any control-character references.
@@ -169,26 +249,94 @@ function sheetsFromXhtml(xhtml: string): LegacySheet[] {
   return sheets.filter((s) => s.rows.some((r) => r.some((c) => c !== '')));
 }
 
-/** The sheets as anydoc reads them, empty sheets dropped; `[]` when anydoc
- *  cannot read the file (an Excel 2007 beta `.xlsb`, a corrupt record). */
-async function sheetsFromAnydoc(bytes: Buffer): Promise<LegacySheet[]> {
-  try {
-    const { anydocSheets } = await import('./anydoc');
-    const sheets = await anydocSheets(bytes, 'xls');
-    return sheets.filter((s) => s.rows.some((r) => r.some((c) => c !== '')));
-  } catch {
-    return [];
+/** Drop the sheets with no text in any cell. */
+function nonEmpty(sheets: LegacySheet[]): LegacySheet[] {
+  return sheets.filter((s) => s.rows.some((r) => r.some((c) => c !== '')));
+}
+
+/** Rebuild the kept sheets as an `.xlsx`; `null` when none is left. Throws
+ *  the size refusal when sheets were read but every one was refused. */
+async function rebuild(
+  kept: LegacySheet[],
+  refused: RefusedSheet[],
+): Promise<LegacyConversion | null> {
+  if (kept.length === 0) {
+    if (refused.length > 0) throw refusedError(refused);
+    return null;
   }
+  const wb = new ExcelJS.Workbook();
+  for (const sheet of kept) {
+    // Excel caps sheet names at 31 chars and forbids \ / ? * [ ] :
+    const name = (sheet.name || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Sheet';
+    const ws = wb.addWorksheet(name);
+    for (const row of sheet.rows) {
+      ws.addRow(row.map(numericOrText));
+    }
+  }
+  return { xlsx: Buffer.from(await wb.xlsx.writeBuffer()), refused };
 }
 
 /**
- * Convert legacy spreadsheet bytes to a real `.xlsx` buffer, or `null` when
- * the file cannot be converted.
+ * Refuse a legacy workbook whose sheets DECLARE more than the cell budget,
+ * from the file's own records, before anydoc lays anything out
+ * (./sheet-extent.ts). anydoc cannot read part of a workbook, so one sheet
+ * past the budget refuses the file. Both anydoc reads of a legacy sheet (its
+ * text here, its pictures in ./embedded-images.ts) call this first.
+ */
+export async function assertLegacyExtentWithinBudget(bytes: Buffer): Promise<void> {
+  const { legacySheetExtents } = await import('./sheet-extent');
+  const extents = await legacySheetExtents(bytes);
+  if (!extents) return;
+  let budget = MAX_LEGACY_CELLS;
+  const over: RefusedSheet[] = [];
+  for (const e of extents) {
+    const cells = e.rows * e.cols;
+    if (cells > budget) over.push(e);
+    else budget -= cells;
+  }
+  if (over.length > 0) throw refusedError(over);
+}
+
+/** The anydoc half of the conversion, run in the parse worker: the sheets
+ *  as anydoc reads them, checked against the cell budget (declared, then
+ *  laid out) before any row is copied, then rebuilt. `null` when anydoc cannot read the file (an Excel
+ *  2007 beta `.xlsb`, a corrupt record); a size limit throws. */
+export async function legacySheetInProcess(bytes: Buffer): Promise<LegacyConversion | null> {
+  await assertLegacyExtentWithinBudget(bytes);
+  let read;
+  try {
+    const { anydocSheets } = await import('./anydoc');
+    read = await anydocSheets(bytes, 'xls', MAX_LEGACY_CELLS);
+  } catch (err) {
+    if (isDocumentLimitError(err)) throw err;
+    return null;
+  }
+  const { kept, refused } = withinBudget(nonEmpty(read.sheets), read.refused);
+  return rebuild(kept, refused);
+}
+
+/** The Tika half, run in the parse worker: Tika's XHTML rendering, under the
+ *  same budget, rebuilt. */
+export async function legacySheetFromXhtmlInProcess(
+  xhtml: string,
+): Promise<LegacyConversion | null> {
+  const { kept, refused } = withinBudget(sheetsFromXhtml(xhtml));
+  return rebuild(kept, refused);
+}
+
+/**
+ * Convert legacy spreadsheet bytes to a real `.xlsx` buffer, with the sheets
+ * refused for their size, or `null` when the file cannot be converted.
  *
- * anydoc reads the sheets in-process first. Only a file it cannot read goes
- * to Tika's XHTML, and only on a box that runs the Tika add-on (without it
- * `parseTikaBytes` answers `''` at once). `mimeType` should be the legacy type
- * for the extension (see `mimeForExt`) so Tika does not have to guess.
+ * An OOXML workbook under a legacy name comes back as it is (it already IS
+ * an `.xlsx`). Otherwise anydoc reads the sheets in a worker first. Only a
+ * file it cannot read goes to Tika's XHTML, and only on a box that runs the
+ * Tika add-on. `mimeType` should be the legacy type for the extension (see
+ * `mimeForExt`) so Tika does not have to guess.
+ *
+ * Throws a {@link DocumentLimitError} when the size limits stopped every
+ * route (Tika, when on, is still asked first: it reads such a file in its
+ * own heap).
  *
  * Cells are written as numbers where the rendered text is unambiguously
  * numeric and as strings otherwise — that keeps a numeric column numeric
@@ -200,25 +348,26 @@ async function sheetsFromAnydoc(bytes: Buffer): Promise<LegacySheet[]> {
 export async function convertLegacySheetToXlsx(
   bytes: Buffer,
   mimeType: string,
-): Promise<Buffer | null> {
-  let sheets = await sheetsFromAnydoc(bytes);
-  if (sheets.length === 0) {
-    const xhtml = await parseTikaBytes(bytes, { mimeType, accept: 'text/html' });
-    if (!xhtml) return null;
-    sheets = sheetsFromXhtml(xhtml);
+): Promise<LegacyConversion | null> {
+  if (isOoxmlWorkbook(bytes)) return { xlsx: bytes, refused: [] };
+  const { runIsolated } = await import('./isolate');
+  let limit: unknown = null;
+  try {
+    const converted = await runIsolated('legacySheet', [bytes]);
+    if (converted) return converted;
+  } catch (err) {
+    if (!isDocumentLimitError(err)) throw err;
+    limit = err;
   }
-  if (sheets.length === 0) return null;
-
-  const wb = new ExcelJS.Workbook();
-  for (const sheet of sheets) {
-    // Excel caps sheet names at 31 chars and forbids \ / ? * [ ] :
-    const name = (sheet.name || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Sheet';
-    const ws = wb.addWorksheet(name);
-    for (const row of sheet.rows) {
-      ws.addRow(row.map(numericOrText));
+  if (tikaConfigured()) {
+    const xhtml = await parseTikaBytes(bytes, { mimeType, accept: 'text/html' });
+    if (xhtml) {
+      const converted = await runIsolated('legacySheetFromXhtml', [xhtml]);
+      if (converted) return converted;
     }
   }
-  return Buffer.from(await wb.xlsx.writeBuffer());
+  if (limit) throw limit;
+  return null;
 }
 
 /** `"12.5"` → `12.5`; anything else stays the string (empty → null). */

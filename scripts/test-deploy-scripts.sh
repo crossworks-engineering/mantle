@@ -2210,7 +2210,7 @@ svc_run
 check "embedder off: profile dropped, ollama stopped and removed, the model volume untouched" sh -c "
   grep -qx 'COMPOSE_PROFILES=' '$T/stack/.env' && grep -qE 'profile local-embedder stop ollama$' '$T/calls' && grep -qE 'profile local-embedder rm -f ollama$' '$T/calls' && ! grep -q 'volume' '$T/calls'"
 
-# ── the helpers: a core box only, two containers ──
+# ── the helpers: a core box only, the PDF browser (Tika has its own tika profile) ──
 svc_case helpfull '{"service":"helpers","enable":false}'
 svc_run
 check "helpers on a full box: refused, nothing to switch" grep -q 'the helpers always run on this box' "$T/sig/service-status.json"
@@ -2221,15 +2221,15 @@ printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/
 svc_run
 check "helpers on a core box: status done" grep -q '"phase":"done","service":"helpers","enable":true.*"ok":true' "$T/sig/service-status.json"
 check "helpers on: the profile is added" grep -qx 'COMPOSE_PROFILES=local-embedder,helpers' "$T/stack/.env"
-check "helpers on: pulls and starts both, as two arguments" sh -c "
-  grep -qE 'profile helpers pull tika browser$' '$T/calls' && grep -qE 'profile helpers up -d --no-deps tika browser$' '$T/calls'"
-check "helpers on: waits on both containers" sh -c "grep -q 'inspect .*mantle_tika\$' '$T/calls' && grep -q 'inspect .*mantle_browser\$' '$T/calls'"
+check "helpers on: pulls and starts the browser only, never tika" sh -c "
+  grep -qE 'profile helpers pull browser$' '$T/calls' && grep -qE 'profile helpers up -d --no-deps browser$' '$T/calls' && ! grep -q 'tika' '$T/calls'"
+check "helpers on: waits on the browser container, not mantle_tika" sh -c "grep -q 'inspect .*mantle_browser\$' '$T/calls' && ! grep -q 'mantle_tika' '$T/calls'"
 svc_case helpoff '{"service":"helpers","enable":false}'
 printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
 svc_run
-check "helpers off: both stopped and removed, profile dropped" sh -c "
-  grep -qE 'profile helpers stop tika browser$' '$T/calls' && grep -qE 'profile helpers rm -f tika browser$' '$T/calls' && grep -qx 'COMPOSE_PROFILES=' '$T/stack/.env'"
+check "helpers off: the browser stopped and removed, tika untouched, profile dropped" sh -c "
+  grep -qE 'profile helpers stop browser$' '$T/calls' && grep -qE 'profile helpers rm -f browser$' '$T/calls' && ! grep -q 'tika' '$T/calls' && grep -qx 'COMPOSE_PROFILES=' '$T/stack/.env'"
 svc_case helpfullprof '{"service":"helpers","enable":false}'
 printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=full,helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"

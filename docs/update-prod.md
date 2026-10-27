@@ -1361,6 +1361,36 @@ nothing). Nothing to do before the roll.
   Going below 0330 as well: this revert first (0330's reads the bridge's
   owner), then 0330's (below).
 
+## Rolling to anydoc: Tika becomes an opt-in add-on
+
+No migration. Documents (legacy Office, OpenDocument, RTF, EPUB, the legacy
+sheets, HTML, XML and `.vsdx`) are read in the app's own processes, and Tika
+moves behind its own `tika` compose profile on every shape. The roll does
+not start Tika on a box without that profile, and it does not stop one that
+is already running either: an existing `mantle_tika` keeps running, outside
+the stack's profiles, until it is dealt with. The app makes no Tika call
+without the profile, so a leftover container is unused memory, not a fault.
+
+Per box, after the roll:
+
+```sh
+docker ps --filter name=mantle_tika --format '{{.Names}} {{.Status}}'
+```
+
+- **Keep Tika** on a box that holds old Visio `.vsd` files (nothing else
+  reads them) or large picture-heavy legacy decks and documents (anydoc
+  refuses a file whose embedded media pass its budget, and records the
+  skip; Tika reads such a file's text and pictures). Add `tika` to
+  `COMPOSE_PROFILES` in `.env` (comma-separated with any profile already
+  there), then `docker compose up -d`. The Dashboard pill turns green; a
+  red one means the profile is on and Tika is not answering.
+- **Drop Tika** everywhere else: `docker compose stop tika && docker
+  compose rm -f tika`. The Dashboard pill reads off (grey), not down.
+
+Files already indexed are not read again by the roll. A file the in-process
+readers refuse for its size gets a `document_too_large` skip with the
+reason, and is not retried until it changes.
+
 ## Rollback
 
 ```bash

@@ -20,12 +20,54 @@
 import { SaxesParser } from 'saxes';
 
 /** Elements whose content is never readable text. */
-const DROPPED = ['script', 'style', 'noscript', 'template', 'svg', 'head', 'iframe', 'object'];
+const DROPPED = new Set([
+  'script',
+  'style',
+  'noscript',
+  'template',
+  'svg',
+  'head',
+  'iframe',
+  'object',
+]);
 
 /** Elements that end a line of text. A table row ends one at its close only,
  *  so rows are not separated by an empty line. */
-const BLOCK =
-  'address|article|aside|blockquote|br|dd|div|dl|dt|figcaption|figure|footer|form|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|tbody|thead|tfoot|ul';
+const BLOCK = new Set([
+  'address',
+  'article',
+  'aside',
+  'blockquote',
+  'br',
+  'dd',
+  'div',
+  'dl',
+  'dt',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'header',
+  'hr',
+  'li',
+  'main',
+  'nav',
+  'ol',
+  'p',
+  'pre',
+  'section',
+  'table',
+  'tbody',
+  'thead',
+  'tfoot',
+  'ul',
+]);
 
 const NAMED_ENTITIES: Record<string, string> = {
   amp: '&',
@@ -34,21 +76,21 @@ const NAMED_ENTITIES: Record<string, string> = {
   quot: '"',
   apos: "'",
   nbsp: ' ',
-  ndash: '–',
-  mdash: '—',
-  hellip: '…',
-  copy: '©',
-  reg: '®',
-  trade: '™',
-  lsquo: '‘',
-  rsquo: '’',
-  ldquo: '“',
-  rdquo: '”',
-  bull: '•',
-  middot: '·',
-  deg: '°',
-  euro: '€',
-  pound: '£',
+  ndash: '\u2013',
+  mdash: '\u2014',
+  hellip: '\u2026',
+  copy: '\u00a9',
+  reg: '\u00ae',
+  trade: '\u2122',
+  lsquo: '\u2018',
+  rsquo: '\u2019',
+  ldquo: '\u201c',
+  rdquo: '\u201d',
+  bull: '\u2022',
+  middot: '\u00b7',
+  deg: '\u00b0',
+  euro: '\u20ac',
+  pound: '\u00a3',
 };
 
 /** Decode character references. An unknown name is left as written. */
@@ -75,23 +117,130 @@ function tidy(text: string): string {
     .trim();
 }
 
-/** Readable text from an HTML page (or any tag soup). */
+/**
+ * `indexOf` for a scanner that only moves forward. Each search starts at or
+ * after the last one, so a found position stays the answer until the scanner
+ * passes it, and a miss stays a miss for the rest of the text. Every needle
+ * is then searched across the text at most once, which is what keeps the
+ * scan linear on hostile input (a page of `<?` with no `?>`, or of `<script>`
+ * with no close, used to cost a full rescan per occurrence: 128 KB of `<?`
+ * took 23 s with the lazy regexes this replaces).
+ */
+function forwardFinder(find: (from: number) => number): (from: number) => number {
+  let last = -2;
+  return (from) => {
+    if (last === -1 || last >= from) return last;
+    last = find(from);
+    return last;
+  };
+}
+
+/** True for a character that can start an element name. */
+function isNameStart(c: number): boolean {
+  return (c >= 0x61 && c <= 0x7a) || (c >= 0x41 && c <= 0x5a);
+}
+
+/** True for a character inside an element name (`h1`, `o:p`, `my-tag`). */
+function isNameChar(c: number): boolean {
+  return isNameStart(c) || (c >= 0x30 && c <= 0x39) || c === 0x3a || c === 0x2d || c === 0x5f;
+}
+
+/**
+ * Readable text from an HTML page (or any tag soup). One forward pass:
+ * comments, the doctype and processing instructions go; CDATA keeps its
+ * text; the DROPPED elements go with their content; block elements become
+ * line breaks, a row end a line break and a cell a tab; every other tag goes.
+ * A `<` that does not start a tag is text. Linear in the input.
+ */
 export function htmlToText(html: string): string {
-  let text = html
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/<!doctype[^>]*>/gi, ' ')
-    .replace(/<\?[\s\S]*?\?>/g, ' ');
-  for (const tag of DROPPED) {
-    text = text.replace(new RegExp(`<${tag}\\b[\\s\\S]*?</${tag}\\s*>`, 'gi'), ' ');
+  const out: string[] = [];
+  const gt = forwardFinder((from) => html.indexOf('>', from));
+  const commentEnd = forwardFinder((from) => html.indexOf('-->', from));
+  const cdataEnd = forwardFinder((from) => html.indexOf(']]>', from));
+  const piEnd = forwardFinder((from) => html.indexOf('?>', from));
+  const closers = new Map<string, (from: number) => number>();
+  const closerOf = (name: string) => {
+    let f = closers.get(name);
+    if (!f) {
+      const re = new RegExp(`</${name}\\s*>`, 'gi');
+      f = forwardFinder((from) => {
+        re.lastIndex = from;
+        return re.exec(html) ? re.lastIndex : -1;
+      });
+      closers.set(name, f);
+    }
+    return f;
+  };
+
+  let i = 0;
+  const n = html.length;
+  while (i < n) {
+    const lt = html.indexOf('<', i);
+    if (lt === -1) {
+      out.push(html.slice(i));
+      break;
+    }
+    if (lt > i) out.push(html.slice(i, lt));
+    i = lt;
+
+    if (html.startsWith('<!--', i)) {
+      const end = commentEnd(i + 4);
+      out.push(' ');
+      i = end === -1 ? n : end + 3;
+      continue;
+    }
+    if (html.startsWith('<![CDATA[', i)) {
+      const end = cdataEnd(i + 9);
+      if (end === -1) {
+        i = n;
+      } else {
+        out.push(html.slice(i + 9, end));
+        i = end + 3;
+      }
+      continue;
+    }
+    if (html.startsWith('<?', i)) {
+      const end = piEnd(i + 2);
+      if (end !== -1) {
+        out.push(' ');
+        i = end + 2;
+        continue;
+      }
+      // An unclosed `<?` is a tag up to the next `>`, as below.
+    }
+
+    const close = html.charCodeAt(i + 1) === 0x2f; // '/'
+    const nameAt = close ? i + 2 : i + 1;
+    const first = html.charCodeAt(nameAt);
+    if (!(isNameStart(first) || first === 0x21 || first === 0x3f)) {
+      // `a < b`, `<3`, a stray `<`: text.
+      out.push('<');
+      i += 1;
+      continue;
+    }
+    const tagEnd = gt(nameAt);
+    if (tagEnd === -1) {
+      // A tag that never closes: the rest is not text.
+      break;
+    }
+    let nameEnd = nameAt;
+    while (nameEnd < tagEnd && isNameChar(html.charCodeAt(nameEnd))) nameEnd++;
+    const name = html.slice(nameAt, nameEnd).toLowerCase();
+    i = tagEnd + 1;
+
+    if (!close && DROPPED.has(name) && html.charCodeAt(tagEnd - 1) !== 0x2f) {
+      const end = closerOf(name)(i);
+      // An element that is never closed takes the rest of the page with it,
+      // as it does in a browser.
+      out.push(' ');
+      i = end === -1 ? n : end;
+      continue;
+    }
+    if (BLOCK.has(name)) out.push('\n');
+    else if (close && name === 'tr') out.push('\n');
+    else if (name === 'td' || name === 'th') out.push('\t');
   }
-  text = text
-    .replace(new RegExp(`</?(?:${BLOCK})\\b[^>]*>`, 'gi'), '\n')
-    .replace(/<\/tr\s*>/gi, '\n')
-    .replace(/<\/?(?:td|th)\b[^>]*>/gi, '\t')
-    .replace(/<[^>]*>/g, '')
-    .replace(/\r\n?/g, '\n');
-  return tidy(decodeEntities(text));
+  return tidy(decodeEntities(out.join('').replace(/\r\n?/g, '\n')));
 }
 
 /** Readable text from an XML document: each element's own text, one per line. */

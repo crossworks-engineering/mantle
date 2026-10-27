@@ -103,6 +103,12 @@ export const PREVIEWABLE_MARKDOWN_EXTS = new Set<string>(['md', 'markdown']);
  *  file anydoc cannot read. The legacy sheets (.xls/.xlsb) use anydoc too, but
  *  through ./legacy-sheet.ts, so they are not in this set. */
 export const ANYDOC_EXTS = new Set<string>(['doc', 'ppt', 'odt', 'ods', 'odp', 'rtf', 'epub']);
+/** LibreOffice native formats: text by anydoc, pictures straight from the
+ *  zip (./ooxml-media.ts). */
+export const ODF_EXTS = new Set<string>(['odt', 'ods', 'odp']);
+/** Legacy sheets exceljs cannot read: converted to `.xlsx` first, through
+ *  anydoc (./legacy-sheet.ts). */
+export const LEGACY_SHEET_EXTS = new Set<string>(['xls', 'xlsb']);
 /** Mostly tags, real content inside: tags stripped in-process (./markup.ts).
  *  `.xml` used to be unreadable (indexed by its filename alone), and as plain
  *  text the summary, embedding and chunks would all be dominated by element

@@ -130,7 +130,7 @@ export const FEATURES = {
   sandboxes: { service: 'sandboxes', doc: 'the sandboxes service (sandboxd)' },
   media: { service: 'media', doc: 'the media sidecar (video_ingest, CAD renders)' },
   localEmbedder: { service: 'local-embedder', doc: 'the bundled local embedder' },
-  docHelpers: { service: 'helpers', doc: 'Tika and the PDF browser (always on a full box)' },
+  docHelpers: { service: 'helpers', doc: 'the PDF browser (always on a full box)' },
 } as const satisfies Record<string, FeatureSpec>;
 
 export type FeatureName = keyof typeof FEATURES;

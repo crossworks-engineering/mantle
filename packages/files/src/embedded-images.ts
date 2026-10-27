@@ -12,10 +12,14 @@
  * shape, same never-throws-on-the-long-tail posture, same lazy imports so a
  * format's heavy dep only loads when that format actually shows up:
  *
- *   1. In-process, no network — docx (via mammoth's parsed AST), pptx/xlsx/
- *      ODF (they're zips; read the media parts), pdf (via pdfjs).
- *   2. Apache Tika `/unpack/all` for the legacy binaries no in-process parser
- *      handles: .doc / .ppt / .xls / .rtf / .vsd. Never-throws → [].
+ *   1. In-process, no network: docx (via mammoth's parsed AST), pptx/xlsx/
+ *      ODF (they're zips; read the media parts), pdf (via pdfjs), and, in
+ *      a worker thread (./isolate.ts), the formats anydoc reads (its
+ *      document model carries their pictures as assets) and Visio's media
+ *      parts.
+ *   2. Apache Tika `/unpack/all`, when the box runs the Tika add-on: the
+ *      second try for those when anydoc finds no picture or cannot read the
+ *      file, and the only reader for `.vsd`. Never-throws → [].
  *   3. `[]` for anything else.
  *
  * ## Document order is the product requirement, not a nicety
@@ -43,21 +47,34 @@
 
 import { createHash } from 'node:crypto';
 import { sniffImage } from './image-probe';
-import { extOf, slugifyFolder } from './slug';
+import { ANYDOC_EXTS, LEGACY_SHEET_EXTS, ODF_EXTS, TIKA_EXTS, extOf, slugifyFolder } from './slug';
 
-/** Formats whose pictures only Tika's /unpack gives: the set Tika used to
- *  read text for, minus those with an in-process image reader above. */
-const TIKA_IMAGE_EXTS = new Set<string>([
-  'doc',
-  'ppt',
-  'rtf',
-  'epub',
-  'vsd',
-  'vsdx',
-  'xlsb',
-  'xml',
-  'html',
-  'htm',
+/** Pictures from anydoc's document model: the formats it reads, less
+ *  OpenDocument, whose zip the in-process reader opens directly. */
+const ANYDOC_IMAGE_EXTS = new Set<string>(
+  [...ANYDOC_EXTS, ...LEGACY_SHEET_EXTS].filter((ext) => !ODF_EXTS.has(ext)),
+);
+/** Read in a worker thread: anydoc's pictures and Visio's media parts. */
+const ISOLATED_IMAGE_EXTS = new Set<string>([...ANYDOC_IMAGE_EXTS, 'vsdx']);
+/** Tika's /unpack: the second try for those, the only reader for TIKA_EXTS. */
+const TIKA_IMAGE_EXTS = new Set<string>([...ISOLATED_IMAGE_EXTS, ...TIKA_EXTS]);
+
+/** Every format this module takes pictures from. The extractor's image pass
+ *  and the images backfill script both read this one list. */
+export const IMAGE_BEARING_EXTS: ReadonlySet<string> = new Set<string>([
+  'docx',
+  'pdf',
+  'pptx',
+  'xlsx',
+  'xlsm',
+  ...ODF_EXTS,
+  ...TIKA_IMAGE_EXTS,
+  // DWF plot sets: one thumbnail per published sheet (marked essential, so
+  // the small-image floor doesn't drop them).
+  'dwf',
+  // DWG and DXF drawings: one essential model-space render from the sidecar.
+  'dwg',
+  'dxf',
 ]);
 
 /** Where the image sits in its source document. Which field is populated
@@ -237,8 +254,48 @@ export async function extractEmbeddedImages(
   opts?: { maxImages?: number },
 ): Promise<ExtractEmbeddedImagesResult> {
   const cap = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
-  const raw = await extractRaw(bytes, ext.toLowerCase(), { maxImages: cap });
+  const lower = ext.toLowerCase();
+  if (!ISOLATED_IMAGE_EXTS.has(lower)) {
+    if (TIKA_IMAGE_EXTS.has(lower)) {
+      return gateAndCap(await (await import('./tika')).unpackTikaImages(bytes, lower), cap);
+    }
+    return gateAndCap(await extractRaw(bytes, lower, { maxImages: cap }), cap);
+  }
+  // anydoc and the Visio media read in a worker thread, gated and capped
+  // there, so only the kept pictures cross back. A limit (a bomb, media past
+  // anydoc's budget) throws after Tika, when on, has had its try.
+  const { runIsolated } = await import('./isolate');
+  let result: ExtractEmbeddedImagesResult | null = null;
+  let failure: unknown = null;
+  try {
+    result = await runIsolated('images', [bytes, lower, cap]);
+  } catch (err) {
+    failure = err;
+  }
+  if (!result || result.candidates === 0) {
+    const { tikaConfigured, unpackTikaImages } = await import('./tika');
+    if (tikaConfigured()) {
+      const fromTika = gateAndCap(await unpackTikaImages(bytes, lower), cap);
+      if (fromTika.candidates > 0 || !failure) return fromTika;
+    }
+  }
+  if (result) return result;
+  throw failure;
+}
 
+/** {@link extractEmbeddedImages} on the calling thread, without the Tika
+ *  second try: the parse worker's job for the isolated formats. */
+export async function extractEmbeddedImagesInProcess(
+  bytes: Buffer,
+  ext: string,
+  maxImages: number,
+): Promise<ExtractEmbeddedImagesResult> {
+  const cap = Math.max(0, maxImages);
+  return gateAndCap(await extractRaw(bytes, ext.toLowerCase(), { maxImages: cap }), cap);
+}
+
+/** The gate and the per-document cap, over candidates in document order. */
+function gateAndCap(raw: EmbeddedImage[], cap: number): ExtractEmbeddedImagesResult {
   const seen = new Set<string>();
   const rejected: ExtractEmbeddedImagesResult['rejected'] = {};
   const kept: EmbeddedImage[] = [];
@@ -415,12 +472,20 @@ async function extractRaw(
   if (ext === 'dxf') {
     return (await import('./dxf')).extractDxfImages(bytes);
   }
-  // Tier 2: the legacy binaries, through Tika's /unpack. `xlsb` is a zip but
-  // an undocumented binary one, so it goes to Tika too rather than getting a
-  // bespoke reader. Tika is an opt-in add-on now; without it these give no
-  // images (their text still comes from anydoc).
-  if (TIKA_IMAGE_EXTS.has(ext)) {
-    return (await import('./tika')).unpackTikaImages(bytes, ext);
+  // Formats anydoc reads: the pictures in its document model. Only reached
+  // in the parse worker (extractEmbeddedImages sends these there).
+  if (ANYDOC_IMAGE_EXTS.has(ext)) {
+    // An .xlsx under a legacy sheet name is read as what it is, like its
+    // text (./legacy-sheet.ts): anydoc would lay out its whole used range.
+    if (LEGACY_SHEET_EXTS.has(ext)) {
+      const legacy = await import('./legacy-sheet');
+      if (legacy.isOoxmlWorkbook(bytes)) {
+        return (await import('./ooxml-media')).extractOoxmlImages(bytes, 'xlsx');
+      }
+      await legacy.assertLegacyExtentWithinBudget(bytes);
+    }
+    return (await import('./anydoc')).anydocImagesInProcess(bytes, ext);
   }
+  if (ext === 'vsdx') return (await import('./vsdx')).vsdxImagesInProcess(bytes);
   return [];
 }

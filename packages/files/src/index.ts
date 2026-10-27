@@ -26,6 +26,7 @@ export { extractPdfTextWithPassword, type PdfPasswordResult } from './pdf-passwo
 
 export { parseTikaBytes, tikaConfigured, tikaIsUp, tikaVersion } from './tika';
 export { htmlToText } from './markup';
+export { DocumentLimitError, isDocumentLimitError } from './document-limit';
 
 export {
   mediaSidecarEnabled,

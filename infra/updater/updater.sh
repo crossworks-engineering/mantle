@@ -1255,12 +1255,14 @@ service_container() {
     sandboxes) echo mantle_sandboxd ;;
     media) echo mantle_media ;;
     local-embedder) echo mantle_ollama ;;
-    helpers) echo mantle_tika ;;
+    helpers) echo mantle_browser ;;
   esac
 }
 # service_containers <name>: every container an "on" waits on to be healthy.
+# One each: the helpers profile is the PDF browser alone now (Tika has its
+# own opt-in `tika` profile, switched in .env, not here).
 service_containers() {
-  case "$1" in helpers) echo "mantle_tika mantle_browser" ;; *) service_container "$1" ;; esac
+  service_container "$1"
 }
 # service_token_var <name>: the bearer token's .env key; nothing for the
 # local embedder and the helpers, which the app reaches without one.
@@ -1380,14 +1382,14 @@ SVC_ENV_BAK=""
 SVC_ERR=""
 SVC_TOKEN_NEW=""
 
-# compose_service <name>: the compose service(s) a switch pulls, starts and
-# stops. Space-separated: the helpers are two.
+# compose_service <name>: the compose service a switch pulls, starts and
+# stops.
 compose_service() {
   case "$1" in
     sandboxes) echo sandboxd ;;
     media) echo media ;;
     local-embedder) echo ollama ;;
-    helpers) echo "tika browser" ;;
+    helpers) echo browser ;;
   esac
 }
 

@@ -8,38 +8,17 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { extOf, ensureExtractedImagesFolder, upsertFile } from '@mantle/files';
+// Formats that can carry a picture worth pulling out: one list, kept beside
+// the readers (the images backfill script reads it too). Deliberately
+// narrower than INGESTABLE_EXTS: there is no point opening a .txt looking
+// for a diagram, and every ext listed has an extractor behind it.
+import { IMAGE_BEARING_EXTS } from '@mantle/files/embedded-images';
 import { startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
 import { loadFileBytes } from './file-bytes';
 import { stepInOwnTrace } from './trace';
-
-/** Formats that can carry a picture worth pulling out. Deliberately narrower
- *  than INGESTABLE_EXTS — there is no point opening a .txt looking for a
- *  diagram, and every ext listed here has an extractor behind it. */
-const IMAGE_BEARING_EXTS = new Set([
-  'docx',
-  'pdf',
-  'pptx',
-  'xlsx',
-  'xlsm',
-  'odt',
-  'ods',
-  'odp',
-  'doc',
-  'ppt',
-  'xls',
-  'xlsb',
-  'rtf',
-  // DWF plot sets: one thumbnail per published sheet (marked essential in
-  // the extractor, so the small-image floor doesn't drop them).
-  'dwf',
-  // DWG drawings: one essential model-space render from the sidecar.
-  'dwg',
-  // DXF drawings: same single render off the same sidecar exchange.
-  'dxf',
-]);
 
 /** Tag marking a file node as derived from a document rather than uploaded.
  *  The lookup path for "show me the pictures from that manual". */
@@ -122,10 +101,27 @@ export async function maybeExtractEmbeddedImages(
 
   const { extractEmbeddedImages, buildImageTitles, buildImageFilename, buildSourceSlug } =
     await import('@mantle/files/embedded-images');
-  const result = await extractEmbeddedImages(loaded.bytes, loaded.ext, {
-    // Blank/0 on the worker means "use the built-in default", not "keep none".
-    maxImages: maxImages && maxImages > 0 ? maxImages : undefined,
-  });
+  let result: Awaited<ReturnType<typeof extractEmbeddedImages>>;
+  try {
+    result = await extractEmbeddedImages(loaded.bytes, loaded.ext, {
+      // Blank/0 on the worker means "use the built-in default", not "keep none".
+      maxImages: maxImages && maxImages > 0 ? maxImages : undefined,
+    });
+  } catch (err) {
+    // A reader that failed or was stopped by a size limit (embedded media
+    // past anydoc's budget, a bomb) leaves its reason on the trace, so a
+    // document with no pictures says why rather than looking empty.
+    await stepInOwnTrace(
+      ownerId,
+      node,
+      { name: 'extract_images', kind: 'compute', input: { filename: loaded.filename } },
+      async (h) => {
+        h.setMeta({ candidates: 0, kept: 0 });
+        h.setError(`image extraction stopped: ${errorMessage(err)}`);
+      },
+    );
+    return;
+  }
   if (result.images.length === 0) {
     // Still worth a step when there WERE candidates: "this manual produced no
     // images" should be explainable from /traces rather than mysterious.
