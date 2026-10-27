@@ -7,11 +7,10 @@
  * renders a bounded-size JPEG per image and caches it on disk, so each photo
  * pays the decode ONCE per content-version.
  *
- * Engine: `@napi-rs/canvas`, which packages/files already carries for PDF
- * rasterization — decode via loadImage, draw scaled, encode JPEG. No new
- * dependency, no system packages. HEIC goes through the existing
- * `heic-convert` transcode first (same path the vision pipeline uses), so
- * iPhone photos thumbnail like everything else.
+ * Engine: the parser service (./image-read.ts: `@napi-rs/canvas`, with HEIC
+ * through `heic-convert` first), so a decode bomb (a small file with a huge
+ * header) kills a parser job, never the web process. This module keeps the
+ * cache and the failure markers.
  *
  * Cache layout: `<filesRoot>/../file-thumbs/<sha256>.<maxDim>.jpg` — a
  * SIBLING of the files root (the retired forum-upload quarantine did the same),
@@ -26,7 +25,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { filesRoot } from './paths';
-import { transcodeImageForVision } from './transcode';
+import { isHeic } from './transcode';
 
 /** Bound the source we are willing to DECODE. A decode allocates
  *  width×height×4 bytes regardless of file size, so both dimensions are
@@ -138,25 +137,12 @@ async function renderThumbnail(
     return null;
   }
   try {
-    // HEIC/HEIF → JPEG first (canvas can't decode them); pass-through for
-    // everything else. Reuses the vision pipeline's transcode + its caps.
-    const { bytes } = await transcodeImageForVision(original, mimeType, null);
-    const { createCanvas, loadImage } = await import('@napi-rs/canvas');
-    const img = await loadImage(bytes);
-    const w = img.width;
-    const h = img.height;
-    if (!w || !h) return null;
-    const scale = Math.min(1, dim / Math.max(w, h));
-    const tw = Math.max(1, Math.round(w * scale));
-    const th = Math.max(1, Math.round(h * scale));
-    const canvas = createCanvas(tw, th);
-    const ctx = canvas.getContext('2d');
-    // JPEG has no alpha — composite transparent PNGs onto white rather than
-    // letting the encoder pick black.
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, tw, th);
-    ctx.drawImage(img, 0, 0, tw, th);
-    const jpeg = canvas.toBuffer('image/jpeg', 82);
+    const { parserThumbnail } = await import('./parser-client');
+    const jpeg = await parserThumbnail(original, isHeic(mimeType) ? 'image/heic' : mimeType, dim);
+    if (!jpeg) {
+      await markFailure(failed);
+      return null;
+    }
     await fs.mkdir(path.dirname(file), { recursive: true });
     // Write-then-rename so a concurrent request never reads a half-written
     // cache file. Collisions are benign (same content ⇒ same output).
@@ -168,7 +154,10 @@ async function renderThumbnail(
     return jpeg;
   } catch (err) {
     console.warn('[files] thumbnail render failed:', err instanceof Error ? err.message : err);
-    await markFailure(failed);
+    // A parser that is busy or restarting is not a verdict on the image: the
+    // next request tries again. Anything else holds the marker.
+    const { isParserError } = await import('./parser-client');
+    if (!(isParserError(err) && err.retryable)) await markFailure(failed);
     return null;
   }
 }

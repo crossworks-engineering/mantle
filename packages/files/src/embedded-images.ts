@@ -8,15 +8,19 @@
  * place that pulls those pictures back out, so the extractor can save them as
  * real image files the assistant can show inline in chat and in Pages.
  *
- * Mirrors `parseDocumentBytes` (./parse.ts) deliberately — same three-tier
- * shape, same never-throws-on-the-long-tail posture, same lazy imports so a
- * format's heavy dep only loads when that format actually shows up:
+ * Two halves, like the text read:
  *
- *   1. In-process, no network — docx (via mammoth's parsed AST), pptx/xlsx/
- *      ODF (they're zips; read the media parts), pdf (via pdfjs).
- *   2. Apache Tika `/unpack/all` for the legacy binaries no in-process parser
- *      handles: .doc / .ppt / .xls / .rtf / .vsd. Never-throws → [].
- *   3. `[]` for anything else.
+ *   - The READERS (./embedded-images-read.ts) open the document: docx (via
+ *     mammoth's parsed AST), pptx/xlsx/ODF and Visio (they're zips; read the
+ *     media parts, each under an inflate cap), pdf (via pdfjs), the formats
+ *     anydoc reads (its document model carries their pictures), DWF (the
+ *     CAD tier's render, or the sheet thumbnails). They run in the parser
+ *     service (server/parser) only, which gates and caps there, so only the
+ *     kept pictures come back.
+ *   - This module, which the brain imports: the types, the gate, the naming,
+ *     and {@link extractEmbeddedImages}, which asks the parser for a
+ *     document's pictures (DWG/DXF take the CAD exchange in ./dwg.ts).
+ *     Nothing here opens a document.
  *
  * ## Document order is the product requirement, not a nicety
  *
@@ -43,7 +47,7 @@
 
 import { createHash } from 'node:crypto';
 import { sniffImage } from './image-probe';
-import { extOf, slugifyFolder, TIKA_EXTS } from './slug';
+import { extOf, slugifyFolder } from './slug';
 
 /** Where the image sits in its source document. Which field is populated
  *  depends on what the format can tell us: PDFs know pages, decks know
@@ -211,10 +215,11 @@ export type ExtractEmbeddedImagesResult = {
 
 /**
  * Pull every embedded image out of a document, in reading order, gated and
- * capped. Never throws for a format we merely don't support — that's an empty
- * result, not an error — but DOES propagate a parser throwing on input it
- * claims to handle, so the caller can tell "no images" from "couldn't read
- * it" the same way `parseDocumentBytes` does.
+ * capped. DWG and DXF take the CAD exchange (./dwg.ts); every other format is
+ * read by the parser service. Never throws for a format we merely don't
+ * support (an empty result), but DOES propagate a read failure (the parser
+ * client's typed error), so the caller can tell "no images" from "couldn't
+ * read it" the same way `parseDocumentBytes` does.
  */
 export async function extractEmbeddedImages(
   bytes: Buffer,
@@ -222,12 +227,27 @@ export async function extractEmbeddedImages(
   opts?: { maxImages?: number },
 ): Promise<ExtractEmbeddedImagesResult> {
   const cap = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
-  const raw = await extractRaw(bytes, ext.toLowerCase(), { maxImages: cap });
+  const lower = ext.toLowerCase();
+  if (lower === 'dwg' || lower === 'dxf') {
+    const { extractDwgImages, extractDxfImages } = await import('./dwg');
+    const raw = lower === 'dwg' ? await extractDwgImages(bytes) : await extractDxfImages(bytes);
+    return gateAndCap(raw, cap);
+  }
+  const { parserImages } = await import('./parser-client');
+  const { renderDpi } = await import('./dwf');
+  return parserImages(bytes, lower, {
+    maxImages: cap,
+    ...(lower === 'dwf' ? { dpi: renderDpi() } : {}),
+  });
+}
 
+/** The gate and the per-document cap, over candidates in document order.
+ *  The parser runs it over what its readers found; the brain runs it over a
+ *  CAD render. */
+export function gateAndCap(raw: EmbeddedImage[], cap: number): ExtractEmbeddedImagesResult {
   const seen = new Set<string>();
   const rejected: ExtractEmbeddedImagesResult['rejected'] = {};
   const kept: EmbeddedImage[] = [];
-
   for (const img of raw) {
     const verdict = passesGate(img, seen);
     if (!verdict.keep) {
@@ -243,7 +263,6 @@ export async function extractEmbeddedImages(
     // "image 3 of 8" in a citation should be able to count to it.
     kept.push({ ...img, ordinal: kept.length + 1 });
   }
-
   return { images: kept, rejected, candidates: raw.length };
 }
 
@@ -368,46 +387,4 @@ export function buildImageFilename(img: EmbeddedImage, sourceSlug: string, ext =
           ? `-${slugifyFolder(img.location.sheet) ?? 'sheet'}`
           : '';
   return `${ordinal}-${sourceSlug}${where}.${ext}`;
-}
-
-/** Format dispatch. Each branch returns candidates in document order with a
- *  provisional ordinal; gating and renumbering happen above. */
-async function extractRaw(
-  bytes: Buffer,
-  ext: string,
-  opts?: { maxImages?: number },
-): Promise<EmbeddedImage[]> {
-  if (ext === 'docx') return (await import('./docx')).extractDocxImages(bytes);
-  // The cap is forwarded so the PDF pass stops decoding pages once it holds
-  // enough real pictures.
-  if (ext === 'pdf') {
-    return (await import('./pdf')).extractPdfImages(bytes, { maxImages: opts?.maxImages });
-  }
-  if (ext === 'pptx' || ext === 'xlsx' || ext === 'xlsm') {
-    return (await import('./ooxml-media')).extractOoxmlImages(bytes, ext);
-  }
-  if (ext === 'odt' || ext === 'ods' || ext === 'odp') {
-    return (await import('./ooxml-media')).extractOdfImages(bytes);
-  }
-  // DWF plot sets: one raster per published sheet, marked essential (the
-  // format guarantees content-ness; see extractDwfImages). The caller's cap
-  // is forwarded so the sidecar never renders sheets the gate would discard.
-  if (ext === 'dwf') {
-    return (await import('./dwf')).extractDwfImages(bytes, { maxSheets: opts?.maxImages });
-  }
-  // DWG drawings: one essential model-space render from the sidecar; no
-  // fallback tier inside the file (see extractDwgImages).
-  if (ext === 'dwg') {
-    return (await import('./dwg')).extractDwgImages(bytes);
-  }
-  // DXF drawings: same single render off the same sidecar exchange.
-  if (ext === 'dxf') {
-    return (await import('./dxf')).extractDxfImages(bytes);
-  }
-  // Tier 2 — the legacy binaries. `xlsb` is a zip but an undocumented binary
-  // one, so it goes to Tika too rather than getting a bespoke reader.
-  if (TIKA_EXTS.has(ext) || ext === 'xlsb') {
-    return (await import('./tika')).unpackTikaImages(bytes, ext);
-  }
-  return [];
 }

@@ -114,6 +114,17 @@ describe('envNum', () => {
     setEnv('MANTLE_LOCAL_EMBED_TIMEOUT_MS', '5000');
     expect(envNum('MANTLE_LOCAL_EMBED_TIMEOUT_MS', 1234)).toBe(5000);
   });
+
+  it("reads video_ingest's caps under their old MEDIA_ names on a box that still sets them", () => {
+    setEnv('VIDEO_INGEST_MAX_STT_DURATION_S', undefined);
+    setEnv('MEDIA_MAX_STT_DURATION_S', '600');
+    expect(envNum('VIDEO_INGEST_MAX_STT_DURATION_S')).toBe(600);
+    setEnv('VIDEO_INGEST_MAX_STT_DURATION_S', '900');
+    expect(envNum('VIDEO_INGEST_MAX_STT_DURATION_S')).toBe(900);
+    setEnv('MEDIA_MAX_STT_DURATION_S', undefined);
+    setEnv('VIDEO_INGEST_MAX_STT_DURATION_S', undefined);
+    expect(envNum('VIDEO_INGEST_MAX_STT_DURATION_S')).toBe(3600);
+  });
 });
 
 describe('feature', () => {
@@ -162,11 +173,9 @@ describe('feature', () => {
 
   it('reads a service switch from the service state', () => {
     setEnv('MANTLE_UPDATE_SIGNAL_DIR', '/nonexistent-signal-dir');
-    setEnv('MANTLE_COMPOSE_PROFILES', 'media');
-    setEnv('MEDIA_SIDECAR_URL', 'http://media:8095');
-    setEnv('MEDIA_SIDECAR_TOKEN', 'x');
+    setEnv('MANTLE_COMPOSE_PROFILES', 'local-embedder');
     setEnv('SANDBOXD_URL', undefined);
-    expect(feature('media')).toBe(true);
+    expect(feature('localEmbedder')).toBe(true);
     expect(feature('sandboxes')).toBe(false);
   });
 });

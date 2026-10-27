@@ -149,11 +149,6 @@ export type KnownEnvName =
   | 'MANTLE_UPDATE_SIGNAL_DIR'
   | 'MANTLE_VIEWER_ROLES_PER_DATABASE'
   | 'MANTLE_WEB_SEARCH_MODEL'
-  | 'MEDIA_MAX_AUDIO_BYTES'
-  | 'MEDIA_MAX_STT_DURATION_S'
-  | 'MEDIA_MAX_VIDEO_BYTES'
-  | 'MEDIA_SIDECAR_TOKEN'
-  | 'MEDIA_SIDECAR_URL'
   | 'MS_CLIENT_ID'
   | 'MS_CLIENT_SECRET'
   | 'MS_REDIRECT_URI'
@@ -161,6 +156,16 @@ export type KnownEnvName =
   | 'NODE_ENV'
   | 'OTLP_LOGS_ENDPOINT'
   | 'OTLP_TRACES_ENDPOINT'
+  | 'PARSER_CAD_DIR'
+  | 'PARSER_CLIENT_CONCURRENCY'
+  | 'PARSER_MAX_JOBS'
+  | 'PARSER_MAX_UPLOAD_MB'
+  | 'PARSER_PORT'
+  | 'PARSER_PYTHON'
+  | 'PARSER_QUEUE_MAX'
+  | 'PARSER_TOKEN'
+  | 'PARSER_URL'
+  | 'PARSER_WORKDIR'
   | 'PORT'
   | 'S3_ACCESS_KEY'
   | 'S3_BUCKET'
@@ -201,8 +206,10 @@ export type KnownEnvName =
   | 'TOOL_RESULT_PAGE_BYTES'
   | 'TOOL_RESULT_SPILL_MAX'
   | 'TOOL_RESULT_TTL_DAYS'
-  | 'TIKA_URL'
   | 'VERIFY_AGENT_SLUG'
+  | 'VIDEO_INGEST_MAX_AUDIO_BYTES'
+  | 'VIDEO_INGEST_MAX_FILE_BYTES'
+  | 'VIDEO_INGEST_MAX_STT_DURATION_S'
   | 'VERIFY_OWNER_ID';
 
 /**
@@ -211,6 +218,11 @@ export type KnownEnvName =
  * Remove an entry once `pnpm status` shows no box sets the legacy name.
  */
 export const ENV_ALIASES: Partial<Record<KnownEnvName, string>> = {
+  // video_ingest's caps were MEDIA_MAX_* while the media sidecar existed
+  // (removed with the parser service, docs/update-prod.md).
+  VIDEO_INGEST_MAX_STT_DURATION_S: 'MEDIA_MAX_STT_DURATION_S',
+  VIDEO_INGEST_MAX_AUDIO_BYTES: 'MEDIA_MAX_AUDIO_BYTES',
+  VIDEO_INGEST_MAX_FILE_BYTES: 'MEDIA_MAX_VIDEO_BYTES',
   MANTLE_PUBLIC_URL: 'NEXT_PUBLIC_APP_URL',
   MANTLE_API_TOKEN: 'NEXT_PUBLIC_MANTLE_API_TOKEN',
   MANTLE_TURN_STREAMING: 'NEXT_PUBLIC_MANTLE_TURN_STREAMING',

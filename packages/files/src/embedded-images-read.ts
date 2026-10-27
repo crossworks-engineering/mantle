@@ -40,7 +40,11 @@ async function extractRaw(
   opts: { maxImages: number; render?: DwfRenderFn; dpi?: number },
 ): Promise<EmbeddedImage[]> {
   if (ext === 'docx') return (await import('./docx')).extractDocxImages(bytes);
-  if (ext === 'pdf') return (await import('./pdf')).extractPdfImages(bytes);
+  // The cap is forwarded so the PDF pass stops decoding pages once it holds
+  // enough real pictures.
+  if (ext === 'pdf') {
+    return (await import('./pdf')).extractPdfImages(bytes, { maxImages: opts.maxImages });
+  }
   if (ext === 'pptx' || ext === 'xlsx' || ext === 'xlsm') {
     return (await import('./ooxml-media')).extractOoxmlImages(bytes, ext);
   }
