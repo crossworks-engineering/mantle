@@ -219,15 +219,18 @@ describe.skipIf(!DB_URL)(
       });
 
       it(`${mode}: a desk saved before the version, or with one that is not a whole number, takes version 0`, async () => {
-        await setMode(mode);
         for (const stored of [undefined, '3', -2, 2.5, Number.MAX_SAFE_INTEGER + 1]) {
           const prefs: Prefs =
             stored === undefined
               ? { homeDesk: OTHER_DESK }
               : { homeDesk: OTHER_DESK, homeDeskVersion: stored };
+          // The row as an older build or a hand write left it, written with
+          // the checks in warn (this connection names no actor).
+          await setMode('warn');
           await raw`insert into profiles (user_id, preferences)
           values (${L.legacy}, ${raw.json(prefs as never)})
           on conflict (user_id) do update set preferences = excluded.preferences`;
+          await setMode(mode);
           const read = await get(L.legacy);
           expect(read.json, String(stored)).toEqual({ homeDesk: OTHER_DESK, version: 0 });
           const mine = desk(++n);

@@ -62,7 +62,9 @@ export async function GET() {
 
 const Body = z.object({
   homeDesk: z.unknown(),
-  loginId: z.unknown(),
+  // Optional here so a body naming no login is the 401 below, as one
+  // naming another is.
+  loginId: z.unknown().optional(),
   version: z
     .number()
     .int()
