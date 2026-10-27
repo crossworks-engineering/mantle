@@ -19,8 +19,6 @@ export type MessengerAuthorKind = 'login' | 'agent' | 'system';
 
 export type MessengerParticipantKind = 'login' | 'agent';
 
-export type MessengerRole = 'admin' | 'member';
-
 /** An agent reply's state (Phase 3); a person's message is always
  *  'complete'. */
 export type MessengerMessageStatus = 'complete' | 'pending' | 'failed';
@@ -38,7 +36,8 @@ export type MessengerParticipant = {
   /** The login id or the agent id. */
   id: string;
   name: string;
-  role: MessengerRole;
+  /** A group admin. */
+  admin: boolean;
   /** ISO, or null while the participant is in the chat. */
   leftAt: string | null;
 };
@@ -84,7 +83,7 @@ export type MessengerConversation = {
   participants: MessengerParticipant[];
   /** My own participant row. */
   me: {
-    role: MessengerRole;
+    admin: boolean;
     lastReadSeq: number;
     clearedBeforeSeq: number;
     muted: boolean;

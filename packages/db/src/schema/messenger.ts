@@ -56,7 +56,8 @@ export const messengerParticipants = pgTable('messenger_participants', {
   kind: text('kind').$type<'login' | 'agent'>().notNull(),
   loginId: uuid('login_id'),
   agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'cascade' }),
-  role: text('role').$type<'admin' | 'member'>().default('member').notNull(),
+  /** A group admin (the creator first); a direct chat has none. */
+  admin: boolean('admin').default(false).notNull(),
   joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
   addedBy: uuid('added_by'),
   leftAt: timestamp('left_at', { withTimezone: true }),

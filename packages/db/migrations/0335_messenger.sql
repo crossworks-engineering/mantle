@@ -66,7 +66,9 @@ CREATE TABLE IF NOT EXISTS "messenger_participants" (
   "kind" text NOT NULL,
   "login_id" uuid REFERENCES "auth"."users"("id") ON DELETE CASCADE,
   "agent_id" uuid REFERENCES "public"."agents"("id") ON DELETE CASCADE,
-  "role" text NOT NULL DEFAULT 'member',
+  -- A group admin (the creator first): adds and removes people, renames,
+  -- deletes history for everyone. A direct chat has none.
+  "admin" boolean NOT NULL DEFAULT false,
   "joined_at" timestamp with time zone NOT NULL DEFAULT now(),
   "added_by" uuid,
   "left_at" timestamp with time zone,
@@ -78,7 +80,6 @@ CREATE TABLE IF NOT EXISTS "messenger_participants" (
   CONSTRAINT "messenger_participants_kind_ck" CHECK (
     ("kind" = 'login' AND "login_id" IS NOT NULL AND "agent_id" IS NULL)
     OR ("kind" = 'agent' AND "agent_id" IS NOT NULL AND "login_id" IS NULL)),
-  CONSTRAINT "messenger_participants_role_ck" CHECK ("role" IN ('admin', 'member')),
   CONSTRAINT "messenger_participants_left_ck" CHECK (("left_at" IS NULL) = ("left_seq" IS NULL))
 );
 --> statement-breakpoint
@@ -299,7 +300,7 @@ ALTER TABLE "public"."login_presence" ENABLE ROW LEVEL SECURITY;
 -- ── messenger_changed: the live stream (ids and seq, never text) ─────────────
 -- Payload {c, seq, kind, actor}. kind: new, edit, delete (a message);
 -- read (a cursor moved); self (my clear or mute: only the actor refetches);
--- participants (someone joined or left, a role or the title changed);
+-- participants (someone joined or left, an admin or the title changed);
 -- reaction. The typing event is raised by its route and stored nowhere.
 CREATE OR REPLACE FUNCTION "public"."mantle_messenger_notify"(c uuid, s bigint, k text, actor uuid)
   RETURNS void LANGUAGE sql AS $$
@@ -337,7 +338,7 @@ BEGIN
     PERFORM "public"."mantle_messenger_notify"(old."conversation_id", NULL, 'participants', old."login_id");
   ELSIF TG_OP = 'INSERT'
      OR new."left_at" IS DISTINCT FROM old."left_at"
-     OR new."role" IS DISTINCT FROM old."role" THEN
+     OR new."admin" IS DISTINCT FROM old."admin" THEN
     PERFORM "public"."mantle_messenger_notify"(new."conversation_id", NULL, 'participants', new."login_id");
   ELSIF new."last_read_seq" IS DISTINCT FROM old."last_read_seq" THEN
     PERFORM "public"."mantle_messenger_notify"(new."conversation_id", new."last_read_seq", 'read', new."login_id");

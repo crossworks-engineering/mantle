@@ -124,7 +124,6 @@ export type {
   MessengerParticipantKind,
   MessengerPreview,
   MessengerReaction,
-  MessengerRole,
   MessengerRowKind,
   MessengerSendRequest,
   MessengerSendResponse,

@@ -8,7 +8,7 @@ import {
   TASKS_CHANGED_CHANNEL,
 } from '@mantle/content';
 import { TREE_CHANGED_CHANNEL } from '@mantle/content/tree';
-import { messengerAudienceRows } from '@mantle/content/messenger';
+import { messengerParticipantLogins } from '@mantle/content/messenger';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
@@ -72,7 +72,7 @@ type Bridge = {
    *  logins (with the seq a left one reads up to), filled on first use and
    *  dropped on a participants event. A stale entry can at worst send an id
    *  to a login that then gets 404 on the fetch; never text. */
-  msgAudience: Map<string, { loginId: string; leftSeq: number | null }[]>;
+  msgRooms: Map<string, { loginId: string; leftSeq: number | null }[]>;
   starting: Promise<void> | null;
   stop: (() => Promise<void>) | null;
 };
@@ -87,7 +87,7 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
   convSubs: new Set<ConvSubscriber>(),
   turnSubs: new Set<TurnStreamSubscriber>(),
   msgSubs: new Map<string, Set<MessengerSubscriber>>(),
-  msgAudience: new Map<string, { loginId: string; leftSeq: number | null }[]>(),
+  msgRooms: new Map<string, { loginId: string; leftSeq: number | null }[]>(),
   starting: null,
   stop: null,
 };
@@ -96,7 +96,7 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
 bridge.convSubs ??= new Set<ConvSubscriber>();
 bridge.turnSubs ??= new Set<TurnStreamSubscriber>();
 bridge.msgSubs ??= new Map<string, Set<MessengerSubscriber>>();
-bridge.msgAudience ??= new Map<string, { loginId: string; leftSeq: number | null }[]>();
+bridge.msgRooms ??= new Map<string, { loginId: string; leftSeq: number | null }[]>();
 globalThis.__mantleRealtime = bridge;
 
 async function ensureListening(): Promise<void> {
@@ -296,32 +296,32 @@ export async function subscribeRealtime(cb: Subscriber): Promise<() => void> {
 
 /** The cap of the fan-out map: past it the map starts again (each entry is
  *  one indexed read to refill). */
-const MESSENGER_AUDIENCE_MAX = 5000;
+const MESSENGER_ROOMS_MAX = 5000;
 
 /** Who hears a messenger change: a room event every live participant (and
  *  the actor); a message event every participant that may read its seq;
  *  'self' only the actor; 'typing' everyone live but the typist. */
 async function fanoutMessenger(c: MessengerChange): Promise<void> {
   if (bridge.msgSubs.size === 0) return;
-  if (c.kind === 'participants') bridge.msgAudience.delete(c.c);
-  let audience: string[];
+  if (c.kind === 'participants') bridge.msgRooms.delete(c.c);
+  let to: string[];
   if (c.kind === 'self') {
-    audience = c.actor ? [c.actor] : [];
+    to = c.actor ? [c.actor] : [];
   } else {
-    let rows = bridge.msgAudience.get(c.c);
+    let rows = bridge.msgRooms.get(c.c);
     if (!rows) {
-      rows = await messengerAudienceRows(c.c);
-      if (bridge.msgAudience.size >= MESSENGER_AUDIENCE_MAX) bridge.msgAudience.clear();
-      bridge.msgAudience.set(c.c, rows);
+      rows = await messengerParticipantLogins(c.c);
+      if (bridge.msgRooms.size >= MESSENGER_ROOMS_MAX) bridge.msgRooms.clear();
+      bridge.msgRooms.set(c.c, rows);
     }
     const seq = c.seq;
-    audience = rows
+    to = rows
       .filter((r) => r.leftSeq === null || (seq !== null && c.kind !== 'typing' && r.leftSeq >= seq))
       .map((r) => r.loginId);
-    if (c.kind === 'typing') audience = audience.filter((l) => l !== c.actor);
-    if (c.kind === 'participants' && c.actor && !audience.includes(c.actor)) audience.push(c.actor);
+    if (c.kind === 'typing') to = to.filter((l) => l !== c.actor);
+    if (c.kind === 'participants' && c.actor && !to.includes(c.actor)) to.push(c.actor);
   }
-  for (const loginId of audience) {
+  for (const loginId of to) {
     for (const cb of bridge.msgSubs.get(loginId) ?? []) {
       try {
         cb(c);

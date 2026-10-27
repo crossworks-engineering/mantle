@@ -22,8 +22,17 @@
  *  - Nothing here starts LLM work: a mention is stored and enqueues nothing
  *    (Phase 3 adds the group turn), and no trigger spends.
  */
-import { sql, type SQL } from 'drizzle-orm';
-import { db, systemDb } from '@mantle/db';
+import { and, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import {
+  db,
+  loginPresence,
+  messengerConversations,
+  messengerFavourites,
+  messengerMessages,
+  messengerParticipants,
+  messengerReactions,
+  systemDb,
+} from '@mantle/db';
 import { InputError, defineDomainError } from '@mantle/std';
 import { workspaceAssistants } from './team-assistant';
 
@@ -57,7 +66,7 @@ defineDomainError(MessengerNotFoundError, {
   status: 404,
 });
 
-/** A participant asked for what its role does not allow (a member renames
+/** A participant asked for what the chat does not allow it (a non-admin renames
  *  a group, someone edits another's message). */
 export class MessengerRefusedError extends Error {
   constructor(message: string) {
@@ -66,7 +75,7 @@ export class MessengerRefusedError extends Error {
   }
 }
 defineDomainError(MessengerRefusedError, {
-  reason: 'a participant asked for what its role in the chat does not allow; the message says which',
+  reason: 'a participant asked for what the chat does not allow it; the message says which',
   status: 403,
 });
 
@@ -90,7 +99,7 @@ export type MessengerParticipantView = {
   kind: 'login' | 'agent';
   id: string;
   name: string;
-  role: 'admin' | 'member';
+  admin: boolean;
   leftAt: string | null;
 };
 
@@ -113,7 +122,7 @@ export type MessengerConversationView = {
   agentId: string | null;
   participants: MessengerParticipantView[];
   me: {
-    role: 'admin' | 'member';
+    admin: boolean;
     lastReadSeq: number;
     clearedBeforeSeq: number;
     muted: boolean;
@@ -345,15 +354,23 @@ export async function messengerDirectory(
     })),
     ...agents
       .filter((a) => !t || a.name.toLowerCase().includes(t) || a.slug.toLowerCase().includes(t))
-      .map((a) => ({ kind: 'agent' as const, id: a.id, name: a.name, online: false, slug: a.slug })),
+      .map((a) => ({
+        kind: 'agent' as const,
+        id: a.id,
+        name: a.name,
+        online: false,
+        slug: a.slug,
+      })),
   ];
 }
 
 // ── Participant checks (system pool, inside the write's transaction) ─────────
 
+type Tx = Parameters<Parameters<typeof systemDb.transaction>[0]>[0];
+
 type ParticipantRow = {
   id: string;
-  role: 'admin' | 'member';
+  admin: boolean;
   left_at: Date | null;
   left_seq: string | number | null;
   last_read_seq: string | number;
@@ -374,7 +391,7 @@ type ConversationRow = {
 /** Lock the conversation and read the actor's participant row; "not found"
  *  for a login that holds none (or a conversation of another brain). */
 async function lockForActor(
-  tx: Exec,
+  tx: Tx,
   actor: MessengerActor,
   conversationId: string,
   opts: { live: boolean } = { live: true },
@@ -391,7 +408,7 @@ async function lockForActor(
   if (!conv) throw new MessengerNotFoundError();
   const [me] = await q<ParticipantRow>(
     tx,
-    sql`select id::text as id, role, left_at, left_seq, last_read_seq, cleared_before_seq, muted
+    sql`select id::text as id, admin, left_at, left_seq, last_read_seq, cleared_before_seq, muted
           from messenger_participants
          where conversation_id = ${c}::uuid and kind = 'login' and login_id = ${actor.loginId}::uuid`,
   );
@@ -402,14 +419,14 @@ async function lockForActor(
 
 function requireGroupAdmin(conv: ConversationRow, me: ParticipantRow): void {
   if (conv.kind !== 'group') throw new MessengerRefusedError('A direct chat has no admin.');
-  if (me.role !== 'admin') throw new MessengerRefusedError('Only a group admin may do that.');
+  if (!me.admin) throw new MessengerRefusedError('Only a group admin may do that.');
 }
 
 /** Insert one message at last_seq + 1 and move the conversation's
  *  counters, in the caller's transaction (the conversation row is locked).
  *  The one place a seq is taken. */
 async function appendMessage(
-  tx: Exec,
+  tx: Tx,
   conv: ConversationRow,
   m: {
     authorKind: 'login' | 'agent' | 'system';
@@ -423,25 +440,32 @@ async function appendMessage(
   },
 ): Promise<number> {
   const seq = num(conv.last_seq) + 1;
-  await tx.execute(
-    sql`insert into messenger_messages
-          (conversation_id, seq, author_kind, author_login_id, author_name, via, via_ref,
-           body, mentions, reply_to_seq, client_msg_id)
-        values (${conv.id}::uuid, ${seq}, ${m.authorKind}, ${m.authorLoginId}::uuid, ${m.authorName},
-                ${m.via?.label ?? null}, ${m.via?.ref ?? null}, ${m.body},
-                ${JSON.stringify(m.mentions)}::jsonb, ${m.replyToSeq}, ${m.clientMsgId})`,
-  );
-  const preview = { authorName: m.authorName, text: previewOf(m.body), authorKind: m.authorKind };
-  await tx.execute(
-    sql`update messenger_conversations
-           set last_seq = ${seq}, last_message_at = now(), last_preview = ${JSON.stringify(preview)}::jsonb
-         where id = ${conv.id}::uuid`,
-  );
+  await tx.insert(messengerMessages).values({
+    conversationId: conv.id,
+    seq,
+    authorKind: m.authorKind,
+    authorLoginId: m.authorLoginId,
+    authorName: m.authorName,
+    via: m.via?.label ?? null,
+    viaRef: m.via?.ref ?? null,
+    body: m.body,
+    mentions: m.mentions,
+    replyToSeq: m.replyToSeq,
+    clientMsgId: m.clientMsgId,
+  });
+  await tx
+    .update(messengerConversations)
+    .set({
+      lastSeq: seq,
+      lastMessageAt: sql`now()`,
+      lastPreview: { authorName: m.authorName, text: previewOf(m.body), authorKind: m.authorKind },
+    })
+    .where(eq(messengerConversations.id, conv.id));
   conv.last_seq = seq;
   return seq;
 }
 
-async function systemLine(tx: Exec, conv: ConversationRow, body: string): Promise<number> {
+async function systemLine(tx: Tx, conv: ConversationRow, body: string): Promise<number> {
   return appendMessage(tx, conv, {
     authorKind: 'system',
     authorLoginId: null,
@@ -452,6 +476,15 @@ async function systemLine(tx: Exec, conv: ConversationRow, body: string): Promis
     replyToSeq: null,
     clientMsgId: null,
   });
+}
+
+/** One participant row's own columns, by its id. */
+function updateParticipant(
+  tx: Tx,
+  id: string,
+  set: Partial<typeof messengerParticipants.$inferInsert>,
+) {
+  return tx.update(messengerParticipants).set(set).where(eq(messengerParticipants.id, id));
 }
 
 // ── Create ───────────────────────────────────────────────────────────────────
@@ -477,8 +510,9 @@ export async function createMessengerConversation(
   if (input.kind !== 'direct' && input.kind !== 'group') {
     throw new InputError('A conversation is direct or group.');
   }
+  const self = actor.loginId.toLowerCase();
   const others = [...new Set(input.participants.map((p) => uuidOr(p, 'A participant')))].filter(
-    (p) => p !== actor.loginId.toLowerCase(),
+    (p) => p !== self,
   );
   if (input.kind === 'direct' && others.length !== 1) {
     throw new InputError('A direct chat names exactly one other person.');
@@ -493,20 +527,24 @@ export async function createMessengerConversation(
   if (others.length > 0) {
     const reach = await reachableLogins(actor.loginId, { only: others, limit: 500 });
     if (reach.length !== others.length) {
-      throw new MessengerRefusedError('You can only start a chat with people who share a workspace with you.');
+      throw new MessengerRefusedError(
+        'You can only start a chat with people who share a workspace with you.',
+      );
     }
   }
 
   if (input.kind === 'direct') {
-    const key = directKey(actor.loginId, others[0]!);
+    const other = others[0]!;
+    const key = directKey(self, other);
     return systemDb.transaction(async (tx) => {
-      const [made] = await q<{ id: string }>(
-        tx,
-        sql`insert into messenger_conversations (owner_id, kind, direct_key, created_by)
-            values (${actor.ownerId}::uuid, 'direct', ${key}, ${actor.loginId}::uuid)
-            on conflict (direct_key) where direct_key is not null do nothing
-            returning id::text as id`,
-      );
+      const [made] = await tx
+        .insert(messengerConversations)
+        .values({ ownerId: actor.ownerId, kind: 'direct', directKey: key, createdBy: self })
+        .onConflictDoNothing({
+          target: messengerConversations.directKey,
+          where: sql`${messengerConversations.directKey} is not null`,
+        })
+        .returning({ id: messengerConversations.id });
       if (!made) {
         const [found] = await q<{ id: string }>(
           tx,
@@ -516,27 +554,27 @@ export async function createMessengerConversation(
         if (!found) throw new MessengerNotFoundError();
         return { conversationId: found.id, created: false };
       }
-      await tx.execute(
-        sql`insert into messenger_participants (conversation_id, kind, login_id, role, added_by)
-            values (${made.id}::uuid, 'login', ${actor.loginId}::uuid, 'member', ${actor.loginId}::uuid),
-                   (${made.id}::uuid, 'login', ${others[0]!}::uuid, 'member', ${actor.loginId}::uuid)`,
-      );
+      await tx.insert(messengerParticipants).values([
+        { conversationId: made.id, kind: 'login', loginId: self, addedBy: self },
+        { conversationId: made.id, kind: 'login', loginId: other, addedBy: self },
+      ]);
       return { conversationId: made.id, created: true };
     });
   }
 
   return systemDb.transaction(async (tx) => {
-    const [made] = await q<{ id: string }>(
-      tx,
-      sql`insert into messenger_conversations (owner_id, kind, title, created_by)
-          values (${actor.ownerId}::uuid, 'group', ${title}, ${actor.loginId}::uuid)
-          returning id::text as id`,
-    );
-    await tx.execute(
-      sql`insert into messenger_participants (conversation_id, kind, login_id, role, added_by)
-          select ${made!.id}::uuid, 'login', l, case when l = ${actor.loginId}::uuid then 'admin' else 'member' end,
-                 ${actor.loginId}::uuid
-            from unnest(${uuidArray([actor.loginId, ...others])}) as l`,
+    const [made] = await tx
+      .insert(messengerConversations)
+      .values({ ownerId: actor.ownerId, kind: 'group', title, createdBy: self })
+      .returning({ id: messengerConversations.id });
+    await tx.insert(messengerParticipants).values(
+      [self, ...others].map((l) => ({
+        conversationId: made!.id,
+        kind: 'login' as const,
+        loginId: l,
+        admin: l === self,
+        addedBy: self,
+      })),
     );
     return { conversationId: made!.id, created: true };
   });
@@ -579,6 +617,7 @@ export async function sendMessengerMessage(
   }
   const mentions = dedupeMentions(input.mentions ?? []);
   const replyTo = input.replyToSeq == null ? null : seqOr(input.replyToSeq, 'reply_to_seq');
+  const self = actor.loginId.toLowerCase();
 
   const out = await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
@@ -587,7 +626,7 @@ export async function sendMessengerMessage(
       const [prior] = await q<{ seq: string | number }>(
         tx,
         sql`select seq from messenger_messages
-             where conversation_id = ${conv.id}::uuid and author_login_id = ${actor.loginId}::uuid
+             where conversation_id = ${conv.id}::uuid and author_login_id = ${self}::uuid
                and client_msg_id = ${clientMsgId}`,
       );
       if (prior) return { seq: num(prior.seq), created: false };
@@ -603,33 +642,36 @@ export async function sendMessengerMessage(
       );
       const ok = new Set(live.map((p) => `${p.kind}:${p.id}`));
       for (const m of mentions) {
-        if (!ok.has(`${m.kind}:${m.id}`)) throw new InputError('A mention names no one in this chat.');
+        if (!ok.has(`${m.kind}:${m.id}`)) {
+          throw new InputError('A mention names no one in this chat.');
+        }
       }
     }
-    const names = await loginNames([actor.loginId]);
+    const names = await loginNames([self]);
     const seq = await appendMessage(tx, conv, {
       authorKind: 'login',
-      authorLoginId: actor.loginId,
-      authorName: names.get(actor.loginId) ?? null,
+      authorLoginId: self,
+      authorName: names.get(self) ?? null,
       via: actor.via ?? null,
       body,
       mentions,
       replyToSeq: replyTo,
       clientMsgId,
     });
-    const mentioned = mentions.filter((m) => m.kind === 'login' && m.id !== actor.loginId).map((m) => m.id);
+    const mentioned = mentions.filter((m) => m.kind === 'login' && m.id !== self).map((m) => m.id);
     if (mentioned.length > 0) {
-      await tx.execute(
-        sql`update messenger_participants set mention_seq = ${seq}
-             where conversation_id = ${conv.id}::uuid and kind = 'login'
-               and login_id = any(${uuidArray(mentioned)})`,
-      );
+      await tx
+        .update(messengerParticipants)
+        .set({ mentionSeq: seq })
+        .where(
+          and(
+            eq(messengerParticipants.conversationId, conv.id),
+            eq(messengerParticipants.kind, 'login'),
+            inArray(messengerParticipants.loginId, mentioned),
+          ),
+        );
     }
-    if (num(me.last_read_seq) < seq) {
-      await tx.execute(
-        sql`update messenger_participants set last_read_seq = ${seq} where id = ${me.id}::uuid`,
-      );
-    }
+    if (num(me.last_read_seq) < seq) await updateParticipant(tx, me.id, { lastReadSeq: seq });
     return { seq, created: true };
   });
   const [message] = await readMessagesBySeq(actor, conversationId, [out.seq]);
@@ -641,7 +683,9 @@ function dedupeMentions(list: readonly MessengerMention[]): MessengerMention[] {
   const seen = new Set<string>();
   const out: MessengerMention[] = [];
   for (const m of list) {
-    if (!m || (m.kind !== 'login' && m.kind !== 'agent')) throw new InputError('A mention is a login or an agent.');
+    if (!m || (m.kind !== 'login' && m.kind !== 'agent')) {
+      throw new InputError('A mention is a login or an agent.');
+    }
     const id = uuidOr(String(m.id), 'A mention');
     const k = `${m.kind}:${id}`;
     if (seen.has(k)) continue;
@@ -652,12 +696,15 @@ function dedupeMentions(list: readonly MessengerMention[]): MessengerMention[] {
   return out;
 }
 
-async function lockMessage(
-  tx: Exec,
-  conversationId: string,
-  seq: number,
-): Promise<{ id: string; author_kind: string; author_login_id: string | null; deleted_at: Date | null }> {
-  const [m] = await q<{ id: string; author_kind: string; author_login_id: string | null; deleted_at: Date | null }>(
+type LockedMessage = {
+  id: string;
+  author_kind: string;
+  author_login_id: string | null;
+  deleted_at: Date | null;
+};
+
+async function lockMessage(tx: Tx, conversationId: string, seq: number): Promise<LockedMessage> {
+  const [m] = await q<LockedMessage>(
     tx,
     sql`select id::text as id, author_kind, author_login_id::text as author_login_id, deleted_at
           from messenger_messages where conversation_id = ${conversationId}::uuid and seq = ${seq}
@@ -668,17 +715,29 @@ async function lockMessage(
 }
 
 /** Keep the conversation's preview right when its last message changes. */
-async function refreshPreviewIfLast(tx: Exec, conv: ConversationRow, seq: number): Promise<void> {
+async function refreshPreviewIfLast(tx: Tx, conv: ConversationRow, seq: number): Promise<void> {
   if (seq !== num(conv.last_seq)) return;
-  await tx.execute(
-    sql`update messenger_conversations c
-           set last_preview = jsonb_build_object(
-                 'authorName', m.author_name,
-                 'text', case when m.deleted_at is null then left(m.body, ${MESSENGER_PREVIEW_CHARS}) else '' end,
-                 'authorKind', m.author_kind)
-          from messenger_messages m
-         where c.id = ${conv.id}::uuid and m.conversation_id = c.id and m.seq = ${seq}`,
+  const [m] = await q<{
+    author_name: string | null;
+    body: string;
+    author_kind: 'login' | 'agent' | 'system';
+    deleted_at: Date | null;
+  }>(
+    tx,
+    sql`select author_name, body, author_kind, deleted_at from messenger_messages
+         where conversation_id = ${conv.id}::uuid and seq = ${seq}`,
   );
+  if (!m) return;
+  await tx
+    .update(messengerConversations)
+    .set({
+      lastPreview: {
+        authorName: m.author_name,
+        text: m.deleted_at ? '' : previewOf(m.body),
+        authorKind: m.author_kind,
+      },
+    })
+    .where(eq(messengerConversations.id, conv.id));
 }
 
 /** Edit my own message (PATCH .../messages/:seq): edited_at set. An
@@ -690,7 +749,9 @@ export async function editMessengerMessage(
   body: string,
 ): Promise<MessengerMessageView> {
   const s = seqOr(seq, 'seq');
-  if (typeof body !== 'string' || body.trim() === '') throw new InputError('A message needs some text.');
+  if (typeof body !== 'string' || body.trim() === '') {
+    throw new InputError('A message needs some text.');
+  }
   if (body.length > MESSENGER_BODY_MAX) {
     throw new InputError(`A message is at most ${MESSENGER_BODY_MAX} characters.`);
   }
@@ -702,9 +763,10 @@ export async function editMessengerMessage(
       throw new MessengerRefusedError('You can only edit your own messages.');
     }
     if (m.deleted_at) throw new MessengerRefusedError('A deleted message cannot be edited.');
-    await tx.execute(
-      sql`update messenger_messages set body = ${body}, edited_at = now() where id = ${m.id}::uuid`,
-    );
+    await tx
+      .update(messengerMessages)
+      .set({ body, editedAt: sql`now()` })
+      .where(eq(messengerMessages.id, m.id));
     await refreshPreviewIfLast(tx, conv, s);
   });
   const [message] = await readMessagesBySeq(actor, conversationId, [s]);
@@ -726,17 +788,15 @@ export async function deleteMessengerMessage(
     const m = await lockMessage(tx, conv.id, s);
     if (m.deleted_at) return;
     const mine = m.author_kind === 'login' && m.author_login_id === actor.loginId.toLowerCase();
-    const groupAdmin = conv.kind === 'group' && me.role === 'admin';
-    if (!mine && !groupAdmin) throw new MessengerRefusedError('You can only delete your own messages.');
-    if (m.author_kind === 'system' && !groupAdmin) {
-      throw new MessengerRefusedError('Only a group admin may delete that.');
+    const groupAdmin = conv.kind === 'group' && me.admin;
+    if (!mine && !groupAdmin) {
+      throw new MessengerRefusedError('You can only delete your own messages.');
     }
-    await tx.execute(
-      sql`update messenger_messages
-             set body = '', mentions = '[]'::jsonb, attachments = '[]'::jsonb, deleted_at = now()
-           where id = ${m.id}::uuid`,
-    );
-    await tx.execute(sql`delete from messenger_reactions where message_id = ${m.id}::uuid`);
+    await tx
+      .update(messengerMessages)
+      .set({ body: '', mentions: [], attachments: [], deletedAt: sql`now()` })
+      .where(eq(messengerMessages.id, m.id));
+    await tx.delete(messengerReactions).where(eq(messengerReactions.messageId, m.id));
     await refreshPreviewIfLast(tx, conv, s);
   });
 }
@@ -754,22 +814,24 @@ export async function toggleMessengerReaction(
   if (e === '' || e.length > MESSENGER_EMOJI_MAX || /\s/.test(e)) {
     throw new InputError('A reaction is one emoji.');
   }
+  const self = actor.loginId.toLowerCase();
   return systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
     if (s <= num(me.cleared_before_seq)) throw new MessengerNotFoundError('No such message.');
     const m = await lockMessage(tx, conv.id, s);
     if (m.deleted_at) throw new MessengerRefusedError('A deleted message takes no reaction.');
-    const gone = await q<{ emoji: string }>(
-      tx,
-      sql`delete from messenger_reactions
-           where message_id = ${m.id}::uuid and login_id = ${actor.loginId}::uuid and emoji = ${e}
-           returning emoji`,
-    );
+    const gone = await tx
+      .delete(messengerReactions)
+      .where(
+        and(
+          eq(messengerReactions.messageId, m.id),
+          eq(messengerReactions.loginId, self),
+          eq(messengerReactions.emoji, e),
+        ),
+      )
+      .returning({ emoji: messengerReactions.emoji });
     if (gone.length > 0) return { on: false };
-    await tx.execute(
-      sql`insert into messenger_reactions (message_id, login_id, emoji)
-          values (${m.id}::uuid, ${actor.loginId}::uuid, ${e})`,
-    );
+    await tx.insert(messengerReactions).values({ messageId: m.id, loginId: self, emoji: e });
     return { on: true };
   });
 }
@@ -788,11 +850,7 @@ export async function markMessengerRead(
     const { conv, me } = await lockForActor(tx, actor, conversationId, { live: false });
     const cap = me.left_at ? num(me.left_seq) : num(conv.last_seq);
     const next = Math.max(num(me.last_read_seq), Math.min(s, cap));
-    if (next !== num(me.last_read_seq)) {
-      await tx.execute(
-        sql`update messenger_participants set last_read_seq = ${next} where id = ${me.id}::uuid`,
-      );
-    }
+    if (next !== num(me.last_read_seq)) await updateParticipant(tx, me.id, { lastReadSeq: next });
     return { lastReadSeq: next };
   });
 }
@@ -805,14 +863,15 @@ export async function clearMessengerForMe(
 ): Promise<{ clearedBeforeSeq: number }> {
   return systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId, { live: false });
-    const upTo = me.left_at ? num(me.left_seq) : num(conv.last_seq);
-    await tx.execute(
-      sql`update messenger_participants
-             set cleared_before_seq = greatest(cleared_before_seq, ${upTo}),
-                 last_read_seq = greatest(last_read_seq, ${upTo})
-           where id = ${me.id}::uuid`,
+    const upTo = Math.max(
+      me.left_at ? num(me.left_seq) : num(conv.last_seq),
+      num(me.cleared_before_seq),
     );
-    return { clearedBeforeSeq: Math.max(upTo, num(me.cleared_before_seq)) };
+    await updateParticipant(tx, me.id, {
+      clearedBeforeSeq: upTo,
+      lastReadSeq: Math.max(upTo, num(me.last_read_seq)),
+    });
+    return { clearedBeforeSeq: upTo };
   });
 }
 
@@ -836,17 +895,20 @@ export async function patchMessengerConversation(
         throw new InputError(`A title is at most ${MESSENGER_TITLE_MAX} characters.`);
       }
       if (title !== conv.title) {
-        await tx.execute(
-          sql`update messenger_conversations set title = ${title} where id = ${conv.id}::uuid`,
-        );
+        await tx
+          .update(messengerConversations)
+          .set({ title })
+          .where(eq(messengerConversations.id, conv.id));
         const names = await loginNames([actor.loginId]);
-        await systemLine(tx, conv, `${names.get(actor.loginId) ?? 'Someone'} renamed the group${title ? ` to "${title}"` : ''}.`);
+        await systemLine(
+          tx,
+          conv,
+          `${names.get(actor.loginId) ?? 'Someone'} renamed the group${title ? ` to "${title}"` : ''}.`,
+        );
       }
     }
     if (input.muted !== undefined && input.muted !== me.muted) {
-      await tx.execute(
-        sql`update messenger_participants set muted = ${input.muted === true} where id = ${me.id}::uuid`,
-      );
+      await updateParticipant(tx, me.id, { muted: input.muted === true });
     }
   });
 }
@@ -863,18 +925,22 @@ export async function deleteMessengerHistory(
   return systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
     requireGroupAdmin(conv, me);
-    const gone = await q<{ id: string }>(
-      tx,
-      before
-        ? sql`delete from messenger_messages where conversation_id = ${conv.id}::uuid
-               and created_at < ${before.toISOString()}::timestamptz returning id::text as id`
-        : sql`delete from messenger_messages where conversation_id = ${conv.id}::uuid returning id::text as id`,
-    );
+    const gone = await tx
+      .delete(messengerMessages)
+      .where(
+        and(
+          eq(messengerMessages.conversationId, conv.id),
+          before ? lt(messengerMessages.createdAt, before) : undefined,
+        ),
+      )
+      .returning({ id: messengerMessages.id });
     const names = await loginNames([actor.loginId]);
     await systemLine(
       tx,
       conv,
-      `${names.get(actor.loginId) ?? 'Someone'} deleted the history${before ? ` before ${before.toISOString().slice(0, 10)}` : ''}.`,
+      `${names.get(actor.loginId) ?? 'Someone'} deleted the history${
+        before ? ` before ${before.toISOString().slice(0, 10)}` : ''
+      }.`,
     );
     return { deleted: gone.length };
   });
@@ -889,8 +955,9 @@ export async function addMessengerParticipants(
   conversationId: string,
   loginIds: readonly string[],
 ): Promise<{ added: string[] }> {
+  const self = actor.loginId.toLowerCase();
   const ids = [...new Set(loginIds.map((l) => uuidOr(l, 'A participant')))].filter(
-    (l) => l !== actor.loginId.toLowerCase(),
+    (l) => l !== self,
   );
   if (ids.length === 0) throw new InputError('Name someone to add.');
   const reach = await reachableLogins(actor.loginId, { only: ids, limit: 500 });
@@ -902,35 +969,49 @@ export async function addMessengerParticipants(
     requireGroupAdmin(conv, me);
     if (conv.agent_id) {
       // Phase 3: a group with an agent takes only users of its workspace.
-      throw new MessengerRefusedError('This group has an agent; adding people arrives with agents in groups.');
+      throw new MessengerRefusedError(
+        'This group has an agent; adding people arrives with agents in groups.',
+      );
     }
-    const live = await q<{ login_id: string; left_at: Date | null }>(
+    const rows = await q<{ login_id: string; left_at: Date | null }>(
       tx,
       sql`select login_id::text as login_id, left_at from messenger_participants
            where conversation_id = ${conv.id}::uuid and kind = 'login'`,
     );
-    const liveCount = live.filter((p) => !p.left_at).length;
-    const byId = new Map(live.map((p) => [p.login_id, p]));
+    const liveCount = rows.filter((p) => !p.left_at).length;
+    const byId = new Map(rows.map((p) => [p.login_id, p]));
     const added = ids.filter((id) => !byId.get(id) || byId.get(id)!.left_at);
     if (liveCount + added.length > MESSENGER_PARTICIPANTS_MAX) {
       throw new InputError(`A group holds at most ${MESSENGER_PARTICIPANTS_MAX} people.`);
     }
     if (added.length === 0) return { added: [] };
-    const names = await loginNames([actor.loginId, ...added]);
+    const names = await loginNames([self, ...added]);
     await systemLine(
       tx,
       conv,
-      `${names.get(actor.loginId) ?? 'Someone'} added ${added.map((a) => names.get(a) ?? 'someone').join(', ')}.`,
+      `${names.get(self) ?? 'Someone'} added ${added.map((a) => names.get(a) ?? 'someone').join(', ')}.`,
     );
-    for (const id of added) {
-      await tx.execute(
-        sql`insert into messenger_participants (conversation_id, kind, login_id, role, added_by)
-            values (${conv.id}::uuid, 'login', ${id}::uuid, 'member', ${actor.loginId}::uuid)
-            on conflict (conversation_id, login_id) where kind = 'login'
-            do update set left_at = null, left_seq = null, role = 'member', joined_at = now(),
-                          added_by = excluded.added_by`,
-      );
-    }
+    await tx
+      .insert(messengerParticipants)
+      .values(
+        added.map((id) => ({
+          conversationId: conv.id,
+          kind: 'login' as const,
+          loginId: id,
+          addedBy: self,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [messengerParticipants.conversationId, messengerParticipants.loginId],
+        targetWhere: sql`${messengerParticipants.kind} = 'login'`,
+        set: {
+          leftAt: null,
+          leftSeq: null,
+          admin: false,
+          joinedAt: sql`now()`,
+          addedBy: self,
+        },
+      });
     return { added };
   });
 }
@@ -943,7 +1024,9 @@ export async function removeMessengerParticipant(
   loginId: string,
 ): Promise<void> {
   const target = uuidOr(loginId, 'The participant');
-  if (target === actor.loginId.toLowerCase()) throw new InputError('To go yourself, leave the chat.');
+  if (target === actor.loginId.toLowerCase()) {
+    throw new InputError('To go yourself, leave the chat.');
+  }
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
     requireGroupAdmin(conv, me);
@@ -959,10 +1042,7 @@ export async function removeMessengerParticipant(
       conv,
       `${names.get(actor.loginId) ?? 'Someone'} removed ${names.get(target) ?? 'someone'}.`,
     );
-    await tx.execute(
-      sql`update messenger_participants set left_at = now(), left_seq = ${seq}, role = 'member'
-           where id = ${p.id}::uuid`,
-    );
+    await updateParticipant(tx, p.id, { leftAt: new Date(), leftSeq: seq, admin: false });
   });
 }
 
@@ -975,27 +1055,25 @@ export async function leaveMessengerConversation(
 ): Promise<void> {
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
-    if (conv.kind !== 'group') throw new MessengerRefusedError('A direct chat cannot be left; clear it instead.');
+    if (conv.kind !== 'group') {
+      throw new MessengerRefusedError('A direct chat cannot be left; clear it instead.');
+    }
     const names = await loginNames([actor.loginId]);
     const seq = await systemLine(tx, conv, `${names.get(actor.loginId) ?? 'Someone'} left.`);
-    await tx.execute(
-      sql`update messenger_participants set left_at = now(), left_seq = ${seq}, role = 'member'
-           where id = ${me.id}::uuid`,
-    );
-    const rest = await q<{ id: string; role: string }>(
+    await updateParticipant(tx, me.id, { leftAt: new Date(), leftSeq: seq, admin: false });
+    const rest = await q<{ id: string; admin: boolean }>(
       tx,
-      sql`select id::text as id, role from messenger_participants
+      sql`select id::text as id, admin from messenger_participants
            where conversation_id = ${conv.id}::uuid and kind = 'login' and left_at is null
            order by joined_at, id`,
     );
     if (rest.length === 0) {
-      await tx.execute(
-        sql`update messenger_conversations set archived_at = now() where id = ${conv.id}::uuid`,
-      );
-    } else if (!rest.some((p) => p.role === 'admin')) {
-      await tx.execute(
-        sql`update messenger_participants set role = 'admin' where id = ${rest[0]!.id}::uuid`,
-      );
+      await tx
+        .update(messengerConversations)
+        .set({ archivedAt: sql`now()` })
+        .where(eq(messengerConversations.id, conv.id));
+    } else if (!rest.some((p) => p.admin)) {
+      await updateParticipant(tx, rest[0]!.id, { admin: true });
     }
   });
 }
@@ -1003,7 +1081,7 @@ export async function leaveMessengerConversation(
 // ── Favourites ───────────────────────────────────────────────────────────────
 
 /** Pin a conversation (I hold a participant row in it) or an agent thread
- *  (an agent I may chat with). Answers false when the pin is refused. */
+ *  (an agent I may chat with); "not found" for any other. */
 export async function setMessengerFavourite(
   actor: MessengerActor,
   kind: 'conversation' | 'agent',
@@ -1011,28 +1089,30 @@ export async function setMessengerFavourite(
   rank = 0,
 ): Promise<void> {
   const ref = uuidOr(refId, 'The pin');
-  if (kind !== 'conversation' && kind !== 'agent') throw new InputError('A pin is a conversation or an agent.');
+  if (kind !== 'conversation' && kind !== 'agent') {
+    throw new InputError('A pin is a conversation or an agent.');
+  }
   if (!Number.isSafeInteger(rank)) throw new InputError('rank is a whole number.');
   if (kind === 'conversation') {
     const [p] = await q<{ ok: number }>(
       systemDb,
       sql`select 1 as ok from messenger_participants p
             join messenger_conversations c on c.id = p.conversation_id
-           where p.conversation_id = ${ref}::uuid and p.kind = 'login' and p.login_id = ${actor.loginId}::uuid
-             and c.owner_id = ${actor.ownerId}::uuid`,
+           where p.conversation_id = ${ref}::uuid and p.kind = 'login'
+             and p.login_id = ${actor.loginId}::uuid and c.owner_id = ${actor.ownerId}::uuid`,
     );
     if (!p) throw new MessengerNotFoundError();
   } else {
     const agents = await messengerChatAgents(actor.ownerId, actor.loginId);
     if (!agents.some((a) => a.id === ref)) throw new MessengerNotFoundError('No such agent.');
   }
-  await systemDb.transaction(async (tx) => {
-    await tx.execute(
-      sql`insert into messenger_favourites (login_id, kind, ref_id, rank)
-          values (${actor.loginId}::uuid, ${kind}, ${ref}::uuid, ${rank})
-          on conflict (login_id, kind, ref_id) do update set rank = excluded.rank`,
-    );
-  });
+  await systemDb
+    .insert(messengerFavourites)
+    .values({ loginId: actor.loginId, kind, refId: ref, rank })
+    .onConflictDoUpdate({
+      target: [messengerFavourites.loginId, messengerFavourites.kind, messengerFavourites.refId],
+      set: { rank },
+    });
 }
 
 export async function removeMessengerFavourite(
@@ -1041,13 +1121,18 @@ export async function removeMessengerFavourite(
   refId: string,
 ): Promise<void> {
   const ref = uuidOr(refId, 'The pin');
-  if (kind !== 'conversation' && kind !== 'agent') throw new InputError('A pin is a conversation or an agent.');
-  await systemDb.transaction(async (tx) => {
-    await tx.execute(
-      sql`delete from messenger_favourites
-           where login_id = ${actor.loginId}::uuid and kind = ${kind} and ref_id = ${ref}::uuid`,
+  if (kind !== 'conversation' && kind !== 'agent') {
+    throw new InputError('A pin is a conversation or an agent.');
+  }
+  await systemDb
+    .delete(messengerFavourites)
+    .where(
+      and(
+        eq(messengerFavourites.loginId, actor.loginId),
+        eq(messengerFavourites.kind, kind),
+        eq(messengerFavourites.refId, ref),
+      ),
     );
-  });
 }
 
 // ── Reads (the login's scope: row security, and the login in every WHERE) ───
@@ -1080,10 +1165,18 @@ const MY_WINDOW = (loginId: string) => sql`
    and m.seq > me.cleared_before_seq
    and (me.left_at is null or m.seq <= me.left_seq)`;
 
-async function decorate(actor: MessengerActor, rows: MessageRow[]): Promise<MessengerMessageView[]> {
+async function decorate(
+  actor: MessengerActor,
+  rows: MessageRow[],
+): Promise<MessengerMessageView[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
-  const reactions = await q<{ message_id: string; emoji: string; count: string | number; mine: boolean }>(
+  const reactions = await q<{
+    message_id: string;
+    emoji: string;
+    count: string | number;
+    mine: boolean;
+  }>(
     db,
     sql`select message_id::text as message_id, emoji, count(*) as count,
                bool_or(login_id = ${actor.loginId}::uuid) as mine
@@ -1158,7 +1251,10 @@ export async function listMessengerMessages(
   input: MessengerPageInput = {},
 ): Promise<{ messages: MessengerMessageView[]; lastSeq: number; hasMore: boolean }> {
   const c = uuidOr(conversationId, 'The conversation');
-  const limit = Math.min(Math.max(Math.trunc(input.limit ?? MESSENGER_PAGE_DEFAULT), 1), MESSENGER_PAGE_MAX);
+  const limit = Math.min(
+    Math.max(Math.trunc(input.limit ?? MESSENGER_PAGE_DEFAULT), 1),
+    MESSENGER_PAGE_MAX,
+  );
   const [conv] = await q<{ last_seq: string | number }>(
     db,
     sql`select c.last_seq from messenger_conversations c
@@ -1182,7 +1278,11 @@ export async function listMessengerMessages(
            order by m.seq asc limit ${limit + 1}`,
     );
     const hasMore = rows.length > limit;
-    return { messages: await decorate(actor, rows.slice(0, limit)), lastSeq: num(conv.last_seq), hasMore };
+    return {
+      messages: await decorate(actor, rows.slice(0, limit)),
+      lastSeq: num(conv.last_seq),
+      hasMore,
+    };
   }
   const before = input.beforeSeq != null ? seqOr(input.beforeSeq, 'before_seq') : null;
   rows = await q<MessageRow>(
@@ -1200,17 +1300,19 @@ type ParticipantReadRow = {
   conversation_id: string;
   kind: 'login' | 'agent';
   id: string;
-  role: 'admin' | 'member';
+  admin: boolean;
   left_at: Date | null;
 };
 
-async function participantsOf(conversationIds: readonly string[]): Promise<Map<string, MessengerParticipantView[]>> {
+async function participantsOf(
+  conversationIds: readonly string[],
+): Promise<Map<string, MessengerParticipantView[]>> {
   const out = new Map<string, MessengerParticipantView[]>();
   if (conversationIds.length === 0) return out;
   const rows = await q<ParticipantReadRow>(
     db,
     sql`select conversation_id::text as conversation_id, kind,
-               coalesce(login_id, agent_id)::text as id, role, left_at
+               coalesce(login_id, agent_id)::text as id, admin, left_at
           from messenger_participants
          where conversation_id = any(${uuidArray(conversationIds)})
          order by joined_at, id`,
@@ -1225,7 +1327,7 @@ async function participantsOf(conversationIds: readonly string[]): Promise<Map<s
       kind: r.kind,
       id: r.id,
       name: (r.kind === 'login' ? ln.get(r.id) : an.get(r.id)) ?? 'Someone',
-      role: r.role,
+      admin: r.admin,
       leftAt: isoOrNull(r.left_at),
     });
     out.set(r.conversation_id, list);
@@ -1250,7 +1352,7 @@ export async function getMessengerConversation(
     last_message_at: Date | null;
     workspace_id: string | null;
     agent_id: string | null;
-    role: 'admin' | 'member';
+    admin: boolean;
     last_read_seq: string | number;
     cleared_before_seq: string | number;
     muted: boolean;
@@ -1259,7 +1361,7 @@ export async function getMessengerConversation(
     db,
     sql`select c.id::text as id, c.kind, c.title, c.created_by::text as created_by, c.created_at,
                c.archived_at, c.last_seq, c.last_message_at, c.workspace_id::text as workspace_id,
-               c.agent_id::text as agent_id, me.role, me.last_read_seq, me.cleared_before_seq, me.muted,
+               c.agent_id::text as agent_id, me.admin, me.last_read_seq, me.cleared_before_seq, me.muted,
                me.left_seq
           from messenger_conversations c
           join messenger_participants me on me.conversation_id = c.id and me.kind = 'login'
@@ -1281,7 +1383,7 @@ export async function getMessengerConversation(
     agentId: row.agent_id,
     participants: parts,
     me: {
-      role: row.role,
+      admin: row.admin,
       lastReadSeq: num(row.last_read_seq),
       clearedBeforeSeq: num(row.cleared_before_seq),
       muted: row.muted,
@@ -1443,7 +1545,8 @@ export async function listMessengerConversations(
           ? {
               authorName: t.last_direction === 'outbound' ? t.name : null,
               text: previewOf(t.last_text),
-              authorKind: (t.last_direction === 'outbound' ? 'agent' : 'login') as 'agent' | 'login',
+              authorKind: (t.last_direction === 'outbound' ? 'agent' : 'login') as
+                'agent' | 'login',
             }
           : null,
         unread: num(t.unread),
@@ -1457,7 +1560,8 @@ export async function listMessengerConversations(
   ];
   rows.sort((a, b) => {
     if (a.favourite !== b.favourite) return a.favourite ? -1 : 1;
-    if (a.favourite && b.favourite && (a.rank ?? 0) !== (b.rank ?? 0)) return (a.rank ?? 0) - (b.rank ?? 0);
+    if (a.favourite && b.favourite && (a.rank ?? 0) !== (b.rank ?? 0))
+      return (a.rank ?? 0) - (b.rank ?? 0);
     const at = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
     const bt = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
     return bt - at;
@@ -1492,7 +1596,7 @@ export async function messengerUnread(
  *  a left one reads up to (null: live), for the SSE fan-out of section 7
  *  (server/web/lib/realtime.ts filters each event by it). On the system
  *  pool: the stream's listener holds no scope. */
-export async function messengerAudienceRows(
+export async function messengerParticipantLogins(
   conversationId: string,
 ): Promise<{ loginId: string; leftSeq: number | null }[]> {
   if (!UUID.test(conversationId)) return [];
@@ -1520,16 +1624,22 @@ export async function messengerLoginUsable(loginId: string): Promise<boolean> {
 /** Mark a login active for "online" (the stream's heartbeat): at most one
  *  write a minute per login. */
 export async function touchLoginPresence(loginId: string): Promise<void> {
-  await systemDb.execute(
-    sql`insert into login_presence (login_id, last_active_at) values (${loginId}::uuid, now())
-        on conflict (login_id) do update set last_active_at = now()
-         where login_presence.last_active_at < now() - interval '1 minute'`,
-  );
+  await systemDb
+    .insert(loginPresence)
+    .values({ loginId })
+    .onConflictDoUpdate({
+      target: loginPresence.loginId,
+      set: { lastActiveAt: sql`now()` },
+      setWhere: sql`${loginPresence.lastActiveAt} < now() - interval '1 minute'`,
+    });
 }
 
 /** Raise a typing event (plan section 7): a NOTIFY, stored nowhere. Only a
  *  live participant's. */
-export async function messengerTyping(actor: MessengerActor, conversationId: string): Promise<void> {
+export async function messengerTyping(
+  actor: MessengerActor,
+  conversationId: string,
+): Promise<void> {
   const c = uuidOr(conversationId, 'The conversation');
   const [p] = await q<{ ok: number }>(
     db,
@@ -1600,9 +1710,11 @@ const openWaits = new Map<string, () => void>();
  *  failed LISTEN leaves the wait to its poll. */
 function ensureWaitListener(): Promise<void> {
   listening ??= (async () => {
-    const client = (systemDb as unknown as {
-      $client: { listen: (ch: string, cb: (p: string) => void) => Promise<unknown> };
-    }).$client;
+    const client = (
+      systemDb as unknown as {
+        $client: { listen: (ch: string, cb: (p: string) => void) => Promise<unknown> };
+      }
+    ).$client;
     await client.listen('messenger_changed', (raw) => {
       try {
         const p = JSON.parse(raw) as { c?: string; seq?: number | string | null; kind?: string };
@@ -1647,7 +1759,11 @@ export async function waitForMessengerMessages(
 
   const first = await check();
   if (first.messages.length > 0 || wait === 0) {
-    return { messages: first.messages, lastSeq: first.lastSeq, timedOut: first.messages.length === 0 };
+    return {
+      messages: first.messages,
+      lastSeq: first.lastSeq,
+      timedOut: first.messages.length === 0,
+    };
   }
 
   const key = `${actor.loginId}|${actor.via?.ref ?? 'session'}`;

@@ -39,6 +39,7 @@ interval server/web/workers/_runner.ts none: keeps the process open
 interval server/web/workers/docs-sync.ts system(worker:docs-sync)
 interval server/web/workers/events-reminders.ts system(worker:events-reminders)
 interval server/web/workers/telegram-poll.ts system(worker:channel-poll)
+listen packages/content/src/messenger.ts none: wakes a messenger_wait, which reads in its own caller's scope
 listen server/api/src/agent/runtime.ts system(listen:<channel>) per channel (listenAs); the turn it starts binds its own
 listen server/api/src/turn-cancel.ts none: aborts a turn in memory, no database
 listen server/sandboxd/src/egress.ts none: a network listener, no brain database
@@ -59,6 +60,7 @@ request-slot packages/db/src/viewer.ts defines the helper: runInRequestSlot star
 request-slot server/web/server/middleware/gate.ts system(http:gate) for the gate's own lookups (an API key, a token); a routed request's slot, opened by enterCall: system(http:no-login), then what the guard names; a page's own slot (A4 step 2): the /s page as system(http:share-page), then the link or the contact the share gate names; a render page as system(http:render), then the render cookie's login
 timeout-loop packages/content/src/app-broker.ts the caller's actor: a drain sleep inside an app database restore
 timeout-loop packages/content/src/app-table-exports.ts system(app-export) for the export sync, whoever scheduled it (F9: never a contact share's actor)
+timeout-loop packages/content/src/messenger.ts the caller's actor: messenger_wait's bounded wait (at most 60 s), each check in the caller's scope
 timeout-loop packages/db/src/access-matrix.ts the caller's actor (migrate's): the write role sync's retry sleep
 timeout-loop packages/db/src/gateway/check-mode.ts none: the first box mode read's retry sleep, outside the actor client (started in runWithoutActor)
 timeout-loop packages/db/src/gateway/heads.ts the caller's actor: a retry sleep
