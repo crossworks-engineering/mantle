@@ -249,9 +249,7 @@ describe('getServicesView', () => {
 
   it('an older updater (no newer services reported): only the first is offered', async () => {
     servicesJson({ core: true, services: { sandboxes: {}, media: {} } });
-    expect((await getServicesView('owner-1')).services.map((s) => s.name)).toEqual([
-      'sandboxes',
-    ]);
+    expect((await getServicesView('owner-1')).services.map((s) => s.name)).toEqual(['sandboxes']);
   });
 
   it('lists the helpers only on a core box without the full profile', async () => {

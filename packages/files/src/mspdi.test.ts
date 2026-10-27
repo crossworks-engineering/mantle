@@ -17,7 +17,7 @@ import {
   renderMspdiText,
   sniffMspdi,
 } from './mspdi';
-import { parseDocumentBytes } from './parse';
+import { readDocumentText } from './read-document';
 
 const XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Project xmlns="http://schemas.microsoft.com/project">
@@ -304,11 +304,11 @@ describe('renderMspdiText', () => {
   });
 });
 
-describe('parseDocumentBytes dispatch', () => {
+describe('readDocumentText dispatch (the parser)', () => {
   it('recognises a Project export by CONTENT and renders the plan', async () => {
-    // Extension alone would send this through a generic text parser and lose
-    // every task name. Returns before Tika is ever contacted.
-    const text = await parseDocumentBytes(Buffer.from(XML, 'utf8'), 'xml');
+    // Extension alone would send this through the generic markup read and
+    // lose every task name.
+    const text = await readDocumentText(Buffer.from(XML, 'utf8'), 'xml');
     expect(text).toContain('Scaffold');
     expect(text).toContain('Project plan: Turnaround');
   });

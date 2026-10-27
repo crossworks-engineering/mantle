@@ -6,13 +6,7 @@
  */
 
 import { nodes } from '@mantle/db';
-import {
-  diskPathForFile,
-  extOf,
-  foldedFilePath,
-  mimeForExt,
-  parserPdfUnlock,
-} from '@mantle/files';
+import { diskPathForFile, extOf, foldedFilePath, mimeForExt, parserPdfUnlock } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { step } from '@mantle/tracing';
 import { getPdfPasswordCandidates, markPdfPasswordUsed } from '@mantle/content';

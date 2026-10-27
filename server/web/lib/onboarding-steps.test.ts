@@ -131,7 +131,10 @@ describe('runInfraChecks: the document parser row', () => {
 
   it('the parser answering passes and names its readers', async () => {
     h.parserUp = true;
-    expect(await parserRow()).toMatchObject({ ok: true, detail: expect.stringMatching(/anydoc 0\.2\.4/) });
+    expect(await parserRow()).toMatchObject({
+      ok: true,
+      detail: expect.stringMatching(/anydoc 0\.2\.4/),
+    });
   });
 });
 

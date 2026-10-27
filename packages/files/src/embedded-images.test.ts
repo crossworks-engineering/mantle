@@ -6,12 +6,12 @@ import {
   buildImageTitles,
   buildSourceSlug,
   describeImageBytes,
-  extractEmbeddedImages,
   MAX_EMBEDDED_IMAGES_PER_DOC,
   MIN_IMAGE_DIMENSION,
   passesGate,
   type EmbeddedImage,
 } from './embedded-images';
+import { readEmbeddedImages } from './embedded-images-read';
 
 /** A PNG header of the given size, padded out to a plausible encoded length
  *  so size-based rules can be exercised independently of dimension rules. */
@@ -253,7 +253,7 @@ describe('buildImageFilename', () => {
   });
 });
 
-describe('extractEmbeddedImages — the per-document cap', () => {
+describe('readEmbeddedImages (the parser): the per-document cap', () => {
   /** A deck of `count` distinct, gate-passing screenshots, one per slide, in
    *  slide order. Stands in for the real shape that motivated the setting: a
    *  product manual whose figures run far past the default ceiling. */
@@ -283,7 +283,7 @@ describe('extractEmbeddedImages — the per-document cap', () => {
 
   it('defaults to MAX_EMBEDDED_IMAGES_PER_DOC and reports the remainder as over_cap', async () => {
     const bytes = await manual(MAX_EMBEDDED_IMAGES_PER_DOC + 12);
-    const result = await extractEmbeddedImages(bytes, 'pptx');
+    const result = await readEmbeddedImages(bytes, 'pptx');
     expect(result.images).toHaveLength(MAX_EMBEDDED_IMAGES_PER_DOC);
     // The drop is counted, never silent — this is what makes a short backfill
     // explainable from the trace instead of looking like "the doc had none".
@@ -292,13 +292,13 @@ describe('extractEmbeddedImages — the per-document cap', () => {
 
   it('honours a raised cap, so a screenshot-heavy manual keeps its later figures', async () => {
     const bytes = await manual(MAX_EMBEDDED_IMAGES_PER_DOC + 12);
-    const result = await extractEmbeddedImages(bytes, 'pptx', { maxImages: 200 });
+    const result = await readEmbeddedImages(bytes, 'pptx', { maxImages: 200 });
     expect(result.images).toHaveLength(MAX_EMBEDDED_IMAGES_PER_DOC + 12);
     expect(result.rejected.over_cap).toBeUndefined();
   });
 
   it('keeps the FIRST N in reading order — the reason a low cap hides late answers', async () => {
-    const result = await extractEmbeddedImages(await manual(8), 'pptx', { maxImages: 3 });
+    const result = await readEmbeddedImages(await manual(8), 'pptx', { maxImages: 3 });
     expect(result.images.map((i) => i.bytes.readUInt32BE(1_000))).toEqual([1, 2, 3]);
     // Ordinals stay dense over what survived, so "image 3 of 3" can be counted to.
     expect(result.images.map((i) => i.ordinal)).toEqual([1, 2, 3]);

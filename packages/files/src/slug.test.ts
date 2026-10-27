@@ -240,7 +240,12 @@ describe('extension sets', () => {
   });
 });
 
-import { ANYDOC_EXTS, exportHintForExt as hintForExt, MARKUP_EXTS, parserRouteForExt } from './slug';
+import {
+  ANYDOC_EXTS,
+  exportHintForExt as hintForExt,
+  MARKUP_EXTS,
+  parserRouteForExt,
+} from './slug';
 
 describe('parserRouteForExt', () => {
   it('routes PDFs to pdf-parse (tier 1: in-process)', () => {
