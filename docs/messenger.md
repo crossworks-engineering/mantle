@@ -164,7 +164,7 @@ local stdio MCP server and a second replica keep their own.
 | `POST /c/:id/read`, `POST /c/:id/clear`, `POST /c/:id/history/delete` | cursor, clear for me, delete history for everyone |
 | `POST /c/:id/typing` | a NOTIFY, stored nowhere |
 | `PUT /favourites/:kind/:id`, `DELETE /favourites/:kind/:id` | pin and unpin |
-| `GET /directory?q=` | who I may chat with, with "online" |
+| `GET /directory?q=` | who I may chat with, with "online"; `q` matches the shown name, never the address |
 | `GET /photo/:loginId?v=` | the older path of `GET /api/people/:id/photo` (People, below): the same handler and callers |
 | `GET /stream` | the SSE stream (below) |
 | `GET /unread` | the badge |
@@ -203,7 +203,9 @@ it left, only those added before it left; a disabled login stays visible
 there). Every read of the module runs on the system pool by name, the
 caller's own login id in its WHERE: the caller is always the
 authenticated login, never an id from a request. Not visible and not
-existing read the same (left out of a list, the one 404). The messenger
+existing read the same (left out of a list, the one 404). Faces too go
+through the gate (`loginFaces` takes the caller), and a search matches the
+name a caller is shown, never the mailbox behind it. The messenger
 re-exports `peopleVisibleTo` and `loginVisibleTo`, and its rooms keep the
 same seq rule (`roomPeopleSql`, which `mantle_messenger_people` answers in
 a scope). Agents are not logins: an agent's face is the messenger's.
@@ -225,7 +227,7 @@ minute):
 
 | Route | What |
 | --- | --- |
-| `GET /api/people` | every card the caller may see, itself included, by name (one query; at most 1000) |
+| `GET /api/people` | every card the caller may see, itself included, by name (one query after the Admin check; at most 1000, with no sign of more) |
 | `GET /api/people/:id` | `{ person }`, or the one 404 |
 | `GET /api/people/presence?ids=a,b,c` | `{ presence: [{id, state, lastActiveAt}] }` for the ids the caller may see; the first 200 ids are read, the rest ignored |
 | `GET /api/people/:id/photo?v=` | the photo's bytes, or the one 404 |
@@ -249,7 +251,12 @@ is read again and must be usable, on the session epoch the token carries
 and of the brain the token names. The photo is then served only through
 the gate, as for a cookie. An expired or forged token is no credential
 (the gate's 401, as on every asset path), so is the token of a login that
-signed out everywhere or was disabled; a token opens no other route.
+signed out everywhere or was disabled, or one naming another brain; a
+token opens no other route and no HEAD. The token is part of the URL a
+browser caches by: a client that rewrites every photo `src` each time the
+shell mints a new token fetches each photo again (and spends the
+`peopleRead` budget); keeping the URL a photo was first drawn with until
+its `v` changes, or fetching the bytes once into a blob, avoids that.
 
 ## Live delivery
 

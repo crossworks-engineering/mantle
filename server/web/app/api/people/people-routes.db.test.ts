@@ -281,9 +281,28 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
     // The token opens the photo rows only: never a card, a list or the
     // presence poll (the gate takes it on the asset paths alone).
     const tok = encodeURIComponent(at(A));
-    for (const p of [`/api/people?at=${tok}`, `/api/people/${C}?at=${tok}`]) {
+    for (const p of [
+      `/api/people?at=${tok}`,
+      `/api/people/${C}?at=${tok}`,
+      `/api/people/presence?ids=${C}&at=${tok}`,
+      `/api/messenger/directory?at=${tok}`,
+    ]) {
       expect((await get(p)).status, p).toBe(401);
     }
+    // Nor a HEAD of the photo (the gate takes a token on a GET only).
+    expect((await app.request(`/api/people/${C}/photo?at=${tok}`, { method: 'HEAD' })).status).toBe(
+      401,
+    );
+    // A token naming another brain (its uid is not this login's anchor).
+    const foreign = tokens.buildAssetToken(
+      randomUUID(),
+      A,
+      0,
+      tokens.SHORT_ASSET_TOKEN_TTL_SECONDS,
+    );
+    expect((await get(`/api/people/${C}/photo?at=${encodeURIComponent(foreign)}`)).status).toBe(
+      401,
+    );
     expect(h.keys).toEqual([]);
   });
 });

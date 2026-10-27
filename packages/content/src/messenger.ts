@@ -546,15 +546,31 @@ export type MessengerCreateInput = {
   color?: string | null;
 };
 
-/** A group's icon as given: one emoji (the app-nav emoji rule, at most 16
- *  characters, no letters or digits); null, or '', clears it; undefined
- *  leaves it. Anything else is an InputError. */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/** Whether `v` is one emoji: one grapheme cluster with a pictograph (or a
+ *  flag's two regional indicators) and no letter, number, space or control
+ *  character; of the format characters only the joiner and a flag's tag
+ *  characters (a sequence such as a family or a region's flag). */
+function oneEmoji(v: string): boolean {
+  if ([...GRAPHEMES.segment(v)].length !== 1) return false;
+  if (/[\p{L}\p{N}\p{Z}\p{Cc}]/u.test(v)) return false;
+  for (const ch of v) {
+    const cp = ch.codePointAt(0)!;
+    if (/\p{Cf}/u.test(ch) && cp !== 0x200d && !(cp >= 0xe0020 && cp <= 0xe007f)) return false;
+  }
+  return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(v);
+}
+
+/** A group's icon as given: one emoji (oneEmoji, within the app-nav emoji
+ *  rule: at most 16 characters); null, or '', clears it; undefined leaves
+ *  it. Anything else is an InputError. */
 function lookIcon(v: string | null | undefined): string | null | undefined {
   if (v === undefined) return undefined;
   const t = (v ?? '').trim();
   if (!t) return null;
   const icon = projectAppIcon(t);
-  if (!icon || icon.startsWith(LUCIDE_ICON_PREFIX)) {
+  if (!icon || icon.startsWith(LUCIDE_ICON_PREFIX) || !oneEmoji(icon)) {
     throw new InputError('An icon is one emoji (at most 16 characters).');
   }
   return icon;
@@ -1557,9 +1573,7 @@ async function participantsOf(
          order by x.joined_at, x.id`,
   );
   const [ln, an] = await Promise.all([
-    loginFaces(actor.ownerId, [
-      ...new Set(rows.filter((r) => r.kind === 'login').map((r) => r.id)),
-    ]),
+    loginFaces(actor, [...new Set(rows.filter((r) => r.kind === 'login').map((r) => r.id))]),
     agentFaces(actor.ownerId, [
       ...new Set(rows.filter((r) => r.kind === 'agent').map((r) => r.id)),
     ]),

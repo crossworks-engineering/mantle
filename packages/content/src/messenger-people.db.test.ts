@@ -232,6 +232,17 @@ describe.skipIf(!URL)('who may see whom (loginVisibleTo, peopleVisibleTo)', () =
     expect(await pp.peoplePresence(actor(A), [...filler, B])).toEqual([]);
   });
 
+  it('faces only through the gate; the directory searches the shown name, never the address', async () => {
+    // Fay (W2) is outside Ann's gate: her face is left out, as an unknown id.
+    const faces = await pp.loginFaces(actor(A), [F, B, randomUUID(), 'nope']);
+    expect([...faces.keys()]).toEqual([B]);
+    expect([...(await pp.loginFaces(actor(adminB), [F])).keys()]).toEqual([F]);
+    // Every address holds the test's tag and example.invalid; no name does.
+    expect(await ms.peopleVisibleTo(actor(adminB), { q: 'example.invalid' })).toEqual([]);
+    expect(await ms.peopleVisibleTo(actor(adminB), { q: tag })).toEqual([]);
+    expect((await ms.peopleVisibleTo(actor(adminB), { q: 'Ben' })).map((p) => p.id)).toEqual([B]);
+  });
+
   it('a photo pointer only through the gate, and only a projected one', async () => {
     const hex = 'f'.repeat(64);
     await su(sqlTag`insert into profiles (user_id, preferences)

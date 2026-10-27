@@ -15,6 +15,8 @@
  *   left, only those added before it left; a disabled login stays visible
  *   there).
  *
+ * Each read asks first whether the caller is an Admin user (loginIsAdmin),
+ * then runs its one statement ("one query" below counts that statement).
  * Everything here reads on the system pool, by name: the caller is always
  * the authenticated login (the session's, or the MCP actor's), never an id
  * taken from a request, and every query names it in its own WHERE. Not
@@ -149,37 +151,45 @@ function agentFace(avatar: unknown, slug: string, style: unknown): PersonAvatarV
 }
 
 /**
- * Logins' names and faces, one query, for ids a gated read already
- * returned (the messenger's room people): never a gate itself. Callers
- * pass only ids the caller may see.
+ * The names and faces of the logins of `ids` that `caller` may see (the
+ * messenger's room people), one query through the gate (after the Admin
+ * check, loginIsAdmin): an id outside it
+ * is left out, as an unknown one is. `caller` must be the authenticated
+ * login.
  */
 export async function loginFaces(
-  ownerId: string,
+  caller: PeopleCaller,
   ids: readonly string[],
 ): Promise<
   Map<string, { name: string; avatar: PersonAvatarView | null; photoVersion: string | null }>
 > {
-  if (ids.length === 0) return new Map();
+  const wanted = ids.filter(isUuid);
+  if (wanted.length === 0) return new Map();
+  const admin = await loginIsAdmin(caller.loginId);
   const rows = await q<{ id: string; name: string } & LoginFaceRow>(
     systemDb,
-    sql`select u.id::text as id, ${LOGIN_NAME} as name, ${LOGIN_FACE_COLUMNS(ownerId)}
+    sql`select u.id::text as id, ${LOGIN_NAME} as name, ${LOGIN_FACE_COLUMNS(caller.ownerId)}
           from auth.users u
           left join profiles pr on pr.user_id = u.id
-         where u.id = any(${uuidArray(ids)})`,
+         where u.id = any(${uuidArray(wanted)}) and ${visible(caller, admin)}`,
   );
   return new Map(rows.map((r) => [r.id, { name: r.name, ...loginFace(r) }]));
 }
 
-/** Agents' names and faces, one query (the agents a gated read returned). */
+/** Agents' names and faces, one query (the agents a gated read returned,
+ *  of the brain `ownerId`). Agents are not people: no gate of this module
+ *  holds them. */
 export async function agentFaces(
   ownerId: string,
   ids: readonly string[],
 ): Promise<Map<string, { name: string; avatar: PersonAvatarView | null }>> {
-  if (ids.length === 0) return new Map();
+  const wanted = ids.filter(isUuid);
+  if (wanted.length === 0) return new Map();
   const rows = await q<{ id: string; name: string; slug: string; avatar: unknown; style: unknown }>(
     systemDb,
     sql`select a.id::text as id, a.name, a.slug, a.avatar, ${BRAIN_STYLE(ownerId)} as style
-          from agents a where a.id = any(${uuidArray(ids)})`,
+          from agents a
+         where a.id = any(${uuidArray(wanted)}) and a.owner_id = ${ownerId}::uuid`,
   );
   return new Map(
     rows.map((r) => [r.id, { name: r.name, avatar: agentFace(r.avatar, r.slug, r.style) }]),
@@ -220,7 +230,8 @@ export function roomPeopleSql(loginId: string, cs: SQL): SQL {
 
 /** The directory part of the rule as a condition on `u` (auth.users): a
  *  usable login other than the caller that shares a live workspace with it
- *  (every usable login for an Admin user). */
+ *  (every usable login for an Admin user: `admin`, loginIsAdmin's answer
+ *  for the caller). */
 function directoryReach(caller: PeopleCaller, admin: boolean): SQL {
   const shared = admin
     ? sql``
@@ -265,9 +276,9 @@ export async function peopleVisibleTo(
 > {
   const admin = await loginIsAdmin(caller.loginId);
   const only = opts.only ? sql`and u.id = any(${uuidArray(opts.only)})` : sql``;
-  const like = opts.q
-    ? sql`and (u.display_name ilike ${'%' + escapeLike(opts.q) + '%'} or u.email ilike ${'%' + escapeLike(opts.q) + '%'})`
-    : sql``;
+  // The name the caller is shown, never the mailbox behind it: an address
+  // is not something a person shares with the team.
+  const like = opts.q ? sql`and ${LOGIN_NAME} ilike ${'%' + escapeLike(opts.q) + '%'}` : sql``;
   const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
   const rows = await q<{ id: string; name: string; last_active_at: Date | null } & LoginFaceRow>(
     systemDb,

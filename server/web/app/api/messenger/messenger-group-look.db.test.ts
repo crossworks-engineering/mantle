@@ -219,10 +219,20 @@ describe.skipIf(!URL)("a group's icon and colour (0341)", () => {
       { icon: 'chart-bar' },
       { icon: 'lucide:rocket' },
       { icon: '🎉'.repeat(9) },
+      // One emoji only: no letters of any script, no hidden controls, not two.
+      { icon: 'абв' },
+      { icon: '\u202e' },
+      { icon: '🚀\u202e' },
+      { icon: '🚀🚀' },
     ]) {
       const res = await patch(A, id, body);
       expect(res.status, JSON.stringify(body)).toBe(400);
     }
+    // A sequence or a flag is one emoji.
+    for (const icon of ['👩‍💻', '🇿🇦', '👍🏽']) {
+      expect(await conv(await patch(A, id, { icon })), icon).toMatchObject({ icon });
+    }
+    expect((await patch(A, id, { icon: '🌱' })).status).toBe(200);
     // A bad create is refused too, and makes no group.
     expect((await create(A, { kind: 'group', participants: [B], color: 'mauve' })).status).toBe(
       400,
