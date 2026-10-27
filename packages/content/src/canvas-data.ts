@@ -1,6 +1,6 @@
 /**
  * The canvas data store (DWG phase 7a; the table: @mantle/db canvas_data,
- * migration 0336; the contract: @mantle/content-core/canvas-data). What a
+ * migration 0338; the contract: @mantle/content-core/canvas-data). What a
  * Present canvas keeps through `mantle.data`, read and written for ONE login
  * on ONE canvas, both named by the caller (the route's session, an agent's
  * scope), never by the canvas.
@@ -17,9 +17,9 @@
  *    writer's login id only to a login with Write on the canvas;
  *  - a read-only snapshot copy is never written.
  *
- * Reads run in the caller's scope, where the row rule (0336) holds the same
+ * Reads run in the caller's scope, where the row rule (0338) holds the same
  * lines; the filters here say them again for unscoped work. Writes are the
- * two definers of 0336 (mantle_canvas_data_put and _delete), called in the
+ * two definers of 0338 (mantle_canvas_data_put and _delete), called in the
  * caller's own scope: they take the login from the scope, check the canvas's
  * rights and the caps under a lock on the canvas, and are the table's only
  * writers (no role writes it itself).
@@ -208,7 +208,7 @@ export async function listCanvasData(
   return { ok: true, entries: rows.map((r) => entryOf(r, writes)) };
 }
 
-/** What a definer answered (0336): 'ok', or why not. */
+/** What a definer answered (0338): 'ok', or why not. */
 type DefinerResult =
   'ok' | 'missing' | 'forbidden' | 'read_only' | 'ro' | 'full' | 'too_big' | 'invalid';
 
@@ -245,7 +245,7 @@ function writeScopeRefusal(caller: CanvasDataCaller): CanvasDataRefusal | null {
 
 /**
  * Save one entry (made or replaced), by its definer (mantle_canvas_data_put,
- * 0336) in the caller's own scope: the canvas's rights, the read-only copy
+ * 0338) in the caller's own scope: the canvas's rights, the read-only copy
  * and the caps are decided there, under a lock on the canvas, so two writes
  * never both pass a cap and a canvas deleted meanwhile is `missing`.
  */
@@ -276,7 +276,7 @@ export async function setCanvasData(
   return { ok: true, updatedAt: new Date(row.saved_at).toISOString() };
 }
 
-/** One call of the delete definer (mantle_canvas_data_delete, 0336). */
+/** One call of the delete definer (mantle_canvas_data_delete, 0338). */
 async function deleteRows(
   id: string,
   bucket: CanvasDataBucket | null,

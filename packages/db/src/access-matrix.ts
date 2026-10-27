@@ -1285,10 +1285,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     ...userOnly('public.item_marks', 'admin'),
     scopedSystemWrite: "own marks: actor_id is the caller's login; the node is read in scope first",
   },
-  // The canvas data store (0336, DWG phase 7a): a Present canvas's small
+  // The canvas data store (0338, DWG phase 7a): a Present canvas's small
   // JSON values. Read by its row rule (a canvas the scope reads: `shared`,
   // the login's own `mine`, or everyone's with Write on the canvas); written
-  // only by its two definers (mantle_canvas_data_put and _delete, 0336),
+  // only by its two definers (mantle_canvas_data_put and _delete, 0338),
   // called in the login's own scope, which hold the rights and the caps.
   // The runtime role reads it, never writes it.
   { ...userOnly('public.canvas_data', 'admin'), runtime: 'read' },
@@ -1599,7 +1599,7 @@ export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
 export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.presents', // 0332
   'public.present_revisions', // 0332
-  'public.canvas_data', // 0336
+  'public.canvas_data', // 0338
   'public.messenger_conversations', // 0335
   'public.messenger_participants', // 0335
   'public.messenger_messages', // 0335
@@ -1775,9 +1775,9 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)':
     'a Telegram chat blocked or unpaired by its own login, a Moderator of its bot’s workspace or an Admin user with the users area (0313): the role holds no right on telegram_chats',
   'public.mantle_canvas_data_put(uuid,text,text,text)':
-    'a canvas data entry saved by the scope’s own login, on the canvas’s rights and under its caps (0336): the role holds no right on canvas_data',
+    'a canvas data entry saved by the scope’s own login, on the canvas’s rights and under its caps (0338): the role holds no right on canvas_data',
   'public.mantle_canvas_data_delete(uuid,text,text,uuid)':
-    'a canvas data entry removed, or the canvas’s data cleared, by the scope’s own login, on the canvas’s rights (0336)',
+    'a canvas data entry removed, or the canvas’s data cleared, by the scope’s own login, on the canvas’s rights (0338)',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

@@ -9,7 +9,7 @@
  *    refused (403) and nothing is written;
  *  - `mine`: any reader writes and reads their own entries only; a user with
  *    Write on the canvas lists everyone's (`everyone=1`), a plain reader is
- *    refused; the row rule (0336) shows a plain reader's scope no other
+ *    refused; the row rule (0338) shows a plain reader's scope no other
  *    login's entry;
  *  - a login that does not read the canvas gets 404 and writes nothing;
  *  - the caps: a value over 64 KB is a 400; past the canvas's 1 MB, or a
@@ -37,7 +37,7 @@
  *    the definer's cap query use an index (EXPLAIN, a generic plan, seq
  *    scans off).
  *
- * The writes are the store's two definers (0336), run in the login's own
+ * The writes are the store's two definers (0338), run in the login's own
  * scope; fixtures that seed rows past the caps write as the superuser (the
  * runtime role only reads the table).
  *

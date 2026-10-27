@@ -190,7 +190,7 @@ describe.skipIf(!URL)(
     it('the matrix marks exactly the four workspace tables runtime read, the member turn ledger and the canvas data store', () => {
       // The ledger too since 0326: its two definers write it, the runtime
       // role only reads it (member-turn-ledger-narrow.db.test.ts holds its
-      // live grants). The canvas data store since 0336: its two definers
+      // live grants). The canvas data store since 0338: its two definers
       // write it (canvas-data-rights.db.test.ts).
       expect(runtimeReadOnlyTables().sort()).toEqual(
         [...TABLES, 'public.member_turn_ledger', 'public.canvas_data'].sort(),

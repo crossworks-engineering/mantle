@@ -1,21 +1,21 @@
--- Rollback of 0336_canvas_data: what an operator MAY run before pinning the
+-- Rollback of 0338_canvas_data: what an operator MAY run before pinning the
 -- image one release back (plan v3.2 rule 2, a one-image rollback). Not a
 -- migration: nothing runs it on its own.
 --
--- Optional: the older image works with 0336 in place. It never reads
+-- Optional: the older image works with 0338 in place. It never reads
 -- `canvas_data` and never calls its two definers (mantle_canvas_data_put,
 -- mantle_canvas_data_delete), and its canvases never call `mantle.data`. So
 -- this revert keeps every stored value, the table's five indexes and both
--- functions: it only takes 0336 off the ledger, so the next roll forward
--- runs it again (every statement in 0336 is IF NOT EXISTS, CREATE OR
+-- functions: it only takes 0338 off the ledger, so the next roll forward
+-- runs it again (every statement in 0338 is IF NOT EXISTS, CREATE OR
 -- REPLACE, or drops and makes its policy again, so the table, its indexes
 -- and its rows stay as they are).
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0336_canvas_data.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0338_canvas_data.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 -- then pin the older image straight away (docs/update-prod.md "Rollback").
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790200320000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790200440000;

@@ -64,8 +64,8 @@
 -- allowlist holds what a viewer role may run). Never the narrow role.
 --
 -- Grants come from the access matrix (applyViewerGrants), never from here.
--- Idempotent. The `when` sits above main's 0334's. Revert:
--- packages/db/rollback/0336_canvas_data.revert.sql.
+-- Idempotent. The `when` sits above 0337's. Revert:
+-- packages/db/rollback/0338_canvas_data.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 

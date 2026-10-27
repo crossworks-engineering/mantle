@@ -2,7 +2,7 @@
  * The tree's custom order (docs/folder-tree.md, "Custom order"): one order
  * for everyone, set by whoever may edit the folder (owner decision
  * 2026-10-26). An item's place is its `data.tree_rank`, a presentation key
- * (0281, 0335): the database lets edit of the item or of its folder change
+ * (0281, 0337): the database lets edit of the item or of its folder change
  * it, and placeTreeItem asks Write on the folder (an Admin scope at the top
  * level).
  *

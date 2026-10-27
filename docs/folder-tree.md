@@ -131,7 +131,7 @@ login (owner decision 2026-10-26).
 - **Where it lives.** An item's place is its `data.tree_rank`, a
   fractional key (`packages/content/src/rank.ts`); a folder's place among
   its siblings is its `data.rank`, as before. Both are presentation keys
-  (0281, `tree_rank` since 0335): the database lets edit of the item or of
+  (0281, `tree_rank` since 0337): the database lets edit of the item or of
   its folder change them, and nothing else of the row. `tree_rank` is the
   tree's own: a task's board order (`rank`) never moves an item in the
   tree, and a place never moves a card on a board. A place never touches

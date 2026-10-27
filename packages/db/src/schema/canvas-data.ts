@@ -14,7 +14,7 @@ import { authUsers } from './auth-users';
 import { nodes } from './nodes';
 
 /**
- * The canvas data store (DWG phase 7a, migration 0336): small JSON values a
+ * The canvas data store (DWG phase 7a, migration 0338): small JSON values a
  * Present canvas keeps through `mantle.data` (meeting marks, saved layouts,
  * suggestions, votes). NOT a canvas revision: a write here never changes
  * the canvas, its source or its rev. The contract (buckets, key format,

@@ -197,7 +197,7 @@ gate: `warn` reports and locks them all, `on` drops them.
   new node's are dropped (above).
 - `mantle_node_presentation_keys()` is `rank` (a task's board order, a
   folder's place among its siblings) and `tree_rank` (an item's place in
-  its folder's custom order, 0335): a change of these alone needs edit of
+  its folder's custom order, 0337): a change of these alone needs edit of
   the item or of its folder (the write check's exemption, plan 20.3).
 - `mantle_node_extractor_keys()` names the 13 keys the extractor writes
   about a file's bytes: the read-only snapshot copy trigger (0267) now reads

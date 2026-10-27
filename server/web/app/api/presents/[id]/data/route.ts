@@ -16,7 +16,7 @@
  * the login's own entries; `everyone=1` lists every login's, Write only.
  * Moderation, Write only: `by=<login id>` removes another login's `mine`
  * entry, and `all=1` removes every entry of the canvas. The writes are the
- * store's definers (0336), in the login's own scope.
+ * store's definers (0338), in the login's own scope.
  * A write declares read, its lowest right; the shared bucket's edit runs
  * as its higher cells (a8-route-cells.ts).
  */

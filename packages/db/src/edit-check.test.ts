@@ -85,16 +85,16 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     }
   });
 
-  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0335) is this list', () => {
+  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0337) is this list', () => {
     const m = migration('0281_edit_check_tables');
     const extractor = sqlArrayAfter(m, 'mantle_node_extractor_keys"()');
     expect(extractor).toEqual([...NODE_EXTRACTOR_KEYS]);
     // The derived keys are the extractor's and the rest.
     const rest = sqlArrayAfter(m, 'mantle_node_derived_keys"()\n');
     expect([...extractor, ...rest].sort()).toEqual([...NODE_DERIVED_KEYS].sort());
-    // The presentation keys, last replaced in 0335 (the tree's own key).
+    // The presentation keys, last replaced in 0337 (the tree's own key).
     const pres = sqlArrayAfter(
-      migration('0335_tree_rank_presentation'),
+      migration('0337_tree_rank_presentation'),
       'mantle_node_presentation_keys"()',
     );
     expect(pres).toEqual([...NODE_PRESENTATION_KEYS]);

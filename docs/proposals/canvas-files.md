@@ -959,7 +959,7 @@ key, json, everyone, by}` to its parent, only after `ready` (the parent
   30 s each. The message names no canvas and no login; the canvas never
   holds a token. A canvas that never calls it sends nothing. With no parent
   (a render, the poster, an export) reads answer empty and writes refuse.
-- **Storage.** `canvas_data` (migration 0336): one row per (canvas, key) in
+- **Storage.** `canvas_data` (migration 0338): one row per (canvas, key) in
   `shared`, per (canvas, login, key) in `mine`; jsonb values, at most 64 KB
   each as stored (what every cap counts) and 64 levels deep, 1 MB and 1000 entries per canvas, every login's
   `mine` together at most 75% of that (so `shared` always keeps a quarter),

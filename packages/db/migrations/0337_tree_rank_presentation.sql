@@ -10,7 +10,7 @@
 -- check that reads it (mantle_write_check_trg, the edit check's keys) is
 -- untouched. Re-runnable.
 --
--- Rollback: packages/db/rollback/0335_tree_rank_presentation.revert.sql puts
+-- Rollback: packages/db/rollback/0337_tree_rank_presentation.revert.sql puts
 -- 0281's list back; the older image never writes tree_rank.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint

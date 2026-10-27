@@ -529,7 +529,7 @@ async function folderIdAt(ownerId: string, path: string): Promise<string | null>
 /**
  * Put an item directly after `afterId` among the items of its folder (null
  * = first), in the folder's custom order, one for everyone (the tree's
- * `custom` sort). The place is the item's `data.tree_rank` (0335), written
+ * `custom` sort). The place is the item's `data.tree_rank` (0337), written
  * without touching `updated_at` (orderChildren).
  */
 export async function placeTreeItem(
@@ -591,7 +591,7 @@ async function placeFolder(
 /** One folder's children to order: its items or its subfolders. */
 type ChildOrder = {
   /** The key the place is written to: an item's `tree_rank`, a folder's
-   *  `rank` (both presentation keys, 0281 and 0335). */
+   *  `rank` (both presentation keys, 0281 and 0337). */
   key: 'tree_rank' | 'rank';
   /** The folder whose children these are (the lock's key). */
   path: string;

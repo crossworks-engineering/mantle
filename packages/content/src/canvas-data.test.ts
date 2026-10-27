@@ -1,5 +1,5 @@
 /**
- * The canvas data store's one writer (migration 0336,
+ * The canvas data store's one writer (migration 0338,
  * mantle_canvas_data_put) holds its own copy of the caps, and both definers
  * (_put and _delete) their own copy of the key rule: pinned here to the
  * contract's constants (@mantle/content-core/canvas-data), so the words a
@@ -19,7 +19,7 @@ import {
 } from '@mantle/content-core/canvas-data';
 
 const sql = readFileSync(
-  new URL('../../db/migrations/0336_canvas_data.sql', import.meta.url),
+  new URL('../../db/migrations/0338_canvas_data.sql', import.meta.url),
   'utf8',
 );
 
@@ -27,7 +27,7 @@ describe("the canvas data definer's caps", () => {
   it('equal the contract', () => {
     const constant = (name: string) => {
       const m = new RegExp(`\\b${name} CONSTANT (?:integer|bigint) := (\\d+);`).exec(sql);
-      if (!m) throw new Error(`no ${name} in 0336`);
+      if (!m) throw new Error(`no ${name} in 0338`);
       return Number(m[1]);
     };
     expect(constant('value_max')).toBe(CANVAS_DATA_VALUE_MAX_BYTES);

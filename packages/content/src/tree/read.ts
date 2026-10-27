@@ -377,7 +377,7 @@ export function treeItemOrderBy(sort: TreeSort): SQL {
 }
 
 /** An item's place in its folder's custom order (`data.tree_rank`, its own
- *  presentation key, 0335), or '~' when it has none or one that is not a
+ *  presentation key, 0337), or '~' when it has none or one that is not a
  *  rank. */
 function rankOf(alias: string): SQL {
   const rank = sql`${sql.identifier(alias)}.data->>'tree_rank'`;

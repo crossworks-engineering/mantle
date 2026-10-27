@@ -1361,9 +1361,9 @@ nothing). Nothing to do before the roll.
   Going below 0330 as well: this revert first (0330's reads the bridge's
   owner), then 0330's (below).
 
-## Going up to 0336 (the canvas data store, DWG phase 7a)
+## Going up to 0338 (the canvas data store, DWG phase 7a)
 
-Migration 0336 adds `canvas_data`: the small JSON values a Present canvas
+Migration 0338 adds `canvas_data`: the small JSON values a Present canvas
 keeps through `mantle.data` (meeting marks, saved layouts, suggestions,
 votes), with a row rule for the workspace role, and its only two writers,
 the definers `mantle_canvas_data_put` and `mantle_canvas_data_delete`
@@ -1377,7 +1377,7 @@ Nothing to do before the roll.
   canvas's data calls are not answered and time out.
 - **Rolling back below it:** optional; the older image never reads the
   table nor calls its definers. The revert
-  (`packages/db/rollback/0336_canvas_data.revert.sql`) takes 0336 off the
+  (`packages/db/rollback/0338_canvas_data.revert.sql`) takes 0338 off the
   ledger and keeps every stored value, the indexes and both functions.
 
 ## Rollback

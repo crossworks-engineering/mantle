@@ -75,7 +75,7 @@ export const NODE_EXTRACTOR_KEYS: readonly string[] = [
 /** The presentation keys of nodes.data (mantle_node_presentation_keys):
  *  a change of these alone needs edit of the item OR of its folder (a
  *  board drag, a sibling rebalance; plan 20.3). `tree_rank` is an item's
- *  place in its folder's custom order (0335, docs/folder-tree.md). */
+ *  place in its folder's custom order (0337, docs/folder-tree.md). */
 export const NODE_PRESENTATION_KEYS: readonly string[] = ['rank', 'tree_rank'];
 
 /**
