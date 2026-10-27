@@ -1,63 +1,35 @@
 /**
- * `video_ingest` — paste a video link (or point at an uploaded video file),
- * get a searchable transcript page + a durable audio artifact into the brain.
+ * `video_ingest` — point at an uploaded video (or audio) file, get a
+ * searchable transcript page + a durable audio artifact into the brain.
  *
- * Pipeline (both entry paths converge on the same artifact set):
+ * Pipeline:
  *
- *   url ──▶ ssrf ──▶ probe ──▶ captions? ──yes──▶ transcript (free, timestamped)
- *                        │no / garbage
- *                        ▼
- *              stt-resolve ──▶ /audio ──▶ save mp3 ──▶ STT ──▶ transcript
+ *   file_node_id ──▶ read bytes ──▶ parser /extract-audio ──▶ save mp3 ──▶ STT ──▶ page
  *
- *   file_node_id ──▶ read bytes ──▶ /extract-audio ──▶ save mp3 ──▶ STT ──▶ …
+ * The audio is saved BEFORE transcription so a failed STT still leaves a
+ * durable, retryable artifact. STT bills per clip, so the worker is resolved
+ * before any byte is read.
  *
- * Order is the economics: captions cost nothing and are usually already
- * timestamped; STT bills per clip, so it runs only when captions are absent
- * or junk (video-transcript.ts owns that judgement, pure + tested). The
- * audio clip is saved BEFORE transcription so a failed STT still leaves a
- * durable, retryable artifact — and audio is only fetched at all on the STT
- * path (the captions path downloads nothing).
+ * No links: the tool fetches nothing. A video on the web is downloaded by the
+ * user and uploaded (the media sidecar that fetched links, with yt-dlp, was
+ * removed with the parser service on 2026-10-27). ffmpeg runs in the parser
+ * service (server/parser), never in this process.
  *
- * Safety: owner-only (tool group `video-ingest`, never the team responder —
- * this is an outbound fetch of an arbitrary URL) plus a surface refusal here
- * as belt-and-braces. The URL is SSRF-checked BEFORE the sidecar sees it;
- * the sidecar itself (infra/media-sidecar) has no DB/secrets/file access.
- * The heavy lifting (yt-dlp/ffmpeg) never runs in this process.
+ * Owner-only (tool group `video-ingest`, never the team responder): it
+ * spends the owner's STT key.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, bumpWorkerUsage } from '@mantle/db';
-import {
-  ensureAutoFiledFolder,
-  fileById,
-  mediaAudio,
-  mediaCaptions,
-  mediaExtractAudio,
-  mediaProbe,
-  mediaSidecarEnabled,
-  mediaVideo,
-  readFileById,
-  upsertFile,
-  type MediaBytes,
-  type MediaProbe,
-} from '@mantle/files';
+import { bumpWorkerUsage } from '@mantle/db';
+import { fileById, parserExtractAudio, readFileById, upsertFile } from '@mantle/files';
 import { createPage, markdownToDoc } from '@mantle/content';
 import { getSttAdapter } from '@mantle/voice';
 import { recordIngest, step } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
-import { EgressRefusedError, egressFetch } from '@mantle/std/egress';
-import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
 import { notFound } from './errors';
 import { defaultWorkerOrError } from './builtins-workers';
 import { str } from './coerce';
-import {
-  buildTranscriptMarkdown,
-  captionsGarbageReason,
-  formatTimestamp,
-  parseVtt,
-  transcriptWordCount,
-} from './video-transcript';
+import { formatTimestamp, transcriptWordCount } from './video-transcript';
 import { envNum } from '@mantle/config';
 import { errorDetail, errorMessage, publicProviderErrorMessage } from '@mantle/std';
 
@@ -67,120 +39,16 @@ import { errorDetail, errorMessage, publicProviderErrorMessage } from '@mantle/s
 // tutorial video is 10–40 minutes and paying for it is this tool's job.
 // 3600 s at 32 kbps mono ≈ 14.4 MB, inside both Google's 20 MB inline cap
 // and Whisper's 25 MB file cap.
-const MAX_STT_DURATION_S = () => envNum('MEDIA_MAX_STT_DURATION_S');
-const MAX_AUDIO_BYTES = () => envNum('MEDIA_MAX_AUDIO_BYTES');
-const MAX_VIDEO_BYTES = () => envNum('MEDIA_MAX_VIDEO_BYTES');
+const MAX_STT_DURATION_S = () => envNum('VIDEO_INGEST_MAX_STT_DURATION_S');
+const MAX_AUDIO_BYTES = () => envNum('VIDEO_INGEST_MAX_AUDIO_BYTES');
+const MAX_FILE_BYTES = () => envNum('VIDEO_INGEST_MAX_FILE_BYTES');
 
-/** Where an ingested video lands: this month's folder under Auto-filed. */
-function ensureVideoIngestDateFolder(ownerId: string): Promise<string> {
-  return ensureAutoFiledFolder(ownerId, 'video-ingest');
-}
+type TranscriptSource = `stt:${string}`;
 
-function slugBase(title: string | null, fallback: string): string {
-  const s = (title ?? '')
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-  return s || fallback;
-}
-
-/** Unwrap a MediaResult into the tool's error shape, or hand back the value. */
-function mediaFail(r: { ok: false; code: string; message: string }): ToolHandlerResult {
-  return { ok: false, error: `${r.code}: ${r.message}` };
-}
-
-type TranscriptSource = `captions:${'manual' | 'auto'}` | `stt:${string}`;
+/** What the transcript page says about the recording. */
+type RecordingInfo = { title: string | null; durationSeconds: number | null };
 
 // ─── the tool ──────────────────────────────────────────────────────
-
-/** How long the redirect walk may take: a link that does not answer in
- *  time is refused, since its redirects were never checked. */
-const REDIRECT_WALK_TIMEOUT_MS = 10_000;
-
-/**
- * Walk a video link before the media sidecar sees it: the link to hand the
- * sidecar, or the refusal. The link is checked, then its redirects are
- * walked through the one egress fetch (A10 part 1), every hop checked and
- * no body read: the sidecar re-checks only the first host and yt-dlp
- * follows redirects itself, so a public link that redirects into private or
- * metadata space is refused here.
- *
- * The walk fails closed (fix rounds 1 and 2): a link that does not answer
- * within the deadline, redirects more than the walk follows, redirects to a
- * Location that is no URL, or fails in any way after its first hop is
- * refused, since a hop the sidecar would follow was never checked. Only a
- * failure on the link itself (a refused connection, a TLS error on the
- * first hop) is the sidecar's to report, as before: no redirect was met.
- *
- * The link handed on is the URL parser's canonical form of the one given,
- * not the raw text: `http://a.example\@169.254.169.254/` is host
- * `a.example` here and could be host 169.254.169.254 to a parser that reads
- * the backslash differently (yt-dlp is Python), so the sidecar gets
- * `http://a.example/@169.254.169.254/`, which every parser reads alike. It
- * is not the walk's final URL: yt-dlp has no option to refuse redirects
- * (and fetches further URLs its extractor finds: API endpoints, manifests,
- * media hosts), so handing it the final hop would close nothing, and a site
- * that redirects a bare client to a consent or login page would break
- * extraction. The sidecar holding nothing worth stealing stays the backstop
- * for what yt-dlp fetches beyond the walk (docs/egress.md).
- */
-export async function walkVideoUrl(
-  url: string,
-): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  try {
-    await assertFetchableUrl(url);
-  } catch (err) {
-    return { ok: false, error: errorMessage(err) };
-  }
-  const canonical = new URL(url).href;
-  let hops = 0;
-  try {
-    const res = await egressFetch(
-      canonical,
-      { method: 'GET' },
-      {
-        guard: async (u) => {
-          hops++;
-          await assertFetchableUrl(u);
-        },
-        exempt: isSandboxProxyUrl,
-        timeoutMs: REDIRECT_WALK_TIMEOUT_MS,
-      },
-    );
-    await res.body?.cancel().catch(() => {});
-  } catch (err) {
-    if (err instanceof EgressRefusedError) return { ok: false, error: errorMessage(err) };
-    if ((err as { name?: string } | null)?.name === 'AbortError') {
-      return {
-        ok: false,
-        error: `the link did not answer within ${REDIRECT_WALK_TIMEOUT_MS / 1000} s, so its redirects could not be checked`,
-      };
-    }
-    if (/too many redirects/.test(errorMessage(err))) {
-      return {
-        ok: false,
-        error: `${errorMessage(err)}: the link's redirects could not all be checked`,
-      };
-    }
-    if (hops > 1) {
-      return {
-        ok: false,
-        error: `the link's redirect could not be followed (${errorMessage(err)}), so its redirects could not all be checked`,
-      };
-    }
-  }
-  return { ok: true, url: canonical };
-}
-
-/** The walk's verdict alone: null when the link may go, else the refusal.
- *  Exported for the egress proof table (egress-proof.test.ts). */
-export async function vetVideoUrl(url: string): Promise<string | null> {
-  const walked = await walkVideoUrl(url);
-  return walked.ok ? null : walked.error;
-}
 
 const video_ingest: BuiltinToolDef = {
   slug: 'video_ingest',
@@ -197,35 +65,22 @@ const video_ingest: BuiltinToolDef = {
     clientSourced: { kind: 'write', nodes: [], creates: true },
   },
   ownerOnly: true,
-  name: 'Ingest a video into the brain',
+  name: 'Transcribe a recording into the brain',
   description:
-    "Turn a video into a searchable, timestamped transcript page. Pass `url` for an online video (captions are used when available — free; otherwise the audio is extracted and transcribed via the STT worker), or `file_node_id` for a video file already in Files (always audio + STT). The extracted audio is kept as a file beside the source; `keep_video: true` additionally stores the video itself. For the user's own reference material. Long-running — up to several minutes for an uncaptioned video.",
+    "Turn an uploaded video or audio file (a file node in Files) into a searchable transcript page: the audio is extracted and transcribed by the speech-to-text worker. The extracted audio is kept as a file beside the source. This tool does not fetch links: for a video on the web, ask the user to download it and upload the file, then pass its file_node_id. For the user's own reference material. Long-running: up to several minutes for a long recording.",
   inputSchema: {
     type: 'object',
     properties: {
-      url: {
-        type: 'string',
-        description: 'http(s) link to the video. Exactly one of url / file_node_id.',
-      },
       file_node_id: {
         type: 'string',
-        description: 'Id of a video file node already in Files. Exactly one of url / file_node_id.',
+        description: 'Id of a video or audio file node already in Files.',
       },
       language: {
         type: 'string',
-        description: "Optional ISO-639-1 hint for captions/STT (e.g. 'en', 'af').",
-      },
-      keep_video: {
-        type: 'boolean',
-        default: false,
-        description: 'Also store the full video file (url path only). Default false — disk.',
-      },
-      force_stt: {
-        type: 'boolean',
-        default: false,
-        description: 'Skip captions and transcribe the audio even when captions exist.',
+        description: "Optional ISO-639-1 hint for speech-to-text (e.g. 'en', 'af').",
       },
     },
+    required: ['file_node_id'],
   },
   // Checked centrally before the handler runs; catches the classic
   // filename-instead-of-uuid mistake with a teaching error instead of a raw
@@ -239,253 +94,27 @@ const video_ingest: BuiltinToolDef = {
     },
   ],
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    // Belt-and-braces on top of the tool-group grant and the dispatch gate (the
-    // MCP server calls handlers directly): an outbound fetch of an arbitrary
-    // URL runs only for the owner.
+    // Belt-and-braces on top of the tool-group grant and the dispatch gate
+    // (the MCP server calls handlers directly): it spends the owner's key.
     if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
-    if (!mediaSidecarEnabled()) {
+    if (str(input.url).trim()) {
       return {
         ok: false,
         error:
-          'Media ingestion is not enabled on this box (the `media` service is switched off). An admin can switch Media on in Settings > Services (see docs/video-ingest.md).',
+          'video_ingest does not fetch links. Ask the user to download the video and upload the file, then pass its file_node_id.',
       };
     }
-    const rawUrl = str(input.url).trim();
     const fileNodeId = str(input.file_node_id).trim();
-    if (rawUrl && fileNodeId) {
-      return { ok: false, error: 'pass EITHER url OR file_node_id, not both' };
-    }
-    if (!rawUrl && !fileNodeId) {
+    if (!fileNodeId) {
       return {
         ok: false,
         error:
-          "pass one of `url` (an http(s) link) or `file_node_id` (a file node's UUID from file_list / search_nodes)",
+          "pass `file_node_id` (a video or audio file node's UUID from file_list / search_nodes)",
       };
     }
     const language = str(input.language) || undefined;
-    const forceStt = input.force_stt === true;
-    let keepVideo = input.keep_video === true;
     const notes: string[] = [];
-    if (keepVideo && ctx.surface?.kind !== 'web') {
-      // A full video download can add 25 minutes to an already-long turn;
-      // off the web surface (Telegram especially) that reads as a hang.
-      keepVideo = false;
-      notes.push('keep_video ignored on this surface — re-run from the web app to store the video');
-    }
 
-    if (rawUrl) {
-      // ── URL path ────────────────────────────────────────────────
-      const walked = await walkVideoUrl(rawUrl);
-      if (!walked.ok) return { ok: false, error: walked.error };
-      // From here on, the canonical form the walk checked (walkVideoUrl).
-      const url = walked.url;
-
-      const probe = await step({ name: 'video_probe', kind: 'http', input: { url } }, async (h) => {
-        const r = await mediaProbe(url);
-        if (r.ok) {
-          h.setMeta({
-            title: r.value.title,
-            durationSeconds: r.value.durationSeconds,
-            captionsManual: r.value.captions.manual.length,
-            captionsAuto: r.value.captions.auto.length,
-          });
-        } else {
-          h.setMeta({ error: r.code });
-        }
-        return r;
-      });
-      if (!probe.ok) return mediaFail(probe);
-      const info = probe.value;
-      if (info.isLive) {
-        return {
-          ok: false,
-          error:
-            'this is a LIVE stream — there is no bounded video to ingest. Try again after it ends.',
-        };
-      }
-      const maxDuration = MAX_STT_DURATION_S();
-      const hasCaptions = info.captions.manual.length > 0 || info.captions.auto.length > 0;
-      const overCap = info.durationSeconds != null && info.durationSeconds > maxDuration;
-      if (overCap && (!hasCaptions || forceStt)) {
-        // Never start a doomed download.
-        return {
-          ok: false,
-          error: `video is ${Math.round(info.durationSeconds!)}s — over the ${maxDuration}s STT cap — and ${forceStt ? 'force_stt was requested' : 'has no captions'}. Raise MEDIA_MAX_STT_DURATION_S or pick a shorter video.`,
-        };
-      }
-
-      // Captions first — free, near-instant, usually already timestamped.
-      let transcriptMd: string | null = null;
-      let source: TranscriptSource | null = null;
-      if (hasCaptions && !forceStt) {
-        const caps = await step(
-          { name: 'video_captions', kind: 'http', input: { url, language } },
-          async (h) => {
-            const r = await mediaCaptions(url, { lang: language, prefer: 'any' });
-            h.setMeta(r.ok ? { source: r.value.source, lang: r.value.lang } : { error: r.code });
-            return r;
-          },
-        );
-        if (caps.ok) {
-          const cues = parseVtt(caps.value.content);
-          const garbage = captionsGarbageReason(cues, info.durationSeconds, {
-            // Human-authored subtitles are never second-guessed on vocabulary
-            // or density — a 4h conference with terse captions must not be
-            // thrown away by a heuristic tuned for auto-caption junk.
-            trusted: caps.value.source === 'manual',
-          });
-          if (garbage) {
-            notes.push(`${caps.value.source} captions rejected: ${garbage}; falling back to STT`);
-          } else {
-            transcriptMd = buildTranscriptMarkdown(cues);
-            source = `captions:${caps.value.source}`;
-            if (caps.value.source === 'auto') {
-              notes.push('transcript is from machine-generated captions — accuracy varies');
-            }
-          }
-        } else if (caps.code === 'no_captions') {
-          notes.push('advertised captions were not downloadable; falling back to STT');
-        } else {
-          return mediaFail(caps);
-        }
-      }
-
-      let audioFileId: string | null = null;
-      let sttModel: string | null = null;
-      if (!transcriptMd) {
-        if (overCap) {
-          return {
-            ok: false,
-            error: `captions were unusable and the video is ${Math.round(info.durationSeconds!)}s — over the ${maxDuration}s STT cap.`,
-          };
-        }
-        // Resolve the STT worker BEFORE fetching audio — never download for
-        // a transcription that can't run.
-        const stt = await defaultWorkerOrError(ctx.ownerId, 'stt');
-        if (!stt.ok) {
-          return {
-            ok: false,
-            error: `this video has no usable captions and ${stt.error}`,
-          };
-        }
-        const adapter = getSttAdapter(stt.worker.provider);
-        if (!adapter) {
-          return {
-            ok: false,
-            error: `no STT adapter is wired for provider '${stt.worker.provider}'`,
-          };
-        }
-        const audio = await step(
-          { name: 'video_audio_fetch', kind: 'http', input: { url } },
-          async (h) => {
-            const r = await mediaAudio(url, {
-              maxDurationSeconds: maxDuration,
-              maxBytes: MAX_AUDIO_BYTES(),
-            });
-            h.setMeta(r.ok ? { bytes: r.value.bytes.length } : { error: r.code });
-            return r;
-          },
-        );
-        if (!audio.ok) return mediaFail(audio);
-
-        // Save BEFORE transcribing: a failed STT still leaves a durable,
-        // retryable artifact (re-run with the file node later).
-        const saved = await saveAudio(ctx.ownerId, audio.value, {
-          sourceUrl: url,
-          videoTitle: info.title,
-          slugFallback: 'video',
-        });
-        if (!saved.ok) return saved;
-        audioFileId = saved.fileId;
-
-        const text = await transcribeStep(audio.value.bytes, {
-          adapter,
-          apiKey: stt.credential.apiKey,
-          workerId: stt.worker.id,
-          workerSlug: stt.worker.slug,
-          model: stt.worker.model,
-          maxDurationSeconds: maxDuration,
-          language,
-        });
-        if (!text.ok) {
-          // Partial success — the audio artifact survived.
-          return {
-            ok: true,
-            output: {
-              ok: true,
-              partial: true,
-              audioFileId,
-              transcriptPageId: null,
-              error: `audio saved, but transcription failed: ${text.error}. Re-run video_ingest with file_node_id later.`,
-            },
-          };
-        }
-        transcriptMd = text.markdown;
-        source = `stt:${stt.worker.provider}`;
-        sttModel = stt.worker.model;
-        notes.push('transcript is machine-transcribed speech (untimestamped) — accuracy varies');
-      }
-
-      // Opt-in: keep the video itself, beside the audio.
-      let videoFileId: string | null = null;
-      if (keepVideo) {
-        const vid = await step(
-          { name: 'video_download', kind: 'http', input: { url } },
-          async (h) => {
-            const r = await mediaVideo(url, { maxBytes: MAX_VIDEO_BYTES() });
-            h.setMeta(r.ok ? { bytes: r.value.bytes.length } : { error: r.code });
-            return r;
-          },
-        );
-        if (vid.ok) {
-          const parentPath = await ensureVideoIngestDateFolder(ctx.ownerId);
-          const file = await upsertFile({
-            ownerId: ctx.ownerId,
-            parentPath,
-            filename: `${Date.now()}-${slugBase(info.title, 'video')}.mp4`,
-            bytes: vid.value.bytes,
-            overwrite: false,
-            title: info.title ?? undefined,
-            data: {
-              source: 'video_ingest',
-              sourceUrl: url,
-              durationSeconds: info.durationSeconds,
-              indexing: 'metadata',
-            },
-            tags: ['video', 'video-ingest'],
-          });
-          videoFileId = file.id;
-          if (audioFileId) {
-            // Derived-node convention: the video is the provenance ROOT.
-            // Re-stamp the audio clip so deleting the video reaps (or at
-            // least surfaces) its derived clip instead of orphaning it.
-            await db
-              .update(nodes)
-              .set({
-                data: sql`${nodes.data} || ${JSON.stringify({ sourceFileId: file.id })}::jsonb`,
-              })
-              .where(and(eq(nodes.id, audioFileId), eq(nodes.ownerId, ctx.ownerId)));
-          }
-        } else {
-          notes.push(
-            `keep_video failed (${vid.code}: ${vid.message}); transcript and audio are unaffected`,
-          );
-        }
-      }
-
-      return await finishWithPage(ctx.ownerId, {
-        transcriptMd: transcriptMd!,
-        source: source!,
-        sttModel,
-        info,
-        sourceUrl: url,
-        audioFileId,
-        videoFileId,
-        notes,
-      });
-    }
-
-    // ── file-node path ────────────────────────────────────────────
     // Metadata FIRST: mime + size gates must run before the bytes are read,
     // or the size cap can only refuse an allocation that already happened
     // (and >2 GiB throws out of fs.readFile before any guard runs).
@@ -498,25 +127,27 @@ const video_ingest: BuiltinToolDef = {
         error: `node '${meta.filename}' is ${mime || 'not a media file'} — video_ingest wants a video/* or audio/* file`,
       };
     }
-    if (meta.sizeBytes > MAX_VIDEO_BYTES()) {
+    if (meta.sizeBytes > MAX_FILE_BYTES()) {
       return {
         ok: false,
-        error: `file is ${meta.sizeBytes} bytes — over the ${MAX_VIDEO_BYTES()}-byte cap`,
+        error: `file is ${meta.sizeBytes} bytes — over the ${MAX_FILE_BYTES()}-byte cap (VIDEO_INGEST_MAX_FILE_BYTES)`,
       };
     }
-    const loaded = await readFileById({ ownerId: ctx.ownerId, fileId: fileNodeId });
-    if (!loaded) return notFound('file', fileNodeId, 'file_list / search_nodes');
+    // The STT worker BEFORE the bytes: never extract audio for a
+    // transcription that cannot run.
     const stt = await defaultWorkerOrError(ctx.ownerId, 'stt');
     if (!stt.ok) return { ok: false, error: stt.error };
     const adapter = getSttAdapter(stt.worker.provider);
     if (!adapter) {
       return { ok: false, error: `no STT adapter is wired for provider '${stt.worker.provider}'` };
     }
+    const loaded = await readFileById({ ownerId: ctx.ownerId, fileId: fileNodeId });
+    if (!loaded) return notFound('file', fileNodeId, 'file_list / search_nodes');
     const maxDuration = MAX_STT_DURATION_S();
     const extracted = await step(
       { name: 'video_extract_audio', kind: 'http', input: { bytes_in: loaded.bytes.length } },
       async (h) => {
-        const r = await mediaExtractAudio(loaded.bytes, {
+        const r = await parserExtractAudio(loaded.bytes, {
           maxDurationSeconds: maxDuration,
           maxAudioBytes: MAX_AUDIO_BYTES(),
         });
@@ -524,7 +155,15 @@ const video_ingest: BuiltinToolDef = {
         return r;
       },
     );
-    if (!extracted.ok) return mediaFail(extracted);
+    if (!extracted.ok) {
+      return {
+        ok: false,
+        error:
+          extracted.code === 'too_large'
+            ? `${extracted.message}. Raise VIDEO_INGEST_MAX_STT_DURATION_S or VIDEO_INGEST_MAX_AUDIO_BYTES, or upload a shorter recording.`
+            : `the audio could not be extracted (${extracted.code}: ${extracted.message})`,
+      };
+    }
 
     // The clip lives BESIDE its video (same folder), linked by sourceFileId.
     // Named `<base>-audio.mp3` and NEVER overwriting: `<base>.mp3` would be
@@ -595,14 +234,7 @@ const video_ingest: BuiltinToolDef = {
       info: {
         title: meta.title || meta.filename,
         durationSeconds: extracted.value.durationSeconds,
-        channel: null,
-        uploadDate: null,
-        extractor: null,
-        isLive: false,
-        captions: { manual: [], auto: [] },
-        filesizeApprox: null,
       },
-      sourceUrl: null,
       audioFileId: savedFile.id,
       videoFileId: fileNodeId,
       notes,
@@ -611,41 +243,6 @@ const video_ingest: BuiltinToolDef = {
 };
 
 // ─── shared stages ─────────────────────────────────────────────────
-
-async function saveAudio(
-  ownerId: string,
-  audio: MediaBytes,
-  opts: { sourceUrl: string; videoTitle: string | null; slugFallback: string },
-): Promise<{ ok: true; fileId: string } | { ok: false; error: string }> {
-  try {
-    const parentPath = await ensureVideoIngestDateFolder(ownerId);
-    const file = await upsertFile({
-      ownerId,
-      parentPath,
-      filename: `${Date.now()}-${slugBase(opts.videoTitle, opts.slugFallback)}.mp3`,
-      bytes: audio.bytes,
-      overwrite: false,
-      title: opts.videoTitle ? `${opts.videoTitle} (audio)` : undefined,
-      data: {
-        source: 'video_ingest',
-        sourceUrl: opts.sourceUrl,
-        videoTitle: opts.videoTitle,
-        durationSeconds: audio.durationSeconds,
-        // Metadata-only spine (name/type/tags, no content read): the clip's
-        // KNOWLEDGE lives in the transcript page; indexing the mp3 itself
-        // would be an unsupported_media skip at best.
-        indexing: 'metadata',
-      },
-      tags: ['audio', 'video-ingest'],
-    });
-    return { ok: true, fileId: file.id };
-  } catch (err) {
-    return {
-      ok: false,
-      error: `audio was extracted but could not be saved: ${errorMessage(err)}`,
-    };
-  }
-}
 
 async function transcribeStep(
   bytes: Buffer,
@@ -702,8 +299,7 @@ async function finishWithPage(
     transcriptMd: string;
     source: TranscriptSource;
     sttModel: string | null;
-    info: MediaProbe;
-    sourceUrl: string | null;
+    info: RecordingInfo;
     audioFileId: string | null;
     videoFileId: string | null;
     notes: string[];
@@ -711,14 +307,8 @@ async function finishWithPage(
 ): Promise<ToolHandlerResult> {
   const { info } = args;
   const meta = [
-    args.sourceUrl ? `Source: ${args.sourceUrl}` : null,
-    info.channel ? `Channel: ${info.channel}` : null,
     info.durationSeconds != null ? `Duration: ${formatTimestamp(info.durationSeconds)}` : null,
-    `Transcript: ${
-      args.source.startsWith('captions:')
-        ? `${args.source.slice('captions:'.length)} captions`
-        : `speech-to-text (${args.sttModel ?? args.source.slice('stt:'.length)})`
-    }`,
+    `Transcript: speech-to-text (${args.sttModel ?? args.source.slice('stt:'.length)})`,
     `Fetched: ${new Date().toISOString().slice(0, 10)}`,
   ]
     .filter(Boolean)
@@ -735,7 +325,6 @@ async function finishWithPage(
       data: {
         source: 'video_ingest',
         transcriptSource: args.source,
-        ...(args.sourceUrl ? { sourceUrl: args.sourceUrl } : {}),
         // Derived-node convention — but ONLY toward the VIDEO. The transcript
         // is the durable knowledge and the mp3 is a disposable byproduct;
         // pointing sourceFileId at the audio would let "tidy up the clips"
@@ -763,11 +352,10 @@ async function finishWithPage(
     source: 'agent_tool',
     ownerId,
     nodeId: pageId,
-    summary: `Video ingested: ${info.title ?? args.sourceUrl ?? 'video'}`,
+    summary: `Video ingested: ${info.title ?? 'recording'}`,
     payload: {
       via: 'video_ingest_tool',
       transcriptSource: args.source,
-      sourceUrl: args.sourceUrl,
       audioFileId: args.audioFileId,
       videoFileId: args.videoFileId,
     },
@@ -781,8 +369,6 @@ async function finishWithPage(
       video: {
         title: info.title,
         durationSeconds: info.durationSeconds,
-        channel: info.channel,
-        url: args.sourceUrl,
       },
       transcriptPageId: pageId,
       transcriptSource: args.source,

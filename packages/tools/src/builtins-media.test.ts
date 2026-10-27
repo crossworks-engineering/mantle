@@ -17,19 +17,18 @@
  *  - synthesize_speech refuses with no delivery surface, picks the container
  *    per surface (opus for Telegram, mp3 for the web) and reports saved
  *    settings the adapter ignored.
- *  - video_ingest refuses the team surfaces and a disabled sidecar first, runs
- *    the REAL egress guard on the url so a private address never reaches the
- *    sidecar, resolves the STT worker BEFORE downloading audio, downloads
- *    nothing on the captions path, and saves the clip BEFORE transcribing so a
- *    failed STT still leaves a retryable artifact. Every file and page it
- *    creates carries ctx.ownerId.
+ *  - video_ingest refuses the team surfaces and any link first (it fetches
+ *    nothing: the user uploads the recording), gates on mime and size and
+ *    resolves the STT worker BEFORE the bytes are read, and saves the clip
+ *    BEFORE transcribing so a failed STT still leaves a retryable artifact.
+ *    The audio comes from the parser service. Every file and page it creates
+ *    carries ctx.ownerId.
  *  - show_image only re-serves bytes the owner already has: metadata gates
  *    (mime, size) run before the bytes are read, and the reply carries
  *    metadata plus an artifact, never the base64 in the model-visible output.
  *
  * The db, file store, telegram, tracing ingest and provider adapters are
- * stubbed; the tools' own branching, the egress guard and the caption
- * pipeline are real.
+ * stubbed, and so is the parser client; the tools' own branching is real.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -105,12 +104,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
     fileById: vi.fn(),
     readFileById: vi.fn(),
     upsertFile: vi.fn(),
-    mediaSidecarEnabled: vi.fn(),
-    mediaProbe: vi.fn(),
-    mediaCaptions: vi.fn(),
-    mediaAudio: vi.fn(),
-    mediaExtractAudio: vi.fn(),
-    mediaVideo: vi.fn(),
+    parserExtractAudio: vi.fn(),
   };
 });
 vi.mock('@mantle/content', async (importOriginal) => {
@@ -130,11 +124,7 @@ import {
   createFolder,
   ensureAutoFiledFolder,
   fileById,
-  mediaAudio,
-  mediaCaptions,
-  mediaExtractAudio,
-  mediaProbe,
-  mediaSidecarEnabled,
+  parserExtractAudio,
   readFileById,
   upsertFile,
 } from '@mantle/files';
@@ -240,29 +230,6 @@ const sttAdapter = {
   transcribe: vi.fn(),
 };
 
-const PUBLIC_VIDEO = 'http://93.184.216.34/watch?v=abc';
-const PROBE = {
-  title: 'Setting the APN',
-  durationSeconds: 120,
-  channel: 'Ops',
-  uploadDate: null,
-  extractor: 'youtube',
-  isLive: false,
-  captions: { manual: ['en'], auto: [] as string[] },
-  filesizeApprox: null,
-};
-const VTT = `WEBVTT
-
-00:00:01.000 --> 00:00:04.000
-First we open the settings menu on the phone.
-
-00:00:04.000 --> 00:00:08.000
-Then we set the access point name to internet and save it.
-
-00:00:08.000 --> 00:00:12.000
-Finally we restart the device so the new profile loads.
-`;
-
 beforeEach(() => {
   vi.clearAllMocks();
   h.selectQueue.length = 0;
@@ -310,19 +277,9 @@ beforeEach(() => {
   vi.mocked(accountForSurface).mockResolvedValue({ id: 'acc' } as never);
   vi.mocked(sendPhoto).mockResolvedValue(777);
   vi.mocked(sendVoice).mockResolvedValue(99);
-  vi.mocked(mediaSidecarEnabled).mockReturnValue(true);
-  vi.mocked(mediaProbe).mockResolvedValue({ ok: true, value: PROBE });
-  vi.mocked(mediaCaptions).mockResolvedValue({
+  vi.mocked(parserExtractAudio).mockResolvedValue({
     ok: true,
-    value: { source: 'manual', lang: 'en', content: VTT },
-  });
-  vi.mocked(mediaAudio).mockResolvedValue({
-    ok: true,
-    value: { bytes: MP3, durationSeconds: 100, title: null },
-  });
-  vi.mocked(mediaExtractAudio).mockResolvedValue({
-    ok: true,
-    value: { bytes: MP3, durationSeconds: 50, title: null },
+    value: { bytes: MP3, durationSeconds: 50 },
   });
   vi.mocked(createPage).mockResolvedValue({ id: 'page-1' } as never);
 });
@@ -643,185 +600,34 @@ describe('synthesize_speech', () => {
 /* ────────────────────────────── video_ingest ───────────────────────────── */
 
 describe('video_ingest', () => {
-  // The link's redirect walk (A10 part 1) reaches the link through the
-  // platform fetch: here a public page that answers without a redirect. The
-  // walk's cells are egress-proof.test.ts.
-  beforeEach(() => {
-    vi.stubGlobal('fetch', async () => new Response('a video page', { status: 200 }));
-  });
-  afterEach(() => vi.unstubAllGlobals());
+  const VIDEO_META = {
+    mimeType: 'video/mp4',
+    filename: 'talk.mp4',
+    sizeBytes: 1000,
+    title: 'Talk',
+  };
+  const VIDEO_FILE = {
+    bytes: Buffer.from('mp4'),
+    row: { parentPath: 'files.videos', filename: 'talk.mp4' },
+  };
 
-  it('refuses the team surface before even checking the sidecar', async () => {
-    expect(errorOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, TEAM_CTX))).toMatch(
+  it('refuses the team surface before reading anything', async () => {
+    expect(errorOf(await videoIngest.handler({ file_node_id: 'f1' }, TEAM_CTX))).toMatch(
       /owner-side tool/,
     );
-    expect(mediaSidecarEnabled).not.toHaveBeenCalled();
-  });
-
-  it('reports a disabled sidecar and a bad url/file_node_id combination as tool errors', async () => {
-    vi.mocked(mediaSidecarEnabled).mockReturnValue(false);
-    expect(errorOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, WEB_CTX))).toMatch(
-      /Media ingestion is not enabled/,
-    );
-    vi.mocked(mediaSidecarEnabled).mockReturnValue(true);
-    expect(
-      errorOf(await videoIngest.handler({ url: PUBLIC_VIDEO, file_node_id: 'f1' }, WEB_CTX)),
-    ).toMatch(/EITHER url OR file_node_id/);
-    expect(errorOf(await videoIngest.handler({}, WEB_CTX))).toMatch(/pass one of `url`/);
-    expect(mediaProbe).not.toHaveBeenCalled();
     expect(fileById).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['the cloud-metadata address', 'http://169.254.169.254/latest/', /private\/internal address/],
-    ['loopback', 'http://127.0.0.1:8080/v.mp4', /private\/internal address/],
-    ['a non-http scheme', 'file:///etc/passwd', /only http\(s\) URLs/],
-  ])('never sends %s to the sidecar', async (_l, url, re) => {
-    expect(errorOf(await videoIngest.handler({ url }, WEB_CTX))).toMatch(re);
-    expect(mediaProbe).not.toHaveBeenCalled();
+  it('refuses a link: the tool fetches nothing, the user uploads the file', async () => {
+    expect(
+      errorOf(await videoIngest.handler({ url: 'https://video.example/watch?v=1' }, WEB_CTX)),
+    ).toMatch(/does not fetch links.*download the video and upload/);
+    expect(errorOf(await videoIngest.handler({}, WEB_CTX))).toMatch(/pass `file_node_id`/);
+    expect(fileById).not.toHaveBeenCalled();
+    expect(parserExtractAudio).not.toHaveBeenCalled();
   });
 
-  it('reports a probe failure and a live stream without fetching anything', async () => {
-    vi.mocked(mediaProbe).mockResolvedValue({
-      ok: false,
-      code: 'unreachable',
-      message: 'no route',
-    });
-    expect(errorOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, WEB_CTX))).toBe(
-      'unreachable: no route',
-    );
-    vi.mocked(mediaProbe).mockResolvedValue({ ok: true, value: { ...PROBE, isLive: true } });
-    expect(errorOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, WEB_CTX))).toMatch(
-      /LIVE stream/,
-    );
-    expect(mediaCaptions).not.toHaveBeenCalled();
-    expect(mediaAudio).not.toHaveBeenCalled();
-  });
-
-  it('refuses an over-cap video with no captions before any download', async () => {
-    vi.mocked(mediaProbe).mockResolvedValue({
-      ok: true,
-      value: { ...PROBE, durationSeconds: 99_999, captions: { manual: [], auto: [] } },
-    });
-    expect(errorOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, WEB_CTX))).toMatch(
-      /over the \d+s STT cap/,
-    );
-    expect(mediaAudio).not.toHaveBeenCalled();
-    expect(getDefaultWorker).not.toHaveBeenCalled();
-  });
-
-  it('captions path: builds the page under the caller and downloads no audio', async () => {
-    const res = await videoIngest.handler({ url: PUBLIC_VIDEO, language: 'en' }, WEB_CTX);
-    expect(mediaCaptions).toHaveBeenCalledWith(PUBLIC_VIDEO, { lang: 'en', prefer: 'any' });
-    expect(mediaAudio).not.toHaveBeenCalled();
-    expect(upsertFile).not.toHaveBeenCalled();
-    expect(getDefaultWorker).not.toHaveBeenCalled();
-    expect(createPage).toHaveBeenCalledWith(
-      'o1',
-      expect.objectContaining({
-        title: expect.stringMatching(/^Transcript — Setting the APN$/),
-        tags: ['transcript', 'video'],
-        data: {
-          source: 'video_ingest',
-          transcriptSource: 'captions:manual',
-          sourceUrl: PUBLIC_VIDEO,
-        },
-      }),
-    );
-    expect(recordIngest).toHaveBeenCalledWith(
-      expect.objectContaining({ source: 'agent_tool', ownerId: 'o1', nodeId: 'page-1' }),
-    );
-    const out = outputOf(res);
-    expect(out).toMatchObject({
-      ok: true,
-      video: { title: 'Setting the APN', durationSeconds: 120, channel: 'Ops', url: PUBLIC_VIDEO },
-      transcriptPageId: 'page-1',
-      transcriptSource: 'captions:manual',
-    });
-    expect(out.wordCount as number).toBeGreaterThan(10);
-    expect(out).not.toHaveProperty('audioFileId');
-    expect(out).not.toHaveProperty('notes');
-  });
-
-  it('STT path: resolves the worker BEFORE fetching audio', async () => {
-    vi.mocked(mediaProbe).mockResolvedValue({
-      ok: true,
-      value: { ...PROBE, captions: { manual: [], auto: [] } },
-    });
-    vi.mocked(getDefaultWorker).mockResolvedValue(null);
-    expect(errorOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, WEB_CTX))).toMatch(
-      /no usable captions and No default stt worker/,
-    );
-    expect(mediaAudio).not.toHaveBeenCalled();
-  });
-
-  it('STT path: saves the clip under the caller BEFORE transcribing, and keeps it when STT fails', async () => {
-    vi.mocked(mediaProbe).mockResolvedValue({
-      ok: true,
-      value: { ...PROBE, captions: { manual: [], auto: [] } },
-    });
-    vi.mocked(upsertFile).mockResolvedValue({ id: 'audio-1' } as never);
-    sttAdapter.transcribe.mockRejectedValue(new Error('quota exceeded'));
-
-    const out = outputOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, WEB_CTX));
-
-    expect(ensureAutoFiledFolder).toHaveBeenCalledWith('o1', 'video-ingest');
-    expect(upsertFile).toHaveBeenCalledWith(
-      expect.objectContaining({
-        ownerId: 'o1',
-        parentPath: 'files.auto_filed.video_ingest.2026_09',
-        filename: expect.stringMatching(/^\d+-setting-the-apn\.mp3$/),
-        bytes: MP3,
-        overwrite: false,
-        tags: ['audio', 'video-ingest'],
-        data: expect.objectContaining({
-          source: 'video_ingest',
-          sourceUrl: PUBLIC_VIDEO,
-          indexing: 'metadata',
-        }),
-      }),
-    );
-    expect(sttAdapter.transcribe).toHaveBeenCalledWith(
-      MP3,
-      expect.objectContaining({ apiKey: 'sk-test', mimeType: 'audio/mpeg', model: 'whisper-1' }),
-    );
-    expect(out).toMatchObject({
-      ok: true,
-      partial: true,
-      audioFileId: 'audio-1',
-      transcriptPageId: null,
-    });
-    expect(out.error).toMatch(/transcription failed: quota exceeded/);
-    expect(createPage).not.toHaveBeenCalled();
-  });
-
-  it('STT path: a good transcription lands as a page that names its source', async () => {
-    vi.mocked(mediaProbe).mockResolvedValue({
-      ok: true,
-      value: { ...PROBE, captions: { manual: [], auto: [] } },
-    });
-    vi.mocked(upsertFile).mockResolvedValue({ id: 'audio-1' } as never);
-    const out = outputOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, WEB_CTX));
-    expect(bumpWorkerUsage).toHaveBeenCalledWith('w-stt');
-    expect(out).toMatchObject({
-      transcriptPageId: 'page-1',
-      transcriptSource: 'stt:openai',
-      audioFileId: 'audio-1',
-      preview: 'hello from the transcript',
-    });
-    expect(out.notes).toEqual([expect.stringMatching(/machine-transcribed/)]);
-  });
-
-  it('keeps the transcript in the turn when the page cannot be created', async () => {
-    vi.mocked(createPage).mockRejectedValue(new Error('pages root missing'));
-    const out = outputOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, WEB_CTX));
-    expect(out).toMatchObject({ ok: true, partial: true, transcriptPageId: null });
-    expect(out.error).toMatch(/page could not be created: pages root missing/);
-    expect(out.preview).toMatch(/First we open the settings menu/);
-    expect(recordIngest).not.toHaveBeenCalled();
-  });
-
-  it('file path: gates on owner, mime and size BEFORE reading the bytes', async () => {
+  it('gates on owner, mime and size BEFORE reading the bytes', async () => {
     expect(errorOf(await videoIngest.handler({ file_node_id: 'f1' }, WEB_CTX))).toMatch(
       /file f1 not found/,
     );
@@ -847,23 +653,51 @@ describe('video_ingest', () => {
     expect(readFileById).not.toHaveBeenCalled();
   });
 
-  it('file path: extracts audio beside the source, linked to it, and transcribes', async () => {
-    vi.mocked(fileById).mockResolvedValue({
-      mimeType: 'video/mp4',
-      filename: 'talk.mp4',
-      sizeBytes: 1000,
-      title: 'Talk',
-    } as never);
-    vi.mocked(readFileById).mockResolvedValue({
-      bytes: Buffer.from('mp4'),
-      row: { parentPath: 'files.videos', filename: 'talk.mp4' },
-    } as never);
+  it('resolves the STT worker BEFORE reading the bytes', async () => {
+    vi.mocked(fileById).mockResolvedValue(VIDEO_META as never);
+    vi.mocked(getDefaultWorker).mockResolvedValue(null);
+    expect(errorOf(await videoIngest.handler({ file_node_id: 'f1' }, WEB_CTX))).toMatch(
+      /No default stt worker/,
+    );
+    expect(readFileById).not.toHaveBeenCalled();
+    expect(parserExtractAudio).not.toHaveBeenCalled();
+  });
+
+  it("reports the parser's refusal, naming the cap to raise when it is the length", async () => {
+    vi.mocked(fileById).mockResolvedValue(VIDEO_META as never);
+    vi.mocked(readFileById).mockResolvedValue(VIDEO_FILE as never);
+    vi.mocked(parserExtractAudio).mockResolvedValue({
+      ok: false,
+      code: 'too_large',
+      message: 'the recording is 7200 s, over the 3600 s limit',
+      retryable: true,
+      terminal: false,
+    });
+    expect(errorOf(await videoIngest.handler({ file_node_id: 'f1' }, WEB_CTX))).toMatch(
+      /over the 3600 s limit\. Raise VIDEO_INGEST_MAX_STT_DURATION_S/,
+    );
+    vi.mocked(parserExtractAudio).mockResolvedValue({
+      ok: false,
+      code: 'failed',
+      message: 'ffmpeg failed: invalid data',
+      retryable: false,
+      terminal: false,
+    });
+    expect(errorOf(await videoIngest.handler({ file_node_id: 'f1' }, WEB_CTX))).toMatch(
+      /could not be extracted \(failed: ffmpeg failed/,
+    );
+    expect(upsertFile).not.toHaveBeenCalled();
+  });
+
+  it('extracts audio beside the source, linked to it, and transcribes', async () => {
+    vi.mocked(fileById).mockResolvedValue(VIDEO_META as never);
+    vi.mocked(readFileById).mockResolvedValue(VIDEO_FILE as never);
     vi.mocked(upsertFile).mockResolvedValue({ id: 'audio-2' } as never);
 
     const out = outputOf(await videoIngest.handler({ file_node_id: 'f1' }, WEB_CTX));
 
     expect(readFileById).toHaveBeenCalledWith({ ownerId: 'o1', fileId: 'f1' });
-    expect(mediaExtractAudio).toHaveBeenCalledWith(Buffer.from('mp4'), expect.any(Object));
+    expect(parserExtractAudio).toHaveBeenCalledWith(Buffer.from('mp4'), expect.any(Object));
     expect(upsertFile).toHaveBeenCalledWith(
       expect.objectContaining({
         ownerId: 'o1',
@@ -873,6 +707,7 @@ describe('video_ingest', () => {
         data: expect.objectContaining({ source: 'video_ingest', sourceFileId: 'f1' }),
       }),
     );
+    expect(bumpWorkerUsage).toHaveBeenCalledWith('w-stt');
     expect(createPage).toHaveBeenCalledWith(
       'o1',
       expect.objectContaining({
@@ -883,8 +718,26 @@ describe('video_ingest', () => {
       transcriptPageId: 'page-1',
       audioFileId: 'audio-2',
       videoFileId: 'f1',
-      video: { title: 'Talk', url: null },
+      video: { title: 'Talk', durationSeconds: 50 },
+      preview: 'hello from the transcript',
     });
+    expect(out.notes).toEqual([expect.stringMatching(/machine-transcribed/)]);
+  });
+
+  it('keeps the clip when STT fails, and the transcript when the page cannot be made', async () => {
+    vi.mocked(fileById).mockResolvedValue(VIDEO_META as never);
+    vi.mocked(readFileById).mockResolvedValue(VIDEO_FILE as never);
+    vi.mocked(upsertFile).mockResolvedValue({ id: 'audio-3' } as never);
+    sttAdapter.transcribe.mockRejectedValueOnce(new Error('quota exceeded'));
+    const failed = outputOf(await videoIngest.handler({ file_node_id: 'f1' }, WEB_CTX));
+    expect(failed).toMatchObject({ ok: true, partial: true, audioFileId: 'audio-3' });
+    expect(createPage).not.toHaveBeenCalled();
+
+    vi.mocked(createPage).mockRejectedValue(new Error('pages root missing'));
+    const out = outputOf(await videoIngest.handler({ file_node_id: 'f1' }, WEB_CTX));
+    expect(out).toMatchObject({ ok: true, partial: true, transcriptPageId: null });
+    expect(out.error).toMatch(/page could not be created: pages root missing/);
+    expect(recordIngest).not.toHaveBeenCalled();
   });
 });
 

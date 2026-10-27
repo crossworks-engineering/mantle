@@ -33,7 +33,6 @@ import { fetchSpecText } from './openapi-sync';
 import { mcpConnectorFetch } from './mcp-client';
 import { mcpOAuthFetch } from './mcp-oauth';
 import { peerMcpFetch } from './builtins-peer-mcp';
-import { vetVideoUrl } from './builtins-video';
 import type { ToolHandlerContext } from './types';
 
 const OK_TEXT = 'hello from the test net';
@@ -130,13 +129,17 @@ const ROWS: Record<string, (base: string) => Promise<string>> = {
       return cellError(err);
     }
   },
-  'video_ingest link check': async (base) => {
-    const refused = await vetVideoUrl(`${base}/watch?v=1`);
-    return refused ? `error: ${refused}` : 'handed to the media sidecar';
-  },
 };
 
 const META_REFUSED = 'error: refusing to fetch a private/internal address (169.254.169.254)';
+
+/** Rows the table no longer has, and why. Any other missing row fails. */
+const REMOVED_ROWS: Record<string, string> = {
+  // video_ingest fetched a link through the media sidecar (yt-dlp). The
+  // sidecar was removed with the parser service (2026-10-27): the tool takes
+  // an uploaded file only and fetches nothing, so there is no link to check.
+  'video_ingest link check': 'video_ingest no longer fetches links',
+};
 
 /** Every cell the move changes, and why. Any other difference fails. */
 const NAMED: NamedChanges = {
@@ -175,24 +178,6 @@ const NAMED: NamedChanges = {
         'error: fetching the spec timed out after 30 s, check the spec URL answers (after 30 s)',
     },
   },
-  // The redirect walk before the sidecar: it reaches the link itself (no
-  // body read), and a redirect into private or metadata space is refused.
-  // A link that does not answer within 10 s is refused (fix round 1: the
-  // walk fails closed, its redirects were never checked).
-  'video_ingest link check': {
-    'public host': { reached: ['public.test'] },
-    'redirect to 169.254.169.254': { answer: META_REFUSED, reached: ['meta-redirect.test'] },
-    'redirect to another host with Authorization': {
-      reached: ['cross-redirect.test', 'other.test'],
-      authorizationAtOtherHost: 'not sent',
-    },
-    'oversized body': { reached: ['huge.test'], oversizedRead: 'stopped at 0 MB' },
-    'slow server': {
-      answer:
-        'error: the link did not answer within 10 s, so its redirects could not be checked (after 10 s)',
-      reached: ['slow.test'],
-    },
-  },
 };
 
 describe('egress proof table: @mantle/tools callers', () => {
@@ -207,7 +192,9 @@ describe('egress proof table: @mantle/tools callers', () => {
       const before = JSON.parse(
         readFileSync(new URL('./__snapshots__/egress-proof.before.json', import.meta.url), 'utf8'),
       ) as EgressTable;
-      expect(table).toEqual(withNamedChanges(before, NAMED));
+      const expected = withNamedChanges(before, NAMED);
+      for (const row of Object.keys(REMOVED_ROWS)) delete expected[row];
+      expect(table).toEqual(expected);
       await expect(JSON.stringify(table, null, 1) + '\n').toMatchFileSnapshot(
         './__snapshots__/egress-proof.after.json',
       );
