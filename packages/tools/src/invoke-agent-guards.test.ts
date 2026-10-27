@@ -38,6 +38,7 @@ import {
   releaseWorkspaceDelegation,
   workspaceChildDrop,
 } from './invoke-agent-guards';
+import { tree_item_move, tree_item_place } from './builtins-tree';
 
 /** An Admin turn (delegationTurnOf): the allowlist alone. */
 const ADMIN_TURN = { workspaceTurn: false, loginId: null };
@@ -372,5 +373,13 @@ describe('a workspace turn’s delegation bounds', () => {
         matrix: { action: 'edit', param: 'id' },
       }),
     ).toBeNull();
+  });
+
+  it('workspaceChildDrop keeps the tree writes: a place orders as a move files', () => {
+    // Neither spends, reaches out or deletes: a workspace child that may file
+    // an item may also put it in order (Write on the folder decides).
+    expect(workspaceChildDrop(tree_item_move.policy)).toBeNull();
+    expect(workspaceChildDrop(tree_item_place.policy)).toBeNull();
+    expect(tree_item_place.policy?.effect).toBe('write');
   });
 });
