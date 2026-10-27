@@ -317,10 +317,8 @@ not ISA-5.1, and a line number outside the profile's format when the profile
 enforces it. Every error names the field and the fix; the tool returns them
 all at once.
 
-`style` (2: the colour set) and `trace` (the circuit and drawing tables a
-traced drawing came from) are written by `circuit_trace`: keep them. Only
-`circuit_trace` writes GUESS, CHECKED BY IMAGE, IMAGE: NO and FROM IMAGE.
-`view: { zoom: false }` hides the zoom controls.
+`style` and `trace` come from `circuit_trace`: keep them, and leave
+its GUESS and IMAGE words to it. `view: { zoom: false }` hides zoom.
 
 **A drawing set.** Past the budget, split, never cut: `{ title, pages:
 [{ id, title, data }] }`, each `data` a sheet as above. In a set a

@@ -468,8 +468,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // list, item, revisions, frame-ticket and frame rows, with their HEADs.
     // Present in Pages (+4 rows, +2 with a caller): the poster with its HEAD
     // (readerAsset), and the share's canvas snapshot (a link row, no caller).
-    expect(rows.filter((r) => r.caller).length).toBe(775);
-    expect(rows.length).toBe(835);
+    // DWG phase 6 (+2, both with a caller): a traced canvas's image check
+    // overview with its HEAD (owner).
+    expect(rows.filter((r) => r.caller).length).toBe(777);
+    expect(rows.length).toBe(837);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
