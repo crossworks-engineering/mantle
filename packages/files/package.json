@@ -33,7 +33,7 @@
     "@mantle/db": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
-    "@napi-rs/canvas": "1.0.13",
+    "@napi-rs/canvas": "1.0.10",
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
     "heic-convert": "^2.1.0",
