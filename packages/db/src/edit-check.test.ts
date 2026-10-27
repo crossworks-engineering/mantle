@@ -85,10 +85,17 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     }
   });
 
-  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0335) is this list', () => {
+  it('the SQL list (mantle_node_derived_keys, 0281; the extractor keys, 0337; the presentation keys, 0335) is this list', () => {
     const m = migration('0281_edit_check_tables');
-    const extractor = sqlArrayAfter(m, 'mantle_node_extractor_keys"()');
+    // The extractor's keys, last replaced in 0337 (the parser's failure count).
+    const extractor = sqlArrayAfter(
+      migration('0337_parser_failures_key'),
+      'mantle_node_extractor_keys"()',
+    );
     expect(extractor).toEqual([...NODE_EXTRACTOR_KEYS]);
+    expect(sqlArrayAfter(m, 'mantle_node_extractor_keys"()')).toEqual(
+      NODE_EXTRACTOR_KEYS.filter((k) => k !== 'parser_failures'),
+    );
     // The derived keys are the extractor's and the rest.
     const rest = sqlArrayAfter(m, 'mantle_node_derived_keys"()\n');
     expect([...extractor, ...rest].sort()).toEqual([...NODE_DERIVED_KEYS].sort());
@@ -100,20 +107,21 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     expect(pres).toEqual([...NODE_PRESENTATION_KEYS]);
   });
 
-  it('holds the snapshot copy’s 13 keys (0267) and the files’ byte keys', () => {
+  it('holds the snapshot copy’s 13 keys (0267), the parser’s count (0337) and the files’ byte keys', () => {
     const copy = sqlArrayAfter(
       migration('0267_workspaces_spaces_fold'),
       'mantle_snapshot_copy_node_trg"()',
     );
     expect(copy).toHaveLength(13);
-    // The copy's trigger now reads the named list (0281): the same 13.
-    expect([...copy].sort()).toEqual([...NODE_EXTRACTOR_KEYS].sort());
+    // The copy's trigger now reads the named list (0281): the same 13, and
+    // the parser's failure count since 0337.
+    expect([...copy, 'parser_failures'].sort()).toEqual([...NODE_EXTRACTOR_KEYS].sort());
     const files = read('packages/files/src/ops/files.ts');
     const at = files.indexOf('export const BYTE_DERIVED_DATA_KEYS = [');
     const bytes = [...files.slice(at, files.indexOf('] as const', at)).matchAll(/'([^']+)'/g)].map(
       (m) => m[1]!,
     );
-    expect(bytes).toHaveLength(13);
+    expect(bytes).toHaveLength(14);
     for (const k of [...copy, ...bytes]) expect(NODE_DERIVED_KEYS, k).toContain(k);
   });
 

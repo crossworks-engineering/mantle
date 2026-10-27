@@ -36,6 +36,7 @@ import { recordSkippedTrace, startTrace } from '@mantle/tracing';
 import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
 import { isDocumentTitleMention } from '@mantle/content';
+import { withParserScope } from '@mantle/files';
 import { TEXT_STORE_MAX_CHARS, truncateForPrompt } from './extract/text';
 import { reusesTableSummary, runExtractorModel } from './extract/model';
 import { admitForExtraction } from './extract/gates';
@@ -49,8 +50,18 @@ import { supersedeFileVersions } from './extract/supersede';
 import { processRelations, reconcileEntities } from './extract/entities';
 import { processFacts, retireUnassertedFacts } from './extract/facts';
 import { retiresOnNoFacts } from './extract/rules';
+import { nodeParserFailures } from './extract/parser-failures';
 
+/** Extract one node. Every parser exchange of the extract counts its
+ *  failures on the node (./extract/parser-failures.ts), so a file the
+ *  parser gave up on twice stays terminal across restarts and rolls. */
 export async function extractNode(nodeId: string, ownerId: string): Promise<void> {
+  return withParserScope({ failures: nodeParserFailures(nodeId, ownerId) }, () =>
+    extractNodeInScope(nodeId, ownerId),
+  );
+}
+
+async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void> {
   // Everything that decides WHETHER to run — worker + node resolution, the
   // hard skips, the two best-effort side passes, the type allowlist, the
   // metadata-only path, the key pre-flight and the already-extracted guard —

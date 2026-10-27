@@ -12,6 +12,7 @@ import {
   mimeForExt,
   isVisionImage,
   isParserError,
+  parserText,
   parseDocumentBytes,
   INGESTABLE_EXTS,
   MEDIA_EXTS,
@@ -70,12 +71,25 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   }
   if (node.type === 'email' || node.type === 'email_thread') {
     const [row] = await db
-      .select({ subject: emails.subject, bodyText: emails.bodyText })
+      .select({ subject: emails.subject, bodyText: emails.bodyText, bodyHtml: emails.bodyHtml })
       .from(emails)
       .where(eq(emails.nodeId, node.id))
       .limit(1);
     if (!row) return node.title;
-    return [row.subject, row.bodyText].filter(Boolean).join('\n\n');
+    let body = row.bodyText;
+    // An HTML-only mail: its HTML is read by the parser service (the sync
+    // keeps it as it came, packages/email/src/providers/imap.ts). The
+    // parser busy or a first refusal fails the extract and it is retried;
+    // a verdict on the HTML leaves the subject alone.
+    if (!body?.trim() && row.bodyHtml) {
+      try {
+        body = (await parserText(Buffer.from(row.bodyHtml, 'utf8'), 'html')).trim();
+      } catch (err) {
+        if (isParserError(err) && err.retryable) throw err;
+        body = null;
+      }
+    }
+    return [row.subject, body].filter(Boolean).join('\n\n');
   }
   // ─── Tasks — body + structured metadata ──────────────────────
   // The extractor needs to know status/priority/due_at to write a useful
@@ -740,7 +754,9 @@ export async function loadExtractableBody(
           hint:
             fileExt === 'dwg' || fileExt === 'dxf' || fileExt === 'dwf'
               ? `The file is named .${fileExt} but does not contain readable ${fileExt.toUpperCase()} data (a renamed or mislabelled format?). Nothing to index beyond the filename — re-export it from the CAD tool and re-upload.`
-              : `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
+              : parserRouteForExt(fileExt) === 'legacy-sheet'
+                ? `The .${fileExt} workbook could not be converted for reading (an unusual or damaged legacy file). Nothing to index beyond the filename: re-save it as .xlsx and re-upload.`
+                : `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
         },
       },
       node,

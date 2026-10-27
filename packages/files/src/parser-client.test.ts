@@ -16,14 +16,24 @@ import { PARSER_ERROR_STATUS, type ParserErrorCode } from './parser-wire';
 import {
   ParserError,
   isParserUnavailable,
+  parserFailureKey,
+  parserHealth,
   parserImages,
   parserText,
   resetParserFailures,
+  withParserScope,
+  type ParserFailureCount,
+  type ParserFailureLedger,
 } from './parser-client';
 
-type Reply = { code: ParserErrorCode } | { text: string } | { status: number };
+type Reply =
+  | { code: ParserErrorCode }
+  | { text: string }
+  | { status: number }
+  | { health: Record<string, unknown> };
 let reply: Reply = { text: '' };
 const hits: string[] = [];
+const auths: string[] = [];
 let server: Server;
 let saved: { url?: string; token?: string };
 
@@ -32,7 +42,12 @@ beforeAll(async () => {
     req.resume();
     req.on('end', () => {
       hits.push(req.url ?? '');
-      if ('status' in reply) {
+      auths.push(req.headers.authorization ?? '');
+      if ('health' in reply) {
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ ok: true, versions: {}, running: 0, queued: 0, ...reply.health }));
+      } else if ('status' in reply) {
         res.writeHead(reply.status).end();
       } else if ('code' in reply) {
         res
@@ -67,6 +82,7 @@ function doc(): Buffer {
 beforeEach(() => {
   resetParserFailures();
   hits.length = 0;
+  auths.length = 0;
   reply = { text: '' };
 });
 
@@ -158,5 +174,72 @@ describe('parser client', () => {
     } finally {
       process.env.PARSER_URL = url;
     }
+  });
+
+  it("counts in the scope's ledger, not in memory, and a count of two there is never sent", async () => {
+    const kept = new Map<string, ParserFailureCount>();
+    const ledger: ParserFailureLedger = {
+      get: (key) => Promise.resolve(kept.get(key) ?? null),
+      add: (key, code) => {
+        const n = (kept.get(key)?.n ?? 0) + 1;
+        kept.set(key, { n, code });
+        return Promise.resolve(n);
+      },
+    };
+    const bytes = doc();
+    reply = { code: 'timeout' };
+    const first = await failure(
+      withParserScope({ failures: ledger }, () => parserText(bytes, 'docx')),
+    );
+    expect(first).toMatchObject({ retryable: true, terminal: false });
+    expect(kept.get(parserFailureKey('text', bytes))).toEqual({ n: 1, code: 'timeout' });
+    // Memory knows nothing of it: a call outside the scope counts afresh.
+    const outside = await failure(parserText(bytes, 'docx'));
+    expect(outside).toMatchObject({ retryable: true, terminal: false });
+    // A restart (a fresh process's memory) changes nothing: the ledger says one.
+    resetParserFailures();
+    const second = await failure(
+      withParserScope({ failures: ledger }, () => parserText(bytes, 'docx')),
+    );
+    expect(second).toMatchObject({ code: 'timeout', retryable: false, terminal: true });
+    hits.length = 0;
+    const third = await failure(
+      withParserScope({ failures: ledger }, () => parserText(bytes, 'docx')),
+    );
+    expect(third).toMatchObject({ code: 'timeout', terminal: true });
+    expect(hits).toEqual([]);
+  });
+
+  it('says busy at once on the interactive path, without waiting it out', async () => {
+    reply = { code: 'busy' };
+    const started = Date.now();
+    const err = await failure(
+      withParserScope({ interactive: true }, () => parserText(doc(), 'docx')),
+    );
+    expect(err).toMatchObject({ code: 'busy', retryable: true, terminal: false });
+    expect(hits).toHaveLength(1);
+    expect(Date.now() - started).toBeLessThan(1_500);
+  });
+
+  it("health: up only when the parser takes this process's token", async () => {
+    reply = { health: { auth: 'token', authorized: true } };
+    expect((await parserHealth(2_000)).up).toBe(true);
+    reply = { health: { auth: 'token', authorized: false } };
+    expect((await parserHealth(2_000)).up).toBe(false);
+    // A parser that asks no token while this process has one: not recreated
+    // with the token yet.
+    process.env.PARSER_TOKEN = 'a-token';
+    try {
+      reply = { health: { auth: 'none', authorized: true } };
+      expect((await parserHealth(2_000)).up).toBe(false);
+      reply = { health: { auth: 'token', authorized: true } };
+      expect((await parserHealth(2_000)).up).toBe(true);
+      expect(auths.at(-1)).toBe('Bearer a-token');
+    } finally {
+      delete process.env.PARSER_TOKEN;
+    }
+    // A parser from before these fields: as it says.
+    reply = { health: {} };
+    expect((await parserHealth(2_000)).up).toBe(true);
   });
 });

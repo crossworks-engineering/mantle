@@ -116,7 +116,7 @@ export async function maybeAutoTableSpreadsheet(
       }
     } else if (fileExt === 'dwf') {
       // DWF plot sets: the registry workbook (Sheets / Layers / Labels tabs),
-      // read by the parser service (packages/files/src/dwf.ts) — on
+      // read by the parser service (packages/files/src/dwf.ts): on
       // circuitization sets the Layers tab IS the circuit registry. The
       // parser gates it on the DWF magic.
       sheets = (await parserGrid(loaded.bytes, 'dwf')).sheets;
@@ -151,10 +151,19 @@ export async function maybeAutoTableSpreadsheet(
     // The parser busy or restarting: the whole extract is retried (gates.ts),
     // any format.
     if (isParserUnavailable(err)) throw err;
-    // A verdict on the document (too large, a timeout, a crash, a reader's
-    // `failed`): no retry from here. A crash or a size refusal counts
-    // against the bytes, so the text pass meets it too and records it.
-    if (isParserError(err)) return;
+    if (isParserError(err)) {
+      // DWG/DXF: a retryable failure (the first time these bytes timed out,
+      // crashed or were too large) fails the whole extract, flagged for the
+      // call site, so the pg-boss retry heals all passes together. The
+      // failure is kept for the rest of this extract (dwg.ts), so no later
+      // pass asks again or counts it twice.
+      if ((fileExt === 'dwg' || fileExt === 'dxf') && err.retryable) {
+        throw Object.assign(err, { fatalToExtract: true });
+      }
+      // A verdict on the document (terminal, or a reader's `failed`): no
+      // retry from here. The text pass meets the same verdict and records it.
+      return;
+    }
     if (fileExt === 'dwg' || fileExt === 'dxf') {
       const e = err instanceof Error ? err : new Error(String(err));
       throw Object.assign(e, { fatalToExtract: true });
