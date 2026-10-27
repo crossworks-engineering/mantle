@@ -47,23 +47,24 @@ no server and no network.
 
 ## Package layout
 
-| Path                                    | What it is                                                           |
-| --------------------------------------- | -------------------------------------------------------------------- |
-| `src/index.ts`                          | `render`, `validate`, `TEMPLATES`, `buildCanvas`, `checkStaticSvg`   |
-| `src/browser.ts`                        | `mount()`: reads the data block, renders, exposes `window.diagram`   |
-| `src/canvas.ts`                         | the canvas file: build, read and replace the data block              |
-| `src/runtime/style.ts`                  | the house style as code: palette, node kinds, font roles, grid       |
-| `src/runtime/text.ts`                   | text measurement (real in the browser, an estimate in Node) and wrap |
-| `src/runtime/layered.ts`                | dagre layout plus the channel and track router for `flow`            |
-| `src/runtime/grid-router.ts`            | A* orthogonal router on an 8px grid for `pid` pipes and signals      |
-| `src/runtime/geom.ts`                   | boxes, segments, hops and the layout self-check                      |
-| `src/runtime/svg.ts`, `export.ts`       | string SVG builder (no scripts possible) and the static check        |
-| `src/runtime/validate.ts`               | checks with exact paths and "did you mean"                           |
-| `src/templates/flow.ts`                 | the `flow` template                                                  |
-| `src/templates/pid/`                    | the `pid` template: schema, site profile, symbols, render, sets      |
-| `src/runtime/pages.ts`                  | a drawing set stacked into one static SVG, and its page references   |
-| `scripts/build.ts`, `scripts/render.ts` | the bundle build and the Chromium harness                            |
-| `samples/`                              | sample data, an example site profile, and the rendered results       |
+| Path                                      | What it is                                                           |
+| ----------------------------------------- | -------------------------------------------------------------------- |
+| `src/index.ts`                            | `render`, `validate`, `TEMPLATES`, `buildCanvas`, `checkStaticSvg`   |
+| `src/browser.ts`                          | `mount()`: reads the data block, renders, exposes `window.diagram`   |
+| `src/canvas.ts`                           | the canvas file: build, read and replace the data block              |
+| `src/runtime/style.ts`                    | the house style as code: palette, node kinds, font roles, grid       |
+| `src/runtime/text.ts`                     | text measurement (real in the browser, an estimate in Node) and wrap |
+| `src/runtime/layered.ts`                  | dagre layout plus the channel and track router for `flow`            |
+| `src/runtime/grid-router.ts`              | A* orthogonal router on an 8px grid for `pid` pipes and signals      |
+| `src/runtime/geom.ts`                     | boxes, segments, hops and the layout self-check                      |
+| `src/runtime/svg.ts`, `export.ts`         | string SVG builder (no scripts possible) and the static check        |
+| `src/runtime/validate.ts`                 | checks with exact paths and "did you mean"                           |
+| `src/templates/flow.ts`                   | the `flow` template                                                  |
+| `src/templates/pid/`                      | the `pid` template: schema, site profile, symbols, render, sets      |
+| `src/runtime/pages.ts`                    | a drawing set stacked into one static SVG, and its page references   |
+| `src/zoom.ts`, `src/runtime/zoom-math.ts` | zoom and pan of the live SVG (`zoomable`), and its view maths        |
+| `scripts/build.ts`, `scripts/render.ts`   | the bundle build and the Chromium harness                            |
+| `samples/`                                | sample data, an example site profile, and the rendered results       |
 
 ## Libraries and sizes
 
@@ -212,6 +213,19 @@ What the template does with it:
 Budget (warnings, from the guide): 8 equipment, 16 bubbles, 20 valves, 5
 loops, 12 lines, 4 line types, 2 accents. Over budget: split the sheet.
 
+Limits (errors, `PID_LIMITS` in `src/templates/pid/sizes.ts`): 30
+equipment, 60 lines, 60 instruments, 20 connectors, 30 tees, 60 signals,
+12 circuits, 6 inline items a line; text up to 80 characters for the
+title, 300 the description, 40 a connector's text or a line number, 32 a
+note or a marker, 40 a circuit label; a set up to 40 pages
+(`SET_LIMITS`). The template's check holds raw data to these sizes before
+anything walks it (`pidLimitsProblem`, `src/templates/pid/limits.ts`; for
+a value with no limit of its own, the largest the template takes: a
+2000-character string, a 4000-item list, a nesting 16 deep) and refuses
+data past one whole. A typo hint (`suggest`) never compares a value or an
+option past 64 characters, and an error repeats an author's text at most
+40 characters long.
+
 ### Drawing sets
 
 A `pid` input with `pages` is a set: several sheets in one canvas that link
@@ -248,6 +262,53 @@ drawings are untouched: the pin in `src/unchanged-output.test.ts` holds, and
 bug) draws as an error panel naming the page and the problem; the render
 result lists it in `failed` (`{ page, path, error }`) and the warnings, and
 the other pages draw.
+
+### Style, plain words and zoom (phase 6)
+
+- **`style`** (pid, a set's too): the drawing style edition
+  (`src/runtime/style.ts`). Absent or `1`: the classic monochrome style,
+  byte for byte as before (`src/unchanged-output.test.ts`,
+  `src/colour-set.test.ts`). `2`: ONE fixed colour set, `ROLE_COLOURS`
+  (main line, branch, deadleg, valve or instrument, guess, checked by
+  image, image says no, from image, page link), each at least 4.5:1 on
+  the paper and on white, each also told apart in grey by weight, dash or
+  words (`ROLE_STROKES`). Themed for a mini app, each role takes one of
+  the theme's inks (`THEME_ROLE_COLOURS`), checked at 3:1 as a line and
+  4.5:1 as text on the card in every shipped theme. Style 2 also gives a
+  connector the room of its text and page reference when it is placed, so
+  notes, markers, line numbers and valves keep off them
+  (`src/label-room.test.ts`). `circuit_trace` writes `style: 2` on every
+  drawing it makes; an author may ask for it; a saved drawing keeps the
+  edition it was saved with.
+- **Plain words.** A traced drawing says its guesses and the image
+  check's answers in its own labels, as plain text written by
+  `circuit_trace`: `(GUESS)`, `(CHECKED BY IMAGE)`, `(GUESS, IMAGE: NO)`,
+  `(FROM IMAGE)`. Style 2 colours a label by the words it says
+  (`wordColour`) and outlines a connector that says GUESS dotted; nothing
+  seals, counts or rewrites them, and a hand edit is allowed. Image checks
+  help; they are not a guarantee. Verify on the drawing.
+- **`trace`** (pid, a set's on the set): `{ circuit, tables }`, the
+  circuit and the drawing tables `circuit_trace` read. Plain data, never
+  drawn; the app reads it to show the overview of those tables' Checks
+  tabs beside the saved canvas (GET `/api/presents/:id/checks`).
+- **Zoom and pan** (`src/zoom.ts`, `zoomable(target, options)` from
+  `@mantle/diagram-templates/browser`): a view of the live SVG through its
+  `viewBox`, never the export (`exportSvg`, `exportPageSvg` and a print are
+  the whole drawing). `mount` uses it for every template; it shows only
+  when the drawing does not fit the frame at a readable size, judged again
+  on resize and page switch; `view: { zoom: true | false }` forces it.
+  Hidden, wheel, drag and keys do nothing. Shown: Ctrl (or Cmd) + wheel
+  and a trackpad pinch zoom; a plain wheel pans while zoomed in past the
+  fit and scrolls the page at the fit or at the drawing's edge; drag,
+  double click, two-finger pinch and drag; on a touch screen a one-finger
+  swipe is the page's at the fit and, where the browser has the one-way
+  values, at the drawing's top or bottom edge (`touchActionFor`); the
+  buttons (zoom out, zoom in, fit page, 100%), keys `+` `-` `0` and the
+  arrows once zoomed in. A page link zooms to its focus and outlines it. A
+  headless render (`RENDER_FLAG`: a look, a poster, an export picture)
+  never shows it. A hand-made canvas opts in with one call; the
+  canvas_authoring skill and `canvas_library` `zoom` say how
+  (`ZOOMABLE_HOWTO`).
 
 ### Site profile
 
