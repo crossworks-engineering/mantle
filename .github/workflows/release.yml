@@ -145,10 +145,11 @@ jobs:
         # v0.202.0 shipped arm64-only manifests for both images exactly that
         # way. As original keys this is a true 4-job cross product, and the
         # includes merely attach the right runner to each platform.
-        # `media` is the yt-dlp/ffmpeg sidecar (infra/media-sidecar) — its own
-        # tiny python image, versioned with the release so compose + images
-        # stay one bundle. Published as <namespace>/mantle-media.
-        target: [server, media]
+        # `parser` is the parser service (server/parser): the one container
+        # that reads every untrusted file, versioned with the release so
+        # compose + images stay one bundle. Published as
+        # <namespace>/mantle-parser. It replaced mantle-media (2026-10).
+        target: [server, parser]
         platform: [linux/amd64, linux/arm64]
         include:
           - platform: linux/amd64
@@ -212,7 +213,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [server, media]
+        target: [server, parser]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -275,6 +276,18 @@ jobs:
         run: |
           docker run --rm "${IMAGE}:${{ github.ref_name }}" \
             pnpm -C server/web exec tsx ../../packages/tabledb/src/probes-cli.ts
+
+      # The parser image carries every reader: the CAD tier's Python modules,
+      # the dwg2dxf binary and ffmpeg. A missing one fails the release here,
+      # not as a typed `failed` on every box's next drawing or recording.
+      - name: Probe the readers on the parser image
+        if: matrix.target == 'parser'
+        run: |
+          docker run --rm --network none -w /app/packages/files "${IMAGE}:${{ github.ref_name }}" sh -c '
+            /opt/cad/bin/python -c "import ezdxf, ezdwf, ezdwg, matplotlib" &&
+            dwg2dxf --version > /dev/null &&
+            ffmpeg -version > /dev/null &&
+            node --input-type=module -e "await import(\"@firecrawl/anydoc\")"'
 
   release:
     needs: merge

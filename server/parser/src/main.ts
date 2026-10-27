@@ -66,6 +66,9 @@ class Refusal extends Error {
 // ── config ──────────────────────────────────────────────────────────────────
 
 const PORT = envNum('PARSER_PORT') || PARSER_DEFAULT_PORT;
+// 0.0.0.0 in the container (its only network is the internal one); the dev
+// script binds 127.0.0.1 so a laptop's parser is not on the LAN.
+const HOST = env('PARSER_HOST') ?? '0.0.0.0';
 const TOKEN = env('PARSER_TOKEN') ?? '';
 const MAX_JOBS = Math.max(1, envNum('PARSER_MAX_JOBS'));
 const QUEUE_MAX = Math.max(0, envNum('PARSER_QUEUE_MAX'));
@@ -350,9 +353,9 @@ async function main(): Promise<void> {
   server.requestTimeout = 0;
   server.headersTimeout = 30_000;
   server.keepAliveTimeout = 5_000;
-  server.listen(PORT, '0.0.0.0', () => {
+  server.listen(PORT, HOST, () => {
     process.stdout.write(
-      `[parser] listening on :${PORT} (${MAX_JOBS} jobs, ${QUEUE_MAX} queued, ${MAX_BODY_BYTES / 1024 / 1024} MB per file)\n`,
+      `[parser] listening on ${HOST}:${PORT} (${MAX_JOBS} jobs, ${QUEUE_MAX} queued, ${MAX_BODY_BYTES / 1024 / 1024} MB per file)\n`,
     );
     void probeVersions();
   });

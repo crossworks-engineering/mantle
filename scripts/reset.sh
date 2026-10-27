@@ -33,7 +33,7 @@ cat <<EOF
 
 This will:
   • Take a backup of the current dev brain (→ backups/mantle-<ts>.dump)
-  • Stop + remove the dev containers (mantle_dev_pg, mantle_dev_objectstore, mantle_dev_tika)
+  • Stop + remove the dev containers (mantle_dev_pg, mantle_dev_objectstore, mantle_dev_browser)
   • DELETE the bind-mounted data dirs $DATA_DIR/{postgres,rustfs,minio}
     (your dev brain, uploads, embeddings cache — all gone)
   • Re-run \`pnpm start\` (infra → bucket → migrate → pg-boss → dev servers)

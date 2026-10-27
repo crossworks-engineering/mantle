@@ -22,10 +22,10 @@
 #
 # Two gates, one ladder:
 #   ["full"]             off on a core box, no way back short of --no-core
-#   ["full", "helpers"]  the doc helpers: stateless parse/render sidecars a
-#                        core can re-enable with `scripts/install.sh --helpers`
-#                        or the Helpers switch in Settings > Services (both
-#                        add `helpers` to COMPOSE_PROFILES in .env)
+#   ["full", "helpers"]  the helper: the stateless PDF-export browser a core
+#                        can re-enable with `scripts/install.sh --helpers` or
+#                        the Helpers switch in Settings > Services (both add
+#                        `helpers` to COMPOSE_PROFILES in .env)
 #
 # What a core keeps and why (see docker-compose.yml for each service's role):
 #   postgres, objectstore, migrate            the data spine
@@ -35,18 +35,17 @@
 #                                             listeners live here, so a core
 #                                             that ingests cannot drop it)
 #   caddy, updater, autoheal, tailscale       front door + upkeep sidecars
+#   parser                                    reads every file the brain
+#                                             receives (docs/parser.md); a
+#                                             brain that ingests cannot shed it
 #   worker_files, worker_docs                 file + documentation ingest
 #   worker_events                             reminders AND the scheduled-
 #                                             backup tick (a core still backs
 #                                             itself up)
 #   worker_maintenance                        nightly registry sweeps, cheap
 #
-# The doc helpers (back on with --helpers, or ad hoc: naming a service on the
-# command line overrides its profile gate, `docker compose up -d tika browser`):
-#   tika               document-parse fallback for formats the in-process
-#                      parsers don't cover (.odt/.doc/.rtf/.epub/...). Common
-#                      formats (pdf, docx, pptx, txt, md) parse in-process, so a
-#                      helper-less core still ingests them fine.
+# The helper (back on with --helpers, or ad hoc: naming a service on the
+# command line overrides its profile gate, `docker compose up -d browser`):
 #   browser            PDF export only; share pages still serve HTML
 #
 # Full-shape only (channel workers; `full` is not meant to be enabled as a
@@ -63,8 +62,6 @@
 # use ONLINE embeddings; the CPU embedder does not fit a 4 GB box.
 
 services:
-  tika:
-    profiles: ["full", "helpers"]
   browser:
     profiles: ["full", "helpers"]
   worker_email:
