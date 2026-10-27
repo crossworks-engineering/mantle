@@ -148,6 +148,79 @@ export function gridRound(n: number): number {
   return Math.round(n / GRID) * GRID;
 }
 
+/**
+ * The drawing style edition a template's data asks for (`style`):
+ *  - 1, or absent: the classic monochrome style, every drawing saved before
+ *    the colour set came in. It draws byte for byte as it always did
+ *    (src/unchanged-output.test.ts pins it).
+ *  - 2: the colour set below, with label placement that keeps connector
+ *    text, notes and page references off each other. circuit_trace writes
+ *    it on every drawing it makes, and an author may ask for it; a saved
+ *    drawing keeps the edition it was saved with.
+ */
+export const STYLE_EDITIONS = [1, 2] as const;
+export type StyleEdition = (typeof STYLE_EDITIONS)[number];
+export const CURRENT_STYLE: StyleEdition = 2;
+
+/**
+ * ONE fixed colour set for what a line or a label MEANS on a P&ID (style 2).
+ * Every colour clears 4.5:1 against the paper (and against white, a marker's
+ * fill), so the same colour serves a line (3:1 needed) and its text (4.5:1);
+ * src/colour-set.test.ts computes the WCAG ratios. Colour never carries
+ * meaning alone: each role also has its own weight or dash (ROLE_STROKES)
+ * or its own words on the drawing, so a grey print still reads.
+ *
+ * The image check's crop overlay names the same three line colours
+ * (main red, branch blue, deadleg orange).
+ */
+export const ROLE_COLOURS = {
+  /** The main process line. */
+  main: '#b42318',
+  /** A branch off the main line. */
+  branch: '#1d5fa8',
+  /** A dead leg. */
+  deadleg: '#a14a00',
+  /** Valves, inline items, instrument bubbles and their connections. */
+  instrument: '#6a3d9a',
+  /** A label that says GUESS (the trace's plain word). */
+  guess: '#7a5a00',
+  /** A label that says CHECKED BY IMAGE (the image check said yes; a help,
+   *  not a guarantee). */
+  checked: '#256b2a',
+  /** A label that says IMAGE: NO (still a guess). */
+  contradicted: '#a8155c',
+  /** A label that says FROM IMAGE (drawn as the image check named it). */
+  corrected: '#4338ca',
+  /** An off-page connector, a page link, a page reference. */
+  link: '#0b6e75',
+} as const;
+export type LineRole = keyof typeof ROLE_COLOURS;
+
+/** The weight and dash of each role's line: what tells them apart in grey. */
+export const ROLE_STROKES: Record<
+  'main' | 'branch' | 'deadleg' | 'guess',
+  { width: number; dash?: string }
+> = {
+  main: { width: 2.4 },
+  branch: { width: 1.4 },
+  deadleg: { width: 1.4, dash: '8,4' },
+  /** A guessed connector's outline (its text says GUESS): dotted. */
+  guess: { width: 1.4, dash: '2,3' },
+};
+
+/** WCAG 2 relative luminance of `#rrggbb`. */
+export function luminance(hex: string): number {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const lin = c.map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * lin[0]! + 0.7152 * lin[1]! + 0.0722 * lin[2]!;
+}
+
+/** WCAG 2 contrast ratio of two `#rrggbb` colours (1 to 21). */
+export function contrastRatio(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
 /** A colour from a series name, a palette name or a literal `#rrggbb`. */
 export function resolveColour(value: string | undefined, fallback: string): string {
   if (!value) return fallback;

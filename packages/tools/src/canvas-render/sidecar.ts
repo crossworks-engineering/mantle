@@ -24,6 +24,7 @@ import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { buildCanvasFrameCsp } from '@mantle/share-ui/canvas-frame-html';
+import { RENDER_FLAG } from '@mantle/diagram-templates';
 import type {
   CanvasDiagramReport,
   CanvasRenderRequest,
@@ -142,7 +143,10 @@ export function lockedEndpoint(endpoint: string): string {
  *   - the console capped where it is written: each message cut to a short
  *     text and only the first ones kept, so a canvas that prints without end
  *     cannot send it all back to the server;
- *   - an uncaught error reported as a short console line, not in full. */
+ *   - an uncaught error reported as a short console line, not in full;
+ *   - the render flag (RENDER_FLAG): a page that asks knows it is a
+ *     picture, not a live view (the diagram zoom stays off, so a look, a
+ *     poster or an export shows the whole drawing and no toolbar). */
 export const RENDER_INIT = `(() => {
   const D = Object.defineProperty;
   for (const n of ['RTCPeerConnection','webkitRTCPeerConnection','RTCDataChannel','RTCIceCandidate','RTCSessionDescription','RTCRtpSender','RTCRtpReceiver']) {
@@ -154,6 +158,7 @@ export const RENDER_INIT = `(() => {
     keys: Object.keys,
   });
   try { D(globalThis, '__mantleProbe', { value: P, configurable: false, writable: false, enumerable: false }); } catch {}
+  try { D(globalThis, '${RENDER_FLAG}', { value: true, configurable: false, writable: false, enumerable: false }); } catch {}
   const apply = Reflect.apply, S = String, cut = String.prototype.slice;
   let n = 0;
   const short = (v) => { try { return apply(cut, S(v), [0, ${MAX_LINE_CHARS}]); } catch { return '?'; } };

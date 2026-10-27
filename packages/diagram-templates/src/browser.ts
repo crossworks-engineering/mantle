@@ -21,6 +21,12 @@
  * canvas's own page: nothing is fetched, no URL is opened, and the window
  * is never navigated (the canvas sandbox's rule).
  *
+ * Zoom and pan (zoom.ts): a drawing that does not fit the frame at a
+ * readable size gets zoom controls (the data's `view.zoom` forces them on
+ * or off). A page link zooms to its focus and outlines it. The view is
+ * never the export: exportSvg, exportPageSvg and a print are the whole
+ * drawing, and a headless render (RENDER_FLAG) never shows the controls.
+ *
  * Bad data shows its errors in the page and throws one error, which the
  * Present frame reports to its host as `{v:1, kind:'error'}`.
  */
@@ -31,6 +37,9 @@ import { domMeasurer } from './runtime/text.ts';
 // escaped, static SVG string `mount` inserts (app-libraries.ts, app-build).
 export { render, domMeasurer };
 export type { RenderOutcome };
+// Zoom and pan for any canvas's SVG: one call opts a hand-made canvas in.
+export { zoomable, type ZoomController, type ZoomMode, type ZoomOptions } from './zoom.ts';
+import { zoomable, type ZoomController, type ZoomMode } from './zoom.ts';
 import { DATA_ID } from './canvas.ts';
 import { messageOf } from './runtime/validate.ts';
 import { PALETTE } from './runtime/style.ts';
@@ -46,6 +55,8 @@ export type DiagramApi = {
   page: string;
   show: (id: string, focus?: string) => boolean;
   exportPageSvg: (id?: string) => string;
+  /** The live view's zoom (never the export); absent until it drew. */
+  zoom?: ZoomController;
 };
 
 type Page = NonNullable<Extract<RenderOutcome, { ok: true }>['pages']>[number];
@@ -72,8 +83,17 @@ const SET_CSS = `
 @media (prefers-reduced-motion:reduce){#diagram .diagram-focus{animation:none}}
 `.trim();
 
+/** What a page switch also tells: the zoom (judge the new page). */
+type Live = { zoom?: () => ZoomController | undefined };
+
 /** Show a drawing set one page at a time, with its page buttons. */
-function mountSet(doc: Document, target: HTMLElement, pages: Page[], api: DiagramApi): void {
+function mountSet(
+  doc: Document,
+  target: HTMLElement,
+  pages: Page[],
+  api: DiagramApi,
+  live: Live = {},
+): void {
   const win = doc.defaultView;
   const style = doc.createElement('style');
   style.textContent = SET_CSS;
@@ -125,8 +145,9 @@ function mountSet(doc: Document, target: HTMLElement, pages: Page[], api: Diagra
     r.setAttribute('height', String(b.height + 12));
     r.setAttribute('rx', '4');
     hit.parentNode?.appendChild(r);
-    // Scroll this document only (never a parent frame's): the element to
-    // the middle of the canvas's own window.
+    // Zoomed: the view moves to it. Else scroll this document only (never
+    // a parent frame's): the element to the middle of the canvas's window.
+    if (live.zoom?.()?.focus(r)) return;
     if (win) {
       const box = r.getBoundingClientRect();
       win.scrollTo({
@@ -162,6 +183,7 @@ function mountSet(doc: Document, target: HTMLElement, pages: Page[], api: Diagra
     });
     back.disabled = history.length === 0;
     home.disabled = hit.n === 1;
+    live.zoom?.()?.refresh();
     for (const a of target.querySelectorAll('[data-link]')) {
       const to = byId.get(a.getAttribute('data-link') ?? '');
       if (!to) continue;
@@ -183,6 +205,8 @@ function mountSet(doc: Document, target: HTMLElement, pages: Page[], api: Diagra
     if (a) follow(a);
   });
   doc.addEventListener('keydown', (e) => {
+    // The zoom took this key.
+    if (e.defaultPrevented) return;
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const a = (e.target as Element | null)?.closest?.('#diagram [data-link]');
     if (a && (e.key === 'Enter' || e.key === ' ')) {
@@ -219,6 +243,13 @@ declare global {
   interface Window {
     diagram?: DiagramApi;
   }
+}
+
+/** The data's `view.zoom`: true forces the controls on, false off; absent,
+ *  they show when the drawing does not fit the frame at a readable size. */
+function zoomModeOf(data: unknown): ZoomMode {
+  const v = (data as { view?: { zoom?: unknown } } | null)?.view?.zoom;
+  return v === true ? 'on' : v === false ? 'off' : 'auto';
 }
 
 function fail(doc: Document, errors: string[]): void {
@@ -266,7 +297,7 @@ export function mount(doc: Document = document): DiagramApi {
       if (doc.fonts?.ready) await doc.fonts.ready;
       const meta =
         doc.querySelector('meta[name="diagram:template"]')?.getAttribute('content') ?? '';
-      const fromData = (data as { template?: unknown }).template;
+      const fromData = (data as { template?: unknown } | null)?.template;
       const template = typeof fromData === 'string' ? fromData : (meta.split('@')[0] ?? '');
       outcome = render(template, data, domMeasurer(doc));
     }
@@ -278,10 +309,35 @@ export function mount(doc: Document = document): DiagramApi {
       api.exportSvg = () => svg;
       const target = doc.getElementById('diagram');
       const pages = outcome!.pages;
+      let zoom: ZoomController | undefined;
+      const live: Live = { zoom: () => zoom };
       // The SVG is built from escaped strings by the template (no markup
       // from the data reaches it unescaped), so it is safe to insert.
-      if (target && pages && pages.length > 1) mountSet(doc, target, pages, api);
+      if (target && pages && pages.length > 1) mountSet(doc, target, pages, api, live);
       else if (target) target.innerHTML = pages?.[0]?.svg ?? svg;
+      if (target) {
+        // The view is extra: a document that cannot zoom still draws.
+        try {
+          // Zoomed, the drawing fills the frame under the page bar: the
+          // page stops centring it, and the viewport is the frame less the
+          // bar and the page's padding.
+          const top = doc.createElement('style');
+          top.textContent = 'body:has(#diagram svg.diagram-zoomed){justify-content:flex-start}';
+          doc.head.appendChild(top);
+          const win = doc.defaultView!;
+          const bar = () => doc.getElementById('diagram-pages');
+          zoom = zoomable(target, {
+            mode: zoomModeOf(data),
+            height: () => {
+              const b = bar();
+              return win.innerHeight - 32 - (b ? b.offsetHeight + 8 : 0);
+            },
+          });
+          api.zoom = zoom;
+        } catch {
+          zoom = undefined;
+        }
+      }
       if (pages?.length === 1) {
         api.pages = [{ id: pages[0]!.id, title: pages[0]!.title }];
         api.page = pages[0]!.id;

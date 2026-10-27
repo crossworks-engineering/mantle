@@ -19,6 +19,7 @@ import {
   bool,
   type Checked,
   type Obj,
+  said,
 } from '../runtime/validate.ts';
 import { el, orthoPath, arrowHead, endDir, textEl, simplify, type Pt } from '../runtime/svg.ts';
 import { lineHeight, measure, wrap, type Measurer } from '../runtime/text.ts';
@@ -106,6 +107,7 @@ const TOP_KEYS = [
   'nodes',
   'edges',
   'groups',
+  'view',
 ];
 const NODE_KEYS = ['id', 'label', 'sublabel', 'tag', 'kind', 'shape', 'group'];
 const EDGE_KEYS = ['id', 'from', 'to', 'label', 'style', 'tone'];
@@ -117,10 +119,16 @@ export function validateFlow(input: unknown): Checked<FlowData> {
   if (!isObj(input)) return { ok: false, errors: ['data: must be a JSON object.'], warnings: [] };
   const d = input as Obj;
   checkKeys(d, TOP_KEYS, '', issues);
+  // How the live canvas shows it (zoom and pan); the drawing is untouched.
+  if (d.view !== undefined) {
+    if (!isObj(d.view)) issues.errors.push('view: must be { zoom? }.');
+    else {
+      checkKeys(d.view, ['zoom'], 'view', issues);
+      bool(d.view, 'zoom', 'view', issues);
+    }
+  }
   if (d.template !== undefined && d.template !== 'flow') {
-    issues.errors.push(
-      `template: this is the 'flow' template, the data says '${String(d.template)}'.`,
-    );
+    issues.errors.push(`template: this is the 'flow' template, the data says ${said(d.template)}.`);
   }
   const title = str(d, 'title', '', issues, { required: true, max: 80 }) ?? '';
   const description = str(d, 'description', '', issues, { max: 300 });
@@ -159,7 +167,7 @@ export function validateFlow(input: unknown): Checked<FlowData> {
   const groupIds = new Map(groups.map((g, i) => [g.id, `groups[${i}]`]));
   groups.forEach((g, i) => {
     if (g.parent && !groupIds.has(g.parent)) {
-      issues.errors.push(`groups[${i}].parent: no group with id '${g.parent}'.`);
+      issues.errors.push(`groups[${i}].parent: no group with id ${said(g.parent)}.`);
     }
     // A group may not contain itself through its parents.
     const seen = new Set<string>([g.id]);
@@ -167,7 +175,7 @@ export function validateFlow(input: unknown): Checked<FlowData> {
     while (cur) {
       if (seen.has(cur)) {
         issues.errors.push(
-          `groups[${i}].parent: the groups '${[...seen].join("' > '")}' form a loop.`,
+          `groups[${i}].parent: the groups ${[...seen].map(said).join(' > ')} form a loop.`,
         );
         break;
       }
@@ -217,14 +225,14 @@ export function validateFlow(input: unknown): Checked<FlowData> {
       const label = str(e, 'label', p, issues, { max: 24 });
       if (label && label.length > 14) {
         issues.warnings.push(
-          `${p}.label: '${label}' is over 14 characters; arrow labels read best short.`,
+          `${p}.label: ${said(label)} is over 14 characters; arrow labels read best short.`,
         );
       }
       const style = oneOf(e, 'style', ['solid', 'dashed'] as const, p, issues) ?? 'solid';
       const tone = oneOf(e, 'tone', ['muted', 'accent', 'link'] as const, p, issues) ?? 'muted';
       if (from && to && from === to)
         issues.errors.push(
-          `${p}: an edge from '${from}' to itself is not drawn; remove it or add a step.`,
+          `${p}: an edge from ${said(from)} to itself is not drawn; remove it or add a step.`,
         );
       if (from && to && id && from !== to)
         edges.push({ id, from, to, style, tone, ...(label ? { label } : {}) });
@@ -302,9 +310,11 @@ function sizeNode(m: Measurer, n: FlowNode): NodeLayout {
     h = gridUp(h + 12);
   }
   const warns: string[] = [];
-  if (name.truncated) warns.push(`nodes '${n.id}': label cut to 3 lines; shorten it.`);
+  if (name.truncated) warns.push(`nodes ${said(n.id)}: label cut to 3 lines; shorten it.`);
   if (name.overflow)
-    warns.push(`nodes '${n.id}': a word in the label is wider than a box; the box grew to fit it.`);
+    warns.push(
+      `nodes ${said(n.id)}: a word in the label is wider than a box; the box grew to fit it.`,
+    );
   return {
     node: n,
     w,
@@ -487,7 +497,7 @@ export function renderFlow(data: FlowData, m: Measurer): RenderResult {
   for (const g of [...data.groups].sort((a, b) => depth(b.id) - depth(a.id))) groupBoxOf(g.id);
   for (const g of data.groups) {
     if (!membersOf(g.id).length)
-      warnings.push(`groups '${g.id}': has no members and is not drawn.`);
+      warnings.push(`groups ${said(g.id)}: has no members and is not drawn.`);
   }
 
   // Everything drawn so far, to find the extent.
@@ -623,7 +633,7 @@ export function renderFlow(data: FlowData, m: Measurer): RenderResult {
     if (!gb) continue;
     for (const n of data.nodes) {
       if (!inGroup(n.group, g.id) && overlaps(gb, lay.nodes.get(n.id)!, 1)) {
-        warnings.push(`layout: '${n.id}' sits inside group '${g.id}' but is not a member.`);
+        warnings.push(`layout: ${said(n.id)} sits inside group ${said(g.id)} but is not a member.`);
       }
     }
   }

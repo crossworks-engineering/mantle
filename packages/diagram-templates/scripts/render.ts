@@ -19,7 +19,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import puppeteer, { type Browser } from 'puppeteer-core';
-import { buildCanvas, checkStaticSvg, isTemplateName } from '../src/index.ts';
+import { buildCanvas, checkStaticSvg, isTemplateName, RENDER_FLAG } from '../src/index.ts';
 import { messageOf } from '../src/runtime/validate.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -117,6 +117,10 @@ try {
     } else {
       const html = buildCanvas({ template, data, runtime });
       const page = await browser.newPage();
+      // A render, as the brain's harness marks it: the zoom stays off.
+      await page.evaluateOnNewDocument(
+        `Object.defineProperty(globalThis, '${RENDER_FLAG}', { value: true });`,
+      );
       await page.setRequestInterception(true);
       // Offline by construction: every request is refused and reported.
       page.on('request', (r) => {
