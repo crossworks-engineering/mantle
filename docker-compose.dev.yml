@@ -131,7 +131,7 @@ services:
       # ERROR (503). Harmless; the grace period keeps it from counting.
       start_period: 10s
 
-  # Browser sidecar (browserless/chromium) — the PDF-export render engine: a
+  # Browser sidecar (browserless/chromium), the PDF-export render engine: a
   # stateless, self-hosted service with its own memory
   # space, session queue, and per-session timeout. server/web connects with
   # puppeteer-core over websocket and drives it to print the owner-authed

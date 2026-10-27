@@ -98,7 +98,7 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
   it('runs the parser entry with its own image CMD, and the entry has a checkpoint', () => {
     const extra = EXTRA as { name: string; command: string[] }[];
     const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
-    const stage = dockerfile.split(/^FROM /m).find((s) => /^\S+ AS parser\b/.test(s));
+    const stage = dockerfile.split(/^FROM /m).find((s) => /^\S+ AS parser\s/.test(s));
     const cmd = [...(stage ?? '').matchAll(/^CMD (\[.*\])\s*$/gm)].at(-1)?.[1];
     expect(cmd, 'the Dockerfile has a parser stage with an exec-form CMD').toBeDefined();
     expect(extra.find((e) => e.name === 'parser')?.command).toEqual(JSON.parse(cmd!));

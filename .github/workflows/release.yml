@@ -247,12 +247,14 @@ jobs:
             exit 1
           fi
 
+      # The release tag only: `:latest` (what a fresh install and every
+      # unpinned box pulls) moves at the end of this job, after the probes
+      # below passed on the pushed image.
       - name: Create + push the multi-arch manifest
         working-directory: ${{ runner.temp }}/digests
         run: |
           docker buildx imagetools create \
             -t "${IMAGE}:${{ github.ref_name }}" \
-            -t "${IMAGE}:latest" \
             $(printf "${IMAGE}@sha256:%s " *)
 
       # Belt to the braces above: the PUSHED manifest must list both
@@ -288,6 +290,33 @@ jobs:
             dwg2dxf --version > /dev/null &&
             ffmpeg -version > /dev/null &&
             node --input-type=module -e "await import(\"@firecrawl/anydoc\")"'
+
+      # The parser SERVICE, not just its programs: it boots with no network,
+      # answers /healthz, and reads a document end to end in a job process.
+      - name: Probe the parser service on the parser image
+        if: matrix.target == 'parser'
+        run: |
+          docker run -d --name parser-probe --network none --init "${IMAGE}:${{ github.ref_name }}"
+          ok=""
+          for i in $(seq 1 30); do
+            if docker exec parser-probe node -e "fetch('http://127.0.0.1:8095/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"; then ok=1; break; fi
+            sleep 2
+          done
+          [ -n "$ok" ] || { docker logs parser-probe; exit 1; }
+          docker exec parser-probe node -e "
+            const opts = Buffer.from(JSON.stringify({ ext: 'html' }));
+            const body = Buffer.concat([opts, Buffer.from('<html><body><p>hello parser</p></body></html>')]);
+            fetch('http://127.0.0.1:8095/text', { method: 'POST', body, headers: { 'x-parser-opts-length': String(opts.length) } })
+              .then((r) => r.json())
+              .then((j) => { console.log(JSON.stringify(j)); process.exit(j.ok && /hello parser/.test(j.text) ? 0 : 1); }, () => process.exit(1));
+          " || { docker logs parser-probe; exit 1; }
+          docker rm -f parser-probe
+
+      # Every probe above passed on the pushed release tag: point `:latest`
+      # at it now.
+      - name: Point latest at the probed release
+        run: |
+          docker buildx imagetools create -t "${IMAGE}:latest" "${IMAGE}:${{ github.ref_name }}"
 
   release:
     needs: merge
