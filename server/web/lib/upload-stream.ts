@@ -95,11 +95,21 @@ export async function readMultipartUpload(
         stream.resume(); // not ours: drain so the parser can move on
         return;
       }
+      // busboy also hands over a part with no filename when its Content-Type
+      // is application/octet-stream. Every client we serve names the part (a
+      // browser or fetch FormData sends "blob" at the least), and a stored
+      // file needs a name, so a nameless one is the caller's error (400).
+      const filename = info.filename;
+      if (!filename) {
+        stream.resume();
+        fail(new InputError('the file part has no filename'));
+        return;
+      }
       activeFile = stream;
       filePromise = spoolUpload(stream, { maxBytes: opts.maxBytes, dir: opts.spoolDir })
-        .then((spooled) => ({ filename: info.filename, spooled }))
+        .then((spooled) => ({ filename, spooled }))
         .catch((err: unknown) => {
-          if (err instanceof UploadTooLargeError) err.filename = info.filename;
+          if (err instanceof UploadTooLargeError) err.filename = filename;
           throw err;
         });
       filePromise.catch(fail);

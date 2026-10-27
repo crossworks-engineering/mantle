@@ -157,6 +157,37 @@ describe('readMultipartUpload', () => {
     expect(await spoolParts()).toEqual([]);
   });
 
+  it('refuses a file part with no filename (InputError, 400)', async () => {
+    // busboy treats an application/octet-stream part as a file even with no
+    // filename in its Content-Disposition; a stored file needs a name.
+    const { readMultipartUpload } = await mod();
+    const { InputError } = await import('@mantle/std');
+    const boundary = 'mantle-test-boundary';
+    const body = [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="parentPath"',
+      '',
+      'files.inbox',
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="file"',
+      'Content-Type: application/octet-stream',
+      '',
+      'nameless bytes',
+      `--${boundary}--`,
+      '',
+    ].join('\r\n');
+    const req = new Request('http://localhost/api/files/files', {
+      method: 'POST',
+      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+      body,
+    });
+    const err = await readMultipartUpload(req, { maxBytes: 1024 * 1024 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InputError);
+    expect((err as Error).message).toBe('the file part has no filename');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await spoolParts()).toEqual([]);
+  });
+
   it('returns file: null when no file part came', async () => {
     const { readMultipartUpload } = await mod();
     const parsed = await readMultipartUpload(multipart([['field', 'parentPath', 'files.x']]), {
