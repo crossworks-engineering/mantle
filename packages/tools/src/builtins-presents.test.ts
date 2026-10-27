@@ -36,6 +36,7 @@ const h = vi.hoisted(() => ({
   listPresentRevisions: vi.fn(async () => null as unknown),
   getPresentRevisionSource: vi.fn(async () => null as string | null),
   listFiles: vi.fn(async () => [] as { id: string; filename: string }[]),
+  readCanvasDataFor: vi.fn(async () => null as unknown),
   fileData: null as Record<string, unknown> | null,
 }));
 
@@ -55,6 +56,7 @@ vi.mock('@mantle/content/presents', async (importOriginal) => {
   };
 });
 vi.mock('@mantle/content', () => ({ nodeUrl: (id: string) => `/n/${id}` }));
+vi.mock('@mantle/content/canvas-data', () => ({ readCanvasDataFor: h.readCanvasDataFor }));
 vi.mock('@mantle/content/tree', () => ({ guardNewFileIn: vi.fn(async () => undefined) }));
 vi.mock('@mantle/files', () => ({
   ensureFolderPath: vi.fn(async ({ path }: { path: string }) => path),
@@ -586,6 +588,49 @@ describe('the reads and the restore', () => {
     h.getPresent.mockResolvedValueOnce(null);
     const none = await tool('present_get').handler({ id: ID }, ctx);
     expect((none as { error: string }).error).toContain('present_list');
+  });
+
+  it('present_get `data: true` of a template canvas returns its template data and its store entries side by side', async () => {
+    await tool('present_create').handler({ template: 'flow', data: FLOW, look: false }, ctx);
+    const tplSource = (h.createPresent.mock.calls[0]![1] as { source: string }).source;
+    const entries = {
+      shared: [
+        {
+          key: 'marks',
+          value: [1, 2],
+          updatedAt: '2026-10-27T00:00:00.000Z',
+          by: { id: 'u1', name: 'A' },
+        },
+      ],
+      mine: [
+        {
+          key: 'note',
+          value: 'mine',
+          updatedAt: '2026-10-27T00:00:00.000Z',
+          by: { id: 'u1', name: 'A' },
+        },
+      ],
+    };
+    h.readCanvasDataFor.mockResolvedValueOnce(entries);
+    h.getPresent.mockResolvedValueOnce(detail(tplSource));
+    const out = (await tool('present_get').handler({ id: ID, data: true }, ctx)) as {
+      output: { template?: string; data?: Record<string, unknown>; store?: unknown };
+    };
+    expect(h.readCanvasDataFor).toHaveBeenCalledWith('anchor', ID);
+    expect(out.output.template).toBe('flow');
+    expect(out.output.data?.title).toBe(FLOW.title);
+    expect(out.output.data?.template).toBe('flow');
+    expect(out.output.store).toEqual(entries);
+
+    // Not asked: the store is not read and no `store` key comes back.
+    const reads = h.readCanvasDataFor.mock.calls.length;
+    h.getPresent.mockResolvedValueOnce(detail(tplSource));
+    const bare = (await tool('present_get').handler({ id: ID }, ctx)) as {
+      output: Record<string, unknown>;
+    };
+    expect(h.readCanvasDataFor.mock.calls.length).toBe(reads);
+    expect(bare.output).not.toHaveProperty('store');
+    expect((bare.output.data as Record<string, unknown>).title).toBe(FLOW.title);
   });
 
   it('present_get of a traced P&ID adds its image check overview on checks: true; otherwise none', async () => {

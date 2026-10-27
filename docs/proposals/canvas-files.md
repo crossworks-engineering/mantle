@@ -987,8 +987,9 @@ key, json, everyone, by}` to its parent, only after `ready` (the parent
   holds (it lists everyone's `mine`), and the host's `frame-src` blocks a
   navigation off the brain; the rest (another page of the brain's own
   origin) is the same exposure as any canvas Write can author (5.3).
-- **Agents.** `present_get` with `data: true` returns `shared`, the user's
-  own `mine` and, with Write, `everyone`. The canvas_authoring skill and
+- **Agents.** `present_get` with `data: true` returns `store`: `shared`,
+  the user's own `mine` and, with Write, `everyone`. Under its own key, so a
+  template canvas's template `data` stays beside it. The canvas_authoring skill and
   canvas_library `data` (what an MCP client reads) carry one text
   (CANVAS_DATA_HOWTO).
 - **Share links.** `/s` shows a canvas's snapshot only, never the live

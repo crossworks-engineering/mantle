@@ -431,30 +431,30 @@ describe.skipIf(!URL)('the canvas data store follows the canvas rights', () => {
     expect(after).toEqual(before);
   });
 
-  it('present_get `data` reads the store with the turn user’s rights', async () => {
+  it('present_get `data: true` reads the store (as `store`) with the turn user’s rights', async () => {
     await put(user, cv.noWrite, 'mine', 'note', 'from user');
     const plain = (await turn(user, [], 'present_get', { id: cv.noWrite, data: true })) as {
       ok: boolean;
-      output: { data: { shared: unknown[]; mine: { key: string }[]; everyone?: unknown[] } };
+      output: { store: { shared: unknown[]; mine: { key: string }[]; everyone?: unknown[] } };
     };
     expect(plain.ok).toBe(true);
-    expect(plain.output.data.shared.length).toBeGreaterThan(0);
-    expect(plain.output.data.mine.map((e) => e.key)).toEqual(['note']);
-    expect(plain.output.data.everyone).toBeUndefined();
+    expect(plain.output.store.shared.length).toBeGreaterThan(0);
+    expect(plain.output.store.mine.map((e) => e.key)).toEqual(['note']);
+    expect(plain.output.store.everyone).toBeUndefined();
 
     const moderator = (await turn(mod, [ws.w], 'present_get', { id: cv.noWrite, data: true })) as {
       ok: boolean;
-      output: { data: { everyone?: { by: { id: string } }[] } };
+      output: { store: { everyone?: { by: { id: string } }[] } };
     };
     expect(moderator.ok).toBe(true);
-    const ids = new Set((moderator.output.data.everyone ?? []).map((e) => e.by.id));
+    const ids = new Set((moderator.output.store.everyone ?? []).map((e) => e.by.id));
     expect(ids.has(user)).toBe(true);
 
     // Without `data` nothing of the store is read.
     const bare = (await turn(user, [], 'present_get', { id: cv.noWrite })) as {
       output: Record<string, unknown>;
     };
-    expect('data' in bare.output).toBe(false);
+    expect('store' in bare.output).toBe(false);
   });
   it('a read-only copy refuses a write and a delete (read_only), and changes nothing', async () => {
     const id = await canvasIn(ws.w, 'copy', true);
