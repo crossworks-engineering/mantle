@@ -3,6 +3,7 @@ import {
   HOME_DESK_BYTES_MAX,
   HOME_DESK_ITEMS_MAX,
   projectHomeDesk,
+  projectHomeDeskVersion,
   validateHomeDeskWrite,
 } from './profile-projections';
 
@@ -186,5 +187,17 @@ describe('validateHomeDeskWrite: strict on write', () => {
       h: 1,
     }));
     expect(validateHomeDeskWrite(desk({ items: big }))).toBeUndefined();
+  });
+});
+
+describe('projectHomeDeskVersion', () => {
+  it('is the stored whole number, else 0 (never saved, or saved before the version)', () => {
+    expect(projectHomeDeskVersion(undefined)).toBe(0);
+    expect(projectHomeDeskVersion(null)).toBe(0);
+    expect(projectHomeDeskVersion(0)).toBe(0);
+    expect(projectHomeDeskVersion(7)).toBe(7);
+    for (const bad of [-1, 1.5, '3', Number.NaN, Number.MAX_SAFE_INTEGER + 1, {}]) {
+      expect(projectHomeDeskVersion(bad), String(bad)).toBe(0);
+    }
   });
 });

@@ -213,10 +213,8 @@ describe('shell chrome reads never fail the shell', () => {
         if (part === 'onboarding') expect(body.onboarded).toBe(true);
         if (part === 'asset token') expect(body).not.toHaveProperty('assetToken');
         if (part === 'own preferences') expect(body.avatar).toBeNull();
-        // A failed read of the login's own row leaves the desk out: never
-        // read as "never saved" (null), which would move a stale local desk up.
-        if (part === 'own preferences') expect(body).not.toHaveProperty('homeDesk');
-        else expect(body.homeDesk).toBeNull();
+        // The Desk has its own route (GET /api/profile/home-desk).
+        expect(body).not.toHaveProperty('homeDesk');
         if (part === 'workspaces') expect(body).toMatchObject({ workspaces: [], areas: [] });
         expect(console.error).toHaveBeenCalledWith(expect.stringContaining(`[shell] ${part}`));
       },
@@ -274,7 +272,6 @@ describe('shell chrome reads never fail the shell', () => {
         onboarded: true,
         pendingApprovals: 0,
         navFavorites: [],
-        homeDesk: null,
         maxUploadBytes: 1024,
         features: { recallV2: true, treeCustomOrder: true },
       });
@@ -294,20 +291,18 @@ describe('shell chrome reads never fail the shell', () => {
         expect(body).toMatchObject({ role, loginId: LOGIN });
         if (part === 'brand') expect(body.siteName).toBeNull();
         if (part === 'own preferences') expect(body.avatar).toBeNull();
-        if (part === 'own preferences') expect(body).not.toHaveProperty('homeDesk');
-        else expect(body.homeDesk).toBeNull();
+        expect(body).not.toHaveProperty('homeDesk');
         if (part === 'workspaces') expect(body).toMatchObject({ workspaces: [], areas: [] });
         if (part === 'asset token') expect(body).not.toHaveProperty('assetToken');
       },
     );
 
-    it("answers the login's own saved desk", async () => {
-      const desk = { v: 1, items: [], counts: {}, icons: false, clock: 'analog' };
-      h.desk = desk;
+    it("never names the login's Desk, even a saved one (it has its own route)", async () => {
+      h.desk = { v: 1, items: [], counts: {}, icons: false, clock: 'analog' };
       try {
         const { status, body } = await shell();
         expect(status).toBe(200);
-        expect(body.homeDesk).toEqual(desk);
+        expect(body).not.toHaveProperty('homeDesk');
       } finally {
         h.desk = undefined;
       }

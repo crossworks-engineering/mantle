@@ -6,34 +6,53 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
 ## Unreleased: the Desk follows the login
 
-- **Feature:** `PUT /api/profile/home-desk { homeDesk }` saves the login's
-  Desk (where each widget and desk icon sits, the kind widgets' counts,
-  desk icons on or off, the clock face) on its own profile row, and
-  `GET /api/shell` returns it as `homeDesk` (null until one is saved). It
-  used to live in one browser's storage; like nav favourites, the Desk now
-  follows the login to another browser, machine or the desktop app. The
-  brain checks the shape and the size only (a v1 desk, at most 400 items
-  and 32 KB counted in UTF-8 bytes); the client owns what a widget is, so a
-  new widget needs no brain release.
+- **Feature:** the login's Desk (where each widget and desk icon sits, the
+  kind widgets' counts, desk icons on or off, the clock face) is kept on its
+  own profile row and has its own route. `GET /api/profile/home-desk`
+  answers `{ homeDesk, version }` (null and 0 until a save; 0 too for a desk
+  saved before the version). It used to live in one browser's storage; like
+  nav favourites, the Desk now follows the login to another browser, machine
+  or the desktop app. The brain checks the shape and the size only (a v1
+  desk, at most 400 items and 32 KB counted in UTF-8 bytes); the client owns
+  what a widget is, so a new widget needs no brain release.
+- **A save is compare-and-set:**
+  `PUT /api/profile/home-desk { homeDesk, version }` lands (200,
+  `{ homeDesk, version: version + 1 }`) only while
+  the stored version equals the one sent, else it is a 409 with the stored
+  `{ homeDesk, version }` (another device saved since). One conditional
+  update of the login's row (`saveHomeDeskIfVersion`, the version stored
+  beside the desk as `homeDeskVersion`), so of two saves sent with the same
+  version exactly one lands. It and `savePreferenceIfRev` share the one
+  compare-and-set write of the preferences column (`mergePreferencesIf`).
+  `homeDesk` and `homeDeskVersion` are written through it only: a
+  preference patch naming either is refused.
+- **The shell does not carry the desk:** `homeDesk` is gone from
+  `GET /api/shell` and the `Shell` DTO, so the shell's periodic reads no longer
+  race the Desk's saves. `HomeDesk`, `HomeDeskItem`, `HomeDeskState` and
+  `HomeDeskPutBody` are in `@mantle/client-types` (dto/home-desk).
 - **A save is kept as sent or refused whole:** the write check
   (`validateHomeDeskWrite`) is a 400 when the projection would change the
   desk (an item or a count dropped, the list cut at the cap, an id or a key
   that is not printable ASCII, a setting of the wrong type), so garbage
   never saves as an empty desk and a NUL or a lone surrogate is a 400, not
-  a 500. The read side (`projectHomeDesk`) stays loose: a stored desk is
-  never lost to the stricter rule. The body is read up to 64 KB (413 past
-  it).
-- **Every login saves its own desk:** the route is an any-login row
-  (`open: 'any'`, `anyLoginCaller`), so a member saves its desk as an Admin
-  user does. The write runs in the login's scope, where the profile write
-  rule (`mantle_profile_writable`) holds it to the login's own row; an API
-  key, a peer and a share link never reach it.
-- **The shell leaves `homeDesk` out** when the login's own row could not be
-  read, so a failed read is never taken for "never saved".
-- **Internal:** the route joins the route rows, the A4 guard sweep, the A10
-  body sweep and the any-login rows with no limit (`UNLIMITED_NON_OWNER_ROWS`,
-  docs/request-plumbing.md); a member-save database test
-  (`home-desk-route.db.test.ts`).
+  a 500. A missing or bad `version` is a 400 too. The read side
+  (`projectHomeDesk`) stays loose: a stored desk is never lost to the
+  stricter rule. The body is read up to 64 KB (413 past it).
+- **Every login keeps its own desk:** both methods are any-login rows
+  (`open: 'any'`, `anyLoginCaller`), so a member reads and saves its desk
+  as an Admin user does. Both run in the login's scope, where the profile
+  rules (`mantle_profile_writable` on write) hold it to the login's own row;
+  an API key, a peer and a share link never reach it.
+- **Internal:** the route joins the route rows (GET and HEAD with a caller:
+  785 of 845), the A4 guard sweep (the HEAD cells in the head-logins file
+  name the main answers of `GET /api/workspaces/user-search`, which takes
+  the same gate path), the A10 body sweep (its 400 names the version:
+  `desk-version`) and the any-login rows with no limit
+  (`UNLIMITED_NON_OWNER_ROWS`, docs/request-plumbing.md); the A6b exit
+  sweep drops the shell's named `homeDesk` change. The route database test
+  (`home-desk-route.db.test.ts`) covers the version conflict, two saves at
+  once with the same version (exactly one lands), the own row only, API
+  keys 401, and the 400 and 413 paths.
 
 ## Unreleased: workspace delegation
 

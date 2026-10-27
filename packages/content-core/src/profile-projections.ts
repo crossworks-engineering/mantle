@@ -573,8 +573,8 @@ const HOME_DESK_KEY_RE = /^[\x21-\x7e]+$/;
  * dropped, the list cut at the cap, an id or a key that is not printable
  * ASCII, a setting of the wrong type. So a save is kept as sent or refused
  * whole, and garbage never saves as an empty desk. The read side
- * (`projectHomeDesk`, loadProfilePreferences) stays loose, so a desk already
- * stored is never lost to a stricter rule.
+ * (`projectHomeDesk`, loadHomeDesk) stays loose, so a desk already stored is
+ * never lost to a stricter rule.
  */
 export function validateHomeDeskWrite(raw: unknown): HomeDesk | undefined {
   const desk = projectHomeDesk(raw);
@@ -593,6 +593,15 @@ export function validateHomeDeskWrite(raw: unknown): HomeDesk | undefined {
   if (d.icons !== undefined && typeof d.icons !== 'boolean') return undefined;
   if (d.clock !== undefined && d.clock !== 'digital' && d.clock !== 'analog') return undefined;
   return desk;
+}
+
+/**
+ * Project the stored desk's version (`homeDeskVersion`, beside `homeDesk` on
+ * the login's profile row): a whole number from 0, the count of saves that
+ * landed. 0 when the desk was never saved, or saved before it had one.
+ */
+export function projectHomeDeskVersion(raw: unknown): number {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0 ? raw : 0;
 }
 
 const utf8 = new TextEncoder();

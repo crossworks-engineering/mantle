@@ -373,13 +373,24 @@ function changeKind(cell: string, main: string, now: string): string | null {
   // refused whole, so the body with a NUL at the end of its strings (the
   // clock face) is the route's 400, where main stored the default face and
   // answered the stand-in's 500. The real answers: home-desk-route.db.test.ts.
+  // Desk saving v2: the save is compare-and-set on a version, so its 400
+  // names the version too (the same cells, the same status).
+  const DESK_400 =
+    '400 application/json {"error":"homeDesk (a v1 desk) and version (a whole number) required"}';
   if (
     cell.startsWith('PUT /api/profile/home-desk ') &&
     variant === 'nul' &&
     main === OPAQUE &&
-    now === '400 application/json {"error":"homeDesk (a v1 desk) required"}'
+    now === DESK_400
   ) {
     return 'desk-write-strict (the Desk, fix round 2: a desk the read would change is a 400)';
+  }
+  if (
+    cell.startsWith('PUT /api/profile/home-desk ') &&
+    main === '400 application/json {"error":"homeDesk (a v1 desk) required"}' &&
+    now === DESK_400
+  ) {
+    return 'desk-version (Desk saving v2: the 400 names the version the save is checked on)';
   }
   // F4 fix round 2 (item 4): a bulk delete checks every id it names first,
   // by @mantle/db's own client (itemWriteVerdicts), which the database

@@ -21,24 +21,6 @@ export type ShellFeatures = {
   treeCustomOrder?: boolean;
 };
 
-/**
- * The login's Desk: where each widget and desk icon sits on the
- * client's grid, and the desk's few settings. The CLIENT owns the meaning
- * (which ids exist, each widget's bounds); the brain only keeps the shape
- * sound and the size bounded (projectHomeDesk), so a new widget needs no
- * brain release.
- */
-export type HomeDeskItem = { id: string; x: number; y: number; w: number; h: number };
-export type HomeDesk = {
-  v: 1;
-  items: HomeDeskItem[];
-  /** Items a kind widget lists, by tree kind. */
-  counts: Record<string, number>;
-  /** Pinned items as desk icons. */
-  icons: boolean;
-  clock: 'digital' | 'analog';
-};
-
 export type Shell = {
   role: ShellRole;
   /** The login at the keyboard (the actor), never the anchor account. */
@@ -69,11 +51,6 @@ export type Shell = {
   email: string | null;
   /** The login's starred screens. [] when none. */
   navFavorites: string[];
-  /** The login's Desk; null until one is saved (the client lays out its
-   *  default). Absent from a brain that predates saving it, and when the
-   *  brain could not read the login's own row this time (never read as
-   *  "never saved": the client keeps its local desk for that visit). */
-  homeDesk?: HomeDesk | null;
   /** The kinds served as the item tree: the admin tree (/api/tree/:kind) for
    *  an admin, the reader tree for a member or a client. */
   treeKinds: TreeKind[];

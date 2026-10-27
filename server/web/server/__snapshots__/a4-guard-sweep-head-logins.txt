@@ -52,7 +52,7 @@ o22 401 content-type=application/json  [getLoginOr401 R401 {"error":"unauthorize
 o23 500 content-type=application/json  [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:login-self]
 o24 500 content-type=application/json  [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=system:rule-in-query out=system:login-self]
 
-# cells: 360
+# cells: 380
 first HEAD /api/access-keys none=h1 main=o1
 first HEAD /api/access-keys owner-cookie=h2 main=o2
 first HEAD /api/access-keys admin-cookie=h3 main=o3
@@ -170,6 +170,19 @@ first HEAD /api/grants/:nodeId/preview key-write=h1 main=o1
 first HEAD /api/grants/:nodeId/preview key-read-area=h1 main=o1
 first HEAD /api/grants/:nodeId/preview key-write-area=h1 main=o1
 first HEAD /api/grants/:nodeId/preview key-member=h1 main=o1
+first HEAD /api/profile/home-desk none=h1 main=o1
+first HEAD /api/profile/home-desk owner-cookie=h2 main=o16
+first HEAD /api/profile/home-desk admin-cookie=h3 main=o17
+first HEAD /api/profile/home-desk limited-cookie=h4 main=o18
+first HEAD /api/profile/home-desk member-cookie=h5 main=o19
+first HEAD /api/profile/home-desk admin-bearer=h6 main=o20
+first HEAD /api/profile/home-desk member-bearer=h7 main=o21
+first HEAD /api/profile/home-desk revoked-bearer=h8 main=o22
+first HEAD /api/profile/home-desk key-read=h1 main=o1
+first HEAD /api/profile/home-desk key-write=h1 main=o1
+first HEAD /api/profile/home-desk key-read-area=h1 main=o1
+first HEAD /api/profile/home-desk key-write-area=h1 main=o1
+first HEAD /api/profile/home-desk key-member=h1 main=o1
 first HEAD /api/shell none=h1 main=o1
 first HEAD /api/shell owner-cookie=h2 main=o2
 first HEAD /api/shell admin-cookie=h3 main=o3
@@ -350,6 +363,13 @@ more HEAD /api/grants/:nodeId/preview rotated-bearer=h8 main=o22
 more HEAD /api/grants/:nodeId/preview expired-bearer=h8 main=o22
 more HEAD /api/grants/:nodeId/preview key-unknown=h1 main=o1
 more HEAD /api/grants/:nodeId/preview key-revoked=h1 main=o1
+more HEAD /api/profile/home-desk disabled-cookie=h8 main=o22
+more HEAD /api/profile/home-desk bumped-cookie=h8 main=o22
+more HEAD /api/profile/home-desk gone-cookie=h8 main=o22
+more HEAD /api/profile/home-desk rotated-bearer=h8 main=o22
+more HEAD /api/profile/home-desk expired-bearer=h8 main=o22
+more HEAD /api/profile/home-desk key-unknown=h1 main=o1
+more HEAD /api/profile/home-desk key-revoked=h1 main=o1
 more HEAD /api/shell disabled-cookie=h8 main=o8
 more HEAD /api/shell bumped-cookie=h8 main=o8
 more HEAD /api/shell gone-cookie=h8 main=o8

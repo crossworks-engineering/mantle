@@ -227,7 +227,9 @@ export type {
   WorkspaceUsersResponse,
 } from './dto/workspaces';
 // GET /api/shell: the one shell, for every login (W5c).
-export type { HomeDesk, HomeDeskItem, Shell, ShellFeatures, ShellRole } from './dto/shell';
+export type { Shell, ShellFeatures, ShellRole } from './dto/shell';
+// GET and PUT /api/profile/home-desk: the login's Desk, compare-and-set.
+export type { HomeDesk, HomeDeskItem, HomeDeskPutBody, HomeDeskState } from './dto/home-desk';
 export type {
   GrantAddBody,
   GrantContactShare,

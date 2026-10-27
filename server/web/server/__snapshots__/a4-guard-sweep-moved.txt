@@ -231,7 +231,7 @@ m229 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m230 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m231 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 9553
+# cells whose guard entry moved to the pipeline: 9577
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -3780,6 +3780,13 @@ first PUT /api/profile/fonts member-cookie=m24
 first PUT /api/profile/fonts admin-bearer=m87
 first PUT /api/profile/fonts member-bearer=m26
 first PUT /api/profile/fonts revoked-bearer=m27
+first GET /api/profile/home-desk owner-cookie=m1
+first GET /api/profile/home-desk admin-cookie=m2
+first GET /api/profile/home-desk limited-cookie=m3
+first GET /api/profile/home-desk member-cookie=m4
+first GET /api/profile/home-desk admin-bearer=m5
+first GET /api/profile/home-desk member-bearer=m6
+first GET /api/profile/home-desk revoked-bearer=m7
 first PUT /api/profile/home-desk owner-cookie=m8
 first PUT /api/profile/home-desk admin-cookie=m9
 first PUT /api/profile/home-desk limited-cookie=m10
@@ -3787,6 +3794,13 @@ first PUT /api/profile/home-desk member-cookie=m11
 first PUT /api/profile/home-desk admin-bearer=m12
 first PUT /api/profile/home-desk member-bearer=m13
 first PUT /api/profile/home-desk revoked-bearer=m7
+first HEAD /api/profile/home-desk owner-cookie=m14
+first HEAD /api/profile/home-desk admin-cookie=m15
+first HEAD /api/profile/home-desk limited-cookie=m16
+first HEAD /api/profile/home-desk member-cookie=m17
+first HEAD /api/profile/home-desk admin-bearer=m18
+first HEAD /api/profile/home-desk member-bearer=m19
+first HEAD /api/profile/home-desk revoked-bearer=m20
 first PUT /api/profile/logo owner-cookie=m84
 first PUT /api/profile/logo admin-cookie=m85
 first PUT /api/profile/logo limited-cookie=m86
@@ -8390,11 +8404,21 @@ more PUT /api/profile/fonts bumped-cookie=m27
 more PUT /api/profile/fonts gone-cookie=m27
 more PUT /api/profile/fonts rotated-bearer=m27
 more PUT /api/profile/fonts expired-bearer=m27
+more GET /api/profile/home-desk disabled-cookie=m7
+more GET /api/profile/home-desk bumped-cookie=m7
+more GET /api/profile/home-desk gone-cookie=m7
+more GET /api/profile/home-desk rotated-bearer=m7
+more GET /api/profile/home-desk expired-bearer=m7
 more PUT /api/profile/home-desk disabled-cookie=m7
 more PUT /api/profile/home-desk bumped-cookie=m7
 more PUT /api/profile/home-desk gone-cookie=m7
 more PUT /api/profile/home-desk rotated-bearer=m7
 more PUT /api/profile/home-desk expired-bearer=m7
+more HEAD /api/profile/home-desk disabled-cookie=m20
+more HEAD /api/profile/home-desk bumped-cookie=m20
+more HEAD /api/profile/home-desk gone-cookie=m20
+more HEAD /api/profile/home-desk rotated-bearer=m20
+more HEAD /api/profile/home-desk expired-bearer=m20
 more PUT /api/profile/logo disabled-cookie=m27
 more PUT /api/profile/logo bumped-cookie=m27
 more PUT /api/profile/logo gone-cookie=m27

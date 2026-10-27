@@ -13,6 +13,7 @@
 # item-read-first (pre-check removal part 2: the write reads the item in the scope before its body): 44 cells
 # item-fault (fix round 1: a failed item says a fixed text for a fault): 6 cells
 # bad-json-400 (empty): 2 cells
+# desk-version (Desk saving v2: the 400 names the version the save is checked on): 4 cells
 # desk-write-strict (the Desk, fix round 2: a desk the read would change is a 400): 2 cells
 # map-read-first (pre-check removal part 2: the owner act reads the map in the scope first): 10 cells
 # close-first (Admin act definer, 0310: the close is asked of the database first): 6 cells
@@ -1012,15 +1013,27 @@ PUT /api/profile/fonts owner malformed [bad-json-400 (malformed)]
 PUT /api/profile/fonts owner chunked [chunked-413]
   main 500 application/json {"error":"internal error"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/home-desk owner empty [desk-version (Desk saving v2: the 400 names the version the save is checked on)]
+  main 400 application/json {"error":"homeDesk (a v1 desk) required"}
+  now  400 application/json {"error":"homeDesk (a v1 desk) and version (a whole number) required"}
 PUT /api/profile/home-desk owner nul [desk-write-strict (the Desk, fix round 2: a desk the read would change is a 400)]
   main 500 application/json {"error":"internal error"}
-  now  400 application/json {"error":"homeDesk (a v1 desk) required"}
+  now  400 application/json {"error":"homeDesk (a v1 desk) and version (a whole number) required"}
+PUT /api/profile/home-desk owner array [desk-version (Desk saving v2: the 400 names the version the save is checked on)]
+  main 400 application/json {"error":"homeDesk (a v1 desk) required"}
+  now  400 application/json {"error":"homeDesk (a v1 desk) and version (a whole number) required"}
 PUT /api/profile/home-desk owner chunked [chunked-413]
   main 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
   now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
+PUT /api/profile/home-desk member empty [desk-version (Desk saving v2: the 400 names the version the save is checked on)]
+  main 400 application/json {"error":"homeDesk (a v1 desk) required"}
+  now  400 application/json {"error":"homeDesk (a v1 desk) and version (a whole number) required"}
 PUT /api/profile/home-desk member nul [desk-write-strict (the Desk, fix round 2: a desk the read would change is a 400)]
   main 500 application/json {"error":"internal error"}
-  now  400 application/json {"error":"homeDesk (a v1 desk) required"}
+  now  400 application/json {"error":"homeDesk (a v1 desk) and version (a whole number) required"}
+PUT /api/profile/home-desk member array [desk-version (Desk saving v2: the 400 names the version the save is checked on)]
+  main 400 application/json {"error":"homeDesk (a v1 desk) required"}
+  now  400 application/json {"error":"homeDesk (a v1 desk) and version (a whole number) required"}
 PUT /api/profile/home-desk member chunked [chunked-413]
   main 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
   now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}

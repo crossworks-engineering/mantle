@@ -131,12 +131,6 @@ async function handleGET(login: Login) {
     // The rail's starred screens: per LOGIN, so they follow the person
     // across browsers. [] when none are starred.
     navFavorites: personal.navFavorites ?? [],
-    // The login's Desk, likewise per LOGIN. null until one is saved:
-    // the client lays out its default and moves a local desk up once. Left
-    // out when the login's own row could not be read: a failed read is not
-    // "never saved", so the client keeps this browser's desk for the visit
-    // rather than taking it for an empty profile.
-    ...(ownRead ? { homeDesk: ownRead.homeDesk ?? null } : {}),
     // The kinds served as the item tree: the admin tree for an admin, the
     // read-only reader tree for a member or a client.
     treeKinds: admin ? [...TREE_LIVE_KINDS] : [...READER_TREE_KINDS],

@@ -218,6 +218,7 @@ GET /api/presents/:id/frame class=content scope=content caller=frame gone=false
 GET /api/presents/:id/poster class=content scope=content caller=readerAsset gone=false
 GET /api/presents/:id/revisions class=content scope=content caller=owner gone=false
 GET /api/profile class=self scope=self caller=owner gone=false
+GET /api/profile/home-desk class=self scope=- caller=login gone=false
 GET /api/profile/photo class=self scope=self caller=ownerAsset gone=false
 GET /api/profile/reminder-channel class=self scope=self caller=owner gone=false
 GET /api/push/preferences class=self scope=self caller=owner gone=false
@@ -473,6 +474,7 @@ HEAD /api/presents/:id/frame class=content scope=content caller=frame gone=false
 HEAD /api/presents/:id/poster class=content scope=content caller=readerAsset gone=false
 HEAD /api/presents/:id/revisions class=content scope=content caller=owner gone=false
 HEAD /api/profile class=self scope=self caller=owner gone=false
+HEAD /api/profile/home-desk class=self scope=- caller=login gone=false
 HEAD /api/profile/photo class=self scope=self caller=ownerAsset gone=false
 HEAD /api/profile/reminder-channel class=self scope=self caller=owner gone=false
 HEAD /api/push/preferences class=self scope=self caller=owner gone=false

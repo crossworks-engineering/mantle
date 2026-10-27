@@ -40,6 +40,7 @@ import {
   projectFontSize,
   projectGrantedGroups,
   projectHomeDesk,
+  projectHomeDeskVersion,
   projectHouseStyle,
   projectLogoKey,
   projectLogoType,
@@ -56,7 +57,8 @@ import {
   type ProfilePreferences,
 } from '@mantle/content-core/profile-projections';
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
+import type { HomeDesk } from '@mantle/client-types';
 import { InputError } from '@mantle/std';
 import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
 import { profileFlag } from '@mantle/client-types/profile-flags';
@@ -204,7 +206,6 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     appNav: projectAppNav(prefs.appNav),
     appPins: projectAppPins(prefs.appPins),
     navFavorites: projectNavFavorites(prefs.navFavorites),
-    homeDesk: projectHomeDesk(prefs.homeDesk),
     appOpens: projectAppOpens(prefs.appOpens),
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
@@ -350,19 +351,18 @@ export async function updateProfilePreferences(
       throw new Error(`${k} is written through savePreferenceIfRev, not a preference patch.`);
     }
   }
+  // The Desk and its version likewise, through saveHomeDeskIfVersion only.
+  for (const k of HOME_DESK_KEYS) {
+    if ((patch as Record<string, unknown>)[k] !== undefined) {
+      throw new Error(`${k} is written through saveHomeDeskIfVersion, not a preference patch.`);
+    }
+  }
   // Canonical forms; [] is the deliberate "clear" write for both lists.
   if (patch.appPins !== undefined) {
     patch = { ...patch, appPins: projectAppPins(patch.appPins) ?? [] };
   }
   if (patch.navFavorites !== undefined) {
     patch = { ...patch, navFavorites: projectNavFavorites(patch.navFavorites) ?? [] };
-  }
-  if (patch.homeDesk !== undefined) {
-    // A desk that does not project is refused, not stored as nothing: saving
-    // one is a whole-desk replace, and a silent clear would lose the layout.
-    const homeDesk = projectHomeDesk(patch.homeDesk);
-    if (!homeDesk) throw new InputError('homeDesk must be a v1 desk within the size cap.');
-    patch = { ...patch, homeDesk };
   }
 
   const merge = JSON.stringify(patch);
@@ -435,7 +435,6 @@ export async function updateProfilePreferences(
     appNav: projectAppNav(merged.appNav),
     appPins: projectAppPins(merged.appPins),
     navFavorites: projectNavFavorites(merged.navFavorites),
-    homeDesk: projectHomeDesk(merged.homeDesk),
     appOpens: projectAppOpens(merged.appOpens),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
     contentKindGroupsGranted: projectGrantedGroups(merged.contentKindGroupsGranted),
@@ -631,27 +630,99 @@ export async function savePreferenceIfRev<K extends RevisionedPreferenceKey>(
   expectedRev: number,
 ): Promise<RevSaveResult<K>> {
   const rowId = isBrainKey(key) ? await brandRowId(userId) : userId;
+  const next = { ...value, rev: expectedRev + 1 } as RevisionedValue<K>;
+  const landed = await mergePreferencesIf(
+    rowId,
+    { [key]: next },
+    sql`coalesce((${profiles.preferences}->${key}->>'rev')::int, 0) = ${expectedRev}`,
+  );
+  if (landed) return { ok: true, value: next };
+  const current = (await loadProfilePreferences(rowId))[key] as RevisionedValue<K> | undefined;
+  return { ok: false, current };
+}
+
+/**
+ * The one compare-and-set write of the preferences column: merge `patch`
+ * into row `rowId` in ONE conditional UPDATE, only while `when` holds of the
+ * stored preferences. True when it landed. A concurrent writer of the same
+ * row waits on the row lock and then sees the merged value, so of two writes
+ * checked against the same stored value exactly one lands.
+ */
+async function mergePreferencesIf(
+  rowId: string,
+  patch: Record<string, unknown>,
+  when: SQL,
+): Promise<boolean> {
   // Materialise the row so the conditional UPDATE has one to match.
   await loadProfilePreferences(rowId);
-  const next = { ...value, rev: expectedRev + 1 } as RevisionedValue<K>;
   const updated = await profileWrite(() =>
     db
       .update(profiles)
       .set({
-        preferences: sql`${profiles.preferences} || ${JSON.stringify({ [key]: next })}::jsonb`,
+        preferences: sql`${profiles.preferences} || ${JSON.stringify(patch)}::jsonb`,
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(profiles.userId, rowId),
-          sql`coalesce((${profiles.preferences}->${key}->>'rev')::int, 0) = ${expectedRev}`,
-        ),
-      )
+      .where(and(eq(profiles.userId, rowId), when))
       .returning({ userId: profiles.userId }),
   );
-  if (updated.length > 0) return { ok: true, value: next };
-  const current = (await loadProfilePreferences(rowId))[key] as RevisionedValue<K> | undefined;
-  return { ok: false, current };
+  return updated.length > 0;
+}
+
+/** Where the login's Desk lives on its own profile row: the desk, and the
+ *  version beside it (the count of saves that landed). */
+const HOME_DESK_KEYS = ['homeDesk', 'homeDeskVersion'] as const;
+
+export type HomeDeskSaveResult =
+  | { ok: true; homeDesk: HomeDesk; version: number }
+  | { ok: false; homeDesk: HomeDesk | null; version: number };
+
+/**
+ * The login's Desk and its version, read from its own profile row in the
+ * caller's scope (the profile read rule shows a login its own row). The
+ * read is loose (projectHomeDesk): a stored desk is never lost to a
+ * stricter rule. `homeDesk` null and `version` 0 until one is saved.
+ */
+export async function loadHomeDesk(
+  loginId: string,
+): Promise<{ homeDesk: HomeDesk | null; version: number }> {
+  const [row] = await db
+    .select({
+      desk: sql<unknown>`${profiles.preferences}->'homeDesk'`,
+      version: sql<unknown>`${profiles.preferences}->'homeDeskVersion'`,
+    })
+    .from(profiles)
+    .where(eq(profiles.userId, loginId))
+    .limit(1);
+  return {
+    homeDesk: projectHomeDesk(row?.desk) ?? null,
+    version: projectHomeDeskVersion(row?.version),
+  };
+}
+
+/**
+ * Replace the login's Desk, compare-and-set: one conditional UPDATE of its
+ * own profile row, so of two saves sent with the same version exactly one
+ * lands. It lands, the version going to `version + 1`, only while the
+ * stored version still equals `version` (an unset one counts as 0);
+ * otherwise nothing is written and the stored desk and version come back,
+ * the other device's save. Personal: the login's own row, in the caller's
+ * scope, where the profile write rule (mantle_profile_writable) holds a
+ * login to its own row. The caller validates `homeDesk`
+ * (validateHomeDeskWrite).
+ */
+export async function saveHomeDeskIfVersion(
+  loginId: string,
+  homeDesk: HomeDesk,
+  version: number,
+): Promise<HomeDeskSaveResult> {
+  const next = version + 1;
+  const landed = await mergePreferencesIf(
+    loginId,
+    { homeDesk, homeDeskVersion: next },
+    sql`coalesce(${profiles.preferences}->'homeDeskVersion', '0'::jsonb) = ${JSON.stringify(version)}::jsonb`,
+  );
+  if (landed) return { ok: true, homeDesk, version: next };
+  return { ok: false, ...(await loadHomeDesk(loginId)) };
 }
 
 /**

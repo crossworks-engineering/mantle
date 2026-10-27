@@ -361,19 +361,19 @@ and the payload's `v` stays `1`.
 now answers every login with the SAME shape (`Shell` in
 `@mantle/client-types`). It names the login: `role` (`admin` or
 `member`), `loginId` and `isOwner`. It carries the login's own face
-(`displayName`, `email`, `avatar`, `avatarPhotoVersion`, `navFavorites`,
-`homeDesk`) and the brain's brand. Then `features`, `assetToken`, `maxUploadBytes`,
+(`displayName`, `email`, `avatar`, `avatarPhotoVersion`, `navFavorites`)
+and the brain's brand. Then `features`, `assetToken`, `maxUploadBytes`,
 `workspaces` and `treeKinds`. `areas` is always `[]` outside the Admin
 workspace; for a member `onboarded` is always true and `pendingApprovals`
-always 0. `homeDesk` is null until the login saves one, and left out when
-the brain could not read the login's own row (a client then keeps the desk
-it has, never taking the gap for "never saved"). Every login, a member as
-an Admin user, saves its own desk with `PUT /api/profile/home-desk
-{ homeDesk }` (an any-login route, `open: 'any'`: the write runs in the
-login's scope and lands on its own profile row only), so the Desk follows
-the login across browsers and devices. A save replaces the whole desk, so
-the last save wins; a client refreshes it when it comes back after a
-while. A desk the brain would have to change to keep (an item dropped, an
+always 0. The login's Desk is not in the shell: it has its own route.
+`GET /api/profile/home-desk` answers `{ homeDesk, version }` (null and 0
+until a save), and `PUT /api/profile/home-desk { homeDesk, version }` saves
+it compare-and-set: 200 `{ homeDesk, version: version + 1 }` when the stored
+version equals the one sent, else 409 with the stored `{ homeDesk, version }`
+(another device saved since; the client adopts it). Both are any-login rows
+(`open: 'any'`): every login, a member as an Admin user, keeps its own desk
+on its own profile row, so the Desk follows the login across browsers and
+devices. A desk the brain would have to change to keep (an item dropped, an
 id that is not printable ASCII) is a 400, never a partial save. `GET /api/member/shell` answers
 410 `{ error, code: "gone" }`, and whoami names `/api/shell` as every
 login's shell. The old `/api/client/*` routes (shell, chat, unread, push,

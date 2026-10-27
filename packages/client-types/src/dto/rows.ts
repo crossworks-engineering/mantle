@@ -13,7 +13,6 @@
 import type { AppNav, AppOpenStat, AppTint } from '../app-nav';
 import type { HistoryActor } from '../role-names';
 import type { ListChips, ListWorkspace } from './grants';
-import type { HomeDesk } from './shell';
 
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
 // Sources: @mantle/content, @mantle/email, @mantle/microsoft, @mantle/runtime/agent
@@ -608,9 +607,6 @@ export type ProfilePreferences = {
   /** Per-login: sidebar favourite hrefs, in order. Moved server-side from the
    *  web client's localStorage so they follow the person across devices. */
   navFavorites?: string[];
-  /** Per-login: the Desk's layout, moved from the web client's
-   *  localStorage so it follows the login. Read via projectHomeDesk. */
-  homeDesk?: HomeDesk;
   /** Per-login: open count + last-opened instant per app id, feeding the
    *  "Most used" and "Recent" filters. Written by recordAppOpen. */
   appOpens?: Record<string, AppOpenStat>;
