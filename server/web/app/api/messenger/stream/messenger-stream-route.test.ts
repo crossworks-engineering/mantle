@@ -73,11 +73,8 @@ describe('GET /api/messenger/stream', () => {
     // A history delete: load the chat again (fix round 2).
     h.emit!({ c: 'c1', seq: 9, kind: 'history', actor: 'someone' });
     const hist = new TextDecoder().decode((await reader.read()).value);
-    expect(JSON.parse(hist.replace(/^data: /, '').trim())).toEqual({
-      type: 'history',
-      c: 'c1',
-      seq: 9,
-    });
+    // No seq: a leaver must not learn how far the chat went.
+    expect(JSON.parse(hist.replace(/^data: /, '').trim())).toEqual({ type: 'history', c: 'c1' });
 
     // The cap: the first stream holds one; the rest up to the cap open, then 429.
     const extra: AbortController[] = [];

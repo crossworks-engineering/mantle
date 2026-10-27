@@ -220,8 +220,10 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     'the highest messenger seq the scope’s own login may read in one conversation (its participant row), for the read policies (0335); reads, writes nothing',
   'mantle_messenger_mine(uuid)':
     'the scope’s own login’s messenger participant rows, with the conversation’s tail capped at its leave (0336); reads, writes nothing',
-  'mantle_messenger_sees_participant(uuid,timestamp with time zone,timestamp with time zone)':
-    'whether the scope’s own login sees one participant row of a conversation it is in (a leaver: who was there when it left), for the read policy (0336); reads, writes nothing',
+  'mantle_messenger_sees_participant(uuid,bigint,bigint)':
+    'whether the scope’s own login sees one participant row of a conversation it is in (a leaver: who was there when it left), by seqs, for the read policy (0336); reads, writes nothing',
+  'mantle_messenger_people(uuid[])':
+    'the people of the scope’s own login’s conversations as it may see them (a later leave shown as not yet) (0336); reads, writes nothing',
   'mantle_pending_card_route(uuid,uuid)':
     'where a queued call’s card goes, for a call the scope’s own login asked; never the bot’s token',
   // 0296: the mail account branches an email attachment's rule and the

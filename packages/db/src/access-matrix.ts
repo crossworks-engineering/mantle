@@ -1301,8 +1301,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // pool, read by the role under the participant rule
   // (mantle_messenger_seq_cap): no Admin exception, a left participant up to
   // left_seq. Favourites are the login's own. Not the conversation's tail
-  // nor anyone's cursors or mute (0336): a login reads its own rows, with
-  // the tail capped at its leave, through mantle_messenger_mine.
+  // nor anyone's cursors, mute or leave (0336): a login reads its own rows,
+  // with the tail capped at its leave, through mantle_messenger_mine, and
+  // the room's people as it may see them through mantle_messenger_people.
   {
     ...none('public.messenger_conversations', 'system'),
     user: [
@@ -1330,7 +1331,6 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       'admin',
       'joined_at',
       'added_by',
-      'left_at',
     ],
   },
   { ...none('public.messenger_messages', 'system'), user: 'all' },

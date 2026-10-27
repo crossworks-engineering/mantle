@@ -1175,7 +1175,7 @@ export async function removeMessengerParticipant(
     );
     await tx
       .update(messengerParticipants)
-      .set({ leftAt: new Date(), leftSeq: seq, admin: false })
+      .set({ leftAt: sql`now()`, leftSeq: seq, admin: false })
       .where(eq(messengerParticipants.id, p.id));
   });
 }
@@ -1197,7 +1197,7 @@ export async function leaveMessengerConversation(
     const seq = await systemLine(tx, conv, `${names.get(actor.loginId) ?? 'Someone'} left.`);
     await tx
       .update(messengerParticipants)
-      .set({ leftAt: new Date(), leftSeq: seq, admin: false })
+      .set({ leftAt: sql`now()`, leftSeq: seq, admin: false })
       .where(eq(messengerParticipants.id, me.id));
     const rest = await q<{ id: string; admin: boolean }>(
       tx,
@@ -1460,7 +1460,10 @@ export async function listMessengerMessages(
     const page = rows.slice(0, limit);
     return {
       messages: await decorate(actor, page),
-      lastSeq: hasMore ? num(page[page.length - 1]!.seq) : num(conv.last_seq),
+      // A send between the two reads can land in the page: never below it.
+      lastSeq: hasMore
+        ? num(page[page.length - 1]!.seq)
+        : Math.max(num(conv.last_seq), page.length ? num(page[page.length - 1]!.seq) : 0),
       hasMore,
     };
   }
@@ -1473,7 +1476,12 @@ export async function listMessengerMessages(
   );
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit).reverse();
-  return { messages: await decorate(actor, page), lastSeq: num(conv.last_seq), hasMore };
+  const top = page.length ? num(page[page.length - 1]!.seq) : 0;
+  return {
+    messages: await decorate(actor, page),
+    lastSeq: Math.max(num(conv.last_seq), top),
+    hasMore,
+  };
 }
 
 type ParticipantReadRow = {
@@ -1484,10 +1492,30 @@ type ParticipantReadRow = {
   left_at: Date | null;
 };
 
-/** The people of each conversation as `actor` may see them: never one who
- *  left before the actor joined; for a conversation it left, only those who
- *  joined before it left, and a later leave shown as not yet (the title and
- *  admin flags are the room's current ones). */
+/**
+ * The people of each conversation as `actor` may see them: never one who
+ * left before the actor joined; for a conversation it left, only those
+ * added before it left, and a later leave shown as not yet (the title and
+ * admin flags are the room's current ones). Judged by seqs. In a scope
+ * mantle_messenger_people answers it (the workspace role reads no left_at,
+ * 0336); outside one the same rows inline.
+ */
+function PEOPLE(actor: MessengerActor, conversationIds: readonly string[]): SQL {
+  const cs = uuidArray(conversationIds);
+  if (currentWorkspaceScope()) return sql`mantle_messenger_people(${cs})`;
+  return sql`(select p.conversation_id, p.kind, coalesce(p.login_id, p.agent_id) as id, p.admin,
+                     p.joined_at,
+                     case when me.left_seq is null or p.left_seq <= me.left_seq
+                          then p.left_at end as left_at
+                from messenger_participants me
+                join messenger_participants p on p.conversation_id = me.conversation_id
+               where me.kind = 'login' and me.login_id = ${actor.loginId}::uuid
+                 and me.conversation_id = any(${cs})
+                 and (me.left_seq is null or p.from_seq < me.left_seq)
+                 and (p.left_seq is null or p.left_seq > me.from_seq))`;
+}
+
+/** The people of each conversation as `actor` may see them (PEOPLE). */
 async function participantsOf(
   actor: MessengerActor,
   conversationIds: readonly string[],
@@ -1496,16 +1524,10 @@ async function participantsOf(
   if (conversationIds.length === 0) return out;
   const rows = await q<ParticipantReadRow>(
     db,
-    sql`select p.conversation_id::text as conversation_id, p.kind,
-               coalesce(p.login_id, p.agent_id)::text as id, p.admin,
-               case when me.left_at is null or p.left_at <= me.left_at then p.left_at end as left_at
-          from messenger_participants p
-          join ${MINE(actor, conversationIds.length === 1 ? conversationIds[0]! : null)} me
-            on me.conversation_id = p.conversation_id
-         where p.conversation_id = any(${uuidArray(conversationIds)})
-           and (me.left_at is null or p.joined_at <= me.left_at)
-           and (p.left_at is null or p.left_at >= me.joined_at)
-         order by p.joined_at, p.id`,
+    sql`select x.conversation_id::text as conversation_id, x.kind, x.id::text as id, x.admin,
+               x.left_at
+          from ${PEOPLE(actor, conversationIds)} x
+         order by x.joined_at, x.id`,
   );
   const [ln, an] = await Promise.all([
     loginNames([...new Set(rows.filter((r) => r.kind === 'login').map((r) => r.id))]),
@@ -1841,9 +1863,7 @@ export async function messengerTyping(
   const c = uuidOr(conversationId, 'The conversation');
   const [p] = await q<{ ok: number }>(
     db,
-    sql`select 1 as ok from messenger_participants
-         where conversation_id = ${c}::uuid and kind = 'login'
-           and login_id = ${actor.loginId}::uuid and left_at is null`,
+    sql`select 1 as ok from ${MINE(actor, c)} me where me.left_at is null`,
   );
   if (!p) throw new MessengerNotFoundError();
   await systemDb.execute(

@@ -9,9 +9,10 @@
 --    columns it reads). Its own participant rows, with the tail capped at
 --    its left_seq and no newer time or line, come from
 --    mantle_messenger_mine(). The participants policy shows a leaver only
---    the people who joined before it left, and a login added later only the
---    people still there when it joined (the rule participantsOf already
---    applied in its own SQL).
+--    the people added before it left, and a login added later only the
+--    people still there when it joined, judged by seqs; nobody reads a
+--    left_at, and mantle_messenger_people() answers the room as the
+--    login may see it.
 --  - The participants trigger tests a clear or a mute before the read
 --    cursor (M2): a clear also moves my cursor, and was told to everyone as
 --    a read instead of to me as a self event. Now both are raised.
@@ -62,32 +63,62 @@ GRANT EXECUTE ON FUNCTION "public"."mantle_messenger_mine"(uuid) TO mantle_view_
 --> statement-breakpoint
 
 -- Whether the acting login may see one participant row of a conversation
--- it is in: a leaver only those who joined before it left, a login added
--- later only those still there when it joined. Its own row always.
+-- it is in: a leaver only those added before it left, a login added later
+-- only those still there when it joined. Its own row always. Judged by
+-- seqs, which every join and leave takes under the conversation's lock (a
+-- clock could disagree): a row added at line L has from_seq L - 1 (0 for
+-- the people a chat starts with), a leave is the line at left_seq.
 -- (The parameters are named apart from every column: in a SQL function a
 -- column name wins over a parameter of the same name.)
 CREATE OR REPLACE FUNCTION "public"."mantle_messenger_sees_participant"(
-  c uuid, their_join timestamp with time zone, their_leave timestamp with time zone)
+  c uuid, their_from bigint, their_left bigint)
   RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
   SELECT coalesce((
-    SELECT (me."left_at" IS NULL OR their_join <= me."left_at")
-       AND (their_leave IS NULL OR their_leave >= me."joined_at")
+    SELECT (me."left_seq" IS NULL OR their_from < me."left_seq")
+       AND (their_left IS NULL OR their_left > me."from_seq")
       FROM "public"."messenger_participants" me
      WHERE me."conversation_id" = c
        AND me."kind" = 'login'
        AND me."login_id" = (SELECT "public"."mantle_login_id"())), false)
 $$;
 --> statement-breakpoint
-REVOKE EXECUTE ON FUNCTION "public"."mantle_messenger_sees_participant"(uuid, timestamp with time zone, timestamp with time zone) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION "public"."mantle_messenger_sees_participant"(uuid, bigint, bigint) FROM PUBLIC;
 --> statement-breakpoint
-GRANT EXECUTE ON FUNCTION "public"."mantle_messenger_sees_participant"(uuid, timestamp with time zone, timestamp with time zone) TO mantle_view_user;
+GRANT EXECUTE ON FUNCTION "public"."mantle_messenger_sees_participant"(uuid, bigint, bigint) TO mantle_view_user;
 --> statement-breakpoint
 DROP POLICY IF EXISTS "messenger_participants_user_read" ON "public"."messenger_participants";
 --> statement-breakpoint
 CREATE POLICY "messenger_participants_user_read" ON "public"."messenger_participants"
   FOR SELECT TO mantle_view_user
-  USING ("public"."mantle_messenger_sees_participant"("conversation_id", "joined_at", "left_at"));
+  USING ("public"."mantle_messenger_sees_participant"("conversation_id", "from_seq", "left_seq"));
+--> statement-breakpoint
+
+-- The people of the acting login's conversations as it may see them: the
+-- rows the policy above shows, with a leave after its own shown as not yet
+-- (the room as it was when it left). The workspace role reads no left_at
+-- itself (ACCESS_MATRIX): a leaver must not learn who left after it.
+CREATE OR REPLACE FUNCTION "public"."mantle_messenger_people"(cs uuid[])
+  RETURNS TABLE (
+    "conversation_id" uuid, "kind" text, "id" uuid, "admin" boolean,
+    "joined_at" timestamp with time zone, "left_at" timestamp with time zone)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT p."conversation_id", p."kind", coalesce(p."login_id", p."agent_id"), p."admin",
+         p."joined_at",
+         CASE WHEN me."left_seq" IS NULL OR p."left_seq" <= me."left_seq" THEN p."left_at" END
+    FROM "public"."messenger_participants" me
+    JOIN "public"."messenger_participants" p ON p."conversation_id" = me."conversation_id"
+   WHERE me."kind" = 'login'
+     AND me."login_id" = (SELECT "public"."mantle_login_id"())
+     AND me."conversation_id" = any(cs)
+     AND (me."left_seq" IS NULL OR p."from_seq" < me."left_seq")
+     AND (p."left_seq" IS NULL OR p."left_seq" > me."from_seq")
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_messenger_people"(uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_messenger_people"(uuid[]) TO mantle_view_user;
 --> statement-breakpoint
 
 -- ── The participants trigger: a clear or a mute first, then the cursor ──────

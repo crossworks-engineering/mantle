@@ -51,6 +51,7 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
   const B = randomUUID();
   const C = randomUUID();
   const D = randomUUID();
+  const C2 = randomUUID();
   const W = randomUUID();
   const W2 = randomUUID();
   const agent = randomUUID();
@@ -68,7 +69,7 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
    *  columns it may read: 0336 keeps the tail and the cursors from it). */
   const RAW_COLUMNS: Record<string, string> = {
     messenger_conversations: 'id, kind, title, archived_at',
-    messenger_participants: 'id, login_id, admin, joined_at, left_at',
+    messenger_participants: 'id, login_id, admin, joined_at',
     messenger_messages: '*',
   };
   const raw = async (loginId: string, table: string, c: string) =>
@@ -102,7 +103,8 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
       (${A}, ${`${tag}-a@example.invalid`}, 'x', 'member', 'Ann'),
       (${B}, ${`${tag}-bb@example.invalid`}, 'x', 'member', 'Ben'),
       (${C}, ${`${tag}-c@example.invalid`}, 'x', 'member', 'Cat'),
-      (${D}, ${`${tag}-d@example.invalid`}, 'x', 'member', 'Dan')`);
+      (${D}, ${`${tag}-d@example.invalid`}, 'x', 'member', 'Dan'),
+      (${C2}, ${`${tag}-c2@example.invalid`}, 'x', 'member', 'Cy')`);
     const [adminWs] = (await su(
       sqlTag`select id::text as id from workspaces where is_admin and archived_at is null limit 1`,
     )) as { id: string }[];
@@ -110,9 +112,9 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
       on conflict do nothing`);
     await su(sqlTag`insert into workspaces (id, owner_id, name) values
       (${W}, ${owner}, ${`${tag} W`}), (${W2}, ${owner}, ${`${tag} W2`})`);
-    await su(sqlTag`delete from workspace_users where login_id in (${A}, ${B}, ${C}, ${D})`);
+    await su(sqlTag`delete from workspace_users where login_id in (${A}, ${B}, ${C}, ${D}, ${C2})`);
     await su(sqlTag`insert into workspace_users (workspace_id, login_id) values
-      (${W}, ${A}), (${W}, ${B}), (${W}, ${D}), (${W2}, ${C})`);
+      (${W}, ${A}), (${W}, ${B}), (${W}, ${D}), (${W}, ${C2}), (${W2}, ${C})`);
     await su(sqlTag`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
       values (${agent}, ${owner}, ${`${tag}-tess`}, 'Tess', 'test/model', 'x', 'assistant', ${W})`);
     await su(sqlTag`insert into workspace_resources (workspace_id, type, ref_id)
@@ -493,9 +495,11 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
   }, 60_000);
 
   it('a leaver reads no tail, no cursor and nobody who came later (raw row security)', async () => {
-    const g = await group(A, [B], 'Tail');
+    const g = await group(A, [B, C2], 'Tail');
     await send(A, g, 'before');
     await ms.leaveMessengerConversation(actor(B), g);
+    // C2 was there when B left, and leaves after: B never learns it.
+    await ms.leaveMessengerConversation(actor(C2), g);
     const secret = `tail-${randomUUID()}`;
     await send(A, g, secret);
     await ms.addMessengerParticipants(actor(A), g, [D]);
@@ -508,6 +512,7 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
         `select last_message_at from messenger_conversations where id = '${g}'`,
         `select last_read_seq from messenger_participants where conversation_id = '${g}'`,
         `select left_seq from messenger_participants where conversation_id = '${g}'`,
+        `select left_at from messenger_participants where conversation_id = '${g}'`,
         `select cleared_before_seq, mention_seq, from_seq, muted from messenger_participants where conversation_id = '${g}'`,
       ]) {
         expect(await denied(who, q), `${who}: ${q}`).toBe(true);
@@ -515,8 +520,8 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
     }
     // B, who left, sees the people of the room as it left: not D.
     const bPeople = (await raw(B, 'messenger_participants', g)).map((r) => String(r.login_id));
-    expect(bPeople.sort()).toEqual([A, B].sort());
-    // D, added later, does not see B, who left before D joined.
+    expect(bPeople.sort()).toEqual([A, B, C2].sort());
+    // D, added later, does not see B or C2, who left before D joined.
     const dPeople = (await raw(D, 'messenger_participants', g)).map((r) => String(r.login_id));
     expect(dPeople.sort()).toEqual([A, D].sort());
     // B still reads the conversation row itself (its list keeps the chat).
@@ -538,7 +543,10 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
     const conv = await as(B, () => ms.getMessengerConversation(actor(B), g));
     expect(conv.lastSeq).toBe(conv.me.leftSeq);
     expect(conv.lastMessageAt).toBeNull();
-    expect(conv.participants.map((p) => p.id).sort()).toEqual([A, B].sort());
+    expect(conv.participants.map((p) => p.id).sort()).toEqual([A, B, C2].sort());
+    // The room as it was when B left: C2's later leave shows as not yet.
+    expect(conv.participants.find((p) => p.id === C2)!.leftAt).toBeNull();
+    expect(conv.participants.find((p) => p.id === B)!.leftAt).not.toBeNull();
     const row = (await as(B, () => ms.listMessengerConversations(actor(B)))).find(
       (r) => r.id === g,
     )!;

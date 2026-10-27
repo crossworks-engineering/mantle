@@ -55,15 +55,16 @@ Row security keys every read on the participant row:
 - a participant who left reads up to its `left_seq` and nothing after; its
   list row shows no newer line, and the room shows the people who were
   there when it left (the participants policy itself: no row of a later
-  joiner);
+  joiner; judged by seqs, never by clocks);
 - a login added to a group later, or added back, reads from the line that
   added it (`from_seq`), never the history before it or the gap while it was
   out, and sees none of the people who left before it joined;
-- nobody reads another login's cursors or mute, and nobody reads the
-  conversation's tail as a column: the workspace role may SELECT only the
-  other columns (ACCESS_MATRIX, 0336). Its own rows, with the tail capped at
-  its leave (no newer time or line), come from
-  `mantle_messenger_mine(conversation)`;
+- nobody reads another login's cursors, mute or leave as a column (a read
+  receipt is a stream event by design), and nobody reads the conversation's
+  tail as a column: the workspace role may SELECT only the other columns
+  (ACCESS_MATRIX, 0336). Its own rows, with the tail capped at its leave (no
+  newer time or line), come from `mantle_messenger_mine(conversation)`, the
+  room's people as it may see them from `mantle_messenger_people`;
 - there is no Admin exception: an Admin user or the brain owner reads no chat
   it is not in, and there is no moderation view;
 - an agent row widens nobody's read.
@@ -73,8 +74,9 @@ login may read (null: none), `mantle_messenger_seq_floor(conversation)`
 the seq it reads above, and `mantle_messenger_sees_participant` whether it
 sees one participant row. All are security definers keyed on the scope's
 own login, so the participant policy does not read itself. The workspace
-role (`mantle_view_user`) has SELECT only. The title and the admin flags a
-leaver sees are the room's current ones.
+role (`mantle_view_user`) has SELECT only. The title, the admin flags and
+whether the group is archived, as a leaver sees them, are the room's
+current ones (a known choice: the list needs a name).
 
 Writes run in `packages/content/src/messenger.ts`, one function per action,
 each one transaction on the system pool (ACCESS_MATRIX writer `system`). Each
@@ -123,7 +125,9 @@ limit (`server/web/lib/route-limits.ts`): `messengerRead` 600, `messengerWrite`
 every write (60 sends and 120 other writes a minute): it is where a route
 and an MCP tool meet, so a login has one bucket whichever way it writes.
 Past it the write answers 429 (`MessengerRateLimitedError`, with the
-seconds to wait); an MCP tool says the same in its error.
+seconds to wait); an MCP tool says the same in its error. The bucket is in
+the memory of one `server/web` process (its routes and its HTTP MCP); the
+local stdio MCP server and a second replica keep their own.
 
 | Route | What |
 | --- | --- |
@@ -154,7 +158,8 @@ Two triggers raise NOTIFYs with ids only, never text:
   raises `read` too), `participants` (someone joined or left, an admin or
   the title changed), `reaction`; `typing` from its route; `history` (a
   history delete up to `seq`: load the chat again, a deleted row raises no
-  message event).
+  message event; the stream event carries no seq, so a leaver does not
+  learn how far the chat went).
 - `login_notice` `{kind: 'message', loginId, c, seq}` for each live login of
   the conversation that is not the author and not muted. The push handler
   skips the kind until Phase 5 sends it.

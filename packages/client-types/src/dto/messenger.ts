@@ -194,6 +194,7 @@ export type MessengerStreamEvent =
   | { type: 'participants'; c: string }
   | { type: 'reaction'; c: string; seq: number }
   | { type: 'typing'; c: string; loginId: string }
-  /** A group's history was deleted (up to `seq`): load the chat again, a
-   *  deleted message raises no message event. */
-  | { type: 'history'; c: string; seq: number };
+  /** A group's history was deleted: load the chat again, a deleted message
+   *  raises no message event. No seq: a leaver must not learn how far the
+   *  chat went after it left. */
+  | { type: 'history'; c: string };

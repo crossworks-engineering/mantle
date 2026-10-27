@@ -66,7 +66,7 @@ function toEvent(c: {
     case 'typing':
       return c.actor ? { type: 'typing', c: c.c, loginId: c.actor } : null;
     case 'history':
-      return c.seq === null ? null : { type: 'history', c: c.c, seq: c.seq };
+      return { type: 'history', c: c.c };
     case 'participants':
     case 'self':
       return { type: 'participants', c: c.c };
