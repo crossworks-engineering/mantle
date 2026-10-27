@@ -10,7 +10,11 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { PARSER_JOB_TIMEOUT_MS, type ParserJob } from '@mantle/files/parser-wire';
+import {
+  PARSER_JOB_TIMEOUT_MS,
+  PARSER_PICTURES_BUDGET_BYTES,
+  type ParserJob,
+} from '@mantle/files/parser-wire';
 import { isDocumentTooLarge } from '@mantle/files/readers/read-limit';
 import { dwfRenderer, dwgCrop, dwgRender, extractAudio } from './cad';
 import { errorMessage } from '@mantle/std';
@@ -79,11 +83,24 @@ export async function runJob(
         ...(typeof opts.dpi === 'number' ? { dpi: int(opts.dpi, 300, 50, 600) } : {}),
         render: dwfRenderer(p.dir, timeoutMs),
       });
+      // The answer's budget: the pictures in reading order until it is
+      // spent; the rest are counted as rejected, never an error.
+      const rejected: Record<string, number> = { ...result.rejected };
+      const kept: typeof result.images = [];
+      let total = 0;
+      for (const img of result.images) {
+        if (total + img.bytes.length > PARSER_PICTURES_BUDGET_BYTES) {
+          rejected.answer_budget = (rejected.answer_budget ?? 0) + 1;
+          continue;
+        }
+        total += img.bytes.length;
+        kept.push(img);
+      }
       return writeJson(p.outJson, {
         ok: true,
         candidates: result.candidates,
-        rejected: result.rejected,
-        images: result.images.map((img) => ({
+        rejected,
+        images: kept.map((img) => ({
           bytes_base64: img.bytes.toString('base64'),
           ext: img.ext,
           ordinal: img.ordinal,
@@ -126,15 +143,22 @@ export async function runJob(
     }
     case 'pdfRasterize': {
       const { rasterizePdfToPngs } = await import('@mantle/files/readers/rasterize');
+      let leftOut = 0;
       const pages = await rasterizePdfToPngs(await fs.readFile(p.input), {
-        maxPages: int(opts.maxPages, 10, 1, 200),
+        maxPages: int(opts.maxPages, 10, 1, 20),
+        maxTotalBytes: PARSER_PICTURES_BUDGET_BYTES,
+        onBudget: (n) => {
+          leftOut = n;
+        },
       });
       return writeJson(p.outJson, {
         ok: true,
         pages: pages.map((pg) => ({
           pageNumber: pg.pageNumber,
           png_base64: pg.png.toString('base64'),
+          mime: pg.mime,
         })),
+        pages_left_out: leftOut,
       });
     }
     case 'pdfInfo': {
@@ -195,6 +219,13 @@ export function failureOf(err: unknown): JobFailure {
   const e = err as { code?: unknown; name?: unknown; message?: unknown } | null;
   if (e?.code === 'unsupported' || e?.name === 'UnsupportedFormatError') {
     return new JobFailure('unsupported', String(e?.message ?? 'unsupported format'));
+  }
+  // The scratch space is full: the document's own output did not fit.
+  if ((err as NodeJS.ErrnoException | null)?.code === 'ENOSPC') {
+    return new JobFailure(
+      'too_large',
+      "the document's output does not fit in the parser's scratch space",
+    );
   }
   // A JavaScript allocation the engine refused: past what the job may hold.
   if (err instanceof RangeError && /allocation|Invalid (string|array) length/i.test(err.message)) {

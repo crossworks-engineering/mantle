@@ -50,11 +50,17 @@ export const MAX_RENDER_PIXELS = 4096 * 4096;
  *  broken MediaBox gets there). It is skipped, not rendered. */
 const MIN_RENDER_SCALE = 0.25;
 
+/** A page whose PNG is larger than this is sent as JPEG instead (a dense
+ *  scan or photo page: PNG is the wrong format for it, and the answer
+ *  carries every page in memory). */
+export const PAGE_PNG_MAX_BYTES = 12 * 1024 * 1024;
+
 export type RasterPage = {
   /** 1-based page number within the PDF. */
   pageNumber: number;
-  /** PNG-encoded bytes of the rendered page. */
+  /** The rendered page's encoded bytes: PNG, or JPEG when `mime` says so. */
   png: Buffer;
+  mime: 'image/png' | 'image/jpeg';
 };
 
 /**
@@ -154,7 +160,14 @@ function drawsSomething(ops: OperatorList, OPS: Record<string, number>): boolean
  */
 export async function rasterizePdfToPngs(
   bytes: Buffer,
-  opts?: { maxPages?: number; viewportScale?: number },
+  opts?: {
+    maxPages?: number;
+    viewportScale?: number;
+    /** All pages' encoded bytes together: the page that would pass it, and
+     *  every page after, is not rendered (`onBudget` hears how many). */
+    maxTotalBytes?: number;
+    onBudget?: (pagesLeftOut: number) => void;
+  },
 ): Promise<RasterPage[]> {
   const maxPages = Math.max(1, opts?.maxPages ?? DEFAULT_MAX_OCR_PAGES);
   const wanted = opts?.viewportScale ?? 2.0;
@@ -168,6 +181,7 @@ export async function rasterizePdfToPngs(
     const count = Math.min(doc.numPages, maxPages);
     const out: RasterPage[] = [];
     const tooLarge: string[] = [];
+    let total = 0;
     for (let pageNumber = 1; pageNumber <= count; pageNumber++) {
       const page = await doc.getPage(pageNumber);
       try {
@@ -201,10 +215,21 @@ export async function rasterizePdfToPngs(
           canvasContext: context as unknown as CanvasRenderingContext2D,
           viewport,
         }).promise;
-        out.push({ pageNumber, png: await canvas.encode('png') });
+        let encoded = await canvas.encode('png');
+        let mime: RasterPage['mime'] = 'image/png';
+        if (encoded.length > PAGE_PNG_MAX_BYTES) {
+          encoded = await canvas.encode('jpeg', 85);
+          mime = 'image/jpeg';
+        }
         // Let go of the page's pixels now rather than whenever the GC
         // gets to the canvas.
         canvas.width = 0;
+        if (opts?.maxTotalBytes !== undefined && total + encoded.length > opts.maxTotalBytes) {
+          opts.onBudget?.(count - pageNumber + 1);
+          break;
+        }
+        total += encoded.length;
+        out.push({ pageNumber, png: encoded, mime });
       } finally {
         page.cleanup();
       }
