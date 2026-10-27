@@ -57,7 +57,7 @@ const CHATTABLE_ROLES = ['assistant', 'responder', 'custom'] as const;
 /** No such conversation or message for this login: also what a
  *  non-participant hears, so an outsider learns nothing. */
 export class MessengerNotFoundError extends Error {
-  constructor(message = 'No such conversation.') {
+  constructor(message = 'Conversation not found (or you are not in it).') {
     super(message);
     this.name = 'MessengerNotFoundError';
   }
@@ -200,12 +200,13 @@ function isoOrNull(v: unknown): string | null {
 }
 
 function uuidOr(v: string, what: string): string {
-  if (!isUuid(v)) throw new InputError(`${what} is not an id.`);
+  if (!isUuid(v)) throw new InputError(`${what} must be an id (a uuid).`);
   return v.toLowerCase();
 }
 
 function seqOr(v: number, what: string): number {
-  if (!Number.isSafeInteger(v) || v < 0) throw new InputError(`${what} is not a sequence number.`);
+  if (!Number.isSafeInteger(v) || v < 0)
+    throw new InputError(`${what} must be a sequence number (a whole number, 0 or more).`);
   return v;
 }
 
@@ -503,14 +504,14 @@ export async function createMessengerConversation(
   input: MessengerCreateInput,
 ): Promise<{ conversationId: string; created: boolean }> {
   if (input.kind !== 'direct' && input.kind !== 'group') {
-    throw new InputError('A conversation is direct or group.');
+    throw new InputError('kind must be "direct" or "group".');
   }
   const self = actor.loginId.toLowerCase();
   const others = [...new Set(input.participants.map((p) => uuidOr(p, 'A participant')))].filter(
     (p) => p !== self,
   );
   if (input.kind === 'direct' && others.length !== 1) {
-    throw new InputError('A direct chat names exactly one other person.');
+    throw new InputError('A direct chat must name exactly one other person (one login id).');
   }
   if (others.length + 1 > MESSENGER_PARTICIPANTS_MAX) {
     throw new InputError(`A group holds at most ${MESSENGER_PARTICIPANTS_MAX} people.`);
@@ -599,7 +600,7 @@ export async function sendMessengerMessage(
   input: MessengerSendInput,
 ): Promise<{ message: MessengerMessageView; created: boolean }> {
   const body = typeof input.body === 'string' ? input.body : '';
-  if (body.trim() === '') throw new InputError('A message needs some text.');
+  if (body.trim() === '') throw new InputError('A message must have some text.');
   if (body.length > MESSENGER_BODY_MAX) {
     throw new InputError(`A message is at most ${MESSENGER_BODY_MAX} characters.`);
   }
@@ -627,7 +628,7 @@ export async function sendMessengerMessage(
       if (prior) return { seq: num(prior.seq), created: false };
     }
     if (replyTo !== null && (replyTo < 1 || replyTo > num(conv.last_seq))) {
-      throw new InputError('reply_to_seq names no message of this chat.');
+      throw new InputError('reply_to_seq must be the seq of a message in this chat.');
     }
     if (mentions.length > 0) {
       const live = await q<{ kind: 'login' | 'agent'; id: string }>(
@@ -638,7 +639,7 @@ export async function sendMessengerMessage(
       const ok = new Set(live.map((p) => `${p.kind}:${p.id}`));
       for (const m of mentions) {
         if (!ok.has(`${m.kind}:${m.id}`)) {
-          throw new InputError('A mention names no one in this chat.');
+          throw new InputError('A mention must name someone in this chat.');
         }
       }
     }
@@ -683,7 +684,7 @@ function dedupeMentions(list: readonly MessengerMention[]): MessengerMention[] {
   const out: MessengerMention[] = [];
   for (const m of list) {
     if (!m || (m.kind !== 'login' && m.kind !== 'agent')) {
-      throw new InputError('A mention is a login or an agent.');
+      throw new InputError('A mention must be a login or an agent.');
     }
     const id = uuidOr(String(m.id), 'A mention');
     const k = `${m.kind}:${id}`;
@@ -691,7 +692,8 @@ function dedupeMentions(list: readonly MessengerMention[]): MessengerMention[] {
     seen.add(k);
     out.push({ kind: m.kind, id });
   }
-  if (out.length > MESSENGER_PARTICIPANTS_MAX) throw new InputError('Too many mentions.');
+  if (out.length > MESSENGER_PARTICIPANTS_MAX)
+    throw new InputError(`A message must mention at most ${MESSENGER_PARTICIPANTS_MAX} people.`);
   return out;
 }
 
@@ -709,7 +711,7 @@ async function lockMessage(tx: Tx, conversationId: string, seq: number): Promise
           from messenger_messages where conversation_id = ${conversationId}::uuid and seq = ${seq}
           for update`,
   );
-  if (!m) throw new MessengerNotFoundError('No such message.');
+  if (!m) throw new MessengerNotFoundError('Message not found in this chat.');
   return m;
 }
 
@@ -749,14 +751,15 @@ export async function editMessengerMessage(
 ): Promise<MessengerMessageView> {
   const s = seqOr(seq, 'seq');
   if (typeof body !== 'string' || body.trim() === '') {
-    throw new InputError('A message needs some text.');
+    throw new InputError('A message must have some text.');
   }
   if (body.length > MESSENGER_BODY_MAX) {
     throw new InputError(`A message is at most ${MESSENGER_BODY_MAX} characters.`);
   }
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
-    if (s <= num(me.cleared_before_seq)) throw new MessengerNotFoundError('No such message.');
+    if (s <= num(me.cleared_before_seq))
+      throw new MessengerNotFoundError('Message not found in this chat.');
     const m = await lockMessage(tx, conv.id, s);
     if (m.author_kind !== 'login' || m.author_login_id !== actor.loginId.toLowerCase()) {
       throw new MessengerRefusedError('You can only edit your own messages.');
@@ -769,7 +772,7 @@ export async function editMessengerMessage(
     await refreshPreviewIfLast(tx, conv, s);
   });
   const [message] = await readMessagesBySeq(actor, conversationId, [s]);
-  if (!message) throw new MessengerNotFoundError('No such message.');
+  if (!message) throw new MessengerNotFoundError('Message not found in this chat.');
   return message;
 }
 
@@ -783,7 +786,8 @@ export async function deleteMessengerMessage(
   const s = seqOr(seq, 'seq');
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
-    if (s <= num(me.cleared_before_seq)) throw new MessengerNotFoundError('No such message.');
+    if (s <= num(me.cleared_before_seq))
+      throw new MessengerNotFoundError('Message not found in this chat.');
     const m = await lockMessage(tx, conv.id, s);
     if (m.deleted_at) return;
     const mine = m.author_kind === 'login' && m.author_login_id === actor.loginId.toLowerCase();
@@ -811,12 +815,13 @@ export async function toggleMessengerReaction(
   const s = seqOr(seq, 'seq');
   const e = typeof emoji === 'string' ? emoji.trim() : '';
   if (e === '' || e.length > MESSENGER_EMOJI_MAX || /\s/.test(e)) {
-    throw new InputError('A reaction is one emoji.');
+    throw new InputError('A reaction must be one emoji.');
   }
   const self = actor.loginId.toLowerCase();
   return systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
-    if (s <= num(me.cleared_before_seq)) throw new MessengerNotFoundError('No such message.');
+    if (s <= num(me.cleared_before_seq))
+      throw new MessengerNotFoundError('Message not found in this chat.');
     const m = await lockMessage(tx, conv.id, s);
     if (m.deleted_at) throw new MessengerRefusedError('A deleted message takes no reaction.');
     const gone = await tx
@@ -930,7 +935,7 @@ export async function deleteMessengerHistory(
   conversationId: string,
   before?: Date | null,
 ): Promise<{ deleted: number }> {
-  if (before && Number.isNaN(before.getTime())) throw new InputError('before is not a date.');
+  if (before && Number.isNaN(before.getTime())) throw new InputError('before must be a date.');
   return systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
     requireGroupAdmin(conv, me);
@@ -968,7 +973,7 @@ export async function addMessengerParticipants(
   const ids = [...new Set(loginIds.map((l) => uuidOr(l, 'A participant')))].filter(
     (l) => l !== self,
   );
-  if (ids.length === 0) throw new InputError('Name someone to add.');
+  if (ids.length === 0) throw new InputError('Name at least one login to add (pass logins).');
   const reach = await reachableLogins(actor.loginId, { only: ids, limit: 500 });
   if (reach.length !== ids.length) {
     throw new MessengerRefusedError('You can only add people who share a workspace with you.');
@@ -1034,7 +1039,7 @@ export async function removeMessengerParticipant(
 ): Promise<void> {
   const target = uuidOr(loginId, 'The participant');
   if (target === actor.loginId.toLowerCase()) {
-    throw new InputError('To go yourself, leave the chat.');
+    throw new InputError('To go yourself, leave the chat: you must not remove yourself.');
   }
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
@@ -1044,7 +1049,7 @@ export async function removeMessengerParticipant(
       sql`select id::text as id, left_at from messenger_participants
            where conversation_id = ${conv.id}::uuid and kind = 'login' and login_id = ${target}::uuid`,
     );
-    if (!p || p.left_at) throw new MessengerNotFoundError('That person is not in this chat.');
+    if (!p || p.left_at) throw new MessengerNotFoundError('Participant not found in this chat.');
     const names = await loginNames([actor.loginId, target], tx);
     const seq = await systemLine(
       tx,
@@ -1108,9 +1113,9 @@ export async function setMessengerFavourite(
 ): Promise<void> {
   const ref = uuidOr(refId, 'The pin');
   if (kind !== 'conversation' && kind !== 'agent') {
-    throw new InputError('A pin is a conversation or an agent.');
+    throw new InputError('kind must be "conversation" or "agent".');
   }
-  if (!Number.isSafeInteger(rank)) throw new InputError('rank is a whole number.');
+  if (!Number.isSafeInteger(rank)) throw new InputError('rank must be a whole number.');
   if (kind === 'conversation') {
     const [p] = await q<{ ok: number }>(
       systemDb,
@@ -1122,7 +1127,8 @@ export async function setMessengerFavourite(
     if (!p) throw new MessengerNotFoundError();
   } else {
     const agents = await messengerChatAgents(actor.ownerId, actor.loginId);
-    if (!agents.some((a) => a.id === ref)) throw new MessengerNotFoundError('No such agent.');
+    if (!agents.some((a) => a.id === ref))
+      throw new MessengerNotFoundError('Agent not found among the agents you may chat with.');
   }
   await systemDb
     .insert(messengerFavourites)
@@ -1140,7 +1146,7 @@ export async function removeMessengerFavourite(
 ): Promise<void> {
   const ref = uuidOr(refId, 'The pin');
   if (kind !== 'conversation' && kind !== 'agent') {
-    throw new InputError('A pin is a conversation or an agent.');
+    throw new InputError('kind must be "conversation" or "agent".');
   }
   await systemDb
     .delete(messengerFavourites)

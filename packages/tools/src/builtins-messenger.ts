@@ -21,6 +21,7 @@ import {
   sendMessengerMessage,
   waitForMessengerMessages,
   MESSENGER_WAIT_MAX_MS,
+  MessengerNotFoundError,
   type MessengerActor,
 } from '@mantle/content/messenger';
 import { domainErrorAnswer, errorMessage } from '@mantle/std';
@@ -47,7 +48,10 @@ async function actorOf(ctx: ToolHandlerContext): Promise<MessengerActor> {
  *  as its own text; anything else the safe message. */
 function fail(err: unknown): { ok: false; error: string } {
   const domain = domainErrorAnswer(err);
-  return { ok: false, error: domain ? domain.toolText : errorMessage(err) };
+  if (!domain) return { ok: false, error: errorMessage(err) };
+  const hint =
+    err instanceof MessengerNotFoundError ? ' Find your chats with `messenger_list`.' : '';
+  return { ok: false, error: `${domain.toolText}${hint}` };
 }
 
 function int(v: unknown): number | null {

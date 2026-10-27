@@ -214,6 +214,8 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   'mantle_client_sourced_gate(uuid,uuid[],uuid[],text[],text[],text[],text[])':
     'a marked turn’s write rule: why it waits, or none',
   'mantle_turn_heartbeats(uuid,uuid)': 'the active heartbeats of the scope’s own login',
+  'mantle_messenger_seq_cap(uuid)':
+    'the highest messenger seq the scope’s own login may read in one conversation (its participant row), for the read policies (0335); reads, writes nothing',
   'mantle_pending_card_route(uuid,uuid)':
     'where a queued call’s card goes, for a call the scope’s own login asked; never the bot’s token',
   // 0296: the mail account branches an email attachment's rule and the
