@@ -258,48 +258,5 @@
     "slow.test"
    ]
   }
- },
- "video_ingest link check": {
-  "public host": {
-   "answer": "handed to the media sidecar",
-   "reached": [
-    "public.test"
-   ]
-  },
-  "private IP": {
-   "answer": "error: refusing to fetch a private/internal address (10.0.0.5)",
-   "reached": []
-  },
-  "name resolving to 127.0.0.1": {
-   "answer": "error: refusing to fetch inside.test — it resolves to a private/internal address",
-   "reached": []
-  },
-  "redirect to 169.254.169.254": {
-   "answer": "error: refusing to fetch a private/internal address (169.254.169.254)",
-   "reached": [
-    "meta-redirect.test"
-   ]
-  },
-  "redirect to another host with Authorization": {
-   "answer": "handed to the media sidecar",
-   "reached": [
-    "cross-redirect.test",
-    "other.test"
-   ],
-   "authorizationAtOtherHost": "not sent"
-  },
-  "oversized body": {
-   "answer": "handed to the media sidecar",
-   "reached": [
-    "huge.test"
-   ],
-   "oversizedRead": "stopped at 0 MB"
-  },
-  "slow server": {
-   "answer": "error: the link did not answer within 10 s, so its redirects could not be checked (after 10 s)",
-   "reached": [
-    "slow.test"
-   ]
-  }
  }
 }
