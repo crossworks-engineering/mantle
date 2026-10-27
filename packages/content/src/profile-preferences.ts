@@ -700,12 +700,28 @@ export async function loadHomeDesk(
 }
 
 /**
+ * The stored desk version as the read projects it (projectHomeDeskVersion),
+ * in SQL: a whole number from 0 up to the largest safe integer, else 0. So a
+ * version that is not one (a string, a fraction, a negative) counts as 0 on
+ * the save as on the read, and a save from the version GET answered lands.
+ * The CASE casts only a JSON number. 9007199254740991 is
+ * Number.MAX_SAFE_INTEGER.
+ */
+function storedHomeDeskVersion(): SQL {
+  const v = sql`(${profiles.preferences}->'homeDeskVersion')`;
+  const n = sql`(${v})::numeric`;
+  return sql`(case when jsonb_typeof(${v}) <> 'number' then 0::numeric
+    when ${n} >= 0 and ${n} = trunc(${n}) and ${n} <= 9007199254740991
+    then ${n} else 0::numeric end)`;
+}
+
+/**
  * Replace the login's Desk, compare-and-set: one conditional UPDATE of its
  * own profile row, so of two saves sent with the same version exactly one
  * lands. It lands, the version going to `version + 1`, only while the
- * stored version still equals `version` (an unset one counts as 0);
- * otherwise nothing is written and the stored desk and version come back,
- * the other device's save. Personal: the login's own row, in the caller's
+ * stored version still equals `version` (one that is unset or not a whole
+ * number counts as 0, as on the read); otherwise nothing is written and the
+ * stored desk and version come back, the other device's save. Personal: the login's own row, in the caller's
  * scope, where the profile write rule (mantle_profile_writable) holds a
  * login to its own row. The caller validates `homeDesk`
  * (validateHomeDeskWrite).
@@ -719,7 +735,7 @@ export async function saveHomeDeskIfVersion(
   const landed = await mergePreferencesIf(
     loginId,
     { homeDesk, homeDeskVersion: next },
-    sql`coalesce(${profiles.preferences}->'homeDeskVersion', '0'::jsonb) = ${JSON.stringify(version)}::jsonb`,
+    sql`${storedHomeDeskVersion()} = ${version}`,
   );
   if (landed) return { ok: true, homeDesk, version: next };
   return { ok: false, ...(await loadHomeDesk(loginId)) };

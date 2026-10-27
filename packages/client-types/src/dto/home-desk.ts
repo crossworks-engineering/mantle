@@ -28,5 +28,8 @@ export type HomeDeskState = { homeDesk: HomeDesk | null; version: number };
  * PUT /api/profile/home-desk: replace the desk, compare-and-set. `version`
  * is the one this client last read or saved; the save lands (and the
  * version goes up by one) only while the stored version still equals it.
+ * `loginId` is the login the desk belongs to (the shell's `loginId`): a save
+ * for any login but the session's is a 401 `{ error, code:
+ * 'login-mismatch' }`, so a desk is never saved over another login's.
  */
-export type HomeDeskPutBody = { homeDesk: HomeDesk; version: number };
+export type HomeDeskPutBody = { homeDesk: HomeDesk; version: number; loginId: string };

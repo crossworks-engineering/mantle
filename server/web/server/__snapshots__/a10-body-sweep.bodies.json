@@ -462,7 +462,8 @@
   "PUT /api/profile/fonts": {},
   "PUT /api/profile/home-desk": {
     "homeDesk": { "v": 1, "items": [], "counts": {}, "icons": true, "clock": "digital" },
-    "version": 0
+    "version": 0,
+    "loginId": "33333333-3333-4333-8333-333333333333"
   },
   "PUT /api/profile/logo": null,
   "DELETE /api/profile/logo": null,

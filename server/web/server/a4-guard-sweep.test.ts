@@ -695,6 +695,11 @@ function withGateCacheDefault(answer: string): string {
 
 /** The header of the main answers in a decision file (decisionFile). */
 const MAIN_ANSWERS = '# answers on main';
+/** The header of the rows added since main in a decision file: rows main
+ *  never had, so no cell of theirs has an answer on main. Each is held to
+ *  the main answer of a sibling row that takes the same gate path, named
+ *  `like=` (decisionFile). */
+const ADDED_ROWS = '# rows added since main';
 
 /**
  * A decision file of A4 hand batch A (the owner decisions 1a and 2a,
@@ -707,7 +712,10 @@ const MAIN_ANSWERS = '# answers on main';
  * masked (maskActor), BEFORE it compares the file. So a rerun with `-u`
  * records the cells as driven but cannot accept a changed status, header,
  * body or log line on these rows: the check fails first, and the main
- * answers are carried over as they were.
+ * answers are carried over as they were. A row added since main has no
+ * answer on main: its cells are kept apart, under ADDED_ROWS, each naming
+ * (`like=`) the main answer of a sibling row that takes the same gate path,
+ * and are held to it the same way; a cell kept there stays there.
  */
 async function decisionFile(
   file: string,
@@ -720,21 +728,26 @@ async function decisionFile(
   const kept = existsSync(path) ? readFileSync(path, 'utf8').split('\n') : [];
   const mainTable = new Map<string, string>();
   const mainOf = new Map<string, string>();
+  const added = new Set<string>();
   let inMain = false;
+  let inAdded = false;
   for (const line of kept) {
     if (line.startsWith(MAIN_ANSWERS)) {
       inMain = true;
       continue;
     }
+    if (line.startsWith(ADDED_ROWS)) inAdded = true;
     if (inMain && line.startsWith('#')) continue;
     if (line === '') inMain = false;
     const answer = inMain ? /^(o\d+) (.*)$/.exec(line) : null;
     if (answer) mainTable.set(answer[1]!, answer[2]!);
-    const cell = /^(\S+ \S+ \S+ \S+)=\w+ main=(o\d+)$/.exec(line);
+    const cell = /^(\S+ \S+ \S+ \S+)=\w+ (main|like)=(o\d+)$/.exec(line);
     if (cell) {
-      const main = mainTable.get(cell[2]!);
+      expect(cell[2], `${file}: ${cell[1]} under the wrong header`).toBe(inAdded ? 'like' : 'main');
+      const main = mainTable.get(cell[3]!);
       expect(main, `${file}: ${cell[1]} names a main answer the file does not keep`).toBeDefined();
       mainOf.set(cell[1]!, main!);
+      if (inAdded) added.add(cell[1]!);
     }
   }
   // Every cell of the decided rows has its main answer kept, and no other.
@@ -758,10 +771,13 @@ async function decisionFile(
     }
     return id;
   };
-  const lines = [...cells].map(
-    ([cell, answer]) =>
-      `${cell}=${idOf(ids, prefix, answer)} main=${idOf(mainIds, 'o', mainOf.get(cell)!)}`,
-  );
+  const lines = [...cells].map(([cell, answer]) => {
+    const id = idOf(ids, prefix, answer);
+    const main = idOf(mainIds, 'o', mainOf.get(cell)!);
+    return { cell, line: `${cell}=${id} ${added.has(cell) ? 'like' : 'main'}=${main}` };
+  });
+  const onMain = lines.filter((l) => !added.has(l.cell)).map((l) => l.line);
+  const since = lines.filter((l) => added.has(l.cell)).map((l) => l.line);
   await expect(
     [
       ...header,
@@ -773,9 +789,19 @@ async function decisionFile(
       '# accept any other change on these rows)',
       ...[...mainIds].map(([answer, id]) => `${id} ${answer}`),
       '',
-      `# cells: ${cells.size}`,
-      ...lines,
+      `# cells: ${onMain.length}`,
+      ...onMain,
       '',
+      ...(since.length > 0
+        ? [
+            `${ADDED_ROWS} (no answer on main: each cell names, like=, the main answer of`,
+            '# a sibling row that takes the same gate path, and is held to it as the cells',
+            '# above are held to theirs)',
+            `# cells: ${since.length}`,
+            ...since,
+            '',
+          ]
+        : []),
     ].join('\n'),
   ).toMatchFileSnapshot(`./__snapshots__/${file}`);
 }

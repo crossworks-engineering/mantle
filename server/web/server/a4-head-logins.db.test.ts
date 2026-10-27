@@ -5,7 +5,8 @@
  * for every login; they run under the login's own rule now, as the GET
  * does. A GET row added to those lists since is held here the same way (19
  * rows with GET /api/workspaces/:id/connector-options, 0315, and GET
- * /api/profile/home-desk, desk saving v2). The guard sweep records the actor and outcome it notes; this test
+ * /api/profile/home-desk, desk saving v2). The guard sweep records the
+ * actor and outcome it notes; this test
  * runs the REAL handler bodies through the real app (createApp) on a
  * migrated scratch database and holds each HEAD to its GET: the same
  * status and the same headers, with no body, for every login kind (the

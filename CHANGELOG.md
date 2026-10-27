@@ -25,7 +25,16 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   version exactly one lands. It and `savePreferenceIfRev` share the one
   compare-and-set write of the preferences column (`mergePreferencesIf`).
   `homeDesk` and `homeDeskVersion` are written through it only: a
-  preference patch naming either is refused.
+  preference patch naming either is refused. The save reads the stored
+  version as GET projects it: one that is unset or not a whole number from
+  0 counts as 0, so a desk saved before the version takes a save sent with
+  version 0.
+- **A save names its login:** the PUT body carries `loginId` (the shell's
+  `loginId`, `HomeDeskPutBody`); a save naming any other login, or none, is
+  a 401 `{ error, code: "login-mismatch" }` and nothing is written. A
+  browser holding several logins can switch the one in use from another
+  tab; the desk on screen still belongs to the first and is never saved
+  over the second's. The code tells it from a session that ended.
 - **The shell does not carry the desk:** `homeDesk` is gone from
   `GET /api/shell` and the `Shell` DTO, so the shell's periodic reads no longer
   race the Desk's saves. `HomeDesk`, `HomeDeskItem`, `HomeDeskState` and
@@ -44,15 +53,18 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   rules (`mantle_profile_writable` on write) hold it to the login's own row;
   an API key, a peer and a share link never reach it.
 - **Internal:** the route joins the route rows (GET and HEAD with a caller:
-  785 of 845), the A4 guard sweep (the HEAD cells in the head-logins file
-  name the main answers of `GET /api/workspaces/user-search`, which takes
-  the same gate path), the A10 body sweep (its 400 names the version:
-  `desk-version`) and the any-login rows with no limit
+  785 of 845), the A4 guard sweep (its HEAD cells, and the connector
+  options route's, sit under "rows added since main" in the head-logins
+  file: main never had them, so each names, `like=`, the main answer of a
+  sibling row that takes the same gate path), the A10 body sweep (its 400
+  names the version: `desk-version`; the member's valid body names another
+  login: `desk-login`) and the any-login rows with no limit
   (`UNLIMITED_NON_OWNER_ROWS`, docs/request-plumbing.md); the A6b exit
   sweep drops the shell's named `homeDesk` change. The route database test
   (`home-desk-route.db.test.ts`) covers the version conflict, two saves at
-  once with the same version (exactly one lands), the own row only, API
-  keys 401, and the 400 and 413 paths.
+  once with the same version (exactly one lands), a desk saved before the
+  version or with a bad one, a save naming another login, the own row
+  only, API keys 401, and the 400 and 413 paths.
 
 ## Unreleased: workspace delegation
 

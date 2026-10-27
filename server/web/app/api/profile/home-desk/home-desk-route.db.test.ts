@@ -5,6 +5,11 @@
  *
  *  - GET answers the login's own desk and version: null and 0 until a save,
  *    and version 0 for a desk saved before the version (the other member's);
+ *  - a desk saved before the version, or with a version that is not a whole
+ *    number from 0, takes a save sent with version 0 (200, version 1): the
+ *    save checks the version as the read projects it;
+ *  - the body names the login (`loginId`): a save naming another login, or
+ *    none, is a 401 (code login-mismatch), and nothing is written;
  *  - every login saves its OWN desk compare-and-set: a PUT with the stored
  *    version lands (200, version + 1), one with any other version is a 409
  *    with the stored desk and version, and nothing is written;
@@ -45,7 +50,12 @@ describe.skipIf(!DB_URL)(
     let runRoute: typeof import('@/server/run-route').runRoute;
     let dir = '';
     const tag = `hd${randomUUID().slice(0, 6)}`;
-    const L = { owner: randomUUID(), member: randomUUID(), other: randomUUID() };
+    const L = {
+      owner: randomUUID(),
+      member: randomUUID(),
+      other: randomUUID(),
+      legacy: randomUUID(),
+    };
     const keys = { owner: '', member: '' };
     /** What the anchor's and the other member's rows hold before any save. */
     const BRAND: Prefs = { siteName: `${tag} brand`, timezone: 'UTC' };
@@ -77,7 +87,16 @@ describe.skipIf(!DB_URL)(
       expect(text).not.toMatch(/SQLSTATE|permission denied|violates|\n\s+at \S/i);
       return { status: res.status, text, json: JSON.parse(text) as Record<string, unknown> };
     };
-    const put = (who: string | { key: string }, body: unknown) => call(who, 'PUT', body);
+    /** A PUT as the client sends it: a login's body names that login
+     *  (`loginId`), unless the body names one itself (or `undefined`). */
+    const put = (who: string | { key: string }, body: unknown) =>
+      call(
+        who,
+        'PUT',
+        typeof who === 'string' && body && typeof body === 'object' && !('loginId' in body)
+          ? { ...body, loginId: who }
+          : body,
+      );
     const get = (who: string | { key: string }) => call(who, 'GET');
     /** The version the member's row holds now, as GET answers it. */
     const versionOf = async (who: string) => (await get(who)).json.version as number;
@@ -118,7 +137,8 @@ describe.skipIf(!DB_URL)(
       )[0]!.id;
       await raw`delete from workspace_users where workspace_id = ${team}`;
       await raw`insert into workspace_users (workspace_id, login_id, moderator)
-      values (${team}, ${L.member}, false), (${team}, ${L.other}, false)`;
+      values (${team}, ${L.member}, false), (${team}, ${L.other}, false),
+             (${team}, ${L.legacy}, false)`;
       // The anchor's row (the brand) and the other member's row (a desk of its
       // own), as they are before any save here.
       await raw`insert into profiles (user_id, preferences) values
@@ -196,6 +216,42 @@ describe.skipIf(!DB_URL)(
         expect(body).not.toHaveProperty('homeDesk');
         expect(body.siteName).toBe(BRAND.siteName);
         expect(m.takeActorMisses(), 'no actor miss').toEqual([]);
+      });
+
+      it(`${mode}: a desk saved before the version, or with one that is not a whole number, takes version 0`, async () => {
+        await setMode(mode);
+        for (const stored of [undefined, '3', -2, 2.5, Number.MAX_SAFE_INTEGER + 1]) {
+          const prefs: Prefs =
+            stored === undefined
+              ? { homeDesk: OTHER_DESK }
+              : { homeDesk: OTHER_DESK, homeDeskVersion: stored };
+          await raw`insert into profiles (user_id, preferences)
+          values (${L.legacy}, ${raw.json(prefs as never)})
+          on conflict (user_id) do update set preferences = excluded.preferences`;
+          const read = await get(L.legacy);
+          expect(read.json, String(stored)).toEqual({ homeDesk: OTHER_DESK, version: 0 });
+          const mine = desk(++n);
+          const res = await put(L.legacy, { homeDesk: mine, version: 0 });
+          expect(res.status, `${String(stored)}: ${res.text}`).toBe(200);
+          expect(res.json).toEqual({ homeDesk: mine, version: 1 });
+          expect(await prefsOf(L.legacy)).toEqual({ homeDesk: mine, homeDeskVersion: 1 });
+        }
+        expect(m.takeActorMisses(), 'no actor miss').toEqual([]);
+      });
+
+      it(`${mode}: a save naming another login, or none, is a 401, and nothing is written`, async () => {
+        await setMode(mode);
+        const before = await Promise.all(Object.values(L).map(prefsOf));
+        const version = await versionOf(L.member);
+        for (const loginId of [L.other, L.owner, undefined, '', 7]) {
+          const res = await put(L.member, { homeDesk: desk(777), version, loginId });
+          expect(res.status, `${String(loginId)}: ${res.text}`).toBe(401);
+          expect(res.json).toEqual({
+            error: 'loginId is not the login of this session',
+            code: 'login-mismatch',
+          });
+        }
+        expect(await Promise.all(Object.values(L).map(prefsOf))).toEqual(before);
       });
 
       it(`${mode}: a stale version is a 409 with the stored desk, and nothing is written`, async () => {
