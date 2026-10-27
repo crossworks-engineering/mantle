@@ -9,7 +9,7 @@
  *   check (on an off-page connector, or a line's inline item), and
  *   checks (a list of them, on a line: one per inferred join its note counts):
  *     { key, kind, state, guess?, question?, answer?, alt?, reason?, model?,
- *       checkedAt?, crops?, overview? }
+ *       checkedAt?, crops?, overview?, cropSha? }
  *   checks (on the drawing, a set, or a set's page), the summary:
  *     { guesses, unchecked, checked, unsure, contradicted, corrected }
  *
@@ -25,7 +25,9 @@
  *     the drawing shows the alternative, labelled FROM IMAGE, never certain;
  *     `guess` keeps what the geometry read.
  * `crops` and `overview` are file ids of the stored crop images (the
- * evidence in the drawing table's Checks tab).
+ * evidence in the drawing table's Checks tab); `cropSha` the sha256 of
+ * each crop's bytes as circuit_verify stored them (sealed with the mark,
+ * so a crop file replaced since is never embedded as the evidence).
  *
  * Sealed marks (phase 6): a Write user or a client could type
  * `state: "checked"` with made-up evidence, or drop every mark so no "not
@@ -58,7 +60,9 @@
  * the element it sits on (`markSite`: the page, its ids, ends, link and
  * label; on a connector every line that ends at it, so a line re-pointed
  * to it or added there moves no check onto a pipe no image saw; on a line
- * its own ends and the ordered keys of every mark it carries; a connector
+ * its own ends, the ports it meets them by, the place of a tee it starts
+ * or ends at (the tee's parent line, `near` and `at`: moving the tee moves
+ * the join), and the ordered keys of every mark it carries; a connector
  * or line whose id another shares, or that has none, vouches for no mark),
  * so a sealed mark copied onto another element, kept under a changed
  * label, left on a line one of whose other marks was dropped or swapped,
@@ -135,6 +139,11 @@ export type PidCheck = {
   /** File ids of the crops the model saw, and of the sheet overview. */
   crops?: string[];
   overview?: string;
+  /** The sha256 (hex) of each crop's bytes as circuit_verify stored them,
+   *  in the order of `crops` (the Checks row's Crops cell records them,
+   *  sealed with the row): a crop is embedded in a canvas only while its
+   *  file still holds those bytes (@mantle/tools present-crops.ts). */
+  cropSha?: string[];
   /** circuit_trace's seal of the mark (`markSealBody`); a save drops a mark
    *  whose seal does not hold to `unchecked`. */
   sig?: string;
@@ -182,6 +191,7 @@ const CHECK_KEYS = [
   'checkedAt',
   'crops',
   'overview',
+  'cropSha',
   'sig',
 ];
 const SUMMARY_KEYS = ['guesses', 'unchecked', 'checked', 'unsure', 'contradicted', 'corrected'];
@@ -191,6 +201,9 @@ const SUMMARY_KEYS = ['guesses', 'unchecked', 'checked', 'unsure', 'contradicted
 export const FILE_ID = /^[0-9a-f-]{36}$/i;
 /** A seal: an HMAC-SHA256, hex. */
 const SIG = /^[0-9a-f]{64}$/;
+/** A crop's sha256, hex (the Crops cell's `sha256:<hex>`, a mark's
+ *  `cropSha`). */
+export const SHA256 = /^[0-9a-f]{64}$/;
 /** A provenance id: random hex. */
 const PROVENANCE_ID = /^[0-9a-f]{16,32}$/;
 
@@ -243,6 +256,18 @@ export function checkOf(
       issues.errors.push(`${p}.crops: at most ${CHECK_LIMITS.crops} file ids of the crops.`);
     else crops = [...(c.crops as string[])];
   }
+  let cropSha: string[] | undefined;
+  if (c.cropSha !== undefined) {
+    if (
+      !Array.isArray(c.cropSha) ||
+      c.cropSha.length !== (Array.isArray(c.crops) ? c.crops.length : 0) ||
+      !c.cropSha.every((x) => typeof x === 'string' && SHA256.test(x))
+    )
+      issues.errors.push(
+        `${p}.cropSha: the sha256 of each crop, one per id in crops, as circuit_trace writes it; keep it unchanged or leave it out.`,
+      );
+    else cropSha = [...(c.cropSha as string[])];
+  }
   // A corrected guess names what the image says it is instead (`alt`),
   // except at the far end of a corrected sheet link, which shows the asked
   // end's state without it (see the header).
@@ -264,6 +289,7 @@ export function checkOf(
     ...(checkedAt ? { checkedAt } : {}),
     ...(crops?.length ? { crops } : {}),
     ...(overview ? { overview } : {}),
+    ...(cropSha?.length ? { cropSha } : {}),
     ...(sig ? { sig } : {}),
   };
 }
@@ -698,7 +724,8 @@ export function withoutMarkWords<T>(data: T): T {
  * link, and every line that ends at it (`ends`: each line's id, from and
  * to, sorted), so a line re-pointed to a checked connector, or one added
  * there, unseals its mark (the check said what continues at THAT end of
- * THOSE lines); a line's id, line number, ends and note, and the ordered
+ * THOSE lines); a line's id, line number, ends, ports, the place of each
+ * end that is a tee (`teeSites`), and note, and the ordered
  * keys of every mark the line carries (its inferred joins' `checks`, then
  * its marked inline items'), so dropping, swapping or copying one of a
  * line's marks unseals the others; and for an inline item, the line's and
@@ -718,10 +745,40 @@ function lineMarkKeys(l: Obj): unknown[] {
       .map((it) => key((it as Obj).check)),
   ];
 }
+/** The tees of one drawing's raw data by id: each tee's `[id, on, near,
+ *  at]`, raw, in order (a copied tee id lists both, so neither reads as
+ *  the sealed one). Read once per drawing. */
+export type TeeSites = ReadonlyMap<string, readonly unknown[][]>;
+export function teeSites(d: Obj): TeeSites {
+  const out = new Map<string, unknown[][]>();
+  for (const t of Array.isArray(d.tees) ? d.tees : []) {
+    if (!isObj(t) || typeof t.id !== 'string') continue;
+    const list = out.get(t.id) ?? [];
+    list.push([raw(t.id), raw(t.on), raw(t.near), raw(t.at)]);
+    out.set(t.id, list);
+  }
+  return out;
+}
 /** What a line's marks' sites share: read once per line (a line carries
- *  at most LINE_CHECKS_MAX joins and PID_LIMITS.inline items). */
-function lineSite(l: Obj): unknown[] {
-  return [raw(l.id), raw(l.number), raw(l.from), raw(l.to), raw(l.note), lineMarkKeys(l)];
+ *  at most LINE_CHECKS_MAX joins and PID_LIMITS.inline items). Its ends
+ *  and the ports it leaves and meets them by, and for an end that is a
+ *  tee the tee's place (its parent line, `near`, `at`): moving the tee a
+ *  checked branch starts or ends at moves the join it checked, so the
+ *  mark no longer holds. */
+function lineSite(l: Obj, tees: TeeSites): unknown[] {
+  const tee = (end: unknown) => (typeof end === 'string' ? (tees.get(end) ?? null) : null);
+  return [
+    raw(l.id),
+    raw(l.number),
+    raw(l.from),
+    raw(l.to),
+    raw(l.fromPort),
+    raw(l.toPort),
+    tee(l.from),
+    tee(l.to),
+    raw(l.note),
+    lineMarkKeys(l),
+  ];
 }
 /** The lines of one drawing's raw data that end at each connector id:
  *  `[id, from, to]` of each, raw, sorted (one pass over the lines). */
@@ -746,8 +803,8 @@ export function connectorEnds(d: Obj): Map<string, unknown[][]> {
 export function markSite(
   where:
     | { offpage: Obj; ends: readonly unknown[] }
-    | { line: Obj }
-    | { line: Obj; inline: Obj; index: number },
+    | { line: Obj; tees: TeeSites }
+    | { line: Obj; tees: TeeSites; inline: Obj; index: number },
   page: string | null = null,
 ): MarkSite {
   if ('offpage' in where) {
@@ -763,8 +820,9 @@ export function markSite(
       where.ends,
     ];
   }
-  if ('inline' in where) return inlineSite(lineSite(where.line), page, where.index, where.inline);
-  return joinSite(lineSite(where.line), page);
+  const shared = lineSite(where.line, where.tees);
+  if ('inline' in where) return inlineSite(shared, page, where.index, where.inline);
+  return joinSite(shared, page);
 }
 /** A line's join mark's site, from the line's shared part (lineSite). */
 const joinSite = (shared: unknown[], page: string | null): MarkSite => ['line', page, ...shared];
@@ -784,7 +842,7 @@ const inlineSite = (shared: unknown[], page: string | null, index: number, it: O
  *  element). Raw values, so a changed type breaks the seal too. */
 export function markSealBody(provenanceId: string, c: Obj, site?: MarkSite): string {
   return JSON.stringify([
-    'pid-check v4',
+    'pid-check v5',
     provenanceId,
     site ?? null,
     ...CHECK_KEYS.filter((k) => k !== 'sig').map((k) => c[k] ?? null),
@@ -819,6 +877,7 @@ export function mapImageChecks(
   page: string | null = null,
 ): Obj {
   const ends = Array.isArray(d.offpage) ? connectorEnds(d) : null;
+  const tees = teeSites(d);
   const offpage = mapList(d.offpage, (o) => {
     if (!isObj(o) || o.check === undefined) return o;
     const at = typeof o.id === 'string' ? (ends?.get(o.id) ?? []) : [];
@@ -829,7 +888,7 @@ export function mapImageChecks(
     if (!isObj(l)) return l;
     // Every site on the line is read off the line as it came in, once: a
     // mark's seal covers its siblings' keys as drawn, not as `fn` left them.
-    const shared = lineSite(l);
+    const shared = lineSite(l, tees);
     const join = joinSite(shared, page);
     const checks = mapList(l.checks, (c) => fn(c, join));
     const inline = mapList(l.inline, (it, index) => {

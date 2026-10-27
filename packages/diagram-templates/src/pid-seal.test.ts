@@ -785,3 +785,76 @@ describe("a connector's mark covers the lines that end at it (H3)", () => {
     expect(((out.offpage as Drawing[])[0]!.check as Mark).state).toBe('checked');
   });
 });
+
+describe("a line's marks cover its tees and ports (M2)", () => {
+  /** A branch L2 leaves main line L1 at tee T1; its inferred join is
+   *  checked. L3 leaves L1 at T2 (unmarked). */
+  const drawnTee = (): Drawing => ({
+    title: 'Traced',
+    equipment: [
+      { id: 'V-101', type: 'vertical-vessel' },
+      { id: 'V-102', type: 'vertical-vessel' },
+      { id: 'V-103', type: 'vertical-vessel' },
+      { id: 'V-104', type: 'vertical-vessel' },
+    ],
+    tees: [
+      { id: 'T1', on: 'L1', at: 0.3 },
+      { id: 'T2', on: 'L1', near: 'to' },
+    ],
+    lines: [
+      { id: 'L1', from: 'V-101', to: 'V-102', fromPort: 'right' },
+      {
+        id: 'L2',
+        from: 'T1',
+        to: 'V-103',
+        checks: [{ key: 'j1', kind: 'join', state: 'checked', answer: 'yes' }],
+      },
+      { id: 'L3', from: 'T2', to: 'V-104' },
+    ],
+    provenance: provenance(['j1']),
+  });
+  const d = () => sign(drawnTee());
+  const joinState = (x: unknown) =>
+    (((x as Drawing).lines as Drawing[])[1]!.checks as Mark[])[0]!.state;
+  const withTee = (x: Drawing, i: number, t: Drawing): Drawing => ({
+    ...x,
+    tees: (x.tees as Drawing[]).map((o, k) => (k === i ? t : o)),
+  });
+
+  it('the traced drawing holds', () => {
+    const x = d();
+    expect(validate('pid', x).ok).toBe(true);
+    expect(honestImageChecks(x, holds)).toBe(x);
+    expect(joinState(x)).toBe('checked');
+  });
+
+  it('moving the tee the checked branch leaves from unseals its join', () => {
+    const x = d();
+    const t1 = (x.tees as Drawing[])[0]!;
+    for (const moved of [
+      { ...t1, at: 0.8 },
+      { id: 'T1', on: 'L1', near: 'from' },
+      { ...t1, on: 'L3' },
+    ]) {
+      const out = honestImageChecks(withTee(x, 0, moved), holds);
+      expect(joinState(out), JSON.stringify(moved)).toBe('unchecked');
+    }
+  });
+
+  it('a copied tee id unseals it; a tee elsewhere changes nothing', () => {
+    const x = d();
+    const copied = { ...x, tees: [...(x.tees as Drawing[]), { id: 'T1', on: 'L1', at: 0.9 }] };
+    expect(joinState(honestImageChecks(copied, holds))).toBe('unchecked');
+    const other = withTee(x, 1, { id: 'T2', on: 'L1', at: 0.6 });
+    expect(joinState(honestImageChecks(other, holds))).toBe('checked');
+  });
+
+  it("changing the line's ports unseals its marks", () => {
+    const x = d();
+    const lines = x.lines as Drawing[];
+    for (const port of [{ fromPort: 'left' }, { toPort: 'top' }]) {
+      const moved = { ...x, lines: [lines[0]!, { ...lines[1]!, ...port }, lines[2]!] };
+      expect(joinState(honestImageChecks(moved, holds)), JSON.stringify(port)).toBe('unchecked');
+    }
+  });
+});
