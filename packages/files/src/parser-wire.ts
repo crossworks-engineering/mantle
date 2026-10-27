@@ -135,6 +135,18 @@ export const PARSER_ERROR_STATUS: Record<ParserErrorCode, number> = {
   bad_request: 400,
 };
 
+/** The largest answer the parser sends and the client takes, in bytes. The
+ *  brain holds an answer in memory while it reads it (and a JSON answer once
+ *  more as a string), so this is a memory number; the parser refuses a
+ *  larger one `too_large` instead of sending it. */
+export const PARSER_ANSWER_MAX_BYTES = 96 * 1024 * 1024;
+
+/** Raw picture bytes one answer may carry, all pictures together (a
+ *  document's embedded images, a PDF's pages for OCR, a drawing's crops).
+ *  Base64 on the wire, about 85 MB, under {@link PARSER_ANSWER_MAX_BYTES}.
+ *  The pictures past it are left out and counted, never an error. */
+export const PARSER_PICTURES_BUDGET_BYTES = 64 * 1024 * 1024;
+
 /** Request header: the byte length of the JSON options ahead of the file. */
 export const OPTS_LENGTH_HEADER = 'x-parser-opts-length';
 /** The JSON options may be at most this long (a crop spec is the largest). */
