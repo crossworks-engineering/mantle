@@ -76,7 +76,11 @@ sees one participant row. All are security definers keyed on the scope's
 own login, so the participant policy does not read itself. The workspace
 role (`mantle_view_user`) has SELECT only. The title, the admin flags and
 whether the group is archived, as a leaver sees them, are the room's
-current ones (a known choice: the list needs a name).
+current ones (a known choice: the list needs a name). A login added back
+reuses its one participant row, so the seq rule judges only its latest
+stint: a leaver no longer sees someone who came back after it left, and the
+one who came back sees nobody who left during its earlier stint (one row per
+stint would keep both; not in V1).
 
 Writes run in `packages/content/src/messenger.ts`, one function per action,
 each one transaction on the system pool (ACCESS_MATRIX writer `system`). Each
