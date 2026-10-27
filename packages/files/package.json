@@ -40,7 +40,6 @@
     "jszip": "^3.10.2",
     "mammoth": "^1.13.0",
     "pdf-parse": "^2.4.5",
-    "pdf-to-png-converter": "^4.2.1",
     "pdfjs-dist": "6.4.299",
     "saxes": "^6.0.0"
   },

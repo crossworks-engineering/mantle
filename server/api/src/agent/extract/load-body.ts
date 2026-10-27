@@ -309,8 +309,8 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
  * Covers the body-load ladder: image vision-ingest, the typed body dispatch
  * (readNodeBodyRaw), and the PDF OCR / native-read / encrypted / bytes-missing
  * / no-text-layer fallbacks. Records its OWN terminal skip traces for every
- * dead-end (no_vision_text, encrypted_pdf, bytes_unavailable, pdf_unreadable,
- * no_text_layer, body_too_short); when it does, it returns `{ ok: false }` and
+ * dead-end (no_vision_text, encrypted_pdf, bytes_unavailable, pdf_too_large,
+ * pdf_unreadable, no_text_layer, body_too_short); when it does, it returns `{ ok: false }` and
  * the caller must simply return. On success returns the raw (untruncated) body
  * text.
  */
@@ -541,6 +541,30 @@ export async function loadExtractableBody(
             filename: existingData.filename,
             sha256: typeof existingData.sha256 === 'string' ? existingData.sha256 : undefined,
             hint: "The file's bytes aren't in object storage (metadata-only node — e.g. an email attachment whose body was never fetched). Re-fetch the source to extract it; OCR can't help.",
+          },
+        },
+        node,
+      );
+      return { ok: false };
+    } else if (ocr.tooLarge) {
+      // Every page was past the render limit (@mantle/files/rasterize). The
+      // same bytes give the same answer, so this is a verdict on the document
+      // and terminal: retrying it is how one oversized upload became a
+      // restart loop before the limits existed.
+      await recordTerminalSkip(
+        {
+          kind: 'extractor_run',
+          ownerId,
+          subjectId: node.id,
+          subjectKind: 'node',
+          disposition: 'pdf_too_large',
+          details: {
+            worker_slug: worker.slug,
+            node_type: node.type,
+            title: node.title,
+            filename: existingData.filename,
+            error: ocr.tooLarge,
+            hint: 'The PDF has no text layer and its pages are too large to render for OCR. Re-export it at a normal page size, then re-extract.',
           },
         },
         node,

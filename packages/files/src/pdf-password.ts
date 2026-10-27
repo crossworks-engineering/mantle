@@ -5,9 +5,8 @@
  * text covers the common case without rasterizing. The extractor calls this
  * with each vaulted password until one opens the document.
  *
- * pdfjs is the only tool in the stack that takes a password (pdf-parse /
- * pdf-to-png-converter don't expose one), and it's already present via
- * pdf-to-png-converter — promoted to a direct dep here.
+ * pdfjs is the tool here that takes a password; it is a direct dep, opened
+ * through `openPdf` like every other pdfjs read in this package.
  *
  * Returns:
  *  - { ok: true, text }              — opened and got a text layer
@@ -17,6 +16,8 @@
  *    later enhancement)
  *  - { ok: false, reason: 'error' }    — corrupt / unreadable
  */
+import { openPdf } from './pdf-open';
+
 export type PdfPasswordResult =
   | { ok: true; text: string; numPages: number }
   | { ok: false; reason: 'password' | 'no_text' | 'error'; message?: string };
@@ -29,24 +30,18 @@ export async function extractPdfTextWithPassword(
   opts?: { maxPages?: number },
 ): Promise<PdfPasswordResult> {
   const maxPages = Math.max(1, opts?.maxPages ?? DEFAULT_MAX_PAGES);
-  let pdfjs: typeof import('pdfjs-dist/legacy/build/pdf.mjs');
+  // pdfjs 6 moved destroy() off PDFDocumentProxy onto the loading task, so the
+  // task is what must be held and torn down: it owns the worker. The `finally`
+  // below reaches it on the failure path too: the wrong-password case is this
+  // function's most common outcome, and it used to leak a worker every time
+  // (the old doc.destroy() only ran on success).
+  let loadingTask: Awaited<ReturnType<typeof openPdf>>['task'];
   try {
-    pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    ({ task: loadingTask } = await openPdf(bytes, { password, useSystemFonts: true }));
   } catch (err) {
     return { ok: false, reason: 'error', message: `pdfjs load failed: ${(err as Error).message}` };
   }
-  // pdfjs 6 moved destroy() off PDFDocumentProxy onto the loading task, so the
-  // task is what must be held and torn down — it owns the worker. Declared out
-  // here so the `finally` reaches it on the failure path too: the wrong-password
-  // case is this function's most common outcome, and it used to leak a worker
-  // every time (the old doc.destroy() only ran on success).
-  let loadingTask: ReturnType<typeof pdfjs.getDocument> | null = null;
   try {
-    loadingTask = pdfjs.getDocument({
-      data: new Uint8Array(bytes),
-      password,
-      useSystemFonts: true,
-    });
     const doc = await loadingTask.promise;
     const numPages = doc.numPages;
     const parts: string[] = [];
@@ -68,6 +63,6 @@ export async function extractPdfTextWithPassword(
     }
     return { ok: false, reason: 'error', message };
   } finally {
-    await loadingTask?.destroy().catch(() => {});
+    await loadingTask.destroy().catch(() => {});
   }
 }

@@ -16,13 +16,14 @@
 
 import { PDFParse } from 'pdf-parse';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
+import { openPdf, SAFE_PDF_PARAMS } from './pdf-open';
 
 /** pdf-parse (v2) ends every page with a `-- N of M --` marker line, text or
  *  no text. */
 const PAGE_MARKER_LINE = /^[ \t]*-- \d+ of \d+ --[ \t]*$/gm;
 
 export async function parsePdf(buf: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: new Uint8Array(buf) });
+  const parser = new PDFParse({ data: new Uint8Array(buf), ...SAFE_PDF_PARAMS });
   try {
     const result = await parser.getText();
     const text = (result.text ?? '').trim();
@@ -42,8 +43,7 @@ export async function parsePdf(buf: Buffer): Promise<string> {
  *  encrypted). Reads the page tree only: no text, no rendering. Used to price
  *  an OCR pass before it runs (maintain `ocr-rescan`). */
 export async function pdfPageCount(bytes: Buffer): Promise<number | null> {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true });
+  const { task } = await openPdf(bytes, { useSystemFonts: true });
   try {
     const doc = await task.promise;
     return doc.numPages;
@@ -131,10 +131,8 @@ function soleFigureCaption(lines: string[]): string | undefined {
  * `rasterizePdfToPngs` + the vision worker where they belong.
  */
 export async function extractPdfImages(bytes: Buffer): Promise<EmbeddedImage[]> {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  let loadingTask: ReturnType<typeof pdfjs.getDocument> | null = null;
+  const { pdfjs, task: loadingTask } = await openPdf(bytes, { useSystemFonts: true });
   try {
-    loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true });
     const doc = await loadingTask.promise;
     const pageCount = Math.min(doc.numPages, MAX_PDF_PAGES_SCANNED);
 
@@ -217,6 +215,6 @@ export async function extractPdfImages(bytes: Buffer): Promise<EmbeddedImage[]> 
     }
     return out;
   } finally {
-    await loadingTask?.destroy().catch(() => {});
+    await loadingTask.destroy().catch(() => {});
   }
 }

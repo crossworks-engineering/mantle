@@ -12,27 +12,80 @@
 /** A valid one-page PDF with a single Helvetica text object. */
 export function helveticaPdf(text = 'Hello Mantle'): Buffer {
   const stream = `BT /F1 12 Tf 20 100 Td (${text}) Tj ET`;
-  const objs = [
+  return assemblePdf([
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] ' +
       '/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
     `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-  ];
+  ]);
+}
 
-  let pdf = '%PDF-1.4\n';
+/**
+ * Number the objects 1..n, write the xref table and trailer (object 1 is the
+ * catalog). An object is PDF syntax, or `[dict, streamBytes]` for a stream
+ * whose bytes are binary.
+ */
+export function assemblePdf(objs: (string | [string, Buffer])[]): Buffer {
+  // Latin-1: the offsets are byte offsets, and PDF syntax is 8-bit.
+  const parts: Buffer[] = [Buffer.from('%PDF-1.4\n', 'latin1')];
+  let length = parts[0]!.length;
   const offsets: number[] = [];
   objs.forEach((body, i) => {
-    offsets.push(pdf.length);
-    pdf += `${i + 1} 0 obj\n${body}\nendobj\n`;
+    offsets.push(length);
+    const part = Buffer.concat(
+      typeof body === 'string'
+        ? [Buffer.from(`${i + 1} 0 obj\n${body}\nendobj\n`, 'latin1')]
+        : [
+            Buffer.from(`${i + 1} 0 obj\n${body[0]}\nstream\n`, 'latin1'),
+            body[1],
+            Buffer.from('\nendstream\nendobj\n', 'latin1'),
+          ],
+    );
+    parts.push(part);
+    length += part.length;
   });
-  const startxref = pdf.length;
-  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
-  for (const o of offsets) pdf += `${String(o).padStart(10, '0')} 00000 n \n`;
-  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF\n`;
-  // Latin-1: the offsets above are byte offsets, and PDF syntax is 8-bit.
-  return Buffer.from(pdf, 'latin1');
+  let tail = `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  for (const o of offsets) tail += `${String(o).padStart(10, '0')} 00000 n \n`;
+  tail += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${length}\n%%EOF\n`;
+  parts.push(Buffer.from(tail, 'latin1'));
+  return Buffer.concat(parts);
+}
+
+/** An embedded RGB 8-bit image: its size and its Flate-compressed samples. */
+export type FixtureImage = { width: number; height: number; flate: Buffer };
+
+/**
+ * A one-page PDF of the given size (points) with a caption line in Helvetica
+ * and the given images, each drawn into its own box down the page. A huge
+ * image declared here costs nothing to build: only its compressed bytes exist.
+ */
+export function imagePagePdf(opts: {
+  pageWidth?: number;
+  pageHeight?: number;
+  caption?: string;
+  images: FixtureImage[];
+}): Buffer {
+  const { pageWidth = 612, pageHeight = 792, caption = 'Figure 1: test', images } = opts;
+  const draws = images
+    .map((_, i) => `q 200 0 0 150 50 ${pageHeight - 250 - i * 170} cm /Im${i + 1} Do Q`)
+    .join(' ');
+  const content = `BT /F1 12 Tf 50 ${pageHeight - 60} Td (${caption}) Tj ET ${draws}`;
+  const xobjects = images.map((_, i) => `/Im${i + 1} ${i + 6} 0 R`).join(' ');
+  return assemblePdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] ` +
+      `/Resources << /Font << /F1 5 0 R >> /XObject << ${xobjects} >> >> /Contents 4 0 R >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    ...images.map((img): [string, Buffer] => [
+      `<< /Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height} ` +
+        `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${img.flate.length} >>`,
+      img.flate,
+    ]),
+  ]);
 }
 
 /**
