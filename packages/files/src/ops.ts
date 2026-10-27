@@ -26,8 +26,6 @@ export {
   BYTE_DERIVED_DATA_KEYS,
   openFileById,
   fileDeleteBlock,
-  DRAWING_CHECK_PROVENANCE,
-  isDrawingCheckCrop,
   type FileDeleteBlock,
   deleteFileById,
   syncFileFromDisk,
