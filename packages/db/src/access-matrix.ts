@@ -1649,7 +1649,9 @@ export function userGrantStatements(
   for (const t of ACCESS_MATRIX) {
     const read = userReadFor(t);
     if (read === 'none') continue;
-    if (read === 'all' && !has(t.table, '*')) continue;
+    // The table first, named columns or not: a late table not there yet is
+    // skipped whole (TABLES_ADDED_LATE), before any column of it is asked.
+    if (!has(t.table, '*')) continue;
     const named = read === 'all' ? null : read.filter((c) => has(t.table, c));
     if (named && named.length === 0) continue;
     const cols = named === null ? '' : ` (${named.map((c) => `"${c}"`).join(', ')})`;
