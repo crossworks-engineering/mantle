@@ -31,7 +31,7 @@
  * canvas's image check marks are kept only as circuit_trace sealed them,
  * and its counts are its own marks'.
  */
-import { and, asc, desc, eq, ilike, isNotNull, lte, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, isNotNull, lte, notInArray, or, sql } from 'drizzle-orm';
 import {
   db,
   nodes,
@@ -49,6 +49,8 @@ import {
   withNodeInsertHeads,
 } from '@mantle/db';
 import { canvasImports, canvasText, parseCanvasHead } from '@mantle/content-core/canvas';
+import { InputError } from '@mantle/std';
+import { claimsPidTemplate } from '@mantle/diagram-templates';
 import { assertCanvasSize, storedCanvasSource } from './drawing-seal';
 import { asKindRootRepair } from './kind-root';
 import { dedupeTags } from './tags';
@@ -377,9 +379,10 @@ export async function savePresentSource(
   id: string,
   given: { source: string; css: string; ifRev?: number },
 ): Promise<SavePresentResult> {
-  // As createPresent: the image checks as sealed, the counts as held.
-  const input = { ...given, source: storedCanvasSource(given.source) };
-  const read = readCanvas(input.source);
+  // The size first (cheap), then the row and the caller's right, and only
+  // then the checks that read the source: no one without the right to
+  // edit the canvas makes the server read a source.
+  assertCanvasSize(given.source);
   const [node] = await db
     .select()
     .from(nodes)
@@ -389,6 +392,9 @@ export async function savePresentSource(
   // The caller's right first: a scope that reads the canvas and may not edit
   // it gets the refusal, not a conflict.
   await assertItemRight(id, 'edit');
+  // As createPresent: the image checks as sealed, the counts as held.
+  const input = { ...given, source: storedCanvasSource(given.source) };
+  const read = readCanvas(input.source);
 
   return db.transaction(async (tx) => {
     // The node as it is now, locked: a rename or a tag change since the read
@@ -449,6 +455,92 @@ export async function savePresentSource(
       ok: true as const,
       present: { ...rowOf(row, { meta: read.meta, rev, posterRev: null }), source: input.source },
     };
+  });
+}
+
+/** What a maintenance re-save did with one canvas (resavePidCanvas). */
+export type PidResaveOutcome =
+  /** The save's checks wrote it differently: stored (or, in a dry run,
+   *  would be). */
+  | 'changed'
+  /** The save's checks write it as it is: nothing to do. */
+  | 'unchanged'
+  /** A save would refuse it now (not exactly what buildCanvas writes, its
+   *  data past a limit): left as it is (the runtime trusts none of its
+   *  marks). */
+  | 'refused'
+  /** Saved by someone while the run read it: left for the next run. */
+  | 'moved';
+
+/**
+ * The `pid` canvases of the box (any owner), a page at a time by id: a
+ * canvas whose source claims the template (claimsPidTemplate; the SQL
+ * only narrows to sources that name `pid` at all). For the maintenance
+ * re-save (server/web lib/maintenance/pid-canvas-resave.ts).
+ */
+export async function listPidCanvasPage(
+  after: string | null,
+  limit: number,
+): Promise<{ ids: string[]; next: string | null }> {
+  const rows = await db
+    .select({ id: presents.nodeId, source: presents.source })
+    .from(presents)
+    .where(and(ilike(presents.source, '%pid%'), ...(after ? [gt(presents.nodeId, after)] : [])))
+    .orderBy(asc(presents.nodeId))
+    .limit(limit);
+  return {
+    ids: rows.filter((r) => claimsPidTemplate(r.source)).map((r) => r.id),
+    next: rows.length === limit ? rows[rows.length - 1]!.id : null,
+  };
+}
+
+/**
+ * One `pid` canvas written again through the checks every save runs
+ * (storedCanvasSource): its marks as circuit_trace sealed them, no trust
+ * word typed into a label, its counts its own. For a canvas saved before
+ * those checks shipped, so it shows what a save would store. The
+ * maintenance runner's write (pid-canvas-resave), with no caller's right
+ * to check (the box's operator runs it) and nothing announced: the title
+ * and the node are not touched, no re-index is scheduled and no extractor
+ * pass runs (the stored text catches up in the index at the canvas's next
+ * edit). Its own revision, as a save's, so the old source stays in the
+ * canvas's history. `apply` false: what would happen, nothing written.
+ */
+export async function resavePidCanvas(
+  id: string,
+  opts: { apply: boolean },
+): Promise<PidResaveOutcome> {
+  const [row] = await db
+    .select({ source: presents.source })
+    .from(presents)
+    .where(eq(presents.nodeId, id))
+    .limit(1);
+  if (!row) return 'moved';
+  let next: string;
+  try {
+    next = storedCanvasSource(row.source);
+  } catch (err) {
+    if (err instanceof InputError) return 'refused';
+    throw err;
+  }
+  if (next === row.source) return 'unchanged';
+  if (!opts.apply) return 'changed';
+  const read = readCanvas(next);
+  return db.transaction(async (tx) => {
+    const [cur] = await tx
+      .select({ rev: presents.rev, source: presents.source })
+      .from(presents)
+      .where(eq(presents.nodeId, id))
+      .for('update')
+      .limit(1);
+    if (!cur || cur.source !== row.source) return 'moved' as const;
+    const rev = cur.rev + 1;
+    await tx
+      .update(presents)
+      .set({ source: next, sourceText: read.text, meta: read.meta, rev, updatedAt: new Date() })
+      .where(eq(presents.nodeId, id));
+    await recordRevision(tx, id, rev, next);
+    return 'changed' as const;
   });
 }
 

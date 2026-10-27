@@ -409,6 +409,23 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Keeps each table summary by default (the re-index rebuilds the vector and profile, no model pass), except a table whose old description said it has no vector geometry: its summary is rewritten (one model call each, at most --limit); --resummarize lets the commit run the extractor for every table. A table already rebuilt is skipped unless --again, so repeated runs reach the rest. Needs the media sidecar and the agent (server/api) running. Start with one --file. The old version stays in the table history when history is kept.',
   },
   {
+    slug: 'pid-canvas-resave',
+    title: 'Re-save P&ID canvases through the image check seals',
+    description:
+      'Once per box after the release that sealed the image check marks: writes every P&ID (pid) canvas again through the checks a save runs, so a canvas saved before them keeps only the marks circuit_trace sealed, no typed CHECKED BY IMAGE or FROM IMAGE in a label (a typed claim on an element with no mark becomes GUESS) and counts of its own marks. Dry run (default) counts what would change; --apply writes each as a new revision (the old source stays in its history). A canvas a save would refuse is left as it is. Prints counts only.',
+    kind: 'remedy',
+    status: 'live',
+    // A source rewrite: no model, no re-index announced, no trigger.
+    cost: 'sql',
+    schedulable: false,
+    script: 'scripts/pid-canvas-resave.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--limit=<n>'],
+    notes:
+      "Free: the write announces nothing, so no extractor pass and no re-index runs (the search index catches up at a canvas's next edit). The view is already honest without it (the runtime draws a typed claim on an unmarked element as GUESS); this makes the stored source, its exports and copies say the same. Safe to run again: a canvas already as a save writes it is counted, not written.",
+  },
+  {
     slug: 'doc-reindex',
     title: 'Re-index documentation nodes with no summary or embedding',
     description:

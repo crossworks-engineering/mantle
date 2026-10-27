@@ -306,6 +306,56 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     expect((await stored(p.id)).offpage[0]!.check).toEqual(honest);
   });
 
+  it('a canvas saved before the seals is re-saved by the maintenance pass: GUESS, a new revision, nothing announced (M1)', async () => {
+    const { buildCanvas, readCanvasData } = await import('@mantle/diagram-templates');
+    const honest = buildCanvas({
+      template: 'pid',
+      mode: 'import',
+      data: {
+        title: `${tag} Old`,
+        equipment: [{ id: 'V-101', type: 'vertical-vessel' }],
+        offpage: [{ id: 'OPC-1', direction: 'out', sheet: 'S2', text: 'TO S2 (GUESS)' }],
+        lines: [{ from: 'V-101', to: 'OPC-1' }],
+      },
+    });
+    const p = await presents.createPresent(owner, { source: honest, css: '' });
+    // What a canvas saved before the checks holds: the words in its label
+    // (written as the stored source, past today's save).
+    const old = honest.replace('TO S2 (GUESS)', 'TO S2 (CHECKED BY IMAGE)');
+    await su`update presents set source = ${old}, index_due_at = null where node_id = ${p.id}`;
+    const row = async () => {
+      const [r] = await admin<{ source: string; rev: number; due: Date | null }[]>`
+        select source, rev, index_due_at as due from presents where node_id = ${p.id}`;
+      return r!;
+    };
+    expect(await presents.resavePidCanvas(p.id, { apply: false })).toBe('changed');
+    expect((await row()).source).toBe(old);
+    expect(await presents.resavePidCanvas(p.id, { apply: true })).toBe('changed');
+    const after = await row();
+    const text = (readCanvasData(after.source) as { offpage: { text: string }[] }).offpage[0]!.text;
+    expect(text).toBe('TO S2 (GUESS)');
+    expect(after.rev).toBe(2);
+    expect(after.due).toBeNull();
+    expect(await presents.getPresentRevisionSource(owner, p.id, 2)).toBe(after.source);
+    // Run again: nothing to do.
+    expect(await presents.resavePidCanvas(p.id, { apply: true })).toBe('unchanged');
+    // A source a save refuses is left as it is.
+    const author = `${old.replace('</body>', '<script>alert(1)</script></body>')}`;
+    await su`update presents set source = ${author} where node_id = ${p.id}`;
+    expect(await presents.resavePidCanvas(p.id, { apply: true })).toBe('refused');
+    expect((await row()).source).toBe(author);
+    // The listing finds it among the box's pid canvases.
+    let after_: string | null = null;
+    let found = false;
+    for (let i = 0; i < 1000 && !found; i += 1) {
+      const page = await presents.listPidCanvasPage(after_, 50);
+      found = page.ids.includes(p.id);
+      if (!page.next) break;
+      after_ = page.next;
+    }
+    expect(found).toBe(true);
+  });
+
   it('refuses a source over the size limit', async () => {
     const big = canvas(`${tag} Big`, 'x'.repeat(1_000_100));
     await expect(presents.createPresent(owner, { source: big })).rejects.toThrow(/over 1 MB/);
