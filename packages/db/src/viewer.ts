@@ -1592,6 +1592,9 @@ export const SYSTEM_DB_MODULES: readonly string[] = [
   'packages/content/src/share-access-log.ts',
   'packages/content/src/team-access-log.ts',
   'packages/content/src/member-turn-ledger.ts',
+  // The messenger (0335): its own system tables, written and checked in
+  // its transactions; the names and agents for ids its scoped read gave.
+  'packages/content/src/messenger.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
 ];

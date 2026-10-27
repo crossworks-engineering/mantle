@@ -321,7 +321,7 @@ export async function messengerChatAgents(
         systemDb,
         sql`select id::text as id, slug, name from agents
              where owner_id = ${ownerId}::uuid and enabled
-               and role = any(${`{${CHATTABLE_ROLES.join(',')}}`}::text[])
+               and role::text = any(${`{${CHATTABLE_ROLES.join(',')}}`}::text[])
              order by priority desc, name`,
       ),
       workspaceAssistants(ownerId, loginId),
