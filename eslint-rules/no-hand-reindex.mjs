@@ -36,8 +36,6 @@ export const REINDEX_ALLOW = Object.freeze({
     'a hand-run operator backfill that re-fires node_ingested for unextracted nodes (dry run by default)',
   'server/web/scripts/relations-backfill.ts':
     'a hand-run operator backfill that drops data.summary to force a full re-extract through the relations pass',
-  'server/web/scripts/extract-images-backfill.ts':
-    'a hand-run operator backfill that re-fires node_ingested for documents ingested before image extraction',
 });
 
 const NOTIFY_CALL = /(?<!function\s)\bnotifyNodeIngested\s*\(/g;

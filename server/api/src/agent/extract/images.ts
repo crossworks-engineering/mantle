@@ -7,13 +7,18 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { extOf, ensureExtractedImagesFolder, upsertFile } from '@mantle/files';
+import {
+  extOf,
+  ensureExtractedImagesFolder,
+  isRetryableReadError,
+  upsertFile,
+} from '@mantle/files';
 // Formats that can carry a picture worth pulling out: one list, kept beside
 // the readers (the images backfill script reads it too). Deliberately
 // narrower than INGESTABLE_EXTS: there is no point opening a .txt looking
 // for a diagram, and every ext listed has an extractor behind it.
 import { IMAGE_BEARING_EXTS } from '@mantle/files/embedded-images';
-import { startTrace, step } from '@mantle/tracing';
+import { log, startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
@@ -23,6 +28,42 @@ import { stepInOwnTrace } from './trace';
 /** Tag marking a file node as derived from a document rather than uploaded.
  *  The lookup path for "show me the pictures from that manual". */
 const EXTRACTED_IMAGE_TAG = 'extracted-image';
+
+/** The channel the images backfill (server/web/scripts/
+ *  extract-images-backfill.ts) raises, one document id a notification. */
+export const PICTURES_REQUESTED_CHANNEL = 'pictures_requested';
+
+let picturesChain: Promise<void> = Promise.resolve();
+
+/**
+ * An owner's explicit request to take the pictures of a document the
+ * extractor has already read: the images backfill's door. The extractor's
+ * own pass runs for new or changed bytes only (gates.ts), so a re-notify of
+ * an indexed document no longer reaches it, and must not (a rename, a move
+ * or an indexing toggle never takes pictures). One request at a time, after
+ * the ones before it. A name-only (metadata) file is never opened.
+ */
+export function extractPicturesOnRequest(nodeId: string, ownerId: string): Promise<void> {
+  picturesChain = picturesChain
+    .then(async () => {
+      const [node] = await db
+        .select()
+        .from(nodes)
+        .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
+        .limit(1);
+      if (!node || node.type !== 'file') return;
+      const { resolveEffectiveIndexing } = await import('@mantle/files');
+      if ((await resolveEffectiveIndexing(ownerId, node)).effective === 'metadata') return;
+      const { resolveExtractor } = await import('./model');
+      const worker = await resolveExtractor(ownerId);
+      const params = (worker?.params ?? {}) as { max_embedded_images_per_doc?: number | null };
+      await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc);
+    })
+    .catch((err: unknown) =>
+      log('extractor').error('requested pictures failed:', errorMessage(err)),
+    );
+  return picturesChain;
+}
 
 /**
  * Pull the diagrams and screenshots out of a document and save them as real
@@ -108,6 +149,9 @@ export async function maybeExtractEmbeddedImages(
       maxImages: maxImages && maxImages > 0 ? maxImages : undefined,
     });
   } catch (err) {
+    // A read that could not run in time (every read slot busy, a first
+    // time-out): the extract is retried, pictures included.
+    if (isRetryableReadError(err)) throw err;
     // A reader that failed or was stopped by a size limit (embedded media
     // past anydoc's budget, a bomb) leaves its reason on the trace, so a
     // document with no pictures says why rather than looking empty.

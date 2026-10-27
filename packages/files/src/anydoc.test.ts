@@ -105,14 +105,16 @@ describe('anydocSheets and the legacy-sheet conversion', () => {
   });
 
   it('converts without Tika, numbers kept numeric', async () => {
-    const bytes = await workbookBuffer({
-      Orders: [
-        ['Tag', 'Qty'],
-        ['P-101', 4],
-      ],
-    });
-    // The rebuild itself (convertLegacySheetToXlsx hands a real .xlsx on
-    // unconverted, see below), as the parse worker runs it.
+    const bytes = biffXls([
+      {
+        name: 'Orders',
+        rows: [
+          ['Tag', 'Qty'],
+          ['P-101', 4],
+        ],
+      },
+    ]);
+    // The rebuild itself, as the parse worker runs it.
     const converted = await legacySheetInProcess(bytes);
     expect(converted).not.toBeNull();
     expect(converted!.xlsx.equals(bytes)).toBe(false);

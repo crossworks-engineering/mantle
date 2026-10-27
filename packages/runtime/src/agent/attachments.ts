@@ -22,15 +22,21 @@ import { getApiKeyById, resolveDefaultWorker } from '@mantle/api-keys';
 import { bumpWorkerUsage, getDefaultWorker } from '@mantle/db';
 import {
   extOf,
+  isRetryableReadError,
   isVisionImage,
   parseDocumentBytes,
   transcodeImageForVision,
+  withReadWaitLimit,
   INGESTABLE_EXTS,
   parserRouteForExt,
 } from '@mantle/files';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
 import { step } from '@mantle/tracing';
 import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
+
+/** How long a chat attachment's read waits for a document-read slot
+ *  (@mantle/files isolate.ts) before the turn answers without it. */
+const ATTACHMENT_READ_WAIT_MS = 15_000;
 
 /** Max chars of parsed document text folded into a responder prompt. The full
  *  text is persisted + indexed by the extractor; the turn only needs a slice. */
@@ -433,7 +439,12 @@ export async function extractAttachmentForTurn(opts: {
             input: { ext, parser: route, bytes_in: opts.bytes.length, filename: opts.filename },
           },
           async (h) => {
-            const t = await parseDocumentBytes(opts.bytes, ext);
+            // A chat turn waits a short while for a read slot, not the
+            // extractor's long wait: the reply says the file could not be
+            // read just now rather than hanging behind a backlog.
+            const t = await withReadWaitLimit(ATTACHMENT_READ_WAIT_MS, () =>
+              parseDocumentBytes(opts.bytes, ext),
+            );
             h.setMeta({ parser: route, chars_out: t.length, empty: t.trim().length === 0 });
             return t;
           },
@@ -469,7 +480,9 @@ export async function extractAttachmentForTurn(opts: {
       return {
         kind: 'file',
         text: '',
-        note: `Couldn't parse the ${ext.toUpperCase()} (scanned, encrypted, or corrupt?): ${errorMessage(err)}`,
+        note: isRetryableReadError(err)
+          ? `Couldn't read the ${ext.toUpperCase()} just now: ${errorMessage(err)} Ask again in a minute, or open the file once it has been indexed.`
+          : `Couldn't parse the ${ext.toUpperCase()} (scanned, encrypted, or corrupt?): ${errorMessage(err)}`,
       };
     }
   }

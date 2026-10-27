@@ -95,18 +95,34 @@ function rowsToCsv(rows: RawCell[][]): string {
  * anyway, and far better than an OOM.
  */
 export async function parseXlsx(buf: Buffer): Promise<string> {
+  const read = await xlsxTextInProcess(buf);
+  if ('text' in read) return read.text;
+  const { parseTikaBytes } = await import('./tika');
+  const { mimeForExt } = await import('./slug');
+  return parseTikaBytes(buf, { mimeType: mimeForExt('xlsx') });
+}
+
+/**
+ * {@link parseXlsx} without the Tika step: the workbook's text, or, for a
+ * workbook past the in-process size ceiling, why not (the caller then asks
+ * Tika, outside the read's thread). The parse worker's job
+ * (`parseDocumentBytes` runs it there, ./isolate.ts).
+ */
+export async function xlsxTextInProcess(
+  buf: Buffer,
+  realSizes?: ReadonlyMap<string, number>,
+): Promise<{ text: string } | { tooLarge: string }> {
   let wb;
   try {
-    wb = await loadWorkbook(buf);
+    wb = await loadWorkbook(buf, realSizes);
   } catch (err) {
-    if (err instanceof SpreadsheetTooLargeError) {
-      const { parseTikaBytes } = await import('./tika');
-      const { mimeForExt } = await import('./slug');
-      return parseTikaBytes(buf, { mimeType: mimeForExt('xlsx') });
-    }
+    if (err instanceof SpreadsheetTooLargeError) return { tooLarge: err.message };
     throw err;
   }
+  return { text: workbookText(wb) };
+}
 
+function workbookText(wb: Awaited<ReturnType<typeof loadWorkbook>>): string {
   const parts: string[] = [];
   let total = 0;
   let truncated = false;

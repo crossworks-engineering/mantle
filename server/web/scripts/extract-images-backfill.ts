@@ -1,10 +1,16 @@
 /**
  * Backfill embedded-image extraction across documents already in the brain.
  *
- * Documents ingested before this feature existed kept their diagrams and
- * screenshots locked inside the binary. This re-fires `node_ingested` for
- * every document that could carry pictures and hasn't produced any yet; the
- * extractor's `maybeExtractEmbeddedImages` pass does the rest.
+ * Documents ingested before this feature existed (or in a format that gained
+ * a picture pass later: `.epub`, `.vsdx` and `.vsd` with the anydoc move,
+ * still awaiting the owner's approval, PICTURE_FORMATS_PENDING_APPROVAL in
+ * @mantle/files/embedded-images) kept their diagrams and screenshots locked
+ * inside the binary. This raises `pictures_requested` for every document
+ * that could carry pictures and hasn't produced any yet; the agent's
+ * `extractPicturesOnRequest` (server/api extract/images.ts) runs the
+ * extractor's pictures pass on it, one document at a time. A re-notify of
+ * `node_ingested` would not: the extractor takes pictures for new or changed
+ * bytes only, so a rename, a move or an indexing toggle never spends.
  *
  * Usage:
  *   pnpm -C server/web extract:images-backfill                # DRY RUN — counts only
@@ -21,16 +27,14 @@
  * mode: CAD files that already produced images, but on the wrong tier (no
  * child carries `provenance: 'sidecar_render'` — files ingested before the
  * media sidecar's CAD/DWG tier, or while it was down/busy). In live mode it
- * deletes those image children and re-notifies the parent so the extractor
- * re-renders through the sidecar. Deleting children breaks links to the OLD
+ * deletes those image children and requests the parent's pictures again so
+ * the extractor's pictures pass re-renders through the sidecar. Deleting children breaks links to the OLD
  * image node ids (Page embeds, chat citations) — the dry run says how many.
  *
  * ## What this costs
  *
- * Re-notifying a document that is already indexed does NOT re-run its text
- * extraction: the image pass sits ahead of the extractor's
- * `already_extracted` guard, so the summary/embedding/facts work short-
- * circuits exactly as it does today. The parent documents are therefore free.
+ * A request runs the pictures pass only: no text extraction, no summary,
+ * embedding or facts. The parent documents are therefore free.
  *
  * The real spend is downstream and unavoidable: every image saved becomes an
  * image node the vision worker will describe — one call each. The gate in
@@ -78,9 +82,9 @@ const DEFAULT_EXTS = [...IMAGE_BEARING_EXTS];
 const DEFAULT_MAX_IMAGES_PER_DOC = 30;
 
 /** The cap the extractor will actually apply, read from the same worker param
- *  the Settings → AI workers form writes. The backfill only fires
- *  `node_ingested`; the extractor does the keeping, so this is a read for the
- *  estimate's sake and never an instruction. */
+ *  the Settings → AI workers form writes. The backfill only raises
+ *  `pictures_requested`; the agent does the keeping, so this is a read for
+ *  the estimate's sake and never an instruction. */
 async function effectiveImageCap(sql: postgres.Sql): Promise<number> {
   const [row] = await sql<Array<{ cap: number | null }>>`
     select (params->>'max_embedded_images_per_doc')::int as cap
@@ -175,7 +179,7 @@ async function main() {
       console.log('');
       console.log('[images-backfill] DRY RUN — nothing deleted, nothing fired.');
       console.log(
-        `[images-backfill] Live mode DELETES the listed image nodes (links to their ids dangle) and re-notifies each ${upExt.toUpperCase()} so the extractor re-renders through the media sidecar. Make sure the sidecar is up with the CAD tier (check /healthz for ${upExt === 'dwf' ? 'ezdwf' : 'dwg2dxf + ezdxf'}) or the re-run ${upExt === 'dwf' ? 'just recreates thumbnails' : 'yields no image at all'}.`,
+        `[images-backfill] Live mode DELETES the listed image nodes (links to their ids dangle) and requests each ${upExt.toUpperCase()}'s pictures again so the extractor re-renders through the media sidecar. Make sure the sidecar is up with the CAD tier (check /healthz for ${upExt === 'dwf' ? 'ezdwf' : 'dwg2dxf + ezdxf'}) or the re-run ${upExt === 'dwf' ? 'just recreates thumbnails' : 'yields no image at all'}.`,
       );
       console.log('[images-backfill] Re-run with --go to proceed.');
       await sql.end();
@@ -204,7 +208,7 @@ async function main() {
             const now = await imagesOf(tx);
             if (now.some((id) => !kids.includes(id))) return false;
             if (now.length) await tx.delete(nodes).where(inArray(nodes.id, now));
-            await tx.execute(dsql`select pg_notify('node_ingested', ${row.id})`);
+            await tx.execute(dsql`select pg_notify('pictures_requested', ${row.id})`);
             return true;
           }),
         );
@@ -278,7 +282,7 @@ async function main() {
   let i = 0;
   for (const row of rows) {
     i++;
-    await sql`select pg_notify('node_ingested', ${row.id}::text)`;
+    await sql`select pg_notify('pictures_requested', ${row.id}::text)`;
     console.log(
       `[images-backfill] (${i}/${rows.length}) ${row.id.slice(0, 8)} — ${row.title.slice(0, 60)}`,
     );
@@ -286,7 +290,7 @@ async function main() {
   }
 
   console.log(
-    `[images-backfill] done. ${rows.length} notifications fired. The extract queue drains at its own pace — watch the agent's logs, or the extract_images steps in /traces.`,
+    `[images-backfill] done. ${rows.length} requests raised. The agent takes them one at a time: watch its logs, or the extract_images steps in /traces.`,
   );
   await sql.end();
 }

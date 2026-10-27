@@ -300,15 +300,16 @@ describe('admitForExtraction — refusals', () => {
     expect(h.embed).not.toHaveBeenCalled();
   });
 
-  it('refuses a type outside the allowlist — but only AFTER the side passes', async () => {
+  it('refuses a type outside the allowlist, but only AFTER the auto-table pass', async () => {
     // A spreadsheet must still reach /tables when `file` is not in
-    // target_types, which is why auto-table is not behind this gate.
+    // target_types, which is why auto-table is not behind this gate. The
+    // pictures pass is: it runs after the indexing check.
     h.resolveExtractor.mockResolvedValue({ ...WORKER, params: { target_types: ['note'] } });
     h.selectQueue.push([node({ type: 'file' })]);
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
     expect(disposition()).toBe('type_not_in_allowlist');
     expect(h.autoTable).toHaveBeenCalled();
-    expect(h.embeddedImages).toHaveBeenCalled();
+    expect(h.embeddedImages).not.toHaveBeenCalled();
   });
 
   // Terminal skips (`data.extract_skipped`): a verdict on the node itself is
@@ -604,6 +605,61 @@ describe('admitForExtraction — metadata-only files', () => {
     const res = await admitForExtraction('n1', 'o1');
     expect(res.proceed).toBe(false);
     expect(disposition()).toBe('metadata_only_indexed');
+  });
+});
+
+describe('admitForExtraction: the pictures pass (new or changed bytes only)', () => {
+  it('takes the pictures of a file no pass has read, before the full-mode stamp', async () => {
+    h.selectQueue.push([node({ type: 'file', data: { filename: 'manual.docx' } })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+    expect(h.embeddedImages).toHaveBeenCalledTimes(1);
+    expect(h.embeddedImages.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.resolveChatKey.mock.invocationCallOrder[0]!,
+    );
+    expect(writtenJson()).toContain('indexing_applied');
+  });
+
+  it.each([
+    [
+      'a rename (the summary kept)',
+      { indexing_applied: 'full', summary: 's', index_work: 'embed' },
+    ],
+    [
+      'an indexing toggle to full (summary dropped)',
+      { indexing_applied: 'metadata', index_work: 'extract' },
+    ],
+    [
+      'a re-run of a file read before the mode stamp',
+      { extract_completed_at: 'x', index_work: 'extract' },
+    ],
+    ['a file refused before', { extract_skipped: { disposition: 'document_too_large' } }],
+  ])('never re-runs it for %s', async (_label, data) => {
+    h.selectQueue.push([node({ type: 'file', data: { filename: 'manual.docx', ...data } })]);
+    await admitForExtraction('n1', 'o1');
+    expect(h.embeddedImages).not.toHaveBeenCalled();
+  });
+
+  it('never runs it for a name-only (metadata) file', async () => {
+    h.resolveEffectiveIndexing.mockResolvedValue({ effective: 'metadata', source: 'folder' });
+    h.selectQueue.push([node({ type: 'file', data: { filename: 'manual.docx' } })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(h.embeddedImages).not.toHaveBeenCalled();
+  });
+
+  it('fails the job, before any model call, when a read could not run in time', async () => {
+    const { DocumentReadRetryableError } = await import('@mantle/files');
+    h.embeddedImages.mockRejectedValue(new DocumentReadRetryableError('busy'));
+    h.selectQueue.push([node({ type: 'file', data: { filename: 'manual.docx' } })]);
+    await expect(admitForExtraction('n1', 'o1')).rejects.toThrow('busy');
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+    // The bytes still read as unread for the retry: no mode stamp written.
+    expect(writtenJson()).not.toContain('indexing_applied');
+  });
+
+  it('keeps going when the pictures pass fails for any other reason', async () => {
+    h.embeddedImages.mockRejectedValue(new Error('corrupt'));
+    h.selectQueue.push([node({ type: 'file', data: { filename: 'manual.docx' } })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
   });
 });
 

@@ -224,7 +224,7 @@ export async function runInfraChecks(browserHost: string | null): Promise<Sanity
             label: 'Document parser add-on (Tika)',
             ok: true,
             detail:
-              'off: optional. Office, OpenDocument, RTF, EPUB, HTML and .vsdx files are read without it; turn it on with the tika profile for old Visio .vsd files and pictures inside .doc and .ppt files.',
+              'off: optional. Office, OpenDocument, RTF, EPUB, HTML and .vsdx files, and their pictures, are read without it; turn it on with the tika profile for old Visio .vsd files and for pictures inside old binary spreadsheets (.xls, .xlsb).',
           }
         : {
             label: 'Document parser add-on (Tika)',

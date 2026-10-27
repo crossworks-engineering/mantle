@@ -50,11 +50,20 @@
  *     itself opens without complaint) is not converted at all: it goes to
  *     the ordinary exceljs path, which reads only the cells present and
  *     has its own caps;
- *   - each sheet's rectangle is checked against {@link MAX_LEGACY_CELLS}
- *     before a row is copied out, and a sheet past the budget is refused by
- *     name (see {@link LegacyConversion});
+ *   - every sheet is measured from its own cell records before anydoc sees
+ *     the file (./sheet-extent.ts: never from the extent the file declares,
+ *     which can lie), and a workbook past {@link MAX_LEGACY_CELLS} is
+ *     refused, naming the sheets; one that cannot be measured is not given
+ *     to anydoc at all. anydoc reads a container rebuilt from exactly the
+ *     parts measured, not the upload;
+ *   - each laid-out sheet is checked against the budget again before a row
+ *     is copied out (see {@link LegacyConversion});
  *   - the anydoc read and the rebuild run in a worker thread with a heap and
- *     time limit (./isolate.ts).
+ *     time limit (./isolate.ts);
+ *   - one upload converts once: the text pass and the auto-table pass share
+ *     the conversion of the same bytes (anydoc's sheet reader carries no
+ *     pictures, so the picture pass does not read a legacy sheet at all;
+ *     Tika does, when on).
  *
  * Unreadable bytes, Tika down, no tables in the output: `null`, and the
  * caller degrades to whatever it would have done for an unreadable file. A
@@ -65,7 +74,8 @@
 import ExcelJS from 'exceljs';
 import { SaxesParser } from 'saxes';
 import type { RefusedSheet } from './anydoc';
-import { DocumentLimitError, isDocumentLimitError } from './document-limit';
+import { DocumentLimitError, isDocumentLimitError, isRetryableReadError } from './document-limit';
+import type { SheetExtent } from './sheet-extent';
 import { LEGACY_SHEET_EXTS } from './slug';
 import { parseTikaBytes, tikaConfigured } from './tika';
 
@@ -277,16 +287,11 @@ async function rebuild(
 }
 
 /**
- * Refuse a legacy workbook whose sheets DECLARE more than the cell budget,
- * from the file's own records, before anydoc lays anything out
- * (./sheet-extent.ts). anydoc cannot read part of a workbook, so one sheet
- * past the budget refuses the file. Both anydoc reads of a legacy sheet (its
- * text here, its pictures in ./embedded-images.ts) call this first.
+ * Refuse a workbook whose sheets, measured from their cell records, are past
+ * the cell budget together (./sheet-extent.ts). One sheet past it refuses
+ * the file: anydoc reads a workbook whole.
  */
-export async function assertLegacyExtentWithinBudget(bytes: Buffer): Promise<void> {
-  const { legacySheetExtents } = await import('./sheet-extent');
-  const extents = await legacySheetExtents(bytes);
-  if (!extents) return;
+function assertWithinBudget(extents: readonly SheetExtent[]): void {
   let budget = MAX_LEGACY_CELLS;
   const over: RefusedSheet[] = [];
   for (const e of extents) {
@@ -298,15 +303,21 @@ export async function assertLegacyExtentWithinBudget(bytes: Buffer): Promise<voi
 }
 
 /** The anydoc half of the conversion, run in the parse worker: the sheets
- *  as anydoc reads them, checked against the cell budget (declared, then
- *  laid out) before any row is copied, then rebuilt. `null` when anydoc cannot read the file (an Excel
- *  2007 beta `.xlsb`, a corrupt record); a size limit throws. */
+ *  measured from their cell records and refused past the budget before
+ *  anydoc is called, anydoc given the container rebuilt from what was
+ *  measured, each laid-out sheet checked again before any row is copied,
+ *  then rebuilt as `.xlsx`. `null` when the sheets cannot be measured or
+ *  anydoc cannot read the file (an Excel 2007 beta `.xlsb`, a corrupt
+ *  record, an encrypted workbook); a size limit throws. */
 export async function legacySheetInProcess(bytes: Buffer): Promise<LegacyConversion | null> {
-  await assertLegacyExtentWithinBudget(bytes);
+  const { measureLegacyWorkbook } = await import('./sheet-extent');
+  const measured = await measureLegacyWorkbook(bytes);
+  if (!measured) return null;
+  assertWithinBudget(measured.extents);
   let read;
   try {
     const { anydocSheets } = await import('./anydoc');
-    read = await anydocSheets(bytes, 'xls', MAX_LEGACY_CELLS);
+    read = await anydocSheets(measured.bytes, 'xls', MAX_LEGACY_CELLS);
   } catch (err) {
     if (isDocumentLimitError(err)) throw err;
     return null;
@@ -345,11 +356,50 @@ export async function legacySheetFromXhtmlInProcess(
  * anydoc renders a date as ISO text (`2017-03-09`), which sheet-to-grid
  * re-infers as a date; Tika gave display text (`3/9/17`).
  */
-export async function convertLegacySheetToXlsx(
+export function convertLegacySheetToXlsx(
   bytes: Buffer,
   mimeType: string,
 ): Promise<LegacyConversion | null> {
-  if (isOoxmlWorkbook(bytes)) return { xlsx: bytes, refused: [] };
+  if (isOoxmlWorkbook(bytes)) return Promise.resolve({ xlsx: bytes, refused: [] });
+  const now = Date.now();
+  const kept = conversions.get(bytes);
+  if (kept && (kept.settledAt === null || kept.ok || now - kept.settledAt < FAILED_KEEP_MS)) {
+    return kept.promise;
+  }
+  const entry: Conversion = { promise: convert(bytes, mimeType), settledAt: null, ok: false };
+  conversions.set(bytes, entry);
+  entry.promise.then(
+    () => {
+      entry.settledAt = Date.now();
+      entry.ok = true;
+    },
+    (err: unknown) => {
+      entry.settledAt = Date.now();
+      // A retryable failure (busy, a first time-out) is not kept: the retry
+      // must read again.
+      if (isRetryableReadError(err)) conversions.delete(bytes);
+    },
+  );
+  return entry.promise;
+}
+
+/**
+ * One conversion per upload. The extractor hands every pass of one ingest
+ * the same Buffer (its byte cache, server/api/src/agent/extract/
+ * file-bytes.ts), so the auto-table pass and the text pass, which both
+ * convert, share one anydoc read: keyed by the Buffer itself, gone with it.
+ * A failure is kept a short while only, so the passes of one ingest share it
+ * and a later retry reads again.
+ */
+type Conversion = {
+  promise: Promise<LegacyConversion | null>;
+  settledAt: number | null;
+  ok: boolean;
+};
+const conversions = new WeakMap<Buffer, Conversion>();
+const FAILED_KEEP_MS = 5 * 60_000;
+
+async function convert(bytes: Buffer, mimeType: string): Promise<LegacyConversion | null> {
   const { runIsolated } = await import('./isolate');
   let limit: unknown = null;
   try {

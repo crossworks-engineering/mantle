@@ -7,7 +7,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { extOf } from '@mantle/files';
+import { extOf, isRetryableReadError } from '@mantle/files';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
 import { recordIngest, step } from '@mantle/tracing';
 import { createTable, tableDocFromGrid } from '@mantle/content';
@@ -150,6 +150,9 @@ export async function maybeAutoTableSpreadsheet(
       const e = err instanceof Error ? err : new Error(String(err));
       throw Object.assign(e, { fatalToExtract: true });
     }
+    // A grid read that could not run in time (every read slot busy, a first
+    // time-out) is retried with the extract, not taken as "no grid".
+    if (isRetryableReadError(err)) throw err;
     return; // unparseable as a grid — leave it as a plain file
   }
   if (sheets.length === 0) return;

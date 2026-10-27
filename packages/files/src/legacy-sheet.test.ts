@@ -39,7 +39,10 @@ const TIKA_XHTML = `<html xmlns="http://www.w3.org/1999/xhtml">
     </body>
 </html>`;
 
-const XLS = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+/** A fresh buffer each time: one upload's conversion is shared by the
+ *  passes that read the same Buffer (legacy-sheet.ts), and each test here
+ *  is a different upload. */
+const xls = () => Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 
 beforeEach(() => parseTikaBytes.mockReset());
 
@@ -56,16 +59,16 @@ describe('isLegacySheetExt', () => {
 describe('convertLegacySheetToXlsx', () => {
   it('asks Tika for XHTML, not plain text', async () => {
     parseTikaBytes.mockResolvedValue(TIKA_XHTML);
-    await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel');
+    await convertLegacySheetToXlsx(xls(), 'application/vnd.ms-excel');
     expect(parseTikaBytes).toHaveBeenCalledWith(
-      XLS,
+      xls(),
       expect.objectContaining({ accept: 'text/html', mimeType: 'application/vnd.ms-excel' }),
     );
   });
 
   it('produces a workbook the ordinary exceljs reader can parse', async () => {
     parseTikaBytes.mockResolvedValue(TIKA_XHTML);
-    const xlsx = await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel');
+    const xlsx = await convertLegacySheetToXlsx(xls(), 'application/vnd.ms-excel');
     expect(xlsx).not.toBeNull();
 
     const text = await parseXlsx(xlsx!.xlsx);
@@ -76,7 +79,7 @@ describe('convertLegacySheetToXlsx', () => {
 
   it('keeps numeric columns numeric through the round trip', async () => {
     parseTikaBytes.mockResolvedValue(TIKA_XHTML);
-    const xlsx = await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel');
+    const xlsx = await convertLegacySheetToXlsx(xls(), 'application/vnd.ms-excel');
     const [orders] = await parseSheetToGrid(xlsx!.xlsx);
     expect(orders!.name).toBe('Orders');
     expect(orders!.columns.map((c) => `${c.name}:${c.type}`)).toEqual([
@@ -100,21 +103,21 @@ describe('convertLegacySheetToXlsx', () => {
         `<tr><td>a1</td><td/><td>c1</td></tr>` +
         `</tbody></table></div></body></html>`,
     );
-    const xlsx = await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel');
+    const xlsx = await convertLegacySheetToXlsx(xls(), 'application/vnd.ms-excel');
     const [sheet] = await parseSheetToGrid(xlsx!.xlsx);
     expect(sheet!.rows).toEqual([['a1', null, 'c1']]);
   });
 
   it('returns null when Tika is unavailable', async () => {
     parseTikaBytes.mockResolvedValue('');
-    expect(await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel')).toBeNull();
+    expect(await convertLegacySheetToXlsx(xls(), 'application/vnd.ms-excel')).toBeNull();
   });
 
   it('returns null when the response holds no tables', async () => {
     parseTikaBytes.mockResolvedValue(
       '<html><body><div class="page"><p>no grid</p></div></body></html>',
     );
-    expect(await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel')).toBeNull();
+    expect(await convertLegacySheetToXlsx(xls(), 'application/vnd.ms-excel')).toBeNull();
   });
 
   it('sanitises a sheet name Excel would reject', async () => {
@@ -122,7 +125,7 @@ describe('convertLegacySheetToXlsx', () => {
       `<html><body><div class="page"><h1>Q1/Q2 [draft]: a very long tab name indeed</h1>` +
         `<table><tbody><tr><td>x</td></tr></tbody></table></div></body></html>`,
     );
-    const xlsx = await convertLegacySheetToXlsx(XLS, 'application/vnd.ms-excel');
+    const xlsx = await convertLegacySheetToXlsx(xls(), 'application/vnd.ms-excel');
     const [sheet] = await parseSheetToGrid(xlsx!.xlsx);
     expect(sheet!.name).toBe('Q1 Q2  draft   a very long tab '); // no \ / ? * [ ] :
     expect(sheet!.name.length).toBe(31); // Excel's hard cap on a tab name

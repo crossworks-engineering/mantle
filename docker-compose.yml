@@ -510,10 +510,11 @@ services:
       start_period: 10s
 
   # Apache Tika: an OPT-IN add-on. anydoc (in-process, no JVM) reads the
-  # legacy Office, OpenDocument, RTF and EPUB files, and our own readers take
-  # HTML, XML and .vsdx. Tika is the only reader for the old binary Visio
-  # .vsd, the second try for a file anydoc cannot read, and the source of
-  # embedded pictures from the legacy binaries. Turn it on with the `tika`
+  # legacy Office, OpenDocument, RTF and EPUB files and their pictures, and
+  # our own readers take HTML, XML and .vsdx. Tika is the only reader for
+  # the old binary Visio .vsd, the second try for a file anydoc cannot read,
+  # and the only source of pictures inside the binary spreadsheets (.xls,
+  # .xlsb; anydoc's sheet reader carries none) and .vsd. Turn it on with the `tika`
   # profile (COMPOSE_PROFILES=tika in .env, then `docker compose up -d`);
   # the app reads the same profile list and skips Tika when it is absent.
   # Self-hosted; bytes stay on the VPS. Stateless, no volume.

@@ -171,3 +171,38 @@ export function sparseXlsx(lastRow = 10_000, lastCol = 200): Buffer {
     },
   ]);
 }
+
+/** A `.docx` whose document part inflates to `bytes` (300 MB by default)
+ *  behind a directory that claims 1 KB: mammoth would inflate it whole. */
+export function docxBomb(bytes = 300_000_000): Buffer {
+  const chunk = Buffer.from('<w:p><w:r><w:t>bomb</w:t></w:r></w:p>'.repeat(16_384));
+  return zipOf([
+    {
+      name: '[Content_Types].xml',
+      data: '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+    },
+    {
+      name: 'word/document.xml',
+      repeat: { chunk, times: Math.ceil(bytes / chunk.length) },
+      declaredSize: 1_000,
+    },
+  ]);
+}
+
+/** A `.pptx` of one slide whose part is `body`: the shapes that made the
+ *  regular-expression scanners quadratic (an `<a:t>` with no close, an
+ *  attribute run with no `>`). */
+export function hostilePptx(body: string): Buffer {
+  const rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide';
+  return zipOf([
+    {
+      name: 'ppt/presentation.xml',
+      data: '<p:presentation><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>',
+    },
+    {
+      name: 'ppt/_rels/presentation.xml.rels',
+      data: `<Relationships><Relationship Id="rId1" Type="${rel}" Target="slides/slide1.xml"/></Relationships>`,
+    },
+    { name: 'ppt/slides/slide1.xml', data: `<p:sld>${body}</p:sld>` },
+  ]);
+}

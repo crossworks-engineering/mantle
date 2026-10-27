@@ -74,7 +74,7 @@
   "reindexNotifyCalls": 0,
   "reindexEmbeddingResets": 0,
   "reindexSummaryClears": 0,
-  "reindexAllowedFiles": 8,
+  "reindexAllowedFiles": 7,
   "spend_handSpend": 0,
   "spend_handSpend_allowed": 19,
   "spend_providerBypass": 0,

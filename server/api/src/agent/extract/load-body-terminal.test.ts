@@ -204,6 +204,31 @@ describe('loadExtractableBody: terminal skips', () => {
     expect(h.recordSkippedTrace).not.toHaveBeenCalled();
   });
 
+  it('fails the extract for a read that could not run in time (no title fallback, no skip)', async () => {
+    // Every read slot busy past the wait, or a first time-out: retried by
+    // pg-boss, never indexed by the title.
+    const { DocumentReadRetryableError } = await import('@mantle/files');
+    h.parseDocumentBytes = async () => {
+      throw new DocumentReadRetryableError('Waited 120 s for the server to finish other documents');
+    };
+    h.loadFileBytes.mockResolvedValue({
+      bytes: Buffer.from('PK'),
+      filename: 'pump-manual.docx',
+      ext: 'docx',
+      mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    await expect(
+      run(
+        fileNode(
+          'pump-manual.docx',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ),
+      ),
+    ).rejects.toThrow('Waited 120 s');
+    expect(h.recordTerminalSkip).not.toHaveBeenCalled();
+    expect(h.recordSkippedTrace).not.toHaveBeenCalled();
+  });
+
   it('leaves an ordinary parse failure on the old path (the title fallback, no skip)', async () => {
     h.parseDocumentBytes = async () => {
       throw Object.assign(new Error('malformed document'), { code: 'malformed' });

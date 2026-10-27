@@ -110,17 +110,42 @@ rebuild it with exceljs. A file anydoc cannot read goes to Tika's XHTML when
 the box runs the Tika add-on. The conversion loses boolean cells and cell
 comments, and turns dates into text (ISO from anydoc); the module comments say
 so in full. An `.xlsx` under a legacy name (a zip naming `xl/workbook.xml`)
-skips the conversion and is read as the `.xlsx` it is. A sheet whose
-rectangle passes 1,000,000 cells is refused by name before any grid is
-built, and the text ends with a note naming it.
+skips the conversion and is read as the `.xlsx` it is. Every sheet of a
+binary workbook is measured from its own cell records before anydoc sees the
+file (`sheet-extent.ts`), never from the used range it declares (the
+DIMENSIONS record, BrtWsDim in `.xlsb`), which a 6 KB file can set to 1 x 1
+while holding a cell at row 19,000, column 200 (anydoc lays that out as 3.8
+million slots, 1.5 GB). A workbook past 1,000,000 cells is refused, naming
+the sheets; one whose sheets cannot be measured is not given to anydoc at
+all. anydoc then reads a container rebuilt from exactly the parts measured
+(a fresh compound file holding the Workbook stream; a fresh zip of the
+workbook, its sheets, shared strings and styles), not the upload. One upload
+converts once: the text and auto-table passes share the conversion.
 
-**Untrusted bytes are read off the main thread.** anydoc, the legacy-sheet
-rebuild, the Visio and markup readers and anydoc's pictures run in a worker
-thread (`packages/files/src/isolate.ts`) with a 768 MB heap limit, a 60 s
-time limit and two reads at once per process. A decompression bomb, a read
-past a limit or a reader's own safety limit throws a `DocumentLimitError`;
-the extractor records it as the terminal skip `document_too_large` with the
-reason as the hint, and does not retry the file until it changes. anydoc is
+**Untrusted bytes are read off the main thread.** Every in-process reader
+(pdf-parse and pdfjs, mammoth, exceljs, the `.pptx`, Visio and markup
+readers, anydoc, the legacy-sheet rebuild) and every picture extractor runs
+in a worker thread (`packages/files/src/isolate.ts`) with a heap limit, a
+60 s time limit and a bound on reads at once. Both come from the memory the
+process may use (`process.constrainedMemory()`, else the machine's): 1,536 MB
+is the process's own, and each read is counted as its heap plus 512 MB for
+memory the heap limit does not see (anydoc's native allocations, inflated
+parts). In a 3 GB container that is a 768 MB heap and one read at a time;
+with 8 GB or more, two. At most 16 reads wait, each up to 120 s (15 s for a
+chat attachment). A zip-based file (`.docx`, `.xlsx`, `.pptx`, OpenDocument,
+`.vsdx`, `.xlsb`) is inflated part by part under a cap first
+(`zip-guard.ts`: 128 MB a part, 512 MB a file), because a lying directory
+otherwise inflates whole, outside the heap limit. The tag scanners of the
+`.pptx`, picture and Visio readers are linear (`xml-scan.ts`; the regular
+expressions they replaced took 9.1 s over 512 KB of unclosed `<a:t>`).
+
+A decompression bomb, a read past a limit or a reader's own safety limit
+throws a `DocumentLimitError`; the extractor records it as the terminal skip
+`document_too_large` with the reason as the hint, and does not retry the file
+until it changes. A read that could not run in time (every slot busy past the
+wait, the queue full, or a first time-out, since a loaded box can be slow
+once) throws a `DocumentReadRetryableError` instead: the job fails and
+pg-boss retries it; the same bytes timing out twice is terminal. anydoc is
 native code: its own memory sits outside the thread's heap limit and is
 bounded by its fixed limits (2 million XML nodes a part, decompression and
 embedded-media budgets), which end in that same skip.
@@ -167,12 +192,28 @@ settings screen **is** the answer to "how do I configure this".
 
 | Tier           | Formats                                     | How                                                                                                                                                                                                                                                                                                                                                                           |
 | -------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 (in-process) | `docx`                                      | mammoth's parsed document AST, the only entry point that honours `transformDocument` is `convertToHtml` (`extractRawText` silently ignores it)                                                                                                                                                                                                                                |
-| 1 (in-process) | `pptx`, `xlsx`, `xlsm`, `odt`, `ods`, `odp` | `@mantle/files/ooxml-media`, zip + relationship walk                                                                                                                                                                                                                                                                                                                          |
-| 1 (in-process) | `pdf`                                       | pdfjs `paintImageXObject`, encoded to PNG via `@napi-rs/canvas`                                                                                                                                                                                                                                                                                                               |
-| 1 (worker)     | `doc`, `ppt`, `rtf`, `epub`, `xls`, `xlsb`, `vsdx` | In a worker thread (`isolate.ts`): the pictures anydoc carries in its document model (`Document.assets`), in reading order with alt text and the nearest heading, and the `visio/media/` parts of a `.vsdx`, each size-checked before it is inflated. Gated and capped in the worker, so only kept pictures cross back. |
-| 2 (Tika add-on) | the row above when it finds none, and `vsd` | Only when the box runs the Tika add-on (`tika` profile): the second try for the row above (no picture found, or the read refused) and the only reader for `.vsd`. `unpackTikaImages` → `PUT /unpack/all` (a capability the Tika container always had and we never called). Reads both ZIP layouts: Tika 4's numbered entries with `.metadata.json` sidecars (the container itself, entry `0.<ext>`, is dropped; the thumbnail is found by its sidecar's part name) and Tika 3's named parts with `__TEXT__`/`__METADATA__`. Never-throws → `[]` |
+| 1 (worker)     | `docx`                                      | mammoth's parsed document AST, the only entry point that honours `transformDocument` is `convertToHtml` (`extractRawText` silently ignores it)                                                                                                                                                                                                                                |
+| 1 (worker)     | `pptx`, `xlsx`, `xlsm`, `odt`, `ods`, `odp` | `@mantle/files/ooxml-media`, zip + relationship walk (an `.xlsx` saved as `.xls` too)                                                                                                                                                                                                                                                                                          |
+| 1 (worker)     | `pdf`                                       | pdfjs `paintImageXObject`, encoded to PNG via `@napi-rs/canvas`                                                                                                                                                                                                                                                                                                               |
+| 1 (worker)     | `doc`, `ppt`, `rtf`, `epub`, `vsdx`         | The pictures anydoc carries in its document model (`Document.assets`), in reading order with alt text and the nearest heading, and the `visio/media/` parts of a `.vsdx`, each size-checked before it is inflated. |
+| 2 (Tika add-on) | the row above when it finds none, `vsd`, `xls`, `xlsb` | Only when the box runs the Tika add-on (`tika` profile): the second try for the row above (no picture found, or the read refused) and the only reader for `.vsd` and the binary sheets (anydoc's sheet reader carries no pictures). `unpackTikaImages` → `PUT /unpack/all` (a capability the Tika container always had and we never called). Reads both ZIP layouts: Tika 4's numbered entries with `.metadata.json` sidecars (the container itself, entry `0.<ext>`, is dropped; the thumbnail is found by its sidecar's part name) and Tika 3's named parts with `__TEXT__`/`__METADATA__`. Never-throws → `[]` |
 | 3              | everything else                             | `[]`                                                                                                                                                                                                                                                                                                                                                                          |
+
+Every tier-1 read runs in a worker thread (`isolate.ts`), gated and capped
+there, so only the kept pictures cross back, moved rather than copied.
+
+**Three formats wait for approval.** `.epub`, `.vsdx` and `.vsd` gained a
+picture pass with the anydoc move; each picture kept is a vision call, so
+they sit in one list, `PICTURE_FORMATS_PENDING_APPROVAL`
+(`packages/files/src/embedded-images.ts`). Emptying it turns all three off;
+nothing else needs to change.
+
+**New or changed bytes only.** The extractor's pictures pass runs for a file
+no pass has read yet (a new upload; new bytes drop the byte-derived keys),
+after the metadata-only check, so a name-only file never has its pictures
+taken. A rename, a move, an indexing toggle or a re-run of a file already
+read never runs it. The backfill below is the one door for a document
+already read.
 
 **Reading order is the product requirement.** A manual's screenshots are only
 useful in sequence. Listing `word/media/` gives the wrong answer, part
@@ -268,9 +309,14 @@ Two forms, and the difference is placement:
 ### Backfill
 
 `pnpm -C server/web extract:images-backfill` (registry slug
-`extract-images-backfill`). Dry-run by default. The parent documents are **free**
-, the image pass sits ahead of the extractor's `already_extracted` guard, so no
-text/summary/embedding work re-runs; spend is one vision call per image _kept_.
+`extract-images-backfill`). Dry-run by default: without `--go` it fires
+nothing and prints the candidates by format and an upper bound on vision
+calls. With `--go` it raises `pictures_requested` per document, and the agent
+runs the pictures pass on each, one at a time (`extractPicturesOnRequest`).
+The parent documents are **free**: a request runs the pictures pass only, no
+text, summary or embedding work; spend is one vision call per image _kept_.
+The candidates include `.epub`, `.vsdx` and `.vsd` while they wait for
+approval; `--types` leaves them out.
 
 ---
 

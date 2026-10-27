@@ -17,6 +17,7 @@ import {
   parserRouteForExt,
   exportHintForExt,
   isDocumentLimitError,
+  isRetryableReadError,
 } from '@mantle/files';
 import { recordSkippedTrace, step } from '@mantle/tracing';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
@@ -308,6 +309,10 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
         // caller records the reason as a terminal skip, rather than this
         // falling back to the title and reading as "no parser".
         if (isDocumentLimitError(err)) throw err;
+        // A read that could not run in time (every slot busy past the wait,
+        // a first time-out): not the document's fault, and not a reason to
+        // index it by its title. The extract fails and pg-boss retries it.
+        if (isRetryableReadError(err)) throw err;
         // Parse / read failed. The step (if it opened) already recorded the
         // error; fall through to the title.
       }

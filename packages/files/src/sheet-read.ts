@@ -118,6 +118,13 @@ export async function sheetXmlBytes(buf: Buffer): Promise<number | null> {
   return measured ? total : null;
 }
 
+/** Total inflated bytes of the worksheet parts, from real sizes. */
+function worksheetBytes(sizes: ReadonlyMap<string, number>): number {
+  let total = 0;
+  for (const [path, size] of sizes) if (/^xl\/worksheets\/sheet\d+\.xml$/.test(path)) total += size;
+  return total;
+}
+
 /**
  * Open an OOXML workbook (.xlsx / .xlsm) from bytes, after the size
  * pre-flight. Throws {@link SpreadsheetTooLargeError} when the workbook is
@@ -125,8 +132,13 @@ export async function sheetXmlBytes(buf: Buffer): Promise<number | null> {
  * are not a readable workbook (encrypted, corrupt, or a legacy .xls that
  * should have gone through `./legacy-sheet.ts` first).
  */
-export async function loadWorkbook(buf: Buffer): Promise<ExcelJS.Workbook> {
-  const bytes = await sheetXmlBytes(buf);
+export async function loadWorkbook(
+  buf: Buffer,
+  realSizes?: ReadonlyMap<string, number>,
+): Promise<ExcelJS.Workbook> {
+  // The sizes inflated under the zip guard (./zip-guard.ts) when the caller
+  // has them: the directory's own can lie.
+  const bytes = realSizes ? worksheetBytes(realSizes) : await sheetXmlBytes(buf);
   if (bytes !== null && bytes > MAX_SHEET_XML_BYTES) {
     throw new SpreadsheetTooLargeError(bytes, MAX_SHEET_XML_BYTES);
   }

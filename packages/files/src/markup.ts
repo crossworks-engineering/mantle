@@ -18,6 +18,7 @@
  */
 
 import { SaxesParser } from 'saxes';
+import { forwardFinder } from './xml-scan';
 
 /** Elements whose content is never readable text. */
 const DROPPED = new Set([
@@ -115,24 +116,6 @@ function tidy(text: string): string {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-/**
- * `indexOf` for a scanner that only moves forward. Each search starts at or
- * after the last one, so a found position stays the answer until the scanner
- * passes it, and a miss stays a miss for the rest of the text. Every needle
- * is then searched across the text at most once, which is what keeps the
- * scan linear on hostile input (a page of `<?` with no `?>`, or of `<script>`
- * with no close, used to cost a full rescan per occurrence: 128 KB of `<?`
- * took 23 s with the lazy regexes this replaces).
- */
-function forwardFinder(find: (from: number) => number): (from: number) => number {
-  let last = -2;
-  return (from) => {
-    if (last === -1 || last >= from) return last;
-    last = find(from);
-    return last;
-  };
 }
 
 /** True for a character that can start an element name. */

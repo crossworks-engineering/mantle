@@ -97,6 +97,7 @@ import {
   stopExtractQueue,
 } from './extract-queue.js';
 import { reflect } from './reflector.js';
+import { PICTURES_REQUESTED_CHANNEL, extractPicturesOnRequest } from './extract/images';
 import { computeFloorGroupAdditions } from './core-tools.js';
 import { ingestTelegramAttachment } from './telegram/ingest-attachment';
 import { isNewChatCommand, newChatReply, sendApology, startTyping } from './telegram/helpers';
@@ -882,6 +883,18 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
     }),
   );
   logger.info('LISTENing on node_ingested');
+
+  // The images backfill (server/web/scripts/extract-images-backfill.ts, an
+  // owner's hand-run, dry-run-by-default tool): take the pictures of a
+  // document already read. The extractor's own pictures pass runs for new
+  // bytes only, so this is the one door for the rest; one at a time.
+  await pg.listen(
+    PICTURES_REQUESTED_CHANNEL,
+    listenAs('listen:pictures-requested', (payload) => {
+      if (payload) void extractPicturesOnRequest(payload, owner);
+    }),
+  );
+  logger.info(`LISTENing on ${PICTURES_REQUESTED_CHANNEL}`);
 
   // NEW-7: low-latency heartbeat wake. createHeartbeat + force-fire
   // paths fire pg_notify('heartbeat_due', ownerId). When we get one,

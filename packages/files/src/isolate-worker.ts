@@ -10,6 +10,10 @@
  * A server started by tsx passes its loader to the thread through execArgv
  * (the default); anywhere else (the test runner) the thread registers tsx
  * itself before importing them.
+ *
+ * The answer's binary parts (extracted pictures) are MOVED to the parent
+ * (`transferList`), not copied: thirty pictures of a few MB each would
+ * otherwise exist twice at the moment of the hand-over.
  */
 import { parentPort, workerData } from 'node:worker_threads';
 
@@ -26,8 +30,35 @@ function revive(value: unknown, depth = 0): unknown {
   }
   if (depth > 4 || value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map((v) => revive(v, depth + 1));
+  if (value instanceof Date) return value;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value)) out[k] = revive(v, depth + 1);
+  return out;
+}
+
+/**
+ * The answer, with each byte array on an ArrayBuffer of its own, and those
+ * ArrayBuffers listed for transfer. A Buffer that is a view of a larger
+ * (pooled) ArrayBuffer is copied into its own first: transferring the pool
+ * would move every other Buffer on it, and one ArrayBuffer may be listed
+ * only once.
+ */
+function forTransfer(value: unknown, list: ArrayBuffer[], depth = 0): unknown {
+  if (value instanceof Uint8Array) {
+    const own =
+      value.byteOffset === 0 &&
+      value.byteLength === value.buffer.byteLength &&
+      value.buffer instanceof ArrayBuffer &&
+      !list.includes(value.buffer);
+    const bytes = own ? value : new Uint8Array(value);
+    list.push(bytes.buffer as ArrayBuffer);
+    return bytes;
+  }
+  if (depth > 4 || value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((v) => forTransfer(v, list, depth + 1));
+  if (value instanceof Date) return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) out[k] = forTransfer(v, list, depth + 1);
   return out;
 }
 
@@ -43,7 +74,9 @@ async function main(): Promise<void> {
       request.job,
       request.args.map((a) => revive(a)),
     );
-    parentPort?.postMessage({ ok: true, result });
+    const transfer: ArrayBuffer[] = [];
+    const message = { ok: true, result: forTransfer(result, transfer) };
+    parentPort?.postMessage(message, transfer);
   } catch (err) {
     const e = err instanceof Error ? err : new Error(String(err));
     parentPort?.postMessage({

@@ -19,7 +19,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   longer one of the core box's helpers). The app reads the same profile list
   and makes no Tika call without it. With it, Tika reads `.vsd`, is the
   second try for a file anydoc cannot read, and gives the pictures inside
-  the legacy binaries.
+  `.xls`, `.xlsb` and `.vsd`.
 - Compared on 14 public Tika test documents, Tika 4.1 on the dev box against
   this branch with Tika off: the same words on `.doc`, `.ppt`, `.odt`, `.rtf`,
   `.epub`, `.xls` and `.vsdx`, except page headers and footers, sheet cell
@@ -31,23 +31,45 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   and by format none of them needs it once anydoc and the in-process readers
   are counted (no `.vsd` on any box).
 
-- Uploads cannot take the server down. anydoc, the legacy-sheet rebuild,
-  the Visio reader, the markup reader and anydoc's pictures run in a worker
-  thread with a heap limit (768 MB) and a time limit (60 s), two at a time
-  per process. A decompression bomb or a read past a limit costs the
-  thread; the extractor records a terminal `document_too_large` skip with
-  the reason and does not retry the file until it changes. anydoc's own
-  native memory is bounded by its fixed safety limits, not by the thread.
+- Uploads cannot take the server down or freeze it. Every in-process
+  document reader (pdf-parse and pdfjs, mammoth, exceljs, the `.pptx`,
+  Visio and markup readers, anydoc, the legacy-sheet rebuild) and every
+  picture extractor runs in a worker thread with a heap limit and a time
+  limit (60 s), sized from the container's memory cap: in a 3 GB container,
+  one read at a time with a 768 MB heap (each read counted as its heap plus
+  512 MB of memory the heap does not see); two with 8 GB or more. At most 16
+  reads wait, each up to 120 s (15 s for a chat attachment). A zip-based
+  file is inflated part by part under a cap first (128 MB a part, 512 MB a
+  file): a lying directory no longer inflates whole. A decompression bomb or
+  a read past a limit costs the thread; the extractor records a terminal
+  `document_too_large` skip with the reason and does not retry the file
+  until it changes. A read that waited too long, found the queue full or
+  timed out for the first time is retried instead (the same bytes timing
+  out twice is terminal). A read's slot frees when its thread has exited.
+  anydoc's own native memory is bounded by its fixed safety limits.
 - The HTML scanner is linear: 5 MB of hostile markup (unclosed `<?`,
   comments, scripts) reads in milliseconds, where 128 KB of `<?` took 23 s.
+  So are the `.pptx`, picture and Visio tag scanners (512 KB of unclosed
+  `<a:t>` took 9.1 s; a 256 KB Visio pages part 1.9 s).
 - An `.xlsx` saved under a legacy `.xls` name is read as the `.xlsx` it is.
-  A legacy sheet whose rectangle passes 1,000,000 cells is refused by name
-  (the note in the text says which), checked before any grid is built.
-  A Visio part is checked for size before it is inflated.
-- Pictures inside `.doc`, `.ppt`, `.rtf`, `.epub`, `.xlsb` and `.vsdx` come
-  from anydoc's document model and the Visio media parts, under the same
-  per-document gate and cap; Tika, when on, is the second try and reads
-  `.vsd`.
+  Every sheet of a binary `.xls` or `.xlsb` is measured from its own cell
+  records (never from the used range the file declares, which can lie)
+  before anydoc sees the file; a workbook past 1,000,000 cells is refused,
+  naming the sheets, and one that cannot be measured is not given to anydoc.
+  anydoc reads a container rebuilt from exactly the parts measured. One
+  upload converts once: the text and auto-table passes share it.
+- Pictures inside `.doc`, `.ppt`, `.rtf`, `.epub` and `.vsdx` come from
+  anydoc's document model and the Visio media parts, under the same
+  per-document gate and cap; Tika, when on, is the second try and the only
+  reader for `.vsd`, `.xls` and `.xlsb` pictures (anydoc's sheet reader
+  carries none). **`.epub`, `.vsdx` and `.vsd` are new picture formats and
+  wait for the owner's approval:** one list, `PICTURE_FORMATS_PENDING_APPROVAL`
+  (`packages/files/src/embedded-images.ts`), turns all three off.
+- The pictures pass runs for new or changed bytes only, after the
+  metadata-only check: a rename, a move, an indexing toggle or a re-run of a
+  file already read never takes pictures or spends a vision call. The
+  images backfill reaches documents already read through its own request
+  (`pictures_requested`), one at a time.
 - The dashboard's Tika status is `up: null` (off, grey) on a box without the
   add-on, instead of red. The updater's `helpers` switch is the PDF browser
   only.

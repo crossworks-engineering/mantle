@@ -36,14 +36,11 @@ export const MAX_VSDX_TOTAL_BYTES = 256 * 1024 * 1024;
 /** Bytes one embedded picture may be. */
 const MAX_VSDX_IMAGE_BYTES = 32 * 1024 * 1024;
 
-/** The entry's uncompressed size from the zip directory, without inflating
- *  (JSZip's internal `_data`, as ./sheet-read.ts and ./dwf.ts read it);
- *  `null` when the field is missing. */
+/** The entry's uncompressed size from the zip directory, without inflating;
+ *  `null` when the field is missing. It can lie: the read itself is capped
+ *  too (./zip-guard.ts). */
 function declaredSize(zip: Zip, path: string): number | null {
-  const entry = zip.file(path);
-  const size = (entry as unknown as { _data?: { uncompressedSize?: number } } | null)?._data
-    ?.uncompressedSize;
-  return typeof size === 'number' && Number.isFinite(size) ? size : null;
+  return zip.file(path)?.declaredSize ?? null;
 }
 
 /** Reads parts of one drawing against the budgets above; a part past either
@@ -73,13 +70,40 @@ function partReader(zip: Zip) {
 
 const PAGES_PART = 'visio/pages/pages.xml';
 
-/** A Visio attribute, single- or double-quoted (Visio writes single quotes). */
-function attr(tag: string, name: string): string | undefined {
-  const m = new RegExp(`\\b${name}=(?:'([^']*)'|"([^"]*)")`).exec(tag);
-  return m ? (m[1] ?? m[2]) : undefined;
-}
-
 type VisioPage = { name: string; path: string };
+
+/**
+ * Each `<Page>` of `pages.xml` with its name and the relationship id of its
+ * first `<Rel>`, in order, read with a streaming XML parser (linear; the
+ * pattern this replaced rescanned to the end of the part for every `<Page>`
+ * left open, 1.9 s over 256 KB). A malformed part keeps the pages read
+ * before the fault.
+ */
+export function pageEntriesOf(xml: string): Array<{ name: string; rId: string }> {
+  const out: Array<{ name: string; rId: string }> = [];
+  let page: { name: string; rId: string } | null = null;
+  const parser = new SaxesParser();
+  parser.on('opentag', (node) => {
+    if (node.name === 'Page') {
+      const a = node.attributes as Record<string, string>;
+      page = { name: a.Name ?? a.NameU ?? '', rId: '' };
+    } else if (node.name === 'Rel' && page && !page.rId) {
+      page.rId = (node.attributes as Record<string, string>)['r:id'] ?? '';
+    }
+  });
+  parser.on('closetag', (node) => {
+    if (node.name === 'Page' && page) {
+      out.push(page);
+      page = null;
+    }
+  });
+  try {
+    parser.write(xml).close();
+  } catch {
+    // Keep the pages read before the fault.
+  }
+  return out;
+}
 
 /** Pages in Visio's order. Without a readable `pages.xml`, every page part
  *  in numeric order (`page2.xml` before `page10.xml`), named by position. */
@@ -91,12 +115,10 @@ async function pagesInOrder(
   if (xml) {
     const rels = await relationshipsFor(zip, PAGES_PART);
     const pages: VisioPage[] = [];
-    for (const m of xml.matchAll(/<Page\b([^>]*)>([\s\S]*?)<\/Page>/g)) {
-      const rel = /<Rel\b[^>]*>/.exec(m[2] ?? '')?.[0];
-      const path = rel ? rels.get(attr(rel, 'r:id') ?? '') : undefined;
+    for (const entry of pageEntriesOf(xml)) {
+      const path = entry.rId ? rels.get(entry.rId) : undefined;
       if (!path || !zip.file(path)) continue;
-      const head = m[1] ?? '';
-      pages.push({ name: attr(head, 'Name') ?? attr(head, 'NameU') ?? '', path });
+      pages.push({ name: entry.name, path });
     }
     if (pages.length > 0) return pages.map((p, i) => ({ ...p, name: p.name || `Page ${i + 1}` }));
   }

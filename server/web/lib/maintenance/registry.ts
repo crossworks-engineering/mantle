@@ -560,7 +560,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'extract-images-backfill',
     title: 'Extract embedded images from existing documents',
     description:
-      'Re-fires node_ingested for documents ingested before embedded-image extraction existed, so their diagrams and screenshots become real image files under files/auto-filed/extracted-images/. Skips documents that already produced images.',
+      'Requests the pictures of documents read before embedded-image extraction covered them (pictures_requested, taken by the agent one document at a time), so their diagrams and screenshots become real image files under files/auto-filed/extracted-images/. Skips documents that already produced images. Covers .epub, .vsdx and .vsd too, the formats awaiting approval (PICTURE_FORMATS_PENDING_APPROVAL in @mantle/files embedded-images): pass --types to leave them out.',
     kind: 'backfill',
     status: 'live',
     cost: 'llm',
@@ -570,7 +570,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     applyFlag: '--go',
     extraFlags: ['--types=<list>', '--limit=<n>', '--rate=<seconds>'],
     notes:
-      'The parent documents are FREE — the image pass sits ahead of the extractor’s already_extracted guard, so no text/summary/embedding work re-runs. Spend is one vision call per image KEPT (gated on dimensions, byte floor and duplicate collapse; capped at 30/doc). Dry-run by default: it prints the candidate count and an upper bound first. Start with --limit=20 --go and read the real yield off the extract_images trace steps.',
+      'Dry-run by default: without --go it fires nothing and prints the candidate count by format and an upper bound on vision calls. The parent documents are FREE: a request runs the pictures pass only, no text, summary or embedding work. The extractor itself takes pictures for new or changed bytes only, so this is the one way to take them for a document already read. Spend is one vision call per image KEPT (gated on dimensions, byte floor and duplicate collapse; capped at 30/doc). The candidates include .epub, .vsdx and .vsd while they stay in PICTURE_FORMATS_PENDING_APPROVAL; leave them out with --types until the owner approves. Start with --limit=20 --go and read the real yield off the extract_images trace steps.',
   },
 
   // ── Retired backfills (historical migrations — kept for reference) ───────

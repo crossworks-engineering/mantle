@@ -10,10 +10,15 @@
  *      RTF, EPUB), the markup reader (HTML, XML), and the UTF-8 read for
  *      text files. Throws on a parser failure (encrypted / corrupt) so
  *      callers can tell a real failure apart from a genuinely-empty file.
- *      anydoc, the legacy-sheet rebuild, the Visio and the markup readers
- *      run in a worker thread with a heap and time limit (./isolate.ts); a
- *      document stopped by a limit throws a DocumentLimitError, which the
- *      extractor records as a terminal skip with the reason.
+ *      Every one of them but the UTF-8 read (and the CAD and plan readers
+ *      below, which have their own exchange) runs in a worker thread with
+ *      a heap and time limit (./isolate.ts), a zip-based file inflated
+ *      under per-part caps first (./zip-guard.ts): nothing an upload holds
+ *      runs on the server's own heap or event loop. A document stopped by a
+ *      limit throws a DocumentLimitError, which the extractor records as a
+ *      terminal skip with the reason; a read that could not run in time (a
+ *      busy box, a first time-out) throws a DocumentReadRetryableError,
+ *      which is retried.
  *   2. Apache Tika, an OPT-IN add-on (the `tika` compose profile): the only
  *      reader for .vsd, and the second try for a file anydoc cannot read.
  *      Tika is **never-throws**: any failure (service off or down, timeout,
@@ -24,14 +29,33 @@
  *      "no_text_layer" skip.
  */
 
-import { isDocumentLimitError } from './document-limit';
+import { DocumentLimitError, isDocumentLimitError, isRetryableReadError } from './document-limit';
+import type { JobArgs, JobName, JobResult } from './isolate-jobs';
 import { ANYDOC_EXTS, MARKUP_EXTS, TEXT_EXTS, TIKA_EXTS, mimeForExt } from './slug';
+
+async function isolated<K extends JobName>(job: K, args: JobArgs<K>): Promise<JobResult<K>> {
+  return (await import('./isolate')).runIsolated(job, args);
+}
+
+/** A workbook's text from exceljs in a worker thread; past exceljs's size
+ *  ceiling, Tika's when the box runs it, else the refusal. */
+async function xlsxText(bytes: Buffer): Promise<string> {
+  const read = await isolated('xlsxText', [bytes]);
+  if ('text' in read) return read.text;
+  const { tikaConfigured, parseTikaBytes } = await import('./tika');
+  const text = tikaConfigured()
+    ? await parseTikaBytes(bytes, { mimeType: mimeForExt('xlsx') })
+    : '';
+  if (text) return text;
+  throw new DocumentLimitError('too_large', `The workbook is too large to read: ${read.tooLarge}.`);
+}
 
 /** anydoc first; when it fails or reads nothing, Tika if the box runs it.
  *  Without Tika, anydoc's own failure is the answer (it throws, so the
  *  extractor records a real error rather than an empty document). A size
- *  limit Tika cannot read past either stays the answer, so its reason is
- *  recorded rather than an empty document. */
+ *  limit, or a read that could not run in time, that Tika cannot read past
+ *  either stays the answer, so its reason is recorded (or the job retried)
+ *  rather than an empty document. */
 async function anydocThenTika(bytes: Buffer, ext: string): Promise<string> {
   const { tikaConfigured, parseTikaBytes } = await import('./tika');
   let failure: unknown = null;
@@ -43,7 +67,7 @@ async function anydocThenTika(bytes: Buffer, ext: string): Promise<string> {
   }
   if (tikaConfigured()) {
     const text = await parseTikaBytes(bytes, { mimeType: mimeForExt(ext) });
-    if (text || !isDocumentLimitError(failure)) return text;
+    if (text || !(isDocumentLimitError(failure) || isRetryableReadError(failure))) return text;
   }
   if (failure) throw failure;
   return '';
@@ -60,20 +84,24 @@ async function legacySheetText(bytes: Buffer, ext: string): Promise<string> {
   if (!converted) {
     return (await import('./tika')).parseTikaBytes(bytes, { mimeType: mimeForExt(ext) });
   }
-  const text = await (await import('./xlsx')).parseXlsx(converted.xlsx);
+  const text = await xlsxText(converted.xlsx);
   if (converted.refused.length === 0) return text;
   const note = `[Left out for size: ${describeRefused(converted.refused)}, past the ${MAX_LEGACY_CELLS.toLocaleString('en-US')}-cell limit for a legacy spreadsheet.]`;
   return text ? `${text}\n\n${note}` : note;
 }
 
 export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<string> {
-  if (ext === 'pdf') return (await import('./pdf')).parsePdf(bytes);
-  if (ext === 'docx') return (await import('./docx')).parseDocx(bytes);
+  if (ext === 'pdf') return isolated('pdfText', [bytes]);
+  if (ext === 'docx') return isolated('docxText', [bytes]);
   // PowerPoint: our own reader keeps slide order (Tika 4 shuffles it, see
   // ./pptx.ts). A deck it cannot open, or one it reads as empty, gets anydoc,
-  // then Tika when the box runs it.
+  // then Tika when the box runs it. A deck stopped by a limit, or a read that
+  // could not run in time, is that answer: anydoc would only meet it again.
   if (ext === 'pptx') {
-    const text = await (await import('./pptx')).parsePptx(bytes).catch(() => '');
+    const text = await isolated('pptxText', [bytes]).catch((err: unknown) => {
+      if (isDocumentLimitError(err) || isRetryableReadError(err)) throw err;
+      return '';
+    });
     if (text) return text;
     return anydocThenTika(bytes, ext);
   }
@@ -85,7 +113,7 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
   if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm' || ext === 'xlsb') {
     const { isLegacySheetExt } = await import('./legacy-sheet');
     if (isLegacySheetExt(ext)) return legacySheetText(bytes, ext);
-    return (await import('./xlsx')).parseXlsx(bytes);
+    return xlsxText(bytes);
   }
   if (TEXT_EXTS.has(ext)) return bytes.toString('utf8');
   // Autodesk DWF plot sets: in-process container parse → sheets/layers/labels
@@ -137,7 +165,7 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
       if (plan) return plan;
     }
   }
-  if (MARKUP_EXTS.has(ext)) return (await import('./isolate')).runIsolated('markup', [bytes, ext]);
+  if (MARKUP_EXTS.has(ext)) return isolated('markup', [bytes, ext]);
   if (ext === 'vsdx') return (await import('./vsdx')).parseVsdx(bytes);
   if (ANYDOC_EXTS.has(ext)) return anydocThenTika(bytes, ext);
   // Tier 2: what only Tika reads. Lazy import keeps the fetch +

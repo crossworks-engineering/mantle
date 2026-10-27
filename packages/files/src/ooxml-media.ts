@@ -29,6 +29,13 @@
  * this part" rather than to a wrong answer. If this ever needs to understand
  * structure rather than spot references, swap in a real parser — don't extend
  * the patterns.
+ *
+ * The tags are found with the linear scanner in ./xml-scan.ts, not with
+ * regular expressions over the whole part: `<\w+:cNvPr\b[^>]*>` and its kin
+ * rescan to the end of the part for every tag left open, which hostile input
+ * turns quadratic. Attribute values are still read with a pattern, over one
+ * tag's own text. Parts are read through ./zip-guard.ts, each under an
+ * inflate cap, and the whole read runs in a worker thread (./isolate.ts).
  */
 
 import {
@@ -36,13 +43,10 @@ import {
   type EmbeddedImage,
   type EmbeddedImageLocation,
 } from './embedded-images';
+import { localName, tagsNamed } from './xml-scan';
+import { loadZip, type Zip } from './zip-guard';
 
-export type Zip = Awaited<ReturnType<typeof loadZip>>;
-
-export async function loadZip(bytes: Buffer) {
-  const JSZip = (await import('jszip')).default;
-  return JSZip.loadAsync(bytes);
-}
+export { loadZip, type Zip };
 
 /** Resolve a relationship Target against the folder of the part that
  *  declared it, collapsing the `../` that OOXML uses constantly. */
@@ -63,7 +67,6 @@ function relsPathFor(partPath: string): string {
   return `${partPath.slice(0, idx)}/_rels/${partPath.slice(idx + 1)}.rels`;
 }
 
-const RELATIONSHIP_RE = /<Relationship\b[^>]*>/g;
 export const ATTR = (tag: string, name: string): string | undefined =>
   new RegExp(`\\b${name}="([^"]*)"`).exec(tag)?.[1];
 
@@ -73,7 +76,7 @@ export async function relationshipsFor(zip: Zip, partPath: string): Promise<Map<
   const file = zip.file(relsPathFor(partPath));
   if (!file) return out;
   const xml = await file.async('string');
-  for (const tag of xml.match(RELATIONSHIP_RE) ?? []) {
+  for (const tag of tagsNamed(xml, (name) => name === 'Relationship')) {
     const id = ATTR(tag, 'Id');
     const target = ATTR(tag, 'Target');
     // External relationships point at a URL, not a part in this archive.
@@ -83,11 +86,16 @@ export async function relationshipsFor(zip: Zip, partPath: string): Promise<Map<
   return out;
 }
 
-/** Picture-name/description elements, blip references, and the SVG extension
- *  that can override the blip — matched together so a single ordered pass can
- *  pair each image with the alt text declared just above it and with the
+/** Picture-name/description elements (`<x:cNvPr>`, any prefix), blip
+ *  references (`<a:blip>`), and the SVG extension that can override the blip
+ *  (`svgBlip`, any prefix or none), taken together in one ordered pass so
+ *  each image pairs with the alt text declared just above it and with the
  *  vector original declared just below it. */
-const PIC_SCAN_RE = /<\w+:cNvPr\b[^>]*\/?>|<a:blip\b[^>]*\/?>|<\w*:?svgBlip\b[^>]*\/?>/g;
+function isPictureTag(name: string): boolean {
+  if (name === 'a:blip') return true;
+  const local = localName(name);
+  return (local === 'cNvPr' && local !== name) || local === 'svgBlip';
+}
 
 type BlipRef = { rId: string; altText?: string };
 
@@ -110,7 +118,7 @@ type BlipRef = { rId: string; altText?: string };
 function blipRefsInOrder(xml: string): BlipRef[] {
   const out: BlipRef[] = [];
   let pendingAlt: string | undefined;
-  for (const tag of xml.match(PIC_SCAN_RE) ?? []) {
+  for (const tag of tagsNamed(xml, isPictureTag)) {
     if (tag.startsWith('<a:blip')) {
       const rId = ATTR(tag, 'r:embed') ?? ATTR(tag, 'r:link');
       if (rId) out.push({ rId, altText: pendingAlt });
@@ -194,7 +202,7 @@ export async function extractOoxmlImages(bytes: Buffer, ext: string): Promise<Em
     const sheetXml = await zip.file(sheetPath)?.async('string');
     if (!sheetXml) continue;
     const sheetRels = await relationshipsFor(zip, sheetPath);
-    const drawingIds = [...(sheetXml.match(/<drawing\b[^>]*\/?>/g) ?? [])]
+    const drawingIds = tagsNamed(sheetXml, (name) => name === 'drawing')
       .map((tag) => ATTR(tag, 'r:id'))
       .filter((v): v is string => Boolean(v));
     for (const rId of drawingIds) {
@@ -217,7 +225,7 @@ async function workbookSheetOrder(zip: Zip): Promise<Array<{ path: string; name:
   if (!xml) return [];
   const rels = await relationshipsFor(zip, workbookPath);
   const out: Array<{ path: string; name: string }> = [];
-  for (const tag of xml.match(/<sheet\b[^>]*\/?>/g) ?? []) {
+  for (const tag of tagsNamed(xml, (name) => name === 'sheet')) {
     const rId = ATTR(tag, 'r:id');
     const name = ATTR(tag, 'name') ?? '';
     const path = rId ? rels.get(rId) : undefined;
@@ -227,8 +235,7 @@ async function workbookSheetOrder(zip: Zip): Promise<Array<{ path: string; name:
 }
 
 /** ODF stores pictures under `Pictures/` and references them from
- *  `content.xml` with `xlink:href`, in document order. */
-const ODF_IMAGE_RE = /<draw:image\b[^>]*\/?>/g;
+ *  `content.xml` (`<draw:image xlink:href>`), in document order. */
 
 /**
  * OpenDocument (.odt / .ods / .odp) images, in document order.
@@ -241,7 +248,7 @@ export async function extractOdfImages(bytes: Buffer): Promise<EmbeddedImage[]> 
   const xml = await zip.file('content.xml')?.async('string');
   if (!xml) return [];
   const out: EmbeddedImage[] = [];
-  for (const tag of xml.match(ODF_IMAGE_RE) ?? []) {
+  for (const tag of tagsNamed(xml, (name) => name === 'draw:image')) {
     const href = ATTR(tag, 'xlink:href');
     if (!href) continue;
     const partPath = href.replace(/^\.?\//, '');

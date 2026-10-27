@@ -15,10 +15,22 @@
  *    `branch` are refused regardless of config; a conversation digest is
  *    refused because re-summarising an authored summary destroys it; a
  *    telegram turn is embedded but never summarised.
- *  - The two SIDE passes (auto-table, embedded images) run mid-chain, after
- *    the hard skips and before the type allowlist, because a spreadsheet
- *    should still reach /tables when `file` is not in target_types. They are
- *    best-effort and deliberately not gates.
+ *  - The auto-table SIDE pass runs mid-chain, after the hard skips and
+ *    before the type allowlist, because a spreadsheet should still reach
+ *    /tables when `file` is not in target_types. It is best-effort and
+ *    deliberately not a gate.
+ *  - The embedded-pictures side pass runs only for a file whose bytes no
+ *    pass has read yet (a new upload, or new bytes: a content change drops
+ *    the byte-derived keys, BYTE_DERIVED_DATA_KEYS in @mantle/files), and
+ *    only after the metadata-only check, so a name-only file never has its
+ *    pictures taken. A rename, a move, an indexing toggle or a re-run of a
+ *    file already read never re-runs it: each picture it saves is a vision
+ *    call later. It is the already-extracted guard for this pass, and a
+ *    stricter one (it also holds for a file whose summary a toggle
+ *    dropped).
+ *  - A document read that could not run in time (DocumentReadRetryableError:
+ *    every read slot busy, a first time-out) fails the whole job in either
+ *    side pass, before any model call, so pg-boss retries it.
  *  - Metadata-only runs BEFORE the key pre-flight (it needs no LLM) and
  *    BEFORE the already-extracted guard (it carries its own idempotency, and
  *    a mode flip must re-run).
@@ -58,7 +70,12 @@ import {
   type ExtractorParams,
 } from '@mantle/db';
 import { digestEmbedText, embed } from '@mantle/embeddings';
-import { effectiveBrainDepth, resolveEffectiveIndexing, metadataSpineText } from '@mantle/files';
+import {
+  effectiveBrainDepth,
+  isRetryableReadError,
+  resolveEffectiveIndexing,
+  metadataSpineText,
+} from '@mantle/files';
 import { recordSkippedTrace } from '@mantle/tracing';
 import { EXTRACT_KINDS } from '@mantle/client-types/kind-lists';
 import { resolveChatKey } from '@mantle/runtime/agent';
@@ -68,6 +85,21 @@ import { maybeExtractEmbeddedImages } from './images';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 import { readNodeBodyLocal } from './load-body';
 import { writeRetrievalChunks } from './index-writes';
+
+/**
+ * True when no pass has read this file's current bytes: none of the keys a
+ * pass leaves on a file is there. A new upload has none; new bytes drop
+ * them (BYTE_DERIVED_DATA_KEYS); a rename keeps them, and an indexing toggle
+ * drops only the summary and the vector (markContentChanged), so neither
+ * reads as unread.
+ */
+export function bytesUnread(data: Record<string, unknown>): boolean {
+  return (
+    data.indexing_applied == null &&
+    data.extract_completed_at == null &&
+    data.extract_skipped == null
+  );
+}
 
 /**
  * The cost guard's index (workspaces plan 5.3): the body as the typed
@@ -499,8 +531,11 @@ export async function admitForExtraction(
   await maybeAutoTableSpreadsheet(node, ownerId).catch((err) => {
     // Flagged fatal (DWG sidecar failure): every pass depends on that same
     // exchange, so let the whole extract fail and retry rather than complete
-    // a node that silently lost its registry workbook.
-    if ((err as { fatalToExtract?: boolean })?.fatalToExtract) throw err;
+    // a node that silently lost its registry workbook. A read that could
+    // not run in time is retried the same way.
+    if ((err as { fatalToExtract?: boolean })?.fatalToExtract || isRetryableReadError(err)) {
+      throw err;
+    }
     console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err);
   });
 
@@ -509,13 +544,6 @@ export async function admitForExtraction(
   // params blob — extractTypes prefers the new name.
   const params = (worker.params ?? {}) as ExtractorParams;
   const extractTypes = params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
-
-  // Pull embedded diagrams/screenshots out into their own image files, on the
-  // same terms: independent of the text allowlist, best-effort, never fatal.
-  // Read AFTER params so the per-document image cap is configurable.
-  await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch((err) =>
-    console.error('[extractor] embedded images failed:', err instanceof Error ? err.message : err),
-  );
 
   // Brain depth: documentation collections default to 'retrieval' — index to
   // L5 (summary + embedding + chunks) but SKIP L4 (entity reconciliation,
@@ -636,11 +664,28 @@ export async function admitForExtraction(
       });
       return { proceed: false };
     }
+    const fullData = (node.data ?? {}) as Record<string, unknown>;
+
+    // Pull embedded diagrams/screenshots out into their own image files, for
+    // bytes no pass has read yet only (see the module note), best-effort and
+    // never fatal except for a read to retry. Before the stamp below: a
+    // retry after a busy box still finds the bytes unread.
+    if (bytesUnread(fullData)) {
+      await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch(
+        (err) => {
+          if (isRetryableReadError(err)) throw err;
+          console.error(
+            '[extractor] embedded images failed:',
+            err instanceof Error ? err.message : err,
+          );
+        },
+      );
+    }
+
     // Falling through to a FULL pass: stamp which mode this run applies so a
     // later metadata flip knows there is content to reap. Stamped here (not in
     // update_index) to anchor the contract next to its counterpart above.
     // Harmless duplicate writes are avoided by only writing on change.
-    const fullData = (node.data ?? {}) as Record<string, unknown>;
     if (fullData.indexing_applied !== 'full') {
       await db
         .update(nodes)

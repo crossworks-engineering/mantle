@@ -3,7 +3,7 @@
  * written from scratch for the tests: no client file, no tool, nothing
  * downloaded. Enough of the format for a reader: the workbook globals (BOF,
  * one BOUNDSHEET per sheet, a shared string table, EOF) and per sheet a BOF,
- * DIMENSIONS, NUMBER and LABELSST cells, EOF. The compound file has one FAT
+ * DIMENSIONS (true, a lie, or left out), NUMBER and LABELSST cells, EOF. The compound file has one FAT
  * sector, one directory sector and the Workbook stream in ordinary sectors
  * (padded past the 4,096-byte mini-stream cutoff with WRITEACCESS records,
  * the blank-padded user-name record Excel itself writes, so no mini stream
@@ -13,7 +13,14 @@
  */
 
 type Cell = string | number;
-export type BiffSheet = { name: string; rows: Cell[][] };
+export type BiffSheet = {
+  name: string;
+  rows: Cell[][];
+  /** The used range the DIMENSIONS record declares: by default the true one
+   *  (the rows and the widest row), or a lie, or `null` for no DIMENSIONS
+   *  record at all. Readers must not trust it. */
+  dimensions?: { rows: number; cols: number } | null;
+};
 
 function record(type: number, body: Buffer): Buffer {
   const head = Buffer.alloc(4);
@@ -46,9 +53,10 @@ function xlString(text: string, lengthBytes: 1 | 2): Buffer {
 
 function sheetStream(sheet: BiffSheet, sst: Map<string, number>): Buffer {
   // Rows and cells may be sparse (holes): a grid holding A1 and IV65536.
-  const rows = sheet.rows.length;
+  let rows = sheet.rows.length;
   let cols = 0;
   sheet.rows.forEach((r) => (cols = Math.max(cols, r.length)));
+  if (sheet.dimensions) ({ rows, cols } = sheet.dimensions);
   const dims = Buffer.alloc(14);
   dims.writeUInt32LE(0, 0);
   dims.writeUInt32LE(rows, 4);
@@ -74,7 +82,8 @@ function sheetStream(sheet: BiffSheet, sst: Map<string, number>): Buffer {
       }
     }),
   );
-  return Buffer.concat([bof(0x0010), record(0x0200, dims), ...cells, EOF]);
+  const head = sheet.dimensions === null ? [] : [record(0x0200, dims)];
+  return Buffer.concat([bof(0x0010), ...head, ...cells, EOF]);
 }
 
 /** The minimal style table a reader expects: 15 style XFs and one cell XF

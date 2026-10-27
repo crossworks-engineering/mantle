@@ -145,7 +145,10 @@ function parseSheet(name: string, rowsAoA: unknown[][]): ParsedSheet[] {
  */
 export async function parseSpreadsheetToGrid(buf: Buffer, ext: string): Promise<ParsedSheet[]> {
   const { isLegacySheetExt, convertLegacySheetToXlsx } = await import('./legacy-sheet');
-  if (!isLegacySheetExt(ext)) return parseSheetToGrid(buf);
+  const { runIsolated } = await import('./isolate');
+  // The read itself runs in a worker thread with a heap and time limit
+  // (./isolate.ts): a sparse sheet can lay out far more cells than it holds.
+  if (!isLegacySheetExt(ext)) return runIsolated('sheetGrid', [buf]);
 
   const { mimeForExt } = await import('./slug');
   const converted = await convertLegacySheetToXlsx(buf, mimeForExt(ext));
@@ -165,7 +168,7 @@ export async function parseSpreadsheetToGrid(buf: Buffer, ext: string): Promise<
         `${MAX_LEGACY_CELLS.toLocaleString('en-US')}-cell limit for a legacy spreadsheet. Save it as .xlsx and import that.`,
     );
   }
-  return parseSheetToGrid(converted.xlsx);
+  return runIsolated('sheetGrid', [converted.xlsx]);
 }
 
 /**
@@ -193,14 +196,17 @@ const GRID_MAX_COLS_PER_SHEET = 16_384;
  * or empty grid import would silently look like a successful one. Both call
  * sites already surface the message to the user.
  */
-export async function parseSheetToGrid(buf: Buffer): Promise<ParsedSheet[]> {
+export async function parseSheetToGrid(
+  buf: Buffer,
+  realSizes?: ReadonlyMap<string, number>,
+): Promise<ParsedSheet[]> {
   if (bytesLookLikeLegacyBiff(buf)) {
     throw new Error(
       'legacy .xls/.xlsb workbook — convert it with convertLegacySheetToXlsx before importing',
     );
   }
   if (!bytesLookLikeOoxml(buf)) return parseDelimited(buf.toString('utf-8'));
-  const wb = await loadWorkbook(buf);
+  const wb = await loadWorkbook(buf, realSizes);
   const out: ParsedSheet[] = [];
   for (const ws of wb.worksheets) {
     const { rows } = worksheetToRows(ws, {

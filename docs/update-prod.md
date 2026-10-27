@@ -1391,6 +1391,27 @@ Files already indexed are not read again by the roll. A file the in-process
 readers refuse for its size gets a `document_too_large` skip with the
 reason, and is not retried until it changes.
 
+**Pictures from three more formats, awaiting the owner's approval.** With
+this roll the extractor takes the pictures inside `.epub`, `.vsdx` and
+`.vsd` files too (it took them from `.docx`, `.pdf`, `.pptx`, the
+spreadsheets, OpenDocument, `.doc`, `.ppt`, `.rtf` and the CAD formats
+before). Each picture kept becomes an image the vision worker describes: one
+model call each, at most 30 a document. They are one list,
+`PICTURE_FORMATS_PENDING_APPROVAL` in `packages/files/src/embedded-images.ts`;
+empty it to turn all three off, nothing else changes. The roll itself spends
+nothing on them: the pictures pass runs for new or changed bytes only (a new
+upload), never for a file already read, and never on a rename, a move or an
+indexing toggle. Existing documents get their pictures only through the
+hand-run images backfill (`extract-images-backfill`, dry run by default;
+`--types` leaves these three out).
+
+**Document reads and memory.** Every document read runs in a worker thread
+sized from the container's memory cap: in the 3 GB api and web containers,
+one read at a time with a 768 MB heap (counted as 1,280 MB with the memory
+the heap does not see), at most 16 waiting, each up to 120 s (15 s for a
+chat attachment). A read that waits too long, or times out once, is
+retried, not skipped.
+
 ## Rollback
 
 ```bash
