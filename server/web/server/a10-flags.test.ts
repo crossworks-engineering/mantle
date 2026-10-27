@@ -198,9 +198,6 @@ const READERS: Record<string, Reader> = {
   'TOOL_RESULT_SPILL_MAX tools/tool-results': reg('TOOL_RESULT_SPILL_MAX'),
   'TOOL_RESULT_MAX_CHUNKS tools/tool-results': reg('TOOL_RESULT_MAX_CHUNKS'),
   'TOOL_RESULT_TTL_DAYS tools/tool-results (days)': reg('TOOL_RESULT_TTL_DAYS'),
-  'MEDIA_MAX_STT_DURATION_S tools/builtins-video': reg('MEDIA_MAX_STT_DURATION_S'),
-  'MEDIA_MAX_AUDIO_BYTES tools/builtins-video': reg('MEDIA_MAX_AUDIO_BYTES'),
-  'MEDIA_MAX_VIDEO_BYTES tools/builtins-video': reg('MEDIA_MAX_VIDEO_BYTES'),
   'BENCH_MAX_USD api/bench/run': num('BENCH_MAX_USD', () =>
     parseNumber(envDynamic('BENCH_MAX_USD'), 0),
   ),
@@ -217,6 +214,23 @@ const READERS: Record<string, Reader> = {
     parseFlag(envDynamic('BENCH_RETRIEVE_ONLY'), false),
   ),
 };
+
+/**
+ * Readers gone since the record was taken, each with why: their recorded
+ * cells (and named changes) leave the comparison.
+ */
+const RETIRED: Record<string, string> = {
+  'MEDIA_MAX_STT_DURATION_S tools/builtins-video':
+    'renamed VIDEO_INGEST_MAX_STT_DURATION_S when the media sidecar was removed; the old name is its legacy alias (ENV_ALIASES)',
+  'MEDIA_MAX_AUDIO_BYTES tools/builtins-video':
+    'renamed VIDEO_INGEST_MAX_AUDIO_BYTES when the media sidecar was removed; the old name is its legacy alias (ENV_ALIASES)',
+  'MEDIA_MAX_VIDEO_BYTES tools/builtins-video':
+    'renamed VIDEO_INGEST_MAX_FILE_BYTES when the media sidecar was removed; the old name is its legacy alias (ENV_ALIASES)',
+};
+
+function retired(cell: string): boolean {
+  return Object.keys(RETIRED).some((id) => cell.startsWith(`${id} | `));
+}
 
 /**
  * Readers the lint found after the record was taken: each keeps the reading
@@ -327,8 +341,15 @@ describe('flags and env: record, move, compare (A10 #11)', () => {
     return;
   }
 
-  const main = { ...readJson<Record<string, Value>>(MAIN_FILE, {}), ...late('main') };
-  const changes = readJson<Changes>(CHANGES_FILE, { cells: {} });
+  const main = Object.fromEntries(
+    Object.entries({ ...readJson<Record<string, Value>>(MAIN_FILE, {}), ...late('main') }).filter(
+      ([cell]) => !retired(cell),
+    ),
+  );
+  const recorded = readJson<Changes>(CHANGES_FILE, { cells: {} });
+  const changes: Changes = {
+    cells: Object.fromEntries(Object.entries(recorded.cells).filter(([cell]) => !retired(cell))),
+  };
 
   it('reads every recorded cell, and only those', () => {
     expect(Object.keys(now).sort()).toEqual(Object.keys(main).sort());
@@ -360,6 +381,10 @@ describe('flags and env: record, move, compare (A10 #11)', () => {
         ).toBe(profileFlag(prefs, spec.profile));
       }
     }
+  });
+
+  it('gives every retired reader a reason', () => {
+    for (const [id, why] of Object.entries(RETIRED)) expect(why.length, id).toBeGreaterThan(20);
   });
 
   it('gives every named change a reason', () => {
