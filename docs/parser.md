@@ -23,25 +23,25 @@ operating system's:
 
 - **Memory, one job at a time.** `mem_limit` (default `2g`,
   `PARSER_MEM_LIMIT`) with `memswap_limit` equal to it (no swap past it),
-  and one job at a time (`PARSER_MAX_JOBS`, default 1), so a job has the
-  whole memory and a healthy file is never killed for its neighbour. A
-  document that blows the limit is killed by the kernel inside the parser,
-  never in a brain process.
+  and always one job at a time (there is no setting to raise it), so a job
+  has the whole memory and a healthy file is never killed for its
+  neighbour. A document that blows the limit is killed by the kernel
+  inside the parser, never in a brain process.
 - **CPU.** `cpus` (default `1`, `PARSER_CPUS`): every box can grant it, a
-  1-vCPU box included. Raise it, and `PARSER_MAX_JOBS` with the memory, on
-  a box with cores to spare.
-- **Disk.** The scratch space (`/tmp`, where a job's files live) is a tmpfs
-  of `PARSER_TMP_SIZE` (default `1g`): a job cannot fill the host's disk.
-  A tmpfs is memory: a job's files count in `mem_limit` while they sit
-  there. A request takes its job slot before its body is read, so the
-  scratch space only ever holds the files of the job that runs, and the
-  job's directory is removed before its slot is given back. Nothing one job
-  writes is there for the next: a job's temp files, home, caches and
-  matplotlib's font cache are inside its own directory (`TMPDIR`, `HOME`,
-  `XDG_CACHE_HOME`, `MPLCONFIGDIR`), tsx keeps no transform cache
-  (`TSX_DISABLE_CACHE`), and whatever is left in `/tmp` beside the job root
-  is removed before the slot is given back
-  (`server/parser/src/proc.ts`, `jobEnv` and `cleanScratch`).
+  1-vCPU box included. Raise it on a box with cores to spare.
+- **Disk.** The root filesystem is read-only (`read_only: true`). The job
+  user can write only to tmpfs mounts: the scratch space (`/tmp`, where a
+  job's files live, `PARSER_TMP_SIZE`, default `1g`), `/dev/shm` and
+  `/dev/mqueue`. A job cannot fill the host's disk or change the image's
+  code. A tmpfs is memory: a job's files count in `mem_limit` while they
+  sit there. A request takes the job slot before its body is read, so the
+  scratch space only ever holds the files of the job that runs. A job's
+  temp files, home, caches and matplotlib's font cache are inside its own
+  directory (`TMPDIR`, `HOME`, `XDG_CACHE_HOME`, `MPLCONFIGDIR`,
+  `server/parser/src/proc.ts` `jobEnv`), and neither tsx nor Node keeps a
+  cache (`TSX_DISABLE_CACHE`, `NODE_DISABLE_COMPILE_CACHE`, set in the
+  image), so the server itself writes nothing to `/tmp` but the empty job
+  root.
 - **Network.** The parser sits only on the compose network `parser`
   (`mantle_parser_net`, `internal: true`): no route out (no NAT), and
   `dns: 0.0.0.0`, so Docker's resolver forwards no name outside the stack.
@@ -81,35 +81,78 @@ reader's child program (the Python CAD child, ffprobe, ffmpeg) starts in the
 JOB's group (`runChild`), never one of its own, so that kill takes it and
 whatever it started. The deadline is absolute: the server settles on the
 job's exit, not on its output pipes closing, so a descendant that left the
-group (`setsid`) cannot hold the slot. Such a descendant is killed before
-the slot is given back (`server/parser/src/proc.ts`, `reapOrphans`): every
-process a job starts carries the server's mark in its environment
-(`MANTLE_PARSER_JOB`), and a marked process outside the group of a running
-job is a leftover; as a backstop inside the container, so is a child of PID
-1 that is not the server (a process that cleared its environment). The
-kernel's OOM kill lands on the job process (the largest), the server answers
-`crashed`, and the next job starts clean.
+group (`setsid`) cannot hold the slot. The kernel's OOM kill lands on the
+job process (the largest), and the server answers `crashed`.
+
+## Between jobs
+
+The container is the boundary between one job and the next, not code. The
+server does not hunt for what a job left and tidy it; it checks whether the
+container is as clean as a fresh one and, if it is not, throws it away.
+
+After every job, once its answer (or its error) is sent and before the slot
+is given back, the server (`server/parser/src/main.ts` `afterJob`,
+`server/parser/src/clean.ts`):
+
+1. kills the job's process group again, and removes the job's directory;
+2. checks the processes. Inside the container the only ones allowed are
+   PID 1 (Docker's init, tini), the server's launcher chain (`pnpm`, the
+   `tsx` command, the server), what those keep under them (tsx's `esbuild`
+   service, pnpm's process-group helper `sh`), and a process entered from
+   outside the container (`docker exec`: the healthcheck, an operator),
+   whose parent is outside it. Nothing of the job's group, nothing that
+   descends from the job, and nothing that left it: a process that left the
+   job's group (`setsid`, a double fork) is re-parented to PID 1 when the
+   job dies, so it descends from neither the server nor `docker exec`. A
+   zombie is dead already. The job's killed processes get 2 s to go;
+3. checks the files. `/tmp` holds the job root (`/tmp/mantle-parser`) and
+   nothing else, the job root is empty, `/dev/shm` and `/dev/mqueue` are
+   empty, and no System V IPC object (shared memory, a semaphore, a message
+   queue) exists. With the root filesystem read-only, these are every place
+   the job user can write.
+
+If a check fails, or the cleanup itself throws (a directory the job made
+undeletable), the server logs one line saying why
+(`[parser] RESTART: after <job>: <why>`), takes no more jobs, answers every
+waiting request `unavailable` (the client retries it and never counts it
+against the file), lets the requests in flight be answered (at most 20 s),
+and exits 1. Docker restarts the container (`restart: unless-stopped`)
+with a fresh tmpfs and a fresh process table. The check runs only after a
+job, so a clean start never exits, and Docker's restart backoff resets
+after 10 s of uptime. The job that left something behind got its answer
+first.
+
+A slot held longer than any job may legitimately hold it (the longest
+job's limit, the body's and the answer's 60 s each, and a 30 s margin:
+`parserSlotHoldMaxMs` in `packages/files/src/parser-wire.ts`) is a wedge:
+`/healthz` answers 503, the healthcheck fails, and autoheal restarts the
+container the same way. The answer itself can no longer wedge it: it is
+streamed with a pipeline that settles when the connection closes, at any
+point.
+
+Outside the container (`pnpm dev`, the tests) only the job root is
+checked: the host's processes and its `/tmp` are not the parser's.
 
 ## Limits
 
-| Setting                     | Default | What it bounds                                                         |
-| --------------------------- | ------- | ---------------------------------------------------------------------- |
-| `PARSER_MEM_LIMIT`          | `2g`    | the container's memory, no swap past it (compose)                      |
-| `PARSER_CPUS`               | `1`     | the container's CPU share (compose)                                    |
-| `PARSER_TMP_SIZE`           | `1g`    | the scratch tmpfs, counted in the memory while full (compose)          |
-| `PARSER_MAX_JOBS`           | 1       | jobs at once, each its own process                                     |
-| `PARSER_QUEUE_MAX`          | 16      | requests that may wait for a slot; one waits at most 30 s, then `busy` |
-| (interactive)               | 10 s    | a person-facing request's wait, at the head of the queue, then `busy`  |
-| (transfer)                  | 60 s    | the body's arrival and the answer's, each, once the slot is taken      |
-| `PARSER_MAX_UPLOAD_MB`      | 512     | the largest body (the brain's streamed upload cap), while it streams   |
-| `PARSER_CLIENT_CONCURRENCY` | 2       | jobs one brain process sends at once                                   |
-| `PARSER_TOKEN`              | none    | the bearer token on every route but `GET /healthz`                     |
+| Setting                     | Default | What it bounds                                                           |
+| --------------------------- | ------- | ------------------------------------------------------------------------ |
+| `PARSER_MEM_LIMIT`          | `2g`    | the container's memory, no swap past it (compose)                        |
+| `PARSER_CPUS`               | `1`     | the container's CPU share (compose)                                      |
+| `PARSER_TMP_SIZE`           | `1g`    | the scratch tmpfs, counted in the memory while full (compose)            |
+| (jobs)                      | 1       | jobs at once, always; each its own process                               |
+| `PARSER_QUEUE_MAX`          | 16      | requests that may wait for the slot; one waits at most 30 s, then `busy` |
+| (interactive)               | 10 s    | a person-facing request's wait, at the head of the queue, then `busy`    |
+| (transfer)                  | 60 s    | the body's arrival and the answer's, each, once the slot is taken        |
+| `PARSER_MAX_UPLOAD_MB`      | 512     | the largest body (the brain's streamed upload cap), while it streams     |
+| `PARSER_CLIENT_CONCURRENCY` | 2       | jobs one brain process sends at once                                     |
+| `PARSER_TOKEN`              | none    | the bearer token on every route but `GET /healthz`                       |
 
 An interactive request (a chat attachment, a thumbnail: the client sends
 `X-Parser-Priority: interactive`) waits at the head of the queue, behind
 earlier interactive ones only, and is answered `busy` after 10 s; it is not
 turned away by a full background queue (each kind is capped at
-`PARSER_QUEUE_MAX`). There is no second slot: it takes the next one that
+`PARSER_QUEUE_MAX`). There is no second slot: it takes the slot when it
 frees. A body that has not arrived 60 s after its slot was taken, or an
 answer not read within 60 s, has its connection cut and the slot given back.
 
@@ -171,8 +214,12 @@ contract is `packages/files/src/parser-wire.ts`.
 
 `GET /healthz` answers the running and queued job counts and the reader
 versions the image carries (pdfjs, anydoc, exceljs, mammoth, python, ezdxf,
-ffmpeg, dwg2dxf). The client waits a job's limit plus the 30 s queue wait
-plus 30 s for the transfer.
+ffmpeg, dwg2dxf); 503 while the slot is wedged or the parser is
+restarting (above). The client waits the parser's worst legitimate time
+for the job, never less: the queue wait (30 s, or 10 s for an interactive
+request), the body's 60 s, the job's limit, the answer's 60 s and a 30 s
+margin (`parserClientTimeoutMs`, built on the same function as the
+parser's watchdog).
 
 ## Errors
 
@@ -230,13 +277,15 @@ What each caller does with them:
 - **HEIC for vision** (`packages/files/src/transcode.ts`): a retryable
   failure is thrown, never an unconverted HEIC sent on to a vision model.
 - **A chat turn** with an attachment says the file could not be read.
-  It runs interactive (`withParserScope({ interactive: true })`): it skips
-  its process's client queue (`PARSER_CLIENT_CONCURRENCY`), waits at the
-  head of the parser's queue for at most 10 s, and a `busy` after that is
-  the answer, never retried: the turn says "try again in a moment". The
+  It runs interactive and uncapped
+  (`withParserScope({ interactive: true, uncapped: true })`): it skips its
+  process's client cap (`PARSER_CLIENT_CONCURRENCY`), waits at the head of
+  the parser's queue for at most 10 s, and a `busy` after that is the
+  answer, never retried: the turn says "try again in a moment". The
   background extract retries `busy` (2, 5 and 10 s). Thumbnails run
-  interactive too: a busy parser shows the type icon, and the next request
-  tries again.
+  interactive too (the head of the parser's queue, a busy parser shows the
+  type icon and the next request tries again), but take their turn under
+  the process's cap, so a gallery cannot starve the background extracts.
 - **Health** (`parserHealth`): up means the parser answers `/healthz` AND
   takes this process's token. `/healthz` says whether the parser asks for a
   token and whether the caller's is right; a mismatch, or a parser that asks
@@ -314,8 +363,8 @@ cases that need ezdxf when it is not installed.
 The release workflow (`.github/workflows/release.yml`) builds both images
 for amd64 and arm64, probes them (the readers, then the parser service
 booted with no network reading a document end to end) and only then moves
-`:latest`. Building both architectures on the workstation BEFORE the tag
-catches a broken arch an hour earlier. Once per machine (arm64 emulation
+`:latest`. Building both architectures on a Linux build host BEFORE the
+tag catches a broken arch an hour earlier. Once per machine (arm64 emulation
 and a builder that can build for both):
 
 ```sh

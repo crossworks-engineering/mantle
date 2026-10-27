@@ -7,36 +7,43 @@
  * client (packages/files/src/parser-client.ts).
  *
  * The safety guarantee is the container: an OS memory limit (`mem_limit`,
- * with no swap beyond it), a CPU share, a size-limited scratch space (a
- * tmpfs) and a network with no route out (compose network `parser`,
- * `internal: true`). Inside it, cheap bounds only:
+ * with no swap beyond it), a CPU share, a read-only root filesystem with a
+ * size-limited scratch space (a tmpfs on /tmp) and a network with no route
+ * out (compose network `parser`, `internal: true`). Inside it, cheap
+ * bounds only:
  *
- *  - PARSER_MAX_JOBS jobs at a time (default 1, so one job has the whole
- *    memory), up to PARSER_QUEUE_MAX waiting at most PARSER_QUEUE_WAIT_MS
- *    each, then `busy`; an interactive request (PRIORITY_HEADER) waits at
- *    the head of the queue, at most PARSER_INTERACTIVE_WAIT_MS. A request
- *    takes its slot BEFORE its body is read: a refused one leaves nothing
- *    on disk;
+ *  - one job at a time, so a job has the whole memory; up to
+ *    PARSER_QUEUE_MAX waiting at most PARSER_QUEUE_WAIT_MS each, then
+ *    `busy`; an interactive request (PRIORITY_HEADER) waits at the head of
+ *    the queue, at most PARSER_INTERACTIVE_WAIT_MS. A request takes the
+ *    slot BEFORE its body is read: a refused one leaves nothing on disk;
  *  - a request-body cap (PARSER_MAX_UPLOAD_MB), enforced while the body
  *    streams to disk, never after it sat in memory; a deadline on the
  *    body's arrival and on the answer's, so a slow transfer cannot hold
  *    the slot;
  *  - each job in its own process (./job.ts) and process group, killed at
  *    the job's deadline (PARSER_JOB_TIMEOUT_MS); the kernel's OOM kill
- *    lands on the job process, and the server answers `crashed`. Before
- *    the slot is given back, what the job left running is killed
- *    (./proc.ts `reapOrphans`) and what it left in /tmp is removed;
+ *    lands on the job process, and the server answers `crashed`;
  *  - an answer cap (PARSER_ANSWER_MAX_BYTES), and the readers' own caps
  *    (zip parts, sheet cells, image pixels, pictures per answer).
  *
- * If the server itself dies, compose restarts it (`restart: unless-stopped`)
- * and the brain reads the dropped connection as `crashed`.
+ * Between jobs the container is the boundary, not code. After every job,
+ * once its answer is sent and before the slot is given back, the server
+ * kills the job's group, removes its directory and checks the container is
+ * as clean as a fresh one (./clean.ts): no process but its own, nothing
+ * written anywhere but the empty job root. If it is not, or the cleanup
+ * throws, the server stops taking jobs and exits, and Docker restarts the
+ * container (`restart: unless-stopped`) with a fresh tmpfs and process
+ * table. The check runs only after a job, so a clean start never exits.
+ * A slot held past every deadline (a wedge) turns /healthz to 503, and
+ * autoheal restarts it the same way. The brain reads a dropped connection
+ * as `crashed`, a refused one as `unavailable`.
  *
  * This process never parses a document. It holds no secret but its bearer
  * token, mounts no data, and reads nothing but the bodies it is sent.
  */
-import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { createReadStream, createWriteStream, promises as fs } from 'node:fs';
+import { timingSafeEqual } from 'node:crypto';
+import { createWriteStream, promises as fs } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -46,10 +53,7 @@ import { errorMessage } from '@mantle/std';
 import { onShutdown } from '@mantle/std/shutdown';
 import {
   MAX_OPTS_BYTES,
-  META_HEADER,
   OPTS_LENGTH_HEADER,
-  PARSER_ANSWER_DEADLINE_MS,
-  PARSER_ANSWER_MAX_BYTES,
   PARSER_DEFAULT_PORT,
   PARSER_ERROR_STATUS,
   PARSER_INTERACTIVE_WAIT_MS,
@@ -59,11 +63,14 @@ import {
   PARSER_SPOOL_DEADLINE_MS,
   PRIORITY_HEADER,
   PRIORITY_INTERACTIVE,
+  parserSlotHoldMaxMs,
   type ParserErrorCode,
   type ParserJob,
 } from '@mantle/files/parser-wire';
-import { JobFailure } from './job-failure';
-import { cleanScratch, inParserContainer, jobEnv, reapOrphans, runGroup } from './proc';
+import { sendAnswer } from './answer';
+import { inParserContainer, leftovers, readProcs, strays } from './clean';
+import { JOB_CODES, JobFailure } from './job-failure';
+import { jobEnv, runGroup } from './proc';
 import { Slots } from './slots';
 import { probeVersions } from './versions';
 
@@ -81,19 +88,26 @@ const PORT = envNum('PARSER_PORT') || PARSER_DEFAULT_PORT;
 // script binds 127.0.0.1 so a laptop's parser is not on the LAN.
 const HOST = env('PARSER_HOST') ?? '0.0.0.0';
 const TOKEN = env('PARSER_TOKEN') ?? '';
-const MAX_JOBS = Math.max(1, envNum('PARSER_MAX_JOBS'));
 const QUEUE_MAX = Math.max(0, envNum('PARSER_QUEUE_MAX'));
 const MAX_BODY_BYTES = Math.max(1, envNum('PARSER_MAX_UPLOAD_MB')) * 1024 * 1024;
 const WORKDIR = env('PARSER_WORKDIR') ?? path.join(os.tmpdir(), 'mantle-parser');
-/** This server's mark on every process its jobs start (./proc.ts
- *  JOB_MARK_VAR): what the reaper looks for. */
-const MARK = randomUUID();
-/** The process groups of the jobs running now: the reaper leaves them be. */
-const runningGroups = new Set<number>();
+/** Past this the slot is wedged (no job, transfer or cleanup takes so
+ *  long): /healthz answers 503 and autoheal restarts the container. */
+const SLOT_HOLD_MAX_MS = envNum('PARSER_SLOT_HOLD_MAX_MS', parserSlotHoldMaxMs());
+/** How long the job's killed processes get to go before the check says
+ *  they stayed. */
+const SETTLE_MS = 2_000;
+/** How long the requests in flight get to be answered (a waiter's
+ *  `unavailable`) before a restart's exit. */
+const RESTART_GRACE_MS = 20_000;
 
-// ── slots ───────────────────────────────────────────────────────────────────
+// ── the slot ────────────────────────────────────────────────────────────────
 
-const slots = new Slots(MAX_JOBS, QUEUE_MAX, PARSER_QUEUE_WAIT_MS, PARSER_INTERACTIVE_WAIT_MS);
+const slots = new Slots(QUEUE_MAX, PARSER_QUEUE_WAIT_MS, PARSER_INTERACTIVE_WAIT_MS);
+/** Job requests in flight (waiting, running or answering). */
+let inFlight = 0;
+/** Why the server is restarting (it takes no more jobs), once it is. */
+let restarting: string | null = null;
 
 // ── one request ─────────────────────────────────────────────────────────────
 
@@ -254,58 +268,81 @@ async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number
   } catch {
     throw new JobFailure('bad_request', 'the options are not JSON');
   }
-  await fs.writeFile(path.join(dir, 'opts.json'), opts || '{}');
+  await fs.writeFile(path.join(dir, 'opts.json'), opts || '{}').catch((err: unknown) => {
+    throw serverFailure(err);
+  });
   return size;
 }
 
 /** A write to the scratch space failed. Full (ENOSPC): the file does not
- *  fit beside what the running jobs hold. Not final: the space can be full
- *  for other reasons, so the bytes get their one retry. */
+ *  fit. Not final: the space can be full for other reasons, so the bytes
+ *  get their one retry. Anything else is the parser's own fault, never the
+ *  file's: `unavailable` (retried, not counted). */
 function scratchFailure(err: NodeJS.ErrnoException): JobFailure {
   if (err.code === 'ENOSPC') {
     return new JobFailure('too_large', "the file does not fit in the parser's scratch space");
   }
-  return new JobFailure('failed', `the parser could not write the file: ${err.message}`);
+  return serverFailure(err);
+}
+
+/** The server's own I/O failed (its scratch directory, a write of the
+ *  options): not a verdict on the file. */
+function serverFailure(err: unknown): JobFailure {
+  return new JobFailure(
+    'unavailable',
+    `the parser could not prepare the job: ${errorMessage(err)}`,
+  );
 }
 
 type Outcome = 'ok' | ParserErrorCode;
 
-/** Run the job process and read how it ended. */
-async function runJobProcess(job: ParserJob, dir: string, abort: AbortSignal): Promise<Outcome> {
+type JobEnd = { code: 'ok' } | { code: ParserErrorCode; message: string; final: boolean };
+
+/** Run the job process and read how it ended. `onSpawn` is told the job's
+ *  process group. */
+async function runJobProcess(
+  job: ParserJob,
+  dir: string,
+  abort: AbortSignal,
+  onSpawn: (pgid: number) => void,
+): Promise<JobEnd> {
   const timeoutMs = PARSER_JOB_TIMEOUT_MS[job];
   // The job's temp files, home and caches: in its own directory (./proc.ts
   // jobEnv), removed with it.
   const scratch = path.join(dir, 'tmp');
-  await fs.mkdir(scratch);
-  let pgid: number | undefined;
+  await fs.mkdir(scratch).catch((err: unknown) => {
+    throw serverFailure(err);
+  });
   const ended = await runGroup(process.execPath, [...process.execArgv, JOB_ENTRY, job, dir], {
     timeoutMs,
     abort,
-    env: jobEnv(scratch, MARK),
-    onSpawn: (pid) => {
-      pgid = pid;
-      runningGroups.add(pid);
-    },
-  }).finally(() => {
-    if (pgid !== undefined) runningGroups.delete(pgid);
+    env: jobEnv(scratch),
+    onSpawn,
   });
-  if (ended.code === 0) return 'ok';
+  if (ended.code === 0) return { code: 'ok' };
   if (ended.timedOut) {
-    await fs.writeFile(
-      path.join(dir, 'error.json'),
-      JSON.stringify({
-        code: 'timeout',
-        message: `the job ran past its ${timeoutMs / 1000} s limit and was killed`,
-      }),
-    );
-    return 'timeout';
+    return {
+      code: 'timeout',
+      message: `the job ran past its ${timeoutMs / 1000} s limit and was killed`,
+      final: false,
+    };
   }
   if (ended.code === 3) {
+    // The job's own verdict, from the codes a job may give: anything else
+    // (the server's busy or unavailable, a made-up code) is a crash.
     try {
       const e = JSON.parse(await fs.readFile(path.join(dir, 'error.json'), 'utf8')) as {
-        code?: ParserErrorCode;
+        code?: unknown;
+        message?: unknown;
+        final?: unknown;
       };
-      if (e.code && e.code in PARSER_ERROR_STATUS) return e.code;
+      if (typeof e.code === 'string' && JOB_CODES.has(e.code as ParserErrorCode)) {
+        return {
+          code: e.code as ParserErrorCode,
+          message: typeof e.message === 'string' ? e.message : e.code,
+          final: e.final === true,
+        };
+      }
     } catch {
       /* fall through to crashed */
     }
@@ -315,22 +352,94 @@ async function runJobProcess(job: ParserJob, dir: string, abort: AbortSignal): P
     : `the job process ended with code ${ended.code}${ended.spawnError ? ` (${ended.spawnError})` : ''}`;
   if (ended.stderr.trim())
     process.stderr.write(`[parser] ${job}: ${ended.stderr.trim().slice(-800)}\n`);
-  await fs.writeFile(
-    path.join(dir, 'error.json'),
-    JSON.stringify({ code: 'crashed', message: why }),
+  return { code: 'crashed', message: why, final: false };
+}
+
+/**
+ * After a job, with its answer sent and before the slot is given back:
+ * kill its process group, remove its directory, and check the container
+ * is clean (./clean.ts). Returns why it is not, or null. Never throws: a
+ * cleanup that throws is a reason too.
+ */
+async function afterJob(dir: string | null, pgid: number | undefined): Promise<string | null> {
+  try {
+    if (pgid !== undefined) {
+      try {
+        process.kill(-pgid, 'SIGKILL');
+      } catch {
+        /* gone already */
+      }
+    }
+    if (dir) {
+      try {
+        await fs.rm(dir, { recursive: true, force: true });
+      } catch (err) {
+        return `the job's directory could not be removed (${errorMessage(err)})`;
+      }
+    }
+    const container = await inParserContainer();
+    const scratchRoot = path.dirname(WORKDIR);
+    // The killed processes need a moment to go; anything still there after
+    // SETTLE_MS stayed.
+    const until = Date.now() + SETTLE_MS;
+    for (;;) {
+      const left = await leftovers({ workdir: WORKDIR, scratchRoot, container });
+      const procs = container ? strays(await readProcs(), process.pid, pgid) : [];
+      const why =
+        left ??
+        (procs.length > 0
+          ? `${procs.length} process(es) outlived the job (pid ${procs
+              .slice(0, 5)
+              .map((p) => p.pid)
+              .join(', ')})`
+          : null);
+      if (!why || Date.now() >= until) return why;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  } catch (err) {
+    return `the cleanup after the job failed (${errorMessage(err)})`;
+  }
+}
+
+/**
+ * The container is dirty: take no more jobs, answer every waiter
+ * `unavailable` (retried, never counted against its file), let the
+ * requests in flight be answered, then exit so Docker restarts the
+ * container with a fresh tmpfs and process table.
+ */
+function restart(why: string): void {
+  if (restarting) return;
+  restarting = why;
+  process.stderr.write(
+    `[parser] RESTART: ${why}; exiting so the container restarts with a fresh /tmp and process table\n`,
   );
-  return 'crashed';
+  slots.close('the parser is restarting');
+  const started = Date.now();
+  const exitWhenIdle = (): void => {
+    if (inFlight === 0 || Date.now() - started >= RESTART_GRACE_MS) process.exit(1);
+    setTimeout(exitWhenIdle, 50);
+  };
+  // After this turn of the loop: the answer just sent is flushed first.
+  setTimeout(exitWhenIdle, 50);
 }
 
 async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const url = (req.url ?? '/').split('?')[0]!;
   if (req.method === 'GET' && url === '/healthz') {
-    sendJson(res, 200, {
-      ok: true,
+    const heldMs = slots.heldMs();
+    // A slot held past every deadline is a wedge; a restart is under way.
+    const wedged = heldMs > SLOT_HOLD_MAX_MS;
+    const ok = !wedged && !restarting;
+    sendJson(res, ok ? 200 : 503, {
+      ok,
+      ...(wedged
+        ? { why: `the job slot has been held ${Math.round(heldMs / 1000)} s, past every deadline` }
+        : restarting
+          ? { why: restarting }
+          : {}),
       versions: await probeVersions(),
       running: slots.running,
       queued: slots.queued,
-      maxJobs: MAX_JOBS,
       // Whether this parser asks for a token, and whether the caller sent
       // the right one: the brain's health screen reads a mismatch as down.
       auth: TOKEN ? 'token' : 'none',
@@ -355,6 +464,19 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     );
     return;
   }
+  inFlight++;
+  try {
+    await runRequest(job, req, res);
+  } finally {
+    inFlight--;
+  }
+}
+
+async function runRequest(
+  job: ParserJob,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<void> {
   const started = Date.now();
   const abort = new AbortController();
   res.on('close', () => {
@@ -363,105 +485,48 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   const interactive = req.headers[PRIORITY_HEADER] === PRIORITY_INTERACTIVE;
   let slot = false;
   let dir: string | null = null;
-  let outcome: Outcome = 'failed';
+  let pgid: number | undefined;
+  let outcome: Outcome = 'unavailable';
   let size = 0;
   try {
     // The slot first: a request that cannot run soon is refused before a
     // byte of its body is read, and the scratch space only ever holds the
-    // files of the jobs that run.
+    // file of the job that runs.
     await slots.acquire({ interactive });
     slot = true;
-    dir = await fs.mkdtemp(path.join(WORKDIR, `${job}-`));
+    dir = await fs.mkdtemp(path.join(WORKDIR, `${job}-`)).catch((err: unknown) => {
+      throw serverFailure(err);
+    });
     const jobDir = dir;
     size = await withTransferDeadline(req, PARSER_SPOOL_DEADLINE_MS, 'the file', () =>
       spoolBody(req, jobDir),
     );
-    outcome = await runJobProcess(job, dir, abort.signal);
-    if (outcome !== 'ok') {
-      const e = JSON.parse(await fs.readFile(path.join(dir, 'error.json'), 'utf8')) as {
-        message?: string;
-        final?: boolean;
-      };
-      await sendFailure(req, res, outcome, e.message ?? outcome, e.final === true);
+    const ended = await runJobProcess(job, dir, abort.signal, (pid) => (pgid = pid));
+    outcome = ended.code;
+    if (ended.code !== 'ok') {
+      await sendFailure(req, res, ended.code, ended.message, ended.final);
       return;
     }
     await sendAnswer(job, dir, res);
   } catch (err) {
-    if (err instanceof JobFailure) {
-      outcome = err.code;
-      await sendFailure(req, res, err.code, err.message, err.final);
-    } else {
-      outcome = 'failed';
-      await sendFailure(req, res, 'failed', errorMessage(err));
-    }
+    // A JobFailure is typed; anything else is the server's own fault, never
+    // a verdict on the file (LOW-A): `unavailable`.
+    const failure = err instanceof JobFailure ? err : serverFailure(err);
+    outcome = failure.code;
+    await sendFailure(req, res, failure.code, failure.message, failure.final);
   } finally {
-    // The job's files go before its slot does: the next job gets the whole
-    // scratch space. Then whatever the job left running, and whatever it
-    // left in /tmp, before the slot is given back: the next job starts with
-    // neither.
-    if (dir) await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    // The answer is sent. Before the slot is given back the job's group
+    // goes, its directory goes, and the container must be as clean as a
+    // fresh one; if it is not, no job runs here again (restart).
     if (slot) {
-      const killed = await reapOrphans({ mark: MARK, keepGroups: runningGroups });
-      if (killed > 0)
-        process.stderr.write(`[parser] ${job}: killed ${killed} left-behind process(es)\n`);
-      // Only while no other job runs (one, by default): a running job's
-      // files are under WORKDIR, but a program may write to /tmp itself.
-      if (slots.running === 1 && (await scratchIsTmp())) await cleanScratch(os.tmpdir(), WORKDIR);
+      const dirty = await afterJob(dir, pgid);
+      if (dirty) restart(`after ${job}: ${dirty}`);
       slots.release();
     }
     // Log the job, never its content.
     process.stdout.write(
-      `[parser] ${job}${interactive ? ' (interactive)' : ''} ${outcome} ${size} B ${Date.now() - started} ms (running ${slots.running}, queued ${slots.queued})\n`,
+      `[parser] ${job}${interactive ? ' (interactive)' : ''} ${outcome} ${size} B ${Date.now() - started} ms (queued ${slots.queued})\n`,
     );
-  }
-}
-
-/** /tmp is the parser's own scratch tmpfs: inside its container, with the
- *  job root directly in it. Never on a developer's machine. */
-async function scratchIsTmp(): Promise<boolean> {
-  return path.dirname(WORKDIR) === os.tmpdir() && (await inParserContainer());
-}
-
-const BYTE_JOBS: ReadonlySet<ParserJob> = new Set(['extractAudio', 'thumbnail', 'visionImage']);
-
-async function sendAnswer(job: ParserJob, dir: string, res: http.ServerResponse): Promise<void> {
-  const byteJob = BYTE_JOBS.has(job);
-  const file = path.join(dir, byteJob ? 'out.bin' : 'out.json');
-  const { size } = await fs.stat(file);
-  // An answer the brain would refuse is not sent: it holds every answer in
-  // memory (packages/files/src/parser-client.ts).
-  if (size > PARSER_ANSWER_MAX_BYTES) {
-    throw new JobFailure(
-      'too_large',
-      `the answer is ${Math.round(size / 1024 / 1024)} MB, past the ${PARSER_ANSWER_MAX_BYTES / 1024 / 1024} MB an answer may be`,
-      { final: true },
-    );
-  }
-  const headers: Record<string, string> = {
-    'content-type': byteJob ? 'application/octet-stream' : 'application/json',
-    'content-length': String(size),
-  };
-  if (byteJob) {
-    const meta = await fs.readFile(path.join(dir, 'meta.json'), 'utf8').catch(() => '{}');
-    headers[META_HEADER] = encodeURIComponent(meta);
-  }
-  res.writeHead(200, headers);
-  // A client that does not read its answer gives the slot back at the
-  // deadline: the connection is cut.
-  const cut = setTimeout(() => res.destroy(), PARSER_ANSWER_DEADLINE_MS);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const stream = createReadStream(file);
-      stream.on('error', reject);
-      res.on('finish', resolve);
-      res.on('close', () => {
-        stream.destroy();
-        resolve();
-      });
-      stream.pipe(res);
-    });
-  } finally {
-    clearTimeout(cut);
   }
 }
 
@@ -471,9 +536,13 @@ async function main(): Promise<void> {
   if (isBootSmoke()) {
     await bootSmokeExit('parser', [() => import('./jobs'), () => import('./cad')]);
   }
-  // A job directory left by a killed server is garbage now.
+  // A job directory left by a killed server is garbage now (in the
+  // container a restart gives a fresh tmpfs anyway).
   await fs.rm(WORKDIR, { recursive: true, force: true });
   await fs.mkdir(WORKDIR, { recursive: true });
+  // The versions before the first request: no probe of the server's own is
+  // ever running beside a job.
+  await probeVersions();
   if (!TOKEN) {
     process.stderr.write(
       '[parser] PARSER_TOKEN is not set: serving without a bearer token (the parser network is internal to the stack)\n',
@@ -481,7 +550,7 @@ async function main(): Promise<void> {
   }
   const server = http.createServer((req, res) => {
     handle(req, res).catch(
-      (err: unknown) => void sendFailure(req, res, 'failed', errorMessage(err)),
+      (err: unknown) => void sendFailure(req, res, 'unavailable', errorMessage(err)),
     );
   });
   // A request is the transfer of one file: no long idle sockets. Node's
@@ -492,9 +561,8 @@ async function main(): Promise<void> {
   server.keepAliveTimeout = 5_000;
   server.listen(PORT, HOST, () => {
     process.stdout.write(
-      `[parser] listening on ${HOST}:${PORT} (${MAX_JOBS} jobs, ${QUEUE_MAX} queued, ${MAX_BODY_BYTES / 1024 / 1024} MB per file)\n`,
+      `[parser] listening on ${HOST}:${PORT} (one job at a time, ${QUEUE_MAX} queued, ${MAX_BODY_BYTES / 1024 / 1024} MB per file)\n`,
     );
-    void probeVersions();
   });
   // Stop taking requests and let the running ones answer; Docker's default
   // 10 s grace ends the rest (a job's group dies with the container).

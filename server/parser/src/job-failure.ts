@@ -20,3 +20,17 @@ export class JobFailure extends Error {
     this.final = opts.final === true;
   }
 }
+
+/**
+ * The codes a job process may answer with (its `error.json`). `busy` and
+ * `unavailable` are the server's own (its slot, its restart): a job that
+ * writes one of them, or anything else, is read as `crashed`.
+ */
+export const JOB_CODES: ReadonlySet<ParserErrorCode> = new Set<ParserErrorCode>([
+  'too_large',
+  'timeout',
+  'crashed',
+  'unsupported',
+  'failed',
+  'bad_request',
+]);

@@ -1,9 +1,11 @@
 /**
- * The parser's job slots (./slots.ts): at most `maxJobs` at once, at most
+ * The parser's one job slot (./slots.ts): one job at a time, at most
  * `queueMax` waiting, each for at most `waitMs`, then `busy`; a freed slot
  * goes to the longest waiter; an interactive waiter goes ahead of every
  * background one, waits its own shorter time, and is not turned away by a
- * full background queue.
+ * full background queue; how long the slot has been held is known (the
+ * watchdog); a closed slot answers every waiter and every later request
+ * `unavailable`.
  */
 import { describe, expect, it } from 'vitest';
 import { JobFailure } from './job-failure';
@@ -19,18 +21,17 @@ async function refusal(p: Promise<unknown>): Promise<JobFailure> {
 }
 
 describe('Slots', () => {
-  it('runs up to maxJobs at once', async () => {
-    const slots = new Slots(2, 0, 1_000);
+  it('runs one job at a time', async () => {
+    const slots = new Slots(0, 1_000);
     await slots.acquire();
-    await slots.acquire();
-    expect(slots.running).toBe(2);
+    expect(slots.running).toBe(1);
     const busy = await refusal(slots.acquire());
     expect(busy.code).toBe('busy');
-    expect(slots.running).toBe(2);
+    expect(slots.running).toBe(1);
   });
 
   it('queues up to queueMax, then refuses busy at once', async () => {
-    const slots = new Slots(1, 2, 10_000);
+    const slots = new Slots(2, 10_000);
     await slots.acquire();
     const a = slots.acquire();
     const b = slots.acquire();
@@ -51,7 +52,7 @@ describe('Slots', () => {
   });
 
   it('answers busy when the wait passes, and leaves the queue', async () => {
-    const slots = new Slots(1, 4, 50);
+    const slots = new Slots(4, 50);
     await slots.acquire();
     const err = await refusal(slots.acquire());
     expect(err.code).toBe('busy');
@@ -62,14 +63,18 @@ describe('Slots', () => {
     expect(slots.running).toBe(0);
   });
 
-  it('never goes below zero', () => {
-    const slots = new Slots(1, 0, 1_000);
+  it('knows how long the slot has been held', async () => {
+    const slots = new Slots(0, 1_000);
+    expect(slots.heldMs()).toBe(0);
+    const before = Date.now();
+    await slots.acquire();
+    expect(slots.heldMs(before + 5_000)).toBeGreaterThanOrEqual(4_000);
     slots.release();
-    expect(slots.running).toBe(0);
+    expect(slots.heldMs()).toBe(0);
   });
 
   it('puts an interactive waiter at the head, behind earlier interactive ones', async () => {
-    const slots = new Slots(1, 4, 10_000, 10_000);
+    const slots = new Slots(4, 10_000, 10_000);
     await slots.acquire();
     const order: string[] = [];
     const bg1 = slots.acquire().then(() => order.push('bg1'));
@@ -85,7 +90,7 @@ describe('Slots', () => {
   });
 
   it('answers an interactive waiter busy after its own short wait', async () => {
-    const slots = new Slots(1, 4, 10_000, 50);
+    const slots = new Slots(4, 10_000, 50);
     await slots.acquire();
     const started = Date.now();
     const err = await refusal(slots.acquire({ interactive: true }));
@@ -96,7 +101,7 @@ describe('Slots', () => {
   });
 
   it('lets an interactive request wait though the background queue is full', async () => {
-    const slots = new Slots(1, 1, 10_000, 10_000);
+    const slots = new Slots(1, 10_000, 10_000);
     await slots.acquire();
     const bg = slots.acquire();
     expect((await refusal(slots.acquire())).code).toBe('busy');
@@ -107,5 +112,19 @@ describe('Slots', () => {
     slots.release();
     await bg;
     expect(slots.queued).toBe(0);
+  });
+
+  it('closed: every waiter and every later request is unavailable, and nothing runs', async () => {
+    const slots = new Slots(4, 10_000, 10_000);
+    await slots.acquire();
+    const bg = refusal(slots.acquire());
+    const person = refusal(slots.acquire({ interactive: true }));
+    slots.close('the parser is restarting');
+    expect(await bg).toMatchObject({ code: 'unavailable', message: 'the parser is restarting' });
+    expect((await person).code).toBe('unavailable');
+    expect(slots.queued).toBe(0);
+    slots.release();
+    expect((await refusal(slots.acquire())).code).toBe('unavailable');
+    expect(slots.running).toBe(0);
   });
 });

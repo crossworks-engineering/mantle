@@ -13,9 +13,12 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   video. The web, api and worker processes never open such a file; they ask
   through one client (`packages/files/src/parser-client.ts`) and get typed
   errors. The guarantee is the container: one job at a time with the whole
-  memory (`PARSER_MAX_JOBS` 1, `PARSER_MEM_LIMIT` 2g, no swap past it), 1
-  CPU (`PARSER_CPUS`), a 1g tmpfs scratch space (`PARSER_TMP_SIZE`), an
-  internal network with no route out and no DNS past the stack.
+  memory (`PARSER_MEM_LIMIT` 2g, no swap past it), 1 CPU (`PARSER_CPUS`), a
+  read-only root filesystem with a 1g tmpfs scratch space
+  (`PARSER_TMP_SIZE`), an internal network with no route out and no DNS
+  past the stack. Between jobs the container is the boundary: a job that
+  leaves anything behind (a process, a file, an IPC object) gets its
+  answer, then the parser exits and Docker restarts it fresh.
 - **Removed:** Apache Tika (`mantle_tika`) and the media sidecar
   (`mantle_media`, yt-dlp, ffmpeg), with their settings. anydoc in the
   parser reads what Tika read (.doc, .ppt, .odt, .ods, .odp, .rtf, .epub,
@@ -150,8 +153,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   `messenger_mark_read` and `messenger_directory`. A message records the
   credential it came through, and `messenger_wait` skips the caller's own,
   so two Claude clients on one login can wait for each other. No agent in a
-  group, no attachment bytes and no phone push yet: those are Phases 3 to
-  5. An Admin user's OAuth MCP connection now carries its client id.
+  group, no attachment bytes and no phone push yet: those are Phases 3 to 5. An Admin user's OAuth MCP connection now carries its client id.
 - **Fix round 2 (two outside reviews):** one per-login budget in the store
   (60 sends, 120 other writes a minute), so an MCP client and the routes
   share it; migration 0336: the workspace role reads no conversation tail

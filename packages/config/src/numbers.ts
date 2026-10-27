@@ -258,17 +258,17 @@ export const ENV_NUMBERS = {
 
   // The parser service (server/parser) and its client (packages/files)
   PARSER_PORT: { default: 8095, int: 'floor', min: 1, max: 65535, doc: 'the parser listens here' },
-  PARSER_MAX_JOBS: {
-    default: 1,
-    atLeast: 1,
-    int: 'floor',
-    doc: 'parse jobs the parser runs at once (each has the whole memory at 1)',
-  },
   PARSER_QUEUE_MAX: {
     default: 16,
     min: 0,
     int: 'floor',
-    doc: 'requests that may wait for a parser job slot',
+    doc: 'requests that may wait for the parser job slot',
+  },
+  PARSER_SLOT_HOLD_MAX_MS: {
+    default: null,
+    atLeast: 1,
+    int: 'floor',
+    doc: 'a job slot held longer turns the parser /healthz to 503, ms (default parserSlotHoldMaxMs, @mantle/files/parser-wire; tests only)',
   },
   PARSER_MAX_UPLOAD_MB: {
     default: 512,

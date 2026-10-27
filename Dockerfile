@@ -197,6 +197,13 @@ ENV PARSER_PYTHON=/opt/cad/bin/python \
 # service itself runs every job in its own process (docs/parser.md).
 FROM parser-base AS parser
 COPY . .
+# Compose runs this image with a read-only root filesystem and a tmpfs on
+# /tmp, where the server keeps nothing: the check after every job wants
+# the empty job root alone there (docs/parser.md, "Between jobs"). So no
+# tsx transform cache and no Node compile cache, for the server and its
+# jobs alike (each job's own caches sit in its directory, proc.ts jobEnv).
+ENV TSX_DISABLE_CACHE=1 \
+    NODE_DISABLE_COMPILE_CACHE=1
 # The base image's unprivileged user: a job that breaks out of its reader
 # still holds no root and no write access to the workspace.
 USER node

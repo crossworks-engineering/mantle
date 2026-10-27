@@ -511,17 +511,24 @@ services:
   # sidecar (2026-10). Core: no profile, always on, on every deploy shape.
   #
   # The safety guarantee is this container, not code in it:
-  #   - one job at a time (PARSER_MAX_JOBS, default 1) with the whole
-  #     mem_limit and no swap beyond it (memswap_limit = mem_limit): a
+  #   - one job at a time, with the whole mem_limit and no swap beyond it
+  #     (memswap_limit = mem_limit): a
   #     document that blows up is OOM-killed by the kernel inside this
   #     limit (the job, usually; the service if need be, and `restart`
   #     brings it back), and a healthy file never shares the memory with
   #     it. The brain reads that as `crashed`: retried once, terminal the
   #     second time for the same bytes (counted on the node).
   #   - cpus 1 by default, so every box starts it (a 1-vCPU box too).
-  #   - the scratch space is a tmpfs of PARSER_TMP_SIZE (default 1g): a job
-  #     cannot fill the host's disk, and its files go with it. A tmpfs is
-  #     memory, counted in mem_limit while a job's files sit there.
+  #   - a read-only root filesystem: the job user can write only to the
+  #     scratch space, a tmpfs on /tmp of PARSER_TMP_SIZE (default 1g), and
+  #     to /dev/shm and /dev/mqueue. A job cannot fill the host's disk or
+  #     change the image's code. A tmpfs is memory, counted in mem_limit
+  #     while a job's files sit there.
+  #   - between jobs the container is the boundary: after every job the
+  #     service checks nothing of it is left (no process, no file, no IPC
+  #     object); if anything is, it answers, then exits, and `restart`
+  #     brings it back with a fresh tmpfs and process table. A slot held
+  #     past every deadline turns /healthz to 503 and autoheal restarts it.
   #   - networks: the internal `parser` network ONLY. No NAT, no route out,
   #     and no DNS (dns 0.0.0.0): it can reach the services that share that
   #     network (the app containers that call it) and nothing else.
@@ -529,8 +536,7 @@ services:
   #     user, no capabilities, no new privileges.
   # Inside it, cheap bounds only: a body cap, a short queue, then `busy`.
   # Raise PARSER_MEM_LIMIT (and PARSER_TMP_SIZE) on a box that reads big
-  # drawing sets; PARSER_CPUS and PARSER_MAX_JOBS on a box with cores and
-  # memory to spare.
+  # drawing sets; PARSER_CPUS on a box with cores to spare.
   parser:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-parser:${MANTLE_IMAGE_TAG:-latest}
     container_name: mantle_parser
@@ -545,6 +551,7 @@ services:
     pids_limit: 512
     cap_drop: ['ALL']
     security_opt: ['no-new-privileges:true']
+    read_only: true
     tmpfs:
       - /tmp:size=${PARSER_TMP_SIZE:-1g},mode=1777
     dns: 0.0.0.0
@@ -552,11 +559,12 @@ services:
       - parser
     environment:
       PARSER_TOKEN: ${PARSER_TOKEN:-}
-      PARSER_MAX_JOBS: ${PARSER_MAX_JOBS:-}
       PARSER_QUEUE_MAX: ${PARSER_QUEUE_MAX:-}
       PARSER_MAX_UPLOAD_MB: ${PARSER_MAX_UPLOAD_MB:-}
-    # A wedged service (its event loop stuck) fails this probe and autoheal
-    # restarts it; a crashed one restarts on its own.
+    # A wedged service (its event loop stuck, or the job slot held past
+    # every deadline: /healthz 503) fails this probe and autoheal restarts
+    # it; a crashed one, or one that exited after a dirty job, restarts on
+    # its own.
     labels: ['autoheal=true']
     healthcheck:
       test:
