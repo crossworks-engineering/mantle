@@ -57,7 +57,7 @@
     "up": "bash scripts/up.sh",
     "down": "bash scripts/dev-compose.sh down",
     "reset": "bash scripts/reset.sh",
-    "infra:up": "bash scripts/dev-compose.sh up -d --wait",
+    "infra:up": "bash scripts/dev-compose.sh up -d --wait --remove-orphans",
     "infra:down": "bash scripts/dev-compose.sh down",
     "infra:logs": "bash scripts/dev-compose.sh logs -f",
     "infra:psql": "docker exec -it mantle_dev_pg psql -U postgres -d postgres",

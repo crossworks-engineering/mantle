@@ -191,7 +191,7 @@ LOCAL_EMBEDDER="${MANTLE_LOCAL_EMBEDDER:-}"
 # CLI sandboxes (sandboxd): 1=enable, 0=disable, empty=default (ON for a FRESH
 # box, keep .env as-is on a re-run — existing boxes never flip implicitly).
 SANDBOXES="${MANTLE_SANDBOXES:-}"
-# Brain-core shape: 1=core (small memory core — channel workers + the PDF
+# Brain-core shape: 1=core (small memory core: channel workers + the PDF
 # browser off), 0=full, empty=keep .env as-is. See docker-compose.core.yml.
 CORE="${MANTLE_CORE:-}"
 # The helper (the PDF-export browser): 1=enable on a core box, 0=disable,
@@ -1015,14 +1015,14 @@ if [[ -n "$CORE" ]]; then
     # Best-effort: stop + remove the services the core sheds (a fresh box has
     # none of them yet; a downsized box drops them here). Naming a service
     # explicitly overrides its profile gate, so this works post-COMPOSE_FILE.
-    # The PDF browser is only shed when the helpers profile isn't active —
+    # The PDF browser is only shed when the helpers profile isn't active:
     # the --helpers block below runs after this one.
     SHED="worker_email worker_telegram worker_microsoft worker_calendar worker_push worker_runs"
     if [[ "$HELPERS" != 1 && "$(getval COMPOSE_PROFILES)" != *helpers* ]]; then SHED="browser $SHED"; fi
     # shellcheck disable=SC2086  # word-splitting $SHED into args is intended
     docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
       rm -sf $SHED >/dev/null 2>&1 || true
-    ok "Brain-core shape ON — channel workers + the PDF browser won't start (see docker-compose.core.yml)"
+    ok "Brain-core shape ON: channel workers + the PDF browser won't start (see docker-compose.core.yml)"
   else
     if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
       tmp="$(mktemp)"; grep -vE '^COMPOSE_FILE=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
@@ -1041,20 +1041,20 @@ if [[ -n "$HELPERS" ]]; then
   rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'helpers' | grep -v '^$' | paste -sd, -)" || rest=""
   if [[ "$HELPERS" == 1 ]]; then
     upsert COMPOSE_PROFILES "${rest:+$rest,}helpers"
-    ok "Helper ON — the PDF-export browser starts with the stack"
+    ok "Helper ON: the PDF-export browser starts with the stack"
   else
     if [[ -n "$rest" ]]; then
       upsert COMPOSE_PROFILES "$rest"
     elif grep -qE '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null; then
       tmp="$(mktemp)"; grep -vE '^COMPOSE_PROFILES=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
     fi
-    # Best-effort stop, but ONLY on the core shape — on a full box it is an
+    # Best-effort stop, but ONLY on the core shape: on a full box it is an
     # always-on service and must not be touched.
     if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
       docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
         rm -sf browser >/dev/null 2>&1 || true
     fi
-    ok "Helper OFF — the PDF-export browser won't start on the core shape"
+    ok "Helper OFF: the PDF-export browser won't start on the core shape"
   fi
 fi
 # ── Owner web UI (the separate client stack) ─────────────────────────────────

@@ -1058,6 +1058,45 @@ check "an image docker refuses (in use) is kept and logged" grep -q 'image prune
 check "each removal is logged" grep -q 'image prune: removed test/mantle-server:v6' "$T/sig/update.log"
 check "no parser container before the roll: parser images left alone, and says so" grep -q 'image prune: test/mantle-parser skipped' "$T/sig/update.log"
 
+echo "updater.sh: a release with the parser on a compose without it is refused before any container changes"
+PARSER_COMPOSE='services:\n  parser:\n    container_name: mantle_parser\n'
+roll_case pgate
+printf 'MANTLE_IMAGE_TAG=v7\n' >> "$T/stack/.env"
+printf "$PARSER_COMPOSE" > "$T/img/docker-compose.yml"
+printf '# a local edit\n' >> "$T/stack/docker-compose.yml"
+cp "$T/stack/docker-compose.yml" "$T/compose.before"
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "parser gate: status error, refused, says why" sh -c "grep -q '\"phase\":\"error\",\"target\":\"v8\".*\"ok\":false' '$T/sig/status.json' && grep -q 'roll refused, no container changed: the release reads every file through the parser service' '$T/sig/status.json'"
+check "parser gate: names the refresh outcome (modified)" grep -q 'was not refreshed (modified)' "$T/sig/status.json"
+check "parser gate: loud in the log" grep -q 'ROLL REFUSED, no container changed' "$T/sig/update.log"
+check "parser gate: no compose pull and no compose up" sh -c "! grep -qE 'compose .*(pull|up)' '$T/calls'"
+check "parser gate: the old image tag is back in .env" sh -c "grep -qx 'MANTLE_IMAGE_TAG=v7' '$T/stack/.env' && test \"\$(grep -c '^MANTLE_IMAGE_TAG=' '$T/stack/.env')\" = 1"
+check "parser gate: the box compose is left as it was" same "$T/stack/docker-compose.yml" "$T/compose.before"
+check "parser gate: no container moved" test "$(cat "$T/state/mantle_web")" = sha256:S7
+
+roll_case pgate-notag
+printf "$PARSER_COMPOSE" > "$T/img/docker-compose.yml"
+printf '# a local edit\n' >> "$T/stack/docker-compose.yml"
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "parser gate, no tag before: refused, and no tag left in .env" sh -c "grep -q 'roll refused, no container changed' '$T/sig/status.json' && ! grep -q '^MANTLE_IMAGE_TAG=' '$T/stack/.env'"
+
+roll_case pgate-has
+printf "$PARSER_COMPOSE" > "$T/img/docker-compose.yml"
+printf "$PARSER_COMPOSE" >> "$T/stack/docker-compose.yml"
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "parser gate: a hand-edited compose that defines the parser rolls" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
+
+roll_case pgate-fresh
+printf "$PARSER_COMPOSE" > "$T/img/docker-compose.yml"
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "parser gate: a pristine compose is refreshed to one with the parser and rolls" sh -c "grep -q '\"phase\":\"done\",\"target\":\"v8\".*\"ok\":true' '$T/sig/status.json' && grep -q 'container_name: mantle_parser' '$T/stack/docker-compose.yml'"
+
+roll_case pgate-old
+printf 'services: {web: {image: older}}\n' > "$T/img/docker-compose.yml"
+printf '# a local edit\n' >> "$T/stack/docker-compose.yml"
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "parser gate: a target without the parser is not refused (a roll back to before it)" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
+
 roll_case parser
 # The parser runs p7 and the roll moves it to p8. p10 and p9 are the two
 # newest parser images (pre-pulled), p6 and a dangling p5 are old. Parser
@@ -1368,6 +1407,11 @@ case "$1" in
       printf '[{"Config":{"Env":["PATH=/bin","MANTLE_STACK_DIR=%s"]},"Mounts":[{"Source":"%s","Destination":"/signal"}]}]\n' "${FAKE_STACK_ENV-$RS/stack}" "$RS/sig"
       exit 0
     fi
+    for a in "$@"; do last=$a; done
+    if [ "$last" = mantle_parser ]; then
+      [ -z "${FAKE_NO_PARSER:-}" ] || exit 1
+      echo "${FAKE_PARSER_HEALTH:-healthy}"; exit 0
+    fi
     echo "${FAKE_HEALTH:-healthy}"; exit 0 ;;
   logs)
     # FAKE_LOGS: a file whose lines stand in for the whole log tail.
@@ -1542,6 +1586,17 @@ check "an app lost in the roll: loud, with the numbers" grep -q 'COUNTS DROPPED.
 roll_box dropfiles
 FAKE_DROP=files roll_sh --ssh fakebox v8
 check "an app-db file lost in the roll: exit 3" sh -c "test '$rc' = 3 && grep -q 'app-db files 7→6' '$RS/out'"
+
+roll_box parser-unhealthy
+FAKE_PARSER_HEALTH=unhealthy roll_sh --ssh fakebox v8
+check "parser never healthy: exit 1 with a loud banner, after web was healthy" sh -c "test '$rc' = 1 && grep -q 'PARSER NOT HEALTHY on fakebox' '$RS/out' && grep -q 'mantle_web: healthy' '$RS/out'"
+check "parser never healthy: prints its log tail" grep -q 'docker logs --tail 20 mantle_parser' "$RS/calls"
+roll_box parser-healthy
+roll_sh --ssh fakebox v8
+check "parser healthy: the roll goes on and says so" sh -c "test '$rc' = 0 && grep -q 'mantle_parser: healthy' '$RS/out'"
+roll_box parser-none
+FAKE_NO_PARSER=1 roll_sh --ssh fakebox v8
+check "no parser container (a release before it): not waited for" sh -c "test '$rc' = 0 && grep -q 'mantle_parser: none' '$RS/out'"
 
 roll_box unhealthy
 FAKE_HEALTH=unhealthy roll_sh --ssh fakebox v8
@@ -2295,6 +2350,20 @@ check "poll loop: a service request is handled" grep -q '"phase":"done","service
 check "poll loop: the request is consumed" test ! -e "$T/sig/service-request.json"
 check "poll loop: the update status is untouched by a switch" sh -c "! grep -q sandboxes '$T/sig/status.json'"
 check "the updater advertises the service verb" grep -q '"verbs":\["roll","service"\]' "$T/sig/services.json"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "docker-compose.yml: the parser starts on every box, one job with the whole memory"
+# The parser is core: a default a 1-vCPU box cannot grant (cpus: 2) keeps it
+# from starting there, and with it every file read.
+PARSER_SVC=$(sed -n '/^  parser:$/,/^  [a-z_]*:$/p' "$ROOT/docker-compose.yml")
+pcpus=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    cpus: \${PARSER_CPUS:-\([0-9.]*\)}$/\1/p')
+check "parser: the default cpus is set" test -n "$pcpus"
+check "parser: the default cpus is at most 1 (a 1-vCPU box starts it)" awk -v v="$pcpus" 'BEGIN { exit !(v + 0 > 0 && v + 0 <= 1) }'
+pmem=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    mem_limit: \(.*\)$/\1/p')
+check "parser: no swap past its memory (memswap_limit is mem_limit)" sh -c "printf '%s\n' \"\$1\" | grep -qxF \"    memswap_limit: \$2\"" _ "$PARSER_SVC" "$pmem"
+check "parser: a size-limited tmpfs for its scratch space" sh -c "printf '%s\n' \"\$1\" | grep -q '/tmp:size=\${PARSER_TMP_SIZE:-'" _ "$PARSER_SVC"
+check "parser: no DNS past the stack" sh -c "printf '%s\n' \"\$1\" | grep -qx '    dns: 0.0.0.0'" _ "$PARSER_SVC"
+check "parser: one job at a time by default (PARSER_MAX_JOBS)" sh -c "sed -n '/PARSER_MAX_JOBS: {/,/}/p' '$ROOT/packages/config/src/numbers.ts' | grep -q 'default: 1,'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo

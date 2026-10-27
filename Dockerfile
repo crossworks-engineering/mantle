@@ -23,7 +23,7 @@
 # run TypeScript directly via tsx in production. At personal scale the image-size
 # cost is fine; the operational simplicity is worth more.
 
-# ── 1. deps: full workspace install ─────────────────────────────────────────
+# ── 1. modules: the workspace's installed dependencies (no source yet) ──────
 # Node 26 — the current line, adopted 2026-07-25 for the V8 14.6 performance
 # work. It is NOT yet LTS: 26 is an even-numbered line and promotes to Active
 # LTS around Oct 2026, at which point this pin simply becomes the LTS pin. Until
@@ -32,7 +32,7 @@
 # Node 20, so node:20-slim fails install with ERR_UNKNOWN_BUILTIN_MODULE; 26 is
 # safely above that. corepack is unbundled from Node 25+, so we install pnpm via
 # npm directly.
-FROM node:26-slim AS deps
+FROM node:26-slim AS modules
 WORKDIR /app
 
 # Copy manifests first so the install layer is cached when only source changes.
@@ -104,7 +104,8 @@ RUN apt-get update \
     && apt-get purge -y python3 build-essential && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /root/.npm /root/.local/share/pnpm/store /root/.cache
 
-# Now copy sources.
+# ── 1a. deps: the installed workspace plus its source (the server image's base)
+FROM modules AS deps
 COPY . .
 
 # ── 1a⅞. ezdwg-build: the DWG fallback converter's wheel, both arches ───────
@@ -150,14 +151,11 @@ RUN ./configure --disable-shared --disable-bindings --disable-docs --disable-wer
   && make -j"$(nproc)" \
   && make install-strip
 
-# ── 1b. parser: the parser service (server/parser) ─────────────────────────
-# Built on the deps stage: the readers are the workspace's own modules
-# (@mantle/files/readers/*) and their dependencies (pdfjs, exceljs, mammoth,
-# anydoc, canvas). It runs no build step, carries no secret (PARSER_TOKEN is
-# its only one) and mounts no data. Compose gives it its memory limit, its
-# CPU share and a network with no route out (docker-compose.yml); the
-# service itself runs every job in its own process (docs/parser.md).
-FROM deps AS parser
+# ── 1b. parser-base: the parser's programs, BEFORE any source ──────────────
+# ffmpeg, the CAD tier's Python and the dwg2dxf binary depend on nothing in
+# the source tree, so they are installed on the `modules` stage: these layers
+# are rebuilt when the lockfile or this block changes, not on every release.
+FROM modules AS parser-base
 ENV NODE_ENV=production
 # ffmpeg for the audio extract; Debian's python3 + venv for the CAD tier.
 RUN apt-get update \
@@ -178,6 +176,16 @@ COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
 ENV PARSER_PYTHON=/opt/cad/bin/python \
     MPLBACKEND=Agg \
     MPLCONFIGDIR=/tmp/mpl
+
+# ── 1c. parser: the parser service (server/parser) ─────────────────────────
+# The readers are the workspace's own modules (@mantle/files/readers/*) and
+# their dependencies (pdfjs, exceljs, mammoth, anydoc, canvas). It runs no
+# build step, carries no secret (PARSER_TOKEN is its only one) and mounts no
+# data. Compose gives it its memory limit, its CPU share, a tmpfs for its
+# scratch space and a network with no route out (docker-compose.yml); the
+# service itself runs every job in its own process (docs/parser.md).
+FROM parser-base AS parser
+COPY . .
 # The base image's unprivileged user: a job that breaks out of its reader
 # still holds no root and no write access to the workspace.
 USER node
