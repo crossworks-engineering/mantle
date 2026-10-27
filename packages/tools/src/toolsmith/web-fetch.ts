@@ -4,7 +4,7 @@
  * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
-import { parseTikaBytes } from '@mantle/files';
+import { parserText } from '@mantle/files';
 import { guardedFetch } from '../ssrf-guard';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
@@ -19,21 +19,6 @@ const FETCH_MAX_BYTES = 5 * 1024 * 1024;
 const DEFAULT_TEXT_CAP = 40_000;
 
 const MAX_TEXT_CAP = 80_000;
-
-/** Last-resort HTML→text when Tika is down: drop scripts/styles/tags. */
-function crudeHtmlToText(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
 
 export const web_fetch: BuiltinToolDef = {
   slug: 'web_fetch',
@@ -93,8 +78,9 @@ export const web_fetch: BuiltinToolDef = {
       const contentType = res.headers.get('content-type') ?? '';
       let text: string;
       if (/html/i.test(contentType)) {
-        text = await parseTikaBytes(clipped, { mimeType: 'text/html' });
-        if (!text) text = crudeHtmlToText(clipped.toString('utf8'));
+        // A page from the open web is untrusted markup: its text is taken out
+        // by the parser service (the linear markup reader), never here.
+        text = await parserText(clipped, 'html');
       } else {
         text = clipped.toString('utf8');
       }

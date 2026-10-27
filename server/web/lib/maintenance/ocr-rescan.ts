@@ -27,7 +27,7 @@ import {
   withDeadlockRetry,
   withHeads,
 } from '@mantle/db';
-import { BYTE_DERIVED_DATA_KEYS, readFileById } from '@mantle/files';
+import { BYTE_DERIVED_DATA_KEYS, parserPdfPageCount, readFileById } from '@mantle/files';
 import { getVisionAdapter, isProviderId } from '@mantle/voice';
 import { fallbackCostMicroUsd } from '@mantle/tracing';
 import { sleep as stdSleep } from '@mantle/std';
@@ -89,12 +89,12 @@ export async function countPages(
   ownerId: string,
   ids: string[],
 ): Promise<{ pages: Map<string, number>; unreadable: string[] }> {
-  const { pdfPageCount } = await import('@mantle/files/pdf');
   const pages = new Map<string, number>();
   const unreadable: string[] = [];
   for (const id of ids) {
     const file = await readFileById({ ownerId, fileId: id }).catch(() => null);
-    const n = file ? await pdfPageCount(file.bytes) : null;
+    // Counted by the parser service: a PDF is never opened in this process.
+    const n = file ? await parserPdfPageCount(file.bytes).catch(() => null) : null;
     if (n && n > 0) pages.set(id, n);
     else unreadable.push(id);
   }

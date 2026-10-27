@@ -10,8 +10,8 @@ import { db, nodes } from '@mantle/db';
 import {
   extOf,
   ensureExtractedImagesFolder,
-  isPdfBusyError,
-  isPdfLimitError,
+  isParserError,
+  parserRasterizePdf,
   upsertFile,
 } from '@mantle/files';
 import { startTrace, step } from '@mantle/tracing';
@@ -20,6 +20,23 @@ import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
 import { loadFileBytes } from './file-bytes';
 import { stepInOwnTrace } from './trace';
+
+/** Picture formats that came with the parser service (anydoc's e-book assets,
+ *  Visio's media parts). Approved by the owner on 2026-10-27 for NEW uploads
+ *  only: every picture kept is a vision call when it is indexed, so a file
+ *  already in a brain (read before, or skipped) is never opened for them,
+ *  and the images backfill script does not list them. */
+const NEW_UPLOAD_ONLY_IMAGE_EXTS = new Set(['epub', 'vsdx']);
+
+/** No pass has read this file's current bytes: a new upload, or new bytes
+ *  (a content change drops these keys, BYTE_DERIVED_DATA_KEYS). */
+function bytesUnread(data: Record<string, unknown>): boolean {
+  return (
+    data.indexing_applied == null &&
+    data.extract_completed_at == null &&
+    data.extract_skipped == null
+  );
+}
 
 /** Formats that can carry a picture worth pulling out. Deliberately narrower
  *  than INGESTABLE_EXTS — there is no point opening a .txt looking for a
@@ -41,10 +58,11 @@ const IMAGE_BEARING_EXTS = new Set([
   // DWF plot sets: one thumbnail per published sheet (marked essential in
   // the extractor, so the small-image floor doesn't drop them).
   'dwf',
-  // DWG drawings: one essential model-space render from the sidecar.
+  // DWG drawings: one essential model-space render from the parser's CAD tier.
   'dwg',
-  // DXF drawings: same single render off the same sidecar exchange.
+  // DXF drawings: same single render off the same exchange.
   'dxf',
+  ...NEW_UPLOAD_ONLY_IMAGE_EXTS,
 ]);
 
 /** Tag marking a file node as derived from a document rather than uploaded.
@@ -87,6 +105,7 @@ export async function maybeExtractEmbeddedImages(
   const nameForExt = typeof data.filename === 'string' ? data.filename : node.title;
   const ext = extOf(nameForExt);
   if (!IMAGE_BEARING_EXTS.has(ext)) return;
+  if (NEW_UPLOAD_ONLY_IMAGE_EXTS.has(ext) && !bytesUnread(data)) return;
 
   // Dedupe: if this document already produced images, do nothing.
   const [existing] = await db
@@ -551,26 +570,25 @@ export async function ocrIngestPdfNode(
         { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: MAX_OCR_PAGES } },
         async (h) => {
           try {
-            // Inside the try: a failed import is the pipeline breaking, so it
-            // must land as `pdf_unreadable` (recorded) and not escape.
-            const { rasterizePdfToPngs } = await import('@mantle/files/rasterize');
-            const r = await rasterizePdfToPngs(buf, { maxPages: MAX_OCR_PAGES });
+            const r = await parserRasterizePdf(buf, { maxPages: MAX_OCR_PAGES });
             h.setMeta({ pages: r.length });
             return r;
           } catch (err) {
-            // A `PdfBusyError` (another PDF held the decode slot too long, or
-            // this render ran past its hold limit) says nothing about the
-            // document: fail the job so pg-boss retries it, as the pictures
-            // pass does (gates.ts). Recorded as `pdf_unreadable` it would
-            // complete the job and strand the scan until something re-queued
-            // it. The retry repeats the native read above when it ran (one
-            // model call that found no text).
-            if (isPdfBusyError(err)) throw err;
-            // Unrenderable / corrupt / encrypted / oversized PDF: record and
-            // give up.
+            // These bytes refused by the parser for the second time: the
+            // caller records document_unreadable. Anything else, the parser
+            // busy or a first refusal included, stays the pdf_unreadable skip
+            // below, which the drain retries: throwing here would make the
+            // job's retry pay the native read above a second time.
+            if (isParserError(err) && err.terminal) {
+              h.setMeta({ pages: 0, error: err.message, parser_code: err.code });
+              throw err;
+            }
+            // Unrenderable / corrupt / encrypted PDF — record and give up.
             const msg = errorMessage(err);
             if (/password/i.test(msg)) encrypted = true;
-            else if (isPdfLimitError(err)) tooLarge = msg;
+            // The parser's PDF caps (declared pixels, size): a verdict on the
+            // document, recorded as pdf_too_large.
+            else if (isParserError(err) && err.code === 'too_large') tooLarge = msg;
             else rasterizeError = msg;
             h.setMeta({ pages: 0, error: msg });
             return [];

@@ -1,6 +1,6 @@
 /**
  * circuit_verify, the run: trace the circuit, turn its guesses into
- * questions (./check.ts), crop the drawings (one sidecar call per sheet),
+ * questions (./check.ts), crop the drawings (one parser call per sheet),
  * ask the vision model in as few requests as the caps allow, and file
  * every answer with its evidence in the sheet's Checks tab
  * (./checks-store.ts).
@@ -21,11 +21,11 @@
  * cut off or garbled is listed in `not_asked` and asked again next call.
  *
  * Every outside effect comes through `deps`, so the test runs the whole
- * flow with a fake sidecar, model and store: no test ever calls a model.
+ * flow with a fake parser, model and store: no test ever calls a model.
  * Spends only when called: nothing here runs on its own.
  */
 import { dwgReindexCommand as reindexCommand, dwgSourceSha } from '@mantle/files/dwg';
-import type { DwgCrops, MediaResult } from '@mantle/files';
+import type { DwgCrops, ParserResult } from '@mantle/files';
 import { classifyProviderError } from '@mantle/std';
 import type { ImagesResult, VisionImage } from '@mantle/voice';
 import {
@@ -80,7 +80,7 @@ export type VerifyDeps = {
   crop: (
     bytes: Buffer,
     spec: import('@mantle/files').DwgCropSpec,
-  ) => Promise<MediaResult<DwgCrops>>;
+  ) => Promise<ParserResult<DwgCrops>>;
   /** The owner's default vision worker. */
   worker: (
     ownerId: string,
@@ -254,7 +254,7 @@ export function cropGap(list: readonly { part: number; of: number }[]): string |
   const whole = list.length === of && list.every((c, i) => c.of === of && c.part === i);
   return whole
     ? null
-    : `the sidecar returned ${list.length} usable ${list.length === 1 ? 'crop' : 'crops'} of the ${of} along it (one came back malformed or twice), so it was not asked on part of its path; call again`;
+    : `the parser returned ${list.length} usable ${list.length === 1 ? 'crop' : 'crops'} of the ${of} along it (one came back malformed or twice), so it was not asked on part of its path; call again`;
 }
 
 export async function verifyCircuit(
@@ -480,11 +480,8 @@ export async function verifyCircuit(
     }
     const cropped = await deps.crop(bytes, spec);
     if (!cropped.ok) {
-      const old = /unknown route/.test(cropped.message);
       skip(
-        old
-          ? 'the media sidecar has no crop endpoint (an image older than this release): update the mantle-media image'
-          : `the drawing could not be cropped (${cropped.code}: ${cropped.message.slice(0, 160)})`,
+        `the drawing could not be cropped (${cropped.code}: ${cropped.message.slice(0, 160)})`,
       );
       continue;
     }
@@ -495,15 +492,15 @@ export async function verifyCircuit(
       else cropsOf.set(c.id, [c]);
     }
     for (const l of cropsOf.values()) l.sort((a, b) => a.part - b.part);
-    // A question the sidecar's per-sheet crop budget cut is not asked, even
+    // A question the CAD tier's per-sheet crop budget cut is not asked, even
     // when some of its crops came: a path is never asked about in part.
     const capped = new Set(cropped.value.capped);
     for (const q of qs)
       if (capped.has(q.id))
         skip(
           cropsOf.has(q.id)
-            ? "the sidecar's crop budget for one sheet ran out partway along it, so it was not asked on part of its path"
-            : "the sidecar's crop budget for one sheet ran out",
+            ? "the crop budget for one sheet ran out partway along it, so it was not asked on part of its path"
+            : 'the crop budget for one sheet ran out',
           [q],
         );
     const overview = cropped.value.overview?.png ?? null;
@@ -514,11 +511,11 @@ export async function verifyCircuit(
       const n = cropsOf.get(q.id)?.length ?? 0;
       if (capped.has(q.id)) continue;
       if (!n) {
-        skip('the sidecar returned no crop for it', [q]);
+        skip('the parser returned no crop for it', [q]);
         continue;
       }
       // Asked only on its whole path: every crop of `of`, each once (one
-      // the sidecar's reply dropped as malformed would leave a hole).
+      // the parser's reply dropped as malformed would leave a hole).
       const gap = cropGap(cropsOf.get(q.id)!);
       if (gap) {
         skip(gap, [q]);

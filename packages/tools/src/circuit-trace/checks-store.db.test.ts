@@ -210,7 +210,7 @@ describe.skipIf(!URL)('the image check store', () => {
     return made.id;
   };
 
-  /** circuit_verify's outside effects: the real store, a sidecar and a
+  /** circuit_verify's outside effects: the real store, a parser and a
    *  model made up (`over` replaces any of them). */
   const verifyDeps = async (
     bytes: Buffer,
@@ -513,7 +513,7 @@ describe.skipIf(!URL)('the image check store', () => {
     );
   });
 
-  it('a sheet skipped before its request leaves no crop folder: no crop endpoint, a replaced drawing, the request cap (LOW-3)', async () => {
+  it('a sheet skipped before its request leaves no crop folder: a failed crop, a replaced drawing, the request cap (LOW-3)', async () => {
     const { verifyCircuit } = await import('./verify');
     const circuit = `${tag}-NF`;
     await circuitTable(circuit, `${tag} PID-NF`, fileId2, SHA2);
@@ -525,13 +525,19 @@ describe.skipIf(!URL)('the image check store', () => {
         (r as unknown as { output?: { not_asked?: { why: string }[] } }).output?.not_asked ?? []
       );
     };
-    // The media sidecar has no crop endpoint (an older image).
+    // The parser could not crop the drawing.
     const old = await run(
       await verifyDeps(BYTES2, counter, {
-        crop: async () => ({ ok: false, code: 'bad_request', message: 'unknown route' }),
+        crop: async () => ({
+          ok: false,
+          code: 'failed',
+          message: 'no converter produced a parseable DXF',
+          retryable: false,
+          terminal: false,
+        }),
       }),
     );
-    expect(old.map((x) => x.why).join(' ')).toMatch(/no crop endpoint/);
+    expect(old.map((x) => x.why).join(' ')).toMatch(/could not be cropped/);
     expect(await foldersAt(path)).toBe(0);
     // The drawing was replaced since its table was read.
     const replaced = await run(await verifyDeps(Buffer.from('AC1032 replaced'), counter));

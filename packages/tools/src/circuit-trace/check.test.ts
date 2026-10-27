@@ -2,7 +2,7 @@
  * The image check (circuit_verify): guesses become questions keyed by
  * handles and coordinates; answers parse to yes / no / unsure; the trace
  * marks a confirmed guess CHECKED BY IMAGE (never certain) and keeps a
- * contradicted or unsure one a GUESS; the whole run with a fake sidecar,
+ * contradicted or unsure one a GUESS; the whole run with a fake parser,
  * model and store (no test ever calls a model). Synthetic sheets only.
  */
 import { createHash } from 'node:crypto';
@@ -492,7 +492,7 @@ describe('big sheets fit the crop request', () => {
     ]);
   });
 
-  it('the overlay is capped to what the sidecar takes, and the cut is counted', () => {
+  it('the overlay is capped to what the CAD tier takes, and the cut is counted', () => {
     const base = nearSheet();
     const many = Array.from({ length: 30000 }, (_, i) =>
       sg(M, `H${i}`, i * 1.123456, 0, i * 1.123456 + 1, 0.5, 100000 + i, 200000 + i),
@@ -512,7 +512,7 @@ describe('big sheets fit the crop request', () => {
   });
 });
 
-describe('verifyCircuit with a fake sidecar, model and store', () => {
+describe('verifyCircuit with a fake parser, model and store', () => {
   const png = Buffer.from('png');
   function deps(over: Partial<VerifyDeps> = {}) {
     const calls = { crop: [] as DwgCropSpec[], ask: [] as { n: number; prompt: string }[] };
@@ -1030,7 +1030,7 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     expect(second.summary).toMatch(/no unanswered guess/);
   });
 
-  it('a question the sidecar cut partway along is not asked on part of its path', async () => {
+  it('a question the CAD tier cut partway along is not asked on part of its path', async () => {
     const { d, calls, filed } = deps({
       crop: async (_b, spec) => {
         calls.crop.push(spec);

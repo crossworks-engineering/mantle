@@ -11,7 +11,7 @@ import {
   extOf,
   foldedFilePath,
   mimeForExt,
-  extractPdfTextWithPassword,
+  parserPdfUnlock,
 } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { step } from '@mantle/tracing';
@@ -180,7 +180,7 @@ export async function tryUnlockPdf(
     { name: 'unlock_pdf', kind: 'compute', input: { candidates: candidates.length } },
     async (h) => {
       for (const c of candidates) {
-        const r = await extractPdfTextWithPassword(loaded.bytes, c.password);
+        const r = await parserPdfUnlock(loaded.bytes, c.password);
         if (r.ok && r.text.trim().length >= 20) {
           await markPdfPasswordUsed(c.id);
           h.setMeta({ unlocked: true, chars: r.text.length, password_id: c.id });
