@@ -11,6 +11,7 @@
  * from a stored `checks`; the crops the marks name are embedded, sealed,
  * and kept by the save.
  */
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCanvas,
@@ -47,6 +48,7 @@ const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64',
 );
+const PNG_SHA = createHash('sha256').update(PNG).digest('hex');
 const read: CropRead = async () => ({ bytes: PNG, mimeType: 'image/png' });
 
 type Obj = Record<string, unknown>;
@@ -126,6 +128,8 @@ function traced(sheets: SheetInput[], answer: (i: number) => Answer): Obj {
         model: 'test/vision-model',
         checkedAt: '2026-10-26T09:00:00.000Z',
         crops: [CROP],
+        // The bytes circuit_verify stored (the Checks row records the hash).
+        cropSha: [PNG_SHA],
       };
       return mark;
     }),

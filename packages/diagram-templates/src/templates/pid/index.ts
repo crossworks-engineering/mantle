@@ -25,6 +25,7 @@ export {
   CHECK_GUESS_KINDS,
   CHECK_LIMITS,
   FILE_ID,
+  SHA256,
   honestImageChecks,
   imageCheckSummary,
   imageChecksStale,

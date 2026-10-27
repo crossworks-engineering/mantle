@@ -139,6 +139,9 @@ export type GuessCheck = {
     checkedAt: string;
     crops: string[];
     overview?: string;
+    /** The sha256 of each crop's bytes, in the order of `crops`, when the
+     *  row recorded them (check.ts cropIdsOf). */
+    cropSha?: string[];
   };
 };
 export type PidChecks = {
@@ -223,6 +226,9 @@ export function checkMark(
           ...(a.model ? { model: a.model.slice(0, CHECK_LIMITS.model) } : {}),
           ...(a.checkedAt ? { checkedAt: a.checkedAt.slice(0, CHECK_LIMITS.checkedAt) } : {}),
           ...(a.crops.length ? { crops: a.crops.slice(0, CHECK_LIMITS.crops) } : {}),
+          ...(a.crops.length && a.cropSha?.length === a.crops.length
+            ? { cropSha: a.cropSha.slice(0, CHECK_LIMITS.crops) }
+            : {}),
           ...(a.overview ? { overview: a.overview } : {}),
         }
       : {}),

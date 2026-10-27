@@ -116,7 +116,9 @@ function checkProblem(c: unknown, path: string): string | null {
     const p = tooLong(c, k, max, path);
     if (p) return p;
   }
-  return tooMany(c, 'crops', CHECK_LIMITS.crops, path);
+  return (
+    tooMany(c, 'crops', CHECK_LIMITS.crops, path) ?? tooMany(c, 'cropSha', CHECK_LIMITS.crops, path)
+  );
 }
 
 /** One drawing's lists, labels and marks past the template's limits. */

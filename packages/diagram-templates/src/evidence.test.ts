@@ -15,6 +15,7 @@ import {
   canonicalPidCanvas,
   CanvasShapeError,
   checkCropIds,
+  checkCropShas,
   checkStaticSvg,
   estimateMeasurer,
   parseCanvasAssets,
@@ -38,6 +39,8 @@ const CROP =
 /** A made-up seal: the content layer checks real ones (drawing-seal.ts). */
 const SIG = 'a'.repeat(64);
 const SEALED: CanvasCrop = { src: CROP, sig: SIG };
+/** The sha256 circuit_verify recorded of the crop file's bytes. */
+const CROP_SHA = 'd'.repeat(64);
 
 const base = (extra: Record<string, unknown> = {}) => ({
   title: 'Evidence check',
@@ -75,6 +78,7 @@ const withChecks = (style?: number) => {
     reason: 'Two parallel bars across the pipe: a flow element.',
     model: 'example/vision-1',
     crops: [CROP_ID],
+    cropSha: [CROP_SHA],
   };
   // Three inferred joins on one line: one unanswered, one unsure, one yes.
   lines[0]!.checks = [
@@ -454,9 +458,9 @@ describe('the canvas carries the crops', () => {
     });
     expect(checkCropIds(withChecks(2))).toEqual([CROP_ID]);
     const seen: string[] = [];
-    const holds = (id: string, src: string, sig: string) => {
+    const holds = (id: string, src: string, sig: string, sourceSha: string) => {
       seen.push(id);
-      return src === CROP && sig === SIG;
+      return src === CROP && sig === SIG && sourceSha === CROP_SHA;
     };
     // OTHER is named by no mark: gone, its seal never asked.
     const kept = withSealedCanvasAssets(html, holds);
@@ -477,6 +481,31 @@ describe('the canvas carries the crops', () => {
     // A block written another way is counted, for the save to refuse.
     const sly = kept.replace('</body>', '<div id=diagram-assets></div></body>');
     expect(assetsBlockCount(sly)).toEqual({ any: 2, written: 1 });
+  });
+
+  it('a crop is kept only for the bytes its mark records (cropSha, M3)', () => {
+    const build = (cropSha?: string[]) => {
+      const data = withChecks(2) as Record<string, any>;
+      const c = data.lines[0].inline[0].check;
+      if (cropSha) c.cropSha = cropSha;
+      else delete c.cropSha;
+      return buildCanvas({
+        template: 'pid',
+        data,
+        mode: 'import',
+        assets: { crops: { [CROP_ID]: SEALED } },
+      });
+    };
+    const holds = (_id: string, src: string, sig: string, sourceSha: string) =>
+      src === CROP && sig === SIG && sourceSha === CROP_SHA;
+    expect(readCanvasAssets(withSealedCanvasAssets(build([CROP_SHA]), holds)).crops).toEqual({
+      [CROP_ID]: SEALED,
+    });
+    // No hash recorded (a row filed before them): no crop.
+    expect(withSealedCanvasAssets(build(), holds)).not.toContain('diagram-assets');
+    // Another hash recorded (the seal binds other bytes): no crop.
+    expect(withSealedCanvasAssets(build(['e'.repeat(64)]), holds)).not.toContain('diagram-assets');
+    expect(checkCropShas(withChecks(2))).toEqual(new Map([[CROP_ID, new Set([CROP_SHA])]]));
   });
 
   it('a pid canvas with crops is the template: the assets block survives the rebuild, in its place only', () => {

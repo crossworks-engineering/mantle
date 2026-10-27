@@ -24,6 +24,7 @@ import { TEMPLATES, isTemplateName, type TemplateName } from './index.ts';
 import {
   CHECK_LIMITS,
   FILE_ID,
+  SHA256,
   honestImageChecks,
   imageChecksStale,
   mapDrawings,
@@ -73,13 +74,21 @@ export const CROP_LIMITS = (() => {
   } as const;
 })();
 
-/** The purpose a crop is sealed under (@mantle/content sealPayload). */
-export const CROP_SEAL_PURPOSE = 'canvas-crop v1';
-/** What the server seals of one crop: the file id it was read from and the
- *  sha256 (hex) of the picture's bytes. Not the canvas: a copied canvas
- *  keeps its crops. */
-export function cropSealPayload(fileId: string, sha256: string): [string, string] {
-  return [fileId.toLowerCase(), sha256];
+/** The purpose a crop is sealed under (@mantle/content sealPayload). v2
+ *  binds the bytes the crop was read from: a crop sealed under v1 is
+ *  dropped by the next save, and embedded again from its file. */
+export const CROP_SEAL_PURPOSE = 'canvas-crop v2';
+/** What the server seals of one crop: the file id it was read from, the
+ *  sha256 (hex) of the embedded picture's bytes and the sha256 of the
+ *  file's bytes it was made from, which is the one circuit_verify stored
+ *  (a mark's `cropSha`, sealed with the mark). Not the canvas: a copied
+ *  canvas keeps its crops. */
+export function cropSealPayload(
+  fileId: string,
+  sha256: string,
+  sourceSha256: string,
+): [string, string, string] {
+  return [fileId.toLowerCase(), sha256, sourceSha256];
 }
 export const RUNTIME_SPECIFIER = '@mantle/diagram-templates/browser';
 
@@ -767,16 +776,48 @@ export function checkCropIds(data: unknown): string[] {
   return out;
 }
 
+/** Every crop file id the checks in `pid` data name with the sha256 its
+ *  mark records for it (`cropSha`, in the order of `crops`), lower case:
+ *  the bytes circuit_verify stored, the only ones a crop of that id may be
+ *  made from. An id no mark records a hash for is not in the map. */
+export function checkCropShas(data: unknown): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  const take = (check: unknown) => {
+    const c = check as { crops?: unknown; cropSha?: unknown } | null;
+    if (!Array.isArray(c?.crops) || !Array.isArray(c.cropSha)) return;
+    if (c.crops.length !== c.cropSha.length) return;
+    c.crops.forEach((id, i) => {
+      const sha = (c.cropSha as unknown[])[i];
+      if (typeof id !== 'string' || !FILE_ID.test(id)) return;
+      if (typeof sha !== 'string' || !SHA256.test(sha)) return;
+      const k = id.toLowerCase();
+      const set = out.get(k) ?? new Set<string>();
+      set.add(sha);
+      out.set(k, set);
+    });
+  };
+  mapDrawings(data, (d) => mapImageChecks(d, (c) => (take(c), c)));
+  return out;
+}
+
 /** Whether `sig` is the server's seal of a crop (`cropSealPayload` under
- *  CROP_SEAL_PURPOSE) for this file id and picture; the content layer
- *  passes it (it hashes the bytes and holds the key). */
-export type CropSealCheck = (fileId: string, src: string, sig: string) => boolean;
+ *  CROP_SEAL_PURPOSE) for this file id and picture, made from the file
+ *  bytes whose sha256 is `sourceSha`; the content layer passes it (it
+ *  hashes the bytes and holds the key). */
+export type CropSealCheck = (
+  fileId: string,
+  src: string,
+  sig: string,
+  sourceSha: string,
+) => boolean;
 
 /**
  * A canvas's assets as a save stores them (@mantle/content honestCanvasSource,
  * after withHonestImageChecks): every written assets block folded into
- * one, keeping only crops a surviving mark of the data names (the marks
- * the save kept: an unsealed claim lost its crops) and whose seal holds.
+ * one, keeping only crops a surviving mark of the data names with the
+ * sha256 of the bytes circuit_verify stored (`checkCropShas`: the marks
+ * the save kept, so an unsealed claim lost its crops) and whose seal holds
+ * for those bytes.
  * Byte for byte unchanged when nothing is dropped. The caller refuses a
  * canvas with an assets block written another way first
  * (`assetsBlockCount`).
@@ -793,11 +834,16 @@ export function withSealedCanvasAssets(html: string, holds: CropSealCheck): stri
       data = null;
     }
   }
-  const named = new Set(checkCropIds(data));
+  // A crop is kept only where a kept mark names it with the hash of the
+  // bytes circuit_verify stored, and its seal binds those bytes.
+  const named = checkCropShas(data);
   const crops: Record<string, CanvasCrop> = {};
   for (const b of blocks)
-    for (const [id, c] of Object.entries(parseCanvasAssets(b[1]).crops))
-      if (!(id in crops) && named.has(id) && holds(id, c.src, c.sig)) crops[id] = c;
+    for (const [id, c] of Object.entries(parseCanvasAssets(b[1]).crops)) {
+      if (id in crops) continue;
+      const shas = named.get(id);
+      if (shas && [...shas].some((sha) => holds(id, c.src, c.sig, sha))) crops[id] = c;
+    }
   const kept: CanvasAssets | null = Object.keys(crops).length ? { crops } : null;
   if (blocks.length === 1 && blocks[0]![0] === assetsBlock(kept)) return html;
   return DATA_BLOCK.test(html) ? replaceCanvasAssets(html, kept) : html.replace(ASSETS_BLOCKS, '');

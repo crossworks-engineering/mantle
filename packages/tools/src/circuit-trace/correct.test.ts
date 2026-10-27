@@ -7,12 +7,15 @@
  * geometry and the first guess stay in the trace. Synthetic sheets only.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { imageCheckSummary, validate } from '@mantle/diagram-templates';
+import { honestImageChecks, imageCheckSummary, validate } from '@mantle/diagram-templates';
+import { drawingSealHolds } from '@mantle/content/drawing-seal';
 import {
   ALT_MAX,
   ALT_WORDS,
   altOf,
   appliedChecks,
+  cropCellWords,
+  cropIdsOf,
   parseAnswers,
   promptFor,
   questionsFor,
@@ -23,7 +26,7 @@ import {
   type CheckQuestion,
   type StoredCheck,
 } from './check';
-import { sealOf } from './check-seal';
+import { sealedPid, sealOf } from './check-seal';
 import {
   CIRCUIT,
   overviewOf,
@@ -190,6 +193,42 @@ describe('the trace corrects from the image', () => {
     );
     expect(valves.map((v) => v.type)).toContain('gate');
     expect(validate('pid', r.pid).ok).toBe(true);
+  });
+
+  it("a row's crop hashes ride into the mark, sealed with it (M3)", () => {
+    const q = questionOf([genericValve()], 'valve');
+    const [a, b] = ['a'.repeat(64), 'b'.repeat(64)];
+    const C1 = '00000000-0000-4000-8000-00000000c001';
+    const C2 = '00000000-0000-4000-8000-00000000c002';
+    const cell = `overview 00000000-0000-4000-8000-0000000000a1 ${cropCellWords(C1, a)} ${cropCellWords(C2, b)}`;
+    expect(cropIdsOf(cell)).toEqual({
+      overview: '00000000-0000-4000-8000-0000000000a1',
+      crops: [C1, C2],
+      cropSha: [a, b],
+    });
+    // A crop without its hash (a row filed before them, or a cell edited
+    // by hand): no hashes at all, so no crop of it is embedded.
+    expect(cropIdsOf(`${C1} ${cropCellWords(C2, b)}`).cropSha).toBeUndefined();
+    const { r } = traced([{ ...genericValve(), checks: [row(q, 'yes', '', cell)] }]);
+    const page = overviewOf(r.pid) as {
+      lines: { inline?: { check?: Record<string, unknown> }[] }[];
+    };
+    const mark = page.lines.flatMap((l) => l.inline ?? []).find((i) => i.check)!.check!;
+    expect(mark).toMatchObject({ state: 'checked', crops: [C1, C2], cropSha: [a, b] });
+    expect(validate('pid', r.pid).ok).toBe(true);
+    // The hashes are part of the mark's seal (circuit_trace seals the
+    // drawing): a changed one leaves the mark unchecked on save.
+    const sheets = [{ ...genericValve(), checks: [row(q, 'yes', '', cell)] }];
+    const raw = traceCircuit(CIRCUIT, sheets, undefined, {
+      checks: (w, l) => appliedChecks(w, l, sheets, [], []),
+    });
+    const sealed = sealedPid(raw.pid as Record<string, unknown>, [], []);
+    const stateOf = (pid: unknown) =>
+      (overviewOf(pid) as typeof page).lines.flatMap((l) => l.inline ?? []).find((i) => i.check)!
+        .check!.state;
+    expect(stateOf(honestImageChecks(sealed, drawingSealHolds))).toBe('checked');
+    const forged = JSON.parse(JSON.stringify(sealed).replace(a, 'c'.repeat(64)));
+    expect(stateOf(honestImageChecks(forged, drawingSealHolds))).toBe('unchecked');
   });
 
   it('a no without a usable alternative stays a contradicted guess', () => {

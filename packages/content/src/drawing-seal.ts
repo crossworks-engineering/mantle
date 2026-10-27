@@ -27,7 +27,7 @@
  * buildCanvas writes it, keeping only the marks circuit_trace sealed and
  * the counts of its own marks, and the embedded crops present_create /
  * present_update sealed (`sealPayload`, CROP_SEAL_PURPOSE) that a kept
- * mark still names.
+ * mark still names, made from the bytes the mark records (`cropSha`).
  */
 import { createHash, createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { env } from '@mantle/config';
@@ -176,16 +176,22 @@ const UNREADABLE_CROPS =
 const overLimit = (problem: string) =>
   `This diagram was not saved: its data is larger than a P&ID drawing can hold (${problem}). A drawing that size could not be drawn either. Make it smaller (split it into pages, or shorten the text) and save again.`;
 
-/** Whether `sig` is the server's seal of this crop: its file id and the
- *  sha256 of the picture's bytes (@mantle/tools present-crops.ts seals
- *  them). */
-export function cropSealHolds(fileId: string, src: string, sig: string): boolean {
+/** Whether `sig` is the server's seal of this crop: its file id, the
+ *  sha256 of the picture's bytes and the sha256 of the file bytes it was
+ *  made from (`sourceSha`: the mark's `cropSha`, what circuit_verify
+ *  stored; @mantle/tools present-crops.ts seals them). */
+export function cropSealHolds(
+  fileId: string,
+  src: string,
+  sig: string,
+  sourceSha: string,
+): boolean {
   const comma = src.indexOf(',');
   if (comma < 0) return false;
   const sha = createHash('sha256')
     .update(Buffer.from(src.slice(comma + 1), 'base64'))
     .digest('hex');
-  return sealPayloadHolds(CROP_SEAL_PURPOSE, cropSealPayload(fileId, sha), sig);
+  return sealPayloadHolds(CROP_SEAL_PURPOSE, cropSealPayload(fileId, sha, sourceSha), sig);
 }
 
 /**

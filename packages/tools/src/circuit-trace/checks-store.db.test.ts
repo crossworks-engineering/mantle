@@ -363,7 +363,10 @@ describe.skipIf(!URL)('the image check store', () => {
     // The row as the read maps it holds its seal (every field it covers).
     expect(check.sealedRow(t, check.storedCheckOf(row))).toBe(true);
     expect(check.sealedRow(t, check.storedCheckOf({ ...row, Reason: 'typed' }))).toBe(false);
-    const cropIds = String(row.Crops).split(' ');
+    // Each crop's id with the sha256 of the bytes stored, sealed with the row.
+    const cell = check.cropIdsOf(String(row.Crops));
+    const cropIds = cell.crops;
+    expect(cell.cropSha).toEqual([createHash('sha256').update(Buffer.from('png-1')).digest('hex')]);
     const crops = await admin`select data from nodes where id = any(${cropIds}::uuid[])`;
     expect(crops).toHaveLength(1);
     expect(crops[0]!.data).toMatchObject({

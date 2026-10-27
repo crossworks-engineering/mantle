@@ -1,11 +1,13 @@
 /**
  * The crops a pid canvas embeds when it is saved (present-crops.ts): every
  * check's crop id once, each read by the caller's own read (a stand-in
- * here), re-encoded as a small JPEG and sealed, capped in count, reads and
+ * here) only while its bytes are the ones the check recorded (`cropSha`),
+ * re-encoded as a small JPEG and sealed, capped in count, reads and
  * size (the canvas cap's room included); what is left out is said. The
  * save keeps a crop only when its seal holds (@mantle/content
  * honestCanvasSource). All ids are made up.
  */
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildCanvas, CROP_LIMITS, readCanvasAssets } from '@mantle/diagram-templates';
 import { cropSealHolds, honestCanvasSource } from '@mantle/content/drawing-seal';
@@ -26,7 +28,17 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
-const check = (crops: string[]) => ({ key: 'k', kind: 'valve', state: 'checked', crops });
+const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+const SVG = Buffer.from('<svg/>');
+// The hash circuit_verify recorded for each crop: the bytes it stored.
+const shaFor = (fileId: string) => sha(fileId === id(3) ? SVG : PNG);
+const check = (crops: string[], cropSha: string[] | null = crops.map(shaFor)) => ({
+  key: 'k',
+  kind: 'valve',
+  state: 'checked',
+  crops,
+  ...(cropSha ? { cropSha } : {}),
+});
 const drawing = (ids: string[]) => ({
   title: 'Crops',
   offpage: [{ id: 'OPC-1', check: check([ids[0]!]) }],
@@ -43,7 +55,7 @@ const reads: string[] = [];
 const read: CropRead = async (fileId) => {
   reads.push(fileId);
   if (fileId === id(2)) return null; // the caller cannot read it
-  if (fileId === id(3)) return { bytes: Buffer.from('<svg/>'), mimeType: 'image/svg+xml' };
+  if (fileId === id(3)) return { bytes: SVG, mimeType: 'image/svg+xml' };
   return { bytes: PNG, mimeType: 'image/png' };
 };
 
@@ -54,12 +66,36 @@ describe('embedCheckCrops', () => {
     expect(Object.keys(r.assets!.crops).sort()).toEqual([id(1), id(4)]);
     for (const [fileId, c] of Object.entries(r.assets!.crops)) {
       expect(c.src).toMatch(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/);
-      expect(cropSealHolds(fileId, c.src, c.sig)).toBe(true);
+      expect(cropSealHolds(fileId, c.src, c.sig, sha(PNG))).toBe(true);
       // The seal names the file: another id does not hold.
-      expect(cropSealHolds(id(9), c.src, c.sig)).toBe(false);
+      expect(cropSealHolds(id(9), c.src, c.sig, sha(PNG))).toBe(false);
+      // And the bytes it was made from: another source hash does not hold.
+      expect(cropSealHolds(fileId, c.src, c.sig, sha(SVG))).toBe(false);
     }
     expect(r.notes.join(' ')).toMatch(/2 crops named by a check could not be read/);
     expect(reads).toEqual([id(1), id(2), id(3), id(4)]);
+  });
+
+  it('embeds a crop only while its file holds the bytes the check stored (M3)', async () => {
+    // id 4's file was replaced since the check (a Files upload with replace).
+    const other = Buffer.from(PNG);
+    other.writeUInt8(other.readUInt8(other.length - 5) ^ 1, other.length - 5);
+    const swapped: CropRead = async (fileId) =>
+      fileId === id(4) ? { bytes: other, mimeType: 'image/png' } : read(fileId);
+    const r = await embedCheckCrops(drawing([id(1), id(2), id(3), id(4)]), swapped, {
+      room: ROOM,
+    });
+    expect(Object.keys(r.assets!.crops)).toEqual([id(1)]);
+    expect(r.notes.join(' ')).toMatch(/1 crop file no longer holds the picture/);
+  });
+
+  it('a mark with no recorded hash embeds none, and says to check again', async () => {
+    reads.length = 0;
+    const data = { title: 'Old row', lines: [{ id: 'L1', checks: [check([id(1)], null)] }] };
+    const r = await embedCheckCrops(data, read, { room: ROOM });
+    expect(r.assets).toBeNull();
+    expect(reads).toEqual([]);
+    expect(r.notes.join(' ')).toMatch(/filed before crops were bound to their bytes/);
   });
 
   it('caps the count', async () => {
@@ -113,6 +149,20 @@ describe('embedCheckCrops', () => {
     expect(r.assets!.crops[id(1)]).toEqual(first.assets!.crops[id(1)]);
   });
 
+  it('an update reads a carried crop again when its seal does not bind the recorded bytes', async () => {
+    const first = await embedCheckCrops(drawing([id(1), id(2), id(3), id(4)]), read, {
+      room: ROOM,
+    });
+    reads.length = 0;
+    // A later check of the same id recorded other bytes: the carried crop
+    // was made from the old ones, so it is not kept; the file is read.
+    const data = { title: 'Again', lines: [{ id: 'L1', checks: [check([id(1)], [sha(SVG)])] }] };
+    const r = await embedCheckCrops(data, read, { room: ROOM, have: first.assets });
+    expect(reads).toEqual([id(1)]);
+    expect(r.assets).toBeNull();
+    expect(r.notes.join(' ')).toMatch(/no longer holds/);
+  });
+
   it('no master key: nothing sealed, nothing embedded, and said', async () => {
     vi.stubEnv('MANTLE_MASTER_KEY', undefined);
     const r = await embedCheckCrops(drawing([id(1), id(2), id(3), id(4)]), read, { room: ROOM });
@@ -150,9 +200,9 @@ describe('a save keeps only sealed crops (honestCanvasSource)', () => {
     expect(readCanvasAssets(html).crops[id(1)]).toBeTruthy();
     expect(honestCanvasSource(html)).not.toContain('diagram-assets');
     const c = assets!.crops[id(1)]!;
-    expect(cropSealHolds(id(1), c.src, c.sig)).toBe(true);
-    expect(cropSealHolds(id(1), `${c.src.slice(0, -8)}AAAAAAA=`, c.sig)).toBe(false);
-    expect(cropSealHolds(id(1), c.src, 'f'.repeat(64))).toBe(false);
+    expect(cropSealHolds(id(1), c.src, c.sig, sha(PNG))).toBe(true);
+    expect(cropSealHolds(id(1), `${c.src.slice(0, -8)}AAAAAAA=`, c.sig, sha(PNG))).toBe(false);
+    expect(cropSealHolds(id(1), c.src, 'f'.repeat(64), sha(PNG))).toBe(false);
   });
 
   it('refuses an assets block written another way', () => {

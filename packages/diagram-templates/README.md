@@ -305,7 +305,7 @@ checkedAt, crops, overview }`. Each marked element gets
   words it holds; a typed bracketed claim on an element with no mark draws
   as `(GUESS)` (`withoutMarkWords`, on every drawing, so a canvas saved
   before the marks is honest on view; `pnpm maintain pid-canvas-resave`
-  rewrites the stored sources). A drawing with no mark and no typed claim
+  rewrites the stored sources and clears their posters). A drawing with no mark and no typed claim
   draws byte for byte as before. In the canvas each item is one tab stop: its
   badge, else its first element.
   The drawing prints `N GUESSES NOT CHECKED BY IMAGE` under its title,
@@ -323,12 +323,18 @@ id="diagram-assets">`, written with `scriptJson`'s escapes,
   `buildCanvas` puts it, under exactly the import runtime it writes
   (`IMPORT_RUNTIME_TEXT`), on the live document (`src/data-read.ts`); in
   any other document the marks draw unchecked and the evidence view does
-  not run. Each crop is `{ src, sig }`: the
-  server seals its file id and the sha256 of its bytes (`cropSealPayload`,
-  CROP_SEAL_PURPOSE) when it embeds it, and every save keeps a crop only
-  when that seal holds and a kept mark still names it
-  (`withSealedCanvasAssets`), so an edit can remove a crop, never swap its
-  picture. Every crop limit is in `CROP_LIMITS` (`src/canvas.ts`).
+  not run. A mark records the sha256 of each crop file's bytes as
+  circuit_verify stored them (`cropSha`, sealed with the mark; the Checks
+  row's Crops cell holds them, sealed with the row), and a crop is embedded
+  only while its file still holds those bytes. Each crop is `{ src, sig }`:
+  the server seals its file id, the sha256 of the embedded bytes and the
+  recorded sha256 of the file it was made from (`cropSealPayload`,
+  CROP_SEAL_PURPOSE `canvas-crop v2`) when it embeds it, and every save
+  keeps a crop only when that seal holds for the hash a kept mark records
+  (`checkCropShas`, `withSealedCanvasAssets`), so an edit can remove a
+  crop, never swap its picture, and a crop file replaced after the check
+  is never shown as its evidence. Every crop limit is in `CROP_LIMITS`
+  (`src/canvas.ts`).
 - **Zoom and pan** (`src/zoom.ts`, `zoomable(target, options)` from
   `@mantle/diagram-templates/browser`): a view of the live SVG through its
   `viewBox`, never the export (`exportSvg`, `exportPageSvg` and a print are

@@ -798,7 +798,8 @@ export type StoredCheck = {
   handles?: string;
   guess?: string;
   file?: string;
-  /** The Crops cell: the overview's and the crops' file ids. */
+  /** The Crops cell: the overview's and the crops' file ids, each crop's
+   *  followed by the sha256 of its bytes (cropCellWords). */
   crops?: string;
   /** circuit_verify's seal of the row (./check-seal.ts); '' when none. */
   seal?: string;
@@ -953,21 +954,42 @@ export type AppliedCheck = {
   checkedAt: string;
 };
 
-/** The Crops cell (`overview <id> <id> ...`) as the overview's file id and
- *  the crops' file ids: only words that are file ids (FILE_ID, the one
- *  pattern a mark's crops are held to), so a cell edited by hand never
- *  puts other text in a mark. */
-export function cropIdsOf(cell: string): { overview?: string; crops: string[] } {
+/** One crop in the Crops cell: its file id, then the sha256 of the bytes
+ *  stored (`<id> sha256:<hex>`; rows filed before the hashes have none). */
+export function cropCellWords(id: string, sha: string): string {
+  return `${id} sha256:${sha}`;
+}
+const SHA_WORD = /^sha256:([0-9a-f]{64})$/;
+
+/** The Crops cell (`overview <id> <id> sha256:<hex> ...`) as the overview's
+ *  file id, the crops' file ids and, when every crop carries one, the
+ *  sha256 of each crop's bytes as stored (`cropSha`, in the order of
+ *  `crops`; the cell is sealed with the row, so these are what
+ *  circuit_verify stored). Only words that are file ids (FILE_ID, the one
+ *  pattern a mark's crops are held to) and hashes, so a cell edited by
+ *  hand never puts other text in a mark. */
+export function cropIdsOf(cell: string): {
+  overview?: string;
+  crops: string[];
+  cropSha?: string[];
+} {
   const words = cell.split(/\s+/).filter(Boolean);
   let overview: string | undefined;
   const crops: string[] = [];
+  const shas: (string | null)[] = [];
   for (let i = 0; i < words.length; i++) {
     if (words[i] === 'overview' && words[i + 1]) {
       if (FILE_ID.test(words[i + 1]!)) overview = words[i + 1];
       i += 1;
-    } else if (FILE_ID.test(words[i]!)) crops.push(words[i]!);
+    } else if (FILE_ID.test(words[i]!)) {
+      crops.push(words[i]!);
+      const sha = SHA_WORD.exec(words[i + 1] ?? '');
+      shas.push(sha ? sha[1]! : null);
+      if (sha) i += 1;
+    }
   }
-  return { ...(overview ? { overview } : {}), crops };
+  const cropSha = shas.every((x): x is string => x !== null) && shas.length ? shas : null;
+  return { ...(overview ? { overview } : {}), crops, ...(cropSha ? { cropSha } : {}) };
 }
 
 /**

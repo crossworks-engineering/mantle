@@ -30,7 +30,7 @@
  * with these rows in it: they publish with the user's commit, and their
  * crops are kept as the evidence (the result says the rows are pending).
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { advisoryXactLock, db, nodes, tables, withHeads } from '@mantle/db';
 import { applyTableOps, commitTable, discardTableDraft, tableWriteRefusal } from '@mantle/content';
@@ -52,7 +52,14 @@ import {
 } from '@mantle/files/dwg';
 import type { TableOp } from '@mantle/tabledb';
 import { errorMessage } from '@mantle/std';
-import { ALT_MAX, CHECK_COLUMNS, CHECKS_TAB, TRUST, type CheckColumn } from './check';
+import {
+  ALT_MAX,
+  CHECK_COLUMNS,
+  CHECKS_TAB,
+  cropCellWords,
+  TRUST,
+  type CheckColumn,
+} from './check';
 import { sealOf } from './check-seal';
 import { circuitKey } from './check-keys';
 import type { CheckAnswer, StoreResult, VerifyClaim, VerifyRun } from './verify';
@@ -204,6 +211,9 @@ export async function storeChecks(
     made.push(id);
     return id;
   };
+  /** Per question, its crops' cell words: each file id with the sha256 of
+   *  the bytes stored (sealed with the row: a crop file replaced later is
+   *  never embedded as this answer's evidence, present-crops.ts). */
   const cropIds = new Map<string, string[]>();
   let overviewId: string | null = null;
   try {
@@ -218,14 +228,13 @@ export async function storeChecks(
     for (const a of answers) {
       const ids: string[] = [];
       for (const c of a.crops) {
-        ids.push(
-          await save(
-            `${fileSafe(circuit)}-${when}-${a.q.id}-${c.part + 1}.png`,
-            c.png,
-            `Image check ${circuit}: ${sheet.title}, ${a.q.id} (${a.q.kind}) crop ${c.part + 1} of ${c.of}`,
-            { checkKey: a.q.key, checkKind: a.q.kind, window: c.window, textPx: c.textPx },
-          ),
+        const id = await save(
+          `${fileSafe(circuit)}-${when}-${a.q.id}-${c.part + 1}.png`,
+          c.png,
+          `Image check ${circuit}: ${sheet.title}, ${a.q.id} (${a.q.kind}) crop ${c.part + 1} of ${c.of}`,
+          { checkKey: a.q.key, checkKind: a.q.kind, window: c.window, textPx: c.textPx },
         );
+        ids.push(cropCellWords(id, createHash('sha256').update(c.png).digest('hex')));
       }
       cropIds.set(a.q.id, ids);
     }

@@ -22,18 +22,27 @@
  *  - Only pictures: decoded, then re-encoded as a small JPEG
  *    (`embeddableJpeg`): no SVG, no markup, nothing executable; the frame's
  *    runtime shows only a base64 image data URL.
- *  - Sealed: each crop carries the server's seal of its file id and the
- *    sha256 of its bytes (`sealPayload`, the drawing check seal's key). Every
- *    save (@mantle/content honestCanvasSource) drops a crop whose seal does
- *    not hold, or that no surviving checked mark names: a canvas edit can
- *    remove a crop, never swap its picture.
+ *  - Bound to the bytes the model saw: circuit_verify records the sha256
+ *    of each crop file's bytes in the Checks row (sealed with it), and
+ *    circuit_trace carries it into the mark (`cropSha`, sealed with the
+ *    mark). A crop is embedded only while its file still holds those bytes:
+ *    a file replaced since (a Files upload with replace, by anyone who may
+ *    write it) is left out and said, the guess shows its words without
+ *    the picture. A mark with no recorded hash (a row filed before the
+ *    hashes) embeds none: run circuit_verify again.
+ *  - Sealed: each crop carries the server's seal of its file id, the
+ *    sha256 of its embedded bytes and the sha256 of the file bytes it was
+ *    made from (`sealPayload`, the drawing check seal's key). Every save
+ *    (@mantle/content honestCanvasSource) drops a crop whose seal does not
+ *    hold for the hash a surviving sealed mark records, or that no such
+ *    mark names: a canvas edit can remove a crop, never swap its picture.
  *  - Size: each crop at most CROP_LIMITS.bytes, all of them at most
  *    CROP_LIMITS.totalBytes and CROP_LIMITS.count, and never past the room
  *    the canvas's 1 MB cap leaves beside the drawing (`cropRoom`). What does
  *    not fit is said, and the guess shows its words without a picture.
  *
  * An update reuses the crops the canvas already carries for the ids still
- * named (their seals still hold), and reads only the new ones. So a canvas
+ * named whose seals hold for the recorded hash, and reads only the others. So a canvas
  * can carry a picture its current author could not open: one an earlier
  * save embedded for another author (an update by an editor, a copy of the
  * canvas), kept because the mark that names it is still sealed. Rights
@@ -47,7 +56,7 @@
  * of the canvas.
  */
 import { createHash } from 'node:crypto';
-import { drawingSealHolds } from '@mantle/content/drawing-seal';
+import { cropSealHolds, drawingSealHolds } from '@mantle/content/drawing-seal';
 import type { Readable } from 'node:stream';
 import { embeddableJpeg, fileById, isEmbeddableImage, openFileById } from '@mantle/files';
 import { CANVAS_MAX_BYTES } from '@mantle/content-core/canvas';
@@ -55,6 +64,7 @@ import {
   CROP_LIMITS,
   CROP_SEAL_PURPOSE,
   checkCropIds,
+  checkCropShas,
   cropSealPayload,
   honestImageChecks,
   type CanvasAssets,
@@ -147,11 +157,16 @@ export async function embedCheckCrops(
 ): Promise<{ assets: CanvasAssets | null; notes: string[] }> {
   const ids = checkCropIds(data);
   if (!ids.length) return { assets: null, notes: [] };
+  const recorded = checkCropShas(data);
   const crops: Record<string, CanvasCrop> = {};
   let raw = 0;
   let used = BLOCK_COST;
   let reads = 0;
   const missing: string[] = [];
+  /** No hash recorded for it (a row filed before the hashes). */
+  const unbound: string[] = [];
+  /** Its file no longer holds the bytes the check stored. */
+  const replaced: string[] = [];
   const over: string[] = [];
   const room: string[] = [];
   let unsealed = 0;
@@ -165,7 +180,16 @@ export async function embedCheckCrops(
       over.push(id);
       continue;
     }
-    const had = opts.have?.crops[id];
+    const shas = recorded.get(id);
+    if (!shas) {
+      unbound.push(id);
+      continue;
+    }
+    const kept = opts.have?.crops[id];
+    const had =
+      kept && [...shas].some((sha) => cropSealHolds(id, kept.src, kept.sig, sha))
+        ? kept
+        : undefined;
     let crop: CanvasCrop;
     let bytes: number;
     if (had) {
@@ -178,18 +202,23 @@ export async function embedCheckCrops(
       }
       reads += 1;
       const file = await read(id);
+      const source = file ? createHash('sha256').update(file.bytes).digest('hex') : null;
+      if (file && source && !shas.has(source)) {
+        replaced.push(id);
+        continue;
+      }
       const jpeg = file
         ? await embeddableJpeg(file.bytes, file.mimeType, {
             maxBytes: CROP_LIMITS.bytes,
             maxSourceBytes: CROP_LIMITS.sourceBytes,
           })
         : null;
-      if (!jpeg) {
+      if (!jpeg || !source) {
         missing.push(id);
         continue;
       }
       const sha = createHash('sha256').update(jpeg).digest('hex');
-      const sig = sealPayload(CROP_SEAL_PURPOSE, cropSealPayload(id, sha));
+      const sig = sealPayload(CROP_SEAL_PURPOSE, cropSealPayload(id, sha, source));
       if (!sig) {
         unsealed += 1;
         continue;
@@ -210,6 +239,14 @@ export async function embedCheckCrops(
   if (missing.length)
     notes.push(
       `${plural(missing.length, 'crop', 'crops')} named by a check could not be read as a picture you may open (${some(missing)}): those guesses show their question and answer without the picture.`,
+    );
+  if (replaced.length)
+    notes.push(
+      `${plural(replaced.length, 'crop file no longer holds', 'crop files no longer hold')} the picture the image check stored (${some(replaced)}): not embedded, those guesses show their words without the picture. The Checks row keeps the hash of the original; run circuit_verify again for new crops.`,
+    );
+  if (unbound.length)
+    notes.push(
+      `${plural(unbound.length, 'crop was', 'crops were')} filed before crops were bound to their bytes (${some(unbound)}): not embedded. Run circuit_verify again, then circuit_trace, for crops the canvas can show.`,
     );
   if (over.length)
     notes.push(
