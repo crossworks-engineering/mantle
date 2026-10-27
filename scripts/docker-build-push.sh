@@ -44,4 +44,4 @@ docker compose push web
 docker push "${MANTLE_IMAGE_NAMESPACE}/mantle-parser:${TAG}"
 
 echo "✔ Pushed ${MANTLE_IMAGE_NAMESPACE}/mantle-server:${TAG} + mantle-parser:${TAG}"
-echo "  On the VPS:  MANTLE_IMAGE_NAMESPACE=${MANTLE_IMAGE_NAMESPACE} MANTLE_IMAGE_TAG=${TAG} docker compose pull && docker compose up -d --wait"
+echo "  On the VPS:  MANTLE_IMAGE_NAMESPACE=${MANTLE_IMAGE_NAMESPACE} MANTLE_IMAGE_TAG=${TAG} docker compose pull && docker compose up -d --wait --remove-orphans"

@@ -306,7 +306,7 @@ while your UI silently stays old:
 ```bash
 cd mantle
 bash scripts/db-dump.sh                                   # cheap insurance
-docker compose pull && docker compose up -d --wait        # server stack
+docker compose pull && docker compose up -d --wait --remove-orphans        # server stack
 docker compose -f docker-compose.client.yml --project-directory . pull \
   && docker compose -f docker-compose.client.yml --project-directory . up -d --wait   # owner UI
 ```
@@ -349,7 +349,7 @@ bash scripts/db-dump.sh        # → backups/mantle-<ts>.dump
 
 ```bash
 # set MANTLE_IMAGE_TAG back to the previous version in .env, then
-docker compose pull && docker compose up -d --wait
+docker compose pull && docker compose up -d --wait --remove-orphans
 ```
 
 Code rolls back instantly. **Schema does not**: migrations are

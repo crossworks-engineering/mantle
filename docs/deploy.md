@@ -56,21 +56,21 @@ box is not steady state; it's two specific events:
    Correct on any CPU since the sub-batched local adapter (v0.20.58), just
    slower on fewer cores. No GPU is needed at personal scale.
 
-| Profile                                                                             | vCPU | RAM   | Disk  | Notes                                                                                                                                                                                                                |
-| ----------------------------------------------------------------------------------- | ---- | ----- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Minimum** (registry-pull deploys)                                                 | 2    | 4 GB  | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong.                                                                                                         |
-| **Brain-core** (`install.sh --core`, online embeddings) | 2 | 4 GB | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + the PDF browser (7 of the 25 defined services; `--helpers` re-adds the PDF browser). See docs/self-hosting.md "Brain-core shape". |
-| **Recommended** (build-on-VPS, only if you build your own image on the box; see §2) | 4    | 8 GB  | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache, run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB).                                             |
-| **Reference** (author's prod)                                                       | 6    | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes).                                                                                                                 |
+| Profile                                                                             | vCPU | RAM   | Disk  | Notes                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------- | ---- | ----- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Minimum** (registry-pull deploys)                                                 | 2    | 4 GB  | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong.                                                                                                       |
+| **Brain-core** (`install.sh --core`, online embeddings)                             | 2    | 4 GB  | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + the PDF browser (7 of the 25 defined services; `--helpers` re-adds the PDF browser). See docs/self-hosting.md "Brain-core shape". |
+| **Recommended** (build-on-VPS, only if you build your own image on the box; see §2) | 4    | 8 GB  | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache, run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB).                                           |
+| **Reference** (author's prod)                                                       | 6    | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes).                                                                                                               |
 
 **Container memory caps.** Every service carries a `mem_limit`: a cap, not a
 reservation, so the caps may add up to more than the box has. The two that
 matter are per-box settings in the stack's `.env`:
 
-| Variable          | Service      | Default | Raise it when                                                                                   |
-| ----------------- | ------------ | ------- | ----------------------------------------------------------------------------------------------- |
-| `WEB_MEM_LIMIT`   | `mantle_web` | `3g`    | the box has RAM to spare (16 GB: `6g`); every `pnpm maintain` run executes inside this container |
-| `API_MEM_LIMIT`   | `mantle_api` | `3g`    | large Tables workbooks next to heavy extraction (16 GB: `4g`)                                    |
+| Variable           | Service         | Default | Raise it when                                                                                                                                                                                                          |
+| ------------------ | --------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WEB_MEM_LIMIT`    | `mantle_web`    | `3g`    | the box has RAM to spare (16 GB: `6g`); every `pnpm maintain` run executes inside this container                                                                                                                       |
+| `API_MEM_LIMIT`    | `mantle_api`    | `3g`    | large Tables workbooks next to heavy extraction (16 GB: `4g`)                                                                                                                                                          |
 | `PARSER_MEM_LIMIT` | `mantle_parser` | `2g`    | big drawing sets or very large documents; a document past it is killed inside the parser and recorded, never a brain process (`PARSER_CPUS`, default 1, sets its CPU share; one job at a time, no swap past the limit) |
 
 Until 2026-09-24 the web cap was a fixed 1.5g: four maintenance runs at once
@@ -397,7 +397,7 @@ one; a manual `compose pull && up` does not, so dump by hand there
 
 ```bash
 # VPS — set MANTLE_IMAGE_TAG back to the previous tag in .env
-docker compose pull && docker compose up -d --wait
+docker compose pull && docker compose up -d --wait --remove-orphans
 ```
 
 Code rolls back instantly. **Schema does not**: a migration is forward-only, so

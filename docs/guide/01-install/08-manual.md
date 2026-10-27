@@ -19,24 +19,24 @@ The bundle also contains the configurator. `bash scripts/install.sh` in the unpa
 
 2. Fill in these values in `.env`:
 
-   | Variable | Value |
-   |---|---|
-   | `SESSION_SECRET` | `openssl rand -base64 48` |
-   | `MANTLE_MASTER_KEY` | `openssl rand -base64 32`. Back it up and never change it: it decrypts your stored keys and mail passwords. |
-   | `POSTGRES_PASSWORD`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Strong random values, for example `openssl rand -hex 16` |
-   | `MANTLE_SETUP_CODE` | Any hard-to-guess string. Sign-up asks for it until the first account exists. |
-   | `MANTLE_SITE_ADDRESS` | Your domain, for HTTPS. Or `:80` for plain HTTP. |
-   | `MANTLE_PUBLIC_URL` | `https://` plus your domain. Leave it out without a domain. |
-   | `MANTLE_SERVER_ORIGIN` | The address people open in the browser, with the port if it is not 80 or 443 |
-   | `MANTLE_STACK_DIR` | This directory's full path (the output of `pwd -P`). The in-app updater needs it. |
-   | `MANTLE_DATA_DIR` | Where all data is stored (default `./data`) |
+   | Variable                                              | Value                                                                                                       |
+   | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+   | `SESSION_SECRET`                                      | `openssl rand -base64 48`                                                                                   |
+   | `MANTLE_MASTER_KEY`                                   | `openssl rand -base64 32`. Back it up and never change it: it decrypts your stored keys and mail passwords. |
+   | `POSTGRES_PASSWORD`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Strong random values, for example `openssl rand -hex 16`                                                    |
+   | `MANTLE_SETUP_CODE`                                   | Any hard-to-guess string. Sign-up asks for it until the first account exists.                               |
+   | `MANTLE_SITE_ADDRESS`                                 | Your domain, for HTTPS. Or `:80` for plain HTTP.                                                            |
+   | `MANTLE_PUBLIC_URL`                                   | `https://` plus your domain. Leave it out without a domain.                                                 |
+   | `MANTLE_SERVER_ORIGIN`                                | The address people open in the browser, with the port if it is not 80 or 443                                |
+   | `MANTLE_STACK_DIR`                                    | This directory's full path (the output of `pwd -P`). The in-app updater needs it.                           |
+   | `MANTLE_DATA_DIR`                                     | Where all data is stored (default `./data`)                                                                 |
 
    Leave `ALLOWED_USER_ID` blank. For a this-machine-only install, also set `MANTLE_BIND_ADDR=127.0.0.1`.
 
 3. Start the brain:
 
    ```bash
-   docker compose pull && docker compose up -d --wait
+   docker compose pull && docker compose up -d --wait --remove-orphans
    ```
 
 4. Start the owner UI, which is a separate stack. Without it there is no sign-up screen.

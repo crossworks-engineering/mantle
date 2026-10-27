@@ -221,7 +221,7 @@ compose_env_ok() {
   return 1
 }
 
-# refresh_one <box-file> <release-path> [<keep>] — extract one canonical
+# refresh_one <box-file> <release-path> [<keep>]: extract one canonical
 # compose from the (already pulled) target image and swap it in when the box
 # copy is pristine. Echoes the outcome token. Never blocks the update. With
 # <keep>, a copy of the canonical it read is left there (the parser check
@@ -319,15 +319,17 @@ refresh_compose() {
 # server compose that refresh_compose already extracted (refresh_one's
 # copy); a target whose compose could not be read (no image, no embedded
 # canonical) is not refused here: the pull and up decide.
+# The parser's own line in a compose file; a commented-out one is not it.
+PARSER_LINE_RE='^[[:space:]]*container_name:[[:space:]]*mantle_parser[[:space:]]*$'
 parser_compose_refusal() {
   PCR_ERR=""
   pcr_canon="$STACK/.compose-canonical.tmp"
   pcr_has=""
-  if [ -s "$pcr_canon" ] && grep -q 'container_name: mantle_parser' "$pcr_canon"; then pcr_has=1; fi
+  if [ -s "$pcr_canon" ] && grep -qE "$PARSER_LINE_RE" "$pcr_canon"; then pcr_has=1; fi
   rm -f "$pcr_canon"
   [ "$REFRESH" = refreshed ] && return 1
   [ -n "$pcr_has" ] || return 1
-  grep -q 'container_name: mantle_parser' "$STACK/docker-compose.yml" 2>/dev/null && return 1
+  grep -qE "$PARSER_LINE_RE" "$STACK/docker-compose.yml" 2>/dev/null && return 1
   PCR_ERR="the release reads every file through the parser service, but this box's docker-compose.yml was not refreshed ($REFRESH) and does not define it. Bring the compose up to the release (move local edits to docker-compose.override.yml, then scripts/compose-adopt.sh), then request the update again"
   return 0
 }
@@ -1413,7 +1415,7 @@ ensure_service_tokens() {
 # before it, which does not know this step); the roll after writes it and
 # recreates the app containers and the parser with it.
 ensure_parser_token() {
-  grep -q 'container_name: mantle_parser' "$STACK/docker-compose.yml" 2>/dev/null || return 0
+  grep -qE "$PARSER_LINE_RE" "$STACK/docker-compose.yml" 2>/dev/null || return 0
   [ -z "$(env_val PARSER_TOKEN)" ] || return 0
   if ept_tok=$(gen_token) && persist_env PARSER_TOKEN "$ept_tok"; then
     echo "[updater] PARSER_TOKEN provisioned (the parser and the app containers take it on this roll)" \

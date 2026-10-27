@@ -32,7 +32,7 @@ Use this when the box has no updater. Run it in the stack directory (the folder 
 2. Update the server:
 
    ```bash
-   docker compose pull && docker compose up -d --wait
+   docker compose pull && docker compose up -d --wait --remove-orphans
    ```
 
 3. Update the interface. It is a second stack, and step 2 does not touch it:
@@ -57,7 +57,7 @@ bash scripts/install.sh --check
 ## Roll back
 
 1. Set `MANTLE_IMAGE_TAG` in `.env` back to the previous version.
-2. Run `docker compose pull && docker compose up -d --wait`.
+2. Run `docker compose pull && docker compose up -d --wait --remove-orphans`.
 
 Migrations only go forward. If the update ran a migration, restore the backup taken before it as well. See [Back up and restore](02-backups.md).
 

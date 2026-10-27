@@ -22,7 +22,11 @@
 #      whose migrate would refuse and leave the site down (2e); refuse a
 #      roll to a release that ships the parser service on a box whose
 #      docker-compose.yml the roll will not refresh (local edits or no
-#      baseline) and that does not define the parser (2f)
+#      baseline) and that does not define the parser, whose Docker
+#      filesystem has less than ROLL_MIN_FREE_GB (8) free, or where the
+#      release's compose with the box's own override and .env does not load
+#      (`docker compose config -q`, on the box) (2f); refuse a roll whose
+#      images are not in the registry yet (2g)
 #   3. backup: scripts/db-dump.sh on the box, strict, its OWN exit status
 #      (no pipe in front of it). Skipped only when the box's updater takes
 #      its own strict pre-roll backup (see pre_roll_backup in
@@ -39,9 +43,10 @@
 #      (masked as in 6): a refused migrate is why compose up failed
 #   6. wait for mantle_web healthy, then mantle_parser (when the release has
 #      it: a release that ships it with no mantle_parser after the roll is a
-#      failure); if one never is, a loud banner and the last 20 lines of its
-#      log, every line, with secret values masked. No automatic rollback: the
-#      operator decides.
+#      failure), then fetch the parser's /healthz from inside mantle_web (its
+#      PARSER_URL: unreachable is a failure); if one never is, a loud banner
+#      and the last 20 lines of its log, every line, with secret values
+#      masked. No automatic rollback: the operator decides.
 #   7. count again: ANY drop in apps, sandboxes or app-db files stops with a
 #      loud error (mini sandbox apps are never to be lost in a roll)
 #   8. print /api/version
@@ -68,7 +73,9 @@
 # Exit codes: 0 rolled and verified, 1 a step failed (nothing requested when it
 # failed before step 4), 2 usage, 3 COUNTS DROPPED after the roll.
 #
-# Env: ROLL_POLL_SECS (15), ROLL_TIMEOUT_SECS (2400), ROLL_HEALTH_TIMEOUT_SECS (900).
+# Env: ROLL_POLL_SECS (15), ROLL_TIMEOUT_SECS (2400), ROLL_HEALTH_TIMEOUT_SECS (900),
+# ROLL_MIN_FREE_GB (8: the free space on the box's Docker filesystem a roll
+# to a release that ships the parser needs, step 2f).
 
 set -euo pipefail
 
@@ -540,6 +547,8 @@ fi
 # as shipping it. PARSER_NOT_BEFORE only skips the question for a release
 # older than any that could ship it (main was v0.400.13 when it was written).
 PARSER_NOT_BEFORE=0.400.14
+# The parser's own line in a compose file; a commented-out one is not it.
+PARSER_LINE_RE='^[[:space:]]*container_name:[[:space:]]*mantle_parser[[:space:]]*$'
 # parser_in_release <tag>: yes when release <tag>'s docker-compose.yml
 # defines the parser, no when it does not, unknown when this checkout has no
 # such tag.
@@ -547,7 +556,7 @@ parser_in_release() {
   local git_dir=${ROLL_RELEASE_GIT:-$ROOT} ref
   for ref in "refs/tags/v${1#v}" "refs/tags/$1"; do
     git -C "$git_dir" rev-parse -q --verify "$ref^{commit}" > /dev/null 2>&1 || continue
-    if git -C "$git_dir" show "$ref:docker-compose.yml" 2> /dev/null | grep -q 'container_name: mantle_parser'; then
+    if git -C "$git_dir" show "$ref:docker-compose.yml" 2> /dev/null | grep -qE "$PARSER_LINE_RE"; then
       echo yes
     else
       echo no
@@ -555,6 +564,17 @@ parser_in_release() {
     return 0
   done
   echo unknown
+}
+# release_file <tag> <file>: release <tag>'s <file>; this checkout's own
+# when it has no such tag.
+release_file() {
+  local git_dir=${ROLL_RELEASE_GIT:-$ROOT} ref
+  for ref in "refs/tags/v${1#v}" "refs/tags/$1"; do
+    git -C "$git_dir" rev-parse -q --verify "$ref^{commit}" > /dev/null 2>&1 || continue
+    git -C "$git_dir" show "$ref:$2"
+    return
+  done
+  cat "$git_dir/$2"
 }
 PARSER_SHIPS=before
 if tag_at_or_past "$PARSER_NOT_BEFORE" "$TAG"; then
@@ -564,7 +584,7 @@ case "$PARSER_SHIPS" in
   before) echo "parser: $TAG is older than any release with the parser service (v$PARSER_NOT_BEFORE); not checked" ;;
   no) echo "parser: $TAG does not ship the parser service (its docker-compose.yml does not define it); not checked" ;;
   *)
-    PC=$(rsh "cd '$STACK' && if grep -q 'container_name: mantle_parser' docker-compose.yml 2>/dev/null; then echo has; elif [ ! -f docker-compose.yml ] || [ ! -f docker-compose.yml.release ]; then echo no-baseline; elif cmp -s docker-compose.yml docker-compose.yml.release; then echo pristine; else echo modified; fi") ||
+    PC=$(rsh "cd '$STACK' && if grep -qE '$PARSER_LINE_RE' docker-compose.yml 2>/dev/null; then echo has; elif [ ! -f docker-compose.yml ] || [ ! -f docker-compose.yml.release ]; then echo no-baseline; elif cmp -s docker-compose.yml docker-compose.yml.release; then echo pristine; else echo modified; fi") ||
       die "could not read this box's docker-compose.yml"
     PC=$(printf '%s' "$PC" | tr -d '\r ')
     PARSER_HOW="Move the local edits to docker-compose.override.yml and run scripts/compose-adopt.sh --apply on the box (docs/update-prod.md, \"Rolling to the parser service\"), then roll again."
@@ -579,8 +599,86 @@ case "$PARSER_SHIPS" in
       no-baseline) die "this box's docker-compose.yml has no baseline (docker-compose.yml.release), so the roll will not refresh it, and it does not define the parser service; $PARSER_WHY. The box's current updater would roll on and bring up a brain that reads no file. $PARSER_HOW" ;;
       modified) die "this box's docker-compose.yml has local edits, so the roll will not refresh it, and it does not define the parser service; $PARSER_WHY. The box's current updater would roll on and bring up a brain that reads no file. $PARSER_HOW" ;;
       *) die "unexpected compose check: $PC" ;;
-    esac ;;
+    esac
+
+    # Disk. The parser image is 2.70 GB and the server image 1.84 GB, and the
+    # first roll to the parser release pulls the server image whole again,
+    # while the old images stay until the updater prunes them: a box short of
+    # space fails mid-pull. Read on the box, before anything changes.
+    MIN_FREE_GB=${ROLL_MIN_FREE_GB:-8}
+    case "$MIN_FREE_GB" in '' | *[!0-9]*) die "ROLL_MIN_FREE_GB must be a whole number of GB (got: $MIN_FREE_GB)" ;; esac
+    FREE_KB=$(rsh 'sh -s' <<'EOF'
+d=$(docker info -f '{{.DockerRootDir}}' 2>/dev/null) || d=""
+[ -n "$d" ] || d=/var/lib/docker
+df -Pk "$d" | awk 'NR == 2 { print $4 }'
+EOF
+    ) || die "could not read the free space on this box's Docker filesystem"
+    FREE_KB=$(printf '%s' "$FREE_KB" | tr -d '\r ')
+    case "$FREE_KB" in '' | *[!0-9]*) die "unexpected free-space answer from the box: $FREE_KB" ;; esac
+    if [ "$FREE_KB" -lt $((MIN_FREE_GB * 1024 * 1024)) ]; then
+      die "this box's Docker filesystem has $((FREE_KB / 1024 / 1024)) GB free, under the $MIN_FREE_GB GB a roll to $TAG needs (the parser image is 2.70 GB, the server image 1.84 GB, and the first roll to the parser release pulls the server image whole). Free space on the box (docker image prune, old backups), then roll again (docs/update-prod.md, \"Rolling to the parser service\"). ROLL_MIN_FREE_GB sets another threshold."
+    fi
+    echo "disk: $((FREE_KB / 1024 / 1024)) GB free on the Docker filesystem (a roll to $TAG needs $MIN_FREE_GB)"
+
+    # The release's compose with this box's own files. The roll refreshes
+    # docker-compose.yml (and docker-compose.core.yml) to the release's but
+    # keeps docker-compose.override.yml and .env: an override that names a
+    # service the release no longer has (tika, media) or a setting the new
+    # compose requires and .env lacks makes every compose command on the box
+    # fail AFTER the roll changed things. So the release's files are copied
+    # to a temp dir on the box and loaded there with the box's own, exactly
+    # as compose will, before anything changes.
+    if [ "$PARSER_SHIPS" = yes ]; then
+      CC_FROM="$TAG"
+    else
+      CC_FROM="this checkout (no tag $TAG here)"
+    fi
+    CC_TMP=$(rsh 'mktemp -d "${TMPDIR:-/tmp}/mantle-roll-compose.XXXXXX"') || die "could not make a temp dir on the box for the compose check"
+    CC_TMP=$(printf '%s' "$CC_TMP" | tr -d '\r')
+    case "$CC_TMP" in /*/mantle-roll-compose.*) ;; *) die "unexpected temp dir from the box: $CC_TMP" ;; esac
+    case "$CC_TMP" in *[!A-Za-z0-9._/-]*) die "unexpected characters in the box's temp dir: $CC_TMP" ;; esac
+    cc_clean() {
+      rsh "rm -f '$CC_TMP/docker-compose.yml' '$CC_TMP/docker-compose.core.yml' && rmdir '$CC_TMP'" > /dev/null 2>&1 \
+        || echo "⚠ compose check: could not remove $CC_TMP on the box (remove it by hand)" >&2
+    }
+    CC_FILES="-f '$CC_TMP/docker-compose.yml'"
+    if ! release_file "$TAG" docker-compose.yml | rsh "cat > '$CC_TMP/docker-compose.yml'"; then
+      cc_clean
+      die "could not copy the release's docker-compose.yml to the box for the compose check"
+    fi
+    if rsh "grep -q '^COMPOSE_FILE=.*docker-compose.core.yml' '$STACK/.env'" 2> /dev/null; then
+      if ! release_file "$TAG" docker-compose.core.yml | rsh "cat > '$CC_TMP/docker-compose.core.yml'"; then
+        cc_clean
+        die "could not copy the release's docker-compose.core.yml to the box for the compose check"
+      fi
+      CC_FILES="$CC_FILES -f '$CC_TMP/docker-compose.core.yml'"
+    fi
+    CC_RC=0
+    CC_OUT=$(rsh "cd '$STACK' && if [ -f docker-compose.override.yml ]; then o='-f docker-compose.override.yml'; else o=''; fi && docker compose --project-directory '$STACK' --env-file .env $CC_FILES \$o config -q 2>&1") || CC_RC=$?
+    cc_clean
+    if [ "$CC_RC" -ne 0 ]; then
+      printf '%s\n' "$CC_OUT" | sed 's/^/    /' >&2
+      die "the release's compose (from $CC_FROM) does not load with this box's docker-compose.override.yml and .env (docker compose config, above), so every compose command would fail after the roll. Fix the override (a service the release no longer has, such as tika or media, must go from it) or .env, then roll again."
+    fi
+    echo "compose: the release's compose (from $CC_FROM) loads with this box's override and .env" ;;
 esac
+
+# ── 2g. the images exist ────────────────────────────────────────────────────
+# The updater pulls <ns>/mantle-server:<tag> (and mantle-parser:<tag> for a
+# release with the parser) only after the backup and the request; a tag
+# whose images CI has not pushed yet fails there. Asked of the registry from
+# the box (its own credentials), before anything changes.
+IMG_NS=$(rsh "sed -n 's/^MANTLE_IMAGE_NAMESPACE=//p' '$STACK/.env' | tail -1" 2> /dev/null || true)
+IMG_NS=$(printf '%s' "$IMG_NS" | tr -d "\r\"' ")
+IMG_NS=${IMG_NS:-titanwest}
+case "$IMG_NS" in *[!A-Za-z0-9._/:-]*) die "unexpected MANTLE_IMAGE_NAMESPACE in the box's .env: $IMG_NS" ;; esac
+IMAGES="$IMG_NS/mantle-server:$TAG"
+case "$PARSER_SHIPS" in before | no) ;; *) IMAGES="$IMAGES $IMG_NS/mantle-parser:$TAG" ;; esac
+for img in $IMAGES; do
+  rsh "docker manifest inspect '$img' > /dev/null 2>&1" \
+    || die "IMAGE MISSING: $img is not in the registry (docker manifest inspect, on the box). Nothing was requested: wait for the release's images, then roll again."
+  echo "image: $img"
+done
 
 if [ -n "$DRY" ]; then
   echo "dry run: stopping before the backup and the request"
@@ -809,6 +907,22 @@ else
     [ "$POLL" -gt 0 ] || waited=$((waited + 1))
   done
   echo "mantle_parser: $PS"
+  # Healthy is the parser's own view. The brain reaches it over the parser
+  # network at PARSER_URL: asked from inside mantle_web, as every file read
+  # will be.
+  if ! rsh 'sh -s' <<'EOF'
+docker exec mantle_web node -e "fetch((process.env.PARSER_URL || 'http://parser:8095') + '/healthz', { signal: AbortSignal.timeout(10000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+EOF
+  then
+    printf '\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
+    printf '!!  PARSER UNREACHABLE on %s after the roll to %s: mantle_web cannot\n' "$SSH_ALIAS" "$TAG" >&2
+    printf '!!  fetch its PARSER_URL /healthz. The brain reads no file. Nothing was\n' >&2
+    printf '!!  rolled back; check the parser network and PARSER_URL in .env, then fix\n' >&2
+    printf '!!  forward or roll back by hand (docs/update-prod.md).\n' >&2
+    printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
+    exit 1
+  fi
+  echo "mantle_parser: reachable from mantle_web"
 fi
 
 # ── 7. counts after ──────────────────────────────────────────────────────────

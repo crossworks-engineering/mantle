@@ -397,7 +397,7 @@ export function registerMantleTools(
   // Outbound and spend. web_search / web_map / web_crawl reach the open
   // internet, and they and video_ingest (an uploaded file's transcript: the
   // parser extracts the audio, a speech model transcribes it) bill the owner's
-  // keys, so they are real actions rather than reads — exposed because a
+  // keys, so they are real actions rather than reads. Exposed because a
   // client asked to research something should be able to, and refusing
   // quietly is worse than spending on request.
   registerBuiltinTools(RESEARCH_TOOLS);

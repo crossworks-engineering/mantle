@@ -1442,6 +1442,31 @@ rolls; its rollback is `packages/db/rollback/0339_parser_failures_key.revert.sql
   runs it, no profile) and no longer pulls `apache/tika` or
   `<ns>/mantle-media`. The parser image carries Python, the CAD tools and
   ffmpeg, so it is the bigger download of the two on the first roll.
+- **Disk: at least 8 GB free on the Docker filesystem before the first
+  roll.** Measured: the parser image is 2.70 GB and the server image
+  1.84 GB, and the first roll to this release re-pulls the WHOLE server
+  image, not only its new layers, while the old images stay until the
+  updater prunes them. Check with
+  `df -h "$(docker info -f '{{.DockerRootDir}}')"` on the box; free space
+  (`docker image prune`, old backups) before rolling a box under it.
+  `scripts/roll.sh` refuses a roll to a release that ships the parser when
+  the box has less than 8 GB free there, before it changes anything
+  (`ROLL_MIN_FREE_GB` sets another threshold).
+- **An override that names a removed service is refused, not half-rolled.**
+  The roll refreshes `docker-compose.yml` to the release's but keeps
+  `docker-compose.override.yml` and `.env`. An override that still sets
+  something on `tika:` or `media:` (a memory limit, say) names a service
+  with no image once they are gone, and every compose command on the box
+  fails after the roll. `scripts/roll.sh` copies the release's compose
+  (and `docker-compose.core.yml` on a core box) to a temp dir on the box
+  and runs `docker compose config -q` there with the box's override and
+  `.env` before it changes anything; a failure is printed and the roll is
+  refused. Take the `tika:` and `media:` blocks out of the override.
+- **`roll.sh` checks the images and the path to the parser.** Before the
+  request it asks the registry (from the box) for both
+  `<ns>/mantle-server:<tag>` and `<ns>/mantle-parser:<tag>`; after the
+  roll it fetches the parser's `/healthz` from inside `mantle_web` at its
+  `PARSER_URL`, and a failure there is `PARSER UNREACHABLE` (exit 1).
 - **The old containers go with the roll.** The roll runs `up -d
 --remove-orphans`, which removes `mantle_tika` and `mantle_media` once the
   refreshed compose no longer defines them. A box rolled by hand without
@@ -1460,8 +1485,12 @@ rolls; its rollback is `packages/db/rollback/0339_parser_failures_key.revert.sql
   now; delete the directory by name so the credential does not linger on
   the box (and in its backups):
 
+  From the stack dir, with the data dir the box's `.env` names (`./data`
+  when it names none), not the shell's:
+
   ```bash
-  rm -r "${MANTLE_DATA_DIR:-./data}/media"   # from the stack dir
+  d=$(grep '^MANTLE_DATA_DIR=' .env | tail -1 | cut -d= -f2- | tr -d "\"'\r")
+  rm -r "${d:-./data}/media"
   ```
 
 - **A hand-edited compose is refused, not half-rolled.** The release reads
@@ -1505,8 +1534,8 @@ rolls; its rollback is `packages/db/rollback/0339_parser_failures_key.revert.sql
   names no service any more and is harmless. Settings > Services no longer
   lists Media, and Helpers (a core box) is the PDF-export browser alone.
   New, all optional: `PARSER_MEM_LIMIT` (default `2g`, no swap past it),
-  `PARSER_CPUS` (default 1), `PARSER_MAX_JOBS` (default 1),
-  `PARSER_TMP_SIZE` (default `1g`), `PARSER_QUEUE_MAX`,
+  `PARSER_CPUS` (default 1), `PARSER_TMP_SIZE` (default `1g`),
+  `PARSER_QUEUE_MAX`,
   `PARSER_MAX_UPLOAD_MB` (default 512), `PARSER_CLIENT_CONCURRENCY`.
 - **What reads less than before.** Legacy Visio `.vsd` files are no longer
   read (Tika did): the extractor asks for a `.vsdx` export. Pictures inside

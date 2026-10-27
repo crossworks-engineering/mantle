@@ -1408,10 +1408,44 @@ shift   # the host
 echo "ssh $*" >> "$RS/calls"
 exec sh -c "$*"
 STUB
+cat > "$RB/df" <<'STUB'
+#!/bin/sh
+# The box's Docker filesystem: FAKE_FREE_KB available (100 GB unless set).
+echo "df $*" >> "$RS/calls"
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+echo "/dev/fake 209715200 1 ${FAKE_FREE_KB:-104857600} 50% /"
+STUB
 cat > "$RB/docker" <<'STUB'
 #!/bin/sh
 echo "docker $*" >> "$RS/calls"
 case "$1" in
+  info) echo /var/lib/docker; exit 0 ;;
+  manifest)
+    # FAKE_NO_MANIFEST: an image name part the registry does not have.
+    for a in "$@"; do last=$a; done
+    case "$last" in *"${FAKE_NO_MANIFEST:-no-such-image-name}"*) echo "no such manifest: $last" >&2; exit 1 ;; esac
+    exit 0 ;;
+  compose)
+    # `config -q`: refused, as compose does, when a later file names a
+    # service (tika, media) the first one no longer defines (no image).
+    first=""; later=""
+    while [ $# -gt 0 ]; do
+      if [ "$1" = -f ]; then
+        if [ -z "$first" ]; then first=$2; else later="$later $2"; fi
+        shift 2
+      else
+        shift
+      fi
+    done
+    for f in $later; do
+      for svc in tika media; do
+        if grep -q "^  $svc:" "$f" && ! grep -q "^  $svc:" "$first"; then
+          echo "service \"$svc\" has neither an image nor a build context specified: invalid compose project" >&2
+          exit 15
+        fi
+      done
+    done
+    exit 0 ;;
   inspect)
     if [ "$2" = mantle_updater ]; then
       printf '[{"Config":{"Env":["PATH=/bin","MANTLE_STACK_DIR=%s"]},"Mounts":[{"Source":"%s","Destination":"/signal"}]}]\n' "${FAKE_STACK_ENV-$RS/stack}" "$RS/sig"
@@ -1521,6 +1555,7 @@ case "$1" in
         done
         exec "$@" ;;
       *api/version*) echo '{"version":"fake"}' ;;
+      *healthz*) [ -z "${FAKE_PARSER_UNREACHABLE:-}" ] || exit 1 ;;
       *psql*)
         # The workspaces switch check (2a) sends its SQL on stdin, no -c:
         # it answers "<refuse> <client logins> <client-level items>". So
@@ -1541,10 +1576,10 @@ case "$1" in
 esac
 exit 0
 STUB
-chmod +x "$RB/ssh" "$RB/docker"
+chmod +x "$RB/ssh" "$RB/docker" "$RB/df"
 
 roll_box() { # <name>: a fake box; its db-dump.sh follows FAKE_DUMP (ok, fail, lossy)
-  RS="$WORK/rollbox-$1"; mkdir -p "$RS/stack/scripts" "$RS/stack/infra/updater" "$RS/sig"
+  RS="$WORK/rollbox-$1"; mkdir -p "$RS/stack/scripts" "$RS/stack/infra/updater" "$RS/sig" "$RS/tmp"
   echo 11 > "$RS/apps"; echo 2 > "$RS/sandboxes"; echo 7 > "$RS/appdbs"
   printf '{"phase":"done","target":"v7","started_at":"OLD","finished_at":"F0","ok":true,"error":""}\n' > "$RS/sig/status.json"
   printf '#!/bin/sh\necho old updater\n' > "$RS/stack/infra/updater/updater.sh"
@@ -1564,7 +1599,7 @@ DUMP
 }
 roll_sh() { # <args...>: run roll.sh against $RS; exit code in $rc, output in $RS/out
   rc=0
-  PATH="$RB:$PATH" RS="$RS" ROLL_POLL_SECS=0 ROLL_TIMEOUT_SECS=5 ROLL_HEALTH_TIMEOUT_SECS=5 \
+  PATH="$RB:$PATH" RS="$RS" TMPDIR="$RS/tmp" ROLL_POLL_SECS=0 ROLL_TIMEOUT_SECS=5 ROLL_HEALTH_TIMEOUT_SECS=5 \
     "$BASH" "$ROOT/scripts/roll.sh" "$@" > "$RS/out" 2>&1 || rc=$?
 }
 
@@ -2026,6 +2061,72 @@ FAKE_NO_PARSER=1 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
 check "parser compose, pristine, but no mantle_parser after the roll (the old updater did not refresh it): exit 1" \
   sh -c "test '$rc' = 1 && grep -q 'PARSER MISSING' '$RS/out' && test -e '$RS/request.seen'"
 
+roll_box pcompose-commented
+printf 'services:\n  parser:\n    # container_name: mantle_parser\n' > "$RS/stack/docker-compose.yml"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "parser compose: a commented-out container_name is not the parser (local edits: refused)" \
+  sh -c "test '$rc' = 1 && grep -q 'has local edits' '$RS/out' && test ! -e '$RS/request.seen'"
+
+roll_box pdisk-low
+FAKE_FREE_KB=4194304 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "disk: 4 GB free on the Docker filesystem, a target that ships the parser: refused before anything" \
+  sh -c "test '$rc' = 1 && grep -q 'Docker filesystem has 4 GB free, under the 8 GB a roll to v0.400.21 needs' '$RS/out' && grep -q '^df -Pk /var/lib/docker' '$RS/calls' && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen'"
+roll_box pdisk-override
+FAKE_FREE_KB=4194304 ROLL_MIN_FREE_GB=2 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "disk: ROLL_MIN_FREE_GB sets another threshold" \
+  sh -c "test '$rc' = 0 && grep -q 'disk: 4 GB free on the Docker filesystem (a roll to v0.400.21 needs 2)' '$RS/out'"
+roll_box pdisk-before
+FAKE_FREE_KB=4194304 FAKE_NO_PARSER=1 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.20
+check "disk: a target without the parser is not held to it" sh -c "test '$rc' = 0 && ! grep -q '^disk:' '$RS/out'"
+
+roll_box poverride-tika
+printf 'services:\n  tika:\n    mem_limit: 1g\n' > "$RS/stack/docker-compose.override.yml"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "compose check: an override naming tika is refused before anything, compose's error printed" \
+  sh -c "test '$rc' = 1 && grep -q 'service \"tika\" has neither an image' '$RS/out' && grep -q 'does not load with this box' '$RS/out' && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen'"
+check "compose check: the release's compose, the box's override and .env, from the stack dir" \
+  sh -c "grep -q \"^docker compose --project-directory $RS/stack --env-file .env -f $RS/tmp/mantle-roll-compose\\.[A-Za-z0-9]*/docker-compose.yml -f docker-compose.override.yml config -q\" '$RS/calls'"
+check "compose check: the temp dir on the box is removed" sh -c "test -z \"\$(ls -A '$RS/tmp')\""
+
+roll_box poverride-ok
+printf 'services:\n  parser:\n    mem_limit: 3g\n' > "$RS/stack/docker-compose.override.yml"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "compose check: an override the release's compose takes rolls" \
+  sh -c "test '$rc' = 0 && grep -q 'compose: the release.s compose (from v0.400.21) loads with this box' '$RS/out' && test -z \"\$(ls -A '$RS/tmp')\""
+
+printf 'services:\n  worker_email: {profiles: [full]}\n' > "$RG/docker-compose.core.yml"
+git -C "$RG" add -A
+git -C "$RG" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm f
+git -C "$RG" tag v0.400.22
+roll_box pcore
+printf 'COMPOSE_FILE=%s/docker-compose.yml:%s/docker-compose.core.yml\n' "$RS/stack" "$RS/stack" > "$RS/stack/.env"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.22
+check "compose check: a core box loads the release's core file too" \
+  sh -c "test '$rc' = 0 && grep -q 'mantle-roll-compose\\.[A-Za-z0-9]*/docker-compose.core.yml config -q' '$RS/calls' && test -z \"\$(ls -A '$RS/tmp')\""
+
+roll_box pmanifest
+FAKE_NO_MANIFEST=mantle-parser ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "images: no parser image for the tag in the registry: refused before anything" \
+  sh -c "test '$rc' = 1 && grep -q 'IMAGE MISSING: titanwest/mantle-parser:v0.400.21' '$RS/out' && grep -q 'image: titanwest/mantle-server:v0.400.21' '$RS/out' && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen'"
+roll_box pmanifest-ns
+printf 'MANTLE_IMAGE_NAMESPACE="acme"\n' > "$RS/stack/.env"
+FAKE_NO_MANIFEST=mantle-server ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "images: the namespace comes from the box's .env; no server image is refused too" \
+  sh -c "test '$rc' = 1 && grep -q 'IMAGE MISSING: acme/mantle-server:v0.400.21' '$RS/out' && test ! -e '$RS/request.seen'"
+roll_box pmanifest-noparser
+FAKE_NO_MANIFEST=mantle-parser FAKE_NO_PARSER=1 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.20
+check "images: a target without the parser is not asked for a parser image" \
+  sh -c "test '$rc' = 0 && ! grep -q 'mantle-parser:v0.400.20' '$RS/calls'"
+
+roll_box punreachable
+FAKE_PARSER_UNREACHABLE=1 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "after the roll: a parser mantle_web cannot reach is PARSER UNREACHABLE, exit 1" \
+  sh -c "test '$rc' = 1 && grep -q 'mantle_parser: healthy' '$RS/out' && grep -q 'PARSER UNREACHABLE on fakebox' '$RS/out' && ! grep -q 'after:  apps=' '$RS/out'"
+roll_box preachable
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "after the roll: the parser's /healthz is fetched from inside mantle_web" \
+  sh -c "test '$rc' = 0 && grep -q 'mantle_parser: reachable from mantle_web' '$RS/out' && grep -q 'exec mantle_web node -e .*PARSER_URL.*healthz' '$RS/calls'"
+
 # ═════════════════════════════════════════════════════════════════════════════
 echo "box-maintain.sh: a sibling container, the env through a pipe, one run per box"
 # A docker stub plays the box: `ps` lists $BM/running, `top` prints $BM/top,
@@ -2440,7 +2541,9 @@ pmem=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    mem_limit: \(.*\)$/\1/p')
 check "parser: no swap past its memory (memswap_limit is mem_limit)" sh -c "printf '%s\n' \"\$1\" | grep -qxF \"    memswap_limit: \$2\"" _ "$PARSER_SVC" "$pmem"
 check "parser: a size-limited tmpfs for its scratch space" sh -c "printf '%s\n' \"\$1\" | grep -q '/tmp:size=\${PARSER_TMP_SIZE:-'" _ "$PARSER_SVC"
 check "parser: no DNS past the stack" sh -c "printf '%s\n' \"\$1\" | grep -qx '    dns: 0.0.0.0'" _ "$PARSER_SVC"
-check "parser: one job at a time by default (PARSER_MAX_JOBS)" sh -c "sed -n '/PARSER_MAX_JOBS: {/,/}/p' '$ROOT/packages/config/src/numbers.ts' | grep -q 'default: 1,'"
+check "parser: a read-only root filesystem (the job user writes only to its tmpfs mounts)" sh -c "printf '%s\n' \"\$1\" | grep -qx '    read_only: true'" _ "$PARSER_SVC"
+check "parser: one job at a time, no setting to raise it (PARSER_MAX_JOBS is gone)" sh -c "! grep -rq PARSER_MAX_JOBS '$ROOT/packages/config/src' '$ROOT/server/parser/src' '$ROOT/docker-compose.yml' '$ROOT/.env.example' '$ROOT/.env.prod.example'"
+check "parser image: the server keeps no cache in /tmp (tsx, Node compile cache)" sh -c "sed -n '/^FROM parser-base AS parser/,/^CMD/p' '$ROOT/Dockerfile' | grep -q 'TSX_DISABLE_CACHE=1' && sed -n '/^FROM parser-base AS parser/,/^CMD/p' '$ROOT/Dockerfile' | grep -q 'NODE_DISABLE_COMPILE_CACHE=1'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo

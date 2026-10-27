@@ -291,6 +291,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Both images refuse to start on stale dependencies (the Dockerfile's
+      # pnpm_config_verify_deps_before_run=error): pnpm must read the setting
+      # as `error`, or a box would install at container start instead.
+      - name: Probe that pnpm refuses stale dependencies at start
+        run: |
+          v=$(docker run --rm --network none "${IMAGE}:${{ github.ref_name }}" pnpm config get verify-deps-before-run)
+          [ "$v" = error ] || { echo "verify-deps-before-run is '$v', expected error"; exit 1; }
+
       # Tables v2 foundation gate: node:sqlite is experimental upstream, so the
       # engine behaviors table storage leans on (readOnly enforcement, FTS5
       # trigram, VACUUM INTO under WAL, …) are re-proven on the ACTUAL image —
@@ -315,12 +323,15 @@ jobs:
             ffmpeg -version > /dev/null &&
             node --input-type=module -e "await import(\"@firecrawl/anydoc\")"'
 
-      # The parser SERVICE, not just its programs: it boots with no network,
-      # answers /healthz, and reads a document end to end in a job process.
+      # The parser SERVICE, not just its programs: it boots with no network
+      # and as compose runs it (a read-only root filesystem, a tmpfs on
+      # /tmp), answers /healthz, and reads a document end to end in a job
+      # process.
       - name: Probe the parser service on the parser image
         if: matrix.target == 'parser'
         run: |
-          docker run -d --name parser-probe --network none --init "${IMAGE}:${{ github.ref_name }}"
+          docker run -d --name parser-probe --network none --init --read-only \
+            --tmpfs /tmp:size=1g,mode=1777 --cap-drop ALL "${IMAGE}:${{ github.ref_name }}"
           ok=""
           for i in $(seq 1 30); do
             if docker exec parser-probe node -e "fetch('http://127.0.0.1:8095/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"; then ok=1; break; fi
@@ -381,9 +392,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # The parser first: a box that pulls `:latest` between the two moves
+      # gets the new parser beside the old server (which reads through the
+      # same wire), never a new server beside an old parser.
       - name: Point latest at the probed release, both images
         run: |
-          for target in server parser; do
+          for target in parser server; do
             image="${IMAGE_BASE}-${target}"
             docker buildx imagetools create -t "${image}:latest" "${image}:${{ github.ref_name }}"
           done
