@@ -240,7 +240,7 @@ describe('extension sets', () => {
   });
 });
 
-import { parserRouteForExt, TIKA_EXTS } from './slug';
+import { ANYDOC_EXTS, exportHintForExt as hintForExt, MARKUP_EXTS, parserRouteForExt } from './slug';
 
 describe('parserRouteForExt', () => {
   it('routes PDFs to pdf-parse (tier 1: in-process)', () => {
@@ -264,32 +264,31 @@ describe('parserRouteForExt', () => {
     }
   });
 
-  it('routes every TIKA_EXTS extension to tika (tier 2), except pptx', () => {
-    // Whatever Tika handles today — ensures no entry sneaks in without a route.
-    // pptx stays in TIKA_EXTS as the fallback, but reads in-process first.
-    for (const ext of TIKA_EXTS) {
-      expect(parserRouteForExt(ext)).toBe(ext === 'pptx' ? 'pptx' : 'tika');
-    }
-  });
-
-  it('routes specifically the formats we promised Tika would cover', () => {
-    // Belt-and-braces: the exact set from the file-ingestion.md changelog.
-    // If someone narrows TIKA_EXTS in the future, this fails loudly.
-    for (const ext of ['odt', 'ods', 'odp', 'pptx', 'ppt', 'doc', 'rtf', 'epub', 'vsdx', 'vsd']) {
-      expect(TIKA_EXTS.has(ext)).toBe(true);
-      if (ext !== 'pptx') expect(parserRouteForExt(ext)).toBe('tika');
-    }
-  });
-
-  it('routes pptx to the in-process reader (Tika 4 shuffles slide order)', () => {
+  it('routes every format Tika used to read to a reader in the parser', () => {
+    // Tika is gone (the parser service): each format it covered has a route,
+    // so no upload of one silently drops to `none`.
+    for (const ext of ANYDOC_EXTS) expect(parserRouteForExt(ext)).toBe('anydoc');
+    for (const ext of MARKUP_EXTS) expect(parserRouteForExt(ext)).toBe('markup');
+    expect(parserRouteForExt('vsdx')).toBe('vsdx');
     expect(parserRouteForExt('pptx')).toBe('pptx');
+    for (const ext of ['odt', 'ods', 'odp', 'ppt', 'doc', 'rtf', 'epub', 'xml', 'html', 'htm']) {
+      expect(INGESTABLE_EXTS.has(ext)).toBe(true);
+    }
   });
 
-  it('routes .xml to tika rather than leaving it unreadable', () => {
+  it('names the export for old binary Visio, which has no reader', () => {
+    // The known gap of the parser service: Tika read .vsd shape text; nothing
+    // does now, so the extractor records needs_export naming .vsdx.
+    expect(parserRouteForExt('vsd')).toBe('none');
+    expect(INGESTABLE_EXTS.has('vsd')).toBe(false);
+    expect(hintForExt('vsd')).toMatch(/\.vsdx/);
+  });
+
+  it('routes .xml to the markup reader rather than leaving it unreadable', () => {
     // Regression guard. `.xml` used to route to `none`, so an upload was
     // indexed by its filename alone — the same silent-nothing `.mpp` had, for a
-    // plainly readable format. Tika strips markup and keeps content.
-    expect(parserRouteForExt('xml')).toBe('tika');
+    // plainly readable format. The markup reader keeps content, not tags.
+    expect(parserRouteForExt('xml')).toBe('markup');
     expect(mimeForExt('xml')).toBe('application/xml; charset=utf-8');
   });
 

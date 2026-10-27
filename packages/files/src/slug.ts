@@ -86,71 +86,66 @@ export function extOf(filename: string): string {
 }
 
 /**
- * Four sets that drive ingestion + editor behaviour.
- *  - TEXT_EXTS: editable in the UI, `data.content` populated, extractor reads.
- *  - TIKA_EXTS: routed to the Apache Tika fallback parser (see ./tika.ts).
+ * The sets that drive ingestion + editor behaviour.
+ *  - TEXT_EXTS: editable in the UI, `data.content` populated, extractor reads
+ *    them in-process (UTF-8 is not parsing).
+ *  - ANYDOC_EXTS: legacy Office, OpenDocument, RTF and EPUB, read by anydoc
+ *    in the parser service (packages/files/src/anydoc.ts).
+ *  - MARKUP_EXTS: HTML and XML, tags stripped in the parser service
+ *    (packages/files/src/markup.ts).
+ *  - LEGACY_SHEET_EXTS: legacy sheets, converted to `.xlsx` in the parser.
  *  - INGESTABLE_EXTS: union of all formats the extractor will try to read.
  *  - PREVIEWABLE_EXTS: rendered as Markdown / code preview in the UI.
+ * Every format outside TEXT_EXTS is read by the parser service
+ * (server/parser), the one process that opens untrusted documents.
  */
 export const TEXT_EXTS = new Set<string>(['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'csv']);
 export const PREVIEWABLE_MARKDOWN_EXTS = new Set<string>(['md', 'markdown']);
-/** Formats handled by the Tika fallback (./tika.ts) — anything our in-process
- *  parsers (pdf/docx/xlsx/text) can't handle but Tika reliably can.
- *  LibreOffice native (.odt/.ods/.odp), PowerPoint (.pptx/.ppt), legacy Word
- *  (.doc), Rich Text (.rtf), e-books (.epub), Visio diagrams (.vsdx/.vsd —
- *  Tika pulls the shape text). Tika supports more (RFC822 mail, MS Publisher,
- *  …); add slugs here as you need them. */
-export const TIKA_EXTS = new Set<string>([
-  'odt',
-  'ods',
-  'odp',
-  'pptx',
-  'ppt',
-  'doc',
-  'rtf',
-  'epub',
-  'vsdx',
-  'vsd',
-  // `.xml` was previously unreadable — not in any set, so `parserRouteForExt`
-  // returned `none` and an upload was indexed by its filename alone. Tika
-  // strips the markup and keeps the content, which is right for a format that
-  // is mostly tags: as TEXT_EXTS the summary, embedding and chunks would all be
-  // dominated by element names, so retrieval would get *worse* while appearing
-  // to work (matching `<title>` rather than titles). Project's MSPDI export is
-  // recognised by content before this fallback — see parseDocumentBytes.
-  'xml',
-  // Saved web pages. Same shape as .xml: mostly markup, real content inside,
-  // Tika strips the tags cleanly. Without this, .html routed 'none' and — once
-  // the hollow-body guard landed — went from degraded filename-indexing to a
-  // no_parser skip, which is a regression for a folder of saved articles.
-  'html',
-  'htm',
-]);
-/** TEXT_EXTS + every binary type the extractor can pull readable text from.
- *  In-process: pdf-parse, mammoth, exceljs. Tika-routed: TIKA_EXTS. Each
- *  in-process binary type has a parser module under packages/files/src/
- *  and a branch in the extractor's readNodeBodyRaw; Tika-routed ones go
- *  through parseDocumentBytes → tika.ts. */
+/** Read by anydoc (a Rust library) in the parser service: legacy Word
+ *  (.doc), PowerPoint (.ppt), LibreOffice native (.odt/.ods/.odp), Rich Text
+ *  (.rtf) and e-books (.epub). The legacy sheets (.xls/.xlsb) use anydoc
+ *  too, through the legacy-sheet conversion, so they are not in this set. */
+export const ANYDOC_EXTS = new Set<string>(['doc', 'ppt', 'odt', 'ods', 'odp', 'rtf', 'epub']);
+/** LibreOffice native formats: text by anydoc, pictures straight from the
+ *  zip (packages/files/src/ooxml-media.ts). */
+export const ODF_EXTS = new Set<string>(['odt', 'ods', 'odp']);
+/** Legacy sheets exceljs cannot read: converted to `.xlsx` first, through
+ *  anydoc (packages/files/src/legacy-sheet.ts). */
+export const LEGACY_SHEET_EXTS = new Set<string>(['xls', 'xlsb']);
+/** Mostly tags, real content inside: tags stripped by the markup reader.
+ *  `.xml` used to be unreadable (indexed by its filename alone), and as plain
+ *  text the summary, embedding and chunks would all be dominated by element
+ *  names, so retrieval would get *worse* while appearing to work (matching
+ *  `<title>` rather than titles). Project's MSPDI export is recognised by
+ *  content before the generic read. `.html`/`.htm` are saved web pages, the
+ *  same shape. */
+export const MARKUP_EXTS = new Set<string>(['html', 'htm', 'xml']);
+/** TEXT_EXTS + every binary type the extractor can pull readable text from,
+ *  all of them through the parser service. */
 export const INGESTABLE_EXTS = new Set<string>([
   ...TEXT_EXTS,
   'pdf',
   'docx',
   'xlsx',
-  'xls',
   'xlsm',
-  'xlsb',
-  // Autodesk DWF drawing sets (published plots). In-process parser — see
-  // ./dwf.ts. Yields the metadata + layer/label digest, not vector geometry.
+  ...LEGACY_SHEET_EXTS,
+  'pptx',
+  // Visio's zip format: shape text page by page (packages/files/src/vsdx.ts).
+  // The old binary `.vsd` has no reader (EXPORT_REQUIRED_EXTS below).
+  'vsdx',
+  // Autodesk DWF drawing sets (published plots): the container digest, read
+  // in the parser (packages/files/src/dwf.ts). Metadata + layer/label
+  // digest, not vector geometry.
   'dwf',
-  // AutoCAD DWG drawings. Sidecar-parsed — see ./dwg.ts. No local parser:
-  // boxes without the media CAD tier get an honest extract error, not a
-  // filename index.
+  // AutoCAD DWG drawings: the parser's CAD tier converts and reads them
+  // (packages/files/src/dwg.ts).
   'dwg',
-  // AutoCAD DXF drawings (the DWG interchange twin). Same sidecar route and
-  // machinery — see ./dxf.ts. Deliberately NOT in TEXT_EXTS even though
-  // ASCII DXF is text: raw group codes would index as garbage.
+  // AutoCAD DXF drawings (the DWG interchange twin). Same CAD route — see
+  // ./dxf.ts. Deliberately NOT in TEXT_EXTS even though ASCII DXF is text:
+  // raw group codes would index as garbage.
   'dxf',
-  ...TIKA_EXTS,
+  ...ANYDOC_EXTS,
+  ...MARKUP_EXTS,
 ]);
 
 /**
@@ -210,6 +205,14 @@ export const EXPORT_REQUIRED_EXTS = new Map<string, string>([
     'mpt',
     "Microsoft Project templates are a proprietary binary format Mantle can't read. Open it in Project and use File → Save As → XML (*.xml), then upload that instead.",
   ],
+  // Old binary Visio (2003-2010). Apache Tika read its shape text; since the
+  // parser service replaced Tika there is no reader for it, so the drawing is
+  // findable by its name only until one is added. Saving as .vsdx is a menu
+  // choice in any Visio since 2013, and .vsdx is read in full.
+  [
+    'vsd',
+    'Old binary Visio drawings (.vsd) cannot be read. In Visio use File → Save As and choose Visio Drawing (*.vsdx), then upload that: its shape text and pictures are read in full. The .vsd stays findable by its name.',
+  ],
   // DWFx is the XPS-based successor to DWF. Mantle reads classic DWF (.dwf);
   // the DWFx package is a different container and stream format that this
   // parser does not decode. Re-publishing is a one-click choice in the plot
@@ -226,40 +229,48 @@ export function exportHintForExt(ext: string): string | undefined {
   return EXPORT_REQUIRED_EXTS.get(ext.toLowerCase());
 }
 
-/** Which parser tier handles a given file extension. Mirrors the dispatch
- *  in {@link parseDocumentBytes} and is used by the `parse_document` trace
- *  step's `parser` meta — pulled out as a pure helper so both call sites
- *  (extractor + live conversational attachment) read from one source and
- *  the routing is unit-testable. `none` = no parser will try this ext (the
- *  caller will fall through to title fallback / `no_text_layer` skip). */
+/** Which reader handles a given file extension. Every route but `utf8` and
+ *  `none` is a reader in the parser service. Used by the `parse_document`
+ *  trace step's `parser` meta — pulled out as a pure helper so both call
+ *  sites (extractor + live conversational attachment) read from one source
+ *  and the routing is unit-testable. `none` = no reader will try this ext
+ *  (the caller will fall through to title fallback / `no_text_layer` skip). */
 export type ParserRoute =
   | 'pdf-parse'
   | 'mammoth'
-  /** PowerPoint, read in-process (./pptx.ts); Tika is its fallback. */
+  /** PowerPoint, read by our own reader (./pptx.ts); anydoc is its fallback. */
   | 'pptx'
   | 'exceljs'
-  /** Legacy .xls/.xlsb: converted to .xlsx via Tika, then read by exceljs. */
+  /** Legacy .xls/.xlsb: converted to .xlsx via anydoc, then read by exceljs. */
   | 'legacy-sheet'
+  /** Legacy Office, OpenDocument, RTF, EPUB: anydoc (./anydoc.ts). */
+  | 'anydoc'
+  /** HTML / XML: tags stripped (./markup.ts); MSPDI plans read as plans. */
+  | 'markup'
+  /** Visio .vsdx: shape text (./vsdx.ts). */
+  | 'vsdx'
   | 'utf8'
   /** Autodesk DWF container: sheets/layers/labels digest (./dwf.ts). */
   | 'dwf'
-  /** AutoCAD DWG: sidecar-converted registry digest (./dwg.ts). */
+  /** AutoCAD DWG: the CAD tier's registry digest (./dwg.ts). */
   | 'dwg'
-  /** AutoCAD DXF: same sidecar registry digest, read natively (./dxf.ts). */
+  /** AutoCAD DXF: same CAD registry digest, read natively (./dxf.ts). */
   | 'dxf'
-  | 'tika'
   | 'none';
+
 export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'pdf') return 'pdf-parse';
   if (ext === 'docx') return 'mammoth';
   if (ext === 'pptx') return 'pptx';
-  if (ext === 'xls' || ext === 'xlsb') return 'legacy-sheet';
+  if (LEGACY_SHEET_EXTS.has(ext)) return 'legacy-sheet';
   if (ext === 'xlsx' || ext === 'xlsm') return 'exceljs';
   if (ext === 'dwf') return 'dwf';
   if (ext === 'dwg') return 'dwg';
   if (ext === 'dxf') return 'dxf';
+  if (ext === 'vsdx') return 'vsdx';
   if (TEXT_EXTS.has(ext)) return 'utf8';
-  if (TIKA_EXTS.has(ext)) return 'tika';
+  if (ANYDOC_EXTS.has(ext)) return 'anydoc';
+  if (MARKUP_EXTS.has(ext)) return 'markup';
   return 'none';
 }
 

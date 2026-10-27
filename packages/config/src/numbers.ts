@@ -236,24 +236,51 @@ export const ENV_NUMBERS = {
     doc: 'days a stored result is kept',
   },
 
-  // Media
-  MEDIA_MAX_STT_DURATION_S: {
+  // video_ingest (an uploaded recording, its audio taken out by the parser)
+  VIDEO_INGEST_MAX_STT_DURATION_S: {
     default: 3600,
     positive: true,
     int: 'floor',
-    doc: 'longest video transcribed by video_ingest, seconds',
+    doc: 'longest recording video_ingest transcribes, seconds',
   },
-  MEDIA_MAX_AUDIO_BYTES: {
+  VIDEO_INGEST_MAX_AUDIO_BYTES: {
     default: 20_000_000,
     positive: true,
     int: 'floor',
     doc: 'largest audio track video_ingest sends to speech to text',
   },
-  MEDIA_MAX_VIDEO_BYTES: {
+  VIDEO_INGEST_MAX_FILE_BYTES: {
     default: 1024 ** 3,
     positive: true,
     int: 'floor',
-    doc: 'largest video video_ingest downloads',
+    doc: 'largest uploaded recording video_ingest reads',
+  },
+
+  // The parser service (server/parser) and its client (packages/files)
+  PARSER_PORT: { default: 8095, int: 'floor', min: 1, max: 65535, doc: 'the parser listens here' },
+  PARSER_MAX_JOBS: {
+    default: 2,
+    atLeast: 1,
+    int: 'floor',
+    doc: 'parse jobs the parser runs at once',
+  },
+  PARSER_QUEUE_MAX: {
+    default: 16,
+    min: 0,
+    int: 'floor',
+    doc: 'requests that may wait for a parser job slot',
+  },
+  PARSER_MAX_UPLOAD_MB: {
+    default: 1024,
+    atLeast: 1,
+    int: 'floor',
+    doc: 'largest file the parser takes, MB',
+  },
+  PARSER_CLIENT_CONCURRENCY: {
+    default: 2,
+    atLeast: 1,
+    int: 'floor',
+    doc: 'parser jobs one brain process sends at once',
   },
 
   // Local models

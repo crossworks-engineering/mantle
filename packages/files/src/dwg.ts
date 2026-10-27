@@ -3,14 +3,14 @@
  *
  * A `.dwg` is the LIVE drawing (unlike a `.dwf`, which is a published plot
  * set); a `.dxf` is the same drawing in AutoCAD's interchange encoding
- * (ASCII or binary). Both are routed formats this process cannot parse
- * locally: everything comes from ONE media-sidecar exchange
- * (`mediaDwgRender`), whose worker sniffs the bytes — DWG magic takes the
+ * (ASCII or binary). Both are read by the parser service's CAD tier, never
+ * in this process: everything comes from ONE parser exchange
+ * (`parserDwgRender`), whose worker sniffs the bytes — DWG magic takes the
  * converter chain (dwg2dxf primary, ezdwg fallback — the 2026-08-31 bake-off
  * found real files each converter fails and the other saves), a DXF is read
  * natively by ezdxf (converter "none") — and extracts with ezdxf either way.
  * The three extractor passes (text digest, auto-table workbook, image node)
- * all consume the SAME memoised sidecar reply, so a drawing costs one upload
+ * all consume the SAME memoised reply, so a drawing costs one upload
  * however many passes run. The `.dxf` public surface (parseDxf & co) lives
  * in ./dxf.ts as thin re-exports of the wrappers defined here; the code path
  * is this one file.
@@ -22,16 +22,17 @@
  * carry ZERO DIMENSION entities — the labels ARE the annotation layer, which
  * is why the workbook keeps per-text coordinates for the geometry phase.
  *
- * Failure honesty: no sidecar (or a pre-DWG image) throws a typed Error so
- * the extract shows a real error and a re-queue after enabling the sidecar
- * heals the node — silently indexing a filename would poison retrieval. The
- * only '' return is a sniff miss (not actually DWG/DXF bytes), which takes
- * the extractor's hollow-skip carve-out like a renamed DWFx does on the dwf
- * route.
+ * Failure honesty: a failed exchange throws the parser client's typed
+ * ParserError, so the extract records a real error (retried, or terminal on
+ * the second counted failure for the same bytes) — silently indexing a
+ * filename would poison retrieval. The only '' return is a sniff miss (not
+ * actually DWG/DXF bytes), which takes the extractor's hollow-skip carve-out
+ * like a renamed DWFx does on the dwf route.
  */
 import { createHash } from 'node:crypto';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
-import { mediaDwgRender, mediaSidecarEnabled, type DwgRender } from './media-sidecar';
+import { ParserError } from './parser-client';
+import { parserDwgRender, type DwgRender } from './parser-cad';
 import type { ParsedSheet } from './sheet-to-grid';
 import { envNum } from '@mantle/config';
 
@@ -138,7 +139,7 @@ const MAX_BLOCK_ROWS = 20_000;
 const MAX_BLOCK_TAG_COLUMNS = 40;
 /** The Blocks tab's own columns; a tag with one of these names is renamed. */
 const BLOCK_FIXED_COLUMNS = ['Block', 'Layer', 'Handle', 'X', 'Y'];
-/** Row ceilings for the bones tabs. The sidecar's character budgets bind
+/** Row ceilings for the bones tabs. The CAD tier's character budgets bind
  *  first on any real drawing; these only guard the grid. */
 const MAX_SEGMENT_ROWS = 60_000;
 const MAX_NODE_ROWS = 60_000;
@@ -149,7 +150,7 @@ const DIGEST_CIRCUIT_CHARS = 12_000;
 const DIGEST_CIRCUIT_LINE_CHARS = 600;
 
 /** Env dial for render sharpness, mirroring DWF_RENDER_DPI (docs there).
- *  One dial for DWG and DXF — same sidecar route, same rasteriser.
+ *  One dial for DWG and DXF — same CAD route, same rasteriser.
  *
  *  `raw <= 0` is UNSET, not "smallest allowed". The compose env anchor passes
  *  `DWG_RENDER_DPI: ${DWG_RENDER_DPI:-}`, so an operator who never sets the
@@ -165,7 +166,7 @@ export function dwgRenderDpi(): number {
 }
 
 /**
- * One sidecar exchange per drawing per process. Keyed by CONTENT HASH, not
+ * One parser exchange per drawing per process. Keyed by CONTENT HASH, not
  * Buffer identity: the extractor's byte cache can evict and re-read a file
  * between passes under load, and a fresh Buffer of the same bytes must reuse
  * the exchange rather than pay a second upload. Tiny LRU (a node's passes run
@@ -175,7 +176,7 @@ export function dwgRenderDpi(): number {
  * message is kept (per hash) so a later pass can explain the missing image.
  */
 const RENDER_MEMO_MAX = 2;
-const renderMemo = new Map<string, Promise<Awaited<ReturnType<typeof mediaDwgRender>>>>();
+const renderMemo = new Map<string, Promise<Awaited<ReturnType<typeof parserDwgRender>>>>();
 const failureMemo = new Map<string, string>();
 
 function dwgHash(bytes: Buffer): string {
@@ -186,7 +187,7 @@ function fetchDwgRender(bytes: Buffer) {
   const key = dwgHash(bytes);
   let entry = renderMemo.get(key);
   if (!entry) {
-    entry = mediaDwgRender(bytes, { dpi: dwgRenderDpi() }).then((res) => {
+    entry = parserDwgRender(bytes, { dpi: dwgRenderDpi() }).then((res) => {
       if (!res.ok) {
         renderMemo.delete(key);
         failureMemo.set(key, `${res.code}: ${res.message}`);
@@ -208,18 +209,14 @@ function fetchDwgRender(bytes: Buffer) {
   return entry;
 }
 
-function requireSidecar(format: CadFormat): void {
-  if (!mediaSidecarEnabled()) {
-    throw new Error(
-      `${format} extraction needs the media sidecar CAD tier (compose profile \`media\` + MEDIA_SIDECAR_TOKEN, image v0.232.99+); enable it and re-queue this file`,
-    );
-  }
-}
-
 async function renderOrThrow(bytes: Buffer, format: CadFormat): Promise<DwgRender> {
-  requireSidecar(format);
   const res = await fetchDwgRender(bytes);
-  if (!res.ok) throw new Error(`${format} extraction failed (${res.code}): ${res.message}`);
+  if (!res.ok) {
+    throw new ParserError(res.code, `${format} extraction failed (${res.code}): ${res.message}`, {
+      retryable: res.retryable,
+      terminal: res.terminal,
+    });
+  }
   return res.value;
 }
 
@@ -348,7 +345,7 @@ function geometryDigest(r: DwgRender): string[] {
 
 /**
  * The indexable text digest. Returns '' only on a sniff miss (bytes are not
- * DWG — hollow-skip); throws when the sidecar is missing or the exchange
+ * DWG — hollow-skip); throws when the parser exchange
  * fails, so the node shows an honest extract error instead of junk.
  */
 export async function parseDwg(bytes: Buffer): Promise<string> {
@@ -364,16 +361,16 @@ export async function parseDxf(bytes: Buffer): Promise<string> {
 
 export type DwgGrids = {
   sheets: ParsedSheet[];
-  /** True when the registry is INCOMPLETE — the sidecar hit its text/layer
+  /** True when the registry is INCOMPLETE — the CAD tier hit its text/layer
    *  caps or the Texts tab was cut at MAX_TEXT_ROWS. The auto-table
    *  description must not claim "every annotation string" then. */
   capped: boolean;
   /** True when the Blocks tab is incomplete: rows or tag columns cut. Kept
    *  apart from `capped`, which speaks for Texts. */
   blocksCapped?: boolean;
-  /** The bones tabs (Segments, Nodes, Inserts, Circuits), when the sidecar
+  /** The bones tabs (Segments, Nodes, Inserts, Circuits), when the CAD tier
    *  sent geometry: how it was built and which tab is incomplete. Absent
-   *  from an older sidecar image; `error` set when the geometry pass failed
+   *  from an older CAD tier; `error` set when the geometry pass failed
    *  on a drawing whose registry is fine. */
   geometry?: DwgGridsGeometry;
 };
@@ -755,7 +752,7 @@ export async function parseDxfToGrids(bytes: Buffer): Promise<DwgGrids> {
 /**
  * The registry workbook of a DWG or DXF file, as the auto-import pass and
  * the dwg-reindex maintenance task both build it: the sniff for the
- * format, the tabs (one sidecar exchange) and the table description. No
+ * format, the tabs (one parser exchange) and the table description. No
  * tabs when the bytes are not that format. One code path for the first
  * import and every rebuild, so a rebuilt table is the table a fresh upload
  * would get.
@@ -782,28 +779,25 @@ export async function cadRegistryWorkbook(
 
 async function explainCadImageMiss(bytes: Buffer, format: CadFormat): Promise<string> {
   if (!sniffFor(format, bytes)) return `not ${format} bytes (sniff miss)`;
-  if (!mediaSidecarEnabled()) {
-    return 'media sidecar not enabled — no render tier on this box';
-  }
   const key = dwgHash(bytes);
   const entry = renderMemo.get(key);
   if (entry) {
     // Settled by the time this runs (the image pass awaited the same promise).
     const res = await entry;
     if (res.ok) {
-      if (res.value.renderError) return `sidecar render failed: ${res.value.renderError}`;
-      if (!res.value.png) return 'the sidecar shipped the registry but no render and no reason';
+      if (res.value.renderError) return `CAD render failed: ${res.value.renderError}`;
+      if (!res.value.png) return 'the CAD tier shipped the registry but no render and no reason';
       return 'a render exists for these bytes (not a miss)';
     }
   }
   const failure = failureMemo.get(key);
-  if (failure) return `sidecar exchange failed (${failure})`;
-  return 'no sidecar exchange was recorded for these bytes';
+  if (failure) return `parser exchange failed (${failure})`;
+  return 'no parser exchange was recorded for these bytes';
 }
 
 /**
  * Why {@link extractDwgImages} came back empty for these bytes, answered from
- * the memos alone — NEVER a fresh sidecar exchange (this runs after the image
+ * the memos alone — NEVER a fresh parser exchange (this runs after the image
  * pass on the same bytes, so retrying here would double a failed upload).
  * Feeds the extractor's zero-candidate `extract_images` trace step.
  */
@@ -818,8 +812,15 @@ export async function explainDxfImageMiss(bytes: Buffer): Promise<string> {
 
 async function extractCadImages(bytes: Buffer, format: CadFormat): Promise<EmbeddedImage[]> {
   if (!sniffFor(format, bytes)) return [];
-  if (!mediaSidecarEnabled()) return [];
   const res = await fetchDwgRender(bytes);
+  // The parser busy or restarting (or a first refusal of these bytes): the
+  // extract retries, rather than completing a drawing with no picture.
+  if (!res.ok && res.retryable) {
+    throw new ParserError(res.code, `${format} render failed (${res.code}): ${res.message}`, {
+      retryable: true,
+      terminal: false,
+    });
+  }
   if (!res.ok || !res.value.png) return [];
   return [
     {
@@ -838,8 +839,8 @@ async function extractCadImages(bytes: Buffer, format: CadFormat): Promise<Embed
 
 /**
  * The model-space render as a single essential image node. Unlike DWF there
- * is no thumbnail fallback tier inside the file: no sidecar (or a failed
- * render) yields [] and the file simply has no image child — the honest
+ * is no thumbnail fallback tier inside the file: a failed render yields []
+ * and the file simply has no image child — the honest
  * outcome, and the extract-images trace records the reason upstream.
  */
 export async function extractDwgImages(bytes: Buffer): Promise<EmbeddedImage[]> {

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { explainDxfImageMiss, extractDxfImages, parseDxf, parseDxfToGrids, sniffDxf } from './dxf';
 import { parseDocumentBytes } from './parse';
+import { resetParserFailures } from './parser-client';
 
 /** Synthesized minimal ASCII DXF — never real drawing bytes (public repo).
  *  The render memo is keyed by CONTENT HASH, so each test that stubs its own
@@ -47,26 +48,27 @@ function sidecarReply() {
   };
 }
 
+/** The parser's CAD tier, faked at the fetch: every /dwg/render answers
+ *  `reply`. */
 function stubSidecar(reply: Record<string, unknown> = sidecarReply()) {
-  vi.stubEnv('MEDIA_SIDECAR_URL', 'http://media.test:8095');
-  vi.stubEnv('MEDIA_SIDECAR_TOKEN', 'secret');
-  const fetchMock = vi.fn(async (url: unknown) => {
-    if (String(url).endsWith('/healthz')) {
-      return Response.json({
-        ok: true,
-        versions: {
-          yt_dlp: null,
-          ffmpeg: '8.1',
-          ezdwf: '0.0.3',
-          dwg2dxf: '0.13.3',
-          ezdxf: '1.4.4',
-        },
-      });
-    }
-    return Response.json(reply);
-  });
+  vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+  vi.stubEnv('PARSER_TOKEN', 'secret');
+  const fetchMock = vi.fn(async (_url: unknown, _init?: unknown) => Response.json(reply));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
+}
+
+/** The parser not running: the connection is refused. */
+function stubParserDown() {
+  vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      throw Object.assign(new TypeError('fetch failed'), {
+        cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      });
+    }),
+  );
 }
 
 describe('sniffDxf', () => {
@@ -101,26 +103,29 @@ describe('parseDxf', () => {
     expect(await parseDxf(Buffer.from('not a drawing'))).toBe('');
   });
 
-  it('throws a typed pointer when the sidecar is not configured', async () => {
-    vi.stubEnv('MEDIA_SIDECAR_URL', '');
-    vi.stubEnv('MEDIA_SIDECAR_TOKEN', '');
+  it('throws a typed, retryable error when the parser cannot be reached', async () => {
+    stubParserDown();
     try {
-      await expect(parseDxf(dxfFixture(1))).rejects.toThrow(/media sidecar CAD tier/);
+      await expect(parseDxf(dxfFixture(1))).rejects.toMatchObject({
+        code: 'unavailable',
+        retryable: true,
+      });
     } finally {
+      vi.unstubAllGlobals();
       vi.unstubAllEnvs();
     }
   });
 
-  it('propagates the sidecar-missing throw through parseDocumentBytes (no title fallback)', async () => {
+  it('propagates the parser failure through parseDocumentBytes (no title fallback)', async () => {
     // The extract must surface a real, retryable error — the parse dispatcher
     // must never swallow this into '' (which reads as "no parser").
-    vi.stubEnv('MEDIA_SIDECAR_URL', '');
-    vi.stubEnv('MEDIA_SIDECAR_TOKEN', '');
+    stubParserDown();
     try {
-      await expect(parseDocumentBytes(dxfFixture(2), 'dxf')).rejects.toThrow(
-        /media sidecar CAD tier/,
-      );
+      await expect(parseDocumentBytes(dxfFixture(2), 'dxf')).rejects.toMatchObject({
+        code: 'unavailable',
+      });
     } finally {
+      vi.unstubAllGlobals();
       vi.unstubAllEnvs();
     }
   });
@@ -186,13 +191,13 @@ describe('parseDxfToGrids', () => {
 });
 
 describe('extractDxfImages', () => {
-  it('returns [] on a sniff miss and when the sidecar is off', async () => {
+  it('returns [] on a sniff miss, and throws a retryable error when the parser is down', async () => {
     expect(await extractDxfImages(Buffer.from('junk'))).toEqual([]);
-    vi.stubEnv('MEDIA_SIDECAR_URL', '');
-    vi.stubEnv('MEDIA_SIDECAR_TOKEN', '');
+    stubParserDown();
     try {
-      expect(await extractDxfImages(dxfFixture(6))).toEqual([]);
+      await expect(extractDxfImages(dxfFixture(6))).rejects.toMatchObject({ retryable: true });
     } finally {
+      vi.unstubAllGlobals();
       vi.unstubAllEnvs();
     }
   });
@@ -227,14 +232,16 @@ describe('extractDxfImages', () => {
     }
   });
 
-  it('explains a sniff miss and a disabled sidecar without an exchange', async () => {
+  it('explains a sniff miss and a failed exchange without a new exchange', async () => {
     expect(await explainDxfImageMiss(Buffer.from('junk'))).toContain('sniff miss');
-    vi.stubEnv('MEDIA_SIDECAR_URL', '');
-    vi.stubEnv('MEDIA_SIDECAR_TOKEN', '');
+    stubParserDown();
     try {
-      expect(await explainDxfImageMiss(dxfFixture(9))).toContain('not enabled');
+      await extractDxfImages(dxfFixture(9)).catch(() => null);
+      expect(await explainDxfImageMiss(dxfFixture(9))).toContain('parser exchange failed');
     } finally {
+      vi.unstubAllGlobals();
       vi.unstubAllEnvs();
+      resetParserFailures();
     }
   });
 });
