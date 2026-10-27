@@ -14,6 +14,7 @@ import {
   editCheckRefusalError,
   errorMessage,
   publicErrorMessage,
+  UUID_RE,
 } from '@mantle/std';
 import {
   advisoryXactLock,
@@ -370,12 +371,17 @@ export async function updateTreeFolder(
   const ops = opsFor(kind);
   const folder = await folderOrThrow(ownerId, kind, folderId);
   // A place is asked of the folder it lands in before anything is written,
-  // so a move and a place never half apply.
+  // so a move and a place never half apply: the folder to follow is a
+  // folder there (not this one), and the caller may order it.
   if (patch.after !== undefined) {
+    if (patch.after === folderId) throw new TreeError('invalid', 'nothing can follow itself');
     const dest =
       patch.parentId !== undefined
         ? await pathOf(ownerId, kind, patch.parentId)
         : treeParentPath(folder.path);
+    if (patch.after !== null && !(await isFolderIn(ownerId, patch.after, dest))) {
+      throw new TreeError('invalid', AFTER_NOT_HERE);
+    }
     await assertMayOrder(ownerId, kind, dest);
   }
   if (patch.parentId !== undefined) {
@@ -407,26 +413,43 @@ export async function updateTreeFolder(
   return folderOrThrow(ownerId, kind, folderId);
 }
 
+/** The refusal of an `after` that names no child of the folder the place
+ *  is in. */
+const AFTER_NOT_HERE = 'the one to place after is not in this folder';
+
+/** Whether `id` is a folder directly in the folder at `parentPath` (as the
+ *  caller reads it). */
+async function isFolderIn(ownerId: string, id: string, parentPath: string): Promise<boolean> {
+  if (!UUID_RE.test(id)) return false;
+  const rows = (await db.execute(sql`
+    select 1 from nodes n
+     where n.id = ${id}::uuid and n.owner_id = ${ownerId} and n.type = 'branch'
+       and n.path ~ ${`${parentPath}.*{1}`}::lquery
+     limit 1`)) as unknown as unknown[];
+  return rows.length > 0;
+}
+
+/** A folder's look in one statement: only the keys asked are set or
+ *  dropped, so a place (`rank`) written meanwhile is never overwritten. */
 async function setFolderLook(
   ownerId: string,
   folderId: string,
   look: { icon?: string | null; color?: AppTint | null },
 ): Promise<void> {
-  const [row] = await db
-    .select({ data: nodes.data })
-    .from(nodes)
-    .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)))
-    .limit(1);
-  const data = { ...((row?.data ?? {}) as Record<string, unknown>) };
+  const set: Record<string, string> = {};
+  const drop: string[] = [];
   for (const key of ['icon', 'color'] as const) {
     const value = look[key];
     if (value === undefined) continue;
-    if (value === null || value === '') delete data[key];
-    else data[key] = value;
+    if (value === null || value === '') drop.push(key);
+    else set[key] = value;
   }
   await db
     .update(nodes)
-    .set({ data, updatedAt: new Date() })
+    .set({
+      data: sql`(coalesce(${nodes.data}, '{}'::jsonb) - ${`{${drop.join(',')}}`}::text[]) || ${JSON.stringify(set)}::text::jsonb`,
+      updatedAt: new Date(),
+    })
     .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
 }
 
@@ -591,13 +614,16 @@ type ChildOrder = {
  * shows them and the plan (order-plan.ts) is written in one statement:
  *
  *  - when the moved child's new neighbours (copies left out) both carry a
- *    rank with room between, only it is written;
+ *    rank with room between, only it is written. Only those two are read
+ *    (nearestRanks), so such a place costs the same in a folder of any
+ *    size;
  *  - else the folder is ranked (planWhole): in an ordered folder only the
  *    children with no rank take one, after the rest; in an unordered one
  *    all of them, evenly. Only rows the caller may write take a rank then:
  *    never a read-only snapshot copy, and at the top level only what the
- *    caller may edit (asked then, not on every place). A folder of more
- *    than TREE_ORDER_MAX children is refused that (409).
+ *    caller may edit (asked then, in the transaction, not on every place).
+ *    The children are counted first: a folder of more than TREE_ORDER_MAX
+ *    is refused that (409) before any of them is read.
  *
  * At the top level the moved child itself must be the caller's to edit:
  * refused first (the edit check's 403), never silently left where it was.
@@ -619,6 +645,22 @@ async function orderChildren(ownerId: string, kind: TreeKind, o: ChildOrder): Pr
         `tree-order:${ownerId}:${kind}:${o.key}:${o.path}`,
         'hashtextextended',
       );
+      const near = await nearestRanks(tx, o, rankSql);
+      const one = near ? rankAt(near.rows, near.at) : null;
+      if (one !== null) {
+        await writeRanks(tx, ownerId, o.key, [{ id: o.movingId, rank: one }]);
+        return;
+      }
+      // The whole folder: counted before it is read.
+      const [counted] = (await tx.execute(sql`
+        select count(*)::int as n from nodes n
+         where ${o.where} and n.id <> ${o.movingId}::uuid`)) as unknown as Array<{ n: number }>;
+      if (Number(counted?.n ?? 0) + 1 > TREE_ORDER_MAX) {
+        throw new TreeError(
+          'conflict',
+          `This folder holds more than ${TREE_ORDER_MAX.toLocaleString('en-US')} entries, too many to put in order by hand. Sort it another way, or split it into folders.`,
+        );
+      }
       // A copy's inherited rank makes no order (read.ts hasCustomOrder).
       const [has] = (await tx.execute(sql`
         select exists (select 1 from nodes n
@@ -643,27 +685,21 @@ async function orderChildren(ownerId: string, kind: TreeKind, o: ChildOrder): Pr
         copy: r.copy === true,
       }));
       const at = o.afterId === null ? 0 : rows.findIndex((r) => r.id === o.afterId) + 1;
-      if (o.afterId !== null && at === 0) {
-        throw new TreeError('invalid', 'the one to place after is not in this folder');
-      }
-      const one = rankAt(rows, at);
+      if (o.afterId !== null && at === 0) throw new TreeError('invalid', AFTER_NOT_HERE);
+      const single = rankAt(rows, at);
       let writes: RankWrite[];
-      if (one !== null) {
-        writes = [{ id: o.movingId, rank: one }];
+      if (single !== null) {
+        writes = [{ id: o.movingId, rank: single }];
       } else {
-        if (rows.length + 1 > TREE_ORDER_MAX) {
-          throw new TreeError(
-            'conflict',
-            `This folder holds more than ${TREE_ORDER_MAX.toLocaleString('en-US')} entries, too many to put in order by hand. Sort it another way, or split it into folders.`,
-          );
-        }
         // At the top level the database asks edit of each row: only those
-        // take a rank (the moved one was asked above).
+        // take a rank (the moved one was asked above), asked on this
+        // transaction's connection.
         const editable =
           o.top && scoped
             ? await itemWriteVerdicts(
                 rows.filter((r) => !r.copy).map((r) => r.id),
                 'edit',
+                tx,
               )
             : null;
         writes = planWhole(
@@ -677,6 +713,59 @@ async function orderChildren(ownerId: string, kind: TreeKind, o: ChildOrder): Pr
       await writeRanks(tx, ownerId, o.key, writes);
     }),
   );
+}
+
+/**
+ * The moved child's new neighbours, read alone (two keyset reads, each one
+ * row): the child to follow and the first one after it that is no copy,
+ * in rank order. Null when they cannot settle the place by themselves, so
+ * the whole folder is read: the child to follow is a copy or has no rank,
+ * the next one has none (or one that is no rank), or the two tie. A child
+ * to follow that is not in the folder is refused here (400).
+ */
+async function nearestRanks(
+  tx: Pick<typeof db, 'execute'>,
+  o: ChildOrder,
+  rankSql: SQL,
+): Promise<{ rows: OrderRow[]; at: number } | null> {
+  let prev: OrderRow | null = null;
+  if (o.afterId !== null) {
+    if (!UUID_RE.test(o.afterId)) throw new TreeError('invalid', AFTER_NOT_HERE);
+    const [after] = (await tx.execute(sql`
+      select n.id::text as id, ${rankSql} as rank, (n.data ? 'snapshot_of') as copy
+        from nodes n
+       where ${o.where} and n.id = ${o.afterId}::uuid
+       limit 1`)) as unknown as Array<{ id: string; rank: string | null; copy: boolean }>;
+    if (!after) throw new TreeError('invalid', AFTER_NOT_HERE);
+    if (after.copy === true || after.rank === null || !RANK_RE.test(after.rank)) return null;
+    prev = { id: after.id, rank: after.rank, copy: false };
+  }
+  const lo = prev?.rank ?? null;
+  // The first child after it in rank order (byte order, as the tree sorts
+  // ranks), copies left out; the ones with no rank (or one that is no rank)
+  // after every rank, as the tree lists them. When that is one of those,
+  // the place needs the whole folder.
+  const [next] = (await tx.execute(sql`
+    select n.id::text as id, ${rankSql} as rank
+      from nodes n
+     where ${o.where} and n.id <> ${o.movingId}::uuid
+       ${o.afterId !== null ? sql`and n.id <> ${o.afterId}::uuid` : sql``}
+       and not (n.data ? 'snapshot_of')
+       ${
+         lo !== null
+           ? sql`and (${rankSql} is null or ${rankSql} !~ ${RANK_RE.source}
+                      or (${rankSql} collate "C") >= (${lo} collate "C"))`
+           : sql``
+       }
+     order by (case when ${rankSql} ~ ${RANK_RE.source} then 0 else 1 end),
+              ${rankSql} collate "C"
+     limit 1`)) as unknown as Array<{ id: string; rank: string | null }>;
+  if (next && (next.rank === null || !RANK_RE.test(next.rank) || next.rank === lo)) return null;
+  const rows: OrderRow[] = [
+    ...(prev ? [prev] : []),
+    ...(next ? [{ id: next.id, rank: next.rank, copy: false }] : []),
+  ];
+  return { rows, at: prev ? 1 : 0 };
 }
 
 /** Every rank of a place in one statement (the write check runs per row). */

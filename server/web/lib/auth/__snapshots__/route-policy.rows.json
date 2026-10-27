@@ -606,7 +606,7 @@
 "PATCH /api/telegram/chats/:id": {"class":"area","scope":{"kind":"area","area":"connectors"},"area":"connectors","effect":"write","caller":"owner"},
 "PATCH /api/tool-groups/:id": {"class":"area","scope":{"kind":"area","area":"assistants"},"area":"assistants","effect":"write","caller":"owner"},
 "PATCH /api/tools/:id": {"class":"area","scope":{"kind":"area","area":"assistants"},"area":"assistants","effect":"write","caller":"owner"},
-"PATCH /api/tree/:kind/folders/:id": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","caller":"owner"},
+"PATCH /api/tree/:kind/folders/:id": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","caller":"owner","rateLimit":["treePlace"]},
 "PATCH /api/users/:id": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"write","audit":"own","caller":"owner"},
 "PATCH /api/v1/pages/:id": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","keyArea":"pages","keySelf":false,"caller":"ownerAtRead"},
 "PATCH /api/v1/tables/:id/rows/:rowId": {"class":"content","scope":{"kind":"content"},"effect":"write","keyArea":"tables","keySelf":false,"caller":"owner"},

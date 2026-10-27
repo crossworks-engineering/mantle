@@ -263,6 +263,8 @@ const TOKEN_LOGINS = [
 const ADMIN_PUSH = ['POST /api/push/connect', 'POST /api/push/subscriptions'];
 const MEMBER_PUSH = ['POST /api/member/push/connect', 'POST /api/member/push/subscriptions'];
 const others = (all: readonly string[], row: string) => all.filter((r) => r !== row);
+/** The rows that place in a folder's custom order (tree-place). */
+const TREE_PLACE = ['POST /api/tree/:kind/place', 'PATCH /api/tree/:kind/folders/:id'];
 
 /** A GET row and the HEAD its handler answers, with the same limits. */
 const getHead = (pattern: string, cell: Omit<SweepCell, 'row'>): SweepCell[] => [
@@ -421,13 +423,15 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     cred: 'member',
     limits: [members('member-bytes', 240)],
   }),
-  // A place in a folder's custom order, per login (an Admin user's too).
-  {
-    row: 'POST /api/tree/:kind/place',
+  // A place in a folder's custom order, per login (an Admin user's too):
+  // an item's place and the folder PATCH (a folder's `after`) share it.
+  ...TREE_PLACE.map((row): SweepCell => ({
+    row,
     cred: 'member',
     body: JSON_BODY,
     limits: [login('tree-place', 120)],
-  },
+    sharesWith: others(TREE_PLACE, row),
+  })),
   ...getHead('/api/workspaces/user-search', {
     cred: 'owner',
     query: '?q=sweep',

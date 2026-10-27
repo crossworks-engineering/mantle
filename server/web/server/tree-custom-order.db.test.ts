@@ -57,6 +57,7 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
   let tree: typeof import('@mantle/content/tree');
   let actorMode: typeof import('../../../packages/db/src/actor');
   let runRoute: typeof import('./run-route').runRoute;
+  let itemArgs: typeof import('../../../packages/tools/src/item-args');
   let dir = '';
   const tag = `tco${randomUUID().slice(0, 6)}`;
   const L: Record<Who, string> = {
@@ -309,6 +310,7 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
     tree = await import('@mantle/content/tree');
     actorMode = await import('../../../packages/db/src/actor');
     runRoute = (await import('./run-route')).runRoute;
+    itemArgs = await import('../../../packages/tools/src/item-args');
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
 
     await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
@@ -488,6 +490,198 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
     }
   });
 
+  it('a place among ranked neighbours reads them alone: one row, an unranked newcomer aside', async () => {
+    await setMode('on');
+    const f = await notesFolder(`${tag} near ${n()}`);
+    const a = await noteIn(f, 'a near');
+    const b = await noteIn(f, 'b near');
+    const c = await noteIn(f, 'c near');
+    await sysTool('tree_item_place', { kind: 'notes', item_id: a, after: null });
+    await sysTool('tree_item_place', { kind: 'notes', item_id: b, after: a });
+    await sysTool('tree_item_place', { kind: 'notes', item_id: c, after: b });
+    // A newcomer has no rank: it lists last, and a place between two ranked
+    // neighbours still writes the moved one only.
+    const fresh = await noteIn(f, 'fresh near');
+    expect(
+      await rankStatements(() =>
+        sysTool('tree_item_place', { kind: 'notes', item_id: c, after: a }),
+      ),
+    ).toEqual([1]);
+    expect((await listed(f)).ids).toEqual([a, c, b, fresh]);
+    // Placing after the newcomer needs a rank for it: the ranking appends.
+    const placed = await viaMcp('owner', 'tree_item_place', {
+      kind: 'notes',
+      item_id: a,
+      after: fresh,
+    });
+    expect(placed.ok, placed.text).toBe(true);
+    expect((await listed(f)).ids).toEqual([c, b, fresh, a]);
+    // An `after` from another folder is refused, nothing written.
+    const other = await noteIn(await notesFolder(`${tag} near other ${n()}`), 'elsewhere');
+    const before = await ranksState();
+    const stray = await viaMcp('owner', 'tree_item_place', {
+      kind: 'notes',
+      item_id: b,
+      after: other,
+    });
+    expect(stray.ok).toBe(false);
+    expect(stray.text).toMatch(/not in this folder/);
+    expect(await ranksState()).toBe(before);
+  });
+
+  it('a move to another folder drops the place: the item lands unranked, never ordering it', async () => {
+    await setMode('on');
+    const from = await notesFolder(`${tag} from ${n()}`);
+    const to = await notesFolder(`${tag} to ${n()}`);
+    const a = await noteIn(from, 'a from');
+    const b = await noteIn(from, 'b from');
+    await sysTool('tree_item_place', { kind: 'notes', item_id: b, after: null });
+    expect(await rankOf(a)).not.toBeNull();
+    await noteIn(to, 'x to');
+    await noteIn(to, 'y to');
+    expect((await listed(to)).ordered).toBe(false);
+    await sysTool('tree_item_move', { kind: 'notes', item_ids: [a], folder_id: to, confirm: true });
+    expect(await rankOf(a)).toBeNull();
+    expect((await listed(to)).ordered).toBe(false);
+    // A move into the folder it is in keeps it.
+    const rb = await rankOf(b);
+    await sysTool('tree_item_move', {
+      kind: 'notes',
+      item_ids: [b],
+      folder_id: from,
+      confirm: true,
+    });
+    expect(await rankOf(b)).toBe(rb);
+
+    // A folder moved under another parent drops its place among the
+    // folders it left (`rank`); the order inside it stays.
+    const p1 = await notesFolder(`${tag} p1 ${n()}`);
+    const p2 = await notesFolder(`${tag} p2 ${n()}`);
+    const k = await notesFolder('k', p1);
+    await notesFolder('l', p1);
+    const inK = await noteIn(k, 'in k');
+    await noteIn(k, 'in k 2');
+    await sysTool('tree_item_place', { kind: 'notes', item_id: inK, after: null });
+    await sys(() => tree.updateTreeFolder(owner, 'notes', k, { after: null }));
+    const folderRank = async (id: string) =>
+      (await raw<{ r: string | null }[]>`select data->>'rank' as r from nodes where id = ${id}`)[0]!
+        .r;
+    expect(await folderRank(k)).not.toBeNull();
+    const rk = await rankOf(inK);
+    await sys(() => tree.updateTreeFolder(owner, 'notes', k, { parentId: p2 }, { confirm: true }));
+    expect(await folderRank(k)).toBeNull();
+    expect(await rankOf(inK)).toBe(rk);
+  });
+
+  it('the lift of a deleted folder drops the places of what lands in another folder', async () => {
+    await setMode('on');
+    const parent = await notesFolder(`${tag} lift ${n()}`);
+    const gone = await notesFolder('gone', parent);
+    const keep = await notesFolder('keep', gone);
+    await notesFolder('keep 2', gone);
+    const direct = await noteIn(gone, 'direct');
+    await noteIn(gone, 'direct 2');
+    const deep = await noteIn(keep, 'deep');
+    await noteIn(keep, 'deep 2');
+    await sysTool('tree_item_place', { kind: 'notes', item_id: direct, after: null });
+    await sysTool('tree_item_place', { kind: 'notes', item_id: deep, after: null });
+    await sys(() => tree.updateTreeFolder(owner, 'notes', keep, { after: null }));
+    const rDeep = await rankOf(deep);
+    await sys(() => tree.deleteTreeFolder(owner, 'notes', gone, { confirm: true }));
+    // Lands in the parent: no place there.
+    expect(await rankOf(direct)).toBeNull();
+    const [k] = await raw<
+      { r: string | null }[]
+    >`select data->>'rank' as r from nodes where id = ${keep}`;
+    expect(k!.r).toBeNull();
+    // A subfolder that moves up whole keeps the order inside it.
+    expect(await rankOf(deep)).toBe(rDeep);
+  });
+
+  it('a copy carries no place (Files), and a Files move drops it', async () => {
+    await setMode('on');
+    await sys(() => tree.ensureKindRoot(owner, 'files'));
+    const dest = idIn(
+      await sysTool('tree_folder_create', { kind: 'files', name: `${tag} fdest ${n()}` }),
+    );
+    const [d] = await raw<{ p: string }[]>`select path::text as p from nodes where id = ${dest}`;
+    const made = (await sysTool('file_create', {
+      parent_path: 'files',
+      filename: `${tag}-${n()}.md`,
+      content: 'x',
+    })) as { id: string };
+    await setData(made.id, { tree_rank: 'i' });
+    const copy = (await sysTool('file_copy', {
+      file_id: made.id,
+      dest_path: d!.p,
+      confirm: true,
+    })) as { id: string };
+    expect(await rankOf(copy.id)).toBeNull();
+    expect(await rankOf(made.id)).toBe('i');
+    await sysTool('tree_item_move', {
+      kind: 'files',
+      item_ids: [made.id],
+      folder_id: dest,
+      confirm: true,
+    });
+    expect(await rankOf(made.id)).toBeNull();
+  });
+
+  it('a look change writes its own keys only: the place stays', async () => {
+    await setMode('on');
+    const p = await notesFolder(`${tag} look ${n()}`);
+    const x = await notesFolder('x look', p);
+    await notesFolder('y look', p);
+    await sys(() => tree.updateTreeFolder(owner, 'notes', x, { after: null }));
+    await setData(x, { icon: 'old', keepme: 1 });
+    const data = async () =>
+      (await raw<{ d: Record<string, unknown> }[]>`select data as d from nodes where id = ${x}`)[0]!
+        .d;
+    const rank = (await data()).rank;
+    expect(rank).toBeTruthy();
+    await sys(() => tree.updateTreeFolder(owner, 'notes', x, { color: 'blue' as never }));
+    let d = await data();
+    expect(d).toMatchObject({ rank, icon: 'old', color: 'blue', keepme: 1 });
+    await sys(() => tree.updateTreeFolder(owner, 'notes', x, { icon: null }));
+    d = await data();
+    expect(d.icon).toBeUndefined();
+    expect(d).toMatchObject({ rank, color: 'blue', keepme: 1 });
+  });
+
+  it('a move with an `after` that is not in the destination is refused before it moves', async () => {
+    await setMode('on');
+    const p1 = await notesFolder(`${tag} m1 ${n()}`);
+    const p2 = await notesFolder(`${tag} m2 ${n()}`);
+    const mover = await notesFolder('mover', p1);
+    const stale = await notesFolder('stale', p1);
+    await notesFolder('there', p2);
+    const pathOf = async (id: string) =>
+      (await raw<{ p: string }[]>`select path::text as p from nodes where id = ${id}`)[0]!.p;
+    const before = await pathOf(mover);
+    const state = await ranksState();
+    const err = await sys(() =>
+      tree.updateTreeFolder(
+        owner,
+        'notes',
+        mover,
+        { parentId: p2, after: stale },
+        { confirm: true },
+      ),
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(tree.TreeError);
+    expect((err as InstanceType<typeof tree.TreeError>).code).toBe('invalid');
+    expect(await pathOf(mover)).toBe(before);
+    expect(await ranksState()).toBe(state);
+    // Over HTTP: the 400, nothing moved.
+    const res = await runRoute(owner, 'PATCH', `/api/tree/notes/folders/${mover}`, {
+      parentId: p2,
+      after: stale,
+      confirm: true,
+    });
+    expect(res.status, await res.clone().text()).toBe(400);
+    expect(await pathOf(mover)).toBe(before);
+  });
+
   for (const mode of ['warn', 'on'] as const) {
     describe(`check mode ${mode}`, () => {
       it("a Write grant's member orders a folder's items, one order for everyone", async () => {
@@ -654,6 +848,24 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
         // A rename still asks edit of the folder itself.
         const renamed = await patch('wr', { name: `${tag} renamed` });
         expect(renamed.status, await renamed.clone().text()).toBe(403);
+        // The approval queue asks no more than the run: an `after` alone
+        // passes it with the folder's read, and the run refuses a rename.
+        const queued = (input: Record<string, unknown>) =>
+          m.withViewer({ login: L.wr }, () =>
+            itemArgs.queueItemRefusal(
+              itemArgs.itemArgsOf('tree_folder_update'),
+              { kind: 'notes', folder_id: b, ...input },
+              owner,
+            ),
+          );
+        expect(await queued({ after: a })).toBeNull();
+        const viaTool = await viaMcp('wr', 'tree_folder_update', {
+          kind: 'notes',
+          folder_id: b,
+          name: `${tag} renamed by tool`,
+        });
+        expect(viaTool.ok, viaTool.text).toBe(false);
+        expect(await order()).toEqual([b, a]);
         // R has no Write on the parent: its member may not order it.
         const rd = await patch('rd', { after: a });
         expect(rd.status, await rd.clone().text()).toBe(403);

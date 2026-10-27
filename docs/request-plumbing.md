@@ -628,7 +628,7 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (124):
+owner rows open to members (123):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
   DELETE /api/draws/:id
@@ -707,7 +707,6 @@ owner rows open to members (124):
   PATCH /api/recall/maps/:id
   PATCH /api/tables/:id
   PATCH /api/tasks/:id
-  PATCH /api/tree/:kind/folders/:id
   PATCH /api/v1/pages/:id
   PATCH /api/v1/tasks/:id
   POST /api/apps
