@@ -1,30 +1,32 @@
 /**
- * PowerPoint (.pptx) text, in slide order, read in-process.
+ * PowerPoint (.pptx) text, in slide order. Runs in the parser service
+ * (server/parser) only.
  *
- * Decks used to go to Tika. Tika 4 reads a deck with its streaming extractor
- * only (3.x's `useSAXPptxExtractor: false` is gone), and that extractor walks
- * slides in relationship-id STRING order: `rId10` sorts before `rId7`, so any
- * deck with more than a handful of slides comes back with its slides shuffled
- * (verified on 4.0.0, 4.1.0 and the 4.2.0 snapshot). Every word is still
- * there, but summaries and chunk order follow the shuffled text. Order is the
- * point of a deck, so we take this one format in-process, like `.docx`, and
- * keep Tika as the fallback for a deck this reader cannot open.
+ * Decks once went to Tika, whose streaming extractor walked slides in
+ * relationship-id STRING order (`rId10` before `rId7`), so any deck with
+ * more than a handful of slides came back shuffled. Order is the point of a
+ * deck, so we read this one format ourselves, like `.docx`; anydoc is the
+ * fallback for a deck this reader cannot open (./read-document.ts).
  *
  * Slide order is the presentation's own `sldIdLst`, resolved through
  * `ppt/_rels/presentation.xml.rels`, which is the order PowerPoint shows. Per
  * slide: each `<a:p>` paragraph on its own line (shapes and groups in source
  * order, a table row as one tab-joined line), then one line per chart (its
- * cached series names, categories and values, as Tika gives them), then
+ * cached series names, categories and values), then
  * SmartArt text, then the speaker notes. Field runs (`<a:fld>`: slide
  * number, date) are dropped; they are furniture, not content.
  *
- * Same bounded regex reading as `./ooxml-media.ts`, for the same reasons: the
+ * Same tag-by-tag reading as `./ooxml-media.ts`, for the same reasons: the
  * input is machine-written OOXML and we only collect text runs in source
- * order. Throws on a container JSZip cannot open; `parseDocumentBytes` turns
- * that, and an empty result, into the Tika fallback.
+ * order. The tags are found with the linear scanner in ./xml-scan.ts (the
+ * regular expressions it replaced took 9.1 s over 512 KB of unclosed
+ * `<a:t>`), and every part is read under an inflate cap (./zip-guard.ts).
+ * Throws on a container JSZip cannot open; `readDocumentText` turns that,
+ * and an empty result, into the anydoc fallback.
  */
 
 import { ATTR, loadZip, numericSuffix, relationshipsFor, type Zip } from './ooxml-media';
+import { TagScanner, tagsNamed, trimEndSpaceTab } from './xml-scan';
 
 const NOTES_REL = /\/relationships\/notesSlide$/;
 const CHART_REL = /\/relationships\/chart$/;
@@ -50,16 +52,16 @@ function decodeXml(s: string): string {
   });
 }
 
-/** Paragraph opener, closer, text run, line break, tab, field open/close, and
- *  table row and cell boundaries, matched together so one ordered pass can
- *  build each paragraph. */
-const RUN_SCAN_RE =
-  /<a:p\b[^>]*>|<\/a:p>|<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>|<a:br\b[^>]*\/?>|<a:tab\b[^>]*\/?>|<a:fld\b[^>]*?(\/?)>|<\/a:fld>|<a:tr\b[^>]*>|<\/a:tc>|<\/a:tr>/g;
-
 /**
  * Every non-empty `<a:p>` paragraph in one part, in source order. A table row
  * is one line, its cells joined by tabs (a cell's own paragraphs by spaces),
- * which is how Tika and our `.docx` path render a row.
+ * which is how our `.docx` path renders a row.
+ *
+ * One pass over the tags: a paragraph opener or closer (`<a:p>`, `<a:p/>`,
+ * `</a:p>`) ends the line; a text run (`<a:t>`) adds its text, up to its
+ * `</a:t>`; a line break and a tab add theirs; a field (`<a:fld>`, the slide
+ * number or a date) is skipped to its close; a table row (`<a:tr>`) collects
+ * its cells (`</a:tc>`) until `</a:tr>`.
  */
 export function paragraphsOf(xml: string): string[] {
   const out: string[] = [];
@@ -68,50 +70,71 @@ export function paragraphsOf(xml: string): string[] {
   let row: string[] | null = null;
   let cell: string[] = [];
   const flush = () => {
-    const text = line.replace(/[ \t]+$/g, '').replace(/^\s+/, '');
+    const text = trimEndSpaceTab(line).replace(/^\s+/, '');
     if (text) (row ? cell : out).push(text);
     line = '';
   };
-  for (const m of xml.matchAll(RUN_SCAN_RE)) {
-    const tag = m[0];
-    // `<a:p>`, `<a:p/>` or `</a:p>`: a paragraph boundary either way.
-    if (tag.startsWith('<a:p') || tag === '</a:p>') {
+  const scan = new TagScanner(xml);
+  for (let tag = scan.next(); tag; tag = scan.next()) {
+    const { name } = tag;
+    if (name === 'a:p') {
       flush();
       continue;
     }
-    if (tag.startsWith('<a:tr')) {
+    if (tag.closing) {
+      if (name === 'a:tc') {
+        flush();
+        row?.push(cell.join(' '));
+        cell = [];
+      } else if (name === 'a:tr') {
+        flush();
+        const text = (row ?? []).join('\t').trimEnd();
+        if (text.trim()) out.push(text);
+        row = null;
+      } else if (name === 'a:fld') {
+        inField = false;
+      }
+      continue;
+    }
+    if (name === 'a:tr') {
       flush();
       row = [];
       cell = [];
       continue;
     }
-    if (tag === '</a:tc>') {
-      flush();
-      row?.push(cell.join(' '));
-      cell = [];
+    if (name === 'a:fld') {
+      inField = !tag.selfClosing;
       continue;
     }
-    if (tag === '</a:tr>') {
-      flush();
-      const text = (row ?? []).join('\t').trimEnd();
-      if (text.trim()) out.push(text);
-      row = null;
-      continue;
-    }
-    if (tag.startsWith('<a:fld')) {
-      inField = m[2] !== '/';
-      continue;
-    }
-    if (tag === '</a:fld>') {
-      inField = false;
+    if (name === 'a:t') {
+      // `<a:t/>` holds nothing; an `<a:t>` with no close is skipped, as the
+      // pattern this replaces skipped it.
+      if (tag.selfClosing) continue;
+      const text = scan.elementText(tag);
+      if (text !== null && !inField) line += decodeXml(text);
       continue;
     }
     if (inField) continue;
-    if (tag.startsWith('<a:br')) line += '\n';
-    else if (tag.startsWith('<a:tab')) line += '\t';
-    else if (m[1] !== undefined) line += decodeXml(m[1]);
+    if (name === 'a:br') line += '\n';
+    else if (name === 'a:tab') line += '\t';
   }
   flush();
+  return out;
+}
+
+/** The `<p:sldId>` tags of the presentation's first `<p:sldIdLst>`. */
+function slideIdsOf(xml: string): string[] {
+  const out: string[] = [];
+  let inList = false;
+  const scan = new TagScanner(xml);
+  for (let tag = scan.next(); tag; tag = scan.next()) {
+    if (tag.name === 'p:sldIdLst') {
+      if (tag.closing) break;
+      inList = !tag.selfClosing;
+    } else if (inList && !tag.closing && tag.name === 'p:sldId') {
+      out.push(scan.text(tag));
+    }
+  }
   return out;
 }
 
@@ -121,14 +144,13 @@ async function slidesInOrder(zip: Zip): Promise<string[]> {
   const presentationPath = 'ppt/presentation.xml';
   const xml = (await zip.file(presentationPath)?.async('string')) ?? '';
   const rels = await relationshipsFor(zip, presentationPath);
-  const listed = (/<p:sldIdLst\b[\s\S]*?<\/p:sldIdLst>/.exec(xml)?.[0] ?? '')
-    .match(/<p:sldId\b[^>]*\/?>/g)
-    ?.map((tag) => {
+  const listed = slideIdsOf(xml)
+    .map((tag) => {
       const rId = ATTR(tag, 'r:id');
       return rId ? rels.get(rId) : undefined;
     })
     .filter((path): path is string => Boolean(path && zip.file(path)));
-  if (listed && listed.length > 0) return listed;
+  if (listed.length > 0) return listed;
   return Object.keys(zip.files)
     .filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n))
     .sort((a, b) => numericSuffix(a) - numericSuffix(b));
@@ -144,7 +166,7 @@ async function relatedParts(
   if (!relsXml) return [];
   const paths = await relationshipsFor(zip, slidePath);
   const out: Array<{ type: string; path: string }> = [];
-  for (const tag of relsXml.match(/<Relationship\b[^>]*>/g) ?? []) {
+  for (const tag of tagsNamed(relsXml, (name) => name === 'Relationship')) {
     const id = ATTR(tag, 'Id');
     const path = id ? paths.get(id) : undefined;
     if (path) out.push({ type: ATTR(tag, 'Type') ?? '', path });
@@ -156,13 +178,19 @@ async function relatedParts(
  *  source order, as one tab-joined line. */
 export function chartLine(xml: string): string {
   const values: string[] = [];
-  for (const m of xml.matchAll(/<c:v>([\s\S]*?)<\/c:v>|<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/g)) {
-    const v = decodeXml(m[1] ?? m[2] ?? '').trim();
+  const scan = new TagScanner(xml);
+  for (let tag = scan.next(); tag; tag = scan.next()) {
+    if (tag.closing || tag.selfClosing || (tag.name !== 'c:v' && tag.name !== 'a:t')) continue;
+    // `<c:v>` is matched bare, as the pattern this replaces matched it.
+    if (tag.name === 'c:v' && tag.end - tag.start !== 5) continue;
+    const text = scan.elementText(tag);
+    const v = text === null ? '' : decodeXml(text).trim();
     if (v) values.push(v);
   }
   return values.join('\t');
 }
 
+/** The deck's text. */
 export async function parsePptx(bytes: Buffer): Promise<string> {
   const zip = await loadZip(bytes);
   const slides: string[] = [];
