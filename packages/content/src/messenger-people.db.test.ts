@@ -146,6 +146,10 @@ describe.skipIf(!URL)('who may see whom (loginVisibleTo, peopleVisibleTo)', () =
     });
     expect(await sees(A, C)).toBe(true);
     expect(await sees(C, A)).toBe(true);
+    // A disabled login stays visible in a chat (it is out of the directory).
+    await su(sqlTag`update auth.users set disabled_at = now() where id = ${C}`);
+    expect(await sees(A, C)).toBe(true);
+    await su(sqlTag`update auth.users set disabled_at = null where id = ${C}`);
     // Ann leaves; Fay joins after: Ann still sees Cat, never Fay.
     await ms.leaveMessengerConversation(actor(A), g.conversationId);
     await ms.addMessengerParticipants(actor(adminB), g.conversationId, [F]);
@@ -163,6 +167,11 @@ describe.skipIf(!URL)('who may see whom (loginVisibleTo, peopleVisibleTo)', () =
     await su(sqlTag`delete from workspace_users where workspace_id = ${W2} and login_id = ${K}`);
     expect(await sees(G, K)).toBe(false);
     expect(await sees(K, G)).toBe(false);
+    // The room is not empty for them: both see the Admin user who made it
+    // (who shares no workspace with either), only through the chat.
+    await su(sqlTag`delete from workspace_users where login_id = ${G}`);
+    expect(await sees(G, adminB)).toBe(true);
+    expect(await sees(K, adminB)).toBe(true);
   });
 
   it('no uuid, an unknown uuid and an agent id are no login', async () => {

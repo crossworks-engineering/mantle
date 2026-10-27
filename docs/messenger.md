@@ -89,15 +89,16 @@ the module also names the login in its own WHERE, so a read stays the
 login's own even outside a scope. A non-participant hears "not found", never
 "forbidden".
 
-**Who may start a chat** (the directory): logins that share a live workspace
-with the caller; an Admin user reaches every usable login. This is one part
-of the one gate of every person-to-person read ("Who may see whom" in the
-content module): `peopleVisibleTo(caller)` is the directory,
-`loginVisibleTo(caller, loginId)` the whole rule for one login (itself, the
-directory, or a person of a chat the caller is in as it sees the room). The agents a login
-may chat with are the assistants of its workspaces; for an Admin user, every
-chat-capable agent except the assistants of non-Admin workspaces it is not
-in (the rule of `listChatAgents`).
+**Who may start a chat** (the directory): logins that share a live
+workspace with the caller; an Admin user reaches every usable login. This
+is one part of the one gate of every person-to-person read ("Who may see
+whom" in the content module): `peopleVisibleTo(caller)` is the directory,
+`loginVisibleTo(caller, loginId)` the whole rule for one login (itself,
+the directory, or a person of a chat the caller is in as it sees the
+room). The agents a login may chat with are the assistants of its
+workspaces; for an Admin user, every chat-capable agent except the
+assistants of non-Admin workspaces it is not in (the rule of
+`listChatAgents`).
 
 **Groups.** The creator is the first admin. Admins add and remove people,
 rename the group and delete its history for everyone. A history delete
@@ -158,28 +159,27 @@ local stdio MCP server and a second replica keep their own.
 The DTOs are in `packages/client-types/src/dto/messenger.ts`. A mention is
 stored and starts nothing in Phase 1: no agent turn exists yet.
 
-**Faces.** A participant and a directory entry carry `avatar`
-(`{style, seed, parts}`, the shape `GET /api/shell` gives for the
-caller's own): a login's from its own Appearance seed and builder parts,
-an agent's from `agents.avatar` (its slug when the seed is empty); `style`
-is always the brain's one style (the anchor's `avatarStyle`), never a
-stored one. No seed is `avatar: null`, and the client draws initials. A
-login also carries `photoVersion` (the shell's `avatarPhotoVersion`, for
-that login), null when it has no photo; the photo outranks the avatar.
-Both are read on the system pool in one query per list (the workspace
-role reads only its own profile row), for the ids the scoped read
-returned, as the names are. `GET /api/messenger/photo/:loginId?v=` serves
-the bytes with the headers of `/api/profile/photo` (`private`,
-`immutable` only when `v` is the photo served) to a login that may see
-that one: itself, a login of its directory, or a person of a chat it is
-in as it sees the room. Anything else, a login with no photo and an id
-that is no uuid answer the one 404, never a 403 (`loginVisibleTo`). As with the caller's
-own photo, a browser keeps a photo it fetched at its `v` (`private`,
-`immutable`) after the access that opened it ends; a new photo is a new
-`v`. The route takes a
+**Faces.** A participant and a directory entry carry `avatar` (`{style,
+seed, parts}`, the shape `GET /api/shell` gives for the caller's own): a
+login's from its own Appearance seed and builder parts, an agent's from
+`agents.avatar` (its slug when the seed is empty); `style` is always the
+brain's one style (the anchor's `avatarStyle`), never a stored one. No
+seed is `avatar: null`, and the client draws initials. A login also
+carries `photoVersion` (the shell's `avatarPhotoVersion`, for that login),
+null when it has no photo; the photo outranks the avatar. Both are read on
+the system pool in one query per list (the workspace role reads only its
+own profile row), for the ids the scoped read returned, as the names are.
+`GET /api/messenger/photo/:loginId?v=` serves the bytes with the headers
+of `/api/profile/photo` (`private`, `immutable` only when `v` is the photo
+served) to a login that may see that one: itself, a login of its
+directory, or a person of a chat it is in as it sees the room. Anything
+else, a login with no photo and an id that is no uuid answer the one 404,
+never a 403 (`loginVisibleTo`). As with the caller's own photo, a browser
+keeps a photo it fetched at its `v` (`private`, `immutable`) after the
+access that opened it ends; a new photo is a new `v`. The route takes a
 cookie or a bearer; an `<img>` of a detached client cannot send the
-bearer, and the path takes no `?at=` asset token (not yet). The MCP
-tools leave both fields out: a face tells a model nothing.
+bearer, and the path takes no `?at=` asset token (not yet). The MCP tools
+leave both fields out: a face tells a model nothing.
 
 ## Live delivery
 

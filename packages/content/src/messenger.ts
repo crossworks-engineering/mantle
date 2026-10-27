@@ -451,7 +451,10 @@ export async function messengerIsAdmin(loginId: string): Promise<boolean> {
 
 /** The caller's directory: the usable logins that share a live workspace
  *  with it, or every usable login for an Admin user (the rule above).
- *  Never itself. One query over workspace_users, with each login's face. */
+ *  Never itself. One query over workspace_users, with each login's face.
+ *  `caller` must be the authenticated login (the session's, or actorOf's
+ *  for a tool), never an id taken from the request: this reads on the
+ *  system pool, keyed on it. */
 export async function peopleVisibleTo(
   caller: { ownerId: string; loginId: string },
   opts: { only?: readonly string[]; q?: string; limit?: number } = {},
@@ -508,7 +511,8 @@ function escapeLike(s: string): string {
  * Whether `caller` may see `loginId` (the rule above): itself, a login of
  * its directory (peopleVisibleTo), or a person of a chat it is in as it may
  * see the room (PEOPLE). false for an id that is no uuid. The room is read
- * on `db`, the caller's scope inside a request.
+ * on `db`, the caller's scope inside a request. `caller` must be the
+ * authenticated login, never an id from the request (peopleVisibleTo).
  */
 export async function loginVisibleTo(caller: MessengerActor, loginId: string): Promise<boolean> {
   if (!isUuid(loginId)) return false;
