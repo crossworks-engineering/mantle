@@ -16,7 +16,7 @@ On a phone the widgets stack one under another, in the order they sit on the des
 
 Your desk follows your login: arrange it in one browser and it looks the same in another browser, on another device and in the desktop app.
 
-## Customize
+### Customize
 
 Click **Customize** to open the desk's panel.
 
@@ -26,7 +26,7 @@ Click **Customize** to open the desk's panel.
 - **Tidy up** closes the gaps, moving every widget up as far as it goes. Left and right stay as they are.
 - **Reset desk** puts the default desk back.
 
-## A home app
+### A home app
 
 A Moderator of a workspace can pick a home app on the workspace screen, under **Landing page**. The app then takes the place of the built-in Desk for that workspace, and **Desk** at the top switches between the two. If the app's build breaks, the built-in Desk shows instead.
 
