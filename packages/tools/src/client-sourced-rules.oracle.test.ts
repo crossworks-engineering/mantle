@@ -141,6 +141,9 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   model_pool_set: free('model routing'),
   model_pool_remove: free('model routing'),
   set_timezone: free("the owner's time zone"),
+  messenger_send: free('a message the caller writes as itself in a chat it is in'),
+  messenger_create: free('a chat the caller starts with people in its directory'),
+  messenger_mark_read: free("the caller's own read cursor"),
 
   // ── Pages ────────────────────────────────────────────────────────────────
   page_create: creates('folder_id', 'parent_id'),

@@ -45,6 +45,15 @@ describe('mcpOnly builtins', () => {
         'file_upload',
         'folder_create',
         'folder_delete',
+        // The messenger (Messenger V1): every login's chats, MCP only until
+        // the agent tool group of Phase 6.
+        'messenger_create',
+        'messenger_directory',
+        'messenger_list',
+        'messenger_mark_read',
+        'messenger_open',
+        'messenger_send',
+        'messenger_wait',
         'note_delete',
         'pending_approve',
         'pending_get',

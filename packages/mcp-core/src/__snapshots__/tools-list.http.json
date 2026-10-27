@@ -7953,6 +7953,193 @@
   }
  },
  {
+  "name": "messenger_list",
+  "description": "Your messenger chats: direct chats, groups and your assistant threads, favourites first, then the newest. Each row has its id, title, unread count, whether a message mentions you, and the last line. Pass unread_only to list only the chats with something new. Read a people chat or group with `messenger_open`; an assistant thread is read in the chat with that assistant, not here.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "unread_only": {
+     "type": "boolean",
+     "description": "Only the chats with unread messages."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "messenger_open",
+  "description": "Messages of one chat, oldest first, with who is in it. With no cursor: the last messages. before_seq: the ones below it (older). after_seq: everything after it (what is new since you last looked). Each message has its seq; pass the highest one to `messenger_wait` or `messenger_mark_read`. To find a chat use `messenger_list`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "conversation": {
+     "type": "string",
+     "description": "The conversation id (from messenger_list or messenger_create)."
+    },
+    "before_seq": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "Older than this seq."
+    },
+    "after_seq": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "Newer than this seq."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 100,
+     "description": "How many messages."
+    }
+   },
+   "required": [
+    "conversation"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "messenger_send",
+  "description": "Send a message as yourself in a chat you are in. It is marked with how you are connected. Give client_msg_id (any unique text) to make a retry safe: the same id twice sends once. Answers the stored message with its seq. Visible at once to everyone in the chat; to wait for an answer use `messenger_wait`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "conversation": {
+     "type": "string",
+     "description": "The conversation id (from messenger_list or messenger_create)."
+    },
+    "text": {
+     "type": "string",
+     "maxLength": 8000,
+     "description": "The message, in markdown, e.g. \"The report is done.\""
+    },
+    "reply_to_seq": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740991,
+     "description": "The seq of the message this answers."
+    },
+    "client_msg_id": {
+     "type": "string",
+     "maxLength": 100,
+     "description": "A unique id for safe retries."
+    }
+   },
+   "required": [
+    "conversation",
+    "text"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "messenger_create",
+  "description": "Start a direct chat (kind \"direct\", exactly one other person: an existing chat with them is answered instead) or a group (kind \"group\", any number of people, none for a chat with yourself, with an optional title). Only people `messenger_directory` lists. Answers the conversation id for `messenger_send`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "kind": {
+     "type": "string",
+     "enum": [
+      "direct",
+      "group"
+     ],
+     "description": "A direct chat with one person, or a group."
+    },
+    "participants": {
+     "maxItems": 200,
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Login ids from messenger_directory, besides you."
+    },
+    "title": {
+     "type": "string",
+     "maxLength": 200,
+     "description": "A group's title."
+    }
+   },
+   "required": [
+    "kind",
+    "participants"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "messenger_wait",
+  "description": "Wait for new messages in a chat after after_seq, instead of polling. Answers at once if there are some, else the moment one lands, else empty at the timeout. Messages you sent through this same connection are left out, so two clients on one login wait for each other. Pass the answer's lastSeq as the next after_seq; to read older messages use `messenger_open`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "conversation": {
+     "type": "string",
+     "description": "The conversation id (from messenger_list or messenger_create)."
+    },
+    "after_seq": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "Wait for messages after this seq."
+    },
+    "timeout_s": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 60,
+     "description": "Seconds to wait."
+    }
+   },
+   "required": [
+    "conversation",
+    "after_seq"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "messenger_mark_read",
+  "description": "Mark a chat read up to a seq; your cursor only moves forward, and nobody else is affected. Answers your cursor. To see what is unread use `messenger_list`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "conversation": {
+     "type": "string",
+     "description": "The conversation id (from messenger_list or messenger_create)."
+    },
+    "seq": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "Read up to here."
+    }
+   },
+   "required": [
+    "conversation",
+    "seq"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "messenger_directory",
+  "description": "The people you may start a chat with (those who share a workspace with you; an Admin user: everyone), each with \"online\", and the assistants you may chat with. Start a chat with one through `messenger_create`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "q": {
+     "type": "string",
+     "maxLength": 100,
+     "description": "Part of a name, e.g. \"chris\"."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
   "name": "file_create",
   "description": "Create or overwrite a **named text file** in a specific folder (e.g. `notes.md`, `config.json`, `recipe.txt`). Use when the user asks for a file with a particular name/extension in a particular place. Filename is lowercased and sanitised automatically. For a plain note that goes into /notes (no filename/folder needed, auto-indexed) use `note_create`. For credentials/passwords use `secret_create`. For a rich-text doc (TipTap) use `page_create`.",
   "inputSchema": {

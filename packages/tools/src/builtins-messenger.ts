@@ -223,7 +223,11 @@ export const messenger_create: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      kind: { type: 'string', enum: ['direct', 'group'] },
+      kind: {
+        type: 'string',
+        enum: ['direct', 'group'],
+        description: 'A direct chat with one person, or a group.',
+      },
       participants: {
         type: 'array',
         items: { type: 'string' },
