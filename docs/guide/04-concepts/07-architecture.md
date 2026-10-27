@@ -26,9 +26,10 @@ MantleOS app (web, Desktop)    Claude and other MCP clients
 | **Workers** | One per job, for example email sync, Telegram, files, calendars and event reminders |
 | **Postgres** | Every item, search index, meaning vector, fact and job queue |
 | **Object store** | The bytes of files and attachments (RustFS, or any S3) |
-| **Helpers** | Document parsing and a headless browser for rendering |
+| **Parser** | Reads every uploaded file (documents, drawings, images, the sound of a video) in its own container, with a memory limit and no internet access |
+| **Helpers** | A headless browser for PDF export |
 
-Optional services add media conversion, a local embedder and code sandboxes ([Optional services](../05-admin/04-services.md)).
+Optional services add a local embedder and code sandboxes ([Optional services](../05-admin/04-services.md)).
 
 ## Everything is a node
 

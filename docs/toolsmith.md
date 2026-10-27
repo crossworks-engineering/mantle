@@ -23,7 +23,7 @@ private/internal/metadata addresses.
 ```
 user prompt ("read <docs url>, build me routing tools")
    └─→ Toolsmith
-         ├─ web_fetch        — read the API docs (Tika HTML→text, paged)
+         ├─ web_fetch        — read the API docs (parser HTML→text, paged)
          ├─ api_key_refs     — find the {{secret:service/label}} vault ref
          ├─ tool_group_ensure        — the INTEGRATION: service + base URL +
          │                            vault ref + where the credential goes
@@ -160,8 +160,8 @@ client browse and test the registry.
 ## 2. The tool set (packages/tools/src/builtins-toolsmith.ts)
 
 - `web_fetch(url, offset?, max_chars?)`, fetch a docs page; HTML goes
-  through the Tika container (crude tag-strip fallback), long pages are
-  read in slices via `offset`.
+  through the parser service's markup reader ([parser.md](parser.md)),
+  long pages are read in slices via `offset`.
 - `api_tool_list / api_tool_get`, browse the registry.
 - `api_tool_create / api_tool_update`, author **http tools only**
   (shell tools stay human-authored; agents can never mint arbitrary

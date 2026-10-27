@@ -220,8 +220,9 @@ types, so its `true`/`false` infer as text, retype in the UI; xlsx booleans
 infer as checkbox.)
 
 Ingest paths call **`parseSpreadsheetToGrid(buf, ext)`** instead — same thing,
-but it converts a legacy `.xls` / `.xlsb` to `.xlsx` first (via Tika, see
-`@mantle/files/legacy-sheet`) so every import path produces identical grids.
+and it runs in the parser service: a legacy `.xls` / `.xlsb` is converted
+to `.xlsx` first (via anydoc, `packages/files/src/legacy-sheet.ts`) so every
+import path produces identical grids ([parser.md](parser.md)).
 
 `parseTextToGrid(text)` is the same path for **pasted tabular text** (markdown
 pipe table, TSV, or quote-aware CSV, parsed with `fast-csv`) → the

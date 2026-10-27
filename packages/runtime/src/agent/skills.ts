@@ -278,7 +278,7 @@ const MAX_EFFECTIVE_TOOL_SLUGS = 512;
  * pure teaching (P4). Deduped + capped.
  *
  * Tools whose optional service is switched off on this box (the sandbox verbs
- * without the `sandboxes` profile, video_ingest without `media`) are left
+ * without the `sandboxes` profile) are left
  * out: the grant stays, the tool comes back the moment the service is on, and
  * meanwhile the model is never offered a tool that can only refuse.
  */
