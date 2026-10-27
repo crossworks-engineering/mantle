@@ -286,8 +286,11 @@ export async function getPresentFrame(
 /** A canvas's Tailwind utilities: the caller compiles (the compiler is a
  *  build-tier package), from the source as the save stores it. A function
  *  is called with that source once the save's checks and the caller's
- *  right have passed, so a compile never runs for a source no one may
- *  store and never reads one the save rewrites. */
+ *  right have passed (savePresentSource: after assertItemRight;
+ *  createPresent: in its transaction, after the node's insert, the
+ *  database's check of the right to create there), so a compile never
+ *  runs for a source no one may store and never reads one the save
+ *  rewrites. */
 export type CanvasCss = string | ((stored: string) => Promise<string>);
 const cssFor = (css: CanvasCss | undefined, stored: string): Promise<string> =>
   typeof css === 'function' ? css(stored) : Promise.resolve(css ?? '');
@@ -329,7 +332,6 @@ export async function createPresent(
   // whoever wrote the source, by whichever path.
   const source = storedCanvasSource(input.source ?? EMPTY_CANVAS);
   const read = readCanvas(source);
-  const css = await cssFor(input.css, source);
   await ensureRoot(ownerId);
   const title = (input.title ?? '').trim().slice(0, 200) || read.title || 'Untitled canvas';
 
@@ -354,6 +356,11 @@ export async function createPresent(
         })
         .returning();
       if (!node) throw new Error('createPresent: insert returned no row');
+      // The CSS once the node is in: its insert is the caller's right to
+      // create here (the database's row check), so a compile never runs
+      // for a canvas no one may store (as savePresentSource compiles after
+      // assertItemRight).
+      const css = await cssFor(input.css, source);
       await tx.insert(presents).values({
         nodeId: node.id,
         source,

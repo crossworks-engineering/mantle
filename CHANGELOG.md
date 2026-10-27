@@ -29,31 +29,57 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
     one whose content does not read as a JSON object.
     The `pid` template's check also refuses a `circuits[].colour` or a
     `profile.serviceColours` entry that names one of the image check's
-    colours (GUESS, CHECKED BY IMAGE, IMAGE: NO, FROM IMAGE), so no line
-    wears a check no image gave it: `present_create`, `present_update` and
-    `diagram_render` with such data save nothing and say which, and a stored
-    canvas holding one shows the template's error in place of the drawing.
+    colours (GUESS, CHECKED BY IMAGE, IMAGE: NO, FROM IMAGE) or one within
+    24 per channel of it, so no line wears a check no image gave it, and
+    data past a size the template holds a drawing to (the save's own
+    bounds, now the template's first check: a meaning of over 2000
+    characters, an object of over 4000 entries, and the like):
+    `present_create`, `present_update`, `present_export` and
+    `diagram_render` with such data save and draw nothing and say which,
+    and a stored canvas holding it shows the template's error in place of
+    the drawing. The template's errors repeat an author's text at most 40
+    characters long, quoted.
     A save also rewrites what it keeps: typed trust words leave every label,
     a mark whose seal does not hold where it sits becomes unchecked with its
     evidence gone, the counts are recounted, and a crop is kept only while
     its seal binds the bytes its sealed mark records.
 - **Every picture the server draws of a canvas** (a save's look and
   poster, `present_render`, `present_export`, `diagram_render`'s preview)
-  is drawn from the source as a save stores it, so a forged mark in an
-  agent's data never previews as checked.
+  is drawn from the source as a save stores it, through the one gateway
+  the save uses, so a forged mark in an agent's data never previews as
+  checked; a canvas a save refuses is drawn as a build with nothing
+  vouched for, or a page that says why, never from its own source.
 - **Crops are bound to their bytes:** the Checks row records each crop's
   sha256 (sealed with the row), the mark carries it (sealed with the
   mark), and a crop file replaced since the check is never embedded as its
   evidence. A picture is checked against the size its own header declares
-  before anything is decoded.
-- **Operator step, once per box after the roll:** `pnpm maintain
-pid-canvas-resave` (dry run), then with `--apply`: each `pid` canvas is
-  written again through the save's checks as a new revision, and every
-  `pid` canvas's poster is cleared (a Page embed shows no snapshot until
-  the canvas's next look). Marks sealed before this release (seal body
-  `pid-check v5` now) show unchecked until the drawing is traced again;
-  crops filed before the hashes are embedded again only after
-  `circuit_verify` runs again. No model, no re-index, counts only.
+  before anything is decoded. A crop file is never replaced (by anyone:
+  409), and only the owner or an Admin deletes one (403), so the file a
+  Checks row links to is the one the image check saw.
+- **Operator steps, per box, in this order:**
+  1. Roll the media sidecar image with the release: `dwg_crop.py` changed
+     (the crop overlay), and `circuit_verify` asks it for every crop.
+  2. Check that `MANTLE_MASTER_KEY` is set: the drawing check seal is
+     derived from it; without it nothing is sealed and no mark holds.
+  3. `pnpm maintain pid-canvas-resave` (`pid:resave`; a dry run: counts
+     only), then the same with `--apply`; on a client box through
+     `scripts/box-maintain.sh <box> pid-canvas-resave` in its own
+     container, one maintenance run per box at a time. Each
+     `pid` canvas is written again through the save's checks as a new
+     revision, and every `pid` canvas's poster is cleared. No model, no
+     re-index.
+  4. Look into any non-zero `refused`: such a canvas keeps its old source
+     (the save would refuse it: its shape is not the template's own, or its
+     data is past a size the template draws), and it draws only the
+     template's error or every mark unchecked until it is fixed or saved
+     again from its data.
+  5. Expect Page embeds of a `pid` canvas to show no snapshot until the
+     canvas is next looked at (its poster was cleared).
+  6. Existing Checks rows have no crop hashes, so their crops are not
+     embedded until `circuit_verify` runs again on that circuit. That
+     spends vision model calls: rerun it only where the evidence is
+     wanted. Marks sealed before this release (seal body `pid-check v5`
+     now) show unchecked until the drawing is traced again.
 
 ## Unreleased: workspace delegation
 
