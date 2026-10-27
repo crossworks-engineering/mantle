@@ -29,8 +29,6 @@ vi.mock('./updates', () => ({
 }));
 const probes = vi.hoisted(() => ({
   sandboxes: null as boolean | null,
-  media: null as boolean | null,
-  tika: null as string | null,
   browser: null as boolean | null,
   embedding: { provider: 'openrouter', baseUrl: null as string | null },
 }));
@@ -39,10 +37,6 @@ vi.mock('./sandboxd', () => ({
 }));
 vi.mock('./render-pdf', () => ({
   browserHealth: async () => ({ up: probes.browser, version: null }),
-}));
-vi.mock('@mantle/files', () => ({
-  mediaSidecarHealth: async () => ({ up: probes.media }),
-  tikaVersion: async () => probes.tika,
 }));
 vi.mock('@mantle/embeddings', () => ({
   resolveEmbeddingConfig: async () => ({ model: 'm', primary: probes.embedding }),
@@ -63,18 +57,15 @@ const KEYS = [
   'MANTLE_COMPOSE_PROFILES',
   'SANDBOXD_URL',
   'SANDBOXD_TOKEN',
-  'MEDIA_SIDECAR_URL',
-  'MEDIA_SIDECAR_TOKEN',
   'MANTLE_COMPOSE_FILE',
   'MANTLE_LOCAL_EMBEDDING_URL',
 ] as const;
 const saved: Record<string, string | undefined> = {};
 let sig: string;
 
-/** What an updater that knows all four services reports. */
+/** What an updater that knows all three services reports. */
 const ALL_SERVICES = {
   sandboxes: { profile: false },
-  media: { profile: false },
   'local-embedder': { profile: false },
   helpers: { profile: false },
 };
@@ -103,14 +94,10 @@ beforeEach(() => {
   process.env.MANTLE_UPDATE_SIGNAL_DIR = sig;
   process.env.SANDBOXD_URL = 'http://sandboxd:8090';
   process.env.SANDBOXD_TOKEN = 'a';
-  process.env.MEDIA_SIDECAR_URL = 'http://media:8095';
-  process.env.MEDIA_SIDECAR_TOKEN = 'b';
   delete process.env.MANTLE_COMPOSE_PROFILES;
   updater.available = true;
   updater.status = null;
   probes.sandboxes = null;
-  probes.media = null;
-  probes.tika = null;
   probes.browser = null;
   probes.embedding = { provider: 'openrouter', baseUrl: null };
   delete process.env.MANTLE_COMPOSE_FILE;
@@ -131,14 +118,14 @@ afterEach(() => {
 
 describe('requestServiceSwitch', () => {
   it('writes only service-request.json, with the name, the switch and a time', async () => {
-    expect(await requestServiceSwitch('media', true)).toEqual({ ok: true });
+    expect(await requestServiceSwitch('sandboxes', true)).toEqual({ ok: true });
     expect(existsSync(join(sig, 'request.json'))).toBe(false);
     const body = JSON.parse(readFileSync(join(sig, 'service-request.json'), 'utf8')) as Record<
       string,
       unknown
     >;
     expect(Object.keys(body).sort()).toEqual(['enable', 'requested_at', 'service']);
-    expect(body).toMatchObject({ service: 'media', enable: true });
+    expect(body).toMatchObject({ service: 'sandboxes', enable: true });
   });
 
   it('a pending request reads as requested at once', async () => {
@@ -172,7 +159,7 @@ describe('requestServiceSwitch', () => {
       () =>
         writeFileSync(
           join(sig, 'service-status.json'),
-          '{"phase":"pulling","service":"media","enable":true}',
+          '{"phase":"pulling","service":"sandboxes","enable":true}',
         ),
       /already being switched/,
     ],
@@ -180,7 +167,7 @@ describe('requestServiceSwitch', () => {
   for (const [label, arrange, why] of refusals) {
     it(`refuses with nothing written: ${label}`, async () => {
       arrange();
-      const r = await requestServiceSwitch('media', true);
+      const r = await requestServiceSwitch('sandboxes', true);
       expect(r.ok).toBe(false);
       expect(r.ok ? '' : r.error).toMatch(why);
       expect(existsSync(join(sig, 'service-request.json'))).toBe(false);
@@ -188,8 +175,8 @@ describe('requestServiceSwitch', () => {
   }
 
   it('a finished run does not block the next', async () => {
-    writeFileSync(join(sig, 'service-status.json'), '{"phase":"error","service":"media"}');
-    expect(await requestServiceSwitch('media', true)).toEqual({ ok: true });
+    writeFileSync(join(sig, 'service-status.json'), '{"phase":"error","service":"sandboxes"}');
+    expect(await requestServiceSwitch('sandboxes', true)).toEqual({ ok: true });
   });
 
   it('refuses the helpers on a full box, where nothing would stop them', async () => {
@@ -200,7 +187,7 @@ describe('requestServiceSwitch', () => {
   });
 
   it('refuses a newer service the box updater does not report yet', async () => {
-    servicesJson({ services: { sandboxes: {}, media: {} } });
+    servicesJson({ services: { sandboxes: {} } });
     expect(await requestServiceSwitch('local-embedder', true)).toMatchObject({
       ok: false,
       error: expect.stringContaining('does not know this service yet'),
@@ -219,25 +206,28 @@ describe('requestServiceSwitch', () => {
 
   it('refuses a name or a switch outside the whitelist', async () => {
     expect(await requestServiceSwitch('postgres' as never, true)).toMatchObject({ ok: false });
-    expect(await requestServiceSwitch('media', 'yes' as never)).toMatchObject({ ok: false });
+    expect(await requestServiceSwitch('sandboxes', 'yes' as never)).toMatchObject({ ok: false });
+    // The removed media sidecar is not a service any more.
+    expect(await requestServiceSwitch('media' as never, true)).toMatchObject({ ok: false });
     expect(existsSync(join(sig, 'service-request.json'))).toBe(false);
   });
 });
 
 describe('getServicesView', () => {
   it('off is off with a token set; on reads the probe', async () => {
+    const off = await getServicesView('owner-1');
+    expect(off.services.find((s) => s.name === 'sandboxes')?.state).toBe('off');
     servicesJson({
-      profiles: 'media',
-      services: { media: { profile: true, container: 'running', health: 'healthy' } },
+      profiles: 'sandboxes',
+      services: { sandboxes: { profile: true, container: 'running', health: 'healthy' } },
     });
-    probes.media = true;
+    probes.sandboxes = true;
     const v = await getServicesView('owner-1');
     const by = Object.fromEntries(v.services.map((s) => [s.name, s]));
-    expect(by.sandboxes?.state).toBe('off');
-    expect(by.media).toMatchObject({ state: 'up', container: 'running', health: 'healthy' });
-    probes.media = false;
+    expect(by.sandboxes).toMatchObject({ state: 'up', container: 'running', health: 'healthy' });
+    probes.sandboxes = false;
     const down = await getServicesView('owner-1');
-    expect(down.services.find((s) => s.name === 'media')?.state).toBe('down');
+    expect(down.services.find((s) => s.name === 'sandboxes')?.state).toBe('down');
   });
 
   it('switching is available only with the verb, and says why not', async () => {
@@ -257,33 +247,31 @@ describe('getServicesView', () => {
     expect((await getServicesView('owner-1')).box.smallBox).toBe(true);
   });
 
-  it('an older updater (no newer services reported): only the first two are offered', async () => {
+  it('an older updater (no newer services reported): only the first is offered', async () => {
     servicesJson({ core: true, services: { sandboxes: {}, media: {} } });
     expect((await getServicesView('owner-1')).services.map((s) => s.name)).toEqual([
       'sandboxes',
-      'media',
     ]);
   });
 
   it('lists the helpers only on a core box without the full profile', async () => {
     const names = async () => (await getServicesView('owner-1')).services.map((s) => s.name);
-    expect(await names()).toEqual(['sandboxes', 'media', 'local-embedder']);
+    expect(await names()).toEqual(['sandboxes', 'local-embedder']);
     servicesJson({ core: true });
-    expect(await names()).toEqual(['sandboxes', 'media', 'local-embedder', 'helpers']);
+    expect(await names()).toEqual(['sandboxes', 'local-embedder', 'helpers']);
     servicesJson({ core: true, profiles: 'full' });
     expect(await names()).not.toContain('helpers');
   });
 
-  it('the helpers are off without their profile, up when both answer', async () => {
+  it('the helper is off without its profile, up when the browser answers', async () => {
     servicesJson({ core: true });
     const helpers = async () =>
       (await getServicesView('owner-1')).services.find((s) => s.name === 'helpers');
     expect((await helpers())?.state).toBe('off');
     servicesJson({ core: true, profiles: 'helpers' });
-    probes.tika = '3.3.1';
     probes.browser = true;
     expect((await helpers())?.state).toBe('up');
-    probes.tika = null;
+    probes.browser = false;
     expect((await helpers())?.state).toBe('down');
     expect((await helpers())?.description.offWarning).toMatch(/PDF export stops/);
   });
@@ -334,11 +322,11 @@ describe('parseServiceRun', () => {
   it('reads the updater shape and tolerates junk', () => {
     expect(
       parseServiceRun(
-        '{"phase":"done","service":"media","enable":false,"started_at":"a","finished_at":"b","ok":true,"error":""}',
+        '{"phase":"done","service":"sandboxes","enable":false,"started_at":"a","finished_at":"b","ok":true,"error":""}',
       ),
     ).toEqual({
       phase: 'done',
-      service: 'media',
+      service: 'sandboxes',
       enable: false,
       startedAt: 'a',
       finishedAt: 'b',

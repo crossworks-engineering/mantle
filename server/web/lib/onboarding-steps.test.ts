@@ -1,6 +1,6 @@
 /**
  * The onboarding steps without a database (headless onboarding audit item
- * 10): the stack check's Tika row per deploy shape, and the validation paths
+ * 10): the stack check's document parser row, and the validation paths
  * of the steps both wizards share. Every dependency is stood in; what is
  * asserted is the decision each step makes.
  */
@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES } from '@mantle/client-types/model-choices';
 
 const h = vi.hoisted(() => ({
-  tika: null as string | null,
+  parserUp: false,
   prefs: [] as Record<string, unknown>[],
   keys: [] as { id: string; service: string }[],
   probeDim: 768 as number | Error,
@@ -26,7 +26,14 @@ vi.mock('@mantle/db', () => ({
 vi.mock('@mantle/storage', () => ({
   bucketStatus: async () => ({ reachable: true, exists: true, bucket: 'mantle' }),
 }));
-vi.mock('@mantle/files', () => ({ tikaVersion: async () => h.tika }));
+vi.mock('@mantle/files', () => ({
+  parserHealth: async () => ({
+    up: h.parserUp,
+    versions: h.parserUp ? { anydoc: '0.2.4', ezdxf: '1.4.5' } : {},
+    running: 0,
+    queued: 0,
+  }),
+}));
 vi.mock('@mantle/content', () => ({
   loadPreferencesFor: async () => ({}),
   savePreferencesFor: async (_u: string, p: Record<string, unknown>) => {
@@ -91,12 +98,11 @@ import {
   savePersona,
   saveProfile,
 } from './onboarding-steps';
-import { composeShapeFrom, tikaIsOptional } from './compose-shape';
 
 const U = 'owner-1';
 
 beforeEach(() => {
-  h.tika = null;
+  h.parserUp = false;
   h.prefs = [];
   h.keys = [];
   h.probeDim = 768;
@@ -109,55 +115,23 @@ beforeEach(() => {
   delete process.env.MANTLE_COMPOSE_PROFILES;
 });
 
-describe('compose shape (derived from COMPOSE_FILE / COMPOSE_PROFILES)', () => {
-  const CORE = '/srv/b/docker-compose.yml:/srv/b/docker-compose.core.yml';
-  it('core without helpers: Tika optional', () => {
-    expect(tikaIsOptional(composeShapeFrom(CORE, 'sandboxes'))).toBe(true);
-    expect(tikaIsOptional(composeShapeFrom(CORE, ''))).toBe(true);
-  });
-  it('core WITH helpers: Tika required (a crashed Tika must not pass)', () => {
-    expect(tikaIsOptional(composeShapeFrom(CORE, 'sandboxes, helpers'))).toBe(false);
-  });
-  it('full shape, or nothing set: Tika required', () => {
-    expect(tikaIsOptional(composeShapeFrom('/srv/b/docker-compose.yml', 'helpers'))).toBe(false);
-    expect(tikaIsOptional(composeShapeFrom(undefined, undefined))).toBe(false);
-  });
-});
-
-describe('runInfraChecks: the Tika row', () => {
-  const tikaRow = async () =>
-    (await runInfraChecks(null)).find((c) => c.label === 'Document parser (Tika)')!;
+describe('runInfraChecks: the document parser row', () => {
+  const parserRow = async () =>
+    (await runInfraChecks(null)).find((c) => c.label === 'Document parser')!;
   const CORE = '/srv/b/docker-compose.yml:/srv/b/docker-compose.core.yml';
 
-  it('core + no helpers, Tika down: optional, passes, says how to add it', async () => {
+  it('the parser down fails on every shape: it is core', async () => {
+    expect((await parserRow()).ok).toBe(false);
     process.env.MANTLE_COMPOSE_FILE = CORE;
-    process.env.MANTLE_COMPOSE_PROFILES = 'sandboxes';
-    const row = await tikaRow();
-    expect(row.ok).toBe(true);
-    expect(row.detail).toMatch(/optional on a brain-core box/);
-    expect(row.detail).toMatch(/\.xls/);
+    process.env.MANTLE_COMPOSE_PROFILES = '';
+    const row = await parserRow();
+    expect(row.ok).toBe(false);
+    expect(row.detail).toMatch(/mantle_parser/);
   });
 
-  it('core + helpers, Tika down: fails', async () => {
-    process.env.MANTLE_COMPOSE_FILE = CORE;
-    process.env.MANTLE_COMPOSE_PROFILES = 'helpers';
-    expect((await tikaRow()).ok).toBe(false);
-  });
-
-  it('full shape, Tika down: fails', async () => {
-    process.env.MANTLE_COMPOSE_FILE = '/srv/b/docker-compose.yml';
-    expect((await tikaRow()).ok).toBe(false);
-  });
-
-  it('unset (dev, an older compose), Tika down: fails', async () => {
-    expect((await tikaRow()).ok).toBe(false);
-  });
-
-  it('Tika answering passes on every shape', async () => {
-    h.tika = 'Apache Tika 3.3.1';
-    expect(await tikaRow()).toMatchObject({ ok: true, detail: 'Apache Tika 3.3.1' });
-    process.env.MANTLE_COMPOSE_FILE = CORE;
-    expect((await tikaRow()).ok).toBe(true);
+  it('the parser answering passes and names its readers', async () => {
+    h.parserUp = true;
+    expect(await parserRow()).toMatchObject({ ok: true, detail: expect.stringMatching(/anydoc 0\.2\.4/) });
   });
 });
 

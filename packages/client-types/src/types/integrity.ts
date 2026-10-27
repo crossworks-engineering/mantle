@@ -57,6 +57,11 @@ export type Capability = { available: boolean; detail: string };
 
 /** Brain-readiness snapshot. */
 export type Capabilities = {
+  /** The parser service: reads every untrusted file the brain receives
+   *  (documents, CAD, images, audio). Core: always expected up. */
+  parser: Capability;
+  /** @deprecated The parser replaced Apache Tika (2026-10); mirrors
+   *  `parser` for a client older than it. */
   tika: Capability;
   vision: Capability;
   extractor: Capability;
@@ -64,8 +69,8 @@ export type Capabilities = {
   summarizer: Capability;
   reflector: Capability;
   stt: Capability;
-  /** The media sidecar (yt-dlp + ffmpeg) behind video_ingest — profile-gated,
-   *  so "unavailable" is the normal resting state on a box without it. */
+  /** @deprecated The media sidecar was removed with the parser service
+   *  (2026-10); always unavailable, for a client older than it. */
   media: Capability;
 };
 

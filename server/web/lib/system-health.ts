@@ -2,7 +2,7 @@ import os from 'node:os';
 import { statfs } from 'node:fs/promises';
 import si from 'systeminformation';
 import { db, dbRoleMode, sql, systemPoolRole } from '@mantle/db';
-import { filesRoot, mediaSidecarHealth, tikaVersion } from '@mantle/files';
+import { filesRoot, parserHealth } from '@mantle/files';
 import { sandboxdHealth } from './sandboxd';
 import { bucketReachable } from '@mantle/storage';
 import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
@@ -210,7 +210,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, storeUp, tikaVer, browserH, emb, net, sbx, media] =
+  const [load, mem, disk, pg, attBytes, storeUp, parserH, browserH, emb, net, sbx] =
     await Promise.all([
       probe('host.cpu', () => si.currentLoad()),
       probe('host.mem', () => si.mem()),
@@ -218,10 +218,8 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       probe('postgres', () => pgHealth()),
       probe('storage.attachments', () => attachmentBytes(userId)),
       probe('storage.objectstore', () => bucketReachable()),
-      // tikaVersion is itself never-throws (returns null on any failure),
-      // so the probe wrapper is mostly belt-and-braces here — the timeout
-      // still applies if the wrapper hangs longer than expected.
-      probe('tika', () => tikaVersion(1_500)),
+      // parserHealth is never-throws (down ⇒ up:false); the wrapper bounds it.
+      probe('parser', () => parserHealth(1_500)),
       // browserHealth (PDF sidecar) is likewise never-throws; wrapper bounds it.
       probe('browser', () => browserHealth(1_500)),
       // embedderHealth is likewise never-throws; the wrapper just bounds it. A
@@ -233,10 +231,8 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       // sandboxdHealth never-throws (profile off ⇒ up:null; unreachable ⇒
       // up:false); the wrapper bounds a hung listing.
       probe('sandboxes', () => sandboxdHealth()),
-      // mediaSidecarHealth never-throws (profile off ⇒ up:null; unreachable ⇒
-      // up:false); its versions expose a stale/failed yt-dlp self-update.
-      probe('media', () => mediaSidecarHealth(1_500)),
     ]);
+  const parser = parserH ?? { up: false, versions: {}, running: null, queued: null };
 
   const memInfo = mem
     ? {
@@ -273,19 +269,16 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       attachmentBytes: attBytes,
       filesDisk: disk,
     },
-    tika: {
-      // tikaVersion returns null on down/timeout/non-2xx/empty; the probe
-      // wrapper also returns null on its own timeout. Either way, no version
-      // string ⇒ Tika is unreachable from the web process's point of view.
-      up: typeof tikaVer === 'string' && tikaVer.length > 0,
-      version: typeof tikaVer === 'string' ? tikaVer : null,
-    },
+    parser,
+    // Deprecated mirrors for a client older than the parser service (the
+    // DTO says when they go).
+    tika: { up: parser.up, version: null },
     // probe() returns null on its own timeout — treat that as sidecar-down
     // (BROWSER_WS_ENDPOINT unset is reported by browserHealth itself as up:null).
     browser: browserH ?? { up: false, version: null },
     embedder: emb ?? { up: null, provider: null, model: null, detail: null, scope: null },
     sandboxes: sbx ?? { up: null, total: null, running: null, disk: null },
-    media: media ?? {
+    media: {
       up: null,
       ytDlpVersion: null,
       ffmpegVersion: null,

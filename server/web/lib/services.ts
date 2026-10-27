@@ -1,7 +1,8 @@
 /**
- * Optional services (sandboxes, media, the local embedder and, on a core box,
- * the doc helpers) for the dashboard switches: what each one is, whether it
- * is on, and asking the updater sidecar to switch one.
+ * Optional services (sandboxes, the local embedder and, on a core box, the
+ * PDF-export helper) for the dashboard switches: what each one is, whether it
+ * is on, and asking the updater sidecar to switch one. The parser service is
+ * not here: it is core, always on (its health is on the dashboard vitals).
  *
  * "On" is @mantle/config `serviceEnabled` (the profile, live from the
  * updater's services.json). Switching writes /signal/service-request.json,
@@ -22,7 +23,6 @@ import {
   type OptionalService,
 } from '@mantle/config';
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
-import { mediaSidecarHealth, tikaVersion } from '@mantle/files';
 import type {
   ServiceDescription,
   ServiceInfo,
@@ -42,8 +42,8 @@ export function isOptionalService(v: unknown): v is OptionalService {
 }
 
 /** What the UI says about each service. Sizes: the compressed images on the
- *  registry (mantle-media, mantle-sandbox base, ollama plus its model, tika
- *  plus browserless); memory: the compose caps. */
+ *  registry (mantle-sandbox base, ollama plus its model, browserless);
+ *  memory: the compose caps. */
 export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> = {
   sandboxes: {
     title: 'Sandboxes',
@@ -58,18 +58,6 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
     memory: '512 MB, plus up to 1 GB for each running sandbox (3 at a time)',
     memoryMaxMb: 3584,
     note: null,
-  },
-  media: {
-    title: 'Media',
-    what: 'Makes transcripts from video and audio, from a web link or an uploaded file, and reads and draws CAD drawings (DWF, DWG and DXF).',
-    usedBy: 'The video_ingest tool, and file ingest for CAD drawings.',
-    whenOff:
-      'Video and audio get no transcript. DWG files are not read, and DWF files show only their small preview pictures.',
-    keeps: 'Everything already ingested. Nothing is stored in this service.',
-    downloadMb: 300,
-    memory: 'up to 1 GB (3 GB is advised for large DWF drawing sets)',
-    memoryMaxMb: 3072,
-    note: 'It runs a downloader (yt-dlp) that updates itself every day and fetches pages from the open web. It holds no keys and cannot reach your data.',
   },
   'local-embedder': {
     title: 'Local embedder',
@@ -87,18 +75,15 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
   },
   helpers: {
     title: 'Helpers',
-    what: 'Two small helpers for a core box: Tika reads rare file types, and a headless browser makes PDF exports.',
-    usedBy:
-      'File ingest for formats the brain cannot read itself (ODT, PPTX, DOC, RTF and others), PDF export, and drawing pictures in exports.',
-    whenOff:
-      'PDF, Word, text and Markdown files are still read, and everything else keeps working.',
-    keeps: 'Everything already ingested. The helpers store nothing.',
-    downloadMb: 1200,
-    memory: 'up to 3.5 GB (Tika 2 GB, the browser 1.5 GB)',
-    memoryMaxMb: 3072,
+    what: 'A headless browser for a core box: it makes PDF exports of pages and draws pictures in exports.',
+    usedBy: 'PDF export, and drawing pictures in exports.',
+    whenOff: 'Every file is still read, and everything else keeps working.',
+    keeps: 'Everything already exported. The helper stores nothing.',
+    downloadMb: 900,
+    memory: 'up to 1.5 GB',
+    memoryMaxMb: 1536,
     note: null,
-    offWarning:
-      'Rare file types (ODT, PPTX, DOC, RTF) are not read and PDF export stops until you switch it on again.',
+    offWarning: 'PDF export stops until you switch it on again.',
   },
 };
 
@@ -220,11 +205,11 @@ export async function serviceRunBusy(): Promise<boolean> {
   return run !== null && BUSY.includes(run.phase);
 }
 
-/** The two services every updater with the `service` verb knows. The newer
- *  two need an updater that knows them too; it reports them in
- *  services.json, so until a roll brings that updater the row is not
- *  offered (an older updater would refuse it as an unknown service). */
-const FIRST_SERVICES: readonly OptionalService[] = ['sandboxes', 'media'];
+/** The service every updater with the `service` verb knows. The newer two
+ *  need an updater that knows them too; it reports them in services.json,
+ *  so until a roll brings that updater the row is not offered (an older
+ *  updater would refuse it as an unknown service). */
+const FIRST_SERVICES: readonly OptionalService[] = ['sandboxes'];
 
 /** Is this service offered on this box? Switchable here (the helpers only
  *  on a core box), and known to the box's updater when there is one. */
@@ -252,21 +237,18 @@ export async function getServicesView(ownerId: string): Promise<ServicesView> {
   const f = readServicesFile();
   const names = OPTIONAL_SERVICES.filter(serviceOffered);
   const helpers = names.includes('helpers');
-  const [blocker, run, sbx, media, embedUp, tika, browser, embedCfg] = await Promise.all([
+  const [blocker, run, sbx, embedUp, browser, embedCfg] = await Promise.all([
     switchBlocker(),
     readServiceRun(),
     sandboxdHealth().catch(() => null),
-    mediaSidecarHealth(1_500).catch(() => null),
     serviceEnabled('local-embedder') ? bundledEmbedderUp() : Promise.resolve(false),
-    helpers ? tikaVersion(1_500).catch(() => null) : Promise.resolve(null),
     helpers ? browserHealth(1_500).catch(() => null) : Promise.resolve(null),
     resolveEmbeddingConfig(ownerId).catch(() => null),
   ]);
   const probe: Record<OptionalService, boolean | null | undefined> = {
     sandboxes: sbx?.up,
-    media: media?.up,
     'local-embedder': embedUp,
-    helpers: Boolean(tika) && browser?.up !== false,
+    helpers: browser?.up === true,
   };
   const embedderInUse = embedCfg !== null && usesBundledEmbedder(embedCfg.primary);
   const services: ServiceInfo[] = names.map((name) => {
