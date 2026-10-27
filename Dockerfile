@@ -34,14 +34,24 @@
 # npm directly.
 FROM node:26-slim AS modules
 WORKDIR /app
+# pnpm 11 checks the installed dependencies before `pnpm run` and `pnpm
+# exec` (the CMDs below and every compose service start that way), and by
+# default INSTALLS when it finds them out of date: on a box, at container
+# start, with lifecycle scripts, from the network (or, in the parser, with
+# none). An image's dependencies are the frozen install below and nothing
+# else, so a mismatch is an image bug: `error` refuses to start with the
+# reason instead. Set as an env var (pnpm reads `pnpm_config_*`, not
+# `npm_config_*`), so the images only: a developer's `pnpm dev` keeps
+# pnpm's install-before-run.
+ENV pnpm_config_verify_deps_before_run=error
 
 # Copy manifests first so the install layer is cached when only source changes.
 # This list MUST contain every workspace package.json (server/* + packages/*) or
 # `pnpm install --frozen-lockfile` below fails ("missing"/"lockfile mismatch")
-# because the workspace it sees doesn't match the lockfile. Keep it in sync when
-# adding a package — verify with:
-#   diff <(grep -oE '(server|packages)/[a-z-]+/package.json' Dockerfile | sort -u) \
-#        <(find server packages -maxdepth 2 -name package.json -not -path '*/node_modules/*' | sort -u)
+# because the workspace it sees doesn't match the lockfile. `pnpm arch:check`
+# fails when it differs from the workspace (scripts/arch-scoreboard.ts,
+# dockerfileManifestProblems), so a new package is added here in the same
+# change.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 # pnpm-workspace.yaml's `patchedDependencies` are resolved DURING install, so
 # every patch file must already be in the context. A missing one is a hard
@@ -173,9 +183,10 @@ RUN python3 -m venv /opt/cad \
        /tmp/ezdwg-wheels/ezdwg-*.whl "matplotlib==3.11.2" "ezdxf==1.4.5" \
     && rm -rf /tmp/ezdwg-wheels /root/.cache
 COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
+# No MPLCONFIGDIR here: each job gets its own, inside the job's directory
+# (server/parser/src/proc.ts jobEnv), so no job reads a cache another left.
 ENV PARSER_PYTHON=/opt/cad/bin/python \
-    MPLBACKEND=Agg \
-    MPLCONFIGDIR=/tmp/mpl
+    MPLBACKEND=Agg
 
 # ── 1c. parser: the parser service (server/parser) ─────────────────────────
 # The readers are the workspace's own modules (@mantle/files/readers/*) and
