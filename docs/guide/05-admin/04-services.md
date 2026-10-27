@@ -2,12 +2,13 @@
 
 Switch the optional parts of a box on and off in **Settings > Services**. Switching off stops the service and keeps all its data.
 
+Reading uploaded files (documents, CAD drawings, the sound of a video) is not optional: the parser service does it on every box, with its own memory limit and no internet access.
+
 | Service | What it gives you | Download | Memory |
 |---|---|---|---|
 | **Sandboxes** | Isolated workspaces where agents run code, build apps and test packages. | about 430 MB | 512 MB, plus up to 1 GB per running sandbox |
-| **Media** | Transcripts from video and audio, and reading CAD drawings (DWF, DWG, DXF). | about 300 MB | up to 1 GB |
 | **Local embedder** | Search vectors made on the box, so indexed text never leaves it. | about 3.9 GB | up to 2 GB |
-| **Helpers** | Rare file types and PDF export. Shown only on a small core box; a full box always runs them. | about 1.2 GB | up to 3.5 GB |
+| **Helpers** | PDF export. Shown only on a small core box; a full box always runs it. | about 1 GB | up to 1.5 GB |
 
 ## Before you start
 
@@ -31,9 +32,8 @@ The service shows as on in **Settings > Services**. Its pill on the dashboard sh
 ## What switching off does
 
 - **Sandboxes**: running sandboxes stop. Every sandbox, its files and its apps stay. Agents lose the sandbox tools until you switch it back on. Mini apps keep running.
-- **Media**: new video, audio and DWG files get no transcript or text. Everything already ingested stays.
 - **Local embedder**: if **Settings > Embedding** uses it, new content is not searchable until you switch it back on. The confirm dialog warns you. The downloaded model stays.
-- **Helpers**: rare file types (ODT, PPTX, DOC, RTF) are not read and PDF export stops. PDF, Word, text and Markdown files are still read.
+- **Helpers**: PDF export stops. Every file type is still read: reading files is the parser's job, and the parser is always on.
 
 ## If it fails
 

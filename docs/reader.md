@@ -55,9 +55,12 @@ How it reads and extracts a page, end to end:
    link-local / cloud-metadata targets, so a malicious page can't turn
    `web_fetch` into a probe of internal services.
 2. **Content-type routing:**
-   - **HTML** → [Apache Tika](../packages/files/src/tika.ts) (`PUT /tika`,
-     `Accept: text/plain`) strips markup to readable plain text; if Tika is down
-     or returns empty, a crude regex fallback drops `<script>`/`<style>`/tags.
+   - **HTML** → the parser service ([parser.md](parser.md), `POST /text`)
+     turns the page into readable plain text with the markup reader
+     ([`markup.ts`](../packages/files/src/markup.ts): one linear pass, scripts
+     and styles dropped, blocks kept apart). A page from the open web is
+     untrusted markup, so it is read there, never in the brain. If the parser
+     cannot be reached the call fails with its typed error.
    - **JSON / markdown / plain text** → returned as-is (no parsing).
 3. **Slice + page**: returns `{ url, status, contentType, text, totalChars,
    offset, truncated }`. Long pages are read by calling again with a higher
@@ -102,14 +105,14 @@ indexed into the brain. Throwaway lookups don't clutter the graph.
 
 ## 5. How it compares to other web readers
 
-`web_fetch` is architecturally closest to **`curl` + Tika text extraction**, and
+`web_fetch` is architecturally closest to **`curl` + a text extractor**, and
 it makes two deliberate trade-offs worth knowing:
 
 - **No JavaScript execution.** It reads the HTML the server sends, no headless
   browser. Static / SSR pages, docs, articles, JSON/RSS, and OpenAPI specs read
   well; a client-rendered SPA that ships an empty shell + JS comes back nearly
   empty. (Unlike Jina Reader / Firecrawl, which render the page first.)
-- **Full-text extraction, not "reader mode."** Tika returns *all* the page's
+- **Full-text extraction, not "reader mode."** The markup reader returns _all_ the page's
   text, including nav/footer chrome; it doesn't isolate the article body the way
   Jina / Firecrawl / Mozilla Readability do. That's why the Reader's prompt leans
   on the model to summarise/excerpt rather than dump raw text.
@@ -126,8 +129,8 @@ Toolsmith would inherit too, not a Reader-only fork.
 
 1. An `openrouter` API key at `/settings/keys` (the Reader's model routes
    through it; `web_fetch` itself needs no key).
-2. A reachable **Tika** sidecar (`TIKA_URL`, default `http://127.0.0.1:9998`)
-   for clean HTML→text, the crude regex fallback covers it being down.
+2. A reachable **parser service** (`PARSER_URL`; every box runs it, `pnpm dev`
+   starts it in development) for HTML→text.
 3. `pnpm -C server/web seed:reader` **and** `pnpm -C server/web seed:tool-groups`
    (the latter syncs the new `web-read` group's membership onto an existing
    brain). Fresh brains and the version-bump boot reconcile pick it up
@@ -144,7 +147,7 @@ Then ask Saskia to read a page and watch `/traces`: her `responder_turn` with an
 | Concern | File |
 |---|---|
 | `web_fetch` primitive | [`packages/tools/src/builtins-toolsmith.ts`](../packages/tools/src/builtins-toolsmith.ts) |
-| HTML→text (Tika) | [`packages/files/src/tika.ts`](../packages/files/src/tika.ts) |
+| HTML→text (the parser's markup reader) | [`packages/files/src/markup.ts`](../packages/files/src/markup.ts) |
 | SSRF guard | [`packages/tools/src/ssrf-guard.ts`](../packages/tools/src/ssrf-guard.ts) |
 | Agent + `web-read` group | [`server/web/lib/system-manifest/manifest.ts`](../server/web/lib/system-manifest/manifest.ts) |
 | Reader prompt | [`server/web/lib/system-manifest/prompts.ts`](../server/web/lib/system-manifest/prompts.ts) |

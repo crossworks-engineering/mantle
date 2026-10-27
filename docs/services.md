@@ -1,20 +1,26 @@
 # Optional services: start and stop from Settings
 
-Four parts of a box are optional, and an admin can switch each one on or off
+Three parts of a box are optional, and an admin can switch each one on or off
 from **Settings > Services** (`/settings/services`, admins only). The System
 vitals pills on the dashboard show each one's state and link there:
 
 | service            | what it does                                                                                                                | download                                                                                        | memory                                                         |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | **Sandboxes**      | Isolated workspaces where the coder and app agents run code, build apps and test packages ([sandboxes.md](sandboxes.md)).   | about 430 MB (the sandbox base image; the supervisor uses the server image the box already has) | 512 MB, plus up to 1 GB for each running sandbox (3 at a time) |
-| **Media**          | Transcripts from video and audio (links or files), and CAD drawings: DWF, DWG and DXF ([video-ingest.md](video-ingest.md)). | about 300 MB                                                                                    | up to 1 GB (3 GB is advised for large DWF sets)                |
 | **Local embedder** | The bundled EmbeddingGemma embedder (ollama), so indexed text never leaves the box ([embeddings.md](embeddings.md)).        | about 3.9 GB (the ollama image plus the model)                                                  | up to 2 GB                                                     |
-| **Helpers**        | Core boxes only: Tika (rare file types) and the headless browser (PDF export, drawing pictures in exports).                 | about 1.2 GB                                                                                    | up to 3.5 GB (Tika 2 GB, the browser 1.5 GB)                   |
+| **Helpers**        | Core boxes only: the headless browser (PDF export, drawing pictures in exports).                                          | about 1 GB                                                                                      | up to 1.5 GB                                                   |
 
-All four are compose **profiles**, and each service name is its profile
-(`sandboxes`, `media`, `local-embedder`, `helpers`). A switch changes the
-box's `.env` and starts or stops that service's containers (one, or two for
-the helpers); the rest of the brain keeps running.
+All three are compose **profiles**, and each service name is its profile
+(`sandboxes`, `local-embedder`, `helpers`). A switch changes the box's `.env`
+and starts or stops that service's container; the rest of the brain keeps
+running.
+
+Not a switch: **the parser service** ([parser.md](parser.md)), which reads
+every uploaded file (documents, CAD drawings, images, the audio of a
+video), is core on every shape. The health screen shows it up or down. The
+media sidecar (a switch here) and Tika (part of Helpers) are gone: their
+work is the parser's. A `media` left in `COMPOSE_PROFILES` names no service and is
+ignored.
 
 - **Local embedder** has no token. "On" is its profile alone. Switching it on
   also runs the `ollama_pull` one-shot and waits up to
@@ -24,23 +30,20 @@ the helpers); the rest of the brain keeps running.
   dialog warns that new content stops being searchable, but only when this
   brain's embedding route is the local provider on the bundled address.
 - **The newer two need the newer updater.** An updater from before them
-  whitelists only sandboxes and media, so the brain offers either row only
-  once the box's updater reports it in `services.json`: one roll after the
-  brain that knows them.
+  whitelists only sandboxes (and the old media sidecar), so the brain offers
+  either row only once the box's updater reports it in `services.json`: one
+  roll after the brain that knows them.
 - **Helpers** have a profile only on the core shape
   (`docker-compose.core.yml`, profiles `["full", "helpers"]`). On the full
   shape they always run, so neither the screen nor the updater offers the
   switch there; nor on a core box with the `full` profile active, which runs
   them whatever their own profile says. This replaces
-  `scripts/install.sh --helpers` for a running box. `lib/compose-shape.ts`
-  reads the live profile from `services.json`, so the Tika onboarding check
-  follows a switch without a web restart.
+  `scripts/install.sh --helpers` for a running box.
 
 **Off never removes anything.** Switching sandboxes off stops the running
 sandbox containers (stop, not remove) and the supervisor. Every sandbox, its
 `/files` directory, its apps and services, the tokens and the images stay. On
-again brings them back. Media stores nothing of its own; everything it
-already ingested stays in the brain.
+again brings them back.
 
 ## Who can switch
 
@@ -54,7 +57,7 @@ audit log with the service, the switch and whether the updater took it.
 ## How it works
 
 ```
-Settings > Services ─POST /api/services/media {enable}─▶ web
+Settings > Services ─POST /api/services/sandboxes {enable}─▶ web
 web ─writes─▶ /signal/service-request.json            (only name + boolean)
 updater sidecar ─reads, whitelists, runs─▶ docker compose on the host
 updater ─writes─▶ /signal/service-status.json, service.log, services.json
@@ -68,11 +71,11 @@ every app container ─reads (mounted read-only)─▶ /signal/services.json
   (what compose gave the container), and only on a dev process outside
   compose from the token alone. A switch does not recreate the app
   containers, so their env would go stale; the live file is what they see
-  change. The dashboard pills, `/api/sandboxes`, the sandbox tools,
-  `video_ingest`, the DWG/DWF path and the agent tool list all read it.
+  change. The dashboard pills, `/api/sandboxes`, the sandbox tools and the
+  agent tool list all read it.
 - **Tools hide when a service is off.** `effectiveToolSlugs`
-  (`packages/runtime/src/agent/skills.ts`) leaves `sandbox_*` and
-  `video_ingest` out of an agent's tools while their service is off. The
+  (`packages/runtime/src/agent/skills.ts`) leaves `sandbox_*` out of an
+  agent's tools while the sandboxes service is off. The
   grant stays, so they come back the moment the service is on. The MCP
   surface keeps listing the sandbox tools on purpose; they answer that the
   service is switched off and that an admin can switch it on.
@@ -99,7 +102,7 @@ every app container ─reads (mounted read-only)─▶ /signal/services.json
    image; a failure there is not fatal, the first new sandbox fetches it).
 6. Only that container starts (`up -d --no-deps`). If the token was only
    just written, the app containers are recreated once so they carry it; a
-   normal roll writes both tokens in advance, so this is rare.
+   normal roll writes the token in advance, so this is rare.
 7. The updater waits up to `MANTLE_SERVICE_HEALTH_TIMEOUT_S` (default 180)
    for the container to report healthy.
 
@@ -119,8 +122,9 @@ If a stop fails, `.env` is left as it was and Settings > Services says so.
 
 ## Tokens are provisioned in advance
 
-A roll writes `SANDBOXD_TOKEN` and `MEDIA_SIDECAR_TOKEN` into `.env` when they
-are missing, whether or not the service is on (`ensure_service_tokens`), and
+A roll writes `SANDBOXD_TOKEN` into `.env` when it is missing, whether or not
+the service is on (`ensure_service_tokens`), and the parser's `PARSER_TOKEN`
+on a compose that runs the parser (`ensure_parser_token`), and
 `scripts/install.sh` does the same on install. A token alone is inert: the
 profile decides what runs, and the brain reads the profile. Having the token
 in the app containers' env from the start is what lets a later switch start

@@ -5,7 +5,7 @@ command, configure everything else in the interface, and update by pulling.
 No checkout, no build, no hand-edited env.
 
 This is the **standard way to run Mantle**. The install itself (prompts, env
-vars, requirements, sandboxes, media, the manual path) is in the install
+vars, requirements, sandboxes, the manual path) is in the install
 pages, [`guide/01-install/`](./guide/01-install/01-choose.md); this
 page carries the operational detail. The companion docs serve other
 audiences: [`getting-started.md`](./getting-started.md) is the developer
@@ -190,14 +190,13 @@ contract: the HTTP API + MCP + share pages, the owner UI (sign-up and
 settings live there), the ingest pipeline (`api` + the file/docs workers),
 reminders + scheduled backups, and nightly maintenance. It sheds the
 channel workers (email, telegram, microsoft, calendar, push, runs) and the
-**doc helpers**: `tika` (parse fallback for .odt/.doc/.rtf/.epub; common
-formats like pdf/docx/txt/md parse in-process without it) and the
-PDF-export `browser` (~2 GB chromium image; share pages still serve HTML).
+**doc helper**: the PDF-export `browser` (~2 GB chromium image; share pages
+still serve HTML). The parser service, which reads every uploaded file
+([parser.md](./parser.md)), is core and runs on every shape.
 The exact split, and the reasoning per service, is the header of
 `docker-compose.core.yml`.
 
-A core that needs exotic-format ingest or PDF export takes the helpers
-back with:
+A core that needs PDF export takes the helper back with:
 
 ```bash
 scripts/install.sh --core --helpers
@@ -205,7 +204,7 @@ scripts/install.sh --core --helpers
 
 (`--helpers` / `--no-helpers` toggle the `helpers` entry in
 `COMPOSE_PROFILES`, same persistence as `--local-embedder`; the full shape
-always runs both, so the flag only matters on a core.)
+always runs it, so the flag only matters on a core.)
 
 The core choice itself persists via `COMPOSE_FILE` in `.env` (absolute
 paths — the in-app updater needs them), so updates keep the shape.
@@ -215,9 +214,9 @@ default). Turn any shed service on ad hoc with
 `docker compose up -d <service>` (naming a service overrides its profile
 gate), or return to the full shape with `scripts/install.sh --no-core`.
 
-### Sandboxes and the media sidecar
+### Sandboxes
 
-Both can be switched on and off in **Settings > Services** (admins
+They can be switched on and off in **Settings > Services** (admins
 only) once the box runs an updater that supports it; off stops the service
 and keeps all its data. See [`services.md`](./services.md). The steps below
 are the same change by hand.
@@ -229,14 +228,11 @@ sandbox base image. Nothing is installed on the host. Turn them off with
 `--no-sandboxes`; an existing box only gains them with an explicit
 `scripts/install.sh --sandboxes`. Details: [`sandboxes.md`](./sandboxes.md).
 
-**Video ingest and CAD drawing ingest are off until you enable the `media`
-profile.** It runs the `titanwest/mantle-media` sidecar (yt-dlp, ffmpeg and
-the DWG tools) behind `MEDIA_SIDECAR_TOKEN`; the installer writes the token
-and leaves the profile off. Add `media` to `COMPOSE_PROFILES` in `.env` (and
-set the token with `openssl rand -hex 32` on a box installed before tokens
-were provisioned), then `docker compose --profile media up -d --wait`.
-The image exists from v0.232.34, so update first on an older box. Guide:
-[`video-ingest.md`](./video-ingest.md).
+**Video ingest and CAD drawing ingest need nothing switched on.** The
+parser service (`titanwest/mantle-parser`, core, every box) carries ffmpeg
+and the DWG tools; `video_ingest` transcribes an uploaded recording
+([`video-ingest.md`](./video-ingest.md)). The media sidecar that once did
+this behind a `media` profile is gone.
 
 ### Manual install (no script)
 
@@ -279,7 +275,7 @@ its own tag, `MANTLE_CLIENT_IMAGE_TAG`, which the in-app updater sets from the
 
 Releases are tagged `vX.Y.Z`; every release publishes the server image to
 Docker Hub (`titanwest/mantle-server:vX.Y.Z` + `latest`, amd64 + arm64),
-the media sidecar (`titanwest/mantle-media`, same tags) and attaches the
+the parser service (`titanwest/mantle-parser`, same tags) and attaches the
 matching deploy bundle. The owner UI image (`titanwest/mantle-client`) is
 published by the jackdaw repo on its own stream.
 

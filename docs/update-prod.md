@@ -157,13 +157,14 @@ when it failed before step 4), 2 usage, 3 counts dropped.
   `update.log`; take your own backup then. These are `.env` settings: a
   request from the app cannot change them.
 - **Old images go after an OK roll.** Nothing pruned images before this, and
-  each release left a server and client pair (about 3.4 GB) behind, plus a
-  media image (about 1.2 GB) on a box with the media sidecar on. After an OK
-  roll the updater removes old images of exactly `<ns>/mantle-server`,
-  `<ns>/mantle-client` and `<ns>/mantle-media`, keeping the images each
-  container ran before the roll (the rollback set), the ones they run now,
-  and the two newest of each repository. With media off there is no
-  `mantle_media` container, and media images are left alone. It never touches another repository (sandbox, rustfs, caddy,
+  each release left a server and client pair (about 3.4 GB) behind. After an
+  OK roll the updater removes old images of exactly `<ns>/mantle-server`,
+  `<ns>/mantle-client`, `<ns>/mantle-parser` and `<ns>/mantle-media`, keeping
+  the images each container ran before the roll (the rollback set), the ones
+  they run now, and the two newest of each repository. `mantle-media` (the
+  removed media sidecar) has no container after the roll that removes it:
+  every image of it goes but the one it ran before that roll, which goes on
+  the next. It never touches another repository (sandbox, rustfs, caddy,
   postgres), volumes or containers, never forces, and logs each removal to
   `update.log`; an image docker refuses to remove (still in use) is logged
   and kept. `MANTLE_IMAGE_PRUNE=0` in `.env` switches it off.
@@ -1379,6 +1380,63 @@ Nothing to do before the roll.
   table nor calls its definers. The revert
   (`packages/db/rollback/0338_canvas_data.revert.sql`) takes 0338 off the
   ledger and keeps every stored value, the indexes and both functions.
+
+## Rolling to the parser service (Tika and the media sidecar go)
+
+This release replaces two sidecars with one core service: the parser
+(`mantle-parser`, container `mantle_parser`, [parser.md](parser.md)) reads
+every file the brain receives, in its own container with a memory limit and
+no route out. Apache Tika (`mantle_tika`) and the media sidecar
+(`mantle_media`, yt-dlp) are gone. No migration.
+
+- **The roll pulls `<ns>/mantle-parser`** with the server image (every box
+  runs it, no profile) and no longer pulls `apache/tika` or
+  `<ns>/mantle-media`. The parser image carries Python, the CAD tools and
+  ffmpeg, so it is the bigger download of the two on the first roll.
+- **The old containers go with the roll.** The roll runs `up -d
+--remove-orphans`, which removes `mantle_tika` and `mantle_media` once the
+  refreshed compose no longer defines them. A box rolled by hand without
+  `--remove-orphans` keeps them running for nothing; remove them by name:
+
+  ```bash
+  docker rm -f mantle_tika mantle_media
+  ```
+
+  The updater prunes the old `mantle-media` images over the next two rolls;
+  the `apache/tika` image is not this product's repository and stays until
+  you remove it (`docker image ls apache/tika`, then `docker rmi` by name).
+
+- **`PARSER_TOKEN`.** The first roll to this release is run by the updater
+  of the release before it, which does not know the token: the parser
+  serves without one on its internal network until the next roll, whose
+  updater writes it into `.env` (`ensure_parser_token`) and recreates the
+  parser and the app containers with it. To have it at once, set it by
+  hand before the roll: `PARSER_TOKEN=$(openssl rand -hex 32)` in `.env`.
+  A fresh install (`scripts/install.sh`) writes one.
+- **Settings that changed.** `MEDIA_SIDECAR_TOKEN`, `MEDIA_MEM_LIMIT`,
+  `MEDIA_MAX_CONCURRENT`, `MEDIA_MAX_UPLOAD_BYTES` and `TIKA_URL` are no
+  longer read; leave them or delete them. `MEDIA_MAX_STT_DURATION_S`,
+  `MEDIA_MAX_AUDIO_BYTES` and `MEDIA_MAX_VIDEO_BYTES` are still read, as the
+  old names of `VIDEO_INGEST_MAX_*`. A `media` left in `COMPOSE_PROFILES`
+  names no service any more and is harmless. Settings > Services no longer
+  lists Media, and Helpers (a core box) is the PDF-export browser alone. New, all optional: `PARSER_MEM_LIMIT` (default
+  `2g`), `PARSER_CPUS` (default 2), `PARSER_MAX_JOBS`, `PARSER_QUEUE_MAX`,
+  `PARSER_MAX_UPLOAD_MB`, `PARSER_CLIENT_CONCURRENCY`.
+- **What reads less than before.** Legacy Visio `.vsd` files are no longer
+  read (Tika did): the extractor asks for a `.vsdx` export. Pictures inside
+  `.xls` and `.xlsb` workbooks are no longer extracted (their text and
+  grids still read). `video_ingest` no longer fetches links: download the
+  video and upload the file. Everything else Tika read (.doc, .ppt, .odt,
+  .ods, .odp, .rtf, .epub, the legacy sheets) is read by anydoc in the
+  parser.
+- **After the roll:** the health screen (with an owner UI release that
+  knows the parser) shows the parser up or down in place of the Tika and
+  media pills; `docker ps` shows `mantle_parser`
+  healthy and no `mantle_tika` or `mantle_media`. A document that fails the
+  parser twice records `document_unreadable` rather than looping.
+- **Rolling back below it:** the older compose brings Tika (and the media
+  sidecar, if its profile is still set) back; `PARSER_TOKEN` in `.env` is
+  ignored, and a `mantle_parser` container is removed as an orphan.
 
 ## Rollback
 

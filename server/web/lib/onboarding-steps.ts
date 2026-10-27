@@ -225,7 +225,7 @@ export async function runInfraChecks(browserHost: string | null): Promise<Sanity
           label: 'Document parser',
           ok: false,
           detail:
-            'not answering — is the parser container (mantle_parser) running? No uploaded file can be read until it is.',
+            'not answering: is the parser container (mantle_parser) running? No uploaded file can be read until it is.',
         },
   );
 

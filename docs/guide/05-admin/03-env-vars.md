@@ -38,9 +38,10 @@ To change the domain, run `scripts/install.sh --domain <host>` instead of editin
 | `MANTLE_IMAGE_TAG` | Server version. `latest`, or a release tag to stay on one version. |
 | `MANTLE_CLIENT_IMAGE_TAG` | Web app version. The updater sets it. |
 | `MANTLE_CLIENT_ENABLED` | `0` runs no web app on the box (headless). Missing means on. |
-| `COMPOSE_PROFILES` | Optional services: `sandboxes`, `media`, `local-embedder`, `helpers`. Prefer **Settings > Services**. |
+| `COMPOSE_PROFILES` | Optional services: `sandboxes`, `local-embedder`, `helpers`. Prefer **Settings > Services**. |
 | `COMPOSE_FILE` | Set by `--core` for the small core shape. |
-| `SANDBOXD_TOKEN`, `MEDIA_SIDECAR_TOKEN` | Tokens for the sandbox and media services. Written for you. |
+| `SANDBOXD_TOKEN`, `PARSER_TOKEN` | Tokens for the sandbox service and the parser. Written for you. |
+| `PARSER_MEM_LIMIT` | Memory for the parser, which reads every uploaded file (default `2g`). Raise it for very large drawing sets. |
 
 ## Updater
 

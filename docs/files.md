@@ -121,11 +121,11 @@ binaries, so they fall through the 20-char minimum-body guard and get
 skipped silently.
 
 **PDFs are ingestable.** `INGESTABLE_EXTS` ∋ `pdf`, and the extractor's
-`readNodeBody` routes `.pdf` files through `@mantle/files/pdf`, a thin
-wrapper around `pdf-parse` that returns the embedded text layer.
-Scanned-image PDFs come back as '' (no OCR) and fall through the
-20-char guard. Encrypted / corrupt PDFs throw and the extractor swallows
-the error, falling back to the node title.
+`readNodeBody` sends `.pdf` files to the parser service
+([parser.md](parser.md)), which reads the embedded text layer with
+`pdf-parse`. Scanned-image PDFs come back as '' and take the OCR fallback
+([file-ingestion.md](file-ingestion.md)). Encrypted or corrupt PDFs are
+the parser's `failed`, and the extractor falls back to the node title.
 
 ---
 
@@ -323,7 +323,7 @@ Two caps, because there are two transports (`packages/files/src/limits.ts`):
 | path                                                           | cap                                           | why                                                                                                                                                                                             |
 | -------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /api/files/files` multipart (the web uploader)           | **512 MB** by default, `MANTLE_MAX_UPLOAD_MB` | Streamed. The body spools to disk as it arrives (`spoolUpload`, hashed and counted per chunk), then is adopted into the folder by rename. Memory stays flat; the cap is a disk/patience number. |
-| MCP `file_upload`, chat attachments, forum uploads, Drive sync | **64 MB**, fixed (`MAX_UPLOAD_BYTES`)         | Buffered. The whole file sits in memory (base64 inflates 4/3 on the wire) and Office formats unzip many times over inside Tika.                                                                 |
+| MCP `file_upload`, chat attachments, forum uploads, Drive sync | **64 MB**, fixed (`MAX_UPLOAD_BYTES`) | Buffered. The whole file sits in memory (base64 inflates 4/3 on the wire) and Office formats are read in the parser container ([parser.md](parser.md)). |
 
 The reverse proxy has its own ceiling, `MANTLE_MAX_BODY_SIZE` (default `1GB`,
 Caddyfile `request_body max_size`). It must stay above the streamed cap plus

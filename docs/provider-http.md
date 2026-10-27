@@ -213,11 +213,12 @@ null gives up early (a deadline).
 | OpenRouter empty 2xx body          | 2 retries          | full jitter over 500 ms doubling, cap 8 s                             |
 | Embed 429 (`withRateLimitBackoff`) | 4 retries          | 2, 4, 8, 16 s plus up to a quarter                                    |
 | Microsoft Graph 429                | 4 retries          | Retry-After seconds, else 1, 2, 4, 8 s                                |
-| Tika 429                           | until the deadline | Retry-After seconds (1 s without), at most 5 s                        |
+| Parser `busy` (429)                | 3 retries    | 2, 5, 10 s (`packages/files/src/parser-client.ts`)                    |
 | Telegram 429                       | 3 retries          | `retry_after` (1 s without), at most 30 s                             |
 | Extract circuit probe              | (a schedule)       | 5, 10, 20, 40, then 60 min (`backoffMs`)                              |
 
 Each row is pinned by a test recorded against the hand loop before the fold.
+(The parser row replaced Tika's, which went with Tika; [parser.md](parser.md).)
 
 **`parseRetryAfterMs`** is the one Retry-After reader: delta-seconds or an
 HTTP date, never negative.
@@ -311,7 +312,7 @@ retries and the failover. That is a known gap, left for its own step.
   aborts after 180 s (`default`), headers only for an event stream. In
   practice that is one call, the AssemblyAI status poll; a caller's own
   signal is never cut shorter by the default.
-- Microsoft Graph and Tika honour a Retry-After given as an HTTP date (the
+- Microsoft Graph (and Tika, while it existed) honour a Retry-After given as an HTTP date (the
   shared reader); before, a date fell back to the doubling or 1 s wait.
 - A provider error that reaches a member or the model says a fixed
   sentence, never the provider's body or message (a body can carry an
@@ -451,8 +452,8 @@ errorMessage(err)` (their work calls no provider directly; the masking
   the read); it now aborts with a `TimeoutError` rather than an
   `AbortError`, and the image is counted missing either way.
 - The Mapbox static image deadline (15 s) now covers the image body too;
-  before, the headers only. Tika, the media sidecar and the onboarding
-  probes abort with a `TimeoutError` rather than an `AbortError` (each
+  before, the headers only. Tika and the media sidecar (both since
+  replaced by the parser service) and the onboarding probes abort with a `TimeoutError` rather than an `AbortError` (each
   caller treats both alike; `route_map` still says "static map request
   timed out", fix round 2).
 - The chat retry log line reads `..., retry 1/2 in 250ms` (no dash).
