@@ -24,8 +24,6 @@ export { isHeic, transcodeImageForVision } from './transcode';
 
 export { parseDocumentBytes } from './parse';
 
-export type { PdfPasswordResult } from './pdf-password';
-
 // The one client for the parser service (server/parser): every untrusted
 // file the brain reads goes through it.
 export {
@@ -46,6 +44,7 @@ export {
   type ParserResult,
   type ParserHealth,
   type ParserGrid,
+  type PdfPasswordResult,
 } from './parser-client';
 export {
   parserDwgCrop,
