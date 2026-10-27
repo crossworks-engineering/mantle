@@ -259,10 +259,10 @@ export const ENV_NUMBERS = {
   // The parser service (server/parser) and its client (packages/files)
   PARSER_PORT: { default: 8095, int: 'floor', min: 1, max: 65535, doc: 'the parser listens here' },
   PARSER_MAX_JOBS: {
-    default: 2,
+    default: 1,
     atLeast: 1,
     int: 'floor',
-    doc: 'parse jobs the parser runs at once',
+    doc: 'parse jobs the parser runs at once (each has the whole memory at 1)',
   },
   PARSER_QUEUE_MAX: {
     default: 16,
@@ -271,10 +271,10 @@ export const ENV_NUMBERS = {
     doc: 'requests that may wait for a parser job slot',
   },
   PARSER_MAX_UPLOAD_MB: {
-    default: 1024,
+    default: 512,
     atLeast: 1,
     int: 'floor',
-    doc: 'largest file the parser takes, MB',
+    doc: 'largest file the parser takes, MB (the streamed upload cap, MANTLE_MAX_UPLOAD_MB)',
   },
   PARSER_CLIENT_CONCURRENCY: {
     default: 2,

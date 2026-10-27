@@ -112,7 +112,8 @@ networks:
   # parser, which reads every untrusted file, has NO route out, by topology.
   # It is attached here ONLY; the app services that send it files join this
   # network as well as the default one (x-app-networks), so they reach it at
-  # parser:8095 and it reaches nothing.
+  # parser:8095. What the parser can reach is those services and nothing
+  # else: no postgres, no object store, no internet.
   parser:
     name: mantle_parser_net
     driver: bridge
@@ -152,10 +153,13 @@ x-worker-healthcheck: &worker-healthcheck
   retries: 3
   start_period: 60s
 
-# The networks of every app service: the default one (postgres, the object
-# store, each other) and the parser's internal one, so each can send a file
-# to the parser (packages/files/src/parser-client.ts). migrate parses nothing
-# and stays on the default network alone.
+# The networks of the app services that send files to the parser
+# (packages/files/src/parser-client.ts): the default one (postgres, the
+# object store, each other) and the parser's internal one. Only those whose
+# code can reach the parser client join it: web, api and the workers that
+# run turns or tools (telegram, events, runs, push). The others (email,
+# microsoft, files, docs, calendar, maintenance) and migrate parse nothing
+# and stay on the default network alone, so the parser cannot reach them.
 x-app-networks: &app-networks
   - default
   - parser
@@ -507,17 +511,26 @@ services:
   # sidecar (2026-10). Core: no profile, always on, on every deploy shape.
   #
   # The safety guarantee is this container, not code in it:
-  #   - mem_limit / cpus: a document that blows up is OOM-killed by the
-  #     kernel inside this limit (the job, usually; the service if need be,
-  #     and `restart` brings it back). The brain reads that as `crashed`:
-  #     retried once, terminal the second time for the same bytes.
-  #   - networks: the internal `parser` network ONLY. No NAT, no route out:
-  #     a reader that is tricked into fetching gets nowhere.
+  #   - one job at a time (PARSER_MAX_JOBS, default 1) with the whole
+  #     mem_limit and no swap beyond it (memswap_limit = mem_limit): a
+  #     document that blows up is OOM-killed by the kernel inside this
+  #     limit (the job, usually; the service if need be, and `restart`
+  #     brings it back), and a healthy file never shares the memory with
+  #     it. The brain reads that as `crashed`: retried once, terminal the
+  #     second time for the same bytes (counted on the node).
+  #   - cpus 1 by default, so every box starts it (a 1-vCPU box too).
+  #   - the scratch space is a tmpfs of PARSER_TMP_SIZE (default 1g): a job
+  #     cannot fill the host's disk, and its files go with it. A tmpfs is
+  #     memory, counted in mem_limit while a job's files sit there.
+  #   - networks: the internal `parser` network ONLY. No NAT, no route out,
+  #     and no DNS (dns 0.0.0.0): it can reach the services that share that
+  #     network (the app containers that call it) and nothing else.
   #   - nothing mounted, no secret but its bearer token, an unprivileged
   #     user, no capabilities, no new privileges.
-  # Inside it, cheap bounds only: a body cap, PARSER_MAX_JOBS jobs at once
-  # (each its own process, killed at its deadline), a short queue, then
-  # `busy`. Raise PARSER_MEM_LIMIT on a box that reads big drawing sets.
+  # Inside it, cheap bounds only: a body cap, a short queue, then `busy`.
+  # Raise PARSER_MEM_LIMIT (and PARSER_TMP_SIZE) on a box that reads big
+  # drawing sets; PARSER_CPUS and PARSER_MAX_JOBS on a box with cores and
+  # memory to spare.
   parser:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-parser:${MANTLE_IMAGE_TAG:-latest}
     container_name: mantle_parser
@@ -527,10 +540,14 @@ services:
     init: true
     logging: *default-logging
     mem_limit: ${PARSER_MEM_LIMIT:-2g}
-    cpus: ${PARSER_CPUS:-2}
+    memswap_limit: ${PARSER_MEM_LIMIT:-2g}
+    cpus: ${PARSER_CPUS:-1}
     pids_limit: 512
     cap_drop: ['ALL']
     security_opt: ['no-new-privileges:true']
+    tmpfs:
+      - /tmp:size=${PARSER_TMP_SIZE:-1g},mode=1777
+    dns: 0.0.0.0
     networks:
       - parser
     environment:
@@ -554,7 +571,7 @@ services:
       retries: 4
       start_period: 30s
 
-  # Browser sidecar (browserless/chromium) — the PDF-export render engine: a
+  # Browser sidecar (browserless/chromium), the PDF-export render engine: a
   # stateless, self-hosted service with its own memory
   # space, session queue, and per-session hard timeout. server/web connects with
   # puppeteer-core over websocket (BROWSER_WS_ENDPOINT) and drives it to print
@@ -1071,7 +1088,6 @@ services:
     # runner) before Docker sends SIGKILL; Docker's default is 10 s.
     stop_grace_period: 20s
     logging: *default-logging
-    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1125,7 +1141,6 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
-    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1153,7 +1168,6 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
-    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1185,7 +1199,6 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
-    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1252,7 +1265,6 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
-    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1281,7 +1293,6 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
-    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe

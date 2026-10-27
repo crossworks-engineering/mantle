@@ -34,9 +34,10 @@
 #   5. wait for a NEW started_at with this target and a finished_at, ok:true;
 #      when not ok, the tail of update.log and of the mantle_migrate log
 #      (masked as in 6): a refused migrate is why compose up failed
-#   6. wait for mantle_web healthy; if it never is, a loud banner and the
-#      last 20 lines of its log, every line, with secret values masked. No
-#      automatic rollback: the operator decides.
+#   6. wait for mantle_web healthy, then mantle_parser (when the release has
+#      it); if one never is, a loud banner and the last 20 lines of its log,
+#      every line, with secret values masked. No automatic rollback: the
+#      operator decides.
 #   7. count again: ANY drop in apps, sandboxes or app-db files stops with a
 #      loud error (mini sandbox apps are never to be lost in a roll)
 #   8. print /api/version
@@ -707,6 +708,32 @@ while :; do
   [ "$POLL" -gt 0 ] || waited=$((waited + 1))
 done
 echo "mantle_web: $HS"
+
+# The parser reads every file the brain receives: a roll whose parser never
+# comes up healthy leaves a brain that reads nothing. A release before the
+# parser has no mantle_parser (nothing to wait for).
+if rsh "docker inspect mantle_parser" > /dev/null 2>&1; then
+  PS=""; waited=0
+  while :; do
+    PS=$(rsh "docker inspect -f '{{.State.Health.Status}}' mantle_parser" 2>/dev/null || true)
+    [ "$PS" = healthy ] && break
+    if [ "$waited" -ge "$HEALTH_TIMEOUT" ]; then
+      printf '\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
+      printf '!!  PARSER NOT HEALTHY on %s %ss after the roll to %s (last: %s).\n' \
+        "$SSH_ALIAS" "$HEALTH_TIMEOUT" "$TAG" "${PS:-unknown}" >&2
+      printf '!!  The brain is up but reads no file. Nothing was rolled back; read the\n' >&2
+      printf '!!  log below, then fix forward or roll back by hand (docs/update-prod.md).\n' >&2
+      printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
+      show_log_tail mantle_parser 20
+      exit 1
+    fi
+    sleep "$POLL"; waited=$((waited + POLL))
+    [ "$POLL" -gt 0 ] || waited=$((waited + 1))
+  done
+  echo "mantle_parser: $PS"
+else
+  echo "mantle_parser: none (a release before the parser service)"
+fi
 
 # ── 7. counts after ──────────────────────────────────────────────────────────
 C1=$(counts) || die "could not count apps / sandboxes / app-db files after the roll"

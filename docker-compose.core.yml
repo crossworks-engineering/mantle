@@ -37,7 +37,10 @@
 #   caddy, updater, autoheal, tailscale       front door + upkeep sidecars
 #   parser                                    reads every file the brain
 #                                             receives (docs/parser.md); a
-#                                             brain that ingests cannot shed it
+#                                             brain that ingests cannot shed it.
+#                                             Its defaults suit a core as they
+#                                             are: 1 CPU, 2g (no swap past it),
+#                                             one job at a time, a 1g tmpfs
 #   worker_files, worker_docs                 file + documentation ingest
 #   worker_events                             reminders AND the scheduled-
 #                                             backup tick (a core still backs

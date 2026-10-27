@@ -300,6 +300,33 @@ refresh_compose() {
   fi
 }
 
+# parser_compose_refusal: true (and PCR_ERR set) when this roll must stop
+# before any container changes, because the release it brings reads every
+# file through the parser service (its compose defines `parser`) and the
+# box's compose, which this roll did NOT refresh (local edits, no baseline,
+# an .env it cannot satisfy, a failed write), does not define it. Rolled on,
+# that box would run a brain that can read no file. Reads the target image
+# set by refresh_compose; a target whose compose cannot be read (no image,
+# no embedded canonical) is not refused here: the pull and up decide.
+parser_compose_refusal() {
+  PCR_ERR=""
+  [ "$REFRESH" = refreshed ] && return 1
+  grep -q 'container_name: mantle_parser' "$STACK/docker-compose.yml" 2>/dev/null && return 1
+  [ "$REFRESH" = pull-failed ] && return 1
+  pcr_tmp="$STACK/.compose-parser-check.tmp"
+  rm -f "$pcr_tmp"
+  pcr_cid=$(docker create "$IMG" 2>> "$SIG/update.log") || return 1
+  docker cp "$pcr_cid:/app/release/docker-compose.yml" "$pcr_tmp" >> "$SIG/update.log" 2>&1
+  docker rm "$pcr_cid" > /dev/null 2>&1
+  if [ -s "$pcr_tmp" ] && grep -q 'container_name: mantle_parser' "$pcr_tmp"; then
+    rm -f "$pcr_tmp"
+    PCR_ERR="the release reads every file through the parser service, but this box's docker-compose.yml was not refreshed ($REFRESH) and does not define it. Bring the compose up to the release (move local edits to docker-compose.override.yml, then scripts/compose-adopt.sh), then request the update again"
+    return 0
+  fi
+  rm -f "$pcr_tmp"
+  return 1
+}
+
 # ── front door: Caddyfile + shapes are release-owned too ─────────────────────
 # Same pristine-vs-baseline rule as compose, same image, same roll. A box copy
 # that matches its .release baseline is swapped for the target release's; a
@@ -1865,7 +1892,9 @@ while true; do
 
     # Persist the tag so a later manual `docker compose up` doesn't roll back.
     # persist_env: temp-file rewrite that keeps .env's owner and mode (a bare
-    # redirect from this root sidecar left it root:root 0644).
+    # redirect from this root sidecar left it root:root 0644). The tag it
+    # replaces is kept: a refusal below puts it back.
+    ROLL_PREV_TAG=$(env_val MANTLE_IMAGE_TAG)
     [ "$TARGET" = latest ] || persist_env MANTLE_IMAGE_TAG "$TARGET"
     # Before compose recreates mantle_web: the runtime role's line (S4a).
     ensure_runtime_role_line >> "$SIG/update.log" 2>&1 || true
@@ -1883,6 +1912,19 @@ while true; do
     # the scripts are run by hand — but it is what stops the next one being
     # applied by a compose-adopt three releases behind the compose it installs.
     [ "$REFRESH" = pull-failed ] || refresh_scripts "$TARGET"
+    # A release with the parser on a compose without it: stop here, loudly,
+    # before any pull or container change, with the old tag back in .env.
+    if parser_compose_refusal; then
+      if [ -n "$ROLL_PREV_TAG" ]; then
+        persist_env MANTLE_IMAGE_TAG "$ROLL_PREV_TAG"
+      elif [ "$TARGET" != latest ]; then
+        env_rewrite '/^MANTLE_IMAGE_TAG=/d'
+      fi
+      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, no container changed: $PCR_ERR"
+      echo "[updater] ⚠ ROLL REFUSED, no container changed: $PCR_ERR" | tee -a "$SIG/update.log"
+      write_stack_info
+      continue
+    fi
     # After the compose refresh (the check reads the compose this roll brings
     # up) and before the pull/up that recreates the app containers with it.
     ensure_service_tokens
