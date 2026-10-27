@@ -932,15 +932,15 @@ export async function markMessengerRead(
   // The furthest I may read: my leave, else the conversation's last seq.
   const cap = sql`least(${s}::bigint, coalesce(${P.leftSeq},
     (select k.last_seq from messenger_conversations k where k.id = ${P.conversationId})))`;
-  const [moved] = await systemDb
+  // One statement: greatest() keeps the cursor from moving back, and an
+  // unchanged cursor raises no event (the trigger compares the values).
+  const [row] = await systemDb
     .update(P)
-    .set({ lastReadSeq: cap })
-    .where(and(mine, sql`${P.lastReadSeq} < ${cap}`))
+    .set({ lastReadSeq: sql`greatest(${P.lastReadSeq}, ${cap})` })
+    .where(mine)
     .returning({ lastReadSeq: P.lastReadSeq });
-  if (moved) return { lastReadSeq: num(moved.lastReadSeq) };
-  const [kept] = await systemDb.select({ lastReadSeq: P.lastReadSeq }).from(P).where(mine);
-  if (!kept) throw new MessengerNotFoundError();
-  return { lastReadSeq: num(kept.lastReadSeq) };
+  if (!row) throw new MessengerNotFoundError();
+  return { lastReadSeq: num(row.lastReadSeq) };
 }
 
 /** Clear for me (plan section 10): I see nothing up to the last seq;
