@@ -4,6 +4,23 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: Messenger V1 Phase 1
+
+- **Feature (plan decision 2026-10-27):** the messenger's core store, API
+  and MCP tools (docs/messenger.md). Direct chats and groups between the
+  logins of one brain (migration 0335), each message a seq taken under the
+  conversation's row lock, row security keyed by the participant row (no
+  Admin exception; a left participant reads up to its leave), the routes
+  under `/api/messenger` with per-login limits, the SSE stream
+  `/api/messenger/stream` on the member stream's guards, the unread badge
+  with the assistant threads, and the MCP tools `messenger_list`,
+  `messenger_open`, `messenger_send`, `messenger_create`, `messenger_wait`,
+  `messenger_mark_read` and `messenger_directory`. A message records the
+  credential it came through, and `messenger_wait` skips the caller's own,
+  so two Claude clients on one login can wait for each other. No agent in a
+  group, no attachment bytes and no phone push yet: those are Phases 3 to
+  5. An Admin user's OAuth MCP connection now carries its client id.
+
 ## Unreleased: workspace delegation
 
 - **Feature (owner decision 2026-10-26):** the assistant of a workspace
