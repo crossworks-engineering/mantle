@@ -12,7 +12,7 @@
  * of a box (410 hits, the check settings) are not here: they live in
  * scripts/arch-scoreboard-box.sh, which verify never runs.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-expect-error: plain-JS module, no types shipped.
@@ -278,10 +278,40 @@ const problems = [
     ? ['server/web/lib/auth/login-shape.test.ts: LOGIN_SHAPE_PIN is not readable']
     : []),
 ];
+/**
+ * The Dockerfile's `modules` stage copies every workspace package.json by
+ * name before `pnpm install --frozen-lockfile`; one missing fails every
+ * image build ("lockfile mismatch"), one left after its package went fails
+ * the COPY. Its list must equal the workspace's (pnpm-workspace.yaml:
+ * server/* and packages/*). Pure: the two lists in, the differences out.
+ */
+function manifestListProblems(copied: string[], workspace: string[]): string[] {
+  const c = new Set(copied);
+  const w = new Set(workspace);
+  return [
+    ...[...w].filter((p) => !c.has(p)).map((p) => `Dockerfile: no COPY of ${p}`),
+    ...[...c].filter((p) => !w.has(p)).map((p) => `Dockerfile: COPY of ${p}, not a package`),
+  ].sort();
+}
+
+function dockerfileManifestProblems(): string[] {
+  const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
+  const copied = [
+    ...dockerfile.matchAll(/^COPY ((?:server|packages)\/[^/\s]+\/package\.json) \1\s*$/gm),
+  ].map((m) => m[1]!);
+  const workspace = ['server', 'packages'].flatMap((top) =>
+    readdirSync(join(ROOT, top), { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(join(ROOT, top, d.name, 'package.json')))
+      .map((d) => `${top}/${d.name}/package.json`),
+  );
+  return manifestListProblems(copied, workspace);
+}
+problems.push(...dockerfileManifestProblems());
+
 const showProblems = () => {
   if (!problems.length) return;
   console.error(
-    `\nWhat the scoreboard cannot count (eslint-rules/as-system-exits.mjs, as-system-routes.mjs):`,
+    `\nWhat the scoreboard cannot count (eslint-rules/as-system-exits.mjs, as-system-routes.mjs), or found out of step (the Dockerfile):`,
   );
   for (const p of problems) console.error(`  ${p}`);
 };
