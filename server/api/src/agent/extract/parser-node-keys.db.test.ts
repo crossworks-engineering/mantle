@@ -67,9 +67,11 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
   /** A file node of this owner, with some data the writes must keep. */
   const fileNode = async (): Promise<string> => {
     const id = randomUUID();
+    // A file's name is unique in its folder: one per node.
+    const filename = `scan-${id.slice(0, 8)}.pdf`;
     await x(sql`insert into nodes (id, owner_id, type, title, path, data) values
-      (${id}, ${owner}, 'file', 'scan.pdf', 'files',
-       ${JSON.stringify({ filename: 'scan.pdf', mimeType: 'application/pdf', keep: 'me' })}::jsonb)`);
+      (${id}, ${owner}, 'file', ${filename}, 'files',
+       ${JSON.stringify({ filename, mimeType: 'application/pdf', keep: 'me' })}::jsonb)`);
     return id;
   };
   const dataOf = async (id: string) =>
