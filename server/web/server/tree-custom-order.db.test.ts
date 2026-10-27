@@ -1,9 +1,10 @@
 /**
  * The tree's custom order (docs/folder-tree.md, "Custom order"): one order
  * for everyone, set by whoever may edit the folder (owner decision
- * 2026-10-26). An item's place is its `data.rank`, the one presentation key
- * (0281): the database lets edit of the item or of its folder change it, and
- * placeTreeItem asks Write on the folder (an Admin scope at the top level).
+ * 2026-10-26). An item's place is its `data.tree_rank`, a presentation key
+ * (0281, 0335): the database lets edit of the item or of its folder change
+ * it, and placeTreeItem asks Write on the folder (an Admin scope at the top
+ * level).
  *
  *  - a Write grant's member puts items of a folder in order
  *    (tree_item_place) and folders among their siblings (tree_folder_update
@@ -55,6 +56,7 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
   let ls: typeof import('@mantle/mcp-core');
   let tree: typeof import('@mantle/content/tree');
   let actorMode: typeof import('../../../packages/db/src/actor');
+  let runRoute: typeof import('./run-route').runRoute;
   let dir = '';
   const tag = `tco${randomUUID().slice(0, 6)}`;
   const L: Record<Who, string> = {
@@ -225,6 +227,65 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
     return o;
   };
 
+  /** Merge `patch` into an item's data as the system (a copy's mark, a
+   *  rank set by hand). */
+  const setData = (id: string, patch: Record<string, unknown>) =>
+    raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`update nodes set data = coalesce(data, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb
+                where id = ${id}`;
+    });
+  const rankOf = async (id: string) =>
+    (
+      await raw<{ r: string | null }[]>`select data->>'tree_rank' as r from nodes where id = ${id}`
+    )[0]!.r;
+
+  /** Hide an item from W (and R): its folder's grants "Removed here", its
+   *  home O (a3a-folders.db.test.ts hide). */
+  const hide = (id: string) =>
+    raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+      await tx`update item_grants set excluded = true, is_home = false, write = false
+                where node_id = ${id}`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home) values (${id}, ${ws.O}, true)
+                on conflict (node_id, workspace_id)
+                do update set is_home = true, excluded = false, via_folder_id = null`;
+    });
+
+  /**
+   * Run `fn` and answer each UPDATE statement on nodes that changed a rank
+   * (`tree_rank` or `rank`), by how many rows it changed: a statement
+   * trigger with transition tables, installed for the call only.
+   */
+  const rankStatements = async (fn: () => Promise<unknown>): Promise<number[]> => {
+    await raw.unsafe(`
+      create table if not exists tco_rank_statements (n int, at timestamptz default clock_timestamp());
+      create or replace function tco_rank_statements_trg() returns trigger
+        language plpgsql security definer set search_path = public as $f$
+      begin
+        insert into tco_rank_statements (n)
+          select count(*) from nt join ot on ot.id = nt.id
+           where nt.data->>'tree_rank' is distinct from ot.data->>'tree_rank'
+              or nt.data->>'rank' is distinct from ot.data->>'rank'
+          having count(*) > 0;
+        return null;
+      end $f$;
+      drop trigger if exists tco_rank_statements on nodes;
+      create trigger tco_rank_statements after update on nodes
+        referencing old table as ot new table as nt
+        for each statement execute function tco_rank_statements_trg();
+      truncate tco_rank_statements;`);
+    try {
+      await fn();
+      return (await raw<{ n: number }[]>`select n from tco_rank_statements order by at`).map((r) =>
+        Number(r.n),
+      );
+    } finally {
+      await raw.unsafe('drop trigger if exists tco_rank_statements on nodes');
+    }
+  };
+
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(DB_URL!);
@@ -247,6 +308,7 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
     ls = await import('@mantle/mcp-core');
     tree = await import('@mantle/content/tree');
     actorMode = await import('../../../packages/db/src/actor');
+    runRoute = (await import('./run-route')).runRoute;
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
 
     await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
@@ -318,6 +380,114 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
     expect(page!.items.map((i) => i.id)).toEqual([t1]);
   });
 
+  it('a whole ranking is one statement, and a later place one row', async () => {
+    await setMode('on');
+    const f = await notesFolder(`${tag} batch ${n()}`);
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i++) ids.push(await noteIn(f, `batch ${i}`));
+    // Unordered: the first place ranks the six whole, in one UPDATE.
+    expect(
+      await rankStatements(() =>
+        sysTool('tree_item_place', { kind: 'notes', item_id: ids[0], after: null }),
+      ),
+    ).toEqual([6]);
+    // Ordered, room between: one statement, one row.
+    expect(
+      await rankStatements(() =>
+        sysTool('tree_item_place', { kind: 'notes', item_id: ids[1], after: ids[0] }),
+      ),
+    ).toEqual([1]);
+  });
+
+  it('a read-only copy is no neighbour: its inherited rank never forces a ranking', async () => {
+    await setMode('on');
+    const f = await notesFolder(`${tag} copy ${n()}`);
+    const a = await noteIn(f, 'a copy test');
+    const b = await noteIn(f, 'b copy test');
+    const c = await noteIn(f, 'c copy test');
+    const x = await noteIn(f, 'x copy test');
+    await sysTool('tree_item_place', { kind: 'notes', item_id: a, after: null });
+    await sysTool('tree_item_place', { kind: 'notes', item_id: b, after: a });
+    await sysTool('tree_item_place', { kind: 'notes', item_id: x, after: b });
+    // c becomes a snapshot copy of a, carrying a's rank: it lists beside a.
+    const ra = await rankOf(a);
+    await setData(c, { snapshot_of: a, tree_rank: ra });
+    const [rb, rc] = [await rankOf(b), await rankOf(c)];
+    expect((await listed(f)).ids).toEqual([a, c, b, x]);
+    // x after a goes between a and b (c skipped): x alone is written, and
+    // the copy's tie with a forces nothing.
+    expect(
+      await rankStatements(() =>
+        sysTool('tree_item_place', { kind: 'notes', item_id: x, after: a }),
+      ),
+    ).toEqual([1]);
+    expect([await rankOf(a), await rankOf(b), await rankOf(c)]).toEqual([ra, rb, rc]);
+    const rx = (await rankOf(x))!;
+    expect(rx > ra! && rx < rb!).toBe(true);
+    // The copy itself is never placed, and an order made only of a copy's
+    // inherited rank is no order.
+    const copyPlace = await viaMcp('owner', 'tree_item_place', {
+      kind: 'notes',
+      item_id: c,
+      after: null,
+    });
+    expect(copyPlace.ok).toBe(false);
+    const g = await notesFolder(`${tag} copy only ${n()}`);
+    const lone = await noteIn(g, 'lone copy');
+    await noteIn(g, 'plain');
+    await setData(lone, { snapshot_of: a, tree_rank: ra });
+    expect((await listed(g)).ordered).toBe(false);
+  });
+
+  it('two real items that tie are ranked again, in the order shown', async () => {
+    await setMode('on');
+    const f = await notesFolder(`${tag} tie ${n()}`);
+    const p = await noteIn(f, 'p tie');
+    const q = await noteIn(f, 'q tie');
+    const y = await noteIn(f, 'y tie');
+    await sysTool('tree_item_place', { kind: 'notes', item_id: p, after: null });
+    await sysTool('tree_item_place', { kind: 'notes', item_id: q, after: p });
+    await sysTool('tree_item_place', { kind: 'notes', item_id: y, after: q });
+    await setData(q, { tree_rank: await rankOf(p) });
+    expect((await listed(f)).ids).toEqual([p, q, y]);
+    const placed = await viaMcp('owner', 'tree_item_place', {
+      kind: 'notes',
+      item_id: y,
+      after: p,
+    });
+    expect(placed.ok, placed.text).toBe(true);
+    expect((await listed(f)).ids).toEqual([p, y, q]);
+    const ranks = [await rankOf(p), await rankOf(y), await rankOf(q)];
+    expect(new Set(ranks).size).toBe(3);
+  });
+
+  it('places in one folder run one at a time: concurrent folder places never tie', async () => {
+    await setMode('on');
+    const p = await notesFolder(`${tag} conc ${n()}`);
+    const x = await notesFolder('x', p);
+    const y = await notesFolder('y', p);
+    await sys(() => tree.updateTreeFolder(owner, 'notes', y, { after: x }));
+    for (let round = 0; round < 4; round++) {
+      const c1 = await notesFolder(`c1 ${round}`, p);
+      const c2 = await notesFolder(`c2 ${round}`, p);
+      await Promise.all([
+        sys(() => tree.updateTreeFolder(owner, 'notes', c1, { after: x })),
+        sys(() => tree.updateTreeFolder(owner, 'notes', c2, { after: x })),
+      ]);
+      const [row] = await raw<{ total: number; distinct: number; unranked: number }[]>`
+        select count(*)::int as total, count(distinct data->>'rank')::int as distinct,
+               count(*) filter (where data->>'rank' is null)::int as unranked
+          from nodes where owner_id = ${owner} and type = 'branch'
+           and path ~ ${`${(await raw<{ p: string }[]>`select path::text as p from nodes where id = ${p}`)[0]!.p}.*{1}`}::lquery`;
+      expect(row!.unranked).toBe(0);
+      expect(row!.distinct).toBe(row!.total);
+      const order = (await listed(p)).page.folders.map((f) => f.id);
+      expect(order[0]).toBe(x);
+      expect(order.at(-1)).toBe(y);
+      expect(order.slice(1, 3).sort()).toEqual([c1, c2].sort());
+    }
+  });
+
   for (const mode of ['warn', 'on'] as const) {
     describe(`check mode ${mode}`, () => {
       it("a Write grant's member orders a folder's items, one order for everyone", async () => {
@@ -355,10 +525,6 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
         expect(ranks.some((r) => r.board)).toBe(false);
 
         // A later place writes the moved item only.
-        const rankOf = async (id: string) =>
-          (
-            await raw<{ r: string }[]>`select data->>'tree_rank' as r from nodes where id = ${id}`
-          )[0]!.r;
         const [r1, r3] = [await rankOf(s1), await rankOf(s3)];
         const second = await place('wr', s2, s1);
         expect(second.ok, second.text).toBe(true);
@@ -426,6 +592,72 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
           a,
           true,
         );
+      });
+
+      it('at the top level, an item the Admin may not edit is refused first', async () => {
+        await setMode(mode);
+        const top = await note(`top locked ${n()}`);
+        // Homed in H, read by the Admin workspace with Write off.
+        await grantsOn(top, [{ ws: ws.H, home: true }, { ws: ws.admin }]);
+        const o = await refused(
+          (id) => viaMcp('owner', 'tree_item_place', { kind: 'notes', item_id: id, after: null }),
+          top,
+          true,
+        );
+        expect(o.text).not.toMatch(/Only an Admin orders the top level/);
+      });
+
+      it("a member's place in an ordered folder leaves what it does not see where it was", async () => {
+        await setMode(mode);
+        const f = await notesFolder(`${tag} hidden ${n()}`);
+        await grantsOn(f, shared());
+        const s1 = await noteIn(f, 'h s1');
+        const h1 = await noteIn(f, 'h h1');
+        const s2 = await noteIn(f, 'h s2');
+        const s3 = await noteIn(f, 'h s3');
+        // The owner orders the four: s1, h1, s2, s3.
+        await sysTool('tree_item_place', { kind: 'notes', item_id: s1, after: null });
+        await sysTool('tree_item_place', { kind: 'notes', item_id: h1, after: s1 });
+        await sysTool('tree_item_place', { kind: 'notes', item_id: s2, after: h1 });
+        await sysTool('tree_item_place', { kind: 'notes', item_id: s3, after: s2 });
+        await hide(h1);
+        const seen = await m.withViewer({ login: L.wr }, () =>
+          tree.loadTreeFolder(owner, 'notes', { folderId: f, sort: 'custom', limit: 100 }),
+        );
+        expect(seen!.items.map((i) => i.id)).not.toContain(h1);
+        // A new item has no rank: it lists last. Placing s2 after it needs
+        // a rank for it, which comes after the last; nothing else moves.
+        const s4 = await noteIn(f, 'h s4');
+        const before = [await rankOf(s1), await rankOf(h1), await rankOf(s3)];
+        const placed = await place('wr', s2, s4);
+        expect(placed.ok, placed.text).toBe(true);
+        expect([await rankOf(s1), await rankOf(h1), await rankOf(s3)]).toEqual(before);
+        expect((await listed(f)).ids).toEqual([s1, h1, s3, s4, s2]);
+      });
+
+      it("an `after` alone asks the parent's order right, not the folder's edit (HTTP)", async () => {
+        await setMode(mode);
+        const f = await notesFolder(`${tag} http ${n()}`);
+        await grantsOn(f, shared());
+        const a = await notesFolder('a http', f);
+        const b = await notesFolder('b http', f);
+        // b is read by W, not written: its own grants, Write off.
+        await grantsOn(b, [{ ws: ws.H, home: true }, { ws: ws.W }, { ws: ws.R }]);
+        const patch = (who: Who, body: Record<string, unknown>) =>
+          runRoute(L[who], 'PATCH', `/api/tree/notes/folders/${b}`, body);
+        const order = async () =>
+          (await listed(f)).page.folders.map((x) => x.id).filter((id) => id === a || id === b);
+        expect(await order()).toEqual([a, b]);
+        const placed = await patch('wr', { after: null });
+        expect(placed.status, await placed.clone().text()).toBe(200);
+        expect(await order()).toEqual([b, a]);
+        // A rename still asks edit of the folder itself.
+        const renamed = await patch('wr', { name: `${tag} renamed` });
+        expect(renamed.status, await renamed.clone().text()).toBe(403);
+        // R has no Write on the parent: its member may not order it.
+        const rd = await patch('rd', { after: a });
+        expect(rd.status, await rd.clone().text()).toBe(403);
+        expect(await order()).toEqual([b, a]);
       });
 
       it('mayOrderFolder answers as the writes do', async () => {

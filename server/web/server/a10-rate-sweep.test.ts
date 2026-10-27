@@ -421,6 +421,13 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     cred: 'member',
     limits: [members('member-bytes', 240)],
   }),
+  // A place in a folder's custom order, per login (an Admin user's too).
+  {
+    row: 'POST /api/tree/:kind/place',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('tree-place', 120)],
+  },
   ...getHead('/api/workspaces/user-search', {
     cred: 'owner',
     query: '?q=sweep',

@@ -45,7 +45,7 @@ export const TREE_SEARCH_MAX = 200;
 
 /** The orders a folder's items can be listed in. Folders always keep their
  *  own manual order (rank, then name). `custom` is the order people set by
- *  dragging (`data.rank`, one for everyone): a folder that has one lists by
+ *  dragging (`data.tree_rank`, one for everyone): a folder that has one lists by
  *  it, then by name; one that has none lists in the kind's first other sort,
  *  so `custom` changes nothing until someone orders the folder. */
 export const TREE_SORTS = ['name', 'updated', 'start', 'due', 'custom'] as const;

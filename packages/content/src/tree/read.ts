@@ -391,7 +391,9 @@ export function treeFallbackSort(kind: TreeKind): TreeSort {
 }
 
 /** Whether the folder at `path` has a custom order: an item there that the
- *  caller reads (and `ws` reads, when given) carries a `tree_rank`. */
+ *  caller reads (and `ws` reads, when given) carries a `tree_rank`. A
+ *  read-only snapshot copy's does not count: it is the rank it inherited,
+ *  never one set by a place (write.ts orderChildren reads the same). */
 export async function hasCustomOrder(
   ownerId: string,
   kind: TreeKind,
@@ -402,6 +404,7 @@ export async function hasCustomOrder(
     select 1 from nodes n
      where n.owner_id = ${ownerId} and n.type = ${TREE_KIND_SPECS[kind].nodeType}
        and n.path = ${path}::ltree ${kindItemFilter(kind, 'n')} ${extra}
+       and not (n.data ? 'snapshot_of')
        and n.data->>'tree_rank' ~ ${RANK_RE.source}
      limit 1`)) as unknown as unknown[];
   return rows.length > 0;

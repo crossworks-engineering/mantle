@@ -178,6 +178,11 @@ export const RATE_LIMITS = {
   memberBytes: { ...perMember('member-bytes', 240), when: BYTES_ASKED },
   memberThumbs: { ...perMember('member-thumbs', 60), when: THUMB_ASKED },
   wsUserSearch: perLogin('ws-user-search', 60),
+  /** A place in a folder's custom order, per login, an Admin user's too: a
+   *  place may rank a whole folder (up to 5,000 rows, write.ts
+   *  orderChildren). A person dragging and pressing Move up stays far
+   *  under it. */
+  treePlace: perLogin('tree-place', 120),
   // The /s link routes, per address: a stranger's requests.
   shareAggregate: perIp('share-aggregate', 120),
   shareBundle: perIp('share-bundle', 30),

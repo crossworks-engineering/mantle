@@ -8,7 +8,7 @@
  * every other kind's folders are rows only (./node-ops). The look and the
  * order are plain row data for every kind.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import {
   defineDomainError,
   editCheckRefusalError,
@@ -45,7 +45,8 @@ import {
   type TreeShareLevel,
 } from '@mantle/client-types/tree';
 import { treeParentPath } from '@mantle/content-core/tree';
-import { RANK_RE, rankBetween, ranksSpread } from '../rank';
+import { RANK_RE } from '../rank';
+import { TREE_ORDER_MAX, planWhole, rankAt, type OrderRow, type RankWrite } from './order-plan';
 import { isTreeLiveKind, kindItemFilter } from './kinds';
 import {
   TreeVisibilityError,
@@ -429,56 +430,6 @@ async function setFolderLook(
     .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
 }
 
-/** The direct subfolders of `parentPath` in their current order. */
-async function childFolderIds(
-  ownerId: string,
-  parentPath: string,
-): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
-  const rows = (await db.execute(sql`
-    select id, data from nodes
-     where owner_id = ${ownerId} and type = 'branch'
-       and path ~ ${`${parentPath}.*{1}`}::lquery
-     order by data->>'rank' collate "C" nulls last, lower(title), id`)) as unknown as Array<{
-    id: string;
-    data: Record<string, unknown> | null;
-  }>;
-  return rows.map((r) => ({ id: r.id, data: r.data ?? {} }));
-}
-
-/**
- * Put a folder directly after `afterId` among its siblings (null = first).
- * The whole sibling list is re-ranked in its new order: a level holds a
- * handful of folders, and fresh ranks never collide with older ones.
- */
-async function placeFolder(
-  ownerId: string,
-  kind: TreeKind,
-  folderId: string,
-  afterId: string | null,
-): Promise<void> {
-  const folder = await folderOrThrow(ownerId, kind, folderId);
-  const siblings = (await childFolderIds(ownerId, treeParentPath(folder.path))).filter(
-    (s) => s.id !== folderId,
-  );
-  const at = afterId === null ? 0 : siblings.findIndex((s) => s.id === afterId) + 1;
-  if (afterId !== null && at === 0)
-    throw new TreeError('invalid', 'the sibling to place after was not found');
-  const moving = { id: folderId, data: {} as Record<string, unknown> };
-  const order = [...siblings.slice(0, at), moving, ...siblings.slice(at)];
-  const ranks = ranksSpread(order.length);
-  await db.transaction(async (tx) => {
-    await keepUpdatedAt(tx);
-    for (const [i, s] of order.entries()) {
-      await tx
-        .update(nodes)
-        .set({
-          data: sql`jsonb_set(coalesce(data, '{}'::jsonb), '{rank}', to_jsonb(${ranks[i]!}::text))`,
-        })
-        .where(sql`id = ${s.id} and owner_id = ${ownerId}`);
-    }
-  });
-}
-
 /** A place is no edit of what it orders: the transaction keeps each row's
  *  `updated_at` (touch_updated_at reads mantle.keep_updated_at), so "last
  *  updated" and the extractor never see an order change. */
@@ -552,23 +503,11 @@ async function folderIdAt(ownerId: string, path: string): Promise<string | null>
   return row?.id ?? null;
 }
 
-/** The rank a single place may write before the folder is ranked whole
- *  again: keys stay well inside RANK_RE's 64 characters. */
-const RANK_MAX_LEN = 48;
-
 /**
  * Put an item directly after `afterId` among the items of its folder (null
  * = first), in the folder's custom order, one for everyone (the tree's
  * `custom` sort). The place is the item's `data.tree_rank` (0335), written
- * without touching `updated_at`.
- *
- * Only the moved item is written when its new neighbours both carry a rank.
- * Else the folder is ranked whole, evenly, in the order the tree shows it
- * now (its custom order, or the kind's other sort when it has none yet), so
- * the first drag moves one item and nothing else. Only rows the caller may
- * write take a rank then: never a read-only snapshot copy, and at the top
- * level only what the caller may edit; the rest keep theirs. Items the
- * caller does not read keep theirs too. One place at a time per folder.
+ * without touching `updated_at` (orderChildren).
  */
 export async function placeTreeItem(
   ownerId: string,
@@ -587,80 +526,178 @@ export async function placeTreeItem(
      limit 1`)) as unknown as Array<{ id: string; path: string; copy: boolean }>;
   if (!item) throw new TreeError('not-found', 'item not found');
   await assertMayOrder(ownerId, kind, item.path);
-  if (afterId === itemId) throw new TreeError('invalid', 'an item cannot follow itself');
   if (item.copy) throw new TreeError('invalid', 'a read-only copy keeps its place');
-  const here = sql`n.owner_id = ${ownerId} and n.type = ${nodeType}
-    and n.path = ${item.path}::ltree ${kindItemFilter(kind, 'n')}`;
-  // At the top level the database asks edit of each item (no folder holds
-  // it): a whole ranking writes only those.
-  const editable =
-    item.path === root && currentWorkspaceScope()
-      ? await itemWriteVerdicts(
-          (
-            (await db.execute(
-              sql`select n.id::text as id from nodes n where ${here}`,
-            )) as unknown as Array<{ id: string }>
-          ).map((r) => r.id),
-          'edit',
-        )
-      : null;
+  await orderChildren(ownerId, kind, {
+    key: 'tree_rank',
+    path: item.path,
+    top: item.path === root,
+    where: sql`n.owner_id = ${ownerId} and n.type = ${nodeType}
+      and n.path = ${item.path}::ltree ${kindItemFilter(kind, 'n')}`,
+    orderBy: (ordered) => treeItemOrderBy(ordered ? 'custom' : treeFallbackSort(kind)),
+    movingId: itemId,
+    afterId,
+  });
+}
+
+/**
+ * Put a folder directly after `afterId` among its sibling folders (null =
+ * first): its `data.rank`, through orderChildren as an item's place. The
+ * caller's right to order the parent is asked before (updateTreeFolder).
+ */
+async function placeFolder(
+  ownerId: string,
+  kind: TreeKind,
+  folderId: string,
+  afterId: string | null,
+): Promise<void> {
+  const folder = await folderOrThrow(ownerId, kind, folderId);
+  const parentPath = treeParentPath(folder.path);
+  await orderChildren(ownerId, kind, {
+    key: 'rank',
+    path: parentPath,
+    top: parentPath === TREE_KIND_SPECS[kind].root,
+    where: sql`n.owner_id = ${ownerId} and n.type = 'branch'
+      and n.path ~ ${`${parentPath}.*{1}`}::lquery`,
+    // The order the tree lists folders in (read.ts listTreeFolders).
+    orderBy: () => sql`n.data->>'rank' collate "C" nulls last, lower(n.title), n.id`,
+    movingId: folderId,
+    afterId,
+  });
+}
+
+/** One folder's children to order: its items or its subfolders. */
+type ChildOrder = {
+  /** The key the place is written to: an item's `tree_rank`, a folder's
+   *  `rank` (both presentation keys, 0281 and 0335). */
+  key: 'tree_rank' | 'rank';
+  /** The folder whose children these are (the lock's key). */
+  path: string;
+  /** The kind's top level: no folder holds the children, so the database
+   *  asks edit of each one written. */
+  top: boolean;
+  /** The children, the moved one among them (alias `n`). */
+  where: SQL;
+  /** The order the tree shows them in, by whether the folder has an order. */
+  orderBy: (ordered: boolean) => SQL;
+  movingId: string;
+  /** The child to follow; null = first. */
+  afterId: string | null;
+};
+
+/**
+ * Order a folder's children (the gateway of every place: an item's, a
+ * folder's). Under an advisory lock on the folder, so places in one folder
+ * run one at a time, the children are read in the transaction as the tree
+ * shows them and the plan (order-plan.ts) is written in one statement:
+ *
+ *  - when the moved child's new neighbours (copies left out) both carry a
+ *    rank with room between, only it is written;
+ *  - else the folder is ranked (planWhole): in an ordered folder only the
+ *    children with no rank take one, after the rest; in an unordered one
+ *    all of them, evenly. Only rows the caller may write take a rank then:
+ *    never a read-only snapshot copy, and at the top level only what the
+ *    caller may edit (asked then, not on every place). A folder of more
+ *    than TREE_ORDER_MAX children is refused that (409).
+ *
+ * At the top level the moved child itself must be the caller's to edit:
+ * refused first (the edit check's 403), never silently left where it was.
+ * Nothing touches `updated_at` (keepUpdatedAt).
+ */
+async function orderChildren(ownerId: string, kind: TreeKind, o: ChildOrder): Promise<void> {
+  if (o.afterId === o.movingId) throw new TreeError('invalid', 'nothing can follow itself');
+  const scoped = currentWorkspaceScope() !== null;
+  if (o.top && scoped) {
+    const v = (await itemWriteVerdicts([o.movingId], 'edit')).get(o.movingId) ?? 'no_read';
+    if (v !== 'ok') throw editCheckRefusalError(v);
+  }
+  const rankSql = sql`n.data->>${o.key}`;
   await refusing(() =>
     db.transaction(async (tx) => {
       await keepUpdatedAt(tx);
-      await advisoryXactLock(tx, `tree-order:${ownerId}:${kind}:${item.path}`, 'hashtextextended');
+      await advisoryXactLock(
+        tx,
+        `tree-order:${ownerId}:${kind}:${o.key}:${o.path}`,
+        'hashtextextended',
+      );
+      // A copy's inherited rank makes no order (read.ts hasCustomOrder).
       const [has] = (await tx.execute(sql`
         select exists (select 1 from nodes n
-                        where ${here} and n.data->>'tree_rank' ~ ${RANK_RE.source}) as ordered`)) as unknown as Array<{
+                        where ${o.where} and not (n.data ? 'snapshot_of')
+                          and ${rankSql} ~ ${RANK_RE.source}) as ordered`)) as unknown as Array<{
         ordered: boolean;
       }>;
-      const order = has?.ordered ? 'custom' : treeFallbackSort(kind);
-      const siblings = (
+      const ordered = has?.ordered === true;
+      const rows: OrderRow[] = (
         (await tx.execute(sql`
-          select n.id::text as id, n.data->>'tree_rank' as rank,
-                 (n.data ? 'snapshot_of') as copy
+          select n.id::text as id, ${rankSql} as rank, (n.data ? 'snapshot_of') as copy
             from nodes n
-           where ${here} and n.id <> ${itemId}::uuid
-           order by ${treeItemOrderBy(order)}`)) as unknown as Array<{
+           where ${o.where} and n.id <> ${o.movingId}::uuid
+           order by ${o.orderBy(ordered)}`)) as unknown as Array<{
           id: string;
           rank: string | null;
           copy: boolean;
         }>
-      ).map((r) => ({ ...r, rank: r.rank !== null && RANK_RE.test(r.rank) ? r.rank : null }));
-      const at = afterId === null ? 0 : siblings.findIndex((r) => r.id === afterId) + 1;
-      if (afterId !== null && at === 0) {
-        throw new TreeError('invalid', 'the item to place after is not in this folder');
+      ).map((r) => ({
+        id: r.id,
+        rank: r.rank !== null && RANK_RE.test(r.rank) ? r.rank : null,
+        copy: r.copy === true,
+      }));
+      const at = o.afterId === null ? 0 : rows.findIndex((r) => r.id === o.afterId) + 1;
+      if (o.afterId !== null && at === 0) {
+        throw new TreeError('invalid', 'the one to place after is not in this folder');
       }
-      const prev = siblings[at - 1];
-      const next = siblings[at];
-      const lo = prev ? prev.rank : null;
-      const hi = next ? next.rank : null;
-      const between =
-        (!prev || lo !== null) &&
-        (!next || hi !== null) &&
-        !(lo !== null && hi !== null && lo >= hi)
-          ? rankBetween(lo, hi)
-          : null;
-      let writes: Array<{ id: string; rank: string }>;
-      if (between !== null && between.length <= RANK_MAX_LEN) {
-        writes = [{ id: itemId, rank: between }];
+      const one = rankAt(rows, at);
+      let writes: RankWrite[];
+      if (one !== null) {
+        writes = [{ id: o.movingId, rank: one }];
       } else {
-        // Ranked whole: the rows the caller may write, in the new order.
-        const order = [...siblings.slice(0, at), { id: itemId, copy: false }, ...siblings.slice(at)]
-          .filter((r) => !r.copy && (editable === null || editable.get(r.id) === 'ok'))
-          .map((r) => r.id);
-        const ranks = ranksSpread(order.length);
-        writes = order.map((id, k) => ({ id, rank: ranks[k]! }));
+        if (rows.length + 1 > TREE_ORDER_MAX) {
+          throw new TreeError(
+            'conflict',
+            `This folder holds more than ${TREE_ORDER_MAX.toLocaleString('en-US')} entries, too many to put in order by hand. Sort it another way, or split it into folders.`,
+          );
+        }
+        // At the top level the database asks edit of each row: only those
+        // take a rank (the moved one was asked above).
+        const editable =
+          o.top && scoped
+            ? await itemWriteVerdicts(
+                rows.filter((r) => !r.copy).map((r) => r.id),
+                'edit',
+              )
+            : null;
+        writes = planWhole(
+          rows,
+          at,
+          o.movingId,
+          ordered,
+          (id) => editable === null || editable.get(id) === 'ok',
+        );
       }
-      for (const w of writes) {
-        await tx
-          .update(nodes)
-          .set({
-            data: sql`jsonb_set(coalesce(data, '{}'::jsonb), '{tree_rank}', to_jsonb(${w.rank}::text))`,
-          })
-          .where(and(eq(nodes.id, w.id), eq(nodes.ownerId, ownerId)));
-      }
+      await writeRanks(tx, ownerId, o.key, writes);
     }),
   );
+}
+
+/** Every rank of a place in one statement (the write check runs per row). */
+async function writeRanks(
+  tx: Pick<typeof db, 'update'>,
+  ownerId: string,
+  key: 'tree_rank' | 'rank',
+  writes: readonly RankWrite[],
+): Promise<void> {
+  if (!writes.length) return;
+  // One uuid[] and one text[] parameter for any number of rows (a bind per
+  // row stops at 65,535); a rank is [0-9a-z] only, safe in the literal.
+  const ids = `{${writes.map((w) => w.id).join(',')}}`;
+  const ranks = `{${writes.map((w) => w.rank).join(',')}}`;
+  await tx
+    .update(nodes)
+    .set({
+      data: sql`jsonb_set(coalesce(${nodes.data}, '{}'::jsonb), ${`{${key}}`}::text[], to_jsonb(place.place_rank))`,
+    })
+    .from(sql`unnest(${ids}::uuid[], ${ranks}::text[]) as place(place_id, place_rank)`)
+    .where(and(eq(nodes.ownerId, ownerId), sql`${nodes.id} = place.place_id`));
 }
 
 /**

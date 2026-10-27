@@ -6,7 +6,8 @@
 # 2026-10-24 (Present, owner decision of the app limits): member-canvas-frame-ticket follows the app rule, an Admin user counts too; its count line says so and it has no "order: an Admin user" probe. The canvas-frame and member-canvas-frame-ticket probes are the Present routes', recorded on the branch.
 # 2026-10-24 (Present in Pages): GET and HEAD /s/:token/present/:presentId, a shared page's canvas snapshot, take share-present-embed, the limit of its drawing sibling; their probes are that sibling's answers, as main recorded them.
 # 2026-10-24 (Present in Pages): GET and HEAD /api/presents/:id/poster, a canvas's snapshot in a page, take present-poster (600 a minute per login); its probes are the branch's own answers (no route on main).
-# probes: 267
+# 2026-10-27 (tree custom order): POST /api/tree/:kind/place, a place in a folder's custom order, takes tree-place (120 a minute per login, an Admin user's too); its probes are the branch's own answers (no route on main).
+# probes: 271
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
 POST /api/auth/login none auth:login scope => other address 401
@@ -274,3 +275,7 @@ GET /s/:token/a/:fileId none share-asset scope => other address 404
 HEAD /s/:token/a/:fileId none share-asset count (ip 240/60s) => first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store 
 HEAD /s/:token/a/:fileId none share-asset window => 59s: 429 text/plain retry-after=1 cache-control=no-store ; 60s: 404
 HEAD /s/:token/a/:fileId none share-asset scope => other address 404
+POST /api/tree/:kind/place member tree-place count (login 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/tree/:kind/place member tree-place window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/tree/:kind/place member tree-place scope => other address 429; other login 404; other login, other address 404
+POST /api/tree/:kind/place member tree-place order: no login => first 429 at 0; answer 401; then 404
