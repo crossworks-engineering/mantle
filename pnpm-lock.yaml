@@ -438,9 +438,6 @@ importers:
         specifier: ^2.18.1
         version: 2.18.1
     devDependencies:
-      '@types/mailparser':
-        specifier: ^3.9.0
-        version: 3.9.0
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -3020,9 +3017,6 @@ packages:
 
   '@types/katex@0.16.8':
     resolution: {integrity: sha512-trgaNyfU+Xh2Tc+ABIb44a5AYUpicB3uwirOioeOkNPPbmgRNtcWyDeeFRzjPZENO9Vq8gvVqfhaaXWLlevVwg==}
-
-  '@types/mailparser@3.9.0':
-    resolution: {integrity: sha512-YnhrRiRVDiEAphFvd72hKa1n8y2b9Q3rgSQiONZQyhQz67h5g4MZHNApET3XWXVEFdInWtHqDHKEwnyjxU3QVw==}
 
   '@types/mdast@4.0.4':
     resolution: {integrity: sha512-kGaNbPh1k7AFzgpud/gMdvIm5xuECykRR+JnWKQno9TAXVa6WIVCGTPvYGekIDL4uwCZQSYbUxNBSb1aUo79oA==}
@@ -7494,11 +7488,6 @@ snapshots:
   '@types/json-schema@7.0.15': {}
 
   '@types/katex@0.16.8': {}
-
-  '@types/mailparser@3.9.0':
-    dependencies:
-      '@types/node': 26.6.5
-      iconv-lite: 0.6.3
 
   '@types/mdast@4.0.4':
     dependencies:

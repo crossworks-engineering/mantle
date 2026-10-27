@@ -125,7 +125,12 @@ const DBOS_POOL = (() => {
   const sys = join(dbosDir, 'dist/src/system_database.js');
   // 5.3.0 made #connect() public as connect(); either spelling borrows from
   // the one pool.
-  pinned(sys, /(?:#)?connect\(\) \{\s*return borrowClient\(this\.pool/, 'DBOS LISTEN client');
+  pinned(sys, /(?<![\w])#?connect\(\) \{\s*return borrowClient\(this\.pool/, 'DBOS LISTEN client');
+  pinned(
+    sys,
+    /const client = await this\.#?connect\(\);\s*acquired = client;/,
+    'DBOS LISTEN borrows',
+  );
   pinned(sys, /sysDbPoolSize = exports\.DEFAULT_POOL_SIZE/, 'DBOS executor pool default');
   pinned(
     join(dbosDir, 'dist/src/client.js'),
