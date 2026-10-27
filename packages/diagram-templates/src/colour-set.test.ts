@@ -333,3 +333,51 @@ describe('the trust words take their colour from the words the view draws', () =
     );
   });
 });
+
+describe("a drawing's own colours are never a check's", () => {
+  const trust = [
+    ROLE_COLOURS.guess,
+    ROLE_COLOURS.checked,
+    ROLE_COLOURS.contradicted,
+    ROLE_COLOURS.corrected,
+  ];
+  const drawing = (extra: Record<string, unknown>) => ({
+    title: 'Colours',
+    equipment: [
+      { id: 'V-1', type: 'vertical-vessel' },
+      { id: 'V-2', type: 'vertical-vessel' },
+    ],
+    lines: [{ id: 'L1', from: 'V-1', to: 'V-2', service: 'P' }],
+    ...extra,
+  });
+
+  it('a circuit or a service in a trust colour is refused, in any case, with what to pick', () => {
+    for (const hex of [...trust, ...trust.map((c) => c.toUpperCase())]) {
+      const circuit = validate(
+        'pid',
+        drawing({ circuits: [{ id: 'C1', colour: hex, lines: ['L1'] }] }),
+      );
+      expect(circuit.ok, hex).toBe(false);
+      expect(circuit.ok ? '' : circuit.errors.join(' ')).toMatch(
+        /circuits\[0\]\.colour: .* keeps for the image check .* Pick another/,
+      );
+      const service = validate('pid', drawing({ profile: { serviceColours: { P: hex } } }));
+      expect(service.ok, hex).toBe(false);
+      expect(service.ok ? '' : service.errors.join(' ')).toMatch(
+        /profile\.serviceColours\.P: .* image check/,
+      );
+    }
+  });
+
+  it('any other colour, a role colour of a line included, is kept', () => {
+    for (const hex of [ROLE_COLOURS.main, ROLE_COLOURS.branch, '#123456', 'series-2']) {
+      expect(
+        validate('pid', drawing({ circuits: [{ id: 'C1', colour: hex, lines: ['L1'] }] })).ok,
+        hex,
+      ).toBe(true);
+      expect(validate('pid', drawing({ profile: { serviceColours: { P: hex } } })).ok, hex).toBe(
+        true,
+      );
+    }
+  });
+});

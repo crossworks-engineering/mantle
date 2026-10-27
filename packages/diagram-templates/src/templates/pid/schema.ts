@@ -20,7 +20,7 @@ import {
   type Issues,
   type Obj,
 } from '../../runtime/validate.ts';
-import { isColour, STYLE_EDITIONS, type StyleEdition } from '../../runtime/style.ts';
+import { isColour, isTrustColour, STYLE_EDITIONS, type StyleEdition } from '../../runtime/style.ts';
 import {
   FOLLOWING_LETTERS,
   parseLineNumber,
@@ -132,6 +132,11 @@ export type InlineItem = {
 };
 export const LINE_ENDS = ['open', 'cap'] as const;
 export const TOWARD = ['up', 'down', 'left', 'right'] as const;
+
+/** Why a drawing's own colour (a circuit's, a service's) is refused: it is
+ *  one the image check's marks wear (style.ts isTrustColour). */
+const TRUST_COLOUR_ERROR = (path: string, colour: string) =>
+  `${path}: '${colour}' is a colour the drawing keeps for the image check (GUESS, CHECKED BY IMAGE, IMAGE: NO, FROM IMAGE), so a line would wear a check no image gave it. Pick another (series-1..series-5 or another #rrggbb).`;
 export type Toward = (typeof TOWARD)[number];
 
 export type Line = {
@@ -369,6 +374,8 @@ function checkProfile(raw: unknown, issues: Issues): SiteProfile | undefined {
           issues.errors.push(
             `profile.serviceColours.${k}: '${String(v)}' is not a colour (series-1..series-5, ink, muted, or #rrggbb).`,
           );
+        } else if (isTrustColour(v)) {
+          issues.errors.push(TRUST_COLOUR_ERROR(`profile.serviceColours.${k}`, v));
         } else out.serviceColours[k] = v;
       }
     }
@@ -1009,6 +1016,8 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
       issues.errors.push(
         `${p}.colour: '${colour}' is not a colour (series-1..series-5 or #rrggbb).`,
       );
+    else if (colour && isTrustColour(colour))
+      issues.errors.push(TRUST_COLOUR_ERROR(`${p}.colour`, colour));
     const cl: string[] = [];
     list(c, 'lines', p, issues).forEach((v, i) => {
       if (typeof v !== 'string' || !lineIds.has(v)) {

@@ -33,12 +33,16 @@
  * What this does not do: it does not make an author's page honest. A
  * script of the author's that runs before the runtime and removes itself
  * leaves no trace in the document, and an author can draw any words in
- * their own markup. Such a canvas is never one whose data names `pid`
- * (a save rebuilds every one of those exactly as buildCanvas writes it,
- * with no author script), so the marks it shows are the author's picture,
- * not the template's claim; the Checks tab of the drawing's table stays
- * the proof. Anywhere the layout does not hold, the runtime draws every
- * mark unchecked (GUESS, no evidence, no count of checked guesses).
+ * their own markup. The runtime cannot tell such a page from the
+ * template's own. A save does not store one as a canvas whose data names
+ * `pid` (it rebuilds each of those exactly as buildCanvas writes it, with
+ * no author script), but a canvas stored before those checks shipped
+ * (until pid-canvas-resave writes it again) or a page served by another
+ * path is not held to that, and what it shows is then the author's
+ * picture, not the template's claim. The Checks tab of the drawing's
+ * table stays the proof. Anywhere the layout does not hold, the runtime
+ * draws every mark unchecked (GUESS, no evidence, no count of checked
+ * guesses).
  *
  * The block is read once, when `mount()` is called (the import runs once
  * the document is parsed).

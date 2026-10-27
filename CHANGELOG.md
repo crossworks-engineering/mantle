@@ -4,6 +4,57 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: DWG bones phase 6, the image check seals
+
+- **Feature:** `circuit_verify` answers can correct the drawing (a no names
+  what the guess is instead), and every guess `circuit_trace` draws carries
+  a sealed image check mark; the canvas shows each check's evidence (its
+  crops, question, answer and model) and how many guesses no image has
+  checked. Details: docs/file-ingestion.md (the phase 6 rows).
+- **Save checks (fleet note): hand-written canvas shapes now refused.**
+  Every save (`present_create`, `present_update`, `present_restore`, the
+  HTTP create and update) refuses, in plain words, and stores nothing:
+  - a `pid` canvas (its data block or its head names the template) holding
+    anything but its data block and the template's own page: another
+    script, markup around or inside the drawing's elements, any other head
+    or body content. Edit the data instead, or start a canvas without the
+    template;
+  - a `pid` canvas with a second data block, another element named
+    `diagram-data`, or a data block that does not read as written;
+  - a `pid` canvas with another element named `diagram-assets` (the block
+    its pictures travel in) written another way;
+  - a `pid` canvas whose data is past a size the template holds a drawing
+    to (its first problem named);
+  - any other canvas with more than one element named `diagram-data`, or
+    one whose content does not read as a JSON object.
+    The `pid` template's check also refuses a `circuits[].colour` or a
+    `profile.serviceColours` entry that names one of the image check's
+    colours (GUESS, CHECKED BY IMAGE, IMAGE: NO, FROM IMAGE), so no line
+    wears a check no image gave it: `present_create`, `present_update` and
+    `diagram_render` with such data save nothing and say which, and a stored
+    canvas holding one shows the template's error in place of the drawing.
+    A save also rewrites what it keeps: typed trust words leave every label,
+    a mark whose seal does not hold where it sits becomes unchecked with its
+    evidence gone, the counts are recounted, and a crop is kept only while
+    its seal binds the bytes its sealed mark records.
+- **Every picture the server draws of a canvas** (a save's look and
+  poster, `present_render`, `present_export`, `diagram_render`'s preview)
+  is drawn from the source as a save stores it, so a forged mark in an
+  agent's data never previews as checked.
+- **Crops are bound to their bytes:** the Checks row records each crop's
+  sha256 (sealed with the row), the mark carries it (sealed with the
+  mark), and a crop file replaced since the check is never embedded as its
+  evidence. A picture is checked against the size its own header declares
+  before anything is decoded.
+- **Operator step, once per box after the roll:** `pnpm maintain
+pid-canvas-resave` (dry run), then with `--apply`: each `pid` canvas is
+  written again through the save's checks as a new revision, and every
+  `pid` canvas's poster is cleared (a Page embed shows no snapshot until
+  the canvas's next look). Marks sealed before this release (seal body
+  `pid-check v5` now) show unchecked until the drawing is traced again;
+  crops filed before the hashes are embedded again only after
+  `circuit_verify` runs again. No model, no re-index, counts only.
+
 ## Unreleased: workspace delegation
 
 - **Feature (owner decision 2026-10-26):** the assistant of a workspace

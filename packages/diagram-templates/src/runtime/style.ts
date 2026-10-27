@@ -229,6 +229,21 @@ export function resolveColour(value: string | undefined, fallback: string): stri
   return fallback;
 }
 
+/** The colours the image check's marks wear (GUESS, CHECKED BY IMAGE,
+ *  IMAGE: NO, FROM IMAGE): a drawing's own colour (a circuit's, a
+ *  service's) may never be one of them, or a line would wear a check's
+ *  colour no mark gave it. */
+const TRUST_COLOURS: ReadonlySet<string> = new Set(
+  [ROLE_COLOURS.guess, ROLE_COLOURS.checked, ROLE_COLOURS.contradicted, ROLE_COLOURS.corrected].map(
+    (c) => c.toLowerCase(),
+  ),
+);
+/** Whether `value` (a colour `isColour` accepts) resolves to a trust
+ *  colour. */
+export function isTrustColour(value: string): boolean {
+  return TRUST_COLOURS.has(resolveColour(value, '').toLowerCase());
+}
+
 /** True for a colour `resolveColour` accepts. */
 export function isColour(value: string): boolean {
   return value in SERIES || value in PALETTE || /^#[0-9a-fA-F]{6}$/.test(value);
