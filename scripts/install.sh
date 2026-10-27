@@ -1248,7 +1248,7 @@ client_network_ready() { # → 0 when the network the client stack joins exists;
 }
 
 inf "Bringing services up (waits for migrate + health)…"
-"${COMPOSE[@]}" up -d --wait || warn "up --wait returned non-zero — the sanity check below will show what's wrong."
+"${COMPOSE[@]}" up -d --wait --remove-orphans || warn "up --wait returned non-zero — the sanity check below will show what's wrong."
 
 # The owner UI — a SEPARATE stack on its own version stream (jackdaw-built;
 # pinned by MANTLE_CLIENT_IMAGE_TAG, default `latest`).

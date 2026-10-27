@@ -264,8 +264,8 @@ reason. The current catalog (extend as new pipelines land):
   re-fetch the source, not to OCR. `details` carries the sha256.
 - `unsupported_media`, an audio/video file (by extension OR mime). Stored and
   playable but no parser reads it; transcription is only ever the explicit
-  `video_ingest` tool, never this sweep (cost-safety). Hint points at link
-  ingestion.
+  `video_ingest` tool, never this sweep (cost-safety). Hint points at
+  `video_ingest` with the file's id.
 - `no_parser`, any OTHER parserless non-image format whose body fell back to
   its own filename (the generalised hollow-body guard, `isHollowFilenameBody`).
   Before v0.232.32 a descriptive filename cleared `body_too_short` and indexed

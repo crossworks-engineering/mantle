@@ -7,10 +7,13 @@
 #    workers/migrate) for amd64 + (the owner-UI image builds in mantle-client)
 #    arm64, each (target, arch) on its OWN native GitHub runner in parallel,
 #    then merges each target's digests into a multi-arch manifest pushed to
-#    Docker Hub as <namespace>/mantle-server:<tag> and :latest.
+#    Docker Hub as <namespace>/mantle-server:<tag> (and mantle-parser), and
+#    probes each image on each architecture's native runner.
 # 2. Cuts a GitHub Release carrying the deploy bundle (docker-compose.yml,
 #    .env.prod.example, infra/, install.sh, db scripts) so compose + image are
 #    versioned TOGETHER — the contract docs/self-hosting.md documents.
+# 3. Only then moves `:latest` of BOTH images, in one job: a fresh install or
+#    an unpinned box never pulls a server whose parser (or release) failed.
 #
 # Required repo secrets (Settings → Secrets and variables → Actions):
 #   DOCKERHUB_USERNAME   (titanwest)
@@ -248,8 +251,8 @@ jobs:
           fi
 
       # The release tag only: `:latest` (what a fresh install and every
-      # unpinned box pulls) moves at the end of this job, after the probes
-      # below passed on the pushed image.
+      # unpinned box pulls) moves in the `latest` job, after both images
+      # passed their probes on both architectures and the release was cut.
       - name: Create + push the multi-arch manifest
         working-directory: ${{ runner.temp }}/digests
         run: |
@@ -258,14 +261,35 @@ jobs:
             $(printf "${IMAGE}@sha256:%s " *)
 
       # Belt to the braces above: the PUSHED manifest must list both
-      # platforms, for BOTH targets (the node:sqlite probe below only runs on
-      # the server image and only exercises amd64 — the client merge passed
-      # v0.202.0's arm64-only manifest without it).
+      # platforms, for BOTH targets (the client merge passed v0.202.0's
+      # arm64-only manifest before this check existed).
       - name: Inspect + assert both platforms
         run: |
           docker buildx imagetools inspect "${IMAGE}:${{ github.ref_name }}" | tee /tmp/inspect.txt
           grep -q "linux/amd64" /tmp/inspect.txt
           grep -q "linux/arm64" /tmp/inspect.txt
+
+  # The probes, on BOTH architectures' native runners: the image a box runs
+  # is the one for its own architecture, so an arm64-only break (a reader
+  # wheel, a native module) fails here too, not on an arm64 box's first
+  # drawing. Docker pulls the runner's own platform from the manifest.
+  probe:
+    needs: merge
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [server, parser]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    env:
+      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle-${{ matrix.target }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Tables v2 foundation gate: node:sqlite is experimental upstream, so the
       # engine behaviors table storage leans on (readOnly enforcement, FTS5
@@ -312,14 +336,8 @@ jobs:
           " || { docker logs parser-probe; exit 1; }
           docker rm -f parser-probe
 
-      # Every probe above passed on the pushed release tag: point `:latest`
-      # at it now.
-      - name: Point latest at the probed release
-        run: |
-          docker buildx imagetools create -t "${IMAGE}:latest" "${IMAGE}:${{ github.ref_name }}"
-
   release:
-    needs: merge
+    needs: probe
     runs-on: ubuntu-24.04
     permissions:
       contents: write # create the release + upload assets
@@ -345,3 +363,27 @@ jobs:
             --generate-notes \
             "dist/mantle-deploy-${{ github.ref_name }}.tar.gz" \
             dist/SHA256SUMS
+
+  # `:latest` (what a fresh install and every unpinned box pulls) moves for
+  # BOTH images in this one job, and only after every merge leg, every probe
+  # leg and the release succeeded: never a `:latest` server beside an older
+  # `:latest` parser, or the other way round.
+  latest:
+    needs: [merge, probe, release]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Point latest at the probed release, both images
+        run: |
+          for target in server parser; do
+            image="${IMAGE_BASE}-${target}"
+            docker buildx imagetools create -t "${image}:latest" "${image}:${{ github.ref_name }}"
+          done

@@ -19,7 +19,10 @@
 #      check is not on, unless its .env says MANTLE_CHECK_FLOOR=keep (2d);
 #      refuse a roll to a release that ships 0330 (the role follows Admin
 #      membership) while any login holds an Admin seat without role admin,
-#      whose migrate would refuse and leave the site down (2e)
+#      whose migrate would refuse and leave the site down (2e); refuse a
+#      roll to a release that ships the parser service on a box whose
+#      docker-compose.yml the roll will not refresh (local edits or no
+#      baseline) and that does not define the parser (2f)
 #   3. backup: scripts/db-dump.sh on the box, strict, its OWN exit status
 #      (no pipe in front of it). Skipped only when the box's updater takes
 #      its own strict pre-roll backup (see pre_roll_backup in
@@ -35,8 +38,9 @@
 #      when not ok, the tail of update.log and of the mantle_migrate log
 #      (masked as in 6): a refused migrate is why compose up failed
 #   6. wait for mantle_web healthy, then mantle_parser (when the release has
-#      it); if one never is, a loud banner and the last 20 lines of its log,
-#      every line, with secret values masked. No automatic rollback: the
+#      it: a release that ships it with no mantle_parser after the roll is a
+#      failure); if one never is, a loud banner and the last 20 lines of its
+#      log, every line, with secret values masked. No automatic rollback: the
 #      operator decides.
 #   7. count again: ANY drop in apps, sandboxes or app-db files stops with a
 #      loud error (mini sandbox apps are never to be lost in a roll)
@@ -518,6 +522,66 @@ else
   echo "admin seats: $TAG is older than any release with 0330 (v$S8B_SEAT_NOT_BEFORE); not checked"
 fi
 
+# ── 2f. the parser service: a compose the roll will not refresh ─────────
+# From the release that adds the parser service (docker-compose.yml defines
+# `container_name: mantle_parser`) the brain reads every file through it.
+# The updater refreshes a pristine box compose to the release's in the same
+# roll; a compose with local edits, or with no baseline
+# (docker-compose.yml.release, from scripts/compose-adopt.sh), is left as it
+# is. The FIRST roll to that release is run by the box's CURRENT updater, a
+# release before the parser, which does not refuse that (the new updater
+# does, parser_compose_refusal): it would bring up a brain that reads no
+# file and report success. So this checkout refuses it here, before the
+# backup and the request, unless the box's compose already defines the
+# parser. Pristine is the updater's own test (the compose equals its
+# baseline, what stack.json's compose_sha and baseline_sha record), read live
+# on the box. Whether the target ships the parser is read from its own tree
+# (its docker-compose.yml), as 2d; a target this checkout cannot tell counts
+# as shipping it. PARSER_NOT_BEFORE only skips the question for a release
+# older than any that could ship it (main was v0.400.13 when it was written).
+PARSER_NOT_BEFORE=0.400.14
+# parser_in_release <tag>: yes when release <tag>'s docker-compose.yml
+# defines the parser, no when it does not, unknown when this checkout has no
+# such tag.
+parser_in_release() {
+  local git_dir=${ROLL_RELEASE_GIT:-$ROOT} ref
+  for ref in "refs/tags/v${1#v}" "refs/tags/$1"; do
+    git -C "$git_dir" rev-parse -q --verify "$ref^{commit}" > /dev/null 2>&1 || continue
+    if git -C "$git_dir" show "$ref:docker-compose.yml" 2> /dev/null | grep -q 'container_name: mantle_parser'; then
+      echo yes
+    else
+      echo no
+    fi
+    return 0
+  done
+  echo unknown
+}
+PARSER_SHIPS=before
+if tag_at_or_past "$PARSER_NOT_BEFORE" "$TAG"; then
+  PARSER_SHIPS=$(parser_in_release "$TAG")
+fi
+case "$PARSER_SHIPS" in
+  before) echo "parser: $TAG is older than any release with the parser service (v$PARSER_NOT_BEFORE); not checked" ;;
+  no) echo "parser: $TAG does not ship the parser service (its docker-compose.yml does not define it); not checked" ;;
+  *)
+    PC=$(rsh "cd '$STACK' && if grep -q 'container_name: mantle_parser' docker-compose.yml 2>/dev/null; then echo has; elif [ ! -f docker-compose.yml ] || [ ! -f docker-compose.yml.release ]; then echo no-baseline; elif cmp -s docker-compose.yml docker-compose.yml.release; then echo pristine; else echo modified; fi") ||
+      die "could not read this box's docker-compose.yml"
+    PC=$(printf '%s' "$PC" | tr -d '\r ')
+    PARSER_HOW="Move the local edits to docker-compose.override.yml and run scripts/compose-adopt.sh --apply on the box (docs/update-prod.md, \"Rolling to the parser service\"), then roll again."
+    if [ "$PARSER_SHIPS" = yes ]; then
+      PARSER_WHY="$TAG ships the parser service"
+    else
+      PARSER_WHY="this checkout cannot tell whether $TAG ships the parser service (no such tag here: git fetch --tags), so it counts as shipping it"
+    fi
+    case "$PC" in
+      has) echo "parser: this box's docker-compose.yml defines the parser service" ;;
+      pristine) echo "parser: this box's docker-compose.yml is the release's (pristine): the roll refreshes it to one with the parser service" ;;
+      no-baseline) die "this box's docker-compose.yml has no baseline (docker-compose.yml.release), so the roll will not refresh it, and it does not define the parser service; $PARSER_WHY. The box's current updater would roll on and bring up a brain that reads no file. $PARSER_HOW" ;;
+      modified) die "this box's docker-compose.yml has local edits, so the roll will not refresh it, and it does not define the parser service; $PARSER_WHY. The box's current updater would roll on and bring up a brain that reads no file. $PARSER_HOW" ;;
+      *) die "unexpected compose check: $PC" ;;
+    esac ;;
+esac
+
 if [ -n "$DRY" ]; then
   echo "dry run: stopping before the backup and the request"
   exit 0
@@ -710,9 +774,23 @@ done
 echo "mantle_web: $HS"
 
 # The parser reads every file the brain receives: a roll whose parser never
-# comes up healthy leaves a brain that reads nothing. A release before the
-# parser has no mantle_parser (nothing to wait for).
-if rsh "docker inspect mantle_parser" > /dev/null 2>&1; then
+# comes up healthy, or never comes up at all on a release that ships it
+# (2f), leaves a brain that reads nothing. A release before the parser has
+# no mantle_parser (nothing to wait for).
+if ! rsh "docker inspect mantle_parser" > /dev/null 2>&1; then
+  case "$PARSER_SHIPS" in
+    before | no) echo "mantle_parser: none (a release before the parser service)" ;;
+    *)
+      printf '\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
+      printf '!!  PARSER MISSING on %s after the roll to %s: there is no mantle_parser.\n' "$SSH_ALIAS" "$TAG" >&2
+      printf '!!  The release reads every file through it, so the brain reads no file.\n' >&2
+      printf '!!  The compose the box ran was not the release'"'"'s (update.log says why).\n' >&2
+      printf '!!  Nothing was rolled back; bring the compose up to the release\n' >&2
+      printf '!!  (docs/update-prod.md, "Rolling to the parser service") or roll back.\n' >&2
+      printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
+      exit 1 ;;
+  esac
+else
   PS=""; waited=0
   while :; do
     PS=$(rsh "docker inspect -f '{{.State.Health.Status}}' mantle_parser" 2>/dev/null || true)
@@ -731,8 +809,6 @@ if rsh "docker inspect mantle_parser" > /dev/null 2>&1; then
     [ "$POLL" -gt 0 ] || waited=$((waited + 1))
   done
   echo "mantle_parser: $PS"
-else
-  echo "mantle_parser: none (a release before the parser service)"
 fi
 
 # ── 7. counts after ──────────────────────────────────────────────────────────

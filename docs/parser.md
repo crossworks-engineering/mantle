@@ -35,7 +35,13 @@ operating system's:
   A tmpfs is memory: a job's files count in `mem_limit` while they sit
   there. A request takes its job slot before its body is read, so the
   scratch space only ever holds the files of the job that runs, and the
-  job's directory is removed before its slot is given back.
+  job's directory is removed before its slot is given back. Nothing one job
+  writes is there for the next: a job's temp files, home, caches and
+  matplotlib's font cache are inside its own directory (`TMPDIR`, `HOME`,
+  `XDG_CACHE_HOME`, `MPLCONFIGDIR`), tsx keeps no transform cache
+  (`TSX_DISABLE_CACHE`), and whatever is left in `/tmp` beside the job root
+  is removed before the slot is given back
+  (`server/parser/src/proc.ts`, `jobEnv` and `cleanScratch`).
 - **Network.** The parser sits only on the compose network `parser`
   (`mantle_parser_net`, `internal: true`): no route out (no NAT), and
   `dns: 0.0.0.0`, so Docker's resolver forwards no name outside the stack.
@@ -44,6 +50,23 @@ operating system's:
   as the default one. What the parser can reach is exactly those
   containers, on that network; not postgres, the object store or anything
   past the host. The other workers and migrate are not on it.
+
+  What the parser can reach includes web's port 3000 directly, past Caddy.
+  The web server takes the client address from X-Forwarded-For (the entry
+  `MANTLE_TRUSTED_PROXIES` hops from the right) or X-Real-IP from any peer
+  (`server/web/lib/rate-limit.ts`, `clientIpFromHeaders`), so a request
+  sent from inside the parser (a reader broken out of its document) could
+  claim any address: a fresh per-address rate-limit bucket on each request
+  to sign-in and key presentation, and a made-up address in the audit log.
+  It gains no access: every route still asks for a session or a key, and
+  no route trusts an address for anything but those budgets and the log.
+  The same holds today for any other container on the stack's networks and
+  for a process on the host (web's debug port, `127.0.0.1:3000`). Trusting
+  those headers only from Caddy is the fix; it is not a narrow change (the
+  peer address is not passed to the limiter, and split or externally
+  proxied boxes put a different peer in front), so it is its own piece of
+  work.
+
 - **Little else.** `cap_drop: ALL`, `no-new-privileges`, `pids_limit: 512`,
   no mounted data, no secret but its bearer token (a job's process does
   not get it; a reader's child program gets a minimal environment of its
@@ -53,13 +76,19 @@ operating system's:
 
 Inside, each job runs in its own process and process group
 (`server/parser/src/job.ts`), and the server sends `SIGKILL` to the group at
-the job's deadline. The deadline is absolute: the server settles on the
+the job's deadline, when the client goes away, and when the job ends. A
+reader's child program (the Python CAD child, ffprobe, ffmpeg) starts in the
+JOB's group (`runChild`), never one of its own, so that kill takes it and
+whatever it started. The deadline is absolute: the server settles on the
 job's exit, not on its output pipes closing, so a descendant that left the
-group (`setsid`) cannot hold the slot; and when the job ends, any process it
-left running (a child of PID 1 that is not the server) is killed
-(`server/parser/src/proc.ts`, `reapOrphans`). The kernel's OOM kill lands on
-the job process (the largest), the server answers `crashed`, and the next
-job starts clean.
+group (`setsid`) cannot hold the slot. Such a descendant is killed before
+the slot is given back (`server/parser/src/proc.ts`, `reapOrphans`): every
+process a job starts carries the server's mark in its environment
+(`MANTLE_PARSER_JOB`), and a marked process outside the group of a running
+job is a leftover; as a backstop inside the container, so is a child of PID
+1 that is not the server (a process that cleared its environment). The
+kernel's OOM kill lands on the job process (the largest), the server answers
+`crashed`, and the next job starts clean.
 
 ## Limits
 
@@ -70,9 +99,19 @@ job starts clean.
 | `PARSER_TMP_SIZE`           | `1g`    | the scratch tmpfs, counted in the memory while full (compose)          |
 | `PARSER_MAX_JOBS`           | 1       | jobs at once, each its own process                                     |
 | `PARSER_QUEUE_MAX`          | 16      | requests that may wait for a slot; one waits at most 30 s, then `busy` |
+| (interactive)               | 10 s    | a person-facing request's wait, at the head of the queue, then `busy`  |
+| (transfer)                  | 60 s    | the body's arrival and the answer's, each, once the slot is taken      |
 | `PARSER_MAX_UPLOAD_MB`      | 512     | the largest body (the brain's streamed upload cap), while it streams   |
 | `PARSER_CLIENT_CONCURRENCY` | 2       | jobs one brain process sends at once                                   |
 | `PARSER_TOKEN`              | none    | the bearer token on every route but `GET /healthz`                     |
+
+An interactive request (a chat attachment, a thumbnail: the client sends
+`X-Parser-Priority: interactive`) waits at the head of the queue, behind
+earlier interactive ones only, and is answered `busy` after 10 s; it is not
+turned away by a full background queue (each kind is capped at
+`PARSER_QUEUE_MAX`). There is no second slot: it takes the next one that
+frees. A body that has not arrived 60 s after its slot was taken, or an
+answer not read within 60 s, has its connection cut and the slot given back.
 
 An answer is at most 96 MB (`PARSER_ANSWER_MAX_BYTES`,
 `packages/files/src/parser-wire.ts`): the brain holds an answer in memory
@@ -102,7 +141,11 @@ usually turned away before it costs much:
   `packages/files/src/rasterize.ts`);
 - images: at most 100 million pixels decoded (`packages/files/src/image-read.ts`).
 
-A refusal is answered `too_large`.
+A refusal is answered `too_large`, marked final (`"final": true` in the
+error envelope): the same bytes fail the same way every time, so the client
+makes it terminal at once. A full scratch space (`ENOSPC`) is `too_large`
+but not final: the space can be full for other reasons, so the bytes get
+their one retry.
 
 ## Routes
 
@@ -150,7 +193,8 @@ Every failure is a typed `ParserError` with a `code`, and `retryable` and
 **Counted** codes count against the bytes in that job: the first is
 retryable (a loaded box can be slow once, a restart can drop one
 connection), the second is terminal, and a terminal job is refused at once
-without asking the parser again. The extractor keeps the count on the node
+without asking the parser again. A final refusal (a fixed cap, above) is
+terminal the first time. The extractor keeps the count on the node
 (`data.parser_failures`, keyed by the job and the bytes' sha256, written by
 `server/api/src/agent/extract/parser-failures.ts`; migration 0337), so it
 survives a restart or a roll: one bomb costs the parser at most two jobs of
@@ -180,16 +224,19 @@ What each caller does with them:
   counted failure is the terminal `document_unreadable`; `too_large` is the
   terminal `pdf_too_large`; a reader's `failed` is the non-terminal
   `pdf_unreadable`. The native model read of a PDF that found no text is
-  remembered per bytes in the api process, so a retry there does not pay
-  for it again. The gap: an api restart between two runs costs one more
-  native read (the count on the node ends a timing-out or crashing render
-  after two runs).
+  kept on the node (`data.native_pdf = { empty_sha256 }`, written before
+  the render runs), so a retry, or a redrive after a restart, does not pay
+  for it again; new bytes drop the key.
 - **HEIC for vision** (`packages/files/src/transcode.ts`): a retryable
   failure is thrown, never an unconverted HEIC sent on to a vision model.
-- **A chat turn** with an attachment says the file could not be read. A
-  busy parser is said at once ("try again in a moment"): the interactive
-  path does not wait out `busy` (`withParserScope({ interactive: true })`),
-  the background extract does (2, 5 and 10 s).
+- **A chat turn** with an attachment says the file could not be read.
+  It runs interactive (`withParserScope({ interactive: true })`): it skips
+  its process's client queue (`PARSER_CLIENT_CONCURRENCY`), waits at the
+  head of the parser's queue for at most 10 s, and a `busy` after that is
+  the answer, never retried: the turn says "try again in a moment". The
+  background extract retries `busy` (2, 5 and 10 s). Thumbnails run
+  interactive too: a busy parser shows the type icon, and the next request
+  tries again.
 - **Health** (`parserHealth`): up means the parser answers `/healthz` AND
   takes this process's token. `/healthz` says whether the parser asks for a
   token and whether the caller's is right; a mismatch, or a parser that asks

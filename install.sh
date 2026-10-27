@@ -57,7 +57,7 @@
 #   4. tells you where to sign up
 #
 # Updating later (see docs/self-hosting.md):
-#   cd <MANTLE_HOME> && docker compose pull && docker compose up -d --wait
+#   cd <MANTLE_HOME> && docker compose pull && docker compose up -d --wait --remove-orphans
 
 set -euo pipefail
 
@@ -232,6 +232,6 @@ cat <<EOF
   email, Telegram — all configured in the interface.
 
   Your data lives in $(pwd)/data — back it up and it IS your brain.
-  Update later:   cd $(pwd) && docker compose pull && docker compose up -d --wait
+  Update later:   cd $(pwd) && docker compose pull && docker compose up -d --wait --remove-orphans
   Full guide:     https://github.com/crossworks-engineering/mantle/blob/main/docs/self-hosting.md
 EOF
