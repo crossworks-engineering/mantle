@@ -19,6 +19,9 @@ export const policy = routePolicy({
   PATCH: {
     class: 'content',
     open: 'owner',
+    // A patch of `after` alone asks no right of the folder beyond its read:
+    // the order right of the folder that holds it (Write there, an Admin
+    // scope at the top level; tree-custom-order.db.test.ts pins it).
     item: { param: 'id', need: 'edit' },
   },
   DELETE: {
@@ -64,13 +67,18 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (kind instanceof Response) return kind;
   const id = Id.safeParse((await ctx.params).id);
   if (!id.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  // The folder's edit first (pre-check removal part 2), as the item gate
+  // The folder read first (pre-check removal part 2), as the item gate
   // asked it: one the scope does not read is the 404 of none (as for an id
-  // no row has), one it reads and may not edit the edit check's 403, before
-  // the body is read. A move and a rename ask manage again below.
-  await assertItemRight(id.data, 'edit');
+  // no row has), before the body is read. Then its edit, the edit check's
+  // 403, unless the patch only places it among its siblings: Write on the
+  // folder that holds it orders its subfolders (docs/folder-tree.md, "Custom
+  // order"), and updateTreeFolder asks that. A move and a rename ask manage
+  // again below.
+  await assertItemRight(id.data, 'read');
   const body = await readBody(req, Patch);
   const { confirm, seen, ...patch } = body;
+  const onlyPlaces = Object.keys(patch).every((k) => k === 'after');
+  if (!onlyPlaces) await assertItemRight(id.data, 'edit');
   const folder = await updateTreeFolder(user.id, kind, id.data, patch, { confirm, seen });
   await notifyTreeChanged(user.id, kind);
   return NextResponse.json({ folder });

@@ -139,28 +139,47 @@ login (owner decision 2026-10-26).
   extractor ignore it.
 - **Who sets it.** Write on the folder orders what it holds, its items and
   its subfolders; the top level is in no folder, so only an Admin scope
-  orders it. `placeTreeItem` and a folder's `after` ask it first
-  (`mayOrderFolder`, `TOP_LEVEL_ORDER_REFUSED`); a folder page says it
-  (`mayOrder`).
+  orders it, and there the database asks edit of each row written, so the
+  moved item or folder must be the caller's to edit (refused first, 403,
+  never silently left in place). `placeTreeItem` and a folder's `after` ask
+  it first (`mayOrderFolder`, `TOP_LEVEL_ORDER_REFUSED`); a folder page says
+  it (`mayOrder`). A PATCH of a folder that only sets `after` asks no right
+  of that folder beyond its read: the order right of the folder that holds
+  it decides.
 - **Reading.** `custom` is every kind's first sort. A folder where an item
   the reader reads carries a rank lists by rank, then by name, items with
   no rank last (`ordered: true` on the page); one with none lists in the
   kind's next sort, exactly as before (`treeFallbackSort`). So an untouched
   folder looks the same, and an ordered one opens in its order for
-  everyone. A to Z and last updated stay a choice per browser.
+  everyone. A to Z and last updated stay a choice per browser. A read-only
+  snapshot copy's rank is the one it inherited: it never makes a folder
+  ordered.
 - **Writing.** `POST /api/tree/:kind/place` `{ id, after }` puts an item
   right after another of its folder (null = first); the agents' tool is
   `tree_item_place`, and `tree_folder_update` takes `after` for a folder.
-  A place writes the moved item only when its new neighbours both carry a
-  rank. Otherwise (a folder not ordered yet, or a key grown past 48
-  characters) it ranks the folder whole, evenly (`ranksSpread`), in the
-  order the tree shows it: the first drag moves one item and nothing else.
-  A whole ranking writes only rows the caller may write: never a read-only
-  snapshot copy (it keeps its place, and cannot be placed), and at the top
-  level only what the caller may edit. Items the caller does not read keep
-  their rank. Places in one folder run one at a time (an advisory lock on
-  the folder). A move to another folder keeps the item's rank, so it lands
-  by it there until someone places it.
+  Both go through one gateway, `orderChildren` in
+  `packages/content/src/tree/write.ts` (the plan is
+  `packages/content/src/tree/order-plan.ts`): under an advisory lock on the
+  folder, so places in one folder run one at a time, it reads the children
+  in its transaction and writes every rank in one statement. Read-only
+  snapshot copies are never neighbours: a place goes between the nearest
+  children that are not copies, and a copy's inherited rank never ties
+  with one. A place writes the moved item only when those neighbours both
+  carry a rank with room between. Otherwise the folder is ranked: in a
+  folder that already has an order every rank stays, the children with
+  none take keys after the last (`planWhole`), so a member's place leaves
+  the items it does not see where they were; in a folder with no order yet
+  (or a tie, or a key grown past 48 characters) the children are ranked
+  whole, evenly (`ranksSpread`), in the order the tree shows them, so the
+  first drag moves one item and nothing else. Such a ranking writes only
+  rows the caller may write: never a copy (it keeps its place, and cannot
+  be placed), and at the top level only what the caller may edit (asked
+  then, not on every place). A folder of more than 5,000 children
+  (`TREE_ORDER_MAX`) is refused a place that needs a ranking (409: sort it
+  another way, or split it); a place between ranked neighbours works at
+  any size. The route is limited per login (`treePlace`, 120 a minute). A
+  move to another folder keeps the item's rank, so it lands by it there
+  until someone places it.
 
 ## Pins, Recent and Most used
 

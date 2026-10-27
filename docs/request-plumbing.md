@@ -629,7 +629,7 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (125):
+owner rows open to members (124):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
   DELETE /api/draws/:id
@@ -741,7 +741,6 @@ owner rows open to members (125):
   POST /api/tasks
   POST /api/tree/:kind/folders
   POST /api/tree/:kind/move
-  POST /api/tree/:kind/place
   POST /api/tree/items/:id/opened
   POST /api/v1/events
   POST /api/v1/files
