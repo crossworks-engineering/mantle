@@ -18,7 +18,7 @@ its unread count, so one list holds everything.
 | Table | What it holds |
 | --- | --- |
 | `messenger_conversations` | A direct chat or a group. `last_seq`, `last_message_at` and `last_preview` are written by the send that changes them. A direct chat has a `direct_key` (the two login ids, sorted and joined; unique), so a pair has one chat. |
-| `messenger_participants` | One row per login (or, from Phase 3, the group's one agent). `admin` marks a group admin (the creator first). `last_read_seq`, `mention_seq`, `cleared_before_seq`, `muted`; `left_at` and `left_seq` once the login left. |
+| `messenger_participants` | One row per login (or, from Phase 3, the group's one agent). `admin` marks a group admin (the creator first). `last_read_seq`, `mention_seq`, `cleared_before_seq`, `muted`; `from_seq`, the floor of what the login reads; `left_at` and `left_seq` once the login left. |
 | `messenger_messages` | One row per message, `(conversation_id, seq)` unique. `author_kind` is login, agent or system. `author_name` is a snapshot. `via` is the credential label shown, `via_ref` the credential itself. `client_msg_id` makes a send idempotent. |
 | `messenger_attachments` | The attachment rows of Phase 4 (no bytes yet). |
 | `messenger_reactions` | One emoji of one login on one message. |
@@ -50,13 +50,19 @@ Row security keys every read on the participant row:
 
 - a login reads a conversation, its participants and its messages while it
   holds a participant row;
-- a participant who left reads up to its `left_seq` and nothing after;
+- a participant who left reads up to its `left_seq` and nothing after; its
+  list row shows no newer line, and the room shows the people as they were
+  when it left;
+- a login added to a group later, or added back, reads from the line that
+  added it (`from_seq`), never the history before it or the gap while it was
+  out;
 - there is no Admin exception: an Admin user or the brain owner reads no chat
   it is not in, and there is no moderation view;
 - an agent row widens nobody's read.
 
 `mantle_messenger_seq_cap(conversation)` answers the highest seq the acting
-login may read (null: none). It is a security definer, so the participant
+login may read (null: none) and `mantle_messenger_seq_floor(conversation)`
+the seq it reads above. Both are security definers, so the participant
 policy does not read itself. The workspace role (`mantle_view_user`) has
 SELECT only.
 
@@ -158,6 +164,10 @@ each runs as the caller in its scope:
 | `messenger_wait` | wait up to 60 s for messages after a seq |
 | `messenger_mark_read` | move my cursor |
 | `messenger_directory` | who I may chat with |
+
+A connection that names no login (a peer bound to an Admin user the owner
+did not register) is refused: the tools never fall back to the brain owner.
+Only the local stdio server, which has no credential, acts as the owner.
 
 Every message records how it was sent: `via` (the OAuth client name, the API
 key name, the peer name) and `via_ref` (the credential itself:
