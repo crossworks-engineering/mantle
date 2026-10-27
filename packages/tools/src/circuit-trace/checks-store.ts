@@ -39,6 +39,7 @@ import {
   autoFiledFolderPath,
   callerMayEditFolder,
   deleteFileById,
+  DRAWING_CHECK_PROVENANCE,
   ensureAutoFiledFolder,
   ensureFilesRootBranch,
   FILES_ROOT_LABEL,
@@ -176,7 +177,7 @@ export async function storeChecks(
   const when = stamp(checkedAt);
   const base = {
     indexing: 'metadata',
-    provenance: 'drawing-check',
+    provenance: DRAWING_CHECK_PROVENANCE,
     sourceFileId: sheet.sourceFileId,
     sourceTableId: sheet.tableId,
     revision: sheet.revision ?? null,

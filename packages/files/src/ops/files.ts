@@ -71,7 +71,8 @@ import {
 import { getContent } from '@mantle/storage';
 import { fileRowFromNode, rowNow, type FileRow } from './shared';
 import { isSystemScope } from '@mantle/db/viewer';
-import { ConflictError, InputError } from '@mantle/std';
+import { ConflictError, editCheckRefusalError, InputError } from '@mantle/std';
+import { FILES_ROOT_LABEL } from '../paths';
 
 const TEXT_BYTE_CAP = 1_000_000; // 1 MB cap for content-in-DB caching.
 
@@ -249,6 +250,9 @@ export async function upsertFile(args: {
         // A read-only snapshot copy is never overwritten (W6b fix round 1),
         // nor a file the caller may read but not change.
         assertNotSnapshotCopy(existing);
+        // A drawing check's crop is never written over, by anyone: its
+        // bytes are what the image check saw (the Checks tab opens them).
+        if (isDrawingCheckCrop(existing)) throw new ConflictError(CROP_REPLACE_REFUSED);
         const id = existing.id;
         if ((await inCallerScope(() => mayEditNode(id))) === false) {
           throw new FileNameTakenError(filename);
@@ -912,6 +916,14 @@ export async function fileDeleteBlock(
   ownerId: string,
   fileId: string,
 ): Promise<FileDeleteBlock | null> {
+  // A drawing check's crop: only a caller that may file crops deletes one
+  // (thrown as the edit check's refusal, 403).
+  const [own] = await db
+    .select({ data: nodes.data })
+    .from(nodes)
+    .where(eq(nodes.id, fileId))
+    .limit(1);
+  if (own && isDrawingCheckCrop(own)) await assertCropDeletable(ownerId);
   // Block deletion of a file that's an email attachment: email_attachments
   // .file_node_id is ON DELETE RESTRICT, so a bare delete would raise an FK
   // violation and surface as a 500. Return a clean refusal the caller can show
@@ -1438,6 +1450,25 @@ export async function bulkDeleteGate(
     if (v === 'ok') allowed.push(id);
     else refused.push({ fileId: id, reason: v === 'no_edit' ? 'forbidden' : 'not_found' });
   }
+  // A drawing check's crop, for a caller that may not delete one
+  // (fileDeleteBlock's refusal): forbidden, before anything is deleted.
+  const crops = allowed.length
+    ? await db
+        .select({ id: nodes.id, ownerId: nodes.ownerId, data: nodes.data })
+        .from(nodes)
+        .where(inArray(nodes.id, allowed))
+    : [];
+  const ofCrops = crops.filter((n) => isDrawingCheckCrop(n));
+  const cropIds = new Set(ofCrops.map((n) => n.id));
+  if (ofCrops[0] && (await callerMayEditFolder(ofCrops[0].ownerId, FILES_ROOT_LABEL)) === false) {
+    return {
+      allowed: allowed.filter((id) => !cropIds.has(id)),
+      refused: [
+        ...refused,
+        ...[...cropIds].map((fileId) => ({ fileId, reason: 'forbidden' as const })),
+      ],
+    };
+  }
   return { allowed, refused };
 }
 
@@ -1460,6 +1491,32 @@ export function bulkRefusalOf(
   }
   if (res.reason === 'attachment') return { fileId, reason: 'attachment' };
   return { fileId, reason: 'not_found' };
+}
+
+/** The provenance circuit_verify stamps on the crops it files under
+ *  Auto-filed > Drawing checks (@mantle/tools circuit-trace/checks-store.ts):
+ *  the evidence a Checks tab row links to. */
+export const DRAWING_CHECK_PROVENANCE = 'drawing-check';
+
+/** Whether a file is a drawing check's crop. */
+export function isDrawingCheckCrop(node: Pick<Node, 'data'>): boolean {
+  return (node.data as Record<string, unknown> | null)?.provenance === DRAWING_CHECK_PROVENANCE;
+}
+
+const CROP_REPLACE_REFUSED =
+  "This file is a drawing check's evidence: its bytes are what the image check saw, so they are never replaced. Upload the new picture under another name, or run the check again (circuit_verify) for new crops.";
+const CROP_DELETE_REFUSED =
+  "This file is a drawing check's evidence: only the owner or an Admin (who may file the checks' crops) deletes it.";
+
+/** Throws the edit check's refusal (403) unless the caller may delete a
+ *  drawing check's crop: one that may change the Files root, as filing
+ *  crops asks (checks-store.ts; the owner, an Admin, system work). The
+ *  Checks tab opens a crop by its id, so a writer of the Drawing checks
+ *  folder must not swap or drop the evidence a row names. */
+async function assertCropDeletable(ownerId: string): Promise<void> {
+  if ((await callerMayEditFolder(ownerId, FILES_ROOT_LABEL)) === false) {
+    throw Object.assign(editCheckRefusalError('no_edit'), { message: CROP_DELETE_REFUSED });
+  }
 }
 
 /** A file name a caller may not write over: a file it cannot read, or one

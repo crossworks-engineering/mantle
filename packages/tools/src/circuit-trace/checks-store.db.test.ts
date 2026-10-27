@@ -633,6 +633,61 @@ describe.skipIf(!URL)('the image check store', () => {
     expect(await read()).toEqual(runs);
   });
 
+  it('a crop is never replaced, and only a caller that may file crops deletes one (final audit round 3, L3)', async () => {
+    const files = await import('@mantle/files');
+    const t = await makeTable(`${tag} crop guard`);
+    const r = await s.storeChecks(
+      anchor,
+      sheetOf(t),
+      'C-9',
+      [answerOf('end:L3@1.0,0.0')],
+      null,
+      'z',
+    );
+    expect(r).toEqual({ stored: 1 });
+    const [row] = await checksRows(t);
+    const cropId = check.cropIdsOf(String(row!.Crops)).crops[0]!;
+    const [crop] = await admin`select path::text as path, data from nodes where id = ${cropId}`;
+    const filename = String((crop!.data as Row).filename);
+    expect((crop!.data as Row).provenance).toBe(files.DRAWING_CHECK_PROVENANCE);
+    // Replace: refused for everyone, the owner included; the bytes stay.
+    await expect(
+      files.upsertFile({
+        ownerId: anchor,
+        parentPath: String(crop!.path),
+        filename,
+        bytes: Buffer.from('swapped'),
+        overwrite: true,
+      }),
+    ).rejects.toThrow(/drawing check's evidence/);
+    const kept = await files.readFileById({ ownerId: anchor, fileId: cropId });
+    expect(kept?.bytes.toString('utf8')).toBe('png-1');
+    // Delete: a scope that manages the crop but may not change the Files
+    // root is refused (403), alone or in a bulk delete.
+    await admin`delete from item_grants where node_id = ${cropId}`;
+    await m.withHeads([cropId], 'update', (tx) =>
+      tx.execute(
+        sqlTag`insert into item_grants (node_id, workspace_id, is_home) values (${cropId}, ${wsId}, true)`,
+      ),
+    );
+    const scope = { kind: 'assistant' as const, loginId: null, ws: [wsId], modWs: [wsId] };
+    const refused = await m
+      .withScope(scope, () => files.deleteFileById({ ownerId: anchor, fileId: cropId }))
+      .then(
+        () => null,
+        (e: unknown) => e as { code?: string; message?: string },
+      );
+    expect(refused?.code).toBe('42501');
+    expect(refused?.message).toMatch(/drawing check's evidence/);
+    const gate = await m.withScope(scope, () => files.bulkDeleteGate([cropId]));
+    expect(gate).toEqual({ allowed: [], refused: [{ fileId: cropId, reason: 'forbidden' }] });
+    expect((await admin`select 1 from nodes where id = ${cropId}`).length).toBe(1);
+    // The owner (system work here) deletes it.
+    expect(
+      await files.deleteFileById({ ownerId: anchor, fileId: cropId, deleteDerived: true }),
+    ).toEqual({ ok: true });
+  });
+
   it('the revision is the stamp; a file replaced in place reads stale', async () => {
     const t = await makeTable(`${tag} revision`);
     const find = async () => (await readMod.dwgTables(anchor)).tables.find((x) => x.id === t);

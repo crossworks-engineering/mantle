@@ -180,6 +180,8 @@ export {
   BYTE_DERIVED_DATA_KEYS,
   deleteFileById,
   fileDeleteBlock,
+  DRAWING_CHECK_PROVENANCE,
+  isDrawingCheckCrop,
   type FileDeleteBlock,
   renameFileById,
   bulkDeleteFiles,
