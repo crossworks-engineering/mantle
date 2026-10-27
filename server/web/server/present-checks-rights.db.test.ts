@@ -184,8 +184,9 @@ describe.skipIf(!URL)('the image check overview reads drawing tables as the view
         values (${owner}, ${`${tag} W`}) returning id::text as id`)
     )[0]!.id;
     await su(sql`delete from workspace_users where workspace_id = ${ws.w}`);
+    // The owner sits in W too (and in Admin): it reads the canvas and both tables.
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
-      (${ws.w}, ${user}, false)`);
+      (${ws.w}, ${user}, false), (${ws.w}, ${owner}, true)`);
 
     t.shared = await drawingTable(title.shared);
     t.hidden = await drawingTable(title.hidden);
@@ -286,8 +287,11 @@ describe.skipIf(!URL)('the image check overview reads drawing tables as the view
         ),
     )) as { ok: boolean; output?: { image_checks?: Checks }; error?: string };
     expect(r.ok, r.error).toBe(true);
+    // The canvas's own data names both tables (the user reads the canvas);
+    // the overview says nothing more of the hidden one than its count.
     const checks = r.output!.image_checks!;
-    onlyItsCount(JSON.stringify(r.output), checks);
+    onlyItsCount(JSON.stringify(checks), checks);
+    expect(JSON.stringify(r.output)).not.toContain(title.hidden);
   });
 
   it("dwgTablesByIds in the user's scope returns the readable table only", async () => {
