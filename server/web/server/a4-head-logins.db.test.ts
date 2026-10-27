@@ -5,7 +5,7 @@
  * for every login; they run under the login's own rule now, as the GET
  * does. A GET row added to those lists since is held here the same way (19
  * rows with GET /api/workspaces/:id/connector-options, 0315, and GET
- * /api/profile/home-desk, desk saving v2; and the messenger rows). The guard sweep records the
+ * /api/profile/home-desk, desk saving v2; the messenger and people rows). The guard sweep records the
  * actor and outcome it notes; this test
  * runs the REAL handler bodies through the real app (createApp) on a
  * migrated scratch database and holds each HEAD to its GET: the same
@@ -58,7 +58,9 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
       // A conversation nobody is in: every login hears not found, GET and HEAD.
       .replace(/^\/api\/messenger\/c\/:id/, `/api/messenger/c/${randomUUID()}`)
       // The owner's photo: it has none, so every signed-in login hears the one 404.
-      .replace(/^\/api\/messenger\/photo\/:loginId/, `/api/messenger/photo/${owner}`);
+      .replace(/^\/api\/messenger\/photo\/:loginId/, `/api/messenger/photo/${owner}`)
+      // The owner's card and photo (no photo: the one 404 for its photo).
+      .replace(/^\/api\/people\/:id/, `/api/people/${owner}`);
 
   /** One request: its status, every header, its body. A stream is read no
    *  further than its headers and closed (the abort runs the handler's
@@ -151,9 +153,9 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
   });
 
   it('the 17 rows 2a changed, and the ones added since: HEAD has the status and the headers of GET, and no body', async () => {
-    // 19, the six messenger GET rows of Messenger V1 Phase 1, and the
-    // messenger photo of the messenger avatars.
-    expect(rows).toHaveLength(26);
+    // 19, the six messenger GET rows of Messenger V1 Phase 1, the
+    // messenger photo of the messenger avatars, and the four people rows.
+    expect(rows).toHaveLength(30);
     const logins: Array<[string, string | null]> = [
       ['owner', owner],
       ['admin', admin],

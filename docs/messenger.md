@@ -17,7 +17,7 @@ its unread count, so one list holds everything.
 
 | Table | What it holds |
 | --- | --- |
-| `messenger_conversations` | A direct chat or a group. `last_seq`, `last_message_at` and `last_preview` (the tail) are written by the send that changes them. A direct chat has a `direct_key` (the two login ids, sorted and joined; unique), so a pair has one chat. |
+| `messenger_conversations` | A direct chat or a group. `last_seq`, `last_message_at` and `last_preview` (the tail) are written by the send that changes them. A direct chat has a `direct_key` (the two login ids, sorted and joined; unique), so a pair has one chat. A group may have an `icon` and a `color` (0341, below). |
 | `messenger_participants` | One row per login (or, from Phase 3, the group's one agent). `admin` marks a group admin (the creator first). `last_read_seq`, `mention_seq`, `cleared_before_seq`, `muted`; `from_seq`, the floor of what the login reads; `left_at` and `left_seq` once the login left. |
 | `messenger_messages` | One row per message, `(conversation_id, seq)` unique. `author_kind` is login, agent or system. `author_name` is a snapshot. `via` is the credential label shown, `via_ref` the credential itself. `client_msg_id` makes a send idempotent. |
 | `messenger_attachments` | The attachment rows of Phase 4 (no bytes yet). |
@@ -28,9 +28,10 @@ its unread count, so one list holds everything.
 `push_login_prefs` has two more columns for Phase 5: `messages` (all,
 mentions, off) and `message_preview`.
 
-Migrations: `packages/db/migrations/0335_messenger.sql` and
+Migrations: `packages/db/migrations/0335_messenger.sql`,
 `0336_messenger_fix_round_2.sql` (the read columns, the participants
-policy, the trigger order). Drizzle schema:
+policy, the trigger order) and `0341_messenger_group_look.sql` (a group's
+icon and colour). Drizzle schema:
 `packages/db/src/schema/messenger.ts`.
 
 ## Seq: the one order
@@ -91,17 +92,16 @@ login's own even outside a scope. A non-participant hears "not found", never
 
 **Who may start a chat** (the directory): logins that share a live
 workspace with the caller; an Admin user reaches every usable login. This
-is one part of the one gate of every person-to-person read ("Who may see
-whom" in the content module): `peopleVisibleTo(caller)` is the directory,
-`loginVisibleTo(caller, loginId)` the whole rule for one login (itself,
-the directory, or a person of a chat the caller is in as it sees the
-room). The agents a login may chat with are the assistants of its
+is one part of the people gate (below): `peopleVisibleTo(caller)` is the
+directory, `loginVisibleTo(caller, loginId)` the whole rule for one login.
+The agents a login may chat with are the assistants of its
 workspaces; for an Admin user, every chat-capable agent except the
 assistants of non-Admin workspaces it is not in (the rule of
 `listChatAgents`).
 
 **Groups.** The creator is the first admin. Admins add and remove people,
-rename the group and delete its history for everyone. A history delete
+rename the group, set its look (below) and delete its history for
+everyone. A history delete
 removes every seq up to a ceiling (all of them, or the newest older than a
 date), moves every participant's `cleared_before_seq` up to it in the same
 transaction (the unread and the mention count only what is left) and
@@ -109,6 +109,19 @@ raises a `history` event. Anyone may leave; the
 last admin who leaves hands admin to the longest-standing member; a group
 with nobody left is archived. A group may hold just its creator ("message
 yourself").
+
+**A group's look.** A group may carry an `icon`, one emoji (the app-nav
+emoji rule: at most 16 characters, no letters or digits), and a `color`,
+an app tint key (`APP_TINTS` in `@mantle/client-types/app-nav`: the key,
+never a colour, so each theme draws its own). Both are null by default;
+`POST /conversations` takes them for a group, `PATCH /c/:id` lets a group
+admin set them (null or `''` clears one); anything else is a 400, a
+member who is no admin a 403. A change raises the room's `participants`
+event, as a rename does, and writes no system line. A direct chat has
+neither: a create ignores them, a PATCH has no admin to set them, and the
+table's check holds the same. The list row and the conversation carry
+both (absent on an agent row); the workspace role reads the two columns
+(ACCESS_MATRIX). The MCP tools leave them out.
 
 **Direct chats.** Two logins, fixed. No admin, no leaving; a direct chat can
 be cleared.
@@ -141,8 +154,8 @@ local stdio MCP server and a second replica keep their own.
 | Route | What |
 | --- | --- |
 | `GET /conversations?unread_only=1` | the one list: people chats, groups and agent threads, favourites first |
-| `POST /conversations` | create: `{kind, participants, title?}`; a direct pair answers its chat |
-| `GET /c/:id`, `PATCH /c/:id` | one conversation; a group's title (admins), my mute |
+| `POST /conversations` | create: `{kind, participants, title?, icon?, color?}`; a direct pair answers its chat |
+| `GET /c/:id`, `PATCH /c/:id` | one conversation; a group's title, icon and colour (admins), my mute |
 | `POST /c/:id/participants`, `DELETE /c/:id/participants/:loginId`, `POST /c/:id/leave` | membership |
 | `GET /c/:id/messages?before_seq=&after_seq=&limit=` | the last `limit` (20; at most 100), older, or newer than a seq; with `after_seq` and `hasMore`, `lastSeq` is the page's highest seq (the next `after_seq`) |
 | `POST /c/:id/messages` | send: `{body, mentions?, replyToSeq?, clientMsgId?}` |
@@ -152,7 +165,7 @@ local stdio MCP server and a second replica keep their own.
 | `POST /c/:id/typing` | a NOTIFY, stored nowhere |
 | `PUT /favourites/:kind/:id`, `DELETE /favourites/:kind/:id` | pin and unpin |
 | `GET /directory?q=` | who I may chat with, with "online" |
-| `GET /photo/:loginId?v=` | another login's uploaded photo (below) |
+| `GET /photo/:loginId?v=` | the older path of `GET /api/people/:id/photo` (People, below): the same handler and callers |
 | `GET /stream` | the SSE stream (below) |
 | `GET /unread` | the badge |
 
@@ -166,20 +179,77 @@ login's from its own Appearance seed and builder parts, an agent's from
 brain's one style (the anchor's `avatarStyle`), never a stored one. No
 seed is `avatar: null`, and the client draws initials. A login also
 carries `photoVersion` (the shell's `avatarPhotoVersion`, for that login),
-null when it has no photo; the photo outranks the avatar. Both are read on
-the system pool in one query per list (the workspace role reads only its
-own profile row), for the ids the scoped read returned, as the names are.
-`GET /api/messenger/photo/:loginId?v=` serves the bytes with the headers
-of `/api/profile/photo` (`private`, `immutable` only when `v` is the photo
-served) to a login that may see that one: itself, a login of its
-directory, or a person of a chat it is in as it sees the room. Anything
-else, a login with no photo and an id that is no uuid answer the one 404,
-never a 403 (`loginVisibleTo`). As with the caller's own photo, a browser
-keeps a photo it fetched at its `v` (`private`, `immutable`) after the
-access that opened it ends; a new photo is a new `v`. The route takes a
-cookie or a bearer; an `<img>` of a detached client cannot send the
-bearer, and the path takes no `?at=` asset token (not yet). The MCP tools
-leave both fields out: a face tells a model nothing.
+null when it has no photo; the photo outranks the avatar. Both come from
+the people module (`loginFaces`, `agentFaces`; one query per list) for
+the ids the scoped read returned, as the names do. The photo itself is
+`GET /api/people/:id/photo?v=` (People, below); `/api/messenger/photo/:loginId`
+is its older path. The MCP tools leave both fields out: a face tells a
+model nothing.
+
+## People
+
+Mantle is a team system and every login is approved by hand, so what a
+person shares with its team (its name, avatar, photo and presence; later a
+status, a time zone or a location shared on purpose) is open to the team:
+the UI, the API and the agents. It reaches a caller through one gate,
+`packages/content/src/people.ts`, and no other way (plan section 23).
+
+**The gate.** A caller sees a login when it is the caller itself; or it is
+in the caller's directory (a usable login, a mailbox and not disabled,
+that shares a live workspace with the caller; for an Admin user every
+usable login); or it is a person of a chat the caller is in, as the
+caller may see that room (never one who left before it joined; for a chat
+it left, only those added before it left; a disabled login stays visible
+there). Every read of the module runs on the system pool by name, the
+caller's own login id in its WHERE: the caller is always the
+authenticated login, never an id from a request. Not visible and not
+existing read the same (left out of a list, the one 404). The messenger
+re-exports `peopleVisibleTo` and `loginVisibleTo`, and its rooms keep the
+same seq rule (`roomPeopleSql`, which `mantle_messenger_people` answers in
+a scope). Agents are not logins: an agent's face is the messenger's.
+
+**The card** (`PersonCard`, `packages/client-types/src/dto/people.ts`):
+
+| Field | What |
+| --- | --- |
+| `id` | the login id |
+| `name` | the display name, else the mailbox part |
+| `avatar` | `{style, seed, parts}` as on a participant, or null (initials) |
+| `photoVersion` | the `v` of the photo route, or null (no photo) |
+| `presence` | `{state, lastActiveAt}`: `online` when the login's stream beat in the last two minutes (`login_presence`), else `offline`; the type also names `idle` and `busy`, which come later |
+| `status` | `{text, until}` or null; always null until a status is stored |
+
+**The routes**, under `/api/people`, each open to every login (`class:
+'self'`, `open: 'any'`) with the per-login limit `peopleRead` (600 a
+minute):
+
+| Route | What |
+| --- | --- |
+| `GET /api/people` | every card the caller may see, itself included, by name (one query; at most 1000) |
+| `GET /api/people/:id` | `{ person }`, or the one 404 |
+| `GET /api/people/presence?ids=a,b,c` | `{ presence: [{id, state, lastActiveAt}] }` for the ids the caller may see; the first 200 ids are read, the rest ignored |
+| `GET /api/people/:id/photo?v=` | the photo's bytes, or the one 404 |
+
+**The photo** carries the headers of `/api/profile/photo` (`private`;
+`immutable` only when `v` is the photo served, revalidated otherwise),
+read from storage only after the gate let the login through. A login out
+of the caller's gate, one with no photo and an id that is no uuid answer
+the one 404, never a 403. As with the caller's own photo, a browser keeps
+a photo it fetched at its `v` after the access that opened it ends.
+
+**The photo token.** An `<img>` in the desktop app or the phone carries no
+cookie and no bearer, so the photo route (and its messenger path) also
+take `?at=<token>`: the short-lived asset token the shell mints for
+`/api/profile/photo` (`buildAssetToken`, the same token and lifetime; a
+member's lasts 10 minutes and the shell mints it again). The gate admits
+the token on these two paths only (`isAssetPath`), on a GET, and the
+route reads the caller as `anyLoginAssetCaller()` (caller kind
+`loginAsset`): the session if there is one, else the token's login, which
+is read again and must be usable, on the session epoch the token carries
+and of the brain the token names. The photo is then served only through
+the gate, as for a cookie. An expired or forged token is no credential
+(the gate's 401, as on every asset path), so is the token of a login that
+signed out everywhere or was disabled; a token opens no other route.
 
 ## Live delivery
 
@@ -278,6 +348,17 @@ a login's message that tags the group's agent, never by an agent's message.
   of a participant (in the brain's style, with the photo version) and of
   a directory entry (a login, an agent, no seed), and who the photo route
   serves (a shared workspace, a shared chat, an Admin user) and 404s.
+- `packages/content/src/messenger-people.db.test.ts` also asks every
+  people read (one card, the list, presence) beside each gate case, the
+  card's fields and the photo pointer.
+- `server/web/app/api/people/people-routes.db.test.ts`: the four people
+  routes through the real app with real cookies and asset tokens: the
+  list, a card, presence (visible ids only, 200 read), the photo by
+  cookie and by token (served, the one 404, an expired or signed-out
+  token refused, a token opening no other route), and the messenger path.
+- `server/web/app/api/messenger/messenger-group-look.db.test.ts`: a
+  group's icon and colour (create, an admin's change and its event, a
+  member refused, a bad tint, a direct chat).
 - `server/web/lib/realtime-messenger.db.test.ts`: the fan-out reaches only
   participants, is right after an add or a remove with no stream open, and
   carries the history event.

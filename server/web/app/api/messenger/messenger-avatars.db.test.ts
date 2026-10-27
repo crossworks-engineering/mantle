@@ -30,6 +30,9 @@ const h = vi.hoisted(() => ({ login: '', owner: '', keys: [] as string[] }));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   anyLoginCaller: vi.fn(() => ({ loginId: h.login, brainId: h.owner })),
+  // The photo route reads the any-login asset caller (a session or the
+  // login's own `?at=` token): the same stand-in.
+  anyLoginAssetCaller: vi.fn(() => ({ loginId: h.login, brainId: h.owner })),
 }));
 vi.mock('@mantle/storage', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

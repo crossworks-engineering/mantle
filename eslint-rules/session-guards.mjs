@@ -20,6 +20,7 @@
 export const SESSION_GUARDS = Object.freeze([
   'getOwnerForAsset',
   'getReaderForAsset',
+  'getLoginForAsset',
   'getSessionUserWithSource',
   'getSessionUser',
   'requireOwnerForRender',
@@ -104,6 +105,14 @@ export const READER_ANSWERS = Object.freeze({
     caller: 'readerAsset',
     guard: 'getReaderForAsset',
     entry: 'pipeline:readerAsset',
+  }),
+  // The photo rows read anyLoginCaller() before the `?at=` token (plan page
+  // d8954876 section 23): the recorded files name the guard that row
+  // called, whose Login answer this reader projects too.
+  anyLoginAssetCaller: Object.freeze({
+    caller: 'loginAsset',
+    guard: 'getLoginOr401',
+    entry: 'pipeline:loginAsset',
   }),
   frameTicketCaller: Object.freeze({ caller: 'frame', guard: null, entry: 'pipeline:frame' }),
   publicLoginItself: Object.freeze({

@@ -479,6 +479,11 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     cred: 'member',
     limits: [login('messenger-read', 600)],
   }),
+  // People (plan page d8954876 section 23), per login.
+  ...getHead('/api/people', { cred: 'member', limits: [login('people-read', 600)] }),
+  ...getHead('/api/people/presence', { cred: 'member', limits: [login('people-read', 600)] }),
+  ...getHead('/api/people/:id', { cred: 'member', limits: [login('people-read', 600)] }),
+  ...getHead('/api/people/:id/photo', { cred: 'member', limits: [login('people-read', 600)] }),
   {
     row: 'POST /api/messenger/c/:id/messages',
     cred: 'member',

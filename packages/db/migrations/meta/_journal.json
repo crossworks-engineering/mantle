@@ -2381,6 +2381,13 @@
       "when": 1790200560000,
       "tag": "0340_s4b_fail_closed",
       "breakpoints": true
+    },
+    {
+      "idx": 341,
+      "version": "7",
+      "when": 1790200620000,
+      "tag": "0341_messenger_group_look",
+      "breakpoints": true
     }
   ]
 }

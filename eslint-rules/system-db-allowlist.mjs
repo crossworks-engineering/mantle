@@ -30,6 +30,11 @@ export const SYSTEM_DB_ALLOWLIST = [
   // statement; and the names, workspaces and agents it reads for ids a
   // scoped read returned. Never nodes or any content table.
   'packages/content/src/messenger.ts',
+  // People (plan page d8954876 section 23): the one gate of person-to-person
+  // reads. Names, faces, presence and the room rule, read by the caller's
+  // own login id in every WHERE (the workspace role reads only its own
+  // profile row). Writes nothing.
+  'packages/content/src/people.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
 ];
@@ -92,6 +97,8 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   'packages/content/src/member-turn-ledger.ts': 'narrow',
   // The messenger's writes and lookups, in the login's request or MCP call.
   'packages/content/src/messenger.ts': 'narrow',
+  // The people gate's reads, in the login's request or MCP call.
+  'packages/content/src/people.ts': 'narrow',
   'packages/content/src/share-access-log.ts': 'narrow',
   'packages/content/src/team-access-log.ts': 'narrow',
   'packages/content/src/team-messages.ts': 'narrow',

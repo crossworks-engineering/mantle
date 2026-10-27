@@ -46,6 +46,11 @@ export function isAssetPath(path: string): boolean {
     // The user's profile photo: a private <img> src (the rail), same
     // can't-carry-a-bearer shape. GET-only byte serving, owner-scoped.
     path === '/api/profile/photo' ||
+    // Another person's photo (plan page d8954876 section 23), and the
+    // messenger's older path for it: any login, the same <img> shape.
+    // The route reads anyLoginAssetCaller (getLoginForAsset).
+    /^\/api\/people\/[^/]+\/photo$/.test(path) ||
+    /^\/api\/messenger\/photo\/[^/]+$/.test(path) ||
     // Drawing SVGs: the route has ALWAYS called getOwnerForAsset and its
     // header promises `?at=` auth for detached clients, but this list never
     // admitted the path, so the gate 401'd the token before the route ran

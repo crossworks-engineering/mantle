@@ -109,7 +109,10 @@ export type RouteLogins = 'owner' | 'any' | 'chat' | 'telegram' | 'member';
  *  A4 hand batch B:
  *  - the asset answers, on the byte routes a browser-native src opens
  *    (a `?at=` asset token, the render cookie): 'ownerAsset'
- *    (getOwnerForAsset) and 'readerAsset' (getReaderForAsset) on owner rows;
+ *    (getOwnerForAsset) and 'readerAsset' (getReaderForAsset) on owner rows,
+ *    and 'loginAsset' (getLoginForAsset: any login, by its session or its
+ *    own `?at=` token) on the any-login photo rows (plan page d8954876
+ *    section 23);
  *  - 'frame': the `?t=` frame ticket of a sandbox frame document, verified
  *    (a declared `caller: 'frame'`), no login and never a refusal;
  *  - the answers taken at the read (ANSWERED_AT_READ): the gate binds the
@@ -129,6 +132,7 @@ export type RouteCaller =
   | 'session'
   | 'ownerAsset'
   | 'readerAsset'
+  | 'loginAsset'
   | 'frame'
   | 'publicLogin'
   | 'cookieUpgrade'
@@ -184,6 +188,8 @@ const CALLER_LOGINS: Readonly<Record<RouteCaller, ReadonlyArray<RouteLogins | nu
   // and a member on the reads open to it: getReaderForAsset).
   ownerAsset: [null, 'owner'],
   readerAsset: [null, 'owner'],
+  // Any login's byte src on an any-login row (a person's photo).
+  loginAsset: ['any'],
   // The frame documents (a declared `caller: 'frame'`, callerServes).
   frame: [],
   // Public rows only (PUBLIC_CALLERS, checked in buildRouteRow).
@@ -194,7 +200,11 @@ const CALLER_LOGINS: Readonly<Record<RouteCaller, ReadonlyArray<RouteLogins | nu
 
 /** The asset caller kinds: answered from a `?at=` asset token or the render
  *  cookie as well as a login, read only on an asset row (assetRow). */
-const ASSET_CALLERS: ReadonlySet<RouteCaller> = new Set(['ownerAsset', 'readerAsset']);
+const ASSET_CALLERS: ReadonlySet<RouteCaller> = new Set([
+  'ownerAsset',
+  'readerAsset',
+  'loginAsset',
+]);
 
 /** The /api/v1 rows that run an asset row's handler: the alias of the file
  *  bytes and the download wrapper (A4 hand batch B). */
@@ -362,6 +372,7 @@ const LIMIT_LOGIN_CALLERS: ReadonlySet<RouteCaller> = new Set([
   'login',
   'chat',
   'readerAsset',
+  'loginAsset',
   'publicLogin',
 ]);
 

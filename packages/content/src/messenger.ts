@@ -30,7 +30,6 @@ import { envNum } from '@mantle/config';
 import {
   currentWorkspaceScope,
   db,
-  liveWorkspaceSql,
   loginPresence,
   messengerConversations,
   messengerFavourites,
@@ -41,12 +40,17 @@ import {
 } from '@mantle/db';
 import { InputError, defineDomainError, isUuid } from '@mantle/std';
 import {
-  logoVersion,
-  projectAvatarParts,
-  projectAvatarPhotoType,
-  projectLogoKey,
-  readAvatarStyle,
-} from '@mantle/content-core/profile-projections';
+  PEOPLE_ONLINE_MS,
+  agentFaces,
+  loginFaces,
+  loginIsAdmin,
+  loginVisibleTo,
+  peopleVisibleTo,
+  roomPeopleSql,
+  type PersonAvatarView,
+} from './people';
+import { APP_TINTS, LUCIDE_ICON_PREFIX, isAppTint } from '@mantle/client-types/app-nav';
+import { projectAppIcon } from '@mantle/content-core/app-nav';
 import { workspaceAssistants } from './team-assistant';
 
 // ── Limits (plan section 14) ─────────────────────────────────────────────────
@@ -59,8 +63,8 @@ export const MESSENGER_PAGE_MAX = 100;
 export const MESSENGER_PREVIEW_CHARS = 140;
 export const MESSENGER_CLIENT_MSG_MAX = 100;
 export const MESSENGER_EMOJI_MAX = 32;
-/** "Online": active within this long (plan section 7). */
-export const MESSENGER_ONLINE_MS = 2 * 60 * 1000;
+/** "Online": active within this long (plan section 7; the people module's). */
+export const MESSENGER_ONLINE_MS = PEOPLE_ONLINE_MS;
 /** Roles that hold a back-and-forth chat (mirrors listAssistantAgents). */
 const CHATTABLE_ROLES = ['assistant', 'responder', 'custom'] as const;
 
@@ -167,7 +171,7 @@ export type MessengerMention = { kind: 'login' | 'agent'; id: string };
 /** The avatar a login chose in Appearance (its seed and builder parts) or
  *  an agent's, drawn in the brain's one style; the shape GET /api/shell
  *  gives for the caller's own. */
-export type MessengerAvatarView = { style: string; seed: string; parts: unknown };
+export type MessengerAvatarView = PersonAvatarView;
 
 export type MessengerParticipantView = {
   kind: 'login' | 'agent';
@@ -192,6 +196,10 @@ export type MessengerConversationView = {
   id: string;
   kind: 'direct' | 'group';
   title: string | null;
+  /** A group's icon (an emoji) and colour (an app tint key); null for a
+   *  direct chat and a group that has none (0341). */
+  icon?: string | null;
+  color?: string | null;
   createdBy: string | null;
   createdAt: string;
   archivedAt: string | null;
@@ -233,6 +241,9 @@ export type MessengerListRowView = {
   kind: 'direct' | 'group' | 'agent';
   id: string;
   title: string;
+  /** As on the conversation; absent on an agent thread. */
+  icon?: string | null;
+  color?: string | null;
   lastSeq: number | null;
   lastMessageAt: string | null;
   preview: MessengerPreviewView | null;
@@ -322,215 +333,19 @@ async function loginNames(
   return new Map(rows.map((r) => [r.id, r.name]));
 }
 
-// ── Faces: the avatar and the photo (read on the system pool) ────────────────
-
-/** The brain's one avatar style (Settings > Appearance), from the anchor's
- *  profile row: a brain-level key (BRAIN_PREFERENCE_KEYS). A subquery each
- *  face query carries, so a face costs no extra round trip. */
-const BRAIN_STYLE = (ownerId: string) =>
-  sql`(select b.preferences->'avatarStyle' from profiles b where b.user_id = ${ownerId}::uuid)`;
-
-/** The face columns of a login's own profile row `pr` (left joined): its
- *  seed, builder parts and photo pointer, and the brain's style. */
-const LOGIN_FACE_COLUMNS = (ownerId: string) =>
-  sql`pr.preferences->'avatarSeed' as seed, pr.preferences->'avatarParts' as parts,
-      pr.preferences->'avatarPhotoKey' as photo_key, pr.preferences->'avatarPhotoType' as photo_type,
-      ${BRAIN_STYLE(ownerId)} as style`;
-
-type LoginFaceRow = {
-  seed: unknown;
-  parts: unknown;
-  photo_key: unknown;
-  photo_type: unknown;
-  style: unknown;
-};
-
-/** A login's avatar and photo version, as GET /api/shell projects its own:
- *  no seed is initials (a real choice), and a photo counts only when its
- *  key and type both project (else the photo route answers 404). */
-function loginFace(r: LoginFaceRow): {
-  avatar: MessengerAvatarView | null;
-  photoVersion: string | null;
-} {
-  const seed = typeof r.seed === 'string' && r.seed.length > 0 ? r.seed : null;
-  const key = projectLogoKey(r.photo_key);
-  return {
-    avatar: seed
-      ? { style: readAvatarStyle(r.style), seed, parts: projectAvatarParts(r.parts) ?? null }
-      : null,
-    photoVersion: key && projectAvatarPhotoType(r.photo_type) ? logoVersion(key) : null,
-  };
-}
-
-/** An agent's avatar (agents.avatar) in the brain's style: the seed, else
- *  the slug (what GET /api/agents/:id/avatar draws); null when the agent
- *  has none. */
-function agentFace(avatar: unknown, slug: string, style: unknown): MessengerAvatarView | null {
-  if (!avatar || typeof avatar !== 'object' || Array.isArray(avatar)) return null;
-  const a = avatar as { seed?: unknown; parts?: unknown };
-  const seed = typeof a.seed === 'string' && a.seed.length > 0 ? a.seed : slug;
-  return { style: readAvatarStyle(style), seed, parts: projectAvatarParts(a.parts) ?? null };
-}
-
-/** Logins' names and face columns, one query (the workspace role reads
- *  only its own profile row). */
-async function loginFaceRows(
-  ownerId: string,
-  ids: readonly string[],
-): Promise<({ id: string; name: string } & LoginFaceRow)[]> {
-  if (ids.length === 0) return [];
-  return q<{ id: string; name: string } & LoginFaceRow>(
-    systemDb,
-    sql`select u.id::text as id,
-               coalesce(nullif(btrim(u.display_name), ''), split_part(coalesce(u.email, ''), '@', 1), 'User') as name,
-               ${LOGIN_FACE_COLUMNS(ownerId)}
-          from auth.users u
-          left join profiles pr on pr.user_id = u.id
-         where u.id = any(${uuidArray(ids)})`,
-  );
-}
-
-/** Logins' names and faces. */
-async function loginFaces(
-  ownerId: string,
-  ids: readonly string[],
-): Promise<
-  Map<string, { name: string; avatar: MessengerAvatarView | null; photoVersion: string | null }>
-> {
-  const rows = await loginFaceRows(ownerId, ids);
-  return new Map(rows.map((r) => [r.id, { name: r.name, ...loginFace(r) }]));
-}
-
-/** Agents' names and faces, one query. */
-async function agentFaces(
-  ownerId: string,
-  ids: readonly string[],
-): Promise<Map<string, { name: string; avatar: MessengerAvatarView | null }>> {
-  if (ids.length === 0) return new Map();
-  const rows = await q<{ id: string; name: string; slug: string; avatar: unknown; style: unknown }>(
-    systemDb,
-    sql`select a.id::text as id, a.name, a.slug, a.avatar, ${BRAIN_STYLE(ownerId)} as style
-          from agents a where a.id = any(${uuidArray(ids)})`,
-  );
-  return new Map(
-    rows.map((r) => [r.id, { name: r.name, avatar: agentFace(r.avatar, r.slug, r.style) }]),
-  );
-}
-
 /** Whether a login is an Admin user (a user of the live Admin workspace). */
-export async function messengerIsAdmin(loginId: string): Promise<boolean> {
-  const [row] = await q<{ admin: boolean }>(
-    systemDb,
-    sql`select coalesce("public"."mantle_login_is_admin"(${loginId}::uuid), false) as admin`,
-  );
-  return row?.admin === true;
-}
+export const messengerIsAdmin = loginIsAdmin;
 
-// ── Who may see whom (plan section 4, decision 19.1 A) ───────────────────────
+// ── Who may see whom: the people module ─────────────────────────────────────
 //
-// The one gate of every person-to-person read: another login's card (its
-// name, avatar, photo and presence), here and, later, /api/people and the
-// people tools. A caller sees a login when:
-//
-//  - it is the caller itself;
-//  - it is in the caller's directory (peopleVisibleTo): a usable login (a
-//    mailbox, not disabled) that shares a live (not archived) workspace
-//    with the caller; an Admin user's directory is every usable login. Who
-//    may start a chat or be added to a group is this list;
-//  - or it is a person of a chat the caller is in, as the caller may see
-//    that room (PEOPLE): never one who left before the caller joined, and
-//    for a chat the caller left or was removed from, only those added
-//    before it left. A disabled login stays visible there.
-//
-// Agents are not logins: an agent's card is the agents the login may chat
-// with (messengerChatAgents). There is no client login kind (LOGIN_ROLES is
-// admin and member), so no client rule. loginVisibleTo answers the whole
-// rule for one login (the photo route); the lists apply its parts in their
-// own one query (the directory reads peopleVisibleTo, a room's people
-// PEOPLE), and their faces are filled only for the logins those return.
+// The one gate of every person-to-person read is packages/content/src/
+// people.ts (peopleVisibleTo: the directory, who may start a chat with or
+// be added by whom; loginVisibleTo: the whole rule for one login). The
+// messenger's lists apply it in their own one query (the directory reads
+// peopleVisibleTo, a room's people PEOPLE, whose rule people.ts holds too),
+// and their faces are filled only for the logins those return.
 
-/** The caller's directory: the usable logins that share a live workspace
- *  with it, or every usable login for an Admin user (the rule above).
- *  Never itself. One query over workspace_users, with each login's face.
- *  `caller` must be the authenticated login (the session's, or actorOf's
- *  for a tool), never an id taken from the request: this reads on the
- *  system pool, keyed on it. */
-export async function peopleVisibleTo(
-  caller: { ownerId: string; loginId: string },
-  opts: { only?: readonly string[]; q?: string; limit?: number } = {},
-): Promise<
-  {
-    id: string;
-    name: string;
-    lastActiveAt: Date | null;
-    avatar: MessengerAvatarView | null;
-    photoVersion: string | null;
-  }[]
-> {
-  const { ownerId, loginId } = caller;
-  const admin = await messengerIsAdmin(loginId);
-  const only = opts.only ? sql`and u.id = any(${uuidArray(opts.only)})` : sql``;
-  const like = opts.q
-    ? sql`and (u.display_name ilike ${'%' + escapeLike(opts.q) + '%'} or u.email ilike ${'%' + escapeLike(opts.q) + '%'})`
-    : sql``;
-  const reach = admin
-    ? sql``
-    : sql`and exists (
-            select 1 from workspace_users mine
-              join workspace_users theirs on theirs.workspace_id = mine.workspace_id
-              join workspaces w on w.id = mine.workspace_id and ${liveWorkspaceSql('w')}
-             where mine.login_id = ${loginId}::uuid and theirs.login_id = u.id)`;
-  const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
-  const rows = await q<{ id: string; name: string; last_active_at: Date | null } & LoginFaceRow>(
-    systemDb,
-    sql`select u.id::text as id,
-               coalesce(nullif(btrim(u.display_name), ''), split_part(u.email, '@', 1)) as name,
-               p.last_active_at, ${LOGIN_FACE_COLUMNS(ownerId)}
-          from auth.users u
-          left join login_presence p on p.login_id = u.id
-          left join profiles pr on pr.user_id = u.id
-         where u.id <> ${loginId}::uuid
-           and u.email is not null and u.disabled_at is null
-           ${reach} ${only} ${like}
-         order by 2
-         limit ${limit}`,
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    lastActiveAt: r.last_active_at ? new Date(r.last_active_at) : null,
-    ...loginFace(r),
-  }));
-}
-
-function escapeLike(s: string): string {
-  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
-}
-
-/**
- * Whether `caller` may see `loginId` (the rule above): itself, a login of
- * its directory (peopleVisibleTo), or a person of a chat it is in as it may
- * see the room (PEOPLE). false for an id that is no uuid. The room is read
- * on `db`, the caller's scope inside a request. `caller` must be the
- * authenticated login, never an id from the request (peopleVisibleTo).
- */
-export async function loginVisibleTo(caller: MessengerActor, loginId: string): Promise<boolean> {
-  if (!isUuid(loginId)) return false;
-  const target = loginId.toLowerCase();
-  if (target === caller.loginId.toLowerCase()) return true;
-  const reach = await peopleVisibleTo(caller, { only: [target], limit: 1 });
-  if (reach.length > 0) return true;
-  const mine = sql`array(select me.conversation_id from ${MINE(caller, null)} me
-                           join messenger_conversations c on c.id = me.conversation_id
-                          where c.owner_id = ${caller.ownerId}::uuid)`;
-  const [hit] = await q<{ ok: number }>(
-    db,
-    sql`select 1 as ok from ${PEOPLE(caller, mine)} x
-         where x.kind = 'login' and x.id = ${target}::uuid
-         limit 1`,
-  );
-  return !!hit;
-}
+export { loginVisibleTo, peopleVisibleTo };
 
 /**
  * The agents a login may chat with (plan sections 4 and 5): the assistant of
@@ -726,7 +541,33 @@ export type MessengerCreateInput = {
   /** Login ids besides the actor. */
   participants: readonly string[];
   title?: string | null;
+  /** A group's look (a direct chat ignores both): lookIcon, lookColor. */
+  icon?: string | null;
+  color?: string | null;
 };
+
+/** A group's icon as given: one emoji (the app-nav emoji rule, at most 16
+ *  characters, no letters or digits); null, or '', clears it; undefined
+ *  leaves it. Anything else is an InputError. */
+function lookIcon(v: string | null | undefined): string | null | undefined {
+  if (v === undefined) return undefined;
+  const t = (v ?? '').trim();
+  if (!t) return null;
+  const icon = projectAppIcon(t);
+  if (!icon || icon.startsWith(LUCIDE_ICON_PREFIX)) {
+    throw new InputError('An icon is one emoji (at most 16 characters).');
+  }
+  return icon;
+}
+
+/** A group's colour as given: an app tint key (APP_TINTS); null, or '',
+ *  clears it; undefined leaves it. Anything else is an InputError. */
+function lookColor(v: string | null | undefined): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  if (!isAppTint(v)) throw new InputError(`A colour is one of: ${APP_TINTS.join(', ')}.`);
+  return v;
+}
 
 /**
  * Create a conversation (POST /api/messenger/conversations). A direct chat
@@ -757,6 +598,8 @@ export async function createMessengerConversation(
   if (title && title.length > MESSENGER_TITLE_MAX) {
     throw new InputError(`A title is at most ${MESSENGER_TITLE_MAX} characters.`);
   }
+  const icon = input.kind === 'group' ? (lookIcon(input.icon) ?? null) : null;
+  const color = input.kind === 'group' ? (lookColor(input.color) ?? null) : null;
   if (others.length > 0) {
     const reach = await peopleVisibleTo(actor, { only: others, limit: 500 });
     if (reach.length !== others.length) {
@@ -798,7 +641,7 @@ export async function createMessengerConversation(
   return systemDb.transaction(async (tx) => {
     const [made] = await tx
       .insert(messengerConversations)
-      .values({ ownerId: actor.ownerId, kind: 'group', title, createdBy: self })
+      .values({ ownerId: actor.ownerId, kind: 'group', title, icon, color, createdBy: self })
       .returning({ id: messengerConversations.id });
     await tx.insert(messengerParticipants).values(
       [self, ...others].map((l) => ({
@@ -1141,20 +984,39 @@ export async function clearMessengerForMe(
   });
 }
 
-export type MessengerPatchInput = { title?: string | null; muted?: boolean };
+export type MessengerPatchInput = {
+  title?: string | null;
+  icon?: string | null;
+  color?: string | null;
+  muted?: boolean;
+};
 
-/** PATCH /api/messenger/c/:id: the title (group admins), and my own mute.
- *  The picture, the workspace and the agent are Phase 3 and 4. */
+/** PATCH /api/messenger/c/:id: the title, the icon and the colour (group
+ *  admins; a change of any raises the room's participants event), and my
+ *  own mute. The picture, the workspace and the agent are Phase 3 and 4. */
 export async function patchMessengerConversation(
   actor: MessengerActor,
   conversationId: string,
   input: MessengerPatchInput,
 ): Promise<void> {
   takeBudget(actor, 'write');
+  const icon = lookIcon(input.icon);
+  const color = lookColor(input.color);
+  const look = icon !== undefined || color !== undefined;
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId, {
-      live: input.title !== undefined,
+      live: input.title !== undefined || look,
     });
+    if (look) {
+      requireGroupAdmin(conv, me);
+      await tx
+        .update(messengerConversations)
+        .set({
+          ...(icon !== undefined ? { icon } : {}),
+          ...(color !== undefined ? { color } : {}),
+        })
+        .where(eq(messengerConversations.id, conv.id));
+    }
     if (input.title !== undefined) {
       requireGroupAdmin(conv, me);
       const title = (input.title ?? '').trim() || null;
@@ -1672,22 +1534,12 @@ type ParticipantReadRow = {
  * added before it left, and a later leave shown as not yet (the title and
  * admin flags are the room's current ones). Judged by seqs. In a scope
  * mantle_messenger_people answers it (the workspace role reads no left_at,
- * 0336); outside one the same rows inline.
+ * 0336); outside one the same rows inline (people.ts roomPeopleSql).
  */
-function PEOPLE(actor: MessengerActor, conversationIds: readonly string[] | SQL): SQL {
-  // The ids, or a uuid[] expression (loginVisibleTo: every chat I am in).
-  const cs = Array.isArray(conversationIds) ? uuidArray(conversationIds) : (conversationIds as SQL);
+function PEOPLE(actor: MessengerActor, conversationIds: readonly string[]): SQL {
+  const cs = uuidArray(conversationIds);
   if (currentWorkspaceScope()) return sql`mantle_messenger_people(${cs})`;
-  return sql`(select p.conversation_id, p.kind, coalesce(p.login_id, p.agent_id) as id, p.admin,
-                     p.joined_at,
-                     case when me.left_seq is null or p.left_seq <= me.left_seq
-                          then p.left_at end as left_at
-                from messenger_participants me
-                join messenger_participants p on p.conversation_id = me.conversation_id
-               where me.kind = 'login' and me.login_id = ${actor.loginId}::uuid
-                 and me.conversation_id = any(${cs})
-                 and (me.left_seq is null or p.from_seq < me.left_seq)
-                 and (p.left_seq is null or p.left_seq > me.from_seq))`;
+  return roomPeopleSql(actor.loginId, cs);
 }
 
 /** The people of each conversation as `actor` may see them (PEOPLE). */
@@ -1742,6 +1594,8 @@ export async function getMessengerConversation(
     id: string;
     kind: 'direct' | 'group';
     title: string | null;
+    icon: string | null;
+    color: string | null;
     created_by: string | null;
     created_at: Date;
     archived_at: Date | null;
@@ -1756,7 +1610,8 @@ export async function getMessengerConversation(
     left_seq: string | number | null;
   }>(
     db,
-    sql`select c.id::text as id, c.kind, c.title, c.created_by::text as created_by, c.created_at,
+    sql`select c.id::text as id, c.kind, c.title, c.icon, c.color,
+               c.created_by::text as created_by, c.created_at,
                c.archived_at, me.last_seq, me.last_message_at,
                c.workspace_id::text as workspace_id,
                c.agent_id::text as agent_id, me.admin, me.last_read_seq, me.cleared_before_seq, me.muted,
@@ -1771,6 +1626,8 @@ export async function getMessengerConversation(
     id: row.id,
     kind: row.kind,
     title: row.kind === 'direct' ? null : row.title,
+    icon: row.kind === 'direct' ? null : row.icon,
+    color: row.kind === 'direct' ? null : row.color,
     createdBy: row.created_by,
     createdAt: iso(row.created_at),
     archivedAt: isoOrNull(row.archived_at),
@@ -1806,6 +1663,8 @@ type ListRow = {
   id: string;
   kind: 'direct' | 'group';
   title: string | null;
+  icon: string | null;
+  color: string | null;
   last_seq: string | number;
   last_message_at: Date | null;
   last_preview: MessengerPreviewView | null;
@@ -1822,7 +1681,7 @@ type ListRow = {
 async function myConversationRows(actor: MessengerActor, unreadOnly = false): Promise<ListRow[]> {
   return q<ListRow>(
     db,
-    sql`select c.id::text as id, c.kind, c.title, me.last_seq, me.last_message_at,
+    sql`select c.id::text as id, c.kind, c.title, c.icon, c.color, me.last_seq, me.last_message_at,
                me.last_preview, me.muted,
                greatest(0, me.last_seq - greatest(me.last_read_seq, me.cleared_before_seq)) as unread,
                me.mention_seq > greatest(me.last_read_seq, me.cleared_before_seq) as mention,
@@ -1921,6 +1780,8 @@ export async function listMessengerConversations(
         kind: c.kind,
         id: c.id,
         title: titleFor(c.kind, c.title, ps, actor.loginId),
+        icon: c.kind === 'direct' ? null : c.icon,
+        color: c.kind === 'direct' ? null : c.color,
         lastSeq: num(c.last_seq),
         lastMessageAt: isoOrNull(c.last_message_at),
         preview: c.last_preview,
@@ -1985,29 +1846,6 @@ export async function messengerUnread(
   const threads = await myAgentThreadRows(actor);
   const agents = threads.reduce((s, t) => s + num(t.unread), 0);
   return { total: messenger + agents, messenger, agents };
-}
-
-// ── A login's photo (GET /api/messenger/photo/:loginId) ──────────────────────
-
-/**
- * The uploaded photo of `loginId` as `actor` may fetch it: the stored
- * pointer (a content key and a raster type, both projected) when the actor
- * sees that login (loginVisibleTo) and it has a photo; null otherwise,
- * with no difference between "no such login", "not yours to see" and "no
- * photo" (the route answers each with the one 404). The profile row is
- * read on the system pool (loginFaceRows), only after the check.
- */
-export async function messengerLoginPhoto(
-  actor: MessengerActor,
-  loginId: string,
-): Promise<{ key: string; type: string; version: string } | null> {
-  if (!(await loginVisibleTo(actor, loginId))) return null;
-  const target = loginId.toLowerCase();
-  const [row] = await loginFaceRows(actor.ownerId, [target]);
-  const key = projectLogoKey(row?.photo_key);
-  const type = projectAvatarPhotoType(row?.photo_type);
-  const version = logoVersion(key);
-  return key && type && version ? { key, type, version } : null;
 }
 
 // ── The stream's fan-out (system pool) ───────────────────────────────────────

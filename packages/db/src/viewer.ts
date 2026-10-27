@@ -1592,6 +1592,9 @@ export const SYSTEM_DB_MODULES: readonly string[] = [
   // The messenger (0335): its own system tables, written and checked in
   // its transactions; the names and agents for ids its scoped read gave.
   'packages/content/src/messenger.ts',
+  // People (section 23): the gate's reads by the caller's own login id
+  // (names, faces, presence, the room rule); writes nothing.
+  'packages/content/src/people.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
 ];

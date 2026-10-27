@@ -1,8 +1,10 @@
 /**
- * Who may see whom (packages/content/src/messenger.ts, "Who may see
- * whom"): the one gate of person-to-person reads, on a migrated scratch
- * brain on workspaces. loginVisibleTo answers the whole rule for one login;
- * peopleVisibleTo is the directory part of it.
+ * Who may see whom (packages/content/src/people.ts, the people gate): the
+ * one gate of person-to-person reads, on a migrated scratch brain on
+ * workspaces. loginVisibleTo answers the whole rule for one login;
+ * peopleVisibleTo is the directory part of it; every other read of the
+ * module (personCards, one or all, peoplePresence, personPhoto) answers
+ * the same rule, asked beside every case below.
  *
  *  - itself; a login sharing a live workspace; not one in another
  *    workspace; an Admin user sees every usable login;
@@ -14,7 +16,9 @@
  *  - an id that is no uuid, an unknown uuid and an agent id are no login.
  *
  * Every answer is asked twice, in the caller's scope (as a request asks it)
- * and outside one (the module's inline rows), and the two must agree.
+ * and outside one, and the two must agree (the module reads by name on the
+ * system pool, so a scope changes nothing). The messenger re-exports the
+ * gate: the same functions.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/messenger-people.db.test.ts
  */
@@ -28,6 +32,7 @@ describe.skipIf(!URL)('who may see whom (loginVisibleTo, peopleVisibleTo)', () =
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
   let ms: typeof import('./messenger');
+  let pp: typeof import('./people');
   let sqlTag: typeof import('drizzle-orm').sql;
   let su: (q: ReturnType<typeof import('drizzle-orm').sql>) => Promise<unknown[]>;
 
@@ -57,6 +62,16 @@ describe.skipIf(!URL)('who may see whom (loginVisibleTo, peopleVisibleTo)', () =
     );
     const inline = await ms.loginVisibleTo(actor(caller), target);
     expect(inline, `${caller} -> ${target}: the scoped and the inline rule`).toBe(scoped);
+    // Every gated read of the people module answers the same rule.
+    const t = target.toLowerCase();
+    const one = (await pp.personCards(actor(caller), { only: [target] })).length > 0;
+    const all = (await pp.personCards(actor(caller))).some((c) => c.id === t);
+    const presence = (await pp.peoplePresence(actor(caller), [target])).length > 0;
+    expect([one, all, presence], `${caller} -> ${target}: card, list, presence`).toEqual([
+      scoped,
+      scoped,
+      scoped,
+    ]);
     return scoped;
   };
   const directory = async (caller: string) =>
@@ -69,6 +84,7 @@ describe.skipIf(!URL)('who may see whom (loginVisibleTo, peopleVisibleTo)', () =
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     ms = await import('./messenger');
+    pp = await import('./people');
     sqlTag = (await import('drizzle-orm')).sql;
     await ts.ensureTestViewerRoles(URL!, process.env.MANTLE_MASTER_KEY);
     su = (q) => ts.superuserExec(scratch!.url, q);
@@ -172,6 +188,68 @@ describe.skipIf(!URL)('who may see whom (loginVisibleTo, peopleVisibleTo)', () =
     await su(sqlTag`delete from workspace_users where login_id = ${G}`);
     expect(await sees(G, adminB)).toBe(true);
     expect(await sees(K, adminB)).toBe(true);
+  });
+
+  it('the messenger re-exports the gate (one copy)', () => {
+    expect(ms.loginVisibleTo).toBe(pp.loginVisibleTo);
+    expect(ms.peopleVisibleTo).toBe(pp.peopleVisibleTo);
+    expect(ms.MESSENGER_ONLINE_MS).toBe(pp.PEOPLE_ONLINE_MS);
+  });
+
+  it('the card: its fields, presence online or offline, status null', async () => {
+    await su(sqlTag`insert into login_presence (login_id, last_active_at) values
+      (${B}, now()), (${adminB}, now() - interval '3 minutes')
+      on conflict (login_id) do update set last_active_at = excluded.last_active_at`);
+    await su(sqlTag`insert into profiles (user_id, preferences)
+      values (${B}, ${JSON.stringify({ avatarSeed: 'ben-seed' })}::jsonb)
+      on conflict (user_id) do update set preferences = profiles.preferences || excluded.preferences`);
+    const cards = await pp.personCards(actor(adminB));
+    const ben = cards.find((c) => c.id === B)!;
+    expect(Object.keys(ben).sort()).toEqual(
+      ['avatar', 'id', 'name', 'photoVersion', 'presence', 'status'].sort(),
+    );
+    expect(ben).toMatchObject({
+      name: 'Ben',
+      avatar: { seed: 'ben-seed', parts: null },
+      photoVersion: null,
+      presence: { state: 'online' },
+      status: null,
+    });
+    expect(cards.find((c) => c.id === adminB)!.presence.state).toBe('offline');
+    expect(cards.find((c) => c.id === C)!.presence).toEqual({
+      state: 'offline',
+      lastActiveAt: null,
+    });
+    // The presence poll: the same states, visible ids only (Ann sees Ben
+    // through W and Cat through the group she left; not Fay), junk and a
+    // repeat dropped.
+    const poll = await pp.peoplePresence(actor(A), [B, C, F, 'junk', B.toUpperCase()]);
+    expect(poll.map((p) => p.id).sort()).toEqual([B, C].sort());
+    expect(poll.find((p) => p.id === B)).toMatchObject({ state: 'online' });
+    expect(poll.find((p) => p.id === C)).toEqual({ id: C, state: 'offline', lastActiveAt: null });
+    // At most PEOPLE_PRESENCE_MAX ids are read.
+    const filler = Array.from({ length: pp.PEOPLE_PRESENCE_MAX }, () => randomUUID());
+    expect(await pp.peoplePresence(actor(A), [...filler, B])).toEqual([]);
+  });
+
+  it('a photo pointer only through the gate, and only a projected one', async () => {
+    const hex = 'f'.repeat(64);
+    await su(sqlTag`insert into profiles (user_id, preferences)
+      values (${F}, ${JSON.stringify({ avatarPhotoKey: `attachments/ff/ff/${hex}`, avatarPhotoType: 'image/png' })}::jsonb)
+      on conflict (user_id) do update set preferences = profiles.preferences || excluded.preferences`);
+    // Fay is in W2 (with Cat and Kim), not with Ann.
+    expect(await pp.personPhoto(actor(adminB), F)).toEqual({
+      key: `attachments/ff/ff/${hex}`,
+      type: 'image/png',
+      version: hex.slice(0, 8),
+    });
+    expect(await pp.personPhoto(actor(C), F)).not.toBeNull();
+    expect(await pp.personPhoto(actor(A), F)).toBeNull();
+    expect(await pp.personPhoto(actor(A), 'nope')).toBeNull();
+    // A type outside the raster allowlist is no photo.
+    await su(sqlTag`update profiles set preferences = preferences || '{"avatarPhotoType":"image/svg+xml"}'::jsonb
+      where user_id = ${F}`);
+    expect(await pp.personPhoto(actor(adminB), F)).toBeNull();
   });
 
   it('no uuid, an unknown uuid and an agent id are no login', async () => {

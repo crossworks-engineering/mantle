@@ -327,9 +327,17 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   // the participant rule it checked in the same transaction (lockForActor).
   'public.messenger_conversations': {
     insert: true,
-    update: ['title', 'last_seq', 'last_message_at', 'last_preview', 'archived_at'],
+    update: [
+      'title',
+      'icon',
+      'color',
+      'last_seq',
+      'last_message_at',
+      'last_preview',
+      'archived_at',
+    ],
     delete: false,
-    why: 'a chat made (create), its counters moved by a send, its title, its archive when the last person leaves',
+    why: 'a chat made (create), its counters moved by a send, its title, icon and colour, its archive when the last person leaves',
   },
   'public.messenger_participants': {
     insert: true,
@@ -1318,6 +1326,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       'kind',
       'title',
       'picture_attachment_id',
+      'icon',
+      'color',
       'workspace_id',
       'agent_id',
       'direct_key',

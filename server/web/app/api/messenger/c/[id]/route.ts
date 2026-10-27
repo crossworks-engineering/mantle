@@ -33,11 +33,25 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 const PatchBody = z
-  .object({ title: z.string().max(200).nullable().optional(), muted: z.boolean().optional() })
-  .refine((b) => b.title !== undefined || b.muted !== undefined, 'nothing to change');
+  .object({
+    title: z.string().max(200).nullable().optional(),
+    // The store checks each (one emoji, an app tint key).
+    icon: z.string().max(64).nullable().optional(),
+    color: z.string().max(32).nullable().optional(),
+    muted: z.boolean().optional(),
+  })
+  .refine(
+    (b) =>
+      b.title !== undefined ||
+      b.icon !== undefined ||
+      b.color !== undefined ||
+      b.muted !== undefined,
+    'nothing to change',
+  );
 
-/** PATCH /api/messenger/c/:id: a group's title (its admins), my own mute.
- *  The picture, the workspace and the agent arrive with Phases 3 and 4. */
+/** PATCH /api/messenger/c/:id: a group's title, icon and colour (its
+ *  admins), my own mute. The picture, the workspace and the agent arrive
+ *  with Phases 3 and 4. */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = anyLoginCaller();
   const { id } = await ctx.params;

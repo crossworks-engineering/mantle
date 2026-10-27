@@ -124,6 +124,7 @@ export type {
   MessengerMessagesResponse,
   MessengerParticipant,
   MessengerParticipantKind,
+  MessengerPatchRequest,
   MessengerPreview,
   MessengerReaction,
   MessengerRowKind,
@@ -132,6 +133,17 @@ export type {
   MessengerStreamEvent,
   MessengerUnreadResponse,
 } from './dto/messenger';
+export type {
+  PeopleListResponse,
+  PeoplePresenceResponse,
+  PersonAvatar,
+  PersonCard,
+  PersonPresence,
+  PersonPresenceEntry,
+  PersonPresenceState,
+  PersonResponse,
+  PersonStatus,
+} from './dto/people';
 export type {
   BulkDeleteCascadeResponse,
   BulkDeleteFilesResponse,

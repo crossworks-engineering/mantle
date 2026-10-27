@@ -352,6 +352,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
     if (v === null || v === undefined || v instanceof NextResponse) return v;
     switch (name) {
       case 'anyLoginCaller':
+      case 'anyLoginAssetCaller':
       case 'publicLoginItself':
         return legacyAny(v as L);
       case 'chatCaller':

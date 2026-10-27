@@ -183,7 +183,7 @@ GET /api/messenger/c/:id class=self scope=- caller=login gone=false
 GET /api/messenger/c/:id/messages class=self scope=- caller=login gone=false
 GET /api/messenger/conversations class=self scope=- caller=login gone=false
 GET /api/messenger/directory class=self scope=- caller=login gone=false
-GET /api/messenger/photo/:loginId class=self scope=- caller=login gone=false
+GET /api/messenger/photo/:loginId class=self scope=- caller=loginAsset gone=false
 GET /api/messenger/stream class=self scope=- caller=login gone=false
 GET /api/messenger/unread class=self scope=- caller=login gone=false
 GET /api/metrics/usage class=area scope=area:settings caller=owner gone=false
@@ -220,6 +220,10 @@ GET /api/peers/:id/shares class=area scope=area:connectors caller=owner gone=fal
 GET /api/peers/nodes class=area scope=area:connectors caller=owner gone=false
 GET /api/pending class=area scope=area:settings caller=owner gone=false
 GET /api/pending/:id class=area scope=area:settings caller=owner gone=false
+GET /api/people class=self scope=- caller=login gone=false
+GET /api/people/:id class=self scope=- caller=login gone=false
+GET /api/people/:id/photo class=self scope=- caller=loginAsset gone=false
+GET /api/people/presence class=self scope=- caller=login gone=false
 GET /api/presents class=content scope=content caller=owner gone=false
 GET /api/presents/:id class=content scope=content caller=owner gone=false
 GET /api/presents/:id/checks class=content scope=content caller=owner gone=false
@@ -446,7 +450,7 @@ HEAD /api/messenger/c/:id class=self scope=- caller=login gone=false
 HEAD /api/messenger/c/:id/messages class=self scope=- caller=login gone=false
 HEAD /api/messenger/conversations class=self scope=- caller=login gone=false
 HEAD /api/messenger/directory class=self scope=- caller=login gone=false
-HEAD /api/messenger/photo/:loginId class=self scope=- caller=login gone=false
+HEAD /api/messenger/photo/:loginId class=self scope=- caller=loginAsset gone=false
 HEAD /api/messenger/stream class=self scope=- caller=login gone=false
 HEAD /api/messenger/unread class=self scope=- caller=login gone=false
 HEAD /api/metrics/usage class=area scope=area:settings caller=owner gone=false
@@ -483,6 +487,10 @@ HEAD /api/peers/:id/shares class=area scope=area:connectors caller=owner gone=fa
 HEAD /api/peers/nodes class=area scope=area:connectors caller=owner gone=false
 HEAD /api/pending class=area scope=area:settings caller=owner gone=false
 HEAD /api/pending/:id class=area scope=area:settings caller=owner gone=false
+HEAD /api/people class=self scope=- caller=login gone=false
+HEAD /api/people/:id class=self scope=- caller=login gone=false
+HEAD /api/people/:id/photo class=self scope=- caller=loginAsset gone=false
+HEAD /api/people/presence class=self scope=- caller=login gone=false
 HEAD /api/presents class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id/checks class=content scope=content caller=owner gone=false

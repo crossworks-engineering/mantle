@@ -36,6 +36,10 @@ export const messengerConversations = pgTable('messenger_conversations', {
   kind: text('kind').$type<'direct' | 'group'>().notNull(),
   title: text('title'),
   pictureAttachmentId: uuid('picture_attachment_id'),
+  /** A group's icon, an emoji (0341); null for a direct chat. */
+  icon: text('icon'),
+  /** A group's colour, an app tint key (APP_TINTS, 0341); null for a direct chat. */
+  color: text('color'),
   workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'set null' }),
   agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   /** A direct chat's two login ids, sorted and joined; null for a group. */

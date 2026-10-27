@@ -39,11 +39,15 @@ const CreateBody = z.object({
   kind: z.enum(['direct', 'group']),
   participants: z.array(z.string().uuid()).max(200),
   title: z.string().max(200).optional(),
+  // A group's look; the store checks each (one emoji, an app tint key).
+  icon: z.string().max(64).nullable().optional(),
+  color: z.string().max(32).nullable().optional(),
 });
 
 /** POST /api/messenger/conversations: a direct chat (one other login; an
- *  existing pair answers its chat) or a group. Only people who share a
- *  workspace with me (Admin users: anyone). */
+ *  existing pair answers its chat) or a group, with an optional icon and
+ *  colour (a direct chat ignores them). Only people who share a workspace
+ *  with me (Admin users: anyone). */
 export async function POST(req: Request) {
   const login = anyLoginCaller();
   const body = await readBody(req, CreateBody);

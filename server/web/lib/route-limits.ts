@@ -191,6 +191,9 @@ export const RATE_LIMITS = {
   messengerWrite: perLogin('messenger-write', 120),
   messengerTyping: perLogin('messenger-typing', 20),
   messengerRead: perLogin('messenger-read', 600),
+  // People (plan page d8954876 section 23), per login: the cards, one
+  // card, the presence poll and the photos a list draws.
+  peopleRead: perLogin('people-read', 600),
   // The /s link routes, per address: a stranger's requests.
   shareAggregate: perIp('share-aggregate', 120),
   shareBundle: perIp('share-bundle', 30),

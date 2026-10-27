@@ -34,6 +34,8 @@ import type {
   MessengerDirectoryEntryView,
   MessengerParticipantView,
 } from '@mantle/content/messenger';
+import type { PersonCard, PersonPresenceEntry } from '@mantle/client-types/dto/people';
+import type { PersonCardView, PersonPresenceView } from '@mantle/content/people';
 import { ACCESS_LEVELS } from '@mantle/client-types/dto/access';
 import { ACCESS_KEY_AREAS as CONTRACT_KEY_AREAS } from '@mantle/client-types/dto/access-keys';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
@@ -152,6 +154,11 @@ describe('client-types mirrors have not drifted from their source of truth', () 
     // The faces (avatar, photoVersion) included: the chat window reads them.
     expectTypeOf<MessengerParticipantView>().toEqualTypeOf<MessengerParticipant>();
     expectTypeOf<MessengerDirectoryEntryView>().toEqualTypeOf<MessengerDirectoryEntry>();
+  });
+
+  it('the people card and presence match the views the people module builds', () => {
+    expectTypeOf<PersonCardView>().toEqualTypeOf<PersonCard>();
+    expectTypeOf<{ id: string } & PersonPresenceView>().toEqualTypeOf<PersonPresenceEntry>();
   });
 
   /**

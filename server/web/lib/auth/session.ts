@@ -402,6 +402,25 @@ async function findMemberAsset(url: string): Promise<MemberCaller | null> {
   return resolved && !resolved.admin && resolved.user.id === claims.uid ? memberOf(resolved) : null;
 }
 
+/**
+ * The login an `?at=` asset token in `url` was minted for, any login (an
+ * Admin user's shell mints it with `act` the login, or none for the
+ * anchor itself; a member's with `act`), with no effect, or null. The
+ * login is re-read: usable, on the session epoch the token carries, and of
+ * the brain the token names, so a disabled, signed-out or moved login's
+ * token stops at once. Read only on a GET of an any-login asset row
+ * (getLoginForAsset).
+ */
+async function findLoginAsset(url: string): Promise<Resolved | null> {
+  const at = new URL(url).searchParams.get('at');
+  const claims = at ? verifyAssetToken(at) : null;
+  if (!claims) return null;
+  const row = await loadLoginRow(claims.act ?? claims.uid);
+  if (!row || !loginUsable(row) || row.sessionEpoch !== claims.ep) return null;
+  const resolved = await resolvedFor(row, 'web');
+  return resolved && resolved.user.id === claims.uid ? resolved : null;
+}
+
 /** A device token a refresh replaced, presented again (reuse detection). */
 type RotatedToken = { jti: string; userId: string; rotatedTo: string };
 
@@ -763,6 +782,7 @@ export class RequestLogins {
   #render: Promise<{ user: SessionUser; nodeId: string } | null> | null = null;
   readonly #owner = new Map<string, Promise<SessionUser | 'refused' | null>>();
   readonly #member = new Map<string, Promise<MemberCaller | null>>();
+  readonly #loginAsset = new Map<string, Promise<Resolved | null>>();
   #changed = false;
   /** The gate's failed find, kept for the first guard read (keepFailure). */
   #failure: Promise<FoundLogin> | null = null;
@@ -790,6 +810,7 @@ export class RequestLogins {
     this.#render = null;
     this.#owner.clear();
     this.#member.clear();
+    this.#loginAsset.clear();
     this.#failure = null;
     this.#applied = null;
     this.#changed = true;
@@ -862,6 +883,10 @@ export class RequestLogins {
 
   memberAsset(url: string): Promise<MemberCaller | null> {
     return RequestLogins.#kept(this.#member, url, findMemberAsset);
+  }
+
+  loginAsset(url: string): Promise<Resolved | null> {
+    return RequestLogins.#kept(this.#loginAsset, url, findLoginAsset);
   }
 
   static #kept<T>(map: Map<string, Promise<T>>, url: string, find: (url: string) => Promise<T>) {
@@ -1107,6 +1132,7 @@ type PipelineAnswer =
   | Readonly<{ caller: 'session'; user: SessionUser | null }>
   | Readonly<{ caller: 'ownerAsset'; user: SessionUser }>
   | Readonly<{ caller: 'readerAsset'; reader: AssetReader }>
+  | Readonly<{ caller: 'loginAsset'; login: Login }>
   | Readonly<{ caller: 'frame'; ticket: AppFrameTicket | null }>
   | Readonly<{
       caller: 'publicLogin';
@@ -1218,6 +1244,7 @@ export function answeredLimitLogin(): LimitLogin | null {
     case 'member':
       return { loginId: answer.member.loginId, member: true };
     case 'login':
+    case 'loginAsset':
       return { loginId: answer.login.loginId, member: !loginAdminPair(answer.login) };
     case 'chat':
       return { loginId: answer.chat.loginId, member: !loginAdminPair(answer.chat.asLogin) };
@@ -1298,6 +1325,10 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
     case 'readerAsset': {
       const reader = await getReaderForAsset(assetRequest(row));
       return reader instanceof NextResponse ? reader : { caller, reader };
+    }
+    case 'loginAsset': {
+      const login = await getLoginForAsset(assetRequest(row));
+      return login instanceof NextResponse ? login : { caller, login };
     }
     case 'frame': {
       // The ticket only (A4 hand batch B): the handler checks it names this
@@ -1476,6 +1507,16 @@ export function readerAssetCaller(): AssetReader {
 }
 
 /**
+ * Any login on a byte route of an any-login row (a person's photo, plan
+ * page d8954876 section 23): what getLoginForAsset answers, its session or
+ * its own `?at=` asset token, read from the pipeline's answer as
+ * anyLoginCaller() reads it.
+ */
+export function anyLoginAssetCaller(): Login {
+  return pipelineAnswer('anyLoginAssetCaller', 'loginAsset').login;
+}
+
+/**
  * The frame ticket a sandbox frame document was opened with (A4 hand batch
  * B): the `?t=` the gate admitted, verified (verifyAppFrameTicket), or null.
  * No login is resolved for these rows; the handler checks the ticket names
@@ -1557,6 +1598,7 @@ const ANSWERED: Readonly<Record<RouteCaller, string>> = {
   session: 'session user',
   ownerAsset: 'asset owner',
   readerAsset: 'asset reader',
+  loginAsset: 'asset login',
   frame: 'frame ticket',
   publicLogin: 'public login',
   cookieUpgrade: 'cookie upgrade login',
@@ -2040,6 +2082,29 @@ export async function getLoginOr401(opts: { audit?: boolean } = {}): Promise<Log
   const login = answeredLogin(res);
   if (opts.audit) await auditLoginMutation(res);
   return login;
+}
+
+/**
+ * The any-login guard of a byte route an <img> src opens (plan page
+ * d8954876 section 23: a person's photo in the desktop app and the phone,
+ * which send no cookie and whose <img> carries no bearer): the request's
+ * login as getLoginOr401 finds it (cookie, device token), else on a GET
+ * the `?at=` asset token the login's shell mints for its byte srcs, the
+ * same token and lifetime /api/profile/photo takes (buildAssetToken;
+ * findLoginAsset re-reads its login). Its actor is named read-only and its
+ * scope entered as the any-login guard enters it (anyLoginScope). No audit
+ * row: a byte read. The gate admits the token on the asset paths alone
+ * (isAssetPath), and ROUTE_POLICY reads this kind on a GET or HEAD of
+ * those only.
+ */
+export async function getLoginForAsset(req: Request): Promise<Login | NextResponse> {
+  const res = await resolveLogin();
+  const found = res ?? (req.method === 'GET' ? await requestLogins().loginAsset(req.url) : null);
+  if (!found) return accessRefusal(new AccessError('unauthorized'));
+  if (!res) nameRequestLogin(found, 'ro');
+  const refused = await anyLoginScope(found);
+  if (refused) return refused;
+  return answeredLogin(found);
 }
 
 /** The Login of a resolved caller, frozen (its actor a frozen copy), with

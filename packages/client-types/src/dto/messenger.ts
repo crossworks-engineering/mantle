@@ -61,6 +61,11 @@ export type MessengerListRow = {
   /** The conversation id, or the agent id for an agent thread. */
   id: string;
   title: string;
+  /** A group's icon (one emoji) and colour (an app tint key, APP_TINTS in
+   *  app-nav); null for a direct chat or a group without one; absent on an
+   *  agent thread. */
+  icon?: string | null;
+  color?: string | null;
   /** null for an agent thread (its order is by time). */
   lastSeq: number | null;
   /** ISO, null when nothing was said yet. */
@@ -84,6 +89,9 @@ export type MessengerConversation = {
   id: string;
   kind: MessengerConversationKind;
   title: string | null;
+  /** As on a list row: a group's icon and colour, null for a direct chat. */
+  icon?: string | null;
+  color?: string | null;
   createdBy: string | null;
   createdAt: string;
   archivedAt: string | null;
@@ -153,12 +161,26 @@ export type MessengerCreateRequest = {
    *  name none (a group of one, "message yourself"). */
   participants: string[];
   title?: string;
+  /** A group's icon (one emoji, at most 16 characters) and colour (an app
+   *  tint key); a direct chat ignores both. */
+  icon?: string | null;
+  color?: string | null;
 };
 
 export type MessengerCreateResponse = {
   conversation: MessengerConversation;
   /** false when a direct chat with that login already existed. */
   created: boolean;
+};
+
+/** PATCH /api/messenger/c/:id: at least one field. The title, icon and
+ *  colour are a group admin's (null or '' clears one); `muted` is mine.
+ *  Answers `{ conversation }`. */
+export type MessengerPatchRequest = {
+  title?: string | null;
+  icon?: string | null;
+  color?: string | null;
+  muted?: boolean;
 };
 
 /** POST /api/messenger/c/:id/messages. */
