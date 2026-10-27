@@ -50,7 +50,9 @@ describe('deploy scripts harness', () => {
             Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')),
           ),
           stdio: ['ignore', 'pipe', 'pipe'],
-          timeout: 120_000,
+          // About 70 s alone on a laptop (600 checks, each roll.sh case a
+          // whole roll against stubs); under the full suite's load twice that.
+          timeout: 240_000,
         });
       } catch (err) {
         const e = err as { stdout?: string; stderr?: string; message: string };
@@ -60,6 +62,6 @@ describe('deploy scripts harness', () => {
       }
       expect(out).toMatch(/\n\d+ passed, 0 failed/);
     },
-    150_000,
+    270_000,
   );
 });

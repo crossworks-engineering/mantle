@@ -47,24 +47,40 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   such a roll itself (`parser_compose_refusal`) before it refreshes any
   release-owned file or changes any container.
 - **`:latest` moves for both images at once:** the release workflow probes
-  the server and parser images on both architectures' native runners, cuts
-  the release, and only then points `:latest` of both at it, in one job.
+  the server and parser images on both architectures' native runners (the
+  parser read-only, as compose runs it; both for pnpm's
+  `verify-deps-before-run` being `error`), cuts the release, and only then
+  points `:latest` of both at it, in one job, the parser first.
+- **`roll.sh` refuses what would fail mid-roll:** for a release with the
+  parser, less than 8 GB free on the box's Docker filesystem
+  (`ROLL_MIN_FREE_GB`; the parser image is 2.70 GB, the server image
+  1.84 GB, and the first roll pulls the server image whole), or a box
+  override or `.env` the release's compose does not load (`docker compose
+  config -q` on the box: an override still naming `tika:` or `media:`);
+  and any roll whose server or parser image is not in the registry yet.
+  After the roll it asks the parser's `/healthz` from inside `mantle_web`
+  (`PARSER UNREACHABLE`, exit 1).
 - **`--remove-orphans`** on every documented and scripted `compose up`
   (`install.sh`, `scripts/install.sh`, `scripts/up.sh`, the update
   command in docs/update-prod.md), so a removed service (Tika, the media
   sidecar) does not keep running after a hand update.
 - **A person waiting goes first:** a chat attachment or a thumbnail asks
-  the parser for the head of its queue (`X-Parser-Priority: interactive`),
-  skips its process's client queue, and is answered `busy` after at most
-  10 s ("try again in a moment"), never waited out behind background
-  extracts. No second slot.
+  the parser for the head of its queue (`X-Parser-Priority: interactive`)
+  and is answered `busy` after at most 10 s ("try again in a moment"),
+  never waited out behind background extracts. No second slot. Only a chat
+  attachment also skips its process's client cap: a gallery of thumbnails
+  takes its turn under it. The client never gives up before the parser's
+  worst legitimate time for the job (one rule, `parser-wire.ts`).
 - **A job leaves nothing behind for the next one:** a reader's child
   program (Python, ffprobe, ffmpeg) runs in its job's process group, so the
-  job's kill takes it; a process that left the group is killed before the
-  slot is given back; a job's temp files, home and caches live in its own
-  directory and tsx keeps no cache; `/tmp` is cleared beside the job root
-  after each job. A slow body or an unread answer gives the slot back after
-  60 s.
+  job's kill takes it; a job's temp files, home and caches live in its own
+  directory and neither tsx nor Node keeps a cache. After every job the
+  parser checks the container is as clean as a fresh one (no process of
+  the job, nothing in `/tmp` but the empty job root, nothing in `/dev/shm`
+  or `/dev/mqueue`, no System V IPC object); if not, it answers, then
+  exits and Docker restarts it (docs/parser.md, "Between jobs"). A slow
+  body or an unread answer gives the slot back after 60 s, and a slot held
+  past every deadline turns `/healthz` to 503 so autoheal restarts it.
 - **A fixed cap is terminal at once:** a `too_large` from the body, a zip
   part, the cells, the pixels or the answer is final the first time; a full
   scratch space still gets its one retry.
