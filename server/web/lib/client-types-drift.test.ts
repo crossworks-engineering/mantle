@@ -26,6 +26,14 @@ import type {
   ShellRole,
   WorkspaceArea,
 } from '@mantle/client-types';
+import type {
+  MessengerDirectoryEntry,
+  MessengerParticipant,
+} from '@mantle/client-types/dto/messenger';
+import type {
+  MessengerDirectoryEntryView,
+  MessengerParticipantView,
+} from '@mantle/content/messenger';
 import { ACCESS_LEVELS } from '@mantle/client-types/dto/access';
 import { ACCESS_KEY_AREAS as CONTRACT_KEY_AREAS } from '@mantle/client-types/dto/access-keys';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
@@ -147,6 +155,12 @@ describe('client-types mirrors have not drifted from their source of truth', () 
    * is the direction that actually happens: the array is what the server
    * validates incoming values against.
    */
+  it('the messenger people match the views the content module builds', () => {
+    // The faces (avatar, photoVersion) included: the chat window reads them.
+    expectTypeOf<MessengerParticipantView>().toEqualTypeOf<MessengerParticipant>();
+    expectTypeOf<MessengerDirectoryEntryView>().toEqualTypeOf<MessengerDirectoryEntry>();
+  });
+
   it('task vocabulary matches the const arrays in content', () => {
     expectTypeOf<SameUnion<(typeof TASK_STATUSES)[number], TaskStatus>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<(typeof TASK_PRIORITIES)[number], TaskPriority>>().toEqualTypeOf<true>();
