@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { db, sql } from '@mantle/db';
 import { bucketStatus } from '@mantle/storage';
-import { tikaVersion } from '@mantle/files';
+import { parserHealth } from '@mantle/files';
 import { loadPreferencesFor, savePreferencesFor, isPurposeArchetype } from '@mantle/content';
 import { setApiKey, listApiKeys, findProviderKeyId, findProviderKeyIds } from '@mantle/api-keys';
 import {
@@ -28,7 +28,6 @@ import { getAgentBySlug } from '@/lib/agents';
 import { env } from '@mantle/config';
 import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
-import { tikaIsOptional } from '@/lib/compose-shape';
 
 /**
  * The onboarding wizard's steps, as plain functions of the owner's id and
@@ -211,27 +210,23 @@ export async function runInfraChecks(browserHost: string | null): Promise<Sanity
     });
   }
 
-  // Tika — the long-tail document parser (office formats, odd PDFs). A
-  // brain-core box without the helpers profile sheds it on purpose
-  // (docker-compose.core.yml), and common formats parse in-process without
-  // it, so there it is optional: reported, never blocking. The shape is
-  // derived from the box's compose settings (lib/compose-shape.ts).
-  const tika = await tikaVersion(2_500);
+  // The parser service: it reads every file the brain receives (documents,
+  // drawings, images, audio). Core on every deploy shape, so a parser that
+  // does not answer fails the check.
+  const parser = await parserHealth(2_500);
   checks.push(
-    tika
-      ? { label: 'Document parser (Tika)', ok: true, detail: tika }
-      : tikaIsOptional()
-        ? {
-            label: 'Document parser (Tika)',
-            ok: true,
-            detail:
-              'not running: optional on a brain-core box. PDF, DOCX, text and markdown parse without it; add it with scripts/install.sh --helpers for .odt, .pptx, .doc, .xls and .rtf.',
-          }
-        : {
-            label: 'Document parser (Tika)',
-            ok: false,
-            detail: 'not answering — is the tika container running? Office/PDF parsing will fail.',
-          },
+    parser.up
+      ? {
+          label: 'Document parser',
+          ok: true,
+          detail: `answering (anydoc ${parser.versions.anydoc ?? '?'}, ezdxf ${parser.versions.ezdxf ?? 'missing'})`,
+        }
+      : {
+          label: 'Document parser',
+          ok: false,
+          detail:
+            'not answering — is the parser container (mantle_parser) running? No uploaded file can be read until it is.',
+        },
   );
 
   // Required secrets — the stack refuses to start without them under compose,
