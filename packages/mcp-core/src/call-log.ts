@@ -172,7 +172,9 @@ export function mcpCallEntry(call: McpCallSeen): McpCallEntry {
   const asked = args[WORKSPACE_ARG];
   const workspaceId =
     typeof asked === 'string' && UUID_RE.test(asked) ? asked.toLowerCase() : seen.landedIn;
+  // The items, not the workspace the call named or landed in.
   const ids = new Set([...argItemIds(call.tool, args), ...seen.itemIds]);
+  if (workspaceId) ids.delete(workspaceId);
   return {
     loginId: call.loginId ?? null,
     via: call.via,
