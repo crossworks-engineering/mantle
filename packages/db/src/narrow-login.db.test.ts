@@ -82,9 +82,8 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
         'select current_user::text as u, session_user::text as s',
       )
     )[0]!;
-  const reopen = async (on: boolean) => {
+  const reopen = async () => {
     await m.closeDb();
-    rr.setNarrowSystemForTests(on);
     await m.systemDb.execute(sql`select 1`);
   };
   /** The test's own narrow session's backend: not the pool's. */
@@ -118,7 +117,6 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
   }, 120_000);
 
   afterAll(async () => {
-    rr?.setNarrowSystemForTests(null);
     await m?.closeDb();
     await nl?.end();
     await su?.end();
@@ -243,7 +241,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
   });
 
   it('the route runs on the login pool, opened on the first narrow statement', async () => {
-    await reopen(true);
+    await reopen();
     // System statements only: no narrow connection yet.
     await m.systemDb.execute(sql`select 1`);
     // The closed pool's backends leave the server a moment after its end.
@@ -316,7 +314,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
   };
 
   it('the session SET is gone after the statement: the same connection, outside a transaction, holds none of it', async () => {
-    await reopen(true);
+    await reopen();
     const login = randomUUID();
     const seen = await exitRead(login);
     expect(seen).toMatchObject({ s: NARROW, l: login, a: 'system:http:admin-area' });
@@ -327,7 +325,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
   });
 
   it('60 parallel narrow statements of two acting logins: each sees its own, none crosses', async () => {
-    await reopen(true);
+    await reopen();
     const a = randomUUID();
     const b = randomUUID();
     const runs = Array.from({ length: 60 }, (_, i) => (i % 2 ? a : b));
@@ -343,7 +341,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
   });
 
   it("the narrow pool's startup parameters: the app's values and the system pool's session-start ones, over any setting stored on the role", async () => {
-    await reopen(true);
+    await reopen();
     // The system pool's session-start values, read once (a session SET of
     // the system pool after it never reaches a narrow connect).
     await nr.systemStartup(su);
@@ -411,7 +409,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     expect(probe).toEqual({ login: true, settings: 2 });
     expect(rr.narrowLoginNote(probe!, true)).toMatch(/2 stored setting row\(s\).*next migrate/);
     // migrate's role step takes every one back.
-    await rr.ensureRuntimeRoles(su, KEY(), { login: true, narrowLogin: true, warn: () => {} });
+    await rr.ensureRuntimeRoles(su, KEY(), { login: true, warn: () => {} });
     expect(await stored()).toBe(0);
   });
 
@@ -494,7 +492,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       await pool.end();
     }
     // migrate's role step takes them back.
-    await rr.ensureRuntimeRoles(su, KEY(), { login: true, narrowLogin: true, warn: () => {} });
+    await rr.ensureRuntimeRoles(su, KEY(), { login: true, warn: () => {} });
     expect(await count()).toBe(0);
   });
 
@@ -524,7 +522,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       expect.stringContaining(`PASSWORD '${rr.narrowRolePassword(KEY())}'`),
     ]);
     // And after a run the stored verifier is the derived password's.
-    await rr.ensureRuntimeRoles(su, KEY(), { login: true, narrowLogin: true, warn: () => {} });
+    await rr.ensureRuntimeRoles(su, KEY(), { login: true, warn: () => {} });
     const [auth] = await su<{ v: string }[]>`
       select rolpassword as v from pg_authid where rolname = ${NARROW}`;
     expect(scramMatches(auth!.v, rr.narrowRolePassword(KEY()))).toBe(true);
@@ -532,7 +530,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
   });
 
   it('a pool that cannot log in as the narrow role fails the statement, closed, with the fix named', async () => {
-    await reopen(true);
+    await reopen();
     const bad = pools.newNarrowPool(
       rr.runtimeDatabaseUrl(scratch.url, 'not-the-derived-one', rr.NARROW_ROLE),
       su,
@@ -553,7 +551,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
           (e) => e instanceof nr.NarrowLoginError,
         ) as Error | undefined;
         expect(named?.message).toMatch(
-          /cannot log in as mantle_system_narrow \(28P01\).*run migrate with MANTLE_NARROW_SYSTEM on/,
+          /cannot log in as mantle_system_narrow \(28P01\).*run migrate as a superuser/,
         );
       }
     } finally {
@@ -562,7 +560,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       await bad.end({ timeout: 1 });
     }
     expect(rr.narrowLoginNote({ login: false, settings: 0 }, true)).toMatch(
-      /cannot log in: every narrow statement fails until you run migrate with MANTLE_NARROW_SYSTEM on/,
+      /cannot log in: every narrow statement fails until you run migrate as a superuser/,
     );
   });
 
@@ -711,7 +709,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
   });
 
   it('a narrow statement may name no gateway setting (one cell per name)', async () => {
-    await reopen(true);
+    await reopen();
     const names = [
       'mantle.actor',
       'mantle.actor_check',
@@ -747,7 +745,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     for (const d of denied) expect(d.what, d.what).toMatch(/^text:[a-z0-9-]+ \| /);
   });
 
-  it('the acting login: a request exit carries it on the narrow route, and on the full route with the check off', async () => {
+  it('the acting login: a request exit carries it on the narrow route', async () => {
     const login = randomUUID();
     const read = () =>
       m.runInRequestSlot(async () => {
@@ -760,19 +758,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
         )) as unknown as { u: string; l: string; a: string }[];
         return rows[0]!;
       });
-    await reopen(true);
+    await reopen();
     expect(await read()).toEqual({ u: NARROW, l: login, a: 'system:http:admin-area' });
-    const saved = process.env.MANTLE_ACTOR_CHECK;
-    delete process.env.MANTLE_ACTOR_CHECK;
-    try {
-      await reopen(false);
-      const off = await read();
-      expect(off.l).toBe(login);
-      expect(off.u).not.toBe(NARROW);
-    } finally {
-      if (saved === undefined) delete process.env.MANTLE_ACTOR_CHECK;
-      else process.env.MANTLE_ACTOR_CHECK = saved;
-      await reopen(true);
-    }
   });
 });

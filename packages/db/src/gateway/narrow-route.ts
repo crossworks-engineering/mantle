@@ -34,8 +34,8 @@ import { NARROW_LOGIN_FIX, NARROW_ROLE } from '../runtime-role';
 import { actingLoginNow } from '../viewer';
 import { ACTOR_SQL_TAG, NARROW_SQL_TAG, firstModeReadNow } from './check-mode';
 import { sqlCode } from '../sql-text';
-import { noteNarrowDenial, sendOrNote } from './narrow-denial';
-import { CALLED_FN, noteWouldRefuseStatement, wouldRefuseTx } from './narrow-would-refuse';
+import { checkSendable, noteNarrowDenial } from './narrow-denial';
+import { CALLED_FN } from './narrow-sendable';
 import {
   lazyQuery,
   resetActorSqlFor,
@@ -129,7 +129,7 @@ function noteNarrowUse(): void {
 
 /**
  * One statement outside a transaction on the narrow route, its text checked
- * first on both pools (sendOrNote: a refusal noted and thrown, nothing
+ * first on both pools (checkSendable: a refusal noted and thrown, nothing
  * sent): BEGIN, the SET (narrowSettingsSql), the statement, the hold check
  * (narrowHeld) and COMMIT, pipelined on one reserved connection of the system pool (one
  * round trip). A failing statement aborts the transaction, the COMMIT then
@@ -142,7 +142,7 @@ export async function narrowStatement(
   mode: QueryMode,
   pool: PgSql | null = null,
 ): Promise<unknown> {
-  sendOrNote(query, false, true);
+  checkSendable(query, false);
   noteNarrowUse();
   noteNarrowFunctions(query);
   if (pool) {
@@ -380,12 +380,12 @@ function watchedQuery(q: QueryLike, onError: (err: unknown) => void) {
  * its error is seen only when it ends the transaction.
  */
 function narrowTxClient(t: PgSql, onError: (err: unknown) => void): PgSql {
-  // The text check's refusal (noted where it is met, sendOrNote) is the
+  // The text check's refusal (noted where it is met, checkSendable) is the
   // statement's error too: seen by `onError` (the transaction's first
   // error) in both branches.
   const sendable = (text: string, tagged: boolean) => {
     try {
-      sendOrNote(text, tagged, true);
+      checkSendable(text, tagged);
     } catch (err) {
       onError(err);
       throw err;
@@ -488,19 +488,12 @@ export function narrowRouteClient(
   base: PgSql,
   narrowNow: () => boolean,
   narrowPool: () => PgSql | null = () => null,
-  wouldNarrow: () => boolean = () => false,
 ): PgSql {
   return new Proxy(withActor, {
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
         return (query: string, args?: unknown[], opts?: unknown) => {
-          if (!narrowNow()) {
-            // The switch off, on a route that would be narrow: the calls
-            // the role could not make and the text the route would not send
-            // are counted (noteWouldRefuseStatement).
-            if (wouldNarrow()) noteWouldRefuseStatement(base, query);
-            return target.unsafe(query, args as never[], opts as never);
-          }
+          if (!narrowNow()) return target.unsafe(query, args as never[], opts as never);
           // Tracked: closeDb waits for it (trackPipeline).
           return lazyQuery((mode) =>
             trackPipeline(
@@ -513,13 +506,6 @@ export function narrowRouteClient(
         return (...args: unknown[]) => {
           const last = args[args.length - 1];
           if (!narrowNow() || typeof last !== 'function') {
-            if (typeof last === 'function' && wouldNarrow()) {
-              const inner = last as (t: PgSql) => unknown;
-              return (target.begin as (...a: unknown[]) => unknown)(
-                ...args.slice(0, -1),
-                (t: PgSql) => inner(wouldRefuseTx(t, base)),
-              );
-            }
             return (target.begin as (...a: unknown[]) => unknown)(...args);
           }
           return trackPipeline(Promise.resolve().then(() => narrowBegin(base, args, narrowPool())));

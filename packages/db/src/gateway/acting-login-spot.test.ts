@@ -13,7 +13,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loginActor, runAsActor } from '../actor';
-import { setNarrowSystemForTests } from '../runtime-role';
 import {
   actingLoginAtSpot,
   asSystem,
@@ -44,11 +43,9 @@ const asSystemExit = <T>(fn: () => Promise<T>) =>
 describe('the acting login at the login-credential spot, the actor check off', () => {
   beforeEach(() => {
     vi.stubEnv('MANTLE_ACTOR_CHECK', 'off');
-    setNarrowSystemForTests(true);
   });
   afterEach(() => {
     vi.unstubAllEnvs();
-    setNarrowSystemForTests(null);
   });
 
   for (const [name, exit] of [

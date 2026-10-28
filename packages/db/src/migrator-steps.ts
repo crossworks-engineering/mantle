@@ -44,15 +44,14 @@ const consoleLog: StepLog = {
  *  outcome for afterMigrations. `runtimeLogin`: MANTLE_DB_RUNTIME_ROLE as
  *  migrate sees it (compose passes it through x-app-env): the runtime role
  *  may log in only then, and is NOLOGIN again at the first migrate without
- *  it. `narrowLogin`: MANTLE_NARROW_SYSTEM as migrate sees it, the same for
- *  the narrow role (its own pool's login, gateway/pools.ts). */
+ *  it. The narrow role logs in whenever it can (a master key, outside
+ *  per-database mode): the narrow route's own pool (gateway/pools.ts). */
 export async function beforeMigrations(
   sql: Sql,
   masterKey: string | null,
   perDatabase: boolean,
   runtimeLogin: boolean,
   log: StepLog = consoleLog,
-  narrowLogin = false,
 ): Promise<RuntimeRolesOutcome> {
   // Refuses to reset roles another brain on this cluster owns.
   if ((await ensureViewerRoles(sql, masterKey, perDatabase)) === 'not-permitted') {
@@ -72,13 +71,12 @@ export async function beforeMigrations(
   };
   const runtime = await ensureRuntimeRoles(sql, masterKey, {
     login: runtimeLogin,
-    narrowLogin,
     perDatabase,
     warn: log.warn,
   });
   if (runtime === 'ok') {
     log.info(loginLine('runtime role mantle_runtime', 'MANTLE_DB_RUNTIME_ROLE', runtimeLogin));
-    log.info(loginLine('narrow role mantle_system_narrow', 'MANTLE_NARROW_SYSTEM', narrowLogin));
+    log.info(narrowLine(perDatabase, masterKey !== null));
   }
   if (runtime === 'not-superuser') {
     log.warn(
@@ -87,32 +85,35 @@ export async function beforeMigrations(
   } else if (runtime === 'old-server') {
     log.warn('  WARNING the runtime role (mantle_runtime) needs Postgres 16 or later: not made');
   }
-  const narrow = narrowLoginWarning(runtime, narrowLogin);
+  const narrow = narrowLoginWarning(runtime);
   if (narrow) log.warn(narrow);
   return runtime;
 }
 
+/** The narrow role's line: LOGIN, or NOLOGIN with the cause that holds. */
+function narrowLine(perDatabase: boolean, hasKey: boolean): string {
+  const role = '  narrow role mantle_system_narrow';
+  if (perDatabase) return `${role}: NOLOGIN (per-database mode: the role is taken per transaction)`;
+  if (!hasKey) return `${role}: NOLOGIN (MANTLE_MASTER_KEY is not set: no password to derive)`;
+  return `${role}: LOGIN`;
+}
+
 /**
- * Migrate's warning when the narrow switch is on (the default) but the
- * roles step did not run (`runtime` is not 'ok'): this run could not make
- * the narrow role or give it its login, so unless an earlier migrate did,
- * every narrow statement fails closed (NarrowLoginError). It names the
- * per-box kill switch. Null when there is nothing to warn of.
+ * Migrate's warning when the roles step did not run (`runtime` is not
+ * 'ok'): this run could not make the narrow role or give it its login, so
+ * unless an earlier migrate did, every narrow statement fails closed
+ * (NarrowLoginError). Null when there is nothing to warn of.
  */
-export function narrowLoginWarning(
-  runtime: RuntimeRolesOutcome,
-  narrowLogin: boolean,
-): string | null {
-  if (!narrowLogin || runtime === 'ok') return null;
+export function narrowLoginWarning(runtime: RuntimeRolesOutcome): string | null {
+  if (runtime === 'ok') return null;
   const why =
     runtime === 'not-superuser'
       ? 'migrate does not run as a superuser'
       : 'the server is older than Postgres 16';
   return (
-    `  WARNING MANTLE_NARROW_SYSTEM is on, but the narrow role (mantle_system_narrow) was not made ` +
-    `or given its login (${why}): unless an earlier migrate did, every narrow statement fails ` +
-    `closed. Run migrate as a superuser on Postgres 16 or later, or set MANTLE_NARROW_SYSTEM=0 ` +
-    `in the stack's .env and run a full docker compose up -d (migrate first, then the app)`
+    `  WARNING the narrow role (mantle_system_narrow) was not made or given its login (${why}): ` +
+    `unless an earlier migrate did, every narrow statement fails closed. Run migrate as a ` +
+    `superuser on Postgres 16 or later`
   );
 }
 

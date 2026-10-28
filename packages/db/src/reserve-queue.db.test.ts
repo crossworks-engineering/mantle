@@ -66,7 +66,6 @@ describe.skipIf(!URL)('a reserve queued when a connection of its pool closes is 
   }, 120_000);
 
   afterAll(async () => {
-    rr?.setNarrowSystemForTests(null);
     reserved?.setReserveWaitForTests(null);
     await m?.closeDb();
     await su?.end();
@@ -128,7 +127,6 @@ describe.skipIf(!URL)('a reserve queued when a connection of its pool closes is 
 
   it('P3, the real route: 4 narrow statements of an Admin-area exit at once, one backend killed; every one settles and closeDb returns', async () => {
     await m.closeDb();
-    rr.setNarrowSystemForTests(true);
     await m.systemDb.execute(sql`select 1`);
     const runs = Array.from({ length: 4 }, () =>
       v
@@ -295,7 +293,6 @@ describe.skipIf(!URL)('a reserve queued when a connection of its pool closes is 
   });
   it("the waits per pool: the narrow pool's runs out while the system pool's still waits, on the real route", async () => {
     await m.closeDb();
-    rr.setNarrowSystemForTests(true);
     await m.systemDb.execute(sql`select 1`);
     // Warm the route's narrow pool, then hold it whole (2).
     await v.asSystem(() => m.db.execute(sql`select 1`), 'admin-area');

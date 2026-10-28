@@ -45,9 +45,7 @@ import {
   NARROW_CONNECTION_LIMIT,
   NARROW_LOGIN_FIX,
   narrowLoginNote,
-  narrowSystemOn,
   revokeOrder,
-  setNarrowSystemForTests,
   systemDatabaseUrl,
   type HeldMembership,
 } from './runtime-role';
@@ -125,19 +123,19 @@ describe('the runtime role statements', () => {
     expect(wantedMemberships().some((m) => m.member === OWNER_ROLE)).toBe(false);
   });
 
-  it("the narrow role's boot line: a role that cannot log in with the switch on names the fix; a stored setting is named whatever the switch", () => {
+  it("the narrow role's boot line: a role that cannot log in names the fix; a stored setting is named in either mode", () => {
     expect(NARROW_CONNECTION_LIMIT).toBe(36);
     expect(narrowLoginNote({ login: true, settings: 0 }, true)).toBeNull();
     expect(narrowLoginNote({ login: false, settings: 0 }, false)).toBeNull();
     expect(narrowLoginNote(null, false)).toBeNull();
     for (const row of [{ login: false, settings: 0 }, null]) {
       expect(narrowLoginNote(row, true)).toBe(
-        `[db] MANTLE_NARROW_SYSTEM is on but ${NARROW_ROLE} ${
+        `[db] the narrow route logs in as ${NARROW_ROLE}, but it ${
           row ? 'cannot log in' : 'does not exist'
         }: every narrow statement fails until you ${NARROW_LOGIN_FIX}`,
       );
     }
-    expect(NARROW_LOGIN_FIX).toMatch(/^run migrate with MANTLE_NARROW_SYSTEM on /);
+    expect(NARROW_LOGIN_FIX).toMatch(/^run migrate as a superuser /);
     for (const on of [true, false]) {
       expect(narrowLoginNote({ login: true, settings: 2 }, on)).toMatch(
         /^\[db\] mantle_system_narrow has 2 stored setting row\(s\) .*the next migrate takes them all back$/,
@@ -147,8 +145,8 @@ describe('the runtime role statements', () => {
   });
 
   it('the narrow system role: logs in only with its own password, bypasses the row rules, holds no owner power', () => {
-    // Its login follows its own password (MANTLE_NARROW_SYSTEM at migrate),
-    // never the runtime role's.
+    // Its login follows its own password (given at migrate with a master
+    // key, outside per-database mode), never the runtime role's.
     for (const pw of ['pw_1-x', null]) {
       const r = runtimeRoleStatements(new Set(), pw).find((x) =>
         x.includes(`ROLE "${NARROW_ROLE}" WITH`),
@@ -189,47 +187,6 @@ describe('the runtime role statements', () => {
 
   it('refuses a password that would need quoting', () => {
     expect(() => runtimeRoleStatements(new Set(), "x'y")).toThrow(/base64url/);
-  });
-});
-
-describe('the narrow route switch (S7b part b3: on by default everywhere)', () => {
-  const read = (value: string | undefined, nodeEnv: string): boolean => {
-    const env = { v: process.env.MANTLE_NARROW_SYSTEM, n: process.env.NODE_ENV };
-    if (value === undefined) delete process.env.MANTLE_NARROW_SYSTEM;
-    else process.env.MANTLE_NARROW_SYSTEM = value;
-    process.env.NODE_ENV = nodeEnv;
-    setNarrowSystemForTests(null);
-    try {
-      return narrowSystemOn();
-    } finally {
-      if (env.v === undefined) delete process.env.MANTLE_NARROW_SYSTEM;
-      else process.env.MANTLE_NARROW_SYSTEM = env.v;
-      process.env.NODE_ENV = env.n;
-      setNarrowSystemForTests(null);
-    }
-  };
-
-  it('is on when unset, in production, development and tests', () => {
-    for (const n of ['production', 'development', 'test']) expect(read(undefined, n), n).toBe(true);
-    expect(read('', 'production')).toBe(true);
-  });
-
-  it('the kill switch: 0, off and false turn it off, in production too', () => {
-    for (const v of ['0', 'off', 'false', 'OFF', ' False ']) {
-      expect(read(v, 'production'), v).toBe(false);
-      expect(read(v, 'development'), v).toBe(false);
-    }
-    for (const v of ['1', 'on', 'true']) expect(read(v, 'production'), v).toBe(true);
-  });
-
-  it('is read once per process: a later change of the variable is not seen', () => {
-    delete process.env.MANTLE_NARROW_SYSTEM;
-    setNarrowSystemForTests(null);
-    expect(narrowSystemOn()).toBe(true);
-    process.env.MANTLE_NARROW_SYSTEM = '0';
-    expect(narrowSystemOn()).toBe(true);
-    delete process.env.MANTLE_NARROW_SYSTEM;
-    setNarrowSystemForTests(null);
   });
 });
 
@@ -441,7 +398,8 @@ describe('the narrow system role rights', () => {
     const writes = new Set(narrowWriteTables());
     const reads = new Set(narrowReadOnlyTables());
     for (const t of ACCESS_MATRIX) {
-      if (t.writer === 'content') expect(writes.has(t.table) || reads.has(t.table), t.table).toBe(false);
+      if (t.writer === 'content')
+        expect(writes.has(t.table) || reads.has(t.table), t.table).toBe(false);
     }
     for (const t of runtimeDeniedTables()) {
       expect(writes.has(t) || reads.has(t), t).toBe(false);

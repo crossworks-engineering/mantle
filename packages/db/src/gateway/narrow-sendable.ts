@@ -16,7 +16,7 @@ import { runsOutsideTransaction } from './actor-sql';
  *  transaction block (DDL, maintenance), or one that ends or opens a
  *  transaction (it would run past the role's transaction-local SET). */
 export class NarrowRouteRefusedError extends RuntimeFaultError {
-  /** What the text check refused (the would-refuse count's `text:` reason). */
+  /** What the text check refused (a denial's `text:` reason). */
   readonly what: string;
   constructor(what: string) {
     super(`narrow system route: ${what} is refused on the narrow role`);
@@ -368,3 +368,11 @@ export function narrowSendable(query: string, tagged = false): void {
     throw new NarrowRouteRefusedError('a set_config other than a local setting it may set');
   }
 }
+
+/** A call of a `mantle_*` function by name in a statement's text (literals
+ *  blanked), bare or as public.mantle_* (quoted or not): the one call
+ *  pattern the narrow route's test measurement and the static scan
+ *  (test-support/narrow-write-scan.ts) read. A name after any other
+ *  schema's dot is not read. Global: take a copy (`new RegExp(CALLED_FN)`)
+ *  where `exec` is looped. */
+export const CALLED_FN = /(?<![\w.$"])(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/gi;

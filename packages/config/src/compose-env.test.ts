@@ -19,12 +19,7 @@ const anchor = compose.slice(
 );
 
 /** Flags a box turns on in its `.env`; each must pass through the anchor. */
-const BOX_FLAGS = [
-  'MANTLE_RUNS',
-  'MANTLE_MCP_TERMINAL',
-  'MANTLE_DB_RUNTIME_ROLE',
-  'MANTLE_NARROW_SYSTEM',
-];
+const BOX_FLAGS = ['MANTLE_RUNS', 'MANTLE_MCP_TERMINAL', 'MANTLE_DB_RUNTIME_ROLE'];
 
 describe('compose passes the box flags to the app services', () => {
   for (const name of BOX_FLAGS) {

@@ -141,7 +141,7 @@ describe.skipIf(!URL)(
       // The cluster roles with a login, then the one runtime connection at
       // once (another file's migrate may set NOLOGIN again; a connection
       // made stays).
-      expect(await ensureRuntimeRoles(admin, KEY, { login: true, narrowLogin: true })).toBe('ok');
+      expect(await ensureRuntimeRoles(admin, KEY, { login: true })).toBe('ok');
       rt = postgres(runtimeDatabaseUrl(scratch.url, runtimeRolePassword(KEY)), {
         max: 1,
         prepare: false,

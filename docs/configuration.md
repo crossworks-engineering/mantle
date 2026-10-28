@@ -37,24 +37,24 @@ keeps its own config block at the top of `main.ts`.
 
 ## Install-time env contract
 
-The variables that decide what a box *is* are written into `.env` by
+The variables that decide what a box _is_ are written into `.env` by
 `scripts/install.sh` and read by compose, the updater sidecar and the sanity
 check. The canonical explanation of each is the
 [install options page](./guide/01-install/07-options.md); this is the checklist for a
 hand-written `.env`:
 
-| Variable | Set by | What it decides |
-|---|---|---|
-| `MANTLE_SERVER_ORIGIN` | installer | the origin the browser reaches the API on; the owner UI serves it as its API base |
-| `MANTLE_CADDY_SHAPE` | installer (`same-origin`) | which `infra/caddy/shapes/*.caddy` the front door imports; `split` needs a second hostname |
-| `MANTLE_CLIENT_ENABLED` | `--no-client` writes `0` | whether the owner UI stack runs; missing means on |
-| `MANTLE_CLIENT_IMAGE_TAG` | updater (`client-tag.auto`) or a hand pin | the `mantle-client` image tag, on its own stream since the repo split |
-| `COMPOSE_PROFILES` | installer flags | opt-in services: `sandboxes`, `local-embedder`, `helpers` (a leftover `media` names no service and is ignored) |
-| `COMPOSE_FILE` | `--core` | adds `docker-compose.core.yml` as an override (absolute paths, the updater needs them). Compose also hands it, with `COMPOSE_PROFILES`, to web as `MANTLE_COMPOSE_FILE` / `MANTLE_COMPOSE_PROFILES`, so the onboarding check knows a core box without `helpers` sheds the PDF-export browser on purpose |
-| `MANTLE_SETUP_CODE` | installer (generated once, never rotated) | the code first-run signup asks for until the first account exists; web only. `scripts/install.sh --setup-code` prints it; unset means no code is asked for ([onboarding.md](./onboarding.md) section 8) |
-| `PARSER_TOKEN` | installer, or a roll when missing | bearer between the app services and the parser service ([parser.md](./parser.md)); never rotated on a re-run |
-| `SANDBOXD_TOKEN` | installer when sandboxes are on | bearer between web/api and `sandboxd`; never rotated on a re-run |
-| `MANTLE_SANDBOXES_HOST_DIR` | installer (`<data-dir>/sandboxes`) | host-absolute bind source `sandboxd` hands to the Docker daemon |
+| Variable                    | Set by                                    | What it decides                                                                                                                                                                                                                                                                                         |
+| --------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MANTLE_SERVER_ORIGIN`      | installer                                 | the origin the browser reaches the API on; the owner UI serves it as its API base                                                                                                                                                                                                                       |
+| `MANTLE_CADDY_SHAPE`        | installer (`same-origin`)                 | which `infra/caddy/shapes/*.caddy` the front door imports; `split` needs a second hostname                                                                                                                                                                                                              |
+| `MANTLE_CLIENT_ENABLED`     | `--no-client` writes `0`                  | whether the owner UI stack runs; missing means on                                                                                                                                                                                                                                                       |
+| `MANTLE_CLIENT_IMAGE_TAG`   | updater (`client-tag.auto`) or a hand pin | the `mantle-client` image tag, on its own stream since the repo split                                                                                                                                                                                                                                   |
+| `COMPOSE_PROFILES`          | installer flags                           | opt-in services: `sandboxes`, `local-embedder`, `helpers` (a leftover `media` names no service and is ignored)                                                                                                                                                                                          |
+| `COMPOSE_FILE`              | `--core`                                  | adds `docker-compose.core.yml` as an override (absolute paths, the updater needs them). Compose also hands it, with `COMPOSE_PROFILES`, to web as `MANTLE_COMPOSE_FILE` / `MANTLE_COMPOSE_PROFILES`, so the onboarding check knows a core box without `helpers` sheds the PDF-export browser on purpose |
+| `MANTLE_SETUP_CODE`         | installer (generated once, never rotated) | the code first-run signup asks for until the first account exists; web only. `scripts/install.sh --setup-code` prints it; unset means no code is asked for ([onboarding.md](./onboarding.md) section 8)                                                                                                 |
+| `PARSER_TOKEN`              | installer, or a roll when missing         | bearer between the app services and the parser service ([parser.md](./parser.md)); never rotated on a re-run                                                                                                                                                                                            |
+| `SANDBOXD_TOKEN`            | installer when sandboxes are on           | bearer between web/api and `sandboxd`; never rotated on a re-run                                                                                                                                                                                                                                        |
+| `MANTLE_SANDBOXES_HOST_DIR` | installer (`<data-dir>/sandboxes`)        | host-absolute bind source `sandboxd` hands to the Docker daemon                                                                                                                                                                                                                                         |
 
 Alongside the five compose refuses to start without (`POSTGRES_PASSWORD`,
 `SESSION_SECRET`, `MANTLE_MASTER_KEY`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`) and the
@@ -87,13 +87,13 @@ default.
 
 **The readers** (`@mantle/config`):
 
-| Reader | Reads |
-|---|---|
-| `feature(name, ctx?)` | a switch in `FEATURES` (`packages/config/src/features.ts`): an env switch, a profile boolean (`ctx.prefs`), or an optional service |
-| `envNum(name)` | a number in `ENV_NUMBERS` (`packages/config/src/numbers.ts`), its default and range from the table |
-| `profileFlag(prefs, key)` | a profile boolean with its default from `PROFILE_FLAGS` (`packages/client-types/src/profile-flags.ts`, browser-safe) |
-| `envFlag`, `envInt`, `envNumber` | an unregistered name in the same dialect (prefer registering it) |
-| `parseFlag`, `parseNumber` | a raw string in the same dialect (the benchmark harness, whose names are data) |
+| Reader                           | Reads                                                                                                                              |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `feature(name, ctx?)`            | a switch in `FEATURES` (`packages/config/src/features.ts`): an env switch, a profile boolean (`ctx.prefs`), or an optional service |
+| `envNum(name)`                   | a number in `ENV_NUMBERS` (`packages/config/src/numbers.ts`), its default and range from the table                                 |
+| `profileFlag(prefs, key)`        | a profile boolean with its default from `PROFILE_FLAGS` (`packages/client-types/src/profile-flags.ts`, browser-safe)               |
+| `envFlag`, `envInt`, `envNumber` | an unregistered name in the same dialect (prefer registering it)                                                                   |
+| `parseFlag`, `parseNumber`       | a raw string in the same dialect (the benchmark harness, whose names are data)                                                     |
 
 The published contract keeps its own browser-safe readers:
 `isTurnStreamingEnabled` / `isTurnStreamingEnabledClient`
@@ -104,33 +104,32 @@ as `env()` does) and the three profile readers in
 
 **Features** (`FEATURES`, read with `feature(name)`):
 
-| Feature | Source | Default | What it switches |
-|---|---|---|---|
-| `turnStreaming` | `MANTLE_TURN_STREAMING (legacy NEXT_PUBLIC_MANTLE_TURN_STREAMING)` | on | live turn stream: the SSE and cancel routes, the non-blocking turn POST, the replay buffer |
-| `turnTokens` | `MANTLE_TURN_TOKENS` | on | live reply token typing (needs turnStreaming) |
-| `turnNarration` | `MANTLE_TURN_NARRATION` | on | the per-step narration phrases on the stream (a small model call each) |
-| `turnSuggestions` | `MANTLE_TURN_SUGGESTIONS` | on | fleet-wide kill switch for the follow-up suggestion (per agent it is opt-in) |
-| `queryEnrich` | `MANTLE_QUERY_ENRICH` | on | enrich a short retrieval query from the recent conversation |
-| `mcpToolsmithWrite` | `MANTLE_MCP_TOOLSMITH_WRITE` | on | the MCP surface offers the toolsmith write tools |
-| `s3ForcePathStyle` | `S3_FORCE_PATH_STYLE` | on | path-style object store URLs |
-| `runs` | `MANTLE_RUNS` | off | runner queues: run_plan / run_append and the runs worker (run_state, run_cancel stay live) |
-| `viewerRolesPerDatabase` | `MANTLE_VIEWER_ROLES_PER_DATABASE` | off | viewer roles named per database (several brains on one Postgres) |
-| `dbRuntimeRole` | `MANTLE_DB_RUNTIME_ROLE` | off | the app pools log in as mantle_runtime, not as the migrator (arch A9, docs/runtime-role.md) |
-| `bootReconcileOff` | `MANTLE_DISABLE_BOOT_RECONCILE` | off | skip the system manifest reconcile at production boot |
-| `detachedDev` | `MANTLE_DETACHED_DEV` | off (never in production) | DB-less detached dev: page navigations render without a session |
-| `crashTest` | `MANTLE_CRASH_TEST` | off | the crash-test harness in server/api |
-| `narrowSystem` | `MANTLE_NARROW_SYSTEM` | on | the narrow system route: the asSystem reasons and request exits that pick it run as mantle_system_narrow, on a pool that logs in as it (migrate gives the role its login only while this is on) (on everywhere since S7b; 0, off or false is the per-box kill switch) |
-| `mcpTerminal` | `MANTLE_MCP_TERMINAL` | the caller | the MCP surface offers the terminal tools (default: stdio yes, HTTP no) |
-| `shareNeat` | `profile.shareNeat` | on | the public /s share reader paints the saved Drift background (full colour, the content on an opaque sheet) |
-| `streamThoughts` | `profile.streamThoughts` | on | stream the thought trail live while a turn runs |
-| `persistThoughts` | `profile.persistThoughts` | on | keep the thought trail on the finished message |
-| `toolsmithRequireApproval` | `profile.toolsmithRequireApproval` | off | a tool an agent authors is confirm-gated until the operator clears it |
-| `heartbeatEgressGate` | `profile.heartbeatEgressGate` | off | a heartbeat's egress tool calls park for approval |
-| `remoteMcp` | `profile.remoteMcpEnabled` | off | the remote MCP connector and its OAuth endpoints answer |
-| `teamPrivateReads` | `profile.teamPrivateReads` | off | the team responder may read the owner's email and journal |
-| `sandboxes` | `service sandboxes` | Settings > Services | the sandboxes service (sandboxd) |
-| `localEmbedder` | `service local-embedder` | Settings > Services | the bundled local embedder |
-| `docHelpers` | `service helpers` | Settings > Services | the PDF-export browser (always on a full box) |
+| Feature                    | Source                                                             | Default                   | What it switches                                                                                           |
+| -------------------------- | ------------------------------------------------------------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `turnStreaming`            | `MANTLE_TURN_STREAMING (legacy NEXT_PUBLIC_MANTLE_TURN_STREAMING)` | on                        | live turn stream: the SSE and cancel routes, the non-blocking turn POST, the replay buffer                 |
+| `turnTokens`               | `MANTLE_TURN_TOKENS`                                               | on                        | live reply token typing (needs turnStreaming)                                                              |
+| `turnNarration`            | `MANTLE_TURN_NARRATION`                                            | on                        | the per-step narration phrases on the stream (a small model call each)                                     |
+| `turnSuggestions`          | `MANTLE_TURN_SUGGESTIONS`                                          | on                        | fleet-wide kill switch for the follow-up suggestion (per agent it is opt-in)                               |
+| `queryEnrich`              | `MANTLE_QUERY_ENRICH`                                              | on                        | enrich a short retrieval query from the recent conversation                                                |
+| `mcpToolsmithWrite`        | `MANTLE_MCP_TOOLSMITH_WRITE`                                       | on                        | the MCP surface offers the toolsmith write tools                                                           |
+| `s3ForcePathStyle`         | `S3_FORCE_PATH_STYLE`                                              | on                        | path-style object store URLs                                                                               |
+| `runs`                     | `MANTLE_RUNS`                                                      | off                       | runner queues: run_plan / run_append and the runs worker (run_state, run_cancel stay live)                 |
+| `viewerRolesPerDatabase`   | `MANTLE_VIEWER_ROLES_PER_DATABASE`                                 | off                       | viewer roles named per database (several brains on one Postgres)                                           |
+| `dbRuntimeRole`            | `MANTLE_DB_RUNTIME_ROLE`                                           | off                       | the app pools log in as mantle_runtime, not as the migrator (arch A9, docs/runtime-role.md)                |
+| `bootReconcileOff`         | `MANTLE_DISABLE_BOOT_RECONCILE`                                    | off                       | skip the system manifest reconcile at production boot                                                      |
+| `detachedDev`              | `MANTLE_DETACHED_DEV`                                              | off (never in production) | DB-less detached dev: page navigations render without a session                                            |
+| `crashTest`                | `MANTLE_CRASH_TEST`                                                | off                       | the crash-test harness in server/api                                                                       |
+| `mcpTerminal`              | `MANTLE_MCP_TERMINAL`                                              | the caller                | the MCP surface offers the terminal tools (default: stdio yes, HTTP no)                                    |
+| `shareNeat`                | `profile.shareNeat`                                                | on                        | the public /s share reader paints the saved Drift background (full colour, the content on an opaque sheet) |
+| `streamThoughts`           | `profile.streamThoughts`                                           | on                        | stream the thought trail live while a turn runs                                                            |
+| `persistThoughts`          | `profile.persistThoughts`                                          | on                        | keep the thought trail on the finished message                                                             |
+| `toolsmithRequireApproval` | `profile.toolsmithRequireApproval`                                 | off                       | a tool an agent authors is confirm-gated until the operator clears it                                      |
+| `heartbeatEgressGate`      | `profile.heartbeatEgressGate`                                      | off                       | a heartbeat's egress tool calls park for approval                                                          |
+| `remoteMcp`                | `profile.remoteMcpEnabled`                                         | off                       | the remote MCP connector and its OAuth endpoints answer                                                    |
+| `teamPrivateReads`         | `profile.teamPrivateReads`                                         | off                       | the team responder may read the owner's email and journal                                                  |
+| `sandboxes`                | `service sandboxes`                                                | Settings > Services       | the sandboxes service (sandboxd)                                                                           |
+| `localEmbedder`            | `service local-embedder`                                           | Settings > Services       | the bundled local embedder                                                                                 |
+| `docHelpers`               | `service helpers`                                                  | Settings > Services       | the PDF-export browser (always on a full box)                                                              |
 
 A profile feature is read with the owner's preferences:
 `feature('streamThoughts', { prefs })`. `mcpTerminal` takes its default from
@@ -138,62 +137,62 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 
 **Numbers** (`ENV_NUMBERS`, read with `envNum(name)`):
 
-| Variable | Default | Range | What it sets |
-|---|---|---|---|
-| `MANTLE_SALIENCE_LAMBDA` | 0.15 | any | weight of (1 - salience) added to a hit distance |
-| `MANTLE_RECENCY_TAU_DAYS` | 180 | any | recency decay time constant, days |
-| `MANTLE_RECENCY_EPISODIC` | 0.15 | any | recency weight for episodic hits |
-| `MANTLE_RECENCY_CONTENT` | 0.06 | any | recency weight for content hits |
-| `MANTLE_SUPERSEDED_SALIENCE` | 0.5 | min 0, max 1 | salience a superseded node drops to |
-| `MANTLE_CORRECTED_SALIENCE` | 0.3 | min 0, max 1 | salience a corrected node drops to |
-| `MANTLE_SUPERSEDED_FILE_SALIENCE` | 0.5 | min 0, max 1 | salience of an older version of an exported file |
-| `MANTLE_SCOPE_EXACT_MAX_ROWS` | 15000 | whole, min 0 | most rows the exact scope path searches; 0 turns it off |
-| `MANTLE_SCOPE_EXACT_MAX_ITEMS` | 500 | whole, min 0 | most items a scope holds for the exact path; 0 turns it off |
-| `MANTLE_SHEET_PROFILE_ROWS` | 8 | any | data rows sampled into a sheet's profile chunk |
-| `EXTRACT_CONCURRENCY` | 2 | whole, at least 1, max 16 | extractions at once (a saved setting wins) |
-| `MANTLE_EXTRACT_EXPIRE_MIN` | 60 | above 0 | extract job expiry, minutes |
-| `MANTLE_EXTRACT_DRAIN_WINDOW_HOURS` | 168 | above 0 | how far back the boot drain and the sweep look, hours |
-| `MANTLE_EXTRACT_DRAIN_LIMIT` | 1000 | above 0 | boot drain batch |
-| `MANTLE_EXTRACT_SWEEP_LIMIT` | 200 | above 0 | periodic sweep batch |
-| `MANTLE_EXTRACT_SWEEP_MS` | 120000 | above 0 | periodic sweep period, ms |
-| `MANTLE_TABLE_MIGRATE_SWEEP_MS` | 300000 | above 0 | table migration sweep period, ms |
-| `MANTLE_MAX_AUTO_TABLE_TABLES` | 20 | above 0 | most tables one auto-table pass makes |
-| `DWF_RENDER_DPI` | 300 | rounded, above 0, min 50, max 600 | DWF sheet render resolution |
-| `DWG_RENDER_DPI` | 300 | rounded, above 0, min 50, max 600 | DWG render resolution |
-| `MANTLE_RUNNER_CONCURRENCY` | 8 | whole, above 0 | in-flight runs on RUNNER_QUEUE |
-| `MANTLE_RUNS_TURN_CONCURRENCY` | 2 | whole, above 0 | in-flight runs turns on RUNS_TURN_QUEUE |
-| `MANTLE_MEMBER_TURN_CONCURRENCY` | 2 | whole, above 0 | in-flight member chat turns on MEMBER_TURN_QUEUE |
-| `MANTLE_RUNS_WORKER_CONCURRENCY` | 3 | whole, at least 1 | running worker items per run |
-| `MANTLE_TURN_STALE_MIN` | 30 | above 0 | a pending turn older than this is failed by the reaper, minutes |
-| `TEAM_CHAT_DAILY_TURNS` | 100 | whole, above 0 | member chat turns per member login per UTC day |
-| `MANTLE_MEMBER_DAILY_TOKENS` | 2000000 | whole, at least 0 | member chat tokens per member login per UTC day; 0 turns the budget off |
-| `PORT` | 3000 | any | the port server/web listens on (compose sets it) |
-| `MANTLE_RATE_LIMIT_SCALE` | 1 | at least 1 | multiplies every rate limit |
-| `MANTLE_TRUSTED_PROXIES` | 1 | above 0, min 1 | proxy hops in front of the server (X-Forwarded-For) |
-| `MANTLE_MAX_UPLOAD_MB` | 512 | whole, min 1 | streamed upload cap, MB; 0 or less is 1 |
-| `APP_SQL_MAX_DB_MB` | 256 | whole, min 1 | one app database, MB; 0 or less is 1 |
-| `APP_SNAPSHOT_MAX_MB` | 2048 | whole, min 1 | snapshot history of one app or table, MB; 0 or less is 1 |
-| `APP_SNAPSHOT_AUTO_MAX_MB` | 1024 | whole, min 1 | automatic app snapshots, MB; 0 or less is 1 |
-| `APP_SNAPSHOT_MCP_MAX_MB` | 512 | whole, min 1 | app snapshots before an MCP write, MB; 0 or less is 1 |
-| `TABLE_HISTORY_MAX_MB` | 512 | whole, min 1 | table edit history, MB; 0 or less is 1 |
-| `TABLE_IMPORT_MAX_ROWS` | 2000000 | whole, above 0 | largest table import, rows |
-| `TABLE_SQL_TIMEOUT_MS` | 5000 | above 0 | table SQL statement timeout, ms |
-| `TOOL_RESULT_INLINE_MAX` | 32768 | whole, above 0 | a tool result up to this many bytes goes to the model inline (per agent overridable) |
-| `TOOL_RESULT_EMBED_MIN` | 102400 | whole, above 0 | from this many bytes a stored result is read back by semantic query |
-| `TOOL_RESULT_PAGE_BYTES` | 16384 | whole, above 0 | read_result page size, bytes |
-| `TOOL_RESULT_SPILL_MAX` | 1048576 | whole, above 0 | a stored result is cut at this many bytes |
-| `TOOL_RESULT_MAX_CHUNKS` | 200 | whole, above 0 | chunks embedded per stored result |
-| `TOOL_RESULT_TTL_DAYS` | 7 | whole, above 0 | days a stored result is kept |
-| `VIDEO_INGEST_MAX_STT_DURATION_S` | 3600 | whole, above 0 | longest recording video_ingest transcribes, seconds (old name `MEDIA_MAX_STT_DURATION_S` still read) |
-| `VIDEO_INGEST_MAX_AUDIO_BYTES` | 20000000 | whole, above 0 | largest audio track video_ingest sends to speech to text (old name `MEDIA_MAX_AUDIO_BYTES`) |
-| `VIDEO_INGEST_MAX_FILE_BYTES` | 1073741824 | whole, above 0 | largest uploaded recording video_ingest reads (old name `MEDIA_MAX_VIDEO_BYTES`) |
-| `PARSER_PORT` | 8095 | whole, min 1, max 65535 | the parser listens here |
-| `PARSER_QUEUE_MAX` | 16 | whole, min 0 | requests that may wait for the parser job slot |
-| `PARSER_SLOT_HOLD_MAX_MS` | the caller | whole, at least 1 | a job slot held longer turns the parser /healthz to 503 (autoheal restarts it), ms (default parserSlotHoldMaxMs, @mantle/files/parser-wire) |
-| `PARSER_MAX_UPLOAD_MB` | 512 | whole, at least 1 | largest file the parser takes, MB (the streamed upload cap, MANTLE_MAX_UPLOAD_MB) |
-| `PARSER_CLIENT_CONCURRENCY` | 2 | whole, at least 1 | parser jobs one brain process sends at once |
-| `MANTLE_LOCAL_EMBED_BATCH` | 16 | whole, at least 1 | texts per request to the local embedder |
-| `MANTLE_LOCAL_EMBED_TIMEOUT_MS` | the caller | whole, at least 1000 | local embedder request timeout, ms (default PROVIDER_TIMEOUTS.localEmbed, @mantle/std) |
+| Variable                            | Default    | Range                             | What it sets                                                                                                                                |
+| ----------------------------------- | ---------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MANTLE_SALIENCE_LAMBDA`            | 0.15       | any                               | weight of (1 - salience) added to a hit distance                                                                                            |
+| `MANTLE_RECENCY_TAU_DAYS`           | 180        | any                               | recency decay time constant, days                                                                                                           |
+| `MANTLE_RECENCY_EPISODIC`           | 0.15       | any                               | recency weight for episodic hits                                                                                                            |
+| `MANTLE_RECENCY_CONTENT`            | 0.06       | any                               | recency weight for content hits                                                                                                             |
+| `MANTLE_SUPERSEDED_SALIENCE`        | 0.5        | min 0, max 1                      | salience a superseded node drops to                                                                                                         |
+| `MANTLE_CORRECTED_SALIENCE`         | 0.3        | min 0, max 1                      | salience a corrected node drops to                                                                                                          |
+| `MANTLE_SUPERSEDED_FILE_SALIENCE`   | 0.5        | min 0, max 1                      | salience of an older version of an exported file                                                                                            |
+| `MANTLE_SCOPE_EXACT_MAX_ROWS`       | 15000      | whole, min 0                      | most rows the exact scope path searches; 0 turns it off                                                                                     |
+| `MANTLE_SCOPE_EXACT_MAX_ITEMS`      | 500        | whole, min 0                      | most items a scope holds for the exact path; 0 turns it off                                                                                 |
+| `MANTLE_SHEET_PROFILE_ROWS`         | 8          | any                               | data rows sampled into a sheet's profile chunk                                                                                              |
+| `EXTRACT_CONCURRENCY`               | 2          | whole, at least 1, max 16         | extractions at once (a saved setting wins)                                                                                                  |
+| `MANTLE_EXTRACT_EXPIRE_MIN`         | 60         | above 0                           | extract job expiry, minutes                                                                                                                 |
+| `MANTLE_EXTRACT_DRAIN_WINDOW_HOURS` | 168        | above 0                           | how far back the boot drain and the sweep look, hours                                                                                       |
+| `MANTLE_EXTRACT_DRAIN_LIMIT`        | 1000       | above 0                           | boot drain batch                                                                                                                            |
+| `MANTLE_EXTRACT_SWEEP_LIMIT`        | 200        | above 0                           | periodic sweep batch                                                                                                                        |
+| `MANTLE_EXTRACT_SWEEP_MS`           | 120000     | above 0                           | periodic sweep period, ms                                                                                                                   |
+| `MANTLE_TABLE_MIGRATE_SWEEP_MS`     | 300000     | above 0                           | table migration sweep period, ms                                                                                                            |
+| `MANTLE_MAX_AUTO_TABLE_TABLES`      | 20         | above 0                           | most tables one auto-table pass makes                                                                                                       |
+| `DWF_RENDER_DPI`                    | 300        | rounded, above 0, min 50, max 600 | DWF sheet render resolution                                                                                                                 |
+| `DWG_RENDER_DPI`                    | 300        | rounded, above 0, min 50, max 600 | DWG render resolution                                                                                                                       |
+| `MANTLE_RUNNER_CONCURRENCY`         | 8          | whole, above 0                    | in-flight runs on RUNNER_QUEUE                                                                                                              |
+| `MANTLE_RUNS_TURN_CONCURRENCY`      | 2          | whole, above 0                    | in-flight runs turns on RUNS_TURN_QUEUE                                                                                                     |
+| `MANTLE_MEMBER_TURN_CONCURRENCY`    | 2          | whole, above 0                    | in-flight member chat turns on MEMBER_TURN_QUEUE                                                                                            |
+| `MANTLE_RUNS_WORKER_CONCURRENCY`    | 3          | whole, at least 1                 | running worker items per run                                                                                                                |
+| `MANTLE_TURN_STALE_MIN`             | 30         | above 0                           | a pending turn older than this is failed by the reaper, minutes                                                                             |
+| `TEAM_CHAT_DAILY_TURNS`             | 100        | whole, above 0                    | member chat turns per member login per UTC day                                                                                              |
+| `MANTLE_MEMBER_DAILY_TOKENS`        | 2000000    | whole, at least 0                 | member chat tokens per member login per UTC day; 0 turns the budget off                                                                     |
+| `PORT`                              | 3000       | any                               | the port server/web listens on (compose sets it)                                                                                            |
+| `MANTLE_RATE_LIMIT_SCALE`           | 1          | at least 1                        | multiplies every rate limit                                                                                                                 |
+| `MANTLE_TRUSTED_PROXIES`            | 1          | above 0, min 1                    | proxy hops in front of the server (X-Forwarded-For)                                                                                         |
+| `MANTLE_MAX_UPLOAD_MB`              | 512        | whole, min 1                      | streamed upload cap, MB; 0 or less is 1                                                                                                     |
+| `APP_SQL_MAX_DB_MB`                 | 256        | whole, min 1                      | one app database, MB; 0 or less is 1                                                                                                        |
+| `APP_SNAPSHOT_MAX_MB`               | 2048       | whole, min 1                      | snapshot history of one app or table, MB; 0 or less is 1                                                                                    |
+| `APP_SNAPSHOT_AUTO_MAX_MB`          | 1024       | whole, min 1                      | automatic app snapshots, MB; 0 or less is 1                                                                                                 |
+| `APP_SNAPSHOT_MCP_MAX_MB`           | 512        | whole, min 1                      | app snapshots before an MCP write, MB; 0 or less is 1                                                                                       |
+| `TABLE_HISTORY_MAX_MB`              | 512        | whole, min 1                      | table edit history, MB; 0 or less is 1                                                                                                      |
+| `TABLE_IMPORT_MAX_ROWS`             | 2000000    | whole, above 0                    | largest table import, rows                                                                                                                  |
+| `TABLE_SQL_TIMEOUT_MS`              | 5000       | above 0                           | table SQL statement timeout, ms                                                                                                             |
+| `TOOL_RESULT_INLINE_MAX`            | 32768      | whole, above 0                    | a tool result up to this many bytes goes to the model inline (per agent overridable)                                                        |
+| `TOOL_RESULT_EMBED_MIN`             | 102400     | whole, above 0                    | from this many bytes a stored result is read back by semantic query                                                                         |
+| `TOOL_RESULT_PAGE_BYTES`            | 16384      | whole, above 0                    | read_result page size, bytes                                                                                                                |
+| `TOOL_RESULT_SPILL_MAX`             | 1048576    | whole, above 0                    | a stored result is cut at this many bytes                                                                                                   |
+| `TOOL_RESULT_MAX_CHUNKS`            | 200        | whole, above 0                    | chunks embedded per stored result                                                                                                           |
+| `TOOL_RESULT_TTL_DAYS`              | 7          | whole, above 0                    | days a stored result is kept                                                                                                                |
+| `VIDEO_INGEST_MAX_STT_DURATION_S`   | 3600       | whole, above 0                    | longest recording video_ingest transcribes, seconds (old name `MEDIA_MAX_STT_DURATION_S` still read)                                        |
+| `VIDEO_INGEST_MAX_AUDIO_BYTES`      | 20000000   | whole, above 0                    | largest audio track video_ingest sends to speech to text (old name `MEDIA_MAX_AUDIO_BYTES`)                                                 |
+| `VIDEO_INGEST_MAX_FILE_BYTES`       | 1073741824 | whole, above 0                    | largest uploaded recording video_ingest reads (old name `MEDIA_MAX_VIDEO_BYTES`)                                                            |
+| `PARSER_PORT`                       | 8095       | whole, min 1, max 65535           | the parser listens here                                                                                                                     |
+| `PARSER_QUEUE_MAX`                  | 16         | whole, min 0                      | requests that may wait for the parser job slot                                                                                              |
+| `PARSER_SLOT_HOLD_MAX_MS`           | the caller | whole, at least 1                 | a job slot held longer turns the parser /healthz to 503 (autoheal restarts it), ms (default parserSlotHoldMaxMs, @mantle/files/parser-wire) |
+| `PARSER_MAX_UPLOAD_MB`              | 512        | whole, at least 1                 | largest file the parser takes, MB (the streamed upload cap, MANTLE_MAX_UPLOAD_MB)                                                           |
+| `PARSER_CLIENT_CONCURRENCY`         | 2          | whole, at least 1                 | parser jobs one brain process sends at once                                                                                                 |
+| `MANTLE_LOCAL_EMBED_BATCH`          | 16         | whole, at least 1                 | texts per request to the local embedder                                                                                                     |
+| `MANTLE_LOCAL_EMBED_TIMEOUT_MS`     | the caller | whole, at least 1000              | local embedder request timeout, ms (default PROVIDER_TIMEOUTS.localEmbed, @mantle/std)                                                      |
 
 **What the move changed.** `server/web/server/a10-flags.test.ts` reads every
 reader under a matrix of inputs (unset, blank, the flag words, numbers,

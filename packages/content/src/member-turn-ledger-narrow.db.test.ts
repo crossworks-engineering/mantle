@@ -66,7 +66,6 @@ describe.skipIf(!URL)('the member turn ledger on the narrow route (0326)', () =>
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     rr = await import('@mantle/db/runtime-role');
-    rr.setNarrowSystemForTests(true);
     v = await import('@mantle/db/viewer');
     m = await import('@mantle/db');
     ledger = await import('./member-turn-ledger');
@@ -77,7 +76,6 @@ describe.skipIf(!URL)('the member turn ledger on the narrow route (0326)', () =>
 
   afterAll(async () => {
     await m?.closeDb();
-    rr?.setNarrowSystemForTests(null);
     for (const c of [nl, su]) await c?.end();
     await scratch?.drop();
   });

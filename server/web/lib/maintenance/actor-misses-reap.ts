@@ -14,8 +14,9 @@ import { actorCheckMisses, db } from '@mantle/db';
 
 export const ACTOR_MISSES_RETENTION_DAYS = 14;
 
-/** The narrow role's counts (check names narrow-*) are kept: they are the
- *  evidence for the narrow switch's default flip, read by
+/** The narrow role's counts (check names narrow-*: the narrow-denied
+ *  refusals) are kept: the box's evidence that no route or tool met a right
+ *  the narrow role does not hold, read by
  *  scripts/arch-scoreboard-box.sh since the latest narrow-epoch row (one
  *  per release, written by migrate: packages/db/src/migrator-steps.ts
  *  ensureNarrowEpoch). The epoch rows match the same prefix, so they are

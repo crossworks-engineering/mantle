@@ -657,38 +657,4 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     }
     expect(failures).toEqual([]);
   }, 300_000);
-
-  // The would-refuse count's call reading (switch off, a route that would be
-  // narrow) reads each statement for mantle_* calls. Its cost on every
-  // statement of each path, an upper bound (only a would-be-narrow route's
-  // statements are read): best of five, so load on the box does not count.
-  it('the switch-off call reading costs a path well under a millisecond', async () => {
-    const ts: Ts = await import('@mantle/db/test-support');
-    const rows: string[] = [];
-    const failures: string[] = [];
-    for (const p of Object.keys(PATHS) as Path[]) {
-      const { statements } = await measure(p, 'warn');
-      const read = statements.filter((st) => /mantle_/i.test(st)).length;
-      let best = Number.POSITIVE_INFINITY;
-      for (let run = 0; run < 5; run += 1) {
-        const t0 = performance.now();
-        for (let rep = 0; rep < 100; rep += 1) {
-          for (const st of statements) ts.calledMantleFunctions(st);
-        }
-        best = Math.min(best, (performance.now() - t0) / 100);
-      }
-      if (best > 1) failures.push(`${p}: the call reading takes ${best.toFixed(3)} ms a run`);
-      rows.push(`| ${p} | ${statements.length} | ${read} | ${(best * 1000).toFixed(1)} us |`);
-    }
-    if (process.env.MANTLE_RT_REPORT) {
-      console.log(
-        [
-          '| path | statements | with mantle_ (lexed) | call reading a run |',
-          '| --- | --- | --- | --- |',
-          ...rows,
-        ].join('\n'),
-      );
-    }
-    expect(failures).toEqual([]);
-  }, 300_000);
 });

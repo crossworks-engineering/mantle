@@ -13,7 +13,6 @@ import {
   dbRoleNote,
   narrowDatabaseUrl,
   narrowLoginNote,
-  narrowSystemOn,
   runtimeRoleOn,
   systemDatabaseUrl,
   readNarrowLogin,
@@ -29,7 +28,7 @@ import {
   type ActorMiss,
 } from '../actor';
 import { ACTOR_SQL_TAG, forgetActorCheckModePool, refreshActorCheckMode } from './check-mode';
-import { actorClient, actorPipelinesDone, scopeMarkedParams } from './actor-sql';
+import { actorClient, actorPipelinesDone } from './actor-sql';
 import { narrowRouteClient, systemStartupOf } from './narrow-route';
 
 type PgSql = ReturnType<typeof postgres>;
@@ -199,17 +198,13 @@ export function getAdminDb(): PostgresJsDatabase<typeof schema> {
   const sql =
     globalThis.__mantleSql ?? postgres(url, { max: 10, prepare: false, onnotice: onPgNotice });
   globalThis.__mantleSql = sql;
-  // The narrow route (plan v3.2 S7a): its switch read once, here, and
-  // logged; a statement of a reason routed 'narrow' runs as the narrow role.
-  const narrow = narrowSystemOn();
-  poolNarrow = narrow;
+  // The narrow route (plan v3.2 S7a): a statement of a reason routed
+  // 'narrow' runs as the narrow role.
   const withActor = narrowRouteClient(
     actorClient(sql),
     sql,
-    () => narrow && systemRouteNow() === 'narrow',
+    () => systemRouteNow() === 'narrow',
     narrowPoolSql,
-    // The switch off, an exit routed narrow: its refused calls are counted.
-    () => !narrow && systemRouteNow() === 'narrow',
   );
   adminActorSql = withActor;
   const client = drizzle(withActor, { schema });
@@ -247,20 +242,17 @@ function reportDbRole(base: PgSql): void {
     .then(async (rows) => {
       const row = rows[0] as DbRoleRow | undefined;
       if (!row) return;
-      // The narrow route's switch, read once when the pool opened; its pool
-      // logs in as the role but in per-database mode (narrowDatabaseUrl).
-      const loginPool = narrowSystemOn() && !feature('viewerRolesPerDatabase');
+      // The narrow route's pool logs in as the role but in per-database
+      // mode (narrowDatabaseUrl).
+      const loginPool = !feature('viewerRolesPerDatabase');
       const narrow = `; narrow system route ${
-        narrowSystemOn()
-          ? loginPool
-            ? 'on, its own pool logs in as mantle_system_narrow'
-            : 'on, the role taken per transaction (per-database mode: the role has no login)'
-          : 'off'
-      } (MANTLE_NARROW_SYSTEM)`;
-      // The narrow role itself: with the switch on and the route logging
-      // in as it, a role that cannot log in (migrate ran with the switch
-      // off) is named with its fix; a setting stored on the role, whatever
-      // the switch (narrowLoginNote).
+        loginPool
+          ? 'on its own pool, which logs in as mantle_system_narrow'
+          : 'taking the role per transaction (per-database mode: the role has no login)'
+      }`;
+      // The narrow role itself: with the route logging in as it, a role
+      // that cannot log in is named with its fix; a setting stored on the
+      // role, in either mode (narrowLoginNote).
       const narrowNote = narrowLoginNote(await readNarrowLogin(base).catch(() => null), loginPool);
       const roleNote = dbRoleNote(row, runtimeRoleOn());
       const note = [roleNote && `${roleNote}${narrow}`, narrowNote].filter(Boolean).join('\n');
@@ -276,18 +268,14 @@ function reportDbRole(base: PgSql): void {
 
 /** The system pool's client with the actor (actorClient over
  *  globalThis.__mantleSql): the login write gateway's system path. */
-/** The narrow switch the system pool read when it opened (null before). */
-let poolNarrow: boolean | null = null;
-
 /**
  * Whether a system pool statement sent now takes the narrow route: the
- * switch the pool read when it opened and the exit's pick (the pool's own
- * test, above). For a writer that must send a different statement there
- * (gateway/structure-item.ts), never to choose a pool.
+ * exit's pick (the pool's own test, above). For a writer that must send a
+ * different statement there (gateway/structure-item.ts), never to choose a
+ * pool.
  */
 export function narrowRouteNow(): boolean {
-  getAdminDb();
-  return (poolNarrow ?? narrowSystemOn()) && systemRouteNow() === 'narrow';
+  return systemRouteNow() === 'narrow';
 }
 
 let adminActorSql: PgSql | null = null;
@@ -298,41 +286,13 @@ let narrowDb: PostgresJsDatabase<typeof schema> | null = null;
 /**
  * The system pool's drizzle handle whose every statement runs on the
  * narrow route (plan v3.2 S7a): systemDb's inside a turn or request scope
- * while the switch is on (gateway/handles.ts). The caller asks the switch.
+ * (gateway/handles.ts).
  */
 export function getNarrowDb(): PostgresJsDatabase<typeof schema> {
   getAdminDb();
   const sql = globalThis.__mantleSql!;
   return (narrowDb ??= drizzle(
     narrowRouteClient(actorClient(sql), sql, () => true, narrowPoolSql),
-    { schema },
-  ));
-}
-
-/** The system pool's handle that marks the narrow route (getScopeMarkedDb). */
-let scopeMarkedDb: PostgresJsDatabase<typeof schema> | null = null;
-
-/**
- * The system pool's drizzle handle for a statement the narrow route would
- * take were the switch on, while it is off:
- * systemDb's inside a turn or request scope (gateway/handles.ts). It runs
- * exactly as getAdminDb's, its actor's settings carrying mantle.route =
- * 'narrow' (actor-sql.ts scopeMarkedParams), so the would-refuse count sees
- * the write whatever the actor: the evidence for the switch's flip has no
- * blind spot there.
- */
-export function getScopeMarkedDb(): PostgresJsDatabase<typeof schema> {
-  getAdminDb();
-  const sql = globalThis.__mantleSql!;
-  return (scopeMarkedDb ??= drizzle(
-    narrowRouteClient(
-      actorClient(sql, scopeMarkedParams),
-      sql,
-      () => (poolNarrow ?? false) && systemRouteNow() === 'narrow',
-      narrowPoolSql,
-      // Every statement here would take the narrow route were the switch on.
-      () => !(poolNarrow ?? false),
-    ),
     { schema },
   ));
 }
@@ -345,9 +305,8 @@ export function getScopeMarkedDb(): PostgresJsDatabase<typeof schema> {
  * narrow statement (postgres.js connects on the first query), so a process
  * that runs no narrow work opens no connection. null when the role has no
  * login here (narrowDatabaseUrl: per-database mode). A role whose login
- * migrate did not open (MANTLE_NARROW_SYSTEM off at migrate, on in the app)
- * fails the narrow statement (never the system pool instead): the error
- * names the fix.
+ * migrate did not open (migrate not run as a superuser) fails the narrow
+ * statement (never the system pool instead): the error names the fix.
  */
 function narrowPoolSql(): PgSql | null {
   if (globalThis.__mantleNarrowSql !== undefined) return globalThis.__mantleNarrowSql;
@@ -543,7 +502,6 @@ export async function closeDb(): Promise<void> {
   globalThis.__mantleTurnDb = undefined;
   adminActorSql = null;
   narrowDb = null;
-  scopeMarkedDb = null;
   for (const reset of closeResets) reset();
   // The next pool reads its database's actor check mode afresh.
   forgetActorCheckModePool();

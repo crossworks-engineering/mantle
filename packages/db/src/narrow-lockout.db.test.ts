@@ -1,13 +1,11 @@
 /**
- * Migration 0327 and the counter's refused calls, on a real, migrated
- * Postgres:
+ * Migration 0327 and 0328 on a real, migrated Postgres:
  *
  *  - the login hold: the REAL narrow login (session_user
  *    mantle_system_narrow) may not move disabled_at or session_epoch of the
  *    owner, an admin by role, or a user of the Admin workspace (refused
  *    42501, rows unchanged); a plain member's it may (the users area's own
- *    write); off the narrow route the same change by a narrow reason is
- *    counted, at a spot it is not;
+ *    write);
  *  - the member token budget reads the ledger's own tokens: the settle
  *    stamps them for the scope login only, only up; traces the narrow login
  *    may write change nothing (inflated for a victim, or zeroed for itself);
@@ -16,24 +14,14 @@
  *  - the count's epoch: the narrow login writes no narrow-epoch row and no
  *    miss dated ahead, directly or through mantle_actor_miss_log; a plain
  *    miss row it still may;
- *  - the would-refuse count reads calls: with the switch off, a statement
- *    of an exit routed narrow that calls a function the narrow role may not
- *    run is noted (narrow-would-refuse fn:<name> EXECUTE); one it may run,
- *    or the same call outside the exit, is not;
  *  - 0328: the grant hold also holds a held login's unclaimed pairing
  *    codes, push devices (a row with no login is the owner's) and the
  *    peers acting as it (released only at the spot); a member's the narrow
- *    login still removes; off the narrow route counted;
- *  - mantle_narrow_counter_missing() (the box script's and this cell's one
- *    query): 0, then 1 with one UPDATE OF trigger dropped, disabled, fired
- *    in replica mode only (0329) or calling another function, then 1 with
- *    one column grant changed;
- *  - migrate's trigger step (applyNarrowWouldRefuse) makes again a
- *    trigger present by its name that does not count (disabled, replica
- *    only, another function): the counter back at 0;
- *  - every migration of the narrow set (0315 to 0329) runs again over its
- *    own end state and leaves it as it was (0322's end-state check, 0319
- *    with the rules after it).
+ *    login still removes;
+ *  - every migration of the narrow set (0315 to 0329, and the one that
+ *    closed the content reads) runs again over its own end state and
+ *    leaves it as it was (0322's end-state check, 0319 with the rules after
+ *    it).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/narrow-lockout.db.test.ts
  */
@@ -43,16 +31,9 @@ import { join } from 'node:path';
 import postgres from 'postgres';
 import { sql as sqlTag } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  createMigratedScratchDatabase,
-  ensureAdminUsers,
-  ensureTestAnchor,
-  takeNarrowWrites,
-} from './test-support';
+import { createMigratedScratchDatabase, ensureAdminUsers, ensureTestAnchor } from './test-support';
 import {
   NARROW_ROLE,
-  NarrowWouldRefuseBeforeError,
-  applyNarrowWouldRefuse,
   ensureRuntimeRoles,
   narrowRolePassword,
   runtimeDatabaseUrl,
@@ -61,7 +42,6 @@ import {
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const KEY = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
-const PREFIX = 'mantle narrow write: ';
 
 /** The first error's SQLSTATE of `stmts` in one transaction on `conn`
  *  (rolled back unless `keep`), or null. */
@@ -92,14 +72,12 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
   const adminByWs = randomUUID();
   const member = randomUUID();
   const victim = randomUUID();
-  const notices: string[] = [];
-  const counted = () => notices.splice(0).filter((n) => n.startsWith(PREFIX));
 
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL!);
-    const keep = (n: { message?: string }) => notices.push(n.message ?? '');
+    const keep = () => {};
     su = postgres(scratch.url, { max: 1, prepare: false, onnotice: keep });
-    expect(await ensureRuntimeRoles(su, KEY, { login: true, narrowLogin: true })).toBe('ok');
+    expect(await ensureRuntimeRoles(su, KEY, { login: true })).toBe('ok');
     anchor = await ensureTestAnchor(su);
     for (const [id, role] of [
       [adminByRole, 'admin'],
@@ -164,34 +142,6 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
         `update auth.users set disabled_at = now(), session_epoch = session_epoch + 1 where id = '${member}'`,
       ]),
     ).toBeNull();
-  });
-
-  it('off the narrow route a narrow reason`s change of a held login is counted, the row written; at a spot or for a member not', async () => {
-    counted();
-    const who = 'system:http:admin-area';
-    const set = (spot = false) =>
-      `select set_config('mantle.actor', '${who}', true), set_config('mantle.write_mode', 'rw', true)` +
-      (spot ? `, set_config('mantle.route', 'full', true)` : '');
-    expect(
-      await run(rt, [
-        set(),
-        `update auth.users set session_epoch = session_epoch + 1 where id = '${adminByWs}'`,
-      ]),
-    ).toBeNull();
-    expect(counted()).toEqual([`${PREFIX}narrow-would-refuse ${who} auth.users UPDATE`]);
-    expect(
-      await run(rt, [
-        set(true),
-        `update auth.users set session_epoch = session_epoch + 1 where id = '${adminByWs}'`,
-      ]),
-    ).toBeNull();
-    expect(
-      await run(rt, [
-        set(),
-        `update auth.users set session_epoch = session_epoch + 1 where id = '${member}'`,
-      ]),
-    ).toBeNull();
-    expect(counted()).toEqual([]);
   });
 
   it('the real narrow login may not revoke or remove a held login`s grants; a member`s it may; a revoked key`s revoked_by is never rewritten', async () => {
@@ -295,28 +245,12 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     ]) {
       expect(await run(nl, [stmt]), stmt).toBeNull();
     }
-    // Off the narrow route a narrow reason's revoke of a held grant is
-    // counted, the row written; at a spot not.
-    counted();
-    const who = 'system:http:admin-area';
-    const set = (spot = false) =>
-      `select set_config('mantle.actor', '${who}', true), set_config('mantle.write_mode', 'rw', true)` +
-      (spot ? `, set_config('mantle.route', 'full', true)` : '');
-    expect(
-      await run(rt, [
-        set(),
-        `update mobile_tokens set revoked_at = now() where id = '${ids.mOwner}'`,
-      ]),
-    ).toBeNull();
-    expect(counted()).toEqual([`${PREFIX}narrow-would-refuse ${who} public.mobile_tokens UPDATE`]);
-    expect(await run(rt, [set(true), `delete from oauth_clients where id = '${c1}'`])).toBeNull();
-    expect(counted()).toEqual([]);
     await su`delete from oauth_clients where id in (${c1}, ${c2})`;
     await su`delete from access_keys where id in ${su(keyIds)}`;
     await su`delete from mobile_tokens where id in (${ids.mOwner}, ${ids.mMember})`;
   });
 
-  it('0328: the real narrow login may not remove a held login`s pairing codes or push devices, nor release a peer acting as one; a member`s it may; off the route counted', async () => {
+  it('0328: the real narrow login may not remove a held login`s pairing codes or push devices, nor release a peer acting as one; a member`s it may', async () => {
     const tag = randomUUID().slice(0, 8);
     const node = async (title: string) =>
       (
@@ -387,170 +321,15 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     ]) {
       expect(await run(nl, [stmt]), stmt).toBeNull();
     }
-    // Off the narrow route a narrow reason's removal of a held login's is
-    // counted, the row removed; at a spot not.
-    counted();
-    const who = 'system:http:admin-area';
-    const set = (spot = false) =>
-      `select set_config('mantle.actor', '${who}', true), set_config('mantle.write_mode', 'rw', true)` +
-      (spot ? `, set_config('mantle.route', 'full', true)` : '');
-    expect(
-      await run(rt, [
-        set(),
-        `delete from push_subscriptions where routing_token = '${tag}-rt-owner'`,
-      ]),
-    ).toBeNull();
-    expect(counted()).toEqual([
-      `${PREFIX}narrow-would-refuse ${who} public.push_subscriptions DELETE`,
-    ]);
-    expect(await run(rt, [set(), release(peer.admin)])).toBeNull();
-    expect(counted()).toEqual([`${PREFIX}narrow-would-refuse ${who} public.mantle_peers UPDATE`]);
-    expect(
-      await run(rt, [set(true), `delete from pairing_codes where code_hash = '${tag}-pc-owner'`]),
-    ).toBeNull();
-    expect(counted()).toEqual([]);
     await su`delete from pairing_codes where code_hash like ${`${tag}-%`}`;
     await su`delete from push_subscriptions where routing_token like ${`${tag}-%`}`;
     await su`delete from mantle_peers where id in (${peer.owner}, ${peer.admin}, ${peer.member})`;
   });
 
-  it('the counter`s missing triggers (one function over the one derivation, the box script`s): 0, 1 with an UPDATE OF trigger dropped, disabled, replica only or calling another function, 1 with a column grant changed', async () => {
-    const missing = async (tx: ReturnType<typeof postgres> | postgres.TransactionSql) =>
-      Number((await tx.unsafe(`select public.mantle_narrow_counter_missing()::int as n`))[0]!.n);
-    expect(await missing(su)).toBe(0);
-    // The derivation migrate made the triggers from is the one the counter
-    // reads: one derived trigger per row, no more.
-    const [made] = await su<{ want: number; have: number }[]>`
-      select (select count(*)::int from public.mantle_narrow_would_refuse_expected()) as want,
-             (select count(*)::int from pg_trigger
-               where not tgisinternal
-                 and tgname in ('mantle_narrow_would_refuse_ins', 'mantle_narrow_would_refuse_del',
-                                'mantle_narrow_would_refuse_upd')) as have`;
-    expect(made!.want).toBeGreaterThan(0);
-    expect(made!.have).toBe(made!.want);
-    // The grant hold's triggers: five from 0327, three from 0328 (the box
-    // script's narrow_hold_triggers).
-    const [holds] = await su<{ n: number }[]>`
-      select count(*)::int as n from pg_trigger
-       where not tgisinternal and tgname = 'mantle_narrow_token_hold_trg' and tgenabled in ('O', 'A')`;
-    expect(holds!.n).toBe(8);
-    // A table with an UPDATE OF trigger (columns the narrow role may not
-    // update) and one column the narrow role may update.
-    const [t] = await su<{ t: string; col: string }[]>`
-      select g.tgrelid::regclass::text as t,
-             (select a.attname::text from pg_attribute a
-               where a.attrelid = g.tgrelid and a.attnum = any (g.tgattr::int2[]) limit 1) as col
-        from pg_trigger g where g.tgname = 'mantle_narrow_would_refuse_upd' and cardinality(g.tgattr::int2[]) > 1
-       order by 1 limit 1`;
-    expect(t?.t).toBeTruthy();
-    for (const change of [
-      `drop trigger mantle_narrow_would_refuse_upd on ${t!.t}`,
-      `alter table ${t!.t} disable trigger mantle_narrow_would_refuse_upd`,
-      // Fires only with session_replication_role replica: never on a box.
-      `alter table ${t!.t} enable replica trigger mantle_narrow_would_refuse_upd`,
-      // The same name and columns, another function: not the count's.
-      `create function public.zz_not_the_count() returns trigger language plpgsql as $$ begin return null; end $$;
-       drop trigger mantle_narrow_would_refuse_upd on ${t!.t};
-       create trigger mantle_narrow_would_refuse_upd after update of ${
-         (
-           await su<{ c: string }[]>`
-           select string_agg(quote_ident(a.attname), ', ' order by a.attnum) as c
-             from pg_trigger g join pg_attribute a
-               on a.attrelid = g.tgrelid and a.attnum = any (g.tgattr::int2[])
-            where g.tgrelid = to_regclass(${t!.t}) and g.tgname = 'mantle_narrow_would_refuse_upd'`
-         )[0]!.c
-       } on ${t!.t} for each statement execute function public.zz_not_the_count()`,
-      `grant update ("${t!.col}") on ${t!.t} to ${NARROW_ROLE}`,
-    ]) {
-      const n = await su
-        .begin(async (tx) => {
-          await tx.unsafe(change);
-          throw Object.assign(new Error('rollback'), { n: await missing(tx) });
-        })
-        .catch((err: { n?: number }) => err.n);
-      expect(n, change).toBe(1);
-    }
-    expect(await missing(su)).toBe(0);
-    // Before 0328 (a migrate that failed short of it) there is no
-    // derivation to read: the triggers' step says so, never a guess.
-    const before = await su
-      .begin(async (tx) => {
-        await tx.unsafe('drop function public.mantle_narrow_counter_missing()');
-        await tx.unsafe('drop function public.mantle_narrow_would_refuse_expected()');
-        const err = await applyNarrowWouldRefuse(tx as never).catch((e: unknown) => e);
-        throw Object.assign(new Error('rollback'), { err });
-      })
-      .catch((e: { err?: unknown }) => e.err);
-    expect(before).toBeInstanceOf(NarrowWouldRefuseBeforeError);
-    expect(await missing(su)).toBe(0);
-  });
-
-  it('migrate makes again a would-refuse trigger present by its name that counts nothing (disabled, replica only, another function): the counter back at 0', async () => {
-    const missing = async () =>
-      Number((await su.unsafe(`select public.mantle_narrow_counter_missing()::int as n`))[0]!.n);
-    expect(await missing()).toBe(0);
-    // One derived trigger of each kind, with its definition calling
-    // another function (the same name, table and event).
-    const picks = await su<{ t: string; name: string; other: string }[]>`
-      select distinct on (g.tgname) g.tgrelid::regclass::text as t, g.tgname::text as name,
-             regexp_replace(pg_get_triggerdef(g.oid), 'EXECUTE FUNCTION .*$',
-                            'EXECUTE FUNCTION public.zz_counts_nothing()') as other
-        from pg_trigger g
-       where not g.tgisinternal
-         and g.tgname in ('mantle_narrow_would_refuse_ins', 'mantle_narrow_would_refuse_del',
-                          'mantle_narrow_would_refuse_upd')
-       order by g.tgname, 1`;
-    const pick = (name: string) => picks.find((p) => p.name === name)!;
-    const del = pick('mantle_narrow_would_refuse_del');
-    const ins = pick('mantle_narrow_would_refuse_ins');
-    const upd = pick('mantle_narrow_would_refuse_upd');
-    expect([del, ins, upd].every(Boolean)).toBe(true);
-    const state = async () =>
-      su<{ t: string; name: string; enabled: string; counts: boolean }[]>`
-        select g.tgrelid::regclass::text as t, g.tgname::text as name, g.tgenabled::text as enabled,
-               g.tgfoid = 'public.mantle_narrow_would_refuse_stmt()'::regprocedure as counts
-          from pg_trigger g
-         where not g.tgisinternal
-           and (g.tgrelid, g.tgname::text) in ((to_regclass(${del.t}), ${del.name}),
-                                         (to_regclass(${ins.t}), ${ins.name}),
-                                         (to_regclass(${upd.t}), ${upd.name}))
-         order by 2`;
-    await su.unsafe(
-      `create function public.zz_counts_nothing() returns trigger language plpgsql as $$ begin return null; end $$`,
-    );
-    try {
-      await su.unsafe(`alter table ${del.t} disable trigger ${del.name}`);
-      await su.unsafe(`alter table ${ins.t} enable replica trigger ${ins.name}`);
-      await su.unsafe(`drop trigger ${upd.name} on ${upd.t}`);
-      await su.unsafe(upd.other);
-      expect((await state()).map((r) => [r.name, r.enabled, r.counts])).toEqual([
-        [del.name, 'D', true],
-        [ins.name, 'R', true],
-        [upd.name, 'O', false],
-      ]);
-      expect(await missing()).toBe(3);
-      await applyNarrowWouldRefuse(su);
-      expect(await missing()).toBe(0);
-      expect((await state()).map((r) => [r.name, r.enabled, r.counts])).toEqual([
-        [del.name, 'O', true],
-        [ins.name, 'O', true],
-        [upd.name, 'O', true],
-      ]);
-      // And a run with nothing to change changes nothing.
-      const before = await state();
-      await applyNarrowWouldRefuse(su);
-      expect(await state()).toEqual(before);
-    } finally {
-      await applyNarrowWouldRefuse(su);
-      await su.unsafe('drop function if exists public.zz_counts_nothing()');
-    }
-    expect(await missing()).toBe(0);
-  });
-
-  it('with the held readers taken from the runtime role (an older image`s grants) every sign-in and sign-out write writes, uncounted; the narrow login`s holds refuse', async () => {
+  it('with the held readers taken from the runtime role (an older image`s grants) every sign-in and sign-out write on the full route writes; the narrow login`s holds refuse', async () => {
     // One image back, the older image's migrate grants the runtime role its
-    // own list: the two held readers are not on it. The report branches ask
-    // them through mantle_narrow_report, which answers false on a 42501.
+    // own list: the two held readers are not on it. The full route never
+    // asks them; the narrow login's holds fail closed without them.
     const readers = [
       'public.mantle_narrow_login_held(uuid)',
       'public.mantle_narrow_client_held(uuid)',
@@ -577,73 +356,52 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
       `REVOKE EXECUTE ON FUNCTION ${readers.join(', ')} FROM mantle_runtime, ${NARROW_ROLE}`,
     );
     try {
-      counted();
-      const set = (who: string, mark = false) =>
+      const set = (who: string) =>
         `select set_config('mantle.actor', '${who}', true), set_config('mantle.write_mode', 'rw', true), ` +
-        `set_config('mantle.actor_check', 'on', true)` +
-        (mark ? `, set_config('mantle.route', 'narrow', true)` : '');
+        `set_config('mantle.actor_check', 'on', true)`;
       const self = 'system:http:login-self';
       const area = 'system:http:admin-area';
-      const writes: [string, string, string, boolean][] = [
+      const writes: [string, string, string][] = [
         [
           'a device token rotated',
           self,
           `update mobile_tokens set revoked_at = now() where id = '${devA}'`,
-          false,
         ],
         [
           'a phone signed out',
           self,
           `update mobile_tokens set revoked_at = now() where id = '${devB}'`,
-          false,
         ],
         [
           'a member key revoked',
           area,
           `update access_keys set revoked_at = now(), revoked_by = '${anchor}' where id = '${keyId}'`,
-          false,
         ],
         [
           'a member disabled',
           area,
           `update auth.users set disabled_at = now(), session_epoch = session_epoch + 1 where id = '${victim}'`,
-          false,
         ],
         [
           'the owner`s sessions ended (held)',
           area,
           `update auth.users set session_epoch = session_epoch + 1 where id = '${anchor}'`,
-          false,
         ],
         [
           'the owner`s MCP token revoked (held)',
           area,
           `update oauth_access_tokens set revoked_at = now() where id = '${tokId}'`,
-          false,
         ],
         [
           'an OAuth code burned',
           area,
           `delete from oauth_auth_codes where code_hash = '${tag}-code'`,
-          false,
         ],
-        [
-          'a member key revoked, the statement marked narrow',
-          'login:x',
-          `update access_keys set revoked_at = now() where id = '${keyId}'`,
-          true,
-        ],
-        [
-          'an MCP client removed (held)',
-          area,
-          `delete from oauth_clients where id = '${client}'`,
-          false,
-        ],
+        ['an MCP client removed (held)', area, `delete from oauth_clients where id = '${client}'`],
       ];
-      for (const [what, who, stmt, mark] of writes) {
-        expect(await run(rt, [set(who, mark), stmt]), what).toBeNull();
+      for (const [what, who, stmt] of writes) {
+        expect(await run(rt, [set(who), stmt]), what).toBeNull();
       }
-      expect(counted()).toEqual([]);
       // Fail closed on the narrow login: a member's disable it could make
       // is refused while it may not run the reader.
       expect(
@@ -660,16 +418,6 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
       await su`delete from access_keys where id = ${keyId}`;
       await su`delete from mobile_tokens where id in (${devA}, ${devB})`;
     }
-    // With the readers back, the same held write by a narrow reason counts.
-    expect(
-      await run(rt, [
-        `select set_config('mantle.actor', 'system:http:admin-area', true), set_config('mantle.write_mode', 'rw', true)`,
-        `update auth.users set session_epoch = session_epoch + 1 where id = '${anchor}'`,
-      ]),
-    ).toBeNull();
-    expect(counted()).toEqual([
-      `${PREFIX}narrow-would-refuse system:http:admin-area auth.users UPDATE`,
-    ]);
   });
 
   const scopeOf = (login: string) => `select set_config('mantle.scope_login', '${login}', true)`;
@@ -815,6 +563,7 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
       'narrow_lockout_and_ledger_tokens',
       'narrow_hold_wider',
       'narrow_counter_enabled',
+      'narrow_reads_revoked',
     ];
     const journal = (
       JSON.parse(readFileSync(join(dir, 'meta', '_journal.json'), 'utf8')) as {
@@ -839,89 +588,12 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
   });
 });
 
-describe.skipIf(!URL)('the would-refuse count reads refused calls (switch off)', () => {
-  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
-  let su: ReturnType<typeof postgres>;
-  let m: typeof import('./index');
-  let v: typeof import('./viewer');
-  let rr: typeof import('./runtime-role');
-
-  beforeAll(async () => {
-    scratch = await createMigratedScratchDatabase(URL!);
-    su = postgres(scratch.url, { max: 1, prepare: false });
-    expect(await ensureRuntimeRoles(su, KEY, { login: true, narrowLogin: true })).toBe('ok');
-    await ensureTestAnchor(su);
-    process.env.DATABASE_URL = scratch.url;
-    rr = await import('./runtime-role');
-    rr.setNarrowSystemForTests(false);
-    v = await import('./viewer');
-    m = await import('./index');
-  }, 180_000);
-
-  afterAll(async () => {
-    await m?.closeDb();
-    rr?.setNarrowSystemForTests(null);
-    await su?.end();
-    await scratch?.drop();
-  }, 60_000);
-
-  const fnNotes = () =>
-    takeNarrowWrites().filter(
-      (w) => w.check === 'narrow-would-refuse' && w.detail.startsWith('fn:'),
-    );
-
-  it('notes a call the narrow role may not run, in an exit routed narrow only', async () => {
-    takeNarrowWrites();
-    // mantle_role_drift: the runtime role's, never the narrow role's (a
-    // count; mantle_login_is_admin, the cell's call before, is a read the
-    // narrow role may run since the role follows Admin membership, 0330).
-    await v.asSystem(
-      () => m.db.execute(sqlTag`select "public"."mantle_role_drift"() as a`),
-      'admin-area',
-    );
-    await expect.poll(() => fnNotes().length > 0 || null, { timeout: 5000 }).toBe(true);
-    // One it may run (mantle_brain_id), and the same refused call as plain
-    // system work: nothing.
-    await v.asSystem(
-      () => m.db.execute(sqlTag`select "public"."mantle_brain_id"() as b`),
-      'admin-area',
-    );
-    await v.asSystem(
-      () => m.db.execute(sqlTag`select "public"."mantle_role_drift"() as a`),
-      'app-data',
-    );
-    await new Promise((r) => setTimeout(r, 300));
-    expect(fnNotes()).toEqual([]);
-  });
-
-  it('reads the calls inside a transaction of that exit', async () => {
-    takeNarrowWrites();
-    await v.asSystem(
-      () =>
-        m.db.transaction(async (tx) => {
-          await tx.execute(sqlTag`select "public"."mantle_role_drift"() as a`);
-        }),
-      'admin-area',
-    );
-    await expect
-      .poll(
-        () =>
-          takeNarrowWrites().some(
-            (w) => w.check === 'narrow-would-refuse' && w.detail === 'fn:mantle_role_drift EXECUTE',
-          ) || null,
-        { timeout: 5000 },
-      )
-      .toBe(true);
-  });
-});
-
 describe.skipIf(!URL)(
-  'a narrow refusal raised by a row rule is noted and never read as a read-only database (switch on)',
+  'a narrow refusal raised by a row rule is noted and never read as a read-only database',
   () => {
     let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
     let su: ReturnType<typeof postgres>;
     let m: typeof import('./index');
-    let rr: typeof import('./runtime-role');
     let ts: typeof import('./test-support');
     let anchor = '';
     const login = randomUUID();
@@ -929,21 +601,18 @@ describe.skipIf(!URL)(
     beforeAll(async () => {
       scratch = await createMigratedScratchDatabase(URL!);
       su = postgres(scratch.url, { max: 1, prepare: false });
-      expect(await ensureRuntimeRoles(su, KEY, { login: true, narrowLogin: true })).toBe('ok');
+      expect(await ensureRuntimeRoles(su, KEY, { login: true })).toBe('ok');
       anchor = await ensureTestAnchor(su);
       await su`insert into auth.users (id, email, password_hash, role)
              values (${login}, ${`${login}@example.test`}, 'x', 'member')`;
       process.env.DATABASE_URL = scratch.url;
       process.env.MANTLE_MASTER_KEY ??= KEY;
-      rr = await import('./runtime-role');
-      rr.setNarrowSystemForTests(true);
       ts = await import('./test-support');
       m = await import('./index');
     }, 180_000);
 
     afterAll(async () => {
       await m?.closeDb();
-      rr?.setNarrowSystemForTests(null);
       await su?.end();
       await scratch?.drop();
     }, 60_000);

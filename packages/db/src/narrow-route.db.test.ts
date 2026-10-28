@@ -1,10 +1,9 @@
 /**
  * The narrow system route on a real, migrated Postgres (plan v3.2 S7a part
- * a2, section 2.1 point 3): with MANTLE_NARROW_SYSTEM on, the system pool
- * sends the work of a reason routed 'narrow' (viewer.ts AS_SYSTEM_ROUTE,
- * REQUEST_SYSTEM_ROUTE) as mantle_system_narrow, taken per transaction with
- * the actor's settings; a reason routed 'full', system work and a rebound
- * actor run as the pool's own login; off, nothing changes. The hold check
+ * a2, section 2.1 point 3): the system pool sends the work of a reason
+ * routed 'narrow' (viewer.ts AS_SYSTEM_ROUTE, REQUEST_SYSTEM_ROUTE) as
+ * mantle_system_narrow, with the actor's settings; a reason routed 'full',
+ * system work and a rebound actor run as the pool's own login. The hold check
  * rolls back a transaction that left the role. The archive path's write
  * scope carries the actor's write mode.
  *
@@ -23,7 +22,6 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let m: typeof import('./index');
   let v: typeof import('./viewer');
-  let rr: typeof import('./runtime-role');
   let nr: typeof import('./gateway/narrow-route');
   let ns: typeof import('./gateway/narrow-sendable');
   let actor: typeof import('./actor');
@@ -84,10 +82,9 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     expect(denied.length).toBeGreaterThan(0);
     for (const d of denied) expect(d.what, d.what).toMatch(/^text:[a-z0-9-]+ \| /);
   };
-  /** The pool reads the switch once, when it opens. */
-  const reopen = async (on: boolean) => {
+  /** The pools, opened afresh. */
+  const reopen = async () => {
     await m.closeDb();
-    rr.setNarrowSystemForTests(on);
     await m.systemDb.execute(sql`select 1`);
   };
 
@@ -106,27 +103,20 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('./index');
     v = await import('./viewer');
-    rr = await import('./runtime-role');
     nr = await import('./gateway/narrow-route');
     ns = await import('./gateway/narrow-sendable');
     actor = await import('./actor');
-    await reopen(true);
+    await reopen();
     pool = (await who()).u;
   }, 120_000);
 
   afterAll(async () => {
-    rr?.setNarrowSystemForTests(null);
     await m?.closeDb();
     await su?.end();
     await scratch?.drop();
   });
 
-  it('is on by default outside production, and every reason picks a route', () => {
-    rr.setNarrowSystemForTests(null);
-    // The default, unless the run sets the switch (the suite once with
-    // MANTLE_NARROW_SYSTEM=0, the switch-off proof).
-    if (process.env.MANTLE_NARROW_SYSTEM === undefined) expect(rr.narrowSystemOn()).toBe(true);
-    rr.setNarrowSystemForTests(true);
+  it('every reason picks a route', () => {
     const reasons = [...v.AS_SYSTEM_TURN_REASONS, ...v.AS_SYSTEM_OTHER_REASONS];
     expect(Object.keys(v.AS_SYSTEM_ROUTE).sort()).toEqual([...reasons].sort());
     expect(v.REQUEST_SYSTEM_ROUTE).toEqual({
@@ -867,22 +857,6 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       ),
     );
     expect(actor.takeNarrowDenials()).toHaveLength(1);
-  });
-
-  it('off: every reason runs as the pool login', async () => {
-    await reopen(false);
-    try {
-      expect((await v.asSystem(who, 'admin-area')).u).toBe(pool);
-      expect((await v.asSystem(whoInTx, 'admin-area')).u).toBe(pool);
-      const got = await v.runInRequestSlot(async () => {
-        v.noteRequestSystem('area');
-        return who();
-      });
-      expect(got.u).toBe(pool);
-      expect(actor.takeNarrowUses()).toEqual({});
-    } finally {
-      await reopen(true);
-    }
   });
 
   it('the system-pool write scope carries the actor write mode (the archive path)', async () => {
