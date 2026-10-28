@@ -171,6 +171,7 @@ GET /api/journal class=content scope=content caller=owner gone=false
 GET /api/journal/:id class=content scope=content caller=owner gone=false
 GET /api/keys class=area scope=area:keys caller=owner gone=false
 GET /api/mcp class=public scope=- caller=- gone=false
+GET /api/mcp-calls class=content scope=content caller=owner gone=false
 GET /api/mcp-connectors class=area scope=area:connectors caller=owner gone=false
 GET /api/mcp-connectors/:slug class=area scope=area:connectors caller=owner gone=false
 GET /api/mcp-connectors/oauth/callback class=area scope=area:connectors caller=owner gone=false
@@ -440,6 +441,7 @@ HEAD /api/journal class=content scope=content caller=owner gone=false
 HEAD /api/journal/:id class=content scope=content caller=owner gone=false
 HEAD /api/keys class=area scope=area:keys caller=owner gone=false
 HEAD /api/mcp class=public scope=- caller=- gone=false
+HEAD /api/mcp-calls class=content scope=content caller=owner gone=false
 HEAD /api/mcp-connectors class=area scope=area:connectors caller=owner gone=false
 HEAD /api/mcp-connectors/:slug class=area scope=area:connectors caller=owner gone=false
 HEAD /api/mcp-connectors/oauth/callback class=area scope=area:connectors caller=owner gone=false
