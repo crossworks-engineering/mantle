@@ -19,7 +19,7 @@ vi.mock('@mantle/db', async (importOriginal) => ({
 }));
 vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn() }));
 
-import { DOCUMENT_TOOL_SLUGS } from '@mantle/config';
+import { toolService } from '@mantle/config';
 import { recordIngest } from '@mantle/tracing';
 import { DOCUMENT_TOOLS, PDF_TOOL_OPS } from './builtins-documents';
 import { memberAppRefusal, TEAM_APP_TOOLS_ALLOWED } from './runtime-policy';
@@ -45,9 +45,15 @@ beforeEach(() => {
 });
 
 describe('the four tools', () => {
-  it("are the config gate's four, writes that make a file, not mcpOnly", () => {
-    expect(new Set(DOCUMENT_TOOLS.map((t) => t.slug))).toEqual(DOCUMENT_TOOL_SLUGS);
+  it('need the documents service, are writes that make a file, not mcpOnly', () => {
+    expect(DOCUMENT_TOOLS.map((t) => t.slug)).toEqual([
+      'pdf_render',
+      'screenshot_render',
+      'office_to_pdf',
+      'pdf_tools',
+    ]);
     for (const t of DOCUMENT_TOOLS) {
+      expect(toolService(t.slug)).toBe('documents');
       expect(t.policy.effect).toBe('write');
       expect(t.policy.spends).toBe('none');
       expect(t.policy.creates).toBe('file');

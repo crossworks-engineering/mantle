@@ -179,7 +179,7 @@ export async function getDrawPngOrRender(
   const svg = await getDrawSvgOrRender(ownerId, id, { actorId });
   if (!svg) return null;
   // The documents engine, when the service is on: a screenshot of the same
-  // print surface at 2x, sized at 1x (P5). A failure degrades to the
+  // print surface at 2x, sized at 1x (stage 2 of the plan). A failure degrades to the
   // placeholder as the sidecar's does; it never falls through to the
   // sidecar, which keeps only the SVG re-render on a box with the engine.
   if (documentsAvailable()) {
@@ -201,8 +201,9 @@ export async function getDrawPngOrRender(
         width: Math.round(size.width / DRAW_PIXEL_RATIO),
         height: Math.round(size.height / DRAW_PIXEL_RATIO),
       };
-    } catch (err) {
-      console.error(`[draw-snapshot] raster failed for ${id} (documents engine):`, err);
+    } catch {
+      // The export degrades to its placeholder, as it does when the sidecar
+      // cannot raster; the engine's own error is its caller's to hear.
       return null;
     }
   }

@@ -12,6 +12,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { toolService } from '@mantle/config';
+// The documents tools register their service when their module loads.
+import './builtins-documents';
 
 const SRC = dirname(fileURLToPath(import.meta.url));
 const SLUG = /^\s+slug: '([a-z0-9_]+)'/gm;

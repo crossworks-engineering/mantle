@@ -15,7 +15,7 @@
  * surface asks an Admin login of it); a call with no login actor converts
  * files and inline text only.
  */
-import { DOCUMENT_TOOL_SLUGS } from '@mantle/config';
+import { registerToolService } from '@mantle/config';
 import { currentActor } from '@mantle/db';
 import { runDocuments, type DocumentsCall, type DocumentsResult } from '@mantle/documents';
 import { errorMessage } from '@mantle/std';
@@ -335,10 +335,6 @@ export const DOCUMENT_TOOLS: BuiltinToolDef[] = [
   pdf_tools,
 ];
 
-// The config's gate (toolService) names the same four: a drift here would
-// leave a tool offered while the service is off.
-for (const t of DOCUMENT_TOOLS) {
-  if (!DOCUMENT_TOOL_SLUGS.has(t.slug)) {
-    throw new Error(`builtins-documents: ${t.slug} is not in @mantle/config DOCUMENT_TOOL_SLUGS`);
-  }
-}
+// The config's gate (toolService): each of the four needs the documents
+// service, so an agent's list leaves it out while the service is off.
+for (const t of DOCUMENT_TOOLS) registerToolService(t.slug, 'documents');

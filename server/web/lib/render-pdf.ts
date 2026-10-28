@@ -32,12 +32,13 @@ export { printOrigin } from './render-sandbox';
  * Chromium never takes the web server with it. `puppeteer-core` is the pure
  * driver (no bundled browser download, ~1 GB off the app image).
  *
- * Since the documents engine (packages/documents, plan page f7c67c92 P5):
+ * Since the documents engine (packages/documents, plan page f7c67c92, stage 2):
  * renderNodeToPdf prints through Gotenberg's chromium/convert/url when the
  * `documents` service is on, with the same print surface, the same render
  * cookie (minted by the package for the acting admin) and the print options
  * (print-options.ts); the browser sidecar below is the fallback while it is
- * off, and keeps the drawing SVG re-render for good (P6). Nothing on the
+ * off, and keeps the drawing SVG re-render for good (the post-back
+ * workaround comes later). Nothing on the
  * browser service is lowered yet.
  *
  * Config:

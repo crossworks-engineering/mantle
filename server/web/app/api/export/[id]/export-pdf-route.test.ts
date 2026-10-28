@@ -1,7 +1,7 @@
 /**
  * GET /api/export/:id?format=pdf hands the render to renderNodeToPdf (the
  * documents engine, or the browser sidecar) as the ACTING admin, whoever
- * clicked Export, for the node being printed (audit F01: the render cookie
+ * clicked Export, for the node being printed (the render cookie
  * both engines carry is minted for that admin and that node, never a
  * session; the engines are stood in here). The print options are query
  * parameters, validated with safe defaults; a bad one is a 400.

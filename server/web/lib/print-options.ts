@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * The print options of a page or drawing export (GET /api/export/:id
  * ?format=pdf): paper size, orientation, margins, a header and a footer
- * line with page numbers. Validated with safe defaults (the A4 print every
+ * line with page numbers. Validated with safe defaults (the a4 portrait print every
  * export was before), and honoured by both engines: the documents engine
  * (Gotenberg, chromium/convert/url) and the browser sidecar (puppeteer
  * page.pdf). A client adds them to its Export menu as query parameters;

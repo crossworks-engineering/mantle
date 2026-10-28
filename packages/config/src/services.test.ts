@@ -6,7 +6,9 @@ import {
   coreShape,
   helpersRun,
   parseServicesFile,
+  registerToolService,
   resetServicesFileCache,
+  resetToolServicesForTests,
   serviceEnabled,
   serviceProfileOn,
   serviceSwitchable,
@@ -199,11 +201,16 @@ describe('the documents engine: a URL and a password, switched like sandboxes', 
 });
 
 describe('tool gating', () => {
-  it('maps tools to their service', () => {
+  beforeEach(() => {
+    resetToolServicesForTests();
+    // What a tool definition file does when it loads (builtins-documents.ts).
+    registerToolService('pdf_tools', 'documents');
+  });
+  afterEach(() => resetToolServicesForTests());
+
+  it('maps tools to their service: the sandbox prefix, and what a definition registered', () => {
     expect(toolService('sandbox_exec')).toBe('sandboxes');
-    for (const slug of ['pdf_render', 'screenshot_render', 'office_to_pdf', 'pdf_tools']) {
-      expect(toolService(slug)).toBe('documents');
-    }
+    expect(toolService('pdf_tools')).toBe('documents');
     expect(toolService('export_node')).toBeNull();
     // video_ingest needs the parser, which is core: no switch gates it.
     expect(toolService('video_ingest')).toBeNull();

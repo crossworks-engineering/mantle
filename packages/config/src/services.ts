@@ -64,14 +64,21 @@ const WIRING: Partial<Record<OptionalService, { url: KnownEnvName; token: KnownE
   documents: { url: 'GOTENBERG_URL', token: 'GOTENBERG_PASSWORD' },
 };
 
-/** The builtin tools that need the documents engine (packages/tools
- *  builtins-documents.ts; the tool list pins itself to this set). */
-export const DOCUMENT_TOOL_SLUGS: ReadonlySet<string> = new Set([
-  'pdf_render',
-  'screenshot_render',
-  'office_to_pdf',
-  'pdf_tools',
-]);
+/** The tools that need an optional service other than the sandboxes, by
+ *  slug: each tool's own definition registers itself when its module loads
+ *  (packages/tools builtins-documents.ts), so no list of slugs lives here
+ *  (a tool's policy is its definition's). */
+const toolServices = new Map<string, OptionalService>();
+
+/** Name the service a tool needs (called by the tool's definition file). */
+export function registerToolService(slug: string, service: OptionalService): void {
+  toolServices.set(slug, service);
+}
+
+/** Tests only: forget the registered tools. */
+export function resetToolServicesForTests(): void {
+  toolServices.clear();
+}
 
 /** One service as the updater saw it. `container` is docker's State.Status
  *  ('running', 'exited', ...) or 'absent'; `health` is the healthcheck status
@@ -245,8 +252,7 @@ export function serviceSwitchable(name: OptionalService): boolean {
  *  prefix (pinned by a test against the sandbox tool list). */
 export function toolService(slug: string): OptionalService | null {
   if (slug.startsWith('sandbox_')) return 'sandboxes';
-  if (DOCUMENT_TOOL_SLUGS.has(slug)) return 'documents';
-  return null;
+  return toolServices.get(slug) ?? null;
 }
 
 /** False when the tool needs a service that is off on this box: the agent's

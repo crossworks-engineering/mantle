@@ -73,6 +73,7 @@ COPY packages/config/package.json packages/config/package.json
 COPY packages/content/package.json packages/content/package.json
 COPY packages/content-core/package.json packages/content-core/package.json
 COPY packages/crypto/package.json packages/crypto/package.json
+COPY packages/documents/package.json packages/documents/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/decisions/package.json packages/decisions/package.json
 COPY packages/diagram-templates/package.json packages/diagram-templates/package.json

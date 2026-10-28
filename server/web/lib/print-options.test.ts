@@ -18,7 +18,7 @@ import {
 const q = (s: string) => parsePrintOptions(new URLSearchParams(s));
 
 describe('parsePrintOptions', () => {
-  it('an empty query is the A4 print every export was', () => {
+  it('an empty query is the a4 print every export was', () => {
     expect(q('')).toEqual({ ok: true, options: DEFAULT_PRINT_OPTIONS });
     expect(q('format=pdf&paper=&header=')).toEqual({ ok: true, options: DEFAULT_PRINT_OPTIONS });
   });
