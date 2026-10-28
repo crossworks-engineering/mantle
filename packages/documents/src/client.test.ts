@@ -82,6 +82,7 @@ describe('callGotenberg', () => {
     expect(headerSafeName('Отчёт')).toBeNull();
     expect(headerSafeName('report 報告 q3')).toBe('report q3');
     expect(headerSafeName('Ärztebrief-2')).toBe('Arztebrief-2');
+    expect(headerSafeName('Søren Straße')).toBe('Soren Strasse');
     answer(200, 'x', { 'content-type': 'application/pdf' });
     await callGotenberg(route, new FormData(), { outputName: 'Отчёт' });
     expect(

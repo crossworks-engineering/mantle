@@ -133,7 +133,7 @@ export async function buildForm(
   const resolved = await resolveInputs(route, call.inputs, caller, deps);
   const form = new FormData();
   for (const p of resolved.parts) {
-    // A view of the bytes, not a copy: an input is held once for the job.
+    // A view of the bytes: the Blob copies them once, not twice.
     form.append(
       p.field,
       new Blob([

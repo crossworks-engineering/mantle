@@ -102,6 +102,13 @@ export function documentsInFlight(): number {
  *  saved file, so the header carries an ASCII form of it, or nothing. */
 export function headerSafeName(stem: string): string | null {
   const ascii = stem
+    .replace(/[øØ]/g, (c) => (c === 'ø' ? 'o' : 'O'))
+    .replace(/ß/g, 'ss')
+    .replace(/[æÆ]/g, (c) => (c === 'æ' ? 'ae' : 'AE'))
+    .replace(/[œŒ]/g, (c) => (c === 'œ' ? 'oe' : 'OE'))
+    .replace(/[łŁ]/g, (c) => (c === 'ł' ? 'l' : 'L'))
+    .replace(/[đĐ]/g, (c) => (c === 'đ' ? 'd' : 'D'))
+    .replace(/[þÞ]/g, (c) => (c === 'þ' ? 'th' : 'Th'))
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\x20-\x7e]+/g, '')
@@ -155,15 +162,16 @@ export async function callGotenberg(
   const headers: Record<string, string> = { authorization: gotenbergAuthHeader(cfg) };
   const outputName = opts.outputName ? headerSafeName(opts.outputName) : null;
   if (outputName) headers['Gotenberg-Output-Filename'] = outputName;
-  if (inFlight >= DOCUMENTS_MAX_IN_FLIGHT) {
-    throw new DocumentsBusyError(
-      `${DOCUMENTS_MAX_IN_FLIGHT} jobs are already running from this process`,
-    );
-  }
+  // The caller's own share first, so a caller who is the cause hears so.
   const key = opts.callerKey ?? '';
   const mine = inFlightBy.get(key) ?? 0;
   if (mine >= DOCUMENTS_MAX_IN_FLIGHT_PER_CALLER) {
     throw new DocumentsBusyError(`${mine} of your jobs are already running`);
+  }
+  if (inFlight >= DOCUMENTS_MAX_IN_FLIGHT) {
+    throw new DocumentsBusyError(
+      `${DOCUMENTS_MAX_IN_FLIGHT} jobs are already running from this process`,
+    );
   }
   inFlight += 1;
   inFlightBy.set(key, mine + 1);

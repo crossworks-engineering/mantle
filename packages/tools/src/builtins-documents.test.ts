@@ -22,10 +22,10 @@ vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn() }));
 import { toolService } from '@mantle/config';
 import { recordIngest } from '@mantle/tracing';
 import { DOCUMENT_TOOLS, PDF_TOOL_OPS, registerDocumentToolServices } from './builtins-documents';
-
-registerDocumentToolServices();
 import { memberAppRefusal, TEAM_APP_TOOLS_ALLOWED } from './runtime-policy';
 import type { ToolHandlerContext } from './types';
+
+registerDocumentToolServices();
 
 const by = Object.fromEntries(DOCUMENT_TOOLS.map((t) => [t.slug, t]));
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
