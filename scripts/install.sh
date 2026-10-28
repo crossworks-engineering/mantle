@@ -869,6 +869,12 @@ ensure MANTLE_SETUP_CODE gen_setup_code   # first-run signup gate; never rotated
 ensure SANDBOXD_TOKEN      "gen_hex 32"
 # The parser service's bearer token (core, always on; docs/parser.md).
 ensure PARSER_TOKEN        "gen_hex 32"
+# The calls media server's API key pair (compose profile `calls`, off until
+# Settings > Services switches it on; docs/messenger.md "Calls"). The brain
+# signs every call token and verifies every LiveKit webhook with it. Inert
+# while the profile is off, like SANDBOXD_TOKEN; never rotated on re-run.
+ensure MANTLE_LIVEKIT_API_KEY    "gen_hex 8"
+ensure MANTLE_LIVEKIT_API_SECRET "gen_hex 32"
 # The runtime role (plan v3.2 S4a): a new install's app logs in as
 # mantle_runtime, not the superuser (docs/runtime-role.md). A FRESH box only,
 # and only when .env has no line: an existing box keeps what it runs with (the
@@ -912,6 +918,16 @@ else
   warn "S3 keys were unset with an existing object-store data dir — pinned to the compose defaults they were initialised with. Rotate them deliberately if you want strong ones."
 fi
 upsert MANTLE_SITE_ADDRESS "$SITE_ADDRESS"
+# The ONE hostname calls use for TURN (its certificate is Caddy's): the first
+# of MANTLE_SITE_ADDRESS when that is a hostname. Only ever written once; a
+# box that serves no hostname gets none (calls need a certificate), and the
+# updater fills it in the day the switch is turned on.
+if [[ -z "$(getval MANTLE_CALLS_HOST)" ]]; then
+  CALLS_HOST="${SITE_ADDRESS%%,*}"; CALLS_HOST="${CALLS_HOST#https://}"; CALLS_HOST="${CALLS_HOST#http://}"; CALLS_HOST="${CALLS_HOST%%/*}"; CALLS_HOST="${CALLS_HOST%%:*}"
+  if [[ -n "$CALLS_HOST" && "$CALLS_HOST" != localhost && "$CALLS_HOST" =~ ^[A-Za-z0-9.-]+$ && "$CALLS_HOST" == *.* && ! "$CALLS_HOST" =~ ^[0-9.]+$ ]]; then
+    upsert MANTLE_CALLS_HOST "$CALLS_HOST"
+  fi
+fi
 # Which interface the front door listens on. 127.0.0.1 for a "this machine
 # only" install — a published Docker port bypasses the host firewall (Docker
 # writes its own DNAT rules), so binding loopback is the only thing that
@@ -1147,9 +1163,14 @@ else
   printf '\n# Front door routing shape: same-origin (one domain, path-routed) or split\n# (owner UI on app.<domain>). See infra/caddy/README.md.\nMANTLE_CADDY_SHAPE=same-origin\n' >> "$ENV_FILE"
   ok "Front door configured (same-origin: one domain serves both apps)"
 fi
-mkdir -p "$STACK_DIR/infra/caddy/conf.d" "$STACK_DIR/infra/caddy/shapes" 2>/dev/null || true
+mkdir -p "$STACK_DIR/infra/caddy/conf.d" "$STACK_DIR/infra/caddy/shapes" "$STACK_DIR/infra/livekit" 2>/dev/null || true
 if [[ ! -f "$STACK_DIR/infra/caddy/shapes/same-origin.caddy" ]]; then
   warn "infra/caddy/shapes/ is missing: the front door will not route. Re-download the deploy bundle."
+fi
+# The calls media server's config (compose profile `calls`): the bundle ships
+# it; the updater adopts it from the image on the next roll when missing.
+if [[ ! -f "$STACK_DIR/infra/livekit/livekit.yaml" ]]; then
+  inf "infra/livekit/livekit.yaml is not in this bundle: the updater installs it on the next update (calls stay off until then)."
 fi
 
 # ── 3c. review ───────────────────────────────────────────────────────────────

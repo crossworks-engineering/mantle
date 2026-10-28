@@ -24,6 +24,12 @@ const BOX_FLAGS = [
   'MANTLE_MCP_TERMINAL',
   'MANTLE_DB_RUNTIME_ROLE',
   'MANTLE_NARROW_SYSTEM',
+  // Calls (plan page 886126b4): the agent worker's flag, the calls host and
+  // the key pair the brain signs tokens with (the profile decides what runs).
+  'MANTLE_CALLS_AGENT',
+  'MANTLE_CALLS_HOST',
+  'MANTLE_LIVEKIT_API_KEY',
+  'MANTLE_LIVEKIT_API_SECRET',
 ];
 
 describe('compose passes the box flags to the app services', () => {

@@ -15,15 +15,15 @@ its unread count, so one list holds everything.
 
 ## The model
 
-| Table | What it holds |
-| --- | --- |
+| Table                     | What it holds                                                                                                                                                                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `messenger_conversations` | A direct chat or a group. `last_seq`, `last_message_at` and `last_preview` (the tail) are written by the send that changes them. A direct chat has a `direct_key` (the two login ids, sorted and joined; unique), so a pair has one chat. A group may have an `icon` and a `color` (0341, below). |
-| `messenger_participants` | One row per login (or, from Phase 3, the group's one agent). `admin` marks a group admin (the creator first). `last_read_seq`, `mention_seq`, `cleared_before_seq`, `muted`; `from_seq`, the floor of what the login reads; `left_at` and `left_seq` once the login left. |
-| `messenger_messages` | One row per message, `(conversation_id, seq)` unique. `author_kind` is login, agent or system. `author_name` is a snapshot. `via` is the credential label shown, `via_ref` the credential itself. `client_msg_id` makes a send idempotent. |
-| `messenger_attachments` | The attachment rows of Phase 4 (no bytes yet). |
-| `messenger_reactions` | One emoji of one login on one message. |
-| `messenger_favourites` | A login's pins: a conversation or an agent thread. |
-| `login_presence` | When a login's messenger stream last beat ("online": the last two minutes). |
+| `messenger_participants`  | One row per login (or, from Phase 3, the group's one agent). `admin` marks a group admin (the creator first). `last_read_seq`, `mention_seq`, `cleared_before_seq`, `muted`; `from_seq`, the floor of what the login reads; `left_at` and `left_seq` once the login left.                         |
+| `messenger_messages`      | One row per message, `(conversation_id, seq)` unique. `author_kind` is login, agent or system. `author_name` is a snapshot. `via` is the credential label shown, `via_ref` the credential itself. `client_msg_id` makes a send idempotent.                                                        |
+| `messenger_attachments`   | The attachment rows of Phase 4 (no bytes yet).                                                                                                                                                                                                                                                    |
+| `messenger_reactions`     | One emoji of one login on one message.                                                                                                                                                                                                                                                            |
+| `messenger_favourites`    | A login's pins: a conversation or an agent thread.                                                                                                                                                                                                                                                |
+| `login_presence`          | When a login's messenger stream last beat ("online": the last two minutes).                                                                                                                                                                                                                       |
 
 `push_login_prefs` has two more columns for Phase 5: `messages` (all,
 mentions, off) and `message_preview`.
@@ -153,23 +153,29 @@ seconds to wait); an MCP tool says the same in its error. The bucket is in
 the memory of one `server/web` process (its routes and its HTTP MCP); the
 local stdio MCP server and a second replica keep their own.
 
-| Route | What |
-| --- | --- |
-| `GET /conversations?unread_only=1` | the one list: people chats, groups and agent threads, favourites first |
-| `POST /conversations` | create: `{kind, participants, title?, icon?, color?}`; a direct pair answers its chat |
-| `GET /c/:id`, `PATCH /c/:id` | one conversation; a group's title, icon and colour (admins), my mute |
-| `POST /c/:id/participants`, `DELETE /c/:id/participants/:loginId`, `POST /c/:id/leave` | membership |
-| `GET /c/:id/messages?before_seq=&after_seq=&limit=` | the last `limit` (20; at most 100), older, or newer than a seq; with `after_seq` and `hasMore`, `lastSeq` is the page's highest seq (the next `after_seq`) |
-| `POST /c/:id/messages` | send: `{body, mentions?, replyToSeq?, clientMsgId?}` |
-| `PATCH /c/:id/messages/:seq`, `DELETE /c/:id/messages/:seq` | edit my message; delete mine (a group admin: any) |
-| `POST /c/:id/messages/:seq/reactions` | toggle an emoji |
-| `POST /c/:id/read`, `POST /c/:id/clear`, `POST /c/:id/history/delete` | cursor, clear for me, delete history for everyone |
-| `POST /c/:id/typing` | a NOTIFY, stored nowhere |
-| `PUT /favourites/:kind/:id`, `DELETE /favourites/:kind/:id` | pin and unpin |
-| `GET /directory?q=` | who I may chat with, with "online"; `q` matches the shown name, never the address |
-| `GET /photo/:loginId?v=` | the older path of `GET /api/people/:id/photo` (People, below): the same handler and callers |
-| `GET /stream` | the SSE stream (below) |
-| `GET /unread` | the badge |
+| Route                                                                                  | What                                                                                                                                                       |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /conversations?unread_only=1`                                                     | the one list: people chats, groups and agent threads, favourites first                                                                                     |
+| `POST /conversations`                                                                  | create: `{kind, participants, title?, icon?, color?}`; a direct pair answers its chat                                                                      |
+| `GET /c/:id`, `PATCH /c/:id`                                                           | one conversation; a group's title, icon and colour (admins), my mute                                                                                       |
+| `POST /c/:id/participants`, `DELETE /c/:id/participants/:loginId`, `POST /c/:id/leave` | membership                                                                                                                                                 |
+| `GET /c/:id/messages?before_seq=&after_seq=&limit=`                                    | the last `limit` (20; at most 100), older, or newer than a seq; with `after_seq` and `hasMore`, `lastSeq` is the page's highest seq (the next `after_seq`) |
+| `POST /c/:id/messages`                                                                 | send: `{body, mentions?, replyToSeq?, clientMsgId?}`                                                                                                       |
+| `PATCH /c/:id/messages/:seq`, `DELETE /c/:id/messages/:seq`                            | edit my message; delete mine (a group admin: any)                                                                                                          |
+| `POST /c/:id/messages/:seq/reactions`                                                  | toggle an emoji                                                                                                                                            |
+| `POST /c/:id/read`, `POST /c/:id/clear`, `POST /c/:id/history/delete`                  | cursor, clear for me, delete history for everyone                                                                                                          |
+| `POST /c/:id/typing`                                                                   | a NOTIFY, stored nowhere                                                                                                                                   |
+| `PUT /favourites/:kind/:id`, `DELETE /favourites/:kind/:id`                            | pin and unpin                                                                                                                                              |
+| `GET /directory?q=`                                                                    | who I may chat with, with "online"; `q` matches the shown name, never the address                                                                          |
+| `GET /photo/:loginId?v=`                                                               | the older path of `GET /api/people/:id/photo` (People, below): the same handler and callers                                                                |
+| `GET /stream`                                                                          | the SSE stream (below)                                                                                                                                     |
+| `GET /unread`                                                                          | the badge                                                                                                                                                  |
+| `GET /capabilities`                                                                    | `{calls, callsAgent, video: false}`: whether this brain shows a Call button (Calls, below)                                                                 |
+| `POST /c/:id/call`, `POST /c/:id/call/token`                                           | start or join the chat's call; a fresh hour for the open one (Calls, below)                                                                                |
+| `POST /c/:id/call/leave`, `POST /c/:id/call/end`                                       | my leave (a courtesy); a group admin ends the call for everyone                                                                                            |
+| `DELETE /c/:id/call/participants/:loginId`                                             | a group admin drops a person from the call                                                                                                                 |
+| `POST /c/:id/call/agent`, `DELETE /c/:id/call/agent`                                   | P2: refused with one line, nothing recorded                                                                                                                |
+| `GET /c/:id/calls?before=&limit=`                                                      | the chat's calls, newest first                                                                                                                             |
 
 The DTOs are in `packages/client-types/src/dto/messenger.ts`. A mention is
 stored and starts nothing in Phase 1: no agent turn exists yet.
@@ -216,25 +222,25 @@ a scope). Agents are not logins: an agent's face is the messenger's.
 
 **The card** (`PersonCard`, `packages/client-types/src/dto/people.ts`):
 
-| Field | What |
-| --- | --- |
-| `id` | the login id |
-| `name` | the display name, else the mailbox part |
-| `avatar` | `{style, seed, parts}` as on a participant, or null (initials) |
-| `photoVersion` | the `v` of the photo route, or null (no photo) |
-| `presence` | `{state, lastActiveAt}`: `online` when the login's stream beat in the last two minutes (`login_presence`), else `offline`; the type also names `idle` and `busy`, which come later |
-| `status` | `{text, until}` or null; always null until a status is stored |
+| Field          | What                                                                                                                                                                               |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`           | the login id                                                                                                                                                                       |
+| `name`         | the display name, else the mailbox part                                                                                                                                            |
+| `avatar`       | `{style, seed, parts}` as on a participant, or null (initials)                                                                                                                     |
+| `photoVersion` | the `v` of the photo route, or null (no photo)                                                                                                                                     |
+| `presence`     | `{state, lastActiveAt}`: `online` when the login's stream beat in the last two minutes (`login_presence`), else `offline`; the type also names `idle` and `busy`, which come later |
+| `status`       | `{text, until}` or null; always null until a status is stored                                                                                                                      |
 
 **The routes**, under `/api/people`, each open to every login (`class:
 'self'`, `open: 'any'`) with the per-login limit `peopleRead` (600 a
 minute):
 
-| Route | What |
-| --- | --- |
-| `GET /api/people` | every card the caller may see, itself included, by name (one query after the Admin check; at most 1000, with no sign of more) |
-| `GET /api/people/:id` | `{ person }`, or the one 404 |
-| `GET /api/people/presence?ids=a,b,c` | `{ presence: [{id, state, lastActiveAt}] }` for the ids the caller may see; the first 200 ids are read, the rest ignored |
-| `GET /api/people/:id/photo?v=` | the photo's bytes, or the one 404 |
+| Route                                | What                                                                                                                          |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/people`                    | every card the caller may see, itself included, by name (one query after the Admin check; at most 1000, with no sign of more) |
+| `GET /api/people/:id`                | `{ person }`, or the one 404                                                                                                  |
+| `GET /api/people/presence?ids=a,b,c` | `{ presence: [{id, state, lastActiveAt}] }` for the ids the caller may see; the first 200 ids are read, the rest ignored      |
+| `GET /api/people/:id/photo?v=`       | the photo's bytes, or the one 404                                                                                             |
 
 **The photo** carries the headers of `/api/profile/photo` (`private`;
 `immutable` only when `v` is the photo served, revalidated otherwise),
@@ -294,20 +300,121 @@ from its member streams (`/api/member/realtime`). The heartbeat marks the
 login online. A client fetches `after_seq` on every event, on reconnect and on
 focus: seq makes the gap exact.
 
+## Calls
+
+Calls between people (plan page "PLAN: Calls and agent voice over LiveKit",
+sections 5, 8, 9, 11, 12 and 20; P1 M1 and M2). A call is a LiveKit room
+named after the conversation (`msgr-<conversationId>`); LiveKit runs on the
+box as the `calls` compose profile, switched from Settings > Services and
+off by default: no container, no ports, no Call button. Nothing else in the
+messenger model changes.
+
+**Start, join, leave.** A live participant taps Call: `POST /c/:id/call`
+opens the call row (one open call per conversation, a partial unique
+index), writes the system line `{type: 'call_started', callId}` at the
+next seq (so the existing `messenger_changed` trigger carries it to every
+client, which rings), and answers a one-hour token for the one room. Every
+later tap is a join: the same call, a token for that login. A login is in
+one call at a time across its devices: a second device swaps the first
+(the earlier participant is removed by identity before the new token is
+handed out), and a join to another chat's call drops it from the one it
+was in. `POST /c/:id/call/token` is a fresh hour with the same checks.
+`POST /c/:id/call/leave` is a courtesy mark (the webhook is the truth).
+A leaver of the chat is refused, an outsider hears "not found", calls off
+is one 404, a LiveKit that does not answer is one 503 with nothing written.
+
+**What the token says** (`packages/content/src/livekit.ts`): identity
+`login:<id>`, the shown name, one room, `roomJoin`, `canPublish`,
+`canSubscribe`, `canPublishData`, `canPublishSources: [microphone]`, one
+hour. Never an admin grant: a group admin's end and remove go through the
+room API on the brain. The API key pair lives in `.env` only.
+
+**The answer** (`packages/client-types/src/dto/calls.ts`,
+`MessengerCallJoinResponse`): `{callId, room, url, token, expiresAt, ice}`.
+`url` is `wss://<site>/livekit` (Caddy proxies `/livekit/*` to the
+service). `ice` is the ICE override of plan section 20: LiveKit tells a
+browser to reach TURN/TLS on port 443, which Caddy holds, so the brain
+hands the client `{urls: ['turns:<MANTLE_CALLS_HOST>:5349?transport=tcp',
+'turn:<MANTLE_CALLS_HOST>:3478?transport=udp'], username, credential}`,
+the room's own TURN credential pair read from the room API (`username` is
+the room's name, `credential` the room's TURN password, exactly as LiveKit
+mints them). The client passes it as `rtcConfig.iceServers` when it
+connects. `ice` is null when the box has no calls host or TURN is off:
+connect with LiveKit's own list then.
+
+**The chat's gate holds for the room.** A login that leaves the chat or is
+removed from it is dropped from the open call in the same transaction (its
+stay closes; the room drops its identity after commit), and the reconciler
+drops any identity in the room that is not a live participant. A group
+admin's `DELETE .../call/participants/:loginId` is a kick, not a ban: the
+person may tap Call again while still in the chat.
+
+**Who is in it, and when it ends.** LiveKit posts signed webhooks to
+`POST /api/livekit/webhook` (public at the gate, verified on the raw body
+with the API secret, 401 and no side effect on any failure, the body never
+logged, every event id kept a day so a replay is a no-op): a stay opens on
+`participant_joined` and closes on `participant_left`; `room_finished`
+closes the call row (`finished`, duration, head count) and writes the line
+`{type: 'call_ended', callId, seconds, participants}`. The reconciler in
+the events worker (`maybeReconcileCalls`, once a minute) is the truth when
+a webhook is lost: a row whose room is gone closes as `reconciled`, a row
+past `MANTLE_CALLS_MAX_MINUTES` closes as `cap_reached` with the room
+deleted and the line `{type: 'call_cap', ...}`, and a pass with the service
+off closes every row as `service_off`. It corrects stays to the room's
+list and never closes anything while LiveKit does not answer. It only
+closes: no cron, trigger or state change ever starts a call or a voice job
+(plan section 12).
+
+**Tables** (migration 0342, rollback beside it): `messenger_calls` (the
+row, with `started_seq`, the seq of its own "call started" line, so row
+security answers a call exactly as it answers that line: a live
+participant, a leaver up to its leave, a login added later from its add
+line) and `messenger_call_participants` (one row per stay; written by the
+webhook, corrected by the reconciler); `messenger_call_webhooks` is the
+replay guard, the system's alone. `messenger_messages.event` carries what
+a system line marks (`MessengerMessage.event` in the DTO; null on every
+other row). `messenger_conversations.voice_replies` is stored for P3 and
+read by nothing yet. Writes go through
+`packages/content/src/messenger-calls.ts` only, one transaction each on
+the system pool.
+
+**Limits** (plan section 12): a start or join 5 a minute per login
+(`messengerCall`), a refresh 12 (`messengerCallToken`), the other call
+writes `messengerWrite`; one open call per conversation; one call at a
+time per login; `MANTLE_CALLS_MAX_PARTICIPANTS` (25) people, checked at the
+tap and set on the room; `MANTLE_CALLS_MAX_MINUTES` (240) per call; the
+webhook 1 MB and 600 a minute per address.
+
+**Your own assistant.** `POST /api/assistant/:agentId/call` and
+`.../call/token` mint a token for the room `asst-<agentId>-<loginId>`
+(no `messenger_calls` row: assistant threads are not messenger rows), for
+an agent the login may chat with, and only where the agent worker is
+registered (`MANTLE_CALLS_AGENT=1`; the worker itself is P2, so until then
+nobody joins that room). `callId` is null in that answer.
+
+**Infra** (M2): the `livekit` service in `docker-compose.yml` behind the
+`calls` profile, its release-owned config `infra/livekit/livekit.yaml`
+(embedded in the image, refreshed by the updater like the Caddyfile,
+filled at container start from the environment), the Caddy route and the
+`access_token=` redaction in both shapes, the Settings > Services switch
+with its updater cases, the key pair `install.sh` writes. The four media
+ports (UDP 7882, TCP 7881, TCP 5349, UDP 3478) must be open at the cloud
+edge of a box; `infra/livekit/README.md` has the ops notes.
+
 ## MCP tools
 
 On the one login surface, MCP only (`mcpOnly`), none spends, none is risky,
 each runs as the caller in its scope:
 
-| Tool | What |
-| --- | --- |
-| `messenger_list` | my chats with unread and the last line |
-| `messenger_open` | messages of a chat, oldest first, with its people |
-| `messenger_send` | send as me; `client_msg_id` makes a retry safe |
-| `messenger_create` | a direct chat or a group |
-| `messenger_wait` | wait up to 60 s for messages after a seq; at most 100 at a time (`hasMore`: call again with `lastSeq`) |
-| `messenger_mark_read` | move my cursor |
-| `messenger_directory` | who I may chat with |
+| Tool                  | What                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------ |
+| `messenger_list`      | my chats with unread and the last line                                                                 |
+| `messenger_open`      | messages of a chat, oldest first, with its people                                                      |
+| `messenger_send`      | send as me; `client_msg_id` makes a retry safe                                                         |
+| `messenger_create`    | a direct chat or a group                                                                               |
+| `messenger_wait`      | wait up to 60 s for messages after a seq; at most 100 at a time (`hasMore`: call again with `lastSeq`) |
+| `messenger_mark_read` | move my cursor                                                                                         |
+| `messenger_directory` | who I may chat with                                                                                    |
 
 A connection that names no login (a peer bound to an Admin user the owner
 did not register) is refused: the tools never fall back to the brain owner.
@@ -375,3 +482,13 @@ a login's message that tags the group's agent, never by an agent's message.
   carries the history event.
 - `server/web/app/api/messenger/stream/messenger-stream-route.test.ts` and
   `server/web/lib/sse.test.ts`: the stream guards, its own slots.
+- Calls: `packages/content/src/livekit.test.ts` (the token's claims exactly,
+  the ICE override, the switch, the webhook signature);
+  `packages/content/src/messenger-calls.db.test.ts` (the token route's rules,
+  one open call, the started line and its NOTIFY, the device swap, the cap,
+  the webhook's stays and the ended line, the replay, the reconciler's four
+  cases, admin end and remove, the agent stub, row security, the assistant
+  twin); `server/web/app/api/livekit/webhook/webhook-route.test.ts` (401 on
+  any bad signature with nothing applied, the 1 MB ceiling);
+  `server/web/lib/caddy-layout.test.ts` (the route in both shapes, the
+  redaction, the release-owned config).

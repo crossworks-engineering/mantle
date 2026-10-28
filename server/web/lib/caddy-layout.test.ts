@@ -91,8 +91,11 @@ describe('infra/caddy layout', () => {
     // Apply the filter as Caddy does (Go's ReplaceAllString with ${n}).
     const re = new RegExp(m![1]!, 'g');
     const redact = (uri: string) =>
-      uri.replace(re, (_all, a?: string, b?: string) => `${a ?? ''}${b ?? ''}REDACTED`);
-    expect(m![2]).toBe('${1}${2}REDACTED');
+      uri.replace(
+        re,
+        (_all, a?: string, b?: string, c?: string) => `${a ?? ''}${b ?? ''}${c ?? ''}REDACTED`,
+      );
+    expect(m![2]).toBe('${1}${2}${3}REDACTED');
     const secret = 'AbCdEfGhJkMnPqRs';
     for (const [uri, want] of [
       [`/client-signin?code=${secret}`, '/client-signin?code=REDACTED'],
@@ -101,6 +104,14 @@ describe('infra/caddy layout', () => {
       ['/api/auth/invite/accept', '/api/auth/invite/accept'],
       ['/api/files/files/abc?raw=1', '/api/files/files/abc?raw=1'],
       ['/api/x?barcode=1', '/api/x?barcode=1'],
+      // The call token on the signalling URL (calls plan section 11), with
+      // the client's other parameters kept.
+      [`/livekit/rtc?access_token=${secret}`, '/livekit/rtc?access_token=REDACTED'],
+      [
+        `/livekit/rtc?protocol=16&access_token=${secret}&join_request=abc`,
+        '/livekit/rtc?protocol=16&access_token=REDACTED&join_request=abc',
+      ],
+      ['/livekit/rtc?my_access_token=1', '/livekit/rtc?my_access_token=1'],
     ] as const) {
       expect(redact(uri), uri).toBe(want);
       expect(redact(uri).includes(secret), uri).toBe(false);
@@ -127,6 +138,76 @@ describe('infra/caddy layout', () => {
       expect(value).toMatch(/^max-age=\d+$/); // no includeSubDomains, no preload
       expect(Number(/\d+/.exec(value)![0])).toBeGreaterThanOrEqual(31536000);
     }
+  });
+
+  it('routes calls signalling to livekit in both shapes, before the catch-all (calls plan section 4)', () => {
+    // The browser connects to wss://<site>/livekit; the prefix is stripped
+    // and the WebSocket proxied to the livekit service's internal port.
+    // Nothing on 7880 is ever published: compose publishes the four media
+    // ports only.
+    for (const shape of ['same-origin', 'split']) {
+      const body = read(`infra/caddy/shapes/${shape}.caddy`);
+      const route = body.indexOf('handle_path /livekit/* {');
+      expect(route, shape).toBeGreaterThan(-1);
+      expect(body.slice(route)).toMatch(
+        /^handle_path \/livekit\/\* \{\s*reverse_proxy livekit:7880\s*\}/,
+      );
+      expect(route, `${shape}: before the catch-all`).toBeLessThan(body.indexOf('\nhandle {'));
+    }
+    const compose = read('docker-compose.yml');
+    const livekit = compose.slice(
+      compose.indexOf('\n  livekit:\n'),
+      compose.indexOf('\n  sandboxd:\n'),
+    );
+    expect(livekit).toContain("profiles: ['calls']");
+    expect(livekit).toContain('image: livekit/livekit-server:v1.13.11');
+    for (const port of [
+      "'7882:7882/udp'",
+      "'7881:7881/tcp'",
+      "'5349:5349/tcp'",
+      "'3478:3478/udp'",
+    ]) {
+      expect(livekit).toContain(port);
+    }
+    expect(livekit).not.toMatch(/'7880:/);
+    expect(livekit).toContain('./infra/livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro');
+    // One certificate pair, not the whole ACME store; the values reach the
+    // shell as environment, never as command text.
+    expect(livekit).toMatch(
+      /acme-v02\.api\.letsencrypt\.org-directory\/\$\{MANTLE_CALLS_HOST[^}]*\}:\/caddy-cert:ro/,
+    );
+    expect(livekit).not.toContain('caddy/data:/caddy-data');
+    expect(livekit).toContain('case "$$MANTLE_CALLS_HOST" in');
+    expect(livekit).not.toMatch(/sed[^\n]*\$\{MANTLE_CALLS_HOST/);
+    expect(livekit).toContain('mem_limit: 512m');
+    // The config is release-owned like the Caddyfile: embedded in the image,
+    // refreshed by the updater, and it never carries the secret.
+    expect(read('Dockerfile')).toContain(
+      'COPY infra/livekit/livekit.yaml /app/release/livekit.yaml',
+    );
+    const updater = read('infra/updater/updater.sh');
+    expect(updater).toContain('refresh_livekit');
+    expect(updater).toContain('/app/release/livekit.yaml');
+    expect(updater).toMatch(/^SERVICE_PROFILES=".*\bcalls\b.*"$/m);
+    expect(updater).toContain('calls) echo mantle_livekit ;;');
+    expect(updater).toContain('calls) echo livekit ;;');
+    expect(updater).toContain('sandboxes | local-embedder | helpers | calls) : ;;');
+    // The calls host must be a name with a certificate: a dotted name, never
+    // a bare IP (install.sh holds the same rule).
+    expect(updater).toContain('ensure_calls_host()');
+    expect(updater).toContain('is not a hostname');
+    expect(updater).toContain('has no domain');
+    expect(updater).toContain('is an IP address');
+    const yaml = read('infra/livekit/livekit.yaml');
+    expect(yaml).toContain('port: 7880');
+    expect(yaml).toContain('tls_port: 5349');
+    expect(yaml).toContain('domain: __MANTLE_CALLS_HOST__');
+    // The pair is read where compose mounts it (one directory, /caddy-cert).
+    expect(yaml).toContain('cert_file: /caddy-cert/__MANTLE_CALLS_HOST__.crt');
+    expect(yaml).toContain('key_file: /caddy-cert/__MANTLE_CALLS_HOST__.key');
+    expect(yaml).not.toContain('/caddy-data');
+    expect(yaml).toContain('http://web:3000/api/livekit/webhook');
+    expect(yaml).not.toMatch(/secret/i);
   });
 
   it('box-local drop-ins are gitignored (public repo)', () => {

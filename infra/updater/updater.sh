@@ -105,6 +105,7 @@ UPDATER_REFRESH=none  # last updater-script refresh outcome (stack.json)
 UPDATER_REL=infra/updater/updater.sh
 CADDY_REL=infra/caddy/Caddyfile
 CADDY_SHAPES_REL=infra/caddy/shapes
+LIVEKIT_REL=infra/livekit/livekit.yaml
 SCRIPTS_REL=scripts
 # The operator scripts the image ships at /app/release/scripts. MUST match the
 # list release.yml puts in the deploy bundle and install.sh fetches — a script
@@ -436,6 +437,21 @@ refresh_caddy() {
          "Move box routes to infra/caddy/conf.d/*.caddy, then re-run: sudo sh scripts/compose-adopt.sh --apply" \
          "Release-level front-door changes are MISSING on this box." | tee -a "$SIG/update.log" ;;
     *) echo "[updater] ⚠ Caddyfile refresh: $CADDY_REFRESH" | tee -a "$SIG/update.log" ;;
+  esac
+}
+
+# refresh_livekit: the calls media server's config (infra/livekit/
+# livekit.yaml, calls plan page 886126b4 section 4), release-owned like a
+# shape: adopted where missing (the compose mounts it; docker would make a
+# DIRECTORY of a missing bind source), refreshed when pristine, left alone
+# and reported when hand-edited. The livekit container is recreated by the
+# roll's compose up like every other service. Requires IMG.
+refresh_livekit() {
+  LIVEKIT_REFRESH=$(refresh_file "$LIVEKIT_REL" /app/release/livekit.yaml yes)
+  case "$LIVEKIT_REFRESH" in
+    refreshed|adopted) echo "[updater] livekit.yaml $LIVEKIT_REFRESH ($1)" | tee -a "$SIG/update.log" ;;
+    current|unavailable) : ;;
+    *) echo "[updater] ⚠ livekit.yaml not refreshed: $LIVEKIT_REFRESH (a hand-edited copy is kept; calls run on it)" | tee -a "$SIG/update.log" ;;
   esac
 }
 
@@ -1301,7 +1317,7 @@ topup_scripts() {
 # /signal read-only) on boot, every ~5 min, after a roll and after a switch.
 # @mantle/config services is the reader. The file carries key NAMES' presence
 # only, never a value.
-SERVICE_PROFILES="sandboxes local-embedder helpers"
+SERVICE_PROFILES="sandboxes local-embedder helpers calls"
 # Request kinds this updater understands; the UI offers a switch only when
 # 'service' is listed.
 UPDATER_VERBS='"roll","service"'
@@ -1312,6 +1328,7 @@ service_container() {
     sandboxes) echo mantle_sandboxd ;;
     local-embedder) echo mantle_ollama ;;
     helpers) echo mantle_browser ;;
+    calls) echo mantle_livekit ;;
   esac
 }
 # service_containers <name>: every container an "on" waits on to be healthy.
@@ -1319,9 +1336,45 @@ service_containers() {
   service_container "$1"
 }
 # service_token_var <name>: the bearer token's .env key; nothing for the
-# local embedder and the helper, which the app reaches without one.
+# local embedder and the helper, which the app reaches without one. Calls:
+# the API secret the brain signs tokens and verifies webhooks with (its key
+# NAME, MANTLE_LIVEKIT_API_KEY, is provisioned beside it: ensure_livekit_key).
 service_token_var() {
-  case "$1" in sandboxes) echo SANDBOXD_TOKEN ;; esac
+  case "$1" in sandboxes) echo SANDBOXD_TOKEN ;; calls) echo MANTLE_LIVEKIT_API_SECRET ;; esac
+}
+
+# ensure_livekit_key: the key NAME beside the secret (LiveKit pairs them as
+# "key: secret"; the brain signs with the pair). 16 hex chars, never rotated.
+ensure_livekit_key() {
+  [ -z "$(env_val MANTLE_LIVEKIT_API_KEY)" ] || return 0
+  elk=$(gen_token) || return 1
+  persist_env MANTLE_LIVEKIT_API_KEY "mk$(printf '%s' "$elk" | cut -c1-16)"
+}
+
+# ensure_calls_host: MANTLE_CALLS_HOST, the ONE hostname TURN uses (its
+# certificate is Caddy's, so a name Caddy serves): the first of
+# MANTLE_SITE_ADDRESS when that is a hostname. 1 with ECH_ERR when the box
+# serves no hostname (":80", a bare IP): calls need a certificate.
+ensure_calls_host() {
+  [ -z "$(env_val MANTLE_CALLS_HOST)" ] || return 0
+  # Portable sed (busybox): scheme off, then the path, then a port.
+  ech=$(env_val MANTLE_SITE_ADDRESS | cut -d, -f1 | sed -e 's|^https://||' -e 's|^http://||' -e 's|/.*$||' -e 's|:[0-9]*$||' | tr -d ' ')
+  # A hostname with a dot, not a bare IP (install.sh holds the same rule):
+  # TURN needs a certificate, which Caddy issues for names only.
+  case "$ech" in
+    '' | :* | localhost | *[!A-Za-z0-9.-]*)
+      ECH_ERR="MANTLE_SITE_ADDRESS is not a hostname (${ech:-empty}); calls need a domain with a certificate. Set MANTLE_CALLS_HOST in .env"
+      return 1 ;;
+  esac
+  case "$ech" in
+    *.*) : ;;
+    *) ECH_ERR="MANTLE_SITE_ADDRESS has no domain (${ech}); calls need a domain with a certificate. Set MANTLE_CALLS_HOST in .env"; return 1 ;;
+  esac
+  case "$ech" in
+    *[!0-9.]*) : ;;
+    *) ECH_ERR="MANTLE_SITE_ADDRESS is an IP address (${ech}); calls need a domain with a certificate. Set MANTLE_CALLS_HOST in .env"; return 1 ;;
+  esac
+  persist_env MANTLE_CALLS_HOST "$ech"
 }
 
 # core_shape: docker-compose.core.yml is loaded (the 4 GB brain-core shape).
@@ -1406,6 +1459,10 @@ ensure_service_tokens() {
         | tee -a "$SIG/update.log"
     fi
   done
+  # The calls key NAME rides with its secret (both inert until the profile).
+  if [ -n "$(env_val MANTLE_LIVEKIT_API_SECRET)" ] && [ -z "$(env_val MANTLE_LIVEKIT_API_KEY)" ]; then
+    ensure_livekit_key && echo "[updater] MANTLE_LIVEKIT_API_KEY provisioned beside the secret" | tee -a "$SIG/update.log"
+  fi
 }
 
 # ensure_parser_token: the parser service's bearer token, written once and
@@ -1463,6 +1520,7 @@ compose_service() {
     sandboxes) echo sandboxd ;;
     local-embedder) echo ollama ;;
     helpers) echo browser ;;
+    calls) echo livekit ;;
   esac
 }
 
@@ -1585,6 +1643,16 @@ service_on() {
     SVC_TOKEN_NEW=1
     svc_log "$so_tv provisioned"
   fi
+  if [ "$1" = calls ]; then
+    # The key NAME beside the secret, the TURN hostname, and the config
+    # file the compose mounts (adopted from the image where missing).
+    ensure_livekit_key || { service_on_failed "$1" "could not write MANTLE_LIVEKIT_API_KEY"; return 1; }
+    ensure_calls_host || { service_on_failed "$1" "$ECH_ERR"; return 1; }
+    IMG=$(compose_image) 2>/dev/null
+    [ -z "$IMG" ] || refresh_livekit current
+    [ -s "$STACK/$LIVEKIT_REL" ] || { service_on_failed "$1" "$LIVEKIT_REL is missing and could not be taken from the image; nothing changed"; return 1; }
+    svc_log "MANTLE_CALLS_HOST=$(env_val MANTLE_CALLS_HOST); the four media ports (UDP 7882, TCP 7881, TCP 5349, UDP 3478) must be open at the box's edge"
+  fi
   if [ "$1" = sandboxes ] && [ -z "$(env_val MANTLE_SANDBOXES_HOST_DIR)" ]; then
     so_hd=$(sandboxes_host_dir)
     case "$so_hd" in
@@ -1693,7 +1761,7 @@ handle_service_request() {
   SVC_STARTED=$(now)
   # The whitelist: the only request input that reaches a command.
   case "$hs_svc" in
-    sandboxes | local-embedder | helpers) : ;;
+    sandboxes | local-embedder | helpers | calls) : ;;
     *) write_service_status error "" null "$SVC_STARTED" "$(now)" false "unknown service"; return 0 ;;
   esac
   case "$hs_en" in
@@ -1925,6 +1993,9 @@ while true; do
     # Front door too (same image, same roll): a release that changes the
     # Caddyfile or a shape lands with its image, no hand copy per box.
     [ "$REFRESH" = pull-failed ] || refresh_caddy "$TARGET"
+    # The calls media server's config rides the same roll (a no-op on a box
+    # that never switched calls on: the file is adopted, nothing runs it).
+    [ "$REFRESH" = pull-failed ] || refresh_livekit "$TARGET"
     # Operator tooling rides the same roll. It does not affect THIS update —
     # the scripts are run by hand — but it is what stops the next one being
     # applied by a compose-adopt three releases behind the compose it installs.

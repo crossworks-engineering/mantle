@@ -53,6 +53,9 @@ docker cp "$CID:/app/release/docker-compose.client.yml" "$TMP/canonical.client.y
 docker cp "$CID:/app/release/docker-compose.core.yml" "$TMP/canonical.core.yml" 2>/dev/null || true
 docker cp "$CID:/app/release/Caddyfile" "$TMP/Caddyfile" 2>/dev/null || true
 mkdir -p "$TMP/shapes"; docker cp "$CID:/app/release/caddy-shapes/." "$TMP/shapes" 2>/dev/null || true
+# The calls media server's config (profile `calls`), release-owned like a
+# shape; older images ship none.
+docker cp "$CID:/app/release/livekit.yaml" "$TMP/livekit.yaml" 2>/dev/null || true
 docker rm "$CID" >/dev/null
 [ -s "$TMP/canonical.yml" ] || {
   echo "✘ $IMG ships no embedded canonical (image is older than v0.142)" >&2
@@ -154,6 +157,20 @@ if [ -s "$TMP/Caddyfile" ]; then
     echo "  one domain routes both apps; set MANTLE_CADDY_SHAPE=split for the owner UI on its own hostname)"
   fi
   echo "  recreate the front door: docker compose up -d --no-deps --force-recreate caddy"
+fi
+if [ -s "$TMP/livekit.yaml" ]; then
+  mkdir -p "$STACK/infra/livekit" 2>/dev/null || true
+  if [ -w "$STACK/infra/livekit" ]; then
+    if [ -f "$STACK/infra/livekit/livekit.yaml" ] && ! cmp -s "$STACK/infra/livekit/livekit.yaml" "$TMP/livekit.yaml"; then
+      cp "$STACK/infra/livekit/livekit.yaml" "$STACK/infra/livekit/livekit.yaml.pre-adopt.$TS"
+      echo "  (previous livekit.yaml kept as infra/livekit/livekit.yaml.pre-adopt.$TS)"
+    fi
+    cp "$TMP/livekit.yaml" "$STACK/infra/livekit/livekit.yaml.release"
+    cp "$TMP/livekit.yaml" "$STACK/infra/livekit/livekit.yaml"
+    echo "✔ livekit.yaml canonical installed (calls profile; baseline seeded)"
+  else
+    echo "  infra/livekit is not writable: livekit.yaml left alone (the updater adopts it on the next roll)"
+  fi
 fi
 echo "  converge with: docker compose up -d --remove-orphans"
 echo "  (client stack: docker compose -f docker-compose.client.yml --project-directory . up -d)"

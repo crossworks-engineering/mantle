@@ -14,6 +14,15 @@
 # MANTLE_SERVER_ORIGIN=https://<domain> (the client app needs an absolute
 # origin for its server-side appearance fetch). MANTLE_CLIENT_SITE_ADDRESS
 # and MANTLE_API_CORS_ORIGINS stay unset.
+# Calls signalling (calls plan page 886126b4 section 4). The browser
+# connects to wss://<site>/livekit (the LiveKit client appends /rtc itself);
+# handle_path strips the prefix and Caddy proxies the WebSocket upgrade as
+# is. Media never passes through Caddy (the livekit service publishes its
+# own ports). With the `calls` profile off the upstream does not resolve
+# and the path answers 502, which is right: there is no Call button then.
+handle_path /livekit/* {
+	reverse_proxy livekit:7880
+}
 @server path /api /api/* /s /s/* /print /print/* /share-runtime/* /app-runtime/* /canvas-runtime/* /fonts/* /Inter/* /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource
 handle @server {
 	reverse_proxy web:3000

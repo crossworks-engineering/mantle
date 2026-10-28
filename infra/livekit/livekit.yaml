@@ -1,0 +1,52 @@
+# LiveKit server config for the `calls` compose profile (calls plan page
+# 886126b4, sections 4 and 20; P1 M2).
+#
+# Release-owned like the Caddyfile: the image embeds it under /app/release/,
+# the updater refreshes a pristine box copy on every roll, and a hand-edited
+# copy is left alone and reported. No credential lives here:
+#   - the API key pair comes from the environment (LIVEKIT_KEYS, built by
+#     compose from the two MANTLE_LIVEKIT_API_* values in .env);
+#   - __MANTLE_CALLS_HOST__ and __MANTLE_LIVEKIT_API_KEY__ are filled in at
+#     container start by the compose command (docker-compose.yml, service
+#     livekit), because LiveKit does not expand environment variables inside
+#     this file. The key is its public NAME only.
+#
+# Why these numbers: infra/livekit/README.md.
+
+port: 7880 # signalling (WebSocket), internal only: Caddy proxies /livekit/* here
+
+rtc:
+  udp_port: 7882 # one UDP port for all media (no 50000-60000 range)
+  tcp_port: 7881 # ICE over TCP, the fallback when UDP is blocked
+  use_external_ip: true # discover the public IP by STUN (bridge networking)
+
+turn:
+  enabled: true
+  domain: __MANTLE_CALLS_HOST__
+  # The calls host's own pair from Caddy's ACME store, mounted read-only at
+  # /caddy-cert (docker-compose.yml). The image runs as root, so the
+  # root-only certificate and key are readable.
+  cert_file: /caddy-cert/__MANTLE_CALLS_HOST__.crt
+  key_file: /caddy-cert/__MANTLE_CALLS_HOST__.key
+  # The TURN/TLS listener. LiveKit tells browsers turns:<domain>:443 whatever
+  # this says (a fixed string in the binary); the brain hands the client the
+  # ICE override with 5349 instead (plan section 20).
+  tls_port: 5349
+  udp_port: 3478 # TURN/UDP (also STUN)
+  external_tls: false
+
+room:
+  auto_create: true # the brain names the room after the conversation; the first join creates it
+  empty_timeout: 30 # seconds after the last leave before the room closes
+
+# Every room event goes to the brain, signed by the API key pair named here
+# (the brain verifies on the raw body, packages/content/src/livekit.ts). The
+# webhook route is public at the gate and judges the signature itself.
+webhook:
+  api_key: __MANTLE_LIVEKIT_API_KEY__
+  urls:
+    - http://web:3000/api/livekit/webhook
+
+logging:
+  json: true
+  level: info
