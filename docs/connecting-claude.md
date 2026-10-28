@@ -200,6 +200,34 @@ is in the Admin workspace; see [`mcp-as-a-login.md`](./mcp-as-a-login.md).)
 | Responder              | `ask_responder`, `ask_as_responder`, `responder_turn_input`, `responder_turn_record`, `invoke_agent`                                                                                                                                                                                                             |
 | Location               | `location_save`, `location_nearby`, `location_distance`, `route_map`                                                                                                                                                                                                                                             |
 
+### Tool hints: approve the reads once
+
+Every tool on the surface carries the MCP tool annotations (`title`,
+`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`),
+derived from its policy at registration
+(`packages/mcp-core/src/tool-annotations.ts`):
+
+- `readOnlyHint` is true exactly when the tool's declared policy says
+  `read` (a read mutates nothing the owner owns and sends nothing out).
+  Never derived from a name.
+- `destructiveHint` marks a write that cannot be undone: a hard delete, a
+  shell, an overwrite. A soft delete with an undelete (`app_delete`), a
+  draft edit a discard reverts, a restore that keeps what it replaces: not
+  destructive.
+- `idempotentHint`: a read, or a write documented as an upsert, a set or a
+  mark.
+- `openWorldHint`: a tool that reaches outside the brain: the web tools,
+  the mail and Telegram sends, the peer tools, every connector tool.
+- A connector tool (an MCP or OpenAPI connector's, a Toolsmith tool) gets
+  hints only once an admin confirmed it reads only (External access);
+  unmarked, it carries none.
+
+What it buys: Claude Desktop and claude.ai offer **Always allow** only on a
+read-only tool. Open the connector's tool permissions once, set the read
+tools to Always allow, and a search no longer asks. A write tool still asks
+by the client's own rule. The hints are advisory: the gate decides what
+runs, exactly as before.
+
 ### The two that are not on it
 
 - **`run_terminal`**: a shell in the brain's OWN container: postgres, the object store,

@@ -75,6 +75,10 @@ Ask Claude: "Search my brain for my last trip." It should call the `search` tool
 
 Writes are real. A note or task Claude makes is the same item the app shows, and the brain indexes it.
 
+## Approve the read tools once
+
+Claude asks before each tool call until you allow it. A tool that only reads (search, list, get) is marked read-only, so Claude offers **Always allow** for it. Open the connector's tool permissions in Claude, allow the read tools once, and searches stop asking. A tool that writes or sends still asks each time. That is Claude's rule, not MantleOS's.
+
 ## If it fails
 
 - **The connector URL says localhost**: set `MANTLE_PUBLIC_URL` and restart MantleOS.
