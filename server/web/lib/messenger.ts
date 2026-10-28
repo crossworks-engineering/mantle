@@ -32,6 +32,19 @@ export {
   toggleMessengerReaction,
   touchLoginPresence,
 } from '@mantle/content/messenger';
+export {
+  addCallAgent,
+  applyCallWebhook,
+  endCall,
+  leaveCall,
+  listCalls,
+  refreshCallToken,
+  removeCallAgent,
+  removeCallParticipant,
+  startAssistantCall,
+  startOrJoinCall,
+} from '@mantle/content/messenger-calls';
+export { callCapabilities, verifyLivekitWebhook } from '@mantle/content/livekit';
 
 /** The actor of a signed-in session: no credential label (a session's
  *  messages carry no via). */

@@ -112,6 +112,10 @@ export const PUBLIC_PATHS = [
   '/api/oauth',
   '/.well-known/oauth-authorization-server',
   '/.well-known/oauth-protected-resource',
+  // LiveKit's webhook (calls plan section 9): no session, the body is
+  // signed with the API secret and verified on the raw bytes before any
+  // write. See server/web/app/api/livekit/webhook/route.ts.
+  '/api/livekit/webhook',
   // /team, /hub and /api/team/* (the team-code portal) were retired in member
   // logins Phase 6: their old page URLs redirect to /login BEFORE this gate
   // (server/pages/stubs.ts mountRetiredTeamPages) and the API paths are gone.

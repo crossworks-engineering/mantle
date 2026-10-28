@@ -36,6 +36,7 @@ import {
 import { botAgentIdSql, sendMessage } from '@mantle/telegram';
 import { recordTurn } from '@mantle/runtime/agent';
 import { loadProfilePreferences, maybeRunScheduledBackups } from '@mantle/content';
+import { maybeReconcileCalls } from '@mantle/content/messenger-calls';
 import { maybeSweep } from '@mantle/tools';
 import { runWorker } from './_runner';
 import { pickWebDefaultAgent } from '@mantle/runtime/assistant';
@@ -199,6 +200,10 @@ async function tick(): Promise<void> {
   // Scheduled local DB backups (/settings/backups) — same piggyback pattern:
   // internally throttled to one due-check per minute, never throws.
   void maybeRunScheduledBackups();
+  // The calls reconciler (calls plan section 5): once a minute, closes a
+  // call whose room is gone, past its cap, or whose service is off. It
+  // only closes; it starts nothing. Throttled inside, never throws.
+  void maybeReconcileCalls();
   const owners = await ownersWithEvents();
   for (const ownerId of owners) {
     const due = await listDueReminders(ownerId, 50);

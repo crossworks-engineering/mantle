@@ -482,7 +482,12 @@ describe('the architecture ratchets (pinned counts)', () => {
     // People (+8, every one with a caller): GET /api/people, /presence,
     // /:id and /:id/photo with their HEADs (any login; the photo reads
     // loginAsset).
-    expect(rows.filter((r) => r.caller).length).toBe(822);
+    // Calls (+13, every one with a caller): GET /api/messenger/capabilities,
+    // POST /c/:id/call, /call/token, /call/leave, /call/end, /call/agent
+    // (+DELETE), DELETE /call/participants/:loginId, GET /c/:id/calls, the
+    // assistant twins POST /api/assistant/:agentId/call and /call/token,
+    // with the GETs' HEADs. The LiveKit webhook is public (no caller).
+    expect(rows.filter((r) => r.caller).length).toBe(835);
     expect(rows.length).toBe(882);
   });
 
