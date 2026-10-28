@@ -42,8 +42,11 @@ explicitly grant it and an optional per-app SQLite database.
    it succeeds (success returns `{ build_ok: true, warnings[], bytes }`). A
    failed build never replaces the last good preview.
 5. **Review** at `/apps/<id>` (the preview renders the draft build).
-6. **`app_publish(id)`**: promotes the draft + its green build to live. Refuses
-   without a successful build.
+6. **`app_publish(id, summary)`**: promotes the draft + its green build to
+   live. Refuses without a successful build. Pass `summary`: a few plain
+   sentences on what the app is, who it is for, how to use it and the tables
+   it keeps (600 characters at most). Search and the assistants find the app
+   by it. Without one, a model writes it from the code.
 
 `app_get(id, include_source?)` reads an app back; `app_list()` browses them;
 `app_delete(id)` removes one (irreversible, confirm first).

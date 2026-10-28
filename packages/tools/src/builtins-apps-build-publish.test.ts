@@ -37,6 +37,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
   };
 });
 vi.mock('@mantle/app-build', () => ({ buildApp: vi.fn(), loadRuntimeExports: vi.fn() }));
+vi.mock('./publish-summary', () => ({ appPublishSummary: vi.fn(async () => null) }));
 vi.mock('@mantle/storage/write', () => ({ putContent: vi.fn() }));
 vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content/app-broker')>();
@@ -67,6 +68,7 @@ import { AppSqlError, appDbSeedRows, checkAppSchemaScript } from '@mantle/conten
 import { createAppSnapshot } from '@mantle/content/app-snapshots';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { APP_TOOLS } from './builtins-apps';
+import { appPublishSummary } from './publish-summary';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const build = APP_TOOLS.find((t) => t.slug === 'app_build')!;
@@ -293,9 +295,33 @@ describe('app_publish', () => {
 
   it('promotes the draft under the caller and reports the live app', async () => {
     const res = await publish.handler({ id: APP_ID }, ctx);
-    expect(publishApp).toHaveBeenCalledWith('o1', APP_ID, { note: null, actor: 'agent' });
+    expect(publishApp).toHaveBeenCalledWith('o1', APP_ID, {
+      note: null,
+      actor: 'agent',
+      summary: null,
+    });
     expect(outputOf(res)).toMatchObject({ id: APP_ID, name: 'Weather', published: true });
     expect(outputOf(res).url).toMatch(APP_ID);
+  });
+
+  it("passes the author's summary to the summary gateway and its answer to the publish", async () => {
+    const kept = {
+      text: 'Logs readings.',
+      source: 'author' as const,
+      hash: 'h',
+      at: '2026-10-28T00:00:00.000Z',
+      model: null,
+    };
+    vi.mocked(appPublishSummary).mockResolvedValueOnce(kept);
+    await publish.handler({ id: APP_ID, summary: 'Logs readings.' }, ctx);
+    expect(appPublishSummary).toHaveBeenCalledWith('o1', APP_ID, 'Logs readings.', {
+      generate: true,
+    });
+    expect(publishApp).toHaveBeenCalledWith('o1', APP_ID, {
+      note: null,
+      actor: 'agent',
+      summary: kept,
+    });
   });
 
   it('surfaces the no-green-build refusal with the instruction to build first', async () => {

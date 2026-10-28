@@ -59,6 +59,7 @@ export {
 
 export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
 export { buildAndStageApp, type AppBuildOutcome } from './app-build-stage';
+export { appPublishSummary, presentPublishSummary } from './publish-summary';
 export { importAppPackage, type AppPackageImportResult } from './app-package-import';
 export { PRIVATE_OUTPUT_TOOL_SLUGS } from './private-output';
 export {

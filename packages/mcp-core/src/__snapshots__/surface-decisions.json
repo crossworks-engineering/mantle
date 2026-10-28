@@ -707,7 +707,7 @@
   "gate": {
    "effect": "write",
    "scope": "any",
-   "spends": "none",
+   "spends": "model",
    "creates": false,
    "keyArea": "apps",
    "peerRisky": true

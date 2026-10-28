@@ -6,7 +6,9 @@
  *   nodes.title           display name
  *   nodes.data.icon       optional emoji or `lucide:<name>` (projectAppIcon)
  *   nodes.data.color      optional tile tint key (APP_TINTS)
- *   nodes.data.summary    extractor-written summary (if 'app' is extracted)
+ *   nodes.data.summary    the summary the extractor indexes: the published
+ *                         summary (@mantle/db published-summary.ts), set by
+ *                         publishApp
  *   apps.source           { entry, files } — built + run
  *   apps.source_text      derived plaintext (concatenated source; FTS reads this)
  *   apps.manifest         { toolSlugs, sqlite, description }
@@ -30,7 +32,11 @@ import {
   shares,
   workspaces,
   markContentChanged,
+  resignalNode,
+  summaryHash,
+  writePublishedSummary,
   type Node,
+  type PublishedSummary,
   type AppSource,
   type AppManifest,
   type AppAuthorLevel,
@@ -202,6 +208,13 @@ function detailOf(n: Node, s: SidecarCols): AppDetail {
 export function sourceToText(src: AppSource): string {
   const paths = Object.keys(src.files).sort();
   return paths.map((p) => `// ${p}\n${src.files[p] ?? ''}`).join('\n\n');
+}
+
+/** What an app's published summary is made from (Journal v3 J9): its code
+ *  and its manifest (tools, schema, description). Equal before and after a
+ *  rebuild-only publish, so that one makes no second summarizer call. */
+export function appSummaryHash(source: AppSource, manifest: AppManifest): string {
+  return summaryHash(sourceToText(source), JSON.stringify(manifest ?? {}));
 }
 
 /** The Apps root branch of a brain (idempotent). Exported for the accept of
@@ -1029,6 +1042,12 @@ export type PublishAppOpts = {
   actor?: AppHistoryActor;
   /** The member a 'member' row names (team apps Phase 3). */
   actorLoginId?: string | null;
+  /** The summary this publish gives the app (Journal v3 J9): the author's,
+   *  or one the summarizer wrote for this code (@mantle/tools
+   *  publish-summary.ts). Written in the publish's transaction, so the
+   *  index the publish announces reads it. An author's summary is written
+   *  even when there is nothing to publish (the item is looked at again). */
+  summary?: PublishedSummary | null;
 };
 
 /** Who a history row names: HISTORY_ACTORS (@mantle/client-types/role-names).
@@ -1048,10 +1067,17 @@ export async function publishApp(
   const published = await db.transaction(async (tx) => {
     const app = await lockAppRow(tx, ownerId, id);
     if (!app) return null;
-    // Nothing staged and no rebuild waiting — already published.
+    // Nothing staged and no rebuild waiting: already published. A new
+    // summary of the author's still lands: the extractor is asked to look
+    // again once this commits (the code did not change, so no reset).
+    if (!app.draft && !app.draftBuild && opts.summary?.source === 'author') {
+      await writePublishedSummary(tx, id, opts.summary);
+      return 'summary' as const;
+    }
     if (!app.draft && !app.draftBuild) return false;
     if (!app.draftBuild?.ok) throw new NoGreenBuildError();
     await promote(tx, id, app.draft, app.draftBuild);
+    if (opts.summary) await writePublishedSummary(tx, id, opts.summary);
     // The version this publish makes (apps snapshots, Phase 2): the code
     // that just went live, appended in the same transaction.
     const code = {
@@ -1075,7 +1101,8 @@ export async function publishApp(
     return true;
   });
   if (published === null) return null;
-  if (published) void notifyAppNavChanged(ownerId);
+  if (published === 'summary') await resignalNode(id);
+  else if (published) void notifyAppNavChanged(ownerId);
   return loadDetail(ownerId, id);
 }
 

@@ -163,6 +163,66 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     expect(node!.work).toBe('extract');
   });
 
+  it("keeps the author's summary, writes the flush's in the announcing transaction, and never the flush's over the author's (J9)", async () => {
+    const key = 'published' + '_summary';
+    const kept = async (id: string) =>
+      (
+        await admin<
+          { s: { text: string; source: string; hash: string } | null; work: string | null }[]
+        >`
+          select data->${key} as s, data->>'index_work' as work from nodes where id = ${id}`
+      )[0]!;
+    const pastDue = (id: string) =>
+      su`update presents set index_due_at = now() - interval '1 second' where node_id = ${id}`;
+
+    // An author's summary at create, kept as written.
+    const a = await presents.createPresent(owner, {
+      source: canvas(`${tag} Authored`, 'x'),
+      summary: '  The feed pump P&ID\n for operators. ',
+    });
+    expect((await kept(a.id)).s).toMatchObject({
+      text: 'The feed pump P&ID for operators.',
+      source: 'author',
+    });
+
+    // The flush asks its hook; the hook's summary lands with the 'extract'
+    // reset, and survives that reset (it is not a summary key).
+    const b = await presents.createPresent(owner, { source: canvas(`${tag} Made`, 'y') });
+    await pastDue(b.id);
+    const asked: string[] = [];
+    const n = await presents.flushDuePresentIndex(25, async (c) => {
+      asked.push(c.id);
+      // The flush is brain-wide: answer for this test's canvas only.
+      return c.id === b.id
+        ? m.newPublishedSummary('A made summary.', 'publish', 'h1', 'cheap-model')
+        : null;
+    });
+    expect(n).toBeGreaterThanOrEqual(1);
+    expect(asked).toContain(b.id);
+    expect(await kept(b.id)).toMatchObject({
+      s: { text: 'A made summary.', source: 'publish' },
+      work: 'extract',
+    });
+
+    // An author's summary set later replaces it and marks the canvas due;
+    // the same text again writes nothing.
+    expect(await presents.setPresentSummary(owner, b.id, 'Mine now.')).toBe(true);
+    expect((await kept(b.id)).s).toMatchObject({ text: 'Mine now.', source: 'author' });
+    expect(await presents.setPresentSummary(owner, b.id, 'Mine now.')).toBe(false);
+    const [due] = await admin<{ due: unknown }[]>`
+      select index_due_at as due from presents where node_id = ${b.id}`;
+    expect(due!.due).not.toBeNull();
+
+    // A generated summary arriving after it never lands over it.
+    await pastDue(b.id);
+    await presents.flushDuePresentIndex(25, async (c) =>
+      c.id === b.id
+        ? m.newPublishedSummary('Generated late.', 'publish', 'h2', 'cheap-model')
+        : null,
+    );
+    expect((await kept(b.id)).s).toMatchObject({ text: 'Mine now.', source: 'author' });
+  });
+
   it('a canvas whose flush fails goes to the back; the next one is announced (the re-audit N4)', async () => {
     const stuck = await presents.createPresent(owner, { source: canvas(`${tag} Stuck`, 'a') });
     const next = await presents.createPresent(owner, { source: canvas(`${tag} Next`, 'b') });

@@ -1010,6 +1010,7 @@ The SVG is served sandboxed and rendered through an <img> tag, where external fe
 2. LOOK at the picture. A canvas can run clean and still be wrong: text cut off, labels overlapping, a chart empty because the data shape was off, a slide that overflows.
 3. Fix with \`present_update\` \`edits\` (find/replace pairs; each \`find\` must occur exactly once). Resend the whole \`source\` only for a rewrite. Pass \`if_rev\` with the rev you last saw.
 4. Stop when the picture is right and the errors are empty. Two or three rounds is normal; more than five means rethink the approach.
+5. Give the canvas its \`summary\` (on \`present_create\`, or on your last \`present_update\`): a few plain sentences on what it is, who it is for and what it shows. Search and the assistants find the canvas by it; a drawing has few words of its own. Pass it again only when what the canvas shows changed.
 
 \`present_render\` looks again without saving: \`at_seconds\` for a later moment of an animation, \`slide\` for one slide of a deck, \`theme: 'dark'\` to check the dark theme, \`width\`/\`height\` for a \`fill\` canvas.
 

@@ -6323,7 +6323,7 @@
  },
  {
   "name": "app_publish",
-  "description": "Publish the app draft: promote the draft source + its build to the live app, recorded as a new version on its history (`app_snapshot_list`). Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved. With NO draft staged this promotes a rebuild instead — `app_build` compiles the published source when there is no draft, so app_build then app_publish refreshes a stale bundle (e.g. one predating per-app CSS) without touching the code.",
+  "description": "Publish the app draft: promote the draft source + its build to the live app, recorded as a new version on its history (`app_snapshot_list`). Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved. With NO draft staged this promotes a rebuild instead: `app_build` compiles the published source when there is no draft, so app_build then app_publish refreshes a stale bundle (e.g. one predating per-app CSS) without touching the code. **Pass `summary`**: search and the assistants find the app by it; without one a model writes it from the code.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -6335,6 +6335,11 @@
      "type": "string",
      "maxLength": 500,
      "description": "Why this version, shown on the app's history, e.g. 'adds the export button'."
+    },
+    "summary": {
+     "type": "string",
+     "maxLength": 600,
+     "description": "Plain text: what the app is, who it is for, how to use it, and the data tables it keeps, e.g. 'Logs pump vibration readings per shift for the maintenance crew; pick a pump, enter the reading, see the trend. Tables: pumps, readings.'"
     }
    },
    "required": [
@@ -8015,7 +8020,7 @@
  },
  {
   "name": "present_create",
-  "description": "Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Change one with `present_update`.",
+  "description": "Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8050,6 +8055,11 @@
      },
      "description": "Labels, e.g. ['q3-review']."
     },
+    "summary": {
+     "type": "string",
+     "maxLength": 600,
+     "description": "Plain text: what the canvas is, who it is for, what it shows, e.g. 'P&ID of the feed pump skid for the operators: suction drum, two pumps in duty/standby, discharge to the heater.'"
+    },
     "look": {
      "type": "boolean",
      "description": "Draw the saved canvas and return the picture. False only for a batch of small fixes."
@@ -8064,7 +8074,7 @@
  },
  {
   "name": "present_update",
-  "description": "Change a canvas and return it drawn as a picture with its errors. Pass ONE of: `edits` (find/replace pairs, each `find` exactly once in the source: the usual fix), `source` (the whole new document), or `data` (a template canvas: its whole new data). `title`/`tags` alone change only the name and labels. Live at once; the last ten versions are kept (`present_revisions`). `if_rev` refuses the save when someone saved since you read it. A canvas can save small data viewers add with `mantle.data` (canvas_library `data`); read it with `present_get` `data: true` (returned as `store`).",
+  "description": "Change a canvas and return it drawn as a picture with its errors. Pass ONE of: `edits` (find/replace pairs, each `find` exactly once in the source: the usual fix), `source` (the whole new document), or `data` (a template canvas: its whole new data). `title`/`tags` alone change only the name and labels. Live at once; the last ten versions are kept (`present_revisions`). `if_rev` refuses the save when someone saved since you read it. Pass `summary` when what the canvas is or shows changed. A canvas can save small data viewers add with `mantle.data` (canvas_library `data`); read it with `present_get` `data: true` (returned as `store`).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8115,6 +8125,11 @@
       "type": "string"
      },
      "description": "Replaces all tags."
+    },
+    "summary": {
+     "type": "string",
+     "maxLength": 600,
+     "description": "Plain text: what the canvas is, who it is for, what it shows, e.g. 'P&ID of the feed pump skid for the operators: suction drum, two pumps in duty/standby, discharge to the heater.'"
     },
     "if_rev": {
      "type": "integer",

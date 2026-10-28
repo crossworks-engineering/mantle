@@ -23,12 +23,14 @@ import {
   createPresent,
   deletePresent,
   getPresent,
+  getPresentPoster,
   getPresentRevisionSource,
   listPresentRevisions,
   listPresents,
   readCanvas,
   savePresentSource,
   setPresentPoster,
+  setPresentSummary,
   updatePresent,
   type PresentDetail,
   type PresentRow,
@@ -43,7 +45,7 @@ import {
   saveExport,
   upsertFile,
 } from '@mantle/files';
-import { db, nodes } from '@mantle/db';
+import { db, nodes, PUBLISHED_SUMMARY_MAX_CHARS } from '@mantle/db';
 import { eq } from 'drizzle-orm';
 import { CANVAS_MODULE_SPECIFIERS, buildCanvasCss } from '@mantle/app-build';
 import { canvasLoadProblems } from '@mantle/content-core/canvas';
@@ -323,6 +325,33 @@ async function lookAndPoster(
     }
   }
   return seen;
+}
+
+/**
+ * A picture of a canvas's latest save for its published summary (Journal v3
+ * J9, publish-summary.ts): the poster when it shows the latest rev (every
+ * save with a look keeps one), else one render by the same renderer, kept as
+ * the poster. Null when neither is there (no renderer in this process, a
+ * failed or too large render). Never throws.
+ */
+export async function latestCanvasPicture(
+  ownerId: string,
+  p: PresentDetail,
+): Promise<{ png: Buffer; mime: 'image/png' | 'image/jpeg' } | null> {
+  try {
+    const poster = await getPresentPoster(ownerId, p.id);
+    if (poster?.current) return { png: poster.png, mime: 'image/png' };
+    const renderer = getCanvasRenderer();
+    if (!renderer) return null;
+    const result = await renderer(canvasRequest(ownerId, p.source, await cssOf(p.source), p.meta));
+    if (!result.ok || result.png.length > MAX_POSTER_BYTES) return null;
+    if (result.mime === 'image/png') {
+      await setPresentPoster(ownerId, p.id, result.png, p.rev).catch(() => false);
+    }
+    return { png: result.png, mime: result.mime };
+  } catch {
+    return null;
+  }
 }
 
 function lookWanted(input: Record<string, unknown>): boolean {
@@ -693,6 +722,14 @@ const LOOK_INPUT = {
     'Draw the saved canvas and return the picture. False only for a batch of small fixes.',
 } as const;
 
+/** The author's summary of a canvas (Journal v3 J9, publish-summary.ts). */
+const SUMMARY_INPUT = {
+  type: 'string',
+  maxLength: PUBLISHED_SUMMARY_MAX_CHARS,
+  description:
+    "Plain text: what the canvas is, who it is for, what it shows, e.g. 'P&ID of the feed pump skid for the operators: suction drum, two pumps in duty/standby, discharge to the heater.'",
+} as const;
+
 const present_create: BuiltinToolDef = {
   slug: 'present_create',
   policy: {
@@ -709,7 +746,7 @@ const present_create: BuiltinToolDef = {
   },
   name: 'Create a canvas',
   description:
-    'Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Change one with `present_update`.',
+    'Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -730,6 +767,7 @@ const present_create: BuiltinToolDef = {
         items: { type: 'string' },
         description: "Labels, e.g. ['q3-review'].",
       },
+      summary: SUMMARY_INPUT,
       look: LOOK_INPUT,
     },
   },
@@ -762,6 +800,7 @@ const present_create: BuiltinToolDef = {
         css,
         title: strOptTrim(input.title),
         tags: tagList(input.tags),
+        summary: strOptTrim(input.summary),
       });
       ctx.step?.setOutput({ id: p.id, title: p.title });
       const seen = lookWanted(input) ? await lookAndPoster(ctx, p, css) : null;
@@ -787,7 +826,7 @@ const present_update: BuiltinToolDef = {
   preconditions: PRESENT_ID_PRE,
   name: 'Update a canvas',
   description:
-    'Change a canvas and return it drawn as a picture with its errors. Pass ONE of: `edits` (find/replace pairs, each `find` exactly once in the source: the usual fix), `source` (the whole new document), or `data` (a template canvas: its whole new data). `title`/`tags` alone change only the name and labels. Live at once; the last ten versions are kept (`present_revisions`). `if_rev` refuses the save when someone saved since you read it. A canvas can save small data viewers add with `mantle.data` (canvas_library `data`); read it with `present_get` `data: true` (returned as `store`).',
+    'Change a canvas and return it drawn as a picture with its errors. Pass ONE of: `edits` (find/replace pairs, each `find` exactly once in the source: the usual fix), `source` (the whole new document), or `data` (a template canvas: its whole new data). `title`/`tags` alone change only the name and labels. Live at once; the last ten versions are kept (`present_revisions`). `if_rev` refuses the save when someone saved since you read it. Pass `summary` when what the canvas is or shows changed. A canvas can save small data viewers add with `mantle.data` (canvas_library `data`); read it with `present_get` `data: true` (returned as `store`).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -816,6 +855,7 @@ const present_update: BuiltinToolDef = {
       },
       title: { type: 'string', description: 'New display name.' },
       tags: { type: 'array', items: { type: 'string' }, description: 'Replaces all tags.' },
+      summary: SUMMARY_INPUT,
       if_rev: { type: 'integer', minimum: 1, description: 'The rev you read, e.g. 4.' },
       look: LOOK_INPUT,
     },
@@ -890,7 +930,15 @@ const present_update: BuiltinToolDef = {
         });
         if (row) detail = { ...row, source: detail.source };
       }
-      if (css === null) return saved(detail, null, { note: 'Only the name or labels changed.' });
+      const summary = strOptTrim(input.summary);
+      if (summary) await setPresentSummary(ctx.ownerId, id, summary);
+      if (css === null) {
+        return saved(detail, null, {
+          note: summary
+            ? 'Only the name, labels or summary changed.'
+            : 'Only the name or labels changed.',
+        });
+      }
       const seen = lookWanted(input) ? await lookAndPoster(ctx, detail, css) : null;
       return saved(detail, seen);
     } catch (err) {

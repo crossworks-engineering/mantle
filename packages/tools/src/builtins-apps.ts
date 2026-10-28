@@ -77,7 +77,13 @@ import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage, UUID_RE } from '@mantle/std';
-import { actingLoginId, isOwnerSurface, loginTurnSurfaceId, OWNER_ONLY_ERROR } from './surface';
+import {
+  actingLoginId,
+  isOwnerSurface,
+  loginTurnSurfaceId,
+  OWNER_ONLY_ERROR,
+  ownerKeysOff,
+} from './surface';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import { and as andWhere, eq as eqWhere, sql as sqlTag } from 'drizzle-orm';
 import {
@@ -87,7 +93,9 @@ import {
   mayManageSql,
   nodes as nodesTable,
   withCreateHome,
+  PUBLISHED_SUMMARY_MAX_CHARS,
 } from '@mantle/db';
+import { appPublishSummary } from './publish-summary';
 import { CS } from './client-sourced-rule';
 import { scopeOutsideAdmin } from './outside-admin';
 
@@ -934,7 +942,10 @@ const app_publish: BuiltinToolDef = {
   policy: {
     matrix: { action: 'editDraft', param: 'id', kinds: ['app'] },
     effect: 'write',
-    spends: 'none',
+    // Without an author's summary, one summarizer call (publish-summary.ts),
+    // which a connection outside Admin skips (ownerKeysOff).
+    spends: 'model',
+    startsModelWork: true,
     scope: 'any',
     outside: { appCode: true },
     itemArgs: [{ param: 'id' }],
@@ -947,7 +958,7 @@ const app_publish: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Publish a mini app',
   description:
-    'Publish the app draft: promote the draft source + its build to the live app, recorded as a new version on its history (`app_snapshot_list`). Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved. With NO draft staged this promotes a rebuild instead — `app_build` compiles the published source when there is no draft, so app_build then app_publish refreshes a stale bundle (e.g. one predating per-app CSS) without touching the code.',
+    'Publish the app draft: promote the draft source + its build to the live app, recorded as a new version on its history (`app_snapshot_list`). Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved. With NO draft staged this promotes a rebuild instead: `app_build` compiles the published source when there is no draft, so app_build then app_publish refreshes a stale bundle (e.g. one predating per-app CSS) without touching the code. **Pass `summary`**: search and the assistants find the app by it; without one a model writes it from the code.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -956,6 +967,12 @@ const app_publish: BuiltinToolDef = {
         type: 'string',
         maxLength: 500,
         description: "Why this version, shown on the app's history, e.g. 'adds the export button'.",
+      },
+      summary: {
+        type: 'string',
+        maxLength: PUBLISHED_SUMMARY_MAX_CHARS,
+        description:
+          "Plain text: what the app is, who it is for, how to use it, and the data tables it keeps, e.g. 'Logs pump vibration readings per shift for the maintenance crew; pick a pump, enter the reading, see the trend. Tables: pumps, readings.'",
       },
     },
     required: ['id'],
@@ -969,6 +986,11 @@ const app_publish: BuiltinToolDef = {
       const app = await publishApp(ctx.ownerId, id, {
         note: str(input.note) || null,
         actor: historyActor(ctx),
+        // Outside an Admin scope on a direct MCP, key or peer call, the
+        // owner's keys pay for no summary (as search_chunks' scoring).
+        summary: await appPublishSummary(ctx.ownerId, id, str(input.summary), {
+          generate: !ownerKeysOff(ctx),
+        }),
       });
       if (!app) return { ok: false, error: `app ${id} not found` };
       const warnings = await appToolWarnings(ctx.ownerId, id);

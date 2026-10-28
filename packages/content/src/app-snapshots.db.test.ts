@@ -118,6 +118,39 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     expect(file && existsSync(file.path)).toBe(true);
   });
 
+  it("a publish writes its summary with the code; an author's alone, with nothing to publish, lands too (J9)", async () => {
+    const key = 'published' + '_summary';
+    const app = await apps.createApp(owner, { title: `${tag} summary` });
+    await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "s";');
+    await apps.setDraftBuild(owner, app.id, GREEN);
+    const made = m.newPublishedSummary('Logs items.', 'publish', 'h1', 'cheap-model')!;
+    await apps.publishApp(owner, app.id, { actor: 'owner', summary: made });
+    const read = async () =>
+      (
+        await admin<{ s: { text: string; source: string } | null; work: string | null }[]>`
+          select data->${key} as s, data->>'index_work' as work from nodes where id = ${app.id}`
+      )[0]!;
+    // In the publish's transaction, beside the 'extract' reset it survives.
+    expect(await read()).toMatchObject({
+      s: { text: 'Logs items.', source: 'publish' },
+      work: 'extract',
+    });
+
+    // Nothing staged: an author's summary still lands; a generated one does not.
+    const mine = m.newPublishedSummary('Mine.', 'author', 'h1')!;
+    expect(await apps.publishApp(owner, app.id, { actor: 'owner', summary: mine })).not.toBeNull();
+    expect((await read()).s).toMatchObject({ text: 'Mine.', source: 'author' });
+    const late = m.newPublishedSummary('Late.', 'publish', 'h2', 'cheap-model')!;
+    await apps.publishApp(owner, app.id, { actor: 'owner', summary: late });
+    expect((await read()).s).toMatchObject({ text: 'Mine.', source: 'author' });
+
+    // A later publish's generated summary never lands over the author's.
+    await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "t";');
+    await apps.setDraftBuild(owner, app.id, GREEN);
+    await apps.publishApp(owner, app.id, { actor: 'owner', summary: late });
+    expect((await read()).s).toMatchObject({ text: 'Mine.', source: 'author' });
+  });
+
   it('restores the data, after an undo snapshot that can restore it back', async () => {
     const id = await publishedApp('data');
     const before = await snaps.createAppSnapshot(owner, id);

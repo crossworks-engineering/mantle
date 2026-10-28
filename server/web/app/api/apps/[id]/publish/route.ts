@@ -13,12 +13,19 @@
  *
  * The MCP `app_publish` tool deliberately keeps the explicit build-then-publish
  * loop: agents want the compile errors as their own feedback step.
+ *
+ * Body (optional): `{ summary }`, the author's summary of the app (Journal v3
+ * J9). Without one, one summarizer call writes it after a green build, unless
+ * the code and manifest are the ones the kept summary was made from
+ * (@mantle/tools publish-summary.ts).
  */
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getApp, publishApp } from '@mantle/content';
-import { buildAndStageApp } from '@mantle/tools';
-import { assertItemRight } from '@mantle/db';
+import { z } from 'zod';
+import { appPublishSummary, buildAndStageApp } from '@mantle/tools';
+import { assertItemRight, PUBLISHED_SUMMARY_MAX_CHARS } from '@mantle/db';
+import { readBody } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -35,7 +42,11 @@ export const policy = routePolicy({
   },
 });
 
-export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+const PublishBody = z.object({
+  summary: z.string().max(PUBLISHED_SUMMARY_MAX_CHARS).optional(),
+});
+
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
 
@@ -48,6 +59,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   // Nothing staged — committing is a no-op, and building here would leave a
   // stray artifact behind for a draft that doesn't exist.
   if (!existing.draft) return NextResponse.json({ app: existing });
+  // The body after the item: a caller who may not edit it is told so first.
+  const body = await readBody(req, PublishBody);
 
   const outcome = await buildAndStageApp(user.id, id);
   if (!outcome) return NextResponse.json({ error: 'app not found' }, { status: 404 });
@@ -59,7 +72,9 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   // NoGreenBuildError answers 409 by the one table (A10 part 2).
-  const app = await publishApp(user.id, id);
+  const app = await publishApp(user.id, id, {
+    summary: await appPublishSummary(user.id, id, body.summary),
+  });
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
   return NextResponse.json({ app });
 }
