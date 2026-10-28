@@ -55,12 +55,37 @@ describe('recordMcpCall', () => {
     const write = vi.fn(() => gate);
     setMcpCallWriter(write);
     const before = mcpCallLogStats();
-    for (let i = 0; i < MCP_CALL_LOG_MAX_IN_FLIGHT + 5; i++) recordMcpCall(entry);
+    // One login each, so none waits for another's row.
+    for (let i = 0; i < MCP_CALL_LOG_MAX_IN_FLIGHT + 5; i++) {
+      recordMcpCall({ ...entry, loginId: `login-${i}` });
+    }
+    await Promise.resolve();
     expect(write).toHaveBeenCalledTimes(MCP_CALL_LOG_MAX_IN_FLIGHT);
     expect(mcpCallLogStats().dropped - before.dropped).toBe(5);
     release();
     await mcpCallsSettled();
     expect(mcpCallLogStats().written - before.written).toBe(MCP_CALL_LOG_MAX_IN_FLIGHT);
+  });
+
+  it("one login's rows are written one after the other, in order", async () => {
+    startCallAudit({ sink: () => {} });
+    const order: string[] = [];
+    let release!: () => void;
+    const first = new Promise<void>((r) => (release = r));
+    setMcpCallWriter(async (e) => {
+      order.push(`start ${e.tool}`);
+      if (e.tool === 'a') await first;
+      order.push(`end ${e.tool}`);
+    });
+    recordMcpCall({ ...entry, loginId: 'l1', tool: 'a' });
+    recordMcpCall({ ...entry, loginId: 'l1', tool: 'b' });
+    recordMcpCall({ ...entry, loginId: 'l2', tool: 'c' });
+    await new Promise((r) => setImmediate(r));
+    // b waits for a; c (another login) does not.
+    expect(order).toEqual(['start a', 'start c', 'end c']);
+    release();
+    await mcpCallsSettled();
+    expect(order).toEqual(['start a', 'start c', 'end c', 'end a', 'start b', 'end b']);
   });
 
   it('a failed insert is counted, not retried, never thrown', async () => {

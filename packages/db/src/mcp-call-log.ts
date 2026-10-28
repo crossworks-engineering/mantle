@@ -14,9 +14,12 @@
  *
  * The work session (`session_id`) is read in the insert itself: the session
  * of the login's last call when that was within MCP_SESSION_GAP_MINUTES,
- * else a new one (one indexed lookup, mcp_calls_login_created_idx). Two
- * first calls at the same instant may open two sessions; a later reader
- * merges by time if it cares.
+ * else a new one (one indexed lookup, mcp_calls_login_created_idx). A
+ * client fires calls in parallel, so one login's rows are written one after
+ * the other in a process (each waits for the login's row before it): the
+ * first burst of a session lands in one session. Two processes (the web
+ * server and a stdio server) writing for one login at the same instant may
+ * still open two; a later reader merges by time if it cares.
  *
  * Reads (listMcpCalls) run on `db` in the caller's scope: the row rule of
  * 0345 gives a login its own rows and an Admin user's scope every row.
@@ -94,6 +97,8 @@ export function setMcpCallWriter(fn: ((e: McpCallEntry) => Promise<void>) | null
 }
 
 const inFlight = new Set<Promise<void>>();
+/** Each login's last row in flight: its next row waits for it. */
+const tails = new Map<string, Promise<void>>();
 const stats = { written: 0, dropped: 0, failed: 0 };
 let lastWarnAt = 0;
 const WARN_EVERY_MS = 10 * 60_000;
@@ -118,12 +123,10 @@ export function recordMcpCall(entry: McpCallEntry): void {
     lost('a call was not logged: too many rows in flight');
     return;
   }
-  let p: Promise<void>;
-  try {
-    p = write(entry);
-  } catch (err) {
-    p = Promise.reject(err);
-  }
+  // After the login's row before it, so it reads that row's session.
+  const key = entry.loginId ?? '';
+  const prev = tails.get(key) ?? Promise.resolve();
+  const p = prev.then(() => write(entry));
   const row = p.then(
     () => {
       stats.written += 1;
@@ -134,7 +137,11 @@ export function recordMcpCall(entry: McpCallEntry): void {
     },
   );
   inFlight.add(row);
-  void row.finally(() => inFlight.delete(row));
+  tails.set(key, row);
+  void row.finally(() => {
+    inFlight.delete(row);
+    if (tails.get(key) === row) tails.delete(key);
+  });
 }
 
 /** The counts since the process started (tests, diagnostics). */

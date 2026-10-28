@@ -290,7 +290,8 @@ about 4 KB and the error at about 1 KB.
 
 A call joins the work session of the same login's last call when that
 was within 30 minutes; otherwise it starts a new one. The insert reads it
-in the same statement.
+in the same statement, and one login's rows are written one after the
+other in a process, so a burst of parallel calls lands in one session.
 
 One place writes it: the one registration every MCP tool goes through
 (`packages/mcp-core/src/gated-tools.ts`, shaped by
