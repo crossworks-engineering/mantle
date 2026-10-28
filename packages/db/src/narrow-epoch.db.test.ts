@@ -87,32 +87,39 @@ describe.skipIf(!URL)('the narrow counts` epoch', () => {
     const narrow = boxQuery('narrow');
     const epoch = boxQuery('narrow_epoch');
     await su`delete from public.actor_check_misses where check_name like 'narrow-%'`;
-    // Before any epoch: every row counts, and the epoch reads none.
-    await row('narrow-content-write', 'system:admin-area', 'facts DELETE', '3 days');
+    // Before any epoch: every row counts, and the epoch reads none. Only
+    // narrow-denied is a count (a report row of a release before 0341 is
+    // not), by distinct actor and detail.
+    await row('narrow-denied', 'system:admin-area', 'permission denied for table facts', '3 days');
     await row('narrow-would-refuse', 'system:admin-area', 'public.audit_log DELETE', '3 days');
-    expect(await first(narrow)).toBe('1 0 0 1 1');
+    expect(await first(narrow)).toBe('1');
     expect(await first(epoch)).toBeUndefined();
 
     // A release's epoch two days ago: the older rows drop out.
     await row(NARROW_EPOCH_CHECK, '', '9.8.7', '2 days', 'migrate');
-    expect(await first(narrow)).toBe('0 0 0 0 0');
-    await row('narrow-content-write', 'system:admin-area', 'nodes UPDATE', '1 day');
+    expect(await first(narrow)).toBe('0');
     await row('narrow-denied', 'system:admin-area', 'permission denied for table nodes', '1 day');
-    await row('narrow-would-refuse', 'system:http:admin-area', 'public.agents UPDATE', '1 day');
-    expect(await first(narrow)).toBe('1 0 1 1 1');
+    await row('narrow-denied', 'system:admin-area', 'permission denied for table nodes', '2 hours');
+    await row('narrow-denied', 'system:http:admin-area', 'text:a-do-block', '1 day');
+    expect(await first(narrow)).toBe('2');
     expect(await first(epoch)).toMatch(/^9\.8\.7 \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
 
     // A later release's epoch: from 0 again.
     await row(NARROW_EPOCH_CHECK, '', '9.8.8', '1 hour', 'migrate');
-    expect(await first(narrow)).toBe('0 0 0 0 0');
-    await row('narrow-cascade-delete', 'system:http:admin-area', 'users DELETE', '1 minute');
-    expect(await first(narrow)).toBe('0 1 0 0 0');
+    expect(await first(narrow)).toBe('0');
+    await row(
+      'narrow-denied',
+      'system:http:admin-area',
+      'permission denied for table users',
+      '1 minute',
+    );
+    expect(await first(narrow)).toBe('1');
     expect(await first(epoch)).toMatch(/^9\.8\.8 /);
 
     // A hand reset (docs/runtime-role.md): its reason never leaves the box.
     await su`insert into public.actor_check_misses (source, check_name, actor, detail)
              values ('operator', 'narrow-epoch', '', 'reset: cause fixed by hand')`;
-    expect(await first(narrow)).toBe('0 0 0 0 0');
+    expect(await first(narrow)).toBe('0');
     expect(await first(epoch)).toMatch(/^reset \d{4}-/);
   });
 });
