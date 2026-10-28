@@ -31,6 +31,8 @@ const DECIDED: Readonly<Record<string, string>> = {
   'public.messenger_messages.event':
     'insert only (0342): what a system line marks (a call started, ended or cut at the cap: a type, the call id, seconds, a head count), set with the line by messenger-calls, never rewritten; read by no model',
   'public.audit_log.detail': 'insert only: an audit line, read by no model',
+  'public.mcp_calls.args':
+    "insert only (Journal v3 J8): an MCP call's arguments, secrets redacted and capped, written after the call; read by no model in J8 (a later step reads it as data, never as a prompt)",
   'public.team_access_log.detail': 'insert only: a member access log line, read by no model',
   'public.calendar_accounts.sync_state':
     "insert only: a new feed's sync cursor (the owner's feed, NARROW_REINSERT_HELD), no prompt",
