@@ -16,8 +16,11 @@
 -- gated-tools.ts, @mantle/db mcp-call-log.ts), fire and forget, through
 -- systemDb as system:audit:mcp-call (the narrow route in a login's scope:
 -- INSERT only, access-matrix.ts NARROW_WRITES). Its session id is read in
--- the same statement: the login's last call within 30 minutes gives its
--- session, else a new one (mcp_calls_login_created_idx).
+-- the same statement: the login's last call over the same via within 30
+-- minutes gives its session, else a new one (mcp_calls_login_created_idx;
+-- the via is a filter on the login's last 30 minutes, not a key of it).
+-- By login and via, so an API key or a peer bound to the owner never joins
+-- the owner's own client's session.
 --
 -- Read (the row rule below, for the workspace role): a login's own rows
 -- only, an Admin user's too (management, not reading: docs/workspaces.md),

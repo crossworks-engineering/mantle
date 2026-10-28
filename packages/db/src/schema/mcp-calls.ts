@@ -22,9 +22,9 @@ import { authUsers } from './auth-users';
  * arguments with secrets redacted and capped (about 4 KB); `error` the
  * refusal or thrown text (about 1 KB); `item_ids` the ids the arguments and
  * the top-level reply name (at most 50); `result_bytes` the reply's size.
- * No reply body is kept. `session_id` groups a login's calls into work
- * sessions: the session of its last call when that was within 30 minutes,
- * else a new one. `workspace_id` is the workspace the call named or a create
+ * No reply body is kept. `session_id` groups a login's calls over one
+ * `via` into work sessions: the session of its last call over that via
+ * when that was within 30 minutes, else a new one. `workspace_id` is the workspace the call named or a create
  * landed in, when it has one (a snapshot: no foreign key).
  *
  * Read: a login its own rows only, an Admin user too (the row rule of

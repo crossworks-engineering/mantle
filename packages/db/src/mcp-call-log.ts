@@ -13,13 +13,16 @@
  * stdio MCP server), so unit tests write none.
  *
  * The work session (`session_id`) is read in the insert itself: the session
- * of the login's last call when that was within MCP_SESSION_GAP_MINUTES,
- * else a new one (one indexed lookup, mcp_calls_login_created_idx). A
- * client fires calls in parallel, so one login's rows are written one after
- * the other in a process (each waits for the login's row before it): the
- * first burst of a session lands in one session. Two processes (the web
- * server and a stdio server) writing for one login at the same instant may
- * still open two; a later reader merges by time if it cares.
+ * of the login's last call over the same `via` when that was within
+ * MCP_SESSION_GAP_MINUTES, else a new one (one indexed lookup,
+ * mcp_calls_login_created_idx). By login and via, so an API key or a peer
+ * bound to the owner never joins the owner's Claude Desktop session, and a
+ * key that polls every few minutes keeps only its own session open. A
+ * client fires calls in parallel, so one login's rows over one via are
+ * written one after the other in a process (each waits for the row before
+ * it): the first burst of a session lands in one session. Two processes
+ * (the web server and a stdio server) writing for one login at the same
+ * instant may still open two; a later reader merges by time if it cares.
  *
  * Reads (listMcpCalls) run on `db` in the caller's scope: the row rule of
  * 0345 gives a login its own rows only, an Admin user too. A reader across
@@ -60,12 +63,13 @@ const MCP_CALL_ACTOR = systemActor('audit:mcp-call');
 const uuidOrNull = (v: string | null): string | null =>
   v && UUID_RE.test(v) ? v.toLowerCase() : null;
 
-/** The session the row joins: the login's last call within the gap, else a
- *  new one. */
-function sessionIdSql(loginId: string | null) {
+/** The session the row joins: the login's last call over `via` within the
+ *  gap, else a new one. */
+function sessionIdSql(loginId: string | null, via: string) {
   return sql`coalesce(
     (select c."session_id" from "public"."mcp_calls" c
       where c."login_id" = ${loginId}::uuid
+        and c."via" = ${via}
         and c."created_at" > now() - make_interval(mins => ${MCP_SESSION_GAP_MINUTES})
       order by c."created_at" desc limit 1),
     gen_random_uuid())`;
@@ -79,7 +83,7 @@ async function insertRow(e: McpCallEntry): Promise<void> {
       loginId,
       via: e.via,
       workspaceId: uuidOrNull(e.workspaceId),
-      sessionId: sessionIdSql(loginId),
+      sessionId: sessionIdSql(loginId, e.via),
       tool: e.tool,
       args: e.args,
       ok: e.ok,
@@ -99,7 +103,8 @@ export function setMcpCallWriter(fn: ((e: McpCallEntry) => Promise<void>) | null
 }
 
 const inFlight = new Set<Promise<void>>();
-/** Each login's last row in flight: its next row waits for it. */
+/** Each login's last row in flight over each via: its next row waits for
+ *  it. */
 const tails = new Map<string, Promise<void>>();
 const stats = { written: 0, dropped: 0, failed: 0 };
 let lastWarnAt = 0;
@@ -132,8 +137,9 @@ export function recordMcpCall(entry: McpCallEntry): void {
     lost('a call was not logged: too many rows in flight');
     return;
   }
-  // After the login's row before it, so it reads that row's session.
-  const key = entry.loginId ?? '';
+  // After the login's row before it over the same via, so it reads that
+  // row's session.
+  const key = `${entry.loginId ?? ''} ${entry.via}`;
   const prev = tails.get(key) ?? Promise.resolve();
   const p = prev.then(() => write(entry));
   const row = p.then(

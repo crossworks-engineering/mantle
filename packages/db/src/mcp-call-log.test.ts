@@ -80,12 +80,22 @@ describe('recordMcpCall', () => {
     recordMcpCall({ ...entry, loginId: 'l1', tool: 'a' });
     recordMcpCall({ ...entry, loginId: 'l1', tool: 'b' });
     recordMcpCall({ ...entry, loginId: 'l2', tool: 'c' });
+    recordMcpCall({ ...entry, loginId: 'l1', via: 'key', tool: 'd' });
     await new Promise((r) => setImmediate(r));
-    // b waits for a; c (another login) does not.
-    expect(order).toEqual(['start a', 'start c', 'end c']);
+    // b waits for a; c (another login) and d (l1 over another via) do not.
+    expect(order).toEqual(['start a', 'start c', 'end c', 'start d', 'end d']);
     release();
     await mcpCallsSettled();
-    expect(order).toEqual(['start a', 'start c', 'end c', 'end a', 'start b', 'end b']);
+    expect(order).toEqual([
+      'start a',
+      'start c',
+      'end c',
+      'start d',
+      'end d',
+      'end a',
+      'start b',
+      'end b',
+    ]);
   });
 
   it('a failed insert is counted, not retried, never thrown', async () => {
