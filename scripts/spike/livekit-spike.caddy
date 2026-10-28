@@ -1,0 +1,27 @@
+# P0 calls spike (box-local drop-in, lives in infra/caddy/conf.d/ on the box,
+# removed when the spike is torn down). Imported inside the main site block.
+
+# Signalling: the browser connects to wss://<site>/livekit, Caddy strips the
+# prefix and proxies the WebSocket upgrade to the spike container on the
+# compose network.
+handle_path /livekit/* {
+	reverse_proxy mantle_livekit_spike:7880
+}
+
+# The bare test page, served from the drop-in folder so no app code and no
+# release change is needed. Reachable only while this drop-in exists.
+handle_path /calls-spike/* {
+	root * /etc/caddy/conf.d/spike
+	file_server
+}
+
+# A second, named access logger with the token redacted. A drop-in cannot
+# change the release logger's filter, so this only proves whether a drop-in
+# can carry a redacted copy; the release filter must grow the same regexp.
+log livekit_spike {
+	output stdout
+	format filter {
+		wrap json
+		request>uri regexp "([?&]access_token=)[^&#]*" "${1}REDACTED"
+	}
+}

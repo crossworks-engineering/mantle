@@ -1,0 +1,42 @@
+# Calls profile (P1 draft from the P0 spike of 2026-10-28). NOT wired into
+# docker-compose.yml yet: P1 M2 merges this into the release compose behind
+# `profiles: [calls]` and the Settings > Services switch. Kept as its own file
+# so the spike's findings are reviewable without touching the stack.
+#
+# Ports published at the box (and opened at the cloud edge by the box owner,
+# decision D2): UDP 7882 media, TCP 7881 ICE/TCP fallback, TCP 5349 TURN/TLS,
+# UDP 3478 TURN/STUN. Signalling (7880) is NOT published: Caddy proxies it.
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    container_name: mantle_livekit
+    profiles: ['calls']
+    restart: unless-stopped
+    # LiveKit does not expand env vars in its yaml, so the release template is
+    # copied with the host filled in, then the server starts with the keys from
+    # the environment. MANTLE_CALLS_HOST must be ONE hostname (the first of
+    # MANTLE_SITE_ADDRESS when that carries several); install.sh writes it.
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >-
+        sed "s/__MANTLE_CALLS_HOST__/${MANTLE_CALLS_HOST:?set MANTLE_CALLS_HOST}/g"
+        /etc/livekit/livekit.yaml > /tmp/livekit.yaml
+        && exec /livekit-server --config /tmp/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: '${MANTLE_LIVEKIT_API_KEY:?}: ${MANTLE_LIVEKIT_API_SECRET:?}'
+    ports:
+      - '7882:7882/udp'
+      - '7881:7881/tcp'
+      - '5349:5349/tcp'
+      - '3478:3478/udp'
+    volumes:
+      - ./infra/livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro
+      - ./data/caddy/data:/caddy-data:ro
+    mem_limit: 512m
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '-', 'http://127.0.0.1:7880/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      autoheal: 'true'

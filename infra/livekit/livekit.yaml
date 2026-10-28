@@ -1,0 +1,39 @@
+# LiveKit server config for the `calls` compose profile (P1 draft from the P0
+# spike of 2026-10-28; not wired into the stack yet).
+#
+# Release-owned like the Caddyfile: the updater refreshes it from the image,
+# a hand-edited box copy is left alone and reported as drift. Nothing secret
+# lives here:
+#   - the API key and secret come from the environment (LIVEKIT_KEYS, built
+#     by compose from MANTLE_LIVEKIT_API_KEY / MANTLE_LIVEKIT_API_SECRET);
+#   - __MANTLE_CALLS_HOST__ is replaced at container start by the compose
+#     command (see docker-compose.calls.yml) with the box's public hostname,
+#     because LiveKit does not expand environment variables inside this file.
+#
+# Spike facts that shaped this file are in infra/livekit/README.md.
+
+port: 7880 # signalling (WebSocket), internal only: Caddy proxies /livekit/* here
+
+rtc:
+  udp_port: 7882 # single UDP port mux for all media (no 50000-60000 range)
+  tcp_port: 7881 # ICE over TCP, the fallback when UDP is blocked
+  use_external_ip: true # discover the public IP by STUN (bridge networking)
+
+turn:
+  enabled: true
+  domain: __MANTLE_CALLS_HOST__
+  # Caddy's ACME storage, mounted read-only at /caddy-data. The container runs
+  # as root, so the root-only cert and key are readable.
+  cert_file: /caddy-data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/__MANTLE_CALLS_HOST__/__MANTLE_CALLS_HOST__.crt
+  key_file: /caddy-data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/__MANTLE_CALLS_HOST__/__MANTLE_CALLS_HOST__.key
+  tls_port: 5349 # the TURN/TLS listener. NOTE: clients are told turns:<domain>:443, see README
+  udp_port: 3478 # TURN/UDP (also STUN)
+  external_tls: false
+
+room:
+  auto_create: true # the brain names the room after the conversation; first join creates it
+  empty_timeout: 30 # seconds after the last leave before the room closes
+
+logging:
+  json: true
+  level: info

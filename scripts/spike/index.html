@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Calls spike</title>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.23.0/dist/livekit-client.umd.js"></script>
+    <style>
+      body {
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+        margin: 16px;
+        background: #111;
+        color: #ddd;
+      }
+      button {
+        font: inherit;
+        padding: 6px 14px;
+        margin-right: 8px;
+      }
+      #tiles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: 12px 0;
+      }
+      .tile {
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 10px;
+        min-width: 200px;
+      }
+      .tile .bar {
+        height: 10px;
+        background: #333;
+        border-radius: 5px;
+        overflow: hidden;
+        margin-top: 6px;
+      }
+      .tile .bar i {
+        display: block;
+        height: 100%;
+        background: #3c3;
+        width: 0;
+        transition: width 0.1s;
+      }
+      .tile.speaking {
+        border-color: #3c3;
+      }
+      pre {
+        background: #000;
+        padding: 8px;
+        max-height: 40vh;
+        overflow: auto;
+        font-size: 12px;
+      }
+      code {
+        color: #9cf;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Calls spike <small id="mode"></small></h2>
+    <p>
+      <button id="join">Join</button>
+      <button id="leave" disabled>Leave</button>
+      <button id="audio">Start audio</button>
+      <span id="status">idle</span>
+    </p>
+    <p>
+      Query: <code>url</code> (default: this origin + /livekit), <code>token</code>,
+      <code>relay=1</code> (TURN only), <code>relay=tls</code> (TURN over TLS only, add
+      <code>tlsport=5349</code> to override the advertised 443), <code>tone=440</code> (publish a
+      pulsed tone instead of the microphone), <code>auto=1</code> (join on load). Assert from
+      <code>window.spike.summary()</code>.
+    </p>
+    <div id="tiles"></div>
+    <pre id="log"></pre>
+    <script>
+      (() => {
+        const q = new URLSearchParams(location.search);
+        const url = q.get('url') || location.origin.replace(/^http/, 'ws') + '/livekit';
+        const token = q.get('token') || '';
+        // relay=1: TURN only (Chrome picks UDP 3478 when it can). relay=tls: TURN over TLS 5349 only, the
+        // "UDP blocked" case: a first join reads the TURN credential LiveKit issues for the room, then the
+        // page reconnects with only the turns: server, so every packet rides TCP 5349.
+        const relay = q.get('relay') === '1' || q.get('relay') === 'tls';
+        const relayTls = q.get('relay') === 'tls';
+        const tone = q.get('tone') ? Number(q.get('tone')) : 0;
+        const auto = q.get('auto') === '1';
+
+        const S = (window.spike = {
+          state: 'idle',
+          url,
+          relay,
+          relayTls,
+          tone,
+          identity: null,
+          room: null,
+          iceServers: null,
+          connectMs: null,
+          publishMs: null,
+          connectedAt: null,
+          participants: {}, // identity -> { joinedAt }
+          level: {},
+          maxLevel: {}, // livekit participant.audioLevel (0..1), by identity
+          rms: {},
+          maxRms: {}, // page-side RMS from an AnalyserNode on the received track
+          moves: {}, // number of silence<->sound transitions seen per identity
+          ice: {}, // selected candidate pair per peer connection
+          events: [],
+          errors: [],
+          summary() {
+            const r = this.room;
+            return {
+              state: this.state,
+              url: this.url,
+              relay: this.relay,
+              relayTls: this.relayTls,
+              tone: this.tone,
+              identity: this.identity,
+              iceServers: this.iceServers,
+              connectMs: this.connectMs,
+              publishMs: this.publishMs,
+              secondsConnected: this.connectedAt
+                ? Math.round((Date.now() - this.connectedAt) / 1000)
+                : 0,
+              participants: Object.keys(this.participants),
+              remoteCount: r ? r.remoteParticipants.size : 0,
+              maxLevel: this.maxLevel,
+              maxRms: this.maxRms,
+              moves: this.moves,
+              ice: this.ice,
+              canPlaybackAudio: r ? r.canPlaybackAudio : null,
+              errors: this.errors,
+            };
+          },
+        });
+
+        const $ = (id) => document.getElementById(id);
+        const logEl = $('log');
+        function log(...a) {
+          const line =
+            new Date().toISOString().slice(11, 23) +
+            ' ' +
+            a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
+          S.events.push(line);
+          logEl.textContent += line + '\n';
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+        function setStatus(s) {
+          S.state = s;
+          $('status').textContent = s;
+        }
+        $('mode').textContent =
+          (relayTls ? '[relay, TLS 5349 only] ' : relay ? '[relay only] ' : '') +
+          (tone ? `[tone ${tone} Hz] ` : '[microphone] ');
+
+        const { Room, RoomEvent, Track, LocalAudioTrack } = LivekitClient;
+        let room = null,
+          actx = null,
+          taps = {};
+
+        function tile(identity) {
+          let el = document.querySelector(`.tile[data-id="${CSS.escape(identity)}"]`);
+          if (!el) {
+            el = document.createElement('div');
+            el.className = 'tile';
+            el.dataset.id = identity;
+            el.innerHTML = `<b>${identity}</b> <span class="meta"></span><div class="bar"><i></i></div><div class="nums"></div>`;
+            $('tiles').append(el);
+          }
+          return el;
+        }
+
+        // Page-side level: RMS of the audio actually received (or sent), independent of LiveKit's speaker detection.
+        function tap(identity, mediaStreamTrack) {
+          if (!actx) actx = new AudioContext();
+          actx.resume();
+          const src = actx.createMediaStreamSource(new MediaStream([mediaStreamTrack]));
+          const an = actx.createAnalyser();
+          an.fftSize = 1024;
+          src.connect(an);
+          taps[identity] = { an, buf: new Float32Array(an.fftSize), loud: false };
+          S.moves[identity] = 0;
+        }
+
+        function poll() {
+          if (!room) return;
+          const all = [room.localParticipant, ...room.remoteParticipants.values()];
+          for (const p of all) {
+            const id = p.identity;
+            S.level[id] = p.audioLevel;
+            S.maxLevel[id] = Math.max(S.maxLevel[id] || 0, p.audioLevel);
+            const t = taps[id];
+            let rms = 0;
+            if (t) {
+              t.an.getFloatTimeDomainData(t.buf);
+              let s = 0;
+              for (let i = 0; i < t.buf.length; i++) s += t.buf[i] * t.buf[i];
+              rms = Math.sqrt(s / t.buf.length);
+              S.rms[id] = rms;
+              S.maxRms[id] = Math.max(S.maxRms[id] || 0, rms);
+              const loud = rms > 0.01;
+              if (loud !== t.loud) {
+                t.loud = loud;
+                S.moves[id]++;
+              }
+            }
+            const el = tile(id);
+            el.classList.toggle('speaking', p.isSpeaking);
+            el.querySelector('.bar i').style.width =
+              Math.min(100, Math.round(Math.max(p.audioLevel, rms * 3) * 100)) + '%';
+            el.querySelector('.nums').textContent =
+              `level ${p.audioLevel.toFixed(3)} max ${S.maxLevel[id].toFixed(3)} | rms ${rms.toFixed(3)} max ${(S.maxRms[id] || 0).toFixed(3)} moves ${S.moves[id] || 0}`;
+          }
+        }
+
+        // The selected ICE candidate pair of each peer connection: proves host/srflx/relay and the relay protocol.
+        async function iceInfo() {
+          if (!room) return;
+          const reports = {};
+          try {
+            const lp = [...room.localParticipant.audioTrackPublications.values()][0];
+            if (lp && lp.track) reports.publisher = await lp.track.getRTCStatsReport();
+            for (const p of room.remoteParticipants.values()) {
+              const rp = [...p.audioTrackPublications.values()][0];
+              if (rp && rp.track) {
+                reports.subscriber = await rp.track.getRTCStatsReport();
+                break;
+              }
+            }
+          } catch (e) {
+            S.errors.push('stats ' + e.message);
+            return;
+          }
+          for (const [name, rep] of Object.entries(reports)) {
+            if (!rep) continue;
+            const by = {};
+            rep.forEach((v) => {
+              by[v.id] = v;
+            });
+            let pair = null;
+            rep.forEach((v) => {
+              if (v.type === 'transport' && v.selectedCandidatePairId)
+                pair = by[v.selectedCandidatePairId];
+            });
+            if (!pair)
+              rep.forEach((v) => {
+                if (v.type === 'candidate-pair' && v.nominated && v.state === 'succeeded') pair = v;
+              });
+            if (!pair) continue;
+            const l = by[pair.localCandidateId] || {},
+              r = by[pair.remoteCandidateId] || {};
+            S.ice[name] = {
+              local: {
+                type: l.candidateType,
+                protocol: l.protocol,
+                relayProtocol: l.relayProtocol || null,
+                port: l.port,
+              },
+              remote: { type: r.candidateType, protocol: r.protocol, port: r.port },
+              bytesSent: pair.bytesSent,
+              bytesReceived: pair.bytesReceived,
+              rttMs:
+                pair.currentRoundTripTime != null
+                  ? Math.round(pair.currentRoundTripTime * 1000)
+                  : null,
+            };
+          }
+        }
+
+        async function publish() {
+          const t0 = performance.now();
+          if (tone) {
+            if (!actx) actx = new AudioContext();
+            await actx.resume();
+            const osc = actx.createOscillator();
+            osc.frequency.value = tone;
+            const gain = actx.createGain();
+            const dest = actx.createMediaStreamDestination();
+            osc.connect(gain).connect(dest);
+            osc.start();
+            // 1 s on, 1 s off: the level must move on every other page.
+            let on = true;
+            gain.gain.value = 0.5;
+            setInterval(() => {
+              on = !on;
+              gain.gain.setTargetAtTime(on ? 0.5 : 0, actx.currentTime, 0.02);
+            }, 1000);
+            const mst = dest.stream.getAudioTracks()[0];
+            const track = new LocalAudioTrack(mst, undefined, true);
+            await room.localParticipant.publishTrack(track, {
+              source: Track.Source.Microphone,
+              dtx: false,
+              red: false,
+              name: 'tone',
+            });
+            tap(room.localParticipant.identity, mst);
+          } else {
+            await room.localParticipant.setMicrophoneEnabled(true);
+            const pub = [...room.localParticipant.audioTrackPublications.values()][0];
+            if (pub && pub.track) tap(room.localParticipant.identity, pub.track.mediaStreamTrack);
+          }
+          S.publishMs = Math.round(performance.now() - t0);
+          log('published', { ms: S.publishMs, tone: tone || 'microphone' });
+        }
+
+        async function join() {
+          if (!token) {
+            log('no token in the query string');
+            return;
+          }
+          $('join').disabled = true;
+          setStatus('connecting');
+          room = S.room = new Room({ adaptiveStream: false, dynacast: false });
+          room
+            .on(RoomEvent.Connected, () =>
+              log('connected', { room: room.name, identity: room.localParticipant.identity }),
+            )
+            .on(RoomEvent.ConnectionStateChanged, (st) => {
+              log('connectionState', st);
+              setStatus(st);
+            })
+            .on(RoomEvent.Disconnected, (reason) => {
+              log('disconnected', { reason });
+              setStatus('disconnected');
+              $('leave').disabled = true;
+              $('join').disabled = false;
+            })
+            .on(RoomEvent.ParticipantConnected, (p) => {
+              S.participants[p.identity] = { joinedAt: Date.now() };
+              log('participantConnected', p.identity);
+            })
+            .on(RoomEvent.ParticipantDisconnected, (p) => {
+              delete S.participants[p.identity];
+              log('participantDisconnected', p.identity);
+            })
+            .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
+              log('trackSubscribed', { from: p.identity, kind: track.kind, sid: pub.trackSid });
+              if (track.kind === 'audio') {
+                const el = track.attach();
+                tile(p.identity).append(el);
+                tap(p.identity, track.mediaStreamTrack);
+              }
+            })
+            .on(RoomEvent.TrackUnsubscribed, (track, pub, p) => {
+              log('trackUnsubscribed', p.identity);
+              track.detach().forEach((e) => e.remove());
+              delete taps[p.identity];
+            })
+            .on(RoomEvent.ActiveSpeakersChanged, (sp) =>
+              log(
+                'activeSpeakers',
+                sp.map((p) => p.identity),
+              ),
+            )
+            .on(RoomEvent.AudioPlaybackStatusChanged, () =>
+              log('canPlaybackAudio', room.canPlaybackAudio),
+            )
+            .on(RoomEvent.MediaDevicesError, (e) => {
+              S.errors.push('media ' + e.message);
+              log('mediaDevicesError', e.message);
+            })
+            .on(RoomEvent.SignalConnected, () => log('signalConnected'))
+            .on(RoomEvent.Reconnecting, () => log('reconnecting'))
+            .on(RoomEvent.Reconnected, () => log('reconnected'));
+          const opts = { autoSubscribe: true };
+          if (relay) opts.rtcConfig = { iceTransportPolicy: 'relay' };
+          if (relayTls) {
+            // First join: only to read the ICE servers (urls, username, credential) the server hands out.
+            const probe = new Room();
+            try {
+              await probe.connect(url, token, {
+                autoSubscribe: false,
+                rtcConfig: { iceTransportPolicy: 'relay' },
+              });
+              const servers = (probe.engine.latestJoinResponse?.iceServers || []).map((s) => ({
+                urls: s.urls,
+                username: s.username,
+                credential: s.credential,
+              }));
+              S.iceServers = servers.map((s) => ({ urls: s.urls, hasCredential: !!s.credential }));
+              // LiveKit advertises turns:<domain>:443 whatever turn.tls_port says (443 is Caddy's). tlsport=5349
+              // rewrites the advertised port so the TURN/TLS listener itself can be proven.
+              const tlsPort = q.get('tlsport');
+              const tls = servers
+                .map((s) => ({
+                  ...s,
+                  urls: s.urls
+                    .filter((u) => u.startsWith('turns:'))
+                    .map((u) => (tlsPort ? u.replace(/:443\?/, `:${tlsPort}?`) : u)),
+                }))
+                .filter((s) => s.urls.length);
+              if (!tls.length) throw new Error('server offered no turns: ICE server');
+              opts.rtcConfig.iceServers = tls;
+              log(
+                'turns servers',
+                tls.map((s) => s.urls),
+              );
+            } finally {
+              await probe.disconnect();
+            }
+          }
+          log('connect', { url, relay, relayTls });
+          const t0 = performance.now();
+          try {
+            await room.connect(url, token, opts);
+          } catch (e) {
+            S.errors.push('connect ' + e.message);
+            log('connect FAILED', e.message);
+            setStatus('failed');
+            $('join').disabled = false;
+            return;
+          }
+          S.connectMs = Math.round(performance.now() - t0);
+          S.connectedAt = Date.now();
+          S.identity = room.localParticipant.identity;
+          for (const p of room.remoteParticipants.values())
+            S.participants[p.identity] = { joinedAt: Date.now() };
+          log('connected in ms', S.connectMs, 'remote', room.remoteParticipants.size);
+          $('leave').disabled = false;
+          try {
+            await publish();
+          } catch (e) {
+            S.errors.push('publish ' + e.message);
+            log('publish FAILED', e.message);
+          }
+          room.startAudio().catch(() => {});
+          setInterval(poll, 250);
+          setInterval(iceInfo, 2000);
+        }
+
+        $('join').onclick = join;
+        $('leave').onclick = async () => {
+          if (room) {
+            await room.disconnect();
+          }
+        };
+        $('audio').onclick = () => {
+          if (room) room.startAudio().then(() => log('startAudio ok'));
+          if (actx) actx.resume();
+        };
+        if (auto) join();
+      })();
+    </script>
+  </body>
+</html>

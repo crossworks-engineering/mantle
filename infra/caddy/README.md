@@ -54,3 +54,30 @@ someone had to remember. Boxes drifted (one carried its own comment header),
 and a route added by hand for a client integration would have been wiped by
 the next roll. Now the file is the same everywhere, the shape is a switch, and
 the routes a box adds live where a roll cannot reach them.
+
+## Calls (LiveKit) route: P1 draft from the P0 spike
+
+Not in the Caddyfile yet. The spike ran these lines from a box-local drop-in;
+P1 M2 moves them into the release file (both shapes, before the catch-all)
+and grows the access-log filter, because a drop-in cannot change the release
+logger and the signalling URL carries the join token as a query parameter.
+
+```
+# Calls signalling. The browser connects to wss://<site>/livekit (the JS
+# client appends /rtc itself); handle_path strips the prefix and Caddy
+# proxies the WebSocket upgrade as is. Media never passes through Caddy.
+# handle_path /livekit/* {
+# 	reverse_proxy livekit:7880
+# }
+#
+# In the log filter, extend the uri regexp so the token is redacted like
+# the sign-in code is today (one alternation more, one group more):
+# request>uri regexp "(^/api/auth/invite/)[A-Za-z0-9]{16}|([?&]code=)[^&#]*|([?&]access_token=)[^&#]*" "${1}${2}${3}REDACTED"
+```
+
+Spike evidence (2026-10-28): the release logger printed the full JWT in
+`"uri":"/livekit/rtc?access_token=eyJ..."` for every signalling request; a
+second, named `log` directive in the drop-in printed the same requests with
+`access_token=REDACTED` but doubled every access-log line, so it is not the
+fix. The `join_request=` parameter next to the token is the client's
+protobuf join request (client info, connection settings), not a secret.

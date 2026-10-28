@@ -1,0 +1,9 @@
+{
+  "name": "mantle-calls-spike",
+  "private": true,
+  "type": "module",
+  "description": "P0 calls spike helpers: token minting on the Mac. Not part of the workspace.",
+  "dependencies": {
+    "livekit-server-sdk": "2.19.2"
+  }
+}
