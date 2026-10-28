@@ -347,6 +347,7 @@ export const sandbox_list: BuiltinToolDef = {
 export const sandbox_stop: BuiltinToolDef = {
   slug: 'sandbox_stop',
   policy: {
+    idempotent: true, // no-op when already stopped
     matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',

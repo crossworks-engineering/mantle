@@ -421,7 +421,7 @@ export const app_data_query: BuiltinToolDef = {
 export const app_data_write: BuiltinToolDef = {
   slug: 'app_data_write',
   policy: {
-    destructive: true, // a raw DELETE or REPLACE on an app's live rows
+    destructive: true, // a raw DELETE or REPLACE on live rows; only the first write in an hour snapshots first
     matrix: { action: 'appData', param: 'app_id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',

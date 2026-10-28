@@ -5953,7 +5953,7 @@
    "title": "table_set_view",
    "readOnlyHint": false,
    "destructiveHint": false,
-   "idempotentHint": false,
+   "idempotentHint": true,
    "openWorldHint": false
   }
  },
@@ -8096,7 +8096,7 @@
    "title": "sandbox_stop",
    "readOnlyHint": false,
    "destructiveHint": false,
-   "idempotentHint": false,
+   "idempotentHint": true,
    "openWorldHint": false
   }
  },
@@ -11984,7 +11984,7 @@
   "annotations": {
    "title": "api_docs_set",
    "readOnlyHint": false,
-   "destructiveHint": false,
+   "destructiveHint": true,
    "idempotentHint": true,
    "openWorldHint": false
   }
@@ -12052,7 +12052,7 @@
   "annotations": {
    "title": "api_skill_set",
    "readOnlyHint": false,
-   "destructiveHint": false,
+   "destructiveHint": true,
    "idempotentHint": true,
    "openWorldHint": false
   }
@@ -12319,7 +12319,7 @@
   "annotations": {
    "title": "tool_group_ensure",
    "readOnlyHint": false,
-   "destructiveHint": false,
+   "destructiveHint": true,
    "idempotentHint": true,
    "openWorldHint": false
   }
