@@ -75,10 +75,8 @@ describe('MCP tool hints on the surface', () => {
   });
 
   it('destructive and idempotent are declared on writes only', () => {
-    for (const def of BUILTIN_TOOLS) {
-      if (def.policy.destructive || def.policy.idempotent) {
-        expect(def.policy.effect, def.slug).toBe('write');
-      }
+    for (const [slug, policy] of POLICY) {
+      if (policy.destructive || policy.idempotent) expect(policy.effect, slug).toBe('write');
     }
   });
 
@@ -118,6 +116,8 @@ describe('MCP tool hints on the surface', () => {
 
   it('pins the destructive tools', () => {
     expect(names((r) => r.hints?.destructiveHint)).toEqual([
+      'api_docs_set',
+      'api_skill_set',
       'api_tool_delete',
       'api_tool_update',
       'app_data_write',
@@ -147,6 +147,7 @@ describe('MCP tool hints on the surface', () => {
       'table_snapshot_delete',
       'task_delete',
       'task_update',
+      'tool_group_ensure',
     ]);
   });
 
@@ -169,10 +170,12 @@ describe('MCP tool hints on the surface', () => {
       'recall_map_publish',
       'run_cancel',
       'sandbox_autostart',
+      'sandbox_stop',
       'set_timezone',
       'table_cell_set',
       'table_rows_upsert',
       'table_set_aggregate',
+      'table_set_view',
       'telegram_mark_processed',
       'tool_group_ensure',
       'worker_group_ensure',

@@ -166,11 +166,13 @@ type ToolPolicyFields = Readonly<{
    *  (tool-matrix.test.ts pins the two agree: the matrix itself is intent
    *  only, read by no product code). */
   deletesItem?: true;
-  /** The write cannot be undone (a hard delete, a free-form shell, an
-   *  overwrite): the MCP surface tells the client so (`destructiveHint`,
+  /** The write destroys stored data nothing keeps (a hard delete, a
+   *  free-form shell, a replace of a whole body, list or file with no
+   *  revision): the MCP surface tells the client so (`destructiveHint`,
    *  @mantle/mcp-core tool-annotations.ts). A soft delete with an undelete,
    *  a draft edit a discard reverts, a restore that keeps what it
-   *  replaces: unset. Advisory: no gate reads it. */
+   *  replaces, a send (nothing stored is destroyed): unset. Advisory: no
+   *  gate reads it. */
   destructive?: true;
   /** Calling it again with the same arguments changes nothing more (an
    *  upsert, a set, a mark, a no-op when already so): `idempotentHint`.

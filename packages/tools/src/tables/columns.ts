@@ -323,6 +323,7 @@ export const table_set_aggregate: BuiltinToolDef = {
 export const table_set_view: BuiltinToolDef = {
   slug: 'table_set_view',
   policy: {
+    idempotent: true, // create or update by name
     matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
