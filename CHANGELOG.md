@@ -4,6 +4,28 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: MCP tool hints
+
+- **Feature:** every tool on the MCP surface carries the MCP tool
+  annotations (`title`, `readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`), derived from its policy at
+  registration (`packages/mcp-core/src/tool-annotations.ts`, one pure
+  function). `readOnlyHint` is true exactly when the declared policy says
+  `read`; `destructiveHint` marks a write that cannot be undone (the hard
+  deletes, the shells, the file overwrites); `idempotentHint` a read or a
+  documented upsert; `openWorldHint` the web tools, the mail and Telegram
+  sends, the peer tools and every connector tool. A connector tool carries
+  hints only once an admin confirmed it reads only. Advisory: the gate
+  decides what runs, exactly as before. Why: Claude Desktop offers "Always
+  allow" only on a read-only tool, so a Teams user had to approve every
+  search (2026-10-28). Docs: [docs/connecting-claude.md](docs/connecting-claude.md),
+  "Tool hints: approve the reads once".
+- **Upgrade notes:** after the roll, open the connector's tool permissions
+  in Claude Desktop (or claude.ai) and set the read tools to Always allow,
+  once per connector. The tools/list snapshots moved
+  (`packages/mcp-core/src/__snapshots__`): the hints, no tool added or
+  removed.
+
 ## Unreleased: the documents engine (Gotenberg) beside the browser sidecar
 
 - **Feature:** a second render sidecar, the documents engine

@@ -60,6 +60,7 @@ import { zodShapeFromJsonSchema } from './register/zod-schema';
 import { withModelImages } from './register/model-images';
 import { refusalReply } from './refusal-reply';
 import { WORKSPACE_ARG, withLanding, withWorkspaceArg } from './create-home';
+import { toolAnnotations } from './tool-annotations';
 // The `mcp-tool` policy source the listing and the calls read.
 import './gate-policy';
 
@@ -333,6 +334,13 @@ export function registerGatedTool(
       throw inner;
     }
   };
-  server.registerTool(name, { description, inputSchema }, handler as never);
+  // The hints a client reads (tool-annotations.ts): advisory, the gate
+  // above decides what runs.
+  const annotations = toolAnnotations(entry, policy);
+  server.registerTool(
+    name,
+    { description, inputSchema, ...(annotations ? { annotations } : {}) },
+    handler as never,
+  );
   return true;
 }
