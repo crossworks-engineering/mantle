@@ -1,17 +1,18 @@
 # Optional services: start and stop from Settings
 
-Three parts of a box are optional, and an admin can switch each one on or off
+Four parts of a box are optional, and an admin can switch each one on or off
 from **Settings > Services** (`/settings/services`, admins only). The System
 vitals pills on the dashboard show each one's state and link there:
 
-| service            | what it does                                                                                                                | download                                                                                        | memory                                                         |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| **Sandboxes**      | Isolated workspaces where the coder and app agents run code, build apps and test packages ([sandboxes.md](sandboxes.md)).   | about 430 MB (the sandbox base image; the supervisor uses the server image the box already has) | 512 MB, plus up to 1 GB for each running sandbox (3 at a time) |
-| **Local embedder** | The bundled EmbeddingGemma embedder (ollama), so indexed text never leaves the box ([embeddings.md](embeddings.md)).        | about 3.9 GB (the ollama image plus the model)                                                  | up to 2 GB                                                     |
-| **Helpers**        | Core boxes only: the headless browser (PDF export, drawing pictures in exports).                                          | about 1 GB                                                                                      | up to 1.5 GB                                                   |
+| service            | what it does                                                                                                                                             | download                                                                                        | memory                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| **Sandboxes**      | Isolated workspaces where the coder and app agents run code, build apps and test packages ([sandboxes.md](sandboxes.md)).                                | about 430 MB (the sandbox base image; the supervisor uses the server image the box already has) | 512 MB, plus up to 1 GB for each running sandbox (3 at a time) |
+| **Local embedder** | The bundled EmbeddingGemma embedder (ollama), so indexed text never leaves the box ([embeddings.md](embeddings.md)).                                     | about 3.9 GB (the ollama image plus the model)                                                  | up to 2 GB                                                     |
+| **Helpers**        | Core boxes only: the headless browser (PDF export, drawing pictures in exports).                                                                         | about 1 GB                                                                                      | up to 1.5 GB                                                   |
+| **Documents**      | The documents engine (Gotenberg): Office files to PDF, page and HTML prints with headers and page numbers, the PDF tools ([documents.md](documents.md)). | about 700 MB (2.4 GB on disk)                                                                   | up to 2 GB (about 300 MB resident after the first job)         |
 
-All three are compose **profiles**, and each service name is its profile
-(`sandboxes`, `local-embedder`, `helpers`). A switch changes the box's `.env`
+All four are compose **profiles**, and each service name is its profile
+(`sandboxes`, `local-embedder`, `helpers`, `documents`). A switch changes the box's `.env`
 and starts or stops that service's container; the rest of the brain keeps
 running.
 
@@ -33,6 +34,16 @@ ignored.
   whitelists only sandboxes (and the old media sidecar), so the brain offers
   either row only once the box's updater reports it in `services.json`: one
   roll after the brain that knows them.
+- **Documents** (the `gotenberg` service, `packages/documents`) carries a
+  basic-auth password, `GOTENBERG_PASSWORD`, where sandboxes carry a token:
+  `install.sh` and every roll write it in advance, so the switch starts one
+  container. Off by default on every shape: a large page print holds about
+  0.7 GB. Off hides the documents tools from agents, MCP and apps and
+  answers 503 on `/api/v1/documents/*`; page PDF export falls back to the
+  browser helper where that runs. The engine stores nothing, so off loses
+  nothing. The web, api and worker containers reach it by service name;
+  nothing else can (no published port, and the engine itself can fetch
+  nothing but the brain's own print pages).
 - **Helpers** have a profile only on the core shape
   (`docker-compose.core.yml`, profiles `["full", "helpers"]`). On the full
   shape they always run, so neither the screen nor the updater offers the

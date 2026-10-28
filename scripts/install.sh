@@ -198,6 +198,12 @@ CORE="${MANTLE_CORE:-}"
 # empty=keep .env as-is. Only meaningful on the core shape; the full shape
 # always runs it.
 HELPERS="${MANTLE_HELPERS:-}"
+# The documents engine (Gotenberg: Office to PDF, page prints, the PDF
+# tools): 1=enable, 0=disable, empty=keep .env as-is. Off by default on every
+# shape (a 2 GB cap; see docker-compose.yml). The password is generated
+# whether or not it is on, so a later Settings > Services switch starts one
+# container instead of restarting the brain.
+DOCUMENTS="${MANTLE_DOCUMENTS:-}"
 # Owner web UI (the separate client stack): 1=run it, 0=headless (API + MCP +
 # share pages only — no signup, no owner screens), empty=keep .env as-is
 # (missing from .env means ON, the pre-flag behaviour).
@@ -262,6 +268,15 @@ ${B}Options${RS}
                          format is read by the parser service, which a core
                          keeps.)
   --no-helpers           Shed the PDF browser again on a core box
+  --documents            The documents engine (Gotenberg, ~700 MB image):
+                         Office files to PDF, page and HTML prints with
+                         headers and page numbers, merge/split/stamp/encrypt
+                         and the other PDF tools, for agents, MCP, the HTTP
+                         API and mini-app reports. Off by default; persists
+                         via COMPOSE_PROFILES in .env. Also a switch in
+                         Settings > Services.
+  --no-documents         Switch the documents engine off again (nothing it
+                         made is removed)
   --client               Run the owner web UI (the default; a separate small
                          container on its own version stream)
   --no-client            Headless box: API + MCP + share pages only. No owner
@@ -313,6 +328,8 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --no-core) CORE=0; shift ;;
   --helpers) HELPERS=1; shift ;;
   --no-helpers) HELPERS=0; shift ;;
+  --documents) DOCUMENTS=1; shift ;;
+  --no-documents) DOCUMENTS=0; shift ;;
   --client) CLIENT=1; shift ;;
   --no-client) CLIENT=0; shift ;;
   --client-image-tag) CLIENT_TAG="${2:-}"; shift 2 ;;
@@ -823,7 +840,7 @@ if [[ $INTERACTIVE -eq 1 && $FRESH_BOX -eq 1 ]]; then
     if confirm "Run the owner web UI?" "$cli_d"; then CLIENT=1; else CLIENT=0; fi
   fi
 elif [[ $INTERACTIVE -eq 1 ]]; then
-  inf "Existing install — components stay as configured. ${DIM}(Change with --core/--sandboxes/--local-embedder/--helpers/--no-client; see --help.)${RS}"
+  inf "Existing install — components stay as configured. ${DIM}(Change with --core/--sandboxes/--local-embedder/--helpers/--documents/--no-client; see --help.)${RS}"
 fi
 
 # ── 3. secrets + .env ────────────────────────────────────────────────────────
@@ -867,6 +884,7 @@ ensure MANTLE_SETUP_CODE gen_setup_code   # first-run signup gate; never rotated
 # lets a dashboard switch start ONE container later instead of restarting the
 # brain. Never rotated on re-run. (The updater does the same on a roll.)
 ensure SANDBOXD_TOKEN      "gen_hex 32"
+ensure GOTENBERG_PASSWORD  "gen_hex 32"   # the documents engine's basic-auth password; never rotated
 # The parser service's bearer token (core, always on; docs/parser.md).
 ensure PARSER_TOKEN        "gen_hex 32"
 # The calls media server's API key pair (compose profile `calls`, off until
@@ -1048,6 +1066,25 @@ if [[ -n "$CORE" ]]; then
     fi
   fi
 fi
+# ── The documents engine (Gotenberg) ─────────────────────────────────────────
+# A compose profile on every shape, off by default. Flag not passed → keep
+# .env as-is (Settings > Services switches it on a running box).
+if [[ -n "$DOCUMENTS" ]]; then
+  rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'documents' | grep -v '^$' | paste -sd, -)" || rest=""
+  if [[ "$DOCUMENTS" == 1 ]]; then
+    upsert COMPOSE_PROFILES "${rest:+$rest,}documents"
+    ok "Documents engine ON: Gotenberg starts with the stack (Office to PDF, page prints, the PDF tools)"
+  else
+    if [[ -n "$rest" ]]; then
+      upsert COMPOSE_PROFILES "$rest"
+    elif grep -qE '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null; then
+      tmp="$(mktemp)"; grep -vE '^COMPOSE_PROFILES=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
+    fi
+    docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" --profile documents \
+      rm -sf gotenberg >/dev/null 2>&1 || true
+    ok "Documents engine OFF (switch it on later with --documents or Settings > Services)"
+  fi
+fi
 # ── The helper (the PDF-export browser) on the core shape ────────────────────
 # Persisted via COMPOSE_PROFILES exactly like the embedder. Only meaningful
 # when the core override is active (the full shape runs it unconditionally),
@@ -1193,6 +1230,7 @@ row "Version"     "$IMAGE_TAG"
 row "Embedder"    "$(if [[ "$(getval COMPOSE_PROFILES)" == *local-embedder* ]]; then printf 'bundled (local)'; else printf 'online — chosen during onboarding'; fi)"
 row "Shape"       "$(if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then if [[ "$(getval COMPOSE_PROFILES)" == *helpers* ]]; then printf 'core + doc helpers (channel workers off)'; else printf 'core (channel workers + doc helpers off)'; fi; else printf 'full'; fi)"
 row "Sandboxes"   "$(if [[ "$(getval COMPOSE_PROFILES)" == *sandboxes* ]]; then printf 'on (coder agent gets isolated containers)'; else printf 'off'; fi)"
+row "Documents"   "$(if [[ "$(getval COMPOSE_PROFILES)" == *documents* ]]; then printf 'on (Gotenberg: Office to PDF, page prints, PDF tools)'; else printf 'off (switch on in Settings > Services or with --documents)'; fi)"
 row "Owner UI"    "$(if [[ "$(getval MANTLE_CLIENT_ENABLED)" == 0 ]]; then printf 'off — headless (MCP / API only)'; else printf 'on (tag: %s)' "$(getval MANTLE_CLIENT_IMAGE_TAG | grep . || echo latest)"; fi)"
 if [[ "$DEBUG_PORT" != 3000 ]]; then row "Debug port" "127.0.0.1:$DEBUG_PORT  ${DIM}(3000 was taken)${RS}"; fi
 existing="$(docker ps -aq --filter "label=com.docker.compose.project=mantle" 2>/dev/null | head -1)"

@@ -165,3 +165,44 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+
+  # Documents engine (Gotenberg), the second render sidecar: Office to PDF,
+  # HTML/markdown/page prints, the PDF tools (packages/documents). Opt-in, the
+  # `documents` profile, as in prod: `COMPOSE_PROFILES=documents pnpm infra:up`
+  # (or `docker compose -f docker-compose.dev.yml --profile documents up -d
+  # gotenberg` through scripts/dev-compose.sh). The same policy as prod, with
+  # the dev print origin (the native dev server on the host) in the allow
+  # list and a dev-only password; .env.local carries GOTENBERG_URL and
+  # GOTENBERG_PASSWORD (see .env.example).
+  gotenberg:
+    image: gotenberg/gotenberg:8.39.0
+    container_name: mantle_dev_gotenberg
+    restart: unless-stopped
+    profiles: ["documents"]
+    mem_limit: 2g
+    environment:
+      API_TIMEOUT: 60s
+      API_ENABLE_BASIC_AUTH: "true"
+      GOTENBERG_API_BASIC_AUTH_USERNAME: mantle
+      GOTENBERG_API_BASIC_AUTH_PASSWORD: mantle
+      API_DISABLE_DOWNLOAD_FROM: "true"
+      WEBHOOK_DISABLE: "true"
+      CHROMIUM_MAX_CONCURRENCY: "2"
+      CHROMIUM_MAX_QUEUE_SIZE: "10"
+      CHROMIUM_DENY_PRIVATE_IPS: "true"
+      CHROMIUM_DENY_PUBLIC_IPS: "true"
+      CHROMIUM_ALLOW_LIST: "^http://host.docker.internal:[0-9]+(/|$$)|^file:///tmp/"
+      LIBREOFFICE_DENY_PRIVATE_IPS: "true"
+      LIBREOFFICE_DENY_PUBLIC_IPS: "true"
+      LIBREOFFICE_MAX_QUEUE_SIZE: "10"
+    ports:
+      # 3005 on the host: .env.local GOTENBERG_URL=http://127.0.0.1:3005
+      - "127.0.0.1:3005:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s

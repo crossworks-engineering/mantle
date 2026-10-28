@@ -387,6 +387,14 @@ x-app-env: &app-env
   # Where Chromium-in-the-sidecar fetches /print/pages/<id> — the app itself,
   # by service DNS, never the public origin (no Caddy/TLS round-trip).
   MANTLE_PRINT_ORIGIN: http://web:3000
+  # The documents engine (Gotenberg, the `gotenberg` service behind the
+  # `documents` profile): reached by service name; the password is the
+  # basic-auth credential the engine requires (scripts/install.sh and the
+  # updater generate it; never rotated). Both are inert while the profile is
+  # off: @mantle/config serviceEnabled reads the live profile, so a box with
+  # the password and no profile offers no documents tool and dials nothing.
+  GOTENBERG_URL: http://gotenberg:3000
+  GOTENBERG_PASSWORD: ${GOTENBERG_PASSWORD:-}
 
 services:
   postgres:
@@ -623,6 +631,56 @@ services:
     healthcheck:
       test:
         ['CMD-SHELL', 'curl -sf http://localhost:3000/meta?token=$${TOKEN} >/dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # Documents engine (Gotenberg: Chromium + LibreOffice + the PDF engines), the
+  # second render sidecar. OPT-IN: it runs only with the `documents` profile
+  # (Settings > Services, or `scripts/install.sh --documents`), off by
+  # default because a large page print holds about 0.7 GB (measured
+  # 2026-10-28: 11 MiB idle, 310 MiB after the first LibreOffice job, 783 MiB
+  # peak on a 13-page print). Office files to PDF, HTML/markdown/page prints
+  # with headers and page numbers, merge/split/stamp/encrypt/PDF-A and the
+  # rest; the agent, MCP, HTTP API and mini-app surfaces all go through
+  # packages/documents. The browser service keeps its jobs.
+  #
+  # Policy (the plan, page f7c67c92 section 3.6): basic auth; no outbound
+  # fetches at all (downloadFrom and webhooks off; Chromium and LibreOffice
+  # deny private AND public addresses), with ONE opening: the print origin,
+  # anchored, so a page prints with its render cookie, plus file:///tmp,
+  # where the engine puts the caller's own uploaded files (Gotenberg's
+  # default file rule; without it the html and markdown routes answer 403
+  # once both IP classes are denied). A hostile document can therefore reach
+  # nothing, and each conversion gets its own browser context (8.38.0), so a
+  # render cookie never outlives its job. Two Chromium jobs at a time, ten
+  # queued, 60 s each; LibreOffice is one at a time by nature, ten queued.
+  gotenberg:
+    image: gotenberg/gotenberg:8.39.0
+    container_name: mantle_gotenberg
+    restart: unless-stopped
+    logging: *default-logging
+    profiles: ['documents']
+    mem_limit: 2g
+    environment:
+      API_TIMEOUT: 60s
+      API_ENABLE_BASIC_AUTH: 'true'
+      GOTENBERG_API_BASIC_AUTH_USERNAME: mantle
+      GOTENBERG_API_BASIC_AUTH_PASSWORD: ${GOTENBERG_PASSWORD:-}
+      API_DISABLE_DOWNLOAD_FROM: 'true'
+      WEBHOOK_DISABLE: 'true'
+      CHROMIUM_MAX_CONCURRENCY: '2'
+      CHROMIUM_MAX_QUEUE_SIZE: '10'
+      CHROMIUM_DENY_PRIVATE_IPS: 'true'
+      CHROMIUM_DENY_PUBLIC_IPS: 'true'
+      CHROMIUM_ALLOW_LIST: '^http://web:3000(/|$$)|^file:///tmp/'
+      LIBREOFFICE_DENY_PRIVATE_IPS: 'true'
+      LIBREOFFICE_DENY_PUBLIC_IPS: 'true'
+      LIBREOFFICE_MAX_QUEUE_SIZE: '10'
+    healthcheck:
+      # /health takes no credential (the engine exempts it for this).
+      test: ['CMD', 'curl', '-sf', 'http://localhost:3000/health']
       interval: 10s
       timeout: 5s
       retries: 12

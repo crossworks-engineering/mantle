@@ -1307,7 +1307,8 @@ topup_scripts() {
 }
 
 # ── optional services: the brain's live capability source ────────────────────
-# Sandboxes, the local embedder and (on a core box) the PDF-export helper are
+# Sandboxes, the local embedder, the documents engine (Gotenberg) and (on a
+# core box) the PDF-export helper are
 # compose PROFILES; each service name IS its profile. (The media sidecar was
 # one until the parser service replaced it; the parser is core, no profile.) Whether one is on is a fact about
 # THIS box's .env, and the app containers cannot see .env: their env is what
@@ -1317,7 +1318,7 @@ topup_scripts() {
 # /signal read-only) on boot, every ~5 min, after a roll and after a switch.
 # @mantle/config services is the reader. The file carries key NAMES' presence
 # only, never a value.
-SERVICE_PROFILES="sandboxes local-embedder helpers calls"
+SERVICE_PROFILES="sandboxes local-embedder helpers calls documents"
 # Request kinds this updater understands; the UI offers a switch only when
 # 'service' is listed.
 UPDATER_VERBS='"roll","service"'
@@ -1329,18 +1330,24 @@ service_container() {
     local-embedder) echo mantle_ollama ;;
     helpers) echo mantle_browser ;;
     calls) echo mantle_livekit ;;
+    documents) echo mantle_gotenberg ;;
   esac
 }
 # service_containers <name>: every container an "on" waits on to be healthy.
 service_containers() {
   service_container "$1"
 }
-# service_token_var <name>: the bearer token's .env key; nothing for the
-# local embedder and the helper, which the app reaches without one. Calls:
-# the API secret the brain signs tokens and verifies webhooks with (its key
-# NAME, MANTLE_LIVEKIT_API_KEY, is provisioned beside it: ensure_livekit_key).
+# service_token_var <name>: the bearer token's .env key (for the documents
+# engine, its basic-auth password); nothing for the local embedder and the
+# helper, which the app reaches without one. Calls: the API secret the brain
+# signs tokens and verifies webhooks with (its key NAME,
+# MANTLE_LIVEKIT_API_KEY, is provisioned beside it: ensure_livekit_key).
 service_token_var() {
-  case "$1" in sandboxes) echo SANDBOXD_TOKEN ;; calls) echo MANTLE_LIVEKIT_API_SECRET ;; esac
+  case "$1" in
+    sandboxes) echo SANDBOXD_TOKEN ;;
+    calls) echo MANTLE_LIVEKIT_API_SECRET ;;
+    documents) echo GOTENBERG_PASSWORD ;;
+  esac
 }
 
 # ensure_livekit_key: the key NAME beside the secret (LiveKit pairs them as
@@ -1487,8 +1494,8 @@ ensure_parser_token() {
 # The dashboard's service switch writes /signal/service-request.json, a file
 # of its OWN: an updater older than this never reads it, where the same body
 # in request.json would read as "roll to latest". One fixed operation per
-# request, inputs whitelisted: the service is `sandboxes`, `local-embedder`
-# or `helpers` (a core box only), the switch true or false.
+# request, inputs whitelisted: the service is `sandboxes`, `local-embedder`,
+# `documents` or `helpers` (a core box only), the switch true or false.
 # Nothing else in the request reaches a command.
 #
 # On:  free-disk check; back up .env; give the service its token (and, for
@@ -1521,6 +1528,7 @@ compose_service() {
     local-embedder) echo ollama ;;
     helpers) echo browser ;;
     calls) echo livekit ;;
+    documents) echo gotenberg ;;
   esac
 }
 
@@ -1761,7 +1769,7 @@ handle_service_request() {
   SVC_STARTED=$(now)
   # The whitelist: the only request input that reaches a command.
   case "$hs_svc" in
-    sandboxes | local-embedder | helpers | calls) : ;;
+    sandboxes | local-embedder | helpers | calls | documents) : ;;
     *) write_service_status error "" null "$SVC_STARTED" "$(now)" false "unknown service"; return 0 ;;
   esac
   case "$hs_en" in

@@ -1,15 +1,17 @@
 /**
  * Optional services: the box services an admin can switch on and off from
- * the dashboard (sandboxes, the local embedder and, on a core box, the
- * PDF-export helper). The parser service is core, never switched. GET
+ * the dashboard (sandboxes, the local embedder, the documents engine and,
+ * on a core box, the PDF-export helper). The parser service is core, never switched. GET
  * /api/services returns a
  * {@link ServicesView}; POST /api/services/:name {enable} asks the updater
  * sidecar to switch one; GET /api/services/status is the progress poll.
  */
 
 /** Each name is also the service's compose profile. `calls` is LiveKit
- *  (calls between people in the messenger). */
-export type OptionalServiceName = 'sandboxes' | 'local-embedder' | 'helpers' | 'calls';
+ *  (calls between people in the messenger); `documents` is the documents
+ *  engine (Gotenberg). */
+export type OptionalServiceName =
+  'sandboxes' | 'local-embedder' | 'helpers' | 'calls' | 'documents';
 
 /**
  * - `off`: the compose profile is not active (the resting state).

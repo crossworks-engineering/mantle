@@ -228,6 +228,21 @@ sandbox base image. Nothing is installed on the host. Turn them off with
 `--no-sandboxes`; an existing box only gains them with an explicit
 `scripts/install.sh --sandboxes`. Details: [`sandboxes.md`](./sandboxes.md).
 
+### Documents (the Gotenberg engine)
+
+Off by default on every shape. Switch it on in **Settings > Services**, or
+with `scripts/install.sh --documents` (`--no-documents` switches it off
+again; nothing it made is removed). It is the `gotenberg` compose service
+behind the `documents` profile: Office files to PDF, page and HTML prints
+with headers and page numbers, and the PDF tools (merge, split, PDF/A,
+stamp, watermark, encrypt, bookmarks, metadata), for agents, MCP, the HTTP
+API (`/api/v1/documents/*`) and mini-app reports. The installer generates
+`GOTENBERG_PASSWORD` (the engine's basic-auth password) on every box,
+whether or not the engine is on, so a later switch starts one container;
+the updater does the same on a roll. Budget about 700 MB of download (2.4 GB
+on disk) and up to 2 GB of memory, about 300 MB resident after the first
+job. See [`documents.md`](./documents.md).
+
 **Video ingest and CAD drawing ingest need nothing switched on.** The
 parser service (`titanwest/mantle-parser`, core, every box) carries ffmpeg
 and the DWG tools; `video_ingest` transcribes an uploaded recording

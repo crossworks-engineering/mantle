@@ -20,6 +20,8 @@ const KEYS = [
   'SANDBOXD_URL',
   'SANDBOXD_TOKEN',
   'MANTLE_COMPOSE_FILE',
+  'GOTENBERG_URL',
+  'GOTENBERG_PASSWORD',
 ] as const;
 
 let dir: string;
@@ -180,9 +182,29 @@ describe('the token-less services: local embedder and helpers', () => {
   });
 });
 
+describe('the documents engine: a URL and a password, switched like sandboxes', () => {
+  it('needs both and the profile not known to be off', () => {
+    expect(serviceEnabled('documents')).toBe(false);
+    process.env.GOTENBERG_URL = 'http://gotenberg:3000';
+    expect(serviceEnabled('documents')).toBe(false);
+    process.env.GOTENBERG_PASSWORD = 'p';
+    // No way to know the profile (a dev process): the wiring alone decides.
+    expect(serviceEnabled('documents')).toBe(true);
+    process.env.MANTLE_COMPOSE_PROFILES = 'sandboxes';
+    expect(serviceEnabled('documents')).toBe(false);
+    servicesJson('documents');
+    expect(serviceEnabled('documents')).toBe(true);
+    expect(serviceSwitchable('documents')).toBe(true);
+  });
+});
+
 describe('tool gating', () => {
   it('maps tools to their service', () => {
     expect(toolService('sandbox_exec')).toBe('sandboxes');
+    for (const slug of ['pdf_render', 'screenshot_render', 'office_to_pdf', 'pdf_tools']) {
+      expect(toolService(slug)).toBe('documents');
+    }
+    expect(toolService('export_node')).toBeNull();
     // video_ingest needs the parser, which is core: no switch gates it.
     expect(toolService('video_ingest')).toBeNull();
     expect(toolService('note_create')).toBeNull();
@@ -192,6 +214,11 @@ describe('tool gating', () => {
     wire();
     process.env.MANTLE_COMPOSE_PROFILES = 'local-embedder';
     expect(toolServiceAvailable('sandbox_exec')).toBe(false);
+    expect(toolServiceAvailable('pdf_tools')).toBe(false);
+    process.env.GOTENBERG_URL = 'http://gotenberg:3000';
+    process.env.GOTENBERG_PASSWORD = 'p';
+    process.env.MANTLE_COMPOSE_PROFILES = 'local-embedder,documents';
+    expect(toolServiceAvailable('pdf_tools')).toBe(true);
     expect(toolServiceAvailable('video_ingest')).toBe(true);
     expect(toolServiceAvailable('note_create')).toBe(true);
   });

@@ -30,6 +30,7 @@ vi.mock('./updates', () => ({
 const probes = vi.hoisted(() => ({
   sandboxes: null as boolean | null,
   browser: null as boolean | null,
+  documents: null as boolean | null,
   embedding: { provider: 'openrouter', baseUrl: null as string | null },
 }));
 vi.mock('./sandboxd', () => ({
@@ -37,6 +38,9 @@ vi.mock('./sandboxd', () => ({
 }));
 vi.mock('./render-pdf', () => ({
   browserHealth: async () => ({ up: probes.browser, version: null }),
+}));
+vi.mock('@mantle/documents', () => ({
+  gotenbergHealth: async () => ({ up: probes.documents, version: null, modules: {} }),
 }));
 vi.mock('@mantle/embeddings', () => ({
   resolveEmbeddingConfig: async () => ({ model: 'm', primary: probes.embedding }),
@@ -59,15 +63,18 @@ const KEYS = [
   'SANDBOXD_TOKEN',
   'MANTLE_COMPOSE_FILE',
   'MANTLE_LOCAL_EMBEDDING_URL',
+  'GOTENBERG_URL',
+  'GOTENBERG_PASSWORD',
 ] as const;
 const saved: Record<string, string | undefined> = {};
 let sig: string;
 
-/** What an updater that knows all three services reports. */
+/** What an updater that knows all four services reports. */
 const ALL_SERVICES = {
   sandboxes: { profile: false },
   'local-embedder': { profile: false },
   helpers: { profile: false },
+  documents: { profile: false },
 };
 
 function servicesJson(over: Record<string, unknown> = {}): void {
@@ -94,11 +101,14 @@ beforeEach(() => {
   process.env.MANTLE_UPDATE_SIGNAL_DIR = sig;
   process.env.SANDBOXD_URL = 'http://sandboxd:8090';
   process.env.SANDBOXD_TOKEN = 'a';
+  process.env.GOTENBERG_URL = 'http://gotenberg:3000';
+  process.env.GOTENBERG_PASSWORD = 'p';
   delete process.env.MANTLE_COMPOSE_PROFILES;
   updater.available = true;
   updater.status = null;
   probes.sandboxes = null;
   probes.browser = null;
+  probes.documents = null;
   probes.embedding = { provider: 'openrouter', baseUrl: null };
   delete process.env.MANTLE_COMPOSE_FILE;
   delete process.env.MANTLE_LOCAL_EMBEDDING_URL;
@@ -254,9 +264,9 @@ describe('getServicesView', () => {
 
   it('lists the helpers only on a core box without the full profile', async () => {
     const names = async () => (await getServicesView('owner-1')).services.map((s) => s.name);
-    expect(await names()).toEqual(['sandboxes', 'local-embedder']);
+    expect(await names()).toEqual(['sandboxes', 'local-embedder', 'documents']);
     servicesJson({ core: true });
-    expect(await names()).toEqual(['sandboxes', 'local-embedder', 'helpers']);
+    expect(await names()).toEqual(['sandboxes', 'local-embedder', 'helpers', 'documents']);
     servicesJson({ core: true, profiles: 'full' });
     expect(await names()).not.toContain('helpers');
   });
@@ -272,6 +282,30 @@ describe('getServicesView', () => {
     probes.browser = false;
     expect((await helpers())?.state).toBe('down');
     expect((await helpers())?.description.offWarning).toMatch(/PDF export stops/);
+  });
+
+  it('the documents engine is off without its profile, up when it answers, and warns before off', async () => {
+    const docs = async () =>
+      (await getServicesView('owner-1')).services.find((s) => s.name === 'documents');
+    expect((await docs())?.state).toBe('off');
+    servicesJson({
+      profiles: 'documents',
+      services: { ...ALL_SERVICES, documents: { profile: true } },
+    });
+    probes.documents = true;
+    expect((await docs())?.state).toBe('up');
+    probes.documents = false;
+    expect((await docs())?.state).toBe('down');
+    expect((await docs())?.description.offWarning).toMatch(/Office to PDF/);
+    expect((await docs())?.description.memoryMaxMb).toBe(2048);
+  });
+
+  it('an updater that does not report the documents engine yet does not offer it', async () => {
+    servicesJson({ services: { sandboxes: {}, 'local-embedder': {}, helpers: {} } });
+    expect((await getServicesView('owner-1')).services.map((s) => s.name)).not.toContain(
+      'documents',
+    );
+    expect(await requestServiceSwitch('documents', true)).toMatchObject({ ok: false });
   });
 
   it('the embedder is on with its profile, and warns only when it is in use', async () => {

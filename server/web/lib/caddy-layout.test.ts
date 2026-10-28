@@ -191,7 +191,7 @@ describe('infra/caddy layout', () => {
     expect(updater).toMatch(/^SERVICE_PROFILES=".*\bcalls\b.*"$/m);
     expect(updater).toContain('calls) echo mantle_livekit ;;');
     expect(updater).toContain('calls) echo livekit ;;');
-    expect(updater).toContain('sandboxes | local-embedder | helpers | calls) : ;;');
+    expect(updater).toContain('sandboxes | local-embedder | helpers | calls | documents) : ;;');
     // The calls host must be a name with a certificate: a dotted name, never
     // a bare IP (install.sh holds the same rule).
     expect(updater).toContain('ensure_calls_host()');

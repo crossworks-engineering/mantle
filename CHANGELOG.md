@@ -4,6 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the documents engine (Gotenberg) beside the browser sidecar
+
+- **Feature:** a second render sidecar, the documents engine
+  (`gotenberg/gotenberg:8.39.0`, the `gotenberg` compose service behind the
+  new optional service **Documents**, profile `documents`, Settings >
+  Services or `scripts/install.sh --documents`). Off by default on every
+  shape. The `browser` service stays exactly as it is. The plan: dev-brain
+  page f7c67c92 (2026-10-23).
+- **Upgrade notes:** nothing to do. The roll writes `GOTENBERG_PASSWORD`
+  into `.env` (64 hex, never rotated) and the app containers carry it
+  inert until the profile is on; an updater from before this release does
+  not know the service, so the Settings row appears one roll after the
+  brain that knows it. Memory on the smallest box: about 300 MB resident
+  after the first LibreOffice job, up to 0.8 GB during a large page print
+  (cap 2 GB); the Services screen warns a box under 6 GB.
+- **Config:** `GOTENBERG_URL` and `GOTENBERG_PASSWORD` in the app-env
+  anchor (`.env.example`); the probe on the dashboard vitals (`documents`)
+  and in Settings > Services (`/health`, `/version`).
+
 ## Unreleased: a group's info (server)
 
 - **New:** a group in Messages carries `info`: plain text (at most 2000

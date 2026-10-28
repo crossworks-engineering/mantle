@@ -9,6 +9,9 @@
  * profile plus the API secret the brain signs tokens with. See the end of
  * this module.
  *
+ * The documents engine (profile `documents`, packages/documents) is the
+ * fifth: a URL and a password, switched like sandboxes, off by default.
+ *
  * The parser service (server/parser) is NOT here: it reads every file the
  * brain receives, so it is core, always on, with no switch.
  *
@@ -39,8 +42,16 @@ import { join } from 'node:path';
 import { env, type KnownEnvName } from './index';
 
 /** Every service Settings > Services can switch. Each name is also its
- *  compose profile. */
-export const OPTIONAL_SERVICES = ['sandboxes', 'local-embedder', 'helpers', 'calls'] as const;
+ *  compose profile. `documents` is the documents engine (Gotenberg,
+ *  packages/documents): off by default on every box, its switch carries a
+ *  URL and a basic-auth password the way sandboxes carry a token. */
+export const OPTIONAL_SERVICES = [
+  'sandboxes',
+  'local-embedder',
+  'helpers',
+  'calls',
+  'documents',
+] as const;
 export type OptionalService = (typeof OPTIONAL_SERVICES)[number];
 
 /** The services the app talks to with a bearer token. "On" needs the token
@@ -50,7 +61,17 @@ const WIRING: Partial<Record<OptionalService, { url: KnownEnvName; token: KnownE
   // Calls (LiveKit): the brain signs every token and webhook with the API
   // secret; without it no call can start, so "on" needs it as a token.
   calls: { url: 'MANTLE_LIVEKIT_URL', token: 'MANTLE_LIVEKIT_API_SECRET' },
+  documents: { url: 'GOTENBERG_URL', token: 'GOTENBERG_PASSWORD' },
 };
+
+/** The builtin tools that need the documents engine (packages/tools
+ *  builtins-documents.ts; the tool list pins itself to this set). */
+export const DOCUMENT_TOOL_SLUGS: ReadonlySet<string> = new Set([
+  'pdf_render',
+  'screenshot_render',
+  'office_to_pdf',
+  'pdf_tools',
+]);
 
 /** One service as the updater saw it. `container` is docker's State.Status
  *  ('running', 'exited', ...) or 'absent'; `health` is the healthcheck status
@@ -224,6 +245,7 @@ export function serviceSwitchable(name: OptionalService): boolean {
  *  prefix (pinned by a test against the sandbox tool list). */
 export function toolService(slug: string): OptionalService | null {
   if (slug.startsWith('sandbox_')) return 'sandboxes';
+  if (DOCUMENT_TOOL_SLUGS.has(slug)) return 'documents';
   return null;
 }
 

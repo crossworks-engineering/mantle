@@ -2265,6 +2265,8 @@ check "local embedder: profile on, no token key at all, no container" \
   test "$(svc_field 'JSON.stringify(j.services["local-embedder"])')" = '{"profile":true,"token":false,"container":"absent","health":"none"}'
 check "helpers: reported (profile off on this core box)" \
   test "$(svc_field 'j.services.helpers.profile')" = false
+check "documents: the engine's container, absent here, no password yet" \
+  test "$(svc_field 'JSON.stringify(j.services.documents)')" = '{"profile":false,"token":false,"container":"absent","health":"none"}'
 check "core shape read from COMPOSE_FILE" test "$(svc_field 'j.core')" = true
 check "verbs advertise the roll and the service switch" test "$(svc_field 'j.verbs.join()')" = roll,service
 check "no token VALUE in the file" sh -c "! grep -q sekrit '$SJ'"
@@ -2281,6 +2283,7 @@ printf 'services:\n  api:\n    volumes:\n      - ./data/update-signal:/signal:ro
 updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
 check "an existing token is never rotated" grep -qx 'PARSER_TOKEN=keepme' "$TK/stack/.env"
 check "a missing token gets 64 hex chars" grep -qE '^SANDBOXD_TOKEN=[0-9a-f]{64}$' "$TK/stack/.env"
+check "the documents engine's password is provisioned the same way" grep -qE '^GOTENBERG_PASSWORD=[0-9a-f]{64}$' "$TK/stack/.env"
 check "one line per token" test "$(grep -c '^SANDBOXD_TOKEN=' "$TK/stack/.env")" = 1
 check ".env keeps mode 600" test "$(mode_of "$TK/stack/.env")" = 600
 tok1=$(sed -n 's/^SANDBOXD_TOKEN=//p' "$TK/stack/.env")
@@ -2508,6 +2511,27 @@ check "helpers on: the profile is added" grep -qx 'COMPOSE_PROFILES=local-embedd
 check "helpers on: pulls and starts the browser alone" sh -c "
   grep -qE 'profile helpers pull browser$' '$T/calls' && grep -qE 'profile helpers up -d --no-deps browser$' '$T/calls' && ! grep -q tika '$T/calls'"
 check "helpers on: waits on the browser" grep -q 'inspect .*mantle_browser$' "$T/calls"
+
+# ── the documents engine (Gotenberg): a password where sandboxes have a token ──
+svc_case docson '{"service":"documents","enable":true}'
+svc_run
+check "documents on: status done" grep -q '"phase":"done","service":"documents","enable":true.*"ok":true' "$T/sig/service-status.json"
+check "documents on: the profile is added" grep -qx 'COMPOSE_PROFILES=local-embedder,documents' "$T/stack/.env"
+check "documents on: the password is provisioned, 64 hex" grep -qE '^GOTENBERG_PASSWORD=[0-9a-f]{64}$' "$T/stack/.env"
+check "documents on: pulls gotenberg alone" grep -qE 'profile documents pull gotenberg$' "$T/calls"
+check "documents on: a new password recreates the app containers once" grep -qE 'profile documents up -d web api worker_files' "$T/calls"
+check "documents on: waits on mantle_gotenberg" grep -q 'inspect .*mantle_gotenberg' "$T/calls"
+svc_case docson2 '{"service":"documents","enable":true}'
+printf 'GOTENBERG_PASSWORD=keep\n' >> "$T/stack/.env"
+svc_run
+check "documents on, password already there: starts only gotenberg (--no-deps), password kept" sh -c "
+  grep -qE 'profile documents up -d --no-deps gotenberg$' '$T/calls' && grep -qx 'GOTENBERG_PASSWORD=keep' '$T/stack/.env'"
+svc_case docsoff '{"service":"documents","enable":false}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=sandboxes,documents/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+printf 'GOTENBERG_PASSWORD=keep\n' >> "$T/stack/.env"
+svc_run
+check "documents off: profile dropped, gotenberg stopped and removed, the password kept" sh -c "
+  grep -qx 'COMPOSE_PROFILES=sandboxes' '$T/stack/.env' && grep -qE 'profile documents stop gotenberg$' '$T/calls' && grep -qE 'profile documents rm -f gotenberg$' '$T/calls' && grep -qx 'GOTENBERG_PASSWORD=keep' '$T/stack/.env'"
 svc_case helpoff '{"service":"helpers","enable":false}'
 printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"

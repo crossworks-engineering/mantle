@@ -1,6 +1,6 @@
 /**
- * Optional services (sandboxes, the local embedder, calls and, on a core box,
- * the PDF-export helper) for the dashboard switches: what each one is, whether it
+ * Optional services (sandboxes, the local embedder, calls, the documents
+ * engine and, on a core box, the PDF-export helper) for the dashboard switches: what each one is, whether it
  * is on, and asking the updater sidecar to switch one. The parser service is
  * not here: it is core, always on (its health is on the dashboard vitals).
  *
@@ -31,6 +31,7 @@ import type {
   ServicesView,
   ServiceSwitchResult,
 } from '@mantle/client-types';
+import { gotenbergHealth } from '@mantle/documents';
 import { browserHealth } from './render-pdf';
 import { livekitHealth } from '@mantle/content/livekit';
 import { sandboxdHealth } from './sandboxd';
@@ -98,6 +99,20 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
     memoryMaxMb: 512,
     note: 'Needs four ports open at the cloud edge of this box: UDP 7882, TCP 7881, TCP 5349 and UDP 3478. Until they are open, calls connect only on the local network.',
     offWarning: 'A running call ends within a minute.',
+  },
+  documents: {
+    title: 'Documents',
+    what: 'A document engine (Gotenberg: Chromium, LibreOffice and PDF tools) in its own container. It turns Office files into PDF, prints pages and HTML to PDF with headers and page numbers, and merges, splits, stamps, encrypts and converts PDFs.',
+    usedBy:
+      'The documents tools of agents and MCP (pdf_render, screenshot_render, office_to_pdf, pdf_tools), the HTTP API under /api/v1/documents, mini-app reports, and page PDF export when it is on.',
+    whenOff:
+      'Office to PDF and the PDF tools are not offered to agents, MCP or apps. Page PDF export uses the browser helper where that runs.',
+    keeps: 'Every file it made. The engine stores nothing itself.',
+    downloadMb: 710,
+    memory: 'up to 2 GB (about 300 MB resident after the first job)',
+    memoryMaxMb: 2048,
+    note: "Documents it renders can fetch nothing from the network: the engine reaches only this brain's own print pages.",
+    offWarning: 'Office to PDF and the PDF tools stop until you switch it on again.',
   },
 };
 
@@ -251,12 +266,13 @@ export async function getServicesView(ownerId: string): Promise<ServicesView> {
   const f = readServicesFile();
   const names = OPTIONAL_SERVICES.filter(serviceOffered);
   const helpers = names.includes('helpers');
-  const [blocker, run, sbx, embedUp, browser, embedCfg, livekit] = await Promise.all([
+  const [blocker, run, sbx, embedUp, browser, documents, embedCfg, livekit] = await Promise.all([
     switchBlocker(),
     readServiceRun(),
     sandboxdHealth().catch(() => null),
     serviceEnabled('local-embedder') ? bundledEmbedderUp() : Promise.resolve(false),
     helpers ? browserHealth(1_500).catch(() => null) : Promise.resolve(null),
+    serviceEnabled('documents') ? gotenbergHealth(1_500).catch(() => null) : Promise.resolve(null),
     resolveEmbeddingConfig(ownerId).catch(() => null),
     serviceEnabled('calls') ? livekitHealth().catch(() => null) : Promise.resolve(null),
   ]);
@@ -265,6 +281,7 @@ export async function getServicesView(ownerId: string): Promise<ServicesView> {
     'local-embedder': embedUp,
     helpers: browser?.up === true,
     calls: livekit?.up === true,
+    documents: documents?.up === true,
   };
   const embedderInUse = embedCfg !== null && usesBundledEmbedder(embedCfg.primary);
   const services: ServiceInfo[] = names.map((name) => {

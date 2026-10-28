@@ -149,6 +149,10 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'owner config',
     why: "the parser service, a service of the stack on its internal network: the deployment's PARSER_URL",
   },
+  'packages/documents/src/health.ts': {
+    kind: 'owner config',
+    why: "the documents engine's /health and /version: the stack's own GOTENBERG_URL",
+  },
   'server/web/lib/render-pdf.ts': {
     kind: 'owner config',
     why: "the browserless health probe: the deployment's BROWSER_WS_ENDPOINT",

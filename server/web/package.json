@@ -101,6 +101,7 @@
     "@mantle/content": "workspace:*",
     "@mantle/content-core": "workspace:*",
     "@mantle/crypto": "workspace:*",
+    "@mantle/documents": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/decisions": "workspace:*",
     "@mantle/diagram-templates": "workspace:*",

@@ -689,6 +689,13 @@ export type SystemHealth = {
     up: boolean | null;
     version: string | null;
   };
+  /** The documents engine (Gotenberg: Chromium + LibreOffice + PDF
+   *  engines), the `documents` service. `up: null` means it is switched off
+   *  or not wired on this brain; absent from a brain older than it. */
+  documents?: {
+    up: boolean | null;
+    version: string | null;
+  };
   /** The configured embedding server. For the `local` provider this is the
    *  self-hosted Ollama/LM Studio/TEI on MANTLE_LOCAL_EMBEDDING_URL (the
    *  bundled `ollama` compose service in prod). `up: true` means it's

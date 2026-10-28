@@ -63,6 +63,24 @@ describe('every app service can read the live optional-service state', () => {
     expect(anchor).toMatch(/^\s+MANTLE_COMPOSE_PROFILES: \$\{COMPOSE_PROFILES:-\}$/m);
   });
 
+  // The documents engine (profile `documents`): its address by service name
+  // and the password the box generated, inert until the profile is on.
+  it('the anchor wires the documents engine', () => {
+    expect(anchor).toMatch(/^\s+GOTENBERG_URL: http:\/\/gotenberg:3000$/m);
+    expect(anchor).toMatch(/^\s+GOTENBERG_PASSWORD: \$\{GOTENBERG_PASSWORD:-\}$/m);
+    const svc = compose.slice(compose.indexOf('\n  gotenberg:\n'));
+    expect(svc).toMatch(/^\s+profiles: \['documents'\]$/m);
+    // No outbound fetch at all, one opening: the print origin, anchored,
+    // and the engine's own upload dir.
+    expect(svc).toMatch(/CHROMIUM_DENY_PRIVATE_IPS: 'true'/);
+    expect(svc).toMatch(/CHROMIUM_DENY_PUBLIC_IPS: 'true'/);
+    expect(svc).toMatch(
+      /CHROMIUM_ALLOW_LIST: '\^http:\/\/web:3000\(\/\|\$\$\)\|\^file:\/\/\/tmp\/'/,
+    );
+    expect(svc).toMatch(/API_DISABLE_DOWNLOAD_FROM: 'true'/);
+    expect(svc).toMatch(/WEBHOOK_DISABLE: 'true'/);
+  });
+
   it('finds the app services', () => {
     expect(appServices.map(name)).toEqual(expect.arrayContaining(['web', 'api', 'worker_files']));
   });

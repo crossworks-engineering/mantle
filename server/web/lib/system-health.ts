@@ -8,6 +8,7 @@ import { bucketReachable } from '@mantle/storage';
 import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
 import { attachmentBytes } from './dashboard';
 import { getTailnetStatus } from './tailscale';
+import { gotenbergHealth } from '@mantle/documents';
 import { browserHealth } from './render-pdf';
 import type { SystemHealth } from '@mantle/client-types';
 import type { DiskInfo } from '@mantle/client-types';
@@ -210,7 +211,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, storeUp, parserH, browserH, emb, net, sbx] =
+  const [load, mem, disk, pg, attBytes, storeUp, parserH, browserH, docsH, emb, net, sbx] =
     await Promise.all([
       probe('host.cpu', () => si.currentLoad()),
       probe('host.mem', () => si.mem()),
@@ -222,6 +223,9 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       probe('parser', () => parserHealth(1_500)),
       // browserHealth (PDF sidecar) is likewise never-throws; wrapper bounds it.
       probe('browser', () => browserHealth(1_500)),
+      // gotenbergHealth (the documents engine) never throws: off or unwired
+      // is up:null; the wrapper bounds it.
+      probe('documents', () => gotenbergHealth(1_500)),
       // embedderHealth is likewise never-throws; the wrapper just bounds it. A
       // cold remote probe is a real API round-trip, so it gets a longer leash
       // (cached 5 min after — see remoteEmbedCache).
@@ -276,6 +280,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     // probe() returns null on its own timeout — treat that as sidecar-down
     // (BROWSER_WS_ENDPOINT unset is reported by browserHealth itself as up:null).
     browser: browserH ?? { up: false, version: null },
+    documents: docsH ? { up: docsH.up, version: docsH.version } : { up: false, version: null },
     embedder: emb ?? { up: null, provider: null, model: null, detail: null, scope: null },
     sandboxes: sbx ?? { up: null, total: null, running: null, disk: null },
     media: {
