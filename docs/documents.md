@@ -100,7 +100,7 @@ broker (the next milestone), and the page export.
 ### The HTTP surface
 
 `POST /api/v1/documents/<family>/<route>` with `{ inputs, options,
-filename }`, session or `mtlk_` key (any login; key area `files`), the
+filename }`, an Admin user's session or `mtlk_` key (key area `files`), the
 `documents` rate limit (30 a minute per login). The answer is the landed
 file (201), the bytes with `?return=bytes`, or `{ result }` for the two
 read routes. The user guide (`docs/guide/07-api/03-http-api.md`) has the

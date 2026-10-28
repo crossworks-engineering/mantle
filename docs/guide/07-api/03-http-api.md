@@ -81,7 +81,7 @@ One body for every route:
 }
 ```
 
-`inputs` are references into the brain, never paths: `file_ids` (files the key's login may read), `node_id` (a page or a drawing, printed as the login; an Admin login), `html` or `markdown` (inline text, 4 MB at most), `asset_file_ids` (images and CSS beside the HTML), `header_html` and `footer_html` (full HTML documents; `<span class="pageNumber"></span>` and `totalPages` are filled in), and `watermark_file_id`, `stamp_file_id`, `facturx_file_id`, `embed_file_ids` on the routes that take them. One input may be 64 MB, all of them 128 MB, fifty files at most.
+`inputs` are references into the brain, never paths: `file_ids` (files the key's login may read), `node_id` (a page or a drawing, printed as the login), `html` or `markdown` (inline text, 4 MB at most), `asset_file_ids` (images and CSS beside the HTML), `header_html` and `footer_html` (full HTML documents; `<span class="pageNumber"></span>` and `totalPages` are filled in), and `watermark_file_id`, `stamp_file_id`, `facturx_file_id`, `embed_file_ids` on the routes that take them. One input may be 64 MB, all of them 128 MB, fifty files at most.
 
 `options` use the engine's own field names ([the Gotenberg docs](https://gotenberg.dev/docs/routes) are the reference: `paperWidth`, `marginTop`, `landscape`, `printBackground`, `waitForExpression`, `pdfa`, `metadata`, `splitMode`, `userPassword` and the rest). An unknown field is a `400` that names it. `url`, `cookies`, `extraHttpHeaders`, `userAgent`, `downloadFrom`, the webhook fields and the raw file fields are the brain's own and are refused: the engine fetches nothing and prints only this brain.
 

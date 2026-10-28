@@ -31,8 +31,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   on every surface. A render cookie the print surface refuses now answers
   403 instead of the login redirect.
 - **HTTP API:** `POST /api/v1/documents/<family>/<route>` with
-  `{ inputs, options, filename }` and `?return=bytes`, session or API key
-  (area `files`), the `documents` rate limit.
+  `{ inputs, options, filename }` and `?return=bytes`, an Admin user's
+  session or API key (area `files`), the `documents` rate limit.
 - **Agents, MCP and apps:** the tools `pdf_render`, `screenshot_render`,
   `office_to_pdf` and `pdf_tools` in the new `documents` tool group (the
   persona, the pages writer and the ledger get it on upgrade),

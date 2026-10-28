@@ -1,4 +1,4 @@
-import { anyLoginCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { routePolicy } from '@/lib/auth/route-declaration';
 import { handleDocumentsPost } from '@/lib/documents-route';
 
@@ -6,7 +6,6 @@ import { handleDocumentsPost } from '@/lib/documents-route';
 export const policy = routePolicy({
   POST: {
     class: 'content',
-    open: 'any',
     keyArea: 'files',
     effect: {
       read: 'reads the metadata or bookmarks of the PDFs it names and answers JSON; nothing is written',
@@ -16,6 +15,6 @@ export const policy = routePolicy({
 });
 
 export async function POST(req: Request) {
-  const login = anyLoginCaller();
-  return handleDocumentsPost(req, login, ['pdfengines', 'metadata', 'read']);
+  const owner = ownerCaller();
+  return handleDocumentsPost(req, owner, ['pdfengines', 'metadata', 'read']);
 }

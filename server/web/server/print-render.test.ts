@@ -177,10 +177,10 @@ describe.skipIf(!hasManifest)('render surfaces and the render cookie', () => {
     expect(csp).not.toMatch(/https?:|\*/);
   });
 
-  it('opens only the node the cookie names', async () => {
+  it('opens only the node the cookie names: another node is a 403, never the login page', async () => {
     const res = await get(`/print/pages/${OTHER_PAGE}`, cookieFor(ADMIN, PAGE));
-    expect(res.status).toBe(307);
-    expect((await get(`/print/draws/${DRAW}`, cookieFor(ADMIN, PAGE))).status).toBe(307);
+    expect(res.status).toBe(403);
+    expect((await get(`/print/draws/${DRAW}`, cookieFor(ADMIN, PAGE))).status).toBe(403);
   });
 
   it('opens the page images as the anchor brain, and nothing beyond the render routes', async () => {
@@ -193,9 +193,11 @@ describe.skipIf(!hasManifest)('render surfaces and the render cookie', () => {
     expect((await get('/settings', cookieFor(ADMIN, PAGE))).status).toBe(307);
   });
 
-  it("refuses a member's or a disabled admin's render cookie", async () => {
+  it("refuses a member's or a disabled admin's render cookie with 403, never the login page", async () => {
+    // A 403, not the login redirect: a render engine that followed the
+    // redirect would print the sign-in page as the document.
     for (const login of [MEMBER, DISABLED]) {
-      expect((await get(`/print/pages/${PAGE}`, cookieFor(login, PAGE))).status, login).toBe(307);
+      expect((await get(`/print/pages/${PAGE}`, cookieFor(login, PAGE))).status, login).toBe(403);
       expect(
         (await get(`/api/files/files/${FILE}?raw=1`, cookieFor(login, PAGE))).status,
         login,

@@ -2,8 +2,7 @@ import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
 import { runDocuments, type DocumentsResult } from '@mantle/documents';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
-import type { Login } from '@/lib/auth/login';
-import { sessionRole } from '@/lib/auth';
+import type { SessionUser } from '@/lib/auth';
 import { readBody } from '@/lib/read-body';
 
 /**
@@ -18,8 +17,9 @@ import { readBody } from '@/lib/read-body';
  * checked by the route's schema, the Mantle-owned fields refused. The answer
  * is the file node the output landed in (the saveExport rules), or, with
  * `?return=bytes`, the bytes themselves with a safe download name; the two
- * JSON routes answer `{ result }`. Session or API key (any login, keyArea
- * files); the rate limit is the row's (`documents`). Errors are the
+ * JSON routes answer `{ result }`. An Admin user's session or API key (a
+ * v1 row with no base route in the app is the Admin's, as the route sweep
+ * pins; key area files); the rate limit is the row's (`documents`). Errors are the
  * package's domain errors: 400 (an input or option), 409 (the engine could
  * not render), 413 (too large), 503 (the service is off, busy or not
  * answering).
@@ -39,7 +39,7 @@ const SEGMENT = /^[a-z-]+$/;
 
 export async function handleDocumentsPost(
   req: Request,
-  login: Login,
+  user: SessionUser,
   segments: readonly string[],
 ): Promise<Response> {
   if (!segments.every((s) => SEGMENT.test(s))) {
@@ -50,9 +50,9 @@ export async function handleDocumentsPost(
   const wantBytes = new URL(req.url).searchParams.get('return') === 'bytes';
   const result: DocumentsResult = await runDocuments(
     { route, inputs: body.inputs, options: body.options, filename: body.filename },
-    // An Admin login opens the print surfaces; a member's node print is
-    // refused up front, in the package's words.
-    { ownerId: login.brainId, actorLoginId: login.loginId, admin: sessionRole(login) === 'admin' },
+    // The acting admin (ownerCaller): the render cookie of a node print
+    // names it, and it opens the print surfaces.
+    { ownerId: user.id, actorLoginId: user.actor.id, admin: true },
     wantBytes ? 'bytes' : 'file',
   );
   if (result.kind === 'json')

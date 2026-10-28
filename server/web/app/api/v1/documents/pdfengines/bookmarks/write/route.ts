@@ -1,4 +1,4 @@
-import { anyLoginCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { routePolicy } from '@/lib/auth/route-declaration';
 import { handleDocumentsPost } from '@/lib/documents-route';
 
@@ -6,7 +6,6 @@ import { handleDocumentsPost } from '@/lib/documents-route';
 export const policy = routePolicy({
   POST: {
     class: 'content',
-    open: 'any',
     keyArea: 'files',
     item: {
       none: "makes a file where an export lands (saveExport, the caller's own files); the inputs it reads are named by id and read in the caller's scope",
@@ -16,6 +15,6 @@ export const policy = routePolicy({
 });
 
 export async function POST(req: Request) {
-  const login = anyLoginCaller();
-  return handleDocumentsPost(req, login, ['pdfengines', 'bookmarks', 'write']);
+  const owner = ownerCaller();
+  return handleDocumentsPost(req, owner, ['pdfengines', 'bookmarks', 'write']);
 }

@@ -487,9 +487,11 @@ describe('the architecture ratchets (pinned counts)', () => {
     // (+DELETE), DELETE /call/participants/:loginId, GET /c/:id/calls, the
     // assistant twins POST /api/assistant/:agentId/call and /call/token,
     // with the GETs' HEADs. The LiveKit webhook is public (no caller).
-    expect(rows.filter((r) => r.caller).length).toBe(835);
-    // 882 + the 13 call rows above + the public webhook.
-    expect(rows.length).toBe(896);
+    // Documents (+8, every one with a caller): the eight POST
+    // /api/v1/documents/* routes, each reading the owner caller.
+    expect(rows.filter((r) => r.caller).length).toBe(843);
+    // 882 + the 13 call rows above + the public webhook + the 8 documents rows.
+    expect(rows.length).toBe(904);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
