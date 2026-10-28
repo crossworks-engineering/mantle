@@ -273,6 +273,7 @@ COPY docker-compose.client.yml /app/release/docker-compose.client.yml
 COPY docker-compose.core.yml /app/release/docker-compose.core.yml
 COPY infra/caddy/Caddyfile /app/release/Caddyfile
 COPY infra/caddy/shapes /app/release/caddy-shapes
+COPY infra/livekit/livekit.yaml /app/release/livekit.yaml
 COPY infra/updater/updater.sh /app/release/updater.sh
 # The OPERATOR scripts a box runs by hand (db-dump, db-restore, sanity,
 # compose-adopt, uninstall) and the configurator install.sh delegates to.

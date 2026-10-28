@@ -4,10 +4,45 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: calls between people (server)
+
+- **New:** voice calls between the people of a brain, from a chat or a group
+  in Messages (calls plan P1, brain side; the client ships in mantle-client).
+  A call is a LiveKit room named after the conversation. Routes under
+  `/api/messenger`: `GET /capabilities`, `POST /c/:id/call` (start or join:
+  a one-hour token for the one room plus the ICE override, `{callId, room,
+url, token, expiresAt, ice}`), `/call/token`, `/call/leave`, `/call/end`,
+  `DELETE /call/participants/:loginId`, `GET /c/:id/calls`, the assistant
+  twins `POST /api/assistant/:agentId/call` and `/call/token`, and the
+  signed LiveKit webhook `POST /api/livekit/webhook` (401 and no side effect
+  on any failure, replay-safe). A call's start, end and cap are system lines
+  with `event` (`MessengerMessage.event`), so the live stream carries them.
+  The reconciler in the events worker closes a call whose room is gone,
+  one past `MANTLE_CALLS_MAX_MINUTES`, and every call when the service is
+  off; nothing starts a call but a person's tap. Migration 0342
+  (`messenger_calls`, `messenger_call_participants`,
+  `messenger_call_webhooks`, `messenger_messages.event`,
+  `messenger_conversations.voice_replies`) with its rollback. DTOs in
+  `@crossworks/client-types` `dto/calls.ts`. `docs/messenger.md` "Calls".
+- **New:** Settings > Services > Calls: the `calls` compose profile runs
+  `livekit/livekit-server:v1.13.11` (media on UDP 7882, ICE/TCP 7881,
+  TURN/TLS 5349 and TURN/UDP 3478, published; signalling internal, Caddy
+  proxies `/livekit/*` in both shapes). Off by default. The config
+  `infra/livekit/livekit.yaml` is release-owned (embedded in the image,
+  refreshed by the updater like the Caddyfile, filled at container start;
+  no credential in the file). `install.sh` writes the key pair and
+  `MANTLE_CALLS_HOST`; the updater provisions them on a switch or a roll.
+  Env: `MANTLE_LIVEKIT_*`, `MANTLE_CALLS_*`, `MANTLE_VOICE_NOTE_MAX_SECONDS`
+  (all in `.env.example`). `infra/livekit/README.md` has the ops notes and
+  the per-box port ask.
+- **Security:** the Caddy access log redacts `access_token=` on the
+  signalling URL like a sign-in `code=` (found by the P0 spike: the release
+  logger printed the full JWT). Pinned by `caddy-layout.test.ts`.
+
 ## Unreleased: HSTS at the front door
 
 - **Fix:** the release Caddyfile sends `Strict-Transport-Security:
-  max-age=31536000` on TLS responses from both site blocks (the main site
+max-age=31536000` on TLS responses from both site blocks (the main site
   and the split owner-UI vhost). On a box whose port 80 is closed at the
   cloud edge a bare hostname tried plain http first and hung there, because
   the request never reached Caddy's http->https redirect; after one HTTPS
@@ -93,7 +128,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   (`ROLL_MIN_FREE_GB`; the parser image is 2.70 GB, the server image
   1.84 GB, and the first roll pulls the server image whole), or a box
   override or `.env` the release's compose does not load (`docker compose
-  config -q` on the box: an override still naming `tika:` or `media:`);
+config -q` on the box: an override still naming `tika:` or `media:`);
   and any roll whose server or parser image is not in the registry yet.
   After the roll it asks the parser's `/healthz` from inside `mantle_web`
   (`PARSER UNREACHABLE`, exit 1).
@@ -206,8 +241,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   `messenger_mark_read` and `messenger_directory`. A message records the
   credential it came through, and `messenger_wait` skips the caller's own,
   so two Claude clients on one login can wait for each other. No agent in a
-  group, no attachment bytes and no phone push yet: those are Phases 3 to
-  5. An Admin user's OAuth MCP connection now carries its client id.
+  group, no attachment bytes and no phone push yet: those are Phases 3 to 5. An Admin user's OAuth MCP connection now carries its client id.
 - **Fix round 2 (two outside reviews):** one per-login budget in the store
   (60 sends, 120 other writes a minute), so an MCP client and the routes
   share it; migration 0336: the workspace role reads no conversation tail

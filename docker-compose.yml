@@ -199,6 +199,25 @@ x-app-env: &app-env
   # with the profile off (or the token unset) they refuse cleanly.
   SANDBOXD_URL: ${SANDBOXD_URL:-http://sandboxd:8090}
   SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
+  # Calls (compose profile `calls`, the livekit service below; calls plan
+  # page 886126b4). Always present, like the sandbox pair: the profile decides
+  # what runs and the brain reads the profile, so an unused key pair is inert.
+  # MANTLE_CALLS_HOST is the ONE hostname TURN and the ICE override use
+  # (install.sh writes the first of MANTLE_SITE_ADDRESS). MANTLE_CALLS_AGENT
+  # registers the agent worker (P2; no worker ships yet). The caps are the
+  # plan's section 12 defaults when unset.
+  MANTLE_LIVEKIT_URL: ${MANTLE_LIVEKIT_URL:-ws://livekit:7880}
+  MANTLE_LIVEKIT_PUBLIC_URL: ${MANTLE_LIVEKIT_PUBLIC_URL:-}
+  MANTLE_LIVEKIT_API_KEY: ${MANTLE_LIVEKIT_API_KEY:-}
+  MANTLE_LIVEKIT_API_SECRET: ${MANTLE_LIVEKIT_API_SECRET:-}
+  MANTLE_CALLS_HOST: ${MANTLE_CALLS_HOST:-}
+  MANTLE_CALLS_AGENT: ${MANTLE_CALLS_AGENT:-}
+  MANTLE_CALLS_MAX_MINUTES: ${MANTLE_CALLS_MAX_MINUTES:-}
+  MANTLE_CALLS_MAX_PARTICIPANTS: ${MANTLE_CALLS_MAX_PARTICIPANTS:-}
+  MANTLE_CALLS_AGENT_MAX_MINUTES: ${MANTLE_CALLS_AGENT_MAX_MINUTES:-}
+  MANTLE_CALLS_AGENT_IDLE_MINUTES: ${MANTLE_CALLS_AGENT_IDLE_MINUTES:-}
+  MANTLE_CALLS_AGENT_MINUTES_PER_DAY: ${MANTLE_CALLS_AGENT_MINUTES_PER_DAY:-}
+  MANTLE_VOICE_NOTE_MAX_SECONDS: ${MANTLE_VOICE_NOTE_MAX_SECONDS:-}
   # MCP surface dials (packages/mcp-core/src/build-server.ts). Both are read by
   # `web`, which serves the HTTP/OAuth connector, so they belong on this shared
   # anchor and nowhere narrower — setting a flag on one service and not the
@@ -915,6 +934,69 @@ services:
       - ./infra/updater/updater.sh:/updater.sh:ro
       - .:${MANTLE_STACK_DIR:-/opt/mantle-stack}
       - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal
+
+  # Calls (compose profile `calls`, Settings > Services > Calls; calls plan
+  # page 886126b4 sections 4 and 20). LiveKit, the media server behind voice
+  # calls between the people of this brain: signalling on 7880 (internal
+  # only, Caddy proxies /livekit/* to it), media on UDP 7882 (one port for
+  # every stream), ICE over TCP 7881 as the fallback, TURN on TLS 5349 and
+  # UDP 3478 for callers whose UDP is blocked. The four media ports are
+  # published here and must be open at the cloud edge of the box (a per-box
+  # ask, like port 80). Off by default: no container, no ports, no Call
+  # button. The brain mints every token; the API key pair never leaves the
+  # box (LIVEKIT_KEYS below, from .env).
+  #
+  # LiveKit does not expand env vars in its yaml, so the release-owned
+  # infra/livekit/livekit.yaml (refreshed by the updater like the Caddyfile)
+  # is copied at start with the calls host and the key NAME filled in, then
+  # the server runs on the copy. TURN/TLS serves Caddy's own certificate for
+  # the calls host: that one pair's directory of the ACME store is mounted
+  # read-only (the image runs as root, so the root-only files are readable).
+  # MANTLE_CALLS_HOST must be ONE hostname Caddy holds a certificate for
+  # (install.sh writes the first of MANTLE_SITE_ADDRESS); compose refuses to
+  # start the service without it.
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    container_name: mantle_livekit
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 512m
+    profiles: ['calls']
+    # The two values reach the shell as environment, never as text in the
+    # command (a value with a shell or sed metacharacter stops the container
+    # with a clear line instead of running as code). $$ is compose's escape
+    # for a literal $.
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >-
+        case "$$MANTLE_CALLS_HOST" in ''|*[!A-Za-z0-9.-]*) echo "MANTLE_CALLS_HOST must be one hostname" >&2; exit 1;; esac
+        && case "$$MANTLE_LIVEKIT_API_KEY" in ''|*[!A-Za-z0-9_-]*) echo "MANTLE_LIVEKIT_API_KEY must be letters, digits, _ or -" >&2; exit 1;; esac
+        && sed -e "s/__MANTLE_CALLS_HOST__/$$MANTLE_CALLS_HOST/g" -e "s/__MANTLE_LIVEKIT_API_KEY__/$$MANTLE_LIVEKIT_API_KEY/g" /etc/livekit/livekit.yaml > /tmp/livekit.yaml
+        && exec /livekit-server --config /tmp/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: '${MANTLE_LIVEKIT_API_KEY:-}: ${MANTLE_LIVEKIT_API_SECRET:-}'
+      MANTLE_CALLS_HOST: ${MANTLE_CALLS_HOST:?set MANTLE_CALLS_HOST in .env (one hostname Caddy serves)}
+      MANTLE_LIVEKIT_API_KEY: ${MANTLE_LIVEKIT_API_KEY:?set MANTLE_LIVEKIT_API_KEY in .env}
+    ports:
+      - '7882:7882/udp'
+      - '7881:7881/tcp'
+      - '5349:5349/tcp'
+      - '3478:3478/udp'
+    volumes:
+      - ./infra/livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro
+      # Only the calls host's own certificate pair from Caddy's ACME store,
+      # read-only (never the whole store: LiveKit is an upstream image with
+      # four published ports). Caddy issues into this directory; an empty one
+      # before the first issue is fine.
+      - ${MANTLE_DATA_DIR:-./data}/caddy/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/${MANTLE_CALLS_HOST:?set MANTLE_CALLS_HOST in .env}:/caddy-cert:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '-', 'http://127.0.0.1:7880/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      - autoheal=true
 
   # ── sandboxd — CLI-sandboxes supervisor (opt-in: compose profile `sandboxes`)
   # The third and last docker-socket holder (with updater/autoheal — root-

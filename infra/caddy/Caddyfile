@@ -45,12 +45,14 @@
 	# the code moved into the URL fragment, an OAuth callback) and the invite
 	# code in the path of the invite lookup are replaced with REDACTED, and
 	# the Referer header (which carried the page URL, code and all, on every
-	# subresource) is dropped.
+	# subresource) is dropped. The call token rides the signalling URL as
+	# `access_token` (/livekit/rtc?access_token=<jwt>, calls plan section
+	# 11): redacted the same way, in the same release as the route.
 	log {
 		output stdout
 		format filter {
 			wrap json
-			request>uri regexp "(^/api/auth/invite/)[A-Za-z0-9]{16}|([?&]code=)[^&#]*" "${1}${2}REDACTED"
+			request>uri regexp "(^/api/auth/invite/)[A-Za-z0-9]{16}|([?&]code=)[^&#]*|([?&]access_token=)[^&#]*" "${1}${2}${3}REDACTED"
 			request>headers>Referer delete
 		}
 	}

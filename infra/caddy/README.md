@@ -54,3 +54,21 @@ someone had to remember. Boxes drifted (one carried its own comment header),
 and a route added by hand for a client integration would have been wiped by
 the next roll. Now the file is the same everywhere, the shape is a switch, and
 the routes a box adds live where a roll cannot reach them.
+
+## Calls signalling (LiveKit)
+
+Both shapes route `handle_path /livekit/*` to `livekit:7880` before the
+catch-all. The browser connects to `wss://<site>/livekit` (the LiveKit
+client appends `/rtc` itself); Caddy strips the prefix and proxies the
+WebSocket upgrade as is. Media never passes through Caddy: the `livekit`
+compose service (profile `calls`) publishes its own four ports. With the
+profile off the upstream does not resolve and the path answers 502, which
+is right: there is no Call button then.
+
+The signalling URL carries the call token as `access_token=<jwt>`, so the
+access-log filter redacts it exactly as it redacts a sign-in `code=`: one
+alternation more in the `request>uri` regexp, `${3}` in the replacement.
+Pinned by `server/web/lib/caddy-layout.test.ts`. Found in the P0 spike
+(2026-10-28): the release logger printed the full JWT for every signalling
+request, and a drop-in cannot change the release logger (a second named
+`log` in a drop-in doubled every access-log line).
