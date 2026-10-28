@@ -1541,3 +1541,47 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
   await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA pgboss FROM ${nr}`);
   await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${nr}`);
 }
+
+/** The would-refuse count's derived triggers (0320; migrate made them from
+ *  the narrow role's grants up to 0.400.15). */
+const WOULD_REFUSE_TRIGGERS = [
+  'mantle_narrow_would_refuse_ins',
+  'mantle_narrow_would_refuse_del',
+  'mantle_narrow_would_refuse_upd',
+] as const;
+
+/**
+ * Drop the would-refuse count's derived triggers table by table, before
+ * the pending migrations (migrate-runner.ts applyJournal): 0341 drops
+ * their function, and one transaction taking the lock of every table that
+ * holds one (about 120) while the old app still serves (compose's migrate)
+ * could stall its writes or deadlock with them. Each table in its own
+ * transaction, waiting at most 3 s for its lock, tried again on a lock wait
+ * or a deadlock (eight tries, a second apart); 0341 drops whatever is
+ * left. One catalog read, finding none, on a database past 0341 or a
+ * fresh one. Returns how many tables it changed.
+ */
+export async function dropNarrowWouldRefuse(sql: Sql): Promise<number> {
+  const tables = await sql<{ t: string; names: string[] }[]>`
+    select g.tgrelid::regclass::text as t, array_agg(g.tgname::text order by g.tgname) as names
+      from pg_trigger g
+     where not g.tgisinternal and g.tgname = any(${[...WOULD_REFUSE_TRIGGERS]}::text[])
+     group by 1 order by 1`;
+  for (const { t, names } of tables) {
+    await withRetry(
+      () =>
+        sql.begin(async (tx) => {
+          await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
+          for (const name of WOULD_REFUSE_TRIGGERS) {
+            if (names.includes(name)) await tx.unsafe(`DROP TRIGGER IF EXISTS "${name}" ON ${t}`);
+          }
+        }),
+      {
+        retries: 7,
+        retryOn: ({ error }) => ['55P03', '40P01'].includes((error as { code?: string }).code ?? ''),
+        delayMs: () => 1000,
+      },
+    );
+  }
+  return tables.length;
+}
