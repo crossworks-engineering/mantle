@@ -1562,7 +1562,8 @@ Migration 0340 takes the "no Admin workspace" branches out of
 reads `brains_without_admin_workspace 0` on the box (on a brain with no
 Admin workspace no login holds an area after it). The image's own fences
 refuse what the fail-open counts counted ([fail-open.md](fail-open.md)), so those
-counts read 0 on the box for a release first.
+counts must read 0 on the box first, read with the previous release's box
+script (this release's script only prints `gone`).
 
 - **What it changes for readers:** nothing on a brain with an Admin
   workspace. The box script prints `fail_open_branches gone`.
