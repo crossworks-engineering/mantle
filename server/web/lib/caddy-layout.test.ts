@@ -113,6 +113,22 @@ describe('infra/caddy layout', () => {
     expect(caddy.match(/header @signin_pages >Referrer-Policy no-referrer/g)?.length).toBe(2);
   });
 
+  it('pins HTTPS in the browser (HSTS) on both site blocks, on TLS responses only', () => {
+    // Where port 80 is closed at the cloud edge a bare hostname tries plain
+    // http first and hangs before the redirect; a browser that has seen the
+    // header goes straight to https from then on. Both site blocks send it,
+    // only on TLS responses, for a year, this host only.
+    const caddy = read('infra/caddy/Caddyfile');
+    expect(caddy.match(/^\s*@https protocol https$/gm)?.length).toBe(2);
+    const hsts = caddy.match(/^\s*header @https Strict-Transport-Security "([^"]+)"$/gm) ?? [];
+    expect(hsts.length).toBe(2);
+    for (const line of hsts) {
+      const value = /"([^"]+)"/.exec(line)![1]!;
+      expect(value).toMatch(/^max-age=\d+$/); // no includeSubDomains, no preload
+      expect(Number(/\d+/.exec(value)![0])).toBeGreaterThanOrEqual(31536000);
+    }
+  });
+
   it('box-local drop-ins are gitignored (public repo)', () => {
     expect(read('.gitignore')).toContain('infra/caddy/conf.d/*.caddy');
   });
