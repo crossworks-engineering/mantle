@@ -112,7 +112,7 @@ describe('files', () => {
       ),
     ).resolves.toMatchObject({ stem: 'a' });
     await expect(resolveInputs(r('pdfengines/merge'), {}, caller, deps)).rejects.toThrow(
-      /needs file_ids/,
+      /file_ids is required/,
     );
     await expect(resolveInputs(r('pdfengines/merge'), { nope: 1 }, caller, deps)).rejects.toThrow(
       /inputs.nope is not an input/,
@@ -266,7 +266,7 @@ describe('html and markdown', () => {
       resolveInputs(r('chromium/convert/html'), { markdown: '# x' }, caller, deps),
     ).rejects.toThrow(/chromium\/convert\/markdown/);
     await expect(resolveInputs(r('chromium/convert/html'), {}, caller, deps)).rejects.toThrow(
-      /needs html/,
+      /html \(inline\) or one \.html file in file_ids is required/,
     );
   });
 

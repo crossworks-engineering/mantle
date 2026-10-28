@@ -221,13 +221,18 @@ export async function resolveInputs(
         }
         stem = stemOf(f.filename);
         await take('files', 'index.html', f.bytes);
-      } else throw new InputError(`${route.key} needs html (inline) or one .html file in file_ids`);
+      } else
+        throw new InputError(
+          `${route.key}: html (inline) or one .html file in file_ids is required`,
+        );
       break;
     }
     case 'markdown': {
       const mdIds = fileIds;
       if (!markdown && !mdIds.length)
-        throw new InputError(`${route.key} needs markdown (inline) or .md files in file_ids`);
+        throw new InputError(
+          `${route.key}: markdown (inline) or .md files in file_ids is required`,
+        );
       const names: string[] = [];
       if (markdown) {
         await take('files', 'file.md', Buffer.from(markdown, 'utf8'));
@@ -307,7 +312,7 @@ export async function resolveInputs(
     case 'pdf': {
       if (!fileIds.length)
         throw new InputError(
-          `${route.key} needs file_ids: the ${route.input === 'pdf' ? 'PDF' : 'Office'} files to work on (file_list, search)`,
+          `${route.key}: file_ids is required, the ${route.input === 'pdf' ? 'PDF' : 'Office'} files to work on (file_list, search)`,
         );
       if (html || markdown)
         throw new InputError(`${route.key} takes files (file_ids), not html or markdown`);
