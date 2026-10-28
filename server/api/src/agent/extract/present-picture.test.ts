@@ -78,6 +78,14 @@ describe("a canvas's one extractor call", () => {
     expect(out).toMatchObject({ summary: 'A pump skid P&ID.', model: 'vision-model' });
   });
 
+  it("asks for the extractor's whole JSON: a generous reply cap, not the vision worker's own", async () => {
+    await run();
+    expect(h.runVisionWorker.mock.calls[0]![0].maxTokens).toBe(8000);
+    vi.clearAllMocks();
+    await runExtractorModel(canvas, 'o1', WORKER, ROUTES, { max_tokens: 3000 }, 'P-101 A/B', {});
+    expect(h.runVisionWorker.mock.calls[0]![0].maxTokens).toBe(3000);
+  });
+
   it('with no vision worker: the text call alone, and no picture fetched or drawn', async () => {
     h.resolveDefaultWorker.mockResolvedValue({ ok: false, why: 'none', worker: null });
     const out = await run();

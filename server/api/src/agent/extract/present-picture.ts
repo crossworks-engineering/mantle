@@ -22,6 +22,9 @@ import { runVisionWorker } from '@mantle/runtime/agent';
 /** A picture past this is not sent (a provider's per-image limit). */
 export const PRESENT_PICTURE_MAX_BYTES = 3_500_000;
 
+/** The reply's ceiling when the extractor worker sets none (max_tokens). */
+export const EXTRACT_WITH_PICTURE_MAX_TOKENS = 8000;
+
 /** What the canvas's one pass sees beside its text. */
 export type PresentPicture = { png: Buffer; mime: 'image/png' | 'image/jpeg' };
 
@@ -70,7 +73,11 @@ export async function extractWithPicture(
     filename: picture.mime === 'image/png' ? 'canvas.png' : 'canvas.jpg',
     systemPrompt: system,
     prompt: `${user}\n\nThe picture is the canvas as it is drawn. Say in the summary what it shows (the drawing, the slides, the figures) as well as its words.`,
-    ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
+    // The extractor's JSON (summary, facts, entities, relations), not a
+    // photo's few lines: the vision worker's own cap would cut a big deck's
+    // reply off, and a cut reply parses to nothing. runDocumentWorker's
+    // generous default.
+    maxTokens: params.max_tokens ?? EXTRACT_WITH_PICTURE_MAX_TOKENS,
   });
   if (!r.ran) throw new Error(r.note ?? 'the vision worker did not run');
   return { text: r.text, model: r.model };
