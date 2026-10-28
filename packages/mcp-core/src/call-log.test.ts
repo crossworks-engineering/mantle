@@ -191,6 +191,90 @@ describe('redactArgs', () => {
     });
   });
 
+  it('a key name run together still reads as a secret', () => {
+    for (const k of [
+      'PGPASSWORD',
+      'ACCESSTOKEN',
+      'AUTHTOKEN',
+      'SECRETKEY',
+      'DBPASS',
+      'refreshtoken',
+      'db_userpass',
+      'mysecret',
+    ]) {
+      expect(isSecretKey(k), k).toBe(true);
+    }
+    for (const k of ['max_tokens', 'passage', 'compass', 'bypass', 'token_url', 'AUTHTOKEN_REF']) {
+      expect(isSecretKey(k), k).toBe(false);
+    }
+  });
+
+  it('drops the password of a URL or connection string and the newer key shapes', () => {
+    const jwt =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    const out = redactArgs('web_fetch', {
+      pg: 'postgres://app:S3cretPw@db.example:5432/x',
+      conn: 'Server=db;User Id=app;Password=S3cretPw2;Database=x',
+      odbc: 'uid=app;pwd=S3cretPw3',
+      lower: 'host=db password=S3cretPw4 dbname=x',
+      // Built at run time so no literal in the repo looks like a real key to
+      // a secret scanner (GitHub push protection refused the plain form).
+      stripe: ['sk_live_', 'sk_test_', 'rk_live_'].map((p) => `${p}ABCDEFGH12345678`).join(' '),
+      github: `${'github'}_pat_11ABCDEFG0abcdefghij_KLMNOPQRSTUV`,
+      gitlab: `${'glpat'}-ABCDEFGH12345678wxyz`,
+      jwt: `id ${jwt} end`,
+      google: `${'AIza'}SyABCDEFGHIJKLMNOPQRSTUVWXYZ0123456`,
+    });
+    const text = JSON.stringify(out);
+    for (const secret of [
+      'S3cretPw',
+      'ABCDEFGH12345678',
+      'abcdefghij_KLMNOPQRSTUV',
+      'eyJzdWIi',
+      'SflKxwRJ',
+      'SyABCDEFG',
+    ]) {
+      expect(text).not.toContain(secret);
+    }
+    expect(out.pg).toBe(`postgres://app:${REDACTED}@db.example:5432/x`);
+    expect(out.conn).toBe(`Server=db;User Id=app;Password=${REDACTED};Database=x`);
+    expect(out.odbc).toBe(`uid=app;pwd=${REDACTED}`);
+    expect(out.stripe).toBe(`sk_${REDACTED} sk_${REDACTED} rk_${REDACTED}`);
+    expect(out.jwt).toBe(`id eyJ${REDACTED} end`);
+    // A URL with no password, and a plain word, stay.
+    expect(
+      redactArgs('web_fetch', { u: 'https://user@h.example/a:b', w: 'pwd is a command' }),
+    ).toEqual({ u: 'https://user@h.example/a:b', w: 'pwd is a command' });
+  });
+
+  it('a cut never splits a character', () => {
+    const lone = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+    // The emoji's high half is the 500th unit.
+    const out = redactArgs('note_create', { body: `${'x'.repeat(499)}😀${'y'.repeat(100)}` });
+    expect(String(out.body)).toBe(`${'x'.repeat(499)}…`);
+    expect(lone.test(JSON.stringify(out))).toBe(false);
+    // The error's byte cap falls inside an emoji.
+    const e = mcpCallEntry({
+      loginId: LOGIN,
+      via: 'oauth',
+      tool: 'web_fetch',
+      args: {},
+      reply: null,
+      thrown: new Error(`${'x'.repeat(ERROR_MAX_BYTES - 2)}😀😀`),
+      threw: true,
+      durationMs: 1,
+    });
+    expect(e.error).toBe('x'.repeat(ERROR_MAX_BYTES - 2));
+    expect(lone.test(e.error!)).toBe(false);
+  });
+
+  it('a huge string is read at its start only, a token at the cut redacted whole', () => {
+    const body = `${'x'.repeat(490)} ghp_${'A'.repeat(36)}${'z'.repeat(6_000_000)}`;
+    const out = redactArgs('file_upload', { body });
+    expect(out.body).toBe(`${'x'.repeat(490)} ghp_${REDACTED.slice(0, 5)}…`);
+    expect(JSON.stringify(out)).not.toContain('AAAA');
+  });
+
   it('caps the stored arguments at about 4 KB', () => {
     const big: Record<string, unknown> = {};
     for (let i = 0; i < 100; i++) big[`k${i}`] = 'x'.repeat(400);

@@ -15,7 +15,7 @@
  * (setImmediate), and only in a process that writes rows (callAuditStarted).
  */
 import { callAuditStarted, noteMcpCallLost, recordMcpCall, type McpCallEntry } from '@mantle/db';
-import { UUID_RE, errorMessage } from '@mantle/std';
+import { UUID_RE, errorMessage, maskKeyLiterals } from '@mantle/std';
 import { getBuiltinRedactFields } from '@mantle/tools';
 import { WORKSPACE_ARG, replyItemIds } from './create-home';
 
@@ -52,14 +52,32 @@ const SECRET_WORDS = new Set([
   'privatekey',
   'bearer',
 ]);
+/** A word run together with one of these at its end, or `secret` at its
+ *  start, is a secret too (PGPASSWORD, DBPASS, ACCESSTOKEN, SECRETKEY). */
+const SECRET_RUN_TOGETHER = /(?:password|passwd|pass|token|secret)$|^secret/;
+/** Words that only look run together. */
+const NOT_SECRET_WORDS = new Set([
+  'compass',
+  'encompass',
+  'bypass',
+  'surpass',
+  'trespass',
+  'overpass',
+  'underpass',
+  'secretary',
+  'secretariat',
+]);
+const isSecretWord = (w: string): boolean =>
+  SECRET_WORDS.has(w) || (!NOT_SECRET_WORDS.has(w) && SECRET_RUN_TOGETHER.test(w));
 /** `<word>_key` is a secret for these words (api_key, private_key). */
 const KEY_OWNERS = new Set(['api', 'private', 'access', 'secret']);
 /** A key that ends in one of these names a secret, never holds one
  *  (secret_ref is a vault reference, token_url an endpoint). */
 const NOT_SECRET_LAST = new Set(['ref', 'url', 'uri']);
 
-/** Does a key name read as a secret? Whole words only: `pass` is not
- *  `passage` or `compass`, `token` is not `max_tokens`. */
+/** Does a key name read as a secret? By its words, and a word run
+ *  together that ends in a secret's name: `pass` is not `passage` or
+ *  `compass`, `token` is not `max_tokens`. */
 export function isSecretKey(key: string): boolean {
   const words = key
     .split(/[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])/)
@@ -69,7 +87,7 @@ export function isSecretKey(key: string): boolean {
   if (last === undefined || NOT_SECRET_LAST.has(last)) return false;
   if (words.length === 1 && last === 'key') return true;
   return words.some(
-    (w, i) => SECRET_WORDS.has(w) || (w === 'key' && i > 0 && KEY_OWNERS.has(words[i - 1]!)),
+    (w, i) => isSecretWord(w) || (w === 'key' && i > 0 && KEY_OWNERS.has(words[i - 1]!)),
   );
 }
 
@@ -77,15 +95,15 @@ export function isSecretKey(key: string): boolean {
  *  connector's mcp_<conn>_secret_set or mcp_<conn>_get_secret. */
 const SECRET_TOOL = /^secret_|^mcp_.*(?:_secret_|_secret$)/;
 
-/** Secrets inside a string; each keeps its lead (`Bearer `, `?key=`, the
- *  token prefix) and loses the rest. */
+/** Secrets inside a string that @mantle/std maskKeyLiterals (the key
+ *  prefixes, `Bearer`, `token=`, bare keys) does not know; each keeps its
+ *  lead (the scheme and user of a URL, `password=`, `?sig=`, the prefix)
+ *  and loses the rest. Run first, so a JWT is still whole. */
 const SECRET_IN_TEXT: readonly RegExp[] = [
-  /\b(Bearer\s+)[^\s"',]{8,}/g,
-  /\b(sk-)[A-Za-z0-9_-]{16,}/g,
-  /\b(gh[pousr]_)[A-Za-z0-9]{20,}/g,
-  /\b(xox[abp]-)[A-Za-z0-9-]{8,}/g,
+  /\b([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:)[^\s@/]+(?=@)/gi,
+  /\b((?:password|passwd|pwd)\s*=\s*)[^;&\s"']+/gi,
+  /\b(eyJ)[A-Za-z0-9_-]{4,}\.eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*/g,
   /\b(AKIA)[0-9A-Z]{16}\b/g,
-  /\b(mtlk_)[A-Za-z0-9_-]{8,}/g,
   /([?&](?:key|token|api_key|apikey|access_token|sig|signature)=)[^&#\s"']+/gi,
 ];
 
@@ -93,13 +111,33 @@ const SECRET_IN_TEXT: readonly RegExp[] = [
 export function redactText(s: string): string {
   let out = s;
   for (const re of SECRET_IN_TEXT) out = out.replace(re, `$1${REDACTED}`);
-  return out;
+  return maskKeyLiterals(out, REDACTED);
 }
 
-/** `s` cut to at most `max` bytes of UTF-8. */
+/** `s` cut to at most `max` UTF-16 units, never inside a surrogate pair
+ *  (a lone surrogate is refused by jsonb, and the row with it). */
+function clipChars(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const c = s.charCodeAt(max - 1);
+  return s.slice(0, c >= 0xd800 && c <= 0xdbff ? max - 1 : max);
+}
+
+/** `s` cut to at most `max` bytes of UTF-8, at a character's start. */
 function clipBytes(s: string, max: number): string {
-  if (Buffer.byteLength(s) <= max) return s;
-  return Buffer.from(s).subarray(0, max).toString('utf8');
+  const buf = Buffer.from(s);
+  if (buf.length <= max) return s;
+  let end = max;
+  while (end > 0 && (buf[end]! & 0xc0) === 0x80) end -= 1;
+  return buf.subarray(0, end).toString('utf8');
+}
+
+/** `s` redacted and cut to `max` units. Only the start is read (a 6 MB
+ *  upload is not scanned), and a little past the cut, so a token at the
+ *  edge is redacted whole before the cut. */
+function redactClip(s: string, max: number): { text: string; cut: boolean } {
+  const text = redactText(clipChars(s, max + 256));
+  if (text.length > max) return { text: clipChars(text, max), cut: true };
+  return { text, cut: s.length > max + 256 };
 }
 
 /** An object's label when it is a name/value pair ({name, value}, the
@@ -114,8 +152,8 @@ function pairLabel(o: Record<string, unknown>): string | null {
 
 function redactValue(v: unknown, depth: number): unknown {
   if (typeof v === 'string') {
-    const s = redactText(v);
-    return s.length > STRING_MAX ? `${s.slice(0, STRING_MAX)}…` : s;
+    const { text, cut } = redactClip(v, STRING_MAX);
+    return cut ? `${text}…` : text;
   }
   if (v === null || typeof v !== 'object') {
     return typeof v === 'number' || typeof v === 'boolean' ? v : v === null ? null : String(v);
@@ -261,7 +299,10 @@ export function mcpCallEntry(call: McpCallSeen): McpCallEntry {
     tool: call.tool,
     args: redactArgs(call.tool, args),
     ok: seen.ok,
-    error: seen.error === null ? null : clipBytes(redactText(seen.error), ERROR_MAX_BYTES),
+    error:
+      seen.error === null
+        ? null
+        : clipBytes(redactClip(seen.error, ERROR_MAX_BYTES).text, ERROR_MAX_BYTES),
     durationMs: call.durationMs,
     itemIds: [...ids].slice(0, ITEM_IDS_MAX),
     resultBytes: seen.bytes,

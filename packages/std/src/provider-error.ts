@@ -307,7 +307,8 @@ export function providerAuthRefusal(err: unknown): { provider?: string; status: 
  * the providers' own key prefixes (OpenAI, Anthropic, OpenRouter `sk-`;
  * ElevenLabs `sk_`; Google `AIza`; Hugging Face `hf_`; Groq `gsk_`; xAI
  * `xai-`; Perplexity `pplx-`; Replicate `r8_`; GitHub `ghp_`, `gho_`,
- * `ghu_`, `ghs_`, `ghr_`; ours `mtlk_`), a `Bearer` or `Token` credential
+ * `ghu_`, `ghs_`, `ghr_`, `github_pat_`; GitLab `glpat-`; Stripe `sk_`,
+ * `rk_`; Slack `xoxb-` and kin; ours `mtlk_`), a `Bearer` or `Token` credential
  * (Deepgram's scheme), a value named `api_key`, `apikey`, `key`, `token`,
  * `secret` or `authorization` (AssemblyAI sends the bare key there), and a
  * bare key with no prefix (Mistral, Cohere, Deepgram, AssemblyAI): a run
@@ -316,20 +317,24 @@ export function providerAuthRefusal(err: unknown): { provider?: string; status: 
  * character that is no letter or digit, or after a percent escape, so the
  * URL-encoded `Bearer%20sk-...` is masked too (fix round 2, L-B). A safety
  * net, not the rule: a refused key's detail never carries its body at all.
+ * `mark` replaces each literal (the MCP call log writes `[redacted]`); a
+ * named value that is the mark already is left as it is.
  */
-export function maskKeyLiterals(text: string): string {
+export function maskKeyLiterals(text: string, mark = '[masked]'): string {
   return text
-    .replace(KEY_PREFIX_RE, (_m, prefix: string) => `${prefix}[masked]`)
-    .replace(BEARER_RE, (_m, word: string, sep: string) => `${word}${sep}[masked]`)
-    .replace(TOKEN_RE, (_m, word: string, sep: string) => `${word}${sep}[masked]`)
-    .replace(NAMED_SECRET_RE, (_m, name: string, sep: string) => `${name}${sep}[masked]`)
-    .replace(BARE_KEY_RE, '[masked]');
+    .replace(KEY_PREFIX_RE, (_m, prefix: string) => `${prefix}${mark}`)
+    .replace(BEARER_RE, (_m, word: string, sep: string) => `${word}${sep}${mark}`)
+    .replace(TOKEN_RE, (_m, word: string, sep: string) => `${word}${sep}${mark}`)
+    .replace(NAMED_SECRET_RE, (m: string, name: string, sep: string, value: string) =>
+      value.startsWith(mark) ? m : `${name}${sep}${mark}`,
+    )
+    .replace(BARE_KEY_RE, mark);
 }
 
 /** Where a literal may start: after no letter or digit, or after a `%XX`. */
 const START = String.raw`(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2}))`;
 const KEY_PREFIX_RE = new RegExp(
-  String.raw`${START}(sk-|sk_|AIza|hf_|gsk_|xai-|pplx-|r8_|gh[pousr]_|mtlk_)[A-Za-z0-9_*.-]{6,}`,
+  String.raw`${START}(sk-|sk_|rk_|AIza|hf_|gsk_|xai-|pplx-|r8_|gh[pousr]_|github_pat_|glpat-|xox[abprs]-|mtlk_)[A-Za-z0-9_*.-]{6,}`,
   'g',
 );
 const BEARER_RE = new RegExp(String.raw`${START}(Bearer)(\s+|%20)[A-Za-z0-9._~+/*-]{8,}=*`, 'gi');
@@ -340,7 +345,7 @@ const TOKEN_RE = new RegExp(
   'gi',
 );
 const NAMED_SECRET_RE = new RegExp(
-  String.raw`${START}(api[_-]?key|x-api-key|key|token|secret|access_token|authorization)(["']?\s*[:=]\s*["']?)(?!\[masked\])[^\s"',;&}]{8,}`,
+  String.raw`${START}(api[_-]?key|x-api-key|key|token|secret|access_token|authorization)(["']?\s*[:=]\s*["']?)([^\s"',;&}]{8,})`,
   'gi',
 );
 /** A key with no prefix: 32+ hex, or 32+ letters and digits that mix upper
