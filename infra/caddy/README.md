@@ -14,6 +14,16 @@ The Caddyfile imports `shapes/{$MANTLE_CADDY_SHAPE:same-origin}.caddy` and
 `conf.d/*.caddy` inside its main site block. Compose mounts all three paths
 read-only into `mantle_caddy`.
 
+## HTTPS only (HSTS)
+
+Both site blocks send `Strict-Transport-Security: max-age=31536000` on TLS
+responses. After one HTTPS visit a browser goes straight to HTTPS for that
+host, so a bare hostname still opens where port 80 is closed at the cloud
+edge (the plain-http request never reaches the redirect). Plain-HTTP
+responses (`:80` local testing) carry no header. One year, this host only:
+no `includeSubDomains`, no `preload`. Opening port 80 at the edge is still
+the right fix for a first visit; the header covers every visit after it.
+
 ## Refresh and drift
 
 The updater sidecar (`infra/updater/updater.sh`) treats the Caddyfile and the
