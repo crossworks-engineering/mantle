@@ -216,7 +216,46 @@ S4b's 0340 (origin/feat/s4b at 31594593b) replaces two functions
 trigger, so no would-refuse UPDATE OF trigger stands in its way; and the
 branch's migrate drops them before any pending migration anyway.
 
-GATES_TBD
+### Gates (round 2)
+
+Mac, at e8dda76f4: `pnpm -r typecheck` 0, `pnpm lint` 0 (one warning, an
+unused disable in a file this branch does not touch), `pnpm format:check`
+0, `pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm boot:smoke` 0, unit
+vitest 1 failed (the journal's no-gap cell: 0340 is not on this branch),
+`pnpm -C server/web build` 0.
+
+Workstation, pg18 per suite (CI's setup: init-scratch, migrate with
+`MANTLE_CHECK_FLOOR=keep`, `--maxWorkers=3`, fsync off), two lanes at a
+time, at 73fbd4cdc; the four failures it found fixed in e8dda76f4 and
+rerun alone:
+
+| suite                                  | exit | files                 | tests                     | failures                                                     |
+| -------------------------------------- | ---- | --------------------- | ------------------------- | ------------------------------------------------------------ |
+| fresh replay 0000..0341 (0340 absent)  | 0    | 340 applied           |                           | none                                                         |
+| full DB vitest, shard 1/2              | 1    | 645 passed, 1 failed  | 7132 passed, 1 failed     | narrow-epoch (the box count's shape)                         |
+| full DB vitest, shard 2/2              | 1    | 642 passed, 3 failed  | 8711 passed, 3 failed     | the journal gap; narrow-rules-13b B; the area sweep's reads  |
+| test:actor-off                         | 1    | 165 passed, 4 failed  | 1637 passed, 4 failed     | the same four                                                |
+| test:actor-on                          | 0    | 35 passed             | 419 passed                |                                                              |
+| test:edit-on                           | 0    | 48 passed             | 595 passed                |                                                              |
+| test:runtime-role (full config)        | 1    | 336 passed, 3 failed  | 3331 passed, 3 failed     | the same three (no journal cell in it)                       |
+| test:matrix                            | 0    | 5 passed              | 9 passed                  |                                                              |
+| test:serial                            | 0    | 1 passed              | 1 passed                  |                                                              |
+| the three fixed files + 0341's, alone  | 0    | 4 passed              | 26 passed                 | (full config), then the three under actor-off and runtime-role: 21 passed each, exit 0 |
+| scripts/test-deploy-scripts.sh         | 0    |                       | 611 passed                |                                                              |
+
+The four: narrow-epoch read the box count's old five-number shape (now
+narrow-denied alone); narrow-rules-13b's cell B asserted 0320's notice off
+the narrow role (now: the write runs and nothing is counted); the area
+sweep's read rows refused any 5xx since round 1 made it one pass, and two
+GETs answer an upstream's 502 and 503 in tests (`/api/dev-tools/mcp`, no
+MCP server; `/api/microsoft/drives/:id/browse`, no Graph): on main they
+passed as the same answer both ways; now a 500 fails, not an upstream's
+answer (no narrow denial on any read row). The journal cell goes green on
+the rebase over 0340.
+
+The sweeps: narrow-area-routes (11), narrow-area-sweep (13; 12 at
+73fbd4cdc, 13 after the fix), w7a-area-system-sweep (5) and w7a-tool-sweep
+(5) green in the shards, every row on the narrow route, no denial.
 
 ### Left (round 2)
 
