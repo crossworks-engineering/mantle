@@ -34,8 +34,6 @@ import { appSummaryHash, sourceToText } from '@mantle/content';
 import { backgroundFence, errorMessage, withFenceNote } from '@mantle/std';
 import { log, startTrace, step } from '@mantle/tracing';
 
-const logger = log('app-summary');
-
 /** The most of an app's own text the call reads (a hard input cap). */
 export const APP_SUMMARY_INPUT_MAX_CHARS = 12_000;
 /** Of which its source may take this much, its schema this much. */
@@ -139,7 +137,7 @@ export async function summarizeAppForIndex(
     const [fresh] = await db.select().from(nodes).where(eq(nodes.id, node.id)).limit(1);
     return { node: fresh ?? node, status: 'written' };
   } catch (err) {
-    logger.warn(`${node.id}: no summary (${errorMessage(err)})`);
+    log('app-summary').warn(`${node.id}: no summary (${errorMessage(err)})`);
     return { node, status: 'failed' };
   }
 }
@@ -195,7 +193,7 @@ async function callSummarizer(
         ),
     );
   } catch (err) {
-    logger.warn(`${node.id}: the summarizer failed (${errorMessage(err)})`);
+    log('app-summary').warn(`${node.id}: the summarizer failed (${errorMessage(err)})`);
     return null;
   }
 }

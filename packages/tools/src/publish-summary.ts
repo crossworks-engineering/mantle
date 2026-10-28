@@ -21,8 +21,6 @@ import { appSummaryHash, getApp } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 
-const logger = log('publish-summary');
-
 /**
  * The summary an app publish writes (publishApp's `summary`): the author's
  * `given` text, or null when none was given, when it is the one kept already,
@@ -50,7 +48,7 @@ export async function appAuthorSummary(
     );
     return plan.do === 'write' ? plan.summary : null;
   } catch (err) {
-    logger.warn(`${id}: no summary (${errorMessage(err)})`);
+    log('publish-summary').warn(`${id}: no summary (${errorMessage(err)})`);
     return null;
   }
 }
