@@ -75,6 +75,9 @@ export async function runVisionWorker(opts: {
   mimeType: string;
   filename?: string | null;
   prompt?: string;
+  /** The call's system prompt instead of the worker's own (the extractor's
+   *  one pass over a Present canvas, Journal v3 J9). */
+  systemPrompt?: string;
   maxTokens?: number;
 }): Promise<VisionResult> {
   // The one resolution (@mantle/api-keys): the worker, its key reference,
@@ -110,7 +113,7 @@ export async function runVisionWorker(opts: {
       ...credential,
       mimeType: forVision.mimeType,
       prompt,
-      systemPrompt: worker.systemPrompt ?? undefined,
+      systemPrompt: opts.systemPrompt ?? worker.systemPrompt ?? undefined,
       model: worker.model,
       maxTokens: opts.maxTokens ?? params.max_tokens ?? 2000,
     });
@@ -162,6 +165,9 @@ export async function runDocumentWorker(opts: {
   mimeType: string;
   filename?: string | null;
   prompt?: string;
+  /** The call's system prompt instead of the worker's own (the extractor's
+   *  one pass over a Present canvas, Journal v3 J9). */
+  systemPrompt?: string;
   maxTokens?: number;
 }): Promise<VisionResult> {
   // Prefer a dedicated 'document' worker; fall back to the 'vision' worker when
@@ -202,7 +208,7 @@ export async function runDocumentWorker(opts: {
       ...credential,
       mimeType: opts.mimeType,
       prompt,
-      systemPrompt: worker.systemPrompt ?? undefined,
+      systemPrompt: opts.systemPrompt ?? worker.systemPrompt ?? undefined,
       model: worker.model,
       // Documents transcribe in one call — honour the worker's max_tokens, but
       // default generous (8000) since the per-image vision default is too small.

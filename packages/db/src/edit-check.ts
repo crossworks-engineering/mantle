@@ -99,7 +99,7 @@ export const GATEWAY_KEY_WRITERS: Readonly<Record<string, { module: string; how:
   },
   published_summary: {
     module: 'packages/db/src/published-summary.ts',
-    how: "set by an app's publish or a canvas's save or quiet-period flush through writePublishedSummary only (Journal v3 J9); the extractor reads it with summaryToIndex",
+    how: "set by an app's publish or its extract job, or a canvas's save, through writePublishedSummary only (Journal v3 J9); the extractor reads it with summaryToIndex",
   },
 };
 

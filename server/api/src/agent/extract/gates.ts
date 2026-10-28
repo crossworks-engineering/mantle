@@ -35,6 +35,11 @@
  *    keeping its summary is admitted there too: the model step reuses the
  *    summary, so it needs no key; one no assistant workspace reads goes to
  *    the cost guard's local index instead, as before the stamp.
+ *  - A type off the list is indexed from its published summary when it has
+ *    one (Journal v3 J9). A published app without one gets it in that
+ *    branch: the one model call this gate makes itself, behind the
+ *    worker and the type list, with the cost guard and the summary hash
+ *    checked before it (app-summary.ts); a failed call is a terminal skip.
  *  - Already-extracted is last, and requires the completion marker as well as
  *    summary+embedding: those are written first, so checking them alone made
  *    every retry skip a pass that had failed partway. An 'extract' stamp (a
@@ -80,6 +85,7 @@ import { maybeExtractEmbeddedImages } from './images';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 import { readNodeBodyLocal } from './load-body';
 import { writePublishedSummaryIndex, writeRetrievalChunks } from './index-writes';
+import { summarizeAppForIndex } from './app-summary';
 
 /** The parser could not take a side pass's job: the extract fails so
  *  pg-boss tries again. */
@@ -574,9 +580,31 @@ export async function admitForExtraction(
   // `*` is a wildcard meaning "any non-HARD_SKIP type" — already enforced above.
   if (!extractTypes.includes('*') && !extractTypes.includes(node.type)) {
     // A kind the extractor does not summarise (an app, by default) that
-    // carries a published summary (its author's or its publish's, Journal
-    // v3 J9) is indexed from it: no model call, one local embedding.
-    if (await indexFromPublishedSummary(node, ownerId)) return { proceed: false };
+    // carries a published summary is indexed from it: one local embedding.
+    // A published app with none gets it here, in its extract job (Journal
+    // v3 J9): at most one summarizer call, behind the gates above and the
+    // cost guard and hash inside (app-summary.ts). A failed call is a
+    // terminal skip, never a throw: no retry repeats a paid call.
+    const made = await summarizeAppForIndex(node, ownerId);
+    if (made.status === 'failed' && !readPublishedSummary(made.node.data)) {
+      await recordTerminalSkip(
+        {
+          kind: 'extractor_run',
+          ownerId,
+          subjectId: node.id,
+          subjectKind: 'node',
+          disposition: 'app_summary_failed',
+          details: {
+            node_type: node.type,
+            worker_slug: worker.slug,
+            hint: 'The summarizer call for this app failed or gave nothing; it is not retried. The next publish asks again (or pass `summary` on app_publish).',
+          },
+        },
+        node,
+      );
+      return { proceed: false };
+    }
+    if (await indexFromPublishedSummary(made.node, ownerId)) return { proceed: false };
     await recordTerminalSkip(
       {
         kind: 'extractor_run',

@@ -6323,7 +6323,7 @@
  },
  {
   "name": "app_publish",
-  "description": "Publish the app draft: promote the draft source + its build to the live app, recorded as a new version on its history (`app_snapshot_list`). Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved. With NO draft staged this promotes a rebuild instead: `app_build` compiles the published source when there is no draft, so app_build then app_publish refreshes a stale bundle (e.g. one predating per-app CSS) without touching the code. **Pass `summary`**: search and the assistants find the app by it; without one a model writes it from the code.",
+  "description": "Publish the app draft: promote the draft source + its build to the live app, recorded as a new version on its history (`app_snapshot_list`). Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved. With NO draft staged this promotes a rebuild instead: `app_build` compiles the published source when there is no draft, so app_build then app_publish refreshes a stale bundle (e.g. one predating per-app CSS) without touching the code. **Pass `summary`**: search and the assistants find the app by it; without one, one is written from the code when the app is indexed.",
   "inputSchema": {
    "type": "object",
    "properties": {

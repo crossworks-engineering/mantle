@@ -49,6 +49,7 @@ const h = vi.hoisted(() => ({
   readNodeBodyLocal: vi.fn(),
   writeRetrievalChunks: vi.fn(),
   writePublishedSummaryIndex: vi.fn(),
+  summarizeAppForIndex: vi.fn(),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -121,6 +122,7 @@ vi.mock('./index-writes', () => ({
   writeRetrievalChunks: h.writeRetrievalChunks,
   writePublishedSummaryIndex: h.writePublishedSummaryIndex,
 }));
+vi.mock('./app-summary', () => ({ summarizeAppForIndex: h.summarizeAppForIndex }));
 
 import { admitForExtraction } from './gates';
 import { sqlValues } from './test-support';
@@ -173,6 +175,7 @@ beforeEach(() => {
   h.readNodeBodyLocal.mockResolvedValue('the body');
   h.writeRetrievalChunks.mockResolvedValue(undefined);
   h.writePublishedSummaryIndex.mockResolvedValue(true);
+  h.summarizeAppForIndex.mockImplementation(async (n: unknown) => ({ node: n, status: 'none' }));
 });
 
 describe('admitForExtraction — refusals', () => {
@@ -343,6 +346,38 @@ describe('admitForExtraction — refusals', () => {
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
     expect(h.writePublishedSummaryIndex).not.toHaveBeenCalled();
     expect(disposition()).toBeUndefined();
+  });
+
+  it("asks for an app's summary in the allowlist branch, then indexes from what it wrote", async () => {
+    const bare = node({ type: 'app' });
+    h.selectQueue.push([bare]);
+    h.summarizeAppForIndex.mockResolvedValueOnce({
+      node: node({ type: 'app', data: { ...published('Made in the job.') } }),
+      status: 'written',
+    });
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(h.summarizeAppForIndex).toHaveBeenCalledTimes(1);
+    expect(h.summarizeAppForIndex).toHaveBeenCalledWith(bare, 'o1');
+    expect(h.writePublishedSummaryIndex).toHaveBeenCalledTimes(1);
+    expect(disposition()).toBeUndefined();
+  });
+
+  it('a failed summarizer call is a terminal skip, never a throw', async () => {
+    h.selectQueue.push([node({ type: 'app' })]);
+    h.summarizeAppForIndex.mockImplementationOnce(async (n: unknown) => ({
+      node: n,
+      status: 'failed',
+    }));
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('app_summary_failed');
+    expect(writtenJson()).toContain('app_summary_failed');
+    expect(h.writePublishedSummaryIndex).not.toHaveBeenCalled();
+  });
+
+  it('a type on the list never asks for an app summary', async () => {
+    h.selectQueue.push([node({ type: 'note' })]);
+    await admitForExtraction('n1', 'o1');
+    expect(h.summarizeAppForIndex).not.toHaveBeenCalled();
   });
 
   it('still refuses an app with no published summary, as before', async () => {

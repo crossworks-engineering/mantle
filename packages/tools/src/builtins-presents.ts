@@ -328,8 +328,9 @@ async function lookAndPoster(
 }
 
 /**
- * A picture of a canvas's latest save for its published summary (Journal v3
- * J9, publish-summary.ts): the poster when it shows the latest rev (every
+ * A picture of a canvas's latest save for the extractor's one pass over it
+ * through a vision worker (Journal v3 J9, server/api extract/present-
+ * picture.ts): the poster when it shows the latest rev (every
  * save with a look keeps one), else one render by the same renderer, kept as
  * the poster. Null when neither is there (no renderer in this process, a
  * failed or too large render). Never throws.
@@ -722,7 +723,7 @@ const LOOK_INPUT = {
     'Draw the saved canvas and return the picture. False only for a batch of small fixes.',
 } as const;
 
-/** The author's summary of a canvas (Journal v3 J9, publish-summary.ts). */
+/** The author's summary of a canvas (Journal v3 J9, @mantle/db published-summary.ts). */
 const SUMMARY_INPUT = {
   type: 'string',
   maxLength: PUBLISHED_SUMMARY_MAX_CHARS,

@@ -7,13 +7,16 @@
  *   { text, source: 'author' | 'publish', hash, at, model }
  *
  *  - 'author': the agent or client that built the item passed it (free).
- *  - 'publish': none was passed, so one summarizer call at the publish
- *    wrote it (@mantle/tools publish-summary.ts).
+ *    Kept until the author passes a new one.
+ *  - 'publish': an app published without one: its extract job made one
+ *    summarizer call and wrote it (server/api extract/app-summary.ts),
+ *    behind the extractor's gates. A canvas never gets one: without an
+ *    author's summary the extractor's own pass summarises it.
  *
  * `hash` names what the summary was made from (the published source, its
  * manifest), so a publish that changed neither makes no second call.
  *
- * It is not a derived key: the user's own publish sets it, so the edit check
+ * It is not a derived key: the user's own publish or save sets it, so the edit check
  * lets it through (edit-check.ts GATEWAY_KEY_WRITERS). It is not one of the
  * SUMMARY_KEYS either, so a content reset never drops it: the extractor
  * indexes it as the item's summary (summaryToIndex) instead of its own, on

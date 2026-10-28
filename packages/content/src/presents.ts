@@ -26,13 +26,14 @@
  * once that period passes. A save whose text is unchanged (a colour, a
  * layout) costs nothing.
  *
- * Summary (Journal v3 J9): a canvas has no publish step, so the settled
- * moment is its publish. The agent that builds it may pass a summary with a
- * save (`summary` on createPresent, setPresentSummary): kept as written. At
- * the flush, a canvas without one gets one summarizer call over its text and
- * its picture (the `summarize` hook the agent runtime passes), made again
- * only when the canvas source changed. Both through @mantle/db
- * published-summary.ts; the extractor indexes it instead of its own.
+ * Summary (Journal v3 J9): the agent that builds a canvas may pass a
+ * summary with a save (`summary` on createPresent, setPresentSummary): kept
+ * as written, through @mantle/db published-summary.ts, until a new one is
+ * passed; the extractor indexes it instead of its own. Without one, the
+ * extractor's own single pass writes it (a new canvas when it is first
+ * indexed, a changed one after the quiet period), with the canvas picture
+ * only through a vision worker (server/api extract/present-picture.ts).
+ * Nothing here calls a model.
  */
 import { and, asc, desc, eq, ilike, isNotNull, lte, notInArray, or, sql } from 'drizzle-orm';
 import {
@@ -49,7 +50,6 @@ import {
   writePublishedSummary,
   type Node,
   type PresentMeta,
-  type PublishedSummary,
   assertItemRight,
   headsOrSpace,
   isSnapshotCopy,
@@ -619,14 +619,6 @@ export const PRESENT_FLUSH_RETRY_MS = 5 * 60_000;
  *  the process: a held lock would refuse a write of the row's own mark. */
 const flushRetryAt = new Map<string, number>();
 
-/** The flush's summary hook (Journal v3 J9): the canvas's published
- *  summary for this settled moment, or null (one kept, or none made). One
- *  summarizer call at most; never throws. */
-export type PresentFlushSummarizer = (canvas: {
-  id: string;
-  ownerId: string;
-}) => Promise<PublishedSummary | null>;
-
 /**
  * Re-index the canvases whose quiet period has passed (section 4.3): one
  * announcement each, through markContentChanged, then the due mark is
@@ -634,22 +626,15 @@ export type PresentFlushSummarizer = (canvas: {
  * mark moved on since it was read (a save landed) is left for a later tick.
  * A row that fails (a lock held past PRESENT_FLUSH_LOCK_MS, a row gone
  * meanwhile) is passed over for PRESENT_FLUSH_RETRY_MS, so the same oldest
- * rows failing every tick never starve the rest. With `summarize`, each
- * canvas's published summary is asked for first and written in the same
- * transaction as the announcement, so the extractor indexes it. Returns how
- * many were announced.
+ * rows failing every tick never starve the rest. Returns how many were announced.
  */
-export async function flushDuePresentIndex(
-  limit = 25,
-  summarize?: PresentFlushSummarizer,
-): Promise<number> {
+export async function flushDuePresentIndex(limit = 25): Promise<number> {
   const now = Date.now();
   for (const [id, at] of flushRetryAt) if (at <= now) flushRetryAt.delete(id);
   const passed = [...flushRetryAt.keys()];
   const due = await db
-    .select({ id: presents.nodeId, ownerId: nodes.ownerId })
+    .select({ id: presents.nodeId })
     .from(presents)
-    .innerJoin(nodes, eq(nodes.id, presents.nodeId))
     .where(
       and(
         isNotNull(presents.indexDueAt),
@@ -661,10 +646,6 @@ export async function flushDuePresentIndex(
     .limit(limit);
   let announced = 0;
   for (const d of due) {
-    // Before the transaction: the summarizer call holds no lock. A save
-    // that lands meanwhile moves the due mark on, and the summary is not
-    // written (the next flush makes one for the newer source).
-    const summary = summarize ? await summarize(d).catch(() => null) : null;
     // One canvas's failure (a lock, a row gone meanwhile) is that canvas's:
     // it is passed over for PRESENT_FLUSH_RETRY_MS, and the others are
     // announced now.
@@ -679,7 +660,6 @@ export async function flushDuePresentIndex(
           .where(and(eq(presents.nodeId, d.id), lte(presents.indexDueAt, sql`now()`)))
           .returning({ id: presents.nodeId });
         if (cleared.length === 0) return false;
-        if (summary) await writePublishedSummary(tx, d.id, summary);
         await markContentChanged(tx, { id: d.id, type: 'present' }, ['source']);
         return true;
       })

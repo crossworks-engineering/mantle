@@ -46,7 +46,8 @@ explicitly grant it and an optional per-app SQLite database.
    live. Refuses without a successful build. Pass `summary`: a few plain
    sentences on what the app is, who it is for, how to use it and the tables
    it keeps (600 characters at most). Search and the assistants find the app
-   by it. Without one, a model writes it from the code.
+   by it, and it stays until you pass a new one. Without one, a model writes
+   it from the code when the app is indexed.
 
 `app_get(id, include_source?)` reads an app back; `app_list()` browses them;
 `app_delete(id)` removes one (irreversible, confirm first).

@@ -792,16 +792,14 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
   }, 300_000);
 
   it('M4: nothing that spends on the owner’s keys is listed for a member, or reached', async () => {
-    // Every spending builtin (a `model` spender keeps its free part outside
-    // Admin: search_chunks its ranking, app_publish its publish without a
-    // generated summary, Journal v3 J9) and every other tool on the owner's
-    // keys (W7 integration fix 2: route_map too).
+    // Every spending builtin (search_chunks keeps its free ranking) and every
+    // other tool on the owner's keys (W7 integration fix 2: route_map too).
     const { BUILTIN_TOOLS } = await import('@mantle/tools');
     const { MCP_TOOL_DEFS, mcpToolPolicyOf } = await import('@mantle/mcp-core');
     // The tools whose policy spends `ownerKey` (A5 step 6a: no list view).
     const ownerKey = [...BUILTIN_TOOLS.map((d) => d.slug), ...MCP_TOOL_DEFS.map((d) => d.slug)];
     const spending = [
-      ...BUILTIN_TOOLS.filter((d) => d.spends && d.policy.spends !== 'model').map((d) => d.slug),
+      ...BUILTIN_TOOLS.filter((d) => d.spends && d.slug !== 'search_chunks').map((d) => d.slug),
       ...new Set(ownerKey.filter((n) => mcpToolPolicyOf(n)?.spends === 'ownerKey')),
     ];
     expect(spending).toContain('route_map');

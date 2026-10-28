@@ -59,7 +59,8 @@ export {
 
 export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
 export { buildAndStageApp, type AppBuildOutcome } from './app-build-stage';
-export { appPublishSummary, presentPublishSummary } from './publish-summary';
+export { appAuthorSummary } from './publish-summary';
+export { latestCanvasPicture } from './builtins-presents';
 export { importAppPackage, type AppPackageImportResult } from './app-package-import';
 export { PRIVATE_OUTPUT_TOOL_SLUGS } from './private-output';
 export {

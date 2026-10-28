@@ -8,7 +8,7 @@
  *   nodes.data.color      optional tile tint key (APP_TINTS)
  *   nodes.data.summary    the summary the extractor indexes: the published
  *                         summary (@mantle/db published-summary.ts), set by
- *                         publishApp
+ *                         publishApp or the app's extract job
  *   apps.source           { entry, files } — built + run
  *   apps.source_text      derived plaintext (concatenated source; FTS reads this)
  *   apps.manifest         { toolSlugs, sqlite, description }
@@ -1042,11 +1042,11 @@ export type PublishAppOpts = {
   actor?: AppHistoryActor;
   /** The member a 'member' row names (team apps Phase 3). */
   actorLoginId?: string | null;
-  /** The summary this publish gives the app (Journal v3 J9): the author's,
-   *  or one the summarizer wrote for this code (@mantle/tools
-   *  publish-summary.ts). Written in the publish's transaction, so the
-   *  index the publish announces reads it. An author's summary is written
-   *  even when there is nothing to publish (the item is looked at again). */
+  /** The summary this publish gives the app (Journal v3 J9): the author's
+   *  (@mantle/tools publish-summary.ts). Written in the publish's
+   *  transaction, so the index the publish announces reads it. An author's
+   *  summary is written even when there is nothing to publish (the item is
+   *  looked at again). Without one, the app's extract job writes one. */
   summary?: PublishedSummary | null;
 };
 

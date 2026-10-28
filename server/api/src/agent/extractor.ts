@@ -191,9 +191,14 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
 
       // ─── content_index pass ───────────────────────────────────────────
       // An app's or a canvas's published summary (its author's, or the one
-      // its publish wrote; Journal v3 J9) is the summary indexed: this pass
-      // never writes over it. Facts and entities still come from the body.
-      const indexed = summaryToIndex(existingData, { text: parsed.summary, model: worker.model });
+      // an app's extract job wrote; Journal v3 J9) is the summary indexed:
+      // this pass never writes over it. Facts and entities still come from
+      // the body. Without one, this pass's own summary is the canvas's (from
+      // its picture too when a vision worker made the call).
+      const indexed = summaryToIndex(existingData, {
+        text: parsed.summary,
+        model: parsed.model ?? worker.model,
+      });
       const summary = indexed.text;
 
       const { tableProfilePieces, tableSchemaDigest } = await buildTableIndexPieces(node, summary);

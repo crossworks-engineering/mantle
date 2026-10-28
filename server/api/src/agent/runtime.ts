@@ -68,7 +68,7 @@ import {
   invokeAgent,
   resolveChatKey,
 } from '@mantle/runtime/agent';
-import { presentPublishSummary, registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
+import { registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
 import { startTicker } from './ticker';
 import { log } from '@mantle/tracing';
 import {
@@ -984,16 +984,13 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
   // Present canvases (docs/proposals/canvas-files.md section 4.3): a save
   // never announces itself; it marks the canvas due a quiet period ahead,
   // and this re-indexes each one once that period passes. Never one
-  // extractor pass per save. That settled moment is a canvas's publish: a
-  // canvas with no summary of its author's gets one summarizer call over
-  // its text and picture first (Journal v3 J9, @mantle/tools
-  // publish-summary.ts), only when its source changed since the last one.
+  // extractor pass per save.
   startTicker({
     name: 'present index flush',
     everyMs: 60_000,
     // A database that keeps failing is asked less often, up to every 30 min.
     backoffCapMs: 30 * 60_000,
-    run: () => flushDuePresentIndex(undefined, presentPublishSummary),
+    run: () => flushDuePresentIndex(),
     onSuccess: (n) => {
       if (n > 0) logger.info(`present index flush: ${n} canvas(es) re-indexed after quiet period`);
     },

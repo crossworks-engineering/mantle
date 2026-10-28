@@ -245,14 +245,11 @@ describe('one surface for every login (W7b): what a scope lists', () => {
       expect(spendsOwnerKeys(s), s).toBe(true);
       expect(preparedLists(p, s), s).toBe(false);
     }
-    // spends 'model': the paid part is skipped outside Admin, the tool is not.
-    for (const d of BUILTIN_TOOLS.filter((x) => x.spends && x.policy.spends !== 'model')) {
+    for (const d of BUILTIN_TOOLS.filter((x) => x.spends && x.slug !== 'search_chunks')) {
       expect(preparedLists(p, d.slug), d.slug).toBe(false);
     }
-    // The query embedding of a passage search is not a paid turn; a publish
-    // makes its summary only on the owner's own keys (Journal v3 J9).
+    // The query embedding of a passage search is not a paid turn.
     expect(preparedLists(p, 'search_chunks')).toBe(true);
-    expect(preparedLists(p, 'app_publish')).toBe(true);
     // A scope holding Admin keeps them (subject to its areas).
     const admin = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: ALL_AREAS });
     for (const s of ['web_search_pro', 'generate_image', 'summarize_text', 'invoke_agent']) {

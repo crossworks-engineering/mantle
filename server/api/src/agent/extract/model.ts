@@ -19,6 +19,7 @@ import { type ChatResult } from '@mantle/voice';
 import { noteProviderFailure, noteProviderSuccess, tagProviderSubject } from '@mantle/embeddings';
 import { parseExtractorOutput, type ExtractorOutput } from '../extractor-parse';
 import { DEFAULT_EXTRACTOR_PROMPT } from './prompts';
+import { extractWithPicture, presentPictureForPass } from './present-picture';
 
 export async function resolveExtractor(ownerId: string): Promise<AiWorker | null> {
   return await getDefaultWorker(ownerId, 'extractor');
@@ -119,7 +120,9 @@ export function buildExtractorInput(
   const tableHint =
     node.type === 'table'
       ? 'This is a structured data table (its column profile and leading rows follow). Describe what the table contains, what each column means, and what questions it can answer.\n\n'
-      : '';
+      : node.type === 'present'
+        ? 'This is a Present canvas (a deck, a diagram or a dashboard; its visible text follows). In the summary say what it is, who it is for and what it shows.\n\n'
+        : '';
   // The node's title and text came from outside (an email subject and body,
   // a fetched page, an upload's filename, other people's words): both are
   // fenced (markers carrying a per-call nonce), their forged markers
@@ -159,7 +162,7 @@ export async function runExtractorModel(
   params: ExtractorParams,
   body: string,
   existingData: Record<string, unknown>,
-): Promise<ExtractorOutput> {
+): Promise<ExtractorOutput & { model?: string }> {
   const { system: systemPrompt, user: userPayload } = buildExtractorInput(
     worker.systemPrompt,
     node,
@@ -217,13 +220,22 @@ export async function runExtractorModel(
           },
         },
         async (h) => {
-          const r = await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
-          const result = parseExtractorOutput(r.text, { nodeId: node.id, model: worker.model });
+          // A canvas: the one call goes to the vision worker with its
+          // picture when one is wired, else the text call (Journal v3 J9,
+          // present-picture.ts). Never both, never a picture to a text model.
+          const picture = await presentPictureForPass(node, ownerId);
+          const r = picture
+            ? await extractWithPicture(ownerId, systemPrompt, userPayload, picture, params)
+            : await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
+          const model = (picture && r.model) || worker.model;
+          const result = parseExtractorOutput(r.text, { nodeId: node.id, model });
           // Capture the full model output — summary, all entities,
           // all facts. truncateJson at the tracing layer will only
           // bite if the combined JSON exceeds 64KB, which is
           // generous for normal extractor outputs.
           h.setOutput({
+            model,
+            picture: Boolean(picture),
             summary: result.summary,
             entity_count: result.entities.length,
             entities: result.entities.map((e) => ({
@@ -233,7 +245,7 @@ export async function runExtractorModel(
             fact_count: result.facts.length,
             facts: result.facts.map((f) => f.content),
           });
-          return result;
+          return { ...result, model };
         },
       );
   return parsed;

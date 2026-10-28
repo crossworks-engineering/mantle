@@ -73,6 +73,10 @@ const h = vi.hoisted(() => ({
   llmAllowed: true,
   /** The extractor's type allowlist (an app outside it: J9). */
   targetTypes: ['*'] as string[],
+  /** J9: a summarizer worker is wired, its calls, and whether they fail. */
+  summarizerOn: false,
+  summaryCalls: 0,
+  summaryFails: false,
 }));
 
 /** One vector per distinct text: a one-hot at the text's first-seen index. */
@@ -99,7 +103,13 @@ vi.mock('@mantle/embeddings', async (importOriginal) => {
 // The model: a fake chat adapter that counts its calls.
 vi.mock('@mantle/voice', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  const chat = async () => {
+  const chat = async (req: { messages: { content: unknown }[] }) => {
+    // J9: an app's summarizer call (app-summary.ts) is counted apart.
+    if (String(req.messages[0]?.content).includes('catalogue summary')) {
+      h.summaryCalls += 1;
+      if (h.summaryFails) throw new Error('provider down (test)');
+      return { text: 'Logs pump readings per shift. Table: readings.', model: 'fake/summarizer' };
+    }
     h.modelCalls += 1;
     return {
       text: JSON.stringify({
@@ -129,6 +139,27 @@ vi.mock('./model', async (importOriginal) => {
       systemPrompt: null,
       params: { target_types: h.targetTypes, extract_facts: false },
     }),
+  };
+});
+// J9: the summarizer worker (an app's extract job), when the test wires it;
+// never a vision worker, so a canvas's pass is the text call.
+vi.mock('@mantle/api-keys', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/api-keys')>();
+  return {
+    ...actual,
+    resolveDefaultWorker: async (_o: string, kind: string) =>
+      kind === 'summarizer' && h.summarizerOn
+        ? {
+            ok: true,
+            worker: {
+              id: 'w-sum',
+              slug: 'summarizer',
+              provider: 'local',
+              model: 'fake/summarizer',
+            },
+            credential: {},
+          }
+        : { ok: false, why: 'none', worker: null },
   };
 });
 vi.mock('@mantle/runtime/agent', async (importOriginal) => {
@@ -252,6 +283,9 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     h.afterLoad = null;
     h.llmAllowed = true;
     h.targetTypes = ['*'];
+    h.summarizerOn = false;
+    h.summaryCalls = 0;
+    h.summaryFails = false;
   });
 
   const LONG = 'Pump overhaul plan for the north site';
@@ -628,10 +662,13 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     expect(d?.model).toBe('author');
   });
 
-  it('J9: an app outside the allowlist, published with a summary: indexed from it, 0 model calls, no skip', async () => {
-    h.targetTypes = ['note'];
-    const app = await c.createApp(owner, { title: 'Pump log' });
-    await c.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "x";');
+  /** A published app (a green build promoted), with `summary` if given. */
+  const publishedApp = async (
+    title: string,
+    summary?: ReturnType<typeof m.newPublishedSummary>,
+  ) => {
+    const app = await c.createApp(owner, { title });
+    await c.writeDraftFile(owner, app.id, 'App.tsx', `export default () => "${title}";`);
     await c.setDraftBuild(owner, app.id, {
       storageKey: 'attachments/aa/bb/test',
       sha256: 'test',
@@ -640,26 +677,99 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
       bytes: 1,
       ok: true,
     });
-    const made = m.newPublishedSummary('Logs pump readings.', 'publish', 'h1', 'cheap/model')!;
-    await c.publishApp(owner, app.id, { actor: 'owner', summary: made });
+    await c.publishApp(owner, app.id, { actor: 'owner', summary });
+    return app;
+  };
+  const summaryModel = async (id: string) =>
+    (
+      await x<{ model: string | null }>(sql`
+        select data->>'summary_model' as model from nodes where id = ${id}`)
+    )[0]?.model;
+
+  it("J9: an app outside the allowlist, published with its author's summary: indexed from it, 0 model calls, no skip", async () => {
+    h.targetTypes = ['note'];
+    h.summarizerOn = true;
+    const app = await publishedApp(
+      'Pump log',
+      m.newPublishedSummary('Logs pump readings.', 'author', 'h1')!,
+    );
     expect((await row(app.id)).work).toBe('extract');
     await extractNode(app.id, owner);
 
     const r = await row(app.id);
-    expect(h.modelCalls).toBe(0);
+    expect(h.modelCalls + h.summaryCalls).toBe(0);
     expect(r.summary).toBe('Logs pump readings.');
     expect(textOf(r.vec)).toBe('Pump log\n\nLogs pump readings.');
     expect(r.work).toBeNull();
     expect(r.skipped).toBeNull();
-    const [d] = await x<{ model: string | null }>(sql`
-      select data->>'summary_model' as model from nodes where id = ${app.id}`);
-    expect(d?.model).toBe('cheap/model');
+    expect(await summaryModel(app.id)).toBe('author');
 
     // Again: nothing to do, nothing written.
     const before = r.vec;
     await extractNode(app.id, owner);
     expect((await row(app.id)).vec).toBe(before);
+    expect(h.modelCalls + h.summaryCalls).toBe(0);
+  });
+
+  it('J9: an app published with no summary gets ONE summarizer call in its extract job; the next pass calls nothing', async () => {
+    h.targetTypes = ['note'];
+    h.summarizerOn = true;
+    const app = await publishedApp('Shift log');
+    await extractNode(app.id, owner);
+
+    const r = await row(app.id);
+    expect(h.summaryCalls).toBe(1);
     expect(h.modelCalls).toBe(0);
+    expect(r.summary).toBe('Logs pump readings per shift. Table: readings.');
+    expect(textOf(r.vec)).toBe('Shift log\n\nLogs pump readings per shift. Table: readings.');
+    expect(r.work).toBeNull();
+    expect(r.skipped).toBeNull();
+    expect(await summaryModel(app.id)).toBe('fake/summarizer');
+    const [kept] = await x<{ source: string | null }>(sql`
+      select data->${'published' + '_summary'}::text->>'source' as source from nodes where id = ${app.id}`);
+    expect(kept?.source).toBe('publish');
+
+    // Another pass, then a rebuild-only publish (the same code, a new green
+    // build) and its pass: the kept summary was made from this code, so no
+    // second call.
+    await extractNode(app.id, owner);
+    await c.setDraftBuild(owner, app.id, {
+      storageKey: 'attachments/aa/bb/rebuild',
+      sha256: 'rebuild',
+      builtAt: '2026-10-28T01:00:00.000Z',
+      esbuildVersion: 'test',
+      bytes: 1,
+      ok: true,
+    });
+    await c.publishApp(owner, app.id, { actor: 'owner' });
+    await extractNode(app.id, owner);
+    expect(h.summaryCalls).toBe(1);
+    expect((await row(app.id)).summary).toBe('Logs pump readings per shift. Table: readings.');
+  });
+
+  it('J9: a failed summarizer call is a terminal skip, never a throw, and is not called again', async () => {
+    h.targetTypes = ['note'];
+    h.summarizerOn = true;
+    h.summaryFails = true;
+    const app = await publishedApp('Broken log');
+    await expect(extractNode(app.id, owner)).resolves.toBeUndefined();
+    expect(h.summaryCalls).toBe(1);
+    expect((await row(app.id)).skipped).toBe('app_summary_failed');
+    expect(await lastDisposition(app.id)).toBe('app_summary_failed');
+  });
+
+  it("J9: a canvas with no author's summary: the extractor's one text call writes its summary (no vision worker)", async () => {
+    const presents = await import('@mantle/content/presents');
+    const p = await presents.createPresent(owner, {
+      source:
+        '<!doctype html><html><head><title>Heater flow</title></head><body><svg></svg><p>Heater H-201 runs on duty with the standby pump feeding the column.</p></body></html>',
+    });
+    await extractNode(p.id, owner);
+    const r = await row(p.id);
+    expect(h.modelCalls).toBe(1);
+    expect(h.summaryCalls).toBe(0);
+    expect(r.summary).toBe('A summary the model wrote.');
+    expect(await summaryModel(p.id)).toBe('fake/extractor');
   });
 
   it('J9 control: an app outside the allowlist with no published summary is still refused', async () => {

@@ -163,7 +163,7 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     expect(node!.work).toBe('extract');
   });
 
-  it("keeps the author's summary, writes the flush's in the announcing transaction, and never the flush's over the author's (J9)", async () => {
+  it("keeps the author's summary until a new one, and the flush calls no model (J9)", async () => {
     const key = 'published' + '_summary';
     const kept = async (id: string) =>
       (
@@ -185,27 +185,13 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
       source: 'author',
     });
 
-    // The flush asks its hook; the hook's summary lands with the 'extract'
-    // reset, and survives that reset (it is not a summary key).
+    // Without one, nothing is written at create: the extractor's own pass
+    // writes the canvas's summary (server/api extract), never the flush.
     const b = await presents.createPresent(owner, { source: canvas(`${tag} Made`, 'y') });
-    await pastDue(b.id);
-    const asked: string[] = [];
-    const n = await presents.flushDuePresentIndex(25, async (c) => {
-      asked.push(c.id);
-      // The flush is brain-wide: answer for this test's canvas only.
-      return c.id === b.id
-        ? m.newPublishedSummary('A made summary.', 'publish', 'h1', 'cheap-model')
-        : null;
-    });
-    expect(n).toBeGreaterThanOrEqual(1);
-    expect(asked).toContain(b.id);
-    expect(await kept(b.id)).toMatchObject({
-      s: { text: 'A made summary.', source: 'publish' },
-      work: 'extract',
-    });
+    expect((await kept(b.id)).s).toBeNull();
 
-    // An author's summary set later replaces it and marks the canvas due;
-    // the same text again writes nothing.
+    // An author's summary set later lands and marks the canvas due; the
+    // same text again writes nothing.
     expect(await presents.setPresentSummary(owner, b.id, 'Mine now.')).toBe(true);
     expect((await kept(b.id)).s).toMatchObject({ text: 'Mine now.', source: 'author' });
     expect(await presents.setPresentSummary(owner, b.id, 'Mine now.')).toBe(false);
@@ -213,13 +199,17 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
       select index_due_at as due from presents where node_id = ${b.id}`;
     expect(due!.due).not.toBeNull();
 
-    // A generated summary arriving after it never lands over it.
+    // The flush only announces: the author's summary survives the reset.
     await pastDue(b.id);
-    await presents.flushDuePresentIndex(25, async (c) =>
-      c.id === b.id
-        ? m.newPublishedSummary('Generated late.', 'publish', 'h2', 'cheap-model')
-        : null,
-    );
+    expect(await presents.flushDuePresentIndex(25)).toBeGreaterThanOrEqual(1);
+    expect(await kept(b.id)).toMatchObject({
+      s: { text: 'Mine now.', source: 'author' },
+      work: 'extract',
+    });
+
+    // A generated summary arriving after it never lands over it.
+    const late = m.newPublishedSummary('Generated late.', 'publish', 'h2', 'cheap-model')!;
+    expect(await m.db.transaction((tx) => m.writePublishedSummary(tx, b.id, late))).toBe(false);
     expect((await kept(b.id)).s).toMatchObject({ text: 'Mine now.', source: 'author' });
   });
 
