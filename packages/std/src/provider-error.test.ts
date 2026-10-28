@@ -453,6 +453,17 @@ describe('the catch helpers: publicErrorText and errorDetail (A10 lows item 4)',
       'duplicate key value violates unique constraint',
     );
   });
+
+  it('masks Stripe, GitHub, GitLab and Slack keys, with the mark a caller names', () => {
+    expect(
+      maskKeyLiterals(
+        'rk_live_ABCDEFGH1234 github_pat_11ABCDEFG0_abcdefgh glpat-ABCDEFGH1234 xoxb-1234567890',
+        '[redacted]',
+      ),
+    ).toBe('rk_[redacted] github_pat_[redacted] glpat-[redacted] xoxb-[redacted]');
+    // A named value that is the mark already stays as it is.
+    expect(maskKeyLiterals('token=[redacted]', '[redacted]')).toBe('token=[redacted]');
+  });
 });
 
 describe('the watch maps a caught provider failure (A10 lows item 4)', () => {
