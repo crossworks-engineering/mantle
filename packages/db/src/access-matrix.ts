@@ -335,9 +335,10 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'last_message_at',
       'last_preview',
       'archived_at',
+      'voice_replies',
     ],
     delete: false,
-    why: 'a chat made (create), its counters moved by a send, its title, icon and colour, its archive when the last person leaves',
+    why: "a chat made (create), its counters moved by a send, its title, icon and colour, its archive when the last person leaves, a group admin's voice-replies switch (0342)",
   },
   'public.messenger_participants': {
     insert: true,
@@ -379,6 +380,29 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     update: ['last_active_at'],
     delete: false,
     why: "the messenger stream's heartbeat marks its own login online",
+  },
+  // Calls (0342): @mantle/content/messenger-calls writes a call's row in
+  // the tapping login's request (the participant rule checked in the same
+  // transaction), the webhook handler and the reconciler close it.
+  'public.messenger_calls': {
+    insert: true,
+    // agent_id and agent_seconds are P2's (the dispatch route): not written
+    // in P1, so not granted.
+    update: ['ended_at', 'ended_reason', 'duration_s', 'max_participants'],
+    delete: false,
+    why: 'a call opened by a participant; closed by the webhook, the reconciler, a group admin or the service switch; its head count',
+  },
+  'public.messenger_call_participants': {
+    insert: true,
+    update: ['left_at', 'device'],
+    delete: false,
+    why: "a stay in a call as LiveKit reports it (the webhook), corrected by the reconciler; a leave's courtesy mark",
+  },
+  'public.messenger_call_webhooks': {
+    insert: true,
+    update: [],
+    delete: true,
+    why: "the webhook's replay guard: one row per LiveKit event id, reaped by the reconciler after a day",
   },
   'auth.users': {
     update: ['disabled_at', 'session_epoch'],
@@ -1355,6 +1379,13 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.messenger_favourites', 'system'), user: 'all' },
   // "Online" (0335): the messenger stream's heartbeat, read on the system pool.
   none('public.login_presence', 'system'),
+  // Calls (0342): written by @mantle/content/messenger-calls on the system
+  // pool; a call and its stays read by the role as the call's own "call
+  // started" line is (started_seq under the participant rule). The replay
+  // guard is the system's alone.
+  { ...none('public.messenger_calls', 'system'), user: 'all' },
+  { ...none('public.messenger_call_participants', 'system'), user: 'all' },
+  none('public.messenger_call_webhooks', 'system'),
   // A public link (A3a, plan 5.2): edit of its item, an app's manage;
   // closing it (revoked_at, or the row deleted) also an Admin user with the
   // users area. Its view counter is the brain's (a named read-path write).
@@ -1599,6 +1630,8 @@ export type ColumnExists = (table: string, column: string) => boolean;
  */
 export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
   'public.tables': ['draft_path'], // 0283
+  'public.messenger_conversations': ['voice_replies'], // 0342
+  'public.messenger_messages': ['event'], // 0342
 };
 
 /** The matrix tables a database may still lack while it migrates, as
@@ -1616,6 +1649,9 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.messenger_reactions', // 0335
   'public.messenger_favourites', // 0335
   'public.login_presence', // 0335
+  'public.messenger_calls', // 0342
+  'public.messenger_call_participants', // 0342
+  'public.messenger_call_webhooks', // 0342
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as
