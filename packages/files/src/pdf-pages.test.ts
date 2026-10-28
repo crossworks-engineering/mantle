@@ -73,7 +73,9 @@ describe('the pictures pass, page by page', () => {
     // One page is two decoded photos (2 x 27 MB) plus their RGBA copies and
     // canvases while encoding; twenty pages at once was ~2.4 GB.
     expect(run.riseMb).toBeLessThan(500);
-    expect(run.ms).toBeLessThan(30_000);
+    // The memory bound is the guard; the time bound only catches a pass gone
+    // badly slow (a shared CI runner took 31 to 33 s on good runs).
+    expect(run.ms).toBeLessThan(45_000);
   }, 60_000);
 
   it('reads a 40-page scan-shaped PDF bounded, and returns nothing for it', async () => {
@@ -89,7 +91,7 @@ describe('the pictures pass, page by page', () => {
     );
     expect(run.value).toEqual([]);
     expect(run.riseMb).toBeLessThan(500);
-    expect(run.ms).toBeLessThan(30_000);
+    expect(run.ms).toBeLessThan(45_000);
   }, 60_000);
 
   it('stops once the cap holds enough real pictures', async () => {
