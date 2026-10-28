@@ -20,105 +20,25 @@
  * change, disable, role change, sign out everywhere) ends them all. A value
  * without `ep` is epoch 0: what every login starts at.
  */
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME } from '../auth-constants';
-import { env } from '@mantle/config';
+import {
+  b64urlDecode,
+  b64urlEncode,
+  derivedSecret,
+  signClaims,
+  verifySigned,
+  type SignedClaims,
+} from '@mantle/crypto';
 
-/** The `k` claim: mobile bearer, asset token, app frame, render cookie,
- *  contact visitor (contact shares), app tool confirmation. 'c' (the retired
- *  team-chat credential) and 't' (the retired team-visitor cookie) are
- *  reserved: no verifier takes them. */
-type TokenKind = 'm' | 'a' | 'f' | 'r' | 'v' | 'q';
-
-/**
- * Claims whose signature, kind and expiry have already been checked. Every
- * field beyond `exp` is still untrusted in SHAPE — each verifier narrows the
- * claims it cares about before handing them to a caller.
- */
-type SignedClaims = Record<string, unknown> & { exp: number };
+// The signing spine (secret, derivedSecret, signClaims, verifySigned, the
+// base64url helpers) lives in @mantle/crypto signed-claims.ts since the
+// documents engine: a package mints the render cookie for a print, and the
+// verifiers here must read the same bytes. Re-exported for the callers that
+// imported derivedSecret from this module.
+export { derivedSecret };
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
-
-function secret(): Buffer {
-  const s = env('SESSION_SECRET');
-  if (!s || s.length < 32) {
-    throw new Error('SESSION_SECRET must be set (>=32 chars). Run `openssl rand -base64 48`.');
-  }
-  return Buffer.from(s);
-}
-
-/**
- * A key for one purpose, derived from SESSION_SECRET (HMAC with the purpose
- * as the message): local to this brain, never sent anywhere, and never the
- * signing key itself. Rotating SESSION_SECRET rotates it.
- */
-export function derivedSecret(purpose: string): Buffer {
-  return createHmac('sha256', secret()).update(`mantle-derived:${purpose}`).digest();
-}
-
-function b64urlEncode(buf: Buffer): string {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function b64urlDecode(s: string): Buffer {
-  s = s.replace(/-/g, '+').replace(/_/g, '/');
-  while (s.length % 4) s += '=';
-  return Buffer.from(s, 'base64');
-}
-
-/**
- * Mint a signed value: `claims` plus an `exp` of `ttlSeconds` from now, encoded
- * and signed. Returns the value and the absolute expiry, since several callers
- * report the latter back to a client.
- */
-function signClaims(
-  claims: Record<string, unknown>,
-  ttlSeconds: number,
-): { value: string; exp: number } {
-  const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
-  const payload = b64urlEncode(Buffer.from(JSON.stringify({ ...claims, exp }), 'utf8'));
-  const sig = createHmac('sha256', secret()).update(payload).digest();
-  return { value: `${payload}.${b64urlEncode(sig)}`, exp };
-}
-
-/**
- * The verification spine every credential below shares: constant-time signature
- * check, kind check, expiry check. Returns the decoded claims, or null if the
- * value is malformed, forged, of the wrong kind, or expired.
- *
- * `kind` is null for the session cookie only — the kindless shape. Keeping the
- * two cases explicit (rather than collapsing them) is deliberate: `k: null` in
- * a payload must NOT satisfy the session check, and an exact comparison is the
- * only form where that reads unambiguously.
- */
-function verifySigned(value: string, kind: TokenKind | null): SignedClaims | null {
-  const dot = value.lastIndexOf('.');
-  if (dot < 0) return null;
-  const payload = value.slice(0, dot);
-  const expected = createHmac('sha256', secret()).update(payload).digest();
-  const got = b64urlDecode(value.slice(dot + 1));
-  if (got.length !== expected.length) return null;
-  if (!timingSafeEqual(got, expected)) return null;
-
-  try {
-    const data: unknown = JSON.parse(b64urlDecode(payload).toString('utf8'));
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) return null;
-    const claims = data as Record<string, unknown>;
-
-    if (kind === null) {
-      if (claims.k !== undefined) return null;
-    } else if (claims.k !== kind) {
-      return null;
-    }
-
-    const exp = claims.exp;
-    if (typeof exp !== 'number') return null;
-    if (Date.now() / 1000 > exp) return null;
-    return { ...claims, exp };
-  } catch {
-    return null;
-  }
-}
 
 /** The `ep` claim: absent is epoch 0 (a value minted before 0181); anything
  *  but a non-negative integer makes the value invalid (null). */
@@ -185,8 +105,6 @@ export function verifySessionCookie(
 // kind 'r', so it is never a session. `n` binds the page it opens: a render
 // cookie for one drawing cannot print another page.
 
-const RENDER_TOKEN_TTL_SECONDS = 300; // one render; bounds a leaked value.
-
 export type RenderClaims = {
   /** The anchor: whose brain the render reads. */
   uid: string;
@@ -198,18 +116,10 @@ export type RenderClaims = {
   n: string;
 };
 
-/** Mint a render cookie VALUE (see block comment). Never sent to a client. */
-export function buildRenderToken(opts: {
-  ownerId: string;
-  actorId: string;
-  nodeId: string;
-  ttlSeconds?: number;
-}): string {
-  return signClaims(
-    { uid: opts.ownerId, act: opts.actorId, n: opts.nodeId, k: 'r' },
-    opts.ttlSeconds ?? RENDER_TOKEN_TTL_SECONDS,
-  ).value;
-}
+/** Mint a render cookie VALUE (see block comment). Never sent to a client.
+ *  The minter is @mantle/documents (one cookie for the documents engine and
+ *  the browser sidecar); the verifier below reads the same bytes. */
+export { buildRenderToken } from '@mantle/documents';
 
 /** Verify a render cookie's signature, expiry and kind (`k:'r'`). No DB: the
  *  caller must still confirm `act` is a usable admin of the `uid` brain. */

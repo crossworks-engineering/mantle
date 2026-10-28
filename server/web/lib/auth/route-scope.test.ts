@@ -47,10 +47,11 @@ describe.skipIf(!hasManifest)('route scope (W6a), over the rows', () => {
       }
     }
     // The two OAuth callbacks (GET and HEAD each); the formula calculator,
-    // a Present canvas's frame ticket, and the three call token mints
-    // (a fresh token for an open call, the assistant room and its refresh:
-    // they write no row).
-    expect([writeGets, readPosts]).toEqual([4, 5]);
+    // a Present canvas's frame ticket, the three call token mints (a fresh
+    // token for an open call, the assistant room and its refresh: they write
+    // no row) and the two documents reads (metadata and bookmarks of the PDFs
+    // they are handed).
+    expect([writeGets, readPosts]).toEqual([4, 7]);
     expect(auditsAsWrite('GET', 'read')).toBe(false);
     expect(auditsAsWrite('OPTIONS', null)).toBe(false);
     expect(auditsAsWrite('patch', null)).toBe(true);

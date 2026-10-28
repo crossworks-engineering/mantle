@@ -38,11 +38,20 @@ describe('public API v1', () => {
     expect([...CONTRACT_AREAS]).toEqual([...ACCESS_KEY_AREAS]);
   });
 
+  /** The v1 POSTs that read (their declaration says the read they are):
+   *  the two documents routes that answer JSON about the PDFs they are
+   *  handed and write nothing, so a read-only key may call them. */
+  const READ_POSTS = new Set([
+    'POST /api/v1/documents/pdfengines/metadata/read',
+    'POST /api/v1/documents/pdfengines/bookmarks/read',
+  ]);
+
   it.skipIf(!hasManifest)('names only known areas, and a read for every GET', async () => {
     for (const r of (await v1Rows()).values()) {
       if (r.keyArea === undefined) continue;
       if (r.keyArea !== null) expect(ACCESS_KEY_AREAS).toContain(r.keyArea);
-      expect(r.effect, r.key).toBe(r.method === 'GET' || r.method === 'HEAD' ? 'read' : 'write');
+      const read = r.method === 'GET' || r.method === 'HEAD' || READ_POSTS.has(r.key);
+      expect(r.effect, r.key).toBe(read ? 'read' : 'write');
     }
   });
 

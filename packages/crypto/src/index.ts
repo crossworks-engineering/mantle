@@ -132,3 +132,13 @@ export function sealedKeyVersion(sealed: Buffer): number {
 export function currentSealVersion(): number {
   return CURRENT_VERSION;
 }
+
+export {
+  b64urlDecode,
+  b64urlEncode,
+  derivedSecret,
+  signClaims,
+  verifySigned,
+  type SignedClaims,
+  type TokenKind,
+} from './signed-claims';

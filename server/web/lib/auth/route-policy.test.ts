@@ -1081,6 +1081,16 @@ const V1_BASES: Readonly<Record<string, string | null>> = {
   'GET /api/v1/contacts/:id': 'GET /api/contacts/:id',
   'GET /api/v1/journal': 'GET /api/journal',
   'POST /api/v1/journal': 'POST /api/journal',
+  // The documents engine: handlers of their own (lib/documents-route.ts),
+  // no base route in the app.
+  'POST /api/v1/documents/chromium/convert/:source': null,
+  'POST /api/v1/documents/chromium/screenshot/:source': null,
+  'POST /api/v1/documents/libreoffice/convert': null,
+  'POST /api/v1/documents/pdfengines/:op': null,
+  'POST /api/v1/documents/pdfengines/bookmarks/read': null,
+  'POST /api/v1/documents/pdfengines/bookmarks/write': null,
+  'POST /api/v1/documents/pdfengines/metadata/read': null,
+  'POST /api/v1/documents/pdfengines/metadata/write': null,
 };
 
 /** The v1 rows a login outside Admin reaches (docs/actors.md, F1's changed

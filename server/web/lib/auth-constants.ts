@@ -13,7 +13,9 @@ export const SESSION_COOKIE_NAME = 'mantle_session';
  * carries on the print origin when it renders an export. Its own name, so it
  * can never be read as the session cookie.
  */
-export const RENDER_COOKIE_NAME = 'mantle_render';
+// Minted by @mantle/documents (the documents engine and the browser sidecar
+// carry one cookie); verified here (lib/auth/tokens.ts).
+export { RENDER_COOKIE_NAME } from '@mantle/documents';
 
 /** The byte routes a render surface loads: page images and scene images
  *  (/api/files/files/:id), embedded drawings (/api/draws/:id/svg) and the

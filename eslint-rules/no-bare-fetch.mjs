@@ -153,6 +153,10 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'owner config',
     why: "the documents engine's /health and /version: the stack's own GOTENBERG_URL",
   },
+  'packages/documents/src/client.ts': {
+    kind: 'owner config',
+    why: "the documents engine's conversion routes: the stack's own GOTENBERG_URL, basic auth",
+  },
   'server/web/lib/render-pdf.ts': {
     kind: 'owner config',
     why: "the browserless health probe: the deployment's BROWSER_WS_ENDPOINT",

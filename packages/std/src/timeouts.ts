@@ -99,6 +99,9 @@ export const NET_TIMEOUTS = {
   openRouterData: 25_000,
   /** The toolsmith's web fetch. */
   webFetch: 25_000,
+  /** One job of the documents engine (Gotenberg): its own API_TIMEOUT is
+   *  60 s, plus the upload and the answer. */
+  documentsJob: 90_000,
   /** A simulated turn (Agent Studio sandbox, eval runs). */
   simTurn: 300_000,
   /** One nightly maintenance sweep. */

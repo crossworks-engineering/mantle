@@ -1,6 +1,8 @@
 import type { Browser, Page } from 'puppeteer-core';
-import { env } from '@mantle/config';
+import { printOrigin } from '@mantle/documents';
 import { RENDER_COOKIE_NAME } from './auth-constants';
+
+export { printOrigin };
 
 /**
  * The one way a server-side render opens a page in the browser sidecar
@@ -26,21 +28,6 @@ import { RENDER_COOKIE_NAME } from './auth-constants';
  * (server/pages/print.ts), which covers what interception does not see (a
  * WebSocket, say).
  */
-
-/** The origin Chromium-in-the-sidecar uses to reach this app's render routes.
- *
- *   MANTLE_PRINT_ORIGIN  prod compose: http://web:3000 (service DNS).
- *   dev default:         http://host.docker.internal:$PORT (the app runs as
- *                        native node; the sidecar container reaches the host
- *                        via its host-gateway alias).
- */
-export function printOrigin(): string {
-  const configured = env('MANTLE_PRINT_ORIGIN');
-  if (configured) return configured.replace(/\/+$/, '');
-  // Dev: the app is native node on the host; the sidecar reaches it through the
-  // host-gateway alias baked into docker-compose.dev.yml.
-  return `http://host.docker.internal:${env('PORT') || '3000'}`;
-}
 
 /** Whether the sidecar may fetch `url` during a render: the print origin
  *  itself, and data:/blob: URLs. Anything else (another host, another port,

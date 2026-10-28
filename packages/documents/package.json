@@ -12,8 +12,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mantle/client-types": "workspace:*",
     "@mantle/config": "workspace:*",
-    "@mantle/std": "workspace:*"
+    "@mantle/crypto": "workspace:*",
+    "@mantle/db": "workspace:*",
+    "@mantle/files": "workspace:*",
+    "@mantle/std": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

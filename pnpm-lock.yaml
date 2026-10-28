@@ -404,12 +404,30 @@ importers:
 
   packages/documents:
     dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/config':
         specifier: workspace:*
         version: link:../config
+      '@mantle/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
+      '@mantle/files':
+        specifier: workspace:*
+        version: link:../files
       '@mantle/std':
         specifier: workspace:*
         version: link:../std
+      drizzle-orm:
+        specifier: ^0.45.4
+        version: 0.45.4(@opentelemetry/api@1.9.1)(pg@8.22.0)(postgres@3.4.9(patch_hash=5f9e843345f7ff09bcc85aa0d63fa992bd13de09064392e281914af27ac298e2))
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: ^26.6.5

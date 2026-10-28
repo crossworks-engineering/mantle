@@ -41,7 +41,7 @@ import {
   type GateCaller,
   type RequestScopeMode,
 } from '@mantle/db';
-import { AccessError, mapAccessError } from '@mantle/std';
+import { AccessError, defineDomainError, mapAccessError } from '@mantle/std';
 import {
   loadAnchorId,
   loadBearerToken,
@@ -1682,8 +1682,28 @@ export async function requireOwnerForRender(nodeId: string): Promise<SessionUser
   if (user) return user;
   const render = await renderCaller();
   if (render && render.nodeId === nodeId) return render.user;
+  // A render cookie that is refused (forged, expired, for another node, or
+  // for a login that is no Admin user now) answers 403: a sidecar that
+  // followed the login redirect would print the sign-in page as the
+  // document (the documents engine fails its job on 403; the browser sidecar
+  // reads the status too). A request with no render cookie is a person: the
+  // login page.
+  if ((await cookies()).get(RENDER_COOKIE_NAME)?.value) throw new RenderCookieRefusedError();
   redirect('/login');
 }
+
+/** The render surfaces' refusal of a render cookie (403, no redirect). */
+export class RenderCookieRefusedError extends Error {
+  constructor() {
+    super('the render cookie does not open this node');
+    this.name = 'RenderCookieRefusedError';
+  }
+}
+defineDomainError(RenderCookieRefusedError, {
+  reason:
+    'a render sidecar sent a render cookie the surface refuses; the job must fail, not print the login page',
+  status: 403,
+});
 
 /**
  * Audit hook of the session guards (the owner guard, the member, any-login

@@ -57,6 +57,53 @@ app brokers answer that the service is off, `/api/v1/documents/*` answers
 503, and page PDF export uses the browser sidecar where that runs. The
 engine stores nothing, so off loses nothing.
 
+## The package: one route table for every surface
+
+`packages/documents` (`@mantle/documents`) owns:
+
+- the route table (`src/routes.ts`): every Gotenberg 8.39 conversion route
+  by key (the engine path without `/forms/`: `chromium/convert/html`,
+  `libreoffice/convert`, `pdfengines/merge`, ...), with its input kind, the
+  extra files it takes and its option schema;
+- the schemas (`src/schemas.ts`): one strict zod object per route, the
+  engine's own field names as the option names, grouped as the engine docs
+  group them (page properties, waits, PDF/A, metadata, split, watermark,
+  stamp, rotate, optimize, encryption, LibreOffice properties, screenshot
+  properties). The Mantle-owned fields (`url`, `cookies`,
+  `extraHttpHeaders`, `userAgent`, `downloadFrom`, the webhook fields, the
+  raw file fields) are refused before the schema runs, each with why;
+- the client (`src/client.ts`): fetch + FormData, basic auth, the
+  `NET_TIMEOUTS.documentsJob` deadline, and one error per engine answer
+  (400 a form field, 409 the job failed, 413 too large, 503 busy; off or
+  unreachable is `DocumentsUnavailableError`, 503, naming the switch);
+- the inputs (`src/inputs.ts`): Mantle refs only. `file_ids` are read with
+  `readFileById` in the caller's scope; `node_id` (a page or a drawing)
+  becomes the print URL on the print origin plus a render cookie minted
+  for the caller's login (`src/render-token.ts`; the print surface answers
+  403 to a cookie it refuses, so a print never shows the login page);
+  inline `html` and `markdown` become `index.html` and `file.md`. Caps: 64
+  MB per input, 128 MB in all, 4 MB inline, 50 files;
+- the runner (`src/run.ts`): `runDocuments(call, caller, mode)` builds the
+  form (with the node defaults: fail on 403 and 404, the bounded diagram
+  wait, network idle, backgrounds), posts it, and lands the answer as a
+  file node by the `saveExport` rules (Auto-filed / Exports for an Admin
+  user, else the top of Files; `data.exportOf` the source, `data.documentsRoute`
+  the route) or hands the bytes back; the two JSON routes answer JSON.
+
+Every surface calls `runDocuments`: the HTTP API
+(`server/web/lib/documents-route.ts`, the route files under
+`app/api/v1/documents/`), the four agent tools, the MCP server and the app
+broker (the next milestone), and the page export.
+
+### The HTTP surface
+
+`POST /api/v1/documents/<family>/<route>` with `{ inputs, options,
+filename }`, session or `mtlk_` key (any login; key area `files`), the
+`documents` rate limit (30 a minute per login). The answer is the landed
+file (201), the bytes with `?return=bytes`, or `{ result }` for the two
+read routes. The user guide (`docs/guide/07-api/03-http-api.md`) has the
+body and the inputs.
+
 ## In dev
 
 ```sh

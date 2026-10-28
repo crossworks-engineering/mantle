@@ -847,6 +847,14 @@ POST /api/updates/check class=area scope=area:settings caller=owner gone=false
 POST /api/updates/request class=area scope=area:settings caller=owner gone=false
 POST /api/users class=area scope=area:users caller=owner gone=false
 POST /api/users/:id/password class=area scope=area:users caller=owner gone=false
+POST /api/v1/documents/chromium/convert/:source class=content scope=content caller=login gone=false
+POST /api/v1/documents/chromium/screenshot/:source class=content scope=content caller=login gone=false
+POST /api/v1/documents/libreoffice/convert class=content scope=content caller=login gone=false
+POST /api/v1/documents/pdfengines/:op class=content scope=content caller=login gone=false
+POST /api/v1/documents/pdfengines/bookmarks/read class=content scope=content caller=login gone=false
+POST /api/v1/documents/pdfengines/bookmarks/write class=content scope=content caller=login gone=false
+POST /api/v1/documents/pdfengines/metadata/read class=content scope=content caller=login gone=false
+POST /api/v1/documents/pdfengines/metadata/write class=content scope=content caller=login gone=false
 POST /api/v1/events class=content scope=content caller=owner gone=false
 POST /api/v1/files class=content scope=content caller=owner gone=false
 POST /api/v1/journal class=content scope=content caller=owner gone=false
