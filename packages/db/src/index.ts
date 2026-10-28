@@ -210,6 +210,19 @@ export {
   type CallAuditRow,
 } from './call-audit';
 export {
+  recordMcpCall,
+  setMcpCallWriter,
+  mcpCallLogStats,
+  mcpCallsSettled,
+  listMcpCalls,
+  reapMcpCalls,
+  MCP_CALLS_RETENTION_DAYS,
+  MCP_SESSION_GAP_MINUTES,
+  MCP_CALL_LOG_MAX_IN_FLIGHT,
+  type McpCallEntry,
+  type McpCallFilter,
+} from './mcp-call-log';
+export {
   READ_ONLY_CALLER_ERROR,
   GateNotReadyError,
   PreRunSideEffectError,

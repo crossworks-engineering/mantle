@@ -248,6 +248,10 @@ took four tries):
   `actor-misses-reap` (actor check miss rows in `actor_check_misses` older
   than 14 days, see [actors.md](./actors.md); plain SQL in batches; by hand
   `pnpm -C server/web actor-misses:reap`, dry run unless `--apply`),
+  `mcp-calls-reap` (MCP call log rows in `mcp_calls` older than 90 days,
+  see [mcp-as-a-login.md](./mcp-as-a-login.md); plain SQL in batches; by
+  hand `pnpm -C server/web mcp-calls:reap`,
+  dry run unless `--apply`),
   `app-export-catch-up` (app table exports still dirty 20 minutes after a
   write, a sync a restart lost; by hand only, as a changed table is
   re-indexed: `pnpm -C server/web app-export:catch-up`, dry run unless

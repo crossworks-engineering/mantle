@@ -549,6 +549,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     delete: false,
     why: 'measured (round 8): INSERT by a login turn, system:audit-log, system:audit:tool-call, system:http:admin-area, system:http:login-self',
   },
+  'public.mcp_calls': {
+    insert: true,
+    update: [],
+    delete: false,
+    why: "the MCP call log (0345, Journal v3 J8): system:audit:mcp-call writes one row per MCP tools/call from the login's request or stdio scope (@mantle/db mcp-call-log.ts); insert only, a log as audit_log is. The 90-day reap runs outside every scope (the maintenance sweep), never on the narrow route",
+  },
   'public.calendar_accounts': {
     insert: true,
     update: ['enabled', 'last_sync_error', 'updated_at'],
@@ -1302,6 +1308,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.audit_log', 'system'),
   userOnly('public.app_access_log', 'system'),
   none('public.team_access_log', 'system'),
+  // The MCP call log (0345, Journal v3 J8): written by the one MCP gateway
+  // through systemDb (mcp-call-log.ts), read by its row rule: a login's own
+  // rows, every row in an Admin user's scope.
+  { ...none('public.mcp_calls', 'system'), user: 'all' },
   // The member turn ledger (0182): written only by its two definers
   // (0326, the request's or chat's own login from the identity gateway),
   // which the runtime role runs; it reads the table, never writes it.
@@ -1654,6 +1664,7 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.messenger_calls', // 0342
   'public.messenger_call_participants', // 0342
   'public.messenger_call_webhooks', // 0342
+  'public.mcp_calls', // 0345
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as

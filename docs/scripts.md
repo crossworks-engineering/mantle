@@ -114,12 +114,12 @@ is wedged, or you need one service rather than the stack, you drop to these.
 Each compose file pins its project with a `name:` key, so the project is the
 same no matter which directory you run it from:
 
-| File                           | Project         | Containers                                                                                                         | What it is                                                                                     |
-| ------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `docker-compose.dev.yml` | `mantle-dev` | `mantle_dev_pg`, `mantle_dev_objectstore`, `mantle_dev_browser` (the parser runs on the host under `pnpm dev`) | Local dev **infra only**: the app runs on your host under `pnpm dev` |
-| `docker-compose.yml` | `mantle` | `mantle_pg`, `mantle_objectstore`, `mantle_parser`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
-| `docker-compose.client.yml`    | `mantle-client` | `mantle_client_web`, `mantle_client_caddy`                                                                         | The zero-secret owner UI (split out at v0.200)                                                 |
-| `e2e/stack/docker-compose.yml` | `mantle-e2e`    | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser`                                                          | Throwaway stack for the Playwright suite                                                       |
+| File                           | Project         | Containers                                                                                                           | What it is                                                                                     |
+| ------------------------------ | --------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `docker-compose.dev.yml`       | `mantle-dev`    | `mantle_dev_pg`, `mantle_dev_objectstore`, `mantle_dev_browser` (the parser runs on the host under `pnpm dev`)       | Local dev **infra only**: the app runs on your host under `pnpm dev`                           |
+| `docker-compose.yml`           | `mantle`        | `mantle_pg`, `mantle_objectstore`, `mantle_parser`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
+| `docker-compose.client.yml`    | `mantle-client` | `mantle_client_web`, `mantle_client_caddy`                                                                           | The zero-secret owner UI (split out at v0.200)                                                 |
+| `e2e/stack/docker-compose.yml` | `mantle-e2e`    | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser`                                                            | Throwaway stack for the Playwright suite                                                       |
 
 > **`-p` does not isolate a second stack.** Every service sets an explicit
 > `container_name:`, so running the same file under a different project name
@@ -582,7 +582,7 @@ spawns. Full detail (including the nightly cron and the `/settings` UI tab) in
 Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
 `backup-table-dbs`, `traces-reap`, `turns-reap`,
 `device-tokens-reap`, `app-access-log-reap`, `app-trash-purge`,
-`files-staged-reap`, `actor-misses-reap`, `app-export-catch-up`, and the hand-run `workspaces-check`) · **remedies** (`dedupe-edges`) · **ops**
+`files-staged-reap`, `actor-misses-reap`, `mcp-calls-reap`, `app-export-catch-up`, and the hand-run `workspaces-check`) · **remedies** (`dedupe-edges`) · **ops**
 (`re-embed`, `extract-backfill`, `rotate-master-key`, `sync-now`,
 `imap-folders`, `pgboss-init`) · **retired backfills** (the rest).
 
@@ -598,6 +598,7 @@ Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
 | `extract:backfill`                          | Re-fires `node_ingested` for nodes with no summary/embedding                                                                    |
 | `traces:reap`                               | Reaps abandoned traces for every owner (the cron-schedulable twin of the owner-scoped UI sweep)                                 |
 | `actor-misses:reap`                         | Deletes actor check miss rows older than 14 days (the CLI twin of the nightly `actor-misses-reap`); dry run unless `--apply`    |
+| `mcp-calls:reap`                            | Deletes MCP call log rows older than 90 days (the CLI twin of the nightly `mcp-calls-reap`); dry run unless `--apply`           |
 | `workspaces:check`                          | Read-only counts of what the workspace grants should never hold (grant drift, orphan grants, items without a home, and more)    |
 | `entities:dedupe`                           | Near-duplicate entity consolidation, free, pure DB, **dry-run by default**                                                      |
 | `dedupe:edges`                              | Collapses duplicate `mentioned_in` edges from before the extractor became idempotent                                            |

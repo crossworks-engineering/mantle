@@ -2409,6 +2409,13 @@
       "when": 1790200800000,
       "tag": "0344_narrow_observe_removed",
       "breakpoints": true
+    },
+    {
+      "idx": 345,
+      "version": "7",
+      "when": 1790200860000,
+      "tag": "0345_mcp_calls",
+      "breakpoints": true
     }
   ]
 }

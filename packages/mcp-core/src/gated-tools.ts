@@ -61,6 +61,7 @@ import { withModelImages } from './register/model-images';
 import { refusalReply } from './refusal-reply';
 import { WORKSPACE_ARG, withLanding, withWorkspaceArg } from './create-home';
 import { toolAnnotations } from './tool-annotations';
+import { logMcpCall } from './call-log';
 // The `mcp-tool` policy source the listing and the calls read.
 import './gate-policy';
 
@@ -267,7 +268,7 @@ export function registerGatedTool(
   const preRun = preRunOf(gate, entry, name);
   const after = entry.kind === 'connector' ? undefined : gate.guard?.after;
 
-  const handler = async (args: unknown, extra: unknown): Promise<unknown> => {
+  const run = async (args: unknown, extra: unknown): Promise<unknown> => {
     const input = { ...((args ?? {}) as Record<string, unknown>) };
     const ask = creates ? { from: 'argument' as const, workspace: input[WORKSPACE_ARG] } : null;
     if (creates) delete input[WORKSPACE_ARG];
@@ -334,7 +335,35 @@ export function registerGatedTool(
       throw inner;
     }
   };
-  // The hints a client reads (tool-annotations.ts): advisory, the gate
+  // The MCP call log (Journal v3 J8): one row per call, here and only here,
+  // for every tool, transport and login kind (call-log.ts). Shaped after the
+  // reply and written fire and forget: it never changes or slows the call.
+  const handler = async (args: unknown, extra: unknown): Promise<unknown> => {
+    const started = performance.now();
+    let reply: unknown = null;
+    let thrown: unknown = null;
+    let threw = false;
+    try {
+      reply = await run(args, extra);
+      return reply;
+    } catch (err) {
+      threw = true;
+      thrown = err;
+      throw err;
+    } finally {
+      logMcpCall({
+        loginId: gate.lists.loginId,
+        via: gate.lists.via,
+        tool: name,
+        args,
+        reply,
+        thrown,
+        threw,
+        durationMs: performance.now() - started,
+      });
+    }
+  };
+    // The hints a client reads (tool-annotations.ts): advisory, the gate
   // above decides what runs.
   const annotations = toolAnnotations(entry, policy);
   server.registerTool(
