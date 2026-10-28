@@ -70,6 +70,9 @@ export const CHROMIUM_BEHAVIOUR = {
     .array(z.object({ name: z.string().max(80), value: z.string().max(80) }))
     .max(20),
   waitDelay: z.string().regex(/^\d+(\.\d+)?(ms|s)$/),
+  // JavaScript the engine evaluates in the printed page (CDP, outside the
+  // print CSP). On a node print it runs under the caller's own render
+  // cookie, so it is no escalation: the caller may already read the page.
   waitForExpression: z.string().max(2000),
   waitForSelector: z.string().max(500),
   failOnHttpStatusCodes: statusCodes,

@@ -17,5 +17,5 @@ export const policy = routePolicy({
 
 export async function POST(req: Request, ctx: { params: Promise<{ op: string }> }) {
   const login = anyLoginCaller();
-  return handleDocumentsPost(req, login, `pdfengines/${(await ctx.params).op}`);
+  return handleDocumentsPost(req, login, ['pdfengines', (await ctx.params).op]);
 }

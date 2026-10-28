@@ -17,5 +17,5 @@ export const policy = routePolicy({
 
 export async function POST(req: Request) {
   const login = anyLoginCaller();
-  return handleDocumentsPost(req, login, 'pdfengines/metadata/write');
+  return handleDocumentsPost(req, login, ['pdfengines', 'metadata', 'write']);
 }

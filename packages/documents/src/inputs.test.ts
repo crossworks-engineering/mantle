@@ -181,7 +181,7 @@ describe('files', () => {
         caller,
         sum,
       ),
-    ).rejects.toThrow(/together pass 128 MB/);
+    ).rejects.toThrow(/together pass 64 MB/);
     await expect(
       resolveInputs(
         r('chromium/convert/html'),
@@ -299,7 +299,19 @@ describe('html and markdown', () => {
     ).rejects.toThrow(/not a markdown file/);
   });
 
-  it('an asset may not replace the document', async () => {
+  it('an asset may not replace the document, its header or its footer', async () => {
+    const chrome: InputDeps = {
+      ...deps,
+      readFile: async () => ({ filename: 'footer.html', bytes: Buffer.from('<p>x</p>') }),
+    };
+    await expect(
+      resolveInputs(
+        r('chromium/convert/html'),
+        { html: 'x', asset_file_ids: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'] },
+        caller,
+        chrome,
+      ),
+    ).rejects.toThrow(/would replace the document, its header or its footer/);
     await expect(
       resolveInputs(
         r('chromium/convert/html'),
@@ -352,7 +364,18 @@ describe('a node print', () => {
     expect(out.node).toMatchObject({ kind: 'draw', url: `http://web:3000/print/draws/${DRAW}` });
   });
 
-  it('refuses: no login, not a page or drawing, unknown, other inputs', async () => {
+  it('refuses: no login, a login the surface knows is no admin, not a page or drawing, unknown, other inputs', async () => {
+    await expect(
+      resolveInputs(
+        r('chromium/convert/url'),
+        { node_id: PAGE },
+        { ...caller, admin: false },
+        deps,
+      ),
+    ).rejects.toThrow(/signed-in Admin user/);
+    await expect(
+      resolveInputs(r('chromium/convert/url'), { node_id: PAGE }, { ...caller, admin: true }, deps),
+    ).resolves.toBeTruthy();
     await expect(
       resolveInputs(
         r('chromium/convert/url'),

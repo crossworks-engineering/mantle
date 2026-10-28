@@ -35,9 +35,12 @@ export type DocumentsInputs = {
   embed_file_ids?: string[];
 };
 
-/** Per input and in total (bytes); the inline texts are smaller. */
+/** Per input and in total (bytes); the inline texts are smaller. The
+ *  inputs and the answer are buffered in this process for the length of
+ *  the job (up to the engine's queue), several jobs at once
+ *  (DOCUMENTS_MAX_IN_FLIGHT), so the total stays modest. */
 export const DOCUMENTS_MAX_INPUT_BYTES = 64 * 1024 * 1024;
-export const DOCUMENTS_MAX_TOTAL_BYTES = 128 * 1024 * 1024;
+export const DOCUMENTS_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 export const DOCUMENTS_MAX_INLINE_BYTES = 4 * 1024 * 1024;
 export const DOCUMENTS_MAX_FILES = 50;
 
@@ -70,6 +73,10 @@ export type DocumentsCaller = {
    *  print surfaces); null when the caller is no login: a node print is
    *  then refused, the other inputs work. */
   actorLoginId: string | null;
+  /** Whether that login is an Admin user, when the surface knows (the HTTP
+   *  route does; a tool call does not): false refuses a node print up
+   *  front, in the package's words, instead of the engine's 403. */
+  admin?: boolean;
 };
 
 /** The reads the resolver makes, injectable for tests. */
@@ -260,7 +267,7 @@ export async function resolveInputs(
         throw new InputError(
           `${route.key} takes node_id alone; html, markdown and file_ids are other routes' inputs`,
         );
-      if (!caller.actorLoginId) {
+      if (!caller.actorLoginId || caller.admin === false) {
         throw new InputError(
           'printing a page or a drawing needs a signed-in Admin user; pass html instead, or use export_node',
         );
@@ -328,9 +335,12 @@ export async function resolveInputs(
   if (route.input === 'html' || route.input === 'markdown') {
     for (const id of ids(input.asset_file_ids, 'asset_file_ids')) {
       const f = await readFile(id, 'asset_file_ids');
-      if (f.filename === 'index.html' || /\.md$/i.test(f.filename)) {
+      if (
+        /^(index|header|footer)\.html?$/i.test(f.filename) ||
+        /\.(md|markdown)$/i.test(f.filename)
+      ) {
         throw new InputError(
-          `asset_file_ids: ${f.filename} would replace the document; assets are images, CSS and fonts`,
+          `asset_file_ids: ${f.filename} would replace the document, its header or its footer; assets are images, CSS and fonts`,
         );
       }
       await take('files', f.filename, f.bytes);

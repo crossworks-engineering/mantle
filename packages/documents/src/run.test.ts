@@ -127,7 +127,7 @@ describe('buildForm', () => {
       deps,
     );
     expect(field(form, 'waitForExpression')).toBe('true');
-    expect(field(form, 'failOnHttpStatusCodes')).toBe('[500,403,404]');
+    expect(field(form, 'failOnHttpStatusCodes')).toBe('[500,403,404,499,599]');
     expect(field(form, 'printBackground')).toBe('false');
     expect(field(form, 'paperWidth')).toBe('8.27in');
   });

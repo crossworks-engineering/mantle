@@ -649,7 +649,10 @@ services:
   # Policy (the plan, page f7c67c92 section 3.6): basic auth; no outbound
   # fetches at all (downloadFrom and webhooks off; Chromium and LibreOffice
   # deny private AND public addresses), with ONE opening: the print origin,
-  # anchored, so a page prints with its render cookie, plus file:///tmp,
+  # anchored, and on it only the paths a print loads (the print and render
+  # surfaces, the share runtime, the fonts, the byte routes of images,
+  # drawings and canvas posters), so a page prints with its render cookie
+  # and a caller's HTML can reach no other route of the brain; plus file:///tmp,
   # where the engine puts the caller's own uploaded files (Gotenberg's
   # default file rule; without it the html and markdown routes answer 403
   # once both IP classes are denied). A hostile document can therefore reach
@@ -674,7 +677,7 @@ services:
       CHROMIUM_MAX_QUEUE_SIZE: '10'
       CHROMIUM_DENY_PRIVATE_IPS: 'true'
       CHROMIUM_DENY_PUBLIC_IPS: 'true'
-      CHROMIUM_ALLOW_LIST: '^http://web:3000(/|$$)|^file:///tmp/'
+      CHROMIUM_ALLOW_LIST: '^http://web:3000/(print|render|share-runtime|excalidraw-assets|Inter|fonts|api/files/files|api/draws|api/presents)/|^file:///tmp/'
       LIBREOFFICE_DENY_PRIVATE_IPS: 'true'
       LIBREOFFICE_DENY_PUBLIC_IPS: 'true'
       LIBREOFFICE_MAX_QUEUE_SIZE: '10'

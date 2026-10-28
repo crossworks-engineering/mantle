@@ -8,6 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetServicesFileCache } from '@mantle/config';
 import {
   callGotenberg,
+  DOCUMENTS_MAX_IN_FLIGHT,
+  documentsInFlight,
+  headerSafeName,
   DocumentsBusyError,
   DocumentsFormError,
   DocumentsRenderError,
@@ -72,6 +75,43 @@ describe('callGotenberg', () => {
     expect(headers['Gotenberg-Output-Filename']).toBe('report');
     expect(calls[0]!.init.method).toBe('POST');
     expect(calls[0]!.init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('names the output in ASCII only, or not at all (the header takes Latin-1)', async () => {
+    expect(headerSafeName('Отчёт')).toBeNull();
+    expect(headerSafeName('report 報告 q3')).toBe('report  q3');
+    answer(200, 'x', { 'content-type': 'application/pdf' });
+    await callGotenberg(route, new FormData(), { outputName: 'Отчёт' });
+    expect(
+      (calls[0]!.init.headers as Record<string, string>)['Gotenberg-Output-Filename'],
+    ).toBeUndefined();
+    await callGotenberg(route, new FormData(), { outputName: 'Ärztebrief-2' });
+    expect((calls[1]!.init.headers as Record<string, string>)['Gotenberg-Output-Filename']).toBe(
+      'rztebrief-2',
+    );
+  });
+
+  it('holds at most the in-flight cap per process, and lets go on every answer', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.stubGlobal('fetch', async () => {
+      await gate;
+      return new Response('x', { status: 200, headers: { 'content-type': 'application/pdf' } });
+    });
+    const running = Array.from({ length: DOCUMENTS_MAX_IN_FLIGHT }, () =>
+      callGotenberg(route, new FormData()),
+    );
+    await Promise.resolve();
+    expect(documentsInFlight()).toBe(DOCUMENTS_MAX_IN_FLIGHT);
+    await expect(callGotenberg(route, new FormData())).rejects.toBeInstanceOf(DocumentsBusyError);
+    release();
+    await Promise.all(running);
+    expect(documentsInFlight()).toBe(0);
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    await callGotenberg(route, new FormData()).catch(() => {});
+    expect(documentsInFlight()).toBe(0);
   });
 
   it('refuses with 503 and the switch when the service is off, and makes no request', async () => {

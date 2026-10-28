@@ -17,5 +17,5 @@ export const policy = routePolicy({
 
 export async function POST(req: Request, ctx: { params: Promise<{ source: string }> }) {
   const login = anyLoginCaller();
-  return handleDocumentsPost(req, login, `chromium/screenshot/${(await ctx.params).source}`);
+  return handleDocumentsPost(req, login, ['chromium', 'screenshot', (await ctx.params).source]);
 }

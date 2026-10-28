@@ -3,6 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { runDocuments, type DocumentsResult } from '@mantle/documents';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import type { Login } from '@/lib/auth/login';
+import { sessionRole } from '@/lib/auth';
 import { readBody } from '@/lib/read-body';
 
 /**
@@ -31,16 +32,27 @@ const Body = z
   })
   .strict();
 
+/** A path segment of a documents route: the engine's own names (letters
+ *  and a hyphen). A param that decoded to more (`metadata%2Fread` on the
+ *  `[op]` row) would reach another route through this row's policy. */
+const SEGMENT = /^[a-z-]+$/;
+
 export async function handleDocumentsPost(
   req: Request,
   login: Login,
-  route: string,
+  segments: readonly string[],
 ): Promise<Response> {
+  if (!segments.every((s) => SEGMENT.test(s))) {
+    return NextResponse.json({ error: 'unknown documents route' }, { status: 404 });
+  }
+  const route = segments.join('/');
   const body = await readBody(req, Body);
   const wantBytes = new URL(req.url).searchParams.get('return') === 'bytes';
   const result: DocumentsResult = await runDocuments(
     { route, inputs: body.inputs, options: body.options, filename: body.filename },
-    { ownerId: login.brainId, actorLoginId: login.loginId },
+    // An Admin login opens the print surfaces; a member's node print is
+    // refused up front, in the package's words.
+    { ownerId: login.brainId, actorLoginId: login.loginId, admin: sessionRole(login) === 'admin' },
     wantBytes ? 'bytes' : 'file',
   );
   if (result.kind === 'json')

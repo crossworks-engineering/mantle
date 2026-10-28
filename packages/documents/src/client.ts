@@ -79,6 +79,27 @@ defineDomainError(DocumentsBusyError, {
   status: 503,
 });
 
+/** Jobs this process has in flight at the engine at once. The engine runs
+ *  two Chromium jobs and queues ten, so more would only wait there while
+ *  this process holds their inputs and answers in memory (the audit's memory
+ *  finding); the
+ *  excess is refused as busy, which a caller retries. */
+export const DOCUMENTS_MAX_IN_FLIGHT = 6;
+let inFlight = 0;
+
+/** Tests only. */
+export function documentsInFlight(): number {
+  return inFlight;
+}
+
+/** The Gotenberg-Output-Filename header takes Latin-1 only (undici's
+ *  Headers refuses anything wider; the audit found it); the stem itself names the
+ *  saved file, so the header carries an ASCII form of it, or nothing. */
+export function headerSafeName(stem: string): string | null {
+  const ascii = stem.replace(/[^\x20-\x7e]+/g, '').trim();
+  return ascii || null;
+}
+
 export type GotenbergAnswer = {
   bytes: Buffer;
   contentType: string;
@@ -122,7 +143,14 @@ export async function callGotenberg(
   const cfg = gotenbergConfig();
   if (!cfg) throw new DocumentsUnavailableError('GOTENBERG_URL or GOTENBERG_PASSWORD is not set');
   const headers: Record<string, string> = { authorization: gotenbergAuthHeader(cfg) };
-  if (opts.outputName) headers['Gotenberg-Output-Filename'] = opts.outputName;
+  const outputName = opts.outputName ? headerSafeName(opts.outputName) : null;
+  if (outputName) headers['Gotenberg-Output-Filename'] = outputName;
+  if (inFlight >= DOCUMENTS_MAX_IN_FLIGHT) {
+    throw new DocumentsBusyError(
+      `${DOCUMENTS_MAX_IN_FLIGHT} jobs are already running from this process`,
+    );
+  }
+  inFlight += 1;
   let res: Response;
   try {
     res = await fetch(`${cfg.url}${route.path}`, {
@@ -132,12 +160,24 @@ export async function callGotenberg(
       signal: timeoutSignal(opts.timeoutMs ?? NET_TIMEOUTS.documentsJob),
     });
   } catch (err) {
+    inFlight -= 1;
     const e = err as Error;
     if (e.name === 'TimeoutError' || e.name === 'AbortError') {
       throw new DocumentsBusyError(`${route.key} did not finish in time`);
     }
     throw new DocumentsUnavailableError(`the engine did not answer (${e.message})`);
   }
+  try {
+    return await readAnswer(route, res);
+  } finally {
+    inFlight -= 1;
+  }
+}
+
+async function readAnswer(
+  route: Pick<RouteDef, 'path' | 'key'>,
+  res: Response,
+): Promise<GotenbergAnswer> {
   if (res.ok) {
     return {
       bytes: Buffer.from(await res.arrayBuffer()),

@@ -34,12 +34,12 @@ services:
       PGDATA: /var/lib/postgresql/data
     ports:
       # 54323 on the host. The .env.local DATABASE_URL must point here.
-      - "127.0.0.1:54323:5432"
+      - '127.0.0.1:54323:5432'
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d postgres']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -65,9 +65,9 @@ services:
   objectstore_init:
     image: titanwest/mantle-rustfs:1.0.1
     container_name: mantle_dev_objectstore_init
-    restart: "no"
-    user: "0:0"
-    entrypoint: ["sh", "-ec"]
+    restart: 'no'
+    user: '0:0'
+    entrypoint: ['sh', '-ec']
     command:
       - |
         D=/mantle-data; SRC=$$D/minio; DST=$$D/rustfs; TMP=$$D/rustfs.partial
@@ -112,18 +112,18 @@ services:
       RUSTFS_ACCESS_KEY: minio
       RUSTFS_SECRET_KEY: minio12345
       RUSTFS_VOLUMES: /data
-      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ENABLE: 'true'
       RUSTFS_REGION: ${S3_REGION:-us-east-1}
       # Empty = log to stdout, so docker's log rotation applies (the image
       # default writes files under /logs inside the container).
-      RUSTFS_OBS_LOG_DIRECTORY: ""
+      RUSTFS_OBS_LOG_DIRECTORY: ''
     ports:
-      - "127.0.0.1:9000:9000"   # S3 API
-      - "127.0.0.1:9001:9001"   # web console
+      - '127.0.0.1:9000:9000' # S3 API
+      - '127.0.0.1:9001:9001' # web console
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/rustfs:/data
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health/ready"]
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:9000/health/ready']
       interval: 10s
       timeout: 5s
       retries: 12
@@ -147,20 +147,20 @@ services:
       TOKEN: mantle
       # Two concurrent renders, small queue, 60s per-session hard cap — a stuck
       # or pathological page render dies in the sidecar, never in server/web.
-      CONCURRENT: "2"
-      QUEUED: "5"
-      TIMEOUT: "60000"
+      CONCURRENT: '2'
+      QUEUED: '5'
+      TIMEOUT: '60000'
     ports:
       # 9222 on the host. server/web runs as native Node in dev and connects
       # here: BROWSER_WS_ENDPOINT=ws://127.0.0.1:9222?token=mantle
-      - "127.0.0.1:9222:3000"
+      - '127.0.0.1:9222:3000'
     extra_hosts:
       # The render target is the dev server on the HOST (native node, :3000 or
       # a worktree's :3100) — this alias lets Chromium-in-the-container reach
       # it. printOrigin() defaults to http://host.docker.internal:$PORT.
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/meta?token=mantle >/dev/null || exit 1"]
+      test: ['CMD-SHELL', 'curl -sf http://localhost:3000/meta?token=mantle >/dev/null || exit 1']
       interval: 10s
       timeout: 5s
       retries: 12
@@ -178,30 +178,30 @@ services:
     image: gotenberg/gotenberg:8.39.0
     container_name: mantle_dev_gotenberg
     restart: unless-stopped
-    profiles: ["documents"]
+    profiles: ['documents']
     mem_limit: 2g
     environment:
       API_TIMEOUT: 60s
-      API_ENABLE_BASIC_AUTH: "true"
+      API_ENABLE_BASIC_AUTH: 'true'
       GOTENBERG_API_BASIC_AUTH_USERNAME: mantle
       GOTENBERG_API_BASIC_AUTH_PASSWORD: mantle
-      API_DISABLE_DOWNLOAD_FROM: "true"
-      WEBHOOK_DISABLE: "true"
-      CHROMIUM_MAX_CONCURRENCY: "2"
-      CHROMIUM_MAX_QUEUE_SIZE: "10"
-      CHROMIUM_DENY_PRIVATE_IPS: "true"
-      CHROMIUM_DENY_PUBLIC_IPS: "true"
-      CHROMIUM_ALLOW_LIST: "^http://host.docker.internal:[0-9]+(/|$$)|^file:///tmp/"
-      LIBREOFFICE_DENY_PRIVATE_IPS: "true"
-      LIBREOFFICE_DENY_PUBLIC_IPS: "true"
-      LIBREOFFICE_MAX_QUEUE_SIZE: "10"
+      API_DISABLE_DOWNLOAD_FROM: 'true'
+      WEBHOOK_DISABLE: 'true'
+      CHROMIUM_MAX_CONCURRENCY: '2'
+      CHROMIUM_MAX_QUEUE_SIZE: '10'
+      CHROMIUM_DENY_PRIVATE_IPS: 'true'
+      CHROMIUM_DENY_PUBLIC_IPS: 'true'
+      CHROMIUM_ALLOW_LIST: '^http://host.docker.internal:[0-9]+/(print|render|share-runtime|excalidraw-assets|Inter|fonts|api/files/files|api/draws|api/presents)/|^file:///tmp/'
+      LIBREOFFICE_DENY_PRIVATE_IPS: 'true'
+      LIBREOFFICE_DENY_PUBLIC_IPS: 'true'
+      LIBREOFFICE_MAX_QUEUE_SIZE: '10'
     ports:
       # 3005 on the host: .env.local GOTENBERG_URL=http://127.0.0.1:3005
-      - "127.0.0.1:3005:3000"
+      - '127.0.0.1:3005:3000'
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      test: ['CMD', 'curl', '-sf', 'http://localhost:3000/health']
       interval: 10s
       timeout: 5s
       retries: 12

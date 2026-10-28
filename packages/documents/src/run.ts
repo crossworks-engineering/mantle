@@ -138,12 +138,10 @@ export async function buildForm(
   if (resolved.node) {
     form.append('url', resolved.node.url);
     form.append('cookies', resolved.node.cookieJson);
-    if (options.failOnHttpStatusCodes === undefined)
-      options.failOnHttpStatusCodes = NODE_FAIL_CODES;
-    else {
-      const given = options.failOnHttpStatusCodes as number[];
-      options.failOnHttpStatusCodes = [...new Set([...given, 403, 404])];
-    }
+    // A caller may add codes, never take the surface's refusals (403, 404)
+    // or the engine's own ranges away: an error page is never the document.
+    const given = (options.failOnHttpStatusCodes as number[] | undefined) ?? [];
+    options.failOnHttpStatusCodes = [...new Set([...given, ...NODE_FAIL_CODES])];
     if (options.waitForExpression === undefined) {
       options.waitForExpression =
         resolved.node.kind === 'page' ? PAGE_WAIT_EXPRESSION : DRAW_WAIT_EXPRESSION;

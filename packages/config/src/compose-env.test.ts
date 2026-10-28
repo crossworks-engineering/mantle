@@ -74,8 +74,12 @@ describe('every app service can read the live optional-service state', () => {
     // and the engine's own upload dir.
     expect(svc).toMatch(/CHROMIUM_DENY_PRIVATE_IPS: 'true'/);
     expect(svc).toMatch(/CHROMIUM_DENY_PUBLIC_IPS: 'true'/);
+    // The print origin, and on it only the paths a print loads: the print
+    // and render surfaces, the share runtime, the fonts, the byte routes
+    // of images, drawings and canvas posters (lib/auth-constants.ts
+    // RENDER_ASSET_RE); a caller's HTML reaches no other route.
     expect(svc).toMatch(
-      /CHROMIUM_ALLOW_LIST: '\^http:\/\/web:3000\(\/\|\$\$\)\|\^file:\/\/\/tmp\/'/,
+      /CHROMIUM_ALLOW_LIST: '\^http:\/\/web:3000\/\(print\|render\|share-runtime\|excalidraw-assets\|Inter\|fonts\|api\/files\/files\|api\/draws\|api\/presents\)\/\|\^file:\/\/\/tmp\/'/,
     );
     expect(svc).toMatch(/API_DISABLE_DOWNLOAD_FROM: 'true'/);
     expect(svc).toMatch(/WEBHOOK_DISABLE: 'true'/);

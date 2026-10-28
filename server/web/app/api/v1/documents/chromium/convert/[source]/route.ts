@@ -17,5 +17,5 @@ export const policy = routePolicy({
 
 export async function POST(req: Request, ctx: { params: Promise<{ source: string }> }) {
   const login = anyLoginCaller();
-  return handleDocumentsPost(req, login, `chromium/convert/${(await ctx.params).source}`);
+  return handleDocumentsPost(req, login, ['chromium', 'convert', (await ctx.params).source]);
 }
