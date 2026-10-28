@@ -44,6 +44,9 @@ export const ACTOR_BINDER_PINS = {
   // A tool write's audit row (A5 step 6d): written as system(audit:tool-call)
   // whatever actor the call ran as, once per row.
   'packages/db/src/call-audit.ts': 1,
+  // An MCP call's log row (Journal v3 J8): written as
+  // system(audit:mcp-call) whatever actor the call ran as, once per row.
+  'packages/db/src/mcp-call-log.ts': 1,
   // The one ordered gate (arch A3c): step 3 binds the actor the policy
   // implies, once per call.
   'packages/db/src/gate.ts': 1,
