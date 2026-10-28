@@ -15,6 +15,15 @@ vi.mock('./mcp-scope', async (importOriginal) => ({
       fn(),
   mcpAdminView: async () => null,
 }));
+// One builtin that marks a field sensitive without a secret_ name.
+vi.mock('@mantle/tools', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/tools')>();
+  return {
+    ...real,
+    getBuiltinRedactFields: (slug: string) =>
+      slug === 'vault_pin_set' ? ['pin'] : real.getBuiltinRedactFields(slug),
+  };
+});
 
 import { z } from 'zod';
 import {
@@ -32,6 +41,7 @@ import {
   ITEM_IDS_MAX,
   REDACTED,
   argItemIds,
+  isSecretKey,
   mcpCallEntry,
   readReply,
   redactArgs,
@@ -69,6 +79,116 @@ describe('redactArgs', () => {
     const out = redactArgs('secret_create', { name: 'k', value: 'hunter2', service: 'x' });
     expect(JSON.stringify(out)).not.toContain('hunter2');
     expect(out).toEqual({ redacted: true, keys: ['name', 'value', 'service'] });
+  });
+
+  it('drops a field the builtin marks sensitive', () => {
+    expect(redactArgs('vault_pin_set', { label: 'door', pin: '4321' })).toEqual({
+      label: 'door',
+      pin: REDACTED,
+    });
+  });
+
+  it("a connector's secret tool keeps no value", () => {
+    for (const tool of ['mcp_vault_secret_set', 'mcp_vault_get_secret']) {
+      expect(JSON.stringify(redactArgs(tool, { name: 'k', value: 'hunter2' }))).not.toContain(
+        'hunter2',
+      );
+    }
+  });
+
+  it('drops a bare `key` and the value of a header pair named as a secret', () => {
+    const out = redactArgs('api_tool_create', {
+      key: 'k-123',
+      headers: [
+        { name: 'Authorization', value: 'Basic dXNlcjpwYXNz' },
+        { name: 'Accept', value: 'json' },
+      ],
+    });
+    expect(out).toEqual({
+      key: REDACTED,
+      headers: [
+        { name: 'Authorization', value: REDACTED },
+        { name: 'Accept', value: 'json' },
+      ],
+    });
+  });
+
+  it('drops a token inside a string and keeps the rest of the string', () => {
+    const leaks: Record<string, string> = {
+      cmd: 'curl -H "Authorization: Bearer abcdefgh12345678" x',
+      openai: 'use sk-proj-abcdefghijklmnop1234 here',
+      github: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+      slack: 'xoxb-1234567890-abcdefghij',
+      aws: 'AKIAABCDEFGHIJKLMNOP',
+      mantle: 'mtlk_abcdefgh12345678',
+      url: 'https://h.example/x?a=1&api_key=SEKRET1&sig=SEKRET2#f',
+    };
+    const out = redactArgs('web_fetch', leaks);
+    const text = JSON.stringify(out);
+    for (const secret of [
+      'abcdefgh12345678',
+      'abcdefghijklmnop1234',
+      'abcdefghijklmnopqrstuvwxyz0123456789',
+      '1234567890-abcdefghij',
+      'ABCDEFGHIJKLMNOP',
+      'SEKRET1',
+      'SEKRET2',
+    ]) {
+      expect(text).not.toContain(secret);
+    }
+    expect(out.cmd).toBe(`curl -H "Authorization: Bearer ${REDACTED}" x`);
+    expect(out.url).toBe(`https://h.example/x?a=1&api_key=${REDACTED}&sig=${REDACTED}#f`);
+    expect(out.aws).toBe(`AKIA${REDACTED}`);
+  });
+
+  it('a thrown error loses its tokens too', () => {
+    const e = mcpCallEntry({
+      loginId: LOGIN,
+      via: 'oauth',
+      tool: 'web_fetch',
+      args: {},
+      reply: null,
+      thrown: new Error('GET https://h.example/?token=SEKRET3 failed'),
+      threw: true,
+      durationMs: 1,
+    });
+    expect(e.error).toBe(`GET https://h.example/?token=${REDACTED} failed`);
+  });
+
+  it('keeps what only looks like a secret', () => {
+    for (const k of [
+      'secret_ref',
+      'client_secret_ref',
+      'clientSecretRef',
+      'token_url',
+      'max_tokens',
+      'passage',
+      'compass',
+      'keywords',
+      'monkey',
+    ]) {
+      expect(isSecretKey(k), k).toBe(false);
+    }
+    for (const k of ['key', 'apiKey', 'APIKey', 'X-Api-Key', 'private_key', 'pass', 'Set-Cookie']) {
+      expect(isSecretKey(k), k).toBe(true);
+    }
+    expect(
+      redactArgs('api_tool_create', {
+        secret_ref: 'vault:abc',
+        token_url: 'https://h.example/token',
+        max_tokens: 100,
+        passage: 'John 3:16',
+        compass: 'north',
+        note: 'the bearer of the scroll',
+      }),
+    ).toEqual({
+      secret_ref: 'vault:abc',
+      token_url: 'https://h.example/token',
+      max_tokens: 100,
+      passage: 'John 3:16',
+      compass: 'north',
+      note: 'the bearer of the scroll',
+    });
   });
 
   it('caps the stored arguments at about 4 KB', () => {
