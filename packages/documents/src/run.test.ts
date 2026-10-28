@@ -65,7 +65,10 @@ function engine(status: number, body: string | Buffer, headers: Record<string, s
       form: init.body as FormData,
       headers: init.headers as Record<string, string>,
     });
-    return new Response(body, { status, headers });
+    return new Response(typeof body === 'string' ? body : new Uint8Array(body), {
+      status,
+      headers,
+    });
   });
 }
 const field = (form: FormData, name: string) => form.get(name);

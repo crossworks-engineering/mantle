@@ -29,7 +29,10 @@ const calls: { url: string; init: RequestInit }[] = [];
 function answer(status: number, body: string | Buffer, headers: Record<string, string> = {}) {
   vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
     calls.push({ url, init });
-    return new Response(body, { status, headers });
+    return new Response(typeof body === 'string' ? body : new Uint8Array(body), {
+      status,
+      headers,
+    });
   });
 }
 
