@@ -8,6 +8,7 @@
 import type postgres from 'postgres';
 import { headsBypassesIn } from './heads-bypass';
 import { assertNoIdentityLeaks } from './identity-gateway';
+import { dropNarrowWouldRefuse } from './runtime-role';
 import {
   gapRefusal,
   gapWarning,
@@ -55,6 +56,9 @@ export async function applyJournal(
   for (const g of plan.gaps) out.warn(gapWarning(g));
 
   if (plan.pending.length === 0) return 0;
+  // The would-refuse count's triggers go table by table before 0341 drops
+  // their function (runtime-role.ts dropNarrowWouldRefuse).
+  await dropNarrowWouldRefuse(sql);
   return await applyPending(sql, plan.pending, out);
 }
 

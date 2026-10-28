@@ -548,6 +548,9 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     // renumber at a rebase must not swap in another branch's migration or
     // drop the last of these).
     const names = [
+      // 0312 first: 0320's report predicate reads its mantle_narrow_actor,
+      // which 0341 drops, and a SQL function's body is checked when made.
+      'narrow_write_observe',
       'acting_login_definers',
       'structure_item_definer',
       'promotion_agent_definers',
@@ -563,7 +566,7 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
       'narrow_lockout_and_ledger_tokens',
       'narrow_hold_wider',
       'narrow_counter_enabled',
-      'narrow_reads_revoked',
+      'narrow_observe_removed',
     ];
     const journal = (
       JSON.parse(readFileSync(join(dir, 'meta', '_journal.json'), 'utf8')) as {
