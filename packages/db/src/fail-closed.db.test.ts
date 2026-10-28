@@ -164,13 +164,26 @@ describe.skipIf(!URL)('fail-closed branches (plan v3.2 S4b)', () => {
         await tx`set local session_replication_role = replica`;
         await tx`delete from workspaces where is_admin`;
         seen.push(await ask(tx));
+        // A scratch copy has no ledger: the revert's own DELETE needs one.
+        await tx`create schema if not exists "drizzle"`;
+        await tx`create table if not exists "drizzle"."__drizzle_migrations" (
+          id serial primary key, hash text not null, created_at bigint)`;
+        await tx`insert into "drizzle"."__drizzle_migrations" (hash, created_at)
+          values ('0340', 1790200560000)`;
         await tx.unsafe(revert);
+        seen.push(
+          (
+            await tx<{ n: number }[]>`select count(*)::int as n
+              from "drizzle"."__drizzle_migrations" where created_at = 1790200560000`
+          )[0]!.n === 0,
+        );
         seen.push(await ask(tx));
         throw new Error('roll back');
       })
       .catch((err: unknown) => {
         if (!(err instanceof Error) || err.message !== 'roll back') throw err;
       });
-    expect(seen).toEqual([false, true]);
+    // No: no area; the revert took 0340 off the ledger; then yes again.
+    expect(seen).toEqual([false, true, true]);
   });
 });
