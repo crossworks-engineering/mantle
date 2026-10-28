@@ -5,11 +5,11 @@
  * driven through the real app (createApp) as an Admin user with a signed
  * session cookie, on a fresh brain: no statement may be refused by the
  * narrow role (takeNarrowDenials, per row), and every row answers 2xx but
- * the named ones (NOT_2XX). Plan v3.2 S7c closed the content tables to the
- * narrow role (reads too): a row that reads an item on its narrow exit is
- * refused here. MANTLE_SWEEP_REPORT=<file> writes each row's answer (its
- * status and its body, less ids, stamps and minted tokens), so two builds'
- * answers can be compared.
+ * the named ones (NOT_2XX). Plan v3.2 S7c leaves the narrow role read only
+ * on the content tables (closed in S7d): a row that writes an item on its
+ * narrow exit is refused here. MANTLE_SWEEP_REPORT=<file> writes each row's
+ * answer (its status and its body, less ids, stamps and minted tokens), so
+ * two builds' answers can be compared.
  *
  * The fixture holds rows at the sample id the paths carry (an assistant, a
  * tool group, a skill, a member login), so the PATCH, DELETE and action
@@ -681,14 +681,20 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     expect(differ).toEqual([]);
   });
 
-  it('the read rows (every GET of an area or self row): sent, none refused by the narrow role, none a 500', () => {
+  it('the read rows (every GET of an area or self row): sent, none refused by the narrow role, none a 5xx but the two upstream rows', () => {
     expect(readAnswers.on.size).toBe(readRows.length);
     expect(readRows.length).toBeGreaterThan(100);
     const refused = [...denials].filter(([k, d]) => k.startsWith('read ') && d.length > 0);
     expect(refused).toEqual([]);
-    // A 502 or 503 is an upstream's answer the sweep has none of (an MCP
-    // server, Microsoft Graph); a database refusal or error answers 500.
-    expect([...readAnswers.on].filter(([, a]) => a === '500')).toEqual([]);
+    // A 502 or 503 is an upstream's answer the sweep has none of, and only
+    // these two rows reach one (an MCP server, Microsoft Graph); every other
+    // row fails on any 5xx.
+    const upstream = new Set(['GET /api/dev-tools/mcp', 'GET /api/microsoft/drives/:id/browse']);
+    expect(
+      [...readAnswers.on].filter(
+        ([k, a]) => a.startsWith('5') && !(upstream.has(k) && (a === '502' || a === '503')),
+      ),
+    ).toEqual([]);
   });
 
   it('the phone sign-out with a live bearer: 200 and its token revoked, nothing refused by the narrow role', () => {

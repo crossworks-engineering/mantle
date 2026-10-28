@@ -42,7 +42,8 @@
  *    other role to go back to. BYPASSRLS, owns nothing (the narrow route's text check refuses
  *    the large-object functions that would make it an owner), member of
  *    nothing, and its rights come
- *    from the access matrix (narrowFor): nothing on the content tables,
+ *    from the access matrix (narrowFor): read only on the content tables
+ *    (closed in S7d),
  *    read and write on the system and admin tables, nothing where the
  *    runtime role has nothing, and EXECUTE on the runtime role's allowlist
  *    less NARROW_DENIED_FUNCTIONS. The runtime role may SET ROLE to it (no
@@ -1542,20 +1543,24 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
   await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${nr}`);
 }
 
-/** The would-refuse count's derived triggers (0320; migrate made them from
- *  the narrow role's grants up to 0.400.15). */
-const WOULD_REFUSE_TRIGGERS = [
+/** The report branch's triggers 0341 drops: the would-refuse count's
+ *  derived ones (0320; migrate made them from the narrow role's grants up to
+ *  0.400.15) and the cascade count's (0312, on auth.users, spaces and
+ *  agents). */
+const REPORT_TRIGGERS = [
   'mantle_narrow_would_refuse_ins',
   'mantle_narrow_would_refuse_del',
   'mantle_narrow_would_refuse_upd',
+  'mantle_narrow_cascade',
 ] as const;
 
 /**
- * Drop the would-refuse count's derived triggers table by table, before
- * the pending migrations (migrate-runner.ts applyJournal): 0341 drops
- * their function, and one transaction taking the lock of every table that
- * holds one (about 120) while the old app still serves (compose's migrate)
- * could stall its writes or deadlock with them. Each table in its own
+ * Drop the report branch's triggers (the would-refuse count's derived ones
+ * and the cascade count's) table by table, before the pending migrations
+ * (migrate-runner.ts applyJournal): 0341 drops their functions, and one
+ * transaction taking the lock of every table that holds one (about 120)
+ * while the old app still serves (compose's migrate) could stall its
+ * writes or deadlock with them. Each table in its own
  * transaction, waiting at most 3 s for its lock, tried again on a lock wait
  * or a deadlock (eight tries, a second apart); 0341 drops whatever is
  * left. One catalog read, finding none, on a database past 0341 or a
@@ -1565,14 +1570,14 @@ export async function dropNarrowWouldRefuse(sql: Sql): Promise<number> {
   const tables = await sql<{ t: string; names: string[] }[]>`
     select g.tgrelid::regclass::text as t, array_agg(g.tgname::text order by g.tgname) as names
       from pg_trigger g
-     where not g.tgisinternal and g.tgname = any(${[...WOULD_REFUSE_TRIGGERS]}::text[])
+     where not g.tgisinternal and g.tgname = any(${[...REPORT_TRIGGERS]}::text[])
      group by 1 order by 1`;
   for (const { t, names } of tables) {
     await withRetry(
       () =>
         sql.begin(async (tx) => {
           await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
-          for (const name of WOULD_REFUSE_TRIGGERS) {
+          for (const name of REPORT_TRIGGERS) {
             if (names.includes(name)) await tx.unsafe(`DROP TRIGGER IF EXISTS "${name}" ON ${t}`);
           }
         }),

@@ -971,11 +971,12 @@ The report-only counts that ran before the narrow route was every box's
 migrations 0312 to 0329) are gone (0341, S7c): a write a narrow reason
 makes off the narrow route no longer happens. Their miss rows stay in
 `actor_check_misses` until the reaper's window takes them; nothing reads
-them. migrate drops the would-refuse count's derived triggers table by
-table before the pending migrations (`dropNarrowWouldRefuse`, from
+them. migrate drops the would-refuse count's derived triggers and the
+cascade count's three (auth.users, spaces, agents) table by table before
+the pending migrations (`dropNarrowWouldRefuse`, from
 `applyJournal`: each table in a transaction of its own, `lock_timeout` 3
 s, retried on a lock wait or a deadlock, since the old app is still
-serving during a roll), and 0341 drops their function and whatever is
+serving during a roll), and 0341 drops their functions and whatever is
 left. One image back (0.400.15) runs on 0341 as it is (its trigger step
 finds no count function and makes nothing); its revert
 (`packages/db/rollback/0341_narrow_observe_removed.revert.sql`) is

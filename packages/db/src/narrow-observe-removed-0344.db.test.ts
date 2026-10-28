@@ -6,6 +6,9 @@
  *
  *  - the renumber proof: 0344's `when` is above every `when` before it, and
  *    the runner applies 0344 and only it;
+ *  - the drop before the pending migrations (dropNarrowWouldRefuse): the
+ *    derived and the cascade triggers go table by table, each under its own
+ *    3 s lock wait, and 0344's functions are left to it;
  *  - the end state: no report function, no derived trigger, no cascade
  *    trigger, and the holds and rules that stay are there;
  *  - the rollback: rollback/<tag>.revert.sql puts the branch back and takes
@@ -19,6 +22,7 @@ import postgres from 'postgres';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyJournal } from './migrate-runner';
+import { dropNarrowWouldRefuse } from './runtime-role';
 import type { JournalEntry } from './migrate-plan';
 import { createScratchDatabaseBefore } from './test-support';
 
@@ -150,6 +154,13 @@ describe.skipIf(!URL)('0344: a database just before it, and the rollback', () =>
       'auth.users mantle_narrow_would_refuse_upd',
       'spaces mantle_narrow_cascade',
     ]);
+  }, 60_000);
+
+  it('the drop before the pending migrations takes the derived and the cascade triggers, table by table, and leaves the functions', async () => {
+    expect(await dropNarrowWouldRefuse(pg)).toBe(3);
+    expect(await triggers()).toEqual([]);
+    expect(await present(GONE)).toEqual([...GONE].sort());
+    expect(await dropNarrowWouldRefuse(pg)).toBe(0);
   }, 60_000);
 
   it('the runner applies 0344 and only it; the branch is gone and the holds stay', async () => {

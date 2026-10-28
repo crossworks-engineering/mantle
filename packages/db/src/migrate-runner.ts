@@ -56,8 +56,9 @@ export async function applyJournal(
   for (const g of plan.gaps) out.warn(gapWarning(g));
 
   if (plan.pending.length === 0) return 0;
-  // The would-refuse count's triggers go table by table before 0341 drops
-  // their function (runtime-role.ts dropNarrowWouldRefuse).
+  // The report branch's triggers (the would-refuse and cascade counts') go
+  // table by table before 0341 drops their functions (runtime-role.ts
+  // dropNarrowWouldRefuse).
   await dropNarrowWouldRefuse(sql);
   return await applyPending(sql, plan.pending, out);
 }
