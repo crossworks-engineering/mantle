@@ -115,6 +115,13 @@ function lost(what: string, err?: unknown): void {
   );
 }
 
+/** A row lost before it reached recordMcpCall (the gateway could not shape
+ *  it): counted as failed, said as a failed insert is. */
+export function noteMcpCallLost(err: unknown): void {
+  stats.failed += 1;
+  lost('a call could not be shaped for the log', err);
+}
+
 /** Record one call: fire and forget, bounded. Never throws. */
 export function recordMcpCall(entry: McpCallEntry): void {
   if (!callAuditStarted()) return;
