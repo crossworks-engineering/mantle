@@ -27,10 +27,12 @@ The container policy (docker-compose.yml, `gotenberg`):
   by the updater on a roll, never rotated; `/health` alone takes no
   credential, for the compose healthcheck);
 - no outbound fetch at all: `downloadFrom` and webhooks are off, Chromium
-  and LibreOffice deny private and public addresses, and the allow list
-  opens exactly two things: the print origin (`^http://web:3000(/|$)`), so
-  a page prints with its render cookie, and `file:///tmp/`, where the
-  engine keeps the caller's own uploaded files (without it the html and
+  and LibreOffice deny private and public addresses, and the allow list opens exactly two things: the print origin, and on it
+  only the paths a print loads (`/print/`, `/render/`, `/share-runtime/`,
+  `/excalidraw-assets/`, the fonts, `/api/files/files/`, `/api/draws/`,
+  `/api/presents/`, and the three icon files), so a page prints with its
+  render cookie and a caller's HTML reaches no other route of the brain,
+  and `file:///tmp/`, where the engine keeps the caller's own uploaded files (without it the html and
   markdown routes answer 403 once both address classes are denied);
 - each conversion gets its own browser context, so a render cookie never
   outlives its job;

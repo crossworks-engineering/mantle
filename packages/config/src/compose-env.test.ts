@@ -79,7 +79,7 @@ describe('every app service can read the live optional-service state', () => {
     // of images, drawings and canvas posters (lib/auth-constants.ts
     // RENDER_ASSET_RE); a caller's HTML reaches no other route.
     expect(svc).toMatch(
-      /CHROMIUM_ALLOW_LIST: '\^http:\/\/web:3000\/\(print\|render\|share-runtime\|excalidraw-assets\|Inter\|fonts\|api\/files\/files\|api\/draws\|api\/presents\)\/\|\^file:\/\/\/tmp\/'/,
+      /CHROMIUM_ALLOW_LIST: '\^http:\/\/web:3000\/\(print\|render\|share-runtime\|excalidraw-assets\|Inter\|fonts\|api\/files\/files\|api\/draws\|api\/presents\)\/\|\^http:\/\/web:3000\/\(favicon\\\.ico\|icon\\\.svg\|apple-icon\\\.png\)\$\$\|\^file:\/\/\/tmp\/'/,
     );
     expect(svc).toMatch(/API_DISABLE_DOWNLOAD_FROM: 'true'/);
     expect(svc).toMatch(/WEBHOOK_DISABLE: 'true'/);

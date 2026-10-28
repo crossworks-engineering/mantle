@@ -11,9 +11,11 @@ import type { PageRoute } from '../route-loader';
 
 /**
  * Content Security Policy for the print surfaces: this origin only, and no
- * script at all. The browser sidecar loads these pages carrying a render
- * cookie (lib/render-sandbox.ts), so a page image or any other subresource
- * with an outside src must not load: interception in the sidecar aborts it,
+ * script at all. A render engine (the documents engine, or the browser
+ * sidecar) loads these pages carrying a render cookie
+ * (lib/render-sandbox.ts, packages/documents), so a page image or any other
+ * subresource with an outside src must not load: the engine's allow list or
+ * the sidecar's interception refuses it,
  * and this policy refuses it again in the page itself (audit F01). data: and
  * blob: stay open for images and fonts (the draw snapshot is a data: image).
  */
@@ -133,9 +135,10 @@ async function printPage(c: Context): Promise<Response> {
   // accepted there, so embedded images load in the sidecar.
   const html = renderPageDoc(page.doc, {
     assetUrl: (fileId: string) => `/api/files/files/${fileId}?raw=1`,
-    // nofill=1 is REQUIRED here: this page is loaded by the sidecar, so a
-    // render triggered from it would need a second sidecar session while
-    // this one blocks on the image (renderUrlToPdf waits for networkidle0).
+    // nofill=1 is REQUIRED here: this page is loaded by a render engine, so
+    // a render triggered from it would need a second sidecar session while
+    // this one blocks on the image (both engines wait for the network to go
+    // idle).
     // The export route warms the cache before printing; an unrendered
     // drawing degrades to its placeholder rather than deadlocking.
     drawUrl: (drawId: string) => `/api/draws/${encodeURIComponent(drawId)}/svg?raw=1&nofill=1`,
@@ -177,9 +180,10 @@ async function printPage(c: Context): Promise<Response> {
 }
 
 /**
- * The render surfaces: admin-only pages with no app chrome. Headless
- * Chromium (lib/render-pdf.ts) navigates here with a render cookie for the
- * acting admin and print-to-PDFs the page for the `?format=pdf` download.
+ * The render surfaces: admin-only pages with no app chrome. A render engine
+ * (the documents engine or the browser sidecar, lib/render-pdf.ts) navigates
+ * here with a render cookie for the acting admin and prints the page for the
+ * `?format=pdf` download.
  * Not linked from the UI. Every surface here opens for an admin session, or
  * for a render cookie naming the node in the URL (requireOwnerForRender).
  *

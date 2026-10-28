@@ -335,6 +335,10 @@ export const DOCUMENT_TOOLS: BuiltinToolDef[] = [
   pdf_tools,
 ];
 
-// The config's gate (toolService): each of the four needs the documents
-// service, so an agent's list leaves it out while the service is off.
-for (const t of DOCUMENT_TOOLS) registerToolService(t.slug, 'documents');
+/** Name the service each of the four needs with the config's gate
+ *  (toolService), so an agent's list leaves them out while the service is
+ *  off. Called where the tools join the registry (builtins.ts), so any
+ *  process that lists builtins has the gate. */
+export function registerDocumentToolServices(): void {
+  for (const t of DOCUMENT_TOOLS) registerToolService(t.slug, 'documents');
+}

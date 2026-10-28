@@ -133,7 +133,14 @@ export async function buildForm(
   const resolved = await resolveInputs(route, call.inputs, caller, deps);
   const form = new FormData();
   for (const p of resolved.parts) {
-    form.append(p.field, new Blob([new Uint8Array(p.bytes)]), p.filename);
+    // A view of the bytes, not a copy: an input is held once for the job.
+    form.append(
+      p.field,
+      new Blob([
+        new Uint8Array(p.bytes.buffer as ArrayBuffer, p.bytes.byteOffset, p.bytes.byteLength),
+      ]),
+      p.filename,
+    );
   }
   if (resolved.node) {
     form.append('url', resolved.node.url);
@@ -171,7 +178,10 @@ export async function runDocuments(
   deps?: InputDeps,
 ): Promise<DocumentsResult> {
   const { route, form, stem, exportOf } = await buildForm(call, caller, deps);
-  const answer: GotenbergAnswer = await callGotenberg(route, form, { outputName: stem });
+  const answer: GotenbergAnswer = await callGotenberg(route, form, {
+    outputName: stem,
+    callerKey: caller.actorLoginId ?? caller.ownerId,
+  });
   if (route.output === 'json') {
     let json: unknown;
     try {

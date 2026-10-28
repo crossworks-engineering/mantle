@@ -53,7 +53,7 @@ import { RUN_TOOLS } from './builtins-runs';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
-import { DOCUMENT_TOOLS } from './builtins-documents';
+import { DOCUMENT_TOOLS, registerDocumentToolServices } from './builtins-documents';
 import { ACCESS_TOOLS } from './builtins-access';
 import { SHEET_TOOLS } from './builtins-sheets';
 import { read_section, search_chunks, search_nodes, tree_list } from './builtins-search';
@@ -257,7 +257,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // the web download button, so the assistant and the UI emit identical files.
   ...EXPORT_TOOLS,
   // The documents engine (Gotenberg): PDF and picture renders, Office to
-  // PDF, the PDF tools. Hidden while the `documents` service is off.
+  // PDF, the PDF tools. Hidden while the `documents` service is off
+  // (registered with the config's gate right below).
   ...DOCUMENT_TOOLS,
   ...ACCESS_TOOLS,
   ...SHEET_TOOLS,
@@ -279,6 +280,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // app_authoring skill instead).
   ...APP_GUIDE_TOOLS,
 ];
+
+// The documents tools need the documents service: say so to the config's
+// gate here, where every process that lists builtins passes.
+registerDocumentToolServices();
 
 // Each definition's `readOnly` and `spends` read its policy (A5).
 for (const def of BUILTIN_TOOLS) withPolicyFlags(def);

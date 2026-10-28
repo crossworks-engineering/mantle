@@ -9,6 +9,7 @@ import { resetServicesFileCache } from '@mantle/config';
 import {
   callGotenberg,
   DOCUMENTS_MAX_IN_FLIGHT,
+  DOCUMENTS_MAX_IN_FLIGHT_PER_CALLER,
   documentsInFlight,
   headerSafeName,
   DocumentsBusyError,
@@ -79,7 +80,8 @@ describe('callGotenberg', () => {
 
   it('names the output in ASCII only, or not at all (the header takes Latin-1)', async () => {
     expect(headerSafeName('Отчёт')).toBeNull();
-    expect(headerSafeName('report 報告 q3')).toBe('report  q3');
+    expect(headerSafeName('report 報告 q3')).toBe('report q3');
+    expect(headerSafeName('Ärztebrief-2')).toBe('Arztebrief-2');
     answer(200, 'x', { 'content-type': 'application/pdf' });
     await callGotenberg(route, new FormData(), { outputName: 'Отчёт' });
     expect(
@@ -87,7 +89,7 @@ describe('callGotenberg', () => {
     ).toBeUndefined();
     await callGotenberg(route, new FormData(), { outputName: 'Ärztebrief-2' });
     expect((calls[1]!.init.headers as Record<string, string>)['Gotenberg-Output-Filename']).toBe(
-      'rztebrief-2',
+      'Arztebrief-2',
     );
   });
 
@@ -98,12 +100,14 @@ describe('callGotenberg', () => {
       await gate;
       return new Response('x', { status: 200, headers: { 'content-type': 'application/pdf' } });
     });
-    const running = Array.from({ length: DOCUMENTS_MAX_IN_FLIGHT }, () =>
-      callGotenberg(route, new FormData()),
+    const running = Array.from({ length: DOCUMENTS_MAX_IN_FLIGHT }, (_, i) =>
+      callGotenberg(route, new FormData(), { callerKey: `login-${i}` }),
     );
     await Promise.resolve();
     expect(documentsInFlight()).toBe(DOCUMENTS_MAX_IN_FLIGHT);
-    await expect(callGotenberg(route, new FormData())).rejects.toBeInstanceOf(DocumentsBusyError);
+    await expect(
+      callGotenberg(route, new FormData(), { callerKey: 'login-9' }),
+    ).rejects.toBeInstanceOf(DocumentsBusyError);
     release();
     await Promise.all(running);
     expect(documentsInFlight()).toBe(0);
@@ -111,6 +115,44 @@ describe('callGotenberg', () => {
       throw new Error('ECONNREFUSED');
     });
     await callGotenberg(route, new FormData()).catch(() => {});
+    expect(documentsInFlight()).toBe(0);
+  });
+
+  it('one caller holds at most its share of the slots', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.stubGlobal('fetch', async () => {
+      await gate;
+      return new Response('x', { status: 200, headers: { 'content-type': 'application/pdf' } });
+    });
+    const mine = Array.from({ length: DOCUMENTS_MAX_IN_FLIGHT_PER_CALLER }, () =>
+      callGotenberg(route, new FormData(), { callerKey: 'login-a' }),
+    );
+    await Promise.resolve();
+    await expect(callGotenberg(route, new FormData(), { callerKey: 'login-a' })).rejects.toThrow(
+      /of your jobs are already running/,
+    );
+    // Another caller still gets a slot.
+    const other = callGotenberg(route, new FormData(), { callerKey: 'login-b' });
+    release();
+    await Promise.all([...mine, other]);
+    expect(documentsInFlight()).toBe(0);
+  });
+
+  it('a deadline that fires while the body is read is busy, not a fault', async () => {
+    vi.stubGlobal('fetch', async () => {
+      const e = new Error('aborted');
+      e.name = 'AbortError';
+      return new Response(
+        new ReadableStream({
+          pull(controller) {
+            controller.error(e);
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/pdf' } },
+      );
+    });
+    await expect(callGotenberg(route, new FormData())).rejects.toBeInstanceOf(DocumentsBusyError);
     expect(documentsInFlight()).toBe(0);
   });
 

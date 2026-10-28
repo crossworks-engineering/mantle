@@ -52,8 +52,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return NextResponse.json({ error: 'invalid format' }, { status: 400 });
   }
 
-  // PDF: rendered by headless Chromium (the browser sidecar) against the live,
-  // admin-only /print surface: highest fidelity to the on-screen page. Pages and draws.
+  // PDF: rendered by headless Chromium (the documents engine, or the browser
+  // sidecar) against the live, admin-only /print surface: highest fidelity to
+  // the on-screen page. Pages and draws.
   if (fmt.data === 'pdf') {
     const print = parsePrintOptions(new URL(req.url).searchParams);
     if (!print.ok) return NextResponse.json({ error: print.error }, { status: 400 });

@@ -85,7 +85,12 @@ defineDomainError(DocumentsBusyError, {
  *  finding); the
  *  excess is refused as busy, which a caller retries. */
 export const DOCUMENTS_MAX_IN_FLIGHT = 6;
+/** Of those, how many one caller (a login, or the brain for a call with no
+ *  login) may hold: one caller's minute of exports never takes every slot
+ *  from the owner's Export button and the other logins. */
+export const DOCUMENTS_MAX_IN_FLIGHT_PER_CALLER = 3;
 let inFlight = 0;
+const inFlightBy = new Map<string, number>();
 
 /** Tests only. */
 export function documentsInFlight(): number {
@@ -96,7 +101,12 @@ export function documentsInFlight(): number {
  *  Headers refuses anything wider; the audit found it); the stem itself names the
  *  saved file, so the header carries an ASCII form of it, or nothing. */
 export function headerSafeName(stem: string): string | null {
-  const ascii = stem.replace(/[^\x20-\x7e]+/g, '').trim();
+  const ascii = stem
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7e]+/g, '')
+    .replace(/ {2,}/g, ' ')
+    .trim();
   return ascii || null;
 }
 
@@ -135,7 +145,7 @@ function filenameOf(disposition: string | null): string | null {
 export async function callGotenberg(
   route: Pick<RouteDef, 'path' | 'key'>,
   form: FormData,
-  opts: { outputName?: string; timeoutMs?: number } = {},
+  opts: { outputName?: string; timeoutMs?: number; callerKey?: string } = {},
 ): Promise<GotenbergAnswer> {
   if (!documentsAvailable()) {
     throw new DocumentsUnavailableError('the Documents service is switched off on this brain');
@@ -150,7 +160,19 @@ export async function callGotenberg(
       `${DOCUMENTS_MAX_IN_FLIGHT} jobs are already running from this process`,
     );
   }
+  const key = opts.callerKey ?? '';
+  const mine = inFlightBy.get(key) ?? 0;
+  if (mine >= DOCUMENTS_MAX_IN_FLIGHT_PER_CALLER) {
+    throw new DocumentsBusyError(`${mine} of your jobs are already running`);
+  }
   inFlight += 1;
+  inFlightBy.set(key, mine + 1);
+  const release = () => {
+    inFlight -= 1;
+    const left = (inFlightBy.get(key) ?? 1) - 1;
+    if (left > 0) inFlightBy.set(key, left);
+    else inFlightBy.delete(key);
+  };
   let res: Response;
   try {
     res = await fetch(`${cfg.url}${route.path}`, {
@@ -160,18 +182,37 @@ export async function callGotenberg(
       signal: timeoutSignal(opts.timeoutMs ?? NET_TIMEOUTS.documentsJob),
     });
   } catch (err) {
-    inFlight -= 1;
-    const e = err as Error;
-    if (e.name === 'TimeoutError' || e.name === 'AbortError') {
-      throw new DocumentsBusyError(`${route.key} did not finish in time`);
-    }
-    throw new DocumentsUnavailableError(`the engine did not answer (${e.message})`);
+    release();
+    throw mapNetworkError(route, err);
   }
   try {
     return await readAnswer(route, res);
+  } catch (err) {
+    // The deadline can fire while the answer body is still being read.
+    throw mapNetworkError(route, err);
   } finally {
-    inFlight -= 1;
+    release();
   }
+}
+
+/** A failure of the request itself (never an engine status): the deadline
+ *  as busy, anything else as unavailable. An error the engine answered
+ *  (readAnswer's own) passes through. */
+function mapNetworkError(route: Pick<RouteDef, 'key'>, err: unknown): Error {
+  const e = err as Error;
+  if (
+    e instanceof DocumentsUnavailableError ||
+    e instanceof DocumentsRenderError ||
+    e instanceof DocumentsFormError ||
+    e instanceof DocumentsTooLargeError ||
+    e instanceof DocumentsBusyError
+  ) {
+    return e;
+  }
+  if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+    return new DocumentsBusyError(`${route.key} did not finish in time`);
+  }
+  return new DocumentsUnavailableError(`the engine did not answer (${e.message})`);
 }
 
 async function readAnswer(
