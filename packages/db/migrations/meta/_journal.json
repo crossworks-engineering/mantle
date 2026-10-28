@@ -2395,6 +2395,13 @@
       "when": 1790200680000,
       "tag": "0342_messenger_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 343,
+      "version": "7",
+      "when": 1790200740000,
+      "tag": "0343_messenger_group_info",
+      "breakpoints": true
     }
   ]
 }

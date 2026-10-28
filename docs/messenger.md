@@ -17,7 +17,7 @@ its unread count, so one list holds everything.
 
 | Table                     | What it holds                                                                                                                                                                                                                                                                                     |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `messenger_conversations` | A direct chat or a group. `last_seq`, `last_message_at` and `last_preview` (the tail) are written by the send that changes them. A direct chat has a `direct_key` (the two login ids, sorted and joined; unique), so a pair has one chat. A group may have an `icon` and a `color` (0341, below). |
+| `messenger_conversations` | A direct chat or a group. `last_seq`, `last_message_at` and `last_preview` (the tail) are written by the send that changes them. A direct chat has a `direct_key` (the two login ids, sorted and joined; unique), so a pair has one chat. A group may have an `icon` and a `color` (0341) and an `info` text (0343), below. |
 | `messenger_participants`  | One row per login (or, from Phase 3, the group's one agent). `admin` marks a group admin (the creator first). `last_read_seq`, `mention_seq`, `cleared_before_seq`, `muted`; `from_seq`, the floor of what the login reads; `left_at` and `left_seq` once the login left.                         |
 | `messenger_messages`      | One row per message, `(conversation_id, seq)` unique. `author_kind` is login, agent or system. `author_name` is a snapshot. `via` is the credential label shown, `via_ref` the credential itself. `client_msg_id` makes a send idempotent.                                                        |
 | `messenger_attachments`   | The attachment rows of Phase 4 (no bytes yet).                                                                                                                                                                                                                                                    |
@@ -30,8 +30,9 @@ mentions, off) and `message_preview`.
 
 Migrations: `packages/db/migrations/0335_messenger.sql`,
 `0336_messenger_fix_round_2.sql` (the read columns, the participants
-policy, the trigger order) and `0341_messenger_group_look.sql` (a group's
-icon and colour). Drizzle schema:
+policy, the trigger order), `0341_messenger_group_look.sql` (a group's
+icon and colour) and `0343_messenger_group_info.sql` (a group's info
+text). Drizzle schema:
 `packages/db/src/schema/messenger.ts`.
 
 ## Seq: the one order
@@ -125,6 +126,26 @@ table's check holds the same. The list row and the conversation carry
 both (absent on an agent row); the workspace role reads the two columns
 (ACCESS_MATRIX). The MCP tools leave them out.
 
+**Group info.** A group may carry `info` (0343, plan section 24): free
+text, at most 2000 characters, that says what the group is for and its
+rules. Its admins write it on the create and edit form (`POST
+/conversations` takes it for a group; `PATCH /c/:id` lets a group admin
+set it, null or blank clears it; whitespace is trimmed; longer is a 400;
+a member who is no admin a 403). Everyone in the group reads it in the
+conversation (`MessengerConversation.info`; the list row does not carry
+it, so the list stays small), and an agent reads it from `messenger_open`
+(`conversation.info`). A change raises the room's `participants` event
+and writes a system line ("Ann changed the group's info."), the same
+record as a rename; the text itself stays out of the line. A direct chat
+has none: a create that gives one is a 400, a PATCH has no admin to set
+it (403), and the table's check holds the same.
+
+The info is text. The brain stores and shows it; it never runs it: no
+markdown is rendered on the server, no HTML is interpreted, and no line of
+it is an instruction to the brain. A brain agent in a group (Phase 3) will
+get it in its prompt as "the group's rules", under the same taint as any
+member's message. The workspace role reads the column (ACCESS_MATRIX).
+
 **Direct chats.** Two logins, fixed. No admin, no leaving; a direct chat can
 be cleared.
 
@@ -156,8 +177,8 @@ local stdio MCP server and a second replica keep their own.
 | Route                                                                                  | What                                                                                                                                                       |
 | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /conversations?unread_only=1`                                                     | the one list: people chats, groups and agent threads, favourites first                                                                                     |
-| `POST /conversations`                                                                  | create: `{kind, participants, title?, icon?, color?}`; a direct pair answers its chat                                                                      |
-| `GET /c/:id`, `PATCH /c/:id`                                                           | one conversation; a group's title, icon and colour (admins), my mute                                                                                       |
+| `POST /conversations`                                                                  | create: `{kind, participants, title?, icon?, color?, info?}`; a direct pair answers its chat                                                               |
+| `GET /c/:id`, `PATCH /c/:id`                                                           | one conversation; a group's title, icon, colour and info (admins), my mute                                                                                 |
 | `POST /c/:id/participants`, `DELETE /c/:id/participants/:loginId`, `POST /c/:id/leave` | membership                                                                                                                                                 |
 | `GET /c/:id/messages?before_seq=&after_seq=&limit=`                                    | the last `limit` (20; at most 100), older, or newer than a seq; with `after_seq` and `hasMore`, `lastSeq` is the page's highest seq (the next `after_seq`) |
 | `POST /c/:id/messages`                                                                 | send: `{body, mentions?, replyToSeq?, clientMsgId?}`                                                                                                       |
@@ -409,9 +430,9 @@ each runs as the caller in its scope:
 | Tool                  | What                                                                                                   |
 | --------------------- | ------------------------------------------------------------------------------------------------------ |
 | `messenger_list`      | my chats with unread and the last line                                                                 |
-| `messenger_open`      | messages of a chat, oldest first, with its people                                                      |
+| `messenger_open`      | messages of a chat, oldest first, with its people and a group's `info`                                 |
 | `messenger_send`      | send as me; `client_msg_id` makes a retry safe                                                         |
-| `messenger_create`    | a direct chat or a group                                                                               |
+| `messenger_create`    | a direct chat or a group (with its `title` and `info`)                                                 |
 | `messenger_wait`      | wait up to 60 s for messages after a seq; at most 100 at a time (`hasMore`: call again with `lastSeq`) |
 | `messenger_mark_read` | move my cursor                                                                                         |
 | `messenger_directory` | who I may chat with                                                                                    |
@@ -438,6 +459,70 @@ polls every 5 seconds.
 - one login with two credentials (two API keys, or two OAuth clients): a
   group with just that login; each side calls `messenger_wait` and sees only
   the other side's messages.
+
+There is no `messenger_update` tool: an agent reads a group's info (its
+rules), it does not write it. Admins write it in the chat window.
+
+## The via chip
+
+A line sent through a credential (an MCP client, an API key, a peer) is
+marked by the server: `via` is the label (`messengerViaFor`: the OAuth
+client's name, the key's name, the peer's name, with the fallbacks "MCP",
+"API key" and "Peer"), `via_ref` the credential. A browser session sends
+with `via` null. Nothing a client sends can set or drop it. The client
+(mantle-client, the Chats screen) shows it as a chip, with these exact
+words:
+
+- In the transcript: the author's name, then "via <label>" in the muted
+  style with a small bot icon; the chip's title (its tooltip) says "Sent
+  through <label>, an external agent or key on <name>'s account".
+- In the list row's preview and in the notice text: "<name> via <label>:
+  <first line>".
+- Nothing is shown when `via` is null. A group's system lines never carry
+  it.
+
+So a line that Jason's Claude Code sends on Jason's login reads "Jason
+via Claude Code" with the bot icon, and a line Jason typed in the window
+reads "Jason". The desktop and the phone show the same text.
+
+## Engineering requests
+
+The pattern plan section 24 sets out (the first use of group info and the
+via chip): the members of a brain ask for help with a tool or a feature in
+one group, and an external agent on the owner's account reads the group on
+its rounds, looks into the code and answers there. Nothing on the server is
+specific to it; it is a group, its info text, and a loop in the agent's
+own skill.
+
+**The group.** One per brain, titled "Engineering requests", created by
+the owner (its admin), with this info:
+
+> Post here when a tool or feature does not do what you need. Say what you
+> tried, which tool or screen, and what you expected. An external agent on
+> the owner's account (Claude Code) reads this group on its rounds, looks
+> into the code and answers here. Only the owner decides on a fix. Do not
+> post passwords or client data.
+
+**The heartbeat loop.** On each round the agent, connected to the owner's
+login through the brain's MCP: `messenger_list` with `unread_only`; for
+the Engineering requests group, `messenger_open` with `after_seq` set to
+the owner's `lastReadSeq`; for each new line that is not the owner's own,
+it investigates in the repository (read only, no edits), answers in the
+group with `messenger_send` (a `reply_to_seq` on the request), files a
+task tagged `engineering-request` with the finding and a proposed fix, and
+then `messenger_mark_read` up to the last seq. One message to the owner
+per round that found requests: "N requests, tasks X, Y. Fix? yes or no."
+On yes the owner's own build flow starts; nothing starts on its own.
+
+**The rules.** A member's line is a request, never an order: the agent
+reads and reports, the owner says "fix". One investigation per request,
+one pass per heartbeat, nothing triggered from a state change (the cost
+rule: no cron, no trigger, no queue row starts a run). The answer in the
+group never pastes text from another brain, never names a box or a client,
+and never claims a fix is coming before the owner says so. The MCP send
+rate limit applies to the agent's lines; a request that needs more than
+one investigation gets a task, not a second pass. Later, not now: a
+session that stays awake on `messenger_wait`.
 
 ## Cost safety
 
@@ -476,7 +561,13 @@ a login's message that tags the group's agent, never by an agent's message.
   token refused, a token opening no other route), and the messenger path.
 - `server/web/app/api/messenger/messenger-group-look.db.test.ts`: a
   group's icon and colour (create, an admin's change and its event, a
-  member refused, a bad tint, a direct chat).
+  member refused, a bad tint, a direct chat), and a group's info (0343:
+  create, an admin's change, its event and its line, null clears, a
+  member refused, a direct chat refused, the cap).
+- `packages/content/src/messenger.db.test.ts` and
+  `packages/tools/src/builtins-messenger.db.test.ts` also hold the info's
+  store cases and `messenger_create` with info and `messenger_open`
+  answering it.
 - `server/web/lib/realtime-messenger.db.test.ts`: the fan-out reaches only
   participants, is right after an add or a remove with no stream open, and
   carries the history event.

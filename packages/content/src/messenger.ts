@@ -61,6 +61,8 @@ import { workspaceAssistants } from './team-assistant';
 export const MESSENGER_BODY_MAX = 8000;
 export const MESSENGER_PARTICIPANTS_MAX = 200;
 export const MESSENGER_TITLE_MAX = 200;
+/** A group's info (0343, plan section 24): what it is for and its rules. */
+export const MESSENGER_INFO_MAX = 2000;
 export const MESSENGER_PAGE_DEFAULT = 20;
 export const MESSENGER_PAGE_MAX = 100;
 export const MESSENGER_PREVIEW_CHARS = 140;
@@ -203,6 +205,9 @@ export type MessengerConversationView = {
    *  direct chat and a group that has none (0341). */
   icon?: string | null;
   color?: string | null;
+  /** A group's info (0343): plain text its admins wrote, shown and never
+   *  run; null for a direct chat and a group that has none. */
+  info: string | null;
   createdBy: string | null;
   createdAt: string;
   archivedAt: string | null;
@@ -446,6 +451,7 @@ export type ConversationRow = {
   id: string;
   kind: 'direct' | 'group';
   title: string | null;
+  info: string | null;
   archived_at: Date | null;
   last_seq: string | number;
   workspace_id: string | null;
@@ -463,7 +469,7 @@ export async function lockForActor(
   const c = uuidOr(conversationId, 'The conversation');
   const [conv] = await q<ConversationRow>(
     tx,
-    sql`select id::text as id, kind, title, archived_at, last_seq,
+    sql`select id::text as id, kind, title, info, archived_at, last_seq,
                workspace_id::text as workspace_id, agent_id::text as agent_id
           from messenger_conversations
          where id = ${c}::uuid and owner_id = ${actor.ownerId}::uuid
@@ -490,7 +496,7 @@ export async function lockConversation(
 ): Promise<ConversationRow | null> {
   const [conv] = await q<ConversationRow>(
     tx,
-    sql`select id::text as id, kind, title, archived_at, last_seq,
+    sql`select id::text as id, kind, title, info, archived_at, last_seq,
                workspace_id::text as workspace_id, agent_id::text as agent_id
           from messenger_conversations
          where id = ${conversationId}::uuid
@@ -614,7 +620,24 @@ export type MessengerCreateInput = {
   /** A group's look (a direct chat ignores both): lookIcon, lookColor. */
   icon?: string | null;
   color?: string | null;
+  /** A group's info (infoText); a direct chat refuses it (InputError). */
+  info?: string | null;
 };
+
+/** A group's info as given: trimmed, at most MESSENGER_INFO_MAX
+ *  characters; null, or blank, clears it; undefined leaves it. Longer is an
+ *  InputError. Text only: nothing here reads it as markup or code. */
+function infoText(v: string | null | undefined): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  if (typeof v !== 'string') throw new InputError('info is text.');
+  const t = v.trim();
+  if (!t) return null;
+  if (t.length > MESSENGER_INFO_MAX) {
+    throw new InputError(`A group's info is at most ${MESSENGER_INFO_MAX} characters.`);
+  }
+  return t;
+}
 
 /** One emoji of Unicode's recommended set (RGI: a pictograph, a flag, a
  *  skin tone or a joined sequence such as a family), the whole string. A
@@ -683,6 +706,12 @@ export async function createMessengerConversation(
   }
   const icon = input.kind === 'group' ? (lookIcon(input.icon) ?? null) : null;
   const color = input.kind === 'group' ? (lookColor(input.color) ?? null) : null;
+  // A direct chat has no info (the table's check holds the same): a create
+  // that gives one is refused, not quietly dropped.
+  const info = infoText(input.info) ?? null;
+  if (info !== null && input.kind !== 'group') {
+    throw new InputError('A direct chat has no info; only a group carries one.');
+  }
   if (others.length > 0) {
     const reach = await peopleVisibleTo(actor, { only: others, limit: 500 });
     if (reach.length !== others.length) {
@@ -724,7 +753,7 @@ export async function createMessengerConversation(
   return systemDb.transaction(async (tx) => {
     const [made] = await tx
       .insert(messengerConversations)
-      .values({ ownerId: actor.ownerId, kind: 'group', title, icon, color, createdBy: self })
+      .values({ ownerId: actor.ownerId, kind: 'group', title, icon, color, info, createdBy: self })
       .returning({ id: messengerConversations.id });
     await tx.insert(messengerParticipants).values(
       [self, ...others].map((l) => ({
@@ -1071,12 +1100,14 @@ export type MessengerPatchInput = {
   title?: string | null;
   icon?: string | null;
   color?: string | null;
+  info?: string | null;
   muted?: boolean;
 };
 
-/** PATCH /api/messenger/c/:id: the title, the icon and the colour (group
- *  admins; a change of any raises the room's participants event), and my
- *  own mute. The picture, the workspace and the agent are Phase 3 and 4. */
+/** PATCH /api/messenger/c/:id: the title, the icon, the colour and the
+ *  info (group admins; a change of any raises the room's participants
+ *  event; a title or info change writes a system line too), and my own
+ *  mute. The picture, the workspace and the agent are Phase 3 and 4. */
 export async function patchMessengerConversation(
   actor: MessengerActor,
   conversationId: string,
@@ -1085,10 +1116,11 @@ export async function patchMessengerConversation(
   takeBudget(actor, 'write');
   const icon = lookIcon(input.icon);
   const color = lookColor(input.color);
+  const info = infoText(input.info);
   const look = icon !== undefined || color !== undefined;
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId, {
-      live: input.title !== undefined || look,
+      live: input.title !== undefined || info !== undefined || look,
     });
     if (look) {
       requireGroupAdmin(conv, me);
@@ -1116,6 +1148,24 @@ export async function patchMessengerConversation(
           tx,
           conv,
           `${names.get(actor.loginId) ?? 'Someone'} renamed the group${title ? ` to "${title}"` : ''}.`,
+        );
+      }
+    }
+    if (info !== undefined) {
+      // The same rights and the same record as a title change: a group
+      // admin, and a system line in the group (the audit row) when the
+      // text changes. The text itself stays out of the line.
+      requireGroupAdmin(conv, me);
+      if (info !== conv.info) {
+        await tx
+          .update(messengerConversations)
+          .set({ info })
+          .where(eq(messengerConversations.id, conv.id));
+        const names = await loginNames([actor.loginId], tx);
+        await systemLine(
+          tx,
+          conv,
+          `${names.get(actor.loginId) ?? 'Someone'} ${info ? 'changed' : 'cleared'} the group's info.`,
         );
       }
     }
@@ -1683,6 +1733,7 @@ export async function getMessengerConversation(
     title: string | null;
     icon: string | null;
     color: string | null;
+    info: string | null;
     created_by: string | null;
     created_at: Date;
     archived_at: Date | null;
@@ -1697,7 +1748,7 @@ export async function getMessengerConversation(
     left_seq: string | number | null;
   }>(
     db,
-    sql`select c.id::text as id, c.kind, c.title, c.icon, c.color,
+    sql`select c.id::text as id, c.kind, c.title, c.icon, c.color, c.info,
                c.created_by::text as created_by, c.created_at,
                c.archived_at, me.last_seq, me.last_message_at,
                c.workspace_id::text as workspace_id,
@@ -1715,6 +1766,7 @@ export async function getMessengerConversation(
     title: row.kind === 'direct' ? null : row.title,
     icon: row.kind === 'direct' ? null : row.icon,
     color: row.kind === 'direct' ? null : row.color,
+    info: row.kind === 'direct' ? null : row.info,
     createdBy: row.created_by,
     createdAt: iso(row.created_at),
     archivedAt: isoOrNull(row.archived_at),

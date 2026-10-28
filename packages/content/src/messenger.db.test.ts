@@ -716,6 +716,67 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
     );
   });
 
+  it("a group's info (0343): created with it, an admin changes and clears it with a line, others refused", async () => {
+    // Created with it: trimmed, read by a member in the member's scope.
+    const { conversationId: g } = await ms.createMessengerConversation(actor(A), {
+      kind: 'group',
+      participants: [B],
+      title: 'Rules',
+      info: '  Post requests here.\nSay what you tried.  ',
+    });
+    const read = (who: string) => as(who, () => ms.getMessengerConversation(actor(who), g));
+    expect((await read(B)).info).toBe('Post requests here.\nSay what you tried.');
+    // A member who is no admin is refused; nothing changes.
+    await expect(ms.patchMessengerConversation(actor(B), g, { info: 'mine' })).rejects.toThrow(
+      ms.MessengerRefusedError,
+    );
+    expect((await read(A)).info).toBe('Post requests here.\nSay what you tried.');
+    // An admin changes it: the row and a system line that names no text.
+    await ms.patchMessengerConversation(actor(A), g, { info: 'Only requests. <b>No orders.</b>' });
+    expect((await read(B)).info).toBe('Only requests. <b>No orders.</b>');
+    let last = (await as(B, () => ms.listMessengerMessages(actor(B), g))).messages.at(-1)!;
+    expect(last).toMatchObject({ authorKind: 'system', body: "Ann changed the group's info." });
+    // The same text again writes no second line.
+    const before = (await as(B, () => ms.listMessengerMessages(actor(B), g))).messages.length;
+    await ms.patchMessengerConversation(actor(A), g, { info: 'Only requests. <b>No orders.</b>' });
+    expect((await as(B, () => ms.listMessengerMessages(actor(B), g))).messages.length).toBe(before);
+    // The cap: one over is refused, the cap itself is stored.
+    await expect(
+      ms.patchMessengerConversation(actor(A), g, { info: 'x'.repeat(2001) }),
+    ).rejects.toThrow(/2000/);
+    await ms.patchMessengerConversation(actor(A), g, { info: 'y'.repeat(2000) });
+    expect((await read(A)).info).toHaveLength(2000);
+    // null clears it, with a line; blank clears it too.
+    await ms.patchMessengerConversation(actor(A), g, { info: null });
+    expect((await read(A)).info).toBeNull();
+    last = (await as(B, () => ms.listMessengerMessages(actor(B), g))).messages.at(-1)!;
+    expect(last.body).toBe("Ann cleared the group's info.");
+    await ms.patchMessengerConversation(actor(A), g, { info: 'again' });
+    await ms.patchMessengerConversation(actor(A), g, { info: '   ' });
+    expect((await read(A)).info).toBeNull();
+    // A direct chat: a create with info is refused (InputError, a 400), a
+    // PATCH has no admin (the title's error), and it reads null.
+    await expect(
+      ms.createMessengerConversation(actor(A), { kind: 'direct', participants: [B], info: 'x' }),
+    ).rejects.toThrow(/direct chat has no info/);
+    const { conversationId: d } = await ms.createMessengerConversation(actor(A), {
+      kind: 'direct',
+      participants: [B],
+    });
+    await expect(ms.patchMessengerConversation(actor(A), d, { info: 'x' })).rejects.toThrow(
+      ms.MessengerRefusedError,
+    );
+    expect((await as(A, () => ms.getMessengerConversation(actor(A), d))).info).toBeNull();
+    // The table's check holds for a direct chat even past the module.
+    await expect(
+      su(sqlTag`update messenger_conversations set info = 'x' where id = ${d}`),
+    ).rejects.toThrow(/messenger_conversations_info_ck/);
+    // An outsider reads nothing of the group, info included.
+    await expect(as(C, () => ms.getMessengerConversation(actor(C), g))).rejects.toThrow(
+      ms.MessengerNotFoundError,
+    );
+  });
+
   it('remove, rename, the last admin hands over, the last leave archives', async () => {
     const g = await group(A, [B, D], 'Crew');
     await expect(ms.removeMessengerParticipant(actor(B), g, D)).rejects.toThrow(

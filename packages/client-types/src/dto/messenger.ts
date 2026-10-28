@@ -92,6 +92,10 @@ export type MessengerConversation = {
   /** As on a list row: a group's icon and colour, null for a direct chat. */
   icon?: string | null;
   color?: string | null;
+  /** A group's info (0343): what it is for and its rules, plain text (at
+   *  most 2000 characters) its admins write; null for a direct chat and a
+   *  group without one. Shown, never run. Not on a list row. */
+  info: string | null;
   createdBy: string | null;
   createdAt: string;
   archivedAt: string | null;
@@ -175,6 +179,9 @@ export type MessengerCreateRequest = {
    *  tint key); a direct chat ignores both. */
   icon?: string | null;
   color?: string | null;
+  /** A group's info (at most 2000 characters; whitespace trimmed, blank is
+   *  none); a direct chat refuses it (400). */
+  info?: string | null;
 };
 
 export type MessengerCreateResponse = {
@@ -183,13 +190,15 @@ export type MessengerCreateResponse = {
   created: boolean;
 };
 
-/** PATCH /api/messenger/c/:id: at least one field. The title, icon and
- *  colour are a group admin's (null or '' clears one); `muted` is mine.
- *  Answers `{ conversation }`. */
+/** PATCH /api/messenger/c/:id: at least one field. The title, icon,
+ *  colour and info are a group admin's (null or '' clears one; a direct
+ *  chat refuses each, 403); `muted` is mine. Answers `{ conversation }`. */
 export type MessengerPatchRequest = {
   title?: string | null;
   icon?: string | null;
   color?: string | null;
+  /** At most 2000 characters, whitespace trimmed; null clears it. */
+  info?: string | null;
   muted?: boolean;
 };
 

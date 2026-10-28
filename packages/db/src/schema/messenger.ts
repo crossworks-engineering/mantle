@@ -50,6 +50,10 @@ export const messengerConversations = pgTable('messenger_conversations', {
   icon: text('icon'),
   /** A group's colour, an app tint key (APP_TINTS, 0341); null for a direct chat. */
   color: text('color'),
+  /** A group's info (0343): what it is for and its rules, at most 2000
+   *  characters, written by its admins; null for a direct chat. Text the
+   *  brain shows and never runs. */
+  info: text('info'),
   workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'set null' }),
   agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   /** A direct chat's two login ids, sorted and joined; null for a group. */

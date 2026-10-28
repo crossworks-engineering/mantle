@@ -4,6 +4,24 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a group's info (server)
+
+- **New:** a group in Messages carries `info`: plain text (at most 2000
+  characters) that says what the group is for and its rules, written by
+  its admins (`POST /api/messenger/conversations` takes it for a group;
+  `PATCH /api/messenger/c/:id` sets or clears it, null clears; a member
+  who is no admin 403; a direct chat 400 on create and 403 on PATCH), read
+  by everyone in the group (`MessengerConversation.info`; not on the list
+  row) and by an agent (`messenger_open` answers it inside
+  `conversation`; `messenger_create` takes it). A change raises the room's
+  `participants` event and writes a system line, as a rename does. The
+  brain stores and shows the text and never runs it. Migration 0343 with
+  its rollback. `docs/messenger.md` "Group info", "The via chip" (the
+  exact words the client shows for a line sent through a credential) and
+  "Engineering requests" (the owner's agent reads a group on its rounds).
+  Plan page d8954876 section 24, B1; the client half (the chip and the
+  info form) follows in mantle-client.
+
 ## Unreleased: calls between people (server)
 
 - **New:** voice calls between the people of a brain, from a chat or a group

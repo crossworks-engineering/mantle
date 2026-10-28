@@ -161,6 +161,10 @@ export const messenger_open: BuiltinToolDef = {
             id: conv.id,
             kind: conv.kind,
             title: conv.title,
+            // A group's info: what it is for and its rules, as its admins
+            // wrote it (plain text, under the same taint as any member's
+            // line); null on a direct chat and a group without one.
+            info: conv.info,
             participants: conv.participants.map(faceless),
             lastReadSeq: conv.me.lastReadSeq,
           },
@@ -263,7 +267,7 @@ export const messenger_create: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Start a chat',
   description:
-    'Start a direct chat (kind "direct", exactly one other person: an existing chat with them is answered instead) or a group (kind "group", any number of people, none for a chat with yourself, with an optional title). Only people `messenger_directory` lists. Answers the conversation id for `messenger_send`.',
+    'Start a direct chat (kind "direct", exactly one other person: an existing chat with them is answered instead) or a group (kind "group", any number of people, none for a chat with yourself, with an optional title and info: what it is for and its rules, which `messenger_open` shows to everyone in it). Only people `messenger_directory` lists. Answers the conversation id for `messenger_send`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -279,6 +283,12 @@ export const messenger_create: BuiltinToolDef = {
         description: 'Login ids from messenger_directory, besides you.',
       },
       title: { type: 'string', maxLength: 200, description: "A group's title." },
+      info: {
+        type: 'string',
+        maxLength: 2000,
+        description:
+          'A group\'s info, plain text: what it is for and its rules, e.g. "Post requests here. Say what you tried and what you expected." Groups only: a direct chat refuses it.',
+      },
     },
     required: ['kind', 'participants'],
   },
@@ -291,6 +301,7 @@ export const messenger_create: BuiltinToolDef = {
         kind,
         participants,
         title: typeof input.title === 'string' ? input.title : null,
+        ...(typeof input.info === 'string' ? { info: input.info } : {}),
       });
       return { ok: true, output: { conversation: out.conversationId, created: out.created } };
     } catch (err) {

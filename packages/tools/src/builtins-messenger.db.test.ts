@@ -249,4 +249,49 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     )) as { n: number }[];
     expect(n!.n).toBe(1);
   });
+
+  it("messenger_create takes a group's info and messenger_open answers it (0343)", async () => {
+    const k = randomUUID();
+    const made = await call('messenger_create', A, k, {
+      kind: 'group',
+      participants: [B],
+      title: 'Engineering requests',
+      info: '  Post here when a tool does not do what you need.  ',
+    });
+    expect(made.ok, made.error).toBe(true);
+    const c = made.output!.conversation as string;
+    // A member opens it: the info, trimmed, inside conversation.
+    const opened = await call('messenger_open', B, randomUUID(), { conversation: c });
+    expect(opened.ok, opened.error).toBe(true);
+    expect(opened.output!.conversation).toMatchObject({
+      id: c,
+      kind: 'group',
+      title: 'Engineering requests',
+      info: 'Post here when a tool does not do what you need.',
+    });
+    // A direct chat refuses info; one without it opens with info null.
+    const refused = await call('messenger_create', A, k, {
+      kind: 'direct',
+      participants: [B],
+      info: 'x',
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.error).toMatch(/direct chat has no info/);
+    const direct = await call('messenger_create', A, k, { kind: 'direct', participants: [B] });
+    expect(direct.ok, direct.error).toBe(true);
+    const d = await call('messenger_open', A, k, {
+      conversation: direct.output!.conversation as string,
+    });
+    expect(d.output!.conversation).toMatchObject({ kind: 'direct', info: null });
+    // Over the cap is refused with the number.
+    const long = await call('messenger_create', A, k, {
+      kind: 'group',
+      participants: [],
+      info: 'x'.repeat(2001),
+    });
+    expect(long.ok).toBe(false);
+    expect(long.error).toMatch(/2000/);
+    // No tool writes it after the create: there is no messenger_update.
+    expect(tools.MESSENGER_TOOLS.some((t) => t.slug === 'messenger_update')).toBe(false);
+  });
 });

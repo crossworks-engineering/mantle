@@ -250,6 +250,61 @@ describe.skipIf(!URL)("a group's icon and colour (0341)", () => {
     expect(room).toMatchObject({ icon: '🌱', color: null });
   });
 
+  it("a group's info (0343): create, an admin's change with its event and line, a member and a direct chat refused, the cap", async () => {
+    const res = await create(A, {
+      kind: 'group',
+      participants: [B],
+      title: 'Requests',
+      info: '  Post requests here.  ',
+    });
+    expect(res.status).toBe(201);
+    const c = await conv(res);
+    expect(c).toMatchObject({ kind: 'group', info: 'Post requests here.' });
+    const id = c.id as string;
+    // Ben reads it in his own scope; the list row does not carry it.
+    const room = await conv(await as(B, 'get', `/api/messenger/c/${id}`, undefined, { id }));
+    expect(room.info).toBe('Post requests here.');
+    const list = (await (await as(B, 'list', '/api/messenger/conversations')).json()) as {
+      rows: Record<string, unknown>[];
+    };
+    expect('info' in list.rows.find((x) => x.id === id)!).toBe(false);
+
+    // A member who is no admin: 403, nothing changed.
+    expect((await patch(B, id, { info: 'mine' })).status).toBe(403);
+    expect((await conv(await as(A, 'get', `/api/messenger/c/${id}`, undefined, { id }))).info).toBe(
+      'Post requests here.',
+    );
+
+    // The admin changes it: the room's event and a system line.
+    changed.length = 0;
+    const set = await patch(A, id, { info: 'Only requests here.' });
+    expect(set.status).toBe(200);
+    expect((await conv(set)).info).toBe('Only requests here.');
+    expect(await event(id, 'participants')).toBe(true);
+    const lines = (await su(
+      sqlTag`select body from messenger_messages where conversation_id = ${id} and author_kind = 'system' order by seq`,
+    )) as { body: string }[];
+    expect(lines.at(-1)?.body).toBe("Ann changed the group's info.");
+
+    // The cap: 2001 is a 400 (the route's schema), 2000 is stored.
+    expect((await patch(A, id, { info: 'x'.repeat(2001) })).status).toBe(400);
+    expect((await conv(await patch(A, id, { info: 'y'.repeat(2000) }))).info).toHaveLength(2000);
+    // null clears it.
+    expect((await conv(await patch(A, id, { info: null }))).info).toBeNull();
+    // A create with too much is a 400 and makes no group.
+    expect(
+      (await create(A, { kind: 'group', participants: [B], info: 'z'.repeat(2001) })).status,
+    ).toBe(400);
+
+    // A direct chat: info on create is a 400; on PATCH there is no admin
+    // (403, as a title); it reads null.
+    expect((await create(A, { kind: 'direct', participants: [B], info: 'x' })).status).toBe(400);
+    const direct = await conv(await create(A, { kind: 'direct', participants: [B] }));
+    expect(direct.info).toBeNull();
+    expect((await patch(A, direct.id as string, { info: 'x' })).status).toBe(403);
+    expect((await patch(A, direct.id as string, { title: 'x' })).status).toBe(403);
+  });
+
   it('a direct chat ignores them on create, and has no admin to change them', async () => {
     const res = await create(A, { kind: 'direct', participants: [B], icon: '🚀', color: 'teal' });
     expect([200, 201]).toContain(res.status);
