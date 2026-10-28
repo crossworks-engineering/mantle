@@ -2,7 +2,8 @@
  * The MCP call log on a real, migrated Postgres (Journal v3 J8, 0345): a
  * row is written from a login's request scope, a read or a write one (the
  * narrow route: system:audit:mcp-call, INSERT only); the work session is
- * the login's last call's within 30 minutes, else a new one; a login reads
+ * the login's last call's over the same via within 30 minutes, else a new
+ * one; a login reads
  * its own rows only, an Admin user too (the row rule); no
  * login's scope writes the table itself; and 0345's rollback takes it off
  * the ledger only. (The 90-day reap: server/web/lib/maintenance/
@@ -68,9 +69,9 @@ describe.skipIf(!URL)('the MCP call log (0345)', () => {
       return fn();
     });
 
-  const entry = (loginId: string, tool: string): import('./index').McpCallEntry => ({
+  const entry = (loginId: string, tool: string, via = 'oauth'): import('./index').McpCallEntry => ({
     loginId,
-    via: 'oauth',
+    via,
     workspaceId: null,
     tool,
     args: { id: 'x' },
@@ -121,6 +122,22 @@ describe.skipIf(!URL)('the MCP call log (0345)', () => {
     // Another login never joins it.
     const [a] = await rowsOf(admin);
     expect([after[0]!.session_id, after[2]!.session_id]).not.toContain(a!.session_id);
+  });
+
+  it('a key bound to the same login keeps a session of its own', async () => {
+    await m.runAsSystem('test:mcp-call-log', async () => {
+      m.recordMcpCall(entry(admin, 'k1', 'key'));
+      m.recordMcpCall(entry(admin, 'a2'));
+      m.recordMcpCall(entry(admin, 'k2', 'key'));
+    });
+    await m.mcpCallsSettled();
+    const s = new Map((await rowsOf(admin)).map((r) => [r.tool, r.session_id]));
+    // The oauth calls stay one session, the key's calls another.
+    expect(s.get('a2')).toBe(s.get('a1'));
+    expect(s.get('k2')).toBe(s.get('k1'));
+    expect(s.get('k1')).not.toBe(s.get('a1'));
+    // Tidy: the read test counts the admin's rows.
+    await su`delete from mcp_calls where login_id = ${admin} and tool in ('k1', 'a2', 'k2')`;
   });
 
   it('a login reads its own rows only, an Admin user too', async () => {
