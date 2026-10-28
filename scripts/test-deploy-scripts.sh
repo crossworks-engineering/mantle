@@ -327,7 +327,7 @@ check "box: the fail-open line reads gone, not a count" sh -c "
   grep -q ' fail_open_branches gone\$' '$ROOT/scripts/arch-scoreboard-box.sh' &&
   ! grep -q 'fail-open:%' '$ROOT/scripts/arch-scoreboard-box.sh'"
 check "box: the narrow counts read all time (no window)" sh -c "
-  sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q 'narrow-would-refuse' &&
+  sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q 'narrow-denied' &&
   ! sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q 'interval'"
 check "box: an unreadable .env reads n/a, not 0" sh -c "
   grep -q '\[ -r \"\$env_stack/.env\" \]' '$ROOT/scripts/arch-scoreboard-box.sh' &&

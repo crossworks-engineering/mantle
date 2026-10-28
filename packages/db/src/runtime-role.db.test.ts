@@ -351,8 +351,8 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
              rolcreaterole as cr, rolcreatedb as cd, rolreplication as repl,
              rolpassword is not null as pw
         from pg_authid where rolname = ${NARROW_ROLE}`;
-    // LOGIN with its password: migrate saw MANTLE_NARROW_SYSTEM on (the
-    // tests' default), so the narrow route's pool logs in as it.
+    // LOGIN with its password: migrate had a master key (not per-database
+    // mode), so the narrow route's pool logs in as it.
     expect(r).toEqual({
       login: true,
       su: false,

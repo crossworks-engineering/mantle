@@ -27,9 +27,8 @@
  * the guard asks the area again, as on main (round 2, the CEO ruling).
  *
  * The device token cells run in every lane the file runs in: the full DB
- * run with the switch on (both shards) and off (MANTLE_NARROW_SYSTEM=0),
- * test:runtime-role and the full run with the runtime role off
- * (MANTLE_DB_RUNTIME_ROLE=0), each against the one record.
+ * run (both shards), test:runtime-role and the full run with the runtime
+ * role off (MANTLE_DB_RUNTIME_ROLE=0), each against the one record.
  *
  * Run in the full DB run (the actor check warn) and test:actor-on (on).
  *

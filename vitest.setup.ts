@@ -32,8 +32,8 @@ beforeEach(() => enterTestActor());
 
 // Plan v3.2 S7a: MANTLE_NARROW_DUMP=<file> lists the narrow route's uses
 // by actor (one JSON line per test file and actor, with the count) and its
-// denials: how each reason routed 'narrow' was measured with the switch on
-// (docs/runtime-role.md, "The narrow route").
+// denials: how each reason routed 'narrow' was measured (docs/runtime-role.md,
+// "The narrow route").
 const narrowDump = process.env.MANTLE_NARROW_DUMP;
 
 afterEach(() => {

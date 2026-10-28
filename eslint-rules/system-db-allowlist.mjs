@@ -81,17 +81,16 @@ export default { rules: { 'system-db-allowlist': rule } };
 /**
  * The route each file's systemDb uses take (plan v3.2 S7a, section 2.1
  * point 7): inside a turn or request scope systemDb runs on the narrow
- * system role while MANTLE_NARROW_SYSTEM is on, outside every scope (a
- * worker, a script, boot) on the full one (gateway/handles.ts). 'narrow':
- * the file is reached in a scope, so its statements hold on the narrow role
- * (measured with the switch on, the DB suites: no denial); 'full': only
- * reached outside every scope. Counted in arch-counts.mjs (systemDbUses_narrow,
+ * system role, outside every scope (a worker, a script, boot) on the full
+ * one (gateway/handles.ts). 'narrow': the file is reached in a scope, so
+ * its statements hold on the narrow role (measured by the DB suites: no
+ * denial); 'full': only reached outside every scope. Counted in arch-counts.mjs (systemDbUses_narrow,
  * systemDbUses_full); a file with uses and no mark fails arch:check.
  *
  * A mark is a declaration, not a switch: the route is decided at run time
  * by the scope (gateway/handles.ts), never read from this list. A 'full'
- * file reached in a scope still runs narrow; what holds it is the switch-on
- * suite (a denial fails the test), not the mark.
+ * file reached in a scope still runs narrow; what holds it is the DB
+ * suites (a denial fails the test), not the mark.
  */
 export const SYSTEM_DB_ROUTE = Object.freeze({
   // Last use of a key in a turn, the vault reads of a tool.
