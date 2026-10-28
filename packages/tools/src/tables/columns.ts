@@ -265,6 +265,7 @@ export const table_column_delete: BuiltinToolDef = {
 export const table_set_aggregate: BuiltinToolDef = {
   slug: 'table_set_aggregate',
   policy: {
+    idempotent: true, // sets the one aggregate
     matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',

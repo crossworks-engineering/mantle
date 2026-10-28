@@ -303,6 +303,7 @@ const formula_update: BuiltinToolDef = {
   slug: 'formula_update',
   autoGrant: true,
   policy: {
+    destructive: true, // spec replaces the whole model; no revision
     matrix: { action: 'edit', param: 'id', kinds: ['formula'] },
     effect: 'write',
     spends: 'none',

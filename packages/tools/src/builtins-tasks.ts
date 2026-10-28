@@ -274,6 +274,7 @@ const task_create: BuiltinToolDef = {
 const task_update: BuiltinToolDef = {
   slug: 'task_update',
   policy: {
+    destructive: true, // todos replaces the whole checklist; no revision
     matrix: { action: 'edit', param: 'id', kinds: ['task'] },
     effect: 'write',
     spends: 'none',

@@ -196,6 +196,7 @@ const note_update: BuiltinToolDef = {
   slug: 'note_update',
   usageTier: 3,
   policy: {
+    destructive: true, // content replaces the whole body; a note keeps no revision
     matrix: { action: 'edit', param: 'id', kinds: ['note'] },
     effect: 'write',
     spends: 'none',

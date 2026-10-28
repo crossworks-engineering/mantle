@@ -806,6 +806,7 @@ const app_db_seed: BuiltinToolDef = {
   slug: 'app_db_seed',
   usageTier: 3,
   policy: {
+    destructive: true, // replace: true empties the live table first
     matrix: { action: 'editDraft', param: 'id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',

@@ -865,7 +865,7 @@
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
-   "openWorldHint": false
+   "openWorldHint": true
   }
  },
  {
@@ -904,7 +904,7 @@
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
-   "openWorldHint": false
+   "openWorldHint": true
   }
  },
  {
@@ -1040,7 +1040,7 @@
   "annotations": {
    "title": "note_update",
    "readOnlyHint": false,
-   "destructiveHint": false,
+   "destructiveHint": true,
    "idempotentHint": false,
    "openWorldHint": false
   }
@@ -1471,7 +1471,7 @@
   "annotations": {
    "title": "task_update",
    "readOnlyHint": false,
-   "destructiveHint": false,
+   "destructiveHint": true,
    "idempotentHint": false,
    "openWorldHint": false
   }
@@ -2525,7 +2525,7 @@
    "title": "recall_map_publish",
    "readOnlyHint": false,
    "destructiveHint": false,
-   "idempotentHint": false,
+   "idempotentHint": true,
    "openWorldHint": false
   }
  },
@@ -3799,7 +3799,7 @@
   "annotations": {
    "title": "page_update",
    "readOnlyHint": false,
-   "destructiveHint": false,
+   "destructiveHint": true,
    "idempotentHint": false,
    "openWorldHint": false
   }
@@ -5857,7 +5857,7 @@
    "title": "table_set_aggregate",
    "readOnlyHint": false,
    "destructiveHint": false,
-   "idempotentHint": false,
+   "idempotentHint": true,
    "openWorldHint": false
   }
  },
@@ -6285,7 +6285,7 @@
   "annotations": {
    "title": "contact_update",
    "readOnlyHint": false,
-   "destructiveHint": false,
+   "destructiveHint": true,
    "idempotentHint": false,
    "openWorldHint": false
   }
@@ -7492,7 +7492,7 @@
   "annotations": {
    "title": "app_db_seed",
    "readOnlyHint": false,
-   "destructiveHint": false,
+   "destructiveHint": true,
    "idempotentHint": false,
    "openWorldHint": false
   }
@@ -9230,7 +9230,7 @@
   "annotations": {
    "title": "formula_update",
    "readOnlyHint": false,
-   "destructiveHint": false,
+   "destructiveHint": true,
    "idempotentHint": false,
    "openWorldHint": false
   }
@@ -10831,7 +10831,7 @@
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
-   "openWorldHint": false
+   "openWorldHint": true
   }
  },
  {
@@ -11195,7 +11195,7 @@
    "title": "run_cancel",
    "readOnlyHint": false,
    "destructiveHint": false,
-   "idempotentHint": false,
+   "idempotentHint": true,
    "openWorldHint": false
   }
  },
@@ -11311,7 +11311,7 @@
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
-   "openWorldHint": false
+   "openWorldHint": true
   }
  },
  {
@@ -11357,7 +11357,7 @@
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
-   "openWorldHint": false
+   "openWorldHint": true
   }
  },
  {
@@ -11373,7 +11373,7 @@
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
-   "openWorldHint": false
+   "openWorldHint": true
   }
  },
  {
@@ -11421,7 +11421,7 @@
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
-   "openWorldHint": false
+   "openWorldHint": true
   }
  },
  {
@@ -11847,7 +11847,7 @@
   "annotations": {
    "title": "api_tool_update",
    "readOnlyHint": false,
-   "destructiveHint": false,
+   "destructiveHint": true,
    "idempotentHint": false,
    "openWorldHint": false
   }
@@ -11905,7 +11905,7 @@
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
-   "openWorldHint": false
+   "openWorldHint": true
   }
  },
  {
@@ -12157,7 +12157,7 @@
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
-   "openWorldHint": false
+   "openWorldHint": true
   }
  },
  {
@@ -12371,7 +12371,7 @@
    "title": "agent_set_thinking_effort",
    "readOnlyHint": false,
    "destructiveHint": false,
-   "idempotentHint": false,
+   "idempotentHint": true,
    "openWorldHint": false
   }
  }

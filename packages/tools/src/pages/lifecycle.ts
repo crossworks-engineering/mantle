@@ -247,6 +247,7 @@ export const page_replace_from_file: BuiltinToolDef = {
 export const page_update: BuiltinToolDef = {
   slug: 'page_update',
   policy: {
+    destructive: true, // markdown replaces the live body in one shot; no revision
     matrix: { action: 'edit', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',

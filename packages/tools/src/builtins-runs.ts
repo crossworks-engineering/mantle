@@ -951,6 +951,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   {
     slug: 'run_cancel',
     policy: {
+      idempotent: true, // idempotent by its own word
       matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',

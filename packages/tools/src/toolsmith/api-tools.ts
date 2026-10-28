@@ -299,6 +299,7 @@ export const api_tool_update: BuiltinToolDef = {
   slug: 'api_tool_update',
   optIn: 'toolsmithWrite',
   policy: {
+    destructive: true, // headers and query replace the whole map; no revision
     matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',
@@ -633,6 +634,7 @@ export const api_tool_test: BuiltinToolDef = {
   slug: 'api_tool_test',
   usageTier: 2,
   policy: {
+    outside: { via: 'http' }, // runs a user-defined HTTP tool
     matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',

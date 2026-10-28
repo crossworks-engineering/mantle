@@ -223,6 +223,7 @@ export const telegram_pending: BuiltinToolDef = {
 export const telegram_react: BuiltinToolDef = {
   slug: 'telegram_react',
   policy: {
+    outside: { via: 'send' }, // the Telegram Bot API
     matrix: { none: 'a Telegram message is not an item' },
     effect: 'write',
     spends: 'none',
@@ -264,6 +265,7 @@ export const telegram_react: BuiltinToolDef = {
 export const telegram_edit: BuiltinToolDef = {
   slug: 'telegram_edit',
   policy: {
+    outside: { via: 'send' }, // the Telegram Bot API
     matrix: { none: 'a Telegram message is not an item' },
     effect: 'write',
     spends: 'none',
