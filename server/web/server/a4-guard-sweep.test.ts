@@ -1204,6 +1204,8 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
       '# 2026-10-27 (Messenger V1 Phase 1): the /api/messenger GET rows had no route on',
       '# main; each of their HEAD cells is held to the main answer of the same shape',
       '# (the any-login HEAD rows above, actor= and out= masked).',
+      '# 2026-10-28 (calls P1): GET /api/messenger/capabilities and /c/:id/calls had no',
+      '# route on main; their HEAD cells are held to /api/messenger/unread and /c/:id.',
     ]);
   });
 

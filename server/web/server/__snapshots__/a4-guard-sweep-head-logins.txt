@@ -7,6 +7,8 @@
 # 2026-10-27 (Messenger V1 Phase 1): the /api/messenger GET rows had no route on
 # main; each of their HEAD cells is held to the main answer of the same shape
 # (the any-login HEAD rows above, actor= and out= masked).
+# 2026-10-28 (calls P1): GET /api/messenger/capabilities and /c/:id/calls had no
+# route on main; their HEAD cells are held to /api/messenger/unread and /c/:id.
 # answers
 h1 401 content-type=application/json cache-control=no-store 
 h2 500 content-type=application/json cache-control=no-store  [getLoginOr401 ok {"email":"admin-3333@example.invalid","kind":"admin","loginId":"33333333-3333-4333-8333-333333333333","sessionEpoch":0,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:false]
@@ -520,7 +522,33 @@ more HEAD /api/workspaces/user-search key-revoked=h1 main=o1
 # rows added since main (no answer on main: each cell names, like=, the main answer of
 # a sibling row that takes the same gate path, and is held to it as the cells
 # above are held to theirs)
-# cells: 140
+# cells: 180
+first HEAD /api/messenger/c/:id/calls none=h1 like=o1
+first HEAD /api/messenger/c/:id/calls owner-cookie=h2 like=o2
+first HEAD /api/messenger/c/:id/calls admin-cookie=h3 like=o3
+first HEAD /api/messenger/c/:id/calls limited-cookie=h4 like=o4
+first HEAD /api/messenger/c/:id/calls member-cookie=h5 like=o5
+first HEAD /api/messenger/c/:id/calls admin-bearer=h6 like=o6
+first HEAD /api/messenger/c/:id/calls member-bearer=h7 like=o7
+first HEAD /api/messenger/c/:id/calls revoked-bearer=h8 like=o8
+first HEAD /api/messenger/c/:id/calls key-read=h1 like=o1
+first HEAD /api/messenger/c/:id/calls key-write=h1 like=o1
+first HEAD /api/messenger/c/:id/calls key-read-area=h1 like=o1
+first HEAD /api/messenger/c/:id/calls key-write-area=h1 like=o1
+first HEAD /api/messenger/c/:id/calls key-member=h1 like=o1
+first HEAD /api/messenger/capabilities none=h1 like=o1
+first HEAD /api/messenger/capabilities owner-cookie=h2 like=o2
+first HEAD /api/messenger/capabilities admin-cookie=h3 like=o3
+first HEAD /api/messenger/capabilities limited-cookie=h4 like=o4
+first HEAD /api/messenger/capabilities member-cookie=h5 like=o5
+first HEAD /api/messenger/capabilities admin-bearer=h6 like=o6
+first HEAD /api/messenger/capabilities member-bearer=h7 like=o7
+first HEAD /api/messenger/capabilities revoked-bearer=h8 like=o8
+first HEAD /api/messenger/capabilities key-read=h1 like=o1
+first HEAD /api/messenger/capabilities key-write=h1 like=o1
+first HEAD /api/messenger/capabilities key-read-area=h1 like=o1
+first HEAD /api/messenger/capabilities key-write-area=h1 like=o1
+first HEAD /api/messenger/capabilities key-member=h1 like=o1
 first HEAD /api/messenger/photo/:loginId none=h1 like=o1
 first HEAD /api/messenger/photo/:loginId owner-cookie=h2 like=o2
 first HEAD /api/messenger/photo/:loginId admin-cookie=h3 like=o3
@@ -612,6 +640,20 @@ first HEAD /api/workspaces/:id/connector-options key-write=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options key-read-area=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options key-write-area=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options key-member=h1 like=o1
+more HEAD /api/messenger/c/:id/calls disabled-cookie=h8 like=o8
+more HEAD /api/messenger/c/:id/calls bumped-cookie=h8 like=o8
+more HEAD /api/messenger/c/:id/calls gone-cookie=h8 like=o8
+more HEAD /api/messenger/c/:id/calls rotated-bearer=h8 like=o8
+more HEAD /api/messenger/c/:id/calls expired-bearer=h8 like=o8
+more HEAD /api/messenger/c/:id/calls key-unknown=h1 like=o1
+more HEAD /api/messenger/c/:id/calls key-revoked=h1 like=o1
+more HEAD /api/messenger/capabilities disabled-cookie=h8 like=o8
+more HEAD /api/messenger/capabilities bumped-cookie=h8 like=o8
+more HEAD /api/messenger/capabilities gone-cookie=h8 like=o8
+more HEAD /api/messenger/capabilities rotated-bearer=h8 like=o8
+more HEAD /api/messenger/capabilities expired-bearer=h8 like=o8
+more HEAD /api/messenger/capabilities key-unknown=h1 like=o1
+more HEAD /api/messenger/capabilities key-revoked=h1 like=o1
 more HEAD /api/messenger/photo/:loginId disabled-cookie=h8 like=o8
 more HEAD /api/messenger/photo/:loginId bumped-cookie=h8 like=o8
 more HEAD /api/messenger/photo/:loginId gone-cookie=h8 like=o8

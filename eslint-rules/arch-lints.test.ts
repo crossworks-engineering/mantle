@@ -488,7 +488,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // assistant twins POST /api/assistant/:agentId/call and /call/token,
     // with the GETs' HEADs. The LiveKit webhook is public (no caller).
     expect(rows.filter((r) => r.caller).length).toBe(835);
-    expect(rows.length).toBe(882);
+    // 882 + the 13 call rows above + the public webhook.
+    expect(rows.length).toBe(896);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

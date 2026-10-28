@@ -14,6 +14,7 @@
 # 2026-10-27 (messenger avatars): GET and HEAD /api/messenger/photo/:loginId, another login's profile photo, take messenger-read (600 a minute per login); its probes are the branch's own answers (no route on main).
 # 2026-10-27 (people, plan page d8954876 section 23): GET and HEAD /api/people, /api/people/presence, /api/people/:id and /api/people/:id/photo take people-read (600 a minute per login); their probes are the branch's own answers (no route on main).
 # probes: 443
+# 2026-10-28 (calls, plan page 886126b4 section 12): GET and HEAD /api/messenger/capabilities and /api/messenger/c/:id/calls take messenger-read; POST /c/:id/call and /api/assistant/:agentId/call messenger-call (5 a minute per login); the two /call/token routes messenger-call-token (12); the other call writes messenger-write; POST /api/livekit/webhook livekit-webhook (600 a minute per address, the machine shape). Their probes are the branch's own answers (no route on main).
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
 POST /api/auth/login none auth:login scope => other address 401
@@ -457,3 +458,58 @@ DELETE /api/messenger/favourites/:kind/:id member messenger-write count (login 1
 DELETE /api/messenger/favourites/:kind/:id member messenger-write window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
 DELETE /api/messenger/favourites/:kind/:id member messenger-write scope => other address 429; other login 404; other login, other address 404
 DELETE /api/messenger/favourites/:kind/:id member messenger-write order: no login => first 429 at 0; answer 401; then 404
+GET /api/messenger/capabilities member messenger-read count (login 600/60s) => first 429 at 601; #600 200; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+GET /api/messenger/capabilities member messenger-read window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 200
+GET /api/messenger/capabilities member messenger-read scope => other address 429; other login 200; other login, other address 200
+GET /api/messenger/capabilities member messenger-read order: no login => first 429 at 0; answer 401; then 200
+HEAD /api/messenger/capabilities member messenger-read count (login 600/60s) => first 429 at 601; #600 200; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /api/messenger/capabilities member messenger-read window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 200
+HEAD /api/messenger/capabilities member messenger-read scope => other address 429; other login 200; other login, other address 200
+HEAD /api/messenger/capabilities member messenger-read order: no login => first 429 at 0; answer 401; then 200
+GET /api/messenger/c/:id/calls member messenger-read count (login 600/60s) => first 429 at 601; #600 500; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+GET /api/messenger/c/:id/calls member messenger-read window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 500
+GET /api/messenger/c/:id/calls member messenger-read scope => other address 429; other login 500; other login, other address 500
+GET /api/messenger/c/:id/calls member messenger-read order: no login => first 429 at 0; answer 401; then 500
+HEAD /api/messenger/c/:id/calls member messenger-read count (login 600/60s) => first 429 at 601; #600 500; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /api/messenger/c/:id/calls member messenger-read window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 500
+HEAD /api/messenger/c/:id/calls member messenger-read scope => other address 429; other login 500; other login, other address 500
+HEAD /api/messenger/c/:id/calls member messenger-read order: no login => first 429 at 0; answer 401; then 500
+POST /api/messenger/c/:id/call member messenger-call count (login 5/60s) => first 429 at 6; #5 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/messenger/c/:id/call member messenger-call window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/messenger/c/:id/call member messenger-call scope => other address 429; other login 404; other login, other address 404
+POST /api/messenger/c/:id/call member messenger-call order: no login => first 429 at 0; answer 401; then 404
+POST /api/messenger/c/:id/call/token member messenger-call-token count (login 12/60s) => first 429 at 13; #12 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/messenger/c/:id/call/token member messenger-call-token window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/messenger/c/:id/call/token member messenger-call-token scope => other address 429; other login 404; other login, other address 404
+POST /api/messenger/c/:id/call/token member messenger-call-token order: no login => first 429 at 0; answer 401; then 404
+POST /api/messenger/c/:id/call/leave member messenger-write count (login 120/60s) => first 429 at 121; #120 500; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/messenger/c/:id/call/leave member messenger-write window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 500
+POST /api/messenger/c/:id/call/leave member messenger-write scope => other address 429; other login 500; other login, other address 500
+POST /api/messenger/c/:id/call/leave member messenger-write order: no login => first 429 at 0; answer 401; then 500
+POST /api/messenger/c/:id/call/end member messenger-write count (login 120/60s) => first 429 at 121; #120 500; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/messenger/c/:id/call/end member messenger-write window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 500
+POST /api/messenger/c/:id/call/end member messenger-write scope => other address 429; other login 500; other login, other address 500
+POST /api/messenger/c/:id/call/end member messenger-write order: no login => first 429 at 0; answer 401; then 500
+POST /api/messenger/c/:id/call/agent member messenger-write count (login 120/60s) => first 429 at 121; #120 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/messenger/c/:id/call/agent member messenger-write window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
+POST /api/messenger/c/:id/call/agent member messenger-write scope => other address 429; other login 400; other login, other address 400
+POST /api/messenger/c/:id/call/agent member messenger-write order: no login => first 429 at 0; answer 401; then 400
+DELETE /api/messenger/c/:id/call/agent member messenger-write count (login 120/60s) => first 429 at 121; #120 500; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+DELETE /api/messenger/c/:id/call/agent member messenger-write window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 500
+DELETE /api/messenger/c/:id/call/agent member messenger-write scope => other address 429; other login 500; other login, other address 500
+DELETE /api/messenger/c/:id/call/agent member messenger-write order: no login => first 429 at 0; answer 401; then 500
+DELETE /api/messenger/c/:id/call/participants/:loginId member messenger-write count (login 120/60s) => first 429 at 121; #120 500; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+DELETE /api/messenger/c/:id/call/participants/:loginId member messenger-write window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 500
+DELETE /api/messenger/c/:id/call/participants/:loginId member messenger-write scope => other address 429; other login 500; other login, other address 500
+DELETE /api/messenger/c/:id/call/participants/:loginId member messenger-write order: no login => first 429 at 0; answer 401; then 500
+POST /api/assistant/:agentId/call member messenger-call count (login 5/60s) => first 429 at 6; #5 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/assistant/:agentId/call member messenger-call window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/assistant/:agentId/call member messenger-call scope => other address 429; other login 404; other login, other address 404
+POST /api/assistant/:agentId/call member messenger-call order: no login => first 429 at 0; answer 401; then 404
+POST /api/assistant/:agentId/call/token member messenger-call-token count (login 12/60s) => first 429 at 13; #12 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/assistant/:agentId/call/token member messenger-call-token window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/assistant/:agentId/call/token member messenger-call-token scope => other address 429; other login 404; other login, other address 404
+POST /api/assistant/:agentId/call/token member messenger-call-token order: no login => first 429 at 0; answer 401; then 404
+POST /api/livekit/webhook none livekit-webhook count (ip 600/60s) => first 429 at 601; #600 401; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+POST /api/livekit/webhook none livekit-webhook window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 401
+POST /api/livekit/webhook none livekit-webhook scope => other address 401
