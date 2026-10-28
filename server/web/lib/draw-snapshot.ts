@@ -1,4 +1,5 @@
 import { EXCALIDRAW_ENGINE, getDrawSnapshot, setDrawSvg } from '@mantle/content';
+import { documentsAvailable, pngSize, runDocuments } from '@mantle/documents';
 import { buildRenderToken } from '@/lib/auth/tokens';
 import { renderDrawSvg, DrawRendererUnavailableError } from '@/lib/render-draw-svg';
 import { renderDrawPng, type DrawPng } from '@/lib/render-draw-png';
@@ -57,6 +58,9 @@ const inFlight = new Map<string, Promise<string | null>>();
  * restart or a fixed drawing gets a fresh attempt without operator action.
  */
 const FAILURE_COOLDOWN_MS = 5 * 60_000;
+/** The raster's pixel ratio: the picture survives being printed rather
+ *  than looked at on screen (render-draw-png.ts PIXEL_RATIO). */
+const DRAW_PIXEL_RATIO = 2;
 const failedUntil = new Map<string, number>();
 
 function inCooldown(id: string): boolean {
@@ -174,6 +178,34 @@ export async function getDrawPngOrRender(
 ): Promise<DrawPng | null> {
   const svg = await getDrawSvgOrRender(ownerId, id, { actorId });
   if (!svg) return null;
+  // The documents engine, when the service is on: a screenshot of the same
+  // print surface at 2x, sized at 1x (P5). A failure degrades to the
+  // placeholder as the sidecar's does; it never falls through to the
+  // sidecar, which keeps only the SVG re-render on a box with the engine.
+  if (documentsAvailable()) {
+    try {
+      const res = await runDocuments(
+        {
+          route: 'chromium/screenshot/url',
+          inputs: { node_id: id },
+          options: { deviceScaleFactor: DRAW_PIXEL_RATIO, width: 800, height: 1000, format: 'png' },
+        },
+        { ownerId, actorLoginId: actorId ?? ownerId },
+        'bytes',
+      );
+      if (res.kind !== 'bytes') return null;
+      const size = pngSize(res.bytes);
+      if (!size) return null;
+      return {
+        bytes: res.bytes,
+        width: Math.round(size.width / DRAW_PIXEL_RATIO),
+        height: Math.round(size.height / DRAW_PIXEL_RATIO),
+      };
+    } catch (err) {
+      console.error(`[draw-snapshot] raster failed for ${id} (documents engine):`, err);
+      return null;
+    }
+  }
   try {
     return await withSlot(() => renderDrawPng(id, renderTokenFor(ownerId, id, actorId)));
   } catch (err) {

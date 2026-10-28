@@ -47,6 +47,10 @@ export type RenderOptions = {
    *  this surface may not show that canvas. Without it, or with null, the
    *  canvas renders as a labelled `[canvas: alt]` placeholder. */
   presentUrl?: (presentId: string) => string | null;
+  /** How an <img> loads: `lazy` (the default, a share page's long scroll)
+   *  or `eager` (the print surface: a render engine prints the document as
+   *  one, so every image must be in by then; task 5dda95ee). */
+  imageLoading?: 'lazy' | 'eager';
 };
 
 function esc(s: string): string {
@@ -201,6 +205,7 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
     case 'tableCell':
       return `<td>${renderBlocks(node.content, opts)}</td>`;
     case 'image': {
+      const loading = opts.imageLoading ?? 'lazy';
       const fileId = str(node.attrs?.nodeId);
       // An embedded drawing is an image whose bytes come from a draw's
       // committed snapshot. Always an <img>, never inline markup — the
@@ -218,7 +223,7 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
         if (!drawSrc) {
           return `<p><em>[drawing: ${esc(str(node.attrs?.alt)) || 'untitled'}]</em></p>`;
         }
-        return `<img src="${escAttr(drawSrc)}" alt="${alt}" loading="lazy">`;
+        return `<img src="${escAttr(drawSrc)}" alt="${alt}" loading="${loading}">`;
       }
       // An embedded canvas (after a drawing, the one order every renderer
       // keeps): its snapshot, a PNG, or a bare placeholder where this surface
@@ -227,10 +232,10 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       if (presentId) {
         const posterSrc = opts.presentUrl?.(presentId) ?? null;
         if (!posterSrc) return '<p><em>[canvas]</em></p>';
-        return `<img class="canvas-embed" src="${escAttr(posterSrc)}" alt="${alt}" loading="lazy">`;
+        return `<img class="canvas-embed" src="${escAttr(posterSrc)}" alt="${alt}" loading="${loading}">`;
       }
       const src = fileId ? opts.assetUrl(fileId) : str(node.attrs?.src);
-      return src ? `<img src="${escAttr(src)}" alt="${alt}" loading="lazy">` : '';
+      return src ? `<img src="${escAttr(src)}" alt="${alt}" loading="${loading}">` : '';
     }
     case 'fileEmbed': {
       const fileId = str(node.attrs?.nodeId);

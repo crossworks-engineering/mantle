@@ -401,6 +401,18 @@ cache + `extract_cost_cap_micro_usd`.
   Admin Moderator), else at the top of Files (a dedicated `export` tool group
   granted to the persona + Pages / Ledger). OOXML opens cleanly in Word / Google
   Docs / LibreOffice.
+- **Export to PDF:** `GET /api/export/[id]?format=pdf` prints the page (or a
+  drawing's committed snapshot) through its own `/print/pages/<id>` surface
+  with a render cookie for the acting admin: through the documents engine
+  (Gotenberg, [`documents.md`](./documents.md)) when the Documents service is
+  on, else the browser sidecar. The print options are query parameters,
+  validated with safe defaults (`server/web/lib/print-options.ts`):
+  `paper=a4|a3|a5|letter|legal`, `landscape=1`, `margin=<mm>` or
+  `margin_top`, `margin_right`, `margin_bottom`, `margin_left` (0 to 60),
+  `header=<text>`, `footer=<text>` (200 characters, text only) and
+  `page_numbers=1` ("Page N of M" at the bottom right; a header or footer
+  line grows its margin to 14 mm). Both engines honour them; the client's
+  Export menu adds them to the download link (a mantle-client follow-up).
 
 ---
 

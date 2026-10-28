@@ -1,9 +1,10 @@
 /**
- * GET /api/export/:id?format=pdf mints the credential the browser sidecar
- * carries (audit F01). It used to be a full session cookie for the ANCHOR,
- * whoever clicked Export; it must now be a render cookie (kind 'r') for the
- * ACTING admin and the node being printed, and never a session. The sidecar
- * itself is stood in: these pin what the route hands it.
+ * GET /api/export/:id?format=pdf hands the render to renderNodeToPdf (the
+ * documents engine, or the browser sidecar) as the ACTING admin, whoever
+ * clicked Export, for the node being printed (audit F01: the render cookie
+ * both engines carry is minted for that admin and that node, never a
+ * session; the engines are stood in here). The print options are query
+ * parameters, validated with safe defaults; a bad one is a 400.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,7 +14,7 @@ const PAGE = '44444444-4444-4444-8444-444444444444';
 const DRAW = '77777777-7777-4777-8777-777777777777';
 
 const h = vi.hoisted(() => ({
-  renders: [] as Array<{ url: string; token: string }>,
+  renders: [] as Array<{ kind: string; id: string; who: unknown; options: unknown }>,
   fills: [] as Array<{ id: string; opts: unknown }>,
   drawSvg: null as string | null,
 }));
@@ -48,22 +49,19 @@ vi.mock('@/lib/draw-snapshot', () => ({
 vi.mock('@/lib/files', () => ({ readFileById: vi.fn(async () => null) }));
 
 vi.mock('@/lib/render-pdf', () => ({
-  printOrigin: () => 'http://web:3000',
   PdfRendererUnavailableError: class extends Error {},
-  renderUrlToPdf: vi.fn(async (url: string, token: string) => {
-    h.renders.push({ url, token });
+  renderNodeToPdf: vi.fn(async (kind: string, id: string, who: unknown, options: unknown) => {
+    h.renders.push({ kind, id, who, options });
     return Buffer.from('%PDF-1.7');
   }),
 }));
 
-describe('PDF export: the sidecar credential', () => {
+describe('PDF export: the render as the acting admin', () => {
   let GET: typeof import('./route').GET;
-  let auth: typeof import('@/lib/auth/tokens');
 
   beforeAll(async () => {
     process.env.SESSION_SECRET = 'export-pdf-route-secret-at-least-32-chars';
     ({ GET } = await import('./route'));
-    auth = await import('@/lib/auth/tokens');
   });
 
   beforeEach(() => {
@@ -72,33 +70,62 @@ describe('PDF export: the sidecar credential', () => {
     h.drawSvg = null;
   });
 
-  const exportPdf = (id: string) =>
-    GET(new Request(`http://brain.test/api/export/${id}?format=pdf`), {
+  const exportPdf = (id: string, query = '') =>
+    GET(new Request(`http://brain.test/api/export/${id}?format=pdf${query}`), {
       params: Promise.resolve({ id }),
     });
 
-  it('prints a page with a render cookie for the acting admin, not the anchor', async () => {
+  it('prints a page as the acting admin, not the anchor, with the default options', async () => {
     const res = await exportPdf(PAGE);
     expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/pdf');
     expect(h.renders).toHaveLength(1);
-    const { url, token } = h.renders[0]!;
-    expect(url).toBe(`http://web:3000/print/pages/${PAGE}`);
-    expect(auth.verifyRenderToken(token)).toEqual({ uid: ANCHOR, act: ADMIN, n: PAGE });
-    // Not a session, and not a Cookie header line either: a bare value the
-    // sidecar sets as a cookie on the print origin.
-    expect(auth.verifySessionCookie(token)).toBeNull();
-    expect(token).not.toContain('=');
+    expect(h.renders[0]).toEqual({
+      kind: 'page',
+      id: PAGE,
+      who: { ownerId: ANCHOR, actorId: ADMIN },
+      options: {
+        paper: 'a4',
+        landscape: false,
+        margins: { top: 18, right: 16, bottom: 18, left: 16 },
+        header: null,
+        footer: null,
+        pageNumbers: false,
+      },
+    });
     // The embedded drawing's cache fill renders for the same admin.
     expect(h.fills).toContainEqual({ id: DRAW, opts: { actorId: ADMIN } });
   });
 
-  it('prints a drawing with a render cookie naming that drawing and the acting admin', async () => {
+  it('prints a drawing as the acting admin', async () => {
     h.drawSvg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
     const res = await exportPdf(DRAW);
     expect(res.status).toBe(200);
-    const { url, token } = h.renders[0]!;
-    expect(url).toBe(`http://web:3000/print/draws/${DRAW}`);
-    expect(auth.verifyRenderToken(token)).toEqual({ uid: ANCHOR, act: ADMIN, n: DRAW });
-    expect(auth.verifySessionCookie(token)).toBeNull();
+    expect(h.renders[0]).toMatchObject({
+      kind: 'draw',
+      id: DRAW,
+      who: { ownerId: ANCHOR, actorId: ADMIN },
+    });
+  });
+
+  it('takes the print options from the query, and refuses a bad one with 400', async () => {
+    const res = await exportPdf(
+      PAGE,
+      '&paper=letter&landscape=1&margin=10&footer=Q3%20pack&page_numbers=1',
+    );
+    expect(res.status).toBe(200);
+    expect(h.renders[0]!.options).toEqual({
+      paper: 'letter',
+      landscape: true,
+      // The footer line needs room: the bottom margin grows to 14 mm.
+      margins: { top: 10, right: 10, bottom: 14, left: 10 },
+      header: null,
+      footer: 'Q3 pack',
+      pageNumbers: true,
+    });
+    const bad = await exportPdf(PAGE, '&paper=tabloid');
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: expect.stringMatching(/print option paper/) });
+    expect(h.renders).toHaveLength(1);
   });
 });

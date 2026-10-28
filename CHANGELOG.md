@@ -40,6 +40,13 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   `host.tools.call` (the authoring guide's "Reports" example). Team apps
   refuse them in v1. `export_node` embeds real drawings in Word exports
   through the engine when the service is on.
+- **Pages export:** with the service on, the page and drawing PDF export
+  and the Word drawing raster print through the engine (the browser sidecar
+  stays the fallback and keeps the SVG re-render). The export takes print
+  options as query parameters: `paper`, `landscape`, `margin` (or per
+  side), `header`, `footer` and `page_numbers` ([docs/pages.md](docs/pages.md));
+  the print surface renders its images eager, so a long page's pictures
+  are in before the print.
 
 ## Unreleased: a group's info (server)
 

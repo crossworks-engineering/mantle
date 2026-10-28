@@ -1,7 +1,16 @@
 import puppeteer from 'puppeteer-core';
 import { env } from '@mantle/config';
+import { buildRenderToken, documentsAvailable, runDocuments } from '@mantle/documents';
 import { defineDomainError, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
-import { openRenderPage } from './render-sandbox';
+import { openRenderPage, printOrigin } from './render-sandbox';
+import {
+  chromeDocument,
+  DEFAULT_PRINT_OPTIONS,
+  mmToInches,
+  paperInches,
+  printChrome,
+  type PrintOptions,
+} from './print-options';
 
 export { printOrigin } from './render-sandbox';
 
@@ -23,12 +32,20 @@ export { printOrigin } from './render-sandbox';
  * Chromium never takes the web server with it. `puppeteer-core` is the pure
  * driver (no bundled browser download, ~1 GB off the app image).
  *
+ * Since the documents engine (packages/documents, plan page f7c67c92 P5):
+ * renderNodeToPdf prints through Gotenberg's chromium/convert/url when the
+ * `documents` service is on, with the same print surface, the same render
+ * cookie (minted by the package for the acting admin) and the print options
+ * (print-options.ts); the browser sidecar below is the fallback while it is
+ * off, and keeps the drawing SVG re-render for good (P6). Nothing on the
+ * browser service is lowered yet.
+ *
  * Config:
  *   BROWSER_WS_ENDPOINT  ws URL incl. token, e.g. ws://browser:3000?token=…
  *                        dev compose publishes 127.0.0.1:9222 →
  *                        ws://127.0.0.1:9222?token=mantle
  *   MANTLE_PRINT_ORIGIN  origin the SIDECAR uses to reach this app (see
- *                        printOrigin in lib/render-sandbox.ts).
+ *                        printOrigin in @mantle/documents).
  */
 
 /** Thrown when the sidecar isn't configured or can't be reached — the export
@@ -89,13 +106,71 @@ export async function browserHealth(
   }
 }
 
+/** The bounded diagram wait: the print surface marks data-diagrams-ready
+ *  when its diagrams rendered (or failed); a page with none passes at once;
+ *  a hung render prints the source blocks after 15 s, never a failed
+ *  export (the same bound the documents engine gets, PAGE_WAIT_EXPRESSION). */
+const DIAGRAM_WAIT_MS = 15_000;
+
 /**
- * Render an app URL (a `/print/...` surface) to a PDF Buffer. `renderToken` is
- * a render cookie value (buildRenderToken) for the acting admin and the node
- * the URL prints; the print route and the image routes it loads accept it, and
- * nothing outside the print origin is ever fetched (lib/render-sandbox.ts).
+ * Print a page or a drawing of this brain to a PDF: through the documents
+ * engine when the `documents` service is on, else the browser sidecar. The
+ * caller has warmed what the print surface embeds (drawing snapshots).
+ * `actorId` is the acting admin the render cookie names.
  */
-export async function renderUrlToPdf(url: string, renderToken: string): Promise<Buffer> {
+export async function renderNodeToPdf(
+  kind: 'page' | 'draw',
+  nodeId: string,
+  who: { ownerId: string; actorId: string },
+  options: PrintOptions = DEFAULT_PRINT_OPTIONS,
+): Promise<Buffer> {
+  if (documentsAvailable()) {
+    const chrome = printChrome(options);
+    const paper = paperInches(options);
+    const res = await runDocuments(
+      {
+        route: 'chromium/convert/url',
+        inputs: {
+          node_id: nodeId,
+          ...(chrome.header ? { header_html: chromeDocument(chrome.header) } : {}),
+          ...(chrome.footer ? { footer_html: chromeDocument(chrome.footer) } : {}),
+        },
+        options: {
+          paperWidth: paper.width,
+          paperHeight: paper.height,
+          marginTop: mmToInches(options.margins.top),
+          marginBottom: mmToInches(options.margins.bottom),
+          marginLeft: mmToInches(options.margins.left),
+          marginRight: mmToInches(options.margins.right),
+          printBackground: true,
+        },
+      },
+      { ownerId: who.ownerId, actorLoginId: who.actorId },
+      'bytes',
+    );
+    if (res.kind !== 'bytes') throw new PdfRendererUnavailableError('the engine answered no bytes');
+    return res.bytes;
+  }
+  const token = buildRenderToken({ ownerId: who.ownerId, actorId: who.actorId, nodeId });
+  return renderUrlToPdf(
+    `${printOrigin()}/print/${kind === 'page' ? 'pages' : 'draws'}/${nodeId}`,
+    token,
+    options,
+  );
+}
+
+/**
+ * Render an app URL (a `/print/...` surface) to a PDF Buffer in the browser
+ * sidecar. `renderToken` is a render cookie value (buildRenderToken) for the
+ * acting admin and the node the URL prints; the print route and the image
+ * routes it loads accept it, and nothing outside the print origin is ever
+ * fetched (lib/render-sandbox.ts).
+ */
+export async function renderUrlToPdf(
+  url: string,
+  renderToken: string,
+  options: PrintOptions = DEFAULT_PRINT_OPTIONS,
+): Promise<Buffer> {
   const endpoint = env('BROWSER_WS_ENDPOINT');
   if (!endpoint) throw new PdfRendererUnavailableError('BROWSER_WS_ENDPOINT is not set');
 
@@ -123,13 +198,24 @@ export async function renderUrlToPdf(url: string, renderToken: string): Promise<
         () =>
           !document.querySelector('script[data-diagram-print]') ||
           document.documentElement.hasAttribute('data-diagrams-ready'),
-        { timeout: 15_000 },
+        { timeout: DIAGRAM_WAIT_MS },
       )
       .catch(() => {});
+    const chrome = printChrome(options);
+    const paper = paperInches(options);
     const bytes = await page.pdf({
-      format: 'A4',
+      width: `${paper.width}in`,
+      height: `${paper.height}in`,
       printBackground: true,
-      margin: { top: '18mm', bottom: '18mm', left: '16mm', right: '16mm' },
+      margin: {
+        top: `${options.margins.top}mm`,
+        bottom: `${options.margins.bottom}mm`,
+        left: `${options.margins.left}mm`,
+        right: `${options.margins.right}mm`,
+      },
+      displayHeaderFooter: Boolean(chrome.header || chrome.footer),
+      headerTemplate: chrome.header ?? '<span></span>',
+      footerTemplate: chrome.footer ?? '<span></span>',
     });
     return Buffer.from(bytes);
   } finally {

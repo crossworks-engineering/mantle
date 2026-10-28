@@ -137,6 +137,22 @@ worked "Reports" example. Team apps refuse them (`TEAM_APP_TOOLS_ALLOWED`:
 a conversion writes a file). This is the flagged seam of v1: landing a
 report in the workspace that holds the app is a later decision.
 
+## Pages export on the engine (stage 2, P5)
+
+`server/web/lib/render-pdf.ts` `renderNodeToPdf` prints a page or a
+drawing through `chromium/convert/url` when the service is on (the same
+print surface, the render cookie the package mints for the acting admin,
+the bounded diagram wait, network idle, backgrounds), and through the
+browser sidecar otherwise; `lib/draw-snapshot.ts` `getDrawPngOrRender`
+rasters a drawing for Word through `chromium/screenshot/url` the same way.
+The print surface renders its images eager, so every picture is in before
+either engine prints (task 5dda95ee). The print options
+(`server/web/lib/print-options.ts`: paper, landscape, margins, a header and
+a footer line, page numbers) are query parameters of
+`GET /api/export/:id?format=pdf`, documented in [`pages.md`](pages.md);
+both engines honour them. Nothing on the browser service is lowered: it
+keeps the drawing SVG re-render (P6 is the post-back workaround, later).
+
 ## In dev
 
 ```sh

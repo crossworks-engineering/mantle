@@ -1,12 +1,13 @@
 import { getPresentPoster } from '@/lib/presents';
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { buildRenderToken, ownerAssetCaller } from '@/lib/auth';
+import { ownerAssetCaller } from '@/lib/auth';
 import { resolveExport, getPage, getDraw, referencedDrawIds } from '@mantle/content';
 import { getDrawSvgOrRender, getDrawPngOrRender } from '@/lib/draw-snapshot';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
-import { renderUrlToPdf, printOrigin } from '@/lib/render-pdf';
+import { renderNodeToPdf } from '@/lib/render-pdf';
+import { parsePrintOptions } from '@/lib/print-options';
 import { slugify } from '@mantle/client-types/slugify';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -22,8 +23,10 @@ const Format = z.enum(['md', 'docx', 'pdf', 'csv', 'xlsx', 'svg']);
  * Download a content node. Format is chosen by `?format=`:
  *   - `md`   → Markdown (page/note markdown, or a table's GFM pipe-table)
  *   - `docx` → Word (page/note), default
- *   - `pdf`  → PDF (page, or a draw's committed snapshot) — headless Chromium
- *              over /print
+ *   - `pdf`  → PDF (page, or a draw's committed snapshot): the documents
+ *              engine, or headless Chromium, over /print; the print options
+ *              (paper, landscape, margins, header, footer, page numbers)
+ *              are query parameters (lib/print-options.ts)
  *   - `csv`  → CSV (table)
  *   - `xlsx` → Excel (table, the table default)
  *   - `svg`  → SVG (a draw's committed snapshot, the draw default)
@@ -52,6 +55,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // PDF: rendered by headless Chromium (the browser sidecar) against the live,
   // admin-only /print surface: highest fidelity to the on-screen page. Pages and draws.
   if (fmt.data === 'pdf') {
+    const print = parsePrintOptions(new URL(req.url).searchParams);
+    if (!print.ok) return NextResponse.json({ error: print.error }, { status: 400 });
     // Draws print their committed SVG snapshot via /print/draws — same
     // sidecar, no Excalidraw involvement there (the snapshot is already
     // pixels-ready). Filling first means an export works even for a drawing no
@@ -59,10 +64,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const actorId = user.actor.id;
     const drawSvg = await getDrawSvgOrRender(user.id, id, { actorId });
     if (drawSvg !== null) {
-      const token = buildRenderToken({ ownerId: user.id, actorId, nodeId: id });
-      // No sidecar (PdfRendererUnavailableError): 503 by the one table (A10
-      // part 2), logged where it is thrown.
-      const bytes = await renderUrlToPdf(`${printOrigin()}/print/draws/${id}`, token);
+      // No engine (PdfRendererUnavailableError, DocumentsUnavailableError):
+      // 503 by the one table (A10 part 2), logged where it is thrown.
+      const bytes = await renderNodeToPdf('draw', id, { ownerId: user.id, actorId }, print.options);
       const title = (await getDraw(user.id, id))?.title ?? 'drawing';
       return download(
         bytes,
@@ -90,17 +94,17 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       await getDrawSvgOrRender(user.id, drawId, { actorId });
     }
 
-    // The browser SIDECAR (not this process) fetches the print route, so the
-    // URL must be reachable from that container: http://web:3000 in prod
-    // (compose DNS), host.docker.internal in dev — never the public origin,
-    // which would round-trip out through Caddy/Tailscale + TLS. Auth: a
-    // server-MINTED render cookie (not the caller's raw Cookie header, which
-    // is EMPTY for bearer-authed callers). It names the ACTING admin, not the
-    // anchor, and this page; it opens the print route and the image routes it
-    // loads and is never a session, and the sidecar sends it to the print
-    // origin only (lib/render-sandbox.ts, audit F01).
-    const token = buildRenderToken({ ownerId: user.id, actorId, nodeId: id });
-    const bytes = await renderUrlToPdf(`${printOrigin()}/print/pages/${id}`, token);
+    // A render SIDECAR (the documents engine or the browser sidecar, not this
+    // process) fetches the print route, so the URL is the print origin:
+    // http://web:3000 in prod (compose DNS), host.docker.internal in dev,
+    // never the public origin, which would round-trip out through
+    // Caddy/Tailscale + TLS. Auth: a server-MINTED render cookie (not the
+    // caller's raw Cookie header, which is EMPTY for bearer-authed callers).
+    // It names the ACTING admin, not the anchor, and this page; it opens the
+    // print route and the image routes it loads and is never a session, and
+    // the sidecar sends it to the print origin only (lib/render-sandbox.ts,
+    // audit F01; the engine's cookie domain is the print origin's).
+    const bytes = await renderNodeToPdf('page', id, { ownerId: user.id, actorId }, print.options);
     return download(
       bytes,
       'application/pdf',
