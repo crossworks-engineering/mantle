@@ -283,10 +283,17 @@ named or a create landed in, a work session id, the tool, its arguments,
 whether it worked, the error text, the duration, the item ids the
 arguments and the top-level reply name (at most 50) and the reply's size.
 The reply itself is never kept. Before a row is written its arguments lose
-every value under a key that reads as a secret (password, secret, token,
-API key, authorization, cookie, credential, private key), a `secret_*`
-tool keeps only the names of its arguments, the arguments are capped at
-about 4 KB and the error at about 1 KB.
+every value under a key that reads as a secret (whole words: password,
+secret, token, API key, a bare `key`, authorization, cookie, credential,
+private key; a name ending in `_ref` or `_url` is kept, it names a secret
+and holds none), every field the builtin marks sensitive (the same list
+the tool loop redacts before `trace_steps`), the value of a header pair
+named as a secret (`{name: 'Authorization', value}`), and the token part
+of a string that carries one (`Bearer …`, `sk-`, `ghp_`, `xoxb-`, `AKIA`,
+`mtlk_`, a URL's `key`, `token` or `sig` parameter). A `secret_*` tool,
+and a connector's `mcp_<conn>_…secret…` tool, keeps only the names of its
+arguments. The arguments are capped at about 4 KB and the error, its
+tokens redacted the same way, at about 1 KB.
 
 A call joins the work session of the same login's last call when that
 was within 30 minutes; otherwise it starts a new one. The insert reads it
@@ -300,11 +307,16 @@ One place writes it: the one registration every MCP tool goes through
 out and written fire and forget, as the system (`system:audit:mcp-call`):
 it never fails, slows or changes the call. At most 32 rows are in flight;
 past that a row is dropped and counted, and a failed insert is counted and
-said on the console at most once every ten minutes, never retried.
+said on the console at most once every ten minutes, never retried. A call
+the MCP SDK refuses before the handler runs (input that fails the tool's
+schema, an unknown tool name) is not logged yet.
 
-Who reads it is the database's rule: a login reads its own rows, an Admin
-user every row (`GET /api/mcp-calls`, in the caller's scope; filters
-`login`, `session`, `tool`, `before`, `limit`). No login's scope may write
+Who reads it is the database's rule: a login reads its own rows only, and
+so does an Admin user (being an Admin user is management, not reading,
+[workspaces.md](./workspaces.md)), as with its chat
+(`GET /api/mcp-calls`, in the caller's scope; filters `session`, `tool`,
+`before`, `limit`). A reader across logins, such as the later learner,
+reads on the system pool. No login's scope may write
 the table. The nightly `mcp-calls-reap` sweep removes rows older than 90
 days (by hand `pnpm -C server/web mcp-calls:reap`, dry run unless
 `--apply`). No model runs on any of it.
