@@ -30,6 +30,16 @@ export type MessengerPreviewJson = {
 /** A mention in a message: a login or an agent. */
 export type MessengerMentionJson = { kind: 'login' | 'agent'; id: string };
 
+/** What a system line marks (calls plan section 8): a call started, ended,
+ *  or cut at the cap. The client tells them apart by `type`. */
+export type MessengerEventJson =
+  | { type: 'call_started'; callId: string }
+  | { type: 'call_ended'; callId: string; seconds: number; participants: number }
+  | { type: 'call_cap'; callId: string; seconds: number; participants: number };
+
+export type MessengerCallEndedReason =
+  'finished' | 'cap_reached' | 'closed_by_admin' | 'service_off' | 'reconciled';
+
 export const messengerConversations = pgTable('messenger_conversations', {
   id: uuid('id').primaryKey().defaultRandom(),
   ownerId: uuid('owner_id').notNull(),
@@ -50,6 +60,9 @@ export const messengerConversations = pgTable('messenger_conversations', {
   lastSeq: bigint('last_seq', { mode: 'number' }).default(0).notNull(),
   lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
   lastPreview: jsonb('last_preview').$type<MessengerPreviewJson>(),
+  /** Calls plan section 7 (P3): the group's agent answers with a voice note
+   *  too. Stored from 0342, read by nothing in P1. */
+  voiceReplies: boolean('voice_replies').default(false).notNull(),
 });
 
 export const messengerParticipants = pgTable('messenger_participants', {
@@ -97,6 +110,9 @@ export const messengerMessages = pgTable('messenger_messages', {
   status: text('status').$type<'complete' | 'pending' | 'failed'>().default('complete').notNull(),
   turnId: uuid('turn_id'),
   error: text('error'),
+  /** A system line that marks a call (0342): {type, callId, ...}; null on
+   *  an ordinary row. */
+  event: jsonb('event').$type<MessengerEventJson>(),
   editedAt: timestamp('edited_at', { withTimezone: true }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -155,6 +171,58 @@ export const loginPresence = pgTable('login_presence', {
   lastActiveAt: timestamp('last_active_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * A call (0342, calls plan section 8): a LiveKit room named after the
+ * conversation, opened by a participant's tap and closed by the webhook,
+ * the reconciler, an admin or the service switch. started_seq is the seq of
+ * its "call started" line: row security answers the row as it answers
+ * that line. Written only by @mantle/content/messenger-calls.
+ */
+export const messengerCalls = pgTable('messenger_calls', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  conversationId: uuid('conversation_id')
+    .notNull()
+    .references(() => messengerConversations.id, { onDelete: 'cascade' }),
+  roomName: text('room_name').notNull(),
+  kind: text('kind').$type<'audio' | 'video'>().default('audio').notNull(),
+  startedBy: uuid('started_by'),
+  startedSeq: bigint('started_seq', { mode: 'number' }).notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+  endedAt: timestamp('ended_at', { withTimezone: true }),
+  endedReason: text('ended_reason').$type<MessengerCallEndedReason>(),
+  durationS: integer('duration_s'),
+  maxParticipants: integer('max_participants').default(0).notNull(),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
+  agentSeconds: integer('agent_seconds').default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** One stay in a call (0342): written by the webhook handler, corrected by
+ *  the reconciler. A login that leaves and joins again has two rows. */
+export const messengerCallParticipants = pgTable('messenger_call_participants', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  callId: uuid('call_id')
+    .notNull()
+    .references(() => messengerCalls.id, { onDelete: 'cascade' }),
+  kind: text('kind').$type<'login' | 'agent'>().notNull(),
+  loginId: uuid('login_id'),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+  joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+  leftAt: timestamp('left_at', { withTimezone: true }),
+  /** What the client said it is (web, desktop, phone). */
+  device: text('device'),
+});
+
+/** The LiveKit webhook's replay guard (0342): one row per event id. */
+export const messengerCallWebhooks = pgTable('messenger_call_webhooks', {
+  eventId: text('event_id').primaryKey(),
+  event: text('event').notNull(),
+  roomName: text('room_name'),
+  receivedAt: timestamp('received_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export type MessengerConversationRow = typeof messengerConversations.$inferSelect;
+export type MessengerCallRow = typeof messengerCalls.$inferSelect;
+export type MessengerCallParticipantRow = typeof messengerCallParticipants.$inferSelect;
 export type MessengerParticipantRow = typeof messengerParticipants.$inferSelect;
 export type MessengerMessageRow = typeof messengerMessages.$inferSelect;

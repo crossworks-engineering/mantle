@@ -28,6 +28,8 @@ const DECIDED: Readonly<Record<string, string>> = {
     'insert and update: attachment ids of a message (Phase 4), no prompt and no limit key',
   'public.messenger_messages.mentions':
     'insert and update: the login and agent ids a message mentions, no prompt and no limit key; a mention starts no turn in V1 Phase 1',
+  'public.messenger_messages.event':
+    'insert only (0342): what a system line marks (a call started, ended or cut at the cap: a type, the call id, seconds, a head count), set with the line by messenger-calls, never rewritten; read by no model',
   'public.audit_log.detail': 'insert only: an audit line, read by no model',
   'public.team_access_log.detail': 'insert only: a member access log line, read by no model',
   'public.calendar_accounts.sync_state':
