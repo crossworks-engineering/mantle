@@ -231,6 +231,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in lib/maintenance/actor-misses-reap.ts (reapActorMisses), shared by the cron and the script.',
   },
   {
+    slug: 'mcp-calls-reap',
+    title: 'Trim the MCP call log',
+    description:
+      'Deletes MCP call log rows (mcp_calls) older than 90 days (Journal v3 J8). Every MCP tool call, on every connection, lands a row, and nothing else removes them.',
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/mcp-calls-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in @mantle/db mcp-call-log.ts (reapMcpCalls), shared by the cron and the script.',
+  },
+  {
     slug: 'app-export-catch-up',
     title: 'Sync app table exports a restart left behind',
     description:

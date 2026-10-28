@@ -627,7 +627,9 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // canvas_data read (0338: its two definers write it; the runtime role reads it).
 // The messenger's seven tables all (0335: system-written by the content
 // module; the workspace role reads six under the participant rule).
-const NARROW_COUNTS = { all: 106, read: 40, none: 8 };
+// mcp_calls all (0345: the MCP call log, system-written, INSERT only on the
+// narrow route; its reap runs outside every scope).
+const NARROW_COUNTS = { all: 107, read: 40, none: 8 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));

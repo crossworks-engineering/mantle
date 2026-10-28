@@ -270,6 +270,44 @@ the login (endLoginSessions `endKeys`, 2026-10-07). A member's MCP request
 body is held to the plain JSON ceiling (8 MB), so a draft file over MCP is
 at most about 6 MB.
 
+## The call log (Journal v3 J8)
+
+Every MCP tool call leaves one row in `mcp_calls` (migration 0345): over
+HTTP and over stdio, for every login kind (an OAuth connector, an API key,
+a peer, the stdio server). It is learning data for a later step that
+learns from how a login works over MCP. It is not the security trail: an
+API key's write keeps its own `audit_log` row as before.
+
+A row holds the login and how it connected (`via`), the workspace the call
+named or a create landed in, a work session id, the tool, its arguments,
+whether it worked, the error text, the duration, the item ids the
+arguments and the top-level reply name (at most 50) and the reply's size.
+The reply itself is never kept. Before a row is written its arguments lose
+every value under a key that reads as a secret (password, secret, token,
+API key, authorization, cookie, credential, private key), a `secret_*`
+tool keeps only the names of its arguments, the arguments are capped at
+about 4 KB and the error at about 1 KB.
+
+A call joins the work session of the same login's last call when that
+was within 30 minutes; otherwise it starts a new one. The insert reads it
+in the same statement.
+
+One place writes it: the one registration every MCP tool goes through
+(`packages/mcp-core/src/gated-tools.ts`, shaped by
+`packages/mcp-core/src/call-log.ts`, written by
+`packages/db/src/mcp-call-log.ts`). The row is shaped after the reply went
+out and written fire and forget, as the system (`system:audit:mcp-call`):
+it never fails, slows or changes the call. At most 32 rows are in flight;
+past that a row is dropped and counted, and a failed insert is counted and
+said on the console at most once every ten minutes, never retried.
+
+Who reads it is the database's rule: a login reads its own rows, an Admin
+user every row (`GET /api/mcp-calls`, in the caller's scope; filters
+`login`, `session`, `tool`, `before`, `limit`). No login's scope may write
+the table. The nightly `mcp-calls-reap` sweep removes rows older than 90
+days (by hand `pnpm -C server/web mcp-calls:reap`, dry run unless
+`--apply`). No model runs on any of it.
+
 ## Not done, and why
 
 - Static tokens for admin logins: admins have OAuth, peers and API keys.
