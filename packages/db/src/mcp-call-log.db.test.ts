@@ -3,7 +3,7 @@
  * row is written from a login's request scope, a read or a write one (the
  * narrow route: system:audit:mcp-call, INSERT only); the work session is
  * the login's last call's within 30 minutes, else a new one; a login reads
- * its own rows and an Admin user's scope every row (the row rule); no
+ * its own rows only, an Admin user too (the row rule); no
  * login's scope writes the table itself; and 0345's rollback takes it off
  * the ledger only. (The 90-day reap: server/web/lib/maintenance/
  * mcp-calls-reap.test.ts.)
@@ -123,7 +123,7 @@ describe.skipIf(!URL)('the MCP call log (0345)', () => {
     expect([after[0]!.session_id, after[2]!.session_id]).not.toContain(a!.session_id);
   });
 
-  it('a login reads its own rows; an Admin user every row', async () => {
+  it('a login reads its own rows only, an Admin user too', async () => {
     const mine = await inRequest(member, memberWs, false, () => m.listMcpCalls());
     expect(new Set(mine.map((r) => r.loginId))).toEqual(new Set([member]));
     expect(mine).toHaveLength(3);
@@ -131,13 +131,16 @@ describe.skipIf(!URL)('the MCP call log (0345)', () => {
     expect(
       await inRequest(member, memberWs, false, () => m.listMcpCalls({ loginId: admin })),
     ).toEqual([]);
-    const all = await inRequest(admin, adminWs, false, () => m.listMcpCalls());
-    expect(new Set(all.map((r) => r.loginId))).toEqual(new Set([member, admin]));
+    // An Admin user reads its own rows, never the member's.
+    const own = await inRequest(admin, adminWs, false, () => m.listMcpCalls());
+    expect(own.map((r) => [r.loginId, r.tool])).toEqual([[admin, 'a1']]);
+    expect(
+      await inRequest(admin, adminWs, false, () => m.listMcpCalls({ loginId: member })),
+    ).toEqual([]);
     // Newest first, and the filters narrow.
-    const one = await inRequest(admin, adminWs, false, () =>
-      m.listMcpCalls({ loginId: member, tool: 'm3' }),
-    );
+    const one = await inRequest(member, memberWs, false, () => m.listMcpCalls({ tool: 'm3' }));
     expect(one.map((r) => r.tool)).toEqual(['m3']);
+    expect(mine[0]!.tool).toBe('m3');
   });
 
   it("no login's scope writes the table itself", async () => {

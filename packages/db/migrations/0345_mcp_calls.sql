@@ -19,8 +19,10 @@
 -- the same statement: the login's last call within 30 minutes gives its
 -- session, else a new one (mcp_calls_login_created_idx).
 --
--- Read (the row rule below, for the workspace role): a login's own rows; an
--- Admin user's scope every row. No role writes it but the system pool. The
+-- Read (the row rule below, for the workspace role): a login's own rows
+-- only, an Admin user's too (management, not reading: docs/workspaces.md),
+-- as assistant_messages and chat_threads (0269). A reader across logins
+-- runs on the system pool. No role writes it but the system pool. The
 -- nightly mcp-calls-reap sweep removes rows older than 90 days
 -- (mcp_calls_created_idx).
 --
@@ -61,5 +63,4 @@ ALTER TABLE "public"."mcp_calls" ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "mcp_calls_user_read" ON "public"."mcp_calls";
 --> statement-breakpoint
 CREATE POLICY "mcp_calls_user_read" ON "public"."mcp_calls" FOR SELECT TO mantle_view_user
-  USING ("login_id" = (SELECT "public"."mantle_login_id"())
-         OR (SELECT "public"."mantle_scope_is_admin"()));
+  USING ("login_id" = (SELECT "public"."mantle_login_id"()));

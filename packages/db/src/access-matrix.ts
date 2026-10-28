@@ -1310,8 +1310,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.team_access_log', 'system'),
   // The MCP call log (0345, Journal v3 J8): written by the one MCP gateway
   // through systemDb (mcp-call-log.ts), read by its row rule: a login's own
-  // rows, every row in an Admin user's scope.
-  { ...none('public.mcp_calls', 'system'), user: 'all' },
+  // rows only, an Admin user's too.
+  userOnly('public.mcp_calls', 'system'),
   // The member turn ledger (0182): written only by its two definers
   // (0326, the request's or chat's own login from the identity gateway),
   // which the runtime role runs; it reads the table, never writes it.

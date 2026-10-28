@@ -1,13 +1,13 @@
 /**
  * GET /api/mcp-calls: the MCP call log (Journal v3 J8, migration 0345), one
  * row per MCP tool call, newest first. The read runs in the caller's scope,
- * where the table's row rule decides what it sees: a login its own calls,
- * an Admin user every login's. No reply bodies are kept (the arguments are
- * redacted and capped when written, @mantle/mcp-core call-log.ts).
+ * where the table's row rule decides what it sees: a login its own calls
+ * only, an Admin user too (being an Admin user is management, not
+ * reading). No reply bodies are kept (the arguments are redacted and
+ * capped when written, @mantle/mcp-core call-log.ts).
  *
- * Query: `login` (an Admin user's narrowing to one login), `session`,
- * `tool`, `before` (an ISO time: the next page), `limit` (1 to 200,
- * default 50).
+ * Query: `session`, `tool`, `before` (an ISO time: the next page), `limit`
+ * (1 to 200, default 50).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -21,7 +21,6 @@ export const policy = routePolicy({
 });
 
 const Query = z.object({
-  login: z.string().uuid().optional(),
   session: z.string().uuid().optional(),
   tool: z
     .string()
@@ -40,7 +39,6 @@ export async function GET(req: Request) {
   }
   const q = parsed.data;
   const rows = await listMcpCalls({
-    loginId: q.login,
     sessionId: q.session,
     tool: q.tool,
     before: q.before ? new Date(q.before) : undefined,
