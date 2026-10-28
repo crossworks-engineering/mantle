@@ -114,12 +114,12 @@ is wedged, or you need one service rather than the stack, you drop to these.
 Each compose file pins its project with a `name:` key, so the project is the
 same no matter which directory you run it from:
 
-| File                           | Project         | Containers                                                                                                           | What it is                                                                                     |
-| ------------------------------ | --------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `docker-compose.dev.yml`       | `mantle-dev`    | `mantle_dev_pg`, `mantle_dev_objectstore`, `mantle_dev_browser` (the parser runs on the host under `pnpm dev`)       | Local dev **infra only**: the app runs on your host under `pnpm dev`                           |
-| `docker-compose.yml`           | `mantle`        | `mantle_pg`, `mantle_objectstore`, `mantle_parser`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
-| `docker-compose.client.yml`    | `mantle-client` | `mantle_client_web`, `mantle_client_caddy`                                                                           | The zero-secret owner UI (split out at v0.200)                                                 |
-| `e2e/stack/docker-compose.yml` | `mantle-e2e`    | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser`                                                            | Throwaway stack for the Playwright suite                                                       |
+| File                           | Project         | Containers                                                                                                         | What it is                                                                                     |
+| ------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `docker-compose.dev.yml` | `mantle-dev` | `mantle_dev_pg`, `mantle_dev_objectstore`, `mantle_dev_browser` (the parser runs on the host under `pnpm dev`) | Local dev **infra only**: the app runs on your host under `pnpm dev` |
+| `docker-compose.yml` | `mantle` | `mantle_pg`, `mantle_objectstore`, `mantle_parser`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
+| `docker-compose.client.yml`    | `mantle-client` | `mantle_client_web`, `mantle_client_caddy`                                                                         | The zero-secret owner UI (split out at v0.200)                                                 |
+| `e2e/stack/docker-compose.yml` | `mantle-e2e`    | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser`                                                          | Throwaway stack for the Playwright suite                                                       |
 
 > **`-p` does not isolate a second stack.** Every service sets an explicit
 > `container_name:`, so running the same file under a different project name
