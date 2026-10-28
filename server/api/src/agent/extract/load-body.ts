@@ -6,7 +6,17 @@
  */
 
 import { eq } from 'drizzle-orm';
-import { db, nodes, emails, pages, tables, draws, presents, type AiWorker } from '@mantle/db';
+import {
+  db,
+  nodes,
+  emails,
+  pages,
+  tables,
+  draws,
+  presents,
+  readPublishedSummary,
+  type AiWorker,
+} from '@mantle/db';
 import {
   extOf,
   mimeForExt,
@@ -762,6 +772,15 @@ export async function loadExtractableBody(
       node,
     );
     return { ok: false };
+  }
+
+  // A published summary (Journal v3 J9: an app's or a canvas's, its
+  // author's or its publish's) leads the body: a drawing-heavy canvas has
+  // few words of its own, so its passages, facts and entities then come
+  // from what the summary says it shows, and it is never too short to index.
+  const published = readPublishedSummary(existingData);
+  if (published && !(rawBody ?? '').includes(published.text)) {
+    rawBody = `${published.text}\n\n${rawBody ?? ''}`.trim();
   }
 
   if (!rawBody || rawBody.trim().length < 20) {

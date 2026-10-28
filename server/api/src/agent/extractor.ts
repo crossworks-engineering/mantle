@@ -31,7 +31,14 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { db, bumpWorkerUsage, indexWorkSql, nodes, parseIndexWork } from '@mantle/db';
+import {
+  db,
+  bumpWorkerUsage,
+  indexWorkSql,
+  nodes,
+  parseIndexWork,
+  summaryToIndex,
+} from '@mantle/db';
 import { recordSkippedTrace, startTrace } from '@mantle/tracing';
 import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
@@ -183,7 +190,11 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
       );
 
       // ─── content_index pass ───────────────────────────────────────────
-      const summary = parsed.summary;
+      // An app's or a canvas's published summary (its author's, or the one
+      // its publish wrote; Journal v3 J9) is the summary indexed: this pass
+      // never writes over it. Facts and entities still come from the body.
+      const indexed = summaryToIndex(existingData, { text: parsed.summary, model: worker.model });
+      const summary = indexed.text;
 
       const { tableProfilePieces, tableSchemaDigest } = await buildTableIndexPieces(node, summary);
 
@@ -206,7 +217,7 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
       await writeContentIndex(
         node,
         ownerId,
-        worker,
+        indexed.model,
         summary,
         uniqueMentions,
         persistedText,

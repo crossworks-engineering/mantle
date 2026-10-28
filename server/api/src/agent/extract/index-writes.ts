@@ -17,7 +17,9 @@ import {
   tables,
   contentChunks,
   contentChunkWindows,
-  type AiWorker,
+  publishedSummaryIs,
+  readIndexWork,
+  summaryToIndex,
 } from '@mantle/db';
 import type { IndexWork } from '@mantle/client-types/kinds';
 import { embed } from '@mantle/embeddings';
@@ -124,7 +126,9 @@ export async function buildTableIndexPieces(
 export async function writeContentIndex(
   node: typeof nodes.$inferSelect,
   ownerId: string,
-  worker: AiWorker,
+  /** What wrote the summary (summaryToIndex): the extractor's model, the
+   *  summarizer's for a published summary, 'author' for an author's. */
+  summaryModel: string,
   summary: string,
   uniqueMentions: EntityMention[],
   persistedText: string | undefined,
@@ -169,7 +173,7 @@ export async function writeContentIndex(
       // still overwriting the index fields below.
       const indexPatch: Record<string, unknown> = {
         summary,
-        summary_model: worker.model,
+        summary_model: summaryModel,
         summary_at: new Date().toISOString(),
         entities: uniqueMentions.map((m) => m.name),
         // Made from folded text (always fold, workspaces plan 5.3): the
@@ -222,6 +226,50 @@ export async function writeContentIndex(
   console.log(
     `[extractor]   → content_index: summary (${summary.length}c), ${uniqueMentions.length} entities`,
   );
+}
+
+/**
+ * The index of an item the extractor does not summarise (an app, by
+ * default) that carries a published summary (Journal v3 J9): that summary
+ * as its summary, and the vector from its title and that summary. No model
+ * call, one local embedding. Written only while the row still holds that
+ * summary (a newer publish keeps its own job); drops the work stamp and a
+ * terminal skip an earlier pass left. Returns whether it was written.
+ */
+export async function writePublishedSummaryIndex(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<boolean> {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  // No extractor text here: a published summary with no model on record
+  // is named for the worker that writes them.
+  const kept = summaryToIndex(data, { text: '', model: 'summarizer' });
+  if (!kept.source) return false;
+  const vec = await embed(ownerId, [node.title, kept.text].filter(Boolean).join('\n\n'));
+  const patch = {
+    summary: kept.text,
+    summary_model: kept.model,
+    summary_at: new Date().toISOString(),
+    summary_folded: true,
+  };
+  const written = await db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
+    const rows = await tx
+      .update(nodes)
+      .set({
+        embedding: vec,
+        data: sql`(${dropIndexWork(nodes.data, readIndexWork(data))} - 'extract_skipped') || ${JSON.stringify(patch)}::jsonb`,
+        derivedMixed: false,
+      })
+      .where(and(eq(nodes.id, node.id), eq(nodes.title, node.title), publishedSummaryIs(kept.text)))
+      .returning({ id: nodes.id });
+    if (rows.length > 0) {
+      await tx.delete(nodeMixedSummaries).where(eq(nodeMixedSummaries.nodeId, node.id));
+    }
+    return rows.length > 0;
+  });
+  if (written) await notifyNodeIndexed(node.id);
+  return written;
 }
 
 /**

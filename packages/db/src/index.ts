@@ -331,6 +331,20 @@ export {
   type ContentTx,
 } from './content-changed';
 export {
+  PUBLISHED_SUMMARY_MAX_CHARS,
+  cleanSummaryText,
+  newPublishedSummary,
+  planPublishedSummary,
+  publishedSummaryIs,
+  readPublishedSummary,
+  summaryHash,
+  summaryToIndex,
+  writePublishedSummary,
+  type PublishedSummary,
+  type PublishedSummaryPlan,
+  type PublishedSummarySource,
+} from './published-summary';
+export {
   dropIndexWork,
   hasSummary,
   hasSummarySql,

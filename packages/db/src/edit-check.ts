@@ -97,6 +97,10 @@ export const GATEWAY_KEY_WRITERS: Readonly<Record<string, { module: string; how:
     module: 'packages/db/src/index-work.ts',
     how: 'set with an embed stamp via markContentChanged only; dropped with the stamp',
   },
+  published_summary: {
+    module: 'packages/db/src/published-summary.ts',
+    how: "set by an app's publish or a canvas's save or quiet-period flush through writePublishedSummary only (Journal v3 J9); the extractor reads it with summaryToIndex",
+  },
 };
 
 /**

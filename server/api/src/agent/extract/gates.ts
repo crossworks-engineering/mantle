@@ -58,6 +58,7 @@ import {
   llmWorkAllowed,
   notifyNodeIndexed,
   readIndexWork,
+  readPublishedSummary,
   stampHadVector,
   withDeadlockRetry,
   withHeads,
@@ -78,7 +79,7 @@ import { maybeAutoTableSpreadsheet } from './auto-table';
 import { maybeExtractEmbeddedImages } from './images';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 import { readNodeBodyLocal } from './load-body';
-import { writeRetrievalChunks } from './index-writes';
+import { writePublishedSummaryIndex, writeRetrievalChunks } from './index-writes';
 
 /** The parser could not take a side pass's job: the extract fails so
  *  pg-boss tries again. */
@@ -259,6 +260,24 @@ async function embedAuthoredSummary(
  *  loaded from the `secrets` table by this file, so it physically can't
  *  leak into a prompt. */
 const HARD_SKIP_TYPES = new Set(['branch']);
+
+/**
+ * Index a node the type allowlist refuses from its published summary
+ * (writePublishedSummaryIndex), when it has one. True when there was one:
+ * indexed now, or already indexed from it (the same summary, a vector, no
+ * work stamp). False with none, and the refusal goes on as before.
+ */
+async function indexFromPublishedSummary(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<boolean> {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const kept = readPublishedSummary(data);
+  if (!kept) return false;
+  if (node.embedding && data.summary === kept.text && !readIndexWork(data)) return true;
+  await writePublishedSummaryIndex(node, ownerId);
+  return true;
+}
 
 /** Default allowlist: the kind registry's `extract` field (EXTRACT_KINDS,
  *  @mantle/client-types/kind-lists); per-agent override via
@@ -554,6 +573,10 @@ export async function admitForExtraction(
   const retrievalOnly = brainDepth === 'retrieval';
   // `*` is a wildcard meaning "any non-HARD_SKIP type" — already enforced above.
   if (!extractTypes.includes('*') && !extractTypes.includes(node.type)) {
+    // A kind the extractor does not summarise (an app, by default) that
+    // carries a published summary (its author's or its publish's, Journal
+    // v3 J9) is indexed from it: no model call, one local embedding.
+    if (await indexFromPublishedSummary(node, ownerId)) return { proceed: false };
     await recordTerminalSkip(
       {
         kind: 'extractor_run',

@@ -48,6 +48,7 @@ const h = vi.hoisted(() => ({
   llmWorkAllowed: vi.fn(),
   readNodeBodyLocal: vi.fn(),
   writeRetrievalChunks: vi.fn(),
+  writePublishedSummaryIndex: vi.fn(),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -116,7 +117,10 @@ vi.mock('./model', () => ({ resolveExtractor: h.resolveExtractor }));
 vi.mock('./auto-table', () => ({ maybeAutoTableSpreadsheet: h.autoTable }));
 vi.mock('./images', () => ({ maybeExtractEmbeddedImages: h.embeddedImages }));
 vi.mock('./load-body', () => ({ readNodeBodyLocal: h.readNodeBodyLocal }));
-vi.mock('./index-writes', () => ({ writeRetrievalChunks: h.writeRetrievalChunks }));
+vi.mock('./index-writes', () => ({
+  writeRetrievalChunks: h.writeRetrievalChunks,
+  writePublishedSummaryIndex: h.writePublishedSummaryIndex,
+}));
 
 import { admitForExtraction } from './gates';
 import { sqlValues } from './test-support';
@@ -168,6 +172,7 @@ beforeEach(() => {
   h.llmWorkAllowed.mockResolvedValue(true);
   h.readNodeBodyLocal.mockResolvedValue('the body');
   h.writeRetrievalChunks.mockResolvedValue(undefined);
+  h.writePublishedSummaryIndex.mockResolvedValue(true);
 });
 
 describe('admitForExtraction — refusals', () => {
@@ -309,6 +314,42 @@ describe('admitForExtraction — refusals', () => {
     expect(disposition()).toBe('type_not_in_allowlist');
     expect(h.autoTable).toHaveBeenCalled();
     expect(h.embeddedImages).toHaveBeenCalled();
+  });
+
+  // Journal v3 J9: an app (not in the default allowlist) that carries a
+  // published summary is indexed from it, with no model call and no
+  // terminal skip; one indexed from that summary already is left alone.
+  const published = (text: string) => ({
+    ['published' + '_summary']: { text, source: 'author', hash: 'h', at: 'x', model: null },
+  });
+
+  it('indexes a type outside the allowlist from its published summary instead', async () => {
+    h.selectQueue.push([node({ type: 'app', data: { ...published('A pump log.') } })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(h.writePublishedSummaryIndex).toHaveBeenCalledTimes(1);
+    expect(disposition()).toBeUndefined();
+    expect(writtenJson()).not.toContain('extract_skipped');
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+  });
+
+  it('leaves an app indexed from its published summary already as it is', async () => {
+    h.selectQueue.push([
+      node({
+        type: 'app',
+        embedding: [0.3],
+        data: { ...published('A pump log.'), summary: 'A pump log.' },
+      }),
+    ]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(h.writePublishedSummaryIndex).not.toHaveBeenCalled();
+    expect(disposition()).toBeUndefined();
+  });
+
+  it('still refuses an app with no published summary, as before', async () => {
+    h.selectQueue.push([node({ type: 'app' })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('type_not_in_allowlist');
+    expect(h.writePublishedSummaryIndex).not.toHaveBeenCalled();
   });
 
   // Terminal skips (`data.extract_skipped`): a verdict on the node itself is

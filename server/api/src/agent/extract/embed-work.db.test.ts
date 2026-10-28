@@ -71,6 +71,8 @@ const h = vi.hoisted(() => ({
   afterLoad: null as null | (() => Promise<void>),
   /** The LLM-work cost guard passes (false: round 3 L1). */
   llmAllowed: true,
+  /** The extractor's type allowlist (an app outside it: J9). */
+  targetTypes: ['*'] as string[],
 }));
 
 /** One vector per distinct text: a one-hot at the text's first-seen index. */
@@ -125,7 +127,7 @@ vi.mock('./model', async (importOriginal) => {
       model: 'fake/extractor',
       apiKeyId: null,
       systemPrompt: null,
-      params: { target_types: ['*'], extract_facts: false },
+      params: { target_types: h.targetTypes, extract_facts: false },
     }),
   };
 });
@@ -249,6 +251,7 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     h.keyOk = true;
     h.afterLoad = null;
     h.llmAllowed = true;
+    h.targetTypes = ['*'];
   });
 
   const LONG = 'Pump overhaul plan for the north site';
@@ -604,6 +607,68 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     await extractNode(note.id, owner);
     expect(h.modelCalls).toBe(1);
     expect(await lastDisposition(note.id)).toBe('already_extracted');
+  });
+
+  // Journal v3 J9: a published summary (the author's, or the publish's) is
+  // the summary indexed; the extractor never writes over it.
+  it("J9: a canvas with its author's summary: the pass keeps it (summary_model 'author')", async () => {
+    const presents = await import('@mantle/content/presents');
+    const p = await presents.createPresent(owner, {
+      source:
+        '<!doctype html><html><head><title>Feed pump skid</title></head><body><svg></svg><p>P-101</p></body></html>',
+      summary: 'P&ID of the feed pump skid for operators.',
+    });
+    await extractNode(p.id, owner);
+    const r = await row(p.id);
+    expect(h.modelCalls).toBe(1);
+    expect(r.summary).toBe('P&ID of the feed pump skid for operators.');
+    expect(textOf(r.vec)).toBe('Feed pump skid\n\nP&ID of the feed pump skid for operators.');
+    const [d] = await x<{ model: string | null }>(sql`
+      select data->>'summary_model' as model from nodes where id = ${p.id}`);
+    expect(d?.model).toBe('author');
+  });
+
+  it('J9: an app outside the allowlist, published with a summary: indexed from it, 0 model calls, no skip', async () => {
+    h.targetTypes = ['note'];
+    const app = await c.createApp(owner, { title: 'Pump log' });
+    await c.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "x";');
+    await c.setDraftBuild(owner, app.id, {
+      storageKey: 'attachments/aa/bb/test',
+      sha256: 'test',
+      builtAt: '2026-10-28T00:00:00.000Z',
+      esbuildVersion: 'test',
+      bytes: 1,
+      ok: true,
+    });
+    const made = m.newPublishedSummary('Logs pump readings.', 'publish', 'h1', 'cheap/model')!;
+    await c.publishApp(owner, app.id, { actor: 'owner', summary: made });
+    expect((await row(app.id)).work).toBe('extract');
+    await extractNode(app.id, owner);
+
+    const r = await row(app.id);
+    expect(h.modelCalls).toBe(0);
+    expect(r.summary).toBe('Logs pump readings.');
+    expect(textOf(r.vec)).toBe('Pump log\n\nLogs pump readings.');
+    expect(r.work).toBeNull();
+    expect(r.skipped).toBeNull();
+    const [d] = await x<{ model: string | null }>(sql`
+      select data->>'summary_model' as model from nodes where id = ${app.id}`);
+    expect(d?.model).toBe('cheap/model');
+
+    // Again: nothing to do, nothing written.
+    const before = r.vec;
+    await extractNode(app.id, owner);
+    expect((await row(app.id)).vec).toBe(before);
+    expect(h.modelCalls).toBe(0);
+  });
+
+  it('J9 control: an app outside the allowlist with no published summary is still refused', async () => {
+    h.targetTypes = ['note'];
+    const app = await c.createApp(owner, { title: 'Bare app' });
+    await extractNode(app.id, owner);
+    const r = await row(app.id);
+    expect(r.summary).toBeNull();
+    expect(r.skipped).toBe('type_not_in_allowlist');
   });
 
   it('round 3 L1: a table keeping its summary that no assistant workspace reads is indexed locally, as on main (0 model calls)', async () => {
