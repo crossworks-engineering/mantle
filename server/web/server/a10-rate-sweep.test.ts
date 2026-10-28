@@ -484,6 +484,71 @@ const SWEEP_CELLS: readonly SweepCell[] = [
   ...getHead('/api/people/presence', { cred: 'member', limits: [login('people-read', 600)] }),
   ...getHead('/api/people/:id', { cred: 'member', limits: [login('people-read', 600)] }),
   ...getHead('/api/people/:id/photo', { cred: 'member', limits: [login('people-read', 600)] }),
+  // Calls (plan page 886126b4 section 12), per login: a start or join 5,
+  // a refresh 12, the other call writes the messenger write bucket; the
+  // reads the read bucket. LiveKit's webhook per address, as a machine.
+  ...getHead('/api/messenger/capabilities', {
+    cred: 'member',
+    limits: [login('messenger-read', 600)],
+  }),
+  ...getHead('/api/messenger/c/:id/calls', {
+    cred: 'member',
+    limits: [login('messenger-read', 600)],
+  }),
+  {
+    row: 'POST /api/messenger/c/:id/call',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('messenger-call', 5)],
+  },
+  {
+    row: 'POST /api/messenger/c/:id/call/token',
+    cred: 'member',
+    limits: [login('messenger-call-token', 12)],
+  },
+  {
+    row: 'POST /api/messenger/c/:id/call/leave',
+    cred: 'member',
+    limits: [login('messenger-write', 120)],
+  },
+  {
+    row: 'POST /api/messenger/c/:id/call/end',
+    cred: 'member',
+    limits: [login('messenger-write', 120)],
+  },
+  {
+    row: 'POST /api/messenger/c/:id/call/agent',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('messenger-write', 120)],
+  },
+  {
+    row: 'DELETE /api/messenger/c/:id/call/agent',
+    cred: 'member',
+    limits: [login('messenger-write', 120)],
+  },
+  {
+    row: 'DELETE /api/messenger/c/:id/call/participants/:loginId',
+    cred: 'member',
+    limits: [login('messenger-write', 120)],
+  },
+  {
+    row: 'POST /api/assistant/:agentId/call',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('messenger-call', 5)],
+  },
+  {
+    row: 'POST /api/assistant/:agentId/call/token',
+    cred: 'member',
+    limits: [login('messenger-call-token', 12)],
+  },
+  {
+    row: 'POST /api/livekit/webhook',
+    cred: 'none',
+    body: JSON_BODY,
+    limits: [ip('livekit-webhook', 600)],
+  },
   {
     row: 'POST /api/messenger/c/:id/messages',
     cred: 'member',
@@ -1032,7 +1097,7 @@ function changeKind(probe: string, main: string, now: string): string | null {
   const nowOk = [...now.matchAll(ONE_429)].every((m) => !m[2] || m[1] === m[2]);
   const mark = (x: string, re: RegExp, keep: boolean) =>
     x.replace(re, (_all, r: string) => `<429 retry-after=${keep ? r : '?'}>`);
-  if (/ (?:mcp|oauth:register|oauth:token) /.test(probe) && now.includes('429 ')) {
+  if (/ (?:mcp|oauth:register|oauth:token|livekit-webhook) /.test(probe) && now.includes('429 ')) {
     const ok = [...now.matchAll(ONE_429_MACHINE)].every((m) => !m[2] || m[1] === m[2]);
     if (ok && mark(main, MAIN_429, true) === mark(now, ONE_429_MACHINE, true)) {
       return 'machine-429';
