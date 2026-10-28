@@ -27,7 +27,7 @@ import { authUsers } from './auth-users';
  * else a new one. `workspace_id` is the workspace the call named or a create
  * landed in, when it has one (a snapshot: no foreign key).
  *
- * Read: a login its own rows, an Admin user every row (the row rule of
+ * Read: a login its own rows only, an Admin user too (the row rule of
  * 0345). Removed after 90 days by the nightly `mcp-calls-reap` sweep.
  */
 export const mcpCalls = pgTable(

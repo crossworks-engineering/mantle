@@ -22,7 +22,8 @@
  * still open two; a later reader merges by time if it cares.
  *
  * Reads (listMcpCalls) run on `db` in the caller's scope: the row rule of
- * 0345 gives a login its own rows and an Admin user's scope every row.
+ * 0345 gives a login its own rows only, an Admin user too. A reader across
+ * logins (the later learner) runs on the system pool.
  */
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import { UUID_RE } from '@mantle/std';
@@ -172,8 +173,8 @@ export type McpCallFilter = Readonly<{
   limit?: number;
 }>;
 
-/** The newest rows the caller's scope reads (the row rule: its own, or
- *  every row in an Admin user's scope), newest first. */
+/** The newest rows the caller's scope reads (the row rule: its own login's
+ *  only), newest first. */
 export async function listMcpCalls(filter: McpCallFilter = {}): Promise<McpCallRow[]> {
   const limit = Math.min(Math.max(1, Math.floor(filter.limit ?? 50)), 200);
   return db
