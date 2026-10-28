@@ -1,6 +1,6 @@
 /**
- * Optional services (sandboxes, the local embedder and, on a core box, the
- * PDF-export helper) for the dashboard switches: what each one is, whether it
+ * Optional services (sandboxes, the local embedder, calls and, on a core box,
+ * the PDF-export helper) for the dashboard switches: what each one is, whether it
  * is on, and asking the updater sidecar to switch one. The parser service is
  * not here: it is core, always on (its health is on the dashboard vitals).
  *
@@ -32,6 +32,7 @@ import type {
   ServiceSwitchResult,
 } from '@mantle/client-types';
 import { browserHealth } from './render-pdf';
+import { livekitHealth } from '@mantle/content/livekit';
 import { sandboxdHealth } from './sandboxd';
 import { readUpdaterStatus, updaterAvailable } from './updates';
 import { NET_TIMEOUTS } from '@mantle/std';
@@ -84,6 +85,19 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
     memoryMaxMb: 1536,
     note: null,
     offWarning: 'PDF export stops until you switch it on again.',
+  },
+  calls: {
+    title: 'Calls',
+    what: 'Voice calls between the people of this brain, from a chat or a group in Messages. Runs LiveKit on this box; the sound goes straight between the callers and the box, never through a third party.',
+    usedBy: 'The Call button in Messages (web and desktop). Agents in calls come later.',
+    whenOff:
+      'Nobody sees a Call button. A call that is running ends within a minute and its chat gets one line saying so.',
+    keeps: 'The record of every past call in its chat. The service stores nothing else.',
+    downloadMb: 45,
+    memory: 'up to 512 MB',
+    memoryMaxMb: 512,
+    note: 'Needs four ports open at the cloud edge of this box: UDP 7882, TCP 7881, TCP 5349 and UDP 3478. Until they are open, calls connect only on the local network.',
+    offWarning: 'A running call ends within a minute.',
   },
 };
 
@@ -237,18 +251,20 @@ export async function getServicesView(ownerId: string): Promise<ServicesView> {
   const f = readServicesFile();
   const names = OPTIONAL_SERVICES.filter(serviceOffered);
   const helpers = names.includes('helpers');
-  const [blocker, run, sbx, embedUp, browser, embedCfg] = await Promise.all([
+  const [blocker, run, sbx, embedUp, browser, embedCfg, livekit] = await Promise.all([
     switchBlocker(),
     readServiceRun(),
     sandboxdHealth().catch(() => null),
     serviceEnabled('local-embedder') ? bundledEmbedderUp() : Promise.resolve(false),
     helpers ? browserHealth(1_500).catch(() => null) : Promise.resolve(null),
     resolveEmbeddingConfig(ownerId).catch(() => null),
+    serviceEnabled('calls') ? livekitHealth().catch(() => null) : Promise.resolve(null),
   ]);
   const probe: Record<OptionalService, boolean | null | undefined> = {
     sandboxes: sbx?.up,
     'local-embedder': embedUp,
     helpers: browser?.up === true,
+    calls: livekit?.up === true,
   };
   const embedderInUse = embedCfg !== null && usesBundledEmbedder(embedCfg.primary);
   const services: ServiceInfo[] = names.map((name) => {

@@ -42,6 +42,9 @@ export const AUTH_BODY_CEILING_BYTES = 64 * 1024;
  *  20 KB statement with up to 999 parameters (apps audit S2). */
 export const SHARE_BODY_CEILING_BYTES = 1 * MB;
 
+/** LiveKit's webhook (calls plan section 12): public, one event a body. */
+export const WEBHOOK_BODY_CEILING_BYTES = 1 * MB;
+
 /** Routes that stream an upload (multipart or raw) to disk under their own
  *  cap, never buffering it: no ceiling here. */
 const UPLOAD_PATHS: readonly RegExp[] = [
@@ -100,6 +103,7 @@ export function bodyCeilingFor(path: string): number | null {
   if (multipart) return multipart[1];
   if (path === '/api/auth' || path.startsWith('/api/auth/')) return AUTH_BODY_CEILING_BYTES;
   if (path.startsWith('/s/')) return SHARE_BODY_CEILING_BYTES;
+  if (path === '/api/livekit/webhook') return WEBHOOK_BODY_CEILING_BYTES;
   if (OWNER_DOCUMENT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
     return OWNER_DOCUMENT_CEILING_BYTES;
   }

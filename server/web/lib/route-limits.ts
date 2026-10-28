@@ -194,6 +194,15 @@ export const RATE_LIMITS = {
   // People (plan page d8954876 section 23), per login: the cards, one
   // card, the presence poll and the photos a list draws.
   peopleRead: perLogin('people-read', 600),
+  // Calls (plan page 886126b4 section 12), per login: a start or join (each
+  // mints a token and makes a room), a token refresh (one an hour per
+  // device, with room for a reconnect storm). The other call writes (leave,
+  // end, remove, the agent stub) take messengerWrite.
+  messengerCall: perLogin('messenger-call', 5),
+  messengerCallToken: perLogin('messenger-call-token', 12),
+  // LiveKit's webhooks, per address: a machine (the signature is the
+  // credential; the handler refuses an unsigned body before any write).
+  livekitWebhook: { ...perIp('livekit-webhook', 600), machine: true },
   // The /s link routes, per address: a stranger's requests.
   shareAggregate: perIp('share-aggregate', 120),
   shareBundle: perIp('share-bundle', 30),
