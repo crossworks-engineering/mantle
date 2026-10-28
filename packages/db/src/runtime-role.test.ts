@@ -354,13 +354,11 @@ describe('the narrow system role rights', () => {
   it('derives from the runtime role and the writer: content read only, system and admin all', () => {
     for (const t of ACCESS_MATRIX) {
       const want =
-        t.runtime === 'none'
+        t.writer === 'content' || t.runtime === 'none'
           ? 'none'
           : t.runtime === 'read'
             ? 'read'
-            : t.writer === 'content'
-              ? 'read'
-              : 'all';
+            : 'all';
       // A hand value (the measured credential and rights tables) only
       // narrows the derived one.
       if (t.narrow !== undefined) {
@@ -432,18 +430,18 @@ describe('the narrow system role rights', () => {
     expect(narrowFor(t({ narrow: 'read' }))).toBe('read');
     expect(narrowFor(t({ narrow: 'none' }))).toBe('none');
     expect(() => narrowFor(t({ writer: 'content', narrow: 'all' }))).toThrow(/wider/);
-    expect(narrowFor(t({ writer: 'content', narrow: 'read' }))).toBe('read');
+    expect(() => narrowFor(t({ writer: 'content', narrow: 'read' }))).toThrow(/wider/);
     expect(narrowFor(t({ writer: 'content', narrow: 'none' }))).toBe('none');
     expect(narrowFor(t({ runtime: 'read', narrow: 'none' }))).toBe('none');
     expect(() => narrowFor(t({ runtime: 'read', narrow: 'all' }))).toThrow(/wider/);
     expect(() => narrowFor(t({ runtime: 'none', narrow: 'read' }))).toThrow(/wider/);
   });
 
-  it('pins the sets: no content table written, no runtime-closed table opened', () => {
+  it('pins the sets: no content table read or written, no runtime-closed table opened', () => {
     const writes = new Set(narrowWriteTables());
     const reads = new Set(narrowReadOnlyTables());
     for (const t of ACCESS_MATRIX) {
-      if (t.writer === 'content') expect(writes.has(t.table), t.table).toBe(false);
+      if (t.writer === 'content') expect(writes.has(t.table) || reads.has(t.table), t.table).toBe(false);
     }
     for (const t of runtimeDeniedTables()) {
       expect(writes.has(t) || reads.has(t), t).toBe(false);
@@ -670,7 +668,7 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // canvas_data read (0338: its two definers write it; the runtime role reads it).
 // The messenger's seven tables all (0335: system-written by the content
 // module; the workspace role reads six under the participant rule).
-const NARROW_COUNTS = { all: 103, read: 40, none: 8 };
+const NARROW_COUNTS = { all: 103, read: 10, none: 38 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));
