@@ -12,10 +12,11 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   registration (`packages/mcp-core/src/tool-annotations.ts`, one pure
   function over facts each tool's policy declares: `effect`, the new
   `destructive` and `idempotent`, `outside`). `readOnlyHint` is true exactly when the declared policy says
-  `read`; `destructiveHint` marks a write that cannot be undone (the hard
-  deletes, the shells, the file overwrites); `idempotentHint` a read or a
-  documented upsert; `openWorldHint` the web tools, the mail and Telegram
-  sends, the peer tools and every connector tool. A connector tool carries
+  `read`; `destructiveHint` marks a write that destroys stored data nothing
+  keeps (the hard deletes, the shells, a whole-body or file replace with no
+  revision); `idempotentHint` a read or a documented upsert, set or mark;
+  `openWorldHint` the web tools, the mail and Telegram sends, the peer
+  tools, the OpenRouter and Mapbox fetches and every connector tool. A connector tool carries
   hints only once an admin confirmed it reads only. Advisory: the gate
   decides what runs, exactly as before. Why: Claude Desktop offers "Always
   allow" only on a read-only tool, so a Teams user had to approve every

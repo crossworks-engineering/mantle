@@ -657,6 +657,7 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
   slug: 'agent_set_thinking_effort',
   optIn: 'toolsmithWrite',
   policy: {
+    idempotent: true, // sets the one value
     matrix: { none: 'a assistant is not an item' },
     effect: 'write',
     spends: 'none',

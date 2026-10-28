@@ -87,6 +87,10 @@ describe('toolAnnotations', () => {
     });
     const peer = policy('read', { outside: { via: 'peer', untrusted: true } });
     expect(toolAnnotations(builtin('peer_query'), peer)?.openWorldHint).toBe(true);
+    const http = policy('write', { outside: { via: 'http' } });
+    expect(toolAnnotations(builtin('route_map'), http)?.openWorldHint).toBe(true);
+    const shell = policy('write', { outside: { via: 'shell' } });
+    expect(toolAnnotations(builtin('x_shell'), shell)?.openWorldHint).toBe(false);
     const untrusted = policy('read', { outside: { untrusted: true } });
     expect(toolAnnotations(builtin('email_get'), untrusted)?.openWorldHint).toBe(false);
     expect(toolAnnotations(builtin('search'), read)?.openWorldHint).toBe(false);

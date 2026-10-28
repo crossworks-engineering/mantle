@@ -210,17 +210,21 @@ derived at registration from facts its policy declares (`effect`,
 - `readOnlyHint` is true exactly when the tool's declared policy says
   `read` (a read mutates nothing the owner owns and sends nothing out).
   Never derived from a name.
-- `destructiveHint` marks a write that cannot be undone: a hard delete, a
-  shell, an overwrite. A soft delete with an undelete (`app_delete`), a
-  draft edit a discard reverts, a restore that keeps what it replaces: not
-  destructive.
+- `destructiveHint` marks a write that destroys stored data nothing keeps:
+  a hard delete, a shell, a replace of a whole body, list or file with no
+  revision. A soft delete with an undelete (`app_delete`), a draft edit a
+  discard reverts, a restore that keeps what it replaces, a send: not
+  destructive (false means additive, not harmless).
 - `idempotentHint`: a read, or a write documented as an upsert, a set or a
   mark.
 - `openWorldHint`: a tool that reaches outside the brain: the web tools,
-  the mail and Telegram sends, the peer tools, every connector tool.
+  the mail and Telegram sends, edits and reactions, the peer tools, the
+  OpenRouter and Mapbox fetches, a user-defined tool's test run, every
+  connector tool. The brain's own model providers do not count.
 - A connector tool (an MCP or OpenAPI connector's, a Toolsmith tool) gets
-  hints only once an admin confirmed it reads only (External access);
-  unmarked, it carries none.
+  hints only once an admin confirmed it reads only (the connector tool's
+  read-only mark, [`mcp-as-a-login.md`](./mcp-as-a-login.md)); unmarked,
+  it carries none.
 
 What it buys: Claude Desktop and claude.ai offer **Always allow** only on a
 read-only tool. Open the connector's tool permissions once, set the read

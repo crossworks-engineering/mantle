@@ -209,6 +209,7 @@ const openrouter_rankings: BuiltinToolDef = {
   slug: 'openrouter_rankings',
   usageTier: 2,
   policy: {
+    outside: { via: 'http' }, // fetches the OpenRouter dataset
     matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
@@ -299,6 +300,7 @@ const openrouter_benchmarks: BuiltinToolDef = {
   slug: 'openrouter_benchmarks',
   usageTier: 2,
   policy: {
+    outside: { via: 'http' }, // fetches the OpenRouter dataset
     matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
@@ -359,6 +361,7 @@ const openrouter_task_classes: BuiltinToolDef = {
   slug: 'openrouter_task_classes',
   usageTier: 2,
   policy: {
+    outside: { via: 'http' }, // fetches the OpenRouter dataset
     matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
@@ -385,6 +388,7 @@ const model_catalog: BuiltinToolDef = {
   slug: 'model_catalog',
   usageTier: 6,
   policy: {
+    outside: { via: 'http' }, // fetches the OpenRouter catalog
     matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',

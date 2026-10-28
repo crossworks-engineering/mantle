@@ -274,6 +274,7 @@ const recall_prompt_confirm: BuiltinToolDef = {
 const recall_map_publish: BuiltinToolDef = {
   slug: 'recall_map_publish',
   policy: {
+    idempotent: true, // sets the one flag
     matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',

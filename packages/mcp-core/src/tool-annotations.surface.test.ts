@@ -89,8 +89,13 @@ describe('MCP tool hints on the surface', () => {
 
   it('pins the open-world tools', () => {
     expect(names((r) => r.hints?.openWorldHint)).toEqual([
+      'api_tool_test',
       'email_page',
       'email_send',
+      'model_catalog',
+      'openrouter_benchmarks',
+      'openrouter_rankings',
+      'openrouter_task_classes',
       'peer_call',
       'peer_file_copy',
       'peer_list',
@@ -98,6 +103,10 @@ describe('MCP tool hints on the surface', () => {
       'peer_query',
       'peer_search_chunks',
       'peer_tools',
+      'recipe_tool_test',
+      'route_map',
+      'telegram_edit',
+      'telegram_react',
       'telegram_send',
       'web_crawl',
       'web_fetch',
@@ -110,19 +119,25 @@ describe('MCP tool hints on the surface', () => {
   it('pins the destructive tools', () => {
     expect(names((r) => r.hints?.destructiveHint)).toEqual([
       'api_tool_delete',
+      'api_tool_update',
       'app_data_write',
       'app_db_schema_set',
+      'app_db_seed',
       'app_snapshot_delete',
       'contact_delete',
+      'contact_update',
       'event_delete',
       'file_create',
       'file_delete',
       'file_upload',
       'formula_delete',
+      'formula_update',
       'journal_delete',
       'note_delete',
+      'note_update',
       'page_delete',
       'page_discard_draft',
+      'page_update',
       'present_delete',
       'recall_map_delete',
       'run_terminal',
@@ -131,11 +146,13 @@ describe('MCP tool hints on the surface', () => {
       'table_delete',
       'table_snapshot_delete',
       'task_delete',
+      'task_update',
     ]);
   });
 
   it('pins the idempotent writes', () => {
     expect(names((r) => !r.hints?.readOnlyHint && r.hints?.idempotentHint)).toEqual([
+      'agent_set_thinking_effort',
       'api_docs_set',
       'api_skill_set',
       'app_source_set',
@@ -149,10 +166,13 @@ describe('MCP tool hints on the surface', () => {
       'page_discard_draft',
       'page_unshare',
       'recall_card_put',
+      'recall_map_publish',
+      'run_cancel',
       'sandbox_autostart',
       'set_timezone',
       'table_cell_set',
       'table_rows_upsert',
+      'table_set_aggregate',
       'telegram_mark_processed',
       'tool_group_ensure',
       'worker_group_ensure',

@@ -271,6 +271,7 @@ const contact_update: BuiltinToolDef = {
   slug: 'contact_update',
   autoGrant: true,
   policy: {
+    destructive: true, // emails replaces the whole list; no revision
     matrix: { none: 'a contact: an Admin kind, not a workspace kind' },
     effect: 'write',
     spends: 'none',
