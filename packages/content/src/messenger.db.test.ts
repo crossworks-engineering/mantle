@@ -775,6 +775,12 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
     await expect(as(C, () => ms.getMessengerConversation(actor(C), g))).rejects.toThrow(
       ms.MessengerNotFoundError,
     );
+    // A login who left is refused too (as any live write), and the text
+    // stays as it was.
+    await ms.patchMessengerConversation(actor(A), g, { info: 'kept' });
+    await ms.leaveMessengerConversation(actor(B), g);
+    await expect(ms.patchMessengerConversation(actor(B), g, { info: 'x' })).rejects.toThrow(/left/);
+    expect((await read(A)).info).toBe('kept');
   });
 
   it('remove, rename, the last admin hands over, the last leave archives', async () => {

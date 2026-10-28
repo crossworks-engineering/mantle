@@ -297,6 +297,9 @@ export const messenger_create: BuiltinToolDef = {
       const kind = input.kind === 'direct' || input.kind === 'group' ? input.kind : null;
       if (!kind) return { ok: false, error: 'kind is "direct" or "group".' };
       const participants = Array.isArray(input.participants) ? input.participants.map(String) : [];
+      if (input.info !== undefined && input.info !== null && typeof input.info !== 'string') {
+        return { ok: false, error: 'info is text (what the group is for and its rules).' };
+      }
       const out = await createMessengerConversation(await actorOf(ctx), {
         kind,
         participants,

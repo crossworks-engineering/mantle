@@ -38,8 +38,9 @@ const PatchBody = z
     // The store checks each (one emoji, an app tint key).
     icon: z.string().max(64).nullable().optional(),
     color: z.string().max(32).nullable().optional(),
-    // A group's info (0343); the store trims it; null clears it.
-    info: z.string().max(2000).nullable().optional(),
+    // A group's info (0343): trimmed, then at most 2000 (the store's rule,
+    // the same over MCP); null or blank clears it.
+    info: z.string().trim().max(2000).nullable().optional(),
     muted: z.boolean().optional(),
   })
   .refine(

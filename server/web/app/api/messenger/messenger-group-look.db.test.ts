@@ -13,6 +13,10 @@
  *  - the list row and the conversation carry them, read in the caller's
  *    scope (the workspace role's column grant, ACCESS_MATRIX).
  *
+ * And a group's info (0343, section 24) through the same two routes: a
+ * group admin's text, its event and its line, a member and a direct chat
+ * refused, the cap, the list row without it.
+ *
  * The caller (anyLoginCaller) is a stand-in; every route runs in the
  * caller's own scope (withViewer), as the gate runs it, and a thrown error
  * is answered as the app answers it (answerAppError).
@@ -286,9 +290,13 @@ describe.skipIf(!URL)("a group's icon and colour (0341)", () => {
     )) as { body: string }[];
     expect(lines.at(-1)?.body).toBe("Ann changed the group's info.");
 
-    // The cap: 2001 is a 400 (the route's schema), 2000 is stored.
+    // The cap: 2001 is a 400 (the route's schema), 2000 is stored, and
+    // 2000 inside whitespace is 2000 (the route trims as the store does).
     expect((await patch(A, id, { info: 'x'.repeat(2001) })).status).toBe(400);
     expect((await conv(await patch(A, id, { info: 'y'.repeat(2000) }))).info).toHaveLength(2000);
+    expect((await conv(await patch(A, id, { info: ` ${'z'.repeat(2000)}\n` }))).info).toBe(
+      'z'.repeat(2000),
+    );
     // null clears it.
     expect((await conv(await patch(A, id, { info: null }))).info).toBeNull();
     // A create with too much is a 400 and makes no group.

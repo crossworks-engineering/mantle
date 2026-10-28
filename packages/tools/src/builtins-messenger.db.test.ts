@@ -283,7 +283,7 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
       conversation: direct.output!.conversation as string,
     });
     expect(d.output!.conversation).toMatchObject({ kind: 'direct', info: null });
-    // Over the cap is refused with the number.
+    // Over the cap is refused with the number; a non-string is refused too.
     const long = await call('messenger_create', A, k, {
       kind: 'group',
       participants: [],
@@ -291,6 +291,17 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     });
     expect(long.ok).toBe(false);
     expect(long.error).toMatch(/2000/);
+    const notText = await call('messenger_create', A, k, {
+      kind: 'group',
+      participants: [],
+      info: 7,
+    });
+    expect(notText.ok).toBe(false);
+    expect(notText.error).toMatch(/text/);
+    // An outsider opens nothing of it, info included.
+    const outsider = await call('messenger_open', C, randomUUID(), { conversation: c });
+    expect(outsider.ok).toBe(false);
+    expect(JSON.stringify(outsider)).not.toContain('Post here when');
     // No tool writes it after the create: there is no messenger_update.
     expect(tools.MESSENGER_TOOLS.some((t) => t.slug === 'messenger_update')).toBe(false);
   });

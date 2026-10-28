@@ -481,9 +481,10 @@ words:
 - Nothing is shown when `via` is null. A group's system lines never carry
   it.
 
-So a line that Jason's Claude Code sends on Jason's login reads "Jason
-via Claude Code" with the bot icon, and a line Jason typed in the window
-reads "Jason". The desktop and the phone show the same text.
+So a line that the owner's Claude Code sends on the owner's login reads
+"Ann via Claude Code" with the bot icon (Ann being the owner's shown name),
+and a line Ann typed in the window reads "Ann". The desktop and the phone
+show the same text.
 
 ## Engineering requests
 

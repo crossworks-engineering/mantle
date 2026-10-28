@@ -42,8 +42,9 @@ const CreateBody = z.object({
   // A group's look; the store checks each (one emoji, an app tint key).
   icon: z.string().max(64).nullable().optional(),
   color: z.string().max(32).nullable().optional(),
-  // A group's info (0343); the store trims it and refuses it on a direct chat.
-  info: z.string().max(2000).nullable().optional(),
+  // A group's info (0343): trimmed, then at most 2000 (the store's rule,
+  // the same over MCP); the store refuses it on a direct chat.
+  info: z.string().trim().max(2000).nullable().optional(),
 });
 
 /** POST /api/messenger/conversations: a direct chat (one other login; an
