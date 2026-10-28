@@ -5551,6 +5551,231 @@
   }
  },
  {
+  "name": "pdf_render",
+  "description": "Print a page or a drawing of this brain (`node_id`), or HTML or markdown you wrote, to a PDF through the documents engine and save it where an export lands (Auto-filed / Exports for an Admin user, else the top of Files). Returns the file id, name, path and landedIn. Options are the engine's fields: paper size and margins, `landscape`, `printBackground`, `pdfa`, `metadata`; `header_html` and `footer_html` print on every page with `<span class=\"pageNumber\">` and `totalPages`. Use when the user wants a PDF or a report. For Word or Excel use `export_node`; for an Office file use `office_to_pdf`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "node_id": {
+     "type": "string",
+     "description": "A page or a drawing of this brain to print (page_list, draw_list, search)."
+    },
+    "html": {
+     "type": "string",
+     "description": "A full HTML document to render (4 MB at most), instead of node_id."
+    },
+    "markdown": {
+     "type": "string",
+     "description": "Markdown to render (4 MB at most), instead of node_id or html."
+    },
+    "asset_file_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Images, CSS or fonts the html references by their own file names."
+    },
+    "header_html": {
+     "type": "string",
+     "description": "A full HTML document printed at the top of every page."
+    },
+    "footer_html": {
+     "type": "string",
+     "description": "A full HTML document printed at the bottom of every page."
+    },
+    "file_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "The files to work on (file_list, search), e.g. [\"<file id>\"]."
+    },
+    "options": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "The engine's own fields (https://gotenberg.dev/docs/routes), e.g. {\"landscape\": true, \"pdfa\": \"PDF/A-2b\"}. An unknown field is refused by name; url, cookies, headers and the raw file fields are the brain's own."
+    },
+    "filename": {
+     "type": "string",
+     "description": "The output name's stem, e.g. 'q3-pack' (the extension follows the output)."
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "screenshot_render",
+  "description": "Take a picture (PNG, JPEG or WebP) of a page or a drawing of this brain (`node_id`), or of HTML or markdown you wrote, through the documents engine, and save it where an export lands. Returns the file id, name, path and landedIn. Options are the engine's fields: `width`, `height`, `selector` (clip to one element), `deviceScaleFactor` (2 for a sharp picture), `format`, `quality`. For a PDF use `pdf_render`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "node_id": {
+     "type": "string",
+     "description": "A page or a drawing of this brain to print (page_list, draw_list, search)."
+    },
+    "html": {
+     "type": "string",
+     "description": "A full HTML document to render (4 MB at most), instead of node_id."
+    },
+    "markdown": {
+     "type": "string",
+     "description": "Markdown to render (4 MB at most), instead of node_id or html."
+    },
+    "asset_file_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Images, CSS or fonts the html references by their own file names."
+    },
+    "file_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "The files to work on (file_list, search), e.g. [\"<file id>\"]."
+    },
+    "options": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "The engine's own fields (https://gotenberg.dev/docs/routes), e.g. {\"landscape\": true, \"pdfa\": \"PDF/A-2b\"}. An unknown field is refused by name; url, cookies, headers and the raw file fields are the brain's own."
+    },
+    "filename": {
+     "type": "string",
+     "description": "The output name's stem, e.g. 'q3-pack' (the extension follows the output)."
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "office_to_pdf",
+  "description": "Convert Office files (Word, Excel, PowerPoint, OpenDocument, RTF, text, images and more; `file_ids`) to PDF through the documents engine (LibreOffice) and save the PDF where an export lands; several files give a zip, or one PDF with `merge: true`. Returns the file id, name, path and landedIn. Options are the engine's fields: `landscape`, `nativePageRanges`, `password` (a protected source), `pdfa`, `exportFormFields`. For a page of this brain use `pdf_render`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "The files to work on (file_list, search), e.g. [\"<file id>\"]."
+    },
+    "options": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "The engine's own fields (https://gotenberg.dev/docs/routes), e.g. {\"landscape\": true, \"pdfa\": \"PDF/A-2b\"}. An unknown field is refused by name; url, cookies, headers and the raw file fields are the brain's own."
+    },
+    "filename": {
+     "type": "string",
+     "description": "The output name's stem, e.g. 'q3-pack' (the extension follows the output)."
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "required": [
+    "file_ids"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "pdf_tools",
+  "description": "Work on PDFs (`file_ids`) through the documents engine: `op` merge, split, flatten, convert (PDF/A, PDF/UA), metadata_read, metadata_write, encrypt, embed (attach files), watermark, stamp, rotate, bookmarks_read, bookmarks_write, optimize, factur_x. The result lands where an export lands and comes back as file id, name, path and landedIn; metadata_read and bookmarks_read answer JSON and save nothing. Options are the engine's fields for that op (`splitMode` and `splitSpan`, `pdfa`, `userPassword`, `watermarkSource` and `watermarkExpression`, `rotateAngle`, `metadata`, `bookmarks`). To make a PDF first use `pdf_render` or `office_to_pdf`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "op": {
+     "type": "string",
+     "enum": [
+      "merge",
+      "split",
+      "flatten",
+      "convert",
+      "metadata_read",
+      "metadata_write",
+      "encrypt",
+      "embed",
+      "watermark",
+      "stamp",
+      "rotate",
+      "bookmarks_read",
+      "bookmarks_write",
+      "optimize",
+      "factur_x"
+     ],
+     "description": "The operation, e.g. 'merge'."
+    },
+    "file_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "The files to work on (file_list, search), e.g. [\"<file id>\"]."
+    },
+    "options": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "The engine's own fields (https://gotenberg.dev/docs/routes), e.g. {\"landscape\": true, \"pdfa\": \"PDF/A-2b\"}. An unknown field is refused by name; url, cookies, headers and the raw file fields are the brain's own."
+    },
+    "filename": {
+     "type": "string",
+     "description": "The output name's stem, e.g. 'q3-pack' (the extension follows the output)."
+    },
+    "watermark_file_id": {
+     "type": "string",
+     "description": "The image or PDF used as the watermark (op watermark)."
+    },
+    "stamp_file_id": {
+     "type": "string",
+     "description": "The image or PDF used as the stamp (op stamp)."
+    },
+    "facturx_file_id": {
+     "type": "string",
+     "description": "The Factur-X invoice XML (op factur_x or embed)."
+    },
+    "embed_file_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Files to attach inside the PDF (op embed)."
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "required": [
+    "op",
+    "file_ids"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
   "name": "access_get",
   "description": "For a brain item: its grants, the workspaces that read it (`home`: the workspace it lives in; `grants`: one row per workspace with `write`, `viaFolder` (the folder the row follows, or null) and `removedHere` (the folder grants that workspace, this item does not)), and the contacts it is shared with. Items have no level any more; grants are changed in the item's Grant Access panel.",
   "inputSchema": {

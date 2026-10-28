@@ -2629,6 +2629,24 @@
    "peerRisky": false
   }
  },
+ "office_to_pdf": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": true,
+   "keyArea": null,
+   "peerRisky": false
+  }
+ },
  "openrouter_benchmarks": {
   "readOnly": false,
   "peerRisky": false,
@@ -3188,6 +3206,42 @@
    "spends": "none",
    "creates": false,
    "keyArea": "pages",
+   "peerRisky": false
+  }
+ },
+ "pdf_render": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": true,
+   "keyArea": null,
+   "peerRisky": false
+  }
+ },
+ "pdf_tools": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": true,
+   "keyArea": null,
    "peerRisky": false
   }
  },
@@ -4443,6 +4497,24 @@
    "creates": false,
    "keyArea": null,
    "peerRisky": true
+  }
+ },
+ "screenshot_render": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": true,
+   "keyArea": null,
+   "peerRisky": false
   }
  },
  "search": {

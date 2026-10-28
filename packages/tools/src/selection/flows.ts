@@ -37,13 +37,14 @@ export const TOOL_FLOWS: readonly ToolFlow[] = [
   {
     slug: 'pages',
     title: 'Write or edit a page',
-    when: 'create, draft, edit blocks of, share or export a page or document; draw a diagram into one; canvases, decks and schematics in Present; a piping circuit traced from the uploaded drawings',
+    when: 'create, draft, edit blocks of, share or export a page or document; print it or an Office file to PDF, work on PDFs; draw a diagram into one; canvases, decks and schematics in Present; a piping circuit traced from the uploaded drawings',
     groups: [
       'pages',
       'pages-draft',
       'page-share',
       'page-admin',
       'export',
+      'documents',
       'draw-read',
       'sharing',
       'diagram',

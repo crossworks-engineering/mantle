@@ -104,6 +104,39 @@ file (201), the bytes with `?return=bytes`, or `{ result }` for the two
 read routes. The user guide (`docs/guide/07-api/03-http-api.md`) has the
 body and the inputs.
 
+## Agents, MCP and apps
+
+Four builtin tools (`packages/tools/src/builtins-documents.ts`), the manifest
+tool group `documents` (system-wide, not Admin only: each tool runs in the
+caller's scope and lands where an export lands for that caller; granted to
+the persona, the pages writer and the ledger specialist; the reconcile
+carries it to existing brains), and the MCP server (`packages/mcp-core`,
+`registerBuiltinTools(DOCUMENT_TOOLS)`):
+
+| Tool                | Route(s)                                                | Inputs                                                       |
+| ------------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
+| `pdf_render`        | `chromium/convert/{url,html,markdown}` by the inputs    | `node_id`, or `html` / `markdown` (+ assets, header, footer) |
+| `screenshot_render` | `chromium/screenshot/{url,html,markdown}`               | the same                                                     |
+| `office_to_pdf`     | `libreoffice/convert`                                   | `file_ids`                                                   |
+| `pdf_tools`         | `pdfengines/<op>` by `op` (merge, split, ..., factur_x) | `file_ids` (+ watermark, stamp, embeds)                      |
+
+Each takes `options` (the engine's fields) and `filename`, runs as the
+acting login (`currentActor`: the render cookie of a page print names it;
+a call with no login actor converts files and inline text only), and
+answers the landed file. While the service is off the tools are left out
+of an agent's list (`toolServiceAvailable`) and MCP answers that the
+service is switched off. `export_node` rasters an embedded drawing through
+`chromium/screenshot/url` (2x, sized at 1x) when the service is on, so a
+Word export from an agent or MCP carries real drawings; off, the drawing
+degrades to `[drawing: alt]` as before.
+
+Mini apps: an app the Admin workspace alone holds declares the tools with
+`app_tools_set` and calls them with `host.tools.call` (the admin broker's
+rule: a declared tool runs as the admin); `app_authoring_guide` has the
+worked "Reports" example. Team apps refuse them (`TEAM_APP_TOOLS_ALLOWED`:
+a conversion writes a file). This is the flagged seam of v1: landing a
+report in the workspace that holds the app is a later decision.
+
 ## In dev
 
 ```sh

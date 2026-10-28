@@ -48,6 +48,19 @@ vi.mock('@mantle/files', () => {
   };
 });
 vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn() }));
+const engine = vi.hoisted(() => ({ available: false, runDocuments: vi.fn() }));
+vi.mock('@mantle/documents', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/documents')>()),
+  documentsAvailable: () => engine.available,
+  runDocuments: engine.runDocuments,
+}));
+vi.mock('@mantle/db', () => ({
+  currentActor: () => ({
+    kind: 'login',
+    mode: 'rw',
+    loginId: '44444444-4444-4444-8444-444444444444',
+  }),
+}));
 
 import { resolveExport } from '@mantle/content';
 import { ensureAutoFiledFolder, readFileById, upsertFile } from '@mantle/files';
@@ -241,5 +254,46 @@ describe('export_node', () => {
     vi.mocked(upsertFile).mockRejectedValue(new Error('disk full'));
     expect(errorOf(await exportNode.handler({ node_id: NODE_ID }, ctx))).toMatch(/disk full/);
     expect(recordIngest).not.toHaveBeenCalled();
+  });
+
+  it('hands a drawing raster from the documents engine, sized at 1x, when the engine is on', async () => {
+    // A 1080x561 PNG header: what the engine answers at deviceScaleFactor 2.
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]),
+      Buffer.from('IHDR'),
+      Buffer.from([0, 0, 4, 56, 0, 0, 2, 49, 8, 6, 0, 0, 0]),
+    ]);
+    engine.available = true;
+    engine.runDocuments.mockResolvedValue({
+      kind: 'bytes',
+      route: 'chromium/screenshot/url',
+      bytes: png,
+      contentType: 'image/png',
+      filename: 'draw.png',
+    });
+    await exportNode.handler({ node_id: NODE_ID }, ctx);
+    const opts = vi.mocked(resolveExport).mock.calls[0]![2] as {
+      loadDraw?: (id: string) => Promise<unknown>;
+    };
+    expect(opts.loadDraw).toBeTypeOf('function');
+    const raster = (await opts.loadDraw!('draw-1')) as {
+      bytes: Buffer;
+      width: number;
+      height: number;
+    };
+    expect(raster.width).toBe(540);
+    expect(raster.height).toBe(281);
+    expect(raster.bytes).toBe(png);
+    expect(engine.runDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ route: 'chromium/screenshot/url', inputs: { node_id: 'draw-1' } }),
+      { ownerId: 'o1', actorLoginId: '44444444-4444-4444-8444-444444444444' },
+      'bytes',
+    );
+    // The engine off, or a failure: the placeholder, never a failed export.
+    engine.runDocuments.mockRejectedValue(new Error('engine down'));
+    expect(await opts.loadDraw!('draw-1')).toBeNull();
+    engine.available = false;
+    engine.runDocuments.mockResolvedValue({ kind: 'bytes', bytes: png });
+    expect(await opts.loadDraw!('draw-1')).toBeNull();
   });
 });

@@ -43,6 +43,12 @@ describe('tool slugs map to their optional service', () => {
     for (const f of outside) {
       for (const s of slugsIn(f)) {
         const svc = toolService(s);
+        // The documents engine's four tools (builtins-documents.ts) need the
+        // documents service; the file pins itself to the config's set.
+        if (f.endsWith('builtins-documents.ts')) {
+          expect(svc, `${s} in ${f}`).toBe('documents');
+          continue;
+        }
         expect(svc, `${s} in ${f}`).toBeNull();
       }
     }

@@ -977,6 +977,9 @@ importers:
       '@mantle/diagram-templates':
         specifier: workspace:*
         version: link:../diagram-templates
+      '@mantle/documents':
+        specifier: workspace:*
+        version: link:../documents
       '@mantle/email':
         specifier: workspace:*
         version: link:../email

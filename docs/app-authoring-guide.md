@@ -387,6 +387,48 @@ admin-only app, mint a recipe tool that returns precisely that); then build
 the app against it. You're binding the app to data you've actually inspected, so
 the queries are correct, not guessed.
 
+## Reports: a PDF from the app
+
+An app that holds the Admin workspace alone (an admin built it, the Admin
+workspace holds it) can make a PDF and land it in the admin's files through
+the documents engine, when the brain's **Documents** service is on
+(Settings > Services). Declare `pdf_render` (and `pdf_tools` or
+`office_to_pdf` if the app needs them) with `app_tools_set`, then call it
+with the HTML the app renders, or with a page of the brain:
+
+```tsx
+async function exportReport(rows: Row[]) {
+  const html = `<!doctype html><html><head><meta charset="utf-8">
+    <style>body{font-family:sans-serif} td{padding:4px 8px}</style></head>
+    <body><h1>Monthly report</h1><table>${rows
+      .map((r) => `<tr><td>${esc(r.name)}</td><td>${r.total}</td></tr>`)
+      .join('')}</table></body></html>`;
+  const r = await host.tools.call('pdf_render', {
+    html,
+    footer_html:
+      '<html><body><div style="font-size:9px;width:100%;text-align:center">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div></body></html>',
+    options: { paperWidth: 8.27, paperHeight: 11.69, marginBottom: 0.6, printBackground: true },
+    filename: 'monthly-report',
+  });
+  // r = { route, file_id, filename, path, size_bytes, mime_type, landedIn }
+  return r;
+}
+```
+
+`node_id` instead of `html` prints a page or a drawing of the brain; `options`
+are the engine's own fields (paper size and margins in inches or with a unit,
+`landscape`, `printBackground`, `pdfa`, `metadata`; the Gotenberg docs are
+the reference). The HTML can fetch nothing from the network: the engine
+reaches only the brain's own print pages, so inline the CSS and put images
+in `asset_file_ids`. The PDF lands where an export lands (Auto-filed /
+Exports for the admin), and `file_id` opens it with the files API.
+
+**Team apps** (held by another workspace, or built by a member) refuse
+these tools in v1: a conversion writes a file, and a team app may only read
+and add rows to its own Tables. Landing a report in the workspace that
+holds the app is a later decision; until then a member asks the assistant,
+which has `pdf_render` of its own.
+
 ## Per-app SQLite
 
 For app-local state (caches, user-entered rows, preferences). Declare DDL via

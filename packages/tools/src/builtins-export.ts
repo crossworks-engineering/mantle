@@ -6,13 +6,17 @@
  * `/api/export/[id]` download button uses. Page images are embedded by reading
  * their bytes from the file store via the injected `loadImage` callback.
  *
- * One documented difference from that button: an embedded DRAWING degrades to
- * `[drawing: alt]` here. Word takes no SVG, so a snapshot has to be rastered in
- * the browser sidecar, and the sidecar is reachable only from `server/web` —
- * this package is imported by every process that runs a tool loop, including
- * workers that have no browser. See docs/draw.md §9.
+ * An embedded DRAWING: Word takes no SVG, so the snapshot is rastered. The
+ * documents engine does it (a screenshot of /print/draws/<id> at 2x,
+ * packages/documents) when the `documents` service is on and the call has a
+ * login actor (the render cookie names it); otherwise the drawing degrades
+ * to `[drawing: alt]`, as it always did here: the browser sidecar is
+ * reachable only from `server/web`, and this package is imported by every
+ * process that runs a tool loop. See docs/draw.md §9.
  */
 import { resolveExport } from '@mantle/content';
+import { currentActor } from '@mantle/db';
+import { documentsAvailable, pngSize, runDocuments } from '@mantle/documents';
 import { readFileById, saveExport } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
@@ -32,6 +36,40 @@ const EXPORT_KINDS = Object.keys(EXPORT_FORMAT_BY_KIND) as ItemKind[];
 const NODE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'node_id', lookup: 'search_nodes / tree_list' },
 ];
+
+/** The raster of a drawing the engine makes (DRAW_PIXEL_RATIO times its CSS
+ *  size), sized at 1x for the document; null when the engine is off, the
+ *  call has no login, or the drawing has nothing to show. Never throws:
+ *  the export degrades to the placeholder. */
+const DRAW_PIXEL_RATIO = 2;
+async function drawRaster(
+  ownerId: string,
+  drawId: string,
+): Promise<{ bytes: Buffer; width: number; height: number } | null> {
+  const actor = currentActor();
+  if (!documentsAvailable() || actor?.kind !== 'login') return null;
+  try {
+    const res = await runDocuments(
+      {
+        route: 'chromium/screenshot/url',
+        inputs: { node_id: drawId },
+        options: { deviceScaleFactor: DRAW_PIXEL_RATIO, width: 800, height: 1000, format: 'png' },
+      },
+      { ownerId, actorLoginId: actor.loginId },
+      'bytes',
+    );
+    if (res.kind !== 'bytes') return null;
+    const size = pngSize(res.bytes);
+    if (!size) return null;
+    return {
+      bytes: res.bytes,
+      width: Math.round(size.width / DRAW_PIXEL_RATIO),
+      height: Math.round(size.height / DRAW_PIXEL_RATIO),
+    };
+  } catch {
+    return null;
+  }
+}
 
 const export_node: BuiltinToolDef = {
   slug: 'export_node',
@@ -76,6 +114,7 @@ const export_node: BuiltinToolDef = {
           const res = await readFileById({ ownerId: ctx.ownerId, fileId });
           return res ? { bytes: res.bytes } : null;
         },
+        loadDraw: (drawId) => drawRaster(ctx.ownerId, drawId),
       });
     } catch (err) {
       return {

@@ -890,6 +890,17 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['export_node'],
   },
   {
+    slug: 'documents',
+    name: 'Documents engine',
+    // System-wide, not adminOnly: every tool runs in the caller's scope
+    // (its own files, inline text; a page print needs an Admin login,
+    // which the print surface asks of the render cookie) and lands where
+    // an export lands for that caller.
+    description:
+      'The documents engine (Gotenberg, the Documents service): print a page, a drawing, HTML or markdown to PDF or a picture, convert Office files to PDF, and work on PDFs (merge, split, PDF/A, metadata, encrypt, watermark, stamp, rotate, bookmarks). Each result lands where an export lands. Non-destructive; offered only while the service is on.',
+    toolSlugs: ['pdf_render', 'screenshot_render', 'office_to_pdf', 'pdf_tools'],
+  },
+  {
     slug: 'spreadsheets',
     name: 'Spreadsheet authoring',
     description:
@@ -1459,6 +1470,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'location',
       'profile',
       'export',
+      'documents',
       'spreadsheets',
       'curation',
       'tables-import',
@@ -1578,6 +1590,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'files',
       'memory-core',
       'export',
+      'documents',
       'curation',
     ],
     skillSlugs: ['rich_writing', 'page_editing', 'writing_style'],
@@ -1612,7 +1625,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
     // `files`/`memory-core` cover source reads + cross-context lookups. Page
     // sharing is Pages' job, not Ledger's — no `page-share` here.
-    toolGroupSlugs: ['tables', 'files', 'memory-core', 'export', 'spreadsheets'],
+    toolGroupSlugs: ['tables', 'files', 'memory-core', 'export', 'documents', 'spreadsheets'],
     skillSlugs: ['table_authoring', 'spreadsheet_authoring', 'writing_style'],
     isDelegate: true,
     params: { temperature: 0.3, max_tokens: 16000 },

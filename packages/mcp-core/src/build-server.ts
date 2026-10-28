@@ -34,6 +34,7 @@ import {
   CONTACT_TOOLS,
   WORKER_DELEGATION_TOOLS,
   EXPORT_TOOLS,
+  DOCUMENT_TOOLS,
   ACCESS_TOOLS,
   SHEET_TOOLS,
   DRAW_TOOLS,
@@ -287,6 +288,9 @@ export function registerMantleTools(
   // Renders a page/note → .docx or a table → .xlsx where an export lands (saveExport) and returns
   // the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
   registerBuiltinTools(EXPORT_TOOLS);
+  // The documents engine (Gotenberg): off, each answers that the service is
+  // switched off and that an admin switches it on.
+  registerBuiltinTools(DOCUMENT_TOOLS);
   // Who reads an item (its grants); access_set only explains that nothing
   // has a level any more (W7b).
   registerBuiltinTools(ACCESS_TOOLS);

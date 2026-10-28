@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "aced2e21fb2ca3d93ad2491caeada12aa80a34c7ca82db7063c747f5e48d10c7",
+  "sha256": "ec616361b2d0c274d7d658964ad45fac71719f9b171700e0ef0c30fce9c1d676",
   "names": [
    "tree_list",
    "search",
@@ -122,6 +122,10 @@
    "contact_get",
    "contact_update",
    "contact_delete",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "sheet_build",
    "app_create",
    "app_get",
@@ -209,7 +213,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "028afb35a6ff654d1473098d5ff3bfa15bf9c7f7d264d404eed14b7290ae8c2e",
+  "sha256": "280b2f57b0ae3db2add874d46f776f11132da839d13ee6baefa89057a8030a9a",
   "names": [
    "tree_list",
    "search",
@@ -372,6 +376,10 @@
    "responder_turn_input",
    "responder_turn_record",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "access_set",
    "sheet_build",
@@ -521,7 +529,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "7bb8e009f01f5536589f20cd2d09d04406a18e3f53ef23197eba0550a424540f",
+  "sha256": "4147a4162b5b0a8c1c11bb596b3703ced1663951854ef69e45bb86cac24bdffd",
   "names": [
    "tree_list",
    "search",
@@ -667,6 +675,10 @@
    "responder_turn_input",
    "responder_turn_record",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "access_set",
    "sheet_build",
@@ -796,7 +808,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "0269157bda68674557718653cfc3e7cec97dfcbbae000c66be0c36b46361eb93",
+  "sha256": "871c8f9505882259ded910b5833dc199e2918ed3847f57c87e36ed2b19d1dd14",
   "names": [
    "tree_list",
    "search",
@@ -942,6 +954,10 @@
    "responder_turn_input",
    "responder_turn_record",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "access_set",
    "sheet_build",
@@ -1054,7 +1070,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "54ccc5072150f72db4d90103ab9954c6b36ad2831691f6c1c8fa4919fcc74b2b",
+  "sha256": "d62e84031ff63435e965a3960f84954f25b54a9ddf6f162c2107c0eab4737972",
   "names": [
    "tree_list",
    "search",
@@ -1167,6 +1183,10 @@
    "contact_find",
    "contact_list",
    "contact_get",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "sheet_build",
    "app_get",
    "app_list",
@@ -1230,7 +1250,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "3d4b93321bd4098685827e1d3d4200af07bdbfee14563599d513af111df5df64",
+  "sha256": "9073ac378adecd6f2c3238fc96dac272b1e0c492613d54d1126e0bc08ff4fe82",
   "names": [
    "tree_list",
    "search",
@@ -1361,6 +1381,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -1447,7 +1471,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "bcbc7d34b4f881c2cfd75973d4842ab73dba4007d09052cdcaa0d24d094918b4",
+  "sha256": "0c840740d0545839066ede9fef316998f052170c672764f114f4d6d9b7482dfa",
   "names": [
    "tree_list",
    "search",
@@ -1574,6 +1598,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -1654,7 +1682,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "d8a82110f4ff5ee0dbcbdcda134ceabe7f544158a8ceea65deb715a2b48f41d3",
+  "sha256": "e51b8dab6290d386621d2bcc4fe9e0b4ab5f73439b282b0873de43fad18e0d67",
   "names": [
    "tree_list",
    "search",
@@ -1781,6 +1809,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -2034,7 +2066,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "54ccc5072150f72db4d90103ab9954c6b36ad2831691f6c1c8fa4919fcc74b2b",
+  "sha256": "d62e84031ff63435e965a3960f84954f25b54a9ddf6f162c2107c0eab4737972",
   "names": [
    "tree_list",
    "search",
@@ -2147,6 +2179,10 @@
    "contact_find",
    "contact_list",
    "contact_get",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "sheet_build",
    "app_get",
    "app_list",
@@ -2210,7 +2246,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "3d4b93321bd4098685827e1d3d4200af07bdbfee14563599d513af111df5df64",
+  "sha256": "9073ac378adecd6f2c3238fc96dac272b1e0c492613d54d1126e0bc08ff4fe82",
   "names": [
    "tree_list",
    "search",
@@ -2341,6 +2377,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -2427,7 +2467,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "bcbc7d34b4f881c2cfd75973d4842ab73dba4007d09052cdcaa0d24d094918b4",
+  "sha256": "0c840740d0545839066ede9fef316998f052170c672764f114f4d6d9b7482dfa",
   "names": [
    "tree_list",
    "search",
@@ -2554,6 +2594,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -2634,7 +2678,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "d8a82110f4ff5ee0dbcbdcda134ceabe7f544158a8ceea65deb715a2b48f41d3",
+  "sha256": "e51b8dab6290d386621d2bcc4fe9e0b4ab5f73439b282b0873de43fad18e0d67",
   "names": [
    "tree_list",
    "search",
@@ -2761,6 +2805,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -2838,7 +2886,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "54ccc5072150f72db4d90103ab9954c6b36ad2831691f6c1c8fa4919fcc74b2b",
+  "sha256": "d62e84031ff63435e965a3960f84954f25b54a9ddf6f162c2107c0eab4737972",
   "names": [
    "tree_list",
    "search",
@@ -2951,6 +2999,10 @@
    "contact_find",
    "contact_list",
    "contact_get",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "sheet_build",
    "app_get",
    "app_list",
@@ -3014,7 +3066,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "9c783157d78cef4a924e52ae10eed595e671aa97dc82e4a683d198c6292ea2a8",
+  "sha256": "372ef7ed86916c7be6216994140299072bf95544c980d8a40b5936c15005496e",
   "names": [
    "tree_list",
    "search",
@@ -3146,6 +3198,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -3234,7 +3290,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "a9aeb5483c57b85f43579f8b84f982db6da95a7b31e520ad1206e3ad4cc02da3",
+  "sha256": "ebb09fab48ef331f3537b5f04f64760ad638cb0a183c1b681e607ab528d5aace",
   "names": [
    "tree_list",
    "search",
@@ -3361,6 +3417,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -3442,7 +3502,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "b4e0f3ab1ca54901c5a5eec9065b77582241ee4b784f679dfdc7cbd4c5c4c6b1",
+  "sha256": "656457ad28693b71d18ac414095bf6a2b04015c700bdafaeaa4461da7acdec87",
   "names": [
    "tree_list",
    "search",
@@ -3569,6 +3629,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -5273,7 +5337,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "aced2e21fb2ca3d93ad2491caeada12aa80a34c7ca82db7063c747f5e48d10c7",
+  "sha256": "ec616361b2d0c274d7d658964ad45fac71719f9b171700e0ef0c30fce9c1d676",
   "names": [
    "tree_list",
    "search",
@@ -5395,6 +5459,10 @@
    "contact_get",
    "contact_update",
    "contact_delete",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "sheet_build",
    "app_create",
    "app_get",
@@ -5482,7 +5550,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "028afb35a6ff654d1473098d5ff3bfa15bf9c7f7d264d404eed14b7290ae8c2e",
+  "sha256": "280b2f57b0ae3db2add874d46f776f11132da839d13ee6baefa89057a8030a9a",
   "names": [
    "tree_list",
    "search",
@@ -5645,6 +5713,10 @@
    "responder_turn_input",
    "responder_turn_record",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "access_set",
    "sheet_build",
@@ -5794,7 +5866,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "7bb8e009f01f5536589f20cd2d09d04406a18e3f53ef23197eba0550a424540f",
+  "sha256": "4147a4162b5b0a8c1c11bb596b3703ced1663951854ef69e45bb86cac24bdffd",
   "names": [
    "tree_list",
    "search",
@@ -5940,6 +6012,10 @@
    "responder_turn_input",
    "responder_turn_record",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "access_set",
    "sheet_build",
@@ -6069,7 +6145,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "0269157bda68674557718653cfc3e7cec97dfcbbae000c66be0c36b46361eb93",
+  "sha256": "871c8f9505882259ded910b5833dc199e2918ed3847f57c87e36ed2b19d1dd14",
   "names": [
    "tree_list",
    "search",
@@ -6215,6 +6291,10 @@
    "responder_turn_input",
    "responder_turn_record",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "access_set",
    "sheet_build",
@@ -6327,7 +6407,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "54ccc5072150f72db4d90103ab9954c6b36ad2831691f6c1c8fa4919fcc74b2b",
+  "sha256": "d62e84031ff63435e965a3960f84954f25b54a9ddf6f162c2107c0eab4737972",
   "names": [
    "tree_list",
    "search",
@@ -6440,6 +6520,10 @@
    "contact_find",
    "contact_list",
    "contact_get",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "sheet_build",
    "app_get",
    "app_list",
@@ -6503,7 +6587,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "3d4b93321bd4098685827e1d3d4200af07bdbfee14563599d513af111df5df64",
+  "sha256": "9073ac378adecd6f2c3238fc96dac272b1e0c492613d54d1126e0bc08ff4fe82",
   "names": [
    "tree_list",
    "search",
@@ -6634,6 +6718,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -6720,7 +6808,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "bcbc7d34b4f881c2cfd75973d4842ab73dba4007d09052cdcaa0d24d094918b4",
+  "sha256": "0c840740d0545839066ede9fef316998f052170c672764f114f4d6d9b7482dfa",
   "names": [
    "tree_list",
    "search",
@@ -6847,6 +6935,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -6927,7 +7019,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "d8a82110f4ff5ee0dbcbdcda134ceabe7f544158a8ceea65deb715a2b48f41d3",
+  "sha256": "e51b8dab6290d386621d2bcc4fe9e0b4ab5f73439b282b0873de43fad18e0d67",
   "names": [
    "tree_list",
    "search",
@@ -7054,6 +7146,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -7307,7 +7403,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "54ccc5072150f72db4d90103ab9954c6b36ad2831691f6c1c8fa4919fcc74b2b",
+  "sha256": "d62e84031ff63435e965a3960f84954f25b54a9ddf6f162c2107c0eab4737972",
   "names": [
    "tree_list",
    "search",
@@ -7420,6 +7516,10 @@
    "contact_find",
    "contact_list",
    "contact_get",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "sheet_build",
    "app_get",
    "app_list",
@@ -7483,7 +7583,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "3d4b93321bd4098685827e1d3d4200af07bdbfee14563599d513af111df5df64",
+  "sha256": "9073ac378adecd6f2c3238fc96dac272b1e0c492613d54d1126e0bc08ff4fe82",
   "names": [
    "tree_list",
    "search",
@@ -7614,6 +7714,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -7700,7 +7804,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "bcbc7d34b4f881c2cfd75973d4842ab73dba4007d09052cdcaa0d24d094918b4",
+  "sha256": "0c840740d0545839066ede9fef316998f052170c672764f114f4d6d9b7482dfa",
   "names": [
    "tree_list",
    "search",
@@ -7827,6 +7931,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -7907,7 +8015,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "d8a82110f4ff5ee0dbcbdcda134ceabe7f544158a8ceea65deb715a2b48f41d3",
+  "sha256": "e51b8dab6290d386621d2bcc4fe9e0b4ab5f73439b282b0873de43fad18e0d67",
   "names": [
    "tree_list",
    "search",
@@ -8034,6 +8142,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -8111,7 +8223,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "54ccc5072150f72db4d90103ab9954c6b36ad2831691f6c1c8fa4919fcc74b2b",
+  "sha256": "d62e84031ff63435e965a3960f84954f25b54a9ddf6f162c2107c0eab4737972",
   "names": [
    "tree_list",
    "search",
@@ -8224,6 +8336,10 @@
    "contact_find",
    "contact_list",
    "contact_get",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "sheet_build",
    "app_get",
    "app_list",
@@ -8287,7 +8403,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "9c783157d78cef4a924e52ae10eed595e671aa97dc82e4a683d198c6292ea2a8",
+  "sha256": "372ef7ed86916c7be6216994140299072bf95544c980d8a40b5936c15005496e",
   "names": [
    "tree_list",
    "search",
@@ -8419,6 +8535,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -8507,7 +8627,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "a9aeb5483c57b85f43579f8b84f982db6da95a7b31e520ad1206e3ad4cc02da3",
+  "sha256": "ebb09fab48ef331f3537b5f04f64760ad638cb0a183c1b681e607ab528d5aace",
   "names": [
    "tree_list",
    "search",
@@ -8634,6 +8754,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",
@@ -8715,7 +8839,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "b4e0f3ab1ca54901c5a5eec9065b77582241ee4b784f679dfdc7cbd4c5c4c6b1",
+  "sha256": "656457ad28693b71d18ac414095bf6a2b04015c700bdafaeaa4461da7acdec87",
   "names": [
    "tree_list",
    "search",
@@ -8842,6 +8966,10 @@
    "contact_list",
    "contact_get",
    "export_node",
+   "pdf_render",
+   "screenshot_render",
+   "office_to_pdf",
+   "pdf_tools",
    "access_get",
    "sheet_build",
    "app_get",

@@ -20,7 +20,7 @@
  * change, disable, role change, sign out everywhere) ends them all. A value
  * without `ep` is epoch 0: what every login starts at.
  */
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME } from '../auth-constants';
 import {
   b64urlDecode,

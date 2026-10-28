@@ -18,7 +18,16 @@ const MAKES =
 const MAKES_NOTHING = new Set(['extract_from_image']);
 
 /** Builtins known to make a node without a create name. */
-const ALSO_MAKES = ['export_node', 'sandbox_export', 'generate_image', 'sheet_build'];
+const ALSO_MAKES = [
+  'export_node',
+  'sandbox_export',
+  'generate_image',
+  'sheet_build',
+  'pdf_render',
+  'screenshot_render',
+  'office_to_pdf',
+  'pdf_tools',
+];
 
 describe('a tool that makes an item is not readOnly', () => {
   it('covers every listed create and every builtin named as one', () => {

@@ -22,6 +22,24 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Config:** `GOTENBERG_URL` and `GOTENBERG_PASSWORD` in the app-env
   anchor (`.env.example`); the probe on the dashboard vitals (`documents`)
   and in Settings > Services (`/health`, `/version`).
+- **The documents package** (`packages/documents`, [docs/documents.md](docs/documents.md)):
+  every Gotenberg conversion route behind one route table and one client,
+  inputs as refs only (file ids, a page or drawing id printed with a render
+  cookie, inline html or markdown), outputs landed by the export rules.
+  The Mantle-owned fields (`url`, `cookies`, `extraHttpHeaders`,
+  `userAgent`, `downloadFrom`, the webhook and raw file fields) are refused
+  on every surface. A render cookie the print surface refuses now answers
+  403 instead of the login redirect.
+- **HTTP API:** `POST /api/v1/documents/<family>/<route>` with
+  `{ inputs, options, filename }` and `?return=bytes`, session or API key
+  (area `files`), the `documents` rate limit.
+- **Agents, MCP and apps:** the tools `pdf_render`, `screenshot_render`,
+  `office_to_pdf` and `pdf_tools` in the new `documents` tool group (the
+  persona, the pages writer and the ledger get it on upgrade),
+  on the MCP server, and callable from an admin-held mini app through
+  `host.tools.call` (the authoring guide's "Reports" example). Team apps
+  refuse them in v1. `export_node` embeds real drawings in Word exports
+  through the engine when the service is on.
 
 ## Unreleased: a group's info (server)
 

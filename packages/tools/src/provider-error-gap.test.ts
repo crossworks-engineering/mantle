@@ -24,7 +24,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const DIRS = ['packages/tools/src', 'packages/runtime/src'];
 
 /** Tool replies that still carry errorMessage(err), as of the A10 lows. */
-const PIN = 109;
+const PIN = 110;
 
 function sources(dir: string): string[] {
   const out: string[] = [];

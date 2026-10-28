@@ -35,7 +35,7 @@ const MAIN_USAGE_TIERS: readonly (readonly [number, string])[] = [
   ],
   [
     2,
-    'entity_facts openrouter_rankings recall_index task_get tree_folder_create tree_item_move web_search_pro table_from_text table_row_delete tool_group_list agent_list api_tool_list api_tool_test export_node openrouter_benchmarks openrouter_task_classes peer_node_get table_column_update table_create table_tab_add tool_group_ensure video_ingest',
+    'entity_facts openrouter_rankings recall_index task_get tree_folder_create tree_item_move web_search_pro table_from_text table_row_delete tool_group_list agent_list api_tool_list api_tool_test export_node openrouter_benchmarks openrouter_task_classes peer_node_get table_column_update table_create table_tab_add tool_group_ensure video_ingest pdf_render screenshot_render office_to_pdf pdf_tools',
   ],
 ];
 const MAIN_PRIOR: Readonly<Record<string, number>> = Object.fromEntries(
