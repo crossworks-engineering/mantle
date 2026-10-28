@@ -119,7 +119,7 @@ export type RenderClaims = {
 /** Mint a render cookie VALUE (see block comment). Never sent to a client.
  *  The minter is @mantle/documents (one cookie for the documents engine and
  *  the browser sidecar); the verifier below reads the same bytes. */
-export { buildRenderToken } from '@mantle/documents';
+export { buildRenderToken } from '@mantle/documents/render-token';
 
 /** Verify a render cookie's signature, expiry and kind (`k:'r'`). No DB: the
  *  caller must still confirm `act` is a usable admin of the `uid` brain. */

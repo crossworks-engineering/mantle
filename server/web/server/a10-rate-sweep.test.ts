@@ -272,6 +272,19 @@ const getHead = (pattern: string, cell: Omit<SweepCell, 'row'>): SweepCell[] => 
   { row: `HEAD ${pattern}`, ...cell },
 ];
 
+/** The documents engine's routes (POST /api/v1/documents/<family>/<route>):
+ *  one limit, `documents`, shared by all eight. */
+const DOCUMENT_ROWS = [
+  'POST /api/v1/documents/chromium/convert/:source',
+  'POST /api/v1/documents/chromium/screenshot/:source',
+  'POST /api/v1/documents/libreoffice/convert',
+  'POST /api/v1/documents/pdfengines/:op',
+  'POST /api/v1/documents/pdfengines/metadata/read',
+  'POST /api/v1/documents/pdfengines/metadata/write',
+  'POST /api/v1/documents/pdfengines/bookmarks/read',
+  'POST /api/v1/documents/pdfengines/bookmarks/write',
+];
+
 const SWEEP_CELLS: readonly SweepCell[] = [
   // The sign-in routes, per address.
   {
@@ -674,6 +687,15 @@ const SWEEP_CELLS: readonly SweepCell[] = [
   },
   ...getHead('/s/:token/view', { cred: 'none', limits: [ip('share-view', 120)] }),
   ...getHead('/s/:token/a/:fileId', { cred: 'none', limits: [ip('share-asset', 240)] }),
+  // The documents engine (docs/documents.md), per login, an Admin user's
+  // too: each job holds a slot of the engine; the eight rows share it.
+  ...DOCUMENT_ROWS.map((row): SweepCell => ({
+    row,
+    cred: 'owner',
+    body: JSON_BODY,
+    limits: [login('documents', 30)],
+    sharesWith: others(DOCUMENT_ROWS, row),
+  })),
 ];
 
 const here = dirname(fileURLToPath(import.meta.url));

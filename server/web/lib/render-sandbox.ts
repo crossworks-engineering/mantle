@@ -1,5 +1,5 @@
 import type { Browser, Page } from 'puppeteer-core';
-import { printOrigin } from '@mantle/documents';
+import { printOrigin } from '@mantle/documents/print-origin';
 import { RENDER_COOKIE_NAME } from './auth-constants';
 
 export { printOrigin };

@@ -15,7 +15,7 @@ export const SESSION_COOKIE_NAME = 'mantle_session';
  */
 // Minted by @mantle/documents (the documents engine and the browser sidecar
 // carry one cookie); verified here (lib/auth/tokens.ts).
-export { RENDER_COOKIE_NAME } from '@mantle/documents';
+export { RENDER_COOKIE_NAME } from '@mantle/documents/render-token';
 
 /** The byte routes a render surface loads: page images and scene images
  *  (/api/files/files/:id), embedded drawings (/api/draws/:id/svg) and the

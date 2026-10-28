@@ -15,6 +15,7 @@
 # 2026-10-27 (people, plan page d8954876 section 23): GET and HEAD /api/people, /api/people/presence, /api/people/:id and /api/people/:id/photo take people-read (600 a minute per login); their probes are the branch's own answers (no route on main).
 # probes: 443
 # 2026-10-28 (calls, plan page 886126b4 section 12): GET and HEAD /api/messenger/capabilities and /api/messenger/c/:id/calls take messenger-read; POST /c/:id/call and /api/assistant/:agentId/call messenger-call (5 a minute per login); the two /call/token routes messenger-call-token (12); the other call writes messenger-write; POST /api/livekit/webhook livekit-webhook (600 a minute per address, the machine shape). Their probes are the branch's own answers (no route on main).
+# 2026-10-28 (the documents engine): the eight POST /api/v1/documents/* rows take documents (30 a minute per login, an Admin user's too), one bucket shared by all eight; their probes are the branch's own answers (no route on main).
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
 POST /api/auth/login none auth:login scope => other address 401
@@ -513,3 +514,91 @@ POST /api/assistant/:agentId/call/token member messenger-call-token order: no lo
 POST /api/livekit/webhook none livekit-webhook count (ip 600/60s) => first 429 at 601; #600 401; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
 POST /api/livekit/webhook none livekit-webhook window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 401
 POST /api/livekit/webhook none livekit-webhook scope => other address 401
+POST /api/v1/documents/chromium/convert/:source owner documents count (login 30/60s) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/v1/documents/chromium/convert/:source owner documents window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/v1/documents/chromium/convert/:source owner documents scope => other address 429; other login 404; other login, other address 404
+POST /api/v1/documents/chromium/convert/:source owner documents shared with POST /api/v1/documents/chromium/screenshot/:source => 429
+POST /api/v1/documents/chromium/convert/:source owner documents shared with POST /api/v1/documents/libreoffice/convert => 429
+POST /api/v1/documents/chromium/convert/:source owner documents shared with POST /api/v1/documents/pdfengines/:op => 429
+POST /api/v1/documents/chromium/convert/:source owner documents shared with POST /api/v1/documents/pdfengines/metadata/read => 429
+POST /api/v1/documents/chromium/convert/:source owner documents shared with POST /api/v1/documents/pdfengines/metadata/write => 429
+POST /api/v1/documents/chromium/convert/:source owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/read => 429
+POST /api/v1/documents/chromium/convert/:source owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/write => 429
+POST /api/v1/documents/chromium/convert/:source owner documents order: no login => first 429 at 0; answer 401; then 404
+POST /api/v1/documents/chromium/screenshot/:source owner documents count (login 30/60s) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/v1/documents/chromium/screenshot/:source owner documents window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/v1/documents/chromium/screenshot/:source owner documents scope => other address 429; other login 404; other login, other address 404
+POST /api/v1/documents/chromium/screenshot/:source owner documents shared with POST /api/v1/documents/chromium/convert/:source => 429
+POST /api/v1/documents/chromium/screenshot/:source owner documents shared with POST /api/v1/documents/libreoffice/convert => 429
+POST /api/v1/documents/chromium/screenshot/:source owner documents shared with POST /api/v1/documents/pdfengines/:op => 429
+POST /api/v1/documents/chromium/screenshot/:source owner documents shared with POST /api/v1/documents/pdfengines/metadata/read => 429
+POST /api/v1/documents/chromium/screenshot/:source owner documents shared with POST /api/v1/documents/pdfengines/metadata/write => 429
+POST /api/v1/documents/chromium/screenshot/:source owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/read => 429
+POST /api/v1/documents/chromium/screenshot/:source owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/write => 429
+POST /api/v1/documents/chromium/screenshot/:source owner documents order: no login => first 429 at 0; answer 401; then 404
+POST /api/v1/documents/libreoffice/convert owner documents count (login 30/60s) => first 429 at 31; #30 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/v1/documents/libreoffice/convert owner documents window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
+POST /api/v1/documents/libreoffice/convert owner documents scope => other address 429; other login 400; other login, other address 400
+POST /api/v1/documents/libreoffice/convert owner documents shared with POST /api/v1/documents/chromium/convert/:source => 429
+POST /api/v1/documents/libreoffice/convert owner documents shared with POST /api/v1/documents/chromium/screenshot/:source => 429
+POST /api/v1/documents/libreoffice/convert owner documents shared with POST /api/v1/documents/pdfengines/:op => 429
+POST /api/v1/documents/libreoffice/convert owner documents shared with POST /api/v1/documents/pdfengines/metadata/read => 429
+POST /api/v1/documents/libreoffice/convert owner documents shared with POST /api/v1/documents/pdfengines/metadata/write => 429
+POST /api/v1/documents/libreoffice/convert owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/read => 429
+POST /api/v1/documents/libreoffice/convert owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/write => 429
+POST /api/v1/documents/libreoffice/convert owner documents order: no login => first 429 at 0; answer 401; then 400
+POST /api/v1/documents/pdfengines/:op owner documents count (login 30/60s) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/v1/documents/pdfengines/:op owner documents window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/v1/documents/pdfengines/:op owner documents scope => other address 429; other login 404; other login, other address 404
+POST /api/v1/documents/pdfengines/:op owner documents shared with POST /api/v1/documents/chromium/convert/:source => 429
+POST /api/v1/documents/pdfengines/:op owner documents shared with POST /api/v1/documents/chromium/screenshot/:source => 429
+POST /api/v1/documents/pdfengines/:op owner documents shared with POST /api/v1/documents/libreoffice/convert => 429
+POST /api/v1/documents/pdfengines/:op owner documents shared with POST /api/v1/documents/pdfengines/metadata/read => 429
+POST /api/v1/documents/pdfengines/:op owner documents shared with POST /api/v1/documents/pdfengines/metadata/write => 429
+POST /api/v1/documents/pdfengines/:op owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/read => 429
+POST /api/v1/documents/pdfengines/:op owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/write => 429
+POST /api/v1/documents/pdfengines/:op owner documents order: no login => first 429 at 0; answer 401; then 404
+POST /api/v1/documents/pdfengines/metadata/read owner documents count (login 30/60s) => first 429 at 31; #30 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/v1/documents/pdfengines/metadata/read owner documents window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
+POST /api/v1/documents/pdfengines/metadata/read owner documents scope => other address 429; other login 400; other login, other address 400
+POST /api/v1/documents/pdfengines/metadata/read owner documents shared with POST /api/v1/documents/chromium/convert/:source => 429
+POST /api/v1/documents/pdfengines/metadata/read owner documents shared with POST /api/v1/documents/chromium/screenshot/:source => 429
+POST /api/v1/documents/pdfengines/metadata/read owner documents shared with POST /api/v1/documents/libreoffice/convert => 429
+POST /api/v1/documents/pdfengines/metadata/read owner documents shared with POST /api/v1/documents/pdfengines/:op => 429
+POST /api/v1/documents/pdfengines/metadata/read owner documents shared with POST /api/v1/documents/pdfengines/metadata/write => 429
+POST /api/v1/documents/pdfengines/metadata/read owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/read => 429
+POST /api/v1/documents/pdfengines/metadata/read owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/write => 429
+POST /api/v1/documents/pdfengines/metadata/read owner documents order: no login => first 429 at 0; answer 401; then 400
+POST /api/v1/documents/pdfengines/metadata/write owner documents count (login 30/60s) => first 429 at 31; #30 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/v1/documents/pdfengines/metadata/write owner documents window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
+POST /api/v1/documents/pdfengines/metadata/write owner documents scope => other address 429; other login 400; other login, other address 400
+POST /api/v1/documents/pdfengines/metadata/write owner documents shared with POST /api/v1/documents/chromium/convert/:source => 429
+POST /api/v1/documents/pdfengines/metadata/write owner documents shared with POST /api/v1/documents/chromium/screenshot/:source => 429
+POST /api/v1/documents/pdfengines/metadata/write owner documents shared with POST /api/v1/documents/libreoffice/convert => 429
+POST /api/v1/documents/pdfengines/metadata/write owner documents shared with POST /api/v1/documents/pdfengines/:op => 429
+POST /api/v1/documents/pdfengines/metadata/write owner documents shared with POST /api/v1/documents/pdfengines/metadata/read => 429
+POST /api/v1/documents/pdfengines/metadata/write owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/read => 429
+POST /api/v1/documents/pdfengines/metadata/write owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/write => 429
+POST /api/v1/documents/pdfengines/metadata/write owner documents order: no login => first 429 at 0; answer 401; then 400
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents count (login 30/60s) => first 429 at 31; #30 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents scope => other address 429; other login 400; other login, other address 400
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents shared with POST /api/v1/documents/chromium/convert/:source => 429
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents shared with POST /api/v1/documents/chromium/screenshot/:source => 429
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents shared with POST /api/v1/documents/libreoffice/convert => 429
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents shared with POST /api/v1/documents/pdfengines/:op => 429
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents shared with POST /api/v1/documents/pdfengines/metadata/read => 429
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents shared with POST /api/v1/documents/pdfengines/metadata/write => 429
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/write => 429
+POST /api/v1/documents/pdfengines/bookmarks/read owner documents order: no login => first 429 at 0; answer 401; then 400
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents count (login 30/60s) => first 429 at 31; #30 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents scope => other address 429; other login 400; other login, other address 400
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/chromium/convert/:source => 429
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/chromium/screenshot/:source => 429
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/libreoffice/convert => 429
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/pdfengines/:op => 429
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/pdfengines/metadata/read => 429
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/pdfengines/metadata/write => 429
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/read => 429
+POST /api/v1/documents/pdfengines/bookmarks/write owner documents order: no login => first 429 at 0; answer 401; then 400

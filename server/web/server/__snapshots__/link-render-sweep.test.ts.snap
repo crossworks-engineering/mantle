@@ -108,11 +108,11 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
   },
   "print draw: render cookie for another node": {
     "actors": [],
-    "body": "",
+    "body": "{"error":"the render cookie does not open this node"}",
     "headers": {
-      "location": "/login",
+      "content-type": "application/json",
     },
-    "status": 307,
+    "status": 403,
   },
   "print page: Origin": {
     "actors": [
@@ -164,11 +164,11 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
   },
   "print page: render cookie for another node": {
     "actors": [],
-    "body": "",
+    "body": "{"error":"the render cookie does not open this node"}",
     "headers": {
-      "location": "/login",
+      "content-type": "application/json",
     },
-    "status": 307,
+    "status": 403,
   },
   "print page: render cookie, HEAD": {
     "actors": [],
