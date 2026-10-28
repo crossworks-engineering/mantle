@@ -116,28 +116,23 @@ function clip(s: string, max: number): string {
 }
 
 /**
- * Whether a login row is told login notices: an enabled login with role
- * member (a member or a client). An admin, a disabled login and a role this
- * code does not know are told nothing.
- *
- * It reads the login's role column, which follows Admin membership since
- * S8b (0330: the membership definers write it with the seat, the role guard
- * refuses any other app writer), so it answers as membership does. Where a
- * hand write left them apart, a role admin outside Admin is still told
- * nothing (narrower), and a seat without role admin cannot reach a box
- * (0330's migrate refuses it). The cells: login-notices-role.test.ts.
+ * Whether a login row is told login notices: an enabled member, a login
+ * that is not an Admin user (`adminMember`: mantle_login_is_admin, read
+ * with the row). An Admin user and a disabled login are told nothing. The
+ * cells: login-notices-role.test.ts.
  */
-export function toldLoginNotices(row: {
-  role: string | null | undefined;
-  disabledAt: Date | null;
-}): boolean {
-  return !row.disabledAt && row.role === 'member';
+export function toldLoginNotices(row: { adminMember: boolean; disabledAt: Date | null }): boolean {
+  return !row.disabledAt && row.adminMember !== true;
 }
 
 /** The login, when it is told login notices (toldLoginNotices), else null. */
 async function noticeLogin(loginId: string): Promise<{ id: string; role: LoginNoticeRole } | null> {
   const [row] = await db
-    .select({ id: authUsers.id, role: authUsers.role, disabledAt: authUsers.disabledAt })
+    .select({
+      id: authUsers.id,
+      adminMember: sql<boolean>`"public"."mantle_login_is_admin"(${authUsers.id})`,
+      disabledAt: authUsers.disabledAt,
+    })
     .from(authUsers)
     .where(eq(authUsers.id, loginId))
     .limit(1);

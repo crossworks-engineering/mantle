@@ -3,20 +3,23 @@
  * on a real migrated Postgres, through the real app (createApp) and the real
  * login row (loadLoginRow reads mantle_login_is_admin with the row).
  *
- * The two named narrowing cells, each next to its as-before cell:
+ * The two named drift cells, each next to its as-before cell:
  *  - a login with role admin outside the Admin workspace (role drift) loses
- *    its `?at=` asset token, its render cookie and the frame re-check
+ *    its Admin `?at=` asset token, its render cookie and the frame re-check
  *    (adminLoginActive); an Admin user keeps all three. Since S8b round 4
  *    membership decides the session too (resolvedFor): it is a member
- *    session, answered as any member;
+ *    session, answered as any member, and since S8e the member checks
+ *    (findMemberAsset, memberLoginActive) answer it as the member it is;
  *  - a role=member login inside the Admin workspace is an Admin login since
  *    S8b (membership decides): the owner gate lets it in as the Admin user
- *    (the one looser answer, drift only, which the definers never leave).
+ *    (the one looser answer, drift only, which the definers never leave),
+ *    and since S8e the member checks refuse it.
  *
- * Member-negative (plan rule 5): an outsider and the drift admin are
- * refused the asset token with the answer a random uuid's token gets, a
- * role=member login inside Admin answers as any member, and every non-Admin
- * render cookie as a random uuid's, byte for byte.
+ * Member-negative (plan rule 5): an outsider is refused the asset token
+ * with the answer a random uuid's token gets, both drift logins answer as
+ * their sessions do (the one inside Admin as an Admin user, the one outside
+ * as any member), and every non-Admin render cookie as a random uuid's,
+ * byte for byte.
  *
  * The area asks (requireArea): in a scope for the caller's own login the
  * scope's rule; unscoped, the area rule about the login; in a scope for
@@ -76,6 +79,10 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
   const fileBytes = () => `/api/files/files/${randomUUID()}`;
   const assetAnswer = (id: string) =>
     call(`${fileBytes()}?at=${tokens.buildAssetToken(anchor, id, 0)}`);
+  /** An owner-only byte route (getOwnerForAsset): an Admin token gets past
+   *  the gate (the handler's 404), any other is the gate's 401. */
+  const ownerAssetAnswer = (id: string) =>
+    call(`/api/attachments/${randomUUID()}?at=${tokens.buildAssetToken(anchor, id, 0)}`);
   const status = (answer: string) => Number(answer.slice(0, 3));
   /** A member route a member gets past (its handler's answer). */
   const memberProbe = async (cookie: string) =>
@@ -150,10 +157,51 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     ).toBe(1);
   });
 
-  it('a role=admin login outside Admin loses the asset token (the named narrowing)', async () => {
-    expect(status(await assetAnswer(adm))).toBe(404); // an Admin user: past the gate
-    expect(await assetAnswer(out)).toBe(await assetAnswer(nobody));
-    expect(status(await assetAnswer(out))).toBe(401);
+  it('a role=admin login outside Admin loses the Admin asset token; its token is a member`s', async () => {
+    expect(status(await ownerAssetAnswer(adm))).toBe(404); // an Admin user: past the gate
+    expect(await ownerAssetAnswer(out)).toBe(await ownerAssetAnswer(nobody));
+    expect(status(await ownerAssetAnswer(out))).toBe(401);
+    // On a byte route a member reads (getReaderForAsset), its token is a
+    // member token (findMemberAsset asks membership, S8e), as its session
+    // is a member session: answered as any member's, byte for byte (main:
+    // the 401 a random uuid's token gets).
+    expect(status(await assetAnswer(mem))).toBe(404);
+    expect(await assetAnswer(out)).toBe(await assetAnswer(mem));
+  });
+
+  it('memberLoginActive asks Admin membership: equal for agreeing logins, drift as its session (S8e)', async () => {
+    const active = {
+      adm: await session.memberLoginActive(adm),
+      mem: await session.memberLoginActive(mem),
+      out: await session.memberLoginActive(out),
+      memIn: await session.memberLoginActive(memIn),
+      nobody: await session.memberLoginActive(nobody),
+    };
+    expect(active).toEqual({
+      adm: false,
+      mem: true,
+      out: true, // drift: a member session (main: false, by role admin)
+      memIn: false, // drift: an Admin session, narrower (main: true, by role member)
+      nobody: false,
+    });
+  });
+
+  it('the MCP consent`s member target asks Admin membership (S8e)', async () => {
+    const { mcpTargetLogin } = await import('../mcp-auth');
+    const target = async (id: string) => (await mcpTargetLogin(id))?.role ?? null;
+    expect({
+      adm: await target(adm),
+      mem: await target(mem),
+      out: await target(out),
+      memIn: await target(memIn),
+      nobody: await target(nobody),
+    }).toEqual({
+      adm: null,
+      mem: 'member',
+      out: 'member', // drift: a member session (main: null, by role admin)
+      memIn: null, // drift: an Admin session, narrower (main: 'member', by role)
+      nobody: null,
+    });
   });
 
   it('a role=admin login outside Admin loses the render cookie (the named narrowing)', async () => {
@@ -176,8 +224,8 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     expect(await call('/api/users', { cookie: cookieAt(out) })).toBe(
       await call('/api/users', { cookie: cookieAt(mem) }),
     );
-    // No asset token, no render cookie, no frame re-check.
-    expect(status(await assetAnswer(out))).toBe(401);
+    // No Admin asset token, no render cookie, no frame re-check.
+    expect(status(await ownerAssetAnswer(out))).toBe(401);
     expect(status(await call(fileBytes(), { cookie: renderAt(out) }))).toBe(401);
     expect(await session.adminLoginActive(adm)).toBe(true);
     expect(await session.adminLoginActive(out)).toBe(false);
@@ -195,14 +243,22 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
   });
 
   it('member-negative: no Admin answer for a non-Admin token, byte for byte', async () => {
+    // The owner-only byte route: an outsider's, a member's and the drift
+    // admin's token answer as a random uuid's.
+    const randomOwner = await ownerAssetAnswer(randomUUID());
+    expect(status(randomOwner)).toBe(401);
+    for (const id of [out, mem, nobody]) {
+      expect(await ownerAssetAnswer(id), id).toBe(randomOwner);
+    }
     // The byte route serves members too (getReaderForAsset: a member `?at=`
-    // token, the member's own reader): a role=member login inside Admin
-    // answers as any member, and the drift admin and an outsider as a
-    // random uuid's token.
+    // token, the member's own reader): an outsider as a random uuid's token,
+    // the drift admin as any member (S8e), and a role=member login inside
+    // Admin as the Admin user it is (S8b).
     const random = await assetAnswer(randomUUID());
     expect(status(random)).toBe(401);
-    for (const id of [out, nobody]) expect(await assetAnswer(id), id).toBe(random);
-    expect(await assetAnswer(memIn)).toBe(await assetAnswer(mem));
+    expect(await assetAnswer(nobody)).toBe(random);
+    expect(await assetAnswer(out)).toBe(await assetAnswer(mem));
+    expect(await assetAnswer(memIn)).toBe(await assetAnswer(adm));
     // The render cookie is the Admin login's only: refused for all of them
     // but the drifted login inside Admin, which membership makes Admin (S8b,
     // drift only): it passes the cookie check and meets the route's own 404.

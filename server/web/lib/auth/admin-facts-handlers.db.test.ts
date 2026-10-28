@@ -395,7 +395,9 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
     expect(keyCaller).toEqual({
       adm: ['admin', 'admin'],
       lim: ['admin', 'admin'],
-      out: ['admin', null], // narrower: not an Admin caller, and no member
+      // Not an Admin caller; a member caller, as its session is (resolvedFor,
+      // S8b): the member path asks membership, not the role, since S8e.
+      out: ['admin', 'member'],
       memIn: ['member', 'admin'], // S8b, wider for the drift only: membership decides
       mem: ['member', 'member'],
     });

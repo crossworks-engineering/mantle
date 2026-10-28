@@ -120,6 +120,9 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
       on conflict (id) do nothing`);
+    // The admin is an Admin user (a user of the live Admin workspace): who
+    // is told is decided by membership, as the session decides.
+    await ts.runWorkspacesSwitch(scratch.url);
     const rows = await exec<{ id: string; login_id: string }>(sqlTag`
       select id, login_id from spaces where kind = 'personal'
         and login_id in (${adminA}, ${member}, ${member2})`);

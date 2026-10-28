@@ -466,9 +466,12 @@ describe('the repo', () => {
     const enabled = lineOf('server/web/lib/mcp-auth.ts', 'export async function mcpLoginUsable');
     expect(risky).toBeGreaterThan(0);
     expect(enabled).toBeGreaterThan(0);
-    expect(reads['server/web/lib/mcp-auth.ts']).not.toContain(risky);
+    expect(reads['server/web/lib/mcp-auth.ts'] ?? []).not.toContain(risky);
     for (const n of [enabled, enabled + 1, enabled + 2])
-      expect(reads['server/web/lib/mcp-auth.ts']).not.toContain(n);
+      expect(reads['server/web/lib/mcp-auth.ts'] ?? []).not.toContain(n);
+    // The member path (memberMcpCaller, mcpTargetLogin) asks Admin
+    // membership too: mcp-auth.ts reads no role at all.
+    expect(reads['server/web/lib/mcp-auth.ts']).toBeUndefined();
     // pair-code.ts: the claim's Admin bearer asks adminLogin.
     const claim = lineOf('server/web/lib/pair-code.ts', '(!admin && !member)) return null');
     expect(claim).toBeGreaterThan(0);
@@ -519,7 +522,7 @@ describe('the repo', () => {
     expect(detail.tsAreaRules).toEqual({});
   });
 
-  it('server/api and content: no login kind branch, and one role read, who is told login notices (on the role until it follows membership)', () => {
+  it('server/api and content: no login kind branch, and no role read (who is told login notices asks Admin membership)', () => {
     const inParts = (o: Record<string, unknown>) =>
       Object.keys(o).filter((p) => /^(server\/api|packages\/content)\//.test(p));
     const d = detail as unknown as {
@@ -528,14 +531,13 @@ describe('the repo', () => {
       adminDecisionFlags: Record<string, number>;
     };
     expect(inParts(d.loginKindBranches)).toEqual([]);
-    expect(inParts(d.loginRoleDecisionReads)).toEqual(['packages/content/src/login-notices.ts']);
+    expect(inParts(d.loginRoleDecisionReads)).toEqual([]);
     const path = 'packages/content/src/login-notices.ts';
     const lines = texts.find((t) => t.path === path)!.text.split('\n');
     const at =
-      lines.findIndex((l) => l.includes("return !row.disabledAt && row.role === 'member';")) + 1;
+      lines.findIndex((l) => l.includes('return !row.disabledAt && row.adminMember !== true;')) + 1;
     expect(at).toBeGreaterThan(0);
-    expect(d.loginRoleDecisionReads[path]).toEqual([at]);
-    expect(lines.slice(at - 6, at - 1).join('\n')).toContain('export function toldLoginNotices(');
+    expect(lines[at - 2]).toContain('export function toldLoginNotices(');
     // Their isAdmin are the workspace's own flag (workspaces.is_admin).
     expect(
       Object.fromEntries(inParts(d.adminDecisionFlags).map((p) => [p, d.adminDecisionFlags[p]])),
