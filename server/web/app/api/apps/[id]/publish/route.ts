@@ -15,13 +15,15 @@
  * loop: agents want the compile errors as their own feedback step.
  *
  * Body (optional): `{ summary }`, the author's summary of the app (Journal v3
- * J9), kept until a new one is passed. With nothing to publish it is still
- * written, as app_publish writes it. No model call here: without one, the
- * app's extract job writes it (server/api extract/app-summary.ts).
+ * J9), kept until a new one is passed: appAuthorSummary's, as app_publish's
+ * is. With no draft it is written alone (setAppAuthorSummary): a staged
+ * rebuild is never promoted by this route without a draft. No model call
+ * here: without one, the app's extract job writes it (server/api
+ * extract/app-summary.ts).
  */
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
-import { getApp, publishApp } from '@mantle/content';
+import { getApp, publishApp, setAppAuthorSummary } from '@mantle/content';
 import { z } from 'zod';
 import { appAuthorSummary, buildAndStageApp } from '@mantle/tools';
 import { assertItemRight, PUBLISHED_SUMMARY_MAX_CHARS } from '@mantle/db';
@@ -61,10 +63,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const summary = await appAuthorSummary(user.id, id, body.summary);
   // Nothing staged: committing is a no-op, and building here would leave a
   // stray artifact behind for a draft that doesn't exist. An author's
-  // summary still lands, as app_publish lands it (publishApp).
+  // summary still lands, alone: a staged rebuild is not promoted.
   if (!existing.draft) {
     if (!summary) return NextResponse.json({ app: existing });
-    const app = await publishApp(user.id, id, { summary });
+    const app = await setAppAuthorSummary(user.id, id, summary);
     return NextResponse.json({ app: app ?? existing });
   }
 

@@ -1106,6 +1106,29 @@ export async function publishApp(
   return loadDetail(ownerId, id);
 }
 
+/**
+ * An author's summary alone (Journal v3 J9), with nothing promoted: the
+ * publish route's commit when no draft is staged, which never promotes a
+ * staged rebuild. The summary is appAuthorSummary's (@mantle/tools
+ * publish-summary.ts), as app_publish's is. Under the row lock, as a
+ * publish; the extractor is asked to look again once it commits. Null when
+ * the app is not found.
+ */
+export async function setAppAuthorSummary(
+  ownerId: string,
+  id: string,
+  summary: PublishedSummary,
+): Promise<AppDetail | null> {
+  const found = await db.transaction(async (tx) => {
+    if (!(await lockAppRow(tx, ownerId, id))) return false;
+    await writePublishedSummary(tx, id, summary);
+    return true;
+  });
+  if (!found) return null;
+  await resignalNode(id);
+  return loadDetail(ownerId, id);
+}
+
 /** The publish write itself: the staged draft (when there is one) and the
  *  build validated from it, promoted together. */
 async function promote(

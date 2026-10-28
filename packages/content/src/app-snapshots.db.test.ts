@@ -151,6 +151,33 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     expect((await read()).s).toMatchObject({ text: 'Mine.', source: 'author' });
   });
 
+  it("an author's summary alone (the publish route with no draft) never promotes a staged rebuild (J9 L2)", async () => {
+    const key = 'published' + '_summary';
+    const app = await apps.createApp(owner, { title: `${tag} summary only` });
+    await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "s";');
+    await apps.setDraftBuild(owner, app.id, GREEN);
+    await apps.publishApp(owner, app.id, { actor: 'owner' });
+    // A rebuild of the published source, staged and not published.
+    await apps.setDraftBuild(owner, app.id, {
+      ...GREEN,
+      storageKey: `${GREEN.storageKey}-rebuild`,
+    });
+    const before = (await apps.getApp(owner, app.id))!;
+    expect(before.draftBuild).not.toBeNull();
+
+    const mine = m.newPublishedSummary('Mine alone.', 'author', 'h1')!;
+    expect(await apps.setAppAuthorSummary(owner, app.id, mine)).not.toBeNull();
+    const after = (await apps.getApp(owner, app.id))!;
+    expect(after.draftBuild).toEqual(before.draftBuild);
+    expect(after.publishedBuild).toEqual(before.publishedBuild);
+    const [r] = await admin<{ s: { text: string; source: string } | null }[]>`
+      select data->${key} as s from nodes where id = ${app.id}`;
+    expect(r!.s).toMatchObject({ text: 'Mine alone.', source: 'author' });
+    const [v] = await admin<{ n: number }[]>`
+      select count(*)::int as n from node_snapshots where node_id = ${app.id}`;
+    expect(v!.n).toBe(1);
+  });
+
   it('restores the data, after an undo snapshot that can restore it back', async () => {
     const id = await publishedApp('data');
     const before = await snaps.createAppSnapshot(owner, id);

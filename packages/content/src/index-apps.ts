@@ -97,6 +97,7 @@ export {
   setDraftBuild,
   discardDraft as discardAppDraft,
   publishApp,
+  setAppAuthorSummary,
   appSummaryHash,
   deleteApp,
   CannotDeleteEntryError,
