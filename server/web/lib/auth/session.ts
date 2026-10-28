@@ -173,8 +173,8 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
  * with the row). Membership decides: the role column follows it, written
  * only by the membership definers (mantle_ws_add_user and
  * mantle_ws_remove_user on Admin), so it is never asked here. The session
- * (resolvedFor) asks this too; memberLoginActive and findMemberAsset still
- * read the column's 'member', which equals membership by construction.
+ * (resolvedFor), findMemberAsset and memberLoginActive ask this: a member
+ * is a login that is not an Admin user.
  */
 export function adminLogin(row: Pick<LoginRow, 'adminMember'>): boolean {
   return row.adminMember === true;
@@ -387,17 +387,15 @@ async function memberForAsset(req: Request): Promise<MemberCaller | NextResponse
 
 /** The member an `?at=` asset token in `url` was minted for (the member
  *  shell mints it with `act` = the login), with no effect, or null. The
- *  login is re-read, so a disabled or demoted login's token stops at once.
- *  It asks the role column AND membership (resolvedFor): a role=admin
- *  login outside Admin (drift) is neither an Admin user nor taken here. */
+ *  login is re-read, so a disabled login's token, or one whose login was
+ *  added to Admin, stops at once. A member is a login that is not an Admin
+ *  user (resolvedFor, adminLogin), as on its session. */
 async function findMemberAsset(url: string): Promise<MemberCaller | null> {
   const at = new URL(url).searchParams.get('at');
   const claims = at ? verifyAssetToken(at) : null;
   if (!claims?.act) return null;
   const row = await loadLoginRow(claims.act);
-  if (!row || row.role !== 'member' || !loginUsable(row) || row.sessionEpoch !== claims.ep) {
-    return null;
-  }
+  if (!row || !loginUsable(row) || row.sessionEpoch !== claims.ep) return null;
   const resolved = await resolvedFor(row, 'web');
   return resolved && !resolved.admin && resolved.user.id === claims.uid ? memberOf(resolved) : null;
 }
@@ -2025,14 +2023,14 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
 }
 
 /**
- * Is this member login still allowed in (audit S8)? For work that outlives
- * the request that authenticated it, such as an open realtime stream: the
- * row is re-read, so a deactivated login, a role change or members turned
- * off on the box all end it.
+ * Is this member login still allowed in? For work that outlives the
+ * request that authenticated it, such as an open realtime stream: the row
+ * is re-read, so a disabled login, or one added to Admin (a member is a
+ * login that is not an Admin user, adminLogin), ends it.
  */
 export async function memberLoginActive(loginId: string): Promise<boolean> {
   const row = await loadLoginRow(loginId);
-  return !!row && row.role === 'member' && loginUsable(row);
+  return !!row && !adminLogin(row) && loginUsable(row);
 }
 
 /** Is this admin login still allowed in? For a frame document that a

@@ -29,6 +29,7 @@ import { mcpToolPolicyOf, type McpCaller } from '@mantle/mcp-core';
 import { isLoginRole } from '@mantle/client-types/role-names';
 import { bearerFrom } from './auth/request';
 import { loadLoginRow } from './auth/login-row';
+import { loginIsAdmin } from './auth/admin-seat';
 import { adminLogin } from './auth/session';
 import {
   auditKeyRefusal,
@@ -45,7 +46,9 @@ import { clientIp, clientIpKey } from './rate-limit';
 
 type LoginRow = {
   id: string;
-  role: string;
+  /** A user of the live Admin workspace now, the login enabled
+   *  (loginIsAdmin, read with the row): adminLogin's answer. */
+  adminMember: boolean;
   email: string | null;
   displayName: string | null;
   disabledAt: Date | null;
@@ -56,7 +59,7 @@ async function loadLogin(loginId: string): Promise<LoginRow | null> {
   const [row] = await db
     .select({
       id: authUsers.id,
-      role: authUsers.role,
+      adminMember: loginIsAdmin(loginId),
       email: authUsers.email,
       displayName: authUsers.displayName,
       disabledAt: authUsers.disabledAt,
@@ -65,11 +68,12 @@ async function loadLogin(loginId: string): Promise<LoginRow | null> {
     .from(authUsers)
     .where(eq(authUsers.id, loginId))
     .limit(1);
-  return row ?? null;
+  return row ? { ...row, adminMember: row.adminMember === true } : null;
 }
 
-/** A member's caller from its login row, or null. Its writes are whatever
- *  its scope may write (W7b: no per-login switch). */
+/** A member's caller from its login row (a login that is not an Admin
+ *  user, adminLogin), or null. Its writes are whatever its scope may write
+ *  (W7b: no per-login switch). */
 function memberMcpCaller(
   row: LoginRow,
   anchorId: string,
@@ -78,10 +82,10 @@ function memberMcpCaller(
   /** The grant was narrowed to read-only (0268, MCP_READ_ONLY_SCOPE). */
   readOnly = false,
 ): McpCaller | null {
-  if (row.role !== 'member') return null;
+  if (adminLogin(row)) return null;
   if (row.disabledAt || !row.email) return null;
   return {
-    role: row.role,
+    role: 'member',
     anchorId,
     loginId: row.id,
     displayName: row.displayName,
@@ -275,21 +279,22 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
 // ── The OAuth consent and the token check ───────────────────────────────────
 
 /** Whether this login is usable for an MCP connection now: not disabled
- *  and with an email. It reads no role, so it answers true for an Admin
- *  user too: it is not "may connect". The consent route asks it on its
- *  member path only, and mcpTargetLogin reads the row again right after
- *  (role member); a login changed between the two reads answers by the
- *  second, which refuses anything but a member. */
+ *  and with an email. It does not ask Admin membership, so it answers true
+ *  for an Admin user too: it is not "may connect". The consent route asks
+ *  it on its member path only, and mcpTargetLogin reads the row again right
+ *  after (not an Admin user); a login changed between the two reads
+ *  answers by the second, which refuses anything but a member. */
 export async function mcpLoginUsable(loginId: string): Promise<boolean> {
   const row = await loadLogin(loginId);
   return !!row && !row.disabledAt && !!row.email;
 }
 
-/** A member login by id (the consent route checks it first). */
+/** A member login by id: one that is not an Admin user (adminLogin). The
+ *  consent route checks it first. */
 export async function mcpTargetLogin(
   loginId: string,
 ): Promise<{ id: string; role: 'member'; sessionEpoch: number } | null> {
   const row = await loadLogin(loginId);
-  if (!row || row.role !== 'member') return null;
-  return { id: row.id, role: row.role, sessionEpoch: row.sessionEpoch };
+  if (!row || adminLogin(row)) return null;
+  return { id: row.id, role: 'member', sessionEpoch: row.sessionEpoch };
 }

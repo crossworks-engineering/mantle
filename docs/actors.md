@@ -337,8 +337,6 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
   system pool: the write role holds no EXECUTE on them yet. S7.
 - The narrow role writes no item but still reads the `content` tables (`narrowFor`): at least 17 code sites read content on a narrow exit (docs/_archive/plan-v3-s7c-handover.md). S7d.
 - Route policy is spread over lists, not declared per route. S9.
-- Five checks still ask the role column, each only narrowing while drift is 0:
-  `findMemberAsset`, `memberLoginActive`, `mcp-auth.ts` (2), `login-notices.ts`. S8 follow-up.
 - Accepted, no step: any role can `set_config('mantle.actor', …)`, so the
   settings are no credential; access is never decided from them on a role
   that runs caller-shaped SQL.

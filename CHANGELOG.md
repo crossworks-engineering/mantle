@@ -4,6 +4,21 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the member checks ask Admin membership (plan v3.2 S8e)
+
+- **Changed:** the last five checks that read the login's role column now
+  ask Admin membership, as the session does: a member is a login that is
+  not an Admin user. They are the member asset token and the member
+  re-check of a stream or frame (`server/web/lib/auth/session.ts`), the
+  MCP member caller and the OAuth consent's member target
+  (`server/web/lib/mcp-auth.ts`), and who is told login notices
+  (`packages/content/src/login-notices.ts`). No decision reads the role
+  column any more; it is display only. Every fleet box counts role drift
+  0, so no answer changes there. Where a superuser's hand write left the
+  role and membership apart, these five now answer as that login's session
+  already does: a role=member login inside Admin is no member here, and a
+  role=admin login outside Admin is one. No migration.
+
 ## Unreleased: the narrow route is always on (plan v3.2 S7c)
 
 - **The switch `MANTLE_NARROW_SYSTEM` is gone.** The system work of an
