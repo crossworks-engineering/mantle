@@ -489,9 +489,12 @@ describe('the architecture ratchets (pinned counts)', () => {
     // with the GETs' HEADs. The LiveKit webhook is public (no caller).
     // Documents (+8, every one with a caller): the eight POST
     // /api/v1/documents/* routes, each reading the owner caller.
-    expect(rows.filter((r) => r.caller).length).toBe(843);
-    // 882 + the 13 call rows above + the public webhook + the 8 documents rows.
-    expect(rows.length).toBe(904);
+    // The MCP call log (+2, both with a caller, Journal v3 J8): GET
+    // /api/mcp-calls with its HEAD (owner, open to every login).
+    expect(rows.filter((r) => r.caller).length).toBe(845);
+    // 882 + the 13 call rows above + the public webhook + the 8 documents
+    // rows + the 2 call log rows.
+    expect(rows.length).toBe(906);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
