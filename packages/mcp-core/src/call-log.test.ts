@@ -148,7 +148,8 @@ describe('the ids a call names', () => {
       durationMs: 1,
     });
     expect(e.workspaceId).toBe(WS);
-    expect(e.itemIds).toEqual(expect.arrayContaining([A, WS]));
+    // The workspace is not an item of the call.
+    expect(e.itemIds).toEqual([A]);
   });
 });
 
