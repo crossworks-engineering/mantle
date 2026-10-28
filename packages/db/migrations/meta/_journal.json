@@ -2374,6 +2374,13 @@
       "when": 1790200500000,
       "tag": "0339_parser_failures_key",
       "breakpoints": true
+    },
+    {
+      "idx": 340,
+      "version": "7",
+      "when": 1790200560000,
+      "tag": "0340_s4b_fail_closed",
+      "breakpoints": true
     }
   ]
 }

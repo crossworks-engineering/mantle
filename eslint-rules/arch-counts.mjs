@@ -1021,27 +1021,11 @@ export function migrationSqlTexts(root) {
 }
 
 /**
- * The fail-open branches that are counted, not refused (plan v3.2 S4a, the
- * `failOpenSites` pin): each call of noteFailOpen, noteUnscopedYes or
- * noteScopedSystemWrite (packages/db/src/fail-open.ts, fail-open-sites.ts)
- * with a literal site, comments blanked. Six at S4a: scopeHoldsAdmin,
- * scopeHasArea (gateway/scope-answers.ts), typedWrite, loginWriteClient
- * (gateway/write-route.ts), the production allows of asSystem and
- * assertSystemDbCaller (viewer.ts). S4b turns each into a refusal, so 0. A
- * seventh fail-open branch is one more call here.
- */
-export function failOpenSiteCount(files) {
-  const CALL = /\bnote(?:FailOpen|UnscopedYes|ScopedSystemWrite)\(\s*'[a-z-]+'/g;
-  let n = 0;
-  for (const { text } of files) n += (stripComments(text).match(CALL) ?? []).length;
-  return n;
-}
-
-/**
  * The tables whose scoped typed writes stay on the system pool (plan v3.2
  * S4a, the `scopedSystemWriteTables` pin): each access matrix row that
  * names a `scopedSystemWrite` reason (packages/db/src/access-matrix.ts,
- * comments blanked). The list S4b reads; it only goes down, or up with a
+ * comments blanked). Every other scoped typed write to a system table is
+ * refused (S4b); it only goes down, or up with a
  * reviewed reason (access-matrix.test.ts holds each reason non-empty).
  */
 export function scopedSystemWriteCount(files) {
@@ -1383,7 +1367,6 @@ export function measure(root) {
       roleResets: roleResetCount([...texts, ...migrationSqlTexts(root)]),
       dbClientLines: lineCount(root, 'packages/db/src/client.ts'),
       ...gateway.numbers,
-      failOpenSites: failOpenSiteCount(texts),
       scopedSystemWriteTables: scopedSystemWriteCount(texts),
     },
     perFile: {

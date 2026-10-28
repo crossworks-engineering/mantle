@@ -1554,6 +1554,22 @@ rolls; its rollback is `packages/db/rollback/0339_parser_failures_key.revert.sql
   ignored, and a `mantle_parser` container is removed as an orphan (the
   rollback command below carries `--remove-orphans`).
 
+## Going up to 0340 (the fail-open branches refuse, plan v3.2 S4b)
+
+Migration 0340 takes the "no Admin workspace" branches out of
+`mantle_login_area` (now the area rule alone) and
+`mantle_tg_moderated_chats`. Before the roll: `scripts/arch-scoreboard-box.sh`
+reads `brains_without_admin_workspace 0` on the box (on a brain with no
+Admin workspace no login holds an area after it). The image's own fences
+refuse what the fail-open counts counted ([fail-open.md](fail-open.md)), so those
+counts read 0 on the box for a release first.
+
+- **What it changes for readers:** nothing on a brain with an Admin
+  workspace. The box script prints `fail_open_branches gone`.
+- **Rolling back below it:** optional; the older image only counts the
+  branches. The revert (`packages/db/rollback/0340_s4b_fail_closed.revert.sql`)
+  puts 0304's and 0313's bodies back and takes 0340 off the ledger.
+
 ## Rollback
 
 ```bash

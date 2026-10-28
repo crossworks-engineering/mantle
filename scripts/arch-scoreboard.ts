@@ -196,8 +196,6 @@ const LABELS: Record<string, string> = {
     'globalThis.__mantle* writes in packages/db/src outside gateway/pools.ts (0: pools.ts owns the keys)',
   dbGlobalKeyReads:
     "globalThis.__mantle* reads in packages/db/src outside gateway/pools.ts (1: actorClient's closing check)",
-  failOpenSites:
-    'fail-open branches counted as miss rows, not refused (plan v3.2 S4a: 5; S4b takes them to 0)',
   scopedSystemWriteTables:
     'tables whose scoped typed writes stay on the system pool, each with a reason (plan v3.2 S4a; the list S4b reads)',
 };

@@ -4,6 +4,32 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the fail-open branches refuse (plan v3.2 S4b)
+
+- **Security:** the six branches that still answered yes, or sent a write
+  to the system pool, for code with no system actor bound now refuse
+  ([docs/fail-open.md](docs/fail-open.md)). Outside every scope,
+  `scopeHoldsAdmin` and `scopeHasArea` answer yes to system work only and
+  throw otherwise. A scoped typed write to a table the write role does not
+  hold is refused unless its access matrix row names a `scopedSystemWrite`
+  reason (a login's write only). An unlisted `asSystem` exit from a turn
+  scope and a `systemDb` use there from a file off `SYSTEM_DB_MODULES`
+  throw in production, as they did in tests and development. Every fleet
+  box counted 0 hits on all six for a full release before this.
+- **Migration 0340:** `mantle_login_area` is the area rule alone: on a
+  brain with no Admin workspace no login holds an area (it said yes).
+  `mantle_tg_moderated_chats` loses its "no Admin workspace: the anchor's
+  chats" branch. Every fleet box has an Admin workspace, so no answer
+  changes there. Rollback: `packages/db/rollback/0340_s4b_fail_closed.revert.sql`.
+- **Removed:** the fail-open counter (its miss rows, the in-process dedupe,
+  the test guard and dump, the `failOpenSites` pin). The box script prints
+  `fail_open_branches gone` in place of the per-site counts.
+- **Tests:** one cell per refusal (`packages/db/src/fail-closed.test.ts`,
+  the turn fences with `NODE_ENV=production`), the same on a migrated
+  database with 0340 and its rollback (`fail-closed.db.test.ts`), and a
+  pin of the files that call the approval queue's and the conversation
+  store's system pool helpers (`system-pool-helpers.test.ts`).
+
 ## Unreleased: the parser service (Tika and the media sidecar go)
 
 - **Feature:** one core container, the parser (`mantle-parser`,

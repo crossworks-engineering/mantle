@@ -88,9 +88,8 @@ own, with the actor it binds: [process-inventory.md](./process-inventory.md)
   check mode: the mode decides refuse or report, never the pool. One
   `SET LOCAL` with the transaction's first statement carries the scope,
   the actor and the create home. Never a session SET.
-- A typed write to a table the write role holds no right on goes to the system
-  pool by its drizzle table (`typed-write`, counted unless named, S4b); a raw one goes to the write
-  role (no table read from text) and Postgres refuses it. Nothing runs again.
+- A typed write to a table the write role holds no right on is refused (S4b, below); a raw
+  one goes to the write role (no table read from text) and Postgres refuses it. Nothing runs again.
 - The scoped pools never run the setter functions. Only `packages/db`
   sets `mantle.*` settings.
 - Transactions: `withSystemTx` in an open system transaction is its
@@ -132,7 +131,7 @@ asked, except by the narrowing checks under Known limits (`Login` has no kind
 or role: `adminFacts`; `mantle_role_drift` counts). `mantle_area_rule` answers `loginHasArea`
 and `areasFor`; `requireArea` asks `mantle_scope_has_area` (the rule plus
 "Admin in the scope") in its login's own scope, the rule unscoped.
-`mantle_login_area` adds a counted fail-open (S4b removes it).
+`mantle_login_area` is the rule too (0340: no Admin workspace, no area).
 
 Owner rules (each holds today unless "Known limits" says otherwise):
 
@@ -191,8 +190,10 @@ Owner rules (each holds today unless "Known limits" says otherwise):
   `mantle_set_edit_check` (they switch the triggers with the setting), as
   the superuser that runs migrations ([update-prod.md](./update-prod.md),
   "The checks' floor").
-- **Fail-open counts** (S4a): five branches fail open, counted. S4b refuses them; a scoped typed write
-  unless its matrix row names a `scopedSystemWrite` reason ([fail-open.md](./fail-open.md)).
+- **Fail closed** (S4b): unscoped, `scopeHoldsAdmin` and `scopeHasArea` say yes to system work
+  only and throw otherwise; a scoped typed write to a system table is refused unless its matrix
+  row names `scopedSystemWrite` (a login's write); an unlisted exit and an off-list `systemDb`
+  caller throw in production too ([fail-open.md](./fail-open.md)).
 
 ## 8. Exits
 
@@ -330,14 +331,12 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
 
 Each ends in the step of plan v3.2 (2026-10-17) named.
 
-- `mantle_login_area` is the area rule or, with no Admin workspace, yes. S4.
 - A definer asked with no scope answers as the system pool would;
   `mantle_grant_change` then takes the caller from its `actor`. S2, S7.
 - The seven Admin acts' definers (0308, 0310) run by `loginDefinerCall` on the
   system pool: the write role holds no EXECUTE on them yet. S7.
 - The system pool is the whole runtime role; the narrow role exists, unused. S7.
 - Route policy is spread over lists, not declared per route. S9.
-- Five branches fail open, counted since S4a (section 7, Fail-open counts). S4.
 - Five checks still ask the role column, each only narrowing while drift is 0:
   `findMemberAsset`, `memberLoginActive`, `mcp-auth.ts` (2), `login-notices.ts`. S8 follow-up.
 - Accepted, no step: any role can `set_config('mantle.actor', …)`, so the

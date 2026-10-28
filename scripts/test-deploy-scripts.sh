@@ -321,20 +321,11 @@ check "the roll calls it after the image tag, before compose" sh -c "
   [ -n \"\$a\" ] && [ -n \"\$b\" ] && [ -n \"\$c\" ] && [ \"\$a\" -lt \"\$b\" ] && [ \"\$b\" -lt \"\$c\" ]"
 check "install.sh writes 1 on a fresh box only" sh -c "grep -q 'FRESH_BOX -eq 1 ]] && ! grep -qE' '$ROOT/scripts/install.sh' && grep -q 'upsert MANTLE_DB_RUNTIME_ROLE 1' '$ROOT/scripts/install.sh'"
 check ".env.example shows it set" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$ROOT/.env.example"
-# The box count's window (scripts/arch-scoreboard-box.sh needs ssh, docker
-# and Postgres, so its query is proved on a throwaway database; here: the
-# floor is never later than an hour ago, so a stray started_at reads as a
-# false non-zero, never a false 0).
-check "box: the fail-open window's floor is at most an hour old" sh -c "
-  sed -n '/^fail_open=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | tr -s ' \n' ' ' |
-    grep -q \"greatest(now() - interval '24 hours', least(coalesce(nullif('\\\$started', '')::timestamptz, '-infinity'), now() - interval '1 hour'))\""
-# A write site's check names its table (fail-open.ts): the per-site counts
-# read the check's site part, so 'fail-open:typed-write:public.x' and an
-# older image's 'fail-open:typed-write' both count as typed-write.
-check "box: the fail-open per-site counts read the site part of the check" sh -c "
-  sed -n '/^fail_open=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' |
-    grep -q \"split_part(check_name, ':', 2) as site, check_name, detail\" &&
-  ! sed -n '/^fail_open=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q \"check_name = 'fail-open:\""
+# The fail-open branches throw since plan v3.2 S4b: the box line says
+# "gone", and no query counts their old miss rows.
+check "box: the fail-open line reads gone, not a count" sh -c "
+  grep -q ' fail_open_branches gone\$' '$ROOT/scripts/arch-scoreboard-box.sh' &&
+  ! grep -q 'fail-open:%' '$ROOT/scripts/arch-scoreboard-box.sh'"
 check "box: the narrow counts read all time (no window)" sh -c "
   sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q 'narrow-would-refuse' &&
   ! sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q 'interval'"

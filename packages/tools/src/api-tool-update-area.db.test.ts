@@ -4,8 +4,8 @@
  * client and Tools console run it there): a login without the connectors
  * area is still refused by the gate and nothing is written; an Admin user
  * with it changes the tool, joins it to a group and switches External
- * access off through areaSystem, so none of those writes is a fail-open
- * typed-write hit (docs/fail-open.md).
+ * access off through areaSystem, so none of those writes is a scoped
+ * system write, which is refused (docs/fail-open.md).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/api-tool-update-area.db.test.ts
  */
@@ -21,7 +21,6 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let su: ReturnType<Ts['superuserClient']> | undefined;
   let m: typeof import('@mantle/db');
-  let fo: Ts;
   let dispatch: typeof import('./dispatch');
   let callers: typeof import('./gate-callers');
   const admin = randomUUID();
@@ -57,7 +56,6 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     await su`insert into tool_groups (owner_id, slug, name, tool_slugs, enabled)
       values (${anchor}, ${group}, 'g', '{}', true)`;
     m = await import('@mantle/db');
-    fo = ts;
     dispatch = await import('./dispatch');
     callers = await import('./gate-callers');
     await import('./gate-narrowers');
@@ -94,7 +92,6 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     )[0];
 
   it('a login without the connectors area: refused by the gate, nothing written', async () => {
-    fo.resetFailOpenForTest();
     // A member (no Admin workspace), and an Admin user whose limits switch
     // the area off.
     const outside = await update(member, { enabled: false, group_slug: group });
@@ -104,11 +101,9 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     expect(off.ok).toBe(false);
     expect(off.ok ? '' : String(off.error)).toMatch(/manages the brain's connectors/);
     expect(await toolRow()).toEqual({ enabled: true, in_group: false });
-    expect(fo.takeFailOpenHits()).toEqual([]);
   });
 
-  it('an Admin user with the area: the tool, its group and External access change, no fail-open hit', async () => {
-    fo.resetFailOpenForTest();
+  it('an Admin user with the area: the tool, its group and External access change', async () => {
     const res = await update(admin, { enabled: false, group_slug: group, external_access: false });
     expect(res.ok, res.ok ? '' : String(res.error)).toBe(true);
     expect(await toolRow()).toEqual({ enabled: false, in_group: true });
@@ -121,18 +116,23 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
       audit = row?.n ?? 0;
     }
     expect(audit).toBe(1);
-    expect(fo.takeFailOpenHits()).toEqual([]);
-    // The same writes as the caller's own scoped write still count: the
-    // hit the fix removed (gateway/write-route.ts typedWrite).
-    await m.runInRequestSlot(async () => {
+    // The same write as the caller's own scoped write is refused
+    // (gateway/write-route.ts typedWrite, plan v3.2 S4b).
+    const refused = await m.runInRequestSlot(async () => {
       m.enterRequestScope(await m.loginScopeFor(admin), { writes: true, drafts: false });
-      await m.db
-        .update(m.tools)
-        .set({ updatedAt: new Date() })
-        .where(sql`false`);
+      return Promise.resolve()
+        .then(() =>
+          m.db
+            .update(m.tools)
+            .set({ updatedAt: new Date() })
+            .where(sql`false`),
+        )
+        .then(
+          () => null,
+          (err: unknown) => err as Error,
+        );
     });
-    expect(fo.takeFailOpenHits()).toEqual([
-      { site: 'typed-write', actor: 'login', table: 'public.tools' },
-    ]);
+    expect(refused?.name).toBe('SystemWorkRequiredError');
+    expect(refused?.message).toMatch(/public\.tools/);
   });
 });

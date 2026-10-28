@@ -489,17 +489,23 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     expect(ran).toBe(false);
   });
 
-  it('in production an unnamed exit is logged (once) and allowed for now', async () => {
+  it('in production an unnamed or unlisted exit throws too (plan v3.2 S4b)', async () => {
     process.env.NODE_ENV = 'production';
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let ran = false;
     await expect(
-      inTurn(() => asSystem(async () => currentScope(), undefined as never)),
-    ).resolves.toEqual({
-      kind: 'system',
-    });
-    await inTurn(() => asSystem(async () => 2, undefined as never));
-    expect(error).toHaveBeenCalledTimes(1);
-    expect(String(error.mock.calls[0]![0])).toMatch(/allowlisted reason/);
+      inTurn(() =>
+        asSystem(async () => {
+          ran = true;
+        }, undefined as never),
+      ),
+    ).rejects.toBeInstanceOf(TurnScopeExitError);
+    await expect(inTurn(() => asSystem(async () => 1, 'login-notice'))).rejects.toThrow(
+      /allowlisted reason/,
+    );
+    expect(ran).toBe(false);
+    // A listed reason still leaves the scope.
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    await expect(inTurn(() => asSystem(async () => 2, 'connector-binding'))).resolves.toBe(2);
   });
 
   it('the list stays small', () => {
@@ -617,7 +623,7 @@ describe('systemDb inside a turn scope: allowlisted modules only (W4b fix round 
     expect(systemDbCallerOf(viaDrizzle)).toBe(content);
   });
 
-  it('skips the gateway modules as client.ts (a fail-open hit in typedWrite names its caller)', () => {
+  it('skips the gateway modules as client.ts (a write through the gateway names its caller)', () => {
     const viaGateway = stackFrom(content).replace(
       '    at loadThing',
       '    at Proxy.<anonymous> (/repo/packages/db/src/gateway/write-route.ts:40:5)\n    at loadThing',
@@ -679,17 +685,15 @@ describe('systemDb inside a turn scope: allowlisted modules only (W4b fix round 
     });
   });
 
-  it('in production: logged once per calling file and allowed for now', async () => {
+  it('in production an off-list caller throws too (plan v3.2 S4b)', async () => {
     process.env.NODE_ENV = 'production';
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const other = '/repo/packages/content/src/pages.ts';
     await inTurn(async () => {
-      expect(() => assertSystemDbCaller(stackFrom(content))).not.toThrow();
-      assertSystemDbCaller(stackFrom(content));
-      assertSystemDbCaller(stackFrom(other));
+      expect(() => assertSystemDbCaller(stackFrom(content))).toThrow(TurnScopeExitError);
+      expect(() => assertSystemDbCaller('Error')).toThrow(/an unknown file/);
+      expect(() =>
+        assertSystemDbCaller(stackFrom('/repo/packages/tools/src/tool-results.ts')),
+      ).not.toThrow();
     });
-    expect(error).toHaveBeenCalledTimes(2);
-    expect(String(error.mock.calls[0]![0])).toMatch(/SYSTEM_DB_MODULES/);
   });
 
   it('the module list equals the eslint import allowlist', () => {

@@ -29,17 +29,9 @@
 #     MANTLE_DB_RUNTIME_ROLE is on (1 or 0, as the app reads it: from
 #     mantle_web's environment, or from the stack's .env when that
 #     container is not there; n/a with neither, or an unreadable .env);
-#   - the fail-open counts (plan v3.2 S4a; packages/db/src/fail-open.ts):
-#     the distinct check and file pairs of the miss rows checked
-#     'fail-open:<site>' (a write site's 'fail-open:<site>:<table>', so a
-#     new table is a new pair) in the last 24 hours, or since the last roll began
-#     (the updater's started_at) when that is later but never from later
-#     than an hour ago, in all and per site. Every process writes its row
-#     again each hour it still hits (fail-open.ts), so a process that has
-#     not restarted still shows. "Brains without an Admin workspace" above is
-#     also the count of mantle_login_area's yes with no Admin workspace and
-#     of areasOf's "migration skipped" path (server/web/lib/workspaces.ts):
-#     a brain reaches either only with no Admin workspace;
+#   - the fail-open branches: gone since plan v3.2 S4b (each throws, or
+#     answers no, docs/fail-open.md), so the line says "gone", never a
+#     count;
 #   - the narrow system role's counts (plan v3.2 S7a, report only): the
 #     distinct check, actor and table rows checked narrow-content-write,
 #     narrow-cascade-delete (migration 0312), narrow-denied and
@@ -178,35 +170,8 @@ select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    and p.prosrc ~* '\m(insert\s+into|update|delete\s+from|merge\s+into|truncate(\s+table)?)\s+(only\s+)?("?public"?\s*\.\s*)?"?(workspaces|workspace_users|workspace_events|workspace_resources)"?($|[^a-z0-9_"])';
 SQL
 )")
-# The fail-open miss rows (S4a): the last 24 hours, or since the last roll
-# began when that is later, but never from later than an hour ago: any
-# status.json write moves started_at (a client-only roll, a refused one, a
-# bad tag, the pull phase), and none of those restarts a server, so a floor
-# at most an hour old keeps every process's hourly row in the window (an
-# error reads as a false non-zero, never a false 0). Not since mantle_web
-# started: a web-only restart would hide the rows the api, worker and MCP
-# processes wrote.
-started=$(docker exec mantle_updater cat /signal/status.json 2>/dev/null |
-  sed -n 's/.*"started_at":"\([^"]*\)".*/\1/p' | head -1 || true)
-case "$started" in *[!0-9TZ:.+-]* | '') started="" ;; esac
-fail_open=$(q <<SQL || true
-select count(*) || ' ' || count(*) filter (where site = 'scope-holds-admin')
-    || ' ' || count(*) filter (where site = 'scope-has-area')
-    || ' ' || count(*) filter (where site = 'typed-write')
-    || ' ' || count(*) filter (where site = 'raw-write')
-    || ' ' || count(*) filter (where site = 'turn-exit')
-    || ' ' || count(*) filter (where site = 'system-db')
-  from (select distinct split_part(check_name, ':', 2) as site, check_name, detail
-          from public.actor_check_misses
-         where check_name like 'fail-open:%'
-           and at >= greatest(now() - interval '24 hours',
-                              least(coalesce(nullif('$started', '')::timestamptz, '-infinity'),
-                                    now() - interval '1 hour'))) m;
-SQL
-)
 # The narrow system role's counts (plan v3.2 S7a; report only): the
-# distinct check, actor and table rows of its miss rows in the same window
-# as the fail-open rows. narrow-content-write: migration 0312's count of a
+# distinct check, actor and table rows of its miss rows. narrow-content-write: migration 0312's count of a
 # content write by a narrow reason off the narrow role (what the role would
 # refuse once it is on, S7b). narrow-cascade-delete: a delete by a narrow
 # reason of a row whose foreign keys cascade into content, counted on
@@ -459,11 +424,7 @@ printf '  %-34s %s\n' admin_workspaces_without_assistant "$no_assistant"
 printf '  %-34s %s\n' workspace_table_writer_fns "$writers"
 printf '  %-34s %s\n' env_names_runtime_role "$names_role"
 printf '  %-34s %s\n' env_has_runtime_role_line "$env_line"
-set -- $fail_open
-for site in all scope-holds-admin scope-has-area typed-write raw-write turn-exit system-db; do
-  printf '  %-34s %s\n' "fail_open_misses:$site" "$(num "${1:-}")"
-  shift || true
-done
+printf '  %-34s %s\n' fail_open_branches gone
 case "$narrow_epoch" in
   '') narrow_epoch=none ;;
   *[!0-9A-Za-z.:\ -]*) narrow_epoch='?' ;;

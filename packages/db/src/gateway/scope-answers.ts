@@ -11,11 +11,18 @@ import {
   currentWorkspaceScope,
   isUnscoped,
   SCOPE_AREAS,
+  SystemWorkRequiredError,
   type ScopeArea,
   type WorkspaceScope,
 } from '../viewer';
-import { actorCheckMode, loginActor, runAsSystem, systemActor, type Actor } from '../actor';
-import { noteUnscopedYes } from '../fail-open-sites';
+import {
+  actorCheckMode,
+  currentActor,
+  loginActor,
+  runAsSystem,
+  systemActor,
+  type Actor,
+} from '../actor';
 import { getAdminDb } from './pools';
 import { getDb } from './scope';
 import { db } from './handles';
@@ -61,15 +68,23 @@ export async function loginActorNow(
 
 const holdsAdmin = new WeakMap<WorkspaceScope, Promise<boolean>>();
 
+/** The yes given outside every workspace scope, for system work only (plan
+ *  v3.2 S4b): with no system actor bound it throws. */
+function systemYes(what: string): true {
+  if (currentActor()?.kind !== 'system') throw new SystemWorkRequiredError(what);
+  return true;
+}
+
 /**
  * Whether the current code may do Admin-workspace work (plan 5.4, adminOnly):
  * unscoped system work (the owner's paths) yes; a workspace scope when it holds
  * the Admin workspace (asked of the database once per scope). Fails closed:
- * an error reads as no.
+ * an error reads as no. Unscoped with no system actor bound it throws
+ * (SystemWorkRequiredError).
  */
 export async function scopeHoldsAdmin(): Promise<boolean> {
   const scope = currentWorkspaceScope();
-  if (!scope) return noteUnscopedYes('scope-holds-admin', isUnscoped());
+  if (!scope) return isUnscoped() && systemYes('scopeHoldsAdmin outside every scope');
   let p = holdsAdmin.get(scope);
   if (!p) {
     p = (async () => {
@@ -95,14 +110,15 @@ export async function scopeHoldsAdmin(): Promise<boolean> {
  * that answers such a login (W7a: the Admin assistant, which answers the
  * owner when no login asks). A link and an assistant turn with no login
  * never may. An unknown kind or area is refused (fails
- * closed).
+ * closed). Outside every scope with no system actor bound it throws
+ * (SystemWorkRequiredError).
  */
 export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
   if (!SCOPE_AREAS.includes(area)) return false;
   const scope = currentScope();
   switch (scope.kind) {
     case 'system':
-      return noteUnscopedYes('scope-has-area', true);
+      return systemYes(`scopeHasArea(${area}) outside every scope`);
     case 'user':
     case 'assistant': {
       if (!scope.loginId) return false;

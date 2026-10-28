@@ -44,7 +44,6 @@ import { hkdfSync } from 'node:crypto';
 import { env } from '@mantle/config';
 import { RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { WORKSPACE_AREAS, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
-import { noteFailOpen } from './fail-open';
 
 /**
  * A personal-space scope (member logins Phase 2, plan section 2b): the code
@@ -513,7 +512,8 @@ export function noteRequestSystemWrite(what: string): void {
   const slot = requestSlots.getStore();
   // A mutating request's writes are its job (a member's own write since
   // W6b): only a READ request's are pinned.
-  if (!slot?.scope || slot.scope.request?.writes || store.getStore() || !strictTurnExits()) return;
+  if (!slot?.scope || slot.scope.request?.writes || store.getStore() || !testOrDevelopment())
+    return;
   const stack = (new Error().stack ?? '')
     .split('\n')
     .filter((line, i) => i === 0 || !line.replace(/\\/g, '/').includes('packages/db/src/'))
@@ -543,7 +543,7 @@ export function noteRequestOwnRule(loginId: string): void {
  */
 export function noteOwnRuleSystemRead(what: string): void {
   const slot = requestSlots.getStore();
-  if (!slot || slot.outcome?.kind !== 'own-rule' || active() || !strictTurnExits()) return;
+  if (!slot || slot.outcome?.kind !== 'own-rule' || active() || !testOrDevelopment()) return;
   (slot.systemReads ??= []).push(`${what} ${systemDbCallerOf(new Error().stack ?? '') ?? '?'}`);
 }
 
@@ -1382,12 +1382,22 @@ export class TurnScopeExitError extends RuntimeFaultError {
   }
 }
 
+/** A yes outside every scope, or a scoped write sent to the system pool,
+ *  that only system work may take, asked with no system actor bound (plan
+ *  v3.2 S4b; docs/fail-open.md). `what` names the answer or the table. */
+export class SystemWorkRequiredError extends RuntimeFaultError {
+  readonly code = 'system-work-required';
+  constructor(what: string) {
+    super(`${what}: only system work may take this (bind a system actor, or run in a scope)`);
+    this.name = 'SystemWorkRequiredError';
+  }
+}
+
 const loggedTurnExits = new Set<string>();
 
-/** Whether an unnamed exit from a turn scope throws: in tests and local
- *  development. In production it is logged and allowed for now (W4b fix
- *  round 1: about 80 call sites, not every one reached by a test yet). */
-function strictTurnExits(): boolean {
+/** Whether the request notes of tests and local development run
+ *  (noteRequestSystemWrite, noteOwnRuleSystemRead): each takes a stack. */
+function testOrDevelopment(): boolean {
   const mode = env('NODE_ENV');
   return mode === 'test' || mode === 'development';
 }
@@ -1401,27 +1411,14 @@ function strictTurnExits(): boolean {
  * Every call names its `reason` (arch A2a: a type error without one), and
  * `fn` runs as the actor system(reason). Inside a turn scope (W4b) the
  * reason must be one of AS_SYSTEM_TURN_REASONS (logged once per reason);
- * any other throws TurnScopeExitError in tests and development, and is
- * logged (once per reason) in production.
+ * any other throws TurnScopeExitError, in production too (plan v3.2 S4b).
  */
 export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promise<T> {
   if (active()?.perQuery) {
     const listed =
       reason !== undefined && (AS_SYSTEM_TURN_REASONS as readonly string[]).includes(reason);
-    if (!listed) {
-      if (strictTurnExits()) return Promise.reject(new TurnScopeExitError(reason));
-      // Allowed in production: counted (plan v3.2 S4a; S4b throws).
-      noteFailOpen('turn-exit', active()?.ws?.kind ?? '', () =>
-        systemDbCallerOf(new Error().stack ?? ''),
-      );
-      const key = `unlisted:${reason ?? ''}`;
-      if (!loggedTurnExits.has(key)) {
-        loggedTurnExits.add(key);
-        console.error(`[db] ${new TurnScopeExitError(reason).message} Allowed in production.`, {
-          stack: new Error().stack,
-        });
-      }
-    } else if (!loggedTurnExits.has(reason)) {
+    if (!listed) return Promise.reject(new TurnScopeExitError(reason));
+    if (!loggedTurnExits.has(reason)) {
       loggedTurnExits.add(reason);
       console.info(`[db] a turn scope leaves for the system pool: ${reason}`);
     }
@@ -1613,7 +1610,6 @@ export function systemDbCallerOf(stack: string): string | null {
       file.endsWith('packages/db/src/viewer.ts') ||
       file.endsWith('packages/db/src/client.ts') ||
       file.includes('packages/db/src/gateway/') ||
-      file.endsWith('packages/db/src/fail-open.ts') ||
       file.includes('/node_modules/') ||
       file.startsWith('node:')
     ) {
@@ -1654,9 +1650,8 @@ export function isSystemDbModule(file: string): boolean {
  * `systemDb` inside a turn scope (workspaces W4b fix round 2): the second
  * door out of the scope, so only SYSTEM_DB_MODULES may use it there (the
  * eslint rule holds the import; this holds the call, whatever path the
- * handle took). Anything else throws TurnScopeExitError in tests and local
- * development, and is logged once per calling file in production, as asSystem
- * does (M4). Outside a turn scope: nothing. gateway/handles.ts calls it on
+ * handle took). Anything else throws TurnScopeExitError, in production
+ * too (plan v3.2 S4b), as asSystem does. Outside a turn scope: nothing. gateway/handles.ts calls it on
  * every access to `systemDb` in a turn scope; `stack` is for tests.
  */
 export function assertSystemDbCaller(stack?: string): void {
@@ -1666,14 +1661,7 @@ export function assertSystemDbCaller(stack?: string): void {
   const message =
     `systemDb inside a turn scope is for the infrastructure modules of SYSTEM_DB_MODULES only; ` +
     `used from ${caller ?? 'an unknown file'}. A turn never reads past its scope on the admin pool.`;
-  if (strictTurnExits()) throw new TurnScopeExitError(undefined, message);
-  // Allowed in production: counted (plan v3.2 S4a; S4b throws).
-  noteFailOpen('system-db', active()?.ws?.kind ?? '', () => caller);
-  const key = `system-db:${caller ?? ''}`;
-  if (!loggedTurnExits.has(key)) {
-    loggedTurnExits.add(key);
-    console.error(`[db] ${message} Allowed in production.`, { stack: new Error().stack });
-  }
+  throw new TurnScopeExitError(undefined, message);
 }
 
 /**

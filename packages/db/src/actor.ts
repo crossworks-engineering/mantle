@@ -342,16 +342,6 @@ export function noteActorMiss(miss: ActorMiss): void {
   missLogger?.(miss);
 }
 
-/** Write a miss row as noteActorMiss does, with no log line and no test
- *  record: the fail-open rows (plan v3.2 S4a), which fail-open.ts dedupes
- *  and which never fail a test. False when no writer is set yet (the pool
- *  sets it when it is made). */
-export function writeActorMissRow(miss: ActorMiss): boolean {
-  if (!missLogger) return false;
-  missLogger(miss);
-  return true;
-}
-
 /** A statement with no actor bound, refused because the check is on (A2b,
  *  plan 4.2 "Fail closed"). */
 export class ActorMissingError extends RuntimeFaultError {
@@ -384,8 +374,7 @@ export function checkActorBound(what: string): Actor | null {
 }
 
 /** `stack` without this file's frames (longStack's, checkActorBound's and a
- *  binder's here), so the caller a miss names is the file outside it, as
- *  failOpenCaller does (fail-open-sites.ts). */
+ *  binder's here), so the caller a miss names is the file outside it. */
 function withoutOwnFrames(stack: string): string {
   return stack
     .split('\n')

@@ -7,21 +7,21 @@
  * client and drizzle handle behind scoped writes (loginWriteClient). One
  * owner for the private workspaces read and the handle's cache.
  */
-import { is } from 'drizzle-orm';
+import { getTableName, is } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { PgTable } from 'drizzle-orm/pg-core';
+import { PgTable, getTableConfig } from 'drizzle-orm/pg-core';
 import type postgres from 'postgres';
 import * as schema from '../schema/index';
 import { UUID_RE } from '@mantle/std';
 import {
   currentCreateHome,
   requestWriteScope,
+  SystemWorkRequiredError,
   type CreateHome,
   type WorkspaceScope,
 } from '../viewer';
 import { actorCheckMode, actorSetting, currentActor, writeModeOf, type Actor } from '../actor';
-import { WRITE_ROLE_TABLES } from '../access-matrix';
-import { noteScopedSystemWrite, tableNameOf } from '../fail-open-sites';
+import { SCOPED_SYSTEM_WRITE, WRITE_ROLE_TABLES } from '../access-matrix';
 import { ACTOR_SQL_TAG, firstModeReadNow } from './check-mode';
 import { runsOutsideTransaction, setActorSql } from './actor-sql';
 import { adminSql, getAdminDb, loginWritePoolOpen, onCloseDb } from './pools';
@@ -54,6 +54,13 @@ const WRITE_ROLE_ACTORS: ReadonlySet<Actor['kind']> = new Set([
 /** The tables the write role writes, as `schema.table` (WRITE_ROLE_TABLES). */
 const WRITE_ROLE_TABLE_SET: ReadonlySet<string> = new Set(WRITE_ROLE_TABLES);
 
+/** `schema.table` of a drizzle table (an unqualified one is public's), or
+ *  '?' for anything else. */
+function tableNameOf(table: unknown): string {
+  if (!is(table, PgTable)) return '?';
+  return `${getTableConfig(table).schema ?? 'public'}.${getTableName(table)}`;
+}
+
 /** Whether a drizzle table is one the write role writes: a typed write to
  *  any other table goes to the system pool, decided before it is sent
  *  (no failed attempt). */
@@ -61,13 +68,32 @@ function isWriteRoleTable(table: unknown): boolean {
   return is(table, PgTable) && WRITE_ROLE_TABLE_SET.has(tableNameOf(table));
 }
 
+/**
+ * Refuse a scoped write the write role holds no right on (plan v3.2 S4b;
+ * S4a counted it): the system pool is for system work, never the caller's
+ * scoped write. Scoped is loginWriteRoute's test (an actor the write role
+ * takes and a write scope), so system work, which binds a system actor, is
+ * never refused. A login's write to a table whose matrix row names
+ * scopedSystemWrite (SCOPED_SYSTEM_WRITE, its reason) still goes there:
+ * every reason names the caller's login as whose row it is, so an
+ * assistant's, a link's or a contact's write to it is refused too.
+ */
+function refuseScopedSystemWrite(table: unknown): void {
+  const actor = currentActor();
+  if (!actor || !WRITE_ROLE_ACTORS.has(actor.kind)) return;
+  if (!requestWriteScope()) return;
+  const name = tableNameOf(table);
+  if (actor.kind === 'login' && Object.hasOwn(SCOPED_SYSTEM_WRITE, name)) return;
+  throw new SystemWorkRequiredError(`a scoped ${actor.kind} write to ${name}, a system table`);
+}
+
 /** db.insert, update or delete of a scoped write (the db proxy): the
  *  gateway's handle for a write-role table, the system pool's for any
- *  other (arch A2b2b). */
+ *  other (arch A2b2b), which refuses a scoped write (S4b). */
 export function typedWrite(prop: 'insert' | 'update' | 'delete', gateway: boolean): unknown {
   return (table: unknown, ...rest: unknown[]) => {
     const toWriteRole = gateway && isWriteRoleTable(table);
-    if (gateway && !toWriteRole) noteScopedSystemWrite('typed-write', table, WRITE_ROLE_ACTORS);
+    if (gateway && !toWriteRole) refuseScopedSystemWrite(table);
     const handle = toWriteRole ? loginWriteDb() : getAdminDb();
     const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
     return fn.call(handle, table, ...rest);

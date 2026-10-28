@@ -8,7 +8,8 @@
  *  - mantle_area_rule against loginHasArea as main had it (its TypeScript
  *    area guard, then its SQL), and adminUserSql (now a call of it) too;
  *  - mantle_login_areas against loginHasArea over SCOPE_AREAS;
- *  - mantle_login_area against its 0293 text;
+ *  - mantle_login_area as mantle_area_rule, with and without an Admin
+ *    workspace (0340, plan v3.2 S4b: its "no Admin workspace: yes" went);
  *  - mantle_scope_has_area against its 0291 text, on the workspace role's
  *    settings and on the system pool's (mantle.scope_login): the same but
  *    for the cells the redefinition names (a disabled login inside a scope
@@ -75,16 +76,6 @@ const MAIN_HAS_AREA = `select exists (
     join auth.users l on l.id = u.login_id and l.disabled_at is null
    where w.owner_id = mantle_brain_id() and w.is_admin and w.archived_at is null
      and coalesce(u.limits -> 'areas' ->> $2::text, '') <> 'false') as a`;
-/** 0293's mantle_login_area body. */
-const MAIN_LOGIN_AREA = `select (NOT EXISTS (SELECT 1 FROM "public"."workspaces" w
-                      WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."is_admin")
-      OR EXISTS (SELECT 1 FROM "public"."workspaces" w
-                   JOIN "public"."workspace_users" u ON u."workspace_id" = w."id" AND u."login_id" = $1::uuid
-                   JOIN "auth"."users" l ON l."id" = u."login_id" AND l."disabled_at" IS NULL
-                  WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."is_admin"
-                    AND w."archived_at" IS NULL
-                    AND $2::text IN ('settings', 'users', 'assistants', 'connectors', 'keys')
-                    AND coalesce(u."limits" -> 'areas' ->> $2::text, '') <> 'false')) as a`;
 /** 0291's mantle_scope_has_area body. */
 const MAIN_SCOPE_HAS_AREA = `select EXISTS (
     SELECT 1 FROM "public"."workspaces" w
@@ -272,12 +263,12 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
     ]);
   });
 
-  it('mantle_login_area answers as its 0293 text, with and without an Admin workspace', async () => {
+  it('mantle_login_area is the area rule, with and without an Admin workspace (S4b)', async () => {
     const grid = async (q: (s: string, p: unknown[]) => Promise<unknown>) => {
       const diffs: string[] = [];
       for (const [k, id] of Object.entries(logins())) {
         for (const area of ASKED) {
-          const main = await q(MAIN_LOGIN_AREA, [id, area]);
+          const main = await q('select mantle_area_rule($1::uuid, $2::text) as a', [id, area]);
           const fact = await q('select mantle_login_area($1::uuid, $2::text) as a', [id, area]);
           if (fact !== main) diffs.push(`${k} ${area}: main ${main} fact ${fact}`);
         }
@@ -285,8 +276,8 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
       return diffs;
     };
     expect(await grid(one)).toEqual([]);
-    // No Admin workspace (the fail-open branch, S4a/S4b): yes for anyone;
-    // the strict facts stay no, so the branch reaches neither of them.
+    // No Admin workspace: no for anyone (0340 removed the fail-open "yes"),
+    // the anchor too, as every strict fact answers.
     const noAdmin = await rolledBack(async (tx) => {
       await tx`set local session_replication_role = replica`;
       await tx`delete from workspaces where owner_id = ${brain} and is_admin`;
@@ -295,6 +286,7 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
       return {
         diffs: await grid(q),
         loginArea: await q('select mantle_login_area($1::uuid, $2::text) as a', [L.out, 'users']),
+        anchorArea: await q('select mantle_login_area($1::uuid, $2::text) as a', [brain, 'users']),
         rule: await q('select mantle_area_rule($1::uuid, $2::text) as a', [brain, 'users']),
         areas: await q('select mantle_login_areas($1::uuid) as a', [brain]),
         admin: await q('select mantle_login_is_admin($1::uuid) as a', [brain]),
@@ -302,7 +294,8 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
     });
     expect(noAdmin).toEqual({
       diffs: [],
-      loginArea: true,
+      loginArea: false,
+      anchorArea: false,
       rule: false,
       areas: [],
       admin: false,

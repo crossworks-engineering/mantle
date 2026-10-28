@@ -117,11 +117,10 @@ export type TableAccess = {
    * Why a scoped typed write (a login's, an assistant's, a link's or a
    * contact's db.insert, update or delete in a write scope) to this table
    * may stay on the system pool though the write role holds no right on it
-   * (gateway/write-route.ts typedWrite). The list S4b reads: it refuses
-   * such a write to any table that names no reason; until then the named
-   * ones are not counted (fail-open-sites.ts noteScopedSystemWrite). It
-   * covers a login actor's write only (the reason names the caller's
-   * login): an assistant's, a link's or a contact's write still counts.
+   * (gateway/write-route.ts typedWrite). Since plan v3.2 S4b such a write
+   * to any table that names no reason is refused. It covers a login
+   * actor's write only (the reason names the caller's login): an
+   * assistant's, a link's or a contact's write is refused.
    * Keep it small: the reason says whose row it is and what was checked
    * first (access-matrix.test.ts; the pin `scopedSystemWriteTables`).
    */
@@ -1694,9 +1693,9 @@ export const WRITE_ROLE_SYSTEM_ONLY: readonly string[] = ACCESS_MATRIX.filter(
 
 /**
  * The tables whose scoped typed writes stay on the system pool, each with
- * its reason (TableAccess.scopedSystemWrite): the list S4b reads before it
- * refuses every other scoped typed write to a table the write role does
- * not hold. Never a write-role table (access-matrix.test.ts).
+ * its reason (TableAccess.scopedSystemWrite): every other scoped typed
+ * write to a table the write role does not hold is refused (plan v3.2
+ * S4b). Never a write-role table (access-matrix.test.ts).
  */
 export const SCOPED_SYSTEM_WRITE: Readonly<Record<string, string>> = Object.freeze(
   Object.fromEntries(

@@ -4,8 +4,8 @@
  * settled, reverted and rejected on the system pool, with the rule in each
  * WHERE as it was when the login's scoped write sent them there. A login
  * that does not decide a call claims nothing; the decider claims it; an
- * approval never claims an elevated call. None is a fail-open hit
- * (vitest.setup.ts fails the test on one).
+ * approval never claims an elevated call. None is a scoped system write,
+ * which is refused (plan v3.2 S4b).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/pending-calls.db.test.ts
  */

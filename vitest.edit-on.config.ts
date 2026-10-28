@@ -33,8 +33,8 @@ export default defineConfig({
       'server/web/server/f4-admin-write-role.db.test.ts',
       // F4 fix round 1: the owner's management flows on the write role.
       'server/web/server/f4-owner-flows.db.test.ts',
-      // Plan v3.2 S4a: the fail-open miss rows with both checks on.
-      'packages/db/src/fail-open.db.test.ts',
+      // Plan v3.2 S4b: the fail-closed branches with both checks on.
+      'packages/db/src/fail-closed.db.test.ts',
       // The parser keys the extractor keeps on a file node (the failure
       // count, the native PDF read that found nothing), both checks on.
       'server/api/src/agent/extract/parser-node-keys.db.test.ts',
