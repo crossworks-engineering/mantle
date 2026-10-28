@@ -13,8 +13,10 @@
  * (one job per node at a time), and here llmWorkAllowed (the item is read by
  * a workspace with an assistant) and the hash (a publish that changed
  * neither the code nor the manifest makes no second call). Never in a
- * request or on a timer. Never a retry: a failed call is a skip, never a
- * throw, so pg-boss does not repeat a paid call; the next publish asks again.
+ * request or on a timer. Never a retry: a failed call is a terminal skip
+ * (APP_SUMMARY_FAILED) that names the hash it was made for, never a throw,
+ * so pg-boss does not repeat a paid call, and no later job (a rename, a
+ * re-signal, a re-index) asks again until the code or the manifest changes.
  */
 import { eq } from 'drizzle-orm';
 import {
@@ -33,6 +35,9 @@ import { getChatAdapter } from '@mantle/voice';
 import { appSummaryHash, sourceToText } from '@mantle/content';
 import { backgroundFence, errorMessage, withFenceNote } from '@mantle/std';
 import { log, startTrace, step } from '@mantle/tracing';
+
+/** The terminal skip of a failed call; its stamp carries the `hash`. */
+export const APP_SUMMARY_FAILED = 'app_summary_failed';
 
 /** The most of an app's own text the call reads (a hard input cap). */
 export const APP_SUMMARY_INPUT_MAX_CHARS = 12_000;
@@ -84,12 +89,22 @@ export type AppSummaryOutcome = {
   node: typeof nodes.$inferSelect;
   /**
    * 'written': one call made and its summary written; 'failed': the call
-   * was made (or its answer could not be written) and there is no new
-   * summary; 'none': no call (not an app with published code, a summary
-   * kept, no assistant reads it, or no summarizer wired).
+   * was made (or its answer could not be written), or one failed already
+   * for this same code, and there is no new summary; 'none': no call (not
+   * an app with published code, a summary kept, no assistant reads it, or
+   * no summarizer wired).
    */
   status: 'written' | 'failed' | 'none';
+  /** With 'failed': the hash the failed call was made for. */
+  hash?: string;
 };
+
+/** A call for this `hash` failed already: the terminal skip's stamp. */
+function failedBefore(data: unknown, hash: string): boolean {
+  const stamp = (data as Record<string, unknown> | null)?.extract_skipped as
+    Record<string, unknown> | undefined;
+  return stamp?.reason === APP_SUMMARY_FAILED && stamp.hash === hash;
+}
 
 /**
  * Make an app's summary in its extract job, when its published code has
@@ -114,6 +129,8 @@ export async function summarizeAppForIndex(
   const hash = appSummaryHash(app.source, app.manifest);
   const plan = planPublishedSummary(readPublishedSummary(node.data), null, hash);
   if (plan.do !== 'generate') return none;
+  // A call for this same code failed: no second paid call until it changes.
+  if (failedBefore(node.data, hash)) return { node, status: 'failed', hash };
   // The extractor's cost guard: no workspace with an assistant reads it.
   if (!(await llmWorkAllowed(node.id))) return none;
   const route = await resolveDefaultWorker(
@@ -130,7 +147,7 @@ export async function summarizeAppForIndex(
       body: appSummaryBody({ manifest: app.manifest, source: app.source }),
     });
     const summary = made ? newPublishedSummary(made.text, 'publish', hash, made.model) : null;
-    if (!summary) return { node, status: 'failed' };
+    if (!summary) return { node, status: 'failed', hash };
     // Written at once, before any embedding: a later failure that retries
     // the job finds it kept (the same hash) and calls nothing.
     await writePublishedSummary(db, node.id, summary);
@@ -138,7 +155,7 @@ export async function summarizeAppForIndex(
     return { node: fresh ?? node, status: 'written' };
   } catch (err) {
     log('app-summary').warn(`${node.id}: no summary (${errorMessage(err)})`);
-    return { node, status: 'failed' };
+    return { node, status: 'failed', hash };
   }
 }
 

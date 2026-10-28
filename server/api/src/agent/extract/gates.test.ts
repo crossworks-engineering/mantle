@@ -122,7 +122,10 @@ vi.mock('./index-writes', () => ({
   writeRetrievalChunks: h.writeRetrievalChunks,
   writePublishedSummaryIndex: h.writePublishedSummaryIndex,
 }));
-vi.mock('./app-summary', () => ({ summarizeAppForIndex: h.summarizeAppForIndex }));
+vi.mock('./app-summary', () => ({
+  APP_SUMMARY_FAILED: 'app_summary_failed',
+  summarizeAppForIndex: h.summarizeAppForIndex,
+}));
 
 import { admitForExtraction } from './gates';
 import { sqlValues } from './test-support';
@@ -372,6 +375,28 @@ describe('admitForExtraction — refusals', () => {
     expect(disposition()).toBe('app_summary_failed');
     expect(writtenJson()).toContain('app_summary_failed');
     expect(h.writePublishedSummaryIndex).not.toHaveBeenCalled();
+  });
+
+  it('a failed call over an older generated summary indexes that summary, then stamps the skip with the hash', async () => {
+    const stale = {
+      ['published' + '_summary']: {
+        text: 'Old.',
+        source: 'publish',
+        hash: 'h0',
+        at: 'x',
+        model: 'm',
+      },
+    };
+    h.selectQueue.push([node({ type: 'app', data: stale })]);
+    h.summarizeAppForIndex.mockImplementationOnce(async (n: unknown) => ({
+      node: n,
+      status: 'failed',
+      hash: 'h1',
+    }));
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(h.writePublishedSummaryIndex).toHaveBeenCalledTimes(1);
+    expect(disposition()).toBe('app_summary_failed');
+    expect(writtenJson()).toContain('"hash":"h1"');
   });
 
   it('a type on the list never asks for an app summary', async () => {

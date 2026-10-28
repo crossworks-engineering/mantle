@@ -18,13 +18,15 @@ import { recordSkippedTrace } from '@mantle/tracing';
 export type SkipInit = Parameters<typeof recordSkippedTrace>[0] & { subjectId: string };
 
 /** Record the skip trace, then stamp the node terminal. `node` is the row as
- *  the job loaded it: its work stamp is the one the verdict answers. */
+ *  the job loaded it: its work stamp is the one the verdict answers. `extra`
+ *  goes on the stamp beside its reason (extractSkippedStamp). */
 export async function recordTerminalSkip(
   init: SkipInit,
   node: { readonly data: unknown },
+  extra?: Record<string, string>,
 ): Promise<void> {
   await recordSkippedTrace(init);
-  await stampExtractSkipped(init.subjectId, init.disposition, readIndexWork(node.data));
+  await stampExtractSkipped(init.subjectId, init.disposition, readIndexWork(node.data), extra);
 }
 
 /** Merge `data.extract_skipped = { reason, at: now() }` onto the node, and
@@ -40,11 +42,14 @@ export async function stampExtractSkipped(
   nodeId: string,
   reason: string,
   seen: ReturnType<typeof readIndexWork>,
+  extra?: Record<string, string>,
 ): Promise<void> {
   try {
     await db
       .update(nodes)
-      .set({ data: sql`${dropIndexWork(nodes.data, seen)} || ${extractSkippedStamp(reason)}` })
+      .set({
+        data: sql`${dropIndexWork(nodes.data, seen)} || ${extractSkippedStamp(reason, extra)}`,
+      })
       .where(eq(nodes.id, nodeId));
   } catch (err) {
     console.error(

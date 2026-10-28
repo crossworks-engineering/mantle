@@ -107,9 +107,11 @@ export const TERMINAL_EXTRACT_SKIPS: readonly string[] = [
 ];
 
 /** The jsonb to merge onto `nodes.data` for a terminal skip. `at` is the
- *  database clock, the same clock the drain compares with `updated_at`. */
-export function extractSkippedStamp(reason: string): SQL {
-  return sql`jsonb_build_object(${EXTRACT_SKIPPED_KEY}::text, jsonb_build_object('reason', ${reason}::text, 'at', now()))`;
+ *  database clock, the same clock the drain compares with `updated_at`.
+ *  `extra`: what else the verdict answers (an app's failed summary call
+ *  names the code it was made for, its `hash`). */
+export function extractSkippedStamp(reason: string, extra: Record<string, string> = {}): SQL {
+  return sql`jsonb_build_object(${EXTRACT_SKIPPED_KEY}::text, ${JSON.stringify(extra)}::jsonb || jsonb_build_object('reason', ${reason}::text, 'at', now()))`;
 }
 
 /** True on `nodes` when a terminal skip stamp is current: stamped at or after

@@ -756,6 +756,67 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     expect(h.summaryCalls).toBe(1);
     expect((await row(app.id)).skipped).toBe('app_summary_failed');
     expect(await lastDisposition(app.id)).toBe('app_summary_failed');
+    // The next job for the same code: no second call.
+    await extractNode(app.id, owner);
+    expect(h.summaryCalls).toBe(1);
+    expect((await row(app.id)).skipped).toBe('app_summary_failed');
+  });
+
+  it('J9 L1: a failed call over an older generated summary: that summary stays indexed, the skip is stamped, and no later job calls again until the code changes', async () => {
+    h.targetTypes = ['note'];
+    h.summarizerOn = true;
+    const app = await publishedApp('Valve log');
+    await extractNode(app.id, owner);
+    expect(h.summaryCalls).toBe(1);
+    const older = (await row(app.id)).summary;
+    expect(older).toBe('Logs pump readings per shift. Table: readings.');
+
+    // New code, and the provider is down: one call, it fails.
+    const build = (key: string) => ({
+      storageKey: `attachments/aa/bb/${key}`,
+      sha256: key,
+      builtAt: '2026-10-28T02:00:00.000Z',
+      esbuildVersion: 'test',
+      bytes: 1,
+      ok: true,
+    });
+    h.summaryFails = true;
+    await c.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "v2";');
+    await c.setDraftBuild(owner, app.id, build('v2'));
+    await c.publishApp(owner, app.id, { actor: 'owner' });
+    await extractNode(app.id, owner);
+    expect(h.summaryCalls).toBe(2);
+    let r = await row(app.id);
+    expect(r.skipped).toBe('app_summary_failed');
+    expect(await lastDisposition(app.id)).toBe('app_summary_failed');
+    expect(r.summary).toBe(older);
+    expect(textOf(r.vec)).toBe(`Valve log\n\n${older}`);
+    expect(r.work).toBeNull();
+
+    // A re-signal, a rename and a rebuild-only publish (the same code): no call.
+    await extractNode(app.id, owner);
+    await c.updateAppMeta(owner, app.id, { title: 'Valve log v2' });
+    await extractNode(app.id, owner);
+    await c.setDraftBuild(owner, app.id, build('v2-rebuild'));
+    await c.publishApp(owner, app.id, { actor: 'owner' });
+    await extractNode(app.id, owner);
+    expect(h.summaryCalls).toBe(2);
+    expect(h.modelCalls).toBe(0);
+    r = await row(app.id);
+    expect(r.skipped).toBe('app_summary_failed');
+    expect(r.summary).toBe(older);
+    expect(textOf(r.vec)).toBe(`Valve log v2\n\n${older}`);
+
+    // New code again, the provider back: one call, its summary, no skip.
+    h.summaryFails = false;
+    await c.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "v3";');
+    await c.setDraftBuild(owner, app.id, build('v3'));
+    await c.publishApp(owner, app.id, { actor: 'owner' });
+    await extractNode(app.id, owner);
+    expect(h.summaryCalls).toBe(3);
+    r = await row(app.id);
+    expect(r.skipped).toBeNull();
+    expect(r.summary).toBe('Logs pump readings per shift. Table: readings.');
   });
 
   it("J9: a canvas with no author's summary: the extractor's one text call writes its summary (no vision worker)", async () => {

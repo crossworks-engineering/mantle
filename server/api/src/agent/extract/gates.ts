@@ -85,7 +85,7 @@ import { maybeExtractEmbeddedImages } from './images';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 import { readNodeBodyLocal } from './load-body';
 import { writePublishedSummaryIndex, writeRetrievalChunks } from './index-writes';
-import { summarizeAppForIndex } from './app-summary';
+import { APP_SUMMARY_FAILED, summarizeAppForIndex } from './app-summary';
 
 /** The parser could not take a side pass's job: the extract fails so
  *  pg-boss tries again. */
@@ -584,27 +584,33 @@ export async function admitForExtraction(
     // A published app with none gets it here, in its extract job (Journal
     // v3 J9): at most one summarizer call, behind the gates above and the
     // cost guard and hash inside (app-summary.ts). A failed call is a
-    // terminal skip, never a throw: no retry repeats a paid call.
+    // terminal skip, never a throw: no retry repeats a paid call, and its
+    // stamp names the code it was made for, so no later job asks again for
+    // that code. An older summary the app still holds is indexed first: the
+    // index drops a skip stamp, so the stamp is written after it.
     const made = await summarizeAppForIndex(node, ownerId);
-    if (made.status === 'failed' && !readPublishedSummary(made.node.data)) {
+    const indexed = await indexFromPublishedSummary(made.node, ownerId);
+    if (made.status === 'failed') {
       await recordTerminalSkip(
         {
           kind: 'extractor_run',
           ownerId,
           subjectId: node.id,
           subjectKind: 'node',
-          disposition: 'app_summary_failed',
+          disposition: APP_SUMMARY_FAILED,
           details: {
             node_type: node.type,
             worker_slug: worker.slug,
-            hint: 'The summarizer call for this app failed or gave nothing; it is not retried. The next publish asks again (or pass `summary` on app_publish).',
+            indexed_older_summary: indexed,
+            hint: "The summarizer call for this app failed or gave nothing; it is not asked again until the app's code or manifest changes. An older summary it holds stays indexed. Pass `summary` on app_publish to give it one.",
           },
         },
         node,
+        made.hash ? { hash: made.hash } : undefined,
       );
       return { proceed: false };
     }
-    if (await indexFromPublishedSummary(made.node, ownerId)) return { proceed: false };
+    if (indexed) return { proceed: false };
     await recordTerminalSkip(
       {
         kind: 'extractor_run',
