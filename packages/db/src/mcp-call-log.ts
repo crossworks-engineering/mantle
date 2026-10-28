@@ -33,7 +33,8 @@ import { mcpCalls, type McpCallRow } from './schema/mcp-calls';
 
 /** A login's calls this close together are one work session. */
 export const MCP_SESSION_GAP_MINUTES = 30;
-/** Rows older than this go (the nightly `mcp-calls-reap` sweep). */
+/** Rows older than this go (the nightly `mcp-calls-reap` sweep,
+ *  server/web/lib/maintenance/mcp-calls-reap.ts). */
 export const MCP_CALLS_RETENTION_DAYS = 90;
 /** Rows in flight at once; past it a row is dropped and counted. */
 export const MCP_CALL_LOG_MAX_IN_FLIGHT = 32;
@@ -188,35 +189,4 @@ export async function listMcpCalls(filter: McpCallFilter = {}): Promise<McpCallR
     )
     .orderBy(desc(mcpCalls.createdAt), desc(mcpCalls.id))
     .limit(limit);
-}
-
-const REAP_BATCH = 10_000;
-
-/** Delete the rows past the retention (the `mcp-calls-reap` sweep, plain
- *  SQL in batches, no model). `dryRun` counts without deleting. Idempotent. */
-export async function reapMcpCalls(
-  opts: { now?: Date; dryRun?: boolean } = {},
-): Promise<{ deleted: number }> {
-  const now = opts.now ?? new Date();
-  const cutoff = new Date(
-    now.getTime() - MCP_CALLS_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  if (opts.dryRun) {
-    const [row] = (await db.execute(
-      sql`select count(*)::int as n from "public"."mcp_calls" where created_at < ${cutoff}::timestamptz`,
-    )) as unknown as { n: number }[];
-    return { deleted: row?.n ?? 0 };
-  }
-  let deleted = 0;
-  for (;;) {
-    const gone = await db
-      .delete(mcpCalls)
-      .where(
-        sql`${mcpCalls.id} in (
-          select id from "public"."mcp_calls" where created_at < ${cutoff}::timestamptz limit ${REAP_BATCH})`,
-      )
-      .returning({ id: mcpCalls.id });
-    deleted += gone.length;
-    if (gone.length < REAP_BATCH) return { deleted };
-  }
 }

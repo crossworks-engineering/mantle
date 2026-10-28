@@ -16,7 +16,7 @@
  * single run. It never fired once. One rule, one definition.
  */
 import { reapDeviceTokens } from '../auth/device-token-reap';
-import { db, reapMcpCalls, tryAdvisoryXactLock } from '@mantle/db';
+import { db, tryAdvisoryXactLock } from '@mantle/db';
 import {
   findDuplicateCandidates,
   mergeEntities,
@@ -40,6 +40,7 @@ import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
 import { runFilesStagedReap, summariseFilesStagedReap } from './files-staged-reap';
 import { summariseStoreSweep, sweepStores } from '@mantle/content/store-sweep';
 import { reapActorMisses, summariseActorMissesReap } from './actor-misses-reap';
+import { reapMcpCalls, summariseMcpCallsReap } from './mcp-calls-reap';
 import { errorMessage, NET_TIMEOUTS, withTimeout } from '@mantle/std';
 import { log } from '@mantle/tracing';
 
@@ -174,10 +175,7 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
   // Arch A2a: actor check miss rows older than 14 days.
   'actor-misses-reap': async () => summariseActorMissesReap(await reapActorMisses()),
   // Journal v3 J8: MCP call log rows older than 90 days.
-  'mcp-calls-reap': async () => {
-    const r = await reapMcpCalls();
-    return r.deleted === 0 ? 'nothing to reap' : `deleted ${r.deleted} MCP call row(s)`;
-  },
+  'mcp-calls-reap': async () => summariseMcpCallsReap(await reapMcpCalls()),
 };
 
 /** Double-fire guard: skip a sweep whose last cron run (any state — a failed

@@ -243,7 +243,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     cwd: 'server/web',
     applyFlag: '--apply',
     notes:
-      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in @mantle/db mcp-call-log.ts (reapMcpCalls), shared by the cron and the script.',
+      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in lib/maintenance/mcp-calls-reap.ts (reapMcpCalls), shared by the cron and the script.',
   },
   {
     slug: 'app-export-catch-up',

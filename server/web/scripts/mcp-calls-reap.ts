@@ -1,7 +1,7 @@
 /**
  * Trim the MCP call log (mcp_calls, Journal v3 J8): the CLI face of the
- * `mcp-calls-reap` maintenance sweep. The rule lives in @mantle/db
- * mcp-call-log.ts (reapMcpCalls), so the cron worker and this script share
+ * `mcp-calls-reap` maintenance sweep. The rule lives in
+ * lib/maintenance/mcp-calls-reap.ts (reapMcpCalls), so the cron worker and this script share
  * one definition. Plain SQL, no model.
  *
  * Usage:
@@ -10,7 +10,8 @@
  */
 
 import { env } from '@mantle/config';
-import { closeDb, MCP_CALLS_RETENTION_DAYS, reapMcpCalls } from '@mantle/db';
+import { closeDb } from '@mantle/db';
+import { MCP_CALLS_RETENTION_DAYS, reapMcpCalls } from '../lib/maintenance/mcp-calls-reap';
 
 if (!env('DATABASE_URL')) {
   console.error('mcp-calls-reap: DATABASE_URL must be set');
