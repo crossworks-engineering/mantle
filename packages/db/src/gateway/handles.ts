@@ -10,7 +10,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import type * as schema from '../schema/index';
 import { RuntimeFaultError } from '@mantle/std';
-import { narrowSystemOn, runtimeRoleOn } from '../runtime-role';
+import { runtimeRoleOn } from '../runtime-role';
 import {
   assertSystemDbCaller,
   carriedWriteScope,
@@ -28,7 +28,7 @@ import { sqlCode } from '../sql-text';
 import { withMigratorConnection } from '../migrator-connection';
 import { ACTOR_SQL_TAG } from './check-mode';
 import { actorParams, setActorSql } from './actor-sql';
-import { getAdminDb, getNarrowDb, getScopeMarkedDb } from './pools';
+import { getAdminDb, getNarrowDb } from './pools';
 import { loginWritesMayRoute, systemWriteDb, typedWrite } from './write-route';
 import { systemPoolTxInScope } from './system-tx';
 import { getDb } from './scope';
@@ -186,19 +186,11 @@ export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     const inScope = inTurnScope();
     if (inScope && systemDbAccessChecked(prop)) assertSystemDbCaller();
     // Plan v3.2 S7a: inside a turn or request scope its infrastructure
-    // writes (traces, spills, counters, logs) run on the narrow route while
-    // the switch is on; outside every scope (workers, boot) it is system
-    // work and runs full.
+    // writes (traces, spills, counters, logs) run on the narrow route;
+    // outside every scope (workers, boot) it is system work and runs full.
     // At a full-route spot (onFullSystemRoute) the system pool, as the
-    // spot's other statements. With the switch off the same statements run
-    // on the system pool with the narrow route marked (getScopeMarkedDb),
-    // so the would-refuse count (0320) counts what the role would refuse.
-    const narrowed = inScope && !systemDbOnSpot();
-    const handle = narrowed
-      ? narrowSystemOn()
-        ? getNarrowDb()
-        : getScopeMarkedDb()
-      : getAdminDb();
+    // spot's other statements.
+    const handle = inScope && !systemDbOnSpot() ? getNarrowDb() : getAdminDb();
     return Reflect.get(handle as object, prop);
   },
 });

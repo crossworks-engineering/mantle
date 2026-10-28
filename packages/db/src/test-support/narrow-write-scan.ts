@@ -28,7 +28,7 @@ import { join, relative } from 'node:path';
 import { getTableColumns, getTableName, is } from 'drizzle-orm';
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import { ACCESS_MATRIX, narrowMayWrite } from '../access-matrix';
-import { CALLED_FN } from '../gateway/narrow-would-refuse';
+import { CALLED_FN } from '../gateway/narrow-sendable';
 import { insertTurnsOn, NARROW_VALUE_SPOTS, turnsOn } from '../narrow-writes';
 
 export type ScannedWrite = {

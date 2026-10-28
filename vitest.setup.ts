@@ -19,7 +19,6 @@ import {
   takeActorMisses,
   takeNarrowDenials,
   takeNarrowUses,
-  takeNarrowWrites,
   takeWriteRoleGaps,
 } from './packages/db/src/actor';
 
@@ -43,16 +42,11 @@ afterEach(() => {
   // its why (viewer.ts AS_SYSTEM_ROUTE), or a table to grant narrowly.
   const denied = takeNarrowDenials();
   const uses = takeNarrowUses();
-  // Part a3: the narrow write counts (report only, never a failure).
-  const writes = takeNarrowWrites();
-  if (narrowDump && (denied.length > 0 || Object.keys(uses).length > 0 || writes.length > 0)) {
+  if (narrowDump && (denied.length > 0 || Object.keys(uses).length > 0)) {
     const file = expect.getState().testPath ?? '?';
     const lines = [
       ...Object.entries(uses).map(([actor, n]) => JSON.stringify({ use: actor, n, file })),
       ...denied.map((d) => JSON.stringify({ denied: d.actor, what: d.what, file })),
-      ...writes.map((w) =>
-        JSON.stringify({ write: w.check, actor: w.actor, what: w.detail, file }),
-      ),
     ];
     appendFileSync(narrowDump, `${lines.join('\n')}\n`);
   }

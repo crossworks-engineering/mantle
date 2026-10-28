@@ -15,10 +15,8 @@ import { onFullSystemRoute } from './viewer';
  * acting as it) at the spot login-credential when the exit's route is the
  * narrow one and a login it touches is held from the narrow login (the
  * owner or an Admin user: 0327's and 0328's hold, loginHeldFromNarrow),
- * else as it is. Read on the route the exit picked, not the switch, so
- * with the switch off the same write is at the spot and the would-refuse
- * count does not see it. The decision is onFullSystemRoute's own (its
- * `when`): one rule for every hold.
+ * else as it is. Read on the route the exit picked. The decision is
+ * onFullSystemRoute's own (its `when`): one rule for every hold.
  */
 export function onLoginHoldSpot<T>(
   who:

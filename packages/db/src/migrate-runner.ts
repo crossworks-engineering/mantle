@@ -8,7 +8,6 @@
 import type postgres from 'postgres';
 import { headsBypassesIn } from './heads-bypass';
 import { assertNoIdentityLeaks } from './identity-gateway';
-import { applyNarrowWouldRefuse, dropNarrowWouldRefuse } from './runtime-role';
 import {
   gapRefusal,
   gapWarning,
@@ -55,27 +54,8 @@ export async function applyJournal(
   if (plan.gaps.some((g) => g.refused)) throw new MigrationGapError(plan.gaps);
   for (const g of plan.gaps) out.warn(gapWarning(g));
 
-  // The would-refuse count's UPDATE OF triggers (runtime-role.ts) hold the
-  // columns they watch: a migration that drops or retypes one would fail
-  // on every migrated box (a fresh one has none, so CI would stay green).
-  // Dropped before the first pending migration; afterMigrations makes them
-  // again from the grants. The drop is inside the try: if it stops part
-  // way, or a migration fails, they are made again here (best effort) so
-  // the count does not go blind until the next migrate.
   if (plan.pending.length === 0) return 0;
-  try {
-    await dropNarrowWouldRefuse(sql);
-    return await applyPending(sql, plan.pending, out);
-  } catch (err) {
-    try {
-      await applyNarrowWouldRefuse(sql);
-    } catch (again) {
-      out.warn(
-        `  WARNING the narrow would-refuse triggers not made again after the failed migration (the next migrate makes them): ${String(again)}`,
-      );
-    }
-    throw err;
-  }
+  return await applyPending(sql, plan.pending, out);
 }
 
 async function applyPending(

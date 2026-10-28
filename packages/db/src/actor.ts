@@ -303,12 +303,8 @@ export function longStack(): string {
 }
 
 const recorded: ActorMiss[] = [];
-/** The narrow role's miss checks (plan v3.2 S7a): deduped by actor too. */
-const NARROW_CHECKS: ReadonlySet<string> = new Set([
-  'narrow-denied',
-  'narrow-content-write',
-  'narrow-cascade-delete',
-]);
+/** The narrow role's miss check (plan v3.2 S7a): deduped by actor too. */
+const NARROW_CHECKS: ReadonlySet<string> = new Set(['narrow-denied']);
 const loggedKeys = new Map<string, number>();
 let missLogger: ((m: ActorMiss) => void) | null = null;
 
@@ -447,51 +443,10 @@ export function takeActorMisses(): ActorMiss[] {
 /** A NOTICE from an item table's write trigger (migration 0275). */
 export const SQL_MISS_PREFIX = 'mantle actor miss: ';
 
-/** A NOTICE from the narrow write count (migration 0312, report only):
- *  `<check> <actor> <table> <op>`, check narrow-content-write or
- *  narrow-cascade-delete. */
-export const SQL_NARROW_PREFIX = 'mantle narrow write: ';
-
-/** Tests only: the narrow write counts seen (never a failure: they report
- *  what the narrow role would refuse; narrow-observe.db.test.ts reads them,
- *  MANTLE_NARROW_DUMP lists them). */
-const narrowWrites: ActorMiss[] = [];
-
-/** Tests: the narrow write counts since the last call, cleared. */
-export function takeNarrowWrites(): ActorMiss[] {
-  return narrowWrites.splice(0, narrowWrites.length);
-}
-
-/** A narrow write count (plan v3.2 S7a part a3): a miss row with its
- *  check, actor and table, as the actor check's misses are written (one
- *  per key an hour, on another connection). Report only. */
-function noteNarrowWrite(text: string): void {
-  const [check = '', actor = '', table = '', op = ''] = text.trim().split(/\s+/);
-  const miss: ActorMiss = { source: 'sql', check, actor, detail: `${table} ${op}`.trim() };
-  if (env('NODE_ENV') === 'test') {
-    narrowWrites.push(miss);
-    return;
-  }
-  noteActorMiss(miss);
-}
-
-/** A call the narrow role could not make (a function it may not EXECUTE),
- *  sent off the narrow route (the switch off) by a statement that route
- *  would take: counted as the database counts a refused write (0320), so
- *  the would-refuse count has no blind spot for refused calls. */
-export function noteNarrowWouldRefuse(actor: string, detail: string): void {
-  noteNarrowWrite(`narrow-would-refuse ${actor} ${detail}`);
-}
-
-/** gateway/pools.ts's onnotice: a trigger's miss becomes a miss, a narrow
- *  write count a miss row of its own check; anything else is printed as
- *  postgres.js prints notices by default. */
+/** gateway/pools.ts's onnotice: a trigger's miss becomes a miss; anything
+ *  else is printed as postgres.js prints notices by default. */
 export function onPgNotice(notice: { message?: string; severity?: string }): void {
   const msg = notice.message ?? '';
-  if (msg.startsWith(SQL_NARROW_PREFIX)) {
-    noteNarrowWrite(msg.slice(SQL_NARROW_PREFIX.length));
-    return;
-  }
   if (msg.startsWith(SQL_MISS_PREFIX)) {
     noteActorMiss({
       source: 'sql',

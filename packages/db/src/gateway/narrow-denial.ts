@@ -3,19 +3,13 @@
  * does not hold, and a statement the text check refused before it was sent
  * (narrow-sendable.ts). One note per error, in both pools' paths
  * (narrow-route.ts), and the one helper that runs the text check and notes
- * its refusal in both switch states (sendOrNote).
+ * its refusal (checkSendable).
  */
 import { env } from '@mantle/config';
 import { causeChain } from '@mantle/std';
 import { refusalOf } from '../pg-error';
-import {
-  actorSetting,
-  currentActor,
-  noteActorMiss,
-  noteNarrowWouldRefuse,
-  noteTestNarrowDenial,
-} from '../actor';
-import { narrowSendable, textRefusalOf, textReason } from './narrow-sendable';
+import { actorSetting, currentActor, noteActorMiss, noteTestNarrowDenial } from '../actor';
+import { narrowSendable, textRefusalOf } from './narrow-sendable';
 
 /** The actor's setting, or 'none' with no actor bound. */
 function whoNow(): string {
@@ -56,22 +50,16 @@ export function noteNarrowDenial(err: unknown): void {
 
 /**
  * The text check the narrow route runs before it sends a statement
- * (narrowSendable), its refusal noted: the one helper for both switch
- * states. On the route (`on`): noted as a denial, `text:<what>`
- * (noteNarrowDenial), and thrown, the statement never sent. Off it (the
- * switch off, on a route that would be narrow): counted as
- * narrow-would-refuse `text:<what> TEXT`, and the statement goes. `tagged`:
- * a tagged template's text, its values joined as `$1`.
+ * (narrowSendable), its refusal noted as a denial, `text:<what>`
+ * (noteNarrowDenial), and thrown, the statement never sent. `tagged`: a
+ * tagged template's text, its values joined as `$1`.
  */
-export function sendOrNote(query: string, tagged: boolean, on: boolean): void {
+export function checkSendable(query: string, tagged: boolean): void {
   try {
     narrowSendable(query, tagged);
   } catch (err) {
-    if (on) {
-      noteNarrowDenial(err);
-      throw err;
-    }
-    noteNarrowWouldRefuse(whoNow(), `${textReason(err)} TEXT`);
+    noteNarrowDenial(err);
+    throw err;
   }
 }
 

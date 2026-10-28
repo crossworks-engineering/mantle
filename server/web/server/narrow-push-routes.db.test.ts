@@ -30,7 +30,6 @@ describe.skipIf(!URL)('the push device routes on the narrow route', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let ts: Ts;
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
-  let rr: typeof import('@mantle/db/runtime-role');
   let m: typeof import('@mantle/db');
   let tokens: typeof import('../lib/auth/tokens');
   let su: ReturnType<typeof postgres>;
@@ -68,9 +67,6 @@ describe.skipIf(!URL)('the push device routes on the narrow route', () => {
         headers: { 'content-type': 'application/json' },
       });
     }) as typeof fetch;
-    rr = await import('@mantle/db/runtime-role');
-    // The narrow route whatever the run's switch: the cells are about it.
-    rr.setNarrowSystemForTests(true);
     m = await import('@mantle/db');
     tokens = await import('../lib/auth/tokens');
     const { createApp } = await import('./app');
@@ -80,7 +76,6 @@ describe.skipIf(!URL)('the push device routes on the narrow route', () => {
   afterAll(async () => {
     globalThis.fetch = realFetch;
     await m?.closeDb();
-    rr?.setNarrowSystemForTests(null);
     await su?.end();
     await scratch?.drop();
   });

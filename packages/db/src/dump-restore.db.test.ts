@@ -299,14 +299,10 @@ describe.skipIf(!DB_URL || (!tools && !ci))('a dump of a migrated brain restores
       expect((await owners()).map((o) => o.owner)).toEqual(['postgres']);
       // The migrate that follows a restore (migrator-steps.ts).
       const key = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
-      await afterMigrations(
-        sql,
-        await ensureRuntimeRoles(sql, key, { login: true, narrowLogin: true }),
-        {
-          info: () => {},
-          warn: () => {},
-        },
-      );
+      await afterMigrations(sql, await ensureRuntimeRoles(sql, key, { login: true }), {
+        info: () => {},
+        warn: () => {},
+      });
       expect((await owners()).map((o) => o.owner)).toEqual([OWNER_ROLE]);
       expect(await tsMatchLeakproof(sql)).toBe(true);
       const [rights] = await sql<{ write: boolean; key: boolean; switch: boolean }[]>`

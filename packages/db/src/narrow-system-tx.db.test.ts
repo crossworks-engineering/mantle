@@ -38,8 +38,6 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     rr = await import('./runtime-role');
-    // The narrow route whatever the run's switch: the cells are about it.
-    rr.setNarrowSystemForTests(true);
     v = await import('./viewer');
     m = await import('./index');
     pools = await import('./gateway/pools');
@@ -50,7 +48,6 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
 
   afterAll(async () => {
     await m?.closeDb();
-    rr?.setNarrowSystemForTests(null);
     await su?.end();
     await scratch?.drop();
   });

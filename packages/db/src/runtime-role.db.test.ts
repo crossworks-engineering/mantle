@@ -99,7 +99,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     scratch = await createMigratedScratchDatabase(URL!);
     admin = postgres(scratch.url, { max: 1, onnotice: () => {} });
     // The cluster roles with a login (the global setup makes them too).
-    expect(await ensureRuntimeRoles(admin, KEY, { login: true, narrowLogin: true })).toBe('ok');
+    expect(await ensureRuntimeRoles(admin, KEY, { login: true })).toBe('ok');
     rt = postgres(runtimeDatabaseUrl(scratch.url, runtimeRolePassword(KEY)), {
       max: 1,
       onnotice: () => {},
@@ -846,7 +846,6 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
       expect(
         await ensureRuntimeRoles(admin, KEY, {
           login: true,
-          narrowLogin: true,
           warn: (l) => warned.push(l),
         }),
       ).toBe('ok');
@@ -1067,9 +1066,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
           ),
         ).toBe(true);
       }
-      expect(
-        await ensureRuntimeRoles(admin, KEY, { login: true, narrowLogin: true, warn: () => {} }),
-      ).toBe('ok');
+      expect(await ensureRuntimeRoles(admin, KEY, { login: true, warn: () => {} })).toBe('ok');
       // Who is a member of mantle_owner now: the runtime role, and no other
       // role that is not a superuser.
       const members = await admin<{ name: string }[]>`

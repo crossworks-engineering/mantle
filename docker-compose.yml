@@ -239,11 +239,6 @@ x-app-env: &app-env
   # pg-boss. Unset = as before, and the app logs a warning. Per box, with the
   # owner's go: the roll steps and the rollback are in the doc.
   MANTLE_DB_RUNTIME_ROLE: ${MANTLE_DB_RUNTIME_ROLE:-}
-  # The narrow system route (docs/runtime-role.md, "The narrow route"): 1 =
-  # the system work of a reason routed narrow runs as mantle_system_narrow.
-  # Unset = on (since S7b); per box, the kill switch is 0 (then
-  # `docker compose up -d`: migrate takes the role's login, the app the old route).
-  MANTLE_NARROW_SYSTEM: ${MANTLE_NARROW_SYSTEM:-}
   # Toolsmith WRITES over MCP (default on; =0 exposes the kit read-only).
   MANTLE_MCP_TOOLSMITH_WRITE: ${MANTLE_MCP_TOOLSMITH_WRITE:-}
   # The parser service (below): every untrusted file the brain reads goes

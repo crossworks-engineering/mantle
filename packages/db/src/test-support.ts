@@ -64,7 +64,6 @@ import {
   APP_SCHEMAS,
   applyRuntimeGrants,
   ensureRuntimeRoles,
-  NarrowWouldRefuseBeforeError,
   ownTables,
   RUNTIME_ROLE,
   RUNTIME_ROLES,
@@ -702,11 +701,7 @@ export async function createScratchDatabaseBefore(
   drop: () => Promise<void>;
   /** Applies `tag` and every later migration, or only those before
    *  `untilTag` when given (a test of one migration stops before the next
-   *  one that rewrites the same rows), then the grants. An `untilTag`
-   *  that leaves 0320 applied and 0328 not (0321 to 0328) throws
-   *  NarrowWouldRefuseBeforeError from the grants, as a box's migrate
-   *  stopped there warns: the would-refuse triggers are made from 0328's
-   *  derivation. Stop at 0320 or before, or run past 0328. */
+   *  one that rewrites the same rows), then the grants. */
   migrateRest: (untilTag?: string) => Promise<void>;
 }> {
   const journal = JSON.parse(
@@ -724,13 +719,7 @@ export async function createScratchDatabaseBefore(
     // A9), as a box at that migration has them: a test seeds the old world
     // through the app's pool.
     await ownTables(sql);
-    // A schema between 0320 and 0328 (`tag` 0321 to 0328) has no
-    // derivation to make the would-refuse triggers from: the grants are
-    // made, the triggers left out (as on a box whose migrate stopped
-    // there); migrateRest past 0328 makes them.
-    await applyRuntimeGrants(sql).catch((err: unknown) => {
-      if (!(err instanceof NarrowWouldRefuseBeforeError)) throw err;
-    });
+    await applyRuntimeGrants(sql);
     // And EXECUTE on every function of that schema: the allowlist reads
     // the viewer roles' grants of the final schema (0278 gives the write
     // role mantle_is_brain_space, say), which an older one lacks, and no
@@ -819,7 +808,7 @@ export async function ensureTestViewerRoles(url: string, masterKey: string): Pro
     // MANTLE_DB_RUNTIME_ROLE=1 logs its pools in as mantle_runtime, and the
     // narrow route's pool logs in as mantle_system_narrow, their passwords
     // from this key.
-    await ensureRuntimeRoles(sql, masterKey, { login: true, narrowLogin: true });
+    await ensureRuntimeRoles(sql, masterKey, { login: true });
   } finally {
     await sql.end();
   }
@@ -931,8 +920,4 @@ export function findPgTools(url: string, containerName?: string): PgTools | null
 
 /** The narrow denials a cell caused on purpose, drained so the run's check
  *  (vitest.setup.ts) does not count them. */
-export { takeNarrowDenials, takeNarrowUses, takeNarrowWrites, takeSpotUses } from './actor';
-
-/** The would-refuse count's call reading, timed by the scan cost cell
- *  (a2a-round-trips.db.test.ts). */
-export { calledMantleFunctions } from './gateway/narrow-would-refuse';
+export { takeNarrowDenials, takeNarrowUses, takeSpotUses } from './actor';

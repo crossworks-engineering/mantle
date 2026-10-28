@@ -34,15 +34,15 @@
  *    write role's own membership tests (0277, 0278) count only a direct
  *    membership, so the system pool is still "not the write role's login"
  *    there, as it was as the superuser.
- *  - mantle_system_narrow: the narrow system role. It logs in only when
- *    migrate sees MANTLE_NARROW_SYSTEM on (LOGIN, its password derived from
- *    MANTLE_MASTER_KEY as the runtime role's is, another label; NOLOGIN
- *    otherwise), and the narrow route's own pool logs in as it
+ *  - mantle_system_narrow: the narrow system role. Migrate gives it its
+ *    login (LOGIN, its password derived from MANTLE_MASTER_KEY as the
+ *    runtime role's is, another label; NOLOGIN in per-database mode or with
+ *    no master key), and the narrow route's own pool logs in as it
  *    (narrowDatabaseUrl, gateway/pools.ts), so a narrow session holds no
  *    other role to go back to. BYPASSRLS, owns nothing (the narrow route's text check refuses
  *    the large-object functions that would make it an owner), member of
  *    nothing, and its rights come
- *    from the access matrix (narrowFor): read only on the content tables,
+ *    from the access matrix (narrowFor): nothing on the content tables,
  *    read and write on the system and admin tables, nothing where the
  *    runtime role has nothing, and EXECUTE on the runtime role's allowlist
  *    less NARROW_DENIED_FUNCTIONS. The runtime role may SET ROLE to it (no
@@ -511,8 +511,7 @@ export function narrowDatabaseUrl(): string | null {
   if (!url) throw new Error('DATABASE_URL must be set');
   if (feature('viewerRolesPerDatabase')) return null;
   const key = env('MANTLE_MASTER_KEY');
-  if (!key)
-    throw new Error('MANTLE_NARROW_SYSTEM needs MANTLE_MASTER_KEY (the narrow role password)');
+  if (!key) throw new Error('the narrow route needs MANTLE_MASTER_KEY (the narrow role password)');
   return runtimeDatabaseUrl(url, narrowRolePassword(key), NARROW_ROLE);
 }
 
@@ -541,17 +540,17 @@ export async function readNarrowLogin(sql: Sql): Promise<NarrowLoginRow | null> 
 /** What readNarrowLogin reads. */
 export type NarrowLoginRow = { login: boolean; settings: number };
 
-/** The fix for a narrow role that cannot log in while the switch is on:
- *  the boot line and the narrow route's error both name it. */
+/** The fix for a narrow role that cannot log in: the boot line and the
+ *  narrow route's error both name it. */
 export const NARROW_LOGIN_FIX =
-  'run migrate with MANTLE_NARROW_SYSTEM on (it gives mantle_system_narrow its login and password), or set MANTLE_NARROW_SYSTEM=0';
+  'run migrate as a superuser on Postgres 16 or later, with MANTLE_MASTER_KEY set (it gives mantle_system_narrow its login and password)';
 
 /**
  * The boot line's warning about the narrow role, or null when there is
- * none. `loginPool`: the switch is on and the route logs in as the role
- * (narrowDatabaseUrl not null). A role with no login (or none at all)
+ * none. `loginPool`: the route logs in as the role (narrowDatabaseUrl not
+ * null, outside per-database mode). A role with no login (or none at all)
  * then fails every narrow statement, closed: the line names the fix. A
- * setting stored on the role is named whatever the switch: the narrow
+ * setting stored on the role is named whatever the mode: the narrow
  * pool's startup parameters win over search_path, TimeZone and DateStyle,
  * and the next migrate takes every one back.
  */
@@ -559,7 +558,7 @@ export function narrowLoginNote(row: NarrowLoginRow | null, loginPool: boolean):
   const lines: string[] = [];
   if (loginPool && !row?.login) {
     lines.push(
-      `[db] MANTLE_NARROW_SYSTEM is on but ${NARROW_ROLE} ${
+      `[db] the narrow route logs in as ${NARROW_ROLE}, but it ${
         row ? 'cannot log in' : 'does not exist'
       }: every narrow statement fails until you ${NARROW_LOGIN_FIX}`,
     );
@@ -575,32 +574,6 @@ export function narrowLoginNote(row: NarrowLoginRow | null, loginPool: boolean):
 /** Whether this process's pools log in as the runtime role. */
 export function runtimeRoleOn(): boolean {
   return feature('dbRuntimeRole');
-}
-
-/** The narrow route's switch, read once per process (narrowSystemOn). */
-let narrowSystem: boolean | null = null;
-
-/**
- * Whether the system pool sends the work of a reason routed 'narrow'
- * (viewer.ts AS_SYSTEM_ROUTE, REQUEST_SYSTEM_ROUTE) as the narrow system
- * role (plan v3.2 S7a): MANTLE_NARROW_SYSTEM, on by default everywhere
- * since S7b (production too); 0, off or false is the per-box kill switch
- * (docs/runtime-role.md, "The kill switch"). Read once, when the system pool
- * opens (gateway/pools.ts), and by migrate (the role's login follows it); a
- * production process logs it with the pool's login (reportDbRole). Off,
- * every statement runs as before.
- */
-export function narrowSystemOn(): boolean {
-  if (narrowSystem === null) {
-    narrowSystem = feature('narrowSystem');
-  }
-  return narrowSystem;
-}
-
-/** Tests only (not in index.ts): the narrow route's switch; null reads
- *  MANTLE_NARROW_SYSTEM again. */
-export function setNarrowSystemForTests(on: boolean | null): void {
-  narrowSystem = on;
 }
 
 /**
@@ -806,8 +779,8 @@ function roleAttrs(role: string, password: string | null): string {
   }
   // The narrow system role reads and writes past the row rules, as the
   // system pool does, but only where the access matrix lets it
-  // (applyNarrowGrants). The narrow route's own pool logs in as it while
-  // MANTLE_NARROW_SYSTEM is on (its password given), never otherwise.
+  // (applyNarrowGrants). The narrow route's own pool logs in as it when
+  // its password is given (a master key, outside per-database mode).
   if (role === NARROW_ROLE) {
     return password
       ? `LOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT ${NARROW_CONNECTION_LIMIT} PASSWORD '${password}'`
@@ -974,8 +947,8 @@ export async function takeBackMemberships(
  * runtime role logs in only when `login` (migrate: MANTLE_DB_RUNTIME_ROLE
  * on), with a master key and outside per-database mode; otherwise it is
  * NOLOGIN with no password, so switching the switch off closes the login at
- * the next migrate. The narrow role the same, by `narrowLogin`
- * (MANTLE_NARROW_SYSTEM). Needs a superuser (a BYPASSRLS role is a superuser's to
+ * the next migrate. The narrow role logs in whenever there is a master key
+ * outside per-database mode (the narrow route is always on). Needs a superuser (a BYPASSRLS role is a superuser's to
  * make): any other caller changes nothing and gets 'not-superuser'.
  * Postgres 16 or later (membership options). Before the migrations: they
  * and the grants name the roles. `warn`: each membership taken back
@@ -986,9 +959,6 @@ export async function ensureRuntimeRoles(
   masterKey: string | null,
   opts: {
     login: boolean;
-    /** MANTLE_NARROW_SYSTEM as migrate sees it: the narrow role logs in only
-     *  then (with a master key, outside per-database mode). */
-    narrowLogin?: boolean;
     perDatabase?: boolean;
     warn?: (line: string) => void;
   },
@@ -1016,8 +986,7 @@ export async function ensureRuntimeRoles(
     select rolname from pg_roles where rolname = any(${[...RUNTIME_ROLES]}::text[])`;
   const password =
     opts.login && masterKey && !opts.perDatabase ? runtimeRolePassword(masterKey) : null;
-  const narrowPassword =
-    opts.narrowLogin && masterKey && !opts.perDatabase ? narrowRolePassword(masterKey) : null;
+  const narrowPassword = masterKey && !opts.perDatabase ? narrowRolePassword(masterKey) : null;
   const statements = runtimeRoleStatements(
     new Set(rows.map((r) => r.rolname)),
     password,
@@ -1492,9 +1461,6 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       }
     }),
   );
-  // The would-refuse count's triggers follow the grants just made, table
-  // by table outside that transaction (applyNarrowWouldRefuse).
-  await applyNarrowWouldRefuse(sql);
 }
 
 /**
@@ -1574,233 +1540,4 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
   await tx.unsafe(`GRANT USAGE ON SCHEMA pgboss TO ${nr}`);
   await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA pgboss FROM ${nr}`);
   await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${nr}`);
-}
-
-/** The derived triggers of the would-refuse count (migration 0320). */
-export const NARROW_WOULD_REFUSE_TRIGGERS = Object.freeze({
-  INSERT: 'mantle_narrow_would_refuse_ins',
-  DELETE: 'mantle_narrow_would_refuse_del',
-  UPDATE: 'mantle_narrow_would_refuse_upd',
-} as const);
-
-/** A lock wait or a deadlock: a trigger step's table was busy (the first
- *  roll, the old app still serving); the step retries that table. */
-const TRIGGER_RETRY_CODES = new Set(['55P03', '40P01']);
-
-/** One table's trigger step in its own transaction, `lock_timeout` 3 s,
- *  retried on a lock wait or a deadlock (as syncWriteRoleRules). */
-async function perTableStep(sql: Sql, step: (tx: Sql) => Promise<void>): Promise<void> {
-  // Eight tries, one second apart, on a lock wait or a deadlock only.
-  await withRetry(
-    () =>
-      withRoleRetry(() =>
-        sql.begin(async (tx) => {
-          await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
-          await step(tx as unknown as Sql);
-        }),
-      ),
-    {
-      retries: 7,
-      retryOn: ({ error }) => TRIGGER_RETRY_CODES.has((error as { code?: string }).code ?? ''),
-      delayMs: () => 1000,
-    },
-  );
-}
-
-type WouldRefuseRow = {
-  t: string;
-  ins: boolean;
-  del: boolean;
-  cols: string[];
-  have: string[];
-  /** Those of `have` that count: enabled (origin or always) and calling
-   *  the count's function. One by the name but not these is made again. */
-  ok: string[];
-  haveCols: string[];
-};
-
-/**
- * The would-refuse state of the app's tables (or of one): the derived
- * triggers the narrow role's grants call for, read from the database's one
- * derivation (mantle_narrow_would_refuse_expected, 0328: also read by
- * mantle_narrow_counter_missing and the box script), and the derived
- * triggers each has (and which of them count). The tables: those the derivation names, and those
- * holding a derived trigger it no longer calls for (dropped).
- */
-async function wouldRefuseRows(q: Sql, only: string | null): Promise<WouldRefuseRow[]> {
-  const names = Object.values(NARROW_WOULD_REFUSE_TRIGGERS);
-  return q<WouldRefuseRow[]>`
-    with e as (select * from public.mantle_narrow_would_refuse_expected())
-    select c.oid::regclass::text as t,
-           exists(select 1 from e where e.rel = c.oid
-                     and e.trigger_name = ${NARROW_WOULD_REFUSE_TRIGGERS.INSERT}) as ins,
-           exists(select 1 from e where e.rel = c.oid
-                     and e.trigger_name = ${NARROW_WOULD_REFUSE_TRIGGERS.DELETE}) as del,
-           coalesce((select array(select a.attname::text from unnest(e.cols) k(n)
-                                   join pg_attribute a on a.attrelid = c.oid and a.attnum = k.n
-                                  order by a.attnum)
-                       from e where e.rel = c.oid
-                        and e.trigger_name = ${NARROW_WOULD_REFUSE_TRIGGERS.UPDATE}),
-                    '{}') as cols,
-           array(select g.tgname::text from pg_trigger g
-                  where g.tgrelid = c.oid and not g.tgisinternal and g.tgname = any(${names}::text[])
-                  order by 1) as have,
-           array(select g.tgname::text from pg_trigger g
-                  where g.tgrelid = c.oid and not g.tgisinternal and g.tgname = any(${names}::text[])
-                    and g.tgenabled in ('O', 'A')
-                    and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')
-                  order by 1) as ok,
-           coalesce((select array(select a.attname::text from unnest(g.tgattr::int2[]) k(n)
-                                   join pg_attribute a on a.attrelid = c.oid and a.attnum = k.n
-                                  order by a.attnum)
-                       from pg_trigger g
-                      where g.tgrelid = c.oid and g.tgname = ${NARROW_WOULD_REFUSE_TRIGGERS.UPDATE}),
-                    '{}') as "haveCols"
-      from pg_class c join pg_namespace n on n.oid = c.relnamespace
-     where n.nspname = any(${[...APP_SCHEMAS]}::text[]) and c.relkind in ('r', 'p')
-       and not c.relispartition
-       and (${only}::text is null or c.oid = to_regclass(${only}::text))
-       and (c.oid in (select e.rel from e)
-            or exists (select 1 from pg_trigger g
-                        where g.tgrelid = c.oid and not g.tgisinternal
-                          and g.tgname = any(${names}::text[])))
-     order by 1`;
-}
-
-/** A change that brings one table's derived triggers to its grants. */
-type TriggerChange = { drop: string } | { create: string; on: string };
-
-/** The changes that bring one table's derived triggers to its grants
- *  (none when they already match). */
-function wouldRefuseChanges(r: WouldRefuseRow): TriggerChange[] {
-  const want = new Map<string, string>();
-  if (r.ins) want.set(NARROW_WOULD_REFUSE_TRIGGERS.INSERT, 'INSERT');
-  if (r.del) want.set(NARROW_WOULD_REFUSE_TRIGGERS.DELETE, 'DELETE');
-  if (r.cols.length > 0) {
-    want.set(
-      NARROW_WOULD_REFUSE_TRIGGERS.UPDATE,
-      `UPDATE OF ${r.cols.map((c) => quotedIdent(c)).join(', ')}`,
-    );
-  }
-  const out: TriggerChange[] = [];
-  for (const name of Object.values(NARROW_WOULD_REFUSE_TRIGGERS)) {
-    const has = r.have.includes(name);
-    const on = want.get(name);
-    // One by the name that is disabled, fires in replica mode only or
-    // calls another function counts nothing: dropped and made again, as
-    // mantle_narrow_counter_missing counts it missing.
-    const same =
-      has &&
-      r.ok.includes(name) &&
-      on !== undefined &&
-      (name !== NARROW_WOULD_REFUSE_TRIGGERS.UPDATE || r.haveCols.join() === r.cols.join());
-    if (same) continue;
-    if (has) out.push({ drop: name });
-    if (on) out.push({ create: name, on });
-  }
-  return out;
-}
-
-/** Make one table's changes (wouldRefuseChanges), in the caller's
- *  transaction. Names are the fixed trigger names; the table is the
- *  catalog's own regclass text. */
-async function applyTriggerChanges(tx: Sql, t: string, changes: TriggerChange[]): Promise<void> {
-  for (const c of changes) {
-    if ('drop' in c) {
-      await tx.unsafe(`DROP TRIGGER "${c.drop}" ON ${t}`);
-    } else {
-      await tx.unsafe(
-        `CREATE TRIGGER "${c.create}" AFTER ${c.on} ON ${t} FOR EACH STATEMENT EXECUTE FUNCTION "public"."mantle_narrow_would_refuse_stmt"()`,
-      );
-    }
-  }
-}
-
-/** The would-refuse triggers met a schema between 0320 and 0328: the
- *  derivation they are made from (mantle_narrow_would_refuse_expected) is
- *  0328's. Only a migrate that failed before 0328 meets it. */
-export class NarrowWouldRefuseBeforeError extends Error {
-  constructor() {
-    super(
-      'the narrow would-refuse triggers are made from migration 0328 (mantle_narrow_would_refuse_expected); the next migrate makes them',
-    );
-    this.name = 'NarrowWouldRefuseBeforeError';
-  }
-}
-
-/**
- * The narrow role's would-refuse count (migration 0320, report only),
- * derived from its live grants right after applyNarrowGrants: on every table of the app's schemas that the actor
- * check does not cover (0312 counts the content tables), a statement-level
- * AFTER INSERT where the role holds no INSERT, AFTER DELETE where it holds
- * no DELETE, and AFTER UPDATE OF the columns it may not update. A write
- * the role may make fires nothing; mantle_narrow_would_refuse_stmt counts
- * the rest when a narrow reason makes them off the narrow route. A
- * trigger is made, changed or dropped only when it differs from the
- * grants (the next migrate after a grant moves follows it) or does not
- * count (disabled, replica only, or calling another function: dropped
- * and made again, as mantle_narrow_counter_missing counts it), so a migrate
- * with nothing pending and no grant change takes no table lock; one with
- * a migration pending drops and makes again each UPDATE OF trigger (a
- * short lock per such table, twice). Partitions follow their
- * parent's trigger. Skipped on a schema before 0320; refused on one
- * before 0328 (NarrowWouldRefuseBeforeError: the derivation is 0328's
- * mantle_narrow_would_refuse_expected).
- *
- * Table by table, each in its own transaction with lock_timeout 3 s and a
- * retry on a lock wait or a deadlock (as syncWriteRoleRules): on a roll
- * the old app is still serving, and one long transaction holding every
- * table's lock could stall its writes or deadlock with them. An UPDATE OF
- * trigger records its columns as dependencies, so a migration that drops
- * or retypes one of them would fail: migrate drops the UPDATE OF
- * triggers before the first pending migration (dropNarrowWouldRefuse,
- * from applyJournal) and this step makes them again after the last.
- */
-export async function applyNarrowWouldRefuse(sql: Sql): Promise<void> {
-  const [fn] = await sql<{ ok: boolean; expected: boolean }[]>`
-    select to_regprocedure('public.mantle_narrow_would_refuse_stmt()') is not null as ok,
-           to_regprocedure('public.mantle_narrow_would_refuse_expected()') is not null as expected`;
-  if (!fn?.ok) return;
-  // Between 0320 and 0328 (a migrate that failed before 0328): no
-  // derivation to read. Thrown, so the runner's warning names it; the next
-  // migrate makes them.
-  if (!fn.expected) throw new NarrowWouldRefuseBeforeError();
-  for (const r of await wouldRefuseRows(sql, null)) {
-    if (wouldRefuseChanges(r).length === 0) continue;
-    await perTableStep(sql, async (tx) => {
-      // Read again inside the table's own transaction: what this run
-      // changes is what the table has now.
-      const [now] = await wouldRefuseRows(tx, r.t);
-      if (!now) return;
-      await applyTriggerChanges(tx, now.t, wouldRefuseChanges(now));
-    });
-  }
-}
-
-/**
- * Drop the derived would-refuse UPDATE OF triggers (migrate, before the
- * first pending migration: an UPDATE OF trigger holds its columns, so a
- * migration that drops or retypes one would fail on every migrated box,
- * while a fresh database, CI's, has none yet). Only those: an INSERT or
- * DELETE trigger holds no column (a dropped table takes its triggers
- * with it), so those tables are not locked for this. Table by table as
- * applyNarrowWouldRefuse; afterMigrations makes them again. Returns how
- * many tables it changed. A database before 0320 has none.
- */
-export async function dropNarrowWouldRefuse(sql: Sql): Promise<number> {
-  const name = NARROW_WOULD_REFUSE_TRIGGERS.UPDATE;
-  const tables = await sql<{ t: string }[]>`
-    select distinct c.oid::regclass::text as t
-      from pg_trigger g join pg_class c on c.oid = g.tgrelid
-     where not g.tgisinternal and g.tgname = ${name}
-     order by 1`;
-  for (const { t } of tables) {
-    await perTableStep(sql, async (tx) => {
-      const [has] = await tx<{ n: number }[]>`
-        select count(*)::int as n from pg_trigger g
-         where g.tgrelid = to_regclass(${t}) and not g.tgisinternal and g.tgname = ${name}`;
-      if ((has?.n ?? 0) > 0) await tx.unsafe(`DROP TRIGGER "${name}" ON ${t}`);
-    });
-  }
-  return tables.length;
 }

@@ -73,7 +73,6 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     rr = await import('./runtime-role');
-    rr.setNarrowSystemForTests(true);
     v = await import('./viewer');
     m = await import('./index');
     pools = await import('./gateway/pools');
@@ -89,7 +88,6 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
 
   afterAll(async () => {
     await m?.closeDb();
-    rr?.setNarrowSystemForTests(null);
     for (const c of [nl, su]) await c?.end();
     await scratch?.drop();
   });

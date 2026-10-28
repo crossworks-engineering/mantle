@@ -31,7 +31,7 @@ describe.skipIf(!URL)('the narrow login changes its own password (alone on the c
   afterAll(async () => {
     // Whatever happened above, the derived password again.
     if (rr) {
-      await rr.ensureRuntimeRoles(su, KEY(), { login: true, narrowLogin: true, warn: () => {} });
+      await rr.ensureRuntimeRoles(su, KEY(), { login: true, warn: () => {} });
     }
     await su?.end();
     await scratch?.drop();
@@ -72,9 +72,7 @@ describe.skipIf(!URL)('the narrow login changes its own password (alone on the c
     expect(await login(derived)).toBe('28P01');
     expect(await login('not-the-derived-one')).toBe(rr.NARROW_ROLE);
     // migrate's role step (beforeMigrations runs it each migrate).
-    expect(
-      await rr.ensureRuntimeRoles(su, KEY(), { login: true, narrowLogin: true, warn: () => {} }),
-    ).toBe('ok');
+    expect(await rr.ensureRuntimeRoles(su, KEY(), { login: true, warn: () => {} })).toBe('ok');
     expect(await login(derived)).toBe(rr.NARROW_ROLE);
     expect(await login('not-the-derived-one')).toBe('28P01');
   });

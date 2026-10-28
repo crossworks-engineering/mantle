@@ -47,8 +47,6 @@ describe.skipIf(!URL)('0317: the promotion and assistant delete on the narrow ro
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     rr = await import('@mantle/db/runtime-role');
-    // The narrow route whatever the run's switch: the cells are about it.
-    rr.setNarrowSystemForTests(true);
     m = await import('@mantle/db');
     v = await import('@mantle/db/viewer');
     content = await import('@mantle/content');
@@ -61,7 +59,6 @@ describe.skipIf(!URL)('0317: the promotion and assistant delete on the narrow ro
 
   afterAll(async () => {
     await m?.closeDb();
-    rr?.setNarrowSystemForTests(null);
     for (const c of [nl, su]) await c?.end();
     await scratch?.drop();
   });

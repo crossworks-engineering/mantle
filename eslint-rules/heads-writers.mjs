@@ -114,10 +114,6 @@ const DYNAMIC_UNSAFE_REVIEWED = new Map([
     "the narrow system route sends the caller's statement as it is, on the narrow role, with its one SET",
   ],
   [
-    'packages/db/src/gateway/narrow-would-refuse.ts',
-    "off the narrow route (the switch off) a transaction's statement goes as it is, its calls read by the would-refuse count",
-  ],
-  [
     'packages/db/src/gateway/system-tx.ts',
     "brokerLockTx runs the store broker's one statement as it is, on the raw system pool",
   ],
