@@ -141,6 +141,7 @@ function firstSentence(s: string | undefined): string {
 const peer_tools: BuiltinToolDef = {
   slug: 'peer_tools',
   policy: {
+    outside: { via: 'peer' }, // reaches the linked brain
     effect: 'read',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
@@ -207,7 +208,7 @@ const peer_call: BuiltinToolDef = {
     scope: { area: 'connectors', systemWhole: true },
     // Its arguments go out to the linked brain, and it may change it there
     // (A5 step 5).
-    outside: { egress: true },
+    outside: { via: 'peer', egress: true },
     peerRisky: true,
     clientSourced: CS.always(CS.OUTWARD),
   },
@@ -256,6 +257,7 @@ const peer_call: BuiltinToolDef = {
 const peer_file_copy: BuiltinToolDef = {
   slug: 'peer_file_copy',
   policy: {
+    outside: { via: 'peer' }, // reaches the linked brain
     matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'file_id', least: 'none' }],

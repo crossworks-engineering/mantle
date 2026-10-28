@@ -367,6 +367,7 @@ export const messenger_wait: BuiltinToolDef = {
 export const messenger_mark_read: BuiltinToolDef = {
   slug: 'messenger_mark_read',
   policy: {
+    idempotent: true, // the cursor only moves forward
     effect: 'write',
     matrix: { none: "the caller's own read cursor, not an item" },
     spends: 'none',

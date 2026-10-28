@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GatePolicy, Tool } from '@mantle/db';
 import type { BuiltinToolDef } from '@mantle/tools';
 import type { McpToolEntry } from './gated-tools';
-import { DESTRUCTIVE_WRITES, IDEMPOTENT_WRITES, toolAnnotations } from './tool-annotations';
+import { toolAnnotations } from './tool-annotations';
 
 /**
  * The pure derivation of the MCP tool hints from an entry and its policy.
@@ -28,18 +28,10 @@ const connector = (slug: string): McpToolEntry => ({
   surface: { kind: 'owner', via: 'mcp' } as never,
 });
 
-const read: GatePolicy = Object.freeze({ effect: 'read', scope: 'any' });
-const write: GatePolicy = Object.freeze({ effect: 'write', scope: 'any' });
-const egress: GatePolicy = Object.freeze({
-  effect: 'write',
-  scope: 'any',
-  fields: { outside: { egress: true } },
-});
-const readEgress: GatePolicy = Object.freeze({
-  effect: 'read',
-  scope: 'any',
-  fields: { outside: { untrusted: true, egress: true } },
-});
+const policy = (effect: 'read' | 'write', fields?: Record<string, unknown>): GatePolicy =>
+  Object.freeze({ effect, scope: 'any', ...(fields ? { fields } : {}) });
+const read = policy('read');
+const write = policy('write');
 
 describe('toolAnnotations', () => {
   it('a read: read-only, not destructive, idempotent, closed world', () => {
@@ -62,30 +54,46 @@ describe('toolAnnotations', () => {
     });
   });
 
-  it('a hard delete is destructive; a soft delete with an undelete is not', () => {
-    expect(toolAnnotations(builtin('page_delete'), write)?.destructiveHint).toBe(true);
+  it('a write whose policy says destructive is; one that does not is not', () => {
+    const del = toolAnnotations(builtin('page_delete'), policy('write', { destructive: true }));
+    expect(del?.destructiveHint).toBe(true);
+    expect(del?.idempotentHint).toBe(false);
     expect(toolAnnotations(builtin('app_delete'), write)?.destructiveHint).toBe(false);
-    expect(DESTRUCTIVE_WRITES.has('page_delete')).toBe(true);
-    expect(DESTRUCTIVE_WRITES.has('app_delete')).toBe(false);
   });
 
-  it('an upsert is idempotent; a create is not', () => {
-    expect(toolAnnotations(builtin('table_rows_upsert'), write)?.idempotentHint).toBe(true);
+  it('a write whose policy says idempotent is; a create is not', () => {
+    const up = toolAnnotations(builtin('table_rows_upsert'), policy('write', { idempotent: true }));
+    expect(up?.idempotentHint).toBe(true);
+    expect(up?.destructiveHint).toBe(false);
     expect(toolAnnotations(builtin('table_rows_add'), write)?.idempotentHint).toBe(false);
-    expect(IDEMPOTENT_WRITES.has('table_rows_upsert')).toBe(true);
   });
 
-  it('a tool whose policy reaches out, or a peer tool, is open world', () => {
+  it('a read ignores destructive and idempotent marks: never destructive, always idempotent', () => {
+    const r = toolAnnotations(builtin('x_get'), policy('read', { destructive: true }));
+    expect(r?.destructiveHint).toBe(false);
+    expect(r?.idempotentHint).toBe(true);
+  });
+
+  it('a tool whose policy reaches out (egress or a peer) is open world', () => {
+    const egress = policy('write', { outside: { egress: true } });
     expect(toolAnnotations(builtin('email_send'), egress)?.openWorldHint).toBe(true);
-    expect(toolAnnotations(builtin('web_search'), readEgress)).toEqual({
+    const search = policy('read', { outside: { untrusted: true, egress: true } });
+    expect(toolAnnotations(builtin('web_search'), search)).toEqual({
       title: 'web_search',
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: true,
     });
-    expect(toolAnnotations(builtin('peer_query'), read)?.openWorldHint).toBe(true);
+    const peer = policy('read', { outside: { via: 'peer', untrusted: true } });
+    expect(toolAnnotations(builtin('peer_query'), peer)?.openWorldHint).toBe(true);
+    const untrusted = policy('read', { outside: { untrusted: true } });
+    expect(toolAnnotations(builtin('email_get'), untrusted)?.openWorldHint).toBe(false);
     expect(toolAnnotations(builtin('search'), read)?.openWorldHint).toBe(false);
+    // An api row carries a string there (runtime-policy.ts): not an object, not open.
+    expect(toolAnnotations(builtin('x'), policy('write', { outside: 'http' }))?.openWorldHint).toBe(
+      false,
+    );
   });
 
   it('a definition follows the same rules under its policy', () => {
@@ -115,14 +123,9 @@ describe('toolAnnotations', () => {
     expect(toolAnnotations(builtin('x'), undefined)).toBeUndefined();
   });
 
-  it('never says read-only for a write, whatever the name', () => {
-    for (const name of ['search', 'note_get', 'page_get', ...IDEMPOTENT_WRITES]) {
-      expect(toolAnnotations(builtin(name), write)?.readOnlyHint, name).toBe(false);
+  it('never says read-only for a write, whatever the fields say', () => {
+    for (const fields of [{}, { idempotent: true }, { outside: { untrusted: true } }]) {
+      expect(toolAnnotations(builtin('search'), policy('write', fields))?.readOnlyHint).toBe(false);
     }
-  });
-
-  it('the two name lists never overlap on destructive-and-idempotent except the documented overwrites', () => {
-    const both = [...DESTRUCTIVE_WRITES].filter((n) => IDEMPOTENT_WRITES.has(n)).sort();
-    expect(both).toEqual(['file_create', 'file_upload', 'page_discard_draft']);
   });
 });

@@ -595,6 +595,7 @@ export const api_tool_delete: BuiltinToolDef = {
   usageTier: 3,
   optIn: 'toolsmithWrite',
   policy: {
+    destructive: true, // the user-defined tool row is gone
     matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',

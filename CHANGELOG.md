@@ -10,7 +10,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   annotations (`title`, `readOnlyHint`, `destructiveHint`,
   `idempotentHint`, `openWorldHint`), derived from its policy at
   registration (`packages/mcp-core/src/tool-annotations.ts`, one pure
-  function). `readOnlyHint` is true exactly when the declared policy says
+  function over facts each tool's policy declares: `effect`, the new
+  `destructive` and `idempotent`, `outside`). `readOnlyHint` is true exactly when the declared policy says
   `read`; `destructiveHint` marks a write that cannot be undone (the hard
   deletes, the shells, the file overwrites); `idempotentHint` a read or a
   documented upsert; `openWorldHint` the web tools, the mail and Telegram

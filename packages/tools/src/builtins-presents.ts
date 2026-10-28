@@ -1234,6 +1234,7 @@ async function exportClash(
 const present_delete: BuiltinToolDef = {
   slug: 'present_delete',
   policy: {
+    destructive: true, // not reversible
     matrix: { action: 'delete', param: 'id', kinds: ['present'] },
     deletesItem: true,
     effect: 'write',

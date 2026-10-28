@@ -244,6 +244,7 @@ const recall_map_create: BuiltinToolDef = {
 const recall_card_put: BuiltinToolDef = {
   slug: 'recall_card_put',
   policy: {
+    idempotent: true, // create or replace
     matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',

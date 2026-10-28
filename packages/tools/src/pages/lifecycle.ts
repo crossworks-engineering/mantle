@@ -488,6 +488,8 @@ export const page_commit: BuiltinToolDef = {
 export const page_discard_draft: BuiltinToolDef = {
   slug: 'page_discard_draft',
   policy: {
+    idempotent: true, // idempotent by its own word
+    destructive: true, // the draft cannot be undone
     matrix: { action: 'editDraft', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
@@ -525,6 +527,7 @@ export const page_delete: BuiltinToolDef = {
   slug: 'page_delete',
   usageTier: 4,
   policy: {
+    destructive: true, // irreversible
     matrix: { action: 'delete', param: 'id', kinds: ['page'] },
     deletesItem: true,
     effect: 'write',

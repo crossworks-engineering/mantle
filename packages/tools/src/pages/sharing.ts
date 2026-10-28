@@ -88,6 +88,7 @@ export const page_share: BuiltinToolDef = {
 export const page_unshare: BuiltinToolDef = {
   slug: 'page_unshare',
   policy: {
+    idempotent: true, // no-op when not shared
     matrix: { action: 'link', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',

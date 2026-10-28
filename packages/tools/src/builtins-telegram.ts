@@ -310,6 +310,7 @@ export const telegram_edit: BuiltinToolDef = {
 export const telegram_mark_processed: BuiltinToolDef = {
   slug: 'telegram_mark_processed',
   policy: {
+    idempotent: true, // a mark
     matrix: { none: 'a Telegram message is not an item' },
     effect: 'write',
     spends: 'none',

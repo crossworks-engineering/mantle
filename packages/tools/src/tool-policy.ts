@@ -166,6 +166,16 @@ type ToolPolicyFields = Readonly<{
    *  (tool-matrix.test.ts pins the two agree: the matrix itself is intent
    *  only, read by no product code). */
   deletesItem?: true;
+  /** The write cannot be undone (a hard delete, a free-form shell, an
+   *  overwrite): the MCP surface tells the client so (`destructiveHint`,
+   *  @mantle/mcp-core tool-annotations.ts). A soft delete with an undelete,
+   *  a draft edit a discard reverts, a restore that keeps what it
+   *  replaces: unset. Advisory: no gate reads it. */
+  destructive?: true;
+  /** Calling it again with the same arguments changes nothing more (an
+   *  upsert, a set, a mark, a no-op when already so): `idempotentHint`.
+   *  Every read is; a write says so itself. Advisory: no gate reads it. */
+  idempotent?: true;
   /** A create that lands in a folder named by its path (an ltree path, e.g.
    *  `parent_path`): the argument. Before a call is queued for approval the
    *  folder must resolve in the queuing turn's scope (A5 step 6a, carried
@@ -254,6 +264,8 @@ export function toGatePolicy(tp: ToolPolicy): GatePolicy {
       keySharedContent: tp.keySharedContent === true,
       memberApp: tp.memberApp ?? 'ok',
       ...(tp.outside ? { outside: tp.outside } : {}),
+      ...(tp.destructive ? { destructive: true } : {}),
+      ...(tp.idempotent ? { idempotent: true } : {}),
       ...(typeof s === 'object' && s.systemWhole ? { systemWhole: true } : {}),
     }),
   });

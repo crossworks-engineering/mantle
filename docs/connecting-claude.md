@@ -204,8 +204,8 @@ is in the Admin workspace; see [`mcp-as-a-login.md`](./mcp-as-a-login.md).)
 
 Every tool on the surface carries the MCP tool annotations (`title`,
 `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`),
-derived from its policy at registration
-(`packages/mcp-core/src/tool-annotations.ts`):
+derived at registration from facts its policy declares (`effect`,
+`destructive`, `idempotent`, `outside`; `packages/mcp-core/src/tool-annotations.ts`):
 
 - `readOnlyHint` is true exactly when the tool's declared policy says
   `read` (a read mutates nothing the owner owns and sends nothing out).

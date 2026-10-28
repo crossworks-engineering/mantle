@@ -480,6 +480,7 @@ const note_from_page: BuiltinToolDef = {
 export const note_delete: BuiltinToolDef = {
   slug: 'note_delete',
   policy: {
+    destructive: true, // the note is gone
     matrix: { action: 'delete', param: 'id', kinds: ['note'] },
     deletesItem: true,
     effect: 'write',

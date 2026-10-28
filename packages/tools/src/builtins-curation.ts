@@ -530,6 +530,7 @@ const model_pool_set: BuiltinToolDef = {
   slug: 'model_pool_set',
   usageTier: 7,
   policy: {
+    idempotent: true, // upsert
     matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',

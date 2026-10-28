@@ -99,6 +99,7 @@ export const tool_group_ensure: BuiltinToolDef = {
   usageTier: 2,
   optIn: 'toolsmithWrite',
   policy: {
+    idempotent: true, // create or update
     matrix: { none: 'a tool group is not an item' },
     effect: 'write',
     spends: 'none',

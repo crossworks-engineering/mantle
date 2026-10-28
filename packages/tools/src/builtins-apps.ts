@@ -494,6 +494,7 @@ const app_file_delete: BuiltinToolDef = {
 const app_source_set: BuiltinToolDef = {
   slug: 'app_source_set',
   policy: {
+    idempotent: true, // replaces the whole draft tree
     matrix: { action: 'editDraft', param: 'id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',
@@ -647,6 +648,7 @@ const app_build: BuiltinToolDef = {
 const app_tools_set: BuiltinToolDef = {
   slug: 'app_tools_set',
   policy: {
+    idempotent: true, // replaces the current list
     matrix: { action: 'editDraft', param: 'id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',
@@ -716,6 +718,7 @@ const app_db_schema_set: BuiltinToolDef = {
   slug: 'app_db_schema_set',
   usageTier: 3,
   policy: {
+    destructive: true, // a free-form DDL script on the app's live database (DROP is not blocked)
     matrix: { action: 'editDraft', param: 'id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',
@@ -1203,6 +1206,7 @@ const app_db_query: BuiltinToolDef = {
 const app_table_export_set: BuiltinToolDef = {
   slug: 'app_table_export_set',
   policy: {
+    idempotent: true, // create or refresh
     matrix: { action: 'editDraft', param: 'id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',
@@ -1499,6 +1503,7 @@ const app_snapshot_restore: BuiltinToolDef = {
 const app_snapshot_delete: BuiltinToolDef = {
   slug: 'app_snapshot_delete',
   policy: {
+    destructive: true, // irreversible
     // A snapshot's delete asks edit of the app, as the HTTP route does (not
     // the app's code).
     matrix: { action: 'edit', param: 'id', kinds: ['app'] },

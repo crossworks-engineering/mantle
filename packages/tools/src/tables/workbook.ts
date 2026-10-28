@@ -364,6 +364,7 @@ export const table_update: BuiltinToolDef = {
 export const table_delete: BuiltinToolDef = {
   slug: 'table_delete',
   policy: {
+    destructive: true, // irreversible
     matrix: { action: 'delete', param: 'id', kinds: ['table'] },
     deletesItem: true,
     effect: 'write',

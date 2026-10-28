@@ -210,6 +210,7 @@ export const sandbox_exec: BuiltinToolDef = {
   slug: 'sandbox_exec',
   usageTier: 3,
   policy: {
+    destructive: true, // a free-form shell in the sandbox
     matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
@@ -383,6 +384,7 @@ export const sandbox_stop: BuiltinToolDef = {
 export const sandbox_rm: BuiltinToolDef = {
   slug: 'sandbox_rm',
   policy: {
+    destructive: true, // the container goes; purge_files is irreversible
     matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
@@ -436,6 +438,7 @@ export const sandbox_rm: BuiltinToolDef = {
 export const sandbox_autostart: BuiltinToolDef = {
   slug: 'sandbox_autostart',
   policy: {
+    idempotent: true, // stores the one command
     matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
