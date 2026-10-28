@@ -115,6 +115,13 @@ export type MessengerConversation = {
 
 export type MessengerMention = { kind: MessengerParticipantKind; id: string };
 
+/** What a system line marks (calls plan section 8). The client tells a
+ *  call line apart by `type`; `callId` names the call (GET .../calls). */
+export type MessengerEvent =
+  | { type: 'call_started'; callId: string }
+  | { type: 'call_ended'; callId: string; seconds: number; participants: number }
+  | { type: 'call_cap'; callId: string; seconds: number; participants: number };
+
 export type MessengerReaction = { emoji: string; count: number; mine: boolean };
 
 export type MessengerMessage = {
@@ -136,6 +143,9 @@ export type MessengerMessage = {
   replyToSeq: number | null;
   clientMsgId: string | null;
   status: MessengerMessageStatus;
+  /** What a system line marks (a call started, ended or cut at the cap;
+   *  dto/calls.ts); null on every other row. */
+  event: MessengerEvent | null;
   editedAt: string | null;
   deletedAt: string | null;
   createdAt: string;

@@ -35,6 +35,9 @@ export const SYSTEM_DB_ALLOWLIST = [
   // own login id in every WHERE (the workspace role reads only its own
   // profile row). Writes nothing.
   'packages/content/src/people.ts',
+  // Calls (0342): the call rows beside the messenger's, written in the
+  // tapping login's request, by the webhook handler and by the reconciler.
+  'packages/content/src/messenger-calls.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
 ];
@@ -99,6 +102,7 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   'packages/content/src/messenger.ts': 'narrow',
   // The people gate's reads, in the login's request or MCP call.
   'packages/content/src/people.ts': 'narrow',
+  'packages/content/src/messenger-calls.ts': 'narrow',
   'packages/content/src/share-access-log.ts': 'narrow',
   'packages/content/src/team-access-log.ts': 'narrow',
   'packages/content/src/team-messages.ts': 'narrow',

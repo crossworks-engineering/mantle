@@ -7,8 +7,9 @@
  * sidecar to switch one; GET /api/services/status is the progress poll.
  */
 
-/** Each name is also the service's compose profile. */
-export type OptionalServiceName = 'sandboxes' | 'local-embedder' | 'helpers';
+/** Each name is also the service's compose profile. `calls` is LiveKit
+ *  (calls between people in the messenger). */
+export type OptionalServiceName = 'sandboxes' | 'local-embedder' | 'helpers' | 'calls';
 
 /**
  * - `off`: the compose profile is not active (the resting state).

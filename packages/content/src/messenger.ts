@@ -25,20 +25,23 @@
  *    routes and the MCP tools meet: one bucket per login, whichever path
  *    the call came by.
  */
-import { and, eq, inArray, lt, lte, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { envNum } from '@mantle/config';
 import {
   currentWorkspaceScope,
   db,
   loginPresence,
+  messengerCallParticipants,
   messengerConversations,
   messengerFavourites,
   messengerMessages,
   messengerParticipants,
   messengerReactions,
   systemDb,
+  type MessengerEventJson,
 } from '@mantle/db';
 import { InputError, defineDomainError, isUuid } from '@mantle/std';
+import { callsServiceOn, livekitClient, loginIdentity } from './livekit';
 import {
   PEOPLE_ONLINE_MS,
   agentFaces,
@@ -127,7 +130,7 @@ const budgets = new Map<string, { count: number; start: number }>();
 /** The e2e stack's factor (MANTLE_RATE_LIMIT_SCALE), as the routes'. */
 const BUDGET_SCALE = envNum('MANTLE_RATE_LIMIT_SCALE');
 
-function takeBudget(actor: MessengerActor, kind: BudgetKind): void {
+export function takeBudget(actor: MessengerActor, kind: BudgetKind): void {
   const max = (kind === 'send' ? MESSENGER_SENDS_PER_MIN : MESSENGER_WRITES_PER_MIN) * BUDGET_SCALE;
   const key = `${kind}:${actor.loginId.toLowerCase()}`;
   const now = Date.now();
@@ -231,6 +234,8 @@ export type MessengerMessageView = {
   replyToSeq: number | null;
   clientMsgId: string | null;
   status: 'complete' | 'pending' | 'failed';
+  /** What a system line marks (a call, 0342); null on every other row. */
+  event: MessengerEventJson | null;
   editedAt: string | null;
   deletedAt: string | null;
   createdAt: string;
@@ -270,12 +275,12 @@ export type MessengerDirectoryEntryView = {
 
 type Exec = { execute: (q: SQL) => Promise<unknown> };
 
-async function q<T>(on: Exec, query: SQL): Promise<T[]> {
+export async function q<T>(on: Exec, query: SQL): Promise<T[]> {
   return (await on.execute(query)) as unknown as T[];
 }
 
 /** A bigint from the driver (a string) or a number, as a number. */
-function num(v: unknown): number {
+export function num(v: unknown): number {
   return typeof v === 'number' ? v : Number(v ?? 0);
 }
 
@@ -319,7 +324,7 @@ function previewOf(body: string): string {
  *  system pool, or on `on`: inside a write's transaction always its own
  *  connection (a second one, under many concurrent sends, empties the
  *  pool). */
-async function loginNames(
+export async function loginNames(
   ids: readonly string[],
   on: Exec = systemDb,
 ): Promise<Map<string, string>> {
@@ -420,10 +425,13 @@ export async function messengerDirectory(
 }
 
 // ── Participant checks (system pool, inside the write's transaction) ─────────
+// lockForActor, lockConversation, appendMessage, loginNames, requireGroupAdmin
+// and takeBudget are exported for messenger-calls.ts only: a call is a fact
+// of a conversation and takes its seq and its participant rule from here.
 
-type Tx = Parameters<Parameters<typeof systemDb.transaction>[0]>[0];
+export type Tx = Parameters<Parameters<typeof systemDb.transaction>[0]>[0];
 
-type ParticipantRow = {
+export type ParticipantRow = {
   id: string;
   admin: boolean;
   left_at: Date | null;
@@ -434,7 +442,7 @@ type ParticipantRow = {
   muted: boolean;
 };
 
-type ConversationRow = {
+export type ConversationRow = {
   id: string;
   kind: 'direct' | 'group';
   title: string | null;
@@ -446,7 +454,7 @@ type ConversationRow = {
 
 /** Lock the conversation and read the actor's participant row; "not found"
  *  for a login that holds none (or a conversation of another brain). */
-async function lockForActor(
+export async function lockForActor(
   tx: Tx,
   actor: MessengerActor,
   conversationId: string,
@@ -473,15 +481,73 @@ async function lockForActor(
   return { conv, me };
 }
 
-function requireGroupAdmin(conv: ConversationRow, me: ParticipantRow): void {
+/** Lock a conversation with no actor (the webhook handler and the
+ *  reconciler, which act for the room, not a login); null when it is not
+ *  there. */
+export async function lockConversation(
+  tx: Tx,
+  conversationId: string,
+): Promise<ConversationRow | null> {
+  const [conv] = await q<ConversationRow>(
+    tx,
+    sql`select id::text as id, kind, title, archived_at, last_seq,
+               workspace_id::text as workspace_id, agent_id::text as agent_id
+          from messenger_conversations
+         where id = ${conversationId}::uuid
+         for update`,
+  );
+  return conv ?? null;
+}
+
+export function requireGroupAdmin(conv: ConversationRow, me: ParticipantRow): void {
   if (conv.kind !== 'group') throw new MessengerRefusedError('A direct chat has no admin.');
   if (!me.admin) throw new MessengerRefusedError('Only a group admin may do that.');
+}
+
+/** A login that leaves the chat, or is removed from it, is out of the
+ *  chat's open call too (calls plan section 11: the gate holds for the
+ *  room): its open stay closes here, in the same transaction, and the
+ *  caller tells the room after commit (dropFromRoom). Answers the room's
+ *  name when the chat has an open call, else null. */
+async function dropFromOpenCall(
+  tx: Tx,
+  conversationId: string,
+  loginId: string,
+): Promise<string | null> {
+  const [call] = await q<{ id: string; room_name: string }>(
+    tx,
+    sql`select id::text as id, room_name from messenger_calls
+         where conversation_id = ${conversationId}::uuid and ended_at is null
+         for update`,
+  );
+  if (!call) return null;
+  await tx
+    .update(messengerCallParticipants)
+    .set({ leftAt: sql`now()` })
+    .where(
+      and(
+        eq(messengerCallParticipants.callId, call.id),
+        eq(messengerCallParticipants.kind, 'login'),
+        eq(messengerCallParticipants.loginId, loginId),
+        isNull(messengerCallParticipants.leftAt),
+      ),
+    );
+  return call.room_name;
+}
+
+/** After commit: the room drops the identity (best effort; the reconciler
+ *  is the backstop). */
+async function dropFromRoom(room: string | null, loginId: string): Promise<void> {
+  if (!room || !callsServiceOn()) return;
+  await livekitClient()
+    .removeParticipant(room, loginIdentity(loginId))
+    .catch(() => {});
 }
 
 /** Insert one message at last_seq + 1 and move the conversation's
  *  counters, in the caller's transaction (the conversation row is locked).
  *  The one place a seq is taken. */
-async function appendMessage(
+export async function appendMessage(
   tx: Tx,
   conv: ConversationRow,
   m: {
@@ -493,6 +559,9 @@ async function appendMessage(
     mentions: MessengerMention[];
     replyToSeq: number | null;
     clientMsgId: string | null;
+    /** What a system line marks (a call event, 0342); null on every
+     *  ordinary row. */
+    event?: MessengerEventJson | null;
   },
 ): Promise<number> {
   const seq = num(conv.last_seq) + 1;
@@ -508,6 +577,7 @@ async function appendMessage(
     mentions: m.mentions,
     replyToSeq: m.replyToSeq,
     clientMsgId: m.clientMsgId,
+    event: m.event ?? null,
   });
   await tx
     .update(messengerConversations)
@@ -1207,7 +1277,7 @@ export async function removeMessengerParticipant(
   if (target === actor.loginId.toLowerCase()) {
     throw new InputError('To go yourself, leave the chat: you must not remove yourself.');
   }
-  await systemDb.transaction(async (tx) => {
+  const room = await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
     requireGroupAdmin(conv, me);
     const [p] = await q<{ id: string; left_at: Date | null }>(
@@ -1226,7 +1296,9 @@ export async function removeMessengerParticipant(
       .update(messengerParticipants)
       .set({ leftAt: sql`now()`, leftSeq: seq, admin: false })
       .where(eq(messengerParticipants.id, p.id));
+    return dropFromOpenCall(tx, conv.id, target);
   });
+  await dropFromRoom(room, target);
 }
 
 /** Leave a group (anyone; a direct chat cannot be left, only cleared). The
@@ -1237,7 +1309,7 @@ export async function leaveMessengerConversation(
   conversationId: string,
 ): Promise<void> {
   takeBudget(actor, 'write');
-  await systemDb.transaction(async (tx) => {
+  const room = await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
     if (conv.kind !== 'group') {
       throw new MessengerRefusedError('A direct chat cannot be left; clear it instead.');
@@ -1265,7 +1337,9 @@ export async function leaveMessengerConversation(
         .set({ admin: true })
         .where(eq(messengerParticipants.id, rest[0]!.id));
     }
+    return dropFromOpenCall(tx, conv.id, actor.loginId);
   });
+  await dropFromRoom(room, actor.loginId);
 }
 
 // ── Favourites ───────────────────────────────────────────────────────────────
@@ -1347,6 +1421,7 @@ type MessageRow = {
   reply_to_seq: string | number | null;
   client_msg_id: string | null;
   status: 'complete' | 'pending' | 'failed';
+  event: MessengerEventJson | null;
   edited_at: Date | null;
   deleted_at: Date | null;
   created_at: Date;
@@ -1426,6 +1501,7 @@ async function decorate(
     replyToSeq: numOrNull(r.reply_to_seq),
     clientMsgId: r.client_msg_id,
     status: r.status,
+    event: r.event ?? null,
     editedAt: isoOrNull(r.edited_at),
     deletedAt: isoOrNull(r.deleted_at),
     createdAt: iso(r.created_at),
@@ -1436,7 +1512,7 @@ async function decorate(
 const MESSAGE_COLUMNS = sql`m.id::text as id, m.conversation_id::text as conversation_id, m.seq,
   m.author_kind, m.author_login_id::text as author_login_id, m.author_agent_id::text as author_agent_id,
   m.author_name, m.via, m.body, m.attachments, m.mentions, m.reply_to_seq, m.client_msg_id, m.status,
-  m.edited_at, m.deleted_at, m.created_at`;
+  m.event, m.edited_at, m.deleted_at, m.created_at`;
 
 async function readMessagesBySeq(
   actor: MessengerActor,
