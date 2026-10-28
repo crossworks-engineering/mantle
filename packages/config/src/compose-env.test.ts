@@ -59,6 +59,15 @@ describe('every app service can read the live optional-service state', () => {
   const appServices = blocks.filter((b) => b.includes('<<: *app-env'));
   const name = (b: string) => b.slice(2, b.indexOf(':'));
 
+  // Compose checks a `${X:?}` guard on every command, profile on or off: the
+  // calls service's guards stopped every roll on a box without calls
+  // (v0.400.23). An optional service checks its values when it starts.
+  it('no service behind a profile requires a variable', () => {
+    for (const b of blocks.filter((x) => /^\s+profiles:/m.test(x))) {
+      expect(b, name(b)).not.toMatch(/\$\{[A-Z_]+:\?/);
+    }
+  });
+
   it('the anchor passes the box profiles', () => {
     expect(anchor).toMatch(/^\s+MANTLE_COMPOSE_PROFILES: \$\{COMPOSE_PROFILES:-\}$/m);
   });
