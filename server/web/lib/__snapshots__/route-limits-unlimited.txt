@@ -56,7 +56,7 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (123):
+owner rows open to members (124):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
   DELETE /api/draws/:id
@@ -85,6 +85,7 @@ owner rows open to members (123):
   GET /api/formulas
   GET /api/formulas/:id
   GET /api/home
+  GET /api/mcp-calls
   GET /api/mentions/search
   GET /api/nodes/:id
   GET /api/notes

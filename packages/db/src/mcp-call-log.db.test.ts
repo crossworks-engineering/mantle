@@ -4,8 +4,9 @@
  * narrow route: system:audit:mcp-call, INSERT only); the work session is
  * the login's last call's within 30 minutes, else a new one; a login reads
  * its own rows and an Admin user's scope every row (the row rule); no
- * login's scope writes the table itself; the reap removes rows past 90
- * days; and 0345's rollback takes it off the ledger only.
+ * login's scope writes the table itself; and 0345's rollback takes it off
+ * the ledger only. (The 90-day reap: server/web/lib/maintenance/
+ * mcp-calls-reap.test.ts.)
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/mcp-call-log.db.test.ts
  */
@@ -164,18 +165,6 @@ describe.skipIf(!URL)('the MCP call log (0345)', () => {
       { n: number }[]
     >`select count(*)::int as n from mcp_calls where tool = 'forged'`;
     expect(n!.n).toBe(0);
-  });
-
-  it('the reap removes rows past 90 days and keeps the rest', async () => {
-    await su`insert into mcp_calls (login_id, via, session_id, tool, args, ok, duration_ms, result_bytes, created_at)
-      values (${member}, 'oauth', gen_random_uuid(), 'old', '{}', true, 1, 1, now() - interval '91 days')`;
-    const dry = await m.runAsSystem('test:mcp-calls-reap', () => m.reapMcpCalls({ dryRun: true }));
-    expect(dry.deleted).toBe(1);
-    const gone = await m.runAsSystem('test:mcp-calls-reap', () => m.reapMcpCalls());
-    expect(gone.deleted).toBe(1);
-    const left = await su<{ tool: string }[]>`select tool from mcp_calls where tool = 'old'`;
-    expect(left).toEqual([]);
-    expect((await rowsOf(member)).length).toBe(3);
   });
 
   it('0345: the rollback takes it off the ledger and keeps the table', async () => {

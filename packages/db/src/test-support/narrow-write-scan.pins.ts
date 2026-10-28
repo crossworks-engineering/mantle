@@ -22,6 +22,7 @@ export const NARROW_SCAN_SYSTEM_FILES: Readonly<Record<string, string>> = Object
   'server/web/lib/auth/device-token-reap.ts': 'a reaper loop (system work)',
   'server/web/lib/brain-identity.ts': "the brain's identity row made once at boot (system work)",
   'server/web/lib/maintenance/actor-misses-reap.ts': 'the maintenance runner (system work)',
+  'server/web/lib/maintenance/mcp-calls-reap.ts': 'the maintenance runner (system work)',
   'server/web/lib/maintenance/history.ts':
     'the maintenance runner (CLI and nightly cron: system work)',
   'server/web/lib/system-manifest/reconcile.ts':
