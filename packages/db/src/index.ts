@@ -211,6 +211,7 @@ export {
 } from './call-audit';
 export {
   recordMcpCall,
+  noteMcpCallLost,
   setMcpCallWriter,
   mcpCallLogStats,
   mcpCallsSettled,

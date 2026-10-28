@@ -12,7 +12,7 @@
  * Never the reply itself. The row is shaped after the reply went out
  * (setImmediate), and only in a process that writes rows (callAuditStarted).
  */
-import { callAuditStarted, recordMcpCall, type McpCallEntry } from '@mantle/db';
+import { callAuditStarted, noteMcpCallLost, recordMcpCall, type McpCallEntry } from '@mantle/db';
 import { UUID_RE, errorMessage } from '@mantle/std';
 import { WORKSPACE_ARG, replyItemIds } from './create-home';
 
@@ -197,7 +197,7 @@ export function logMcpCall(call: McpCallSeen): void {
     try {
       recordMcpCall(mcpCallEntry(call));
     } catch (err) {
-      console.error('[mcp-call-log] a call could not be shaped for the log:', err);
+      noteMcpCallLost(err);
     }
   });
 }

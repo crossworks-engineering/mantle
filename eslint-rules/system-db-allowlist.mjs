@@ -111,6 +111,9 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   'packages/db/src/ai-workers-resolve.ts': 'narrow',
   // The audit row of a tool write, written by the gate in the turn.
   'packages/db/src/call-audit.ts': 'narrow',
+  // The MCP call log's row (0343), written after an MCP call in its
+  // request or stdio context.
+  'packages/db/src/mcp-call-log.ts': 'narrow',
   // The push worker's count of parked extractions.
   'packages/db/src/extract-parked.ts': 'full',
   // A one-off maintenance script (extract-skip-stamp.ts).
