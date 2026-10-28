@@ -1595,6 +1595,8 @@ export const SYSTEM_DB_MODULES: readonly string[] = [
   // People (section 23): the gate's reads by the caller's own login id
   // (names, faces, presence, the room rule); writes nothing.
   'packages/content/src/people.ts',
+  // Calls (0342): the call rows, written as the messenger's are.
+  'packages/content/src/messenger-calls.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
 ];

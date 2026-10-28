@@ -4,7 +4,10 @@
  * sandbox tools, the agent tool list). Two more services carry no token and
  * gate no tool, but are switched the same way from Settings > Services: the
  * bundled local embedder (profile `local-embedder`) and, on a core box only,
- * the PDF-export browser (profile `helpers`). See the end of this module.
+ * the PDF-export browser (profile `helpers`). A fourth, `calls` (LiveKit,
+ * calls between people in the messenger), is wired like the sandboxes: its
+ * profile plus the API secret the brain signs tokens with. See the end of
+ * this module.
  *
  * The parser service (server/parser) is NOT here: it reads every file the
  * brain receives, so it is core, always on, with no switch.
@@ -37,13 +40,16 @@ import { env, type KnownEnvName } from './index';
 
 /** Every service Settings > Services can switch. Each name is also its
  *  compose profile. */
-export const OPTIONAL_SERVICES = ['sandboxes', 'local-embedder', 'helpers'] as const;
+export const OPTIONAL_SERVICES = ['sandboxes', 'local-embedder', 'helpers', 'calls'] as const;
 export type OptionalService = (typeof OPTIONAL_SERVICES)[number];
 
 /** The services the app talks to with a bearer token. "On" needs the token
  *  too; the other two are on when their profile is. */
 const WIRING: Partial<Record<OptionalService, { url: KnownEnvName; token: KnownEnvName }>> = {
   sandboxes: { url: 'SANDBOXD_URL', token: 'SANDBOXD_TOKEN' },
+  // Calls (LiveKit): the brain signs every token and webhook with the API
+  // secret; without it no call can start, so "on" needs it as a token.
+  calls: { url: 'MANTLE_LIVEKIT_URL', token: 'MANTLE_LIVEKIT_API_SECRET' },
 };
 
 /** One service as the updater saw it. `container` is docker's State.Status

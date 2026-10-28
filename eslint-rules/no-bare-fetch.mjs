@@ -141,6 +141,10 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'owner config',
     why: "sandboxd's control API: the stack's own SANDBOXD_URL",
   },
+  'packages/content/src/livekit.ts': {
+    kind: 'owner config',
+    why: "the LiveKit health probe (Settings > Services): the stack's own MANTLE_LIVEKIT_URL",
+  },
   'packages/files/src/parser-client.ts': {
     kind: 'owner config',
     why: "the parser service, a service of the stack on its internal network: the deployment's PARSER_URL",
