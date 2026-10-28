@@ -354,6 +354,7 @@ const formula_update: BuiltinToolDef = {
 const formula_delete: BuiltinToolDef = {
   slug: 'formula_delete',
   policy: {
+    destructive: true, // not reversible
     matrix: { action: 'delete', param: 'id', kinds: ['formula'] },
     deletesItem: true,
     effect: 'write',

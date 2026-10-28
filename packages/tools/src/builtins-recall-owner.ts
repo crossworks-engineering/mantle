@@ -319,6 +319,7 @@ const recall_map_publish: BuiltinToolDef = {
 const recall_map_delete: BuiltinToolDef = {
   slug: 'recall_map_delete',
   policy: {
+    destructive: true, // cannot be undone
     matrix: { action: 'delete', param: 'map', kinds: ['recall'] },
     deletesItem: true,
     effect: 'write',

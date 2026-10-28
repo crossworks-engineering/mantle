@@ -27,6 +27,8 @@ export const file_create: BuiltinToolDef = {
   slug: 'file_create',
   usageTier: 4,
   policy: {
+    idempotent: true, // create or overwrite
+    destructive: true, // create or overwrite: the old bytes are gone
     matrix: { action: 'create', param: 'parent_path', kinds: ['file'] },
     effect: 'write',
     spends: 'none',

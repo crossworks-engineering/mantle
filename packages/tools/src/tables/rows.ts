@@ -195,6 +195,7 @@ export const table_rows_add: BuiltinToolDef = {
 export const table_rows_upsert: BuiltinToolDef = {
   slug: 'table_rows_upsert',
   policy: {
+    idempotent: true, // upsert
     matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
@@ -552,6 +553,7 @@ export const table_cell_set: BuiltinToolDef = {
   slug: 'table_cell_set',
   usageTier: 6,
   policy: {
+    idempotent: true, // sets the one cell
     matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',

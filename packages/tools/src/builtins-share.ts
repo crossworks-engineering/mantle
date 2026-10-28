@@ -257,6 +257,7 @@ export async function closeLink(
 const node_unshare: BuiltinToolDef = {
   slug: 'node_unshare',
   policy: {
+    idempotent: true, // no-op when not shared
     matrix: { action: 'link', param: 'id', kinds: LINK_KINDS },
     effect: 'write',
     spends: 'none',

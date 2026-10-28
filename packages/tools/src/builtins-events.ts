@@ -332,6 +332,7 @@ const event_update: BuiltinToolDef = {
 const event_delete: BuiltinToolDef = {
   slug: 'event_delete',
   policy: {
+    destructive: true, // the original id and its deeplinks are gone
     matrix: { action: 'delete', param: 'id', kinds: ['event'] },
     deletesItem: true,
     effect: 'write',

@@ -357,6 +357,7 @@ const contact_update: BuiltinToolDef = {
 const contact_delete: BuiltinToolDef = {
   slug: 'contact_delete',
   policy: {
+    destructive: true, // the contact and its email allowlist entry are gone
     matrix: { none: 'a contact: an Admin kind, not a workspace kind' },
     effect: 'write',
     spends: 'none',

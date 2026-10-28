@@ -210,6 +210,7 @@ export const worker_group_list: BuiltinToolDef = {
 export const worker_group_ensure: BuiltinToolDef = {
   slug: 'worker_group_ensure',
   policy: {
+    idempotent: true, // idempotent upsert
     matrix: { none: 'a worker group is not an item' },
     effect: 'write',
     spends: 'none',

@@ -54,6 +54,7 @@ export const api_docs_set: BuiltinToolDef = {
   slug: 'api_docs_set',
   optIn: 'toolsmithWrite',
   policy: {
+    idempotent: true, // store or replace
     matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',
@@ -261,6 +262,7 @@ export const api_skill_set: BuiltinToolDef = {
   slug: 'api_skill_set',
   optIn: 'toolsmithWrite',
   policy: {
+    idempotent: true, // write or replace
     matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',

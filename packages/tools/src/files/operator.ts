@@ -133,6 +133,8 @@ export const folder_delete: BuiltinToolDef = {
 export const file_upload: BuiltinToolDef = {
   slug: 'file_upload',
   policy: {
+    idempotent: true, // create or overwrite
+    destructive: true, // create or overwrite: the old bytes are gone
     matrix: { action: 'create', param: 'parent_path', kinds: ['file'] },
     effect: 'write',
     spends: 'none',
@@ -247,6 +249,7 @@ function undeletableReason(
 export const file_delete: BuiltinToolDef = {
   slug: 'file_delete',
   policy: {
+    destructive: true, // the row and the on-disk file are removed
     matrix: { action: 'delete', param: 'file_id', kinds: ['file'] },
     deletesItem: true,
     effect: 'write',

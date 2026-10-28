@@ -49,6 +49,7 @@ const run_terminal: BuiltinToolDef = {
   usageTier: 6,
   optIn: 'terminal',
   policy: {
+    destructive: true, // a free-form shell on the brain's host
     matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
