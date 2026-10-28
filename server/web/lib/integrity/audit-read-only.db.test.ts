@@ -10,9 +10,8 @@
  *    the insert outside it writes;
  *  - the same under asSystem with a reason the narrow system route takes
  *    ('admin-area', 'audit-log'): the transaction reads
- *    transaction_read_only on, as the narrow role while
- *    MANTLE_NARROW_SYSTEM is on, and a definer that inserts is refused
- *    (25006);
+ *    transaction_read_only on, as the narrow role, and a definer that
+ *    inserts is refused (25006);
  *  - every statement runCorpusAudit sends goes after the SET TRANSACTION
  *    READ ONLY of its transaction, on its connection (the system pool's
  *    sends, recorded): an audit that ran a check outside
@@ -159,9 +158,7 @@ describe.skipIf(!URL)('the corpus audit runs read only', () => {
         reason,
       );
       expect(row.ro).toBe('on');
-      // The narrow route is on unless the run turns it off.
-      if (process.env.MANTLE_NARROW_SYSTEM === undefined)
-        expect(row.u).toBe('mantle_system_narrow');
+      expect(row.u).toBe('mantle_system_narrow');
       const text = `select public.${definerFn}() as x`;
       const err = await m
         .asSystem(

@@ -1578,7 +1578,8 @@ export async function dropNarrowWouldRefuse(sql: Sql): Promise<number> {
         }),
       {
         retries: 7,
-        retryOn: ({ error }) => ['55P03', '40P01'].includes((error as { code?: string }).code ?? ''),
+        retryOn: ({ error }) =>
+          ['55P03', '40P01'].includes((error as { code?: string }).code ?? ''),
         delayMs: () => 1000,
       },
     );

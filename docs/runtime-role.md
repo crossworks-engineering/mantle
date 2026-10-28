@@ -152,7 +152,8 @@ again closes the login at the next migrate. Its log says which:
 `runtime role mantle_runtime: LOGIN (MANTLE_DB_RUNTIME_ROLE is on)`, or
 `NOLOGIN` with the cause that holds: the switch is off, per-database mode,
 or the switch is on with no `MANTLE_MASTER_KEY` to derive the password from.
-The narrow role's line reads the same with `MANTLE_NARROW_SYSTEM`.
+The narrow role's line is `LOGIN`, or `NOLOGIN` with per-database mode or
+no `MANTLE_MASTER_KEY` as its cause.
 
 A statement that sets a password (the runtime role's, the viewer roles')
 runs in a transaction of its own that first sets, for that transaction only,
@@ -179,25 +180,22 @@ own none). The runtime role is its member with `SET` only (`wantedMemberships`),
 runtime role holds none of its rights and may take it; the superuser may take
 it as any role. Migrate makes it and its membership on every run
 (`ensureRuntimeRoles`), and a hand grant to it or from it is taken back like
-the others'. It logs in only when migrate sees `MANTLE_NARROW_SYSTEM` on,
-as the runtime role follows its own switch: `LOGIN` with a password derived
-from `MANTLE_MASTER_KEY` (HKDF, the runtime role's scheme with its own
-label, `runtime-role:mantle_system_narrow`), `NOLOGIN` with no password
-otherwise, and always `NOLOGIN` in per-database mode (one cluster, several
-brains: one password cannot be every brain's). Migrate logs which. When
-the switch is on but migrate could not run the roles step (it does not
+the others'. Migrate gives it its login on every run: `LOGIN` with a
+password derived from `MANTLE_MASTER_KEY` (HKDF, the runtime role's scheme
+with its own label, `runtime-role:mantle_system_narrow`), `NOLOGIN` with no
+password when there is no master key, and always `NOLOGIN` in per-database
+mode (one cluster, several brains: one password cannot be every brain's).
+Migrate logs which. When migrate could not run the roles step (it does not
 run as a superuser, or the server is older than Postgres 16), it warns
 that the narrow role was not made or given its login, so unless an
 earlier migrate did every narrow statement fails closed, and names the
-fix: migrate as a superuser on Postgres 16 or later, or the per-box kill
-switch `MANTLE_NARROW_SYSTEM=0` and a full `docker compose up -d`
+fix: migrate as a superuser on Postgres 16 or later
 (`narrowLoginWarning`, migrator-steps.ts). The
 narrow route's own pool logs in as it (below), whatever the system pool
 logs in as: with `MANTLE_DB_RUNTIME_ROLE` off (the system pool is the
 superuser) the narrow pool still logs in as the narrow role, so a fresh
-install with the runtime role off and the switch on works, and the narrow
-work there can no more reach the superuser than on a box with the runtime
-role on.
+install with the runtime role off works, and the narrow work there can no
+more reach the superuser than on a box with the runtime role on.
 
 Its rights, made equal to the access matrix at every migrate inside
 `applyRuntimeGrants` (`applyNarrowGrants`), from `narrow` in each row of
@@ -213,7 +211,7 @@ Its rights, made equal to the access matrix at every migrate inside
   with a plain name was writable): `INSERT` where listed, `UPDATE` of only
   the listed columns (always column-level), `DELETE` where listed. A table
   or column not listed is read only, so a new one is closed by default.
-  Measured with the switch on over the full DB suite, actor-off, actor-on,
+  Measured on the narrow route over the full DB suite, actor-off, actor-on,
   edit-on, runtime-role and the area-route sweep (a row trigger on every
   table and the statement log; an `INSERT ... ON CONFLICT DO UPDATE` needs
   `UPDATE` on every column its `SET` names even when no row conflicts, so
@@ -248,19 +246,7 @@ Its rights, made equal to the access matrix at every migrate inside
   fires as the anchor, a skill's text, a parked call, or point a vault key
   at another host (narrow-allowlist.db.test.ts). The runs worker checks a
   run's maker too: an item of a run that names neither its assistant nor
-  its login, or a login that is gone, never runs. With the switch off,
-  migration 0320 counts, report only, each write a narrow reason makes on
-  the full route that the role would refuse (a table or column privilege,
-  0319's one-way rules): `narrow-would-refuse` miss rows, read by
-  scripts/arch-scoreboard-box.sh; its triggers are derived from the role's
-  live grants on every migrate, so an allowed write fires none. A
-  `systemDb` write inside a login's turn or request scope (which the narrow
-  route takes with the switch on, whatever its actor) carries the login's
-  actor, so the gateway marks its actor settings `mantle.route = 'narrow'`
-  (gateway/pools.ts getScopeMarkedDb) and the counts take the mark
-  (`mantle_narrow_counted`, round 10): the count has no blind spot there
-  while the actor check is in warn or on (with it off no actor is sent, as
-  before);
+  its login, or a login that is gone, never runs;
 - the credential and rights tables within it: `auth.users`:
   `display_name`, `disabled_at`, `session_epoch` and `DELETE` (never `role`,
   `password_hash`, `email`, `is_owner` or `contact_id`, and no new login);
@@ -278,7 +264,7 @@ Its rights, made equal to the access matrix at every migrate inside
   `integration`, `enabled`, `configured_by`, `updated_at` (never
   `tool_slugs`, `slug`, `admin_only` or `owner_id`; since round 8 not
   `integration` or `configured_by` either: `tool-config`), and neither table's
-  `DELETE`. Measured with the switch on (every statement
+  `DELETE`. Measured on the narrow route (every statement
   the narrow login sent in the full DB suite, `log_statement = mod`; then a
   trigger logging each row the narrow login wrote on these tables with its
   actor, S7b part b2 round 5). A new login, a role change, an enable, a
@@ -304,7 +290,7 @@ Its rights, made equal to the access matrix at every migrate inside
 - `USAGE, SELECT` on the sequences its `'all'` tables draw from, never
   `UPDATE` (`setval`);
 - `EXECUTE` on an allowlist, `NARROW_SYSTEM_FUNCTIONS`
-  (`packages/db/src/runtime-role.ts`), measured with the switch on (the full
+  (`packages/db/src/runtime-role.ts`), measured on the narrow route (the full
   DB suite; `MANTLE_NARROW_DUMP`'s `fn:<name>` uses, quoted names counted):
   what narrow statements call by name, ten today (the read definers
   of the login-self routes, the Admin area's approvals and the email
@@ -358,63 +344,21 @@ of `'all'`, `'read'` and `'none'` tables.
 
 ### The narrow route
 
-`MANTLE_NARROW_SYSTEM` (feature `narrowSystem`): on by default everywhere
-since S7b part b3 (production, development and tests); `0`, `off` or `false`
-turns it off on a box (the kill switch, below). Read once per process when
-the system pool opens, and a production process logs it with the pool's
-login; migrate reads it too and gives the role its login only while it is
-on. Off, every statement runs as before.
+On everywhere (production, development and tests). The switch that turned
+it off per box (`MANTLE_NARROW_SYSTEM`, S7b's kill switch) is gone since
+S7c: a line naming it in a box's `.env` is inert. What it means for each
+shape:
 
-#### The kill switch
-
-Per box, with no image change: set `MANTLE_NARROW_SYSTEM=0` in the box's
-`.env` (`off` and `false` read the same), then a full `docker compose up
--d` (restarting the app containers alone runs no migrate, so the role
-keeps its login).
-Compose passes the switch to the migrate gate and to every app process
-(x-app-env), so migrate runs first and makes `mantle_system_narrow`
-`NOLOGIN` again, and each process starts on the full route (its boot line
-says `narrow system route off`). Nothing in the database changes: the
-column rights, the definers and the one-way rules stay, and hold only the
-narrow role, which then runs nothing. To turn it back on, remove the line
-(or set `1`) and `docker compose up -d` again. A process that reads the
-switch on while migrate saw it off fails its narrow statements closed and
-names the fix (`NARROW_LOGIN_FIX`); compose cannot produce that, since both
-read the same `.env`.
-
-What the default means for each shape:
-
-- A fresh install: on. Compose's `MANTLE_NARROW_SYSTEM` is empty, so
-  migrate gives the role its login (its password derived from
-  `MANTLE_MASTER_KEY`, which compose requires) and the app opens the narrow
-  pool on its first narrow statement. `MANTLE_DB_RUNTIME_ROLE` may be off:
-  the narrow pool logs in as the narrow role either way.
+- A fresh install: migrate gives the role its login (its password derived
+  from `MANTLE_MASTER_KEY`, which compose requires) and the app opens the
+  narrow pool on its first narrow statement. `MANTLE_DB_RUNTIME_ROLE` may
+  be off: the narrow pool logs in as the narrow role either way.
 - Per-database mode (`MANTLE_VIEWER_ROLES_PER_DATABASE`, several brains on
-  one cluster): on, on the S7a route. The role has no login there (one
-  password cannot be every brain's), so the system pool takes the role per
-  transaction, with the hold check and the text check as the boundary.
-- An existing box rolled to this release: on at that roll, with nothing set
-  in its `.env`. Before the fleet flip the CEO reads the box counts
-  (`scripts/arch-scoreboard-box.sh`) at 0 under the owner's rule (The
-  narrow write count, below); the list is in
-  docs/_archive/plan-v3-s7b-handover.md, part b3. The flip release also
-  carries the b3 checklist (0328's wider grant hold, the text check
-  counted, the box script's new lines): those ran on no box before it, and
-  the switch is their fallback too.
-- A box pinned back to an image before b3 (b2, v0.300.133 or .134): that
-  image reads an unset switch as off in production, so the pin alone takes
-  the box off the narrow route; a box that set `MANTLE_NARROW_SYSTEM=1`
-  keeps it on (the one image back paragraph below says what that needs).
+  one cluster): the role has no login there (one password cannot be every
+  brain's), so the system pool takes the role per transaction, with the
+  hold check and the text check as the boundary.
 
-The kill switch's cells: `runtime-role.test.ts` (unset on in every
-environment; `0`, `off`, `false` off in production too; read once per
-process), `narrow-route.db.test.ts` ("off: every reason runs as the pool
-login": an asSystem exit, its transaction and a request exit all on the
-pool's own login), the full DB suite run with `MANTLE_NARROW_SYSTEM=0`, and
-the drill's rows (migrate with the switch unset gives the role its login;
-with `0` or `off` it takes it away).
-
-On, a statement the system pool sends
+A statement the system pool sends
 for an exit routed `'narrow'` runs as `mantle_system_narrow`
 (`packages/db/src/gateway/narrow-route.ts`):
 
@@ -459,9 +403,9 @@ DATABASE` form for each database), and the boot line names it; migrate
   sets the derived password again each run (the login may change its own).
   A production process reads the role
   with its boot line (`readNarrowLogin`)
-  and, with the switch on, warns when it cannot log in, naming the fix (run
-  migrate with the switch on, or set `MANTLE_NARROW_SYSTEM=0`); any stored
-  setting it names whatever the switch. A role whose
+  and warns when it cannot log in, naming the fix (run migrate as a
+  superuser with `MANTLE_MASTER_KEY` set); any stored setting it names
+  too. A role whose
   login migrate did not open fails the narrow statement, never the system
   pool instead (`NarrowLoginError`, its message the same fix);
 - one statement outside a transaction: on one reserved connection, a
@@ -584,7 +528,7 @@ settings), the operations open to it and where a new one lands; the caller
 must be a system session with no scope (0315's rule), name the acting
 login, and that login must hold the kind's area (`mantle_area_rule`). The
 narrow role runs it and holds no right on `nodes`. Anywhere else (a
-login's scope, a full reason, the switch off) the app's own statements run
+login's scope, a full reason) the app's own statements run
 as before; the definer does what they did (the row, the heads, the index
 reset), so placement and readers are the same.
 
@@ -643,9 +587,8 @@ A right the narrow role does not hold, met on the route, is noted every
 time, a caught one too: a miss row (check `narrow-denied`) on a box, and in
 tests a failure (`vitest.setup.ts`). So is a statement the text check
 refused before it was sent (detail `text:<what>`, e.g. `text:a-do-block`):
-one helper (`sendOrNote`, gateway/narrow-denial.ts) runs the text check
-and notes its refusal in both switch states, a denial on the route and a
-`narrow-would-refuse` count off it. `MANTLE_NARROW_DUMP=<file>` lists the
+one helper (`checkSendable`, gateway/narrow-denial.ts) runs the text check
+and notes its refusal. `MANTLE_NARROW_DUMP=<file>` lists the
 route's uses by actor and its denials per test file: how each reason was
 measured. A denial is a measurement result: the reason routes full with its
 why, or the table is granted narrowly with a reason, never widened for a
@@ -653,8 +596,8 @@ member, client, key, peer or public link.
 
 `narrow-route.db.test.ts` pins the route: each reason's role, a statement
 and a transaction; the request exits; the actor carried; a content write
-refused and noted; the hold check's rollback; the refused statements; off
-changes nothing; the system-pool write scope carries the actor's write mode
+refused and noted; the hold check's rollback; the refused statements; the
+system-pool write scope carries the actor's write mode
 (a definer's read-only refusal, `mantle_ws_archive`, reads it).
 `narrow-login.db.test.ts` pins the login: every escape form the S7a audits
 found, sent unguarded on a narrow session, leaves it the narrow role and a
@@ -855,8 +798,7 @@ only reads the table; the narrow role, the write role and the workspace
 role may run neither and write nothing there, so a forged narrow session
 can clear no login's slot (its own or another's) and make none. Before
 0326 the app's own statements wrote the table on the system pool, which
-inside a member's chat request is the narrow route: refused with the
-switch on.
+inside a member's chat request is the narrow route: refused there.
 
 The token budget reads the ledger's own tokens since 0327, never the
 traces: the narrow role inserts and updates traces (a turn's record), so a
@@ -893,8 +835,7 @@ the owner and every Admin user out, nor sign them out again and again. The
 users area's disable and session end of such a login runs at the spot
 `login-credential` (`onLoginHoldSpot`, packages/db `login-hold.ts`, which
 asks the same definer; endLoginSessions and applyLoginChange go through
-it). Off the narrow route the same change by a narrow reason is counted
-(0320's notice), at the spot it is not. When the S8b rebase lands, Admin
+it). When the S8b rebase lands, Admin
 here keeps meaning the Admin workspace's users; the role column test is
 the older name of the same thing.
 
@@ -923,55 +864,34 @@ login that may talk there (a user of the workspace, the owner or an Admin
 user; for the Admin workspace the owner or an Admin user only). A row
 whose status is not `pending` is never rewritten (a finished turn's text is
 what later turns read as history), but for the follow-up suggestion in its
-data; a settled row never goes back to pending. Off the narrow route the
-same break by a narrow reason is counted (0320's notice) and runs.
+data; a settled row never goes back to pending.
 
-### The narrow write count
+### The narrow-denied count
 
-Report only (migration 0312): what the role would refuse once it is on by
-default is counted one release before, on every box, whatever the switch.
-Nothing is refused and no model work starts; the triggers raise a notice
-and the pool writes a miss row on another connection, as the actor check's
-misses (at most one per check, actor and table an hour).
+Every 42501 a narrow statement meets is noted as `narrow-denied`: a
+privilege gap, and a refusal a row rule, a guard or a definer raises with
+that code; and every text check refusal, as `text:<what>` (it carries no
+SQLSTATE: nothing was sent) (`noteNarrowDenial`,
+`packages/db/src/gateway/narrow-denial.ts`). Tests fail on one
+(vitest.setup.ts); a box writes a miss row, as the actor check's misses
+(at most one per check, actor and detail an hour). Such an error is marked
+where it is met, so a caller that skips a write a read-only database
+refuses (`isWriteRefused`, `bestEffortWrite`) never skips the narrow role's
+refusal, systemDb inside a scope included. A count above 0 on a box is a
+route or tool that met a right the role lacks: route its reason full with
+its why, or grant narrowly in the access matrix.
 
-- `narrow-content-write`: the actor check trigger on a content table counts
-  a write whose actor is a narrow reason's (`mantle_narrow_actor`: the
-  `AS_SYSTEM_ROUTE` and `REQUEST_SYSTEM_ROUTE` reasons routed narrow, pinned
-  equal by `narrow-observe.test.ts`) AND `current_user` is the session's own
-  role, the role it SET or else its login (migration 0318; 0312 asked
-  `current_user = session_user`, which a superuser-owned definer met on the
-  per-database fallback: the full route, where the narrow role was refused
-  before any trigger, a definer runs as its owner, a cascade as the table's
-  owner) AND `mantle.route` is not
-  `full` (not a declared spot). Counted where the actor check runs (warn or
-  on); with it off the trigger is disabled and no actor is sent on the full
-  route. Exact with the runtime role on: as the superuser, a definer a
-  migration made runs as that superuser, and its writes count too.
-- `narrow-cascade-delete`: a delete from `auth.users`, `spaces` or `agents`
-  by a narrow reason's actor, not at a spot, on either route, not inside a
-  definer (the same own-role test, 0318), once per
-  statement (their foreign keys cascade or set null into content tables as
-  the owner, past the role's own rights). A sign of content going away
-  under narrow work, not a refusal to come: turning the role on does not
-  stop it, since the cascade runs as the table's owner.
-- Not counted: a write whose actor a narrow exit rebound (a login, an
-  assistant, a full reason, system work), a definer's write, a cascade from
-  any other table.
+`scripts/arch-scoreboard-box.sh` prints `narrow_misses:denied` (distinct
+actor and right rows since the release's epoch; numbers only),
+`narrow_prev_epoch:denied` (the epoch before: from the second latest epoch
+row to the latest, so a reset shows what the one before it saw), real use
+since the epoch as counts (`narrow_traffic_since_epoch:member-turns`,
+`:audited-actions`, every `audit_log` row since the epoch, and
+`:active-logins`: a 0 with no traffic proves nothing), and
+`narrow_hold_triggers` (the grant hold's triggers: five from 0327, three
+from 0328, so 8).
 
-`scripts/arch-scoreboard-box.sh` prints `narrow_misses:content-write`,
-`narrow_misses:cascade-delete` and `narrow_misses:denied` (distinct check,
-actor and table rows since the release's epoch, below; numbers only), and
-`narrow_misses:would-refuse` and `narrow_misses:would-refuse-tables`
-(migration 0320: the writes the
-role would refuse, made with the switch off; like 0318's counts it asks
-for the session's own role, so a definer's own writes are left out on the
-narrow route and with the runtime role on, and counted on a system pool
-logged in as the superuser that owns the definers, where the two are one
-role (the "Exact with the runtime role on" note above: read those boxes'
-counts with that in mind), and 0321's row rules (a heartbeat's books, an enable,
-the owner's and an Admin user's row) count through 0320's report branch).
-
-The counts are read since the release's epoch, so a release that fixed a
+The count is read since the release's epoch, so a release that fixed a
 cause starts again from 0. The epoch is a row of `actor_check_misses`
 itself, check `narrow-epoch`, its detail the release's version (no
 migration and no new table): migrate writes one after the runtime role's
@@ -981,16 +901,15 @@ version. A second migrate of the same version writes none, and neither
 does a roll back to a version an epoch row already names (the newer epoch
 holds). No version read: no row, and a warning. The box counts every
 narrow row whose `at` is at or after the latest epoch row's; a box with
-none reads all time, as before. The script prints the epoch it counts
-from as `narrow_misses_since_epoch` (the version and its time in UTC;
-`none` when there is none). The maintenance reaper keeps the epoch rows,
-as it keeps every `narrow-` row. Migrate runs before the new release's
-processes start, so a row the old processes write in that minute counts
-in the new epoch: one more reason a nonzero count is read on the box
-before it is acted on.
+none reads all time. The script prints the epoch it counts from as
+`narrow_misses_since_epoch` (the version and its time in UTC; `none` when
+there is none). The maintenance reaper keeps the epoch rows, as it keeps
+every `narrow-` row. Only migrate or an operator writes an epoch row:
+0327's guard refuses the narrow role a `narrow-epoch` row or a miss row
+dated ahead (directly or through `mantle_actor_miss_log`).
 
 The reset, by hand: write an epoch row with the reason in its detail, as
-the superuser that runs migrations (the counts start again from that
+the superuser that runs migrations (the count starts again from that
 moment; the script prints such an epoch's version as `reset`, since its
 detail is free text and only numbers leave a client box):
 
@@ -1004,75 +923,41 @@ To go back to the release's epoch, delete the hand row
 (`delete from public.actor_check_misses where check_name = 'narrow-epoch'
 and source = 'operator'`).
 
-What the counts do not see, and which the switch-on suites measure
-instead (the DB vitest shards, actor-off, actor-on, edit-on, runtime-role
-and the area-route sweep, each with `MANTLE_NARROW_SYSTEM=1`; a refusal
-there fails the run; the sweep sends every writing area row, every
-writing `self` row and every GET of an area or `self` row, from the route
-table, so a read on an area's narrow exit is measured too): a function the narrow role may not EXECUTE (outside
-`NARROW_SYSTEM_FUNCTIONS`), a read of a table or column it may not SELECT,
-and a TRUNCATE (no role the app runs as holds it). The static narrow
-write scan (`packages/db/src/narrow-write-scan.test.ts`) reads the source
-for every drizzle write of a table that is not a content table and holds
-it against the allowlist: at a spot, in a system-only file, or pinned open
-(a list that only shrinks). The same scan reads every `mantle_<name>(` call
-in the SQL text the source sends and holds it against what the narrow role
-may run (its EXECUTE allowlist and PUBLIC definers, or a function that runs
-as its caller and stays PUBLIC's, read from the migrations): any other call
-sits at a spot, in a system file, or is pinned per file with its count and
-its function's decision (`NARROW_SCAN_FN_OPEN`, `NARROW_SCAN_FN_DECIDED`),
-so a new call of a definer the narrow role may not run fails the unit suite.
-`runtime-role.db.test.ts` checks that reading against the catalog.
+What the count cannot see before a box meets it, the suites measure (the
+DB vitest shards, actor-off, actor-on, edit-on, runtime-role and the
+area-route sweep, every one on the narrow route; a refusal there fails the
+run; the sweep sends every writing area row, every writing `self` row and
+every GET of an area or `self` row, from the route table, so a read on an
+area's narrow exit is measured too): a function the narrow role may not
+EXECUTE (outside `NARROW_SYSTEM_FUNCTIONS`), a read of a table or column
+it may not SELECT, and a TRUNCATE (no role the app runs as holds it). The
+static narrow write scan (`packages/db/src/narrow-write-scan.test.ts`)
+reads the source for every drizzle write of a table that is not a content
+table and holds it against the allowlist: at a spot, in a system-only
+file, or pinned open (a list that only shrinks). The same scan reads every
+`mantle_<name>(` call in the SQL text the source sends (one pattern,
+`CALLED_FN` in `gateway/narrow-sendable.ts`) and holds it against what the
+narrow role may run (its EXECUTE allowlist and PUBLIC definers, or a
+function that runs as its caller and stays PUBLIC's, read from the
+migrations): any other call sits at a spot, in a system file, or is pinned
+per file with its count and its function's decision (`NARROW_SCAN_FN_OPEN`,
+`NARROW_SCAN_FN_DECIDED`), so a new call of a definer the narrow role may
+not run fails the unit suite. `runtime-role.db.test.ts` checks that
+reading against the catalog. A trigger function that is not a definer
+runs as the role that wrote the row, so every `mantle_<name>` it reaches
+(through other plain functions, never past a definer) needs the narrow
+role's EXECUTE when the table is one the role may write. No statement
+shows that call; a catalog cell holds it instead (`runtime-role.db.test.ts`,
+"every function a plain trigger reaches on a narrow-writable table is
+narrow-executable"), read from `pg_trigger` and the function bodies, so a
+new trigger is covered without a list.
 
-The counter sees refused calls too (no blind spot, the round 10 class
-rule): with the switch off, a statement the narrow route would take (an
-exit routed narrow, or systemDb inside a turn or request scope, the
-scope-marked handle) is read for its `mantle_<name>(` calls, and each
-function the narrow role may not EXECUTE (its grants and PUBLIC's, read
-from the catalog once every ten minutes, `has_function_privilege`) is
-noted as `narrow-would-refuse <actor> fn:<name> EXECUTE`, beside the
-database's own count of refused writes. Only `public.mantle_*` calls are
-read, bare or schema-qualified as `public` (quoted or not); a name after
-any other schema's dot is not (one pattern, `CALLED_FN` in
-`gateway/narrow-would-refuse.ts`, which the static scan reads too). The
-text check the narrow route runs before it sends a statement
-(`narrowSendable`) runs here as well, and a statement it would refuse is
-noted as `narrow-would-refuse <actor> text:<what> TEXT` (`<what>` the
-refusal as one word, e.g. `text:a-do-block`): the switch-off count has
-no blind spot for the text check either. Inside a transaction of such an
-exit its statements (tagged templates included) and savepoints are read
-too. Not read: a call made
-inside a function (a definer's calls run as its owner, so the role needs
-no EXECUTE there) and a name built at run time (dynamic SQL); the
-switch-on suites cover those. A trigger function that is not a definer is
-the exception: it runs as the role that wrote the row, so every
-`mantle_<name>` it reaches (through other plain functions, never past a
-definer) needs the narrow role's EXECUTE when the table is one the role
-may write. No statement shows that call, so neither reading sees it; a
-catalog cell holds it instead (`runtime-role.db.test.ts`, "every function
-a plain trigger reaches on a narrow-writable table is narrow-executable"),
-read from `pg_trigger` and the function bodies, so a new trigger is
-covered without a list.
+Reads are covered by the suites alone: the narrow role still reads the
+`content` tables (`narrowFor`), and closing those reads is its own step
+(S7d, docs/_archive/plan-v3-s7c-handover.md: at least 17 code sites read
+content on a narrow exit today).
 
-Its cost is the reading alone: a statement with no `mantle_` in it is not
-lexed. Measured on the workstation (`a2a-round-trips.db.test.ts`, the scan
-cost cell, every statement of a path read, an upper bound): a chat turn's
-start sends 125 statements, 8 of them lexed, 87 microseconds a turn; no
-other path above 0.2 ms. No cache per statement text: it would cost more
-to keep than it saves.
-
-With the switch on, every 42501 a narrow statement meets is noted as
-`narrow-denied`: a privilege gap, and a refusal a row rule, a guard or a
-definer raises with that code; and every text check refusal, as
-`text:<what>` (it carries no SQLSTATE: nothing was sent). Such an error is marked where it is met, so
-a caller that skips a write a read-only database refuses
-(`isWriteRefused`, `bestEffortWrite`) never skips the narrow role's
-refusal, systemDb inside a scope included.
-
-What the counts can still lose: a miss row is written after the statement
-from the pool's NOTICE (`onnotice`), on another connection; a process that
-dies between the two, or a notice the driver drops, loses that row (the
-statement itself is unchanged). NOTIFY and advisory locks are no writes:
+What else the role may still do: NOTIFY and advisory locks are no writes:
 the narrow role may send a NOTIFY or take an advisory lock, and listeners
 read the database again before they act (a NOTIFY is a hint, never a
 grant). An encrypted value (a sealed key or token) is bound to its row id
@@ -1081,141 +966,21 @@ may update both columns could move a sealed value between two rows it may
 write; the next re-encrypt binds the table name too (named for that
 work).
 
-The narrow switch going off (`MANTLE_NARROW_SYSTEM=0` and a migrate) makes
-the role NOLOGIN; Postgres does not end a session already logged in. The
-app's narrow pool closes when the process restarts with the switch off
-(`docker compose up -d` recreates the container), so a box flipped off has
-no narrow session left once its app is up again; a hand session as the
-role ends when its client disconnects, or by
-`select pg_terminate_backend(pid) from pg_stat_activity where usename = 'mantle_system_narrow'`
-as the superuser.
-
-The derived triggers hold columns. An `AFTER UPDATE OF <columns>`
-trigger records each column as a dependency, so a migration that drops a
-column or changes its type would fail on every migrated box (and not in
-CI, whose fresh database has no trigger yet). So migrate drops the
-derived UPDATE OF triggers before its first pending migration
-(`dropNarrowWouldRefuse`, from `applyJournal`) and makes them again from
-the grants after the last (`applyNarrowWouldRefuse`, in
-`afterMigrations`); a migration that fails puts them back on its way out.
-Only the UPDATE OF triggers are dropped (an INSERT or DELETE trigger
-holds no column), so a migrate with a migration pending takes a short lock
-twice on each table that has one, and none on the rest; a migrate with
-nothing pending touches none of them. The drop runs inside the same guard
-as the migrations: one that stops part way makes them again too. Each
-table's triggers change in a transaction of their own, `lock_timeout` 3 s,
-retried on a lock wait or a deadlock (the old app is still serving during
-a roll). A trigger present by its name that counts nothing (disabled,
-replica only, or calling another function) is dropped and made again by
-the same step, so the next migrate puts back what a hand change took
-out of the count. The
-rule for migration authors: nothing to do; a hand-run revert that drops or
-retypes a column on a table outside the actor check runs
-`select tgname, tgrelid::regclass from pg_trigger where tgname like 'mantle\_narrow\_would\_refuse\_%'`
-first and drops those on its table (the next migrate makes them again).
-
-One image back needs no revert with the narrow switch off
-(`MANTLE_NARROW_SYSTEM=0`; or unset on an image before b3, whose default
-is off in production): every report branch asks one predicate,
-`mantle_narrow_report(who, held, id)`, which answers false when the role
-may not run a reader it asks (the older image's migrate grants the runtime
-role its own list, without this release's held readers), so the sign-in
-and sign-out writes (a device token's rotation, a phone's sign-out, a key
-or token revoke, a disable, an End sessions, an MCP client's removal, an
-OAuth code's burn) write, uncounted; the drill's N-1 rows run each as the
-runtime role with the actor check on. With the switch on, the older
-image's grants also leave the narrow role without those readers, so its
-holds refuse (42501, fail closed) every write they guard, a member's too.
-The b2 image (one back) is the exception: its own migrations (0315 to 0327) grant the held readers, and with the switch on only 0328's wider
-hold stands in its way (it refuses the push device deletes b2 sends
-outside the spot). So with the switch on, pinning b2 takes one of
-two forms: set `MANTLE_NARROW_SYSTEM=0` in the same `.env` edit as
-`MANTLE_IMAGE_TAG` and one `docker compose up -d` for both (no container
-of the older image ever runs with the switch on), or revert 0329 and
-then 0328 first (below; 0329 only changes the counter's function, which
-no image calls, but its ledger row must go before 0328's), then pin; an
-image older than b2 takes the same switch edit, or the reverts of 0329
-down to 0315. The switch alone, with
-no pin, is the fallback for a narrow refusal on this release
-(update-prod.md's rollback floors say the same).
-
-Reverting the narrow migrations by hand (before pinning an image older
-than one back, or to keep the switch on one back): newest first, each file in its own
-transaction, `0329_narrow_counter_enabled` (0328's counter function
-back: a trigger counts when not disabled), `0328_narrow_hold_wider` (the grant hold's three new
-triggers and the counter's missing-triggers function; 0327's hold body
-back), `0327_narrow_lockout_and_ledger_tokens`,
-`0326_member_turn_ledger_definers`,
-`0325_narrow_off_on_insert`, `0324_narrow_enable_off`,
-`0323_narrow_message_rules`, `0322_identity_gateway`,
-`0321_narrow_row_rules`, then
-`0320_narrow_would_refuse`, `0319`, `0318`, `0317`, `0316`, `0315` (each in
-`packages/db/rollback/`): 0327's revert drops the settle definer, the
-login and grant holds and the miss guard, puts 0320's report predicate
-back (no hold named), puts 0326's claim back (the budget from the
-traces) and drops the ledger's tokens column; 0326's revert drops the two ledger definers (an
-older image writes the ledger itself, its own migrate grants the runtime
-role the writes again), 0325's revert takes INSERT out of the one-way
-triggers and its two replaces out of `mantle_narrow_one_way` (0324's then
-takes the switch rules out), 0323's revert puts 0321's message guard back
-(which 0321's revert then drops), 0322's revert puts the direct reads back into the
-bodies 0321 and 0320 wrote, and 0320's revert puts 0319's
-`mantle_narrow_one_way` back, so each must run before the next.
-
-Every one of these counts needs the actor check in warn or on (the
-process's `MANTLE_ACTOR_CHECK` or the box's mode, the higher). The counts
-read the actor, and the route mark rides the actor's settings: with the
-check off on both, no actor is sent on the full route and nothing is
-counted, so a 0 then says nothing. The fleet boxes run the check on (the same
-script's `actor_check=` line reads `on`), so their 0s are the evidence the
-default flip waits for; read a box's `actor_check=` line before its 0s. The
-default flip (S7b part b3) waits for 0 since the epoch of the release
-that will flip: every box rolled to that release (its
-`narrow_misses_since_epoch` names that version) and each count 0 since
-its epoch, not since some older one. A 0 counts only where the counter
-exists: `narrow_counter_triggers` above 0 (the derived triggers migrate
-makes; 0 on a box before 0320 or after a failed migrate) and
-`narrow_counter_actor_check` warn or on, and
-`narrow_counter_missing_triggers` 0 (the triggers the narrow role's grants
-call for, less the ones there, enabled (origin or always: 0329; one set
-to fire in replica mode only never fires on a box) and calling the count's function:
-a migrate stopped part way can leave the total above 0 with one table
-blind; from 0328 the database's own `mantle_narrow_counter_missing()`
-answers, over `mantle_narrow_would_refuse_expected()`, the one derivation
-migrate makes the triggers from and the script and the cell in
-`narrow-lockout.db.test.ts` read), and `narrow_counter_held_readers` yes
-(the runtime role may run the two held readers the login and grant holds
-ask; without them those writes run uncounted). b3 needs all four on every
-box, and `narrow_hold_triggers` 8 (the grant hold's triggers: five from
-0327, three from 0328). The epoch must also have seen real work: the rule (the owner's,
-2026-10-23) is one working day of real use since the epoch on the box with
-the most daily member traffic (member and Admin turns, the users, keys and
-settings areas, workers), each count 0 at its end, and each count 0 on
-every other box; a release rolled to that box in between starts its own
-epoch and the day again. A fresh epoch on a quiet box reads 0 and proves
-nothing, so the day is of that busy box: the script prints that use as
-counts (`narrow_traffic_since_epoch:member-turns`, `:audited-actions`
-(every `audit_log` row since the epoch),
-`:active-logins`) and the switch as the app container has it
-(`narrow_switch`: on, off, unset or `?`). The script also prints the epoch
-before (`narrow_prev_epoch:*`, from the second latest epoch row to the
-latest), so a reset shows what the one before it saw. The release shape
-(which release carries the default to a box, and after which day's counts)
-is decided by the CEO per box, recorded in
-[update-prod.md](update-prod.md) before that box rolls. A path
-too rare to run in a day (a yearly job, a recovery tool) is not proven by
-it; it rests on the switch-on suites above. The fallback after the flip is
-per box and is the switch itself, not a code roll: `MANTLE_NARROW_SYSTEM=0`
-in the stack's `.env` and a full `docker compose up -d` (migrate first,
-which takes the role's login, then the app), the full route again for
-every system write. Only migrate or an operator writes an epoch row: 0327's
-guard refuses the narrow role a `narrow-epoch` row or a miss row dated
-ahead (directly or through `mantle_actor_miss_log`).
-`narrow-observe.db.test.ts` holds the cells (as the runtime role, so
-`current_user = session_user` is the pool login's), the box query and the
-revert (`packages/db/rollback/0312_narrow_write_observe.revert.sql`);
-`w7a-area-system-sweep.db.test.ts` runs every `systemWhole` tool with the
-switch on (narrow, no denial) and off (no content write counted).
+The report-only counts that ran before the narrow route was every box's
+(`narrow-content-write`, `narrow-cascade-delete`, `narrow-would-refuse`,
+migrations 0312 to 0329) are gone (0341, S7c): a write a narrow reason
+makes off the narrow route no longer happens. Their miss rows stay in
+`actor_check_misses` until the reaper's window takes them; nothing reads
+them. migrate drops the would-refuse count's derived triggers table by
+table before the pending migrations (`dropNarrowWouldRefuse`, from
+`applyJournal`: each table in a transaction of its own, `lock_timeout` 3
+s, retried on a lock wait or a deadlock, since the old app is still
+serving during a roll), and 0341 drops their function and whatever is
+left. One image back (0.400.15) runs on 0341 as it is (its trigger step
+finds no count function and makes nothing); its revert
+(`packages/db/rollback/0341_narrow_observe_removed.revert.sql`) is
+optional and puts the counts back, the older image's migrate then making
+the derived triggers again.
 
 ## What runs as what
 
@@ -1416,7 +1181,7 @@ refuses a brain not on workspaces.
 - The migrator itself could log in as `mantle_owner` instead of the
   superuser, except for the steps that need one (making roles, `BYPASSRLS`,
   `LEAKPROOF`, `ALTER DATABASE SET` of a check mode).
-- For S7c (the signed acting login, then the content read revoke): the
+- For S7d (the content read revoke, after the signed acting login): the
   narrow role's inserts whose text reaches a later prompt
   (`tool_result_chunks`, `tool_results.chunked`, `trace_steps.output`) stay
   on its allowlist (the turn's hot path) and move to the turn's own write

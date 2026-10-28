@@ -16,8 +16,7 @@
  * request) switches as its own script actor. Answers for a brain with an
  * owner are unchanged (403; the boot's switch changes nothing).
  *
- * Runs in the full DB run (runtime role off, the narrow switch on), with
- * MANTLE_NARROW_SYSTEM=0 (narrow off), in test:actor-on and in
+ * Runs in the full DB run (runtime role off), in test:actor-on and in
  * test:runtime-role (CI's subset matches /ws-): the box mode is set 'on'
  * here whatever the run's MANTLE_ACTOR_CHECK.
  *

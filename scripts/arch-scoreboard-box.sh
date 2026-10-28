@@ -40,23 +40,14 @@
 #     also the count of mantle_login_area's yes with no Admin workspace and
 #     of areasOf's "migration skipped" path (server/web/lib/workspaces.ts):
 #     a brain reaches either only with no Admin workspace;
-#   - the narrow system role's counts (plan v3.2 S7a, report only): the
-#     distinct check, actor and table rows checked narrow-content-write,
-#     narrow-cascade-delete (migration 0312), narrow-denied and
-#     narrow-would-refuse (migration 0320: what the role would refuse once
-#     the switch is on), and the tables the last names, since the
-#     release's epoch (the latest narrow-epoch row: migrate writes one per
-#     version; all time on a box with none), and that epoch's version and
-#     time; and whether the count can count at all: its derived triggers'
-#     number, the ones missing, the actor check's mode and whether the
-#     runtime role may run the two held readers (b3 needs triggers above
-#     0, none missing, the mode warn or on and the readers yes: a box can
-#     read 0 counts with no counter); the grant hold's trigger count (b3
-#     needs 8); the same counts over the epoch
-#     before; the narrow switch as the app container has it (on, off,
-#     unset: the image's default, or "?"); and real use since the epoch,
-#     counts only (member chat turns, audited actions, active
-#     logins: a 0 with no traffic proves nothing);
+#   - the narrow system role's count: the distinct actor and right rows
+#     checked narrow-denied (a right the role lacks, met on the narrow
+#     route) since the release's epoch (the latest narrow-epoch row:
+#     migrate writes one per version; all time on a box with none), and
+#     that epoch's version and time; the grant hold's trigger count (8);
+#     the same count over the epoch before; and real use since the epoch,
+#     counts only (member chat turns, audited actions, active logins: a 0
+#     with no traffic proves nothing);
 #   - whether the stack's .env has a MANTLE_DB_RUNTIME_ROLE line at all (1
 #     or 0; the updater and roll.sh write one, S4a), n/a with no readable
 #     .env.
@@ -204,150 +195,47 @@ select count(*) || ' ' || count(*) filter (where site = 'scope-holds-admin')
                                     now() - interval '1 hour'))) m;
 SQL
 )
-# The narrow system role's counts (plan v3.2 S7a; report only): the
-# distinct check, actor and table rows of its miss rows in the same window
-# as the fail-open rows. narrow-content-write: migration 0312's count of a
-# content write by a narrow reason off the narrow role (what the role would
-# refuse once it is on, S7b). narrow-cascade-delete: a delete by a narrow
-# reason of a row whose foreign keys cascade into content, counted on
-# either route; a sign of content going away under narrow work, not a
-# refusal to come: the cascade runs as the table's owner, so the role's
-# rights never stop it. narrow-denied: a right the role does not hold, met
-# on the narrow route, or a text the route's check refused (text:<what>). narrow-would-refuse (migration 0320, S7b part b2
-# round 9): a write by a narrow reason off the narrow route that the role
-# would refuse once the switch is on (a table or column privilege it does
-# not hold, or 0319's one-way rules), per actor, table and operation; the
-# second number is the tables they name. Both must read 0 on every box
-# before the default flip (S7b part b3). Numbers only: the table names
-# are read on the box itself (select detail from actor_check_misses where
-# check_name = 'narrow-would-refuse'). Since the release's epoch, not the
-# last 24 hours: the counts are the flip's evidence, so every row since the
-# latest narrow-epoch row counts (migrate writes one per release, its
-# detail the version; an operator may write one by hand to start again,
-# docs/runtime-role.md "The narrow write count"). A box with no epoch row
-# reads all time. The maintenance reaper keeps the narrow rows, the epoch
-# rows too. The epoch row itself is never counted (its check is not one of
-# the four).
+# The narrow system role's count: narrow-denied, a right the role does not
+# hold, met on the narrow route, or a text the route's check refused
+# (text:<what>), as distinct actor and right rows. Since the release's
+# epoch, not the last 24 hours: every row since the latest narrow-epoch row
+# counts (migrate writes one per release, its detail the version; an
+# operator may write one by hand to start again, docs/runtime-role.md "The
+# narrow-denied count"). A box with no epoch row reads all time. The
+# maintenance reaper keeps the narrow rows, the epoch rows too. The epoch
+# row itself is never counted.
 narrow=$(q <<SQL || true
-select count(*) filter (where check_name = 'narrow-content-write')
-    || ' ' || count(*) filter (where check_name = 'narrow-cascade-delete')
-    || ' ' || count(*) filter (where check_name = 'narrow-denied')
-    || ' ' || count(*) filter (where check_name = 'narrow-would-refuse')
-    || ' ' || count(distinct split_part(detail, ' ', 1)) filter (where check_name = 'narrow-would-refuse')
-  from (select distinct check_name, actor, detail from public.actor_check_misses
-         where check_name in ('narrow-content-write', 'narrow-cascade-delete', 'narrow-denied',
-                              'narrow-would-refuse')
+select count(*)
+  from (select distinct actor, detail from public.actor_check_misses
+         where check_name = 'narrow-denied'
            and at >= coalesce((select max(at) from public.actor_check_misses
                                 where check_name = 'narrow-epoch'), '-infinity')) m;
 SQL
 )
-# The same counts over the epoch before (from the second latest epoch row
+# The same count over the epoch before (from the second latest epoch row
 # to the latest): a release that reset the count shows what the one
-# before it saw (0 0 0 0 0 with fewer than two epochs).
+# before it saw (0 with fewer than two epochs).
 narrow_prev=$(q <<SQL || true
 with e as (select at from public.actor_check_misses where check_name = 'narrow-epoch'
             order by at desc, id desc limit 2),
      w as (select min(at) as lo, max(at) as hi, count(*) as n from e)
-select count(*) filter (where check_name = 'narrow-content-write')
-    || ' ' || count(*) filter (where check_name = 'narrow-cascade-delete')
-    || ' ' || count(*) filter (where check_name = 'narrow-denied')
-    || ' ' || count(*) filter (where check_name = 'narrow-would-refuse')
-    || ' ' || count(distinct split_part(detail, ' ', 1)) filter (where check_name = 'narrow-would-refuse')
-  from (select distinct check_name, actor, detail from public.actor_check_misses, w
-         where check_name in ('narrow-content-write', 'narrow-cascade-delete', 'narrow-denied',
-                              'narrow-would-refuse')
+select count(*)
+  from (select distinct actor, detail from public.actor_check_misses, w
+         where check_name = 'narrow-denied'
            and w.n = 2 and at >= w.lo and at < w.hi) m;
 SQL
 )
-# Whether the would-refuse count can count at all (b3 needs both): the
-# number of its derived triggers (migrate makes them from the narrow
-# role's grants, runtime-role.ts applyNarrowWouldRefuse; 0 on a box before
-# 0320 or after a failed migrate) and the actor check's mode as the
-# database holds it (the counts are written only with it warn or on). A
-# box can read 0 counts with no counter: these two say whether it has one.
-narrow_triggers=$(q <<SQL || true
-select count(*) from pg_trigger
- where not tgisinternal
-   and tgname in ('mantle_narrow_would_refuse_ins', 'mantle_narrow_would_refuse_del',
-                  'mantle_narrow_would_refuse_upd');
-SQL
-)
-# The derived triggers the narrow role's grants call for less the ones
-# there (enabled, origin or always, never replica only, and calling the
-# count's function): 0 when the counter is
-# whole. A trigger dropped and never made again (a migrate stopped part
-# way) or disabled shows here, though the total above stays above 0. "?"
-# before 0320. From 0328 the database's own mantle_narrow_counter_missing()
-# answers, over the one derivation migrate makes the triggers from
-# (mantle_narrow_would_refuse_expected); the query below is its copy, for
-# a box before 0328 (the would-refuse cell reads the function:
-# narrow-lockout.db.test.ts).
-narrow_missing=$(q <<'SQL' || true
-select case when to_regprocedure('public.mantle_narrow_counter_missing()') is not null
-            then public.mantle_narrow_counter_missing() end;
-SQL
-)
-[ -n "$narrow_missing" ] || narrow_missing=$(q <<'SQL' || true
-with t as (
-  select c.oid,
-         has_table_privilege(to_regrole('mantle_system_narrow'), c.oid, 'INSERT') is false as ins,
-         has_table_privilege(to_regrole('mantle_system_narrow'), c.oid, 'DELETE') is false as del,
-         array(select a.attnum from pg_attribute a
-                where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
-                  and has_column_privilege(to_regrole('mantle_system_narrow'), c.oid, a.attnum, 'UPDATE') is false
-                order by a.attnum) as cols
-    from pg_class c join pg_namespace n on n.oid = c.relnamespace
-   where n.nspname in ('public', 'auth') and c.relkind in ('r', 'p') and not c.relispartition
-     and to_regrole('mantle_system_narrow') is not null
-     and not exists (select 1 from pg_trigger g
-                      where g.tgrelid = c.oid and g.tgname = 'mantle_actor_check' and not g.tgisinternal)
-)
-select case when to_regprocedure('public.mantle_narrow_would_refuse_stmt()') is null then null else
-  (select count(*) from t where ins and not exists (
-     select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_ins'
-        and g.tgenabled in ('O', 'A') and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')))
-  + (select count(*) from t where del and not exists (
-     select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_del'
-        and g.tgenabled in ('O', 'A') and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')))
-  + (select count(*) from t where cardinality(t.cols) > 0 and not exists (
-     select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_upd'
-        and g.tgenabled in ('O', 'A') and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')
-        and (select array_agg(x order by x) from unnest(g.tgattr::int2[]) x) = t.cols))
-end;
-SQL
-)
-# Whether the runtime role may run the two held readers (0327) the login
-# and grant holds' report branches ask: without them (an older image's
-# grants) those writes run uncounted. yes or no; n/a before 0327 or with
-# no runtime role. b3 needs yes.
-narrow_held=$(q <<'SQL' || true
-select case
-  when to_regprocedure('public.mantle_narrow_login_held(uuid)') is null
-    or to_regprocedure('public.mantle_narrow_client_held(uuid)') is null
-    or to_regrole('mantle_runtime') is null then 'n/a'
-  when has_function_privilege('mantle_runtime', 'public.mantle_narrow_login_held(uuid)', 'EXECUTE')
-   and has_function_privilege('mantle_runtime', 'public.mantle_narrow_client_held(uuid)', 'EXECUTE')
-    then 'yes'
-  else 'no' end;
-SQL
-)
-case "$narrow_held" in yes | no | n/a) ;; *) narrow_held='?' ;; esac
 # The grant hold's triggers (mantle_narrow_token_hold_trg, enabled: origin
 # or always, a replica only one never fires on a box): 5
 # from 0327 (access_keys, oauth_access_tokens, mobile_tokens,
 # oauth_auth_codes, oauth_clients) and 3 from 0328 (pairing_codes,
-# push_subscriptions, mantle_peers). b3 needs 8.
+# push_subscriptions, mantle_peers): 8 from 0328 on.
 narrow_holds=$(q <<'SQL' || true
 select count(*) from pg_trigger
  where not tgisinternal and tgname = 'mantle_narrow_token_hold_trg' and tgenabled in ('O', 'A');
 SQL
 )
-narrow_mode=$(q <<SQL || true
-select coalesce(nullif(current_setting('mantle.actor_check', true), ''), 'off');
-SQL
-)
-case "$narrow_mode" in off | warn | on) ;; *) narrow_mode='?' ;; esac
-# The epoch the narrow counts start from: its version and time (UTC), or
+# The epoch the narrow count starts from: its version and time (UTC), or
 # none. A hand-written epoch's detail is the operator's reason, free text,
 # so only a plain version is printed and anything else reads "reset".
 narrow_epoch=$(q <<SQL || true
@@ -360,8 +248,8 @@ select case when detail ~ '^[0-9]+[.][0-9]+[.][0-9]+' and detail !~ '[^0-9A-Za-z
  limit 1;
 SQL
 )
-# Real use since the narrow epoch (counts only; the b3 rule reads the
-# would-refuse counts against it: a 0 with no traffic proves nothing):
+# Real use since the narrow epoch (counts only: a 0 narrow-denied with no
+# traffic proves nothing):
 # member chat turns (the member turn ledger; rows older than its own keep
 # window are gone), audited actions (every audit_log row: the areas' and
 # the logins' recorded actions, not only the Admin areas'), and active logins (distinct logins that sent a chat message or
@@ -428,25 +316,6 @@ if [ "$have" = 1 ]; then
   v=$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
   case "$v" in 1 | true | yes | on) names_role=1 ;; *) names_role=0 ;; esac
 fi
-# MANTLE_NARROW_SYSTEM as the app container has it (the narrow route's
-# switch, read once at boot): on (1, true, yes, on), off (0, false, no,
-# off), unset (the image's default: off before S7b part b3, on from it),
-# or "?" (a word parseFlag warns on). Only that word leaves the box.
-narrow_switch=n/a
-if env_dump=$(docker inspect --type container "$web" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null); then
-  if printf '%s\n' "$env_dump" | grep -q '^MANTLE_NARROW_SYSTEM='; then
-    v=$(printf '%s\n' "$env_dump" | sed -n 's/^MANTLE_NARROW_SYSTEM=//p' | tail -n 1 |
-      sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
-    case "$v" in
-      1 | true | yes | on) narrow_switch=on ;;
-      0 | false | no | off) narrow_switch=off ;;
-      '') narrow_switch=unset ;;
-      *) narrow_switch='?' ;;
-    esac
-  else
-    narrow_switch=unset
-  fi
-fi
 printf '  %-34s %s\n' role_drift "$drift"
 printf '  %-34s %s\n' role_drift_all_logins "$drift_all"
 printf '  %-34s %s\n' brains_without_admin_workspace "$no_admin"
@@ -468,26 +337,13 @@ case "$narrow_epoch" in
   '') narrow_epoch=none ;;
   *[!0-9A-Za-z.:\ -]*) narrow_epoch='?' ;;
 esac
-printf '  %-34s %s\n' narrow_switch "$narrow_switch"
 printf '  %-34s %s\n' narrow_misses_since_epoch "$narrow_epoch"
-printf '  %-34s %s\n' narrow_counter_triggers "$(num "$narrow_triggers")"
-printf '  %-34s %s\n' narrow_counter_missing_triggers "$(num "$narrow_missing")"
-printf '  %-34s %s\n' narrow_counter_actor_check "$narrow_mode"
-printf '  %-34s %s\n' narrow_counter_held_readers "$narrow_held"
 printf '  %-34s %s\n' narrow_hold_triggers "$(num "$narrow_holds")"
-set -- $narrow
-for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
-  printf '  %-34s %s\n' "narrow_misses:$check" "$(num "${1:-}")"
-  shift || true
-done
+printf '  %-34s %s\n' narrow_misses:denied "$(num "$narrow")"
 set -- $traffic
 for what in member-turns audited-actions active-logins; do
   printf '  %-34s %s\n' "narrow_traffic_since_epoch:$what" "$(num "${1:-}")"
   shift || true
 done
-set -- $narrow_prev
-for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
-  printf '  %-34s %s\n' "narrow_prev_epoch:$check" "$(num "${1:-}")"
-  shift || true
-done
+printf '  %-34s %s\n' narrow_prev_epoch:denied "$(num "$narrow_prev")"
 REMOTE

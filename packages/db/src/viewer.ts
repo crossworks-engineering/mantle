@@ -1019,10 +1019,9 @@ export type SystemRoute = 'narrow' | 'full';
 
 /**
  * The route of each asSystem reason (plan v3.2 S7a part a2), typed so a new
- * reason must pick. A 'narrow' reason runs on mantle_system_narrow while
- * MANTLE_NARROW_SYSTEM is on (narrowSystemOn, runtime-role.ts); off, every
- * reason runs full as before. Measured with the switch on (the DB suites;
- * docs/runtime-role.md, "The narrow route"): a narrow reason the role
+ * reason must pick. A 'narrow' reason runs on mantle_system_narrow.
+ * Measured by the DB suites (docs/runtime-role.md, "The narrow route"): a
+ * narrow reason the role
  * refuses is routed full here with its why, or granted narrowly in the
  * access matrix. systemWork runs full whatever its reason (workers, boot
  * steps).
@@ -1247,12 +1246,8 @@ export type FullRouteSpot = keyof typeof FULL_ROUTE_SPOTS;
  * the narrow one now (systemRouteNow, which reads the exit's pick, not the
  * switch), keeping the actor; anywhere else (a login's scope, system work)
  * `fn` runs as it is. The actor's SET at the spot also carries
- * `mantle.route` = 'full' (runOnFullRouteSpot, actor.ts), so the database
- * tells a declared spot from a narrow reason's other writes on the full
- * route. With the switch off the pool sends nothing on the narrow route
- * (pools.ts), so the spot changes only that one setting in the SET the
- * actor client sends anyway (none with the check off): the same statements
- * and answers.
+ * `mantle.route` = 'full' (runOnFullRouteSpot, actor.ts); no database rule
+ * reads it since the report counts went (0341).
  *
  * `when` (a hold's spot, the one rule for them all): asked only when the
  * route is the narrow one; `fn` runs at the spot when it answers yes, else

@@ -176,7 +176,7 @@ export async function afterMigrations(
 }
 
 /** The check name of the narrow counts' epoch row in actor_check_misses
- *  (docs/runtime-role.md, "The narrow write count"). It starts with
+ *  (docs/runtime-role.md, "The narrow-denied count"). It starts with
  *  narrow- so the maintenance reaper keeps it, as it keeps the counts. */
 export const NARROW_EPOCH_CHECK = 'narrow-epoch';
 

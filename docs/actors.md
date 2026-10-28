@@ -335,7 +335,7 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
   `mantle_grant_change` then takes the caller from its `actor`. S2, S7.
 - The seven Admin acts' definers (0308, 0310) run by `loginDefinerCall` on the
   system pool: the write role holds no EXECUTE on them yet. S7.
-- The system pool is the whole runtime role; the narrow role exists, unused. S7.
+- The narrow role writes no item but still reads the `content` tables (`narrowFor`): at least 17 code sites read content on a narrow exit (docs/_archive/plan-v3-s7c-handover.md). S7d.
 - Route policy is spread over lists, not declared per route. S9.
 - Five branches fail open, counted since S4a (section 7, Fail-open counts). S4.
 - Five checks still ask the role column, each only narrowing while drift is 0:

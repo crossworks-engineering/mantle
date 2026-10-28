@@ -9,8 +9,7 @@
  *    outside the read-only transaction, so the cell has teeth;
  *  - the same under asSystem with a reason the narrow system route takes
  *    ('admin-area', 'audit-log'): the read sees transaction_read_only on,
- *    as the narrow role while MANTLE_NARROW_SYSTEM is on, and a definer
- *    that inserts is refused (25006);
+ *    as the narrow role, and a definer that inserts is refused (25006);
  *  - graphPath's own walk is sent after the SET TRANSACTION READ ONLY of
  *    its transaction, on its connection (the system pool's sends,
  *    recorded): a graphPath that stopped using simpleReadOnly fails here.
@@ -158,10 +157,7 @@ describe.skipIf(!URL)('graphPath reads in a READ ONLY transaction', () => {
         reason,
       )) as { ro: string; u: string }[];
       expect(rows[0]!.ro).toBe('on');
-      // The narrow route is on unless the run turns it off.
-      if (process.env.MANTLE_NARROW_SYSTEM === undefined) {
-        expect(rows[0]!.u).toBe('mantle_system_narrow');
-      }
+      expect(rows[0]!.u).toBe('mantle_system_narrow');
       const err = await refusal(() =>
         m.asSystem(() => s.simpleReadOnly(`select public.${definerFn}() as x`), reason),
       );

@@ -336,7 +336,7 @@ check "box: the fail-open per-site counts read the site part of the check" sh -c
     grep -q \"split_part(check_name, ':', 2) as site, check_name, detail\" &&
   ! sed -n '/^fail_open=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q \"check_name = 'fail-open:\""
 check "box: the narrow counts read all time (no window)" sh -c "
-  sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q 'narrow-would-refuse' &&
+  sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q 'narrow-denied' &&
   ! sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q 'interval'"
 check "box: an unreadable .env reads n/a, not 0" sh -c "
   grep -q '\[ -r \"\$env_stack/.env\" \]' '$ROOT/scripts/arch-scoreboard-box.sh' &&

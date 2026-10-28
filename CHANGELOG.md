@@ -4,6 +4,27 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the narrow route is always on (plan v3.2 S7c)
+
+- **The switch `MANTLE_NARROW_SYSTEM` is gone.** The system work of an
+  Admin area exit runs as the narrow system role on every box, always. A
+  `MANTLE_NARROW_SYSTEM` line in a box's `.env` is inert; an operator may
+  delete it. **A box that set it to `0` (or `off`, `false`) is on after
+  this roll.** The fallback for a narrow refusal is a pin to the image one
+  back, with `MANTLE_NARROW_SYSTEM=0` in the same `.env` edit: that image
+  still reads it ([docs/update-prod.md](docs/update-prod.md), "The narrow
+  system route: on by default (S7b), always on (S7c)").
+- **The report-only counts go (migration 0341):** the would-refuse,
+  content-write and cascade counts, which only told a write made off the
+  narrow route, with their triggers and functions. migrate drops the
+  would-refuse triggers table by table before the migration. What the
+  narrow role is held to (the one-way rules, the message guard, the login
+  and grant holds) refuses it as before. `narrow-denied` and its epoch
+  stay; `scripts/arch-scoreboard-box.sh` prints those and the epoch lines
+  only. The revert is optional for a pin one back.
+- **Unchanged:** the narrow role still reads the content tables. Closing
+  those reads is its own step (S7d).
+
 ## Unreleased: the parser service (Tika and the media sidecar go)
 
 - **Feature:** one core container, the parser (`mantle-parser`,

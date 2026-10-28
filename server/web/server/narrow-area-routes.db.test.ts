@@ -1,16 +1,12 @@
 /**
  * The Admin area routes on the narrow system route, driven through the real
- * app (createApp) with a signed session cookie, the switch on
- * (MANTLE_NARROW_SYSTEM, the tests' default): each row is a route whose
+ * app (createApp) with a signed session cookie: each row is a route whose
  * handler writes a content table on its area exit, so it must reach that
  * write at a named full-route spot (packages/db/src/viewer.ts
  * FULL_ROUTE_SPOTS). A write the narrow role refuses is recorded and fails
  * the test (vitest.setup.ts); a row also fails on a 500, on a database
  * error's own text in the answer, and when the write it exists for did not
  * happen (so a row cannot pass by doing nothing).
- *
- * With MANTLE_NARROW_SYSTEM=0 (the suite's switch-off run) the same rows
- * pass on the full route: the answers do not change.
  *
  * A new area route that writes a content table gets a row here.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/narrow-area-routes.db.test.ts
