@@ -114,8 +114,7 @@ function appTrashSystem<T>(fn: () => Promise<T>): Promise<T> {
  * Marked `ownerOnly` + `loginTurns` so the gate refuses a client, a
  * contact, a team surface with no login (a heartbeat) or a missing one
  * first; this is the handler's own check, for the MCP path that calls
- * handlers directly. Underneath, the column grant holds too (a limited role
- * cannot read `apps.draft_source`).
+ * handlers directly.
  */
 function ownerOnlyRefusal(
   ctx: Parameters<BuiltinToolDef['handler']>[1],

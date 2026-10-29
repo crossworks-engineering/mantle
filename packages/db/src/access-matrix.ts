@@ -1103,7 +1103,7 @@ export const APP_CODE_COLUMNS: readonly string[] = [
   'restored_from_seq',
 ];
 
-/** An app's switches and author (Admin users only, docs/actors.md, "Who may do what"):
+/** An app's switches and author (Admin users only):
  *  trust its tools (author_level), MCP access, data read only
  *  (Informational), and who made it. */
 export const APP_SWITCH_COLUMNS: readonly string[] = [

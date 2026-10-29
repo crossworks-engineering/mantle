@@ -2595,8 +2595,8 @@ export async function presentRotatedToken(
 /** An `?at=` asset token for the anchor's bytes, minted for the login
  *  `loginId` and signed with `sessionEpoch`: the epoch the request's own
  *  credential was checked at (Login.sessionEpoch), read with the login's
- *  row by the session guard, never read again here (on the system pool:
- *  no scope reads auth.users). `ttlSeconds` shortens it (a member's:
+ *  row by the session guard. It is not read again here: a re-read would
+ *  need the system pool, since no scope reads auth.users. `ttlSeconds` shortens it (a member's:
  *  SHORT_ASSET_TOKEN_TTL_SECONDS). */
 export function mintAssetToken(
   anchorId: string,

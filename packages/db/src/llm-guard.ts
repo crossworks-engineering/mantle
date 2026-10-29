@@ -6,9 +6,9 @@
  * private workspace without an assistant costs nothing in LLM work, as a
  * personal space does.
  *
- * An item with an empty read_ws (no grant written) keeps the brain's rule
- * (it is the Admin assistant's). Personal-space items never reach the extractor (its
- * owner check).
+ * An item with an empty read_ws (no grant written) gets LLM work, as the
+ * Admin assistant's does. Personal-space items never reach the extractor
+ * (its owner check).
  */
 import { sql } from 'drizzle-orm';
 import { systemDb } from './client';
