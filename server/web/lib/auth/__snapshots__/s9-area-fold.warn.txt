@@ -1,4 +1,4 @@
-GET /api/users cookie:adm = 200 {"users":[{"id":"<uuid>","email":"test-anchor@example.invalid","displayName":null,"isOwner":true,"role":"admin","contactId":null,"disabledAt":null,"createdAt":"<ts>","lastLoginAt":null,"agent":null},{"id":"<uuid>","email":"<email>","displayName":null,"isOwner":false,"role"
+GET /api/users cookie:adm = 200 {"users":[{"id":"<uuid>","email":"test-anchor@example.invalid","displayName":null,"isOwner":true,"role":"admin","contactId":null,"disabledAt":null,"createdAt":"<ts>","lastLoginAt":null,"description":null,"agent":null},{"id":"<uuid>","email":"<email>","displayName":null,"is
 GET /api/users cookie:noArea = 403 {"error":"forbidden","reason":"area","area":"users","message":"You cannot manage this part of the brain."}
 GET /api/users cookie:mem = 403 {"error":"forbidden","reason":"member-login","message":"Not available to member logins."}
 GET /api/users none = 401 {"error":"unauthorized"}
@@ -72,7 +72,7 @@ GET /api/users fail:once cookie = 200 {"users":[{"id":"<uuid>","email":"test-anc
 GET attachment fail:once cookie = 404 not found
 GET attachment?at fail:once token = 500 {"error":"internal error"}
 GET /api/keys fail:once cookie = 403 {"error":"forbidden","reason":"area","area":"keys","message":"You cannot manage this part of the brain."}
-GET /api/users bearer:adm = 200 {"users":[{"id":"<uuid>","email":"test-anchor@example.invalid","displayName":null,"isOwner":true,"role":"admin","contactId":null,"disabledAt":null,"createdAt":"<ts>","lastLoginAt":null,"agent":null},{"id":"<uuid>","email":"<email>","displayName":null,"isOwner":false,"role"
+GET /api/users bearer:adm = 200 {"users":[{"id":"<uuid>","email":"test-anchor@example.invalid","displayName":null,"isOwner":true,"role":"admin","contactId":null,"disabledAt":null,"createdAt":"<ts>","lastLoginAt":null,"description":null,"agent":null},{"id":"<uuid>","email":"<email>","displayName":null,"is
 GET /api/users bearer:noArea = 403 {"error":"forbidden","reason":"area","area":"users","message":"You cannot manage this part of the brain."}
 GET /api/users bearer:mem = 403 {"error":"forbidden","reason":"member-login","message":"Not available to member logins."}
 GET /api/keys bearer:adm = 200 {"keys":[],"knownServices":[{"service":"firecrawl","label":"Firecrawl","description":"Web crawling: turn whole websites into searchable documentation in the brain. Free tier ~1,000 pages/month.","signupUrl":"https://www.firecrawl.dev","usedFor":"web_map / web_crawl tools","configured":false},{"servi
