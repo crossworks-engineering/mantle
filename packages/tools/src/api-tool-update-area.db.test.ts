@@ -66,6 +66,9 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     await su`insert into tool_groups (owner_id, slug, name, tool_slugs, enabled)
       values (${anchor}, ${group}, 'g', '{}', true)`;
     m = await import('@mantle/db');
+    // The login write pool, as web and api open it: a login's scoped work
+    // runs on the write role, which does not read the key vault.
+    m.openLoginWritePool({ max: 2 });
     dispatch = await import('./dispatch');
     callers = await import('./gate-callers');
     await import('./gate-narrowers');
