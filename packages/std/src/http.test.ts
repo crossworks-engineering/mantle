@@ -172,6 +172,8 @@ describe('parseRetryAfterMs', () => {
     // An unreadable ms value falls back to the seconds header.
     const junk = new Headers({ 'retry-after-ms': 'soon', 'retry-after': '3' });
     expect(parseRetryAfterMs(junk)).toBe(3_000);
+    const blank = { get: (n: string) => (n === 'retry-after-ms' ? '   ' : '3') };
+    expect(parseRetryAfterMs(blank)).toBe(3_000);
   });
 });
 

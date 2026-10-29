@@ -434,6 +434,8 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
       const body = rec(
         await getJson(foundryModelsUrl(root, version), {
           headers: { 'api-key': credential?.apiKey ?? '' },
+          // A redirect would carry the api-key header to another origin.
+          redirect: 'error',
         }),
       );
       return parseOpenAiLike(asArray(body.data));

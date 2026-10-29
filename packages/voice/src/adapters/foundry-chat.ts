@@ -18,9 +18,9 @@
  *     `envCredential` for a route with no Base URL of its own.
  *   - Reasoning models refuse `max_tokens` and sampling parameters. Thinking
  *     on: `reasoning_effort` + `max_completion_tokens`, no sampling. Thinking
- *     off: `max_tokens`, and ONE resend with the fix when a 400 names
- *     `max_completion_tokens`, `temperature` or `top_p` (`paramFix`). A 400
- *     comes before any stream output, so the resend never repeats text.
+ *     off: `max_tokens`. A 400 that names a refused parameter gets a resend
+ *     with that one fix (`paramFix`: each kind once, three at most). A 400
+ *     comes before any stream output, so a resend never repeats text.
  *   - Errors are the shared ChatHttpError: retry (429 with `retry-after-ms`,
  *     5xx), failover, and the provider_alerts circuit read the status the
  *     same way for every provider. A 404 (no such deployment) is not
@@ -61,7 +61,7 @@ import { customReasoningEffort, sanitizeForReasoning } from './custom-chat';
 import { scrubThinkBlocks } from './think-scrubber';
 import { env } from '@mantle/config';
 import { PROVIDER_TIMEOUTS } from '@mantle/std';
-import { providerFetch } from './provider-fetch';
+import { providerFetch, type ProviderFetchOptions } from './provider-fetch';
 
 const PROVIDER = 'foundry';
 
@@ -83,17 +83,41 @@ export function foundryTarget(baseUrl: string | null | undefined): FoundryTarget
   return { root, version };
 }
 
+/**
+ * providerFetch with redirects refused. The key rides a custom `api-key`
+ * header, which a redirect to another origin would carry along (only
+ * `Authorization` and cookies are dropped), with the prompt on a 307 or 308.
+ * Foundry answers in place, so a redirect is never one to follow.
+ */
+function foundryFetch(
+  url: string | URL | Request,
+  init?: RequestInit,
+  opts?: ProviderFetchOptions,
+): Promise<Response> {
+  return providerFetch(url, { ...init, redirect: 'error' }, opts);
+}
+
 function headers(apiKey: string): Record<string, string> {
   return { 'api-key': apiKey, 'content-type': 'application/json' };
 }
 
+/** One request's parameters: the options for the shared body builder, the
+ *  extra body fields, and the parameter fixes already made (each is made
+ *  once, so two fixes can never undo each other). */
+type FoundryRequest = {
+  o: ChatOptions;
+  extra: Record<string, unknown>;
+  done: ReadonlySet<FixKind>;
+};
+
+type FixKind = 'effort' | 'to_completion' | 'to_tokens' | 'sampling';
+
 /** The request as Foundry wants it: thinking on moves the output budget to
  *  `max_completion_tokens` (reasoning models refuse `max_tokens`) and drops
- *  the sampling parameters. Returns the options for the shared body builder
- *  and the extra body fields. */
-function prepare(opts: ChatOptions): { o: ChatOptions; extra: Record<string, unknown> } {
+ *  the sampling parameters. */
+function prepare(opts: ChatOptions): FoundryRequest {
   const effort = customReasoningEffort(opts);
-  if (!effort) return { o: opts, extra: {} };
+  if (!effort) return { o: opts, extra: {}, done: new Set() };
   const { maxTokens, ...rest } = sanitizeForReasoning(opts, true);
   return {
     o: rest,
@@ -101,46 +125,96 @@ function prepare(opts: ChatOptions): { o: ChatOptions; extra: Record<string, unk
       reasoning_effort: effort,
       ...(typeof maxTokens === 'number' ? { max_completion_tokens: maxTokens } : {}),
     },
+    done: new Set(),
   };
 }
 
 /** Words a 400 uses for a parameter the model does not take. */
 const UNSUPPORTED_RE =
-  /unsupported|not supported|does not support|is not allowed|only the default/i;
+  /unsupported|not supported|does not support|is not allowed|not permitted|unrecognized|unknown parameter|only the default/i;
+
+/** The most fixes one call makes (one of each kind but the two that undo
+ *  each other's budget move). */
+const MAX_FIXES = 3;
 
 /**
- * The fixed request after a 400 that names a parameter this model refuses,
- * or null. Two fixes, each applied only when it changes something:
- *   - `max_tokens` refused: move the budget to `max_completion_tokens`.
+ * The fixed request after a 400 that names a parameter this deployment
+ * refuses, or null. Each kind is made at most once, and only when it
+ * changes what was sent:
+ *   - `reasoning_effort` refused (a non-reasoning model with thinking on):
+ *     send none, and the budget as `max_tokens` again.
+ *   - `max_tokens` refused (a reasoning model, thinking off): move the
+ *     budget to `max_completion_tokens`, with `reasoning_effort: low` so the
+ *     model's default reasoning does not eat the whole budget.
+ *   - `max_completion_tokens` refused (a model that only takes
+ *     `max_tokens`): move the budget back.
  *   - `temperature` or `top_p` refused: send neither.
  * Exported for the tests.
  */
-export function paramFix(
-  err: unknown,
-  o: ChatOptions,
-  extra: Record<string, unknown>,
-): { o: ChatOptions; extra: Record<string, unknown> } | null {
+export function paramFix(err: unknown, req: FoundryRequest): FoundryRequest | null {
   if (!(err instanceof ChatHttpError) || err.status !== 400) return null;
   const text = err.body ?? '';
-  if (/max_completion_tokens/.test(text) && typeof o.maxTokens === 'number') {
-    const { maxTokens, ...rest } = o;
-    return { o: rest, extra: { ...extra, max_completion_tokens: maxTokens } };
+  const { o, extra, done } = req;
+  const made = (kind: FixKind, next: Omit<FoundryRequest, 'done'>): FoundryRequest => ({
+    ...next,
+    done: new Set([...done, kind]),
+  });
+  const refused = UNSUPPORTED_RE.test(text);
+
+  if (
+    !done.has('effort') &&
+    'reasoning_effort' in extra &&
+    refused &&
+    /reasoning_effort/.test(text)
+  ) {
+    const { reasoning_effort: _r, max_completion_tokens: mct, ...rest } = extra;
+    return made('effort', {
+      o: typeof mct === 'number' ? { ...o, maxTokens: mct } : o,
+      extra: rest,
+    });
   }
   if (
+    !done.has('to_completion') &&
+    !done.has('to_tokens') &&
+    typeof o.maxTokens === 'number' &&
+    /max_completion_tokens/.test(text)
+  ) {
+    const { maxTokens, ...rest } = o;
+    return made('to_completion', {
+      o: rest,
+      extra: {
+        ...extra,
+        max_completion_tokens: maxTokens,
+        ...(done.has('effort') || 'reasoning_effort' in extra ? {} : { reasoning_effort: 'low' }),
+      },
+    });
+  }
+  if (
+    !done.has('to_tokens') &&
+    !done.has('to_completion') &&
+    typeof extra.max_completion_tokens === 'number' &&
+    refused &&
+    /max_completion_tokens/.test(text) &&
+    !/\bmax_tokens\b/.test(text)
+  ) {
+    const { max_completion_tokens: mct, ...rest } = extra;
+    return made('to_tokens', { o: { ...o, maxTokens: mct as number }, extra: rest });
+  }
+  if (
+    !done.has('sampling') &&
+    refused &&
     /\b(?:temperature|top_p)\b/.test(text) &&
-    UNSUPPORTED_RE.test(text) &&
     (typeof o.temperature === 'number' || typeof o.topP === 'number')
   ) {
     const { temperature: _t, topP: _p, ...rest } = o;
-    return { o: rest, extra };
+    return made('sampling', { o: rest, extra });
   }
   return null;
 }
 
-/** Run `call`, and again after each parameter fix a 400 asks for (two at
- *  most: a reasoning model can refuse `max_tokens` and then `temperature`). */
+/** Run `call`, and again after each parameter fix a 400 asks for. */
 async function withParamFix<T>(
-  start: { o: ChatOptions; extra: Record<string, unknown> },
+  start: FoundryRequest,
   call: (o: ChatOptions, extra: Record<string, unknown>) => Promise<T>,
 ): Promise<T> {
   let cur = start;
@@ -148,7 +222,7 @@ async function withParamFix<T>(
     try {
       return await call(cur.o, cur.extra);
     } catch (err) {
-      const next = fixes < 2 && !cur.o.signal?.aborted ? paramFix(err, cur.o, cur.extra) : null;
+      const next = fixes < MAX_FIXES && !cur.o.signal?.aborted ? paramFix(err, cur) : null;
       if (!next) throw err;
       cur = next;
     }
@@ -177,7 +251,7 @@ async function foundryChat(opts: ChatOptions): Promise<ChatResult> {
       ...extra,
       ...(o.extra ?? {}),
     };
-    const res = await providerFetch(
+    const res = await foundryFetch(
       url,
       {
         method: 'POST',
@@ -222,7 +296,13 @@ async function foundryChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pr
   return withParamFix(prepare(opts), (o, extra) =>
     streamOpenAICompatChat(
       o,
-      { url, headers: headers(opts.apiKey), provider: PROVIDER, bodyExtra: extra },
+      {
+        url,
+        headers: headers(opts.apiKey),
+        provider: PROVIDER,
+        bodyExtra: extra,
+        fetchImpl: foundryFetch,
+      },
       onDelta,
     ),
   );
@@ -258,7 +338,7 @@ async function foundryDiscover({
     return { available: seed, filtered: false, error: msg };
   }
   try {
-    const res = await providerFetch(
+    const res = await foundryFetch(
       foundryModelsUrl(target.root, target.version),
       { headers: { 'api-key': apiKey } },
       { timeoutMs: PROVIDER_TIMEOUTS.discover },

@@ -177,6 +177,14 @@ const ERR_MAX_TOKENS = err(
   'unsupported_parameter',
   "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.",
 );
+const ERR_EFFORT = err(
+  'unsupported_parameter',
+  "Unsupported parameter: 'reasoning_effort' is not supported with this model.",
+);
+const ERR_MCT = err(
+  'invalid_request_error',
+  'Unrecognized request argument supplied: max_completion_tokens',
+);
 const ERR_TEMPERATURE = err(
   'unsupported_value',
   "Unsupported value: 'temperature' does not support 0.2 with this model. Only the default (1) value is supported.",
@@ -281,6 +289,12 @@ describe('foundry endpoint rules', () => {
       query: '2025-04-01-preview',
     });
     expect(parseFoundryApiVersion('2024-10-21&x=1')).toBeNull();
+    // Older dates refuse stream_options and max_completion_tokens.
+    expect(parseFoundryApiVersion('2024-06-01')).toBeNull();
+    expect(parseFoundryApiVersion('2024-09-01-preview')).toEqual({
+      kind: 'dated',
+      query: '2024-09-01-preview',
+    });
     expect(parseFoundryApiVersion('latest')).toBeNull();
   });
 
@@ -292,6 +306,17 @@ describe('foundry endpoint rules', () => {
 });
 
 describe('foundry-chat routing + auth', () => {
+  it('refuses redirects, so the api-key header never follows one to another origin', async () => {
+    const calls = scriptFetch({ kind: 'sse', chunks: STREAM_TEXT });
+    await foundryChatAdapter.chatStream!(base(), () => {});
+    scriptFetch({ kind: 'json', body: COMPLETION });
+    const one = scriptFetch({ kind: 'json', body: COMPLETION });
+    await foundryChatAdapter.chat(base());
+    const list = scriptFetch({ kind: 'json', body: { data: [] } });
+    await foundryChatAdapter.discoverModels!({ apiKey: KEY });
+    for (const c of [calls[0]!, one[0]!, list[0]!]) expect(c.init?.redirect).toBe('error');
+  });
+
   it('POSTs to <resource>/openai/v1/chat/completions with the api-key header only', async () => {
     const calls = scriptFetch({ kind: 'json', body: COMPLETION });
     await foundryChatAdapter.chat(base({ model: 'my-gpt4o-mini' }));
@@ -546,11 +571,57 @@ describe('foundry-chat reasoning models', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('thinking on, a model without reasoning: drops reasoning_effort, budget back to max_tokens', async () => {
+    const calls = scriptFetch(
+      { kind: 'error', status: 400, body: ERR_EFFORT },
+      { kind: 'json', body: COMPLETION },
+    );
+    const r = await foundryChatAdapter.chat(base({ thinkingBudget: 4000, maxTokens: 700 }));
+    expect(r.text).toBe('Hello there.');
+    const second = bodyOf(calls[1]!);
+    expect(second.reasoning_effort).toBeUndefined();
+    expect(second.max_completion_tokens).toBeUndefined();
+    expect(second.max_tokens).toBe(700);
+  });
+
+  it('moves the budget back to max_tokens when max_completion_tokens is refused', async () => {
+    const calls = scriptFetch(
+      { kind: 'error', status: 400, body: ERR_MCT },
+      { kind: 'json', body: COMPLETION },
+    );
+    // Thinking on sends max_completion_tokens; this model refuses that field
+    // alone (it took reasoning_effort).
+    await foundryChatAdapter.chat(base({ thinkingBudget: 4000, maxTokens: 300 }));
+    const second = bodyOf(calls[1]!);
+    expect(second.max_tokens).toBe(300);
+    expect(second.max_completion_tokens).toBeUndefined();
+    expect(second.reasoning_effort).toBe('medium');
+  });
+
+  it('the max_tokens swap adds reasoning_effort low, so default reasoning cannot eat the budget', async () => {
+    const calls = scriptFetch(
+      { kind: 'error', status: 400, body: ERR_MAX_TOKENS },
+      { kind: 'json', body: COMPLETION },
+    );
+    await foundryChatAdapter.chat(base({ maxTokens: 500 }));
+    expect(bodyOf(calls[1]!).reasoning_effort).toBe('low');
+  });
+
+  it('makes each fix once: the budget swaps never undo each other', () => {
+    const e = (body: string) => new ChatHttpError({ provider: 'foundry', status: 400, body });
+    const start = { o: base({ maxTokens: 5 }), extra: {}, done: new Set<never>() };
+    const first = paramFix(e(ERR_MAX_TOKENS), start)!;
+    expect(first.extra.max_completion_tokens).toBe(5);
+    // A later refusal of max_completion_tokens does not swap it back.
+    expect(paramFix(e(ERR_MCT), first)).toBeNull();
+  });
+
   it('paramFix changes nothing it was not asked to', () => {
+    const none = { extra: {}, done: new Set<never>() };
     const e = new ChatHttpError({ provider: 'foundry', status: 400, body: ERR_TEMPERATURE });
-    expect(paramFix(e, base(), {})).toBeNull(); // no temperature was sent
+    expect(paramFix(e, { o: base(), ...none })).toBeNull(); // no temperature was sent
     const e429 = new ChatHttpError({ provider: 'foundry', status: 429, body: ERR_MAX_TOKENS });
-    expect(paramFix(e429, base({ maxTokens: 5 }), {})).toBeNull();
+    expect(paramFix(e429, { o: base({ maxTokens: 5 }), ...none })).toBeNull();
   });
 });
 

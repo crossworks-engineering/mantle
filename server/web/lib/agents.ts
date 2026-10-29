@@ -22,6 +22,7 @@ import {
   onNarrowSpots,
 } from '@mantle/db';
 import { CHATTABLE_ROLES } from '@mantle/runtime/assistant';
+import { chatRouteKeyRefusal } from '@mantle/runtime/agent';
 import {
   parseAgentThinkingEffort,
   type AgentThinkingEffort,
@@ -162,6 +163,36 @@ export async function getAgent(userId: string, id: string): Promise<AgentSummary
     .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
     .limit(1);
   return row ? toSummary(row) : null;
+}
+
+/**
+ * The host an agent's chat calls go to, for the owner's one-off test calls
+ * (agent Test chat, the Studio sandbox): its base URL and tailnet flag, or
+ * none, when the login that paired them with the agent's key may no longer
+ * send it there (@mantle/runtime chatRouteKeyRefusal, the gate a real turn
+ * passes). Null when the agent is not the owner's.
+ */
+export async function agentChatHost(
+  userId: string,
+  id: string,
+): Promise<
+  | { ok: true; baseUrl: string | undefined; viaTailnet: boolean }
+  | { ok: false; refusal: string }
+  | null
+> {
+  const [row] = await db
+    .select({
+      baseUrl: agents.baseUrl,
+      viaTailnet: agents.viaTailnet,
+      configuredBy: agents.configuredBy,
+    })
+    .from(agents)
+    .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
+    .limit(1);
+  if (!row) return null;
+  const refusal = await chatRouteKeyRefusal(userId, row);
+  if (refusal) return { ok: false, refusal };
+  return { ok: true, baseUrl: row.baseUrl?.trim() || undefined, viaTailnet: row.viaTailnet };
 }
 
 /**

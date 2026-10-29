@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 
 import { ownerCaller } from '@/lib/auth';
-import { getAgent } from '@/lib/agents';
+import { agentChatHost, getAgent } from '@/lib/agents';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/runtime/agent';
@@ -81,6 +81,11 @@ export async function POST(req: Request) {
         { error: `no chat adapter for provider '${agent.provider}'` },
         { status: 400 },
       );
+    // The agent's own host, as a real turn sends it, under the same key
+    // pairing gate.
+    const host = await agentChatHost(user.id, agentId);
+    if (!host) return NextResponse.json({ error: 'agent not found' }, { status: 404 });
+    if (!host.ok) return NextResponse.json({ error: host.refusal }, { status: 400 });
 
     // Compose the same prompt a real turn assembles: base + attached skills.
     const skills = await resolveAgentSkills(user.id, agent.skillSlugs ?? [], {
@@ -95,6 +100,8 @@ export async function POST(req: Request) {
     const result = await adapter.chat({
       ...credential,
       model: agent.model,
+      baseUrl: host.baseUrl,
+      viaTailnet: host.viaTailnet,
       messages: [
         ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
         ...clean,

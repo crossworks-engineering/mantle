@@ -217,9 +217,11 @@ export async function resolveChatKey(
   // A box-level key from the environment (Microsoft Foundry's
   // MANTLE_FOUNDRY_API_KEY), only for a route with no base URL of its own:
   // the adapter decides, so the key goes only to the box-level endpoint. A
-  // caller that did not say which base URL the route has gets none.
+  // caller that did not say which base URL the route has gets none, and so
+  // does a route that pins a key (a pinned key that is gone stays a miss
+  // rather than moving the bill to the box-level resource).
   const fromEnv =
-    route.baseUrl === undefined
+    route.baseUrl === undefined || route.apiKeyId
       ? null
       : getChatAdapter(route.provider)?.envCredential?.(route.baseUrl);
   if (fromEnv) return { ok: true, credential: fromEnv };

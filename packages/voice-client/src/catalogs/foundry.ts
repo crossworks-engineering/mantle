@@ -21,6 +21,10 @@ import type { ChatModelInfo } from '../adapters/types';
 /** The path the v1 API lives under, on either host form. */
 export const FOUNDRY_V1_PATH = '/openai/v1';
 
+/** The oldest date version the adapter speaks to (`stream_options` and
+ *  `max_completion_tokens` arrived in 2024-09-01-preview). */
+export const FOUNDRY_OLDEST_DATED = '2024-09-01';
+
 /** The API version the v1 route needs no query for. */
 export const FOUNDRY_DEFAULT_API_VERSION = 'v1';
 
@@ -31,7 +35,7 @@ export const FOUNDRY_ENDPOINT_PROBLEM =
 export const FOUNDRY_ENDPOINT_INVALID =
   'The Microsoft Foundry endpoint is not a plain https URL (no user, query or fragment). Use the resource URL, e.g. https://<resource>.openai.azure.com.';
 export const FOUNDRY_API_VERSION_INVALID =
-  "MANTLE_FOUNDRY_API_VERSION must be 'v1', 'preview' or a date version such as 2024-10-21 or 2025-04-01-preview.";
+  "MANTLE_FOUNDRY_API_VERSION must be 'v1', 'preview' or a date version from 2024-09-01 on, such as 2024-10-21 or 2025-04-01-preview.";
 
 /** A parsed MANTLE_FOUNDRY_API_VERSION. `v1` and `preview` use the v1 route;
  *  a date version uses the older per-deployment route. */
@@ -40,14 +44,19 @@ export type FoundryApiVersion =
 
 /**
  * Parse an API version. Blank or unset is `v1`. Returns null for anything
- * else that is not `v1`, `preview` or `YYYY-MM-DD` with an optional
- * `-preview`, so a stray value can never reach the URL.
+ * else that is not `v1`, `preview` or `YYYY-MM-DD` (from
+ * FOUNDRY_OLDEST_DATED on) with an optional `-preview`, so a stray value can
+ * never reach the URL.
  */
 export function parseFoundryApiVersion(raw: string | null | undefined): FoundryApiVersion | null {
   const v = (raw ?? '').trim();
   if (!v || v === FOUNDRY_DEFAULT_API_VERSION) return { kind: 'v1', query: null };
   if (v === 'preview') return { kind: 'v1', query: 'preview' };
-  if (/^\d{4}-\d{2}-\d{2}(?:-preview)?$/.test(v)) return { kind: 'dated', query: v };
+  // Date versions from 2024-09-01 on: older ones refuse `stream_options`,
+  // which every stream sends, and `max_completion_tokens`.
+  if (/^\d{4}-\d{2}-\d{2}(?:-preview)?$/.test(v) && v.slice(0, 10) >= FOUNDRY_OLDEST_DATED) {
+    return { kind: 'dated', query: v };
+  }
   return null;
 }
 
