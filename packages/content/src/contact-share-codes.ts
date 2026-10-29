@@ -133,8 +133,7 @@ export async function contactSharingByContact(
   if (contactIds.length === 0) return out;
   // The codes table is never granted to the workspace role: the status of
   // contacts the caller already read (the id list is the rule), by its
-  // definer (mantle_contact_sharing, 0293: the dates, never the code; A6b:
-  // on the system pool before, 'contact-sharing').
+  // definer (mantle_contact_sharing, 0293: the dates, never the code).
   const at = (v: Date | string | null) => (v === null ? null : new Date(v));
   const rows = (
     (await db.execute(

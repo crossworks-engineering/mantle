@@ -233,7 +233,7 @@ export function planRetires(
 /** Supersede each retire's older rule. `version` for a same-rule copy,
  *  `corrected` when the newer rule changes it. Returns how many failed;
  *  `onApplied` hears each one that was superseded. In a workspace scope
- *  (W7a fix round 2, N3: update_persona in an Admin user's turn) a rule
+ *  (update_persona in an Admin user's turn) a rule
  *  the scope may not edit is not retired (it counts as failed): the write
  *  runs on the system pool, so the edit check is asked here first. */
 export async function applyRetires(

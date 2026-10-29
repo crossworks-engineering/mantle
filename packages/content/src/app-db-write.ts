@@ -1,5 +1,5 @@
 /**
- * The one write path of an app's own database (A10 #9): a write, and the
+ * The one write path of an app's own database: a write, and the
  * linked app-table exports' sync after it. Every writer of a running app's
  * rows goes through here: the owner's db broker, a member's
  * (server/web/lib/app-runner.ts), a contact link's (/s/:token/db-broker),
@@ -9,12 +9,12 @@
  * left its app's Tables stale until the catch-up task. The scoreboard pins
  * the hand calls at 0 outside this file (handExportSyncCalls).
  *
- * The sync is scheduled in the caller's scope, as each writer did: a
- * member's and an MCP login's write run as system work ('app-data') around
- * the whole call; the owner's and a link's run as they always ran. The
+ * The sync is scheduled in the caller's scope: a member's and an MCP
+ * login's write run as system work ('app-data') around the whole call; the
+ * owner's and a link's run in their own context. The
  * export bookkeeping itself (the dirty stamp and the debounced sync) runs
  * as system(app-export) whoever wrote: a contact share's own actor writes
- * its app's data only (A8 matrix F9, migration 0294). Debounced and hash-gated
+ * its app's data only (migration 0294). Debounced and hash-gated
  * (app-table-exports.ts), so a chatty app costs no extra commits.
  *
  * Server-only (opens the app SQLite): imported as

@@ -1,17 +1,16 @@
 /**
- * A user's chat thread with a workspace assistant (workspaces W7c, 0269):
- * the store the workspace turn engine (run-team-turn.ts) writes and reads.
- * Since 0269 a member's thread with the Team assistant is an ordinary
+ * A user's chat thread with a workspace assistant (0269): the store the
+ * workspace turn engine (run-team-turn.ts) writes and reads. A member's
+ * thread with the Team assistant is an ordinary
  * per-(agent, login) thread in `assistant_messages`, like the owner's: the
  * turn writes its rows there with the login, row security lets only that
  * login read them, and these helpers always name the login.
  *
- * `team_messages` was frozen in 0269 and dropped in 0274 (workspaces W8d):
+ * `team_messages` was dropped in 0274:
  * its member rows are in `assistant_messages` with the same ids, its
  * team-portal contact rows (no login) in `archive_team_messages`, history
- * read by no product code. Admin users no longer read other users' chats
- * (the owner's answer of 2026-10-11): nothing here reads a login's thread
- * for anyone but that login.
+ * read by no product code. Admin users do not read other users' chats:
+ * nothing here reads a login's thread for anyone but that login.
  */
 import { and, desc, eq, gte, sql as dsql } from 'drizzle-orm';
 import {
@@ -32,7 +31,7 @@ import {
 export type ThreadMessage = AssistantMessage & {
   /** The turn's trace (data.trace_id), for the deep link from a reply. */
   traceId: string | null;
-  /** A reply that may quote the login's PRIVATE items (audit S3). */
+  /** A reply that may quote the login's PRIVATE items. */
   usedPrivate: boolean;
 };
 
@@ -96,7 +95,7 @@ export type UpdateThreadMessageOutcomeInput = {
   error?: string | null;
   /** Media the turn's tools produced: node references only, never bytes. */
   attachments?: ConversationAttachment[];
-  /** The reply may quote the login's private items (audit S3). */
+  /** The reply may quote the login's private items. */
   usedPrivate?: boolean;
 };
 

@@ -94,7 +94,7 @@ export type RunSimulatedResponderTurnOptions = {
   maxIterations?: number;
   /** Hard wall-clock ceiling for the whole turn. Defaults to 5 minutes. */
   timeoutMs?: number;
-  /** The login the turn is for (the MCP connection's, W7c fix round 1, M1):
+  /** The login the turn is for (the MCP connection's):
    *  its own thread's digests and its scope, never another user's. */
   loginId?: string | null;
 };

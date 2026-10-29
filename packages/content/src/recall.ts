@@ -2,12 +2,8 @@
  * Recall — the helpers the native path (recall-native.ts) and the serving
  * tools share: the Recall root, folder crumbs, and the prompt embed refill.
  *
- * Until R5 this file also held v1, the page compiler that turned a `recall`
- * tagged page tree into serving rows on every commit. Page-built maps were
- * retired in R5 (2026-09-30); `recall` and `prompt` are ordinary page tags
- * again, and a map is only ever a `recall` item written natively.
- *
- * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
+ * `recall` and `prompt` are ordinary page tags: a map is only ever a `recall`
+ * item written natively, never built from pages.
  */
 
 import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
@@ -131,7 +127,7 @@ export async function recallFolderCrumbs(
  *  a silent zero here is invisible until recall_match stops finding prompts. */
 export async function embedPendingRecallPrompts(ownerId: string): Promise<number> {
   // The brain's own work, whoever's call started it (a reader's recall_match
-  // too): a named read-path write, never the caller's write (arch A3a).
+  // too): a named read-path write, never the caller's write.
   return runReadPathWrite('backfill:recall-prompt-embeddings', () =>
     embedPendingRecallPromptsNow(ownerId),
   );

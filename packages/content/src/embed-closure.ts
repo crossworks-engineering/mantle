@@ -1,9 +1,9 @@
 /**
- * What an item embeds (workspaces W5b2: embeds no longer change who reads
- * anything). Grants alone decide who reads an item: an image, file or drawing
+ * What an item embeds (embeds do not change who reads anything). Grants
+ * alone decide who reads an item: an image, file or drawing
  * a page embeds is read where its own grants say, and "Grant these too" in
  * the item's Grant Access panel (/api/grants/:id/embeds) is the only way an
- * embed gains readers (plan 21.8 row 12). Nothing here writes a row.
+ * embed gains readers. Nothing here writes a row.
  *
  * What counts as an embed:
  *  - a page: its images and file embeds, its embedded drawings, its child
@@ -19,8 +19,7 @@ import { EMBEDDING_KINDS as REGISTRY_EMBEDDING_KINDS } from '@mantle/client-type
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { referencedDrawIds, referencedFileIds, referencedPresentIds } from './doc-assets';
 
-/** The kinds that embed other items: the kind registry's `embeds` field
- *  (A10 #12). */
+/** The kinds that embed other items: the kind registry's `embeds` field. */
 export const EMBEDDING_KINDS: readonly string[] = REGISTRY_EMBEDDING_KINDS;
 
 /** What a note's markdown embeds: images, file embeds, drawings and
@@ -67,11 +66,10 @@ export function drawPlacedFileIds(scene: unknown, fileRefs: unknown): string[] {
 }
 
 // ── Deprecated type ──────────────────────────────────────────────────────────
-// Removed in W5b2: the embed closure no longer lowers anything. The member
-// review accept that used the other no-ops was removed in W5c; this type
-// keeps the share tool's answer compiling.
+// The embed closure lowers nothing; this type keeps the share tool's answer
+// compiling.
 
-/** @deprecated removed in W5b2; callers go in the writers/links helpers. */
+/** @deprecated nothing is lowered; callers go in the writers/links helpers. */
 export type LoweredItem = {
   id: string;
   type: string;

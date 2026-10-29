@@ -1,5 +1,5 @@
 /**
- * Always fold (workspaces plan 5.3, phase W2): the text a page, note or
+ * Always fold: the text a page, note or
  * drawing indexes holds the item's OWN words, and a plain marker where it
  * embeds another item. The embedded item is indexed as its own item and found
  * through its own grants (today: its own level), so a reader who may read the

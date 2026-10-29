@@ -1,7 +1,6 @@
 /**
- * The visibility confirm for Files writes made OUTSIDE the tree routes
- * (folder plan section 4, "Confirm before visibility changes"): the Files
- * screen's own move and copy routes and the agent tools file_move,
+ * The visibility confirm for Files writes made OUTSIDE the tree routes: the
+ * Files screen's own move and copy routes and the agent tools file_move,
  * file_copy, folder_move, folder_copy, file_create and file_upload. They
  * call the Files operations directly, so the tree's own check (write.ts)
  * never ran for them, and a file moved, copied or written into a shared
@@ -95,7 +94,7 @@ export async function guardFolderCopyTo(
 }
 
 /** A NEW file (created or uploaded) in the folder at `destPath`: it takes
- *  the folder's grants and home (S6), so every workspace other than Admin
+ *  the folder's grants and home, so every workspace other than Admin
  *  that reads the folder is named ("This will also be visible to: ..."). */
 export async function guardNewFileIn(
   ownerId: string,

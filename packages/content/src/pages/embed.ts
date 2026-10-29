@@ -1,7 +1,7 @@
 /**
  * Embedded-asset text, folded for a LIVE read.
  *
- * Since always fold (workspaces plan 5.3, phase W2) no stored text folds an
+ * Always fold: no stored text folds an
  * embed's words in: `doc_text` and `scene_text` hold the item's own words
  * and a marker per embed (pages/level-text.ts, draw-scene-text.ts). This
  * fold is for a reader who reads the embeds too (draw-reader.ts redoes it

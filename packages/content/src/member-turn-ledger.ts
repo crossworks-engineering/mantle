@@ -1,10 +1,10 @@
 /**
- * The member chat's cost limits (audit F09): a per-login ledger written when a
- * turn is QUEUED, and a per-login daily token budget.
+ * The member chat's cost limits: a per-login ledger written when a turn is
+ * QUEUED, and a per-login daily token budget.
  *
- * Before this, the daily cap counted the inbound `team_messages` rows the turn
- * workflow writes once it runs, so turns waiting on a busy queue were not
- * counted and a member could pass the cap. `claimMemberTurn` runs at enqueue
+ * Counted at enqueue, not when the turn runs: rows written once a turn runs
+ * miss the turns waiting on a busy queue, so a member could pass the cap.
+ * `claimMemberTurn` runs at enqueue
  * time, in one transaction under a per-login advisory lock, so two sends at
  * once cannot both take the last slot:
  *

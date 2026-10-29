@@ -14,7 +14,7 @@
  * The note is retrievable by relevance and never extracted (no facts from the
  * brain's own answers): see extract/gates.ts.
  *
- * Per login since 0269 (W7c): a thread is one login's chat with one agent.
+ * Per login (0269): a thread is one login's chat with one agent.
  * Every read here names the login, and the summary note is that login's
  * (nodes.login_id), made in the agent's workspace (chatNoteHome), so no
  * other user reads it.
@@ -58,8 +58,7 @@ export class ChatThreadNotFoundError extends Error {
   }
 }
 
-// What the archive routes answered by hand (archiveResponse, A10 part 2 fix
-// round 1, L7): 409 and 404 with the message.
+// The one error answer: 409 and 404 with the message.
 defineDomainError(ChatArchiveBusyError, {
   reason: 'a reply is still running in this chat; try again when it has finished',
   status: 409,
@@ -383,7 +382,7 @@ export async function summarizeChatThread(
       const periodEnd = end.toISOString();
       return step(
         { name: 'persist_archive_summary', kind: 'db_write', input: { title } },
-        // The notes folder's head first (plan U1). The model has answered
+        // The notes folder's head first. The model has answered
         // and the note is embedded, so a retry repeats only this write.
         async () =>
           withChatNoteHome(agentRow?.workspaceId ?? null, () =>
@@ -455,8 +454,8 @@ export function fallbackThreadTitle(firstInbound: string | null, startedAt: Date
 
 /** The summary call's messages. The thread carries other people's words
  *  and tool output, and the summary re-enters later prompts: the input is
- *  fenced, its forged markers defanged (A10 part 1 fix round 1), its markers
- *  carrying a per-call nonce (fix round 2), and buildChatMessages' standing
+ *  fenced, its forged markers defanged, its markers carrying a per-call
+ *  nonce, and buildChatMessages' standing
  *  data-boundary rule explains the fence, as for the conversation
  *  summarizer. */
 export function buildArchiveSummaryMessages(

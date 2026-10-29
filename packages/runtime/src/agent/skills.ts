@@ -114,11 +114,11 @@ export function effectiveSkillSlugs(ownSlugs: string[], groupSkillSlugs: string[
 /**
  * Resolve granted tool-group slugs → the flat, deduped union of their member
  * tool slugs (ENABLED groups only, matching the runtime's resolve-or-omit rule).
- * Empty in ⇒ empty out (no DB hit). See docs/tools-and-skills.md (Phase 3).
+ * Empty in ⇒ empty out (no DB hit). See docs/tools-and-skills.md.
  */
 export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): Promise<string[]> {
   if (slugs.length === 0) return [];
-  // Agents and tool groups have no level since workspaces W7b (plan 5.4):
+  // Agents and tool groups have no level:
   // a group is system-wide, or adminOnly, which runs only where the scope
   // holds the Admin workspace (unscoped system work does; a workspace turn
   // scope when it holds Admin; a level scope never). What a tool then reads

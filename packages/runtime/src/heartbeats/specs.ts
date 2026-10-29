@@ -1,5 +1,5 @@
 /**
- * The heartbeat control tools' definitions as data (A5 step 6d fix round 1):
+ * The heartbeat control tools' definitions as data:
  * each tool's slug, its `heartbeat` field, its policy, name, description
  * and input schema, with no handler and no runtime import, so a data module
  * that reads them (the system manifest's known external tools) loads none
@@ -13,8 +13,7 @@ export type HeartbeatToolSpec = Omit<BuiltinToolDef, 'handler'>;
 
 /** Default cap on heartbeat_list output. The full state jsonb can
  *  be sizable for skills that accumulate (interview answers, daily
- *  log entries, …) — multiplied by N rows it'd blow context.
- *  P2-3 from the v1 audit. */
+ *  log entries, …) — multiplied by N rows it'd blow context. */
 export const HEARTBEAT_LIST_DEFAULT_LIMIT = 20;
 export const HEARTBEAT_LIST_MAX_LIMIT = 100;
 
@@ -78,7 +77,7 @@ export const HEARTBEAT_UPDATE_STATE_SPEC: HeartbeatToolSpec = {
   // A heartbeat's own scratch state, written on every fire: no audit row
   // inside a fire on the firing heartbeat (no `slug`). A call naming one by
   // slug (a responder turn must, and it may move another login's heartbeat
-  // to this login) keeps its row (lows round, 6d L5).
+  // to this login) keeps its row.
   policy: {
     effect: 'write',
     matrix: { none: 'a heartbeat is not an item' },

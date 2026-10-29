@@ -67,9 +67,9 @@ export type RecordMcpResponderTurnOptions = {
   inputTraceId?: string;
   /** Tools the client says it called. Stored as its claim. */
   toolsUsed?: string[];
-  /** The login the turn serves (workspaces R3): stamped on both rows and the
-   *  trace. The MCP surface passes the connection's login (the anchor's
-   *  only on its own stdio), W7c fix round 1, M1. */
+  /** The login the turn serves: stamped on both rows and the trace. The MCP
+   *  surface passes the connection's login (the anchor's only on its own
+   *  stdio). */
   loginId?: string | null;
 };
 

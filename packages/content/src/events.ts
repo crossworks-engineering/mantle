@@ -72,7 +72,7 @@ async function ensureRoot(ownerId: string): Promise<void> {
 }
 
 async function ensureRootNow(ownerId: string): Promise<void> {
-  // Heads first (workspaces plan U1): the folder the root lands in.
+  // Heads first: the folder the root lands in.
   await withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'branch', path: EVENTS_ROOT_LABEL }], (tx) =>
       tx
@@ -365,8 +365,7 @@ export async function deleteEvent(ownerId: string, id: string): Promise<boolean>
  * sent yet. The worker calls this on every tick. Owner-scoped because
  * we look up the destination Telegram chat per-owner.
  *
- * Only the events the owner's own scope reads (workspaces arch A1 fix
- * round, M1): a reminder goes to the owner's chats, so an event in a
+ * Only the events the owner's own scope reads: a reminder goes to the owner's chats, so an event in a
  * workspace the owner is not in (a user's private workspace) is never
  * delivered there; its title and place stay in its workspace. This ALWAYS
  * reads in the owner's scope: an owner with no live workspace (disabled,
@@ -684,7 +683,7 @@ export async function deleteAllExternalEvents(
     eq(nodes.type, 'event'),
     sql`${nodes.data}->>'external_account_id' = ${externalAccountId}`,
   );
-  // Heads first (workspaces plan V4): read the ids, lock their heads, then
+  // Heads first: read the ids, lock their heads, then
   // delete exactly those rows.
   const found = await db.select({ id: nodes.id }).from(nodes).where(where);
   if (found.length === 0) return 0;

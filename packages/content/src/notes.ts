@@ -41,8 +41,8 @@ export type NoteRow = {
   summary: string | null;
   // Who reads it is its workspace grants (workspaces W5b2): the list's
   // chips (`workspaces`, `hasLink`), not a level on the row.
-  /** A read-only snapshot copy of an accepted item (data.snapshot_of,
-   *  workspaces W6b fix round 1): nobody edits it, moves it out of its
+  /** A read-only snapshot copy of an accepted item (data.snapshot_of):
+   *  nobody edits it, moves it out of its
    *  private workspace or shares it; its author may delete it. Absent on
    *  every other item. */
   readOnly?: true;
@@ -205,7 +205,7 @@ export type CreateNoteInput = {
 
 export async function createNote(ownerId: string, input: CreateNoteInput): Promise<NoteRow> {
   await ensureRoot(ownerId);
-  // Heads first (workspaces plan U1): the folder the note lands in.
+  // Heads first: the folder the note lands in.
   const [row] = await headsOrSpace<Node[]>(
     (f) =>
       withDeadlockRetry(() =>
@@ -271,7 +271,7 @@ async function updateNoteOnce(
   // re-extracts, a new title re-embeds. Not the title of an authored summary
   // note (a chat archive, a conversation digest): its vector comes from its
   // topic and summary, never its title, and the extractor never reads it, so
-  // a rename keeps the vector it has (fix round 1 of A10 #7, M2).
+  // a rename keeps the vector it has.
   const changed = changedFields({
     ...(isAuthoredSummaryNote(node) ? {} : { title: [node.title, title] as const }),
     content: [oldData.content, newData.content],

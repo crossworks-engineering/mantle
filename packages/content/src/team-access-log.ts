@@ -61,7 +61,7 @@ export async function listTeamAccess(
     contactId?: string;
     loginId?: string;
     limit?: number;
-    /** false: the log rows alone, contactName null (W7a fix round 2): the
+    /** false: the log rows alone, contactName null: the
      *  caller resolves the contact names in its own scope, so a read of the
      *  log on the system pool reads no item. */
     names?: boolean;
@@ -108,8 +108,8 @@ export async function listTeamAccess(
 }
 
 /**
- * The titles of the contacts `ids` the current caller reads, by id (W7a fix
- * round 2). Run in the caller's scope: the owner-side team tools read their
+ * The titles of the contacts `ids` the current caller reads, by id. Run in
+ * the caller's scope: the owner-side team tools read their
  * logs and threads (system tables) through the system pool and name the
  * contacts here, so no contact is read on the system pool. A contact the
  * scope does not read, or a deleted one, is absent.

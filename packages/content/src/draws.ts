@@ -4,18 +4,15 @@
  *
  *   nodes.title           display name
  *   nodes.data.summary    extractor-written summary
- *   nodes.data.visibility 'private' | 'public' (read-only sharing, phase 4)
+ *   nodes.data.visibility 'private' | 'public' (read-only sharing)
  *   draws.scene           { elements, appState? } (source of truth)
  *   draws.scene_text      derived plaintext (the extractor + FTS read this)
  *   draws.scene_svg       commit-time SVG snapshot (list preview, /s, export)
  *
  * All under the `draw` ltree root, lazy-created on first write. Mirrors
  * pages.ts throughout — the draft/commit model, the draft_rev etag and the
- * row lock are the same machinery; only the document type differs. `draw`
- * joins the extractor's DEFAULT_EXTRACT_TYPES in Phase 3, at which point
- * summary + embedding land automatically on the next
- * pg_notify('node_ingested'); `readNodeBodyRaw` reads `scene_text` from the
- * sidecar.
+ * row lock are the same machinery; only the document type differs.
+ * `readNodeBodyRaw` reads `scene_text` from the sidecar.
  */
 import { and, asc, desc, eq, ilike, isNull, ne, or, sql } from 'drizzle-orm';
 import {
@@ -127,10 +124,10 @@ export type DrawRow = {
    *  rendered (that is the whole point of the commit gate), so the list can
    *  only SAY it exists — see the badge in the preview pane. */
   hasDraft: boolean;
-  // Who reads it is its workspace grants (workspaces W5b2): the list's
+  // Who reads it is its workspace grants: the list's
   // chips (`workspaces`, `hasLink`), not a level on the row.
-  /** A read-only snapshot copy of an accepted item (data.snapshot_of,
-   *  workspaces W6b fix round 1): nobody edits it, moves it out of its
+  /** A read-only snapshot copy of an accepted item (data.snapshot_of):
+   *  nobody edits it, moves it out of its
    *  private workspace or shares it; its author may delete it. Absent on
    *  every other item. */
   readOnly?: true;
@@ -544,7 +541,7 @@ export async function createDraw(ownerId: string, input: CreateDrawInput): Promi
   const scene = normalizeScene(input.scene ?? EMPTY_SCENE);
   const sceneText = sceneToText(scene);
 
-  // Heads first (workspaces plan U1): the folder the drawing lands in.
+  // Heads first: the folder the drawing lands in.
   return headsOrSpace<DrawDetail>(
     (f) =>
       withDeadlockRetry(() =>
@@ -746,8 +743,8 @@ async function commitDrawOnce(
   await assertItemRight(id, 'edit');
 
   const normalized = normalizeScene(scene);
-  // The drawing's own words and a marker per image it places (always fold,
-  // workspaces plan 5.3): an image's text (vision, OCR) is indexed on the
+  // The drawing's own words and a marker per image it places (always
+  // fold): an image's text (vision, OCR) is indexed on the
   // image's own file node and found through its own level or grants.
   const refsForText =
     opts.fileRefs ??

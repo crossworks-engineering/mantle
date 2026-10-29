@@ -1,5 +1,5 @@
 /**
- * Shared responder-loop CORE (audit #5c stage 2) — the traced middle of one
+ * Shared responder-loop CORE — the traced middle of one
  * conversational turn, between "inbound persisted" and "deliver/persist the
  * reply". All three surfaces (web /assistant, Telegram, Team Chat) run this
  * one implementation:
@@ -216,7 +216,7 @@ export function loadContextStep(
  * Everything before (inbound persistence, transcription, attachment ingest)
  * and after (delivery, outbound persistence) stays in the surface adapter.
  */
-/** The responder loop, at the agent's level (member logins Phase 0b): every
+/** The responder loop, at the agent's level: every
  *  tool it dispatches reads through row level security for a below-admin
  *  agent, whoever called it. */
 export function runResponderLoop(opts: RunResponderLoopOptions): Promise<ResponderLoopResult> {
@@ -229,13 +229,13 @@ export function runResponderLoop(opts: RunResponderLoopOptions): Promise<Respond
 }
 
 /**
- * The taint a responder turn starts with (plan N18, I9): its conversation's
+ * The taint a responder turn starts with: its conversation's
  * mark (unless `conversation` is false: a simulated turn keeps none), then
  * the client-written text its retrieval context names. The one place it is
  * derived: the turn itself, and what describes the turn's tool list
  * (describeResponderTurnInput, describeResponderPersona), so a client-sourced
- * turn's listing (loopToolRows' `taint`) is described as it is sent (A5
- * step 6d fix round 1). `persist: false` (a description): a mark found is
+ * turn's listing (loopToolRows' `taint`) is described as it is sent.
+ * `persist: false` (a description): a mark found is
  * never written back to the conversation.
  */
 export async function responderTurnTaint(o: {
@@ -280,11 +280,11 @@ async function runResponderLoopAtLevel(
     opts.contextStepExtra,
   );
 
-  // The conversation's mark (I9): a turn of a conversation that read
+  // The conversation's mark: a turn of a conversation that read
   // client-written text in the last 24 hours starts marked, since the text
   // is still in its history. Client-written text in the retrieval context (a
   // reviewed client request is indexed like any task) marks the turn before
-  // any tool runs (plan N18), and renews the conversation's mark.
+  // any tool runs, and renews the conversation's mark.
   const taint = await responderTurnTaint({
     ownerId: opts.ownerId,
     agentId: agent.id,
@@ -294,7 +294,7 @@ async function runResponderLoopAtLevel(
   });
 
   // The caller resolved the agent's key; it goes to the agent's base URL only
-  // while the login that paired them holds the keys area (W7a fix round 5).
+  // while the login that paired them holds the keys area.
   // A keyless provider runs keyless instead.
   const routeRefused = await chatRouteKeyRefusal(opts.ownerId, agent);
   if (routeRefused && agent.provider !== 'local') throw new Error(routeRefused);

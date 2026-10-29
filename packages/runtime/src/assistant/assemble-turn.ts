@@ -1,15 +1,14 @@
 /**
  * Shared responder-turn ASSEMBLY — the prompt/tool/budget preparation every
  * conversational surface (web /assistant, Telegram, Team Chat) runs before its
- * tool loop. Extracted from the three parallel copies (audit #5c) so a fix to
- * the drift-prone middle lands once:
+ * tool loop. One copy, so a fix to the drift-prone middle lands once:
  *
  *   - identity block (Journal user lane, memory_config.inject_journal-gated)
  *   - working-notes block (Journal agent lane, inject_working_notes-gated)
  *   - skills → system prompt (+ an optional surface suffix, e.g. Telegram's
  *     audio-tag instructions)
  *   - volatile context: time line + surface extras + open-heartbeat awareness
- *   - tool allowlist from granted tool GROUPS (P6) + the per-turn heartbeat
+ *   - tool allowlist from granted tool GROUPS + the per-turn heartbeat
  *     continuity-tool affordance
  *   - per-user adaptive thinking budget
  *   - per-agent tool-loop overrides (max_iterations clamp + tool-volume caps)
@@ -155,8 +154,7 @@ export type AssembleResponderTurnOptions = {
   excludeToolSlugs?: readonly string[];
   /** Drop the tools that read the owner's private corpus (their policy's
    *  `privateCorpus`: mail, the Journal) AFTER group resolution: the team
-   *  private-reads gate (A5 step 6a: read off the policy, where it was the
-   *  TEAM_PRIVATE_READ_SLUGS list). Enforced here at tool resolution so a
+   *  private-reads gate (read off the policy). Enforced here at tool resolution so a
    *  manifest change that re-adds them to a group can't bypass the switch. */
   excludePrivateCorpus?: boolean;
   /** Read-only turn: keep ONLY tools the registry marks safe (mutate nothing,
@@ -180,7 +178,7 @@ export type AssembledResponderTurn = {
   volatileContext: string;
   /** Slugs of open (expecting-reply) heartbeats that influenced this turn —
    *  callers thread this into their trace so /traces can pivot on "influenced
-   *  by heartbeat X" (audit P-trace-5). Empty when none / no surface. */
+   *  by heartbeat X". Empty when none / no surface. */
   relatedHeartbeatSlugs: string[];
   allowedTools: Awaited<ReturnType<typeof resolveAgentTools>>;
   thinkingBudget: number | undefined;
@@ -206,7 +204,7 @@ export type AssembledResponderTurn = {
  * turn.
  */
 /** Assemble at the agent's level: the prompt derives context from the brain
- *  too (member logins Phase 0b). */
+ *  too. */
 export function assembleResponderTurn(
   opts: AssembleResponderTurnOptions,
 ): Promise<AssembledResponderTurn> {
@@ -239,8 +237,8 @@ async function assembleResponderTurnAtLevel(
   // relative references like "tomorrow at 3pm" into a UTC ISO when calling
   // event_create. It carries a per-turn millisecond timestamp, so it MUST
   // ride in the uncached volatile block — prepending it to the system prompt
-  // put it inside cache breakpoint 1 and made the persona prefix miss on
-  // every turn (2026-06 chat-cost audit).
+  // would put it inside cache breakpoint 1 and make the persona prefix miss
+  // on every turn.
   const timeContextLine = buildTimeContextLine(prefs);
   const promptWithSkills = composeSystemPromptWithSkills(agent.systemPrompt, attachedSkills, {
     agentName: agent.name,
@@ -252,7 +250,7 @@ async function assembleResponderTurnAtLevel(
   // small awareness block so the agent knows it's mid-conversation with one of
   // its own proactive tasks and should call heartbeat_update_state after
   // acting on the user's reply. Best-effort; a DB blip here shouldn't kill the
-  // turn. (P0-3 in the v1 heartbeats audit.)
+  // turn.
   let openHeartbeatBlock = '';
   let relatedHeartbeatSlugs: string[] = [];
   if (opts.heartbeatSurface) {
@@ -418,7 +416,7 @@ async function assembleResponderTurnAtLevel(
   }
   // The grant. What the one gate lets the turn call of it is decided where
   // every loop lists its tools, in the loop's own scope (loopToolRows in
-  // agent/tool-loop.ts, A5 step 5 pick B), not here.
+  // agent/tool-loop.ts), not here.
   const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 
   // Honor the agent's per-turn iteration override for the TOP-LEVEL responder

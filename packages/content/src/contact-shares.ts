@@ -38,8 +38,7 @@ export class ContactShareRefusedError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// the routes answered by hand.
+// The one error answer (@mantle/std domain-errors.ts).
 defineDomainError(ContactShareRefusedError, {
   reason: 'the share cannot be made as asked; the message and the reason say why',
   status: 400,
@@ -47,9 +46,9 @@ defineDomainError(ContactShareRefusedError, {
 });
 
 /** Kinds a contact share may name: the kind registry's `contactShare`
- *  (@mantle/client-types/kinds), never a folder. Its own field since A1, not
- *  the workspace class: tasks, events and Recall maps joined that class
- *  (D1) and stay out of contact shares until a reviewed change says so. */
+ *  (@mantle/client-types/kinds), never a folder. Its own field, not the
+ *  workspace class: tasks, events and Recall maps are in that class and
+ *  stay out of contact shares until a reviewed change says so. */
 export const CONTACT_SHAREABLE_TYPES: readonly string[] = kindsWhere<ContactShareKind>(
   (s) => s.contactShare,
 );
@@ -76,8 +75,8 @@ export type ContactShareActRow = {
 /** The refusal a share act's `refused` names, in today's words. */
 function refusalOf(refused: string): ContactShareRefusedError {
   if (refused === 'missing') return new ContactShareRefusedError('not-shareable', 'item not found');
-  // A read-only snapshot copy is shared with no one (W6b fix round 2,
-  // L-1; the database refuses it too).
+  // A read-only snapshot copy is shared with no one (the database refuses
+  // it too).
   if (refused === 'snapshot') {
     return new ContactShareRefusedError('not-shareable', SNAPSHOT_COPY_NO_SHARE);
   }
@@ -329,7 +328,7 @@ export async function listContactSharesForAdmin(
  *  a contact's sharing is on comes from contactSharingByContact, the one
  *  reader of the codes table (contact-share-codes.ts): the workspace role
  *  never reads it, so this list reads in the caller's scope too (the Grant
- *  Access panel, arch A6). */
+ *  Access panel). */
 export async function contactSharesForNode(
   ownerId: string,
   nodeId: string,

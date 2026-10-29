@@ -249,7 +249,7 @@ export async function runAssistantTurn(
       'No enabled assistant agent. Create one at /settings/agents (role=assistant or fallback responder).',
     );
   }
-  // A chat turn always names the login it answers (W7c fix round 2, H1): a
+  // A chat turn always names the login it answers: a
   // helper with no workspace runs in that login's scope, and with no login
   // it would run as system work, which a chat never is.
   if (!agent.workspaceId && !options?.loginId) {
@@ -367,8 +367,8 @@ export async function runAssistantTurn(
   // Current-time / timezone / locale context so the assistant can resolve
   // relative time references in event_create calls. Carries a per-turn
   // millisecond timestamp, so it rides in the uncached volatile block —
-  // prepending it to the system prompt put it inside cache breakpoint 1
-  // and busted the persona prefix every turn (2026-06 chat-cost audit).
+  // prepending it to the system prompt would put it inside cache
+  // breakpoint 1 and bust the persona prefix every turn.
   // Mirrors the server/api (Telegram) flow.
   let prefs = await loadProfilePreferences(ownerId);
   // Auto-set the timezone from a trustworthy device location (mobile always;
@@ -400,7 +400,7 @@ export async function runAssistantTurn(
       `know you've done this, and offer to switch it back when they're home.`
     : '';
 
-  // Shared responder-turn assembly (audit #5c): identity + skills prompt,
+  // Shared responder-turn assembly: identity + skills prompt,
   // volatile context (time line + the two web extras above + open-heartbeat
   // awareness), tool allowlist + heartbeat affordance, thinking budget, loop
   // overrides. `relatedHeartbeatSlugs` is threaded into the startTrace data
@@ -461,10 +461,9 @@ export async function runAssistantTurn(
   }
 
   // Wrap the shared loop core in a trace so every LLM call + tool dispatch
-  // gets persisted as a step. This is the Layer A treatment for the
-  // web /assistant surface — previously turns ran silently and the
-  // operator had no way to see whether Saskia actually called a tool
-  // or just claimed she did. We reuse the existing 'responder_turn'
+  // gets persisted as a step, so the operator can see whether the
+  // assistant actually called a tool or just claimed it did. We reuse the
+  // existing 'responder_turn'
   // kind (no new enum value needed); subject_kind='assistant_message'
   // + subject_id=inbound.id ties the trace to the row the chat UI
   // shows. The node-biography page at /nodes/<id>/history works for
@@ -506,7 +505,7 @@ export async function runAssistantTurn(
       },
       () => {
         // The follow-up suggestion runs after this trace closes; it charges
-        // its spend here (A10 #5). The image-fallback retry's trace wins.
+        // its spend here. The image-fallback retry's trace wins.
         turnSpend = spendTarget();
         return runResponderLoop({
           ownerId,
@@ -543,7 +542,7 @@ export async function runAssistantTurn(
           // /assistant has no outbound channel beyond the reply stream
           // itself — tools that want to "send a voice note" or similar
           // refuse here with a clean error so the LLM falls back to text.
-          // The signed-in login rides along (W6b fix round 2, M-2).
+          // The signed-in login rides along.
           surface: { kind: 'web', ...(options?.loginId ? { loginId: options.loginId } : {}) },
           abortSignal: abortController?.signal ?? null,
         });
@@ -592,8 +591,8 @@ export async function runAssistantTurn(
       // terminal error event, then re-throw — the workflow lands in ERROR and the
       // blocking route's getResult() still rejects (unchanged failure surface).
       // What the person reads (the stored row, the stream's error event):
-      // never a database's, a provider's or the runtime's own text (fix
-      // round 1 M1), as the team turn says it; the detail is logged.
+      // never a database's, a provider's or the runtime's own text, as the
+      // team turn says it; the detail is logged.
       const msg = publicProviderErrorMessage(err, 'assistant-turn');
       await runDurableStep('fail_outbound', () =>
         updateAssistantMessageOutcome({
@@ -637,13 +636,12 @@ export async function runAssistantTurn(
 
   const durableAttachments = durableAttachmentsFor(outcome.loop.artifacts, reply);
 
-  // A turn that ends aborted with NOTHING to show is not an answer. It used to
-  // finalize 'complete' with a 0-character reply, which left a dead turn
-  // indistinguishable from a successful one: no error, no failed status, nothing
-  // any failure count or alert would ever pick up. On 2026-09-09 a stalled
-  // OpenRouter call sat for 3606s and then recorded exactly that — twice — and
-  // the only symptom anyone could see was a spinner that never stopped. Record
-  // it as failed instead, naming which kind of stop it was. A stop that DID
+  // A turn that ends aborted with NOTHING to show is not an answer. Finalized
+  // 'complete' with a 0-character reply, a dead turn would be
+  // indistinguishable from a successful one: no error, no failed status,
+  // nothing any failure count or alert would ever pick up (a stalled provider
+  // call shows only as a spinner that never stops). Record it as failed
+  // instead, naming which kind of stop it was. A stop that DID
   // stream something keeps its partial reply and still finalizes 'complete'.
   const stoppedMessage = stoppedWithoutOutput(abortController?.signal, reply);
   const stoppedEmpty = stoppedMessage !== null;

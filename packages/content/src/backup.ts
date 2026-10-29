@@ -440,8 +440,8 @@ async function runBackupInner(
     );
   }
   // When the dump starts: the workbook and app database archives leave out
-  // only the revisions the store sweep had marked unreferenced before it
-  // (A3b fix round 2), so the file every dumped row names is in them.
+  // only the revisions the store sweep had marked unreferenced before it,
+  // so the file every dumped row names is in them.
   const dumpStartedAt = Date.now();
   const exit = await new Promise<{ code: number | null; stderr: string; spawnErr?: string }>(
     (resolve) => {

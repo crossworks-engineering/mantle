@@ -14,9 +14,9 @@
  * Under the `tasks` ltree root. Lazy-created on first write. The
  * extractor's special case in server/api/src/agent/extractor.ts:readNodeBodyRaw
  * surfaces status + priority + due_at + todos into the body it summarises.
- * Tasks have no comments any more (2026-10-09: user-to-user talk moves to
- * the forum; progress goes in the task body). `commentCount` stays on the
- * row, always 0, so an older UI still renders.
+ * Tasks have no comments (user-to-user talk goes to the forum; progress
+ * goes in the task body). `commentCount` stays on the row, always 0, so an
+ * older UI still renders.
  */
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import {
@@ -348,7 +348,7 @@ export async function updateTask(
   const newTitle =
     input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled task' : node.title;
   // A team request a member filed is extract-exempt until an admin acts on
-  // it (audit F08, extract-exempt.ts). This IS the admin acting: every caller
+  // it (extract-exempt.ts). This IS the admin acting: every caller
   // of updateTask is an owner path (the task routes and tools). Stamp it and
   // announce it once, as an ordinary task's insert is announced.
   const becameReviewed = oldData.source === TEAM_REQUEST_SOURCE && !oldData.reviewed_at;

@@ -1,8 +1,7 @@
 /**
  * Every reference a member's personal item carries, for the save-time embed
- * rule (member logins Phase 2, plan 2d; audit S2). Pure. The personal-space
- * rule that used it went in workspaces W8d; the redactors (client-redact.ts)
- * and the level text (pages/level-text.ts) still read it.
+ * rule. Pure. The redactors (client-redact.ts) and the level text
+ * (pages/level-text.ts) read it.
  *
  * What counts as a reference:
  *  - page documents: the id attributes (`nodeId`, `drawId`, `presentId`,
@@ -24,7 +23,7 @@
  * scheme (`javascript:`, `vbscript:`, a `data:` link; only a `data:image/`
  * image passes). The scheme is read the way a browser reads it: controls and
  * whitespace inside the value are ignored first, so `java<TAB>script:` is
- * `javascript:` here too (final audit F31).
+ * `javascript:` here too.
  */
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import {
@@ -41,7 +40,7 @@ import { UUID_RE } from '@mantle/std';
  *  `ids` that render INSIDE the item (an image, a file embed, an embedded
  *  drawing or child page: any id, src or href on a node); the rest are
  *  links (a link mark, a mention chip, a drawing's element link, a table
- *  cell). Accept (Phase 4, plan 6.2) moves the embeds with the item and
+ *  cell). Accept moves the embeds with the item and
  *  leaves the links where they are. */
 export type EmbedRefs = { ids: string[]; refused: string[]; embeds: string[] };
 

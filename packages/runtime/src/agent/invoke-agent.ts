@@ -111,10 +111,10 @@ export const invokeAgent: AgentInvoker = async ({
     };
   }
 
-  // The scope decides what the child reads (W4b; no level since W8c).
+  // The scope decides what the child reads (no level).
   const openScope = currentWorkspaceScope();
 
-  // The child runs in ITS workspace (W4b fix round 1, M2): an assistant of a
+  // The child runs in ITS workspace: an assistant of a
   // workspace other than Admin (the Team assistant) in a turn scope of it; a
   // helper (no workspace) inside a turn scope in the caller's scope. Inside a
   // workspace turn, an assistant of any other workspace (the Admin one
@@ -271,10 +271,10 @@ export const invokeAgent: AgentInvoker = async ({
       subjectId: target.id,
       agentId: target.id,
       // Attribute the child's live status lines to the specialist by name
-      // ("Pages · Editing the page…"). The child's steps have streamed into
-      // the parent turn since v0.79 (turnId inherits, notifyStepObserver);
-      // what was missing is WHO — anonymous lines interleaved with the
-      // parent's own read as one confusing actor during a 400s delegation.
+      // ("Pages · Editing the page…"). The child's steps stream into the
+      // parent turn (turnId inherits, notifyStepObserver); without WHO,
+      // anonymous lines interleaved with the parent's own read as one
+      // confusing actor during a long delegation.
       streamLabel: target.name,
       data: {
         parent_trace_id: parentTraceId,

@@ -40,7 +40,7 @@ export async function tickHeartbeats(ownerId: string, now: Date = new Date()): P
     .orderBy(asc(heartbeats.nextFireAt))
     .limit(TICK_BATCH);
 
-  // P0-2: filter out heartbeats whose previous fire is still
+  // Filter out heartbeats whose previous fire is still
   // running. The fire updates next_fire_at only after the LLM
   // round-trip completes (can take 30-90s), so a fire taking
   // longer than the 60s tick interval would otherwise be
@@ -82,11 +82,10 @@ function turnLogin(ownerId: string): string | null {
 }
 
 /**
- * The active heartbeats the turn's login set up (W7 integration fix 2): a
- * turn sees only its own login's, its state included, never another
- * user's. By its definer (mantle_turn_heartbeats, 0293: the heartbeats table
- * is granted to no role; in a scope only the scope's own login's; A6b: on
- * the system pool in a scope before, 'heartbeat-context').
+ * The active heartbeats the turn's login set up: a turn sees only its own
+ * login's, its state included, never another user's. By its definer
+ * (mantle_turn_heartbeats, 0293: the heartbeats table is granted to no
+ * role; in a scope only the scope's own login's).
  */
 async function turnHeartbeats(
   ownerId: string,

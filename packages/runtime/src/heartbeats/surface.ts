@@ -10,7 +10,7 @@ export type HeartbeatSurface = NonNullable<ToolHandlerContext['surface']>;
 /** A workspace assistant's fire is not the owner's channel: a team surface
  *  with no login (read only, private reads off). Otherwise the chat the
  *  heartbeat names when it is paired to the login the fire answers (its own
- *  bot, W7d fix round 1, L7), else the owner's web surface. */
+ *  bot), else the owner's web surface. */
 export function heartbeatSurface(o: {
   scoped: boolean;
   adminAssistant: boolean;
@@ -23,7 +23,7 @@ export function heartbeatSurface(o: {
       ? {
           kind: 'telegram',
           telegramChatId: o.telegramChat,
-          // The chat's own bot (W7d fix round 1, L7).
+          // The chat's own bot.
           accountId: o.pairedTelegram.accountId,
         }
       : { kind: 'web' };

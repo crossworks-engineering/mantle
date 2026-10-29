@@ -2,7 +2,7 @@
  * File helpers for the history trees (APP_DB_DIR/_snapshots and
  * TABLE_DB_DIR/_snapshots; app-snapshots.ts, table-snapshots.ts). Async all
  * through: none of them holds the event loop of the process that serves the
- * app (apps audit 2026-10-02, items 5 and 14).
+ * app.
  *
  * Server-only (node:fs).
  */
@@ -11,7 +11,7 @@ import * as path from 'node:path';
 
 /** A file a writer is still making (a snapshot copy before its rename, a
  *  restore's temp file), or the store sweep's memory of the folder
- *  (`.store-sweep.json`, A3b part 2): never part of the history. */
+ *  (`.store-sweep.json`): never part of the history. */
 function isPartial(name: string): boolean {
   return name.includes('.tmp-') || name.includes('.restore-') || name.startsWith('.store-sweep');
 }
@@ -96,7 +96,7 @@ const LEFTOVER_MIN_AGE_MS = 60 * 60 * 1000;
 /**
  * Remove the work files crashes left under these roots (APP_DB_DIR,
  * TABLE_DB_DIR) more than an hour ago, and anything in APP_DB_DIR/_tmp
- * that old (apps audit 2026-10-02, low: nothing swept them). Part of the
+ * that old (nothing else sweeps them). Part of the
  * nightly `app-trash-purge`; plain file removal. Returns the count (a dry
  * run removes nothing).
  */

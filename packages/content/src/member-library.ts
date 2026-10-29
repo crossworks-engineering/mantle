@@ -1,18 +1,17 @@
 /**
- * The member Library (member logins, Phase 1): the brain items a member login
- * may read. There is no ACCESS filter here on purpose. The routes read as the
- * login (`withViewer({ login }, …)`, workspaces W5b2): row security on
+ * The member Library: the brain items a member login may read. There is no
+ * ACCESS filter here on purpose. The routes read as the login
+ * (`withViewer({ login }, …)`): row security on
  * the workspace role shows the items the login's workspaces hold (their
  * grants), published content only (draft columns are never granted). A row
  * this code cannot see is simply absent, so a member can never reach an
- * admin item by id. (A client's "Shared with you" read the same way; the
- * client reader went in workspaces W8d.)
+ * admin item by id.
  *
- * No level is read (workspaces W5c): a row carries no level badge, and no
+ * No level is read: a row carries no level badge, and no
  * level narrows the list. A level-role scope (a test) reads what that role's
  * row security shows.
  *
- * Read-only in Phase 1. Writing and personal spaces come in Phase 2.
+ * Read-only.
  */
 import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
 import { db, nodes, currentScope, nodeReadByWorkspace } from '@mantle/db';
@@ -27,8 +26,8 @@ import {
 } from '@mantle/client-types/member-kinds';
 
 /** What the Library lists: the member item kinds, the one list shared with
- *  personal spaces and the client (audit M2). Folders, apps and formulas
- *  come later. */
+ *  personal spaces and the client. Folders, apps and formulas are not
+ *  listed. */
 export {
   MEMBER_ITEM_KINDS as LIBRARY_KINDS,
   isMemberItemKind as isLibraryKind,
@@ -178,12 +177,12 @@ export async function getLibraryItem(
   if (!n || !isLibraryKind(n.type)) return null;
   const base = rowOf(n);
   const d = (n.data ?? {}) as Record<string, unknown>;
-  // The one switch over an accepted item's kind (A10 #12).
+  // The one switch over an accepted item's kind.
   return (
     forAcceptedKind<typeof n, Promise<LibraryItem | null>>(n, {
       page: async () => {
         const page = await getPage(anchorId, id);
-        // Its folder (folder phase 7), for a Folder index block set to `here`.
+        // Its folder, for a Folder index block set to `here`.
         return page
           ? { ...base, type: 'page', doc: page.doc, folderId: page.folderId ?? null }
           : null;

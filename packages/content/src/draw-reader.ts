@@ -103,8 +103,8 @@ function teamReadOnSystemPool(readFor: DrawReadFor): boolean {
  * The scene file ids of this drawing's images the current scope may see, by
  * the same rule as the SVG byte route; null means all of them (the owner's
  * own paths on the admin pool). Fail closed: a rule that cannot run leaves
- * none, and so does a team surface that reaches here on the system pool
- * (W8 integration): a member's read never gets every image of the owner's.
+ * none, and so does a team surface that reaches here on the system pool:
+ * a member's read never gets every image of the owner's.
  */
 export async function readerVisibleFileIds(
   ownerId: string,
@@ -112,7 +112,7 @@ export async function readerVisibleFileIds(
   readFor: DrawReadFor = {},
 ): Promise<ReadonlySet<string> | null> {
   try {
-    // Inside a turn scope (workspaces W4b fix round 2) the scope's own row
+    // Inside a turn scope the scope's own row
     // rules decide, and a turn never leaves its scope unnamed.
     if (inTurnScope()) return await scopeVisibleDrawFileIds(ownerId, id);
     if (isSystemScope() && !currentSpaceScope()) return readFor.teamSurface ? new Set() : null;

@@ -1,6 +1,5 @@
 /**
- * The visibility confirm for a NEW page (folder phase 7; folder plan
- * section 4, "Confirm before visibility changes"; workspaces S6). A page
+ * The visibility confirm for a NEW page. A page
  * made in a folder takes the folder's grants and home from its first
  * moment, so the workspaces other than Admin that would read it are named
  * first ("This will also be visible to: ..."). Notes cannot be created in a

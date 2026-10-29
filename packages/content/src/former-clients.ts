@@ -1,15 +1,15 @@
 /**
- * Former client logins (workspaces W8a fix round 1). There is no client
- * login role since migration 0272; the client logins it ended are listed in
+ * Former client logins. There is no client login role (migration 0272);
+ * the client logins it ended are listed in
  * `archive_client_logins` and stay former clients:
  *
  *  - an admin cannot enable one again (it stays the disabled member row 0272
  *    left, so what it wrote keeps its author), and the login bridge gives
  *    one no workspace (0272);
  *  - an invite or a new login on the email or the contact of one is
- *    refused, and so is linking another login to the contact of one (W8d),
+ *    refused, and so is linking another login to the contact of one,
  *    so a former client never comes back as a member by itself.
- *    Clients are set up by hand (owner rule 21.9);
+ *    Clients are set up by hand;
  *  - what one wrote stays client-sourced (packages/tools/src/client-sourced.ts).
  *
  * The admin pool reads the archive (management routes and the public
@@ -31,7 +31,7 @@ export const FORMER_CLIENT_EMAIL_MESSAGE =
   'That email belonged to a client login. A former client cannot be invited or given a new login.';
 
 /** What an admin reads when an invite or a new login linked to a former
- *  client's contact is refused (W8a fix round 2). */
+ *  client's contact is refused. */
 export const FORMER_CLIENT_CONTACT_MESSAGE =
   'That contact belonged to a client login. A former client cannot be invited or given a new login.';
 
@@ -59,9 +59,9 @@ export async function isFormerClientEmail(email: string, exec: Exec = db): Promi
 }
 
 /** Whether `contactId` was the contact of a client login (archived by 0272),
- *  whether or not that login still exists (W8a fix round 2). `except`: a
- *  login whose own contact it was does not count (the former client itself,
- *  its contact unchanged; W8d). */
+ *  whether or not that login still exists. `except`: a login whose own
+ *  contact it was does not count (the former client itself, its contact
+ *  unchanged). */
 export async function isFormerClientContact(
   contactId: string,
   exec: Exec = db,

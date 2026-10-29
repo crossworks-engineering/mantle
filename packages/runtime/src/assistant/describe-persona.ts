@@ -111,11 +111,10 @@ export async function describeResponderPersona(
     // What the real loop would list: the grant the gate lets the agent's
     // turn call in its own scope, plus read_result (loopToolRows, the list
     // the loop sends), on the surface the responder's turn runs on: the
-    // owner's web, as runSimulatedResponderTurn runs it (fix round 1,
-    // LOW-4), with the taint its next turn starts with (the conversation's
-    // mark: responderTurnTaint, never written back here), so a
-    // client-sourced conversation is described with what it is offered (A5
-    // step 6d fix round 1).
+    // owner's web, as runSimulatedResponderTurn runs it, with the taint its
+    // next turn starts with (the conversation's mark: responderTurnTaint,
+    // never written back here), so a client-sourced conversation is
+    // described with what it is offered.
     toolSlugs: (
       await withAgentViewer(agent, async () =>
         loopToolRows(ownerId, assembled.allowedTools, {

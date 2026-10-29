@@ -1,10 +1,9 @@
 /**
  * Workspace chat turn execution: one conversational turn for a LOGIN against
  * the assistant of a workspace other than Admin (any workspace the login is a
- * user of since W7c; with none named, its default, defaultWorkspaceAssistant:
- * its oldest workspace beyond Admin with an assistant). POST
- * /api/assistant/turn enqueues it for such an assistant (the member chat
- * route it served before answers 410 since W7c).
+ * user of; with none named, its default, defaultWorkspaceAssistant: its
+ * oldest workspace beyond Admin with an assistant). POST
+ * /api/assistant/turn enqueues it for such an assistant.
  *
  * Deliberately a SIBLING of runAssistantTurn, not a flag on it: the owner path
  * carries a pile of owner-personal machinery (identity/journal injection,
@@ -90,8 +89,7 @@ import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
 import { withAgentViewer } from '../agent/agent-viewer';
 
 /** Transport a team turn arrived on: 'web' (the app), 'api' (a bearer
- *  client), 'msteams' (an 'api' client that tags itself). Its own type
- *  since team_messages, which declared it, was dropped (0274, W8d). */
+ *  client), 'msteams' (an 'api' client that tags itself). */
 type TeamChannel = 'web' | 'api' | 'msteams';
 
 // The responder slugs live in a leaf module (slugs.ts), so a data module
@@ -112,10 +110,9 @@ export type RunTeamTurnOptions = {
   /** Client-minted correlation id for live streaming (same contract as the
    *  owner surface — see docs/live-turn-streaming.md). */
   streamId?: string;
-  /** The MEMBER login this turn belongs to (member logins, plan section 5):
-   *  the turn joins that login's own thread, and runs in the scope of the
-   *  assistant's workspace for that login. Required: the team-code portal's
-   *  contact turns are retired (Phase 6). */
+  /** The MEMBER login this turn belongs to: the turn joins that login's own
+   *  thread, and runs in the scope of the assistant's workspace for that
+   *  login. Required: the team-code portal's contact turns are retired. */
   loginId: string;
   /** The agent the route resolved (an assistant of a workspace of the
    *  login). The turn re-checks it: an agent that is not such an assistant
@@ -198,7 +195,7 @@ async function resolveMemberAgent(
 }
 
 /**
- * Whether a team reply may quote the member's PRIVATE items (audit S3): the
+ * Whether a team reply may quote the member's PRIVATE items: the
  * turn read them with a my-space tool, or the history the model saw holds a
  * reply that did (a follow-up can repeat what the earlier reply quoted).
  */
@@ -269,12 +266,12 @@ export async function runTeamTurn(
 ): Promise<TeamTurnResult> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error('runTeamTurn: empty text');
-  // A turn input from before Phase 6 may still name only a portal contact
-  // (a workflow recovered on upgrade): refuse it, as the portal is gone.
+  // An old turn input may still name only a portal contact (a workflow
+  // recovered on upgrade): refuse it, as the portal is gone.
   if (!options.loginId) {
     throw new Error('runTeamTurn: loginId required (the team-code portal chat is retired)');
   }
-  // A login this code does not name has no chat (W7c fix round 1, M4; W8a):
+  // A login this code does not name has no chat:
   // the route refuses it, and so does the engine, before anything is
   // written or a model is called.
   if (await hasUnknownRole(options.loginId)) {
@@ -290,8 +287,8 @@ export async function runTeamTurn(
     return await runTeamTurnSteps(ownerId, trimmed, displayText, channel, options, progress);
   } catch (err) {
     // A turn that fails BEFORE the inbound row is written (no agent, no key,
-    // retrieval down) used to leave nothing behind: the route had already
-    // answered 202, so the message simply vanished (audit MED 12). Record it
+    // retrieval down) would leave nothing behind: the route has already
+    // answered 202, so the message would simply vanish. Record it
     // with a failed reply, so the thread shows the message and "did not go
     // through". Failures after that point mark their own pending row.
     // A turn whose agent was never resolved has no thread to land in
@@ -425,7 +422,7 @@ async function runTeamTurnSteps(
       // The history is read before the inbound step, outside any durable step,
       // so a turn RECOVERED after that step (DBOS replays it from the journal)
       // finds its own inbound row already in the thread: it would reach the
-      // model twice, once as history and once as the new message (audit F31).
+      // model twice, once as history and once as the new message.
       const teamHistoryRows = historyBeforeInbound(loadedHistoryRows, inbound.id);
       const history = teamThreadToHistory(teamHistoryRows);
 
@@ -464,12 +461,12 @@ async function runTeamTurnSteps(
       // prefix would bust the shared per-agent cache on every member switch.
       const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (user ${loginId}). You are serving this person: a member of the team, not the brain's owner.`;
 
-      // Shared responder-turn assembly (audit #5c), configured for the team
+      // Shared responder-turn assembly, configured for the team
       // surface's HARD isolation: no identity/journal block, no heartbeats, no
       // owner thinking budget (an effort set on the responder agent itself
       // still applies). Delegation: the workspace delegates of the agent's
-      // delegate_to only (Draftsman, Presenter, Appsmith; owner decision
-      // 2026-10-26), which the assembly and the delegation gateway read from
+      // delegate_to only (Draftsman, Presenter, Appsmith), which the
+      // assembly and the delegation gateway read from
       // this turn's scope; the child runs in this scope, on this surface,
       // with this login's rights. The private-reads
       // switch (default OFF) is enforced HERE, at tool resolution — independent
@@ -558,10 +555,10 @@ async function runTeamTurnSteps(
               recordToolCount: true,
               // Delegation is the workspace delegates only (assembled.delegateTo,
               // and the gateway at the call). `assembled` also
-              // carries loopOverrides (spread by runResponderLoop): since the
-              // unification, the team-responder's memory_config max_tool_calls /
-              // max_calls_per_tool clamps are enforced here where they weren't
-              // before — safe (tighter caps), inert unless the agent configures them.
+              // carries loopOverrides (spread by runResponderLoop): the
+              // team-responder's memory_config max_tool_calls /
+              // max_calls_per_tool clamps are enforced here, inert unless the
+              // agent configures them.
               assembled,
               // Retrieval ran before the trace; the member's REAL history came
               // from their own team thread, so the step's turnCount reflects
@@ -643,7 +640,7 @@ async function runTeamTurnSteps(
       // is the shared rule (inline-images.ts).
       const durableAttachments = durableAttachmentsFor(outcome.loop.artifacts, reply);
 
-      // Admins never see a member's private items (audit S3): a reply that read
+      // Admins never see a member's private items: a reply that read
       // them with a my-space tool, or that follows such a reply in the history
       // the model saw, is marked; the admin readers show a placeholder.
       const usedPrivate = replyUsedPrivate(outcome.loop.toolCalls, teamHistoryRows);

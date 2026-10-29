@@ -1,14 +1,14 @@
 /**
- * What a change to a login does to its personal space (audit F21).
+ * What a change to a login does to its personal space.
  *
  * A member promoted to admin keeps their space (every login has one), but an
- * admin's items are never team drafts and never reviewed (Phase 7). The rows
+ * admin's items are never team drafts and never reviewed. The rows
  * of what they shared or submitted as a member would otherwise sit there:
  * hidden while they are an admin, back in Team drafts after a demotion. So a
  * promotion turns them back into private drafts, in the promotion's own
  * transaction: 'team' becomes 'private', 'submitted' becomes 'draft' (the
  * admin can edit it again; there is no admin Recall), and the recorded
- * bundles go. Migration 0180 did the same once for the admins of the day.
+ * bundles go (migration 0180 did the same for existing admins).
  *
  * A DELETED login needs nothing here: its space counts as nobody's member
  * space from then on (`mantle_member_space`, 0180), and the purge takes its

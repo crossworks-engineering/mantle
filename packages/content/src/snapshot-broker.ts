@@ -1,6 +1,5 @@
 /**
- * The snapshot store's broker (workspaces arch A3b part 2, plan 20.3;
- * docs/store-brokers.md): the copies under APP_DB_DIR/_snapshots and
+ * The snapshot store's broker (docs/store-brokers.md): the copies under APP_DB_DIR/_snapshots and
  * TABLE_DB_DIR/_snapshots (node_snapshots.db_path) and the accepted
  * tables' workbook copies under TABLE_DB_DIR/accepted-snapshots
  * (accepted_snapshots.table_path).

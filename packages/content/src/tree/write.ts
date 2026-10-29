@@ -110,8 +110,7 @@ export class TreeError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// treeErrorResponse answered by hand in each route.
+// The one error answer (@mantle/std domain-errors.ts).
 defineDomainError(TreeError, {
   reason: 'a folder write the caller asked for cannot be done as asked; the message says why',
   status: (e) =>
@@ -191,7 +190,7 @@ function refusingError(err: unknown): never {
   if (err instanceof TreeError) throw err;
   if (err instanceof NodeOpRefusal) throw new TreeError(err.code, err.message);
   if (err instanceof FilesMergeRefusal) throw new TreeError('conflict', err.message);
-  // The database refused it under the caller's workspaces (W6a fix round 1):
+  // The database refused it under the caller's workspaces:
   // the HTTP layer answers 403 item-workspace, never the SQL.
   if (isScopeWriteRefusal(err)) throw err;
   const message = errorMessage(err);
@@ -301,9 +300,9 @@ async function checkVisibility(
  *
  * The items it starts from are read in the caller's scope (the ones it
  * moved and reads); the walk and the fold are the brain's, the named system
- * step 'tree-refold' (S11a-5): the walk reads node_embeds, which no
- * workspace scope reads, so in the caller's scope a member's move answered
- * a database error after the move had been made; and the pages reached are
+ * step 'tree-refold': the walk reads node_embeds, which no workspace scope
+ * reads, so in the caller's scope a member's move would answer a database
+ * error after the move had been made; and the pages reached are
  * folded whoever reads them, as a grant change folds them (grants.ts
  * refoldAfter). Nothing it reads goes back to the caller.
  */
@@ -481,7 +480,7 @@ defineDomainError(TreeOrderRefusal, {
 /**
  * Whether the caller may set the order of what the folder at `path` holds
  * (its items and its subfolders): Write on that folder, or an Admin scope at
- * the kind's top level, which is in no folder (owner decision 2026-10-26).
+ * the kind's top level, which is in no folder.
  * The order is one for everyone. The database asks the same of the rank it
  * writes: edit of the item or of its folder (the presentation key, 0281).
  * System work is not checked.
@@ -791,7 +790,7 @@ async function writeRanks(
 
 /**
  * Delete a folder; everything it holds moves up to its parent first, and
- * nothing inside is deleted (folder plan section 5). A subfolder whose name
+ * nothing inside is deleted. A subfolder whose name
  * is already taken there MERGES into that folder, recursively: the folder
  * that was there keeps its name, look and share, and what merged in takes
  * that share. A file whose name is taken there gets a new one

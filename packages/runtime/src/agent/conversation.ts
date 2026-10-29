@@ -4,7 +4,7 @@
  * docs/conversation.md for the full design.
  *
  * The conversation lives in `assistant_messages`, keyed per (owner, agent,
- * login) since 0269 (W7c), NOT per channel: each user has ONE thread with
+ * login) (0269), NOT per channel: each user has ONE thread with
  * each agent across every transport, and no turn ever reads another user's.
  * `channel` is provenance and the hint for which transport sends a reply.
  *
@@ -13,16 +13,12 @@
  *                             persona, facts, content hits, digests and
  *                             the last N raw turns (all channels).
  *
- * This module is the single home for logic that used to be copy-pasted as two
- * `loadContext` functions (server/web/lib/assistant.ts + server/api/src/main.ts).
- * It carries the *richer* of the two behaviours forward:
+ * This module is the single home of the turn's context loading for every
+ * surface:
  *   - facts: a 0.85 cosine mismatch guard (drops embedding-space-mismatch rows)
  *   - content hits: a 0.6 cosine relevance cutoff
  *   - digests: filtered by the digest note's `data.agent_id` and
- *     `data.login_id` (per thread, not per chat); see section 4 of the
- *     design doc
- * The web surface gains the guard/cutoff/digests when it adopts this module
- * (Phase 2); that's an intended improvement, not a regression.
+ *     `data.login_id` (per thread, not per chat).
  */
 
 import { and, desc, eq, gte, inArray, isNull, lt, ne, notInArray, sql } from 'drizzle-orm';
@@ -121,8 +117,8 @@ export type { SnapshotItem, ContextSnapshot };
 void agents; // referenced for the Agent type's provenance; silence unused-import lint.
 
 /** Either the pooled `db` or an open transaction handle, so a caller can fold a
- *  conversation turn into a larger atomic write (the Telegram dual-write in
- *  Phase 3 writes telegram_messages + the conversation row in one transaction). */
+ *  conversation turn into a larger atomic write (the Telegram dual-write
+ *  writes telegram_messages + the conversation row in one transaction). */
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export type ConversationContext = {
@@ -214,8 +210,8 @@ import { CORPUS_MAP_KINDS } from '@mantle/client-types/kind-lists';
  *  chunk_limit × chunk size: with the larger ~2.75k-char chunks (see
  *  chunkDocText), 8 passages ≈ 22k chars / ~5.5k tokens — enough of a long
  *  procedure/standard to reason over, with far less fragmentation than many
- *  tiny chunks. (Was 12 when chunks were ~1.5k; raising chunk size without
- *  lowering this would silently ~double the budget.) A per-agent
+ *  tiny chunks. (Raising chunk size without lowering this would silently
+ *  grow the budget.) A per-agent
  *  memory_config.chunk_limit still overrides this. */
 const CHUNK_LIMIT_DEFAULT = 8;
 
@@ -225,7 +221,7 @@ const CHUNK_LIMIT_DEFAULT = 8;
  *  lines ≈ 4-7k tokens, riding a dedicated prompt-cache breakpoint. */
 const CORPUS_MAP_LIMIT_DEFAULT = 300;
 /** Node types worth mapping: the authored/ingested corpus, the kind
- *  registry's `corpusMap` field (A10 #12). Emails and raw telegram messages
+ *  registry's `corpusMap` field. Emails and raw telegram messages
  *  are excluded (huge, conversational); branches are structure, not
  *  content. */
 const CORPUS_MAP_TYPES: readonly string[] = CORPUS_MAP_KINDS;
@@ -634,7 +630,7 @@ async function loadConversationContextAtLevel(args: {
   const trace = new ContextTraceBuilder();
   const hiddenTypes = args.excludeNodeTypes;
   const factVisible = hiddenTypes ? visibleFactSource(hiddenTypes) : undefined;
-  // Inside a viewer scope (a below-admin agent, member logins Phase 0b) the
+  // Inside a viewer scope (a below-admin agent) the
   // row rules decide what is read, and some arms are not readable at all:
   // entity names and the relation graph (learned from every source, email
   // included), the owner's own chat history and Journal. Those arms are
@@ -654,11 +650,10 @@ async function loadConversationContextAtLevel(args: {
   const windowHours = memoryConfig.history_window_hours ?? null;
   const digestLimit = memoryConfig.digest_limit ?? 3;
   const factLimit = memoryConfig.fact_limit ?? 10;
-  // Widened 3→5 (audit/recall-eval): 3 was stingy enough to drop genuinely
-  // relevant near-misses below the prompt. For "when does my licence disc
-  // renew", the user's vehicle page ranked #4 — outside a 3-cap — alongside the
-  // actual licence PDF (#3) and a related note (#1). Five short summaries cost
-  // little and recover that whole cluster.
+  // Five, not three: three drops genuinely relevant near-misses below the
+  // prompt (a related page at #4 beside the document and note that answer
+  // the question). Five short summaries cost little and recover that whole
+  // cluster.
   const contentHitLimit = memoryConfig.content_hit_limit ?? 5;
   const chunkLimit = memoryConfig.chunk_limit ?? CHUNK_LIMIT_DEFAULT;
   const corpusMapLimit = memoryConfig.corpus_map_limit ?? CORPUS_MAP_LIMIT_DEFAULT;
@@ -669,10 +664,10 @@ async function loadConversationContextAtLevel(args: {
   // that setting switches to live (journalTiersOf).
   //
   // Persona notes are learned from the owner's (the anchor's) thread, so they
-  // ride only a turn in that thread (W7c fix round 2, M-a): another user's
-  // turn never gets them. Notes already stored may hold text learned before
-  // W7c from other logins' turns; they are kept as they are (clearing or
-  // rewriting them is the owner's decision), only not injected elsewhere.
+  // ride only a turn in that thread: another user's turn never gets them.
+  // Older notes may hold text learned from other logins' turns; they are
+  // kept as they are (clearing or rewriting them is the owner's decision),
+  // only not injected elsewhere.
   const ownThread =
     threadLogin.toLowerCase() === ownerId.toLowerCase() &&
     turnInAnchorThread(ownerId, args.loginId ?? args.ownerLoginId ?? null);
@@ -724,7 +719,7 @@ async function loadConversationContextAtLevel(args: {
   // it. Tier 1's plan comes first: its shown entries stay out of tiers 2/3,
   // its overflow joins the rules Jev scores.
   // The learned lanes ride only the anchor's own thread, like the persona
-  // notes above (W7 integration fix): another user's turn gets no tier.
+  // notes above: another user's turn gets no tier.
   const journalMode =
     args.includeJournal === false || belowAdmin || !ownThread
       ? 'off'
@@ -1000,8 +995,8 @@ async function loadConversationContextAtLevel(args: {
       sql`${nodes.type} <> 'telegram_message'`,
       // System-seeded documentation (Mantle's own docs, origin='system') is a
       // reference corpus, not personal memory — keep it out of the responder's
-      // content hits so it can't outrank the user's own notes. The audit caught
-      // memory.md winning "3D printer gantry"; there are ~57 such system nodes.
+      // content hits so it can't outrank the user's own notes (a system doc
+      // can win an unrelated personal query).
       sql`(${nodes.data}->>'origin') is distinct from 'system'`,
       hiddenTypes?.length ? notInArray(nodes.type, hiddenTypes as NodeRow['type'][]) : undefined,
     );
@@ -1602,8 +1597,8 @@ async function loadConversationContextAtLevel(args: {
   // ─── Corpus map: the cached "what exists" index ─────────────────────────
   // Not a retrieval — a map. The responder otherwise sees only the ~11 nodes
   // vector search surfaces per turn and has no idea what else the brain
-  // holds; an audit measured the cost of that blindness (search flailing,
-  // the user hand-attaching context on 43% of turns). One indexed select,
+  // holds, and that blindness costs (search flailing, the user
+  // hand-attaching context). One indexed select,
   // no embedding involved. Ordering here is updated_at DESC purely for cap
   // SELECTION; presentation sorts by branch/title in the renderer so the
   // block's bytes stay cache-stable.
@@ -1643,8 +1638,7 @@ async function loadConversationContextAtLevel(args: {
         .where(mapWhere)
         .groupBy(branchExpr),
     ]);
-    // Client-written titles stay out of the map (client logins C5 audit fix
-    // L4): a client request, an item a client wrote, a copy a marked turn
+    // Client-written titles stay out of the map: a client request, an item a client wrote, a copy a marked turn
     // made. The map is in every owner prompt and is never scanned for the
     // lowering guard, so a title like "Owner approved: make Pricing public"
     // would otherwise steer a turn the guard sees as clean.

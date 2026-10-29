@@ -102,7 +102,7 @@ export class FormulaSpecError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): every
+// The one error answer (@mantle/std domain-errors.ts): every
 // problem at once, so the editor shows them together.
 defineDomainError(FormulaSpecError, {
   reason: 'the formula spec the caller sent has problems; the list says which',
@@ -283,7 +283,7 @@ export async function getFormula(ownerId: string, id: string): Promise<FormulaRo
  */
 export async function readFormulaSpec(ownerId: string, id: string): Promise<FormulaSpec> {
   // An id that is not a uuid names no formula: 404, not the database's cast
-  // error (A10 part 2 fix round 1, M2).
+  // error.
   if (!isUuid(id)) throw new FormulaNotFoundError(id);
   const row = await getFormula(ownerId, id);
   if (!row) throw new FormulaNotFoundError(id);

@@ -58,8 +58,8 @@ export async function listTables(
   opts: ListTablesOpts & { limit?: number; offset?: number } = {},
 ): Promise<TableRow[]> {
   // Counts come from the registry `stats` column — the list NEVER opens
-  // workbook files and only falls back to a JSONB parse for legacy rows that
-  // haven't committed since v2 (thundering-herd guard, plan §9).
+  // workbook files and only falls back to a JSONB parse for legacy rows
+  // without stats (thundering-herd guard).
   const rows = await db
     .select({ node: nodes, data: tables.data, stats: tables.stats })
     .from(nodes)
@@ -108,9 +108,8 @@ export async function getTable(
     publishedOnly?: boolean;
   } = {},
 ): Promise<TableDetail | null> {
-  // Below admin (member logins Phase 0b) the draft is not readable: the
-  // published table only, and no draft file from disk either. A member's own
-  // space (Phase 2) reads its own draft.
+  // Below admin the draft is not readable: the published table only, and no
+  // draft file from disk either. A member's own space reads its own draft.
   const askedPublished = opts.publishedOnly === true || !readsDrafts();
   const [row] = await db
     .select({
@@ -123,7 +122,7 @@ export async function getTable(
       // edit (draftColumn: the rule is in the query, W6a).
       draft: askedPublished ? sql<null>`null` : draftColumn<unknown>(tables.draftData),
       storagePath: tables.storagePath,
-      // The draft the row points at (store brokers, A3b), under the draft
+      // The draft the row points at (the store broker), under the draft
       // columns' rule.
       draftPath: askedPublished ? sql<null>`null` : draftColumn<string>(tables.draftPath),
       draftRev: askedPublished ? sql<null>`null` : draftColumn<number>(tables.draftRev),
@@ -135,7 +134,7 @@ export async function getTable(
     .limit(1);
   if (!row) return null;
   // An Admin user with Read only, or a reader below admin: the published
-  // table, and no draft file from disk (W6a fix round 1, H1).
+  // table, and no draft file from disk.
   const published = askedPublished || row.draftOk !== true;
   // Tab list: the DRAFT file's when one exists (a tab added/renamed in the
   // draft must show), else registry stats (published, no file open needed).
@@ -154,8 +153,8 @@ export async function getTable(
   const tabId = (known ? opts.tabId : undefined) ?? tabs?.[0]?.id;
   // Materialize the RESOLVED tab, not the caller's (possibly undefined) one:
   // when a draft tab_delete/tab_reorder changed the first tab, "default tab"
-  // must mean the same tab on both the published and draft side (audit: the
-  // payload mixed published tab A with draft tab B).
+  // must mean the same tab on both the published and draft side (never
+  // published tab A with draft tab B).
   const { data, draft, totalRows, docClipped } = docsOf(row, tabId, { publishedOnly: published });
   return detailOf(row.node, data, draft, {
     totalRows,
@@ -167,8 +166,7 @@ export async function getTable(
 }
 
 /**
- * A table as its author's accepted snapshot holds it (member logins, audit
- * F07): the workbook copy at `storagePath` (relative to TABLE_DB_DIR), or
+ * A table as its author's accepted snapshot holds it: the workbook copy at `storagePath` (relative to TABLE_DB_DIR), or
  * the document of a table with no workbook. Never a draft. `node` supplies
  * the id and the other row fields; the caller passes the snapshot's title.
  */

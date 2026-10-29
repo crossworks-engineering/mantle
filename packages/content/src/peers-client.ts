@@ -52,7 +52,7 @@ async function callPeer(
   init: { method: string; body?: unknown },
 ): Promise<{ ok: true; json: unknown } | { ok: false; error: string }> {
   try {
-    // The one egress fetch (A10 part 1, docs/egress.md). allowLan: the owner
+    // The one egress fetch (docs/egress.md). allowLan: the owner
     // may link a brain on a private or tailnet address, and that keeps
     // working; every hop is still checked, so a redirect into link-local
     // space (the cloud metadata address) is refused, the token is dropped

@@ -1,6 +1,5 @@
 /**
- * The tables store's broker (workspaces arch A3b, plan sections 6 and 20.3;
- * docs/store-brokers.md): the ONLY writer of the workbook files under
+ * The tables store's broker (docs/store-brokers.md): the ONLY writer of the workbook files under
  * TABLE_DB_DIR, and the only importer of their write API
  * (@mantle/tabledb/write; the store-brokers lint pins it). Readers keep
  * @mantle/tabledb and resolve a table's files through its row
@@ -18,8 +17,8 @@
  * The one exception: an op batch on an existing draft changes the draft in
  * place, inside a short transaction whose first statement is the check
  * (the draft_rev bump, which takes the row lock): a copy per batch costs a
- * whole workbook (p95 1.7 s at 500,000 rows on the workstation's disk,
- * 2026-10-13), and the batch itself takes milliseconds.
+ * whole workbook (p95 1.7 s at 500,000 rows), and the batch itself takes
+ * milliseconds.
  *
  * Server-only (node:fs, node:sqlite).
  */
@@ -75,7 +74,7 @@ export class TableRevConflict extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): a draft
+// The one error answer (@mantle/std domain-errors.ts): a draft
 // another write kept changing past the retries; reload and apply again.
 defineDomainError(TableRevConflict, {
   reason: 'another write changed the draft while this one retried; the caller reloads',
@@ -155,7 +154,7 @@ export async function readTableRow(nodeId: string): Promise<TableRow | null> {
 }
 
 /**
- * THE flip of a table (plan 20.3 step 2): one short transaction whose first
+ * THE flip of a table: one short transaction whose first
  * statement checks the registry row as the caller and moves it to its next
  * revision, from `expectRev` (none: whatever it is). Exactly one row; no
  * row is a refusal (StoreRefusedError, a 404), a row at another revision a
@@ -323,7 +322,7 @@ export async function opsInPlace<T>(
       if (!draftAbs || !existsSync(draftAbs)) {
         // A commit or a discard took the draft since the caller read it, or
         // the row names a draft file that is not there (0283 pointed every
-        // row with a draft time at its old name; A3b fix round 1, L1):
+        // row with a draft time at its old name):
         // nothing in place (the bump rolls back); the caller stages a new
         // draft from the published workbook instead.
         throw new NoDraftInPlace();

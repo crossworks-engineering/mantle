@@ -1,8 +1,7 @@
 /**
- * The one tag normaliser (A10 #15): every kind that stores a tag list
- * (notes, tasks, events, journal, contacts, draws, formulas, locations,
- * apps, pages, tables, secrets) wrote the same function by hand, twelve
- * copies byte for byte. A tag is trimmed and lower-cased, a blank or one
+ * The one tag normaliser for every kind that stores a tag list (notes,
+ * tasks, events, journal, contacts, draws, formulas, locations, apps, pages,
+ * tables, secrets). A tag is trimmed and lower-cased, a blank or one
  * over TAG_MAX_LENGTH characters is dropped, a repeat is dropped, and at
  * most TAG_MAX_COUNT are kept, so a bad write cannot grow the row.
  */

@@ -1,7 +1,7 @@
 /**
  * A drawing's indexed text (`draws.scene_text`): its own labels, frames and
  * relations (sceneToText), and one plain marker for each image it places
- * (always fold, workspaces plan 5.3, phase W2). An image's words (vision,
+ * (always fold). An image's words (vision,
  * OCR) are indexed on the image's own file node and found through its own
  * level or grants, never through the drawing. Pure.
  */

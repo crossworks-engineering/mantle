@@ -100,9 +100,9 @@ async function latestRetrieval(ownerId: string): Promise<RetrievalScore | null> 
 }
 
 /** Live counts for one brain, measured against the split policy, plus the
- *  latest measured retrieval score. `countsVia` runs the two counts (W7a fix
- *  round 2: brain_capacity counts the whole brain on the system pool,
- *  numbers only, and reads the score's note in its caller's scope). */
+ *  latest measured retrieval score. `countsVia` runs the two counts
+ *  (brain_capacity counts the whole brain on the system pool, numbers only,
+ *  and reads the score's note in its caller's scope). */
 export async function corpusCapacity(
   ownerId: string,
   opts: { countsVia?: <T>(fn: () => Promise<T>) => Promise<T> } = {},

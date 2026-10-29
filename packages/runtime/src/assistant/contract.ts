@@ -25,7 +25,7 @@ export const TEAM_TURN_WORKFLOW = 'teamTurnWorkflow';
  *  cleanly instead of failing on every boot. */
 export const RETIRED_CLIENT_TURN_WORKFLOW = 'clientTurnWorkflow';
 
-/** The retired Team Forum turn workflow's name (member logins Phase 6). No
+/** The retired Team Forum turn workflow's name. No
  *  one enqueues it any more; server/api keeps a no-op stub registered under
  *  it so a forum turn still queued, or in flight, on a box when it upgrades
  *  finishes cleanly instead of failing on every boot. */
@@ -36,10 +36,10 @@ export const RETIRED_FORUM_TURN_WORKFLOW = 'forumTurnWorkflow';
  *  LLM-provider backpressure valve. */
 export const RUNNER_QUEUE = 'mantle';
 
-/** The member chat's own queue (audit F31): member turns used to share
- *  RUNNER_QUEUE with the owner's interactive turns, so a few busy members could
- *  queue ahead of the owner. Registered in server/api with a low concurrency
- *  (MANTLE_MEMBER_TURN_CONCURRENCY, default 2), as background runs got
+/** The member chat's own queue: on RUNNER_QUEUE with the owner's
+ *  interactive turns, a few busy members could queue ahead of the owner.
+ *  Registered in server/api with a low concurrency
+ *  (MANTLE_MEMBER_TURN_CONCURRENCY, default 2), as background runs have
  *  RUNS_TURN_QUEUE. A turn enqueued here before server/api registers it waits
  *  until the api process rolls (compose restarts web and api together). */
 export const MEMBER_TURN_QUEUE = 'mantle.member';

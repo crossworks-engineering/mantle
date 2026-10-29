@@ -2,7 +2,7 @@
  * Pages · read paths. Every query that returns a page without changing one:
  * the list/count/tag surface, the single-page read and inbound backlinks.
  * Where a page sits (its folder) is the item tree's read (tree/read.ts);
- * pages do not nest (folder phase 7).
+ * pages do not nest.
  *
  * The one write it performs is `persistBlockIdBackfill`: maintenance, not an
  * edit (no version bump, no re-index, fire-and-forget), and a compare-and-set
@@ -114,9 +114,9 @@ export async function listPageTags(ownerId: string): Promise<{ tag: string; coun
 }
 
 export async function getPage(ownerId: string, id: string): Promise<PageDetail | null> {
-  // Below admin (a team-level agent, member logins Phase 0b) the draft is the
-  // author's working copy and is not readable: the published doc only. In a
-  // member's own space (Phase 2) the draft IS the reader's working copy.
+  // Below admin (a team-level agent) the draft is the author's working copy
+  // and is not readable: the published doc only. In a member's own space
+  // the draft IS the reader's working copy.
   const published = !readsDrafts();
   const [row] = await db
     .select({
@@ -128,7 +128,7 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
       draftUpdatedAt: published ? sql<null>`null` : draftColumn<Date>(pages.draftUpdatedAt),
       draftRev: published ? sql<null>`null` : draftColumn<number>(pages.draftRev),
       // Whether the reader may edit the page (the draft rule): only an
-      // editor's read repairs it (W6a fix round 1, L2).
+      // editor's read repairs it.
       mayEdit: published ? sql<boolean>`false` : draftAllowed(),
     })
     .from(nodes)
@@ -137,7 +137,7 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
     .limit(1);
   if (!row) return null;
 
-  // Lazy block-id backfill — legacy docs that predate Phase 2b come back
+  // Lazy block-id backfill — legacy docs without block ids come back
   // through this read path enriched with stable per-block ids. ensureBlockIds
   // returns the SAME reference when ids are already present, so we use
   // reference inequality to detect "we just injected something" and persist
@@ -159,7 +159,7 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
   const draftChanged = draft !== rawDraft && rawDraft !== null;
   // Never inside a scope's own transaction (a personal space, withScope,
   // withSystemTx): it ends with its caller, before a fire-and-forget write
-  // would run, and on a viewer role the write is refused (W6a fix round 2).
+  // would run, and on a viewer role the write is refused.
   // The next read outside one repairs the page. In a request scope the
   // write goes to the system pool (`db`, packages/db gateway/handles.ts).
   // Nor for a reader who may not edit the page (an Admin user with Read
@@ -171,7 +171,7 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
     row.doc !== null &&
     !inScopeTransaction()
   ) {
-    // Arch A2a: a named system write (it never runs as the reader, so a
+    // A named system write (it never runs as the reader, so a
     // read-only key's read still repairs), detached from the read.
     void runReadPathWrite('backfill:page-block-ids', () =>
       persistBlockIdBackfill(
@@ -191,7 +191,7 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
 }
 
 /**
- * The folder a page sits in (folder phase 7): the `branch` row at its path,
+ * The folder a page sits in: the `branch` row at its path,
  * the owner's or the brain's (a member's draft sits at a brain folder's
  * path); null at the top level. Answered by `mantle_page_folder_id`
  * (migration 0210, SECURITY DEFINER), whatever role the caller runs under:

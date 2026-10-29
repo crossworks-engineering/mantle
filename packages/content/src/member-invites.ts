@@ -1,5 +1,5 @@
 /**
- * Member invites (member logins, Phase 6). An admin invites a person; the
+ * Member invites. An admin invites a person; the
  * person opens the invite link, sets a password, and becomes a MEMBER login.
  * The table is `member_invites` (migration 0174), modelled on pairing_codes.
  *
@@ -55,9 +55,9 @@ export type MemberInviteErrorReason =
   | 'contact-has-login'
   | 'no-email'
   | 'email-has-login'
-  /** The email was a client login's (archived by 0272, W8a fix round 1). */
+  /** The email was a client login's (archived by 0272). */
   | 'email-was-client'
-  /** The contact was a client login's (archived by 0272, W8a fix round 2). */
+  /** The contact was a client login's (archived by 0272). */
   | 'contact-was-client';
 
 /** A create the admin can fix. The route maps `reason` to a status. */
@@ -71,9 +71,8 @@ export class MemberInviteError extends Error {
   }
 }
 
-// What the admin create answered by hand (inviteErrorResponse, A10 part 2
-// fix round 1, L7): a login already there (or a client's) 409, any other
-// 400, with `{ error, reason }`.
+// The one error answer: a login already there (or a client's) 409, any
+// other 400, with `{ error, reason }`.
 const INVITE_CONFLICTS: ReadonlySet<MemberInviteErrorReason> = new Set([
   'contact-has-login',
   'email-has-login',
@@ -120,8 +119,7 @@ export function hashInviteCode(code: string): string {
 
 /** The client-app path the admin shares. The code is the only secret in it,
  *  so it rides in the FRAGMENT, never sent to a server (no access log, no
- *  Referer; client logins audit B12). The invite page still reads `?code=`
- *  (links shared before). */
+ *  Referer). The invite page still reads `?code=` (older shared links). */
 export function inviteLinkPath(code: string): string {
   return `/invite#code=${encodeURIComponent(code)}`;
 }
@@ -206,7 +204,7 @@ export async function createMemberInvite(
     const contact = await getContact(ownerId, input.contactId);
     if (!contact) throw new MemberInviteError('contact-not-found', 'Contact not found.');
     // A former client's contact: its login may be gone, the archive of 0272
-    // still names the contact it was linked to (W8a fix round 2).
+    // still names the contact it was linked to.
     if (await isFormerClientContact(contact.id)) {
       throw new MemberInviteError('contact-was-client', FORMER_CLIENT_CONTACT_MESSAGE);
     }
@@ -453,7 +451,7 @@ export async function redeemMemberInvite(
         contactId: invite.contactId,
       });
 
-      // A member joins no workspace (0286; plan Q1 reversed 2026-10-13): its
+      // A member joins no workspace (0286): its
       // private workspace comes the first time it needs one; an Admin user
       // adds it to any other. The role follows Admin membership, so a new
       // member login needs no Admin row and nothing calls the login bridge.

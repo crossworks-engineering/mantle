@@ -28,7 +28,7 @@ import { EMPTY_DOC, detailOf, type PageDetail } from './shared';
 import { dedupeTags } from '../tags';
 import { pageDocText, pageHolders } from './level-text';
 
-// ── Draft concurrency control (audit item #3) ────────────────────────────────
+// ── Draft concurrency control ────────────────────────────────────────────────
 // Page drafts mirror the Tables registry-lock spine (see table-storage.ts):
 // every draft write, commit, and discard bumps `pages.draft_rev` and serializes
 // on the pages row via SELECT … FOR UPDATE, so two autosave streams (a second
@@ -107,9 +107,9 @@ export type UpdatePageInput = Partial<{
 
 /** updatePage, once more when another write held its rows (withBusyRetry).
  *  A doc written here is indexed like a commit (the editor never sends one
- *  through here: it saves drafts and commits). The old `reindex: false`
- *  opt-out is gone (A10 #7): it left the page's index on the previous doc,
- *  and the POST .../reindex route that was to catch it up never existed. */
+ *  through here: it saves drafts and commits). There is no opt-out: an
+ *  unindexed write would leave the page's index on the previous doc, with
+ *  nothing to catch it up. */
 export function updatePage(
   ownerId: string,
   id: string,
@@ -205,7 +205,7 @@ export type SaveDraftResult =
  * all left untouched. Cheap and frequent; nothing is rendered to other
  * surfaces or indexed from a draft.
  *
- * Concurrency (audit item #3): the write runs under `withPageLock` and bumps
+ * Concurrency: the write runs under `withPageLock` and bumps
  * `draft_rev`. When `opts.baseRev` is supplied (the editor's autosave etag) a
  * stale value returns a typed conflict WITHOUT touching the draft, so a second
  * device or the Pages agent can't silently overwrite newer edits. Internal
@@ -224,7 +224,7 @@ export async function saveDraft(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return { ok: false, missing: true };
-  // The page's edit first (pre-check removal parts 2 and 3): a caller that
+  // The page's edit first: a caller that
   // reads the page and may not edit it reads no draft, so its save would
   // answer a draft conflict ("changed since you read it"), or the lock
   // nothing, where the edit is the refusal. Asked before the rev, in a
@@ -318,7 +318,7 @@ async function commitPageOnce(
   await assertItemRight(id, 'edit');
 
   // Guarantee the committed doc carries stable per-block ids so the
-  // brain (via doc_text), Phase 2b block tools, and the editor diff
+  // brain (via doc_text), the block tools, and the editor diff
   // view all see addressable blocks. Idempotent.
   const enriched = ensureBlockIds(repairTableRows(doc));
   // Same etag guard as saveDraft, under the same lock: a stale `baseRev`
@@ -333,8 +333,8 @@ async function commitPageOnce(
       if (decision.conflict) {
         return { ok: false as const, conflict: true as const, rev: decision.rev };
       }
-      // The page's own words, a marker per embed (always fold, workspaces plan
-      // 5.3): an embed's text is indexed on the embed itself. A mention or
+      // The page's own words, a marker per embed (always fold): an embed's
+      // text is indexed on the embed itself. A mention or
       // link of an item not every workspace holding the page holds is
       // "Private item" (pages/level-text.ts).
       const docText = await pageDocText(ownerId, await pageHolders(id, tx), enriched, tx);
@@ -389,10 +389,9 @@ export async function commitPageDraft(ownerId: string, id: string): Promise<Comm
     .where(and(eq(pages.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!row) return { ok: false, missing: true };
-  // Edit first (pre-check removal fix round A): a reader that may not edit
-  // the page gets the refusal whether a draft is there or not. With a draft,
-  // commitPage asks it (before the doc's text is made), so it is asked once
-  // per path (R0 integration).
+  // Edit first: a reader that may not edit the page gets the refusal
+  // whether a draft is there or not. With a draft, commitPage asks it
+  // (before the doc's text is made), so it is asked once per path.
   if (!row.draftDoc) {
     await assertItemRight(id, 'edit');
     return { ok: false, noDraft: true };

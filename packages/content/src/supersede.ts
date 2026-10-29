@@ -1,12 +1,12 @@
 /**
  * Node-level supersession — the content-currency lineage layer (write side).
  *
- * The problem this solves (measured on a client brain, 2026-07-17): source files whose
- * content was migrated into corrected pages kept ranking at full weight — the
- * stale file often carries MORE chunks than its successor page, so passage
- * queries preferred the dead document, and the responder cited rev0 .docx
- * sources daily. Facts have had first-class supersession for months
- * (facts.superseded_by); this lifts the same primitive to nodes.
+ * The problem this solves: source files whose content was migrated into
+ * corrected pages would keep ranking at full weight — the stale file often
+ * carries MORE chunks than its successor page, so passage queries prefer the
+ * dead document and the responder cites outdated sources. Facts have
+ * first-class supersession (facts.superseded_by); this lifts the same
+ * primitive to nodes.
  *
  * Semantics:
  *  - `superseded_by` is the SOURCE OF TRUTH; ranking demotion is MATERIALIZED
@@ -177,8 +177,7 @@ export async function supersedeNode(input: SupersedeNodeInput): Promise<Node> {
 /** Undo a supersession mark: clear the edge + reason, restore full salience. */
 export async function unsupersedeNode(ownerId: string, id: string): Promise<Node> {
   await assertMaySupersede([id]);
-  // Read in the caller's scope first, as supersedeNode does (W7a fix round
-  // 1, L5): the write runs on the system pool in a scope, so an id the scope
+  // Read in the caller's scope first, as supersedeNode does: the write runs on the system pool in a scope, so an id the scope
   // does not read must never be changed, nor its title returned.
   const [seen] = await db
     .select({ id: nodes.id })

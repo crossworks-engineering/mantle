@@ -24,8 +24,7 @@
  * Nmin ago" heartbeat context, the query-ranked top-K facts) must go in
  * `volatileContext` / the facts block below the breakpoints — folding it
  * into `systemPrompt` silently breaks the prefix match and turns every
- * turn into a full cache write (the 2026-06 chat-cost audit's first-call
- * misses).
+ * turn into a full cache write.
  *
  * Other providers cache the longest byte-identical prefix on their own
  * (grok, openai/*, gemini, deepseek/*): they get plain-string blocks in the
@@ -107,9 +106,9 @@ export type ChunkContextHit = {
 
 /** One entry of the corpus map — the cached "what exists" index injected so
  *  the responder KNOWS the brain's contents instead of discovering them one
- *  search at a time. An audit measured the blind spot this fixes: ~11 node
- *  references visible per turn out of ~380 content nodes, with the user
- *  attaching context on 43% of turns to compensate. Titles + short ids only
+ *  search at a time (retrieval alone shows a handful of nodes per turn out
+ *  of hundreds, and the user ends up attaching context by hand). Titles +
+ *  short ids only
  *  (summaries for pages/tables); passages stay the job of chunk hits. */
 export type CorpusMapEntry = {
   nodeId: string;
@@ -217,10 +216,9 @@ export function buildAttachmentContextText(
   const isSpreadsheet = kind === 'file' && /\.(xlsx|xls|csv)$/i.test(opts.filename ?? '');
   // The reference hint lists EVERY tool the attached node_id slots into,
   // so the model can pick the right one based on the user's intent
-  // (read / inspect vs. import). Pre-page_from_file the marker pinned
-  // `file_read` for documents, which steered the model toward
-  // file_read → re-emit-body → page_create on import requests — the
-  // truncation path Phase 1 (page_from_file) was built to replace.
+  // (read / inspect vs. import). Pinning `file_read` alone would steer the
+  // model toward file_read → re-emit-body → page_create on import requests,
+  // the truncation path page_from_file replaces.
   // A spreadsheet is auto-imported into Tables on ingest, so its hint points at
   // the grid (read to discuss) rather than page import — and deliberately does
   // NOT push table_from_file, which would create a SECOND table beside the
@@ -247,8 +245,8 @@ export function buildAttachmentContextText(
  * Reduce a `ChatMessage[]` (the rich agent-runtime shape with vision +
  * tool-call hooks) to the plain `Array<{role, content: string}>` shape
  * the chat adapter contract accepts. Used by the chat-shaped workers
- * (extractor, summarizer, reflector) for their single-turn calls
- * post-Phase 3a — they never carry images or tool messages, so the
+ * (extractor, summarizer, reflector) for their single-turn calls — they
+ * never carry images or tool messages, so the
  * flattening is lossless for them.
  *
  * Multi-modal images and tool messages are rejected here rather than
@@ -304,18 +302,16 @@ export function flattenChatMessagesForAdapter(
  * markers from the data so it can't escape the fence. The standing rule that
  * explains the fence lives in the persona block (renderPersonaPrompt).
  *
- * The fence itself lives in @mantle/std (A10 part 1) so the background jobs
- * fence with the same markers; re-exported here for the tool loop
- * (execute-call.ts) and the turn's own blocks, byte for byte as before.
+ * The fence itself lives in @mantle/std so the background jobs fence with
+ * the same markers; re-exported here for the tool loop (execute-call.ts) and
+ * the turn's own blocks.
  */
 export { fenceRetrieved };
 
-/** Character budget for the rendered corpus map: about 2k tokens. The
- *  2026-10-05 block audit (dev page e3c5d926) measured the old 24k budget at
- *  7.6k tokens a turn with no measurable answer-quality gain, and found it
- *  clipping whole branches: branches rendered alphabetically, so on a big
- *  brain `tables` and `tasks` never appeared. memory_config.corpus_map_chars
- *  overrides per agent. */
+/** Character budget for the rendered corpus map: about 2k tokens. A larger
+ *  budget (24k chars, about 7.6k tokens a turn) showed no measurable
+ *  answer-quality gain. memory_config.corpus_map_chars overrides per
+ *  agent. */
 export const CORPUS_MAP_MAX_CHARS = 6_500;
 
 /** A fold group needs this many near-identical titles (a generated image

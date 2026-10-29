@@ -2,8 +2,7 @@
  * What a member login is told about on its phone (migration
  * mobile_roles_push, docs/mobile-companion-backend.md "Every login on the
  * phone"): a reply in its own chat thread, a review result on its own item.
- * The client login went in W8a, and the brain has no comments since
- * 2026-10-09.
+ * There is no client login role, and the brain has no comments.
  *
  * The `login_notice` NOTIFY (raised by triggers) carries ids only. This
  * module turns one into the message for the ONE login it concerns: who is
@@ -47,7 +46,7 @@ import { UUID_RE } from '@mantle/std';
 /**
  * A login's notices are read and written on the system pool by the named
  * reason 'login-notice'. The push worker builds them, never a scope:
- * systemWork runs them as asSystem did and refuses a scope (A6b: no exit).
+ * systemWork runs them on the system pool and refuses a scope.
  */
 function loginNoticeSystem<T>(fn: () => Promise<T>): Promise<T> {
   return systemWork(fn, 'login-notice');
@@ -82,8 +81,8 @@ export function parseLoginNotice(payload: string): LoginNotice | null {
     return null;
   }
   if (!p || typeof p !== 'object' || !isId(p.id)) return null;
-  // A 'comment' payload (the node_comments trigger) is no longer ours: the
-  // brain has no comments (2026-10-09), so it parses to nothing.
+  // A 'comment' payload (the node_comments trigger) is not ours: the brain
+  // has no comments, so it parses to nothing.
   if (!isId(p.loginId)) return null;
   if (p.kind === 'chat') return { kind: 'chat', loginId: p.loginId, id: p.id };
   if (
@@ -220,7 +219,7 @@ export function chatReplyNotice(n: {
 
 /** Which of a bundle's items names it: a page before a note, a table, a
  *  drawing, a file (the parts a page embeds come last). The kind registry's
- *  `accepted.rank` (A10 #12). */
+ *  `accepted.rank`. */
 const rank = acceptedRank;
 
 /**
@@ -284,7 +283,7 @@ export function reviewResultNotice(
       state === 'taken' ? main.takenTitle : state === 'accepted' ? main.acceptedTitle : null;
     const name = `"${clip(known || main.title || 'Untitled', 80)}"`;
 
-    // No reviewer text: review flows carry no messages (2026-10-09).
+    // No reviewer text: review flows carry no messages.
     const words =
       state === 'accepted'
         ? { title: 'Accepted', body: `${name} was accepted.` }

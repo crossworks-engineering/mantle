@@ -1,5 +1,5 @@
 /**
- * The runtime's fixed agent slugs, as data only (A5 step 6d fix round 1):
+ * The runtime's fixed agent slugs, as data only:
  * a leaf module with no imports, so a data module that names them (the
  * system manifest's reconcile helpers) reads them without loading the
  * assistant runtime. The assistant runtime re-exports them

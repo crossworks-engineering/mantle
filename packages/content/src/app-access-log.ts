@@ -2,8 +2,8 @@
  * Audit writes for the external app-share surface. Every visitor action on
  * /s/<token>/* lands one row: WHO (contactId, or null for an anonymous
  * public-mode visitor), WHAT (kind + detail), on WHICH app. A member login
- * running an app from the member shell lands the same rows with `actorId`
- * (member logins Phase 4b). This is the
+ * running an app from the member shell lands the same rows with `actorId`.
+ * This is the
  * "the app registers who it's for" half of the team-token design — the token
  * carries identity, this table remembers it.
  *
@@ -11,18 +11,17 @@
  * hiccup can never take down a working app for a visitor. It must stay a
  * best-effort trail, not a gate.
  *
- * Bounded (client tier audit 2026-09-30, I4): tool calls and writes land a
+ * Bounded: tool calls and writes land a
  * row each, but a caller's database READS at most one row per app per
  * minute (a running app polls), and the `app-access-log-reap` maintenance
  * sweep deletes rows older than APP_ACCESS_LOG_RETENTION_DAYS.
  *
- * Errors (apps first-class plan, Phase 3, G4): a broker that answers a
+ * Errors: a broker that answers a
  * running app with an error (its SQL failed, a tool refused or failed) lands
  * an `error` row through `recordAppError`, whoever ran the app, the owner
  * included. The owner reads them on the app's Activity tab, the agent with
  * `app_errors` (whose answer the agent loop fences as data: the SQL and the
- * messages can come from a visitor). Bounded (apps audit 2026-10-02, item
- * 12): each caller lands at most APP_ERROR_LOG_PER_CALLER_PER_MINUTE rows a
+ * messages can come from a visitor). Bounded: each caller lands at most APP_ERROR_LOG_PER_CALLER_PER_MINUTE rows a
  * minute, so one visitor cannot spend the app's budget; the callers other
  * than the owner share APP_ERROR_LOG_PER_MINUTE; an app lands at most
  * APP_ERROR_LOG_PER_DAY a day; and the reaper keeps errors
@@ -244,8 +243,8 @@ export async function listAppAccess(
     id: r.id,
     contactId: r.contactId,
     // A member or client row whose login was deleted keeps no name (SET
-    // NULL): say so, rather than let it read as an anonymous public visitor
-    // (client logins, audit I5).
+    // NULL): say so, rather than let it read as an anonymous public
+    // visitor.
     contactName:
       r.contactName ?? (r.actorId ? names.get(r.actorId) : null) ?? removedLoginName(r.detail),
     actorId: r.actorId,
@@ -259,8 +258,7 @@ export async function listAppAccess(
  *  display name, else the email's local part. Login rows are never granted
  *  to the workspace role: by their definer (mantle_access_log_names, 0293),
  *  for these ids only where they are actors on the app's access log (in a
- *  scope, of an app it reads; A6b: on the system pool before,
- *  'login-names'). */
+ *  scope, of an app it reads). */
 async function actorNames(
   appNodeId: string,
   ids: readonly (string | null)[],

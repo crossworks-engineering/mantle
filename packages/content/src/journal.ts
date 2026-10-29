@@ -458,9 +458,8 @@ export async function resolveGapEntry(
   const answerKind = input.answerKind?.trim() || 'context';
 
   // Write the answer FIRST. If marking the gap resolved then fails, the gap
-  // stays open and the next attempt simply answers it again; the old order
-  // could leave a gap marked resolved with no answer behind it (2026-09-02
-  // audit, sloppiness A10).
+  // stays open and the next attempt simply answers it again; the other
+  // order could leave a gap marked resolved with no answer behind it.
   const answer = await createJournal(ownerId, {
     body: answerBody,
     kind: answerKind,

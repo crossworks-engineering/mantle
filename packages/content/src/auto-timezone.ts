@@ -98,7 +98,7 @@ export async function applyAutoTimezone(
   if (decision.action === 'none') return { prefs };
   // The row is the brain's on an assistant turn: a scope that may not write
   // it (a member's turn, an Admin user's without Settings) leaves it as it
-  // is, rather than a refusal logged every turn (plan v3 S3 fix round 3).
+  // is, rather than a refusal logged every turn.
   if (!(await profileRowWritable(userId))) return { prefs };
   if (decision.action === 'record') {
     const updated = await updateProfilePreferences(userId, { lastAutoTimezone: decision.zone });

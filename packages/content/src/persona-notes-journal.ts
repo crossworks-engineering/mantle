@@ -414,9 +414,9 @@ export async function applyConversionPlan(
 
 export type NotesTarget = 'persona' | 'journal';
 
-/** Where an agent's learned notes live. The Journal since 2026-09-24 (the
- *  fleet had moved every agent's notes over); `persona` is an explicit
- *  opt-out, kept only as the undo path while `persona_notes` still exists. */
+/** Where an agent's learned notes live: the Journal by default; `persona`
+ *  is an explicit opt-out, kept only as the undo path while `persona_notes`
+ *  still exists. */
 export function notesTargetOf(
   memoryConfig: { notes_target?: string } | null | undefined,
 ): NotesTarget {
@@ -575,7 +575,7 @@ export async function writeLearnedEntries(
     replaces: Math.round(score.replaces * 100) / 100,
   }));
   // Live: the report names the retires that were applied (a rule the
-  // caller's scope may not edit is not, W7a fix round 2).
+  // caller's scope may not edit is not).
   const applied: RuleRetire[] = [];
   const errors = live
     ? await applyRetires(ownerId, retires, judgement.threshold, (r) => applied.push(r))

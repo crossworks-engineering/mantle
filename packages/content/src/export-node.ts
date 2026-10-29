@@ -27,7 +27,7 @@ import { renderXlsx, renderXlsxWorkbook, type RenderXlsxSheet } from './render-x
 import { tableToText, tableToCsv } from './table-to-text';
 
 export type ExportFormat = 'docx' | 'xlsx' | 'md' | 'csv' | 'svg';
-/** The exportable kinds: the kind registry's `exportAs` field (A10 #12). */
+/** The exportable kinds: the kind registry's `exportAs` field. */
 export type ExportKind = RegistryExportKind;
 
 /** Formats a node can be asked to download as (the caller picks). PDF is NOT
@@ -71,7 +71,7 @@ export type ResolveExportOptions = {
 };
 
 /** The export type a node maps to, or null if it isn't an exportable kind:
- *  the kind registry's `exportAs` field (A10 #12). */
+ *  the kind registry's `exportAs` field. */
 export const EXPORTABLE_TYPES: Readonly<Record<ExportKind, ExportFormat>> = EXPORT_FORMAT_BY_KIND;
 
 /** Prepend the node's title as an H1 so a Markdown download opens as a titled

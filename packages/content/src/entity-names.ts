@@ -1,5 +1,5 @@
 /**
- * Pure name rules for entity quality on document corpora (2026-10-03).
+ * Pure name rules for entity quality on document corpora.
  *
  * Two failure modes seen on a brain of a few thousand sermon PDFs:
  *
@@ -29,7 +29,7 @@ const TITLE_PRONE_KINDS = new Set(['project', 'event']);
 /** Node types whose title is the title of a document, not a thing the user
  *  does. A note or page titled "Kitchen renovation" can name a real project;
  *  an uploaded file's title names the file. The kind registry's
- *  `documentTitle` field (A10 #12). */
+ *  `documentTitle` field. */
 const DOCUMENT_NODE_TYPES: ReadonlySet<string> = new Set(DOCUMENT_TITLE_KINDS);
 
 /**

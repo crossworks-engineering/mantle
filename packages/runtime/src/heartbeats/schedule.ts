@@ -82,7 +82,7 @@ export function computeNextFireAt(input: ComputeNextFireInput): Date | null {
 }
 
 /** Validate a schedule payload at create/update time. Throws InputError
- *  (400 and the message, A10 part 2) with a human-readable message on an
+ *  (400) with a human-readable message on an
  *  invalid shape. UI calls this before INSERT. */
 export function validateSchedule(s: HeartbeatScheduleSpec): void {
   switch (s.kind) {
