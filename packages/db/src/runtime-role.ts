@@ -1543,7 +1543,7 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
   await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${nr}`);
 }
 
-/** The report branch's triggers 0341 drops: the would-refuse count's
+/** The report branch's triggers 0344 drops: the would-refuse count's
  *  derived ones (0320; migrate made them from the narrow role's grants up to
  *  0.400.15) and the cascade count's (0312, on auth.users, spaces and
  *  agents). */
@@ -1557,13 +1557,13 @@ const REPORT_TRIGGERS = [
 /**
  * Drop the report branch's triggers (the would-refuse count's derived ones
  * and the cascade count's) table by table, before the pending migrations
- * (migrate-runner.ts applyJournal): 0341 drops their functions, and one
+ * (migrate-runner.ts applyJournal): 0344 drops their functions, and one
  * transaction taking the lock of every table that holds one (about 120)
  * while the old app still serves (compose's migrate) could stall its
  * writes or deadlock with them. Each table in its own
  * transaction, waiting at most 3 s for its lock, tried again on a lock wait
- * or a deadlock (eight tries, a second apart); 0341 drops whatever is
- * left. One catalog read, finding none, on a database past 0341 or a
+ * or a deadlock (eight tries, a second apart); 0344 drops whatever is
+ * left. One catalog read, finding none, on a database past 0344 or a
  * fresh one. Returns how many tables it changed.
  */
 export async function dropNarrowWouldRefuse(sql: Sql): Promise<number> {

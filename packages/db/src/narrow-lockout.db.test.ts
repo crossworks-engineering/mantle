@@ -18,7 +18,7 @@
  *    codes, push devices (a row with no login is the owner's) and the
  *    peers acting as it (released only at the spot); a member's the narrow
  *    login still removes;
- *  - every migration of the narrow set (0312 to 0329, and 0341 that took
+ *  - every migration of the narrow set (0312 to 0329, and 0344 that took
  *    the report branch out; the narrow role stays read only on the content
  *    tables, closed in S7d) runs again over its own end state and leaves it
  *    as it was (0322's end-state check, 0319 with the rules after it).
@@ -549,7 +549,7 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     // drop the last of these).
     const names = [
       // 0312 first: 0320's report predicate reads its mantle_narrow_actor,
-      // which 0341 drops, and a SQL function's body is checked when made.
+      // which 0344 drops, and a SQL function's body is checked when made.
       'narrow_write_observe',
       'acting_login_definers',
       'structure_item_definer',

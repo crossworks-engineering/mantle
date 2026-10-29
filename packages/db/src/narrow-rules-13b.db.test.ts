@@ -10,7 +10,7 @@
  *    workspace: the owner or an Admin user only); a settled row is never
  *    rewritten, by UPDATE, ON CONFLICT or MERGE (COPY: the forge proof's
  *    psql, forge13b.sql); off the narrow
- *    role the guard leaves the row alone and counts nothing (0341).
+ *    role the guard leaves the row alone and counts nothing (0344).
  *  - C: the limit and prompt JSON columns (an assistant's memory_config and
  *    params, an AI worker's params) are off the narrow list.
  *  - D (0324): every enabled, is_default and backup_enabled column the
@@ -377,7 +377,7 @@ describe.skipIf(!URL)('round 13b: the narrow login`s rules, items B to E', () =>
     expect(bad).toEqual([]);
   });
 
-  it('B: off the narrow role a narrow reason`s write runs and nothing is counted (0341)', async () => {
+  it('B: off the narrow role a narrow reason`s write runs and nothing is counted (0344)', async () => {
     const notices: string[] = [];
     const c = postgres(scratch.url, {
       max: 1,

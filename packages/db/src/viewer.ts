@@ -1247,7 +1247,7 @@ export type FullRouteSpot = keyof typeof FULL_ROUTE_SPOTS;
  * switch), keeping the actor; anywhere else (a login's scope, system work)
  * `fn` runs as it is. The actor's SET at the spot also carries
  * `mantle.route` = 'full' (runOnFullRouteSpot, actor.ts); no database rule
- * reads it since the report counts went (0341).
+ * reads it since the report counts went (0344).
  *
  * `when` (a hold's spot, the one rule for them all): asked only when the
  * route is the narrow one; `fn` runs at the spot when it answers yes, else

@@ -88,7 +88,7 @@ describe.skipIf(!URL)('the narrow counts` epoch', () => {
     const epoch = boxQuery('narrow_epoch');
     await su`delete from public.actor_check_misses where check_name like 'narrow-%'`;
     // Before any epoch: every row counts, and the epoch reads none. Only
-    // narrow-denied is a count (a report row of a release before 0341 is
+    // narrow-denied is a count (a report row of a release before 0344 is
     // not), by distinct actor and detail.
     await row('narrow-denied', 'system:admin-area', 'permission denied for table facts', '3 days');
     await row('narrow-would-refuse', 'system:admin-area', 'public.audit_log DELETE', '3 days');

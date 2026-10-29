@@ -744,11 +744,11 @@ a fresh backup first: the steps, the checks and the rollback are in
 
 From the release that carries S7b part b3, the system work of an Admin area
 exit runs as `mantle_system_narrow`, on a pool that logs in as it (migrate
-gives the role its login at the roll). Up to and including v0.400.15 a box
+gives the role its login at the roll). Up to the release before S7c a box
 could turn it off with `MANTLE_NARROW_SYSTEM=0` in its `.env` (the kill
 switch).
 
-From the release that carries S7c (migration 0341) the switch is gone: the
+From the release that carries S7c (migration 0344) the switch is gone: the
 narrow route is on on every box, always. A `MANTLE_NARROW_SYSTEM` line in a
 box's `.env` is inert from that roll on; an operator may delete it. **A box
 whose `.env` says `MANTLE_NARROW_SYSTEM=0` (or `off`, `false`) is ON after
@@ -756,15 +756,15 @@ that roll**: its Admin area work moves to the narrow role at the roll, with
 nothing else changed. Before rolling such a box, read its narrow count on
 the current release (`scripts/arch-scoreboard-box.sh`,
 `narrow_misses:denied`) and expect the first day's count to be the one that
-matters. 0341 also takes the report-only counts out of the database (the
+matters. 0344 also takes the report-only counts out of the database (the
 would-refuse, content-write and cascade counts, which only told a write made
 off the narrow route); the box script prints `narrow_misses:denied` and the
 epoch lines only.
 
 The fallback for a narrow refusal on that release is a pin to the image one
-back (v0.400.15 or the release before S7c), with `MANTLE_NARROW_SYSTEM=0`
+back (the release before S7c), with `MANTLE_NARROW_SYSTEM=0`
 in the same `.env` edit as `MANTLE_IMAGE_TAG` and one `docker compose up
--d` for both: that image still reads the switch. 0341's revert is optional
+-d` for both: that image still reads the switch. 0344's revert is optional
 for it (Rollback floors, below). The detail, and what a fresh install and
 per-database mode do, is in [runtime-role.md](runtime-role.md), "The narrow
 route".
@@ -1697,15 +1697,15 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   ("Going up to 0334" above). Going up to 0330: "Going up to 0330" above.
 
 - **Below the narrow report branch's removal (plan v3.2 S7c, migration
-  0341):** the image one back works with 0341 in place: its migrate finds no
+  0344):** the image one back works with 0344 in place: its migrate finds no
   would-refuse function and makes no trigger, and nothing it does is
-  refused for 0341; it lacks only the report counts, which told a write made
+  refused for 0344; it lacks only the report counts, which told a write made
   off the narrow route. So the revert is optional. To leave the catalog as
   the older image shipped it, while the newer image is still up, as the
   superuser, in one transaction:
-  `docker exec mantle_web cat /app/packages/db/rollback/0341_narrow_observe_removed.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1`,
+  `docker exec mantle_web cat /app/packages/db/rollback/0344_narrow_observe_removed.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1`,
   then pin the older tag straight away (or stop mantle_web first): a
-  restart in between applies 0341 again. The older image's next migrate
+  restart in between applies 0344 again. The older image's next migrate
   makes the derived would-refuse triggers again from the grants. The older
   image reads `MANTLE_NARROW_SYSTEM` again: an `.env` line that went inert
   at the S7c roll is live again after the pin. The content tables are

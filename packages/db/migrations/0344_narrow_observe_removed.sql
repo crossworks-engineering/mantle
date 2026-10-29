@@ -30,7 +30,7 @@
 -- The holds' readers (mantle_narrow_login_held, mantle_narrow_client_held)
 -- stay: the holds and the app's spot (onLoginHoldSpot) read them.
 --
--- No table or row changes; no LLM work. Re-runnable. An older image (0.400.15)
+-- No table or row changes; no LLM work. Re-runnable. An older image (the release before)
 -- runs on it as it is: its migrate's trigger step finds no count function and
 -- makes nothing, its box script reads the counts as absent, and the report
 -- notices it printed are never raised. Revert:
