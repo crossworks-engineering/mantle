@@ -13,8 +13,11 @@ import { countedFiles, readRepoFile } from './arch-counts.mjs';
 import { asSystemExits } from './as-system-exits.mjs';
 import {
   ADMIN_PAST_GATE_SITES,
+  ADMIN_VIEW_GATES,
+  adminAskAliases,
   adminOrSystemScopeCalls,
   adminPastGateProblems,
+  adminWrapperProblems,
   legacyPrecheckUndated,
   migrationFunctions,
   readsAreaLimits,
@@ -315,6 +318,88 @@ describe('adminPastGateProblems', () => {
   });
 });
 
+describe('adminWrapperProblems', () => {
+  type Site = { count: number; callers?: Record<string, Record<string, number>> };
+  const sites = ADMIN_PAST_GATE_SITES as Record<string, Site>;
+  const views = ADMIN_VIEW_GATES as Record<string, { count: number; why: string }>;
+  // Every listed wrapper caller and gate, each file calling as listed.
+  const listed = () => {
+    const byPath: Record<string, string> = {};
+    const add = (path: string, call: string, n: number) => {
+      byPath[path] = (byPath[path] ?? '') + `await ${call}();\n`.repeat(n);
+    };
+    for (const [path, s] of Object.entries(views)) add(path, 'scopeAdminView', s.count);
+    for (const s of Object.values(sites)) {
+      for (const [name, files] of Object.entries(s.callers ?? {})) {
+        for (const [path, n] of Object.entries(files)) add(path, name, n);
+      }
+    }
+    return Object.entries(byPath).map(([path, text]) => ({ path, text }));
+  };
+
+  it('names no problem when every wrapper caller is as listed', () => {
+    expect(adminWrapperProblems(listed())).toEqual([]);
+  });
+
+  it('fails a renamed import of an Admin ask', () => {
+    for (const name of ['adminOrSystemScope', 'scopeHoldsAdmin']) {
+      const text = `import { ${name} as held } from '@mantle/db';\nif (await held()) go();`;
+      expect(adminWrapperProblems([...listed(), { path: 'packages/x/a.ts', text }])).toEqual([
+        expect.stringContaining(`packages/x/a.ts: ${name} renamed`),
+      ]);
+    }
+  });
+
+  it('fails an alias, a destructure and a callback of an ask or a wrapper', () => {
+    expect(adminAskAliases('const outsideAdmin = scopeOutsideAdmin;')).toEqual([
+      'scopeOutsideAdmin used, not called',
+    ]);
+    expect(
+      adminAskAliases("const { adminOrSystemScope: a } = await import('@mantle/db');"),
+    ).toEqual(['adminOrSystemScope used, not called']);
+    expect(adminAskAliases('await Promise.all([x].map(delegationTurnOf));')).toEqual([
+      'delegationTurnOf used, not called',
+    ]);
+  });
+
+  it('reads no alias in a call, a definition, a plain import or export, a comment or a string', () => {
+    const text = `
+      import { adminOrSystemScope, scopeHoldsAdmin } from '@mantle/db';
+      export { delegationTurnOf } from './outside-admin';
+      export async function scopeOutsideAdmin() { return !(await adminOrSystemScope()); }
+      const v = await scopeAdminView([]);
+      // scopeHoldsAdmin in prose
+      systemYes('scopeHoldsAdmin outside every scope');
+    `;
+    expect(adminAskAliases(text)).toEqual([]);
+  });
+
+  it('fails a scopeAdminView caller not named as a gate, and a moved count', () => {
+    const one = Object.keys(views)[0]!;
+    expect(
+      adminWrapperProblems([
+        ...listed(),
+        { path: 'packages/x/b.ts', text: 'await scopeAdminView([]);' },
+      ]),
+    ).toEqual([expect.stringContaining('packages/x/b.ts: calls scopeAdminView 1x, not named')]);
+    expect(
+      adminWrapperProblems(listed().map((f) => (f.path === one ? { ...f, text: '' } : f))),
+    ).toEqual([expect.stringContaining(`${one}: named in ADMIN_VIEW_GATES, calls no`)]);
+  });
+
+  it('fails a caller of scopeOutsideAdmin or delegationTurnOf the outside-admin entry does not list', () => {
+    for (const name of ['scopeOutsideAdmin', 'delegationTurnOf']) {
+      expect(
+        adminWrapperProblems([...listed(), { path: 'packages/x/c.ts', text: `await ${name}();` }]),
+      ).toEqual([expect.stringContaining(`packages/x/c.ts: calls ${name} 1x, not named`)]);
+    }
+  });
+
+  it('gives each gate a why', () => {
+    for (const s of Object.values(views)) expect(s.why.length).toBeGreaterThan(20);
+  });
+});
+
 describe('tsAdminRuleSql', () => {
   it("counts SQL text reading the 'areas' limits or deciding an Admin user", () => {
     expect(tsAdminRuleSql("sql`select coalesce(u.limits -> 'areas' ->> ${area}, '')`")).toBe(1);
@@ -539,6 +624,10 @@ describe('the repo', () => {
 
   it('names every adminOrSystemScope call past a gate', () => {
     expect(adminPastGateProblems(texts)).toEqual([]);
+  });
+
+  it('names every caller of an Admin wrapper, and no ask under another name', () => {
+    expect(adminWrapperProblems(texts)).toEqual([]);
   });
 
   it('keeps no legacy pre-check without an owner and an end date', () => {

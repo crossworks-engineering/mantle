@@ -176,12 +176,15 @@ export function adminOrSystemScopeCalls(text) {
  * named here, or a count that moved, fails arch:check
  * (adminPastGateProblems): name the new call with its why, or ask the gate.
  *
- * @type {Readonly<Record<string, { count: number, why: string }>>}
+ * An entry whose call sits in an exported wrapper names the wrapper's
+ * callers too (`callers`: wrapper name, then file and count).
+ *
+ * @type {Readonly<Record<string, { count: number, why: string, callers?: Record<string, Record<string, number>> }>>}
  */
 export const ADMIN_PAST_GATE_SITES = Object.freeze({
   'packages/runtime/src/heartbeats/tools.ts': {
     count: 2,
-    why: 'a read decision: which heartbeat rows a heartbeat tool reads (every owner heartbeat through the assistants area, or the firing one only)',
+    why: 'a read decision: which heartbeat rows a heartbeat tool reads or changes (every owner heartbeat through the assistants area, or the firing one only; a change to any other is refused)',
   },
   'packages/runtime/src/agent/conversation.ts': {
     count: 1,
@@ -210,8 +213,139 @@ export const ADMIN_PAST_GATE_SITES = Object.freeze({
   'packages/tools/src/outside-admin.ts': {
     count: 1,
     why: 'a listing and a context: scopeOutsideAdmin, read by the author ceiling of the app tools and by the delegation turn',
+    callers: {
+      scopeOutsideAdmin: {
+        'packages/tools/src/builtins-apps.ts': 4,
+        'packages/tools/src/outside-admin.ts': 1,
+      },
+      delegationTurnOf: {
+        'packages/runtime/src/agent/invoke-agent.ts': 1,
+        'packages/runtime/src/assistant/assemble-turn.ts': 1,
+        'packages/tools/src/builtins-delegation.ts': 1,
+      },
+    },
   },
 });
+
+/**
+ * The callers of scopeAdminView (packages/tools/src/admin-gate.ts), the one
+ * Admin view the gates read: each file with its count of calls and the gate
+ * it is. A file not named here, or a count that moved, fails arch:check
+ * (adminWrapperProblems).
+ *
+ * @type {Readonly<Record<string, { count: number, why: string }>>}
+ */
+export const ADMIN_VIEW_GATES = Object.freeze({
+  'packages/tools/src/gate-callers.ts': {
+    count: 1,
+    why: "a gate: a tool call's Admin and area check in its scope",
+  },
+  'packages/mcp-core/src/login-surface.ts': {
+    count: 1,
+    why: "a gate: what an MCP connection's login lists and may call of the Admin tools",
+  },
+  'packages/mcp-core/src/mcp-scope.ts': {
+    count: 1,
+    why: "a gate: an MCP call's Admin and area check in its login's scope",
+  },
+  'packages/tools/src/pending-origin.ts': {
+    count: 1,
+    why: 'a gate: the Admin view a pending call is stamped with when it is held',
+  },
+  'packages/tools/src/pending-approval.ts': {
+    count: 1,
+    why: "a gate: the re-check of a pending call's Admin view when it is approved",
+  },
+});
+
+/** The Admin asks and the wrappers of one (scopeAdminView, scopeOutsideAdmin,
+ *  delegationTurnOf): the names whose calls the lists above count. */
+export const ADMIN_ASK_NAMES = Object.freeze([
+  'scopeHoldsAdmin',
+  'adminOrSystemScope',
+  'scopeAdminView',
+  'scopeOutsideAdmin',
+  'delegationTurnOf',
+]);
+
+/** `code` with its plain string literals blanked (a name in a message is no
+ *  use of it). */
+function blankStrings(code) {
+  return code.replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g, (m) => ' '.repeat(m.length));
+}
+
+/** An import or export list (`import { a, b as c } from`, `export { a }`). */
+const IMPORT_EXPORT_LIST = /\b(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{[^}]*\}/g;
+
+/**
+ * The uses of an Admin ask or wrapper (ADMIN_ASK_NAMES) in `text` that are
+ * not a call, its definition, or an import or export under its own name: a
+ * renamed import or export (`adminOrSystemScope as x`), an alias
+ * (`const x = scopeOutsideAdmin`), a destructure, a callback. Its calls
+ * under the other name would count 0.
+ */
+export function adminAskAliases(text) {
+  const code = blankStrings(stripComments(text));
+  const out = [];
+  for (const name of ADMIN_ASK_NAMES) {
+    for (const m of code.matchAll(IMPORT_EXPORT_LIST)) {
+      if (new RegExp(`\\b${name}\\s+as\\b`).test(m[0])) out.push(`${name} renamed`);
+    }
+    const rest = code.replace(IMPORT_EXPORT_LIST, (m) => ' '.repeat(m.length));
+    for (const m of rest.matchAll(new RegExp(`\\b${name}\\b(?!\\s*\\()`, 'g'))) {
+      if (/\bfunction\s+$/.test(rest.slice(Math.max(0, m.index - 20), m.index))) continue;
+      out.push(`${name} used, not called`);
+    }
+  }
+  return out;
+}
+
+/** The problems of a caller list (`{ path: count }`) of `name` against the
+ *  files' calls of it. */
+function callerListProblems(files, name, expected, listName) {
+  const problems = [];
+  const seen = new Set();
+  for (const { path, text } of files) {
+    const n = callsOf(text, name);
+    if (n === 0) continue;
+    seen.add(path);
+    if (expected[path] === undefined) {
+      problems.push(
+        `${path}: calls ${name} ${n}x, not named in ${listName} (eslint-rules/rights-counts.mjs)`,
+      );
+    } else if (expected[path] !== n) {
+      problems.push(`${path}: calls ${name} ${n}x, ${listName} says ${expected[path]}`);
+    }
+  }
+  for (const path of Object.keys(expected)) {
+    if (!seen.has(path)) problems.push(`${path}: named in ${listName}, calls no ${name}`);
+  }
+  return problems;
+}
+
+/** The asks past the gate the lists do not see: an Admin ask or wrapper
+ *  under another name, and a wrapper's callers that are not as listed
+ *  (ADMIN_VIEW_GATES; the callers of an ADMIN_PAST_GATE_SITES entry). */
+export function adminWrapperProblems(files) {
+  const problems = [];
+  for (const { path, text } of files) {
+    for (const a of new Set(adminAskAliases(text))) {
+      problems.push(`${path}: ${a} (call it by its own name, or the Admin ask counts miss it)`);
+    }
+  }
+  const views = Object.fromEntries(
+    Object.entries(ADMIN_VIEW_GATES).map(([path, s]) => [path, s.count]),
+  );
+  problems.push(...callerListProblems(files, 'scopeAdminView', views, 'ADMIN_VIEW_GATES'));
+  for (const [site, { callers }] of Object.entries(ADMIN_PAST_GATE_SITES)) {
+    for (const [name, expected] of Object.entries(callers ?? {})) {
+      problems.push(
+        ...callerListProblems(files, name, expected, `ADMIN_PAST_GATE_SITES['${site}'].callers`),
+      );
+    }
+  }
+  return problems;
+}
 
 /** The files whose adminOrSystemScope calls are not as ADMIN_PAST_GATE_SITES
  *  names them: a new file, a moved count, an entry left with no call. */
@@ -738,7 +872,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
       adminCountProblems: admin.problems,
       requestSystemExits: exits,
       requestSystemExitProblems: requestExits.problems,
-      adminPastGateProblems: adminPastGateProblems(texts),
+      adminPastGateProblems: [...adminPastGateProblems(texts), ...adminWrapperProblems(texts)],
       workspaceTableWriterFns: writers.map((f) => ({
         fn: `${f.schema}.${f.name}(${f.args})`,
         definer: f.definer,

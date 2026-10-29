@@ -212,7 +212,7 @@ const app_create: BuiltinToolDef = {
       // A user outside the Admin workspace: at team rules, its author named,
       // as the web create route makes it.
       const author = actingLoginId(ctx.surface);
-      const member = author && (await outsideAdmin());
+      const member = author && (await scopeOutsideAdmin());
       const app = await createApp(ctx.ownerId, {
         ...(member ? { authorLevel: 'team' as const, authorLoginId: author } : {}),
         title: name.slice(0, 200),
@@ -1700,7 +1700,7 @@ const app_duplicate: BuiltinToolDef = {
       // A user outside the Admin workspace: the copy is made at team rules,
       // its author named, never lowered after.
       const author = actingLoginId(ctx.surface);
-      const member = author && (await outsideAdmin());
+      const member = author && (await scopeOutsideAdmin());
       const copy = await duplicateApp(ctx.ownerId, id, {
         ...(member ? { authorLoginId: author } : {}),
         ...(name ? { title: name } : {}),
@@ -1868,7 +1868,7 @@ const app_import: BuiltinToolDef = {
       // Imported code always starts at team rules; a user outside the Admin
       // workspace is named its author.
       const author = actingLoginId(ctx.surface);
-      const member = author && (await outsideAdmin());
+      const member = author && (await scopeOutsideAdmin());
       const res = await importAppPackage(ctx.ownerId, bytes, {
         ...(member ? { authorLoginId: author } : {}),
         ...(name ? { title: name } : {}),
@@ -1995,10 +1995,6 @@ const app_errors: BuiltinToolDef = {
 
 // ─── The author ceiling for a user outside the Admin workspace ───────────────
 
-/** Whether the call runs in a scope that does not hold the Admin workspace
- *  (a member's MCP, a user's workspace turn). */
-const outsideAdmin = scopeOutsideAdmin;
-
 /** Put app `id` at team rules (the author ceiling, apps.author_level) when
  *  the caller may manage it: never lifted here, only lowered. Manage, as
  *  the code write asks (lockAppRow): a caller that
@@ -2031,7 +2027,7 @@ function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
     ...def,
     handler: async (input, ctx) => {
       const target = str(input.id).trim().toLowerCase();
-      if (UUID_RE.test(target) && (await outsideAdmin())) {
+      if (UUID_RE.test(target) && (await scopeOutsideAdmin())) {
         await lowerToTeamRules(ctx.ownerId, target);
       }
       return def.handler(input, ctx);
