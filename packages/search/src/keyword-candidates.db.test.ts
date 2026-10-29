@@ -6,7 +6,11 @@
  *
  *  - the items the scope reads are found by their words alone (they hold
  *    no embedding, so only the keyword arm can return them);
- *  - an item of another workspace that holds the same words is not;
+ *  - an item of another workspace that holds the same words, more often
+ *    (it ranks first among the keyword candidates), is not, and takes no
+ *    place of the scope's: with the limit at the scope's own count, all of
+ *    them come back (a candidate kept past the scope's re-read would push
+ *    one out, though the final read drops it);
  *  - the candidates went through the narrow route, with no denial.
  *
  * Seeds its own rows on the shared anchor and removes them after.
@@ -48,8 +52,10 @@ describe.skipIf(!URL)('keyword candidates of a big scope, on the runtime role', 
     await su`insert into workspaces (id, owner_id, name) values
              (${ws.team}, ${anchor}, ${`${word} team`}), (${ws.other}, ${anchor}, ${`${word} other`})`;
     for (const [k, id] of items.entries()) {
+      // The outside item names the word three times: it ranks first.
+      const title = id === outside ? `${word} ${word} ${word} note` : `${word} note ${k}`;
       await su`insert into nodes (id, owner_id, type, title, path)
-               values (${id}, ${anchor}, 'page', ${`${word} note ${k}`}, 'pages')`;
+               values (${id}, ${anchor}, 'page', ${title}, 'pages')`;
     }
     for (const id of inTeam) {
       await su`insert into item_grants (node_id, workspace_id) values (${id}, ${ws.team})`;
@@ -75,21 +81,27 @@ describe.skipIf(!URL)('keyword candidates of a big scope, on the runtime role', 
   it("finds the scope's items by their words through the narrow route, and no other workspace's", async () => {
     // No scope searches exactly: every workspace scope is a big one here.
     process.env.MANTLE_SCOPE_EXACT_MAX_ROWS = '0';
+    const search = (limit: number) =>
+      s.searchNodes({ ownerId: anchor, q: word, queryEmbedding: query, ids: items, limit });
+    // Unscoped, the outside item is a keyword candidate, and the first.
+    const all = await m.asSystem(() => search(10), 'test');
+    expect(all.map((n) => n.id)[0]).toBe(outside);
+    expect(all.map((n) => n.id).sort()).toEqual([...items].sort());
     ts.takeNarrowUses();
-    const { big, hits } = await m.withScope(
+    const { big, hits, read } = await m.withScope(
       { kind: 'user', loginId: login, ws: [ws.team], modWs: [] },
       async () => ({
         big: !(await s.smallScope('nodes')),
-        hits: await s.searchNodes({
-          ownerId: anchor,
-          q: word,
-          queryEmbedding: query,
-          ids: items,
-          limit: 10,
-        }),
+        hits: await search(inTeam.length),
+        read: await m.db
+          .select({ id: m.nodes.id })
+          .from(m.nodes)
+          .where(m.sql`${m.nodes.id} = ${outside}`),
       }),
     );
     expect(big).toBe(true);
+    // Not in the scope's rows, so it takes no place of the scope's items.
+    expect(read).toEqual([]);
     expect(hits.map((n) => n.id).sort()).toEqual([...inTeam].sort());
     expect(ts.takeNarrowUses()['system:keyword-candidates']).toBeGreaterThan(0);
     expect(ts.takeNarrowDenials()).toEqual([]);
