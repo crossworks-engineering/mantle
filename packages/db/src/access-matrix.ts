@@ -1762,10 +1762,7 @@ export const SCOPED_SYSTEM_WRITE: Readonly<Record<string, string>> = Object.free
 /**
  * A role nothing runs as: applyViewerGrants keeps it holding no right at
  * all (syncGapWriterRights), so a rollback to an image that still uses it
- * finds it.
- * TODO: once no image a box can roll back to uses it, drop the role, its
- * runtime role membership (runtime-role.ts wantedMemberships) and the lock
- * attributes it shares with the viewer roles (viewer-roles.ts).
+ * finds it (docs/actors.md, "Known limits").
  */
 export const GAP_WRITER_ROLE = 'mantle_gap_writer';
 

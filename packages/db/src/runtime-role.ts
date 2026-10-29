@@ -27,9 +27,9 @@
  *    to the superuser. So the marker that guard reads is out of its reach.
  *  - mantle_system (NOLOGIN) holds no right and owns nothing. The runtime
  *    role may SET ROLE to it (no INHERIT), and it may SET ROLE to the write
- *    role and the gap writer, which nothing does now (TODO: drop both SET
- *    memberships and the gap writer role once no image a box can roll back
- *    to uses them). The write role's own membership tests (0277, 0278) count only a direct
+ *    role and the gap writer, which nothing does now (kept for a rollback,
+ *    docs/actors.md, "Known limits"). The write role's own membership
+ *    tests (0277, 0278) count only a direct
  *    membership, so the system pool is still "not the write role's login"
  *    there, as it was as the superuser.
  *  - mantle_system_narrow: the narrow system role. Migrate gives it its
@@ -750,8 +750,8 @@ export function wantedMemberships(): readonly Membership[] {
     { member: RUNTIME_ROLE, role: SYSTEM_ROLE, inherit: false, set: true },
     { member: RUNTIME_ROLE, role: NARROW_ROLE, inherit: false, set: true },
     { member: SYSTEM_ROLE, role: viewerRoleName('write'), inherit: false, set: true },
-    // TODO: nothing SETs these two; kept so a rollback to an older image
-    // still finds them. Drop them once no such image is in reach.
+    // Nothing SETs these two; kept so a rollback to an older image still
+    // finds them (docs/actors.md, "Known limits").
     { member: SYSTEM_ROLE, role: GAP_WRITER_ROLE, inherit: false, set: true },
   ];
 }

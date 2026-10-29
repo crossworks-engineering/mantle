@@ -341,3 +341,7 @@ runs (`WRITERS`, `packages/db/src/ws-user-definers.db.test.ts`; pin `workspaceTa
 - Accepted: any role can `set_config('mantle.actor', ...)`, so the settings are no credential;
   access is never decided from them on a role that runs caller-shaped SQL. Owner: `packages/db`,
   reviewed at every security audit; next by 2026-12-31.
+- `mantle_gap_writer` and the system role's SET memberships of it and of the write role stay,
+  unused, for a rollback to an image that uses them. Owner: `packages/db`. By 2026-12-31.
+- An Admin user's `file_create` shows whether a folder path it cannot read exists (a free path is
+  made, a hidden one answers "not found"). Owner: `packages/tools`. By 2026-12-31.
