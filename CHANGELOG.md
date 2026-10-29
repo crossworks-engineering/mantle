@@ -4,6 +4,20 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a person's description, for the team and its agents
+
+- **Added:** every login has a description on its person card: who it is
+  to the team, a job title, a role or a relationship ("Developer",
+  "Project manager", "Jason's wife"), at most 500 characters. A login
+  sets its own (`PUT /api/profile/description`); the users area sets
+  anyone's (`PATCH /api/users/:id`, listed on `GET /api/users`). It is
+  open to every login and agent that may see the card: on `GET
+  /api/people`, in the messenger directory (whose search now matches it)
+  and on one conversation's people. `messenger_directory` and
+  `messenger_open` carry it to agents, so one asked to message "the
+  developer" can find who that is. Stored as the profile key
+  `description`; no migration (`docs/messenger.md`, "People").
+
 ## Unreleased: the member checks ask Admin membership (plan v3.2 S8e)
 
 - **Changed:** the last five checks that read the login's role column now

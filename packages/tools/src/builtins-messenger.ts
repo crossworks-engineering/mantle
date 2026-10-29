@@ -407,11 +407,15 @@ export const messenger_directory: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Who I may chat with',
   description:
-    'The people you may start a chat with (those who share a workspace with you; an Admin user: everyone), each with "online", and the assistants you may chat with. Start a chat with one through `messenger_create`.',
+    'The people you may start a chat with (those who share a workspace with you; an Admin user: everyone), each with "online" and a description of who they are to the team (a job title, a role or a relationship, e.g. "Developer"; null when none is set), and the assistants you may chat with. To message "the developer" or "the project manager", find the person whose description says so. Start a chat with one through `messenger_create`.',
   inputSchema: {
     type: 'object',
     properties: {
-      q: { type: 'string', maxLength: 100, description: 'Part of a name, e.g. "chris".' },
+      q: {
+        type: 'string',
+        maxLength: 100,
+        description: 'Part of a name or a description, e.g. "chris" or "developer".',
+      },
     },
   },
   handler: async (input, ctx) => {

@@ -51,6 +51,9 @@ export type MessengerParticipant = {
    *  `avatarPhotoVersion` is for the caller). null: no photo. The photo
    *  outranks the avatar. */
   photoVersion?: string | null;
+  /** Logins only: who the person is to the team (their card's
+   *  description, person-description.ts); null when none is set. */
+  description?: string | null;
 };
 
 /** One row of GET /api/messenger/conversations. */
@@ -228,6 +231,8 @@ export type MessengerDirectoryEntry = {
   avatar?: MessengerAvatar | null;
   /** Logins only, as on a participant. */
   photoVersion?: string | null;
+  /** Logins only, as on a participant: who the person is to the team. */
+  description?: string | null;
 };
 
 export type MessengerDirectoryResponse = { entries: MessengerDirectoryEntry[] };

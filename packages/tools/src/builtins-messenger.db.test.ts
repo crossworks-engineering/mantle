@@ -156,6 +156,22 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     for (const e of dir.output!.entries as Record<string, unknown>[]) {
       expect('avatar' in e || 'photoVersion' in e).toBe(false);
     }
+    // Who each person is to the team reaches the agent, and its search
+    // matches it: "the developer" is Ben.
+    await su(sqlTag`insert into profiles (user_id, preferences)
+      values (${B}, ${JSON.stringify({ description: 'Developer' })}::jsonb)
+      on conflict (user_id) do update set preferences = profiles.preferences || excluded.preferences`);
+    const devs = await call('messenger_directory', A, k1, { q: 'developer' });
+    expect(
+      (devs.output!.entries as { kind: string; id: string; description?: string | null }[])
+        .filter((e) => e.kind === 'login')
+        .map((e) => [e.id, e.description]),
+    ).toEqual([[B, 'Developer']]);
+    // And on the people of a chat it opens (Ann alone here, none set).
+    const opened = await call('messenger_open', A, k1, { conversation: c });
+    const people = (opened.output!.conversation as { participants: Record<string, unknown>[] })
+      .participants;
+    expect(people.find((p) => p.id === A)).toMatchObject({ description: null });
   }, 30_000);
 
   it('a connection that names no login is refused, never the owner (a peer of an Admin user)', async () => {

@@ -188,6 +188,10 @@ export type MessengerParticipantView = {
   /** A login's uploaded photo (GET /api/messenger/photo/:loginId?v=); null
    *  when it has none. Logins only. */
   photoVersion?: string | null;
+  /** Who a login is to the team (its card's description); null when none
+   *  is set. Logins only, and on one conversation's view only: a list row
+   *  leaves it out. */
+  description?: string | null;
 };
 
 export type MessengerPreviewView = {
@@ -273,6 +277,9 @@ export type MessengerDirectoryEntryView = {
   avatar?: MessengerAvatarView | null;
   /** Logins only, as on a participant. */
   photoVersion?: string | null;
+  /** Logins only: who the person is to the team (its card's description),
+   *  what an agent matches "the developer" against. */
+  description?: string | null;
 };
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -416,6 +423,7 @@ export async function messengerDirectory(
       online: !!p.lastActiveAt && now - p.lastActiveAt.getTime() < MESSENGER_ONLINE_MS,
       avatar: p.avatar,
       photoVersion: p.photoVersion,
+      description: p.description,
     })),
     ...agents.map((a) => ({
       kind: 'agent' as const,
@@ -1679,10 +1687,13 @@ function PEOPLE(actor: MessengerActor, conversationIds: readonly string[]): SQL 
   return roomPeopleSql(actor.loginId, cs);
 }
 
-/** The people of each conversation as `actor` may see them (PEOPLE). */
+/** The people of each conversation as `actor` may see them (PEOPLE).
+ *  `described`: each login with its description too (one conversation's
+ *  view; a list's rows leave it out, to stay small). */
 async function participantsOf(
   actor: MessengerActor,
   conversationIds: readonly string[],
+  opts: { described?: boolean } = {},
 ): Promise<Map<string, MessengerParticipantView[]>> {
   const out = new Map<string, MessengerParticipantView[]>();
   if (conversationIds.length === 0) return out;
@@ -1709,6 +1720,7 @@ async function participantsOf(
         name: f?.name ?? 'Someone',
         avatar: f?.avatar ?? null,
         photoVersion: f?.photoVersion ?? null,
+        ...(opts.described ? { description: f?.description ?? null } : {}),
       });
     } else {
       const f = an.get(r.id);
@@ -1757,7 +1769,7 @@ export async function getMessengerConversation(
          where c.id = ${c}::uuid and c.owner_id = ${actor.ownerId}::uuid`,
   );
   if (!row) throw new MessengerNotFoundError();
-  const parts = (await participantsOf(actor, [row.id])).get(row.id) ?? [];
+  const parts = (await participantsOf(actor, [row.id], { described: true })).get(row.id) ?? [];
   return {
     id: row.id,
     kind: row.kind,

@@ -58,6 +58,7 @@ import {
 
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { HomeDesk } from '@mantle/client-types';
+import { projectPersonDescription } from '@mantle/client-types/person-description';
 import { InputError } from '@mantle/std';
 import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
 import { profileFlag } from '@mantle/client-types/profile-flags';
@@ -156,6 +157,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
       typeof prefs.displayName === 'string' && prefs.displayName.length > 0
         ? prefs.displayName
         : undefined,
+    description: projectPersonDescription(prefs.description) ?? undefined,
     siteName: projectSiteName(prefs.siteName),
     peerName: projectPeerName(prefs.peerName),
     houseStyle: projectHouseStyle(prefs.houseStyle),
@@ -393,6 +395,7 @@ export async function updateProfilePreferences(
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
     displayName: merged.displayName || undefined,
+    description: projectPersonDescription(merged.description) ?? undefined,
     siteName: projectSiteName(merged.siteName),
     peerName: projectPeerName(merged.peerName),
     houseStyle: projectHouseStyle(merged.houseStyle),

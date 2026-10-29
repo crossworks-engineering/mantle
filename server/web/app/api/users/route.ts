@@ -11,6 +11,7 @@ import {
   asc,
   eq,
   nodes,
+  profiles,
   sql,
 } from '@mantle/db';
 import {
@@ -19,6 +20,7 @@ import {
   isFormerClientContact,
   isFormerClientEmail,
 } from '@mantle/content';
+import { projectPersonDescription } from '@mantle/client-types/person-description';
 import { hashLoginPassword, ownerCaller } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { loginRole } from '@/lib/auth/admin-seat';
@@ -75,16 +77,20 @@ export async function GET() {
       agentId: agents.id,
       agentSlug: agents.slug,
       agentName: agents.name,
+      // The person card's description (the login's profile key).
+      description: sql<unknown>`${profiles.preferences}->'description'`,
     })
     .from(authUsers)
     // At most one agent per login (partial unique index on assigned_user_id),
     // so this stays one row per user.
     .leftJoin(agents, eq(agents.assignedUserId, authUsers.id))
+    .leftJoin(profiles, eq(profiles.userId, authUsers.id))
     .orderBy(asc(authUsers.createdAt));
 
   return NextResponse.json({
-    users: rows.map(({ agentId, agentSlug, agentName, ...u }) => ({
+    users: rows.map(({ agentId, agentSlug, agentName, description, ...u }) => ({
       ...u,
+      description: projectPersonDescription(description),
       agent: agentId ? { id: agentId, slug: agentSlug, name: agentName } : null,
     })),
     currentActorId: user.actor.id,

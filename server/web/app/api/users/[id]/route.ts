@@ -16,6 +16,11 @@ import {
   type LoginChangeRefusal,
 } from '@/lib/login-update';
 import { readJson } from '@/lib/read-body';
+import { savePreferencesFor } from '@mantle/content';
+import {
+  PERSON_DESCRIPTION_MAX,
+  personDescriptionTooLongError,
+} from '@mantle/client-types/person-description';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -35,9 +40,28 @@ export const policy = routePolicy({
 
 const IdParams = z.object({ id: z.string().uuid() });
 
+/** A PATCH that changes the description alone runs no login change. */
+const NOTHING_DONE: LoginChangeDone = {
+  ok: true,
+  sessionsEnded: false,
+  lockingOut: false,
+  peersUnbound: 0,
+  releasedAgentId: null,
+  pushDevicesRemoved: 0,
+};
+
 const PatchBody = z
   .object({
     displayName: z.string().trim().max(120).nullable().optional(),
+    /** Who the login is to the team ("Developer", "Jason's wife"): its
+     *  person card's description, read by every login and agent that may
+     *  see the card. null or '' clears it. Checked trimmed against
+     *  PERSON_DESCRIPTION_MAX below; this only bounds the payload. */
+    description: z
+      .string()
+      .max(PERSON_DESCRIPTION_MAX * 4)
+      .nullable()
+      .optional(),
     /** Never 'member' on the anchor or yourself (there is no client
      *  role). */
     role: LoginRoleSchema.optional(),
@@ -60,7 +84,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 });
   }
   const targetId = idParsed.data.id;
-  const body = parsed.data;
+  const { description, ...body } = parsed.data;
+  const descriptionText = description === undefined ? undefined : (description ?? '').trim();
+  if (descriptionText !== undefined && descriptionText.length > PERSON_DESCRIPTION_MAX) {
+    return NextResponse.json(
+      { error: personDescriptionTooLongError(descriptionText.length) },
+      { status: 400 },
+    );
+  }
+  // The description is the card's, on the login's profile row, not a
+  // login column: a change of it alone touches no session, role or link.
+  const loginChange = Object.values(body).some((v) => v !== undefined);
 
   const target = await loadLoginTarget(targetId);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
@@ -74,13 +108,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // change is decided from membership, and a drifted column is put right.
   const role = body.role;
   const roleChange = role !== undefined && role !== target.role;
-  let done: LoginChangeDone | LoginChangeRefusal;
+  let done: LoginChangeDone | LoginChangeRefusal = NOTHING_DONE;
   try {
-    done = roleChange
-      ? await applyLoginChange(user, target, body, undefined, (tx) =>
-          adminMembershipChange(tx, targetId, role === 'admin'),
-        )
-      : await applyLoginChange(user, target, body);
+    if (loginChange)
+      done = roleChange
+        ? await applyLoginChange(user, target, body, undefined, (tx) =>
+            adminMembershipChange(tx, targetId, role === 'admin'),
+          )
+        : await applyLoginChange(user, target, body);
   } catch (err) {
     // The definer's refusal: the last Moderator of Admin (409), or a caller
     // it refuses (403: no users area, no Admin seat, a read-only or no
@@ -99,6 +134,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!done.ok) {
     return NextResponse.json({ error: done.error, reason: done.reason }, { status: done.status });
   }
+  // After the login change, so a refused one leaves the card as it was. A
+  // PERSONAL key: it lands on the target's own row (the profile-row spot).
+  if (descriptionText !== undefined) {
+    await savePreferencesFor(targetId, { description: descriptionText });
+  }
 
   auditFireAndForget({
     actorId: user.actor.id,
@@ -109,7 +149,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     detail: {
       targetId,
       targetEmail: target.email,
-      changes: body,
+      changes: descriptionText === undefined ? body : { ...body, description: descriptionText },
       ...(done.sessionsEnded ? { sessionsEnded: true } : {}),
       ...(done.lockingOut
         ? { releasedAgentId: done.releasedAgentId, pushDevicesRemoved: done.pushDevicesRemoved }

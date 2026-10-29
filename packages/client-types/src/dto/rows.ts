@@ -406,6 +406,10 @@ export type ProfilePreferences = {
    *  the assistant's real knowledge of the user comes from the Journal identity
    *  block; this is for greetings/UI. */
   displayName?: string;
+  /** Who this login is to the team ("Developer", "Jason's wife"): its
+   *  person card's description, open to every login and agent that may see
+   *  the card (PERSON_DESCRIPTION_MAX, person-description.ts). Unset: none. */
+  description?: string;
   /** Custom site name rendered as the header wordmark in place of "mantle" —
    *  a per-box label (e.g. 'Refinery') so anyone with several brains can see at
    *  a glance which one they're on. Cosmetic only; unset ⇒ the Mantle wordmark.

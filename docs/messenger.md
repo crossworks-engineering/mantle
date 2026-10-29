@@ -15,15 +15,15 @@ its unread count, so one list holds everything.
 
 ## The model
 
-| Table                     | What it holds                                                                                                                                                                                                                                                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table                     | What it holds                                                                                                                                                                                                                                                                                                               |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `messenger_conversations` | A direct chat or a group. `last_seq`, `last_message_at` and `last_preview` (the tail) are written by the send that changes them. A direct chat has a `direct_key` (the two login ids, sorted and joined; unique), so a pair has one chat. A group may have an `icon` and a `color` (0341) and an `info` text (0343), below. |
-| `messenger_participants`  | One row per login (or, from Phase 3, the group's one agent). `admin` marks a group admin (the creator first). `last_read_seq`, `mention_seq`, `cleared_before_seq`, `muted`; `from_seq`, the floor of what the login reads; `left_at` and `left_seq` once the login left.                         |
-| `messenger_messages`      | One row per message, `(conversation_id, seq)` unique. `author_kind` is login, agent or system. `author_name` is a snapshot. `via` is the credential label shown, `via_ref` the credential itself. `client_msg_id` makes a send idempotent.                                                        |
-| `messenger_attachments`   | The attachment rows of Phase 4 (no bytes yet).                                                                                                                                                                                                                                                    |
-| `messenger_reactions`     | One emoji of one login on one message.                                                                                                                                                                                                                                                            |
-| `messenger_favourites`    | A login's pins: a conversation or an agent thread.                                                                                                                                                                                                                                                |
-| `login_presence`          | When a login's messenger stream last beat ("online": the last two minutes).                                                                                                                                                                                                                       |
+| `messenger_participants`  | One row per login (or, from Phase 3, the group's one agent). `admin` marks a group admin (the creator first). `last_read_seq`, `mention_seq`, `cleared_before_seq`, `muted`; `from_seq`, the floor of what the login reads; `left_at` and `left_seq` once the login left.                                                   |
+| `messenger_messages`      | One row per message, `(conversation_id, seq)` unique. `author_kind` is login, agent or system. `author_name` is a snapshot. `via` is the credential label shown, `via_ref` the credential itself. `client_msg_id` makes a send idempotent.                                                                                  |
+| `messenger_attachments`   | The attachment rows of Phase 4 (no bytes yet).                                                                                                                                                                                                                                                                              |
+| `messenger_reactions`     | One emoji of one login on one message.                                                                                                                                                                                                                                                                                      |
+| `messenger_favourites`    | A login's pins: a conversation or an agent thread.                                                                                                                                                                                                                                                                          |
+| `login_presence`          | When a login's messenger stream last beat ("online": the last two minutes).                                                                                                                                                                                                                                                 |
 
 `push_login_prefs` has two more columns for Phase 5: `messages` (all,
 mentions, off) and `message_preview`.
@@ -220,8 +220,9 @@ model nothing.
 ## People
 
 Mantle is a team system and every login is approved by hand, so what a
-person shares with its team (its name, avatar, photo and presence; later a
-status, a time zone or a location shared on purpose) is open to the team:
+person shares with its team (its name, description, avatar, photo and
+presence; later a status, a time zone or a location shared on purpose) is
+open to the team:
 the UI, the API and the agents. It reaches a caller through one gate,
 `packages/content/src/people.ts`, and no other way (plan section 23).
 
@@ -236,7 +237,7 @@ caller's own login id in its WHERE: the caller is always the
 authenticated login, never an id from a request. Not visible and not
 existing read the same (left out of a list, the one 404). Faces too go
 through the gate (`loginFaces` takes the caller), and a search matches the
-name a caller is shown, never the mailbox behind it. The messenger
+name a caller is shown or the description, never the mailbox behind them. The messenger
 re-exports `peopleVisibleTo` and `loginVisibleTo`, and its rooms keep the
 same seq rule (`roomPeopleSql`, which `mantle_messenger_people` answers in
 a scope). Agents are not logins: an agent's face is the messenger's.
@@ -247,6 +248,7 @@ a scope). Agents are not logins: an agent's face is the messenger's.
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`           | the login id                                                                                                                                                                       |
 | `name`         | the display name, else the mailbox part                                                                                                                                            |
+| `description`  | who the person is to the team ("Developer", "Jason's wife"), trimmed, at most 500 characters, or null                                                                              |
 | `avatar`       | `{style, seed, parts}` as on a participant, or null (initials)                                                                                                                     |
 | `photoVersion` | the `v` of the photo route, or null (no photo)                                                                                                                                     |
 | `presence`     | `{state, lastActiveAt}`: `online` when the login's stream beat in the last two minutes (`login_presence`), else `offline`; the type also names `idle` and `busy`, which come later |
@@ -262,6 +264,19 @@ minute):
 | `GET /api/people/:id`                | `{ person }`, or the one 404                                                                                                  |
 | `GET /api/people/presence?ids=a,b,c` | `{ presence: [{id, state, lastActiveAt}] }` for the ids the caller may see; the first 200 ids are read, the rest ignored      |
 | `GET /api/people/:id/photo?v=`       | the photo's bytes, or the one 404                                                                                             |
+
+**The description** says who a person is to the team: a job title, a role
+or a relationship. It is the login's profile key `description` (its own
+row, beside the avatar and the photo), written by the login itself (`PUT
+/api/profile/description { description }`, `class: 'self'`) or by the
+users area (`PATCH /api/users/:id { description }`, which also lists it on
+`GET /api/users`). null or '' clears it; over 500 characters, trimmed, is
+refused, never cut (`person-description.ts` in client-types holds the
+limit). It is not private from the team: every login and agent that may
+see the card reads it, on the card, in the directory (whose search matches
+it) and on one conversation's people (`GET /api/messenger/c/:id`,
+`messenger_open`; a list row leaves it out). It is how an agent asked to
+message "the developer" finds who that is.
 
 **The photo** carries the headers of `/api/profile/photo` (`private`;
 `immutable` only when `v` is the photo served, revalidated otherwise),
@@ -435,7 +450,7 @@ each runs as the caller in its scope:
 | `messenger_create`    | a direct chat or a group (with its `title` and `info`)                                                 |
 | `messenger_wait`      | wait up to 60 s for messages after a seq; at most 100 at a time (`hasMore`: call again with `lastSeq`) |
 | `messenger_mark_read` | move my cursor                                                                                         |
-| `messenger_directory` | who I may chat with                                                                                    |
+| `messenger_directory` | who I may chat with, each person with their description (`q` matches it)                               |
 
 A connection that names no login (a peer bound to an Admin user the owner
 did not register) is refused: the tools never fall back to the brain owner.

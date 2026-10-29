@@ -1,7 +1,8 @@
 /**
  * People (docs/messenger.md, "People"): what a person shares
  * with its team, under /api/people/*. Every login is approved by hand, so a
- * person's card (its name, avatar, photo and presence; later a status) is
+ * person's card (its name, description, avatar, photo and presence; later a
+ * status) is
  * open to the logins that may see it, and to nobody else: itself, the
  * people sharing a live workspace with it (an Admin user sees every usable
  * login), and the people of its chats. A login the caller may not see and a
@@ -32,6 +33,10 @@ export type PersonCard = {
   /** The login id. */
   id: string;
   name: string;
+  /** Who the person is to the team: a job title, a role or a relationship
+   *  ("Developer", "Jason's wife"), as they or an admin wrote it. null: none
+   *  set. Agents read the same text (messenger_directory). */
+  description: string | null;
   /** null: the client draws initials. */
   avatar: PersonAvatar | null;
   /** The uploaded photo's version, the `v` of GET /api/people/:id/photo?v=

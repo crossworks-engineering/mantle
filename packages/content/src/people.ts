@@ -3,9 +3,11 @@
  * every person-to-person read, and the card a login shares with its team.
  *
  * Mantle is a team system and every login is approved by hand, so what a
- * person shares with the team (its name, avatar, photo and presence; later
- * a status, a time zone, a location shared on purpose) is open to the
- * team: the UI, the API and the agents. It reaches a caller through this
+ * person shares with the team (its name, its description, avatar, photo and
+ * presence; later a status, a time zone, a location shared on purpose) is
+ * open to the team: the UI, the API and the agents. The description says
+ * who the person is to the team ("Developer", "Jason's wife"), so an agent
+ * asked to message "the developer" can tell who that is. It reaches a caller through this
  * module only. The rule, for a caller C and a login L:
  *
  *   C sees L when L is C itself; or L is in C's directory (a usable login,
@@ -27,6 +29,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { liveWorkspaceSql, systemDb } from '@mantle/db';
 import { isUuid } from '@mantle/std';
+import { projectPersonDescription } from '@mantle/client-types/person-description';
 import {
   logoVersion,
   projectAvatarParts,
@@ -63,6 +66,9 @@ export type PersonPresenceView = { state: PersonPresenceState; lastActiveAt: str
 export type PersonCardView = {
   id: string;
   name: string;
+  /** Who the person is to the team, as they or an admin wrote it (the
+   *  profile key `description`); null: none set. */
+  description: string | null;
   /** null: the client draws initials. */
   avatar: PersonAvatarView | null;
   /** The uploaded photo's version, the `v` of GET /api/people/:id/photo;
@@ -106,11 +112,15 @@ const BRAIN_STYLE = (ownerId: string) =>
   sql`(select b.preferences->'avatarStyle' from profiles b where b.user_id = ${ownerId}::uuid)`;
 
 /** The face columns of a login's own profile row `pr` (left joined): its
- *  seed, builder parts and photo pointer, and the brain's style. */
+ *  seed, builder parts and photo pointer, the brain's style, and the
+ *  description the card carries next to the face. */
 const LOGIN_FACE_COLUMNS = (ownerId: string) =>
   sql`pr.preferences->'avatarSeed' as seed, pr.preferences->'avatarParts' as parts,
       pr.preferences->'avatarPhotoKey' as photo_key, pr.preferences->'avatarPhotoType' as photo_type,
-      ${BRAIN_STYLE(ownerId)} as style`;
+      ${BRAIN_STYLE(ownerId)} as style, pr.preferences->'description' as description`;
+
+/** A login's description as text, for a search to match ('' when none). */
+const LOGIN_DESCRIPTION = sql`coalesce(pr.preferences->>'description', '')`;
 
 /** A login's shown name: its display name, else the mailbox part. */
 const LOGIN_NAME = sql`coalesce(nullif(btrim(u.display_name), ''), split_part(coalesce(u.email, ''), '@', 1), 'User')`;
@@ -121,6 +131,7 @@ type LoginFaceRow = {
   photo_key: unknown;
   photo_type: unknown;
   style: unknown;
+  description: unknown;
 };
 
 /** A login's avatar and photo version, as GET /api/shell projects its own:
@@ -129,6 +140,7 @@ type LoginFaceRow = {
 function loginFace(r: LoginFaceRow): {
   avatar: PersonAvatarView | null;
   photoVersion: string | null;
+  description: string | null;
 } {
   const seed = typeof r.seed === 'string' && r.seed.length > 0 ? r.seed : null;
   const key = projectLogoKey(r.photo_key);
@@ -137,6 +149,7 @@ function loginFace(r: LoginFaceRow): {
       ? { style: readAvatarStyle(r.style), seed, parts: projectAvatarParts(r.parts) ?? null }
       : null,
     photoVersion: key && projectAvatarPhotoType(r.photo_type) ? logoVersion(key) : null,
+    description: projectPersonDescription(r.description),
   };
 }
 
@@ -161,7 +174,15 @@ export async function loginFaces(
   caller: PeopleCaller,
   ids: readonly string[],
 ): Promise<
-  Map<string, { name: string; avatar: PersonAvatarView | null; photoVersion: string | null }>
+  Map<
+    string,
+    {
+      name: string;
+      avatar: PersonAvatarView | null;
+      photoVersion: string | null;
+      description: string | null;
+    }
+  >
 > {
   const wanted = ids.filter(isUuid);
   if (wanted.length === 0) return new Map();
@@ -272,13 +293,18 @@ export async function peopleVisibleTo(
     lastActiveAt: Date | null;
     avatar: PersonAvatarView | null;
     photoVersion: string | null;
+    description: string | null;
   }[]
 > {
   const admin = await loginIsAdmin(caller.loginId);
   const only = opts.only ? sql`and u.id = any(${uuidArray(opts.only)})` : sql``;
-  // The name the caller is shown, never the mailbox behind it: an address
-  // is not something a person shares with the team.
-  const like = opts.q ? sql`and ${LOGIN_NAME} ilike ${'%' + escapeLike(opts.q) + '%'}` : sql``;
+  // The name the caller is shown or the description the card carries
+  // ("developer" finds the developer), never the mailbox behind them: an
+  // address is not something a person shares with the team.
+  const pattern = opts.q ? '%' + escapeLike(opts.q) + '%' : '';
+  const like = opts.q
+    ? sql`and (${LOGIN_NAME} ilike ${pattern} or ${LOGIN_DESCRIPTION} ilike ${pattern})`
+    : sql``;
   const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
   const rows = await q<{ id: string; name: string; last_active_at: Date | null } & LoginFaceRow>(
     systemDb,

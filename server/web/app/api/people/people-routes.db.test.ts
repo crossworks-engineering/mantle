@@ -11,6 +11,9 @@
  *    no uuid).
  *  - GET /api/people/presence: only visible ids, online or offline, at
  *    most 200 ids read.
+ *  - The description (who a person is to the team): on the card, set by
+ *    the login itself (PUT /api/profile/description) or by the users area
+ *    (PATCH /api/users/:id), and matched by the directory's search.
  *  - GET /api/people/:id/photo and its alias /api/messenger/photo/:loginId:
  *    a cookie, or the caller's own `?at=` token: a visible login's photo is
  *    served; a login outside the gate is the one 404; an expired token, or
@@ -72,6 +75,21 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
     tokens.buildAssetToken(owner, login, 0, ttl ?? tokens.SHORT_ASSET_TOKEN_TTL_SECONDS);
   const get = (p: string, headers: Record<string, string> = {}) =>
     app.request(p, { method: 'GET', headers });
+  let ip = 0;
+  /** A JSON write with a session cookie (a fresh address per call keeps
+   *  the per-IP limits out of the way). */
+  const send = (method: 'PUT' | 'PATCH', p: string, login: string, body: unknown) => {
+    ip += 1;
+    return app.request(p, {
+      method,
+      headers: {
+        ...cookie(login),
+        'content-type': 'application/json',
+        'x-forwarded-for': `203.0.113.${ip % 250}`,
+      },
+      body: JSON.stringify(body),
+    });
+  };
   const json = async (res: Response) => {
     expect(res.status).toBe(200);
     return (await res.json()) as Record<string, unknown>;
@@ -121,6 +139,7 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
     await prefs(owner, { avatarStyle: 'lorelei' });
     await prefs(A, { avatarSeed: 'ann-seed' });
     await prefs(C, {
+      description: '  Project manager  ',
       avatarSeed: 'cat-seed',
       avatarPhotoKey: key('c'),
       avatarPhotoType: 'image/png',
@@ -158,10 +177,11 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
     expect(ids(people as { id: string }[])).toEqual([A, B, C, owner].sort());
     const cat = people.find((p) => p.id === C)!;
     expect(Object.keys(cat).sort()).toEqual(
-      ['avatar', 'id', 'name', 'photoVersion', 'presence', 'status'].sort(),
+      ['avatar', 'description', 'id', 'name', 'photoVersion', 'presence', 'status'].sort(),
     );
     expect(cat).toMatchObject({
       name: 'Cat',
+      description: 'Project manager',
       avatar: { style: 'lorelei', seed: 'cat-seed', parts: null },
       photoVersion: ver('c'),
       presence: { state: 'offline' },
@@ -169,6 +189,7 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
     });
     expect(typeof (cat.presence as { lastActiveAt: unknown }).lastActiveAt).toBe('string');
     expect(people.find((p) => p.id === B)).toMatchObject({
+      description: null,
       avatar: null,
       photoVersion: null,
       presence: { state: 'online' },
@@ -304,5 +325,67 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
       401,
     );
     expect(h.keys).toEqual([]);
+  });
+
+  it("the description: the login sets its own, an admin sets anyone's, the team reads it", async () => {
+    const card = async (viewer: string, id: string) =>
+      (
+        (await json(await get(`/api/people/${id}`, cookie(viewer)))) as {
+          person: { description: string | null };
+        }
+      ).person.description;
+
+    // Ben writes his own; Ann (sharing W) reads it on his card.
+    const own = await send('PUT', '/api/profile/description', B, { description: ' Developer ' });
+    expect(await json(own)).toEqual({ description: 'Developer' });
+    expect(await card(A, B)).toBe('Developer');
+    expect(
+      (
+        (await json(await get('/api/profile', cookie(B)))) as {
+          preferences: { description?: string };
+        }
+      ).preferences.description,
+    ).toBe('Developer');
+
+    // Over the limit is refused, never cut; the card keeps what it had.
+    const long = await send('PUT', '/api/profile/description', B, { description: 'x'.repeat(501) });
+    expect(long.status).toBe(400);
+    expect(await card(A, B)).toBe('Developer');
+
+    // The directory finds him by it, as an agent asking for "the developer"
+    // would; a name search still works.
+    const dir = (q: string) =>
+      get(`/api/messenger/directory?q=${encodeURIComponent(q)}`, cookie(A))
+        .then(json)
+        .then((r) => r.entries as { id: string; kind: string; description?: string | null }[]);
+    const devs = (await dir('develop')).filter((e) => e.kind === 'login');
+    expect(devs.map((e) => e.id)).toEqual([B]);
+    expect(devs[0]!.description).toBe('Developer');
+    expect((await dir('ben')).filter((e) => e.kind === 'login').map((e) => e.id)).toEqual([B]);
+
+    // A member may not set another login's (the users area is the Admin's).
+    expect(
+      (await send('PATCH', `/api/users/${A}`, B, { description: 'Not hers to say' })).status,
+    ).toBe(403);
+    expect(await card(B, A)).toBeNull();
+
+    // The owner (an Admin user) sets Ann's through the users area: the
+    // description alone changes no session (her cookie still reads).
+    const set = await send('PATCH', `/api/users/${A}`, owner, { description: "Jason's wife" });
+    expect(await json(set)).toEqual({ ok: true });
+    expect(await card(B, A)).toBe("Jason's wife");
+    expect(await card(A, A)).toBe("Jason's wife");
+    const users = (await json(await get('/api/users', cookie(owner)))) as {
+      users: { id: string; description: string | null }[];
+    };
+    expect(users.users.find((u) => u.id === A)!.description).toBe("Jason's wife");
+
+    // null clears it.
+    expect((await send('PATCH', `/api/users/${A}`, owner, { description: null })).status).toBe(200);
+    expect(await card(B, A)).toBeNull();
+    expect((await send('PUT', '/api/profile/description', B, { description: null })).status).toBe(
+      200,
+    );
+    expect(await card(A, B)).toBeNull();
   });
 });
