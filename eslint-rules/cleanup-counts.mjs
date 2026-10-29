@@ -9,7 +9,7 @@
  *    write or a definer call would let the database route it;
  *  - history codes in code comments: provenance a comment carries (fix
  *    rounds, audit finding codes, step codes next to a provenance word or
- *    named in the history file's headings) instead of the why.
+ *    on the reviewed list, HISTORY_HEADING_CODES) instead of the why.
  *
  * Syntax trees (the TypeScript parser): a string is never a comment, a
  * comment is never SQL.
@@ -534,12 +534,12 @@ function rawWriteAllowed(root) {
 // ── history codes in comments ───────────────────────────────────────────────
 
 /** The always-findings: the words fix and round together, a round code, an
- *  audit finding code. A bare round and number counts only in a finding's
- *  shape: closed by punctuation (a comma, a closing bracket, a colon, a
- *  quote) or followed by a finding code (a letter and a number), so
- *  `round 2 decimals` is no history. */
+ *  audit finding code (`audit L5`, `apps audit S2`: any letter). A bare
+ *  round and number counts only in a finding's shape: closed by punctuation
+ *  (a comma, a closing bracket, a colon, a quote) or followed by a finding
+ *  code (a letter and a number), so `round 2 decimals` is no history. */
 const HISTORY_WORDS =
-  /fix round|\bround (?:[0-9]{1,2}[A-Za-z]?|[A-Z])(?=\s*[,):;"']|\s*$|\.(?:\s|$)|\s+[A-Z]-?[0-9]{1,2}\b)|\baudit [HLMN][0-9]+\b/gi;
+  /fix round|\bround (?:[0-9]{1,2}[A-Za-z]?|[A-Z])(?=\s*[,):;"']|\s*$|\.(?:\s|$)|\s+[A-Z]-?[0-9]{1,2}\b)|\baudit [A-Z][0-9]+\b/gi;
 /** A code in a comment: a letter, a number, and its sub-step letters and
  *  numbers (B4, C0, P2a, B2b1, B2b2c, X5b2). Case-sensitive. */
 const CODE = /\b[A-Z][0-9]{1,2}(?:[a-z][0-9]?)*\b/g;
@@ -649,9 +649,12 @@ export function historyHeadingCodes(root, { openFences = null } = {}) {
  * The step codes a comment holds as history wherever it names them, but in
  * a sheet comment (a cell) and where the stoplist says it is no step:
  * frozen and reviewed. They are the codes the history files' headings name
- * (historyHeadingCodes) less HEADING_CODES_LEFT_OUT. A heading code in
- * neither list is a problem that fails arch:check, so a new handover's
- * heading never moves the count unreviewed: add its code to one of them.
+ * (historyHeadingCodes) less HEADING_CODES_LEFT_OUT, and the steps whose
+ * handover headings do not name their code: plan v3.2's (S1 to S13 and
+ * their parts) and the workspaces plan's (W1 to W9 and their parts). A
+ * heading code in neither list is a problem that fails arch:check, so a new
+ * handover's heading never moves the count unreviewed: add its code to one
+ * of them.
  */
 export const HISTORY_HEADING_CODES = Object.freeze([
   'A10',
@@ -672,18 +675,60 @@ export const HISTORY_HEADING_CODES = Object.freeze([
   'P1a',
   'P1b',
   'R0',
+  'S1',
   'S10',
+  'S11',
   'S11a',
+  'S11b',
   'S12',
   'S13',
+  'S2',
   'S2a',
   'S2b',
   'S2c',
   'S3',
+  'S4',
   'S4a',
+  'S4b',
+  'S5',
   'S6',
+  'S7',
+  'S7a',
+  'S7b',
+  'S7c',
+  'S8',
   'S8a',
+  'S8b',
   'S8c',
+  'S8d',
+  'S8e',
+  'S9',
+  'W1',
+  'W2',
+  'W3',
+  'W4',
+  'W4b',
+  'W5',
+  'W5a',
+  'W5b',
+  'W5b1',
+  'W5b2',
+  'W5c',
+  'W6',
+  'W6a',
+  'W6b',
+  'W7',
+  'W7a',
+  'W7b',
+  'W7c',
+  'W7d',
+  'W7e',
+  'W8',
+  'W8a',
+  'W8b',
+  'W8c',
+  'W8d',
+  'W9',
 ]);
 
 /** Heading codes that do not count by name, each with why. Next to a
@@ -692,7 +737,6 @@ export const HISTORY_HEADING_CODES = Object.freeze([
  *  entry) lowers historyCodeComments, so it is reviewed like a pin. */
 export const HEADING_CODES_LEFT_OUT = Object.freeze({
   D1: 'plan v3.2 D1 (the spec cut) shares its label with owner decision D1 and the D findings of the apps audit, the apps plan and plan v2 (D1 to D8); no counted comment names the step, each D1 there is a decision or a finding',
-  S9: 'plan v3.2 S9 (the route declarations) shares its label with finding S9 of an earlier audit (the private thumbnails fix, packages/files space-disk.ts and thumbnail.ts: "audit S9"); no counted comment names the step (its code says "the route declarations"), each S9 there is that finding',
 });
 
 /** Each heading code in neither HISTORY_HEADING_CODES nor
@@ -716,41 +760,48 @@ export function headingCodeProblems(root) {
   return out;
 }
 
+/** Whether one line (or two joined) holds a history finding. */
+function holdsHistory(line, codes, { sheet, path }) {
+  HISTORY_WORDS.lastIndex = 0;
+  if (HISTORY_WORDS.test(line)) return true;
+  // A cell reference: a cell-shaped code in a sheet file or on a line
+  // that says sheet, formula or cell. Next to a provenance word only the
+  // line's own sheet words make it a cell (a sheet file's `A31 part 2` is
+  // a step).
+  const sheetLine = SHEET_WORDS.test(line);
+  for (const m of line.matchAll(CODE)) {
+    if (stoplisted(m[0], line, path, m.index)) continue;
+    const cell = CELL_SHAPE.test(m[0]);
+    const before = line.slice(0, m.index);
+    const after = line.slice(m.index + m[0].length);
+    const near =
+      STEP_SHAPE.test(m[0]) &&
+      !(cell && sheetLine) &&
+      (new RegExp(String.raw`\b${PROVENANCE}\b[\s,:;()-]*(?:[\w.]+[\s,:;()-]+)?$`, 'i').test(
+        before,
+      ) ||
+        new RegExp(String.raw`^[\s,:;()-]*(?:[\w.]+[\s,:;()-]+)?${PROVENANCE}\b`, 'i').test(after));
+    if (near || (codes.has(m[0]) && !(cell && (sheet || sheetLine)))) return true;
+  }
+  return false;
+}
+
 /** The history findings of one comment's text (its lines): the line
- *  offsets within the comment that hold one. `path` picks the file-wide
- *  stoplist entries (the storage package's S3, the object store). */
+ *  offsets within the comment that hold one. A finding split over two
+ *  lines (`the apps audit` then `S2 cap`) counts on its first line: a line
+ *  with none is read again joined with the next, when the next holds none
+ *  of its own. `path` picks the file-wide stoplist entries (the
+ *  storage package's S3, the object store). */
 export function historyFindings(comment, codes, { sheet = false, path = '' } = {}) {
   const lines = comment.split('\n');
+  const opts = { sheet, path };
+  const own = lines.map((line) => holdsHistory(line, codes, opts));
   const hits = [];
   lines.forEach((line, i) => {
-    HISTORY_WORDS.lastIndex = 0;
-    if (HISTORY_WORDS.test(line)) {
-      hits.push(i);
-      return;
-    }
-    // A cell reference: a cell-shaped code in a sheet file or on a line
-    // that says sheet, formula or cell. Next to a provenance word only the
-    // line's own sheet words make it a cell (a sheet file's `A31 part 2` is
-    // a step).
-    const sheetLine = SHEET_WORDS.test(line);
-    for (const m of line.matchAll(CODE)) {
-      if (stoplisted(m[0], line, path, m.index)) continue;
-      const cell = CELL_SHAPE.test(m[0]);
-      const before = line.slice(0, m.index);
-      const after = line.slice(m.index + m[0].length);
-      const near =
-        STEP_SHAPE.test(m[0]) &&
-        !(cell && sheetLine) &&
-        (new RegExp(String.raw`\b${PROVENANCE}\b[\s,:;()-]*(?:[\w.]+[\s,:;()-]+)?$`, 'i').test(
-          before,
-        ) ||
-          new RegExp(String.raw`^[\s,:;()-]*(?:[\w.]+[\s,:;()-]+)?${PROVENANCE}\b`, 'i').test(
-            after,
-          ));
-      if (near || (codes.has(m[0]) && !(cell && (sheet || sheetLine)))) {
-        hits.push(i);
-        return;
-      }
+    if (own[i]) hits.push(i);
+    else if (i + 1 < lines.length && !own[i + 1]) {
+      const next = lines[i + 1].replace(/^\s*(?:\/\/+|\*+(?!\/))?\s*/, '');
+      if (holdsHistory(`${line} ${next}`, codes, opts)) hits.push(i);
     }
   });
   return hits;
@@ -776,14 +827,33 @@ function commentsOf(sf) {
 /** The comment lines of `text` with a history finding: their line
  *  numbers. */
 export function historyCommentLines(path, text, codes) {
-  HISTORY_WORDS.lastIndex = 0;
-  if (!HISTORY_WORDS.test(text) && !/\b[A-Z][0-9]/.test(text)) return [];
+  // Every finding names a round, an audit or a code (a letter and a
+  // number), on one line or split over two.
+  if (!/\bround\b|\baudit\b|\b[A-Z][0-9]/i.test(text)) return [];
   const sf = parse(path, text);
   const sheet = /sheet|formula|xlsx|tabledb/i.test(path);
-  const out = new Set();
-  for (const c of commentsOf(sf)) {
+  // A run of `//` comments on consecutive lines is one comment's text, so
+  // a finding split over two of them is read whole.
+  const runs = [];
+  for (const c of commentsOf(sf).sort((a, b) => a.pos - b.pos)) {
     const first = lineOf(sf, c.pos);
-    for (const i of historyFindings(c.text, codes, { sheet, path })) out.add(first + i);
+    const last = runs.at(-1);
+    if (
+      last &&
+      last.line &&
+      c.text.startsWith('//') &&
+      first === last.first + last.text.split('\n').length &&
+      /^\s*$/.test(text.slice(last.end, c.pos))
+    ) {
+      last.text += `\n${c.text}`;
+      last.end = c.pos + c.text.length;
+    } else {
+      runs.push({ first, text: c.text, end: c.pos + c.text.length, line: c.text.startsWith('//') });
+    }
+  }
+  const out = new Set();
+  for (const r of runs) {
+    for (const i of historyFindings(r.text, codes, { sheet, path })) out.add(r.first + i);
   }
   return [...out].sort((a, b) => a - b);
 }

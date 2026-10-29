@@ -504,6 +504,41 @@ describe('history codes in comments', () => {
     expect(n.historyCodeComments).toBe(0);
   });
 
+  it('counts an audit code of any letter, and a W or plan v3.2 step code by name', () => {
+    const repo = new Set(HISTORY_HEADING_CODES as string[]);
+    const r = (t: string) => historyCommentLines('x.ts', t, repo);
+    expect(
+      r(
+        [
+          '// capped (apps audit S2)',
+          '// the one answer (audit B23)',
+          '// the chat is paired to its user (W8a)',
+          '// the role follows membership, S8b',
+          '// the S3 client',
+          '// an audit trail',
+        ].join('\n'),
+      ),
+    ).toEqual([1, 2, 3, 4]);
+  });
+
+  it('counts a finding split over two lines on its first line', () => {
+    const repo = new Set(HISTORY_HEADING_CODES as string[]);
+    const r = (t: string) => historyCommentLines('x.ts', t, repo);
+    // Two `//` lines are one comment's text.
+    expect(r(['// capped by the apps audit', '// H1: one cap', 'const x = 1;'].join('\n'))).toEqual(
+      [1],
+    );
+    expect(r(['// capped by the apps audit', '// a cap of 1 MB'].join('\n'))).toEqual([]);
+    expect(r(['// moved in the', '// fix round of the cap'].join('\n'))).toEqual([2]);
+    expect(r(['// set in the', '// round 3, the cap'].join('\n'))).toEqual([2]);
+    expect(r(['const a = 1; // the apps audit', 'const b = 2; // H1 cap'].join('\n'))).toEqual([]);
+    expect(r(['/**', ' * capped by the apps audit', ' * H1 cap', ' */'].join('\n'))).toEqual([2]);
+    expect(r(['// the fix', '// round 2 moved it'].join('\n'))).toEqual([1]);
+    // A stoplisted S3 split from its store word stays the store.
+    expect(r(['// plain', '// S3 calls'].join('\n'))).toEqual([]);
+    expect(r(['/**', ' * any self-hosted', ' * S3 backend', ' */'].join('\n'))).toEqual([]);
+  });
+
   it('counts each line of a block comment', () => {
     const t = '/**\n * F4 fix round 3:\n * the A6b exits\n * nothing here\n */\nconst x = 1;';
     expect(lines(t)).toEqual([2, 3]);
