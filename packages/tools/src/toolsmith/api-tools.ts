@@ -538,9 +538,12 @@ export const api_tool_update: BuiltinToolDef = {
       // area asked again, as api_tool_create's whole run is.
       const updated = await areaSystem('connectors', () => updateTool(ctx.ownerId, row.id, patch));
       if (!updated) return { ok: false, error: `tool '${slug}' not found` };
+      // The warnings read the key vault, a system table too: areaSystem.
       const warnings =
         updated.handler.kind === 'http'
-          ? await handlerWarnings(ctx.ownerId, updated.handler as HttpHandler, updated.inputSchema)
+          ? await areaSystem('connectors', () =>
+              handlerWarnings(ctx.ownerId, updated.handler as HttpHandler, updated.inputSchema),
+            )
           : [];
       if (isOpenapiMirror && touchesDefinition) {
         warnings.push(
@@ -550,7 +553,12 @@ export const api_tool_update: BuiltinToolDef = {
       if (group) {
         await areaSystem('connectors', () => addToolToGroup(ctx.ownerId, group.slug, slug));
         if (group.integration) {
-          warnings.push(...(await integrationWarnings(ctx.ownerId, group.integration)));
+          const integration = group.integration;
+          warnings.push(
+            ...(await areaSystem('connectors', () =>
+              integrationWarnings(ctx.ownerId, integration),
+            )),
+          );
         }
       }
       let externalAccess = updated.externalAccess ?? null;

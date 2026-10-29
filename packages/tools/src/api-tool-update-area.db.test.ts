@@ -29,6 +29,8 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
   const limited = randomUUID();
   const tag = `atu${randomUUID().slice(0, 6)}`;
   const slug = `${tag}_tool`;
+  // A tool whose templates name a vault key: its update reads the vault.
+  const secretSlug = `${tag}_secret_tool`;
   const group = `${tag}-group`;
   let anchor = '';
 
@@ -53,6 +55,14 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     const http = JSON.stringify({ kind: 'http', url: 'https://api.example.test/x', method: 'GET' });
     await su`insert into tools (owner_id, slug, name, description, handler, requires_confirm)
       values (${anchor}, ${slug}, 'n', 'd', ${http}::jsonb, false)`;
+    const withSecret = JSON.stringify({
+      kind: 'http',
+      url: 'https://api.example.test/y',
+      method: 'GET',
+      headers: { Authorization: 'Bearer {{secret:example-token}}' },
+    });
+    await su`insert into tools (owner_id, slug, name, description, handler, requires_confirm)
+      values (${anchor}, ${secretSlug}, 'n', 'd', ${withSecret}::jsonb, false)`;
     await su`insert into tool_groups (owner_id, slug, name, tool_slugs, enabled)
       values (${anchor}, ${group}, 'g', '{}', true)`;
     m = await import('@mantle/db');
@@ -134,5 +144,24 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     });
     expect(refused?.name).toBe('SystemWorkRequiredError');
     expect(refused?.message).toMatch(/public\.tools/);
+  });
+  it('an Admin user updates a tool that names a vault key: the vault is read in the area, not refused', async () => {
+    const res = await m.runInRequestSlot(async () => {
+      const scope = await m.loginScopeFor(admin);
+      expect(m.enterRequestScope(scope, { writes: true, drafts: false })).toBe(true);
+      return dispatch.dispatchTool(
+        {
+          slug: 'api_tool_update',
+          handler: { kind: 'builtin', ref: 'api_tool_update' },
+          inputSchema: {},
+        } as unknown as Tool,
+        { slug: secretSlug, description: 'a new description' },
+        { ownerId: anchor, surface: { kind: 'web' }, caller: callers.ownerWebCaller() },
+      );
+    });
+    expect(res.ok, res.ok ? '' : String(res.error)).toBe(true);
+    const [row] = await su!<{ description: string }[]>`
+      select description from tools where owner_id = ${anchor} and slug = ${secretSlug}`;
+    expect(row?.description).toBe('a new description');
   });
 });
