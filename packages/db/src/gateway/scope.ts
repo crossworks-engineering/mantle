@@ -27,7 +27,7 @@ import { getAdminDb, getViewerDb, turnScopedDbOnce } from './pools';
 import { uuidArrayLiteral } from './write-route';
 
 /**
- * A turn's scope was looked for at query time and is gone (workspaces W4b):
+ * A turn's scope was looked for at query time and is gone:
  * a query built inside a turn scope ran after the turn ended, or from a
  * callback that does not carry it. Refused, never run unscoped.
  */
@@ -69,7 +69,7 @@ type PgSql = ReturnType<typeof postgres>;
  */
 export function turnScopedClient(base: PgSql): PgSql {
   // BEGIN, the settings, the query and COMMIT go out together on one
-  // reserved connection: one round trip, not three (W6a: `begin` waits for
+  // reserved connection: one round trip, not three (`begin` waits for
   // BEGIN, and COMMIT is a trip of its own). A failing statement aborts the
   // transaction; the COMMIT then rolls back, and the first error is thrown.
   const run = async (
@@ -85,7 +85,7 @@ export function turnScopedClient(base: PgSql): PgSql {
       const scope = conn.unsafe(SCOPE_SETTINGS_SQL, settings);
       const q = conn.unsafe(query, (params ?? []) as never[]);
       // A raw caller's simple protocol (a parameterless query with its own
-      // literals, entities.ts graph paths) works in a scope too (W7a).
+      // literals, entities.ts graph paths) works in a scope too.
       const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
       const commit = conn.unsafe('commit');
       const out = await Promise.allSettled([begin, scope, main, commit].map((s) => lease.watch(s)));
@@ -207,7 +207,7 @@ export async function withTurnScope<T>(
     ws: Object.freeze([...new Set(scope.ws)].sort()),
     modWs: Object.freeze([...new Set(scope.modWs)].sort()),
   });
-  // An Admin turn (W7a, `writes`): the Admin assistant and the Admin MCP
+  // An Admin turn (`writes`): the Admin assistant and the Admin MCP
   // surface write as an Admin user's mutating request does, on the system
   // pool with the turn's scope set on its transactions (the database's
   // move, create and delete checks), and read drafts as the editor does.
@@ -262,7 +262,7 @@ function scopeProblem(
 type ReadTx = Parameters<Parameters<PostgresJsDatabase<typeof schema>['transaction']>[0]>[0];
 
 /**
- * A transaction that only READS (W7a): in a turn or request scope it runs
+ * A transaction that only READS: in a turn or request scope it runs
  * on the workspace role with the scope set, even where `db.transaction` is
  * a write (a mutating request, an Admin turn) and goes to the system pool.
  * A vector search's settings transaction (withHnswPool) uses it, so a scoped

@@ -54,14 +54,14 @@ export const facts = pgTable(
       .$type<Record<string, unknown>>()
       .default(sql`'{}'::jsonb`)
       .notNull(),
-    /** Workspaces W1: a copy of the node's read_ws and login_id, kept by
+    /** A copy of the node's read_ws and login_id, kept by
      *  triggers (migration 0241), so a vector scan filters on its own row. */
     readWs: uuid('read_ws')
       .array()
       .notNull()
       .default(sql`'{}'::uuid[]`),
     loginId: uuid('login_id'),
-    /** Workspaces W2 (migration 0247): made from a source's text before
+    /** Mixed (migration 0247): made from a source's text before
      *  always fold, so it may carry an embed's words. Read only in a scope
      *  that holds the Admin workspace (never by a level role) until a later
      *  extraction re-asserts it from folded text. */

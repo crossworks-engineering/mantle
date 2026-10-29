@@ -34,12 +34,12 @@ export const toolResults = pgTable(
     /** Whether the lazy chunk+embed pass has run (only the first semantic
      *  `query` triggers it; page/grep never need it). */
     chunked: boolean('chunked').notNull().default(false),
-    /** The viewer level the spill was written at (migration 0189, audit
-     *  A27): null = admin (no viewer scope). `read_result` refuses a spill
+    /** The viewer level the spill was written at (migration 0189): null =
+     *  admin (no viewer scope). `read_result` refuses a spill
      *  its reader's level does not cover. */
     viewerLevel: text('viewer_level'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+    /** The workspace this row belongs to (0250), stamped at
      *  insert from its agent (NULL = the Admin workspace), and the login it
      *  was for. The foreign key lives in the migration. */
     workspaceId: uuid('workspace_id'),

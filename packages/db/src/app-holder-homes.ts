@@ -1,6 +1,5 @@
 /**
- * Whether an item is homed in a workspace that holds an app (task
- * 2178377a, 2026-10-22): the target rule of a team app's Table row write
+ * Whether an item is homed in a workspace that holds an app: the target rule of a team app's Table row write
  * (@mantle/tools member-app-tools.ts rule 6). The holder is the one an app
  * run reads through (AppRunFor, appRunHolders and viewerScopeFor in
  * gateway/viewer-scope.ts): the one live workspace beyond Admin its grants

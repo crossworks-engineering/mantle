@@ -620,7 +620,8 @@ export const DB_ROLE_SQL = `
 /**
  * The integrity row runtime_role_lock (server/web/lib/integrity/audit.ts):
  * one row (id, kind, detail) when mantle_runtime is no longer the lock it
- * was made as, none when it is (or does not exist: a box before A9). Here,
+ * was made as, none when it is (or does not exist: a box that never made
+ * it). Here,
  * beside the roles it names. Also what the lock leans on: the marker present
  * and mantle_owner's, mantle_owner_role() the MEMBER version of 0290 (a
  * skipped 0290 shows here), and no role but mantle_runtime (and a
@@ -684,8 +685,8 @@ export async function runtimeLockDetails(sql: Sql): Promise<string[]> {
   return rows.map((r) => r.detail);
 }
 
-/** runtime: the runtime role, not a superuser and owning nothing (what A9
- *  wants); superuser: the box before its roll; other: anything else. */
+/** runtime: the runtime role, not a superuser and owning nothing (as
+ *  wanted); superuser: a box with the switch off; other: anything else. */
 export function dbRoleMode(row: DbRoleRow): DbRoleMode {
   if (row.superuser) return 'superuser';
   if (row.user === RUNTIME_ROLE && row.owns === 0) return 'runtime';

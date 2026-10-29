@@ -1,5 +1,5 @@
 /**
- * Extractions the workspaces heads check parked (plan V5; the stamp is
+ * Extractions the workspaces heads check parked (the stamp is
  * `data.extract_parked`, extract-exempt.ts). The push worker reads this on
  * each "needs you" event so an admin's phone hears of a new one. A count
  * query on the system pool: what an admin must see is never scoped away.

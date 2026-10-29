@@ -1,11 +1,11 @@
 /**
- * Who a statement runs as (workspaces arch plan v2, section 4 and 20.3;
- * A2a). Every process entry binds its actor once, at its entry
- * (docs/process-inventory.md lists them); everything it awaits carries it. The database learns it as
+ * Who a statement runs as (docs/actors.md, "Actor kinds"). Every process
+ * entry binds its actor once, at its entry (docs/process-inventory.md lists
+ * them); everything it awaits carries it. The database learns it as
  * mantle.actor and mantle.write_mode, set by mantle_set_actor (migration
  * 0275) on the app's system pool only, from gateway/actor-sql.ts.
  *
- * The kinds (plan 4.1, 20.3 item 15):
+ * The kinds:
  *  - login(rw): a signed-in user, a read-write key, a peer acting as a login
  *    with Write on. login(ro): a read-only key, a peer with Write off.
  *    login(owner): the owner cases the guide names (the Admin assistant with
@@ -61,10 +61,10 @@ export function systemActor(reason: string): Actor {
  * read only when the caller is a read-only caller from outside, so leaving
  * the caller's scope never turns one into a writer. Those callers are
  * login(ro) (a read key, a peer with Write off), a public link and a
- * contact share without can_write. An assistant with no user still does its own system work (its
- * traces, its turn's rows), as a peer(share) does its audit row: they keep
- * write mode rw here. A named repair or backfill does not use this: it
- * writes for any caller (runReadPathWrite, plan 20.3 item 8).
+ * contact share without can_write. An assistant with no user still does
+ * its own system work (its traces, its turn's rows), as a peer(share) does
+ * its audit row: they keep write mode rw here. A named repair or backfill
+ * does not use this: it writes for any caller (runReadPathWrite).
  */
 export function systemUnder(reason: string, outer: Actor | null): Actor {
   const actor = systemActor(reason);
@@ -89,7 +89,7 @@ function narrowsSystemWork(outer: Actor): boolean {
 }
 
 /** What the actor may write: login(ro), assistant, link, peer and a contact
- *  share without can_write read only (plan 4.1). */
+ *  share without can_write read only. */
 export function writeModeOf(actor: Actor): WriteMode {
   switch (actor.kind) {
     case 'login':
@@ -223,7 +223,7 @@ export function currentActor(): Actor | null {
 let scriptActorMemo: Actor | null | undefined;
 
 /**
- * An operator script (plan 4.3: server/web/scripts/*, maintain, the root
+ * An operator script (server/web/scripts/*, maintain, the root
  * scripts) runs as system(script:<file name>): the process's main file is
  * a scripts/ file. Read once. Servers, workers and tests are none.
  */
@@ -236,7 +236,7 @@ export function scriptActor(): Actor | null {
   return scriptActorMemo;
 }
 
-// ── The check (warn only in A2a) ────────────────────────────────────────────
+// ── The check ───────────────────────────────────────────────────────────────
 
 export type ActorCheckMode = 'off' | 'warn' | 'on';
 
@@ -302,7 +302,7 @@ export function longStack(): string {
 }
 
 const recorded: ActorMiss[] = [];
-/** The narrow role's miss check (plan v3.2 S7a): deduped by actor too. */
+/** The narrow role's miss check: deduped by actor too. */
 const NARROW_CHECKS: ReadonlySet<string> = new Set(['narrow-denied']);
 const loggedKeys = new Map<string, number>();
 let missLogger: ((m: ActorMiss) => void) | null = null;
@@ -392,7 +392,7 @@ export function takeWriteRoleGaps(): string[] {
 }
 
 /** Tests only (gateway/narrow-route.ts): the narrow route's denials and
- *  its uses by actor (plan v3.2 S7a), kept here, beside the write-role
+ *  its uses by actor, kept here, beside the write-role
  *  gaps, so the test setup reads them without loading the gateway. */
 const narrowDenials: { actor: string; what: string }[] = [];
 const narrowUses = new Map<string, number>();

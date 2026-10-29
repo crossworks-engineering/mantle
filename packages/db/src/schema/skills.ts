@@ -13,7 +13,7 @@ import {
 /**
  * Behaviour packs an agent can be attached to — PURE TEACHING. When a skill is
  * in an agent's skill_slugs its instructions get injected into the system prompt.
- * Skills carry NO tools (Phase 4, docs/tools-and-skills.md): capability is granted
+ * Skills carry NO tools (docs/tools-and-skills.md): capability is granted
  * to agents directly + via tool groups. The old `tool_slugs` column was dropped in
  * migration 0082.
  */

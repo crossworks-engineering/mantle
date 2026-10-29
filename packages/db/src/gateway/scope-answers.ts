@@ -68,15 +68,14 @@ export async function loginActorNow(
 
 const holdsAdmin = new WeakMap<WorkspaceScope, Promise<boolean>>();
 
-/** The yes given outside every workspace scope, for system work only (plan
- *  v3.2 S4b): with no system actor bound it throws. */
+/** The yes given outside every workspace scope, for system work only: with no system actor bound it throws. */
 function systemYes(what: string): true {
   if (currentActor()?.kind !== 'system') throw new SystemWorkRequiredError(what);
   return true;
 }
 
 /**
- * Whether the current code may do Admin-workspace work (plan 5.4, adminOnly):
+ * Whether the current code may do Admin-workspace work (adminOnly):
  * unscoped system work (the owner's paths) yes; a workspace scope when it holds
  * the Admin workspace (asked of the database once per scope). Fails closed:
  * an error reads as no. Unscoped with no system actor bound it throws
@@ -103,11 +102,11 @@ export async function scopeHoldsAdmin(): Promise<boolean> {
 }
 
 /**
- * Whether the current code may do an "Admin only" thing in `area` (plan S2,
- * 2.4): system work may; a user scope may when it holds the Admin workspace,
+ * Whether the current code may do an "Admin only" thing in `area`: system
+ * work may; a user scope may when it holds the Admin workspace,
  * its login is a user there and its limits leave the area on
  * (mantle_scope_has_area, the rule of areasFor); so may an assistant turn
- * that answers such a login (W7a: the Admin assistant, which answers the
+ * that answers such a login (the Admin assistant, which answers the
  * owner when no login asks). A link and an assistant turn with no login
  * never may. An unknown kind or area is refused (fails
  * closed). Outside every scope with no system actor bound it throws

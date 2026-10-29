@@ -43,7 +43,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
-/** The six stores of plan section 6. */
+/** The six stores. */
 export const STORE_NAMES = ['tables', 'appdb', 'files', 'snapshots', 'appbuild', 'docs'] as const;
 export type StoreName = (typeof STORE_NAMES)[number];
 
@@ -610,7 +610,7 @@ function walkFiles(root: string, rel = '', out: string[] = [], depth = 0): strin
 }
 
 /**
- * THE sweep (plan 20.3: "leaves a sweep to remove orphans"), one for every
+ * THE sweep, one for every
  * store. It removes ONLY an old revision a flip replaced: a file of the
  * store (`nodeOf`) that no row names, whose node HAS a row naming other
  * files, all of them on disk; and only once it has been unreferenced on two

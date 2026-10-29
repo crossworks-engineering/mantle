@@ -1,5 +1,5 @@
 /**
- * Keyword search under row security (workspaces W3, migration 0249).
+ * Keyword search under row security (migration 0249).
  *
  * Under a row rule Postgres uses an index for a condition only when its
  * function is LEAKPROOF. `search_tsv @@ query` runs ts_match_vq, which

@@ -1,7 +1,7 @@
 /**
- * An item's older summary, set aside by the W2 mark (migration 0247): it was
- * made before always fold and may hold an embedded item's words, so only an
- * Admin user's item detail shows it, labelled; lists and search never do.
+ * An item's older summary, set aside by the mixed-summary mark (migration
+ * 0247): it was made before always fold and may hold an embedded item's
+ * words, so only an Admin user's item detail shows it, labelled; lists and search never do.
  * Admin pool only (no limited role may read node_mixed_summaries).
  */
 import { eq } from 'drizzle-orm';

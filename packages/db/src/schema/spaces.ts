@@ -19,7 +19,7 @@ export const SPACE_KINDS = ['brain', 'personal'] as const;
 export type SpaceKind = (typeof SPACE_KINDS)[number];
 
 /**
- * What `nodes.owner_id` points at (member logins Phase 2, migration 0165).
+ * What `nodes.owner_id` points at (migration 0165).
  *
  * - `brain`: one row per box, id = the anchor login's id, so every brain row
  *   kept its owner_id. Every brain path filters on it.
@@ -57,7 +57,7 @@ export const REVIEW_STATES = ['draft', 'submitted', 'returned', 'accepted', 'tak
 export type ReviewState = (typeof REVIEW_STATES)[number];
 
 /**
- * Sharing and review state of a personal item (plan 2d). One row per item in
+ * Sharing and review state of a personal item. One row per item in
  * a personal space, written by the space-items state function only.
  *
  * draft -> submitted -> accepted (moved into the brain) | returned (back to
@@ -149,7 +149,7 @@ export const spaceSubmissions = pgTable(
 );
 
 /**
- * One row per comment a CLIENT login writes (migration 0195, audit I2): the
+ * One row per comment a CLIENT login writes (migration 0195): the
  * review talk in its own space and the client thread on a client-level item.
  * The daily comment cap counts it, so deleting a comment never refunds. The
  * space role inserts and reads its own login's rows; the client thread is
@@ -197,7 +197,7 @@ export const spaceItemBundles = pgTable(
 );
 
 /**
- * The upload ledger of a personal space (migration 0169, audit D3): one row
+ * The upload ledger of a personal space (migration 0169): one row
  * per member upload, kept when the file is deleted, so the daily upload cap
  * counts what was uploaded, not what is still there. The space role inserts
  * and reads its own rows; nothing below admin updates or deletes them.

@@ -8,9 +8,6 @@
  * columns that row security reads (nodes.read_ws and the copy on facts) are
  * kept by triggers, never by the app; chunks and windows read their node
  * (migration 0249).
- *
- * W1 ships the model in shadow: nothing in the product reads these tables
- * yet.
  */
 import { ltree } from './_shared';
 import { sql } from 'drizzle-orm';
@@ -124,7 +121,7 @@ export const itemGrants = pgTable(
     viaFolderId: uuid('via_folder_id').references(() => nodes.id, { onDelete: 'cascade' }),
     /** "Removed here" against a folder's grant. */
     excluded: boolean('excluded').notNull().default(false),
-    /** Written by the level bridge (0250, until W5b): the bridge rewrites only
+    /** Written by the level bridge (0250): the bridge rewrites only
      *  rows with this mark. */
     bridge: boolean('bridge').notNull().default(false),
     grantedBy: uuid('granted_by').references(() => authUsers.id, { onDelete: 'set null' }),
@@ -283,7 +280,7 @@ export const mantleMovedNodes = pgTable(
  * transaction id (0250): written by the bridge's row trigger, taken by its
  * statement trigger, so the level bridge runs once per statement. Unlogged,
  * empty outside a running statement; definer functions only. Goes with the
- * bridge in W5b.
+ * bridge.
  */
 export const mantleBridgePending = pgTable(
   'mantle_bridge_pending',

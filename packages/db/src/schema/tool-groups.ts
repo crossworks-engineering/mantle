@@ -206,10 +206,6 @@ export type ToolGroupIntegration = {
  * *configuration* (`integration`) — a base URL, a vault ref, an auth
  * placement, a docs pointer — which is data the authoring path reads, not
  * behaviour handed to a model.
- *
- * Phase 0 (dormant substrate): the table + `agents.tool_group_slugs` exist and
- * are seeded from the manifest, but the runtime does not yet expand groups into
- * an agent's effective tool set — that's Phase 1's `effectiveToolSlugs` flip.
  */
 export const toolGroups = pgTable(
   'tool_groups',

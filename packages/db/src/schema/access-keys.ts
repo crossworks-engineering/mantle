@@ -11,16 +11,16 @@ import {
 } from 'drizzle-orm/pg-core';
 
 /**
- * Inbound API keys (migration 0232, plan page 1e62e204). A login makes a
- * named key that acts as itself, and it can only narrow that login's rights: `access` (read or read_write) and
- * `areas` (null = all). A key works as a Bearer on /api/v1/* and /api/mcp,
+ * Inbound API keys (migration 0232). A login makes a named key that acts as
+ * itself, and it can only narrow that login's rights: `access` (read or
+ * read_write) and `areas` (null = all). A key works as a Bearer on /api/v1/* and /api/mcp,
  * nowhere else.
  *
  * Only the SHA-256 of the secret is kept. `key_prefix` is the public part of
  * the secret (`mtlk_<prefix>_<secret>`): the lookup key and what the UI
  * shows. A key acts as its login as it is now: it carries no role of its
- * own (the role it was made under went in workspaces W8a, migration 0272,
- * archive_key_roles). A disable ends it; a plain sign-out leaves it; a
+ * own (the role it was made under is kept in archive_key_roles, migration
+ * 0272). A disable ends it; a plain sign-out leaves it; a
  * password change, "sign out everywhere" and an admin's End sessions revoke
  * every key of the login. The FKs into `auth.users` are declared in the SQL
  * migration (Drizzle manages public.* only; see schema/auth-users.ts).
@@ -35,7 +35,7 @@ export const accessKeys = pgTable(
     loginId: uuid('login_id').notNull(),
     keyPrefix: text('key_prefix').notNull(),
     keyHash: text('key_hash').notNull(),
-    /** Unused since workspaces W8a (only a client key carried one). */
+    /** Unused (only a client key carried one). */
     sessionEpoch: integer('session_epoch'),
     access: text('access').notNull(),
     areas: text('areas').array(),

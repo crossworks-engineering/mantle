@@ -53,7 +53,7 @@ export const archiveSpaceItemBundles = pgTable(
 );
 
 /** Every personal space row as it was when the spaces folded into the brain
- *  (migration 0267, W6b). The spaces rows stay (a kind root still names its
+ *  (migration 0267). The spaces rows stay (a kind root still names its
  *  space); this is the record. */
 export const archiveSpaces = pgTable('archive_spaces', {
   id: uuid('id').primaryKey(),

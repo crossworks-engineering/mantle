@@ -2,8 +2,8 @@ import { pgTable, primaryKey, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { agents } from './agents';
 
 /**
- * Per-(owner, agent, login) read cursor for the assistant inbox (per login
- * since 0269, W7c: each user has their own thread with each assistant).
+ * Per-(owner, agent, login) read cursor for the assistant inbox (per login,
+ * 0269: each user has their own thread with each assistant).
  * `last_read_at` marks how far that login has read its thread; unread =
  * outbound messages newer than this. One row per thread the login has ever
  * opened (absent → never read → everything counts as unread). See the mobile

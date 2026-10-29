@@ -84,13 +84,12 @@ export const nodes = pgTable(
      *  packages/content/src/supersede.ts. */
     supersededBy: uuid('superseded_by'),
     // The four tier-level columns of the old access model stay in the
-    // database, frozen (0261), until W10 drops them; Drizzle no longer names
-    // them (W8c), so no code reads or writes them and an insert takes the
+    // database, frozen (0261); Drizzle does not name them, so no code reads or writes them and an insert takes the
     // database's defaults. schema-drift.test.ts allowlists them.
 
     /** Why: 'version' (filename-family sibling), 'migrated' (page built from
      *  this source), 'corrected' (explicit mark — demotes harder). */
-    /** Workspaces W1 (migration 0241): derived from item_grants by
+    /** Derived (migration 0241) from item_grants by
      *  triggers, never written by the app. The home workspace, the
      *  workspaces the item is granted to, and those whose grant has Write
      *  on. Row security for the workspace role reads read_ws. */
@@ -104,9 +103,9 @@ export const nodes = pgTable(
       .notNull()
       .default(sql`'{}'::uuid[]`),
     /** A per-login row (a chat, a fact learned from one): read only by
-     *  this login inside its workspaces (plan S4). NULL = anyone there. */
+     *  this login inside its workspaces. NULL = anyone there. */
     loginId: uuid('login_id'),
-    /** Workspaces W2 (migration 0247): the summary, entities and facts were
+    /** Mixed (migration 0247): the summary, entities and facts were
      *  made from text that may hold an embed's words (before always fold).
      *  The old summary sits in node_mixed_summaries (admin only); marked
      *  facts are hidden outside Admin. Cleared when the extractor next

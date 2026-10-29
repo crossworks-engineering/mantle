@@ -46,7 +46,7 @@ export type ConversationExternalRef = {
 
 /**
  * Web assistant chat surface. One row per turn (inbound or outbound).
- * One continuous conversation **per (owner, agent, login)** since 0269 (W7c):
+ * One continuous conversation **per (owner, agent, login)** (0269):
  * each user has their own thread with each assistant, and reads only that
  * (row security on login_id; every row names its login, the anchor's when
  * no other login asked). A member's thread with the Team assistant lives
@@ -107,18 +107,18 @@ export const assistantMessages = pgTable(
      *  flips it to 'complete' or 'failed'), where in-progress/failed states must
      *  survive navigation. Defaulting to 'complete' classifies all existing rows
      *  with no backfill (same trick as `channel`). DBOS WorkflowStatus is the
-     *  execution source of truth; this is the read-model. See docs/conversation.md
-     *  + the dedicated-API Phase 1 plan. */
+     *  execution source of truth; this is the read-model. See
+     *  docs/conversation.md. */
     status: text('status').$type<'pending' | 'complete' | 'failed'>().default('complete').notNull(),
     /** Reserved (see `status`): human-readable failure reason for a 'failed'
      *  turn under the future async-delivery model; NULL today. */
     error: text('error'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+    /** The workspace this row belongs to (0250), stamped at
      *  insert from its agent (NULL = the Admin workspace), and the login it
      *  was for. The foreign key lives in the migration. */
     workspaceId: uuid('workspace_id'),
-    /** NOT NULL in practice since 0269: the stamp trigger names the anchor
+    /** NOT NULL in practice: the stamp trigger names the anchor
      *  login when nothing else does. */
     loginId: uuid('login_id'),
   },
@@ -126,7 +126,7 @@ export const assistantMessages = pgTable(
     index('assistant_messages_owner_created_idx').on(t.ownerId, t.createdAt),
     // Drives the per-agent transcript query in recentAssistantMessages.
     index('assistant_messages_owner_agent_created_idx').on(t.ownerId, t.agentId, t.createdAt),
-    // One login's thread with one agent (0269, W7c): history, digests, pages.
+    // One login's thread with one agent (0269): history, digests, pages.
     index('assistant_messages_owner_agent_login_created_idx').on(
       t.ownerId,
       t.agentId,

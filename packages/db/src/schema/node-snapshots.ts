@@ -15,9 +15,8 @@ import type { HistoryActor } from '@mantle/client-types/role-names';
 import type { AppManifest, AppSource, BuildRef } from './apps';
 
 /**
- * Snapshots and versions of an item, one timeline per node (apps first-class
- * plan, Phase 2; migration 0219). Apps, and tables since Phase 4
- * (`node_kind`; migration 0222).
+ * Snapshots and versions of an item, one timeline per node (migration
+ * 0219). Apps, and tables (`node_kind`; migration 0222).
  *
  * Two kinds of row on one numbered line (`seq`, what the owner sees as v1,
  * v2 …):
@@ -27,7 +26,7 @@ import type { AppManifest, AppSource, BuildRef } from './apps';
  *    change): the code AND a copy of the app's SQLite database, a file under
  *    APP_DB_DIR/_snapshots (`db_path`, relative to APP_DB_DIR).
  *
- * A TABLE's line (Phase 4) holds `commit` rows, the published workbook a
+ * A TABLE's line holds `commit` rows, the published workbook a
  * commit replaced, and `manual` ones; each a file under
  * TABLE_DB_DIR/_snapshots (`db_path` relative to TABLE_DB_DIR), no code.
  *
@@ -55,7 +54,7 @@ export const nodeSnapshots = pgTable(
     note: text('note'),
     /** Who the row names: HISTORY_ACTORS (@mantle/client-types/role-names). */
     actor: text('actor').$type<HistoryActor>().notNull(),
-    /** The member a 'member' row names (team apps Phase 3, 0235). */
+    /** The member a 'member' row names (0235). */
     actorLoginId: uuid('actor_login_id'),
     /** The app's code at the time (null for a table). */
     code: jsonb('code').$type<AppSnapshotCode>(),
@@ -87,7 +86,7 @@ export const nodeSnapshots = pgTable(
 /** What an app snapshot or version keeps of the code. */
 export type AppSnapshotCode = {
   /** The app's name and look when it was taken (what a deleted app comes
-   *  back as). Absent on rows before Phase 3. */
+   *  back as). Absent on older rows. */
   meta?: AppSnapshotMeta;
   source: AppSource;
   /** The unpublished draft at the time, when there was one. */
@@ -98,8 +97,7 @@ export type AppSnapshotCode = {
 
 export type AppSnapshotMeta = {
   title: string;
-  /** The author ceiling when it was taken, only when 'team' (team apps
-   *  Phase 3): restoring this code, or bringing the app back from the
+  /** The author ceiling when it was taken, only when 'team': restoring this code, or bringing the app back from the
    *  trash, keeps it at team rules. */
   authorLevel?: 'team';
   icon?: string;

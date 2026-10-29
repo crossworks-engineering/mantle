@@ -114,8 +114,8 @@ export type AgentMemoryConfig = {
   journal_relevance_min?: number;
   /** Tier 2/3 characters per turn. Default 3000. */
   journal_relevant_chars?: number;
-  /** Where this agent's learned notes live. `journal` (default since
-   *  2026-09-24): the reflector and `update_persona` write Journal entries
+  /** Where this agent's learned notes live. `journal` (the default): the
+   *  reflector and `update_persona` write Journal entries
    *  (general → tier 1, topic → tier 2), the agent does not read its persona
    *  notes, and its Journal tiers are live. `persona`: the old path, the
    *  `persona_notes` array in every prompt; kept only as the undo while the
@@ -265,10 +265,8 @@ export const agents = pgTable(
     /** Provider id matching `packages/voice/src/providers.ts`. Drives
      *  which chat adapter the responder / assistant / heartbeat loop
      *  resolves via getChatAdapter(provider). Defaults to 'openrouter'
-     *  — the legacy hard-wired routing before Phase 3 added the column.
-     *  Migration 0048 added the column with a backfilled 'openrouter'
-     *  default; existing rows pre-migration are equivalent to a row
-     *  explicitly carrying that value. */
+     *  (migration 0048 backfilled it): a row with the default is one that
+     *  explicitly carries that value. */
     provider: text('provider').notNull().default('openrouter'),
     /** Model id, interpreted relative to `provider`. For OpenRouter
      *  this is a route slug (`anthropic/claude-sonnet-4.6`); for direct
@@ -364,9 +362,9 @@ export const agents = pgTable(
     priority: integer('priority').default(100).notNull(),
     enabled: boolean('enabled').default(true).notNull(),
     // The agent's old tier level stays in the database, frozen (0268,
-    // archived in archive_tool_levels), until W10; Drizzle no longer names it
-    // (W8c). An assistant reads its workspace (workspaceId).
-    /** Workspaces W1 (0241): the one workspace this assistant answers in,
+    // archived in archive_tool_levels); Drizzle does not name it. An
+    // assistant reads its workspace (workspaceId).
+    /** The one workspace (0241) this assistant answers in,
      *  written at its first attach and frozen once it has history. */
     workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'restrict' }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),

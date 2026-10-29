@@ -7,8 +7,7 @@
  * `.constraint_name`) is its `.cause`. A raw postgres-js tagged query throws
  * the driver error itself. So a check for `err.code === '23505'`, or for
  * "duplicate key" / a constraint name in the MESSAGE, silently never matches
- * on a drizzle query, and a duplicate turns into a 500 (seen 2026-09-29 on
- * POST /api/users and /api/keys, and in the rfc_message_id backfill).
+ * on a drizzle query, and a duplicate turns into a 500.
  *
  * These helpers walk the error and up to three causes below it.
  */
@@ -38,7 +37,7 @@ export function pgConstraint(err: unknown): string | null {
 }
 
 /**
- * A write the workspaces heads check refused (0241, plan V5): in 'on' mode a
+ * A write the workspaces heads check refused (0241): in 'on' mode a
  * writer that did not lock its heads first fails with 40001 "heads not held
  * ...", and a first lock taken after a write with 55000. Not transient: the
  * same code path fails the same way again, so a worker sends the job to its

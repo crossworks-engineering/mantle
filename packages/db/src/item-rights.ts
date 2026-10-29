@@ -33,7 +33,7 @@ export type ItemNeed = 'read' | 'edit' | 'manage';
  *  delete it. An edit always changes the item. */
 export type ItemCheckOpts = Readonly<{ changes?: boolean }>;
 
-/** The refusal of a write to an item the scope cannot read (W6a style). */
+/** The refusal of a write to an item the scope cannot read. */
 export function itemNotInScopeError(id: string): string {
   return `Item ${id} is not in your workspaces: it is in a workspace you are not in (add yourself to it first), or there is no such item (find it with search_nodes).`;
 }

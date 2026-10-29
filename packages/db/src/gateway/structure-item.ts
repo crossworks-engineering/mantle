@@ -1,10 +1,9 @@
 /**
- * The structure items an Admin area's narrow exit makes, edits and removes
- * (plan v3.2 S7b part b2): the Secrets root, a secret, a peer, a sender's
- * contact, a documentation item and the folders above one, and the events a
- * calendar synced (removed only). One gateway for the six writers that ran
- * at a full-route spot before (secrets-root, secret-item, peer-item,
- * sender-contact, docs-collection, calendar-events).
+ * The structure items an Admin area's narrow exit makes, edits and
+ * removes: the Secrets root, a secret, a peer, a sender's contact, a
+ * documentation item and the folders above one, and the events a calendar
+ * synced (removed only). One gateway for the six writers (secrets-root, secret-item,
+ * peer-item, sender-contact, docs-collection, calendar-events).
  *
  * On the narrow route (narrowRouteNow: the switch on and the exit's pick)
  * each write is one call of the definer mantle_structure_item (migration

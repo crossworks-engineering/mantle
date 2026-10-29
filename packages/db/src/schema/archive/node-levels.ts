@@ -1,6 +1,6 @@
 /**
  * The four tier levels of every node as they were when the workspace grants
- * became the only truth (migration 0261, W5b2), kept for W8. Read by no
+ * became the only truth (migration 0261). Read by no
  * product code (an archive: the level-reads sweep skips this folder); the
  * node columns themselves are frozen from then on. No grant to any role:
  * definer functions and the admin pool only.

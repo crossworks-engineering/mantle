@@ -1,5 +1,5 @@
 /**
- * The records migration 0268 (workspaces W7b) keeps when every login got one
+ * The records migration 0268 keeps when every login got one
  * MCP surface: the per-login MCP switch as it was (archive_mcp_login_access),
  * each agent's and tool group's level as it was (archive_tool_levels), and
  * the credential cutoff for a login with no switch row, written once

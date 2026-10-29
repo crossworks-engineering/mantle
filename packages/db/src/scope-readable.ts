@@ -38,7 +38,7 @@ function scopeReads(alias = 'n'): SQL {
 /**
  * The same rule on a `nodes` row aliased `alias` in a hand-written query,
  * for a read that may run on the system pool inside a login's write (the
- * reply of a folder write, a move's confirm list; task b6e4a8aa): only
+ * reply of a folder write, a move's confirm list): only
  * what the caller's scope reads. A read in a workspace scope already has
  * it from the row rules; with no scope at all (the system's own work) it
  * keeps every row.
@@ -64,7 +64,7 @@ export async function scopeReadsNodes(tx: Exec, ids: readonly string[]): Promise
   return new Set(rows.map((r) => r.id));
 }
 
-/** The list filter `?ws=<id>` (W5b2): only the items workspace `ws` reads,
+/** The list filter `?ws=<id>`: only the items workspace `ws` reads,
  *  as a condition on a query of `nodes`. `ws` is a checked id
  *  (parseWsFilter). */
 export function nodeReadByWorkspace(ws: string): SQL {
@@ -78,7 +78,7 @@ export function nodeAliasReadByWorkspace(ws: string, alias: string): SQL {
   return sql`${ws}::uuid = any(${sql.raw(alias)}.read_ws)`;
 }
 
-/** Search across workspaces (task f26a516e): some of `ids` (checked
+/** Search across workspaces: some of `ids` (checked
  *  workspace ids, the caller's own) read the `nodes` row aliased `alias`. */
 export function nodeAliasReadByAnyOf(ids: readonly string[], alias: string): SQL {
   if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`bad alias: ${alias}`);

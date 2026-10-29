@@ -27,7 +27,7 @@ export interface ConcurrentIndex {
 
 export const CONCURRENT_INDEXES: readonly ConcurrentIndex[] = [
   {
-    // The small-scope search path (plan section 3): a scope's items by the
+    // The small-scope search path: a scope's items by the
     // workspaces they are granted to. fastupdate keeps grant writes cheap.
     name: 'nodes_read_ws_gin',
     create:
@@ -36,7 +36,7 @@ export const CONCURRENT_INDEXES: readonly ConcurrentIndex[] = [
   },
   {
     // Facts without a source (learned in chat, or whose source is gone) are
-    // read by their own read_ws (W4a): the small-scope count and the exact
+    // read by their own read_ws: the small-scope count and the exact
     // facts arm find a scope's ones here. Facts with a source go by node id.
     name: 'facts_own_read_ws_gin',
     create:

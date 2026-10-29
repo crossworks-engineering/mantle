@@ -25,7 +25,7 @@ export const authUsers = authSchema.table('users', {
   isOwner: boolean('is_owner').notNull().default(false),
   displayName: text('display_name'),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
-  /** 'admin' | 'member' (0162; the client role went in W8a, 0272). Read
+  /** 'admin' | 'member' (0162; 0272 retired the client role). Read
    *  from this row on every request, never from a token. The anchor is
    *  always admin (CHECK). Code that branches on it names every role and
    *  treats an unknown value as no login (fail closed). No default

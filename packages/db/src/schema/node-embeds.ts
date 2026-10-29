@@ -22,7 +22,7 @@ export const nodeEmbeds = pgTable(
 );
 
 /**
- * Old summaries made before always fold (migration 0247, workspaces W2): a
+ * Old summaries made before always fold (migration 0247): a
  * page, note or drawing with embeds whose summary may hold an embed's words.
  * Moved here out of nodes.data so no reader of the row and no keyword search
  * sees it; admin pool only (no grant to any limited role). The extractor

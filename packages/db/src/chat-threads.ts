@@ -5,7 +5,7 @@
  * write side (archive, continue) lives in @mantle/runtime, next to the model
  * call that names and summarises the archived thread.
  *
- * Per login since 0269 (W7c): every helper names the login whose thread it
+ * Per login (0269): every helper names the login whose thread it
  * reads, and never reads another login's. Row security says the same to the
  * workspace role (own login only); the explicit filter keeps a system-pool
  * caller (an Admin user's own-things route, the summarizer) to one login.

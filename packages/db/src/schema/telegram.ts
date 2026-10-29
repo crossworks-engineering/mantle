@@ -97,7 +97,7 @@ export const telegramChats = pgTable(
     responderAgentId: uuid('responder_agent_id').references(() => agents.id, {
       onDelete: 'set null',
     }),
-    /** The user this chat is paired to (workspaces W7d, 0271): set when that
+    /** The user this chat is paired to (0271): set when that
      *  login pairs it with its code while signed in. A turn on the chat runs
      *  as this login, in its assistant's workspace. NULL = not paired (a
      *  pending or blocked chat, or one whose login is gone): no turn runs. */

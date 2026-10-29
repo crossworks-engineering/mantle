@@ -34,8 +34,7 @@ export const appDatabases = pgTable(
     storagePath: text('storage_path').notNull(),
     schemaVersion: integer('schema_version').default(0).notNull(),
     sizeBytes: integer('size_bytes').default(0).notNull(),
-    /** When a CLIENT login first wrote this database (client tier audit I3,
-     *  migration 0199). Never cleared: a Table exported from the app stays
+    /** When a CLIENT login first wrote this database (migration 0199). Never cleared: a Table exported from the app stays
      *  client-sourced after the app is raised above client. */
     clientWrittenAt: timestamp('client_written_at', { withTimezone: true }),
     /** The per-app random key of the app's viewer pseudonyms (app identity,

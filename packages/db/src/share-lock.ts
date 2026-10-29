@@ -28,7 +28,7 @@ export async function takeShareWriteLock(tx: Exec, ownerId: string): Promise<voi
 /** Shared: the FIRST statement of a transaction that moves existing rows
  *  (an item move updates its row, and Postgres locks the row before the
  *  inherit trigger asks for this lock; a folder writer holding the lock
- *  exclusive then waiting on that row would deadlock: review F2), or that
+ *  exclusive then waiting on that row would deadlock), or that
  *  reads the shares its rows will land under (Accept). Advisory first, then
  *  rows, always. */
 export async function takeShareReadLock(tx: Exec, ownerId: string): Promise<void> {

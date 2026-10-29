@@ -12,8 +12,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 /**
- * Runner queues — durable, inspectable execution plans (docs/runs.md, when it
- * lands; design: "Runner queues & worker agents — implementation plan v1").
+ * Runner queues: durable, inspectable execution plans.
  *
  * A **run** is one delegated goal: a tree of **run items** (structured
  * concurrency — `group_seq` / `group_par` groups, leaves are tool calls,
@@ -72,7 +71,7 @@ export const runs = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
-    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+    /** The workspace this row belongs to (0250), stamped at
      *  insert from its agent (NULL = the Admin workspace), and the login it
      *  was for. The foreign key lives in the migration. */
     workspaceId: uuid('workspace_id'),
@@ -172,7 +171,7 @@ export const runItems = pgTable(
      *  resume-worthy group's responder wake-up is claimed (claimResume). NULL
      *  on everything else. At-most-once: marked BEFORE the resume turn runs. */
     resumedAt: timestamp('resumed_at', { withTimezone: true }),
-    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+    /** The workspace this row belongs to (0250), stamped at
      *  insert from its agent (NULL = the Admin workspace), and the login it
      *  was for. The foreign key lives in the migration. */
     workspaceId: uuid('workspace_id'),

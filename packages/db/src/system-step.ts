@@ -66,7 +66,7 @@ export type SystemStep =
   /** After a tree write moved items relative to shared folders (a move, a
    *  folder's move, a folder deleted), the indexed text of the pages they
    *  reach through embeds and of the pages that name them, folded for the
-   *  level they are now read at (S11a-5): the walk reads node_embeds, which
+   *  level they are now read at: the walk reads node_embeds, which
    *  no scope reads, and the pages reached are the brain's to fold, those
    *  the caller does not read too. Its items are the moved ones the caller
    *  reads; nothing goes back to the caller. */

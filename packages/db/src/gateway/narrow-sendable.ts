@@ -1,5 +1,5 @@
 /**
- * The narrow system route's text check (plan v3.2 S7a): what a statement
+ * The narrow system route's text check: what a statement
  * sent on the narrow role may be (narrowSendable), read on the text's code
  * (sql-text.ts sqlCode, the repo's one SQL text reader: comments, strings
  * and dollar quotes blanked as Postgres's lexer reads them, quoted names
@@ -304,9 +304,9 @@ const PLACEHOLDER_NAME = /(?<!\binto\s+)\$\d+\s*\(|^set\s+local\s+\$\d+/i;
  * function or a setting is named (PLACEHOLDER_NAME).
  *
  * A guard against mistakes, not against deliberate code: a statement that
- * means to leave the role can be written past any text check. The design
- * that closes the class is a narrow pool that logs in as the narrow role
- * itself (plan v3.2 S7b): no other role in the session to go back to. Not
+ * means to leave the role can be written past any text check. The
+ * boundary is the narrow pool, which logs in as the narrow role itself:
+ * no other role in the session to go back to. Not
  * read at all: a fragment a tagged template takes from another postgres.js
  * client (another pool's `sql`), whose text this client never sees.
  */

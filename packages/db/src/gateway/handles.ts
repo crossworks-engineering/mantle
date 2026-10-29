@@ -185,7 +185,7 @@ export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     if (STATEMENT_PROPS.has(prop)) checkActorBound(`systemDb.${String(prop)}`);
     const inScope = inTurnScope();
     if (inScope && systemDbAccessChecked(prop)) assertSystemDbCaller();
-    // Plan v3.2 S7a: inside a turn or request scope its infrastructure
+    // Inside a turn or request scope its infrastructure
     // writes (traces, spills, counters, logs) run on the narrow route;
     // outside every scope (workers, boot) it is system work and runs full.
     // At a full-route spot (onFullSystemRoute) the system pool, as the

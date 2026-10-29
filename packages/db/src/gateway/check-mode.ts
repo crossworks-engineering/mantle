@@ -19,7 +19,7 @@ export const ACTOR_SQL_TAG = '/* mantle:actor */';
 /** The tag on the narrow system route's own statements (its BEGIN, its one
  *  SET, the hold check, its COMMIT: gateway/narrow-route.ts), sent the same
  *  in every check mode: the round-trip test counts them as the route's,
- *  never as the actor's cost (plan v3.2 S7a). */
+ *  never as the actor's cost. */
 export const NARROW_SQL_TAG = '/* mantle:narrow */';
 
 /** The pool whose box mode a timer reads (refreshActorCheckMode). */

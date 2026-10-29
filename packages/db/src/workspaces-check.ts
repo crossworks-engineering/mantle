@@ -1,7 +1,6 @@
 /**
- * workspaces:check (workspaces plan 7.8): the read-only health check of the
- * grants once they are the only truth (W5b2, migration 0261). It replaced the
- * level bridge's drift row. Numbers only, never titles or names; it writes
+ * workspaces:check: the read-only health check of the grants, the only
+ * truth (migration 0261). Numbers only, never titles or names; it writes
  * nothing (the runner reads in a READ ONLY transaction).
  *
  *  - grant drift: nodes whose read_ws, write_ws or home_ws differ from what

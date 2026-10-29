@@ -8,7 +8,7 @@
  * @mantle/db because it spans two schemas (`nodes`, `emails`) and is called from
  * both the web API and the agent runtime.
  *
- * Two rules this file exists to enforce, both from the 2026-08-19 design:
+ * Two rules this file exists to enforce:
  *
  *  1. **Owner-scope everything.** `id` now arrives from the client and can be
  *     any uuid, so an unscoped lookup here is a cross-owner read.
@@ -123,8 +123,8 @@ export async function resolveContextRef(
  * `emails.id → emails.node_id`, owner-scoped through the account, plus the
  * thread key the client could not supply.
  *
- * Jason settled 2026-08-20 that an `email` ref means the THREAD — "replying
- * means the whole conversation". It resolves to the MESSAGE node anyway, because
+ * An `email` ref means the THREAD ("replying means the whole
+ * conversation"). It resolves to the MESSAGE node anyway, because
  * `email_thread` is a declared node type that nothing populates: there is no
  * `email_threads` table and no insert anywhere, so a thread node cannot be
  * returned. Instead the provider's thread key rides back in `meta`, and a caller

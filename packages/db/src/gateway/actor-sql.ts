@@ -120,7 +120,7 @@ export function setActorSql(
 
 /** The actor's settings (setActorSql): its value, write mode, the box's
  *  check mode, 'full' at a declared full-route spot (fullRouteSpotNow), and
- *  the acting login of the exit it runs in (actingLoginNow, plan v3.2 S7b:
+ *  the acting login of the exit it runs in (actingLoginNow:
  *  mantle.acting_login, which only the gateway's own SET may name). */
 export type ActorParams = readonly [
   string,

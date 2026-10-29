@@ -35,7 +35,7 @@ export type ChatThreadStatus = 'open' | 'archived';
  * `seed_thread_id` is "Continue from this": the open thread starts with that
  * archived thread's summary in its context, not its raw turns.
  *
- * Per login since 0269 (W7c): a thread belongs to one (agent, login), and
+ * Per login (0269): a thread belongs to one (agent, login), and
  * each login reads only its own (row security on login_id).
  */
 export const chatThreads = pgTable(
@@ -65,7 +65,7 @@ export const chatThreads = pgTable(
       .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+    /** The workspace this row belongs to (0250), stamped at
      *  insert from its agent (NULL = the Admin workspace), and the login it
      *  was for. The foreign key lives in the migration. */
     workspaceId: uuid('workspace_id'),

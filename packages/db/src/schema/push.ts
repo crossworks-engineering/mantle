@@ -113,11 +113,10 @@ export const pushLoginPrefs = pgTable('push_login_prefs', {
   chatReplies: boolean('chat_replies').notNull().default(true),
   /** An own item accepted, returned or taken over. */
   reviewResults: boolean('review_results').notNull().default(true),
-  /** Retired (access matrix T23): comments were removed on 2026-10-09 and
-   *  nothing sends a comment push. Neither read nor offered; the column
+  /** Retired: comments are gone and nothing sends a comment push. Neither read nor offered; the column
    *  stays so a rollback finds it. */
   comments: boolean('comments').notNull().default(true),
-  /** Messenger pushes (0335, sent from Messenger Phase 5): every message,
+  /** Messenger pushes (0335): every message,
    *  mentions only, or none. */
   messages: text('messages').$type<'all' | 'mentions' | 'off'>().notNull().default('all'),
   /** Show the author and the first 100 characters; off: the chat title only. */

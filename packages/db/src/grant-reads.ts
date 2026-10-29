@@ -1,12 +1,11 @@
 /**
  * "Does a shared workspace read this item?" from the grants. Product
- * code asks this instead of reading the level columns (workspaces plan S2;
- * W5b1, and since W5b2 the grants alone).
+ * code asks this instead of reading the level columns: the grants alone
+ * decide.
  *
- * Until migration 0286 this asked about the built-in Team workspace. Team
- * is a normal workspace now (owner decision 2026-10-13) and a new brain has
- * none, so the question is about every shared workspace: the one rule,
- * whatever the workspaces are called.
+ * Team is a normal workspace and a new brain has none, so the question is
+ * about every shared workspace: the one rule, whatever the workspaces are
+ * called.
  *
  * "Shared" has one meaning (sharedWorkspacesSql): a workspace that is
  * neither Admin, nor a login's private workspace, nor a Former user

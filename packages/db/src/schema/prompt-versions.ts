@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 /**
- * Prose version history for Agent Studio (docs/agent-studio.md Phase 2).
+ * Prose version history for Agent Studio (docs/agent-studio.md).
  *
  * Append-only history of every human-editable prompt field — agent
  * `system_prompt`, skill `instructions`, worker `system_prompt` /
@@ -13,7 +13,7 @@ import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'dri
  * revert away.
  *
  * Polymorphic: `entity_id` points at agents / skills / ai_workers, so there's no
- * FK. `trace_id` is reserved for Phase 4 (sandbox outcome-correlation).
+ * FK. `trace_id` is reserved (sandbox outcome-correlation).
  */
 export const promptVersions = pgTable(
   'prompt_versions',

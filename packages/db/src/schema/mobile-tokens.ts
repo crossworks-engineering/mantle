@@ -25,7 +25,7 @@ export const mobileTokens = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     userId: uuid('user_id').notNull(),
-    /** Human label for the device list, e.g. "Jason's iPhone". */
+    /** Human label for the device list, e.g. "Sam's iPhone". */
     label: text('label').notNull().default('Mobile device'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     /** Set when the device is unpaired / token revoked; null while active. */

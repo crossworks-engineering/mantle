@@ -97,7 +97,7 @@ export const spaceItemHomes = pgTable(
 );
 
 /**
- * The spaces fold (migration 0267, W6b): one row per item a personal space
+ * The spaces fold (migration 0267): one row per item a personal space
  * owned, moved into the brain (owner_id = the brain), with where it came
  * from (its space and login, its path and slug) and what it became (its
  * home, the Admin and Team grants, its new path and slug when a brain name

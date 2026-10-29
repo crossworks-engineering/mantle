@@ -1,6 +1,5 @@
 /**
- * The named heads-check bypass of a migration (workspaces plan V5, migration
- * 0244): a migration that writes nodes, chunks, windows, facts or grants in
+ * The named heads-check bypass of a migration (migration 0244): a migration that writes nodes, chunks, windows, facts or grants in
  * bulk calls `SELECT mantle_heads_bypass('<its name>');` first. The database
  * signs it and logs one row; the runner prints the names it finds, so every
  * bypass shows in the migration output too. Pure.

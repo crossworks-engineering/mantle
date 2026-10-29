@@ -11,7 +11,7 @@
  * where they are, and without it they would count as ordinary files from
  * then on (access matrix T20). The account branch covers the files whose
  * emails were deleted before the stamp existed, which migration 0239
- * cannot find (audit B4): no other writer puts an `attachments` folder
+ * cannot find: no other writer puts an `attachments` folder
  * under a mail account's branch. The account branches are read through
  * mantle_mail_branch_holds (0296), as `email_accounts` is no table a scope
  * reads: a scoped read of this rule (an area-limited key's lists) answered

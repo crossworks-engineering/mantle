@@ -1,5 +1,5 @@
 /**
- * The records migration 0274 (workspaces W8d) keeps of the frozen chat and
+ * The records migration 0274 keeps of the frozen chat and
  * client tables it drops: the owner's read cursors of the old portal
  * threads, the member notifications, a login's own chat read cursor, the
  * "what clients see" acknowledgements and the client quota log, each as it

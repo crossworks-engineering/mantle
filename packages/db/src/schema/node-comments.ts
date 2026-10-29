@@ -4,8 +4,8 @@ import { agents } from './agents';
 import { authUsers } from './auth-users';
 import { nodes } from './nodes';
 
-/** Who wrote a comment. `client` stays: a client login wrote comments until
- *  workspaces W8a removed the role, and those rows keep their author_kind
+/** Who wrote a comment. `client` stays: a client login (a retired role)
+ *  wrote comments, and those rows keep their author_kind
  *  (no new row gets it). Not the login roles: `owner` and `agent` are not
  *  logins (client-types mirrors it, NodeCommentAuthorKind in dto/rows.ts). */
 export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent' | 'client';

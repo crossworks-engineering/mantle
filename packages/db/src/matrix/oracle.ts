@@ -53,15 +53,14 @@ export const ORACLE_ROLES: readonly OracleRole[] = [
   'outsider',
 ];
 
-/** What is asked. A1: read and create; the rest join in later phases. */
+/** What is asked: read and create. */
 export type OracleAction = 'read' | 'create';
 
 /** Where the item is (read) or is made (create). */
 export type OraclePlacement = 'root' | 'folder';
 
 export type OracleContext = {
-  /** The way in. A1: the SQL level only. Later: http, mcp, assistant, key,
-   *  peer, each with its own narrowing. */
+  /** The way in: the SQL level only. */
   surface: 'sql';
   placement: OraclePlacement;
 };
@@ -129,7 +128,7 @@ export function expectedReadCreate(
   return { allow: true, lands };
 }
 
-// ── Folder counts (task b6e4a8aa) ───────────────────────────────────────────
+// ── Folder counts ───────────────────────────────────────────────────────────
 
 /**
  * The folder-count fixture: a folder homed in workspace H and granted to
@@ -243,7 +242,7 @@ export type OracleWriteAction =
   /** Make a new item of the kind where the fixture's item is. */
   | 'create'
   /** Make a new item in the folder carrying values only the brain sets (a
-   *  summary, an embedding): they are dropped for a login (fix round 1). */
+   *  summary, an embedding): they are dropped for a login. */
   | 'createDerived'
   /** Change its content (its title). */
   | 'edit'
@@ -432,9 +431,8 @@ export function expectedWrite(
     case 'delete':
     case 'deleteContent':
     case 'appDataDelete':
-      // "Delete it: Moderator of its home" (an app too: the owner's decision
-      // of 2026-10-15, plan s34, a delete is an archive; Admin users who
-      // read it besides are expectedAccess's).
+      // "Delete it: Moderator of its home" (an app too: a delete is an
+      // archive; Admin users who read it besides are expectedAccess's).
       return GUIDE_RULES.delete(standing) ? { allow: true } : deny('not a Moderator of its home');
     case 'appCode':
     case 'appCreate':
@@ -455,7 +453,7 @@ export function expectedWrite(
 
 /**
  * The detail a refusal must carry, where the guide decides it (the mapper
- * reads it, plan 5.2): a caller that only reads, `ro_actor`; an
+ * reads it): a caller that only reads, `ro_actor`; an
  * Informational app's data for a user who may edit the app, `read_only`.
  * Null: any refusal (a detail of the edit check, or a check before it).
  */

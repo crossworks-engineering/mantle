@@ -136,7 +136,7 @@ async function main() {
       checkFloorPolicy(env('MANTLE_CHECK_FLOOR'), env('MANTLE_CHECK_FLOOR_REASON'), log),
     );
 
-    // Indexes built CONCURRENTLY, outside any transaction (workspaces W3).
+    // Indexes built CONCURRENTLY, outside any transaction.
     // Last, bounded, and never fatal: an index here is speed only, so a
     // build that waits on a lock or runs long is given up (and its INVALID
     // leftover dropped) with a warning, and the next run tries again.

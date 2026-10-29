@@ -3,7 +3,7 @@ import { index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/
 import { nodes } from './nodes';
 
 /**
- * Member invites (member logins, Phase 6; migration 0174). An admin mints an
+ * Member invites (migration 0174). An admin mints an
  * invite for a person (a contact of the brain, or just an email); the person
  * opens the invite link, sets a password, and becomes a MEMBER login. See
  * packages/content/src/member-invites.ts.

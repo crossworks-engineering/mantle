@@ -1,7 +1,7 @@
 /**
  * A team-portal contact's chat rows (no login) as they were when
- * team_messages folded into assistant_messages (migration 0269, workspaces
- * W7c): history only, never a thread. The member logins' rows went to
+ * team_messages folded into assistant_messages (migration 0269): history
+ * only, never a thread. The member logins' rows went to
  * assistant_messages with the same ids. team_messages' columns (the types
  * and NOT NULLs, no foreign key, no check) plus archived_at. Read by no
  * product code. No grant to any role: the admin pool only.

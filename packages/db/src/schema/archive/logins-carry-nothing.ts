@@ -52,8 +52,8 @@ export const archiveClientWorkspaceUsers = pgTable(
   (t) => [primaryKey({ columns: [t.workspaceId, t.loginId] })],
 );
 
-/** A former client's private workspace row as it was when it was removed
- *  (W8a leftover, closed in W8d): the review homes then rename that
+/** A former client's private workspace row as it was when it was removed:
+ *  the review homes then rename that
  *  workspace "Former user" and register it. */
 export const archiveClientPrivateWorkspaces = pgTable('archive_client_private_workspaces', {
   loginId: uuid('login_id').primaryKey(),

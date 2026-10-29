@@ -13,7 +13,7 @@ import { agents } from './agents';
 import { workspaces } from './workspaces';
 
 /**
- * The messenger (migration 0335, plan page d8954876 section 11): direct
+ * The messenger (migration 0335): direct
  * chats and groups between the logins of one brain. Row security keys every
  * read on the participant row (mantle_messenger_seq_cap); every write goes
  * through @mantle/content/messenger on the system pool. The FKs into
@@ -30,7 +30,7 @@ export type MessengerPreviewJson = {
 /** A mention in a message: a login or an agent. */
 export type MessengerMentionJson = { kind: 'login' | 'agent'; id: string };
 
-/** What a system line marks (calls plan section 8): a call started, ended,
+/** What a system line marks: a call started, ended,
  *  or cut at the cap. The client tells them apart by `type`. */
 export type MessengerEventJson =
   | { type: 'call_started'; callId: string }
@@ -64,8 +64,8 @@ export const messengerConversations = pgTable('messenger_conversations', {
   lastSeq: bigint('last_seq', { mode: 'number' }).default(0).notNull(),
   lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
   lastPreview: jsonb('last_preview').$type<MessengerPreviewJson>(),
-  /** Calls plan section 7 (P3): the group's agent answers with a voice note
-   *  too. Stored from 0342, read by nothing in P1. */
+  /** The group's agent answers with a voice note too. Stored (0342);
+   *  nothing reads it yet. */
   voiceReplies: boolean('voice_replies').default(false).notNull(),
 });
 
@@ -176,7 +176,7 @@ export const loginPresence = pgTable('login_presence', {
 });
 
 /**
- * A call (0342, calls plan section 8): a LiveKit room named after the
+ * A call (0342): a LiveKit room named after the
  * conversation, opened by a participant's tap and closed by the webhook,
  * the reconciler, an admin or the service switch. started_seq is the seq of
  * its "call started" line: row security answers the row as it answers

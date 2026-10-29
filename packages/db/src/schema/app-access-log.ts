@@ -16,7 +16,7 @@ import { authUsers } from './auth-users';
  * the history of "something happened" outlives the person's contact record.
  * `share_id` is informational (shares are soft-revoked, rows persist).
  * `actor_id` is the member LOGIN that ran the app from the member shell
- * (member logins Phase 4b, migration 0172); NULL on share-link rows.
+ * (migration 0172); NULL on share-link rows.
  *
  * The owner's own successful broker calls (/api/apps/*) are NOT logged here:
  * apart from errors, this table answers "what did outsiders do", not "what

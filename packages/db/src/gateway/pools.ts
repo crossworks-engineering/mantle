@@ -43,7 +43,7 @@ declare global {
     | Map<PoolRole, { sql: ReturnType<typeof postgres>; db: PostgresJsDatabase<typeof schema> }>
     | undefined;
 
-  /** The narrow route's own pool (plan v3.2 S7b): logs in as
+  /** The narrow route's own pool: logs in as
    *  mantle_system_narrow; opened on the first narrow statement. null: the
    *  role has no login here (per-database mode), the route takes the role
    *  per transaction on the system pool instead. */
@@ -63,7 +63,7 @@ declare global {
 
 /** Connections of a limited pool, per process and role. Small on purpose:
  *  every process of a box opens its own pools, and their sum must stay under
- *  the box's max_connections (the connection ceiling, task 29008b01).
+ *  the box's max_connections (the connection ceiling).
  *  The write role's pool (getViewerDb('write')) opens only in the processes
  *  that call openLoginWritePool, at the size each asks for (at most this). */
 const VIEWER_POOL_MAX = 3;
@@ -198,7 +198,7 @@ export function getAdminDb(): PostgresJsDatabase<typeof schema> {
   const sql =
     globalThis.__mantleSql ?? postgres(url, { max: 10, prepare: false, onnotice: onPgNotice });
   globalThis.__mantleSql = sql;
-  // The narrow route (plan v3.2 S7a): a statement of a reason routed
+  // The narrow route: a statement of a reason routed
   // 'narrow' runs as the narrow role.
   const withActor = narrowRouteClient(
     actorClient(sql),
@@ -285,7 +285,7 @@ let narrowDb: PostgresJsDatabase<typeof schema> | null = null;
 
 /**
  * The system pool's drizzle handle whose every statement runs on the
- * narrow route (plan v3.2 S7a): systemDb's inside a turn or request scope
+ * narrow route: systemDb's inside a turn or request scope
  * (gateway/handles.ts).
  */
 export function getNarrowDb(): PostgresJsDatabase<typeof schema> {
@@ -298,8 +298,7 @@ export function getNarrowDb(): PostgresJsDatabase<typeof schema> {
 }
 
 /**
- * The narrow route's own pool (plan v3.2 S7b, the design that closes the
- * class of plan 2.1 MED-A): every connection logs in as
+ * The narrow route's own pool: every connection logs in as
  * mantle_system_narrow, which is a member of nothing, so a statement that
  * resets or changes the role has no other role to reach. Made on the first
  * narrow statement (postgres.js connects on the first query), so a process
@@ -386,10 +385,10 @@ export function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> 
     // The write role's: the size this process opened it at (openLoginWritePool).
     max: level === 'write' ? loginWritePoolMax() : VIEWER_POOL_MAX,
     prepare: false,
-    // No JIT on a scoped connection (W7a): a row rule raises the planner's
-    // cost estimate past jit_above_cost, so a vector search that reads 50
-    // rows paid about 13 ms of compiling on a large brain copy (5 ms without,
-    // 3 ms on the system pool). Scoped reads are small; JIT never pays here.
+    // No JIT on a scoped connection: a row rule raises the planner's cost
+    // estimate past jit_above_cost, so a vector search that reads 50 rows
+    // would pay about 13 ms of compiling on a large brain (5 ms without, 3
+    // ms on the system pool). Scoped reads are small; JIT never pays here.
     connection: { jit: 'off' },
     // A write check's refusal the box mode lets through (off and warn on
     // the write role, 0278) arrives as a NOTICE: a miss, as on the system

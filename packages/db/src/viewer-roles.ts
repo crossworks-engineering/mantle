@@ -1,6 +1,5 @@
 /**
- * Create the viewer LOGIN roles and (re)set their passwords (member logins
- * Phase 0b, plan section 2b). Idempotent: migrate runs it after every batch,
+ * Create the viewer LOGIN roles and (re)set their passwords. Idempotent: migrate runs it after every batch,
  * which also covers the cases where the roles would otherwise be missing or
  * stale:
  *  - a restore into a fresh cluster (roles are cluster objects and are not in

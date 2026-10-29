@@ -1,8 +1,8 @@
 /**
- * The narrow system route (plan v3.2 section 2.1 point 3): a statement or
+ * The narrow system route: a statement or
  * a transaction of a reason routed 'narrow' runs as mantle_system_narrow.
  *
- * Since S7b on the route's own pool, whose connections log in as the
+ * On the route's own pool, whose connections log in as the
  * narrow role (gateway/pools.ts narrowPoolSql): the role is the session's
  * own, a member of nothing, so no statement can leave it (a reset or a
  * role change lands on the narrow role again). A statement outside a
@@ -10,8 +10,8 @@
  * and a RESET behind it (no BEGIN, no COMMIT); a transaction sets the
  * actor with its first statement, and the hold check runs before its
  * COMMIT. Where the role has no login (per-database mode, narrowPoolSql
- * null) the route takes the role per transaction on the system pool, as
- * S7a built it: set_config('role', ..., true) with the actor's settings
+ * null) the route takes the role per transaction on the system pool:
+ * set_config('role', ..., true) with the actor's settings
  * (never a session SET), the hold check before the COMMIT.
  *
  * The text check (narrow-sendable.ts) runs on both: on the login pool it
@@ -79,7 +79,7 @@ export class NarrowRoleLeftError extends RuntimeFaultError {
  * The actor's settings on the narrow route: set whatever the check's mode,
  * so the database always knows who wrote (the actor stays system:<reason>),
  * its write mode (a read-only caller's definers refuse) and the acting
- * login of the exit (actingLoginNow: mantle.acting_login, plan v3.2 S7b). Null
+ * login of the exit (actingLoginNow: mantle.acting_login). Null
  * with no actor bound.
  */
 async function narrowParams(): Promise<ActorParams | null> {
@@ -271,8 +271,8 @@ export class NarrowStartupError extends RuntimeFaultError {
 const HOLD_FAILED = '22012';
 
 /**
- * One statement outside a transaction on the narrow route's own pool
- * (plan v3.2 S7b): the session is the narrow role's, so no BEGIN, no role
+ * One statement outside a transaction on the narrow route's own pool: the
+ * session is the narrow role's, so no BEGIN, no role
  * SET, no hold check and no COMMIT. With an actor bound, the actor
  * client's own pipeline (actor-sql.ts settingsPipeline: a session-level
  * SET of its settings, the statement and a RESET of them on one reserved
@@ -476,11 +476,11 @@ export async function narrowBegin(
 }
 
 /**
- * The system pool's client with the narrow route (plan v3.2 S7a): a
+ * The system pool's client with the narrow route: a
  * statement or a transaction sent while `narrowNow()` says so runs on the
  * narrow route (narrowStatement, narrowBegin), on `narrowPool()`'s
- * connections (the narrow role's own login, S7b), else on `base`'s;
- * everything else is `withActor`'s (the actor client), exactly as before.
+ * connections (the narrow role's own login), else on `base`'s;
+ * everything else is `withActor`'s (the actor client).
  * Decided when the statement is sent, in the caller's context.
  */
 export function narrowRouteClient(

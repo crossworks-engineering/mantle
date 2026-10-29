@@ -137,7 +137,7 @@ async function carry(
     // (a lift, a merge, or a clamp of deeper folders) takes a "-2" name (then
     // "-3"...), as Accept does: file names are unique per owner and folder
     // (file_filename_in_parent_uq, and the slug index), and a clash here
-    // failed the admin's rename, move or delete half done (review F6).
+    // would fail the admin's rename, move or delete half done.
     const aliasedMapped = mapped(aliased.path);
     const finalPath = sql`subpath(${aliasedMapped}, 0, least(nlevel(${aliasedMapped}), ${MAX_TREE_NLEVEL}))`;
     const renamed = sql`(case when r.fname ~ '^.+[.][^.]+$'
@@ -173,7 +173,7 @@ async function carry(
     // Two passes through a temporary prefix: in one UPDATE a row's new path
     // can be another moving row's old one (a lift maps `a.o.o.y` onto `a.o.y`,
     // which itself moves on to `a.y`), and the unique index is checked row by
-    // row, so a single pass failed or not by physical order (folder audit C3).
+    // row, so a single pass would fail or not by physical order.
     // The prefix sits outside every kind root, so no folder check applies.
     await q
       .update(nodes)

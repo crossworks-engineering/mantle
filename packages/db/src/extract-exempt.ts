@@ -4,7 +4,7 @@
  *
  * Two kinds today:
  *
- *  - The Forum archive (member logins Phase 6): one admin-level page per
+ *  - The Forum archive: one admin-level page per
  *    retired forum topic, private topics included, stamped
  *    `data.source = 'forum-archive'` (docs/team-forum.md). Exempt for good.
  *  - A team request a member filed through the team agent
@@ -64,10 +64,10 @@ export function extractExemptSql(): SQL {
  * the worker does not extract). `data.extract_skipped = { reason, at }`.
  *
  * Without it such a node has no embedding forever, so the boot drain (and the
- * provider circuit's recovery drain, which is the same query) re-queued it on
- * every restart and every recovery: a job and a trace each time, and a vision
- * or OCR call each time for an image or a scan. NATREF, 2026-10-04: one .exe
- * file, 16 jobs in 3 days; in September 75 short files had 24,605 runs.
+ * provider circuit's recovery drain, which is the same query) would re-queue
+ * it on every restart and every recovery: a job and a trace each time, and a
+ * vision or OCR call each time for an image or a scan (one file can run up
+ * thousands of jobs).
  *
  * The stamp holds only while the node is unchanged: a write that bumps
  * `updated_at` (an edit, new bytes, a rename) makes it stale, and the drain
@@ -150,8 +150,8 @@ export function extractParkedSql(): SQL {
  * The window is on `updated_at`, not `created_at`. A content change nulls the
  * embedding and fires a notify; when that notify is lost (the agent was down,
  * e.g. the docs sync at web boot during a roll), an OLD node must still be
- * picked up. On `created_at` it never was: dev, 2026-10-05, 365 documentation
- * nodes created in July/August sat without a summary or an embedding.
+ * picked up. On `created_at` an old node whose notify was lost would sit
+ * without a summary or an embedding for ever.
  */
 export function unextractedNodeConds(ownerId: string, since: Date): SQL {
   return and(

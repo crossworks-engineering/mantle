@@ -20,14 +20,10 @@ import { vector } from './_shared';
  * directly by packages/content/src/recall-native.ts, checked in the same
  * transaction, so every agent-facing read is one indexed row with no compile
  * step, no ProseMirror parsing and no LLM on the hot path.
- * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
  *
- * History: until R5 (2026-09-30) these rows could also be a BUILD ARTIFACT
- * compiled from a `recall`-tagged page tree (a "page-built" or v1 map, with
- * node_id NULL and the root page's id as the map id). R5 removed that
- * compiler; migration 0209 deleted the remaining rows. `last_compile_ok` and
- * `last_compile_report` stay, unused, so the release before R5 still runs on
- * this table after a rollback; a later migration drops them.
+ * `last_compile_ok` and `last_compile_report` are unused: they stay only so
+ * an older release still runs on this table after a rollback; a later
+ * migration drops them.
  */
 
 export const recallMaps = pgTable(
@@ -43,9 +39,9 @@ export const recallMaps = pgTable(
     enterWhen: text('enter_when').default('').notNull(),
     /** Card count, recounted on every write. 0 = no cards; the catalog hides it. */
     nodeCount: integer('node_count').default(0).notNull(),
-    /** UNUSED since R5: the v1 compile outcome. Kept (and declared, so the
-     *  schema drift test still matches the table) only so the release before
-     *  R5 runs after a rollback. Nothing reads or writes them; drop both in a
+    /** UNUSED: the v1 compile outcome. Kept (and declared, so the schema
+     *  drift test still matches the table) only so an older release runs
+     *  after a rollback. Nothing reads or writes them; drop both in a
      *  later migration. */
     lastCompileOk: boolean('last_compile_ok').default(true).notNull(),
     lastCompileReport: jsonb('last_compile_report').$type<unknown[]>(),

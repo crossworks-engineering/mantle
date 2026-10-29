@@ -1,5 +1,5 @@
 /**
- * The narrow route's denials, noted (plan v3.2 S7a): a right the narrow role
+ * The narrow route's denials, noted: a right the narrow role
  * does not hold, and a statement the text check refused before it was sent
  * (narrow-sendable.ts). One note per error, in both pools' paths
  * (narrow-route.ts), and the one helper that runs the text check and notes

@@ -46,11 +46,11 @@ export const apps = pgTable('apps', {
   // app's database. Off, an app at team or client level is a shared workspace
   // everyone who runs it writes. Set only by the owner's app update route.
   dataReadOnly: boolean('data_read_only').default(false).notNull(),
-  // MCP access (team apps Phase 1, 0234): a member's or client's MCP
+  // MCP access (0234): a member's or client's MCP
   // connection reaches this app's data (the app_data_* tools) only while
   // this is on. Off by default. Set only by the owner's app update route.
   mcpAccess: boolean('mcp_access').default(false).notNull(),
-  // Team apps Phase 3 (0235): the login that built the app (null for an
+  // The login (0235) that built the app (null for an
   // admin's), and the AUTHOR CEILING: its tools run at most at this level,
   // for every runner. A member builds at 'team'; an admin raises it to
   // 'admin' only when accepting the app, after seeing its declared tools.

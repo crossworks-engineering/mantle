@@ -148,7 +148,7 @@ export const GUIDE_LOGIN_ACTORS: readonly GuideActor[] = actorsOf('login');
 /** The actor kinds that answer no login (the grid runs them once). */
 export const GUIDE_OTHER_ACTORS: readonly GuideActor[] = actorsOf('other');
 
-/** The ways in (plan 4.3). 'sql' is the grid; the rest are surface cells. */
+/** The ways in. 'sql' is the grid; the rest are surface cells. */
 export type GuideSurface =
   | 'sql'
   | 'web'
@@ -572,10 +572,8 @@ function narrowedAnswer(
     case 'delete':
       // An app: its home Moderator, Admin users and the owner delete it. A
       // delete is an archive: the app goes to Recently deleted with a
-      // snapshot, and only the owner deletes it for good. The owner's
-      // decision of 2026-10-15 (workspaces arch plan v2, section 34: delete
-      // is an archive; it reverses the rule set earlier that day). In a turn the Admin user's
-      // seat is the Admin assistant's.
+      // snapshot, and only the owner deletes it for good (docs/actors.md, "Who may do what").
+      // In a turn the Admin user's seat is the Admin assistant's.
       if (kind === 'app' && s.admin) return { allow: true };
       // "Delete it: Moderator of its home" (the copy's author is one).
       return GUIDE_RULES.delete(s) ? { allow: true } : deny('not a Moderator of its home');

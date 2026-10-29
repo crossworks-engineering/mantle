@@ -18,7 +18,7 @@ import { getDb } from './scope';
 
 /**
  * Run `fn` in ONE admin-pool transaction whose FIRST lock is the heads of
- * `ids` (workspaces plan U1 and V2): every writer of nodes, chunks, windows,
+ * `ids`: every writer of nodes, chunks, windows,
  * facts and grants goes through here, so no two writers can deadlock and none
  * can miss another's grant change. `update` for a change of grants, a move, a
  * delete or a chunk rewrite; `share` for a new item in a folder (lock the
@@ -44,7 +44,7 @@ export async function withHeads<T>(
 }
 
 /**
- * withHeads for a whole subtree (plan U2, V1, V3): the heads of `root` and
+ * withHeads for a whole subtree: the heads of `root` and
  * everything under it (a folder), plus `extra` (a move's old and new
  * folder), locked FIRST; later rounds pick up rows that arrived while the
  * first round waited, without waiting. For a folder's grant change and for a
@@ -109,7 +109,7 @@ export async function withNodeInsertHeads<T>(
 }
 
 /**
- * Heads for moving one node (a path change, plan V3): the node and, for a
+ * Heads for moving one node (a path change): the node and, for a
  * folder, everything under it, plus its old folder and the folder at
  * `newPath`, in rounds until stable.
  */
@@ -127,7 +127,7 @@ export async function withNodeMoveHeads<T>(
 }
 
 /**
- * Heads for deleting nodes (plan V4): each node, everything under a folder,
+ * Heads for deleting nodes: each node, everything under a folder,
  * and the folders they sit in, UPDATE. Read before the transaction.
  */
 export async function withNodeDeleteHeads<T>(
@@ -158,8 +158,8 @@ export async function withNodeDeleteHeads<T>(
  * brain, `open` takes the heads and runs `fn` in its transaction; inside a
  * personal-space scope (rows outside any workspace grant, on the space
  * role, where heads cannot be taken) `fn` runs on the scope's own
- * transaction. That second path is removed with personal spaces in W6b
- * (workspaces plan); it is the one sanctioned exemption.
+ * transaction. That second path goes with personal spaces; it is the one
+ * sanctioned exemption.
  */
 export async function headsOrSpace<T>(
   open: (fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>) => Promise<T>,
@@ -175,8 +175,7 @@ export async function headsOrSpace<T>(
  * none: the database exempts rows a personal space owns from the heads
  * check, because no workspace reads them (migration 0244 refuses a grant on
  * one). Throws outside a personal-space scope, so it cannot carry a brain
- * write. Removed with personal spaces in W6b (W4 replaces the exemption
- * before it grants personal items).
+ * write. It goes with personal spaces.
  */
 export async function withSpaceRows<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
@@ -193,8 +192,8 @@ export async function withSpaceRows<T>(
  * spaces, a brain folder rename carried into the members' drafts. Checks
  * first that every id in `spaceIds` is a personal space. The database
  * exempts those rows from the heads check (0244) and still checks any brain
- * row, so a brain write slipped in here is caught there. Removed with
- * personal spaces in W6b.
+ * row, so a brain write slipped in here is caught there. It goes with
+ * personal spaces.
  */
 export async function onSpaceRows<
   Q extends { execute: PostgresJsDatabase<typeof schema>['execute'] },
@@ -237,7 +236,7 @@ export async function withWriterHeads<T>(
 }
 
 /**
- * Lock more heads later in a heads transaction (plan U2, V1): FOR UPDATE
+ * Lock more heads later in a heads transaction: FOR UPDATE
  * NOWAIT, for rows found only after the first lock (a bundle, the folders an
  * Accept lands in). A busy head fails with 55P03: run the whole transaction
  * in withDeadlockRetry.

@@ -28,7 +28,7 @@ import { ownPrivate } from './write-route';
 import { systemPoolTxInScope } from './system-tx';
 
 /**
- * The R6 shim (plan R6, S2, T4): run `fn` for whoever `actsFor` names, in a
+ * Run `fn` for whoever `actsFor` names, in a
  * WORKSPACE scope. A login reads the union of its
  * live workspaces (a disabled login: none); an assistant reads its own
  * workspace (none when it sits on no workspace); a public link reads no
@@ -38,7 +38,7 @@ import { systemPoolTxInScope } from './system-tx';
  * Fails closed: an empty scope reads nothing.
  *
  * System work never comes through here: a caller that may run as the
- * system runs `fn` itself (the level argument that said so went in W8c).
+ * system runs `fn` itself.
  * Inside the same workspace scope it just runs `fn`; inside another one it
  * is refused, unless it narrows a request scope.
  *
@@ -73,9 +73,9 @@ export async function withViewer<T>(
       runInViewerScope(scope, fn, { writes: true, drafts: true }),
     );
   }
-  // Inside the request scope of this very login (W6a): that scope is the
-  // one withViewer would build, read once by the session guard. No second
-  // lookup per call (the W5b2 member search cost).
+  // Inside the request scope of this very login: that scope is the one
+  // withViewer would build, read once by the session guard. No second
+  // lookup per call (a member search would repeat it per result).
   const open = currentWorkspaceScope();
   if (
     'login' in actsFor &&
@@ -106,7 +106,7 @@ const appRunWrite = new AsyncLocalStorage<AppRunWriter>();
  * bound login when the request is a mutating one in that login's write
  * scope (requestWriteScope) and the login writes (not a read-only login,
  * login(ro): a read key, a peer with Write off). Null otherwise: the app's
- * write is then refused (task 2178377a, its audit).
+ * write is then refused.
  */
 export function appRunWriter(): AppRunWriter | null {
   const scope = requestWriteScope();
@@ -200,7 +200,7 @@ export function seedLoginScope(
 }
 
 /**
- * The scope the session guard enters for a signed-in login (W6a): the
+ * The scope the session guard enters for a signed-in login: the
  * union of its live workspaces, Moderator where it is one (a disabled
  * login: none). The same scope `withViewer({ login }, …)` builds.
  */
@@ -296,7 +296,7 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
     let ws = rows[0]?.ws ?? [];
     let mod = rows[0]?.mod ?? [];
     if (actsFor.app) {
-      // An app run (plan R2, H1): the holders beyond Admin, met with the
+      // An app run: the holders beyond Admin, met with the
       // runner's workspaces; see AppRunFor.
       const held = await appRunHolders(actsFor.app);
       const holder = held.length === 1 ? held[0]! : null;
