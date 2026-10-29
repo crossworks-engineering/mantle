@@ -37,9 +37,10 @@ const INHERIT = 'inherit';
 /**
  * Providers that point at whatever the operator is self-hosting. Their model
  * ids are true by definition — whatever the box serves is the catalogue — so
- * there is nothing to drift against.
+ * there is nothing to drift against. Microsoft Foundry is one in kind: its
+ * model id is a deployment name the owner chose (docs/foundry.md).
  */
-const SELF_HOSTED = new Set(['local', 'custom']);
+const SELF_HOSTED = new Set(['local', 'custom', 'foundry']);
 
 /**
  * Worker kind → the modality its model is used for.

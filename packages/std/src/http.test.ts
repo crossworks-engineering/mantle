@@ -164,6 +164,15 @@ describe('parseRetryAfterMs', () => {
     expect(parseRetryAfterMs({})).toBeUndefined();
     expect(parseRetryAfterMs({ get: () => null })).toBeUndefined();
   });
+
+  it('prefers retry-after-ms (Azure OpenAI, OpenAI) over the seconds header', () => {
+    const both = new Headers({ 'retry-after-ms': '1250', 'retry-after': '2' });
+    expect(parseRetryAfterMs(both)).toBe(1_250);
+    expect(parseRetryAfterMs(new Headers({ 'retry-after-ms': '400' }))).toBe(400);
+    // An unreadable ms value falls back to the seconds header.
+    const junk = new Headers({ 'retry-after-ms': 'soon', 'retry-after': '3' });
+    expect(parseRetryAfterMs(junk)).toBe(3_000);
+  });
 });
 
 describe('the timeout tables', () => {

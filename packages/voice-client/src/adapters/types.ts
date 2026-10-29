@@ -547,6 +547,12 @@ export interface ChatDispatcher extends AdapterMeta {
   /** Adapters expose their static catalog for the UI to render before
    *  discovery completes (or when discovery isn't supported). */
   staticCatalog?(): readonly ChatModelInfo[];
+  /** Optional. A box-level credential from the environment, for a route with
+   *  no vault key (Microsoft Foundry's MANTLE_FOUNDRY_API_KEY). `baseUrl` is
+   *  the route's own host: an adapter returns null when it is set, so an
+   *  environment key only ever goes to the environment's endpoint. Read by
+   *  the one chat key resolver (@mantle/runtime chat-failover resolveChatKey). */
+  envCredential?(baseUrl: string | null): ProviderCredential | null;
 }
 
 export interface SttDispatcher extends AdapterMeta {

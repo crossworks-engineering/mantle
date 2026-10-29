@@ -33,6 +33,7 @@ const { deepseekChatAdapter } = await import('./deepseek-chat');
 const { copilotChatAdapter } = await import('./copilot-chat');
 const { mammouthChatAdapter } = await import('./mammouth-chat');
 const { customChatAdapter } = await import('./custom-chat');
+const { foundryChatAdapter } = await import('./foundry-chat');
 
 const base = {
   apiKey: 'k;tid=1',
@@ -83,6 +84,13 @@ describe('every one-shot chat call names its deadline', () => {
       expect(opts).toEqual({ timeoutMs: ms });
     });
   }
+  // Foundry takes https endpoints only, so it gets one of its own.
+  it(`foundry: { timeoutMs: ${PROVIDER_TIMEOUTS.chatRelay} }`, async () => {
+    const opts = await lastOpts(() =>
+      foundryChatAdapter.chat({ ...base, baseUrl: 'https://res.openai.azure.com' }),
+    );
+    expect(opts).toEqual({ timeoutMs: PROVIDER_TIMEOUTS.chatRelay });
+  });
 });
 
 describe('every stream says its deadline covers the headers only', () => {
@@ -105,4 +113,16 @@ describe('every stream says its deadline covers the headers only', () => {
       });
     });
   }
+  it('foundry', async () => {
+    const opts = await lastOpts(() =>
+      foundryChatAdapter.chatStream!(
+        { ...base, baseUrl: 'https://res.openai.azure.com' },
+        () => {},
+      ),
+    );
+    expect(opts).toEqual({
+      timeoutMs: PROVIDER_TIMEOUTS.streamConnect,
+      timeoutScope: 'headers',
+    });
+  });
 });

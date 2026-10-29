@@ -37,6 +37,7 @@ export * from './catalogs/deepgram';
 export * from './catalogs/assemblyai';
 export * from './catalogs/deepseek';
 export * from './catalogs/mammouth';
+export * from './catalogs/foundry';
 
 // Pure wiring metadata (no adapter modules pulled: registry.ts imports types
 // only).

@@ -172,6 +172,8 @@ type HeaderSource = { get?: (name: string) => string | null | undefined } | null
  * (RFC 9110), into milliseconds, never negative. Takes a Headers (or any
  * object with `get`; a mocked transport may hand back none), the header's
  * value, or a number of seconds (Telegram's `parameters.retry_after`).
+ * From Headers, a `retry-after-ms` (Azure OpenAI and OpenAI send it on a
+ * 429, finer than the seconds header) wins when it is a number.
  * Undefined when absent or unreadable.
  */
 export function parseRetryAfterMs(
@@ -180,7 +182,12 @@ export function parseRetryAfterMs(
 ): number | undefined {
   let raw: string | number | null | undefined;
   if (typeof source === 'string' || typeof source === 'number') raw = source;
-  else raw = source?.get?.('retry-after');
+  else {
+    const msRaw = source?.get?.('retry-after-ms');
+    const ms = msRaw == null || msRaw === '' ? NaN : Number(msRaw);
+    if (Number.isFinite(ms)) return Math.max(0, ms);
+    raw = source?.get?.('retry-after');
+  }
   if (raw === null || raw === undefined || raw === '') return undefined;
   const secs = Number(raw);
   if (Number.isFinite(secs)) return Math.max(0, secs * 1000);

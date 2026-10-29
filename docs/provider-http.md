@@ -166,10 +166,10 @@ after which a stream's idle guard (120 s between chunks) bounds it.
 | Caller                                                                       | Main                                       | Now                                             |
 | ---------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------- |
 | Chat one-shot: Anthropic, Google, xAI, Hugging Face, DeepSeek                | 60 s exchange (`init.signal`)              | 60 s exchange (`chat`)                          |
-| Chat one-shot: Copilot, Mammouth, custom                                     | 120 s exchange                             | 120 s exchange (`chatRelay`)                    |
+| Chat one-shot: Copilot, Mammouth, Foundry, custom                            | 120 s exchange                             | 120 s exchange (`chatRelay`)                    |
 | Chat one-shot: local (direct or tailnet)                                     | 300 s exchange                             | 300 s exchange (`chatLocal`)                    |
 | Chat one-shot: OpenRouter (SDK)                                              | 60 s exchange (SDK signal)                 | the same (a Request input: no default)          |
-| Chat stream: Anthropic, Google, xAI, HF, DeepSeek, Copilot, Mammouth, custom | 60 s headers                               | 60 s headers (`streamConnect`, scope `headers`) |
+| Chat stream: Anthropic, Google, xAI, HF, DeepSeek, Copilot, Mammouth, Foundry, custom | 60 s headers                               | 60 s headers (`streamConnect`, scope `headers`) |
 | Chat stream: local (direct or tailnet)                                       | 300 s headers                              | 300 s headers (scope `headers`)                 |
 | Chat stream: OpenRouter (SDK)                                                | 60 s headers                               | the same (a Request input: no default)          |
 | OpenRouter research (`web_search`, `web_search_pro`, SDK)                    | undici                                     | undici (a Request input: no default)            |

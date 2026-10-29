@@ -20,7 +20,7 @@ export const PROVIDER_TIMEOUTS = {
   /** A one-shot hosted chat call (headers and body). */
   chat: 60_000,
   /** A one-shot chat call to an OpenAI-compatible relay (Copilot, Mammouth,
-   *  a custom endpoint), whose first byte can come later. */
+   *  Microsoft Foundry, a custom endpoint), whose first byte can come later. */
   chatRelay: 120_000,
   /** A one-shot chat call to a self-hosted model (CPU inference). */
   chatLocal: 300_000,

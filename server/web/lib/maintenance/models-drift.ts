@@ -20,8 +20,10 @@ import { errorMessage } from '@mantle/std';
 
 /** Providers whose catalogue is a fallback, not a curated list — their
  *  discovery builds `available` from the live response, so "drift" is not a
- *  thing that can happen to them. */
-const SELF_UPDATING = new Set(['openrouter', 'copilot', 'local', 'custom']);
+ *  thing that can happen to them. Microsoft Foundry's catalogue is a seed of
+ *  likely deployment names the owner chooses; its live list is base models,
+ *  not deployments (docs/foundry.md). */
+const SELF_UPDATING = new Set(['openrouter', 'copilot', 'local', 'custom', 'foundry']);
 
 /**
  * Anthropic's Models API returns dated snapshot ids while our catalogue holds

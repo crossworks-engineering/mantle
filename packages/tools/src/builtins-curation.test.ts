@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { voiceCatalogSupplement } from './builtins-curation';
+import { foundryCatalogSupplement, voiceCatalogSupplement } from './builtins-curation';
 
 describe('voiceCatalogSupplement', () => {
   const sup = voiceCatalogSupplement();
@@ -29,5 +29,21 @@ describe('voiceCatalogSupplement', () => {
       expect(seen.has(key), `duplicate ${key}`).toBe(false);
       seen.add(key);
     }
+  });
+});
+
+describe('foundryCatalogSupplement', () => {
+  const sup = foundryCatalogSupplement();
+
+  it('lists the Foundry seed as chat rows of provider foundry, priced null', () => {
+    expect(sup.length).toBeGreaterThan(0);
+    for (const m of sup) {
+      expect(m.provider).toBe('foundry');
+      expect(m.kind).toBe('chat');
+      expect(m.inputPerM).toBeNull();
+      expect(m.outputPerM).toBeNull();
+      expect(m.outputModalities).toEqual(['text']);
+    }
+    expect(sup.map((m) => m.id)).toContain('gpt-4o-mini');
   });
 });

@@ -34,6 +34,7 @@ import { googleChatAdapter } from './google-chat';
 import { openrouterChatAdapter } from './openrouter-chat';
 import { deepseekChatAdapter } from './deepseek-chat';
 import { mammouthChatAdapter } from './mammouth-chat';
+import { foundryChatAdapter } from './foundry-chat';
 import { copilotChatAdapter } from './copilot-chat';
 import { customChatAdapter } from './custom-chat';
 import { googleTtsAdapter } from './google-tts';
@@ -86,6 +87,7 @@ registerChatAdapter(googleChatAdapter);
 registerChatAdapter(openrouterChatAdapter);
 registerChatAdapter(deepseekChatAdapter);
 registerChatAdapter(mammouthChatAdapter);
+registerChatAdapter(foundryChatAdapter);
 registerChatAdapter(copilotChatAdapter);
 registerChatAdapter(customChatAdapter);
 registerChatAdapter(localChatAdapter);
@@ -268,6 +270,12 @@ export {
   MAMMOUTH_DEFAULT_CHAT_MODEL,
   mammouthCostUsd,
 } from '../catalogs/mammouth';
+export {
+  FOUNDRY_CHAT_MODELS,
+  foundryModelsUrl,
+  foundryResourceRoot,
+  parseFoundryApiVersion,
+} from '../catalogs/foundry';
 export {
   GOOGLE_CHAT_MODELS,
   GOOGLE_BASE_URL,
