@@ -87,7 +87,7 @@ describe('every one-shot chat call names its deadline', () => {
   // Foundry takes https endpoints only, so it gets one of its own.
   it(`foundry: { timeoutMs: ${PROVIDER_TIMEOUTS.chatRelay} }`, async () => {
     const opts = await lastOpts(() =>
-      foundryChatAdapter.chat({ ...base, baseUrl: 'https://res.openai.azure.com' }),
+      foundryChatAdapter.chat({ ...base, baseUrl: 'https://foundry-a.example.invalid' }),
     );
     expect(opts).toEqual({ timeoutMs: PROVIDER_TIMEOUTS.chatRelay });
   });
@@ -116,7 +116,7 @@ describe('every stream says its deadline covers the headers only', () => {
   it('foundry', async () => {
     const opts = await lastOpts(() =>
       foundryChatAdapter.chatStream!(
-        { ...base, baseUrl: 'https://res.openai.azure.com' },
+        { ...base, baseUrl: 'https://foundry-a.example.invalid' },
         () => {},
       ),
     );

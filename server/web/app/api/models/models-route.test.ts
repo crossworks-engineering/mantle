@@ -13,7 +13,7 @@ const TEAM = '22222222-2222-4222-8222-222222222222';
 const OPENAI = '44444444-4444-4444-8444-444444444444';
 const THEIRS = '55555555-5555-4555-8555-555555555555';
 const FOUNDRY = '77777777-7777-4777-8777-777777777777';
-const FOUNDRY_ROOT = 'https://res-example.openai.azure.com';
+const FOUNDRY_ROOT = 'https://foundry-a.example.invalid';
 
 const VAULT: Record<
   string,

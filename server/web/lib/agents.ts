@@ -23,6 +23,7 @@ import {
 } from '@mantle/db';
 import { CHATTABLE_ROLES } from '@mantle/runtime/assistant';
 import { chatRouteKeyRefusal } from '@mantle/runtime/agent';
+import type { ProviderCredential } from '@mantle/voice';
 import {
   parseAgentThinkingEffort,
   type AgentThinkingEffort,
@@ -167,21 +168,25 @@ export async function getAgent(userId: string, id: string): Promise<AgentSummary
 
 /**
  * The host an agent's chat calls go to, for the owner's one-off test calls
- * (agent Test chat, the Studio sandbox): its base URL and tailnet flag, or
- * none, when the login that paired them with the agent's key may no longer
- * send it there (@mantle/runtime chatRouteKeyRefusal, the gate a real turn
- * passes). Null when the agent is not the owner's.
+ * (agent Test chat, the Studio sandbox), as a real turn sends them
+ * (@mantle/runtime responder-loop): its base URL and tailnet flag, and the
+ * credential to send. When the login that paired the host with the agent's
+ * key may no longer send it there (chatRouteKeyRefusal), a `local` agent
+ * runs keyless and any other is refused. Null when the agent is not the
+ * owner's.
  */
 export async function agentChatHost(
   userId: string,
   id: string,
+  credential: ProviderCredential,
 ): Promise<
-  | { ok: true; baseUrl: string | undefined; viaTailnet: boolean }
+  | { ok: true; baseUrl: string | undefined; viaTailnet: boolean; credential: ProviderCredential }
   | { ok: false; refusal: string }
   | null
 > {
   const [row] = await db
     .select({
+      provider: agents.provider,
       baseUrl: agents.baseUrl,
       viaTailnet: agents.viaTailnet,
       configuredBy: agents.configuredBy,
@@ -191,8 +196,13 @@ export async function agentChatHost(
     .limit(1);
   if (!row) return null;
   const refusal = await chatRouteKeyRefusal(userId, row);
-  if (refusal) return { ok: false, refusal };
-  return { ok: true, baseUrl: row.baseUrl?.trim() || undefined, viaTailnet: row.viaTailnet };
+  if (refusal && row.provider !== 'local') return { ok: false, refusal };
+  return {
+    ok: true,
+    baseUrl: row.baseUrl?.trim() || undefined,
+    viaTailnet: row.viaTailnet,
+    credential: refusal ? { apiKey: 'local' } : credential,
+  };
 }
 
 /**

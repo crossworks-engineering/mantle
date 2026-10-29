@@ -62,6 +62,7 @@ import { scrubThinkBlocks } from './think-scrubber';
 import { env } from '@mantle/config';
 import { PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch, type ProviderFetchOptions } from './provider-fetch';
+import { tailnetFetch } from './tailnet';
 
 const PROVIDER = 'foundry';
 
@@ -95,6 +96,21 @@ function foundryFetch(
   opts?: ProviderFetchOptions,
 ): Promise<Response> {
   return providerFetch(url, { ...init, redirect: 'error' }, opts);
+}
+
+/** The same through the Tailscale proxy, for a route flagged `viaTailnet`
+ *  (a gateway in front of the resource reachable only on the tailnet). */
+function foundryTailnetFetch(
+  url: string,
+  init?: RequestInit,
+  opts?: ProviderFetchOptions,
+): Promise<Response> {
+  return tailnetFetch(url, { ...init, redirect: 'error' }, opts);
+}
+
+/** The fetch for a call's route. */
+function fetchFor(opts: ChatOptions) {
+  return opts.viaTailnet ? foundryTailnetFetch : foundryFetch;
 }
 
 function headers(apiKey: string): Record<string, string> {
@@ -167,16 +183,21 @@ export function paramFix(err: unknown, req: FoundryRequest): FoundryRequest | nu
     refused &&
     /reasoning_effort/.test(text)
   ) {
-    const { reasoning_effort: _r, max_completion_tokens: mct, ...rest } = extra;
+    const { reasoning_effort: _r, ...rest } = extra;
+    // Our own `low` from the max_tokens swap: the model wants
+    // max_completion_tokens, so the budget stays there.
+    if (done.has('to_completion')) return made('effort', { o, extra: rest });
+    const { max_completion_tokens: mct, ...noBudget } = rest;
     return made('effort', {
       o: typeof mct === 'number' ? { ...o, maxTokens: mct } : o,
-      extra: rest,
+      extra: noBudget,
     });
   }
   if (
     !done.has('to_completion') &&
     !done.has('to_tokens') &&
     typeof o.maxTokens === 'number' &&
+    refused &&
     /max_completion_tokens/.test(text)
   ) {
     const { maxTokens, ...rest } = o;
@@ -251,7 +272,7 @@ async function foundryChat(opts: ChatOptions): Promise<ChatResult> {
       ...extra,
       ...(o.extra ?? {}),
     };
-    const res = await foundryFetch(
+    const res = await fetchFor(opts)(
       url,
       {
         method: 'POST',
@@ -301,7 +322,7 @@ async function foundryChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pr
         headers: headers(opts.apiKey),
         provider: PROVIDER,
         bodyExtra: extra,
-        fetchImpl: foundryFetch,
+        fetchImpl: fetchFor(opts),
       },
       onDelta,
     ),
