@@ -37,7 +37,7 @@ vi.mock('@mantle/db/viewer', async (importOriginal) => ({
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  scopeHoldsAdmin: async () => h.holdsAdmin,
+  adminOrSystemScope: async () => !h.scope || h.holdsAdmin,
 }));
 
 vi.mock('@mantle/decisions', () => ({

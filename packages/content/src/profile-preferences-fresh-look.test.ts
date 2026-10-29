@@ -32,7 +32,7 @@ vi.mock('@mantle/db', () => {
     resolveSingleOwnerId: async () => null,
     // No scope here (W7a: an Admin scope reads the owner's row by a reason).
     currentWorkspaceScope: () => null,
-    scopeHoldsAdmin: async () => true,
+    adminOrSystemScope: async () => true,
     asSystem: <T>(fn: () => Promise<T>) => fn(),
     // No narrow exit here: a full-route spot runs its work as it is.
     onFullSystemRoute: <T>(_spot: string, fn: () => PromiseLike<T>) => Promise.resolve(fn()),

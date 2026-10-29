@@ -162,8 +162,8 @@ Owner rules:
   Change a mode only with `mantle_set_actor_check` or `mantle_set_edit_check` (they switch the
   triggers with the setting), as the superuser that runs migrations
   ([update-prod.md](./update-prod.md), "The checks' floor").
-- **Fail closed**: unscoped, `scopeHoldsAdmin` and `scopeHasArea` say yes to system work only and
-  throw otherwise; a scoped typed write to a table the write role holds no right on is refused
+- **Fail closed**: unscoped, `scopeHoldsAdmin`, `adminOrSystemScope` and `scopeHasArea` say yes to
+  system work only and throw otherwise; a scoped typed write to a table the write role holds no right on is refused
   before it is sent, unless its matrix row names `scopedSystemWrite` (a login's write; pin
   `scopedSystemWriteTables`), and a raw one goes to the write role, which refuses it; an unlisted
   exit and an off-list `systemDb` caller throw in production too ([fail-open.md](./fail-open.md)).

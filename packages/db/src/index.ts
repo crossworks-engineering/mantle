@@ -89,6 +89,7 @@ export {
 } from './gateway/heads';
 export { afterOuterRollback, afterOuterCommit } from './gateway/role-tx';
 export { ACTOR_CHECK_DRIFT_SQL, EDIT_CHECK_DRIFT_SQL } from './gateway/check-mode';
+export { adminOrSystemScope } from './gateway/scope-answers';
 export { appHolderHomes, assertAppRunWriteHome } from './app-holder-homes';
 export {
   appRunHolders,

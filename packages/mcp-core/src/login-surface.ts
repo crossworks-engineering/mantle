@@ -37,11 +37,8 @@ import {
   loginActor,
   runAsActor,
   loginScopeFor,
-  scopeHasArea,
-  scopeHoldsAdmin,
   withTurnScope,
   type PolicyRef,
-  type ScopeArea,
   type Tool,
   type WorkspaceScope,
   markCallAudited,
@@ -52,6 +49,7 @@ import {
   listLoginConnectorTools,
   loginConnectorRefused,
   mcpBuiltinToolRef,
+  scopeAdminView,
   type AdminGateView,
   type LoginMcpChannel,
   type ToolSurface,
@@ -177,14 +175,7 @@ export type PreparedCallerTools = {
 async function gateViewFor(loginId: string): Promise<AdminGateView> {
   const scope = await loginScopeFor(loginId);
   if (scope.ws.length === 0) return { holdsAdmin: false, areas: new Set() };
-  return withTurnScope(scope, async () => {
-    const holdsAdmin = await scopeHoldsAdmin();
-    const areas = new Set<ScopeArea>();
-    if (holdsAdmin) {
-      for (const a of SCOPE_AREAS) if (await scopeHasArea(a)) areas.add(a);
-    }
-    return { holdsAdmin, areas };
-  });
+  return withTurnScope(scope, () => scopeAdminView(SCOPE_AREAS));
 }
 
 export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCallerTools> {

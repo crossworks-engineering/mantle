@@ -44,8 +44,6 @@ import {
   loginActorNow,
   loginScopeFor,
   runAsActor,
-  scopeHasArea,
-  scopeHoldsAdmin,
   systemActor,
   type Actor,
   type PendingOrigin,
@@ -56,6 +54,7 @@ import {
 } from '@mantle/db';
 import { currentWorkspaceScope, scopeLeftForSystem } from '@mantle/db/viewer';
 import { defineDomainError } from '@mantle/std';
+import { scopeAdminView } from './admin-gate';
 import { CONNECTOR_WRITE_ERROR } from './connector-scope';
 import { gateCallerFor, pendingCaller, type ToolCaller } from './gate-callers';
 import {
@@ -248,11 +247,9 @@ export type OriginApproval = Readonly<{
 async function adminNarrowed(run: OriginRun): Promise<string[]> {
   const cap = run.adminCap;
   if (!run.scope || !cap?.holds) return [];
-  if (!(await scopeHoldsAdmin())) return ['admin'];
-  for (const area of cap.areas) {
-    if (!(await scopeHasArea(area as ScopeArea))) return ['areas'];
-  }
-  return [];
+  const now = await scopeAdminView(cap.areas as ScopeArea[]);
+  if (!now.holdsAdmin) return ['admin'];
+  return cap.areas.every((a) => now.areas.has(a as ScopeArea)) ? [] : ['areas'];
 }
 
 /**

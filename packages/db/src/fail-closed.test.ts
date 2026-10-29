@@ -12,7 +12,7 @@ import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { loginActor, runAsActor, runAsSystem, runWithoutActor, type Actor } from './actor';
 import { closeDb } from './gateway/pools';
 import { db } from './gateway/handles';
-import { scopeHasArea, scopeHoldsAdmin } from './gateway/scope-answers';
+import { adminOrSystemScope, scopeHasArea, scopeHoldsAdmin } from './gateway/scope-answers';
 import { actorCheckMisses, itemMarks, nodes } from './schema';
 import {
   asSystem,
@@ -45,6 +45,27 @@ describe('scopeHoldsAdmin outside every scope', () => {
   it('a system actor: yes, the route that yes is for', async () => {
     await runAsSystem('worker:fail-closed-test', async () => {
       expect(await scopeHoldsAdmin()).toBe(true);
+    });
+  });
+});
+
+describe('adminOrSystemScope outside every workspace scope', () => {
+  // The one answer of "system work or an Admin scope": its system yes is
+  // system work's only, as scopeHoldsAdmin's is. A commit's history copy,
+  // an email attachment's bytes and the outside-Admin reading once said yes
+  // here with no system actor bound; now they throw.
+  it('no actor bound, or a login actor with no scope: throws', async () => {
+    await runWithoutActor(async () => {
+      await expect(adminOrSystemScope()).rejects.toBeInstanceOf(SystemWorkRequiredError);
+    });
+    await runAsActor(loginActor(LOGIN), async () => {
+      await expect(adminOrSystemScope()).rejects.toBeInstanceOf(SystemWorkRequiredError);
+    });
+  });
+
+  it('a system actor: yes', async () => {
+    await runAsSystem('worker:fail-closed-test', async () => {
+      expect(await adminOrSystemScope()).toBe(true);
     });
   });
 });

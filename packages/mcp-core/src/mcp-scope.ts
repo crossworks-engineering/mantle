@@ -21,13 +21,13 @@
 import {
   AccessError,
   loginScopeFor,
-  scopeHasArea,
-  scopeHoldsAdmin,
   withTurnScope,
   type AdminView,
   type PolicyScope,
+  type ScopeArea,
 } from '@mantle/db';
 import { NO_SCOPE_ERROR } from '@mantle/std';
+import { scopeAdminView } from '@mantle/tools';
 
 /** The refusal when the login holds no workspace at all: the gate's own
  *  no-scope refusal (@mantle/std NO_SCOPE_ERROR, one constant, in the
@@ -65,12 +65,5 @@ export async function mcpAdminView(loginId: string, need: PolicyScope): Promise<
   const scope = await loginScopeFor(loginId);
   const area = typeof need === 'object' ? need.area : null;
   if (scope.ws.length === 0) return { holdsAdmin: false, areas: new Set() };
-  return withTurnScope(scope, async () => {
-    const holdsAdmin = await scopeHoldsAdmin();
-    const areas = new Set<string>();
-    if (holdsAdmin && area && (await scopeHasArea(area as Parameters<typeof scopeHasArea>[0]))) {
-      areas.add(area);
-    }
-    return { holdsAdmin, areas };
-  });
+  return withTurnScope(scope, () => scopeAdminView(area ? [area as ScopeArea] : []));
 }

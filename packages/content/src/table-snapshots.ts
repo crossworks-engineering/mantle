@@ -30,18 +30,18 @@ import { existsSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import {
+  adminOrSystemScope,
   assertItemRight,
   db,
   inFlipTransaction,
   nodeSnapshots,
   nodes,
-  scopeHoldsAdmin,
   snapshotBytesUsed,
   StoreRefusedError,
   systemStep,
   tables,
 } from '@mantle/db';
-import { currentSpaceScope, isSystemScope } from '@mantle/db/viewer';
+import { currentSpaceScope } from '@mantle/db/viewer';
 import { resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
 import { defineDomainError } from '@mantle/std';
 import type { TableSnapshot } from '@mantle/client-types';
@@ -124,7 +124,7 @@ function snapshotAbsPath(rel: string): string {
  */
 export async function historyKept(): Promise<boolean> {
   if (currentSpaceScope() !== null) return false;
-  return isSystemScope() || (await scopeHoldsAdmin());
+  return adminOrSystemScope();
 }
 
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];

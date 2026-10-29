@@ -204,6 +204,7 @@ export {
   callerHasArea,
   isAdminGateRefusal,
   runGated,
+  scopeAdminView,
   type AdminGateView,
 } from './admin-gate';
 export {

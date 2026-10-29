@@ -11,14 +11,7 @@
  * agent made that the owner has not published yet, and maps with no cards.
  */
 import { and, asc, eq, ilike, inArray, isNotNull, or, sql } from 'drizzle-orm';
-import {
-  db,
-  itemReadByWorkspace,
-  loginHoldsAdmin,
-  nodes,
-  recallMaps,
-  recallNodes,
-} from '@mantle/db';
+import { db, itemReadByWorkspace, nodes, recallMaps, recallNodes } from '@mantle/db';
 import {
   getRecallCard,
   listRecallRevisions,
@@ -32,6 +25,8 @@ import type {
   RecallNodeDTO,
   RecallRevisionDTO,
 } from '@mantle/client-types';
+import { adminFacts } from '@/lib/auth/login';
+import { ownerUserLogin, type SessionUser } from '@/lib/auth/session';
 
 type MapRow = typeof recallMaps.$inferSelect;
 
@@ -165,18 +160,19 @@ export async function getRecallMapDetail(
 /**
  * Who writes a map through the HTTP routes. The owner's acts on a map (publish it, confirm or drop a prompt,
  * restore a revision, change a slug, reorder or delete it) stay with the
- * Admin users, as on MCP, where those tools are owner-only and never reach a
- * login outside Admin (admin-gate.ts). Any other login writes as an editor
+ * Admin users (adminFacts of the owner the handler read, ownerUserLogin:
+ * the login's scope answers it), as on MCP, where those tools are
+ * owner-only and never reach a login outside Admin (admin-gate.ts). Any
+ * other login writes as an editor
  * ('agent' in the revision log, the same as the recall_* write tools): its
  * map starts as a draft and its edit of a confirmed prompt waits for an
  * Admin user to confirm it again. The log names the real login (id and
  * name), never the owner.
  */
-export async function recallActorOf(user: {
-  actor: { id: string; displayName?: string | null };
-}): Promise<RecallActor> {
+export async function recallActorOf(user: SessionUser): Promise<RecallActor> {
+  const login = ownerUserLogin(user);
   return {
-    kind: (await loginHoldsAdmin(user.actor.id)) ? 'owner' : 'agent',
+    kind: login && (await adminFacts(login)).admin ? 'owner' : 'agent',
     id: user.actor.id,
     name: user.actor.displayName ?? null,
   };

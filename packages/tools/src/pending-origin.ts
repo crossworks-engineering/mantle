@@ -55,8 +55,6 @@ import {
   currentRequestMode,
   liveWorkspaceIds,
   loginScopeFor,
-  scopeHasArea,
-  scopeHoldsAdmin,
   SCOPE_AREAS,
   withoutLeftScope,
   withTurnScope,
@@ -65,6 +63,7 @@ import {
   type WorkspaceScope,
 } from '@mantle/db';
 import { currentWorkspaceScope, turnScopeWrites } from '@mantle/db/viewer';
+import { scopeAdminView } from './admin-gate';
 import type { ToolHandlerContext } from './types';
 
 /** What the approval reads off the stamp: the scope to judge and run the
@@ -147,13 +146,6 @@ function stampSurface(surface: ToolHandlerContext['surface']): PendingOrigin['su
   };
 }
 
-/** The Admin areas the current scope may do (scopeHasArea), in order. */
-async function scopeAreas(): Promise<string[]> {
-  const out: string[] = [];
-  for (const area of SCOPE_AREAS) if (await scopeHasArea(area)) out.push(area);
-  return out;
-}
-
 /**
  * The stamp of a call queued now, from the scope the queuing turn runs in.
  * Asked by every path that queues a turn's call: the
@@ -168,7 +160,7 @@ export async function pendingOriginNow(
   const empty = { ...base, scope: null, enter: null, writes: false, admin: null } as const;
   if (ws?.kind === 'link') return { ...empty, link: true, actor: stampActor() };
   if (!ws) return { ...empty, actor: stampActor() };
-  const holds = await scopeHoldsAdmin();
+  const view = await scopeAdminView(SCOPE_AREAS);
   return {
     ...base,
     scope: {
@@ -179,7 +171,7 @@ export async function pendingOriginNow(
     },
     enter: 'turn',
     writes: currentRequestMode()?.writes === true,
-    admin: { holds, areas: holds ? await scopeAreas() : [] },
+    admin: { holds: view.holdsAdmin, areas: [...view.areas] },
     actor: stampActor(),
   };
 }

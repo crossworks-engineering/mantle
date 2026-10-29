@@ -1762,7 +1762,7 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
     if (route === UNROUTED) return unroutedRefusal();
     if (route === OUTSIDE) return loginRefused(false);
     const who: OwnerRouteLogin = { user: res.user, source: res.source, member: memberOf(res) };
-    ownerLogins.set(who, answeredLogin(res));
+    noteOwnerLogin(who, answeredLogin(res));
     if (memberOpenRead(route)) {
       await enterLoginScope(res.loginId, requestMode(true));
       return who;
@@ -1777,7 +1777,7 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
   if (refused) return refused;
   await auditMutation(res.user);
   const who: OwnerRouteLogin = { user: res.user, source: res.source, member: null };
-  ownerLogins.set(who, answeredLogin(res));
+  noteOwnerLogin(who, answeredLogin(res));
   return who;
 }
 
@@ -1785,6 +1785,25 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
  *  very answer, which the pipeline keeps): what ownerLoginCaller() reads,
  *  so a handler asks adminFacts(login). */
 const ownerLogins = new WeakMap<OwnerRouteLogin, Login>();
+/** The same Login, keyed on the answer's very user object (what
+ *  ownerCaller() hands a handler): ownerUserLogin. */
+const ownerUserLogins = new WeakMap<SessionUser, Login>();
+
+function noteOwnerLogin(who: OwnerRouteLogin, login: Login): void {
+  ownerLogins.set(who, login);
+  ownerUserLogins.set(who.user, login);
+}
+
+/**
+ * The Login of the owner a handler read with ownerCaller(), from that very
+ * user object: a projection of what the handler already read, never a read
+ * of the pipeline, so a helper the handler passes its user to can ask
+ * adminFacts(login). Null for a user no owner answer gave (a copy, a
+ * stand-in): the helper answers as for a login without the facts.
+ */
+export function ownerUserLogin(user: SessionUser): Login | null {
+  return ownerUserLogins.get(user) ?? null;
+}
 
 // ── The request scope ───────────────────────────────────────────────────────
 

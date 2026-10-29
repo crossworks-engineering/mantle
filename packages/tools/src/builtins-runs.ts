@@ -15,15 +15,7 @@
  */
 import { currentTrace } from '@mantle/tracing';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import {
-  agentGroups,
-  agents,
-  db,
-  onFullSystemRoute,
-  runItems,
-  runs,
-  scopeHasArea,
-} from '@mantle/db';
+import { agentGroups, agents, db, onFullSystemRoute, runItems, runs } from '@mantle/db';
 import {
   appendChildren,
   applyAuditVerdict,
@@ -263,17 +255,11 @@ const DISABLED_ERROR =
 
 /** run_* is a responder affordance: a delegated child agent must not open
  *  side channels of queued work its parent never sees. A turn below admin
- *  (a member's or a client's) is refused too: a run's items execute later on
- *  the admin pool, which would read past the turn's level. */
+ *  (a member's or a client's) never gets here: a run's items execute later
+ *  on the admin pool, which would read past the turn's level, so each run
+ *  tool's policy names the assistants area and the gate's Admin step
+ *  refuses a scope without it. */
 async function refuseIfDelegated(ctx: ToolHandlerContext): Promise<ToolHandlerResult | null> {
-  if (!(await scopeHasArea('assistants'))) {
-    return {
-      ok: false,
-      error:
-        'run tools work at admin level only, and this turn runs below it. ' +
-        'Do the work inline with ordinary tool calls instead.',
-    };
-  }
   if (ctx.agent && ctx.agent.depth > 1) {
     return {
       ok: false,
@@ -647,7 +633,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',
-      scope: 'admin',
+      scope: { area: 'assistants', adminOnly: true },
       // A run queues tool calls and workers that execute later as the owner,
       // outside a key's or peer's narrowing.
       peerRisky: true,
@@ -778,7 +764,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',
-      scope: 'admin',
+      scope: { area: 'assistants', adminOnly: true },
       // A run queues tool calls and workers that execute later as the owner,
       // outside a key's or peer's narrowing.
       peerRisky: true,
@@ -887,7 +873,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       matrix: { none: 'a run is not an item' },
       effect: 'read',
       spends: 'none',
-      scope: 'admin',
+      scope: { area: 'assistants', adminOnly: true },
       recipe: { runItem: 'banned' },
     },
     name: 'Inspect runs',
@@ -955,7 +941,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',
-      scope: 'admin',
+      scope: { area: 'assistants', adminOnly: true },
       recipe: { runItem: 'banned' },
       clientSourced: CS.free('stops work'),
     },
@@ -987,7 +973,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',
-      scope: 'admin',
+      scope: { area: 'assistants', adminOnly: true },
       recipe: { runItem: 'banned' },
       clientSourced: CS.always(CS.LATER),
     },

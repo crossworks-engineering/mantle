@@ -35,11 +35,10 @@
 
 import { and, eq } from 'drizzle-orm';
 import {
+  adminOrSystemScope,
   asSystem,
   db,
   heartbeats,
-  scopeHasArea,
-  scopeHoldsAdmin,
   withTurnScope,
   type Heartbeat,
   onFullSystemRoute,
@@ -51,7 +50,6 @@ import {
   scopeLeftForSystem,
 } from '@mantle/db/viewer';
 import {
-  adminAreaError,
   areaSystem,
   ownerSurfaceLoginId,
   registerBuiltin,
@@ -78,13 +76,13 @@ import {
  * turn scope) reaches only the row of the heartbeat that is firing
  * (resolveTargetHeartbeat refuses any other), on the system pool with a
  * named reason. In a scope that holds Admin (the Admin assistant): every
- * owner's heartbeat, on the system pool after the assistants area check
- * (resolveTargetHeartbeat). Outside a workspace scope: the caller's own
- * read.
+ * owner's heartbeat, through the assistants area's system door
+ * (areaSystem: it asks the area, and refuses a scope without it in the
+ * gate's words). Outside a workspace scope: the caller's own read.
  */
 async function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {
   if (!currentWorkspaceScope()) return fn();
-  if (await scopeHoldsAdmin()) return asSystem(fn, 'admin-area');
+  if (await adminOrSystemScope()) return areaSystem('assistants', fn);
   return asSystem(fn, 'heartbeat-own-row');
 }
 
@@ -144,12 +142,7 @@ async function resolveTargetHeartbeat(
   ownerId: string,
 ): Promise<{ ok: true; hb: Heartbeat; via: 'slug' | 'als' } | { ok: false; error: string }> {
   const slugInput = typeof input.slug === 'string' && input.slug.trim() ? input.slug.trim() : null;
-  const scoped = currentWorkspaceScope() !== null;
-  const adminScope = scoped && (await scopeHoldsAdmin());
-  if (adminScope && !(await scopeHasArea('assistants'))) {
-    return { ok: false, error: adminAreaError('assistants') };
-  }
-  if (scoped && !adminScope) {
+  if (currentWorkspaceScope() && !(await adminOrSystemScope())) {
     // A workspace turn: only the heartbeat that is firing, never another.
     const firing = currentHeartbeat();
     if (!firing || (slugInput && slugInput !== firing.slug)) {

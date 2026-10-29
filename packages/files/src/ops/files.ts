@@ -63,7 +63,7 @@ import {
   itemHomeSql,
   mayEditSql,
   itemWriteVerdicts,
-  scopeHoldsAdmin,
+  adminOrSystemScope,
   systemStep,
   textArraySql,
   trailForCaller,
@@ -676,7 +676,7 @@ async function storageBytesForNode(nodeId: string): Promise<Buffer | null> {
   // would stop partway). The caller read the
   // file node first (readFileById, openFileById: the item check); the
   // attachment row and its object are the named system step.
-  if (!isSystemScope() && !(await scopeHoldsAdmin())) return null;
+  if (!(await adminOrSystemScope())) return null;
   return systemStep('attachment-bytes', { items: [nodeId], need: 'read' }, async () => {
     const [attachment] = await db
       .select({ storageKey: emailAttachments.storageKey })

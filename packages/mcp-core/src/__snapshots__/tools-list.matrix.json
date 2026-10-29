@@ -529,7 +529,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "321fa15121ea92a2efbe462a1cd30eadb63f375026a0a02bba3baba431000ba3",
+  "sha256": "796df818af9723ce6ce8471bc7b08a5f6ebab36b530fc1058e3b5d5e004cf8c8",
   "names": [
    "tree_list",
    "search",
@@ -788,11 +788,6 @@
    "node_share",
    "node_unshare",
    "invoke_agent",
-   "run_plan",
-   "run_append",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -808,7 +803,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "050f8552c37384811f636d600d4bb2c612d13a51c02dbde9854ddb18b2c0152d",
+  "sha256": "4a8389abecb0c22f3ca155a61b3bb635d0eda596633e9bbb8ad8d9a45d70c1a9",
   "names": [
    "tree_list",
    "search",
@@ -1054,11 +1049,6 @@
    "node_share",
    "node_unshare",
    "invoke_agent",
-   "run_plan",
-   "run_append",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -1471,7 +1461,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "b64fec358f53239de7ed97208bf9540e8d5ad76675cf626c083dbfc97fe5c0e3",
+  "sha256": "bf897bb87474c4d5137efcb58b853aa240648c19fbe9dcef3624781c353b5f6b",
   "names": [
    "tree_list",
    "search",
@@ -1668,9 +1658,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -1682,7 +1669,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "3128e9d1d54ae79bc98f902b684e079854bad1f68e473d108579818180ffc410",
+  "sha256": "31aa8fb57681a16acf83a6ad6b844d67bb52ece354cdcde0d7b3ead7d6685017",
   "names": [
    "tree_list",
    "search",
@@ -1878,9 +1865,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -2467,7 +2451,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "b64fec358f53239de7ed97208bf9540e8d5ad76675cf626c083dbfc97fe5c0e3",
+  "sha256": "bf897bb87474c4d5137efcb58b853aa240648c19fbe9dcef3624781c353b5f6b",
   "names": [
    "tree_list",
    "search",
@@ -2664,9 +2648,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -2678,7 +2659,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "3128e9d1d54ae79bc98f902b684e079854bad1f68e473d108579818180ffc410",
+  "sha256": "31aa8fb57681a16acf83a6ad6b844d67bb52ece354cdcde0d7b3ead7d6685017",
   "names": [
    "tree_list",
    "search",
@@ -2874,9 +2855,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -3290,7 +3268,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "26393cbe0af108328b8c78d44111bdc80eaca96c423f05191ca119f9905e115d",
+  "sha256": "3b38012c222d526bd5f807e6292c095a356e16b4b9c61212e3778ef883f1e49a",
   "names": [
    "tree_list",
    "search",
@@ -3488,9 +3466,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -3502,7 +3477,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "68fd09b1727a91ef093cfb4f9960ddcf48a138f10345d690de150b8295947672",
+  "sha256": "0344fe76aa4de61e0f814b371f09772a6045740b0b2bc40ee8a7a975b319c902",
   "names": [
    "tree_list",
    "search",
@@ -3699,9 +3674,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -3911,7 +3883,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "cac5928a3d18e120727259fdc26d91d50e682b48aa260e52b5926a83ce29f88a",
+  "sha256": "de5bd2c037b4b77198cb35165e4d9249e9a831deecbf16a2db35d3e01efd0515",
   "names": [
    "tree_list",
    "search",
@@ -4005,13 +3977,12 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
  },
  "admin/oauth/ro/null/[]/true:": {
-  "sha256": "cbbe965c164d8c523e6cbe3fbfe422028b4270b289c7d315c3614a4493703c26",
+  "sha256": "f7eb802d66155826af4b32528edc6b7872999e36776ebf3a331412f5dc61fbae",
   "names": [
    "tree_list",
    "search",
@@ -4101,7 +4072,6 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
@@ -4294,7 +4264,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "7e7309cbab0c7980dbf20d922367b07dc904b487100e4e9c0c1483a142533ae6",
+  "sha256": "aecacebcbd4c9e913a7aeb7ebe24cf93aad480bd407af3f993e309d9b2d75fea",
   "names": [
    "tree_list",
    "search",
@@ -4382,13 +4352,12 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
  },
  "admin/key/ro/null/[]/true:": {
-  "sha256": "1dd52f87b48dce6409b9da54ed25fdf6cff53f9d9c384df97b95602588d7601c",
+  "sha256": "e7f598b814dd433501a258137cf58cfc1a898bb5ff5b7f564ce54bdd48dbd929",
   "names": [
    "tree_list",
    "search",
@@ -4475,7 +4444,6 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
@@ -4776,7 +4744,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "7e7309cbab0c7980dbf20d922367b07dc904b487100e4e9c0c1483a142533ae6",
+  "sha256": "aecacebcbd4c9e913a7aeb7ebe24cf93aad480bd407af3f993e309d9b2d75fea",
   "names": [
    "tree_list",
    "search",
@@ -4864,13 +4832,12 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[]/true:": {
-  "sha256": "1dd52f87b48dce6409b9da54ed25fdf6cff53f9d9c384df97b95602588d7601c",
+  "sha256": "e7f598b814dd433501a258137cf58cfc1a898bb5ff5b7f564ce54bdd48dbd929",
   "names": [
    "tree_list",
    "search",
@@ -4957,7 +4924,6 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
@@ -5150,7 +5116,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "7e7309cbab0c7980dbf20d922367b07dc904b487100e4e9c0c1483a142533ae6",
+  "sha256": "aecacebcbd4c9e913a7aeb7ebe24cf93aad480bd407af3f993e309d9b2d75fea",
   "names": [
    "tree_list",
    "search",
@@ -5238,13 +5204,12 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "1dd52f87b48dce6409b9da54ed25fdf6cff53f9d9c384df97b95602588d7601c",
+  "sha256": "e7f598b814dd433501a258137cf58cfc1a898bb5ff5b7f564ce54bdd48dbd929",
   "names": [
    "tree_list",
    "search",
@@ -5331,7 +5296,6 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
@@ -5866,7 +5830,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "321fa15121ea92a2efbe462a1cd30eadb63f375026a0a02bba3baba431000ba3",
+  "sha256": "796df818af9723ce6ce8471bc7b08a5f6ebab36b530fc1058e3b5d5e004cf8c8",
   "names": [
    "tree_list",
    "search",
@@ -6125,11 +6089,6 @@
    "node_share",
    "node_unshare",
    "invoke_agent",
-   "run_plan",
-   "run_append",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -6145,7 +6104,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "050f8552c37384811f636d600d4bb2c612d13a51c02dbde9854ddb18b2c0152d",
+  "sha256": "4a8389abecb0c22f3ca155a61b3bb635d0eda596633e9bbb8ad8d9a45d70c1a9",
   "names": [
    "tree_list",
    "search",
@@ -6391,11 +6350,6 @@
    "node_share",
    "node_unshare",
    "invoke_agent",
-   "run_plan",
-   "run_append",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -6808,7 +6762,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "b64fec358f53239de7ed97208bf9540e8d5ad76675cf626c083dbfc97fe5c0e3",
+  "sha256": "bf897bb87474c4d5137efcb58b853aa240648c19fbe9dcef3624781c353b5f6b",
   "names": [
    "tree_list",
    "search",
@@ -7005,9 +6959,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -7019,7 +6970,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "3128e9d1d54ae79bc98f902b684e079854bad1f68e473d108579818180ffc410",
+  "sha256": "31aa8fb57681a16acf83a6ad6b844d67bb52ece354cdcde0d7b3ead7d6685017",
   "names": [
    "tree_list",
    "search",
@@ -7215,9 +7166,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -7804,7 +7752,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "b64fec358f53239de7ed97208bf9540e8d5ad76675cf626c083dbfc97fe5c0e3",
+  "sha256": "bf897bb87474c4d5137efcb58b853aa240648c19fbe9dcef3624781c353b5f6b",
   "names": [
    "tree_list",
    "search",
@@ -8001,9 +7949,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -8015,7 +7960,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "3128e9d1d54ae79bc98f902b684e079854bad1f68e473d108579818180ffc410",
+  "sha256": "31aa8fb57681a16acf83a6ad6b844d67bb52ece354cdcde0d7b3ead7d6685017",
   "names": [
    "tree_list",
    "search",
@@ -8211,9 +8156,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -8627,7 +8569,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "26393cbe0af108328b8c78d44111bdc80eaca96c423f05191ca119f9905e115d",
+  "sha256": "3b38012c222d526bd5f807e6292c095a356e16b4b9c61212e3778ef883f1e49a",
   "names": [
    "tree_list",
    "search",
@@ -8825,9 +8767,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -8839,7 +8778,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "68fd09b1727a91ef093cfb4f9960ddcf48a138f10345d690de150b8295947672",
+  "sha256": "0344fe76aa4de61e0f814b371f09772a6045740b0b2bc40ee8a7a975b319c902",
   "names": [
    "tree_list",
    "search",
@@ -9036,9 +8975,6 @@
    "route_map",
    "set_timezone",
    "node_unshare",
-   "run_state",
-   "run_cancel",
-   "run_audit",
    "openrouter_rankings",
    "openrouter_benchmarks",
    "openrouter_task_classes",
@@ -9248,7 +9184,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "cac5928a3d18e120727259fdc26d91d50e682b48aa260e52b5926a83ce29f88a",
+  "sha256": "de5bd2c037b4b77198cb35165e4d9249e9a831deecbf16a2db35d3e01efd0515",
   "names": [
    "tree_list",
    "search",
@@ -9342,13 +9278,12 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
  },
  "member/oauth/ro/null/[]/true:": {
-  "sha256": "cbbe965c164d8c523e6cbe3fbfe422028b4270b289c7d315c3614a4493703c26",
+  "sha256": "f7eb802d66155826af4b32528edc6b7872999e36776ebf3a331412f5dc61fbae",
   "names": [
    "tree_list",
    "search",
@@ -9438,7 +9373,6 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
@@ -9631,7 +9565,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "7e7309cbab0c7980dbf20d922367b07dc904b487100e4e9c0c1483a142533ae6",
+  "sha256": "aecacebcbd4c9e913a7aeb7ebe24cf93aad480bd407af3f993e309d9b2d75fea",
   "names": [
    "tree_list",
    "search",
@@ -9719,13 +9653,12 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
  },
  "member/key/ro/null/[]/true:": {
-  "sha256": "1dd52f87b48dce6409b9da54ed25fdf6cff53f9d9c384df97b95602588d7601c",
+  "sha256": "e7f598b814dd433501a258137cf58cfc1a898bb5ff5b7f564ce54bdd48dbd929",
   "names": [
    "tree_list",
    "search",
@@ -9812,7 +9745,6 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
@@ -10113,7 +10045,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "7e7309cbab0c7980dbf20d922367b07dc904b487100e4e9c0c1483a142533ae6",
+  "sha256": "aecacebcbd4c9e913a7aeb7ebe24cf93aad480bd407af3f993e309d9b2d75fea",
   "names": [
    "tree_list",
    "search",
@@ -10201,13 +10133,12 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[]/true:": {
-  "sha256": "1dd52f87b48dce6409b9da54ed25fdf6cff53f9d9c384df97b95602588d7601c",
+  "sha256": "e7f598b814dd433501a258137cf58cfc1a898bb5ff5b7f564ce54bdd48dbd929",
   "names": [
    "tree_list",
    "search",
@@ -10294,7 +10225,6 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
@@ -10487,7 +10417,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "7e7309cbab0c7980dbf20d922367b07dc904b487100e4e9c0c1483a142533ae6",
+  "sha256": "aecacebcbd4c9e913a7aeb7ebe24cf93aad480bd407af3f993e309d9b2d75fea",
   "names": [
    "tree_list",
    "search",
@@ -10575,13 +10505,12 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "1dd52f87b48dce6409b9da54ed25fdf6cff53f9d9c384df97b95602588d7601c",
+  "sha256": "e7f598b814dd433501a258137cf58cfc1a898bb5ff5b7f564ce54bdd48dbd929",
   "names": [
    "tree_list",
    "search",
@@ -10668,7 +10597,6 @@
    "replay_window",
    "location_nearby",
    "location_distance",
-   "run_state",
    "tool_catalog",
    "mcp_crm_contacts_list"
   ]

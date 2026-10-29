@@ -34,8 +34,9 @@
  *    in a workspace scope, whether it holds Admin and the area asked;
  *    outside any, unscoped (null: the surface rules decide). Read only when
  *    the policy names an Admin step, and on every call: an area turned off
- *    mid-turn refuses the turn's next call. Only whether the scope holds
- *    Admin is kept per scope, by scopeHoldsAdmin itself;
+ *    mid-turn refuses the turn's next call (scopeAdminView, admin-gate.ts).
+ *    Only whether the scope holds Admin is kept per scope, by
+ *    scopeHoldsAdmin itself;
  *  - the create-home rule of an assistant scope that names its login (the
  *    turn rule, pinned against turnCreateHome by turn-gate-parity.test.ts),
  *    for a builtin only: a runtime row names no home (its recipe's steps
@@ -47,8 +48,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   currentActor,
-  scopeHasArea,
-  scopeHoldsAdmin,
   type AdminView,
   type CallerVia,
   type CreateAsk,
@@ -60,6 +59,7 @@ import {
   type WorkspaceScope,
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
+import { scopeAdminView } from './admin-gate';
 import { connectorScopeFacts, elevatedConnectorFacts } from './connector-scope';
 
 /** The dispatch entries. */
@@ -269,10 +269,7 @@ async function readAdminView(
   area: ScopeArea | null,
 ): Promise<AdminView | null> {
   if (!ws) return null;
-  const holdsAdmin = await scopeHoldsAdmin();
-  const areas = new Set<string>();
-  if (holdsAdmin && area && (await scopeHasArea(area))) areas.add(area);
-  return { holdsAdmin, areas };
+  return scopeAdminView(area ? [area] : []);
 }
 
 /** `view` no wider than `cap`: an approved call's Admin view

@@ -2,20 +2,21 @@
  * Whether the current code runs in a workspace scope that does not hold the
  * Admin workspace: a user's MCP scope outside Admin, or the
  * turn scope of a workspace other than Admin (a workspace assistant's turn,
- * its run, a delegated child of either). Unscoped work is not outside Admin.
+ * its run, a delegated child of either): the negation of adminOrSystemScope,
+ * so unscoped system work is not outside Admin.
  * One reading for the app tools' author ceiling and the delegation gateway
  * (a workspace turn delegates to the workspace delegates only), so the two
  * cannot drift. A leaf module: the turn assembly imports it with no tool
  * registry.
  */
-import { scopeHoldsAdmin } from '@mantle/db';
+import { adminOrSystemScope } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import type { DelegationTurn } from './invoke-agent-guards';
 import { isOwnerSurface } from './surface';
 import type { ToolHandlerContext } from './types';
 
 export async function scopeOutsideAdmin(): Promise<boolean> {
-  return currentWorkspaceScope() !== null && !(await scopeHoldsAdmin());
+  return !(await adminOrSystemScope());
 }
 
 /**

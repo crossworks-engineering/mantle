@@ -5,8 +5,9 @@
  * routes. Kept as a module so existing `@/lib/tools` imports stand.
  */
 
-import { loginHasArea } from '@mantle/db';
 import { SECRET_REFS_NEED_KEYS, vaultPairLoginRefusal } from '@mantle/tools';
+import { adminFacts } from '@/lib/auth/login';
+import { ownerUserLogin, type SessionUser } from '@/lib/auth/session';
 
 /**
  * The maker a Tools route records on a tool it writes (tools.created_by):
@@ -21,15 +22,13 @@ export function toolMakerFor(user: { id: string; actor: { id: string } }): strin
  * Why the signed-in login may not write a template that sends a vault key
  * (a {{secret:...}} or {{oauth:...}} ref, or an OAuth2 group's token URL or
  * base URL), or null: that is the keys area's (@mantle/tools
- * secret-ref-gate.ts). The brain owner always may.
+ * secret-ref-gate.ts), as the login's scope answers it (adminFacts of the
+ * owner the handler read, ownerUserLogin). The brain owner always may.
  */
-export async function keysAreaRefusal(user: {
-  id: string;
-  actor: { id: string };
-}): Promise<string | null> {
-  const maker = toolMakerFor(user);
-  if (!maker) return null;
-  return (await loginHasArea(maker, 'keys')) ? null : SECRET_REFS_NEED_KEYS;
+export async function keysAreaRefusal(user: SessionUser): Promise<string | null> {
+  if (!toolMakerFor(user)) return null;
+  const login = ownerUserLogin(user);
+  return login && (await adminFacts(login)).areas.has('keys') ? null : SECRET_REFS_NEED_KEYS;
 }
 
 /**

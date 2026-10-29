@@ -39,10 +39,7 @@ export const AS_SYSTEM_PINS = {
   'packages/db/src/system-step.ts': { count: 1, why: ['brain-bookkeeping'] },
   'packages/mcp-core/src/login-surface.ts': { count: 1, why: ['audit-log'] },
   'packages/runtime/src/agent/agent-viewer.ts': { count: 1, why: ['agent-workspace'] },
-  'packages/runtime/src/heartbeats/tools.ts': {
-    count: 2,
-    why: ['admin-area', 'heartbeat-own-row'],
-  },
+  'packages/runtime/src/heartbeats/tools.ts': { count: 1, why: ['heartbeat-own-row'] },
   'packages/search/src/index.ts': { count: 1, why: ['keyword-candidates'] },
   'packages/telegram/src/pairing.ts': { count: 1, why: ['login-telegram'] },
   'packages/tools/src/admin-gate.ts': { count: 1, why: ['admin-area'] },

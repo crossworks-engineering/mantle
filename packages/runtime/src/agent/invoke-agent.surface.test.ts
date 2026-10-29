@@ -44,8 +44,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
     ...actual,
     db: { select: () => chain },
     bumpAgentUsage: vi.fn(),
-    // The workspace turn's scope holds no Admin.
-    scopeHoldsAdmin: async () => false,
+    // A workspace turn's scope holds no Admin; unscoped system work does.
+    adminOrSystemScope: async () => !h.scope,
   };
 });
 vi.mock('@mantle/db/viewer', () => ({

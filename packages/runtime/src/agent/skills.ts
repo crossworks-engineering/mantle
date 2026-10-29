@@ -7,7 +7,7 @@
 
 import { and, eq, inArray } from 'drizzle-orm';
 import { toolServiceAvailable } from '@mantle/config';
-import { db, scopeHoldsAdmin, skills, toolGroups, type Skill } from '@mantle/db';
+import { adminOrSystemScope, db, skills, toolGroups, type Skill } from '@mantle/db';
 
 export type SkillForRuntime = {
   id: string;
@@ -124,7 +124,7 @@ export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): 
   // scope when it holds Admin; a level scope never). What a tool then reads
   // is the scope's. A connector group's call is checked in dispatch
   // (connectorCallRefused: a resource of the scope's workspace).
-  const adminScope = await scopeHoldsAdmin();
+  const adminScope = await adminOrSystemScope();
   const rows = await db
     .select({
       slug: toolGroups.slug,

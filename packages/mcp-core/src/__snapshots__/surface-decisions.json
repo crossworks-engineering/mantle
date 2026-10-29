@@ -4149,7 +4149,9 @@
   "adminOnly": true,
   "gate": {
    "effect": "write",
-   "scope": "admin",
+   "scope": {
+    "area": "assistants"
+   },
    "spends": "none",
    "creates": false,
    "keyArea": null,
@@ -4167,7 +4169,9 @@
   "adminOnly": true,
   "gate": {
    "effect": "write",
-   "scope": "admin",
+   "scope": {
+    "area": "assistants"
+   },
    "spends": "none",
    "creates": false,
    "keyArea": null,
@@ -4185,7 +4189,9 @@
   "adminOnly": true,
   "gate": {
    "effect": "write",
-   "scope": "admin",
+   "scope": {
+    "area": "assistants"
+   },
    "spends": "none",
    "creates": false,
    "keyArea": null,
@@ -4203,7 +4209,9 @@
   "adminOnly": true,
   "gate": {
    "effect": "write",
-   "scope": "admin",
+   "scope": {
+    "area": "assistants"
+   },
    "spends": "none",
    "creates": false,
    "keyArea": null,
@@ -4221,7 +4229,9 @@
   "adminOnly": true,
   "gate": {
    "effect": "read",
-   "scope": "admin",
+   "scope": {
+    "area": "assistants"
+   },
    "spends": "none",
    "creates": false,
    "keyArea": null,

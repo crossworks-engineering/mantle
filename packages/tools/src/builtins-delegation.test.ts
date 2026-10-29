@@ -57,7 +57,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return {
     ...actual,
     db: { ...actual.db, select: vi.fn(() => chain) },
-    scopeHoldsAdmin: vi.fn(async () => scope.holdsAdmin),
+    adminOrSystemScope: vi.fn(async () => !scope.open || scope.holdsAdmin),
   };
 });
 /** The turn's trace as the handler reads it (currentTrace). */

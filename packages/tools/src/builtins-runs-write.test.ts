@@ -98,6 +98,9 @@ import {
 import { resolveTools } from './resolve';
 import { paramsOf } from './test-support';
 import { RUN_TOOLS } from './builtins-runs';
+import { adminAreaError } from './admin-gate';
+import { builtinToolRef } from './tool-gate-policy';
+import './gate-narrowers';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 // The access lists are views of the tool policy table, which the registry
 // fills (A5): load it.
@@ -175,11 +178,26 @@ describe('run_plan', () => {
     expect(createRun).not.toHaveBeenCalled();
   });
 
-  it('refuses a turn below admin: its items would run on the admin pool (A3)', async () => {
-    vi.mocked(dbmod.scopeHasArea).mockResolvedValueOnce(false);
-    const res = await plan.handler({ title: 'Digest', plan: okPlan }, ctx);
-    expect(errorOf(res)).toMatch(/admin level only/);
-    expect(createRun).not.toHaveBeenCalled();
+  it("a scope without the assistants area is the gate's to refuse, in its words: the handler asks no area", async () => {
+    // Every run tool's policy names the assistants area, so the gate's
+    // Admin step refuses an Admin scope without it (the area refusal,
+    // adminAreaError), where the handler once answered "run tools work at
+    // admin level only" itself.
+    for (const t of RUN_TOOLS) {
+      expect(t.policy.scope, t.slug).toEqual({ area: 'assistants', adminOnly: true });
+    }
+    const refused = await dbmod.gateCallRefusal(
+      {
+        actor: dbmod.loginActor('00000000-0000-4000-8000-0000000000a1', 'rw'),
+        via: 'oauth',
+        loginId: '00000000-0000-4000-8000-0000000000a1',
+        admin: { holdsAdmin: true, areas: new Set() },
+      },
+      builtinToolRef('run_plan', 'run_plan'),
+    );
+    expect(refused?.toolText).toBe(adminAreaError('assistants'));
+    await plan.handler({ title: 'Digest', plan: okPlan }, ctx);
+    expect(dbmod.scopeHasArea).not.toHaveBeenCalled();
   });
 
   it('refuses when runner queues are dark, naming the flag', async () => {

@@ -31,7 +31,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const real = await importOriginal<typeof import('@mantle/db')>();
   return {
     ...real,
-    scopeHoldsAdmin: async () => h.holdsAdmin,
+    adminOrSystemScope: async () => !h.scope || h.holdsAdmin,
     // The folders the scope reads, of those asked.
     foldersReadOf: async (_owner: string, paths: readonly string[]) => {
       h.asked.push([...paths]);

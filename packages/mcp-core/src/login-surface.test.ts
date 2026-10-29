@@ -172,7 +172,6 @@ describe('one surface for every login (W7b): what a scope lists', () => {
   ];
   const ADMIN_ONLY = [
     'replay_window',
-    'run_plan',
     'pending_approve',
     'set_timezone',
     'responder_turn_record',
@@ -180,7 +179,14 @@ describe('one surface for every login (W7b): what a scope lists', () => {
     'recall_map_publish',
     'content_supersede',
   ];
-  const AREA = ['model_pool_set', 'agent_list', 'peer_call', 'secret_create', 'email_send'];
+  const AREA = [
+    'model_pool_set',
+    'agent_list',
+    'run_plan',
+    'peer_call',
+    'secret_create',
+    'email_send',
+  ];
 
   it('a scope without Admin: item tools listed, adminOnly and Admin-area tools not', () => {
     const p = prep(member, { holdsAdmin: false, areas: [] });

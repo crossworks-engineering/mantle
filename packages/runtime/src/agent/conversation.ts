@@ -23,6 +23,7 @@
 
 import { and, desc, eq, gte, inArray, isNull, lt, ne, notInArray, sql } from 'drizzle-orm';
 import {
+  adminOrSystemScope,
   db,
   agents,
   assistantMessages,
@@ -34,7 +35,6 @@ import {
   entities,
   facts,
   nodes,
-  scopeHoldsAdmin,
   type Agent,
   type AgentMemoryConfig,
   type AssistantMessage,
@@ -636,7 +636,7 @@ async function loadConversationContextAtLevel(args: {
   // included), the owner's own chat history and Journal. Those arms are
   // skipped, not left to fail on a permission error. The Admin assistant
   // (a turn scope of Admin) reads them: the scope holds Admin.
-  const belowAdmin = !(await scopeHoldsAdmin());
+  const belowAdmin = !(await adminOrSystemScope());
   // Whose thread this turn reads (0269): the login it answers, else the
   // owner surface's login, else the anchor (a turn that answers no login acts
   // for the owner). Every history, thread and digest read names it.

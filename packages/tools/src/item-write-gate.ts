@@ -10,7 +10,7 @@
  * tool relies on those and declares no item list (the arch pin
  * itemPrecheckTools is 0).
  */
-import { foldersReadOf, scopeHoldsAdmin } from '@mantle/db';
+import { adminOrSystemScope, foldersReadOf } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { clampFilesFolderPath } from '@mantle/files';
 
@@ -64,7 +64,7 @@ export async function createFolderRefusal(
   const raw = typeof input[param] === 'string' ? input[param].trim() : '';
   if (!raw || !raw.includes('.')) return null;
   if (!currentWorkspaceScope()) return null;
-  if (await scopeHoldsAdmin()) return null;
+  if (await adminOrSystemScope()) return null;
   const lookup = 'folder_list / tree_list';
   if (makesFolders && raw.startsWith('files.')) {
     const path = clampFilesFolderPath(raw);

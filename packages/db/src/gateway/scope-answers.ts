@@ -102,6 +102,20 @@ export async function scopeHoldsAdmin(): Promise<boolean> {
 }
 
 /**
+ * Whether the current code is system work or runs in a workspace scope that
+ * holds the Admin workspace: the one answer for code past a gate that
+ * keeps something to Admin and the system (a commit's history copy, an
+ * email attachment's bytes, an adminOnly tool group, a turn's Admin-only
+ * reads, a queue-time rule an Admin scope skips). Outside every workspace
+ * scope (a system transaction too) yes for system work, and with no system
+ * actor bound it throws (SystemWorkRequiredError); in one, scopeHoldsAdmin.
+ */
+export async function adminOrSystemScope(): Promise<boolean> {
+  if (!currentWorkspaceScope()) return systemYes('adminOrSystemScope outside every scope');
+  return scopeHoldsAdmin();
+}
+
+/**
  * Whether the current code may do an "Admin only" thing in `area`: system
  * work may; a user scope may when it holds the Admin workspace,
  * its login is a user there and its limits leave the area on

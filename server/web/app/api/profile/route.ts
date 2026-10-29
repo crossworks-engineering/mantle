@@ -20,7 +20,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { toolMakerFor } from '@/lib/tools';
-import { loginHasArea } from '@mantle/db';
+import { brandSettingsRefusal } from '@/lib/brand-gate';
 import { AvatarPartsSchema } from '@/lib/avatar-schema';
 import {
   DEFAULT_PREFERENCES,
@@ -178,13 +178,12 @@ export async function PUT(req: Request) {
       );
     }
     const brandChanged = changed(brandSet);
-    if (brandChanged.length > 0 && !(await loginHasArea(user.actor.id, 'settings'))) {
-      return NextResponse.json(
-        {
-          error: `The brain's own settings (${brandChanged.join(', ')}) are changed by the brain owner or a user with the settings area.`,
-        },
-        { status: 403 },
+    if (brandChanged.length > 0) {
+      const refused = await brandSettingsRefusal(
+        user,
+        `The brain's look (${brandChanged.join(', ')})`,
       );
+      if (refused) return refused;
     }
   }
   // A value the preferences refuse (InputError: a timezone, a locale) answers

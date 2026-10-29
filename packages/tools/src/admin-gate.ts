@@ -30,6 +30,7 @@ import {
   asSystem,
   currentWorkspaceScope,
   scopeHasArea,
+  scopeHoldsAdmin,
   scopeLeftForSystem,
   withTurnScope,
   type ScopeArea,
@@ -49,6 +50,20 @@ function adminAreaSystem<T>(fn: () => Promise<T>): Promise<T> {
 /** What a scope may list: whether it holds Admin, and the
  *  Admin areas it may do. Read once per MCP connection. */
 export type AdminGateView = { holdsAdmin: boolean; areas: ReadonlySet<ScopeArea> };
+
+/**
+ * What the current workspace scope holds of Admin, as an Admin step reads
+ * it: whether it holds the Admin workspace (scopeHoldsAdmin), and which of
+ * `areas` it may do there (scopeHasArea; none when it does not hold Admin).
+ * The one read of it: a tool call's gate caller, an MCP connection's list
+ * and call, a pending call's stamp and its re-check. Asked in the scope.
+ */
+export async function scopeAdminView(areas: readonly ScopeArea[]): Promise<AdminGateView> {
+  const holdsAdmin = await scopeHoldsAdmin();
+  const held = new Set<ScopeArea>();
+  if (holdsAdmin) for (const a of areas) if (await scopeHasArea(a)) held.add(a);
+  return { holdsAdmin, areas: held };
+}
 
 /** The refusals of an adminOnly tool outside the Admin workspace and of an
  *  Admin-area tool for a scope without that area: the words of the one

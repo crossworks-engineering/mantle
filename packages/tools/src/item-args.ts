@@ -17,7 +17,13 @@
  * those it may), a Recall revision (its own lookup answers it).
  */
 import { and, eq } from 'drizzle-orm';
-import { db, itemWriteRefusalOf, recallMaps, recallRevisions, scopeHoldsAdmin } from '@mantle/db';
+import {
+  adminOrSystemScope,
+  db,
+  itemWriteRefusalOf,
+  recallMaps,
+  recallRevisions,
+} from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { editCheckRefusalError, mapAccessError, UUID_RE } from '@mantle/std';
 import { namedToolPolicy, type ToolItemArg } from './tool-policy';
@@ -155,7 +161,7 @@ export async function queueItemRefusal(
     if (ref === undefined) continue;
     const id = await resolveRef(arg, ref, ownerId);
     if (id === null) {
-      if (arg.by === 'recall-map' && arg.missing && !(await scopeHoldsAdmin())) {
+      if (arg.by === 'recall-map' && arg.missing && !(await adminOrSystemScope())) {
         return arg.missing(ref);
       }
       // Not a node id: the tool's own error answers it at run time.
