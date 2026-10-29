@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the UI sounds save names its login
+
+- **Fixed:** `PUT /api/profile/sounds` now takes `loginId`, the login the
+  choice was made as, and refuses a save for any other login (403, code
+  `login-mismatch`), as the Desk and the description saves do. A tab left
+  on one login no longer writes its sounds to another login after the
+  browser switched logins. The client sends it from its next release; an
+  older client gets the 403 and keeps its choice in the browser only.
+
 ## Unreleased: a person's description, for the team and its agents
 
 - **Added:** every login has a description on its person card: who it is

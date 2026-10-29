@@ -5,6 +5,7 @@
 # 2026-10-28 (calls P1, plan page 886126b4): the call rows, the assistant call twins and the LiveKit webhook had no route on main; their cells are the branch's own answers.
 # 2026-10-29 (a person's description): PUT /api/profile/description had no route on main; its cells are the branch's own answers.
 # 2026-10-29 (UI sounds): PUT /api/profile/sounds had no route on main; its cells are the branch's own answers.
+# 2026-10-29 (UI sounds, login bound): PUT /api/profile/sounds names its login (loginId), as the Desk's save does; the sweep body names none, so valid and nul are the 403 login-mismatch.
 # cells: 2514
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -1500,16 +1501,16 @@ POST /api/push/connect owner empty => 400 application/json {"error":"invalid_bod
 POST /api/push/connect owner nul => 400 application/json {"error":"invalid_body"}
 POST /api/push/connect owner array => 400 application/json {"error":"invalid_body"}
 POST /api/push/connect owner chunked => 400 application/json {"error":"invalid_body"}
-PUT /api/profile/sounds owner valid => 500 application/json {"error":"internal error"}
+PUT /api/profile/sounds owner valid => 403 application/json {"error":"loginId is not the login of this session","code":"login-mismatch"}
 PUT /api/profile/sounds owner malformed => 400 application/json {"error":"invalid JSON"}
 PUT /api/profile/sounds owner empty => 400 application/json {"error":"sounds ({ enabled: boolean, volume: number }) required"}
-PUT /api/profile/sounds owner nul => 500 application/json {"error":"internal error"}
+PUT /api/profile/sounds owner nul => 403 application/json {"error":"loginId is not the login of this session","code":"login-mismatch"}
 PUT /api/profile/sounds owner array => 400 application/json {"error":"sounds ({ enabled: boolean, volume: number }) required"}
 PUT /api/profile/sounds owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-PUT /api/profile/sounds member valid => 500 application/json {"error":"internal error"}
+PUT /api/profile/sounds member valid => 403 application/json {"error":"loginId is not the login of this session","code":"login-mismatch"}
 PUT /api/profile/sounds member malformed => 400 application/json {"error":"invalid JSON"}
 PUT /api/profile/sounds member empty => 400 application/json {"error":"sounds ({ enabled: boolean, volume: number }) required"}
-PUT /api/profile/sounds member nul => 500 application/json {"error":"internal error"}
+PUT /api/profile/sounds member nul => 403 application/json {"error":"loginId is not the login of this session","code":"login-mismatch"}
 PUT /api/profile/sounds member array => 400 application/json {"error":"sounds ({ enabled: boolean, volume: number }) required"}
 PUT /api/profile/sounds member chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
 PUT /api/push/preferences owner valid => 500 application/json {"error":"internal error"}
