@@ -42,8 +42,7 @@ vi.mock('@/lib/mcp-oauth', () => ({
   },
 }));
 vi.mock('@/lib/mcp-auth', () => ({
-  mcpLoginUsable: async () => h.mcpOn,
-  mcpTargetLogin: async (id: string) => ({ id, role: 'member', sessionEpoch: 0 }),
+  mcpTargetLogin: async (id: string) => (h.mcpOn ? { id, role: 'member', sessionEpoch: 0 } : null),
 }));
 vi.mock('@/lib/audit', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/audit')>()),

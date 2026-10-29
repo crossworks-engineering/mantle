@@ -57,6 +57,7 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
   const out = randomUUID(); // role admin, taken out of Admin (drift)
   const memIn = randomUUID(); // role member, put into Admin (drift)
   const mem = randomUUID(); // member, not in Admin
+  const admOff = randomUUID(); // role admin, in Admin, disabled
   const nobody = randomUUID(); // no login at all
   let anchor = '';
   const PASSWORD = 'first password 1';
@@ -116,7 +117,8 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     try {
       await su0`insert into auth.users (id, email, password_hash, role) values
         (${adm}, ${emailOf(adm)}, ${hash}, 'admin'), (${out}, ${emailOf(out)}, ${hash}, 'admin'),
-        (${memIn}, ${emailOf(memIn)}, ${hash}, 'member'), (${mem}, ${emailOf(mem)}, ${hash}, 'member')`;
+        (${memIn}, ${emailOf(memIn)}, ${hash}, 'member'), (${mem}, ${emailOf(mem)}, ${hash}, 'member'),
+        (${admOff}, ${emailOf(admOff)}, ${hash}, 'admin')`;
     } finally {
       await su0.end();
     }
@@ -135,6 +137,14 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
       await su.end();
     }
     expect(Number((await sql<Row[]>`select mantle_role_drift() as n`)[0]!.n)).toBe(2);
+    // An Admin user disabled after the switch: no Admin user now (the login
+    // enabled is part of mantle_login_is_admin), and no member either.
+    const su1 = superuserClient(scratch.url);
+    try {
+      await su1`update auth.users set disabled_at = now() where id = ${admOff}`;
+    } finally {
+      await su1.end();
+    }
     const { createApp } = await import('../../server/app');
     app = await createApp();
   }, 120_000);
@@ -175,6 +185,7 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
       mem: await session.memberLoginActive(mem),
       out: await session.memberLoginActive(out),
       memIn: await session.memberLoginActive(memIn),
+      admOff: await session.memberLoginActive(admOff),
       nobody: await session.memberLoginActive(nobody),
     };
     expect(active).toEqual({
@@ -182,6 +193,7 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
       mem: true,
       out: true, // drift: a member session (main: false, by role admin)
       memIn: false, // drift: an Admin session, narrower (main: true, by role member)
+      admOff: false, // disabled: no member (memberLogin asks loginUsable)
       nobody: false,
     });
   });
@@ -194,12 +206,14 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
       mem: await target(mem),
       out: await target(out),
       memIn: await target(memIn),
+      admOff: await target(admOff),
       nobody: await target(nobody),
     }).toEqual({
       adm: null,
       mem: 'member',
       out: 'member', // drift: a member session (main: null, by role admin)
       memIn: null, // drift: an Admin session, narrower (main: 'member', by role)
+      admOff: null, // disabled: no member target (S8e audit L1)
       nobody: null,
     });
   });

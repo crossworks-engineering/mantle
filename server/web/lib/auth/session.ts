@@ -163,7 +163,7 @@ export const ROTATE_WHEN_UNDER_SECONDS = 23 * 24 * 60 * 60;
 /** Whether a login row may hold a session at all: not disabled, and it has
  *  an email. Admin and member alike (member logins are always on since
  *  Phase 6; the MANTLE_MEMBERS flag is gone). */
-export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolean {
+export function loginUsable(row: { disabledAt: Date | null; email: string | null }): boolean {
   return !!row.email && !row.disabledAt;
 }
 
@@ -173,11 +173,18 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
  * with the row). Membership decides: the role column follows it, written
  * only by the membership definers (mantle_ws_add_user and
  * mantle_ws_remove_user on Admin), so it is never asked here. The session
- * (resolvedFor), findMemberAsset and memberLoginActive ask this: a member
- * is a login that is not an Admin user.
+ * (resolvedFor) and findMemberAsset ask this; a member is memberLogin.
  */
 export function adminLogin(row: Pick<LoginRow, 'adminMember'>): boolean {
   return row.adminMember === true;
+}
+
+/** Whether a login row is a member now: a usable login (loginUsable) that
+ *  is not an Admin user (adminLogin). */
+export function memberLogin(
+  row: Pick<LoginRow, 'adminMember'> & { disabledAt: Date | null; email: string | null },
+): boolean {
+  return loginUsable(row) && !adminLogin(row);
 }
 
 /** The role a login is shown with (the gate's caller, whoami, the shell,
@@ -2025,12 +2032,12 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
 /**
  * Is this member login still allowed in? For work that outlives the
  * request that authenticated it, such as an open realtime stream: the row
- * is re-read, so a disabled login, or one added to Admin (a member is a
- * login that is not an Admin user, adminLogin), ends it.
+ * is re-read, so a disabled login, or one added to Admin (memberLogin),
+ * ends it.
  */
 export async function memberLoginActive(loginId: string): Promise<boolean> {
   const row = await loadLoginRow(loginId);
-  return !!row && !adminLogin(row) && loginUsable(row);
+  return !!row && memberLogin(row);
 }
 
 /** Is this admin login still allowed in? For a frame document that a

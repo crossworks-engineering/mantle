@@ -41,7 +41,7 @@
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/auth/admin-facts-handlers.db.test.ts
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -438,6 +438,37 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
       out: [200, 426],
       memIn: [426, 200],
       mem: [426, 426],
+    });
+  });
+
+  it("a member OAuth grant's caller: the member path asks membership, not the role (S8e)", async () => {
+    const { loadLoginRow } = await import('./login-row');
+    const { resolveMcpCaller } = await import('../mcp-auth');
+    const [o] = await sql<Row[]>`select id::text as id from auth.users where is_owner`;
+    const client = randomUUID();
+    await sql`insert into oauth_clients (id, client_name, redirect_uris)
+              values (${client}, ${`${tag} member grant`}, ${['https://client.example.invalid/cb']})`;
+    // A member grant (a session epoch) per login, as the consent mints it.
+    const grantCaller = await table(async (id) => {
+      const token = `mtlmcp_at_${randomUUID().replace(/-/g, '')}`;
+      await sql`insert into oauth_access_tokens
+          (token_hash, owner_id, actor_id, client_id, scope, expires_at, session_epoch)
+        values (${createHash('sha256').update(token, 'utf8').digest('hex')}, ${o!.id as string},
+                ${id}, ${client}, 'mcp', now() + interval '1 hour', 0)`;
+      const req = new Request('http://x/api/mcp', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      return [(await loadLoginRow(id))!.role, (await resolveMcpCaller(req))?.role ?? null];
+    });
+    expect(grantCaller).toEqual({
+      adm: ['admin', null],
+      lim: ['admin', null],
+      // Drift: a member caller, as its session is (resolvedFor) and as
+      // actorMayConnect connects it (main: null, memberMcpCaller asked the role).
+      out: ['admin', 'member'],
+      memIn: ['member', null], // an Admin user: actorMayConnect refuses it (S8b, as main)
+      mem: ['member', 'member'],
     });
   });
 });
