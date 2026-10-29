@@ -18,7 +18,9 @@ import {
 import { readJson } from '@/lib/read-body';
 import { savePreferencesFor } from '@mantle/content';
 import {
+  normalizePersonDescription,
   PERSON_DESCRIPTION_MAX,
+  personDescriptionLength,
   personDescriptionTooLongError,
 } from '@mantle/client-types/person-description';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -55,8 +57,9 @@ const PatchBody = z
     displayName: z.string().trim().max(120).nullable().optional(),
     /** Who the login is to the team ("Developer", "Jason's wife"): its
      *  person card's description, read by every login and agent that may
-     *  see the card. null or '' clears it. Checked trimmed against
-     *  PERSON_DESCRIPTION_MAX below; this only bounds the payload. */
+     *  see the card. null or '' clears it. Normalized to one line of
+     *  visible text and checked against PERSON_DESCRIPTION_MAX below;
+     *  this only bounds the payload. */
     description: z
       .string()
       .max(PERSON_DESCRIPTION_MAX * 4)
@@ -85,10 +88,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   const targetId = idParsed.data.id;
   const { description, ...body } = parsed.data;
-  const descriptionText = description === undefined ? undefined : (description ?? '').trim();
-  if (descriptionText !== undefined && descriptionText.length > PERSON_DESCRIPTION_MAX) {
+  // One line of visible text, as the login's own save stores it.
+  const descriptionText =
+    description === undefined ? undefined : normalizePersonDescription(description ?? '');
+  const descriptionLength =
+    descriptionText === undefined ? 0 : personDescriptionLength(descriptionText);
+  if (descriptionLength > PERSON_DESCRIPTION_MAX) {
     return NextResponse.json(
-      { error: personDescriptionTooLongError(descriptionText.length) },
+      { error: personDescriptionTooLongError(descriptionLength) },
       { status: 400 },
     );
   }

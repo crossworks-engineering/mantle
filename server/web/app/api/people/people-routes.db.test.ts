@@ -335,21 +335,48 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
         }
       ).person.description;
 
-    // Ben writes his own; Ann (sharing W) reads it on his card.
-    const own = await send('PUT', '/api/profile/description', B, { description: ' Developer ' });
+    // Ben writes his own, naming the login he wrote it as; Ann (sharing W)
+    // reads it on his card.
+    const mine = (description: string | null, loginId: unknown = B) =>
+      send('PUT', '/api/profile/description', B, { description, loginId });
+    const own = await mine(' Developer ');
     expect(await json(own)).toEqual({ description: 'Developer' });
     expect(await card(A, B)).toBe('Developer');
     expect(await card(B, B)).toBe('Developer');
 
     // Over the limit is refused, never cut; the card keeps what it had.
-    const long = await send('PUT', '/api/profile/description', B, { description: 'x'.repeat(501) });
-    expect(long.status).toBe(400);
+    // An emoji counts once: 500 of them fit.
+    expect((await mine('x'.repeat(501))).status).toBe(400);
     expect(await card(A, B)).toBe('Developer');
+    expect((await mine('\u{1F600}'.repeat(500))).status).toBe(200);
+
+    // A body naming no login, or another one, writes nothing (the Desk's
+    // rule): a tab left on one login never writes another's card.
+    for (const loginId of [undefined, A, 'not-a-uuid']) {
+      const res = await mine('Finance manager', loginId);
+      expect(res.status, String(loginId)).toBe(403);
+      expect(await res.json()).toMatchObject({ code: 'login-mismatch' });
+    }
+
+    // One line of visible text: a NUL, a bidi override, zero-width and
+    // newlines are dropped or folded, never stored (jsonb refuses U+0000).
+    const odd = await mine('\u202EDev\u0000\u200Belo\nper\u202C \uFEFF');
+    expect(await json(odd)).toEqual({ description: 'Develo per' });
+    expect(await card(A, B)).toBe('Develo per');
+    const admin = await send('PATCH', `/api/users/${B}`, owner, {
+      description: 'De\u2066vel\u2069oper\r\n',
+    });
+    expect(admin.status).toBe(200);
+    expect(await card(A, B)).toBe('Developer');
+    // Nothing visible clears it.
+    expect(await json(await mine('\u200B \u202E'))).toEqual({ description: null });
+    expect(await card(A, B)).toBeNull();
+    expect(await json(await mine('Developer'))).toEqual({ description: 'Developer' });
 
     // The directory finds him by it, as an agent asking for "the developer"
     // would; a name search still works.
     const dir = (q: string) =>
-      get(`/api/messenger/directory?q=${encodeURIComponent(q)}`, cookie(A))
+      Promise.resolve(get(`/api/messenger/directory?q=${encodeURIComponent(q)}`, cookie(A)))
         .then(json)
         .then((r) => r.entries as { id: string; kind: string; description?: string | null }[]);
     const devs = (await dir('develop')).filter((e) => e.kind === 'login');
@@ -377,9 +404,7 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
     // null clears it.
     expect((await send('PATCH', `/api/users/${A}`, owner, { description: null })).status).toBe(200);
     expect(await card(B, A)).toBeNull();
-    expect((await send('PUT', '/api/profile/description', B, { description: null })).status).toBe(
-      200,
-    );
+    expect((await mine(null)).status).toBe(200);
     expect(await card(A, B)).toBeNull();
   });
 });

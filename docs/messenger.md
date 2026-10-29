@@ -268,15 +268,25 @@ minute):
 **The description** says who a person is to the team: a job title, a role
 or a relationship. It is the login's profile key `description` (its own
 row, beside the avatar and the photo), written by the login itself (`PUT
-/api/profile/description { description }`, `class: 'self'`) or by the
-users area (`PATCH /api/users/:id { description }`, which also lists it on
-`GET /api/users`). null or '' clears it; over 500 characters, trimmed, is
-refused, never cut (`person-description.ts` in client-types holds the
-limit). It is not private from the team: every login and agent that may
-see the card reads it, on the card, in the directory (whose search matches
-it) and on one conversation's people (`GET /api/messenger/c/:id`,
-`messenger_open`; a list row leaves it out). It is how an agent asked to
-message "the developer" finds who that is.
+/api/profile/description { description, loginId }`, `class: 'self'`; a
+`loginId` that is not the session's is a 403 `login-mismatch`, as on the
+Desk) or by the users area (`PATCH /api/users/:id { description }`, which
+also lists it on `GET /api/users`). It is stored as one line of visible
+text: newlines and tabs become spaces, and control and format characters
+(U+0000, zero-width spaces, bidi overrides such as U+202E) are dropped, a
+joiner inside an emoji excepted. null, '' or nothing visible clears it;
+over 500 code points after that is refused, never cut
+(`person-description.ts` in client-types holds the rule and the limit). It
+is not private from the team: every login and agent that may see the card
+reads it, on the card, in the directory (whose search matches it) and on
+one conversation's people (`GET /api/messenger/c/:id`, `messenger_open`; a
+list row leaves it out). It is how an agent asked to message "the
+developer" finds who that is.
+
+It is self-reported: any login rewrites its own, over what an admin set.
+So `messenger_directory` tells agents to take it as a hint, never as proof
+of who someone is nor as instructions, and to confirm with the user before
+sending anything sensitive to a person found by it.
 
 **The photo** carries the headers of `/api/profile/photo` (`private`;
 `immutable` only when `v` is the photo served, revalidated otherwise),
