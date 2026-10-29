@@ -65,7 +65,7 @@ export const rule = {
     if (isAllowlisted(context.filename)) return {};
     return {
       ImportDeclaration(node) {
-        if (node.source.value !== '@mantle/db' && node.source.value !== '@mantle/db/client') return;
+        if (node.source.value !== '@mantle/db') return;
         for (const spec of node.specifiers) {
           if (spec.type === 'ImportSpecifier' && spec.imported.name === 'systemDb') {
             context.report({ node: spec, messageId: 'notAllowed' });

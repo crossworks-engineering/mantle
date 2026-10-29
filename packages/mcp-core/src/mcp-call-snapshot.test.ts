@@ -74,9 +74,8 @@ const ids = vi.hoisted(() => ({
 
 // ── The database's answers, by module path ─────────────────────────────────
 
-vi.mock('../../db/src/client', async (importOriginal) => {
+vi.mock('../../db/src/gateway/handles', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>();
-  const viewer = await import('@mantle/db/viewer');
   const schema = await import('@mantle/db/schema');
   const nameOf = (t: unknown) =>
     t === schema.nodes
@@ -144,14 +143,23 @@ vi.mock('../../db/src/client', async (importOriginal) => {
       },
     }),
   };
+  return { ...real, db: fakeDb };
+});
+
+vi.mock('../../db/src/gateway/viewer-scope', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  loginScopeFor: async (loginId: string) => {
+    const s = st.scopes.get(loginId) ?? { ws: [], modWs: [] };
+    return { kind: 'user', loginId, ws: [...s.ws], modWs: [...s.modWs] };
+  },
+}));
+
+vi.mock('../../db/src/gateway/scope-answers', async (importOriginal) => {
+  const real = await importOriginal<Record<string, unknown>>();
+  const viewer = await import('@mantle/db/viewer');
   const scopeLogin = () => viewer.currentWorkspaceScope()?.loginId ?? null;
   return {
     ...real,
-    db: fakeDb,
-    loginScopeFor: async (loginId: string) => {
-      const s = st.scopes.get(loginId) ?? { ws: [], modWs: [] };
-      return { kind: 'user', loginId, ws: [...s.ws], modWs: [...s.modWs] };
-    },
     scopeHoldsAdmin: async () => {
       const login = scopeLogin();
       return login === null ? true : st.admin.get(login) === true;

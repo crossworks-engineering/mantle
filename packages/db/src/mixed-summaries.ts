@@ -5,7 +5,7 @@
  * Admin pool only (no limited role may read node_mixed_summaries).
  */
 import { eq } from 'drizzle-orm';
-import { systemDb } from './client';
+import { systemDb } from './gateway/handles';
 import { nodeMixedSummaries } from './schema/node-embeds';
 
 export const OLDER_SUMMARY_LABEL = 'older summary, includes embedded items';

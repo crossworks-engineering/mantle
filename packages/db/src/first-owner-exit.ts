@@ -30,7 +30,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { RuntimeFaultError, UUID_RE } from '@mantle/std';
-import { executeAsMigrator } from './client';
+import { executeAsMigrator } from './gateway/handles';
 import { enterFirstOwnerExit } from './viewer';
 
 /** A row of the workspaces switch (mantle_ws_migrate_locked). */

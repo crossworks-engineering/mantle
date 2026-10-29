@@ -10,7 +10,9 @@
  */
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { loginActor, runAsActor, runAsSystem, runWithoutActor, type Actor } from './actor';
-import { closeDb, db, scopeHasArea, scopeHoldsAdmin } from './client';
+import { closeDb } from './gateway/pools';
+import { db } from './gateway/handles';
+import { scopeHasArea, scopeHoldsAdmin } from './gateway/scope-answers';
 import { actorCheckMisses, itemMarks, nodes } from './schema';
 import {
   asSystem,

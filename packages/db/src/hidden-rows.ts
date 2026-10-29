@@ -12,7 +12,7 @@
  * refuses. Never on the workspace role, which may not run the function.
  */
 import { sql } from 'drizzle-orm';
-import { withSystemTx } from './client';
+import { withSystemTx } from './gateway/system-tx';
 
 export async function refuseHiddenRows(ownerId: string, path: string): Promise<void> {
   await withSystemTx((tx) =>

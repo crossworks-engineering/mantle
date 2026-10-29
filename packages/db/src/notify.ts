@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { executeWrite } from './client';
+import { executeWrite } from './gateway/handles';
 import { currentCreateHome, currentSpaceScope } from './viewer';
 
 /**

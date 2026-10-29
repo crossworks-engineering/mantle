@@ -23,7 +23,7 @@
  *    predate the key is not flagged for every link.
  */
 import { sql } from 'drizzle-orm';
-import { db } from './client';
+import { db } from './gateway/handles';
 import { liveWorkspaceText } from './workspace-live';
 
 /** The grant drift count alone (`n`; also the integrity row). */

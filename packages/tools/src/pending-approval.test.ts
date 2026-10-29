@@ -33,17 +33,20 @@ vi.mock('../../db/src/viewer', async (importOriginal) => {
     scopeLeftForSystem: () => null,
   };
 });
-vi.mock('../../db/src/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../db/src/client')>()),
+vi.mock('../../db/src/gateway/scope-answers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/scope-answers')>()),
   scopeHoldsAdmin: async () => false,
   scopeHasArea: async () => false,
+  loginActorNow: async (login: string) => ({ kind: 'login', mode: 'rw', loginId: login }),
+}));
+vi.mock('../../db/src/gateway/viewer-scope', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/viewer-scope')>()),
   loginScopeFor: async (login: string) => ({
     kind: 'user',
     loginId: login,
     ws: h.ws[login] ?? h.modWs[login] ?? [],
     modWs: h.modWs[login] ?? [],
   }),
-  loginActorNow: async (login: string) => ({ kind: 'login', mode: 'rw', loginId: login }),
 }));
 vi.mock('../../db/src/pending-elevated', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../db/src/pending-elevated')>()),

@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const caller = vi.hoisted(() => ({ value: null as unknown, scope: null as unknown }));
 vi.mock('./gate', () => ({ currentCaller: () => caller.value }));
 vi.mock('./viewer', () => ({ currentWorkspaceScope: () => caller.scope }));
-vi.mock('./client', () => ({
+vi.mock('./gateway/handles', () => ({
   db: {
     execute: () => {
       throw new Error('no definer may be asked here');

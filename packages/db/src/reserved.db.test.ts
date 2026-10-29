@@ -43,7 +43,8 @@ describe.skipIf(!URL)('a reserved connection that dies is never handed back', ()
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let admin: ReturnType<typeof postgres>;
   let m: typeof import('./index');
-  let c: typeof import('./client');
+  let actorSql: typeof import('./gateway/actor-sql');
+  let scopeModule: typeof import('./gateway/scope');
   // The write as the actor runs only while the check is not off: the file
   // sets warn, so it runs the same under `pnpm test:actor-off`.
   const suiteMode = process.env.MANTLE_ACTOR_CHECK;
@@ -55,7 +56,8 @@ describe.skipIf(!URL)('a reserved connection that dies is never handed back', ()
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('./index');
-    c = await import('./client');
+    actorSql = await import('./gateway/actor-sql');
+    scopeModule = await import('./gateway/scope');
     await admin`create table rfix (id int primary key, a int not null)`;
     await admin`insert into rfix values (1, 0)`;
   }, 120_000);
@@ -287,7 +289,7 @@ describe.skipIf(!URL)('a reserved connection that dies is never handed back', ()
     async (_, text, args) => {
       const { pool } = onePool();
       await asSystemPool(pool, async () => {
-        const client = c.actorClient(pool);
+        const client = actorSql.actorClient(pool);
         const pid = await pidOf(pool);
         const write = m.runAsSystem('worker:test', () =>
           Promise.resolve(client.unsafe(text, args)),
@@ -311,7 +313,7 @@ describe.skipIf(!URL)('a reserved connection that dies is never handed back', ()
   it('a RESET that fails on a live connection ends it on purpose; it is not handed back', async () => {
     const { pool } = onePool();
     await asSystemPool(pool, async () => {
-      const client = c.actorClient(pool);
+      const client = actorSql.actorClient(pool);
       const before = await pidOf(pool);
       // Leaves the session in an aborted transaction block: the RESET after
       // it fails (25P02) on a connection that is still open.
@@ -340,7 +342,7 @@ describe.skipIf(!URL)('a reserved connection that dies is never handed back', ()
   it('a turn-scoped query whose connection is killed fails; the pool answers', async () => {
     const { pool } = onePool();
     try {
-      const client = c.turnScopedClient(pool);
+      const client = scopeModule.turnScopedClient(pool);
       const pid = await pidOf(pool);
       const scope = { kind: 'assistant' as const, loginId: null, ws: [randomUUID()], modWs: [] };
       const q = m.withTurnScope(scope, async () => client.unsafe('select pg_sleep(5)'));

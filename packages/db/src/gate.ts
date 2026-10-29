@@ -43,7 +43,7 @@ import {
   type AccessRefusal,
 } from '@mantle/std';
 import { runAsActor, systemActor, SYSTEM_REASON_RE, type Actor } from './actor';
-import { turnScopeProblem, withTurnScope } from './client';
+import { turnScopeProblem, withTurnScope } from './gateway/scope';
 import { auditsKind, inCallAuditFrame, resetCallAudit } from './call-audit';
 import { createHomeIntent, type CreateAsk, type CreateFallback } from './create-home';
 import { currentCreateHome, withCreateHome, type CreateHome, type WorkspaceScope } from './viewer';

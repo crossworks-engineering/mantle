@@ -8,14 +8,15 @@ import { END_SESSION_SQL } from './reserved';
 import {
   actorClient,
   actorInTransaction,
-  closeDb,
   needsActorWrap,
-  refreshActorCheckMode,
   runsOutsideTransaction,
   setActorSql,
-  writeRoleSettingsSql,
-} from './client';
-import { statementBody, workResult } from './gateway/actor-sql';
+  statementBody,
+  workResult,
+} from './gateway/actor-sql';
+import { closeDb } from './gateway/pools';
+import { refreshActorCheckMode } from './gateway/check-mode';
+import { writeRoleSettingsSql } from './gateway/write-route';
 
 type PgSql = Parameters<typeof actorInTransaction>[0];
 

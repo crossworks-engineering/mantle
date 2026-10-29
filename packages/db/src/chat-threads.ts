@@ -11,7 +11,7 @@
  * caller (an Admin user's own-things route, the summarizer) to one login.
  */
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
-import { db } from './client';
+import { db } from './gateway/handles';
 import { chatThreads, type ChatThread } from './schema/chat-threads';
 
 /** The open thread of a login's chat with an agent, or null when that chat

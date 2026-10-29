@@ -17,7 +17,7 @@ import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ACCESS_MATRIX } from './access-matrix';
-import { ACTOR_CHECK_DRIFT_SQL } from './client';
+import { ACTOR_CHECK_DRIFT_SQL } from './gateway/check-mode';
 import { createMigratedScratchDatabase, createScratchDatabaseBefore } from './test-support';
 
 type Mode = 'off' | 'warn' | 'on';

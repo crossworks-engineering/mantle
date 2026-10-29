@@ -27,9 +27,8 @@ vi.mock('../../db/src/viewer', async (importOriginal) => {
     asSystem: (fn: () => Promise<unknown>) => fn(),
   };
 });
-vi.mock('../../db/src/client', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../db/src/client')>();
-  const viewer = await import('../../db/src/viewer');
+vi.mock('../../db/src/gateway/handles', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../db/src/gateway/handles')>();
   const chain = () => {
     const q: Record<string, unknown> = {};
     for (const m of ['from', 'innerJoin', 'leftJoin', 'where', 'limit', 'orderBy', 'groupBy']) {
@@ -42,8 +41,18 @@ vi.mock('../../db/src/client', async (importOriginal) => {
   return {
     ...real,
     db: { select: () => chain(), insert: () => ({ values: async () => [] }) },
-    scopeHoldsAdmin: async () => h.holdsAdmin,
-    scopeHasArea: async () => h.holdsAdmin,
+  };
+});
+vi.mock('../../db/src/gateway/scope-answers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/scope-answers')>()),
+  scopeHoldsAdmin: async () => h.holdsAdmin,
+  scopeHasArea: async () => h.holdsAdmin,
+}));
+vi.mock('../../db/src/gateway/scope', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../db/src/gateway/scope')>();
+  const viewer = await import('../../db/src/viewer');
+  return {
+    ...real,
     withTurnScope: (scope: never, fn: () => Promise<unknown>) => viewer.runInViewerScope(scope, fn),
   };
 });

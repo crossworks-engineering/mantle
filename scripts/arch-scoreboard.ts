@@ -188,7 +188,8 @@ const LABELS: Record<string, string> = {
   docQuotesDangling: 'doc heading quotes naming no heading, listed (down only; docs-quotes.mjs)',
   gapTables:
     'write-role gap reruns (a role switch to any role but the write role; 0 since plan v3 S3)',
-  dbClientLines: 'lines of packages/db/src/client.ts (down only; plan v3 S5 splits it)',
+  dbClientLines:
+    'lines of packages/db/src/client.ts, a re-export barrel the gateway does not need (0)',
   dbGatewayMaxLines:
     'most lines of a packages/db/src/gateway module: the max-lines limit, or the longest module over it (down only)',
   dbGatewayImportCycles: 'packages/db/src/gateway modules on an import cycle (0)',

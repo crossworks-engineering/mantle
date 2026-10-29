@@ -5,7 +5,7 @@
  * query on the system pool: what an admin must see is never scoped away.
  */
 import { sql } from 'drizzle-orm';
-import { systemDb } from './client';
+import { systemDb } from './gateway/handles';
 import { extractParkedSql } from './extract-exempt';
 import { nodes } from './schema/nodes';
 

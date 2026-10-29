@@ -54,15 +54,15 @@
  *    coverage and the capped exemption lists; the asSystem exits by route and the Admin
  *    counts (as-system-routes.mjs, admin-counts.mjs);
  *  - raw write SQL and history codes in comments (cleanup-counts.mjs).
- *  - the gateway split out of packages/db/src/client.ts: its modules'
- *    line limit and its import cycles (gateway-counts.mjs).
+ *  - the database gateway (packages/db/src/gateway/): its modules' line
+ *    limit and its import cycles (gateway-counts.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
  * of server/web/app/ is not one) or generated manifests.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { CALLER_READERS, SESSION_GUARDS } from './session-guards.mjs';
 import {
@@ -1029,8 +1029,9 @@ export function scopedSystemWriteCount(files) {
   return n;
 }
 
-/** The lines of one file (dbClientLines). */
+/** The lines of one file, 0 when there is none (dbClientLines). */
 function lineCount(root, path) {
+  if (!existsSync(join(root, path))) return 0;
   return readFileSync(join(root, path), 'utf8').split('\n').length - 1;
 }
 

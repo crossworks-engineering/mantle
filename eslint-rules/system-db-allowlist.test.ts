@@ -10,7 +10,7 @@ import { isAllowlisted, rule } from './system-db-allowlist.mjs';
 describe('system-db-allowlist', () => {
   it('allows the infrastructure modules and tests, refuses the rest', () => {
     expect(isAllowlisted('/repo/packages/tracing/src/store.ts')).toBe(true);
-    expect(isAllowlisted('/repo/packages/db/src/client.ts')).toBe(true);
+    expect(isAllowlisted('/repo/packages/db/src/gateway/handles.ts')).toBe(true);
     expect(isAllowlisted('/repo/packages/search/src/index.test.ts')).toBe(true);
     expect(isAllowlisted('/repo/packages/search/src/index.ts')).toBe(false);
     expect(isAllowlisted('/repo/packages/tools/src/builtins-search.ts')).toBe(false);

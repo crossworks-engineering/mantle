@@ -604,13 +604,13 @@ describe('systemDb inside a turn scope: allowlisted modules only (W4b fix round 
     [
       'Error',
       '    at assertSystemDbCaller (/repo/packages/db/src/viewer.ts:600:20)',
-      '    at Object.get (/repo/packages/db/src/client.ts:740:30)',
+      '    at Object.get (/repo/packages/db/src/gateway/handles.ts:177:30)',
       `    at loadThing (${file}:12:7)`,
       '    at async run (/repo/packages/runtime/src/agent/tool-loop.ts:1:1)',
     ].join('\n');
   const content = '/repo/packages/content/src/nodes.ts';
 
-  it('names the calling file past the proxy frames', () => {
+  it('names the calling file past the proxy frames (the systemDb proxy lives in gateway/handles.ts)', () => {
     expect(systemDbCallerOf(stackFrom(content))).toBe(content);
     expect(systemDbCallerOf(stackFrom(`file://${content}`))).toBe(content);
     expect(systemDbCallerOf('Error\n    at <anonymous>')).toBeNull();
@@ -623,21 +623,12 @@ describe('systemDb inside a turn scope: allowlisted modules only (W4b fix round 
     expect(systemDbCallerOf(viaDrizzle)).toBe(content);
   });
 
-  it('skips the gateway modules as client.ts (a write through the gateway names its caller)', () => {
+  it('skips the gateway modules (a write through the gateway names its caller)', () => {
     const viaGateway = stackFrom(content).replace(
       '    at loadThing',
       '    at Proxy.<anonymous> (/repo/packages/db/src/gateway/write-route.ts:40:5)\n    at loadThing',
     );
     expect(systemDbCallerOf(viaGateway)).toBe(content);
-  });
-
-  it('skips the proxy frame of gateway/handles.ts (the systemDb proxy lives there)', () => {
-    const viaHandles = stackFrom(content).replace(
-      '/repo/packages/db/src/client.ts:740:30',
-      '/repo/packages/db/src/gateway/handles.ts:177:30',
-    );
-    expect(viaHandles).toContain('gateway/handles.ts');
-    expect(systemDbCallerOf(viaHandles)).toBe(content);
   });
 
   it("skips drizzle's internal reads on the proxy, checks every method (W5a audit W3)", () => {

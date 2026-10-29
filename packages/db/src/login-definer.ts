@@ -26,7 +26,8 @@
 import type { SQL } from 'drizzle-orm';
 import { RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { currentActor } from './actor';
-import { loginScopeFor, systemPoolTxInScope } from './client';
+import { loginScopeFor } from './gateway/viewer-scope';
+import { systemPoolTxInScope } from './gateway/system-tx';
 import { getAdminDb } from './gateway/pools';
 import { actingLoginNow, currentWorkspaceScope } from './viewer';
 

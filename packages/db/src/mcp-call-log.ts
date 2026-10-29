@@ -32,7 +32,7 @@ import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import { UUID_RE } from '@mantle/std';
 import { runAsActor, systemActor } from './actor';
 import { callAuditStarted } from './call-audit';
-import { db, systemDb } from './client';
+import { db, systemDb } from './gateway/handles';
 import { mcpCalls, type McpCallRow } from './schema/mcp-calls';
 
 /** A login's calls this close together are one work session. */

@@ -58,13 +58,16 @@ vi.mock('../../db/src/viewer', async (importOriginal) => {
     currentWorkspaceScope: () => h.scope ?? real.currentWorkspaceScope(),
   };
 });
-vi.mock('../../db/src/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../db/src/client')>()),
+vi.mock('../../db/src/gateway/scope-answers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/scope-answers')>()),
   scopeHoldsAdmin: async () => h.view.holdsAdmin,
   scopeHasArea: async (a: string) => h.view.holdsAdmin && h.view.areas.has(a),
   // No database: every Moderator seat a turn holds is held still (A8 L5).
   moderatorSeatsNow: async (_l: string, ws: readonly string[]) => [...ws],
   loginHasArea: async (_l: string, a: string) => h.view.areas.has(a),
+}));
+vi.mock('../../db/src/gateway/scope', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/scope')>()),
   // A scope entered (a left scope's checks): they run in it.
   withTurnScope: async (s: Record<string, unknown>, fn: () => Promise<unknown>) => {
     const prev = h.scope;

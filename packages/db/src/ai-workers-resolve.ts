@@ -9,7 +9,7 @@
  */
 
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, systemDb } from './client';
+import { db, systemDb } from './gateway/handles';
 import { aiWorkers, type AiWorker, type AiWorkerKind } from './schema/ai-workers';
 
 /**

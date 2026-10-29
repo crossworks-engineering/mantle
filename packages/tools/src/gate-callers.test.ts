@@ -50,8 +50,8 @@ vi.mock('../../db/src/viewer', async (importOriginal) => {
     currentWorkspaceScope: () => h.scope ?? real.currentWorkspaceScope(),
   };
 });
-vi.mock('../../db/src/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../db/src/client')>()),
+vi.mock('../../db/src/gateway/scope-answers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/scope-answers')>()),
   scopeHoldsAdmin: async () => h.view.holdsAdmin,
   scopeHasArea: async (a: string) => {
     h.areaReads += 1;

@@ -28,7 +28,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql, type SQL } from 'drizzle-orm';
 import { runAsActor, systemActor, type Actor } from './actor';
-import { afterOuterCommit, systemDb } from './client';
+import { afterOuterCommit } from './gateway/role-tx';
+import { systemDb } from './gateway/handles';
 import { auditLog } from './schema/audit-log';
 import { UUID_RE } from '@mantle/std';
 

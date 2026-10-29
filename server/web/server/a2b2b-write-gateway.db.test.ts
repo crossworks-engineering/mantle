@@ -1,5 +1,5 @@
 /**
- * Arch A2b2b: the login write gateway (packages/db/src/client.ts). A scoped
+ * Arch A2b2b: the login write gateway (packages/db/src/gateway/). A scoped
  * login write runs on the write role (mantle_write_user) in every actor
  * check mode (plan v3 S3: the mode decides refuse or report, never the
  * pool; before S3 off ran it on the system pool).
@@ -1236,8 +1236,8 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
 
   it('M2: a write inside an open write transaction joins it; a pool of 3 never hangs', async () => {
     setMode('warn');
-    const client = await import('@mantle/db/client');
-    client.setWritePoolWaitForTests(3_000);
+    const roleTx = await import('../../../packages/db/src/gateway/role-tx');
+    roleTx.setWritePoolWaitForTests(3_000);
     try {
       const ids = await Promise.all(
         Array.from({ length: 6 }, (_, i) => noteIn(team, `${tag} m2 ${i}`)),
@@ -1305,7 +1305,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
               .where(eq(m.nodes.id, ids[3]!)),
           ),
         );
-        expect(root(busy)).toBeInstanceOf(client.WritePoolBusyError);
+        expect(root(busy)).toBeInstanceOf(roleTx.WritePoolBusyError);
         expect(m.isBusy(busy)).toBe(true);
         expect(Date.now() - t0).toBeLessThan(8_000);
       } finally {
@@ -1314,7 +1314,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       }
       expect(await titleOf(ids[3]!)).toBe(`${tag} m2 3 c`);
     } finally {
-      client.setWritePoolWaitForTests(null);
+      roleTx.setWritePoolWaitForTests(null);
     }
   }, 60_000);
 
@@ -1522,7 +1522,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
   for (const mode of ['warn', 'on'] as const) {
     it(`A (round 3, ${mode}): a transaction that fails while a join runs sends nothing of it after its rollback`, async () => {
       setMode(mode);
-      const client = await import('@mantle/db/client');
+      const roleTx = await import('../../../packages/db/src/gateway/role-tx');
       m.takeWriteRoleGaps();
       const id = await noteIn(team, `${tag} A ${mode}`);
       const before = await titleOf(id);
@@ -1564,7 +1564,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       // Rolled back, and nothing written after.
       expect(await titleOf(id)).toBe(before);
       expect(late).toHaveLength(1);
-      expect(root(late[0] as Error)).toBeInstanceOf(client.JoinedWriteEndedError);
+      expect(root(late[0] as Error)).toBeInstanceOf(roleTx.JoinedWriteEndedError);
       m.takeWriteRoleGaps();
       m.takeActorMisses();
     });
@@ -1679,7 +1679,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
 
   it('N1 (round 4): a statement of an ended write transaction sends nothing, its SET neither', async () => {
     setMode('warn');
-    const client = await import('@mantle/db/client');
+    const roleTx = await import('../../../packages/db/src/gateway/role-tx');
     let kept: { execute: (q: ReturnType<typeof sql>) => Promise<unknown> } | null = null;
     // A write transaction that sends no statement of its own (its SET goes
     // with the first one), its client kept past its end.
@@ -1688,13 +1688,13 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
         kept = tx;
       }),
     );
-    const before = client.watchedSendsForTests();
+    const before = roleTx.watchedSendsForTests();
     const late = await failure(
       inRequest(mem, async () => kept!.execute(sql`select 1`) as Promise<unknown>),
     );
     await sleep(100);
-    expect(root(late)).toBeInstanceOf(client.JoinedWriteEndedError);
-    expect(client.watchedSendsForTests()).toBe(before);
+    expect(root(late)).toBeInstanceOf(roleTx.JoinedWriteEndedError);
+    expect(roleTx.watchedSendsForTests()).toBe(before);
   });
 
   it('N2 (round 4): a nested system transaction on the write role is counted once', async () => {

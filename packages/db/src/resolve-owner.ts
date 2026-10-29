@@ -18,7 +18,7 @@
  * silently scoping every query to nothing.
  */
 import { sql } from 'drizzle-orm';
-import { db } from './client';
+import { db } from './gateway/handles';
 import { authUsers } from './schema/auth-users';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';

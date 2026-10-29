@@ -10,7 +10,7 @@
  * definers answer as the system pool read.
  */
 import { sql } from 'drizzle-orm';
-import { db } from './client';
+import { db } from './gateway/handles';
 
 type Exec = Pick<typeof db, 'execute'>;
 

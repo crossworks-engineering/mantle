@@ -18,7 +18,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { CONTEXT_REF_KINDS, NODE_TYPE_BY_CONTEXT_REF } from '@mantle/client-types/kind-lists';
-import { db } from './client';
+import { db } from './gateway/handles';
 import { nodeType, nodes } from './schema/nodes';
 import { emailAccounts, emails } from './schema/emails';
 

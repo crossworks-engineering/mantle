@@ -39,7 +39,7 @@
  * every site with its why. docs/actors.md lists them.
  */
 import { editCheckRefusalError, RuntimeFaultError } from '@mantle/std';
-import { inOpenTransaction } from './client';
+import { inOpenTransaction } from './gateway/role-tx';
 import { itemWriteVerdicts, type ItemNeed } from './item-rights';
 import { asSystem, isSystemScope } from './viewer';
 

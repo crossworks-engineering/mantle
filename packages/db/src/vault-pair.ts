@@ -5,7 +5,7 @@
  * (@mantle/runtime resolveChatKey, @mantle/embeddings) answer to the same
  * check as connectors and API tools.
  */
-import { loginHasArea } from './client';
+import { loginHasArea } from './gateway/scope-answers';
 
 /** The refusal at run time of a pairing whose configuring login lost the keys area. */
 export const VAULT_PAIR_MAKER_NO_KEYS =

@@ -15,7 +15,7 @@
  * same reason, a deciding scope's row rule would hide it from its approver.
  */
 import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import { systemDb } from './client';
+import { systemDb } from './gateway/handles';
 import { agents, pendingToolCalls, workspaces, type PendingToolCall } from './schema/index';
 
 const waiting = (ownerId: string, id: string) =>

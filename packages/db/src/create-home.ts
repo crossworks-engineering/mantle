@@ -25,7 +25,8 @@
  * (@mantle/files export-home.ts).
  */
 import { and, eq, gte, inArray, or, sql } from 'drizzle-orm';
-import { createHomeFallback, db, loginScopeFor } from './client';
+import { createHomeFallback, loginScopeFor } from './gateway/viewer-scope';
+import { db } from './gateway/handles';
 import { itemHomeSql } from './item-acl';
 import { nodes, workspaces, workspaceUsers } from './schema/index';
 import { currentWorkspaceScope, type CreateHome } from './viewer';

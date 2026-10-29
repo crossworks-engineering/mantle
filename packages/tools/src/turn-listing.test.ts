@@ -39,9 +39,12 @@ const { noRows } = vi.hoisted(() => {
   });
   return { noRows };
 });
-vi.mock('../../db/src/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../db/src/client')>()),
+vi.mock('../../db/src/gateway/handles', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/handles')>()),
   db: noRows,
+}));
+vi.mock('../../db/src/gateway/scope-answers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/scope-answers')>()),
   scopeHoldsAdmin: async () => h.view.holdsAdmin,
   scopeHasArea: async (a: string) => h.view.holdsAdmin && h.view.areas.has(a),
 }));

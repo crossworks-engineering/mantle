@@ -13,7 +13,7 @@
  * Plain SQL: no model, no embedding, no queue. Dry run by default.
  */
 import { sql } from 'drizzle-orm';
-import { systemDb } from './client';
+import { systemDb } from './gateway/handles';
 import { nodes } from './schema/nodes';
 import {
   TERMINAL_EXTRACT_SKIPS,

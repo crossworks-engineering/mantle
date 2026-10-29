@@ -9,7 +9,7 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { systemDb } from './client';
+import { systemDb } from './gateway/handles';
 import { agents } from './schema/agents';
 
 /**

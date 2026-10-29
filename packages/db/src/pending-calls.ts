@@ -14,7 +14,7 @@
  * since the narrow role makes no call (no INSERT).
  */
 import { and, eq, isNull, type SQL } from 'drizzle-orm';
-import { systemDb } from './client';
+import { systemDb } from './gateway/handles';
 import { onFullSystemRoute } from './viewer';
 import { pendingToolCalls, type NewPendingToolCall, type PendingToolCall } from './schema/index';
 

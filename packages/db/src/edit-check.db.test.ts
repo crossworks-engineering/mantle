@@ -23,7 +23,7 @@ import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ITEM_KINDS } from '@mantle/client-types/kinds';
 import { ACCESS_MATRIX, editCheckTriggers, syncWriteRoleRules } from './access-matrix';
-import { EDIT_CHECK_DRIFT_SQL } from './client';
+import { EDIT_CHECK_DRIFT_SQL } from './gateway/check-mode';
 import { NODE_DERIVED_KEYS } from './edit-check';
 import { createMigratedScratchDatabase } from './test-support';
 import { viewerDatabaseUrl, viewerRolePassword } from './viewer';

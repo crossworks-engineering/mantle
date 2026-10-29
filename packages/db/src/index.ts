@@ -42,19 +42,38 @@ export {
 export {
   db,
   systemDb,
-  closeDb,
+  isWriteSql,
+  executeWrite,
+  executeAsMigrator,
+  NotAWriteError,
+  type Db,
+} from './gateway/handles';
+export { closeDb, systemPoolRole, openLoginWritePool } from './gateway/pools';
+export {
   withSystemTx,
   NestedSystemTxError,
+  systemPoolTxInScope,
+  type SystemPoolScope,
+  brokerLockTx,
+} from './gateway/system-tx';
+export {
   withViewer,
   viewerScopeFor,
-  withScope,
-  withTurnScope,
-  ScopeLostError,
+  loginScopeFor,
+  loginScopeColumns,
+  seedLoginScope,
+} from './gateway/viewer-scope';
+export { withScope, withTurnScope, ScopeLostError, readTransaction } from './gateway/scope';
+export {
   scopeHoldsAdmin,
   scopeHasArea,
   loginHasArea,
   loginAreas,
   loginHoldsAdmin,
+  moderatorSeatsNow,
+  loginActorNow,
+} from './gateway/scope-answers';
+export {
   withHeads,
   withSubtreeHeads,
   withNodeInsertHeads,
@@ -67,27 +86,9 @@ export {
   onSpaceRows,
   lockMoreHeads,
   withDeadlockRetry,
-  loginScopeFor,
-  moderatorSeatsNow,
-  loginScopeColumns,
-  seedLoginScope,
-  isWriteSql,
-  executeWrite,
-  executeAsMigrator,
-  systemPoolTxInScope,
-  type SystemPoolScope,
-  systemPoolRole,
-  afterOuterRollback,
-  afterOuterCommit,
-  brokerLockTx,
-  NotAWriteError,
-  readTransaction,
-  loginActorNow,
-  openLoginWritePool,
-  ACTOR_CHECK_DRIFT_SQL,
-  EDIT_CHECK_DRIFT_SQL,
-  type Db,
-} from './client';
+} from './gateway/heads';
+export { afterOuterRollback, afterOuterCommit } from './gateway/role-tx';
+export { ACTOR_CHECK_DRIFT_SQL, EDIT_CHECK_DRIFT_SQL } from './gateway/check-mode';
 export { appHolderHomes, assertAppRunWriteHome } from './app-holder-homes';
 export {
   appRunHolders,
@@ -561,8 +562,7 @@ export {
   type SweepRow,
   type SweepSpec,
 } from './store-broker';
-// The structure items (gateway/structure-item.ts). Not through client.ts:
-// it imports content-changed.ts, whose notify.ts imports client.ts.
+// The structure items (gateway/structure-item.ts).
 export {
   deleteStructureItems,
   insertStructureItem,

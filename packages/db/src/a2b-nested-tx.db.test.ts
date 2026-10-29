@@ -276,7 +276,7 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
   });
 
   it('more than 32 nested calls in one transaction warn once (A2b1 fix round 2, L2)', async () => {
-    const { NESTED_SAVEPOINT_WARN } = await import('./client');
+    const { NESTED_SAVEPOINT_WARN } = await import('./gateway/role-tx');
     expect(NESTED_SAVEPOINT_WARN).toBe(32);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

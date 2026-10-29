@@ -6,7 +6,7 @@
  * case fails before any database call.
  */
 import { describe, expect, it } from 'vitest';
-import { turnScopeProblem, withScope, withTurnScope } from './client';
+import { turnScopeProblem, withScope, withTurnScope } from './gateway/scope';
 import type { WorkspaceScope } from './viewer';
 
 const A = '00000000-0000-4000-8000-00000000000a';

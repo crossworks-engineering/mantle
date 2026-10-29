@@ -235,7 +235,7 @@ export async function flipThenPlace<T>(steps: {
   await quietly(steps.discard, 'remove a stage');
   // Inside an outer transaction the flip was a savepoint: the disk goes back
   // if that one rolls back, and what `unplace` needs stays until it commits.
-  const { afterOuterCommit, afterOuterRollback } = await import('./client');
+  const { afterOuterCommit, afterOuterRollback } = await import('./gateway/role-tx');
   if (placed && steps.unplace) {
     const back = steps.unplace;
     afterOuterRollback(() => quietly(back, 'put the disk back after an outer rollback'));
@@ -327,7 +327,7 @@ export type SweptStore = keyof typeof STORE_FILE_COLUMNS;
  *  read on the caller's handle: `columns` in the spec's order (null where
  *  none), `files` the ones that are set. */
 export async function storeRows(store: SweptStore): Promise<SweepRow[]> {
-  const [{ db }, { sql }] = await Promise.all([import('./client'), import('drizzle-orm')]);
+  const [{ db }, { sql }] = await Promise.all([import('./gateway/handles'), import('drizzle-orm')]);
   const spec: { table: string; node: string; files: readonly string[]; where?: string } =
     STORE_FILE_COLUMNS[store];
   // One column per file (never a SQL array: a null element would come back
@@ -359,7 +359,7 @@ export async function storeRows(store: SweptStore): Promise<SweepRow[]> {
 export async function storeTombstones(
   store: 'appsnap' | 'tablesnap' | 'accepted',
 ): Promise<{ path: string; ageMs: number }[]> {
-  const [{ db }, { sql }] = await Promise.all([import('./client'), import('drizzle-orm')]);
+  const [{ db }, { sql }] = await Promise.all([import('./gateway/handles'), import('drizzle-orm')]);
   const rows = (await db.execute(
     sql`select path, (extract(epoch from (now() - created_at)) * 1000)::float8 as age
           from store_tombstones where store = ${store}`,
@@ -374,7 +374,7 @@ export async function forgetTombstones(
 ): Promise<void> {
   if (!paths.length) return;
   const [{ db }, { sql }, { storeTombstones: tombstones }] = await Promise.all([
-    import('./client'),
+    import('./gateway/handles'),
     import('drizzle-orm'),
     import('./schema/store-tombstones'),
   ]);

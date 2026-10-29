@@ -17,7 +17,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { currentActor } from './actor';
-import { systemDb } from './client';
+import { systemDb } from './gateway/handles';
 import { onFullSystemRoute } from './viewer';
 import type * as schema from './schema/index';
 import { assistantMessages, type AssistantMessage, type NewAssistantMessage } from './schema/index';

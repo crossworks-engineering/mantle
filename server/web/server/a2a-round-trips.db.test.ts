@@ -86,16 +86,16 @@ const OFF_BASELINE: Partial<Record<Path, Count>> = {
   'page save': { statements: 11, roundTrips: 17 },
 };
 
-/** The actor's own statements: its setting (packages/db/src/client.ts) and
+/** The actor's own statements: its setting (packages/db/src/gateway/actor-sql.ts) and
  *  its tagged statements. */
 const ACTOR_SQL = /mantle\.actor|mantle_actor_|\/\* mantle:actor \*\//;
 /** Not a path's: the box mode timer and postgres.js's type fetch on a new
  *  connection. */
 const NOISE_SQL = /mantle_actor_check_mode|from pg_catalog\.pg_type/;
 
-/** The actor SET itself (client.ts setActorSql). */
+/** The actor SET itself (gateway/actor-sql.ts setActorSql). */
 const SET_SQL = /set_config\('mantle\.actor'/;
-/** The RESET behind a write outside a transaction (client.ts
+/** The RESET behind a write outside a transaction (gateway/actor-sql.ts
  *  RESET_ACTOR_SQL): sent after the caller has the write's answer. */
 const RESET_SQL = /reset mantle\.actor;/;
 

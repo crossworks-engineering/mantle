@@ -39,7 +39,8 @@
 import { randomUUID } from 'node:crypto';
 import type postgres from 'postgres';
 import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
-import { setActorSql, writeRoleSettingsSql } from '../../client';
+import { setActorSql } from '../../gateway/actor-sql';
+import { writeRoleSettingsSql } from '../../gateway/write-route';
 import {
   ASSISTANT_WORKSPACE,
   GUIDE_ACTIONS,

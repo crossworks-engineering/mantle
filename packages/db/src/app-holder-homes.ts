@@ -7,7 +7,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { editCheckRefusalError, UUID_RE } from '@mantle/std';
-import { db } from './client';
+import { db } from './gateway/handles';
 import { getAdminDb } from './gateway/pools';
 import { appRunHolders, inAppRunWrite } from './gateway/viewer-scope';
 import { currentWorkspaceScope } from './viewer';

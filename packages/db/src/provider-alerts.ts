@@ -11,7 +11,7 @@
  * row updates, not one per call.
  */
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
-import { systemDb } from './client';
+import { systemDb } from './gateway/handles';
 import { providerAlerts, type ProviderAlertRow } from './schema/provider-alerts';
 
 export type ProviderSubject = 'embedding' | 'extraction';

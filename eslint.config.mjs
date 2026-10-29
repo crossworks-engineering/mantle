@@ -682,7 +682,7 @@ export default tseslint.config(
     },
   },
   {
-    // The gateway split out of packages/db/src/client.ts: small modules
+    // The database gateway (packages/db/src/gateway/): small modules
     // (eslint-rules/gateway-counts.mjs; the scoreboard pins the limit and
     // the gateway's import cycles).
     files: ['packages/db/src/gateway/**/*.ts'],

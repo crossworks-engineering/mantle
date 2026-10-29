@@ -8,8 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ log: [] as string[] }));
 
-vi.mock('./client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./client')>()),
+vi.mock('./gateway/scope', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./gateway/scope')>()),
   withTurnScope: vi.fn(
     async (_scope: unknown, fn: () => Promise<unknown>, o?: { writes?: boolean }) => {
       h.log.push(`scope:${o?.writes ? 'writes' : 'reads'}`);
@@ -26,7 +26,7 @@ vi.mock('./create-home', () => ({
 
 import { ADMIN_ONLY_ERROR, adminAreaError, ADMIN_KIND_CREATE_ERROR } from '@mantle/std';
 import { currentActor, loginActor, systemActor, type Actor } from './actor';
-import { withTurnScope } from './client';
+import { withTurnScope } from './gateway/scope';
 import { createHomeIntent } from './create-home';
 import {
   GateNotReadyError,

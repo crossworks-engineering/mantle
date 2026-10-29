@@ -11,8 +11,8 @@ const h = vi.hoisted(() => ({
   open: null as null | Array<() => unknown>,
 }));
 
-vi.mock('./client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./client')>()),
+vi.mock('./gateway/role-tx', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./gateway/role-tx')>()),
   afterOuterCommit: async (fn: () => unknown) => {
     if (h.open) h.open.push(fn);
     else await fn();

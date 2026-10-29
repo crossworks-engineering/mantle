@@ -5,7 +5,7 @@
  * it does not take for a write.
  */
 import { describe, expect, it } from 'vitest';
-import { isWriteSql } from './client';
+import { isWriteSql } from './gateway/handles';
 
 describe('isWriteSql', () => {
   it.each([

@@ -15,7 +15,7 @@
  * so its reads are the statements they were.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { db } from './client';
+import { db } from './gateway/handles';
 import { currentCaller } from './gate';
 import { currentWorkspaceScope } from './viewer';
 

@@ -14,7 +14,7 @@ const h = vi.hoisted(() => ({
   spots: [] as string[],
 }));
 
-vi.mock('./client', async (importOriginal) => ({
+vi.mock('./gateway/handles', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   systemDb: {
     update: () => ({

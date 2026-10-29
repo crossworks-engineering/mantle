@@ -18,7 +18,7 @@
  * the surface rules decide, as before.
  */
 import { sql } from 'drizzle-orm';
-import { db } from './client';
+import { db } from './gateway/handles';
 import { currentWorkspaceScope } from './viewer';
 import { editCheckRefusalError, READ_ONLY_COPY_MESSAGE, UUID_RE } from '@mantle/std';
 import { SnapshotCopyReadOnlyError } from './snapshot-copy';

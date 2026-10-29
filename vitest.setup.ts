@@ -23,7 +23,7 @@ import {
 } from './packages/db/src/actor';
 
 // The suite runs the login write gateway as web and api do
-// (openLoginWritePool in packages/db/src/client.ts reads this flag), so
+// (openLoginWritePool in packages/db/src/gateway/pools.ts reads this flag), so
 // every scoped login write in a test goes to the write role (in warn).
 (globalThis as { __mantleLoginWritePool?: boolean }).__mantleLoginWritePool = true;
 

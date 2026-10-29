@@ -11,7 +11,7 @@
  * (its owner check).
  */
 import { sql } from 'drizzle-orm';
-import { systemDb } from './client';
+import { systemDb } from './gateway/handles';
 import { liveWorkspaceSql } from './workspace-live';
 
 export async function llmWorkAllowed(nodeId: string): Promise<boolean> {

@@ -11,7 +11,7 @@ import { isSwept } from './level-reads.mjs';
  * role any other way. withViewer builds a WORKSPACE scope from that (a
  * login's workspaces, an assistant's workspace, a link's served list): the
  * old level roles serve only personal spaces (until W6b), inside
- * packages/db/src/client.ts. withHumanViewer and withTeamDrafts, the last
+ * packages/db/src/gateway/. withHumanViewer and withTeamDrafts, the last
  * level-role path (the review flows), went in W5c: nothing may call them.
  * The runtime half (what each scope reads) is
  * packages/db/src/viewer-shim.db.test.ts.
@@ -25,29 +25,27 @@ import { isSwept } from './level-reads.mjs';
  */
 const ROOT = join(__dirname, '..');
 
-const CLIENT = 'packages/db/src/client.ts';
 const VIEWER = 'packages/db/src/viewer.ts';
 const DB_INDEX = 'packages/db/src/index.ts';
-/** The modules of client.ts's gateway (packages/db/src/gateway/): client.ts's
- *  own code, split out of it. */
+/** The gateway modules (packages/db/src/gateway/). */
 const GATEWAY = readdirSync(join(ROOT, 'packages/db/src/gateway'))
   .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
   .map((f) => `packages/db/src/gateway/${f}`);
 
 /** Where the scope functions are defined (and re-exported): exempt. */
-const HOME = new Set([CLIENT, VIEWER, DB_INDEX, ...GATEWAY]);
+const HOME = new Set([VIEWER, DB_INDEX, ...GATEWAY]);
 
-/** Entered only inside client.ts: a workspace scope is opened by
+/** Entered only inside the gateway: a workspace scope is opened by
  *  withViewer for whom it acts for (or by a turn, withTurnScope), never
  *  from a hand-built scope. */
 const CLIENT_ONLY = ['withScope', 'runInViewerScope'] as const;
 
-/** The level-role entries: client.ts and viewer.ts only (tests excepted). */
+/** The level-role entries: the gateway and viewer.ts only (tests excepted). */
 const LEVEL_ENTRIES = ['runInTxScope', 'getViewerDb', 'runInLevelRoleForTest'] as const;
 
 /**
  * The human level-role path (team drafts, client requests) went with review
- * in workspaces W5c: no caller is left, and client.ts defines neither any
+ * in workspaces W5c: no caller is left, and the gateway defines neither any
  * more. A call anywhere fails here: a member reads in a workspace scope
  * (withViewer) instead.
  */
@@ -236,7 +234,7 @@ describe('the withViewer shim sweep (R6)', () => {
     ).toEqual([]);
   });
 
-  it('no product code enters a level role, or a hand-built scope, outside client.ts', () => {
+  it('no product code enters a level role, or a hand-built scope, outside the gateway', () => {
     const names = [...CLIENT_ONLY, ...LEVEL_ENTRIES];
     expect(all.filter((p) => names.some((n) => p.endsWith(`: ${n}`)))).toEqual([]);
   });
@@ -260,8 +258,8 @@ describe('the withViewer shim sweep (R6)', () => {
     expect(all).toEqual([]);
   });
 
-  it('in client.ts only the workspace pool and the write pool are opened (the level pools went in W8c)', () => {
-    const text = [CLIENT, ...GATEWAY].map((f) => blanked(code(load(f)!))).join('\n');
+  it('in the gateway only the workspace pool and the write pool are opened (the level pools went in W8c)', () => {
+    const text = GATEWAY.map((f) => blanked(code(load(f)!))).join('\n');
     const otherPools = calls(text, 'getViewerDb').filter(
       (c) => !/getViewerDb\('(user|write)'\)/.test(c),
     );
@@ -321,7 +319,7 @@ describe('the sweep itself (fixtures)', () => {
     expect(problems(F, src, [...KEYS, 'app'])).toEqual([]);
   });
 
-  it('catches withScope and runInViewerScope outside client.ts, however named', () => {
+  it('catches withScope and runInViewerScope outside the gateway, however named', () => {
     const cases = [
       `import { withScope } from '@mantle/db'; withScope(scope, fn);`,
       `import { withScope as ws } from '@mantle/db'; ws(scope, fn);`,
@@ -329,7 +327,7 @@ describe('the sweep itself (fixtures)', () => {
       `const { runInViewerScope: enter } = await import('@mantle/db/viewer'); enter(s, fn);`,
     ];
     for (const src of cases) expect(run(src), src).toEqual([expect.stringMatching(/: \w+$/)]);
-    expect(run(`withScope(scope, fn);`, CLIENT)).toEqual([]);
+    expect(run(`withScope(scope, fn);`, 'packages/db/src/gateway/scope.ts')).toEqual([]);
   });
 
   it('catches a guarded function passed around as a value', () => {

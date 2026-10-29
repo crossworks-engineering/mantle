@@ -9,10 +9,10 @@
  *    fails the pin).
  *  - dbGatewayImportCycles: the gateway modules on an import cycle among
  *    the files of packages/db/src (relative imports and re-exports, type
- *    imports too), pinned at 0. A gateway module that imports client.ts is
- *    on one, since client.ts imports the gateway. A specifier may name the
+ *    imports too), pinned at 0. A gateway module that imports index.ts is
+ *    on one, since index.ts imports the gateway. A specifier may name the
  *    file as `.js`, and the package's own name (`@mantle/db`,
- *    `@mantle/db/client`) resolves through packages/db/package.json's
+ *    `@mantle/db/viewer`) resolves through packages/db/package.json's
  *    exports; comments are stripped first.
  *  - dbGlobalKeyWrites and dbGlobalKeyReads: the globalThis.__mantle* keys
  *    are pools.ts's. A write of one (`=`, `??=`, `||=`, `&&=`, `delete`) in
@@ -54,7 +54,7 @@ function dbSpecifiers(code) {
 
 /** The repo path of `spec` imported from `from`, among `paths`, or null:
  *  a `.js` name is its `.ts` file; the package's own name goes through
- *  `exports` (packages/db/package.json's, `./client` -> `./src/client.ts`). */
+ *  `exports` (packages/db/package.json's, `./viewer` -> `./src/viewer.ts`). */
 function resolve(from, spec, paths, exports) {
   let base;
   if (spec === DB_PACKAGE || spec.startsWith(`${DB_PACKAGE}/`)) {

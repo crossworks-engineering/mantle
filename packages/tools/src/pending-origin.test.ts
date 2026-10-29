@@ -24,12 +24,18 @@ vi.mock('../../db/src/viewer', async (importOriginal) => {
     currentRequestMode: () => h.mode,
   };
 });
-vi.mock('../../db/src/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../db/src/client')>()),
+vi.mock('../../db/src/gateway/scope-answers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/scope-answers')>()),
   scopeHoldsAdmin: async () => h.holds,
   scopeHasArea: async (area: string) => h.areas.includes(area),
   loginHasArea: async (_login: string, area: string) => h.areas.includes(area),
+}));
+vi.mock('../../db/src/gateway/scope', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/scope')>()),
   withTurnScope: async (_s: unknown, fn: () => Promise<unknown>) => fn(),
+}));
+vi.mock('../../db/src/gateway/viewer-scope', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/gateway/viewer-scope')>()),
   loginScopeFor: async (loginId: string) => ({
     kind: 'user',
     loginId,

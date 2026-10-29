@@ -32,7 +32,8 @@
  * folders moves only its own rows).
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { onSpaceRows, type Db } from './client';
+import { onSpaceRows } from './gateway/heads';
+import { type Db } from './gateway/handles';
 import { nodes } from './schema/nodes';
 
 /** Root plus three folder levels (TREE_MAX_DEPTH in @mantle/client-types). */

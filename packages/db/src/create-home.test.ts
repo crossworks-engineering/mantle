@@ -19,9 +19,11 @@ const h = vi.hoisted(() => ({
   rows: [] as { id: string; name: string; moderator?: boolean }[],
 }));
 
-vi.mock('./client', () => ({
+vi.mock('./gateway/viewer-scope', () => ({
   loginScopeFor: vi.fn(async () => ({ kind: 'user', ws: [W1, W2], modWs: [W1] })),
   createHomeFallback: vi.fn(async () => ({ privateWs: P1 })),
+}));
+vi.mock('./gateway/handles', () => ({
   db: {
     select: () => ({
       from: () => ({
@@ -33,7 +35,7 @@ vi.mock('./client', () => ({
 }));
 vi.mock('./viewer', () => ({ currentWorkspaceScope: () => h.scope }));
 
-import { createHomeFallback, loginScopeFor } from './client';
+import { createHomeFallback, loginScopeFor } from './gateway/viewer-scope';
 import { createHomeIntent } from './create-home';
 
 beforeEach(() => {
