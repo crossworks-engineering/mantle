@@ -52,7 +52,6 @@ export const ARCHIVE = 'docs/_archive/actors-history.md';
 /** `file: doc, "quote"` of each known quote that names no heading. The
  *  list only shrinks: an entry that no longer dangles is a problem. */
 export const DANGLING = [
-  'eslint-rules/as-system-allowlist.mjs: docs/actors.md, "A6"',
   'packages/db/migrations/0213_mobile_roles_push.sql: docs/mobile-companion-backend.md, "Three roles on the phone"',
   'packages/db/migrations/0215_tool_team_apps.sql: docs/member-logins.md, "Outside tools in team apps"',
   'packages/db/migrations/0280_edit_check.sql: docs/actors.md, "A3a must"',

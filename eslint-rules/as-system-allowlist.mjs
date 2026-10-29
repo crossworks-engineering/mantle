@@ -29,8 +29,6 @@ import { asSystemSites, isCounted, repoPathOf, pinnedRule } from './arch-counts.
  * one answer outside the scope asks a narrow definer instead (docs/actors.md,
  * "9. Definers"); code that never runs in a scope says so with systemWork
  * (no exit: it refuses a workspace scope).
- *
- * docs/actors.md, "A6" (a dangling quote, listed in docs-quotes.mjs DANGLING)
  */
 export const AS_SYSTEM_PINS = {
   // The named system step, the one door for the brain-wide bookkeeping a

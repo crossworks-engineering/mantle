@@ -39,7 +39,7 @@ export function isRenderAssetPath(path: string): boolean {
  *  ones, but the same can't-carry-a-bearer link shape. The gate admits the
  *  token here (GET only), and ROUTE_POLICY lets the asset caller kinds be
  *  read only on a GET or HEAD row of these paths (route-policy.ts
- *  callerServes, A4 hand batch B fix round 1). */
+ *  callerServes). */
 export function isAssetPath(path: string): boolean {
   return (
     path.startsWith('/api/files/files/') ||
@@ -123,7 +123,7 @@ export const PUBLIC_PATHS = [
 /**
  * Whether `path` is under PUBLIC_PATHS: the one function that reads the
  * list. ROUTE_POLICY builds each row's `public` with it; the gate asks it
- * only for a request no row answers (arch A4 step 2).
+ * only for a request no row answers.
  */
 export function isPublicPath(path: string): boolean {
   return PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
