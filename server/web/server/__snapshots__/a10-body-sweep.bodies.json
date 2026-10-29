@@ -459,6 +459,7 @@
   "PUT /api/profile/default-mode": {
     "defaultMode": "light"
   },
+  "PUT /api/profile/description": { "description": "sweep" },
   "PUT /api/profile/fonts": {},
   "PUT /api/profile/home-desk": {
     "homeDesk": { "v": 1, "items": [], "counts": {}, "icons": true, "clock": "digital" },
