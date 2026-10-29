@@ -181,7 +181,7 @@ export async function createRun(
     /** Surface the run was created from — the root resume reports back
      *  here (0134). Omit for web/background. */
     originChannel?: { kind: 'telegram'; chat_id: string };
-    /** The login the planning turn served (R3): its trace's login. */
+    /** The login the planning turn served: its trace's login. */
     loginId?: string | null;
   },
 ): Promise<{ runId: string; rootItemId: string; actions: PostCommitAction[] }> {

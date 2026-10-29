@@ -2,8 +2,8 @@
  * Server-side CRUD + fan-out helpers for tool groups (capability bundles).
  *
  * A `tool_group` is { slug, name, description, tool_slugs }. Agents grant it via
- * `agents.tool_group_slugs[]`. From Phase 3 the tool-loop expands an agent's
- * granted groups into its effective tool set; until then groups are dormant.
+ * `agents.tool_group_slugs[]`. The tool-loop expands an agent's granted
+ * groups into its effective tool set.
  * See docs/tools-and-skills.md.
  */
 

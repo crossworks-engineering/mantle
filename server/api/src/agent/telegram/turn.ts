@@ -55,10 +55,10 @@ export async function runTelegramTurn(args: {
   /** The agent's key as its lookup returned it (resolveChatKey). */
   credential: ProviderCredential;
   ownerId: string;
-  /** The login the chat is paired to (workspaces W7d): the turn answers it,
+  /** The login the chat is paired to: the turn answers it,
    *  in its own thread, in the workspace of the assistant. */
   loginId: string;
-  /** An assistant of a workspace other than Admin (W7d): text in, text
+  /** An assistant of a workspace other than Admin: text in, text
    *  out, as its web chat. */
   textOnly?: boolean;
   wasVoice: boolean;
@@ -151,7 +151,7 @@ export async function runTelegramTurn(args: {
   const assembled = await assembleResponderTurn({
     ownerId,
     agent,
-    // The chat's login (W7d): the assistant answers it in its workspace;
+    // The chat's login: the assistant answers it in its workspace;
     // a helper (no workspace) in that login's turn scope of Admin.
     loginId,
     prefs,

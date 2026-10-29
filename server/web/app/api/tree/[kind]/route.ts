@@ -27,7 +27,7 @@ const Query = z.object({
  *  (no private items) and is echoed back; each folder then also counts the
  *  items there that only the caller's other workspaces read
  *  (`itemsElsewhere`), and a first page with no item names them
- *  (`elsewhere`, task f26a516e). `mayOrder` says whether the caller may set
+ *  (`elsewhere`). `mayOrder` says whether the caller may set
  *  the folder's order (Write on it; an Admin scope at the top level). */
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string }> }) {
   const user = ownerCaller();

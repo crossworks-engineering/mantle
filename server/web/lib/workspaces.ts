@@ -1062,9 +1062,9 @@ async function roleChangeOnSystemPool(
   }
 }
 
-/** POST /api/workspaces/:id/users. A Moderator adds anyone (Q3), without
+/** POST /api/workspaces/:id/users. A Moderator adds anyone, without
  *  the Moderator tick; an Admin user adds anyone anywhere, itself included,
- *  private workspaces too (S1), with or without it: logged with
+ *  private workspaces too, with or without it: logged with
  *  subject.self and shown as "Added by NAME on DATE". On the Admin
  *  workspace the add is the role change to admin, a Moderator there
  *  always: an add there with the tick off is refused (409 admin_workspace),
@@ -1143,9 +1143,9 @@ function lastAdminError(err: unknown): WsError | null {
 }
 
 /** DELETE /api/workspaces/:id/users/:loginId: a Moderator or an Admin user
- *  removes a plain user; only an Admin user removes a Moderator (owner
- *  answer Q2); anyone may leave. Never the last Moderator. On the Admin
- *  workspace it is the role change to member (W5a). The rule is
+ *  removes a plain user; only an Admin user removes a Moderator; anyone
+ *  may leave. Never the last Moderator. On the Admin workspace it is the
+ *  role change to member. The rule is
  *  mantle_ws_remove_user's (0307). */
 export async function removeUser(
   caller: WsCaller,

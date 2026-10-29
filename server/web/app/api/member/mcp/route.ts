@@ -1,18 +1,18 @@
 /**
- * GET /api/member/mcp: a member's own view of Settings > MCP (team apps
- * Phase 1, plan page b6dd688e). What it answers:
+ * GET /api/member/mcp: a member's own view of Settings > MCP. What it
+ * answers:
  *
  *  - `remoteEnabled`: the box-level remote MCP switch (an admin's);
  *  - `connectorUrl`: the URL to paste into an MCP client;
- *  - `access`: always on since workspaces W7b (the per-login MCP and Write
- *    switches went: a login reaches MCP in its own workspaces, and writes
- *    where its workspaces let it);
+ *  - `access`: always on (there is no per-login MCP or Write switch: a
+ *    login reaches MCP in its own workspaces, and writes where its
+ *    workspaces let it);
  *  - `clients`: the MCP clients THIS member connected (their live OAuth
  *    grants), never another login's;
- *  - `connectors`: the connectors the member's own MCP really offers (team
- *    apps Phase 2; access matrix N10): the connector tools of the member's
+ *  - `connectors`: the connectors the member's own MCP really offers (access
+ *    matrix N10): the connector tools of the member's
  *    workspaces, as the one MCP surface lists them for an OAuth client of
- *    this member (W7b). Each with its read and write tool counts.
+ *    this member. Each with its read and write tool counts.
  *
  * A member only: an admin uses Settings > MCP itself, a client has no MCP
  * screen yet. Nothing here is writable but the member's own disconnect
@@ -40,9 +40,8 @@ export async function GET() {
     listLoginClients(member.anchorId, member.loginId),
     listLoginConnectorTools(member.anchorId, member.loginId),
   ]);
-  // The connectors the member's MCP offers (M2 audit, low 7; access matrix
-  // N10): none while the box's remote MCP is off; else the connector tools
-  // of the member's workspaces, as the one surface lists them (W7b).
+  // The connectors the member's MCP offers (access matrix N10): none while the box's remote MCP is off; else the connector tools
+  // of the member's workspaces, as the one surface lists them.
   const open = feature('remoteMcp', { prefs });
   const offered = new Set(open ? tools.map((t) => t.tool.id) : []);
   const byGroup = new Map<string, MemberMcpConnector>();

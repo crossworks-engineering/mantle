@@ -123,15 +123,15 @@ for STORE_DIR in "${TABLE_DB_DIR:-$DATA_DIR/table-dbs}" "${APP_DB_DIR:-$DATA_DIR
   fi
 done
 
-# The viewer roles (member logins Phase 0b, plus the personal-space role of
-# Phase 2) are cluster objects: a dump does not carry them, but its row
-# policies and grants name them. Create them first (no login; migrate sets the
-# login and a password derived from MANTLE_MASTER_KEY), or every policy fails
-# to restore: a team-level agent sees an empty brain and a member an empty
-# space. The write role (mantle_write_user, arch A2b2a) too: its rules name it.
-# And the gap writer (mantle_gap_writer, A2b2b: a row rule on each gap table
-# names it). And the runtime roles (arch A9, the narrow system role among
-# them): the dump's grants and default privileges name them. The source of these names is TypeScript, which a
+# The viewer roles (and the personal-space role) are cluster objects: a dump
+# does not carry them, but its row policies and grants name them. Create them
+# first (no login; migrate sets the login and a password derived from
+# MANTLE_MASTER_KEY), or every policy fails to restore: a team-level agent
+# sees an empty brain and a member an empty space. The write role
+# (mantle_write_user) too: its rules name it. And the gap writer
+# (mantle_gap_writer: a row rule on each gap table names it). And the runtime
+# roles (the narrow system role among them): the dump's grants and default
+# privileges name them. The source of these names is TypeScript, which a
 # shell script cannot import: packages/db/src/viewer-roles.ts (POOL_ROLES and
 # RETIRED_POOL_ROLES), GAP_WRITER_ROLE (access-matrix.ts) and RUNTIME_ROLES
 # (runtime-role.ts). packages/db/src/viewer.test.ts fails when this list and

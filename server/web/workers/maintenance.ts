@@ -1,6 +1,6 @@
 /**
  * Maintenance worker — the nightly cron for schedulable registry sweeps
- * (docs/maintenance-runner.md, Phase 2). Mirrors the email/calendar worker
+ * (docs/maintenance-runner.md). Mirrors the email/calendar worker
  * idiom: pg-boss queue + `boss.schedule` cron, one job per slot.
  *
  * Today the schedulable set is exactly one task: entities-dedupe (auto tier,

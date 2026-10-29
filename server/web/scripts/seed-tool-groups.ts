@@ -1,11 +1,9 @@
 /**
- * Seed the manifest tool groups (capability bundles) for an owner.
- *
- * Tools & Skills split, Phase 0 (docs/tools-and-skills.md). The 19 default
- * groups mirror the `*_TOOLS` clusters in @mantle/tools. They are DORMANT: no
- * agent grants them yet, so seeding changes nothing at runtime — it just
- * populates `tool_groups` so the Tools manager + integrity checks have rows to
- * work with after migration 0080.
+ * Seed the manifest tool groups (capability bundles) for an owner
+ * (docs/tools-and-skills.md). The default groups mirror the `*_TOOLS`
+ * clusters in @mantle/tools. Seeding grants no group to any agent: it
+ * populates `tool_groups` so the Tools manager + integrity checks have rows
+ * to work with.
  *
  * Runs `applyManifest` with empty agent/skill filters in gap-fill mode, so it
  * touches ONLY the groups (+ idempotent builtin tools) and never clobbers an

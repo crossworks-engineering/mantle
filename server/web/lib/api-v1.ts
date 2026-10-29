@@ -1,12 +1,11 @@
 /**
- * The public HTTP API, version 1 (plan page 1e62e204, section 2.6).
+ * The public HTTP API, version 1.
  *
  * Every /api/v1 route file declares, per method, the area an API key needs
- * (`keyArea` in its `policy`, route-declaration.ts; plan v3.2 S9 part 3:
- * the table that listed them here is gone). That is the contract a key is
+ * (`keyArea` in its `policy`, route-declaration.ts). That is the contract a key is
  * held to: the gate reads the request's row (route-policy.ts keyOnRow) and
  * refuses a key outside its areas or a write its access does not allow. A
- * key acts as its login (workspaces plan 7.5): the login's rights and
+ * key acts as its login: the login's rights and
  * workspaces decide, and the key's access and areas only narrow them,
  * never widen. A row under /api/v1 that declares no key area is a 404 for
  * a key, so a route file added without one can never be reached with one.

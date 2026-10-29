@@ -40,7 +40,7 @@ export const policy = routePolicy({
  * Rotate the calling bearer: mint a new jti + token, revoke the old row,
  * atomically, so a crash can't leave zero valid tokens. The old row is
  * CLAIMED first (revoked only if still live, in the same statement), so two
- * refreshes of one token at once give one new token, not two (F31): the
+ * refreshes of one token at once give one new token, not two: the
  * loser gets the same 401 as a revoked token. Self-authenticates from the
  * Authorization header (like mobile-logout), so it lives under the public
  * /api/auth prefix.

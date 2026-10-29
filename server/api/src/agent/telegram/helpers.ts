@@ -19,7 +19,7 @@ export function telegramCaption(text: string | null | undefined): string {
 }
 
 /** Map a Telegram message's attachments to the unified conversation-stream
- *  shape so a turn renders its media in /assistant (Phase 5). `fileNodeId` is
+ *  shape so a turn renders its media in /assistant. `fileNodeId` is
  *  the ingested file node (photos/documents get one), surfaced so a future
  *  render can re-fetch the original. Stickers are dropped (no conversational
  *  value). Bytes are never stored — only the transport file_id + node id. */

@@ -1,11 +1,11 @@
 /**
- * Search across workspaces (task f26a516e). A search (GET /api/search, and
- * GET /api/tree/:kind/search asked with `across=1`) looks in every
- * workspace the caller reads, not only the one picked in the switcher. The
- * database's row rules decide what the caller reads; the switcher's
- * workspace (`ws`) only orders the hits: its own come first. Each hit names
- * the workspace it opens in, so a client tags a hit from another workspace
- * and switches there before it opens it.
+ * Search across workspaces (docs/folder-tree.md). A search (GET
+ * /api/search, and GET /api/tree/:kind/search asked with `across=1`) looks
+ * in every workspace the caller reads, not only the one picked in the
+ * switcher. The database's row rules decide what the caller reads; the
+ * switcher's workspace (`ws`) only orders the hits: its own come first.
+ * Each hit names the workspace it opens in, so a client tags a hit from
+ * another workspace and switches there before it opens it.
  *
  * Every field here is optional on the wire: a brain before it sends none,
  * and a client then shows no tag and does not switch.

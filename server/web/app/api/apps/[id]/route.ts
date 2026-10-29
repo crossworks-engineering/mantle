@@ -65,11 +65,11 @@ const PatchBody = z.object({
   // grant (contract change 36): while it is on nobody beyond Admin writes
   // the data, whatever the grants' Write says; off, the grants decide.
   dataReadOnly: z.boolean().optional(),
-  // MCP access (team apps Phase 1, 0234): a member's or client's MCP
+  // MCP access: a member's or client's MCP
   // connection reaches the app's data. This route (admin only) is its one
   // writer: no agent tool and no API key sets it (a key never reaches it).
   mcpAccess: z.boolean().optional(),
-  // Trust its tools (team apps Phase 3, M3 audit): true lifts the author
+  // Trust its tools: true lifts the author
   // ceiling ('admin': the app runs its tools at the runner's own rules),
   // false puts it back ('team'). An admin's own click after reading the
   // declared tools: this route (admin session only) is its one writer, so

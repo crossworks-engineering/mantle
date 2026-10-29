@@ -1,6 +1,6 @@
 /**
  * DELETE /api/tables/[id]/history/[sid] — delete one entry of a table's
- * history and its copy of the data (apps first-class plan, Phase 4). The
+ * history and its copy of the data. The
  * table itself is not touched. Owner only; 404 when it is not there.
  */
 import { NextResponse } from '@/server/http-compat';

@@ -1,6 +1,6 @@
 /**
- * Clean up an agent's learned Journal rules: copies and stale versions
- * (spike 14, dev-brain page d58e4ed3). Maintenance task
+ * Clean up an agent's learned Journal rules: copies and stale versions.
+ * Maintenance task
  * `journal-rules-reconcile`.
  *
  *   dry run (default): every pair of the agent's live learned rules at or

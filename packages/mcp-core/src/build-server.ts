@@ -290,7 +290,7 @@ export function registerMantleTools(
   // switched off and that an admin switches it on.
   registerBuiltinTools(DOCUMENT_TOOLS);
   // Who reads an item (its grants); access_set only explains that nothing
-  // has a level any more (W7b).
+  // has a level any more.
   registerBuiltinTools(ACCESS_TOOLS);
 
   // ─── Spreadsheet authoring ───────────────────────────────────────────────────
@@ -313,7 +313,7 @@ export function registerMantleTools(
   // The authoring guide (docs/app-authoring-guide.md) on demand. In the app,
   // Appsmith carries the app_authoring skill; an outside Claude had only the
   // tool descriptions and could not learn host.me(), the :host_me_* SQL
-  // parameters or the level rules (task 603f6970). mcpOnly, read-only.
+  // parameters or the level rules. mcpOnly, read-only.
   registerBuiltinTools(APP_GUIDE_TOOLS);
 
   // ─── CLI sandboxes ────────────────────────────────────────────────────────────

@@ -355,7 +355,7 @@ export async function runsWorkerTurnImpl(
               ...(payload.redo_of ? { redo_of: payload.redo_of } : {}),
             },
           },
-          // The run's own scope (W4b): a run planned in a non-Admin
+          // The run's own scope: a run planned in a non-Admin
           // workspace is worked in that workspace, never wider.
           () =>
             asRunLogin(async () => {

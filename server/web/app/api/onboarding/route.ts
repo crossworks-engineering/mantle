@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     case 'profile':
       // The time zone, locale and name are the signed-in login's own
       // (personal preference keys): saved to its own row, never the brain
-      // owner's (W7e). Only the wizard's step, a brain key, lands on the
+      // owner's. Only the wizard's step, a brain key, lands on the
       // anchor's row (savePreferencesFor). For the anchor both are one row.
       return NextResponse.json(await saveProfile(user.actor.id, body));
     case 'saveKey':

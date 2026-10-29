@@ -367,10 +367,9 @@ function adminForWrite(role: OracleWriteRole): boolean {
  *  - delete it (and its content row): Moderator of its home;
  *  - open, change or close its link: be able to edit it, an app: Moderator
  *    of its home; close any public link: an Admin user with the users area;
- *  - an app's code: a Moderator of its home (D4); its switches: Admin
- *    users only (D5), on an app they may edit (the switch is a change of
- *    the app); its data: edit, and while Informational is on nobody
- *    outside Admin (D6);
+ *  - an app's code: a Moderator of its home; its switches: Admin users
+ *    only, on an app they may edit (the switch is a change of the app); its
+ *    data: edit, and while Informational is on nobody outside Admin;
  *  - a Recall card, an item's history row: edit of the item.
  */
 export function expectedWrite(

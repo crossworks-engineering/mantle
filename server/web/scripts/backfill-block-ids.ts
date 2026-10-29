@@ -71,7 +71,7 @@ async function main() {
       // Note: deliberately NO updatedAt bump and NO notifyNodeIngested.
       // This is maintenance — same content, just addressable. The extractor
       // doesn't need to re-run; the brain index is unaffected.
-      // A compare-and-set (W8b): only over exactly the doc, draft and
+      // A compare-and-set: only over exactly the doc, draft and
       // draft_rev this run read, so an edit that landed since is never
       // overwritten. A lost race writes nothing; the next run (or the page's
       // next read) repairs it.

@@ -1,6 +1,6 @@
 /**
- * GET /api/apps/deleted — the owner's recently deleted apps (apps first-class
- * plan, Phase 3), newest first: name, look, when, until when it can come
+ * GET /api/apps/deleted — the owner's recently deleted apps, newest
+ * first: name, look, when, until when it can come
  * back, and whether its data was kept. See packages/content/src/app-trash.ts.
  */
 import { NextResponse } from '@/server/http-compat';

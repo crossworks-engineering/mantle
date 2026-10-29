@@ -64,7 +64,7 @@ export async function POST(req: Request) {
   // the web client upgraded it to, which rides with it (access matrix T15).
   const keepJti = await ownLiveDeviceJti(req, actorId);
   await updatePassword(actorId, parsed.data.newPassword);
-  // A new password ends every other session the login holds (F06): the epoch
+  // A new password ends every other session the login holds: the epoch
   // bump kills each cookie and asset token signed before it, and the login's
   // bearers are revoked. The device that asked stays signed in: it keeps its
   // own bearer (only the others are revoked), and a cookie caller gets a

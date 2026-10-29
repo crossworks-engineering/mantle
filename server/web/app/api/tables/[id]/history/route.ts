@@ -1,6 +1,6 @@
 /**
- * /api/tables/[id]/history — a table's history (apps first-class plan,
- * Phase 4): GET lists it newest first (each commit keeps the version it
+ * /api/tables/[id]/history — a table's history:
+ * GET lists it newest first (each commit keeps the version it
  * replaced; the owner's own snapshots); POST takes a snapshot of the
  * published table now, with an optional note. Owner only. See
  * packages/content/src/table-snapshots.ts.

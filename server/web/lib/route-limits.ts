@@ -182,7 +182,7 @@ export const RATE_LIMITS = {
    *  orderChildren). A person dragging and pressing Move up stays far
    *  under it. */
   treePlace: perLogin('tree-place', 120),
-  // The messenger (plan page d8954876 section 14), per login: sends, the
+  // The messenger (docs/messenger.md), per login: sends, the
   // other writes (edit, delete, react, read, clear, membership, pins),
   // typing (one per 3 s; stored nowhere) and the reads (the list, a
   // window, the catch-up a client runs on every event).
@@ -190,10 +190,10 @@ export const RATE_LIMITS = {
   messengerWrite: perLogin('messenger-write', 120),
   messengerTyping: perLogin('messenger-typing', 20),
   messengerRead: perLogin('messenger-read', 600),
-  // People (plan page d8954876 section 23), per login: the cards, one
+  // People, per login: the cards, one
   // card, the presence poll and the photos a list draws.
   peopleRead: perLogin('people-read', 600),
-  // Calls (plan page 886126b4 section 12), per login: a start or join (each
+  // Calls, per login: a start or join (each
   // mints a token and makes a room), a token refresh (one an hour per
   // device, with room for a reconnect storm). The other call writes (leave,
   // end, remove, the agent stub) take messengerWrite.

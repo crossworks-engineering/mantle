@@ -1,5 +1,5 @@
 /**
- * Inbound API keys (migration 0232, plan page 1e62e204).
+ * Inbound API keys (migration 0232).
  *
  * A key acts as the ONE login that made it (nobody makes a key for another
  * login), as that login is now, and can only narrow what that login may do: `access` is read or read_write, `areas`
@@ -211,7 +211,7 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
 // ── Use: rate limits, last use, refusals ─────────────────────────────────────
 
 /** Take one request from the key's budget on `surface`, and from its
- *  login's budget across every key (F7). Both must allow it. */
+ *  login's budget across every key. Both must allow it. */
 export function rateLimitAccessKey(
   grant: Pick<AccessKeyGrant, 'id' | 'loginId'>,
   surface: 'v1' | 'mcp',

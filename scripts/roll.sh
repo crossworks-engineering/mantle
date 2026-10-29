@@ -296,7 +296,7 @@ else
 fi
 
 # ── 2c. connectors by level: what the roll opens ────────────────────────────
-# From team apps Phase 2 a connector's level decides who may use its tools,
+# A connector's level decides who may use its tools,
 # and a tool without the admin's read-only mark can change data: on a
 # connector already below admin (set for the team assistant in chat) every
 # unmarked tool becomes callable as a write by members' apps and MCP the
@@ -345,7 +345,7 @@ if [ "$OPEN_WRITES" -gt 0 ] || [ "$APPS_OPENING" -gt 0 ]; then
 fi
 
 # ── 2c (2). run-time schema SQL that rows-only breaks ─────────────────────
-# From team apps Phase 3 a member's, client's or contact's write runs rows
+# A member's, client's or contact's write runs rows
 # only: CREATE TABLE / CREATE INDEX IF NOT EXISTS on an object that exists is
 # a no-op, but any other create, ALTER, DROP, PRAGMA, transaction control,
 # VACUUM, REINDEX or ANALYZE run through host.db.exec is refused for them.

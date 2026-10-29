@@ -102,8 +102,7 @@ export function memberMayWriteAppData(app: { writable: boolean }): boolean {
 const publishedGreen = sql`(${apps.publishedBuild}->>'ok')::boolean is true`;
 
 /** `ws` (a checked id, parseWsFilter) keeps only the apps that workspace
- *  holds, on top of the member's own reach: a workspace's landing page
- *  (task d78e7bde). */
+ *  holds, on top of the member's own reach: a workspace's landing page. */
 function runnableWhere(anchorId: string, ws?: string | null) {
   return and(
     eq(nodes.ownerId, anchorId),
@@ -216,8 +215,7 @@ export async function listTeamLevelAppIds(anchorId: string): Promise<Set<string>
 }
 
 /**
- * A workspace's home app (task d78e7bde; was the brain-wide member home app
- * of plan 4a): the app the workspace names as its landing page
+ * A workspace's home app: the app the workspace names as its landing page
  * (workspaces.landing_app_id, set on the workspace screen by a Moderator),
  * honoured only while the workspace holds it, its published build is green
  * and the reader may run it. No share is needed: the grant is the access.

@@ -1,5 +1,5 @@
 /**
- * People (Messenger V1 plan page d8954876, section 23): what a person shares
+ * People (docs/messenger.md, "People"): what a person shares
  * with its team, under /api/people/*. Every login is approved by hand, so a
  * person's card (its name, avatar, photo and presence; later a status) is
  * open to the logins that may see it, and to nobody else: itself, the

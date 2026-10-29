@@ -579,7 +579,7 @@ export async function commitTable(
       }
       let draftAbs: string | null = null;
       if (!commitDoc) {
-        // ── Promote path (P3): no doc posted: publish the SERVER draft. ──
+        // ── Promote path: no doc posted: publish the SERVER draft. ──
         if (!row.storagePath) {
           // Legacy JSONB table: its draft (if any) lives in draftData: the
           // doc path's semantics via the mirror.

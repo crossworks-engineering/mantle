@@ -6,10 +6,10 @@
  * Pure types: ZERO runtime, ZERO dependencies. That's the whole point — a client
  * component can name a row shape without importing `@mantle/db` (which drags
  * `postgres` into the browser bundle). This is the single source of truth for the
- * frontend/backend contract as screens move to client data-fetching (Phase 2 ·
- * Task 4); the server aliases its summary types to these so drift is a type error.
+ * frontend/backend contract as screens move to client data-fetching; the
+ * server aliases its summary types to these so drift is a type error.
  *
- * Since the jackdaw-repo-split P0 this package is the CONTRACT package: subpath
+ * This package is the CONTRACT package: subpath
  * modules (`version`, `turn-streaming`, `traces-format`, `types/*`, `lib/*`, …)
  * carry the small dependency-free constants and helpers both sides of the wire
  * share. This root index stays types-only; subpaths may hold runtime code but
@@ -264,7 +264,7 @@ export type {
   WorkspaceUserSearchResponse,
   WorkspaceUsersResponse,
 } from './dto/workspaces';
-// GET /api/shell: the one shell, for every login (W5c).
+// GET /api/shell: the one shell, for every login.
 export type { Shell, ShellFeatures, ShellRole } from './dto/shell';
 // GET and PUT /api/profile/home-desk: the login's Desk, compare-and-set.
 export type { HomeDesk, HomeDeskItem, HomeDeskPutBody, HomeDeskState } from './dto/home-desk';
@@ -292,7 +292,7 @@ export type {
   ListWorkspace,
   ListWsEcho,
 } from './dto/grants';
-// Search across workspaces (task f26a516e).
+// Search across workspaces.
 export type {
   ElsewhereCount,
   HitWorkspace,

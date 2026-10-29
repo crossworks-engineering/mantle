@@ -145,9 +145,9 @@ type SidecarCols = {
   draftUpdatedAt?: Date | null;
 };
 
-/** The home apps of the brain's live workspaces (workspaces.landing_app_id,
- *  task d78e7bde): an app's `isHub`. In a login's scope the row rule keeps
- *  it to that login's workspaces. */
+/** The home apps of the brain's live workspaces (workspaces.landing_app_id):
+ *  an app's `isHub`. In a login's scope the row rule keeps it to that login's
+ *  workspaces. */
 async function landingAppIds(ownerId: string): Promise<Set<string>> {
   const rows = await db
     .select({ id: workspaces.landingAppId })

@@ -441,7 +441,7 @@ refresh_caddy() {
 }
 
 # refresh_livekit: the calls media server's config (infra/livekit/
-# livekit.yaml, calls plan page 886126b4 section 4), release-owned like a
+# livekit.yaml, docs/messenger.md), release-owned like a
 # shape: adopted where missing (the compose mounts it; docker would make a
 # DIRECTORY of a missing bind source), refreshed when pristine, left alone
 # and reported when hand-edited. The livekit container is recreated by the

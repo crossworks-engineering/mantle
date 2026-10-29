@@ -23,7 +23,7 @@ export const policy = routePolicy({
 });
 
 /**
- * Keyset page of rows for the grid's lazy-load (P3). Draft-first like every
+ * Keyset page of rows for the grid's lazy-load. Draft-first like every
  * other read surface: ?draft=1 reads the draft file when one exists and the
  * caller may edit the table (draftAllowed); published otherwise. Cursor = the last row of the previous page
  * (after_pos + after_rid); omit for the first page.

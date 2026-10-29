@@ -893,7 +893,7 @@ ensure PARSER_TOKEN        "gen_hex 32"
 # while the profile is off, like SANDBOXD_TOKEN; never rotated on re-run.
 ensure MANTLE_LIVEKIT_API_KEY    "gen_hex 8"
 ensure MANTLE_LIVEKIT_API_SECRET "gen_hex 32"
-# The runtime role (plan v3.2 S4a): a new install's app logs in as
+# The runtime role: a new install's app logs in as
 # mantle_runtime, not the superuser (docs/runtime-role.md). A FRESH box only,
 # and only when .env has no line: an existing box keeps what it runs with (the
 # updater and roll.sh write that value into a .env that has no line).

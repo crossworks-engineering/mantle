@@ -118,7 +118,7 @@ import { errorMessage } from '@mantle/std';
  *  (DBOS.logger), so a line written inside a workflow carries its id. */
 const logger = log('agent');
 
-/** A workspace assistant's chat on Telegram takes text only (W7d). */
+/** A workspace assistant's chat on Telegram takes text only. */
 const TELEGRAM_TEXT_ONLY_REPLY =
   'This assistant takes typed messages only here. Please send your message as text.';
 
@@ -466,7 +466,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         subjectId: row.id,
         subjectKind: 'telegram_message',
         agentId: agent.id,
-        // The chat's login (W7d): its trace is listed to that login only.
+        // The chat's login: its trace is listed to that login only.
         loginId,
         data: {
           telegramChatId: row.telegramChatId,
@@ -816,7 +816,7 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
 
   // Grant the core capability FLOOR (persona self-edit + task CRUD etc., as
   // tool GROUPS) to the conversational agents so "be more professional" / "add
-  // a task" work without manual /settings/tools setup. Idempotent (P6).
+  // a task" work without manual /settings/tools setup. Idempotent.
   try {
     const granted = await ensureCoreToolsOnConversationalAgents(owner);
     if (granted.length > 0) {

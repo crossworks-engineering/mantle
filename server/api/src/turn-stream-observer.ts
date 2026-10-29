@@ -31,7 +31,7 @@ import type { TurnEvent } from '@mantle/client-types';
 import { narrateStatus } from './turn-narration';
 import { feature } from '@mantle/config';
 
-/* Token streaming (Phase 3): installing the delta observer is what makes the
+/* Token streaming: installing the delta observer is what makes the
  * tool-loop stream (`isTurnStreaming()`). On by default, on its own switch,
  * `feature('turnTokens')` (MANTLE_TURN_TOKENS=0 turns just the live reply
  * typing off). */
@@ -145,7 +145,7 @@ function lifecycleEvent(e: TurnLifecycleEvent): TurnEvent {
 }
 
 export function installTurnStreamObserver(): void {
-  // Phase 3: token deltas. Installing this observer is ALSO what flips
+  // Token deltas. Installing this observer is ALSO what flips
   // `isTurnStreaming()` true in the tool-loop, so the turn only streams (uses the
   // adapter's chatStream + streaming HTTP) when this flag is set. Each delta
   // publishes over the SAME NOTIFY bus as status — fire-and-forget, never throws.

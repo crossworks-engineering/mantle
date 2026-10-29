@@ -17,7 +17,7 @@ import { errorMessage } from '@mantle/std';
  *
  * Probes are self-contained: each works in a throwaway temp directory and
  * cleans up after itself. No dependency on TABLE_DB_DIR existing — that is a
- * separate (P1) mount/writability check, deliberately not conflated with
+ * separate mount/writability check, deliberately not conflated with
  * engine capability.
  */
 

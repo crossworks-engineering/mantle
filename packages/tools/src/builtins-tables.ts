@@ -77,7 +77,7 @@ export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_tab_delete,
   table_set_aggregate,
   table_set_view,
-  // History (apps first-class plan, Phase 4).
+  // History (docs/tables.md).
   ...TABLE_HISTORY_TOOLS,
 ];
 

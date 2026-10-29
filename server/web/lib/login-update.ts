@@ -212,7 +212,7 @@ export async function applyLoginChange(
   if (change.contactId !== undefined) changes.contactId = change.contactId;
   if (change.disabled !== undefined) changes.disabledAt = change.disabled ? new Date() : null;
 
-  // Every session the login holds ends (F06) when it is disabled or enabled,
+  // Every session the login holds ends when it is disabled or enabled,
   // when its role changes, or when asked: the session epoch is bumped and
   // its bearers revoked. Re-enabling bumps too, so a cookie from before a
   // disable made by an older release cannot come back to life.

@@ -1,8 +1,8 @@
 /**
- * A member's own view of Settings > MCP (team apps Phase 1): GET
- * /api/member/mcp. The member reads their access here; an admin sets it.
- * The only thing a member changes is their own connected clients
- * (DELETE /api/member/mcp/clients/:id).
+ * A member's own view of Settings > MCP: GET /api/member/mcp. The member
+ * reads their access here; an admin sets it. The only thing a member
+ * changes is their own connected clients (DELETE
+ * /api/member/mcp/clients/:id).
  */
 
 /** One MCP client the member connected: their live OAuth grants on it. */

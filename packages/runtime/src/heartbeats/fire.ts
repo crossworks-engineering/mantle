@@ -380,8 +380,8 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   const systemPrompt = `${buildTimeContextLine(prefs, now)}\n\n${baseSystem}\n\n${HEARTBEAT_DATA_BOUNDARY}`;
 
   // Resolve tool allowlist = the agent's effective set (from its granted tool
-  // groups; P6) + the heartbeat control tools (always granted on a heartbeat
-  // turn). The bound heartbeat skill is pure teaching (P4): it contributes
+  // groups) + the heartbeat control tools (always granted on a heartbeat
+  // turn). The bound heartbeat skill is pure teaching: it contributes
   // instructions via the synthetic prompt, never tools.
   // In a workspace scope the heartbeat's own control tools are the ones
   // that change the firing heartbeat; list and fire reach every heartbeat

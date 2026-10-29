@@ -1,8 +1,8 @@
 /**
  * POST /api/auth/invite/accept { code, password, email? } (public, under
- * /api/auth): redeem an invite and become a MEMBER login (member logins,
- * Phase 6). Only the 16-char invite code redeems: team codes are retired
- * (migration 0178), so an old 8-char team code is just a wrong code. One
+ * /api/auth): redeem an invite and become a MEMBER login. Only the
+ * 16-char invite code redeems: team codes are retired (migration 0178), so
+ * an old 8-char team code is just a wrong code. One
  * transaction creates the login, marks the invite redeemed and writes the
  * team access log (redeemMemberInvite). Then the session cookie is set
  * exactly as POST /api/auth/login sets it.

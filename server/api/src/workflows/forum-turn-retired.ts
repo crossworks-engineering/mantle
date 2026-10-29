@@ -1,6 +1,5 @@
 /**
- * The retired Team Forum turn, kept as a no-op under its old workflow name
- * (member logins Phase 6).
+ * The retired Team Forum turn, kept as a no-op under its old workflow name.
  *
  * The forum's turn runner is gone, but a box can hold forum turns in its DBOS
  * system database when it upgrades: ENQUEUED on the `mantle_forum` queue (that

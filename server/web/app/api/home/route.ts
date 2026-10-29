@@ -9,8 +9,8 @@ export const policy = routePolicy({
 });
 
 /**
- * GET /api/home?ws=<id>: the landing page of the login's current workspace
- * (task d78e7bde), for every login, Admin users and members alike. Without
+ * GET /api/home?ws=<id>: the landing page of the login's current workspace,
+ * for every login, Admin users and members alike. Without
  * `ws` it is "All my workspaces": the built-in Desk over every workspace of
  * the login. With it: that workspace's home app when it names one the login
  * may run, and the built-in Desk's data kept to what that workspace reads.

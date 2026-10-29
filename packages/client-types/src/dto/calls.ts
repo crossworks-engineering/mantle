@@ -1,8 +1,8 @@
 /**
- * Calls between people (calls plan page 886126b4, sections 5, 8, 9 and 20):
- * a call is a LiveKit room named after a messenger conversation. The routes
- * live under /api/messenger; the brain mints every token and never hands
- * out an admin grant. The system lines that mark a call ride the message
+ * Calls between people (docs/messenger.md, "Calls"): a call is a LiveKit
+ * room named after a messenger conversation. The routes live under
+ * /api/messenger; the brain mints every token and never hands out an admin
+ * grant. The system lines that mark a call ride the message
  * stream (MessengerMessage.event, dto/messenger.ts).
  */
 
@@ -10,10 +10,10 @@
 export type MessengerCapabilities = {
   /** The Calls service is on for this brain: show the Call button. */
   calls: boolean;
-  /** The agent worker is registered on this box (P2): show the assistant
+  /** The agent worker is registered on this box: show the assistant
    *  row's Call button only then. */
   callsAgent: boolean;
-  /** Always false in P1. */
+  /** Always false: calls are voice only. */
   video: false;
 };
 

@@ -18,9 +18,9 @@
  *  - a create takes an optional `workspace` and names where it landed
  *    (create-home.ts; the gate's step 6 names the home).
  *
- * The member and client tool sets, the per-login MCP switch and the
- * my_app_* tools went (W7b), the client login and the static login tokens
- * in W8a: a login carries no permission of its own.
+ * There are no member or client tool sets, no per-login MCP switch, no
+ * my_app_* tools, no client login and no static login tokens: a login
+ * carries no permission of its own.
  *
  * `McpCaller` is the one context every MCP auth path resolves to, so a tool
  * that must act for the calling login reads it from the surface the call

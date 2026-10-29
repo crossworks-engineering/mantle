@@ -250,8 +250,8 @@ export function wantsOutboundPush(c: { direction?: string; status?: string | nul
 /**
  * Push the latest outbound turn of ONE login's thread with {ownerId,
  * agentSlug} to that login's own ADMIN devices, unless the
- * assistant-messages trigger is off. Each user has their own thread since
- * 0269 (W7c) and reads only that, so no other admin's phone hears it. A
+ * assistant-messages trigger is off. Each user has their own thread and
+ * reads only that, so no other admin's phone hears it. A
  * member's or a client's thread is never pushed here: its reply reaches its
  * own phone by the login_notice path (login-notify.ts).
  *

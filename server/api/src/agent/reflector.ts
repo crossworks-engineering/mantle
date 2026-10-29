@@ -101,10 +101,9 @@ async function resolveReflector(ownerId: string): Promise<AiWorker | null> {
  * cost-safety gate: an agent only earns an LLM reflection if the user actually
  * conversed with it since the last run. A recorded MCP turn is not activity.
  *
- * An assistant of a workspace other than Admin is never reflected on (W7c):
- * its turns are its users' own threads (0269, the member chat folded in),
- * and no reflection of them ever ran before. No new LLM work, and no user's
- * chat becomes another user's note.
+ * An assistant of a workspace other than Admin is never reflected on: its
+ * turns are its users' own threads (0269), so no user's chat becomes another
+ * user's note.
  */
 export async function qualifyingAgents(ownerId: string, since: Date): Promise<Agent[]> {
   const candidates = (

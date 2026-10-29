@@ -65,9 +65,9 @@ export function kindLane(key: string | null): JournalLane {
 }
 
 /** Legacy life areas that describe WHO the user is (background), not what
- *  happened lately. Spike 10 (dev-brain page 60a2f51e): mapping these to
- *  `context` let the newest-first cap drop a personal brain's family, faith
- *  and health baseline entries from every prompt. */
+ *  happened lately. Mapped to `context`, the newest-first cap dropped a
+ *  personal brain's family, faith and health baseline entries from every
+ *  prompt. */
 const LEGACY_BACKGROUND = new Set(['family', 'relationships', 'faith', 'health']);
 
 /** Map a legacy pre-v2 `category` value to a kind, for rows written before

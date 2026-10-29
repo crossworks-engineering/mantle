@@ -1,8 +1,8 @@
 /**
- * The member API's wire shapes (member logins, Phase 1): what a MEMBER login's
- * client reads from /api/member/*. A member reads what its workspaces hold
- * (the brain enforces it with row security) and chats with the Team
- * workspace's assistant in its own thread.
+ * The member API's wire shapes: what a MEMBER login's client reads from
+ * /api/member/*. A member reads what its workspaces hold (the brain
+ * enforces it with row security) and chats with the Team workspace's
+ * assistant in its own thread.
  */
 import type { MemberItemAuthor } from './access';
 import type { MemberItemKind } from '../member-kinds';
@@ -59,7 +59,7 @@ export type MemberChatThread = {
   messages: MemberChatMessage[];
 };
 
-// ── Personal spaces (member logins Phase 2) ──────────────────────────────
+// ── Personal spaces ──────────────────────────────────────────────────────
 
 export type MemberSpaceSharing = 'private' | 'team';
 /** A personal item's review state as the brain stores it. `taken` (brains
@@ -178,10 +178,10 @@ export type MemberSpaceItem<TDoc = unknown, TTable = unknown> = {
   body: MemberSpaceItemBody<TDoc, TTable>;
 };
 
-// ── Accepted items (member logins Phase 4, plan 6.2) ────────────────────
+// ── Accepted items ──────────────────────────────────────────────────────
 
 /** An item this member wrote and an admin accepted into the brain. No
- *  level (workspaces W5c): whether the member's Library holds it too is
+ *  level: whether the member's Library holds it too is
  *  its row in GET /api/member/items (`source` 'library'). */
 export type MemberAcceptedRow = {
   id: string;

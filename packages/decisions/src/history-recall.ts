@@ -6,9 +6,9 @@
  * user message + reply) 0-3 for "does a reply to this message need it"; code
  * brings back the ones at the threshold, in time order, before the recent part.
  *
- * Why: spike 12 (2026-09-23, 50 real turns on a work brain, dev-brain page c8c2256f).
- * Today's last-30 window missed a needed exchange on 4 turns, 3 of them a
- * RETURN to a topic after 8 h to 10 days, which Jev scored 2.2 to 2.85. The
+ * Why (measured on 50 real turns of a work brain): a last-30 window missed a
+ * needed exchange on 4 turns, 3 of them a RETURN to a topic after 8 h to 10
+ * days, which Jev scored 2.2 to 2.85. The
  * last 20 + Jev at 1.0 missed on 3 turns with 78% of the tokens; 11 of the 18
  * needed exchanges outside the last 20 came back. A walk back to the topic
  * start and chat-model selectors both lost (12 to 18 misses).

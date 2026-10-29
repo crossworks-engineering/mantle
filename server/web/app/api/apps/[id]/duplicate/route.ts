@@ -1,9 +1,9 @@
 /**
- * POST /api/apps/[id]/duplicate — copy an app in this brain (apps first-class
- * plan, Phase 3): its code with the builds (a published app is live at once),
- * its draft, declared tools and schema, and its data unless `withData` is
- * false. Sharing, level, history and table exports stay with the original;
- * the copy starts admin-only in Unsorted. Owner only. 409 when the app's
+ * POST /api/apps/[id]/duplicate — copy an app in this brain: its code with
+ * the builds (a published app is live at once), its draft, declared tools
+ * and schema, and its data unless `withData` is false. Sharing, level,
+ * history and table exports stay with the original; the copy starts
+ * admin-only in Unsorted. Owner only. 409 when the app's
  * database file is lost (copy with `withData: false` then).
  */
 import { NextResponse } from '@/server/http-compat';

@@ -20,9 +20,8 @@ export const policy = routePolicy({
  * operator picks — the same source the dashboard's context-% bars read,
  * so the number is consistent everywhere.
  *
- * Response shape (backward-compatible — `pricing` was added in Phase 2 of
- * the model-selection work; older clients reading only `limits` keep
- * working unchanged):
+ * Response shape (backward-compatible: older clients reading only `limits`
+ * keep working unchanged):
  *
  *     { limits: Record<slug, contextLength>,
  *       pricing: Record<slug, { inputPricePerM?, outputPricePerM? }>,

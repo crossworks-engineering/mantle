@@ -21,7 +21,7 @@ export const policy = routePolicy({
 });
 
 /**
- * Apply an op batch to the table's DRAFT (P3). The batch is atomic on the
+ * Apply an op batch to the table's DRAFT. The batch is atomic on the
  * server (all ops or none, under the registry lock); `if_rev` is the etag
  * from the last read/apply — a stale value gets 409 + the current rev so the
  * client refetches instead of silently clobbering newer (e.g. agent) edits.

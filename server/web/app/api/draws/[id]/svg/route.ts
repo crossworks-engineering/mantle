@@ -49,7 +49,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // simultaneous exports would deadlock until the session timeout. The export
   // route warms the cache before printing instead.
   //
-  // A member (W7e) reads the cache only, in its own scope, and gets only the
+  // A member reads the cache only, in its own scope, and gets only the
   // images whose file its workspaces read (an Admin image in a shared
   // drawing is taken out, its frame shows empty).
   const cached =

@@ -1,5 +1,5 @@
 /**
- * Who is calling /api/mcp (MCP as a login, plan page e5b854dd).
+ * Who is calling /api/mcp (MCP as a login, docs/mcp-as-a-login.md).
  *
  * Three bearers resolve to one `McpCaller` (@mantle/mcp-core):
  *

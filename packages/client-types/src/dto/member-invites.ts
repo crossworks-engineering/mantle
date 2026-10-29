@@ -1,5 +1,5 @@
 /**
- * Member invites (member logins Phase 6): an admin invites a person, who
+ * Member invites: an admin invites a person, who
  * opens the invite link, sets a password and becomes a MEMBER login.
  *
  * Admin: /api/team-admin/invites (create, list, revoke). Public, no session:

@@ -1,7 +1,6 @@
 /**
- * Collapse duplicate entity edges that accumulated before the extractor became
- * idempotent. Until Phase 4, the extractor APPENDED a `mentioned_in` edge on
- * every (re)extract, so re-edited content piled up duplicate
+ * Collapse duplicate entity edges left by an older, non-idempotent
+ * extractor, which APPENDED a `mentioned_in` edge on every (re)extract, so re-edited content piled up duplicate
  * `entity --mentioned_in--> node` rows. Going forward the extractor rebuilds
  * them (delete-then-insert) so no new dupes appear; this script cleans the
  * historical ones in a single pass — no LLM calls, just SQL.

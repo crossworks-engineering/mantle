@@ -188,25 +188,25 @@ export type AppRow = {
    */
   shareMode: ShareMode | null;
   /** Whether this app is the home app of a workspace the reader sees (its
-   *  landing page, set on the workspace screen; task d78e7bde). */
+   *  landing page, set on the workspace screen). */
   isHub: boolean;
   /** A live open public link exists (not revoked, not expired): the
-   *  "Public" pill. Absent from a brain before W5b2. */
+   *  "Public" pill. Absent from an older brain. */
   hasLink?: boolean;
-  /** Informational (client logins C6): members and clients only read the
-   *  app's data, whatever the grants' Write says. It changes no grant
-   *  (contract change 36): off, a member writes where a workspace of
-   *  theirs holds the app with Write on. Set with PATCH /api/apps/:id
+  /** Informational: members and clients only read the app's data,
+   *  whatever the grants' Write says. It changes no grant (contract change
+   *  36): off, a member writes where a workspace of theirs holds the app
+   *  with Write on. Set with PATCH /api/apps/:id
    *  `{ dataReadOnly }`. Absent from an older brain: read as false. */
   dataReadOnly?: boolean;
-  /** MCP access (team apps Phase 1, migration 0234): a member's or client's
+  /** MCP access (migration 0234): a member's or client's
    *  MCP connection may reach this app's data (the app_data_* tools), at
    *  the app's level, read or write by the login's Write switch and
    *  `dataReadOnly`. Off by default. Set with PATCH /api/apps/:id
    *  `{ mcpAccess }`. Absent from an older brain: read as false (and the
    *  switch is not shown). */
   mcpAccess?: boolean;
-  /** The author ceiling (team apps Phase 3, migration 0235): 'team' = the
+  /** The author ceiling (migration 0235): 'team' = the
    *  app runs its tools at team rules for every runner, admins too (a
    *  member wrote it, or its code came from a copy, an import or a
    *  member-era restore). An admin lifts it with PATCH /api/apps/:id
@@ -254,7 +254,7 @@ export type AppDetail = AppRow & {
 };
 
 /**
- * One entry on an app's History line (apps snapshots, Phase 2). A VERSION
+ * One entry on an app's History line. A VERSION
  * (`trigger` 'publish') is the code a publish made live; a SNAPSHOT (the
  * owner's, or one taken automatically before a restore or a schema change)
  * also holds a copy of the app's database. `seq` is the number the owner sees
@@ -294,9 +294,9 @@ export type AppSnapshot = {
 export type AppRestoreMode = 'code' | 'data' | 'full';
 
 /**
- * One entry on a table's History line (apps first-class plan, Phase 4). A
- * `commit` entry is the published table a commit replaced (kept by
- * itself, the newest 20); a `manual` one the owner took. Each holds a copy
+ * One entry on a table's History line. A `commit` entry is the published
+ * table a commit replaced (kept by itself, the newest 20); a `manual` one
+ * the owner took. Each holds a copy
  * of the whole workbook. `seq` is the number the owner sees (v1, v2 …).
  */
 export type TableSnapshot = {
@@ -582,7 +582,7 @@ export type ProfilePreferences = {
    *  group grant, so the switch can't be bypassed by a manifest change. Flip it
    *  from the Team admin surface. */
   teamPrivateReads?: boolean;
-  /** RETIRED (task d78e7bde, migration 0276): the brain-wide members' home
+  /** RETIRED (migration 0276): the brain-wide members' home
    *  app. 0276 made it the Team workspace's home app
    *  (workspaces.landing_app_id); nothing reads it any more. It stays in
    *  the stored preferences so a rollback finds it. Read via
@@ -659,10 +659,8 @@ export type CuratedTeamSection = {
 };
 
 /** One contact's OLD team portal chat (the roster `team_chat_list` reads).
- *  Since team codes were retired (member logins Phase 6, migration 0178) the
- *  roster is every contact with portal chat, not every code holder. It was
- *  also Team admin's "Chat archive" (GET /api/team-admin/members) until that
- *  tab and its route were removed on 2026-10-09; the data stays. */
+ *  Team codes are retired (migration 0178): the roster is every contact
+ *  with portal chat, not every code holder. */
 export type TeamMemberActivity = {
   contactId: string;
   /** Contact node title; '(deleted contact)' can't occur here: portal chat
@@ -1015,7 +1013,7 @@ export interface OnboardingModelChoices {
  *
  *   public — anyone with the link (the original model).
  *
- * 'team' is retired (member logins Phase 6 stage 6): members read team items
+ * 'team' is retired: members read team items
  * by level with their own logins. Migration 0176 revoked every team link, no
  * link is created or switched to team (PATCH /api/shares answers 400
  * `team-links-retired`), and an old team `/s` link shows a "sign in as a
@@ -1026,10 +1024,9 @@ export type ShareMode = 'public';
 
 /**
  * Why a link was refused (the `reason` of a 400 from the share routes):
- * `team-links-retired` for a team link (member logins Phase 6), and
- * `client-links-retired` for any link on an item at client level (client
- * logins C1): client means signed-in clients, and public is the only level
- * with an open link.
+ * `team-links-retired` for a team link, and `client-links-retired` for any
+ * link on an item at client level: client means signed-in clients, and
+ * public is the only level with an open link.
  */
 export type ShareRetiredReason = 'team-links-retired' | 'client-links-retired';
 

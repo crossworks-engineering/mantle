@@ -32,7 +32,7 @@ export { printOrigin } from './render-sandbox';
  * Chromium never takes the web server with it. `puppeteer-core` is the pure
  * driver (no bundled browser download, ~1 GB off the app image).
  *
- * Since the documents engine (packages/documents, plan page f7c67c92, stage 2):
+ * With the documents engine (packages/documents):
  * renderNodeToPdf prints through Gotenberg's chromium/convert/url when the
  * `documents` service is on, with the same print surface, the same render
  * cookie (minted by the package for the acting admin) and the print options

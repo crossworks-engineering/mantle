@@ -3,8 +3,8 @@
  *
  * A `skill` is { slug, name, description, instructions } — pure teaching.
  * It attaches to agents via `agents.skill_slugs[]`; its instructions are
- * composed into the agent's system prompt. Skills carry no tools (Phase 4,
- * docs/tools-and-skills.md) — capability lives on tool groups + direct grants.
+ * composed into the agent's system prompt. Skills carry no tools
+ * (docs/tools-and-skills.md): capability lives on tool groups + direct grants.
  */
 
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';

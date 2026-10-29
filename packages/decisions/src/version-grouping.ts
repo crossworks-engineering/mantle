@@ -44,7 +44,7 @@ export const MAX_VERSION_PAIRS = 60;
 /** Per-passage text cap sent to the model (same as passage scoring). */
 export const MAX_VERSION_PASSAGE_CHARS = 2_400;
 
-/** The spike's best wording (W2). The contrastive `false` criterion is what
+/** The best measured wording. The contrastive `false` criterion is what
  *  stopped topic overlap from counting: the plain "same fact about the same
  *  subject" wording grouped 14 of 33 negatives at 0.5. */
 export function versionQuestion(a: string, b: string): DecisionQuestion {

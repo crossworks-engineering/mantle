@@ -32,7 +32,7 @@ const Body = z.object({ newPassword: z.string().min(8).max(1024) });
  * /api/auth/change-password is for). No permission tiers by design: any login
  * may reset any account, their own included. The audit event is the
  * accountability mechanism. A reset ends every session the target holds
- * (F06); resetting your own keeps the device you did it from signed in, as
+ * resetting your own keeps the device you did it from signed in, as
  * /api/auth/change-password does: the device token it came with, and a
  * cookie that rides with it keeps the web client's short upgrade life,
  * bound to that token (access matrix T14), never a fresh year.

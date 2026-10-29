@@ -3594,13 +3594,12 @@ export const THEME_SEEDS = [
   {
     id: 'jackdaw',
     label: 'MantleOS',
-    // The ONE MantleOS theme (Jason, 2026-10-21): the mantle-site palette,
+    // The ONE MantleOS theme: the mantle-site palette,
     // token for token, so the apps and mantleos.io look like one product. The
     // id stays `jackdaw` because saved appearance rows store it; it replaces
     // both Jackdaw themes, and `jackdaw-harvest` (the teal one) is retired, so
     // a brain that saved it falls back to this fresh-install default. The
-    // brand guide is dev-brain page 4b3d1273; the source of truth for the
-    // values is mantle-site app/globals.css.
+    // source of truth for the values is mantle-site app/globals.css.
     //
     // LIGHT is print paper: the ground is #faedcf, the average paper colour of
     // the site's story prints, not the palette cream. Rust is deepened to

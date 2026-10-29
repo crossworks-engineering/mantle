@@ -151,7 +151,7 @@ export async function provisionDefaults(
   if (openrouter || azureRoute) {
     // It runs at the full-route spot tool-group-grant (seed.ts). A refusal
     // of the narrow login is a route bug, never a soft failure: it is thrown,
-    // not logged and swallowed (plan v3.2 S7b part b2 round 8 B).
+    // not logged and swallowed.
     await seedToolCapabilities(ownerId).catch((err) => {
       if (isRefusedRight(err)) throw err;
       console.error('[onboarding] seedToolCapabilities failed:', err);

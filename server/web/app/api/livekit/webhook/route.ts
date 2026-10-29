@@ -1,6 +1,5 @@
 /**
- * POST /api/livekit/webhook (calls plan page 886126b4, sections 5, 9 and
- * 11): LiveKit tells the brain what happened in a room (a participant
+ * POST /api/livekit/webhook (docs/messenger.md): LiveKit tells the brain what happened in a room (a participant
  * joined or left, the room closed). No session: the credential is the
  * JWT in Authorization, signed with the API secret and carrying the sha256
  * of the body, verified on the RAW bytes. Any failure is one 401 with no

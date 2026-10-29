@@ -1,8 +1,8 @@
 /**
- * Workspace management on the wire (workspaces plan page 4887b8e7, phase
- * W5a): /api/workspaces and the two fields /api/shell adds. Users are flat;
- * every permission is set on a workspace screen (users, Moderator ticks,
- * resources) or, from W5b, on an item's Grant Access panel.
+ * Workspace management on the wire (docs/workspaces.md): /api/workspaces
+ * and the two fields /api/shell adds. Users are flat; every permission is
+ * set on a workspace screen (users, Moderator ticks, resources) or on an
+ * item's Grant Access panel.
  *
  * Every refusal is `{ error, code }` with 400, 403, 404 or 409. A workspace
  * or login the caller may not see answers 404, never 403.
@@ -30,7 +30,7 @@ export function isWorkspaceArea(v: unknown): v is WorkspaceArea {
 export type WorkspaceKind = 'admin' | 'team' | 'private' | 'other';
 
 /**
- * A workspace's look (task 5edc9149): on every workspace the brain lists
+ * A workspace's look: on every workspace the brain lists
  * (this list and screen, /api/shell's switcher list, and the chips of the
  * lists and the tree). `color` is a tint key of the folder palette, `icon`
  * an emoji or `lucide:<name>`, the folder vocabulary; null = the default:
@@ -116,7 +116,7 @@ export type WorkspaceDetailResponse = {
   /** The assistant has history (threads or messages): it cannot be swapped
    *  or removed, only cloned to use elsewhere. */
   hasHistory: boolean;
-  /** The workspace's landing page (task d78e7bde): its home app, or null
+  /** The workspace's landing page: its home app, or null
    *  for the built-in Desk. Absent from an older brain. */
   landingApp?: WorkspaceLandingApp | null;
 };

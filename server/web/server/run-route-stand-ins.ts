@@ -73,7 +73,7 @@ export const loginRowStandIn = {
 };
 
 /**
- * A stood-in Login (plan v3.2 section 2.2: no role, no kind) for a test
+ * A stood-in Login (no role, no kind) for a test
  * whose code under test reads the Login (anyLoginCaller, chatCaller's
  * asLogin, ownerLoginCaller, publicLoginItself) and asks adminFacts. The
  * Admin facts ride on the object for adminFactsStandIn; the test says them

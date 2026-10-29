@@ -11,7 +11,7 @@ import { shellPart } from '@/lib/shell-part';
 import { shellWorkspaces, type WsCaller } from '@/lib/workspaces';
 
 /** `admin`: whether the login is an Admin user, as the route asked it (the
- *  shell: adminFacts, plan v3.2 section 2.2). */
+ *  shell: adminFacts). */
 export async function loginWorkspaces(
   route: string,
   caller: WsCaller,

@@ -1,12 +1,11 @@
 /**
- * Inbound API keys (plan page 1e62e204). Every login, signed in with a
+ * Inbound API keys (docs/workspaces.md). Every login, signed in with a
  * session or a device token; a key itself can never reach this route (keys
  * work on /api/v1 and /api/mcp only).
  *
- * A key acts as the login that MADE it, and nothing else (Jason,
- * 2026-10-07, audit item 8): nobody can make a key that acts as another
- * login. It keeps no role of its own (workspaces W8a): it reads what its
- * login's workspaces read now.
+ * A key acts as the login that MADE it, and nothing else: nobody can make a
+ * key that acts as another login. It keeps no role of its own: it reads
+ * what its login's workspaces read now.
  *
  * GET  /api/access-keys : the keys the caller may see (never the secret or
  *      its hash), the areas, the default and longest expiry, and the
@@ -93,8 +92,8 @@ const Body = z
 
 async function handleGET(login: Login) {
   // An Admin user sees every key; any other login its own (adminFacts: the
-  // scope's answer, plan v3.2 section 2.2). What a key may be decides on the
-  // keys area, never on the role (W8a).
+  // scope's answer). What a key may be decides on the keys area, never on
+  // the role.
   const facts = await adminFacts(login);
   const keys = await listAccessKeys(facts.admin ? null : login.loginId);
   const maxDays = maxKeyDays(facts.areas.has('keys'));

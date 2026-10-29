@@ -1,6 +1,6 @@
 /**
  * DELETE /api/team-admin/invites/:id: revoke an invite that has not been
- * redeemed (member logins, Phase 6). 404 when there is no such open invite.
+ * redeemed. 404 when there is no such open invite.
  * Admin only.
  */
 import { NextResponse } from '@/server/http-compat';

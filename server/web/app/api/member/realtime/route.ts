@@ -9,12 +9,10 @@ export const policy = routePolicy({
 });
 
 /**
- * GET /api/member/realtime : Server-Sent Events for a MEMBER (member logins
- * Phase 2). It carried one event per personal-item change; personal spaces
- * folded into the brain in workspaces W6b, and nothing has raised such a
- * change since, so the feed went in W8d. The stream stays for an older app
- * that opens it: it opens, keeps alive and closes as before, and carries no
- * event.
+ * GET /api/member/realtime : Server-Sent Events for a MEMBER, kept for an
+ * older app that opens it: it opens, keeps alive and closes, and carries no
+ * event (nothing raises a personal-item change: there are no personal
+ * spaces).
  *
  * The login is checked again on every heartbeat (a deactivated member's
  * stream closes), a stream lives at most an hour, and one login holds at most

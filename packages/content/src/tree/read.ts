@@ -111,7 +111,7 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
  *  in the folder order: manual rank first, then name.
  *
  *  The counts are what the folder shows when the reader opens it in the
- *  same scope (the one count path; task b6e4a8aa): only what the reader's
+ *  same scope (the one count path): only what the reader's
  *  workspaces read (the row rules on a read; the caller's scope on the
  *  system pool, as in a write's reply), and `ws` (the switcher's workspace)
  *  keeps the items to what that workspace reads, as the item page does.
@@ -568,7 +568,7 @@ export async function loadTreeFolder(
 }
 
 /** Of a row aliased `alias`: `ws` does not read it and one of `others`
- *  does (task f26a516e). `ws` and `others` are checked ids (the caller's
+ *  does. `ws` and `others` are checked ids (the caller's
  *  own live workspaces, lib/list-workspaces.ts). Null when no other is
  *  left (none named, or only `ws`): nothing can be elsewhere, so a caller
  *  counts nothing rather than scanning for a match that cannot be. */
@@ -580,8 +580,8 @@ function elsewhereOf(ws: string, others: readonly string[], alias: string): SQL 
 
 /**
  * The items directly in the folder at `path` that `ws` does not read, by
- * each of the caller's `others` that reads them, most first (task f26a516e:
- * the hint under an empty list, "2 items in Admin"). The read rule of the
+ * each of the caller's `others` that reads them, most first (the hint under
+ * an empty list, "2 items in Admin"). The read rule of the
  * caller's scope applies as on every tree read (the row rules in a
  * workspace scope; nodeAliasScopeReads on the system pool), so an item the
  * caller does not read is never counted, and only the named workspaces are
@@ -626,7 +626,7 @@ export function likePattern(q: string): string {
 /**
  * One page of a kind's items by name (A to Z), those whose title holds
  * `term` (all of them for an empty term). `extra` narrows further (`and ...`
- * on alias `n`). `first` (a checked workspace id; task f26a516e): the items
+ * on alias `n`). `first` (a checked workspace id): the items
  * that workspace reads come first, each part by name; the cursor's key then
  * carries the part ('0' first, '1' the rest) before the name.
  */
@@ -664,7 +664,7 @@ export async function searchItemRows(
   return { page: more ? rows.slice(0, limit) : rows, more };
 }
 
-/** What a tree search covers (task f26a516e), decided once by the route's
+/** What a tree search covers, decided once by the route's
  *  gateway (parseReadCover, server/web/lib/list-workspaces.ts) and taken
  *  here as is:
  *  - `ws`: narrows the items to what that workspace reads; null, none.
@@ -682,7 +682,7 @@ export type TreeSearchCover = { ws: string | null; current: string | null; acros
  * (workspace, tag) narrows the items and drops the folders: it is a question
  * about items.
  *
- * `cover` (TreeSearchCover; task f26a516e) says whether a workspace narrows
+ * `cover` (TreeSearchCover) says whether a workspace narrows
  * or orders. Across, the search covers what the caller's scope reads (the
  * row rules, as on every read here), the items `current` reads come first,
  * and the folders that match come too (unless a tag narrows). `across` is

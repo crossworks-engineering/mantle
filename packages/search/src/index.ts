@@ -225,7 +225,7 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
         .orderBy(...kw.order)
         .limit(n);
     if (currentWorkspaceScope() && !exact) {
-      // A big workspace scope (W7a): the text match is not leakproof, so
+      // A big workspace scope: the text match is not leakproof, so
       // under the row rule Postgres may not use the text index; it walked
       // every item of the scope and matched each (30 to 40 ms on a large
       // brain copy for one search). The ranked match runs on the system

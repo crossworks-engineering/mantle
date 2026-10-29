@@ -382,8 +382,8 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
     };
   }
   const detail = editRefusalDetail(err);
-  // The caller does not read the item: 404, as any item it may not read
-  // (owner decision D2). A tool says "not found".
+  // The caller does not read the item: 404, as any item it may not read. A
+  // tool says "not found".
   if (detail === 'no_read') {
     return {
       kind: 'database',

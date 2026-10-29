@@ -94,7 +94,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     }
     throw err;
   }
-  // The refusal's reason rides along (W8d): `contact-was-client` and
+  // The refusal's reason rides along: `contact-was-client` and
   // `former-client` among them, as the invite routes name theirs.
   if (!done.ok) {
     return NextResponse.json({ error: done.error, reason: done.reason }, { status: done.status });
@@ -166,7 +166,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   // auth.users per request. The push devices are deleted first, by hand, so
   // the relay can be told: a cascade would drop them silently. A comment
   // keeps its author's name (the FK goes SET NULL): the role grants nothing
-  // and takes nothing (W8a).
+  // and takes nothing.
   // A login's delete cascades its rows (and the brain owner's would
   // cascade the brain): not the narrow login's (access-matrix.ts
   // NARROW_WRITES, auth.users DELETE; 0321 also refuses it the owner's and

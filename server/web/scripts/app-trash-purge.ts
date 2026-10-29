@@ -1,6 +1,6 @@
 /**
- * Purge deleted apps past their 30 days in the trash (apps first-class plan,
- * Phase 3), the history rows of deleted tables (Phase 4), and the work files
+ * Purge deleted apps past their 30 days in the trash, the history rows of
+ * deleted tables, and the work files
  * a crash left in the app and table folders: the CLI face of the
  * `app-trash-purge` maintenance sweep. The rule lives in
  * @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the cron

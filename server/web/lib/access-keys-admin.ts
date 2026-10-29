@@ -1,5 +1,5 @@
 /**
- * The list side of inbound API keys (plan page 1e62e204): what the
+ * The list side of inbound API keys: what the
  * Settings > API access screen shows. Never the secret, never its hash.
  */
 import { sql } from 'drizzle-orm';

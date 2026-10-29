@@ -1,6 +1,6 @@
 /**
  * POST /api/tables/[id]/history/[sid]/restore — put a history entry back
- * into the table's DRAFT (apps first-class plan, Phase 4), and commit it at
+ * into the table's DRAFT, and commit it at
  * once with `commit: true`. Body: { discardDraft?, commit? }. 409 when an
  * unpublished draft is in the way (`reason: 'draft'`), for an app table, or
  * when the entry's file is gone. Owner only; 404 when not there.

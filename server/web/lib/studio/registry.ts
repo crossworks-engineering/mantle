@@ -7,7 +7,7 @@
  * makes that provable: the Studio reads from it, so a new instruction field can't
  * silently escape the prose layer — you add it here and it's in scope.
  *
- * Phase 1 reads this to label the read-only prose it surfaces. Phase 2's
+ * The Studio reads this to label the prose it surfaces, and the
  * `prompt_versions` table is keyed by `(entityType, field)` straight from these
  * entries, so versioning auto-covers anything listed here.
  *
@@ -70,7 +70,7 @@ export const PROSE_REGISTRY: readonly ProseField[] = [
   },
 ];
 
-/** The text-blob prose fields for an entity type (what Phase 2 versions as a body). */
+/** The text-blob prose fields for an entity type (what prompt_versions versions as a body). */
 export function textProseFields(entityType: ProseEntityType): ProseField[] {
   return PROSE_REGISTRY.filter((p) => p.entityType === entityType && p.shape === 'text');
 }

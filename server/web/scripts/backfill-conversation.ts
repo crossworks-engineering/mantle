@@ -1,11 +1,11 @@
 /**
- * Phase 6 (docs/conversation.md): one-time backfill of existing Telegram history
- * into the unified per-(owner, agent) conversation stream, + re-key existing
+ * One-time backfill (docs/conversation.md) of existing Telegram history into
+ * the unified per-(owner, agent) conversation stream, + re-key existing
  * conversation-digest notes with data.agent_id.
  *
- * Why: after the Phase 3 cutover the responder reads history (and the
- * summarizer rolls up) from assistant_messages, but pre-cutover Telegram turns
- * live only in telegram_messages, and pre-cutover digests carry data.chat_id /
+ * Why: the responder reads history (and the summarizer rolls up) from
+ * assistant_messages, but older Telegram turns live only in
+ * telegram_messages, and older digests carry data.chat_id /
  * source='web' rather than data.agent_id. So a Telegram thread's short-term
  * history + its older digests look empty until this runs.
  *

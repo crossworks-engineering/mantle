@@ -73,7 +73,7 @@ export async function disconnectClient(ownerId: string, clientId: string): Promi
   return true;
 }
 
-// ── A member's own clients (team apps Phase 1) ───────────────────────────────
+// ── A member's own clients ───────────────────────────────────────────────────
 
 /** The clients ONE login connected: its live grants only, grouped by client.
  *  A member's MCP screen lists these, and nobody else's. */

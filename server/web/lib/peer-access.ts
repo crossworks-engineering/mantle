@@ -1,5 +1,5 @@
 /**
- * What a peer's token may do on /api/mcp (plan page e5b854dd): the body
+ * What a peer's token may do on /api/mcp (docs/mcp-as-a-login.md): the body
  * fields the peer routes take, and the check that the login it is to act as
  * exists. `actsAs` is 'owner' (the anchor login), a member login id, or
  * null (a share-only peer). A bound peer acts as its login as that login

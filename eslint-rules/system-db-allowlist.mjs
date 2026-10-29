@@ -30,7 +30,7 @@ export const SYSTEM_DB_ALLOWLIST = [
   // statement; and the names, workspaces and agents it reads for ids a
   // scoped read returned. Never nodes or any content table.
   'packages/content/src/messenger.ts',
-  // People (plan page d8954876 section 23): the one gate of person-to-person
+  // People (docs/messenger.md, "People"): the one gate of person-to-person
   // reads. Names, faces, presence and the room rule, read by the caller's
   // own login id in every WHERE (the workspace role reads only its own
   // profile row). Writes nothing.

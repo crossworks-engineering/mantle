@@ -145,7 +145,7 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
 /** The changed rows of `rows` (id, title, gain uuid[], lose uuid[], via:
  *  the folder the gain comes through), named,
  *  the first TREE_VISIBILITY_LIST_MAX by title, with the total. Only the
- *  rows the caller's scope reads (task b6e4a8aa): the list may run on the
+ *  rows the caller's scope reads: the list may run on the
  *  system pool inside a write, and must not name, or count, an item the
  *  caller cannot open. A new item (id '') is the caller's own.
  *

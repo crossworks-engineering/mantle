@@ -1,6 +1,6 @@
 /**
  * Rule reconcile: keep an agent's learned Journal rules from piling up as
- * copies and stale versions (spike 14, dev-brain page d58e4ed3).
+ * copies and stale versions.
  *
  * The decider's `rule_reconcile` use judges (older, newer) pairs of the
  * agent's own learned rules: "same rule" and "newer changes the older". When

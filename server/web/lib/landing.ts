@@ -1,7 +1,6 @@
 /**
- * A workspace's landing page (task d78e7bde; workspaces arch plan v2,
- * section 21): what a login sees at the root of the app while a workspace
- * is its current pick. GET /api/home?ws=<id> answers it for every login;
+ * A workspace's landing page: what a login sees at the root of the app
+ * while a workspace is its current pick. GET /api/home?ws=<id> answers it for every login;
  * GET /api/member/home answers the Team workspace's for an older app.
  *
  * The landing page is the built-in Desk, showing that workspace's data,

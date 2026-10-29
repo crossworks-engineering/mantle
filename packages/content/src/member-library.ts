@@ -77,7 +77,7 @@ const notExtractedFragment = sql`NOT (${nodes.type} = 'file' AND ${nodes.data} ?
 /** What the Library lists: this brain's items of a Library kind the reader
  *  reads, without extracted image fragments. `ws` (a checked id,
  *  parseWsFilter) keeps only what that workspace reads, on top of the
- *  reader's own rule: a workspace's landing page (task d78e7bde). */
+ *  reader's own rule: a workspace's landing page. */
 function libraryWhere(
   anchorId: string,
   opts: { kind?: LibraryKind; q?: string; ws?: string | null } = {},

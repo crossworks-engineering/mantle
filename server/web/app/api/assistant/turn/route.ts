@@ -416,7 +416,7 @@ async function runTurn(
 
     const options: RunAssistantTurnOptions = {
       agentSlug,
-      // The signed-in login (R3): its messages and trace carry it.
+      // The signed-in login: its messages and trace carry it.
       loginId: user.actor.id,
       // An API key ('api') never reaches this route (keys work on /api/v1
       // only); the type still names it, so it maps to no channel.

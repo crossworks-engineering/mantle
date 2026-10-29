@@ -101,9 +101,9 @@ export type AppOpenStat = { n: number; at: string };
 /** Slim app row for navigation surfaces: everything the tree needs to render
  *  and search, nothing it doesn't. */
 /**
- * What the VIEWER may do with an app's data (team apps Phase 3): read only,
- * or read and change. The brain works it out per viewer with the same rule
- * its database brokers apply; a client only shows it (the R and R/W pill).
+ * What the VIEWER may do with an app's data: read only, or read and change.
+ * The brain works it out per viewer with the same rule its database brokers
+ * apply; a client only shows it (the R and R/W pill).
  */
 export type AppDataAccess = 'read' | 'read_write';
 
@@ -122,8 +122,8 @@ export type AppNavItem = {
    *  owner broker always writes, so 'read_write'. Absent from an older brain
    *  (show no pill). */
   dataAccess?: AppDataAccess;
-  /** The app's MCP access switch (team apps Phase 1): members' and clients'
-   *  MCP may reach its data. Absent from an older brain. */
+  /** The app's MCP access switch: members' and clients' MCP may reach its
+   *  data. Absent from an older brain. */
   mcpAccess?: boolean;
   /** Whether that switch reaches anyone now: on, published and below
    *  admin (members' and clients' MCP reach only such an app). Absent from

@@ -273,9 +273,9 @@ const MAX_EFFECTIVE_TOOL_SLUGS = 512;
 
 /**
  * An agent's effective tool allowlist: exactly the tools conferred by its
- * granted tool groups (pre-resolved via resolveAgentToolGroups). P6: tool groups
- * are the SOLE grant — the `agents.tool_slugs` column is gone, and skills are
- * pure teaching (P4). Deduped + capped.
+ * granted tool groups (pre-resolved via resolveAgentToolGroups). Tool groups
+ * are the SOLE grant (an agent has no tool list of its own), and skills are
+ * pure teaching. Deduped + capped.
  *
  * Tools whose optional service is switched off on this box (the sandbox verbs
  * without the `sandboxes` profile) are left

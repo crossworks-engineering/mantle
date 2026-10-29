@@ -10,7 +10,7 @@
  * a normal workspace, and each workspace's screen names its own assistant
  * (a member with no assistant named chats with defaultWorkspaceAssistant's
  * pick). The member home app designation left with per-workspace landing
- * pages (task d78e7bde): each workspace sets its home app on its own screen.
+ * pages: each workspace sets its home app on its own screen.
  * Session/bearer-gated: `/api/team-admin` is not in PUBLIC_PATHS.
  */
 import { NextResponse } from '@/server/http-compat';

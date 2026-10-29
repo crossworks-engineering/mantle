@@ -148,7 +148,7 @@ async function printPage(c: Context): Promise<Response> {
       printable.has(presentId) ? presentPosterSrc(presentId) : null,
     // A render engine prints the document as one: every image must be in
     // (a lazy image below the fold loaded today only because page.pdf
-    // forces layout; task 5dda95ee).
+    // forces layout).
     imageLoading: 'eager',
   });
   const widthClass = page.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';

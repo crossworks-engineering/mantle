@@ -1397,9 +1397,8 @@ async function loadConversationContextAtLevel(args: {
   // is also in the pool goes. Part B asks the model, only for passage pairs
   // from different, UNLINKED nodes that embed as near-copies, "are these two
   // versions of the same passage"; a direct yes at the threshold drops the
-  // lower-ranked one. The model never picks the newer copy. Spike: dev-brain
-  // page b564522b. `shadow`: counts only. Part B null (off / failed): Part A
-  // still counts.
+  // lower-ranked one. The model never picks the newer copy. `shadow`: counts
+  // only. Part B null (off / failed): Part A still counts.
   let versionSnap: ContextSnapshot['versionGrouping'] = undefined;
   const versionUse =
     retrievalVec && contentHits.length + chunkHits.length > 1
@@ -1724,7 +1723,7 @@ async function loadConversationContextAtLevel(args: {
   // exchanges that score at the threshold come back before the recent part,
   // in time order, each marked so the model knows the messages between are
   // not shown. `shadow`: the scores land in the snapshot only. Null scoring
-  // (failed / slow) = today's history. Spike 12, dev-brain page c8c2256f.
+  // (failed / slow) = the plain recent history.
   let recallSnap: ContextSnapshot['historyRecall'] = undefined;
   if (recall?.scoring) {
     const { scoring } = recall;

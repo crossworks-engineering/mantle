@@ -2,7 +2,7 @@
  * In-process maintenance sweeps — the code behind the nightly cron worker
  * (workers/maintenance.ts) and the shared implementation of the recurring
  * hygiene tasks, so the CLI script and the cron run exactly one definition
- * of each sweep (docs/maintenance-runner.md, Phase 2).
+ * of each sweep (docs/maintenance-runner.md).
  *
  * Cost-safety: only registry tasks with `schedulable: true` are considered, and
  * the registry asserts at load that those are free. As belt-and-braces this
@@ -151,8 +151,7 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     if (r.deleted === 0 && s.deleted === 0) return 'nothing to reap';
     return `deleted ${r.deleted} access log row(s), ${s.deleted} contact share row(s)`;
   },
-  // Apps first-class plan, Phase 3: deleted apps past their 30 days.
-  // Apps plan Phase 4: the history of deleted tables, too.
+  // Deleted apps past their 30 days, and the history of deleted tables.
   'app-trash-purge': async () => {
     const r = await purgeExpiredDeletedApps();
     const t = await purgeOrphanTableHistory();

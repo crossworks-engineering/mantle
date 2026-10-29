@@ -5,8 +5,8 @@
  * that carries a cache marker (Anthropic) or the stable-prefix tag (every
  * provider that caches implicitly: grok, OpenAI, Gemini). Short hashes of those parts, stored on each
  * model-call step, show WHICH part changed when a call that should have hit
- * the cache did not (spike 9, dev-brain page e9539aaf: reflector notes and
- * tool order were suspects, but nothing recorded it).
+ * the cache did not (reflector notes and tool order are suspects that
+ * nothing else records).
  */
 import { createHash } from 'node:crypto';
 import type { ChatToolDefinition } from '@mantle/voice';

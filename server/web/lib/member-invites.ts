@@ -1,7 +1,7 @@
 import { countRateFailure } from '@/lib/route-limits';
 
 /**
- * Shared bits of the member invite routes (member logins, Phase 6): the
+ * Shared bits of the member invite routes: the
  * public preview and accept under /api/auth/invite, and the admin routes
  * under /api/team-admin/invites. The invite logic itself is
  * packages/content/src/member-invites.ts.

@@ -1,6 +1,6 @@
 /**
- * Journal tiers 2 + 3 for one turn (memory_config.journal_tiers; spike 10,
- * dev-brain page 60a2f51e): pick the entries that match this message, work
+ * Journal tiers 2 + 3 for one turn (memory_config.journal_tiers): pick the
+ * entries that match this message, work
  * out what they make redundant, and build the snapshot. The caller applies
  * the drops in `live`; in `shadow` nothing it returns reaches the prompt.
  *

@@ -8,7 +8,7 @@
  * importer is unaffected.
  */
 
-// ─── Tool-outcome read-back (context-transfer audit, task 64170cb0) ─────────
+// ─── Tool-outcome read-back ─────────────────────────────────────────────────
 // History carries reply text only, so what a turn actually DID — which node it
 // wrote, what failed, what's parked behind approval — vanished unless the
 // prose restated it. The per-turn toolStats ledger persisted on

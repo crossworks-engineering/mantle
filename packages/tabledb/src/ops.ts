@@ -9,8 +9,8 @@ import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './n
 import { openTableFile, type SqliteDb } from './sqlite';
 
 /**
- * Incremental op application on a DRAFT workbook file (P3). The grid and the
- * agent tools stop shipping whole documents: each edit becomes an op
+ * Incremental op application on a DRAFT workbook file. The grid and the
+ * agent tools never ship whole documents: each edit becomes an op
  * descriptor, batches apply atomically (BEGIN…COMMIT), and the registry lock
  * (content-side) serializes writers across processes.
  *

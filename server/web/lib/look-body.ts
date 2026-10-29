@@ -1,5 +1,5 @@
 /**
- * A look as body fields (folders, and workspaces since task 5edc9149): the
+ * A look as body fields (folders and workspaces): the
  * ONE pair of validators for an icon and a colour, so a folder and a
  * workspace take exactly the same values. The palette is APP_TINTS and the
  * icon vocabulary the app-nav one (@mantle/client-types/app-nav).

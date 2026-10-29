@@ -82,8 +82,8 @@ export interface ToolDTO {
   /** "External access" on an outside tool (mcp or http): everyone a shared
    *  app that declares it reaches (members, clients, contacts on a contact
    *  link) may call it. Null when off. Set it with
-   *  `PUT /api/tools/:id/external-access`. On a CONNECTOR tool (mcp) since
-   *  team apps Phase 2 it is the READ-ONLY MARK: the connector's level
+   *  `PUT /api/tools/:id/external-access`. On a CONNECTOR tool (mcp) it
+   *  is the READ-ONLY MARK: the connector's level
    *  decides who may use the tool, and on = a read, off = a write (apps
    *  may write; a login's MCP needs its Write switch). */
   externalAccess?: ToolExternalAccessDTO | null;

@@ -18,7 +18,7 @@ export const policy = routePolicy({
 });
 
 /**
- * Agent Studio Phase 4 — the no-persist sandbox (docs/agent-studio.md).
+ * The Agent Studio no-persist sandbox (docs/agent-studio.md).
  *
  * Run a multi-turn conversation against an agent's CURRENT config without
  * writing anything: no recordTurn, no nodes, no conversation store, no tool loop,

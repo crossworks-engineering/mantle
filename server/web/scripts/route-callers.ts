@@ -1265,7 +1265,7 @@ export function specPattern(
 
 /**
  * Where a route file's declared `aliasOf` is not the route its handler
- * comes from (plan v3.2 S9, round 3 LOW-1): each declared method's alias
+ * comes from: each declared method's alias
  * is exactly the route file it re-exports (`patternOf` its spec, the
  * same method there), and a method that re-exports another route file's
  * handler declares that alias. `patternOf` gives the route pattern of a

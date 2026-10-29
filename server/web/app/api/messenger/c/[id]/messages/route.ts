@@ -65,7 +65,7 @@ const SendBody = z.object({
 
 /** POST /api/messenger/c/:id/messages: send as me. The same clientMsgId
  *  twice stores one message and answers it again. A mention starts nothing
- *  in this phase (agents in groups are Phase 3). */
+ *  (it is stored only). */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = anyLoginCaller();
   const { id } = await ctx.params;

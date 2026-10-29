@@ -1,17 +1,16 @@
 /**
- * The workspace chips and the `?ws=` filter of the brain's lists (W5b2
- * contract changes 5 and 14): every row of GET /api/pages and /api/notes,
+ * The workspace chips and the `?ws=` filter of the brain's lists: every row of GET /api/pages and /api/notes,
  * and every item and folder of GET /api/tree/:kind (its search and marks
  * too), carries `workspaces` (the workspaces of its read_ws the caller is a
  * user of; all of them for an Admin user; live ones, by name, each with its
- * look: colour, icon and kind, task 5edc9149) and `hasLink`
+ * look: colour, icon and kind) and `hasLink`
  * (a live open public link exists). A list asked with `?ws=<id>` keeps only
  * what that workspace reads and echoes the id as a top-level `ws`.
  *
  * One place for every list (the apps list too), so the rule is the same
  * everywhere. A workspace the caller may not name is 404, never 403.
  *
- * Search across workspaces (task f26a516e): `parseReadCover` is the one
+ * Search across workspaces: `parseReadCover` is the one
  * gateway that says what a read covers. A list narrows to the switcher's
  * workspace; a search (GET /api/search, and a tree search asked `across`)
  * covers every workspace the caller reads, and the switcher's workspace
@@ -196,7 +195,7 @@ export async function parseWsFilter(
 }
 
 /**
- * What one read covers (task f26a516e): TreeSearchCover, the shape the
+ * What one read covers: TreeSearchCover, the shape the
  * tree search takes as is.
  *  - `ws`: narrows the read to the items that workspace reads (a list);
  *    null narrows nothing.

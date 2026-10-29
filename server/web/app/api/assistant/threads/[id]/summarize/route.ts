@@ -29,7 +29,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const login = chatCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  // The login's own thread (W7c): another login's thread is not found, nor
+  // The login's own thread: another login's thread is not found, nor
   // one with an agent the login may no longer chat with.
   const found = await getChatThread(login.ownerId, id, login.loginId);
   const thread = found && (await resolveChatAgentById(login, found.agentId)) ? found : null;

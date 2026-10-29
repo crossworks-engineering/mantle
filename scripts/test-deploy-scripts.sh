@@ -321,7 +321,7 @@ check "the roll calls it after the image tag, before compose" sh -c "
   [ -n \"\$a\" ] && [ -n \"\$b\" ] && [ -n \"\$c\" ] && [ \"\$a\" -lt \"\$b\" ] && [ \"\$b\" -lt \"\$c\" ]"
 check "install.sh writes 1 on a fresh box only" sh -c "grep -q 'FRESH_BOX -eq 1 ]] && ! grep -qE' '$ROOT/scripts/install.sh' && grep -q 'upsert MANTLE_DB_RUNTIME_ROLE 1' '$ROOT/scripts/install.sh'"
 check ".env.example shows it set" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$ROOT/.env.example"
-# The fail-open branches throw since plan v3.2 S4b: the box line says
+# The fail-open branches throw: the box line says
 # "gone", and no query counts their old miss rows.
 check "box: the fail-open line reads gone, not a count" sh -c "
   grep -q ' fail_open_branches gone\$' '$ROOT/scripts/arch-scoreboard-box.sh' &&

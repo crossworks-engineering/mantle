@@ -1,6 +1,6 @@
 /**
  * POST /api/apps/[id]/snapshots/[sid]/restore `{ mode, discardDraft? }` —
- * restore an app from an entry on its history (apps snapshots, Phase 2).
+ * restore an app from an entry on its history.
  * `mode`: 'code' (into the draft), 'data' (the live database) or 'full'
  * (both, the code live). A snapshot of the current state is taken first; its
  * id comes back as `undo`. A code restore leaves the app's tools alone:

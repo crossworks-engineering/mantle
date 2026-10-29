@@ -1,9 +1,8 @@
 /**
- * The messenger (Messenger V1, plan page d8954876, sections 11 and 12):
- * direct chats and groups between the logins of one brain, under
- * /api/messenger/*. The chat with an assistant stays in assistant_messages;
- * the list shows each such thread as a row of kind 'agent' beside the
- * people chats.
+ * The messenger (docs/messenger.md): direct chats and groups between the
+ * logins of one brain, under /api/messenger/*. The chat with an assistant
+ * stays in assistant_messages; the list shows each such thread as a row of
+ * kind 'agent' beside the people chats.
  *
  * Every number that orders a chat is a seq: the conversation's last_seq,
  * a message's seq, a participant's read cursor. Clocks never order.
@@ -19,8 +18,7 @@ export type MessengerAuthorKind = 'login' | 'agent' | 'system';
 
 export type MessengerParticipantKind = 'login' | 'agent';
 
-/** An agent reply's state (Phase 3); a person's message is always
- *  'complete'. */
+/** An agent reply's state; a person's message is always 'complete'. */
 export type MessengerMessageStatus = 'complete' | 'pending' | 'failed';
 
 /** The last line of a conversation, kept in its row by the send. */
@@ -101,9 +99,9 @@ export type MessengerConversation = {
   archivedAt: string | null;
   lastSeq: number;
   lastMessageAt: string | null;
-  /** The bound workspace (Phase 3), or null. */
+  /** The bound workspace, or null. */
   workspaceId: string | null;
-  /** The group's agent (Phase 3), or null. */
+  /** The group's agent, or null. */
   agentId: string | null;
   participants: MessengerParticipant[];
   /** My own participant row. */
@@ -141,7 +139,7 @@ export type MessengerMessage = {
   via: string | null;
   /** '' once deleted. */
   body: string;
-  /** Attachment ids (Phase 4). */
+  /** Attachment ids. */
   attachments: string[];
   mentions: MessengerMention[];
   replyToSeq: number | null;

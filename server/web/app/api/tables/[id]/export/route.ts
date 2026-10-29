@@ -19,7 +19,7 @@ export const policy = routePolicy({
 });
 
 /**
- * Raw .sqlite download (P3) — the workbook file IS the interchange format.
+ * Raw .sqlite download: the workbook file IS the interchange format.
  * The response is a VACUUM INTO snapshot (consistent under concurrent
  * writes), not the live file. Committed data only; drafts are not exported.
  */

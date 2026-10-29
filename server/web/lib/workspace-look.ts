@@ -1,5 +1,5 @@
 /**
- * A workspace's look (task 5edc9149, migration 0285): its colour, its icon
+ * A workspace's look (migration 0285): its colour, its icon
  * and its kind, on every workspace the brain lists: the workspace list and
  * screen (lib/workspaces.ts), the switcher's list (/api/shell, the same
  * module) and the workspace chips of the lists and the tree

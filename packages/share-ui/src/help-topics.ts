@@ -80,7 +80,7 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/sandboxes', 'sandboxes'],
   ['/traces', 'traces'],
   ['/debug', 'debug'],
-  // The brain health Dashboard (task d78e7bde: no longer the home).
+  // The brain health Dashboard (not the home).
   ['/dashboard', 'dashboard'],
 
   // Home: the current workspace's landing page. Matched exact-only by the

@@ -1,5 +1,5 @@
 /**
- * Agent Studio Phase 2 — prose version history (docs/agent-studio.md).
+ * Agent Studio prose version history (docs/agent-studio.md).
  *
  * Append-only versioning for the human-editable prompt fields named in the prose
  * registry. Every edit + every revert inserts a `prompt_versions` row and writes

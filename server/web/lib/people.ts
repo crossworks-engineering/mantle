@@ -1,5 +1,5 @@
 /**
- * People's HTTP adapter (plan page d8954876 section 23): the routes under
+ * People's HTTP adapter (docs/messenger.md, "People"): the routes under
  * /api/people/* (and the messenger's older photo path) read the caller and
  * hand @mantle/content/people the authenticated login. Every rule is in
  * the content module; this file maps a request to it and serves a photo.

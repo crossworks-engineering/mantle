@@ -2,9 +2,9 @@
  * Maintenance task registry — the single source of truth for every
  * operational/maintenance script in the repo. Consumed by:
  *
- *   - `pnpm maintain` (scripts/maintain.ts) — the terminal runner (Phase 1)
- *   - workers/maintenance.ts — pg-boss cron sweeps over `schedulable` tasks (Phase 2)
- *   - the /debug/integrity Maintenance tab (Phase 3)
+ *   - `pnpm maintain` (scripts/maintain.ts): the terminal runner
+ *   - workers/maintenance.ts: pg-boss cron sweeps over `schedulable` tasks
+ *   - the /debug/integrity Maintenance tab
  *
  * Design + audit rationale: docs/maintenance-runner.md. This module is pure
  * data (plus invariant assertions) — it must stay importable from CLI, worker,

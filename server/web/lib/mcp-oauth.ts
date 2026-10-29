@@ -139,7 +139,7 @@ export async function registerClient(input: {
 
 /** Client ids are uuids (the registry's primary key). Anything else is an
  *  unknown client, answered before the query: Postgres would refuse a
- *  non-uuid with 22P02, which surfaced as a 500 (F31). */
+ *  non-uuid with 22P02, which would surface as a 500. */
 export async function getClient(clientId: string): Promise<OAuthClient | null> {
   if (!UUID_RE.test(clientId)) return null;
   const [row] = await db.select().from(oauthClients).where(eq(oauthClients.id, clientId)).limit(1);

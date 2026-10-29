@@ -159,8 +159,7 @@ async function main(): Promise<void> {
   // The shared runner queue — concurrency caps total in-flight runs across all
   // server/api processes (LLM-provider backpressure).
   await DBOS.registerQueue(RUNNER_QUEUE, { concurrency: runnerConcurrency() });
-  // The forum's queue ('mantle_forum') is no longer registered (member logins
-  // Phase 6). Its row persists in the DBOS system database on a box that had
+  // The forum's queue ('mantle_forum') is not registered. Its row persists in the DBOS system database on a box that had
   // it, so any turn left on it still dispatches, into the retired stub.
   // Dedicated queue for background runs turns (worker + resume). Off the shared
   // RUNNER_QUEUE so a run that fans out worker turns can never queue ahead of

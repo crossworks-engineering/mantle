@@ -354,9 +354,8 @@ export async function admitForExtraction(
     return { proceed: false };
   }
   // Owner check: only the brain's own items are learned. A node owned by
-  // anything else (a member's personal space, member logins Phase 2) is
-  // never extracted, whichever path notified us. Ships a release before any
-  // such row can exist, so no container ever learns a private item.
+  // anything else (a member's personal space) is never extracted, whichever
+  // path notified us, so no container ever learns a private item.
   if (node.ownerId !== ownerId) {
     await recordSkippedTrace({
       kind: 'extractor_run',
@@ -369,7 +368,7 @@ export async function admitForExtraction(
     return { proceed: false };
   }
   // Exempt nodes are refused before ANY pass: no side pass, no embedding, no
-  // key check. The Forum archive pages (member logins Phase 6) carry every
+  // key check. The Forum archive pages carry every
   // forum topic, private ones too, and stay out of the brain; a team request
   // a member filed waits until an admin acts on it (extract-exempt.ts).
   if (isExtractExempt(node)) {

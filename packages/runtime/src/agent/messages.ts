@@ -17,7 +17,6 @@
  *                                                 small, the map churns with
  *                                                 any content write
  *   …everything after is per-turn volatile and deliberately UNCACHED.
- * Measured basis: dev-brain page e9539aaf (spike 9).
  *
  * Cross-turn cache hits depend on blocks 1-2 being BYTE-STABLE between
  * turns: anything that varies per turn (the current-time line, "asked

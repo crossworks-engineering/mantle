@@ -49,7 +49,7 @@ export type RenderOptions = {
   presentUrl?: (presentId: string) => string | null;
   /** How an <img> loads: `lazy` (the default, a share page's long scroll)
    *  or `eager` (the print surface: a render engine prints the document as
-   *  one, so every image must be in by then; task 5dda95ee). */
+   *  one, so every image must be in by then). */
   imageLoading?: 'lazy' | 'eager';
 };
 

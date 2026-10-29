@@ -62,7 +62,7 @@ export async function withHnswPool<T>(
     )) as unknown as Array<{ v: string | null }>;
     hasIterativeScan = probe[0]?.v != null;
   }
-  // A read (W7a): in an Admin turn `db.transaction` is a write and goes to
+  // A read: in an Admin turn `db.transaction` is a write and goes to
   // the system pool; this one stays in the scope.
   return readTransaction(async (tx) => {
     // GUC values can't be bind parameters; `ef` is a clamped integer.

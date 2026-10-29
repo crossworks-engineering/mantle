@@ -71,7 +71,7 @@ export const RANK_DECAY = 0.5;
 /**
  * Chat glue that Postgres's `english` stopwords keep, as `english` stems.
  * These are rare in documents, so rarity alone would rank them like a part
- * number ("hey, quick one, what about task 0634cb44" put the task's passage
+ * number ("hey, quick one, what about task <id>" put the task's passage
  * third behind rows holding "hey", "quick" and "got"). Only words that carry
  * no content in a question; the vector arm still sees the whole message.
  */

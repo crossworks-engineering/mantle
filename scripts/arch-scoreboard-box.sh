@@ -9,18 +9,18 @@
 #     since the container started (one release: a roll restarts it), or
 #     --since (a docker duration). Counted ON THE BOX, by stub family (the
 #     first segment after /api/ of the retired routes), so only numbers come
-#     back over ssh: never a path, an id or a log line (arch A7);
+#     back over ssh: never a path, an id or a log line;
 #   - the check settings: mantle.actor_check and mantle.edit_check on the
-#     database (off, warn or on; "not set" until A2a and A3a add them);
-#   - the rights counts (plan v3, rule 10), each a number counted on the
+#     database (off, warn or on; "not set" on a box without them);
+#   - the rights counts, each a number counted on the
 #     box: role drift (mantle_role_drift(): enabled logins whose role
-#     disagrees with Admin, former clients left out before S8b's 0330 and
-#     counted from it; n/a on a box that has no
+#     disagrees with Admin, former clients left out before migration 0330
+#     and counted from it; n/a on a box that has no
 #     such function yet, never a guessed 0), the same over ALL logins
 #     (disabled ones and former clients too: a login whose role
 #     says admin without a user row in the live Admin workspace, or the
-#     other way; asked of the tables directly, so a box before S8b's
-#     migration answers it too; n/a where the tables are not there yet),
+#     other way; asked of the tables directly, so a box before migration
+#     0330 answers it too; n/a where the tables are not there yet),
 #     brains without a live Admin
 #     workspace, live Admin workspaces with no assistant and no assistant
 #     removal event, the SQL functions writing the four workspace tables
@@ -29,7 +29,7 @@
 #     MANTLE_DB_RUNTIME_ROLE is on (1 or 0, as the app reads it: from
 #     mantle_web's environment, or from the stack's .env when that
 #     container is not there; n/a with neither, or an unreadable .env);
-#   - the fail-open branches: gone since plan v3.2 S4b (each throws, or
+#   - the fail-open branches: gone (each throws, or
 #     answers no, docs/fail-open.md), so the line says "gone", never a
 #     count;
 #   - the narrow system role's count: the distinct actor and right rows
@@ -285,7 +285,7 @@ fi
 printf '  %-34s %s\n' role_drift "$drift"
 printf '  %-34s %s\n' role_drift_all_logins "$drift_all"
 printf '  %-34s %s\n' brains_without_admin_workspace "$no_admin"
-# S8b's merge precondition (the role follows Admin membership): the three
+# The precondition for the role to follow Admin membership: the three
 # above all 0. Anything else, n/a or ? included, is a no.
 s8b_ready=no
 [ "$drift" = 0 ] && [ "$drift_all" = 0 ] && [ "$no_admin" = 0 ] && s8b_ready=yes

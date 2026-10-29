@@ -33,13 +33,13 @@ import { envNum } from '@mantle/config';
 /** The tables a vector arm searches. */
 export type ScopeTable = 'nodes' | 'content_chunks' | 'content_chunk_windows' | 'facts';
 
-/** The most rows the exact path may search (the W3 bench set it).
+/** The most rows the exact path may search (set from a bench).
  *  MANTLE_SCOPE_EXACT_MAX_ROWS tunes it per box; 0 turns the exact path off. */
 export function scopeExactMaxRows(): number {
   return envNum('MANTLE_SCOPE_EXACT_MAX_ROWS');
 }
 
-/** The most items a scope may hold for the exact path (W6a). Default 500;
+/** The most items a scope may hold for the exact path. Default 500;
  *  MANTLE_SCOPE_EXACT_MAX_ITEMS changes it. */
 export function scopeExactMaxItems(): number {
   return envNum('MANTLE_SCOPE_EXACT_MAX_ITEMS');
@@ -48,7 +48,7 @@ export function scopeExactMaxItems(): number {
 const counted = new WeakMap<WorkspaceScope, Map<ScopeTable, Promise<number>>>();
 
 /** The same counts by the scope's workspaces and login, kept briefly across
- *  scopes (W7a): a request or an MCP call builds a new scope object each
+ *  scopes: a request or an MCP call builds a new scope object each
  *  time, and the counts only choose a plan (exact or HNSW), so a count up
  *  to COUNT_TTL_MS old is as good as a fresh one. */
 const COUNT_TTL_MS = 30_000;

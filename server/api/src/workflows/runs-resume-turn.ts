@@ -437,7 +437,7 @@ export async function resumeSurface(
     }
   }
   if (originChannel?.kind === 'telegram') {
-    // The chat's own user (W7d): the run's login, which is the login of the
+    // The chat's own user: the run's login, which is the login of the
     // Telegram turn that planned it.
     const chat = await pairedChatOf({
       ownerId,

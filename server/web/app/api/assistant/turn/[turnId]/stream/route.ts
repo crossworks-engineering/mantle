@@ -14,7 +14,7 @@ export const policy = routePolicy({
 
 /**
  * GET /api/assistant/turn/[turnId]/stream — Server-Sent Events for ONE in-flight
- * turn: live status, tool activity, reasoning, and (Phase 3) token deltas.
+ * turn: live status, tool activity, reasoning, and token deltas.
  * See `docs/live-turn-streaming.md`.
  *
  * **Bearer-authed from day one** (`getOwnerOr401`), so it serves the same-origin

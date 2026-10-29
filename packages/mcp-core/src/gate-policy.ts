@@ -77,7 +77,7 @@ function connectionActor(loginId: string, mode: 'rw' | 'ro' | 'owner'): Actor | 
 /**
  * The gate's caller for a prepared MCP connection (login-surface.ts). Its
  * scope's Admin view is the one the listing read; its scope too, so a
- * login in no workspace lists nothing (owner decision A). Each call enters
+ * login in no workspace lists nothing. Each call enters
  * the login's scope as mcp-scope.ts says, and names its create home by the
  * connection's rule.
  */
@@ -92,7 +92,7 @@ export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller {
     role: caller.role,
     write: caller.write,
     admin: view,
-    // The scope the listing read (owner decision A: none, nothing listed).
+    // The scope the listing read (none: nothing listed).
     ...(prepared.scope ? { scope: prepared.scope } : {}),
     enterScope: mcpScopeEntry(caller.loginId),
     createFallback: { privateWs: prepared.privateWs },

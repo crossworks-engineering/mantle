@@ -278,7 +278,7 @@ export async function buildWorkingNotesContext(
   return renderWorkingNotesBlock(entries, currentAgentSlug ?? null);
 }
 
-// ─── Journal tiers (spike 10, dev-brain page 60a2f51e) ───────────────────────
+// ─── Journal tiers ───────────────────────────────────────────────────────────
 // The two blocks above sit at the FRONT of the cached prompt with newest-first
 // caps: a work brain showed six cut-off release notes as "About the user", a
 // personal brain silently lost its background entries, and every Journal

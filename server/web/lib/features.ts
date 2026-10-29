@@ -12,12 +12,11 @@
  */
 
 /**
- * Recall v2: the native authoring path — a map is a `recall` node and its
+ * Recall v2: the native authoring path: a map is a `recall` node and its
  * cards are rows written directly, rather than a page tree compiled into the
- * serving tables. Plan: "PLAN: Recall v2, its own content type" (dev brain,
- * roadmap task 5d6ce06a).
+ * serving tables (docs/recall.md).
  *
- * TRUE from R2: the serving tools understand native maps and the contract
+ * TRUE: the serving tools understand native maps and the contract
  * shapes (@mantle/client-types) carry the v2 fields, so a client may build
  * the v2 screen against this brain.
  *
@@ -25,10 +24,9 @@
  * flag is true while any of them is missing from the route manifest, so the
  * flag cannot say more than the brain can do.
  *
- * It stays true for good. Since R5 this brain serves no page-built (v1) map
- * at all, and a client that reads the flag as false or absent falls back to
- * its v1 screen (or, from jackdaw's R5 release, a "needs an update" state),
- * which is wrong for this brain.
+ * It stays true for good. This brain serves no page-built (v1) map at all,
+ * and a client that reads the flag as false or absent falls back to its v1
+ * screen (or a "needs an update" state), which is wrong for this brain.
  */
 export const RECALL_V2 = true;
 

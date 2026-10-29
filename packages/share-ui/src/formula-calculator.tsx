@@ -10,7 +10,8 @@ import type { TraceStep } from '@mantle/content-core/formula-eval';
  * The live calculator on a shared formula — a client island, because it is the
  * one part of the page that has to talk back to the server.
  *
- * Its fields come from the Phase 1 signature, embedded in the page payload
+ * Its fields come from the formula's signature (formula-signature.ts,
+ * docs/formulas.md), embedded in the page payload
  * rather than re-derived here: which symbols a target needs, which are
  * optional, and what the legal values of a rating are. A visitor on a public
  * link has no way to read the resolution ladder, so anything this got wrong

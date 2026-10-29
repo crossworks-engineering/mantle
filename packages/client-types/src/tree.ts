@@ -111,17 +111,17 @@ export type TreeFolder = {
   depth: number;
   /** The parent folder; null at the top level. */
   parentId: string | null;
-  /** DEPRECATED (W5b2): folder shares are frozen and grants decide who
+  /** DEPRECATED: folder shares are frozen and grants decide who
    *  reads (`workspaces`). The brain's tree no longer sends it; a member's
    *  own folder still sends null. */
   share?: TreeShareLevel | null;
-  /** DEPRECATED (W5b2): no longer sent by the brain's tree. */
+  /** DEPRECATED: no longer sent by the brain's tree. */
   inherited?: TreeShareLevel | null;
   /** Made by Mantle (Auto-filed): the name is locked and it cannot be shared. */
   system: boolean;
   folderCount: number;
   itemCount: number;
-  /** Asked with `?ws=<id>` (task f26a516e): the items in the folder that
+  /** Asked with `?ws=<id>`: the items in the folder that
    *  the caller reads in its other workspaces and `ws` does not read. They
    *  are not in `itemCount`; a client may still open the folder to say
    *  where they are (TreeFolderPage `elsewhere`). Absent without `ws`, and
@@ -165,12 +165,12 @@ export type TreeItem = {
   /** A short kind-specific token for the status slot: a file's extension, a
    *  secret's kind, an event's start. Null when the kind has none. */
   subtype: string | null;
-  /** DEPRECATED (W5b2): the tier levels are frozen and grants decide who
+  /** DEPRECATED: the tier levels are frozen and grants decide who
    *  reads (`workspaces`, `hasLink`). The brain's tree no longer sends it. */
   level?: AccessLevel;
-  /** DEPRECATED (W5b2): no longer sent. */
+  /** DEPRECATED: no longer sent. */
   inherited?: TreeShareLevel | null;
-  /** DEPRECATED (W5b2): no longer sent. */
+  /** DEPRECATED: no longer sent. */
   embedded?: TreeShareLevel | null;
   state: TreeItemState | null;
   updatedAt: string;
@@ -215,7 +215,7 @@ export type TreeFolderPage = {
    *  workspace reads; the folders stay (the way to them). */
   ws?: string;
   /** Asked with `?ws=<id>`, on the first page of a folder where `ws` reads
-   *  no item (task f26a516e): the caller's other workspaces that read items
+   *  no item: the caller's other workspaces that read items
    *  in this same folder, with how many, most first. Only workspaces the
    *  caller is a user of, and only items its scope reads. Absent when there
    *  are none, and from a brain before it. */
@@ -224,13 +224,12 @@ export type TreeFolderPage = {
 
 /** Narrowing for GET /api/tree/:kind/search (`ws=`, `tag=`), the tree's
  *  filter menu. Both optional; together they both apply. A filtered search
- *  lists items only, no folders. The level filter went with the levels
- *  (W5b2). */
+ *  lists items only, no folders. There is no level filter. */
 export type TreeFilter = {
   /** Only items this workspace reads (its id is in their read_ws). With
    *  `across`, the switcher's workspace instead: its items come first. */
   ws?: string;
-  /** `across=1` (task f26a516e): a search with a term looks in every
+  /** `across=1`: a search with a term looks in every
    *  workspace the caller reads; `ws` then orders the items (its own
    *  first) and narrows nothing, and the folders that match come too. Each
    *  item names the workspace it opens in (`workspace`). An empty term (the
@@ -283,7 +282,7 @@ export type TreeWorkspaceChange = {
   alsoVisibleTo: GrantWorkspaceRef[];
   /** The workspaces that would no longer read it. */
   removedFrom: GrantWorkspaceRef[];
-  /** An item not made yet: the workspace it will be homed in (A0). */
+  /** An item not made yet: the workspace it will be homed in. */
   home?: GrantWorkspaceRef;
   /** An item not made yet: those of `alsoVisibleTo` that will read it but
    *  not edit it (a folder's rows with Write off, the folder's own home

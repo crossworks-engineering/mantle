@@ -34,12 +34,11 @@ import { CACHE_CONTROL } from '../../lib/cache-control';
  * /share-runtime/islands.js. Always resolved per request against the live DB —
  * a revoked link must 404 immediately.
  *
- * Every link here is open: team links were retired in member logins Phase 6
- * stage 6 (migration 0176 revoked them). An old team link answers a plain
- * "sign in as a member" page instead of the not-found, pointing at /login.
- * Old client links were retired in client logins C3 (migration 0192): one
- * answers a plain 410 "this link has ended" (the client sign-in pages went in
- * workspaces W5c, so it points nowhere).
+ * Every link here is open: team links are retired (migration 0176 revoked
+ * them). An old team link answers a plain "sign in as a member" page
+ * instead of the not-found, pointing at /login. Client links are retired
+ * too (migration 0192): one answers a plain 410 "this link has ended" (there
+ * is no client sign-in page, so it points nowhere).
  *
  * A CONTACT share (migration 0214) runs behind the contact gate: without a
  * cookie that admits the share's contact, the page is the code prompt (401,

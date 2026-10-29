@@ -1,5 +1,5 @@
 /**
- * The messenger's HTTP adapter (Messenger V1, plan page d8954876): the
+ * The messenger's HTTP adapter (docs/messenger.md): the
  * routes under /api/messenger/* read the caller with anyLoginCaller() and
  * hand @mantle/content/messenger the actor. Every rule is in the content
  * module; this file only maps a request to it.

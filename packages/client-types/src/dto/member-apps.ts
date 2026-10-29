@@ -21,8 +21,8 @@ export type MemberAppCard = {
    *  runs AND writes it. A write to a read-only app answers 403
    *  `{ ok: false, error, reason: 'read-only' }`. */
   dataReadOnly?: boolean;
-  /** The same, as the R and R/W pill shows it (team apps Phase 3). Absent
-   *  from an older brain: show no pill. */
+  /** The same, as the R and R/W pill shows it. Absent from an older brain:
+   *  show no pill. */
   dataAccess?: AppDataAccess;
 };
 
@@ -78,8 +78,8 @@ export type MemberHomeData<THub = unknown> =
   { homeApp: MemberHomeApp; hub: THub } | { homeApp: null; hub: null };
 
 /**
- * GET /api/home?ws=<id>: the landing page of a workspace, for every login
- * (task d78e7bde). Without `ws` it is "All my workspaces": the built-in
+ * GET /api/home?ws=<id>: the landing page of a workspace, for every login.
+ * Without `ws` it is "All my workspaces": the built-in
  * Desk over every workspace of the login, never a home app.
  *
  * `ws` echoes the workspace asked for (null: all). `homeApp` is the
@@ -132,7 +132,7 @@ export type MemberChatArchiveMessage = {
   createdAt: string;
 };
 
-/** The selected login's OLD team portal chat (member logins Phase 6): the
+/** The selected login's OLD team portal chat (team codes are retired): the
  *  thread its contact had with the team code before the invite made it a
  *  login. History only, for the admin: never part of the member's live
  *  thread, never shown to the member, never in the agent's context. Show it

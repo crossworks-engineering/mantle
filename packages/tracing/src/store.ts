@@ -467,7 +467,7 @@ function notifyStepObserver(
   }
 }
 
-// ─── Turn token-delta observer (Phase 3 streaming) ───────────────────────────
+// ─── Turn token-delta observer (token streaming) ─────────────────────────────
 
 /** One streamed token delta for the current turn. `seq` shares the trace's
  *  monotonic `streamSeq` with status events, so a client orders BOTH on one
@@ -1073,8 +1073,7 @@ export async function recordSkippedTrace(init: {
   subjectKind?: string;
   agentId?: string | null;
   /** The login the skipped work answered (traces.login_id, as startTrace's
-   *  loginId): its trace is listed to that login only; null the anchor's
-   *  (W7e). */
+   *  loginId): its trace is listed to that login only; null the anchor's. */
   loginId?: string | null;
   disposition: string;
   details?: Record<string, unknown>;

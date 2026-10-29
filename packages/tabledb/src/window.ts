@@ -9,7 +9,7 @@ import { openTableFile, type SqliteDb } from './sqlite';
 const metaType = (c: { type: ColumnType }): ColumnType => storageType(c);
 
 /**
- * Windowed reads over a workbook file (P3): keyset pagination on (_pos, _rid)
+ * Windowed reads over a workbook file: keyset pagination on (_pos, _rid)
  * for the grid's lazy-load, and a PARITY-GATED filter/sort/aggregate compiler
  * for the read tools.
  *

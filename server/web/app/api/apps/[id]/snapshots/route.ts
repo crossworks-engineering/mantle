@@ -1,5 +1,5 @@
 /**
- * /api/apps/[id]/snapshots — an app's history (apps snapshots, Phase 2):
+ * /api/apps/[id]/snapshots — an app's history:
  * GET lists versions and snapshots newest first (no code); POST takes a
  * snapshot (the code and a copy of the database) with an optional note.
  * Owner only. See packages/content/src/app-snapshots.ts.

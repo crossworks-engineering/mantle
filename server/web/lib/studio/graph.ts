@@ -149,8 +149,8 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     }
   }
 
-  // Skill nodes. Skills are pure teaching (P1) — sublabel reflects that, not a
-  // tool count (which is always 0 now).
+  // Skill nodes. Skills are pure teaching, so the sublabel says that, not a
+  // tool count (which is always 0).
   for (const s of skills) {
     const issues: string[] = [];
     if (!s.enabled) issues.push('skill disabled');

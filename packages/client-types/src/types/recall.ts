@@ -1,13 +1,9 @@
 /**
- * Wire shapes for the owner Recall API (roadmap tasks 073b322d / 91c93428;
- * docs/recall.md in the mantle repo). Dates are ISO strings.
+ * Wire shapes for the owner Recall API (docs/recall.md in the mantle repo).
+ * Dates are ISO strings.
  *
  * A map is one `recall` item in the tree; its cards are rows written
- * directly, and a card's `id` is its own, NOT a page. (Page-built v1 maps,
- * compiled from a page tree, were retired in R5: the compile report, the
- * page state route and `lastCompileOk` went with them.)
- *
- * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
+ * directly, and a card's `id` is its own, NOT a page.
  *
  * Whether a brain can serve Recall at all is `features.recallV2` from
  * `GET /api/shell`, absent on a brain older than v2. Branch the SCREEN on

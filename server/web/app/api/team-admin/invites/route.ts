@@ -1,5 +1,5 @@
 /**
- * Member invites, admin side (member logins, Phase 6).
+ * Member invites, admin side.
  *
  * GET  /api/team-admin/invites: open, redeemed and expired invites, newest
  *      first, never a code (MemberInviteList).

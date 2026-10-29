@@ -1,7 +1,7 @@
 /**
- * POST /api/apps/import-package — make a NEW app from a `.mantleapp` file
- * (apps first-class plan, Phase 3). The body is the file itself (raw bytes,
- * e.g. `fetch(url, { method: 'POST', body: file })`), read under its own cap
+ * POST /api/apps/import-package — make a NEW app from a `.mantleapp` file.
+ * The body is the file itself (raw bytes, e.g.
+ * `fetch(url, { method: 'POST', body: file })`), read under its own cap
  * (a full app database plus the code; lib/body-limit.ts lists the path as an
  * upload). Query: `title` names the new app; `data=0` leaves the data out.
  *

@@ -21,7 +21,7 @@ import type { InboundRow } from './types';
 
 export async function persistOutbound(args: {
   ownerId: string;
-  /** The chat's login (W7d): its thread and its per-login node rows. */
+  /** The chat's login: its thread and its per-login node rows. */
   loginId: string;
   row: InboundRow;
   account: TelegramAccount;

@@ -20,8 +20,8 @@ export const policy = routePolicy({
  * needs the embedding, so an embed failure there is a 503.
  *
  * It looks in every workspace the caller reads (the request scope's row
- * rules decide which items those are). `ws` (the switcher's workspace,
- * task f26a516e) narrows nothing: the hits it reads come first, every hit
+ * rules decide which items those are). `ws` (the switcher's workspace)
+ * narrows nothing: the hits it reads come first, every hit
  * names the workspace it opens in (`workspace`), and `ws` is echoed.
  */
 export async function GET(req: Request) {

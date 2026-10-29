@@ -41,9 +41,9 @@ type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
  */
 async function handleGET(login: Login) {
   const caller = workspaceCaller(login);
-  // Whether the login is an Admin user, asked of its scope (adminFacts,
-  // plan v3.2 section 2.2): what only an Admin user has answers its empty
-  // value for every other login.
+  // Whether the login is an Admin user, asked of its scope (adminFacts):
+  // what only an Admin user has answers its empty value for every other
+  // login.
   const admin = (await adminFacts(login)).admin;
   const anchorId = caller.anchorId;
   const loginId = caller.loginId;
@@ -56,8 +56,8 @@ async function handleGET(login: Login) {
       ? shellPart('shell', 'onboarding', () => isOnboarded(login.brainId, read), true)
       : true,
     admin ? shellPart('shell', 'pending count', () => countPending(login.brainId), 0) : 0,
-    // The login's workspaces (the switcher) and its Admin areas (W5a), the
-    // same builder GET /api/auth/whoami answers with (W7e).
+    // The login's workspaces (the switcher) and its Admin areas, the
+    // same builder GET /api/auth/whoami answers with.
     loginWorkspaces('shell', caller, admin),
   ]);
   // The FACE is per-login: seed, builder pins, the uploaded photo and the

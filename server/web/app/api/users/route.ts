@@ -43,7 +43,7 @@ export const policy = routePolicy({
  * account operates on the one brain (content stays keyed to the anchor); a row
  * here is just an identity for the audit trail.
  *
- * Two roles (member logins, Phase 1): an ADMIN login is a full co-owner; a
+ * Two roles: an ADMIN login is a full co-owner; a
  * MEMBER login is refused by every admin route
  * and reads team-level items through the member routes. These routes emit
  * their own `user.*` audit
@@ -66,7 +66,7 @@ export async function GET() {
       email: authUsers.email,
       displayName: authUsers.displayName,
       isOwner: authUsers.isOwner,
-      // The display role Admin membership gives (S8b), never the column.
+      // The display role Admin membership gives, never the column.
       role: loginRole(authUsers.id),
       contactId: authUsers.contactId,
       disabledAt: authUsers.disabledAt,

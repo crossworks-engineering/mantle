@@ -9,8 +9,8 @@ import { env } from '@mantle/config';
  * MANTLE_CLIENT_ORIGIN; with no client origin configured they fall back to a
  * static pointer card: an explanation, never a loop.
  *
- * /team and /hub (the team-code portal) were retired in member logins
- * Phase 6: see mountRetiredTeamPages.
+ * /team and /hub (the team-code portal) are retired: see
+ * mountRetiredTeamPages.
  */
 
 function clientOrigin(): string {
@@ -30,7 +30,7 @@ function movedCard(heading: string, bodyHtml: string): string {
 }
 
 /**
- * The retired team-code portal pages (member logins Phase 6): /team, anything
+ * The retired team-code portal pages: /team, anything
  * under it, and /hub. A team member signs in with a member login now (invites,
  * docs/member-logins.md section 9), so an old bookmark goes to /login.
  *

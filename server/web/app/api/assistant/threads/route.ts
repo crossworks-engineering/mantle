@@ -18,7 +18,7 @@ export const policy = routePolicy({
  * POST /api/assistant/threads { agent? }: "New chat", archive the login's
  *      own open thread with the agent and open a new one.
  *
- * Any login (W7c): each user has their own threads with each assistant and
+ * Any login: each user has their own threads with each assistant and
  * reads and archives only those.
  */
 export async function GET(req: Request) {

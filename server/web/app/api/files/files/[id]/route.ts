@@ -56,7 +56,7 @@ async function fileOr404(ownerId: string, fileId: string) {
 const NOT_FOUND = () => NextResponse.json({ error: 'not found' }, { status: 404 });
 
 const IdParams = z.object({ id: z.string().uuid() });
-/** A file's raw bytes are read in the login's scope (W7e): never stored. */
+/** A file's raw bytes are read in the login's scope: never stored. */
 const RAW_CACHE = CACHE_CONTROL.privateNone;
 /** A thumbnail is kept privately but revalidated on every use (its etag). */
 const THUMB_CACHE = CACHE_CONTROL.privateRevalidate;

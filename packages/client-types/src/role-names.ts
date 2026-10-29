@@ -26,8 +26,8 @@ export function isLoginRole(v: unknown): v is LoginRole {
 }
 
 /** Who a version or snapshot row of an app or a table names
- *  (node_snapshots.actor): 'member' is a member author's own act (team apps
- *  Phase 3), and the row then names the login too. */
+ *  (node_snapshots.actor): 'member' is a member author's own act, and the
+ *  row then names the login too. */
 export const HISTORY_ACTORS = ['owner', 'agent', 'mcp', 'system', 'member'] as const;
 export type HistoryActor = (typeof HISTORY_ACTORS)[number];
 

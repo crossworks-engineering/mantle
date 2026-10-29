@@ -278,7 +278,7 @@ function run(job) {
       }
     }
     db.setAuthorizer((action, arg1) => {
-      // Data only (an MCP write, team apps Phase 1): rows, never the
+      // Data only (an MCP write to an app's data): rows, never the
       // schema. An allowlist: reading, selecting, functions, a recursive
       // CTE and the three row writes. Every CREATE, DROP, ALTER, trigger,
       // view, index, transaction, savepoint, ANALYZE and REINDEX is refused,

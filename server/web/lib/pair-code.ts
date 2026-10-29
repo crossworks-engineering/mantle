@@ -92,7 +92,7 @@ export type ClaimedPairCode = {
 
 /** Trade a scanned code for a mobile bearer. `null` for an unknown, expired
  *  or already-claimed code: the caller must not say which. `nonAdmin`: the
- *  phone build serves every login (W7e), so a member's code is claimed (a
+ *  phone build serves every login, so a member's code is claimed (a
  *  30-day token, rotated like device-login's); without it a member's code
  *  answers `'update-app'` and is not used up. */
 export async function claimPairCode(
@@ -143,7 +143,7 @@ export async function claimPairCode(
   // bearer for a login that is gone, disabled or of a role this phone build
   // cannot serve. An Admin login always (adminLogin: a user of Admin
   // now, read with the row); a member only from a build that
-  // serves every login (W7e). A client signs in with its emailed code
+  // serves every login. A client signs in with its emailed code
   // instead.
   const [user] = await db
     .select({

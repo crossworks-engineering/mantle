@@ -668,7 +668,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       // is indexed, without touching storage or sharing. Non-destructive.
       'file_set_indexing',
       'folder_set_indexing',
-      // Relocation + duplication (P4). Non-destructive: a move keeps the id,
+      // Relocation + duplication. Non-destructive: a move keeps the id,
       // a copy makes a new file; neither deletes anything.
       'file_move',
       'file_copy',
@@ -976,7 +976,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     // Authoring is a different responsibility from asking. A team member should
     // be able to get a computed release rate with its derivation; writing a new
     // calculation model into the owner's brain is the mathematician's job.
-    // Not adminOnly: a workspace's assistant may hold it (W4b).
+    // Not adminOnly: a workspace's assistant may hold it.
     toolSlugs: ['formula_list', 'formula_get', 'formula_evaluate'],
   },
   {
@@ -1280,7 +1280,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Team reads (member-facing)',
     description:
       "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, app data), including `show_image`, which renders a file the member could already read, plus its ONE write action: filing a team change request into the specialist review queue. The reads a workspace other than Admin may never make (the knowledge graph, events, tasks, contacts, email_*/journal_*) are not here: they sit in `team-read-admin`, which is Admin only. Deliberately excludes export_node (bulk exfiltration ease), replay_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. The reads are bounded by the workspace of the assistant that holds the group: the Team assistant reads only what the Team workspace holds.",
-    // Not adminOnly: the Team workspace's assistant holds it (W4b). Every
+    // Not adminOnly: the Team workspace's assistant holds it. Every
     // tool here runs in that workspace's turn scope
     // (team-groups.turn-scope.db.test.ts).
     toolSlugs: [
@@ -1424,9 +1424,8 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     role: 'responder',
     model: DEFAULT_AGENT_MODEL,
     isPersona: true,
-    // P6: grants are pure tool groups — the generalist's effective set is the
-    // union of these bundles. Page/table work is HYBRID (2026-07-18 delegation
-    // review, page a7f3255d on dev): the persona holds the LIGHT slices
+    // Grants are pure tool groups: the generalist's effective set is the
+    // union of these bundles. Page/table work is HYBRID: the persona holds the LIGHT slices
     // directly — `tables-read` (answer from grids; tool_grounding's table_sql
     // ladder assumed this all along), `tables-rows` (single-row writes), and
     // `pages-draft` (create / draft-write / single-block fixes) — while HEAVY
@@ -1439,9 +1438,8 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // untrusted input, and the no-write-tools child is the injection firewall).
     // `federation` IS granted: peer reads are scoped by the answering side's
     // grants, and without the group the persona can't reach paired brains at
-    // all (it invents workarounds instead). Versus the pre-P6 set this drops
-    // `contact_delete` + `journal_delete` (now deliberate-only) — the one
-    // intentional removal.
+    // all (it invents workarounds instead). `contact_delete` and
+    // `journal_delete` are deliberate-only and not in this set.
     toolGroupSlugs: [
       'memory-core',
       'files',
@@ -1914,13 +1912,11 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TEAM_RESPONDER_MODEL',
     systemPrompt: AGENT_PROMPTS['team-responder']!,
-    // The two defaults it shipped with before member logins Phase 6 (the
-    // 1:1 portal chat, 2026-07-05, and the forum, 2026-07-17). A brain whose
-    // prompt is still one of them gets the member-chat rewrite on upgrade.
-    // And the one before workspaces W7b, which filed change requests with
-    // team_request_create (retired with builtins-team.ts). The last is the
-    // Phase 6 member-chat default itself (v0.232.295 to v0.239.94), before
-    // W6b reworded it.
+    // The defaults this prompt shipped with before: the 1:1 portal chat, the
+    // forum, the member chat that filed change requests with
+    // team_request_create (retired with builtins-team.ts), and the first
+    // member-chat default. A brain whose prompt is still one of them gets the
+    // current prompt on upgrade.
     retiredPromptSha256: [
       '60f5262a299ecaefe17696d89fba1234cf03d76de1283aed8c61f62d2cb305b1',
       '3cc6514ff02f41ae7c32bc2bca326b764440ebbadd39ff23a883d4c1da074841',
@@ -1936,8 +1932,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // I/O, no model. A member asking "what's the release rate at 300 psi" gets
     // a number with its derivation; authoring stays owner-side.
     // Not a delegate, no assist surface — it is resolved explicitly by the team
-    // turn pipeline and nothing else. `delegation` (owner decision
-    // 2026-10-26): its own surface stays read-only, and it hands a drawing,
+    // turn pipeline and nothing else. `delegation`: its own surface stays read-only, and it hands a drawing,
     // a canvas or an app to the workspace delegates (delegate_to below,
     // WORKSPACE_DELEGATE_SLUGS), which run with the member's own rights in
     // its workspace. Granted ONCE to an existing brain's responder

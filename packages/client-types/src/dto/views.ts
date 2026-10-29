@@ -1043,7 +1043,7 @@ export type StudioAgentDetail = {
   maxIterations?: number;
   /** Whether this is a manifest agent that can be reset to its canonical default. */
   resettable: boolean;
-  /** The base system prompt (editable prose in Phase 2). */
+  /** The base system prompt (editable prose). */
   systemPrompt: string;
   /** The enabled, attached skills in composition order. */
   skillBlocks: ComposedSkillBlock[];

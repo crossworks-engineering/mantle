@@ -1,12 +1,11 @@
 /**
- * The messenger on the one MCP surface every login has (Messenger V1, plan
- * page d8954876, sections 6 and 12): list, open, send, create, wait, mark
- * read, directory. Each runs as the caller (its login and its scope); a
- * message records the credential it came through (via), and
- * messenger_wait skips the caller's own, so two clients on one login wait
- * for each other.
+ * The messenger on the one MCP surface every login has (docs/messenger.md,
+ * "MCP tools"): list, open, send, create, wait, mark read, directory. Each
+ * runs as the caller (its login and its scope); a message records the
+ * credential it came through (via), and messenger_wait skips the caller's
+ * own, so two clients on one login wait for each other.
  *
- * MCP only: an agent tool group `messenger` is Phase 6 (a send by an agent
+ * MCP only: there is no agent tool group `messenger` (a send by an agent
  * is an outward act). None spends on the owner's keys, none is risky, and
  * nothing here starts a turn: a mention is stored, no more.
  */

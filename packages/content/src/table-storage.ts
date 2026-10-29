@@ -48,8 +48,8 @@ import { flipTable, stageDoc, stagedTableWrite, tableRevisionPath } from './tabl
  *   - doc loading with draft-first semantics off the workbook files.
  *   - file cleanup that also sweeps the -wal/-shm sidecars.
  *
- * P1 tab naming: every workbook has the single engine-default tab; multi-tab
- * arrives with un-split imports (P3) on the same layout.
+ * Tab naming: a workbook starts with the single engine-default tab; more tabs
+ * use the same layout.
  */
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];

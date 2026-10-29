@@ -1,10 +1,10 @@
 /**
- * The Grant Access panel on the wire (workspaces plan page 4887b8e7, phase
- * W5b2): /api/grants. An item is shared by a grant to a workspace; each
- * grant has its own Write switch. Every item has ONE home workspace (R1):
- * only Moderators of the home manage the item's grants. Folders pass their
- * grants to what is inside them (rows "via folder"); a row taken away from
- * a folder-derived grant stays as "Removed here" until restored.
+ * The Grant Access panel on the wire: /api/grants. An item is shared by a
+ * grant to a workspace; each grant has its own Write switch. Every item has
+ * ONE home workspace: only Moderators of the home manage the item's grants.
+ * Folders pass their grants to what is inside them (rows "via folder"); a
+ * row taken away from a folder-derived grant stays as "Removed here" until
+ * restored.
  *
  * Permissions are set in exactly two places: the workspace screen and this
  * panel. Every refusal is `{ error, code }` with 400, 403, 404 or 409; an
@@ -212,8 +212,9 @@ export type ItemCaps = {
   readOnly?: true;
   /** The brain item a read-only copy copies (the accepted item). */
   snapshotOf?: string;
-  /** A member app that was in its author's trash when the spaces were
-   *  folded (W6b): show it as "was in your trash" with Delete. */
+  /** A member app that was in its author's trash when the personal spaces
+   *  were folded into workspaces: show it as "was in your trash" with
+   *  Delete. */
   trashedBeforeFold?: true;
 };
 

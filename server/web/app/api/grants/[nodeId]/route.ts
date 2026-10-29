@@ -23,7 +23,7 @@ const AddBody = z.object({
   confirm: z.boolean().optional(),
 });
 
-/** The Grant Access panel of an item or a folder (W5b2). */
+/** The Grant Access panel of an item or a folder. */
 export async function GET(_req: Request, ctx: { params: Promise<{ nodeId: string }> }) {
   const login = anyLoginCaller();
   const { nodeId } = await ctx.params;

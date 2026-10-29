@@ -5,7 +5,7 @@
  * volatile system context and the responder still chooses; the delegation
  * allowlist stays code-enforced in the tool loop. Jev never routes.
  *
- * Spike (a work brain, 2026-09-22, 83 real turns, dev-brain page 4bf1f284): with
+ * Measured (83 real turns on a work brain): with
  * "hint only at confidence ≥ 0.6 and never hint `none`", 36 hints, 31 right,
  * 4 wrong (2 arguable) — 86% precision, 296 ms, ~$0.00004 per turn. Jev says
  * `none` on half the turns the responder answered itself; the chat baseline

@@ -25,8 +25,6 @@ import { asKindRootRepair } from './kind-root';
  * A map is a `recall` node under this root, optionally inside folders (at most
  * TREE_MAX_DEPTH of them). Cards are ROWS, never nodes, so they never appear
  * in the tree.
- *
- * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
  */
 export const RECALL_ROOT_LABEL = 'recall';
 

@@ -99,8 +99,8 @@ async function asksCanWrite(req: Request): Promise<boolean | null> {
  *
  *  PATCH /api/shares/[id] { mode } → set the link's admission (owner-scoped).
  *  'public' is the only mode (a live link already is: this confirms it).
- *  'team' is refused with 400 `team-links-retired`: team links are retired
- *  (member logins Phase 6 stage 6), members use their own logins.
+ *  'team' is refused with 400 `team-links-retired`: team links are retired,
+ *  members use their own logins.
  *
  *  Any change but a contact share's "Can write" is the link's: asked first
  *  in the login's scope (shareItemRefusal), the item gate's 404 and 403. */

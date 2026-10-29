@@ -3,7 +3,7 @@
  *
  * GET renders the consent page ("Allow Claude to access your Mantle brain") once
  * the owner is signed in; if they're not, it bounces to /login?next=… and comes
- * back. A member login connects too (MCP as a login, plan page e5b854dd);
+ * back. A member login connects too (docs/mcp-as-a-login.md);
  * a member that may not connect gets a plain refusal page (403). Its grant
  * carries the login's session epoch, and reads only its own workspaces. POST is the Allow/Deny
  * decision: Allow mints a single-use PKCE-bound code and 302s back to the

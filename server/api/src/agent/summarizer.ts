@@ -12,7 +12,7 @@
  * migration 0072) in main.ts. This module is intentionally pure-logic — no
  * listeners, no LISTEN handling.
  *
- * Per (agent, login) since 0269 (W7c): each user has their own thread with an
+ * Per (agent, login) (migration 0269): each user has their own thread with an
  * agent, so a run digests each login's undigested turns on their own, and a
  * digest carries `data.login_id` and `nodes.login_id` (read only for that
  * login). Rows folded in from team_messages are already digested
@@ -186,13 +186,12 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
     return;
   }
 
-  // Couple the trigger to the agent's live-history window (context-transfer
-  // audit, dev-brain task 64170cb0): with the old flat default of 30 vs a
-  // 20-turn history window, up to 9 turns could sit in neither history nor any
-  // digest. Capping the threshold at the history window closes that band by
-  // construction. The batch-size floor keeps a small history window from
-  // driving near-per-turn digest LLM calls (cost safety); an explicit lower
-  // threshold is respected as before.
+  // Couple the trigger to the agent's live-history window: a threshold above
+  // the history window (say 30 against 20 turns) leaves turns in neither
+  // history nor any digest. Capping the threshold at the history window
+  // closes that band by construction. The batch-size floor keeps a small
+  // history window from driving near-per-turn digest LLM calls (cost safety);
+  // an explicit lower threshold is respected.
   const historyLimit = agentRow?.memoryConfig?.history_limit ?? 20;
   const threshold = Math.min(params.summarize_threshold ?? 30, Math.max(historyLimit, batchSize));
 

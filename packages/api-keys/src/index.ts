@@ -152,8 +152,8 @@ const PICK_ORDER = () => [
  * The id of the key a provider call uses when nothing pins one: the key
  * labelled 'default', else the oldest key of that service (ties by id). A
  * key added on /settings/keys keeps whatever label was typed, so a lookup of
- * 'default' alone found nothing for it (task 698e6faf). Null: no key of that
- * service on file.
+ * 'default' alone would find nothing for it. Null: no key of that service on
+ * file.
  */
 export async function findProviderKeyId(userId: string, service: string): Promise<string | null> {
   const [row] = await systemDb

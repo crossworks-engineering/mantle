@@ -230,8 +230,8 @@ export async function deleteLandedNode(
     db.delete(traces).where(and(eq(traces.subjectId, nodeId), eq(traces.ownerId, ownerId)));
 
   if (row.type === 'file') {
-    // The item's delete on the full route from the narrow exit (plan v3.2
-    // S7a, FULL_ROUTE_SPOTS 'integrity-delete'), here and below.
+    // The item's delete on the full route from the narrow exit
+    // (FULL_ROUTE_SPOTS 'integrity-delete'), here and below.
     const res = await onFullSystemRoute('integrity-delete', async () => {
       await dropTraces();
       return deleteFileById({ ownerId, fileId: nodeId });

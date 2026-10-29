@@ -3,15 +3,10 @@
  * lives in lib with relative imports so the co-located vitest run resolves it,
  * same pattern as token-login.ts).
  *
- * It began as the owner counterpart of the team-code `/api/team/sso` upgrade
- * (retired in member logins Phase 6). Until v0.204 the owner UI decided "am I split?" with
- * `runtimeApiBase() !== ''`, which is TRUE on every same-origin box that sets
- * a base — so owners on a one-domain deployment authenticated in BEARER mode
- * and hold no session cookie. The API surface doesn't care (the bearer is a
- * first-class carrier), but the browser-native loaders do: `<img>`, `<iframe>`
- * and download anchors can't set an Authorization header, so once those go
- * back to same-origin cookie auth, a bearer-only owner would 401 on every
- * asset.
+ * An owner may hold a device bearer and no session cookie. The API surface
+ * doesn't care (the bearer is a first-class carrier), but the browser-native
+ * loaders do: `<img>`, `<iframe>` and download anchors can't set an
+ * Authorization header, so a bearer-only owner would 401 on every asset.
  *
  * So: verify the caller's device bearer, mint a fresh session cookie bound
  * to that device token, answer 204. No token re-entry, no redirect, no

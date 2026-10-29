@@ -379,11 +379,11 @@ async function assembleResponderTurnAtLevel(
     .filter(Boolean)
     .join('\n\n');
 
-  // Resolve the agent's tool allowlist from its granted tool groups (P6:
-  // groups are the sole grant). Empty result → tool-loop sends no `tools`.
+  // Resolve the agent's tool allowlist from its granted tool groups (groups
+  // are the sole grant). Empty result → tool-loop sends no `tools`.
   //
   // Heartbeat continuity tools (update_state / complete / snooze) are a
-  // per-turn AFFORDANCE (P6), not a stored grant: inject them only when
+  // per-turn AFFORDANCE, not a stored grant: inject them only when
   // there's an active heartbeat on this surface for the model to act on.
   // No runtime magic the rest of the time. See docs/heartbeats.md §4
   // "Permission model & runtime hygiene".

@@ -1,5 +1,5 @@
 /**
- * Chunk-level retrieval (Phase 4). Where `searchNodes` ranks whole nodes,
+ * Chunk-level retrieval. Where `searchNodes` ranks whole nodes,
  * this finds the most relevant *passage* inside a long page / file / email,
  * joined back to its node for title/type/scope. Caller supplies a precomputed
  * query embedding so this package stays dependency-light (no embeddings dep).
@@ -234,7 +234,7 @@ async function runChunkSearch(
   const kq = resolved ? gateRareTerms(resolved, pool) : null;
   const kw = kq ? keywordSql(contentChunks.searchTsv, kq) : null;
   // Under a big workspace scope the text match runs first, fenced (offset
-  // 0), and the node join after it (W6a). The planner cannot see how many
+  // 0), and the node join after it. The planner cannot see how many
   // items the scope holds (a run-time setting) and guesses a handful: for a
   // big scope it then walked the scope's nodes and re-ran the text index
   // once for each (an Admin user's 1,600 items: 130 ms for a common word).

@@ -1,5 +1,5 @@
 /**
- * Inbound API keys on the wire (migration 0232, plan page 1e62e204): the
+ * Inbound API keys on the wire (migration 0232): the
  * Settings > API access screen, and the public API v1 answers about keys.
  *
  * A key acts as the ONE login that made it, as that login is now, and can
@@ -25,7 +25,7 @@ export const ACCESS_KEY_AREAS = [
   'contacts',
   'journal',
   'apps',
-  // The data of mini apps opened to MCP (team apps Phase 1, app_data_*).
+  // The data of mini apps opened to MCP (the app_data_* tools).
   'app_data',
 ] as const;
 export type AccessKeyArea = (typeof ACCESS_KEY_AREAS)[number];
@@ -87,7 +87,7 @@ export type AccessKeyCreateInput = {
   areas: AccessKeyArea[] | null;
   /** Omitted = the default (90); null = never; else 1 to 3650 days. */
   expiresInDays?: number | null;
-  /** Only for a login in the Admin workspace with its keys area (W8a). */
+  /** Only for a login in the Admin workspace with its keys area. */
   riskyTools?: string[];
   /** The caller's password, when `needsPassword` (never stored, never
    *  logged). */

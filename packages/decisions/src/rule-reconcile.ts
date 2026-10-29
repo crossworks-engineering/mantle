@@ -2,7 +2,7 @@
  * Rule reconcile (use `rule_reconcile`): when an agent learns a rule, is an
  * older rule it already holds now redundant or wrong?
  *
- * Spike 14 (2026-09-24, dev-brain page d58e4ed3): 387 real pairs of learned
+ * Measured basis: 387 real pairs of learned
  * rules from two work brains (cosine ≥ 0.70), Sonnet 5 as the answer key with
  * four labels (same / replaces / extends / different), every retire hand
  * checked. The reframe that makes Jev safe here: for same, extends AND

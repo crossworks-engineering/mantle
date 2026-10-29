@@ -1,6 +1,6 @@
 /**
  * DELETE /api/member/mcp/clients/:id: a member disconnects one of THEIR OWN
- * MCP clients (team apps Phase 1). Only this member's grants on that client
+ * MCP clients. Only this member's grants on that client
  * end (lib/mcp-clients.ts disconnectLoginClient, under the login's OAuth
  * lock); the client registration and every other login's grants stay. A
  * client this member holds no live grant on is a plain 404.

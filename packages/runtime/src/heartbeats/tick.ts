@@ -141,7 +141,7 @@ export async function openHeartbeatsForSurface(
 /**
  * Cheap boolean check: are there any active heartbeats on this surface
  * (regardless of expecting_reply)? Powers the per-turn tool-list
- * injection in the responders (P6) — when this returns true, the 3
+ * injection in the responders: when this returns true, the 3
  * responder-continuity tools (HEARTBEAT_RESPONDER_TOOLS in tools.ts)
  * are injected into the model's tool list for the turn; otherwise the
  * model never sees them. They are an affordance, not a stored grant.

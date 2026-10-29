@@ -1,9 +1,9 @@
 /**
- * GET /api/apps/[id]/export — the app as a `.mantleapp` file (apps
- * first-class plan, Phase 3): a zip of its code and, unless `?data=0`, a copy
- * of its database. Written to a work file first, then streamed; the work file
- * goes when the download ends. Owner only. 409 when the app's database file
- * is lost (export with `?data=0` then). Format: @mantle/content/app-package.
+ * GET /api/apps/[id]/export — the app as a `.mantleapp` file: a zip of its
+ * code and, unless `?data=0`, a copy of its database. Written to a work
+ * file first, then streamed; the work file goes when the download ends.
+ * Owner only. 409 when the app's database file is lost (export with
+ * `?data=0` then). Format: @mantle/content/app-package.
  */
 import { createReadStream } from 'node:fs';
 import { rm } from 'node:fs/promises';

@@ -26,7 +26,7 @@ const Query = z.object({
  *  workspaces and link pill (TreeSearchResult). An empty or missing `q`
  *  lists every item by name (the A to Z view), no folders. `ws` and `tag`
  *  (TreeFilter) narrow the items; a filtered search has no folders. `ws` is
- *  echoed back. `across=1` with a term (task f26a516e): every workspace the
+ *  echoed back. `across=1` with a term: every workspace the
  *  caller reads, `ws`'s items first, each item with the workspace it opens
  *  in (`workspace`); `across` is echoed. */
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string }> }) {
