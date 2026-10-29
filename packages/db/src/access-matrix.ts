@@ -1,6 +1,5 @@
 /**
- * The grant and write matrix (member logins Phase 0b, plan section 2b, review
- * fix M9; the workspace role from W1 on). ONE list of every table: what the
+ * The grant and write matrix. ONE list of every table: what the
  * workspace role (`mantle_view_user`) may read, and who writes it. The
  * checklist the tests enforce:
  *
@@ -13,8 +12,8 @@
  * invisible to the role until it is added here: a missing grant fails a query
  * loudly (permission denied), it never leaks.
  *
- * The level roles and the personal-space role are retired (W6b, W8c): they
- * hold nothing, and applyViewerGrants revokes what an old migration grants
+ * The level roles and the personal-space role are retired: they hold
+ * nothing, and applyViewerGrants revokes what an old migration grants
  * them on a fresh install.
  */
 import { createHash } from 'node:crypto';
@@ -26,10 +25,8 @@ import { kindsWhere, type WorkspaceKind } from '@mantle/client-types/kinds';
 /** The node types that may be granted beyond the Admin workspace: the
  *  'workspace' class of the kind registry (@mantle/client-types/kinds), the
  *  same set as mantle_kind_class in SQL (access-matrix.db.test.ts). Tasks,
- *  events and Recall maps joined with the registry (workspaces arch A1,
- *  owner decision D1); a journal entry, an email and the other Admin-only
- *  kinds stay Admin. The old list (mantle_workspace_kind, 0159) went at
- *  arch A7 (0295). */
+ *  events and Recall maps are in it; a journal entry, an email and the
+ *  other Admin-only kinds stay Admin. */
 export const WORKSPACE_NODE_TYPES = kindsWhere<WorkspaceKind>((s) => s.class === 'workspace');
 
 /** What the workspace role may SELECT: nothing, the whole row, or named
@@ -50,25 +47,24 @@ export type TableAccess = {
   table: string;
   writer: Writer;
   /**
-   * What the workspace role (`mantle_view_user`, workspaces W1) may SELECT.
+   * What the workspace role (`mantle_view_user`) may SELECT.
    * Absent = none. Its row rules are the workspace policies of migration
    * 0242 and after (the row's workspaces meet the scope).
    */
   user?: LimitedRead;
   /** The item table's draft columns too (DRAFT_COLUMNS), next to the named
-   *  `user` columns (W6a). */
+   *  `user` columns. */
   drafts?: true;
   /**
-   * The workspace role's row rule where it differs (W6a fix round 2).
+   * The workspace role's row rule where it differs.
    * 'own-login': the login's own row, the brain's row, or every row when the
    * scope holds the Admin workspace (profiles, migration 0266).
    */
   userRule?: 'own-login';
   /**
    * The write role's write rule where it is narrower than the read rule
-   * (plan v3 S3; mantle_write_role_sync_table's write_rule, migration
-   * S3's). 'own-login' (profiles, owner decision 2026-10-17): the login's
-   * own row, or the brain's row when the scope's login holds the Settings
+   * (mantle_write_role_sync_table's write_rule). 'own-login' (profiles;
+   * docs/actors.md, "Who may do what"): the login's own row, or the brain's row when the scope's login holds the Settings
    * area (mantle_scope_has_area). Never another login's row. Absent: the
    * write rule is the read rule.
    */
@@ -83,7 +79,7 @@ export type TableAccess = {
   writeCheck?: { kind: 'self' } | { kind: 'edit' | 'manage'; item: string };
   /**
    * What the write role must hold beyond the write check, per operation and
-   * column (workspaces arch A3a, plan 5.2), behind mantle.edit_check: off
+   * column, behind mantle.edit_check: off
    * runs, warn reports, on refuses (docs/edit-check.md). Migrate makes the
    * triggers (mantle_edit_check_trg, migration 0281) from it:
    * editCheckTriggers.
@@ -96,7 +92,7 @@ export type TableAccess = {
    */
   derived?: readonly string[];
   /**
-   * 'none': the runtime role (mantle_runtime, arch A9) holds no right on it
+   * 'none': the runtime role (mantle_runtime) holds no right on it
    * either: only definer functions touch it (runtime-role.ts). 'read': the
    * runtime role may SELECT it, never write it: every write
    * is a definer call, so on a box with the runtime role on Postgres
@@ -117,8 +113,8 @@ export type TableAccess = {
    * Why a scoped typed write (a login's, an assistant's, a link's or a
    * contact's db.insert, update or delete in a write scope) to this table
    * may stay on the system pool though the write role holds no right on it
-   * (gateway/write-route.ts typedWrite). Since plan v3.2 S4b such a write
-   * to any table that names no reason is refused. It covers a login
+   * (gateway/write-route.ts typedWrite). Such a write to any table that
+   * names no reason is refused. It covers a login
    * actor's write only (the reason names the caller's login): an
    * assistant's, a link's or a contact's write is refused.
    * Keep it small: the reason says whose row it is and what was checked
@@ -156,7 +152,7 @@ export function narrowFor(t: TableAccess): NarrowAccess {
 
 /**
  * The credential and rights tables and what the narrow system role may do
- * on each (plan v3.2 S7a part a2), measured: 'all' only where a narrow exit
+ * on each, measured: 'all' only where a narrow exit
  * writes it, with the writer named; every other one narrowed in its matrix
  * row. A matrix table whose name reads as a credential (CREDENTIAL_NAME)
  * must be listed here (access-matrix.test.ts), so a new one never defaults
@@ -292,9 +288,8 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
 
 /**
  * What the narrow system role may WRITE, per table: a measured allowlist
- * (plan v3.2 S7b part b2 round 8, the class fix of the full audits: its
- * write rights were derived by table name, so a rights table with a plain
- * name was narrow 'all'). Every table the narrow role may touch is SELECT;
+ * (rights derived from a table's name would leave a rights table with a
+ * plain name narrow 'all'). Every table the narrow role may touch is SELECT;
  * on top of that only what is listed here: INSERT where `insert`, UPDATE of
  * exactly the `update` columns (always column-level), DELETE where
  * `delete`. A table that is not listed is read only, so a new table (and a
@@ -302,8 +297,7 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
  * Measured with the switch on (the full DB vitest, test:actor-off,
  * actor-on, edit-on and runtime-role, the area-route sweep inside the full
  * run: a row trigger on every table and the statement log, every write the
- * narrow login made with its columns and actor; the handover's round 8
- * measurement), less every column that grants, makes, points or executes
+ * narrow login made with its columns and actor), less every column that grants, makes, points or executes
  * (NARROW_NEVER_UPDATE, NARROW_NEVER_INSERT): those writes run at a named
  * full-route spot (viewer.ts FULL_ROUTE_SPOTS) or a definer with its own
  * check, or are listed in NARROW_MOVES_LEFT with the spot they move to.
@@ -484,7 +478,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     delete: false,
     why: "the connectors and settings areas rename, bind (integration, configured_by) and enable or disable a group; the MCP token refresh writes its integration. A group made or removed, or its tools, slug or admin_only changed, runs at the full-route spot tool-group-grant. The integration is outbound configuration, as api_keys'. Round 8: its integration and configuring login (where its calls, token and vault refs go) run at the full-route spot tool-config. Round 13b (item F): its description too (the model reads it to pick the group's tools, and the delegate roster quotes it), at tool-config",
   },
-  // The rest of the measured allowlist (round 8): every table the narrow
+  // The rest of the measured allowlist: every table the narrow
   // login wrote over the measured suites, its operations and its columns.
   'public.actor_check_misses': {
     insert: true,
@@ -774,8 +768,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
 });
 
 /**
- * Columns no narrow UPDATE may name, on any table (plan v3.2 S7b part b2
- * round 8): who a row belongs to, acts for or was made by, where it sends a
+ * Columns no narrow UPDATE may name, on any table: who a row belongs to, acts for or was made by, where it sends a
  * key or a call, what it runs and with what, and what it grants. A write
  * that needs one runs at a full-route spot or a definer with its own check
  * (NARROW_WRITES' header). The exceptions are the one-way columns 0319
@@ -882,7 +875,7 @@ export const NARROW_ONE_WAY_HELD: readonly string[] = Object.freeze([
   'public.mantle_peers.acts_as_login_id',
 ]);
 
-/** Tables no narrow INSERT may reach (plan v3.2 S7b part b2 round 8): a row
+/** Tables no narrow INSERT may reach: a row
  *  there is executed (a run, a run item, a heartbeat, a tool, a skill's
  *  instructions), decided (a pending call), grants (an assistant, a tool
  *  group, a channel, a bot) or lets a device or a client in. Their inserts
@@ -953,8 +946,7 @@ export const NARROW_REINSERT_HELD: Readonly<Record<string, string>> = Object.fre
 
 /**
  * What the measured narrow writes still name that the rules above refuse,
- * with the spot or definer each moves to (plan v3.2 S7b part b2 round 8:
- * the class fix lands in steps, a round each). Each is granted until its
+ * with the spot or definer each moves to. Each is granted until its
  * move lands (the product writes it on the narrow route today, measured);
  * runtime-role.test.ts holds this list to shrink only, and NARROW_WRITES
  * to name nothing else the rules refuse.
@@ -986,13 +978,13 @@ export const CREDENTIAL_NAME =
  * migration 0280): edit (a Moderator of its home, or a grant with Write
  * on), manage (a Moderator of its home), admin (the scope holds the Admin
  * workspace: an Admin user), appdata (an app's data: edit, and while the app
- * is Informational an Admin scope too, owner decision D6), link (a public
+ * is Informational an Admin scope too: docs/actors.md, "Who may do what"), link (a public
  * link: edit, an app's manage) or link_close (a link closed: link, or an
  * Admin user with the users area). 'system': only the brain writes it.
  */
 export type EditNeed = 'edit' | 'manage' | 'admin' | 'appdata' | 'link' | 'link_close';
 
-/** A table's A3a checks (TableAccess.editCheck). Only what the write check
+/** A table's edit checks (TableAccess.editCheck). Only what the write check
  *  (writeCheck, 0278) does not already ask. */
 export type EditCheck = {
   /** The column naming the row's item (a node id), or 'self' on nodes. */
@@ -1024,8 +1016,8 @@ export type EditCheck = {
   contactAdmin?: true;
 };
 
-/** The draft columns of the item tables. The workspace role reads them since
- *  W6a (plan 14): an Admin user's editor reads the draft, and every reader
+/** The draft columns of the item tables. The workspace role reads them: an
+ *  Admin user's editor reads the draft, and every reader
  *  asks for it only for an item the user may edit (draftColumn,
  *  draft-read.ts: the rule is in the query). */
 export const DRAFT_COLUMNS: Readonly<Record<string, readonly string[]>> = {
@@ -1065,8 +1057,8 @@ export function writeColumnsFor(t: TableAccess): LimitedRead {
 const none = (table: string, writer: Writer = 'admin'): TableAccess => ({ table, writer });
 
 /**
- * A table the workspace role reads whole since W6a (an Admin user's screens
- * run in its scope, plan 2.4). Its row rule is in migration 0265: rows that
+ * A table the workspace role reads whole (an Admin user's screens run in
+ * its scope). Its row rule is in migration 0265: rows that
  * follow an item the scope reads, or (graph, documentation collections)
  * only a scope that holds the Admin workspace.
  */
@@ -1076,7 +1068,7 @@ const userOnly = (table: string, writer: Writer = 'admin'): TableAccess => ({
   user: 'all',
 });
 
-/** The nodes columns a login's edit changes (A3a): the write check asks
+/** The nodes columns a login's edit changes: the write check asks
  *  edit of each change, the guards keep the derived ones (home_ws,
  *  read_ws, write_ws, login_id) and a kind never changes on the role. Every
  *  other column is the brain's (editCheck 'rest'). */
@@ -1098,7 +1090,7 @@ export const NODE_EDIT_COLUMNS: readonly string[] = [
   'login_id',
 ];
 
-/** An app's code (owner decision D4: a Moderator of its home changes it). */
+/** An app's code: a Moderator of its home changes it (docs/actors.md, "Who may do what"). */
 export const APP_CODE_COLUMNS: readonly string[] = [
   'source',
   'source_text',
@@ -1111,7 +1103,7 @@ export const APP_CODE_COLUMNS: readonly string[] = [
   'restored_from_seq',
 ];
 
-/** An app's switches and author (owner decision D5: Admin users only):
+/** An app's switches and author (Admin users only, docs/actors.md, "Who may do what"):
  *  trust its tools (author_level), MCP access, data read only
  *  (Informational), and who made it. */
 export const APP_SWITCH_COLUMNS: readonly string[] = [
@@ -1129,7 +1121,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     user: 'all',
     writer: 'content',
     writeCheck: { kind: 'self' },
-    // A3a: the columns an edit changes (the write check asks edit; the
+    // The columns an edit changes (the write check asks edit; the
     // guards keep the derived ones); every other column is the brain's
     // (deny by default), an embedding only cleared; the derived keys of
     // data only cleared.
@@ -1221,11 +1213,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     ],
     writer: 'content',
   },
-  // Every column since W6a: an Admin user's app screens read them all;
-  // drafts only where the user may edit (draftColumn).
-  // A3a: the code needs manage (owner decision D4: a Moderator of the
-  // app's home), the three switches and the author need an Admin user (D5);
-  // lowering the tool level to team is always allowed.
+  // Every column: an Admin user's app screens read them all; drafts only
+  // where the user may edit (draftColumn). The code needs manage (a
+  // Moderator of the app's home), the three switches and the author need
+  // an Admin user; lowering the tool level to team is always allowed
+  // (docs/actors.md, "Who may do what").
   {
     table: 'public.apps',
     user: 'all',
@@ -1244,7 +1236,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       },
     },
   },
-  // A3a: an app's data (D6: while Informational is on, Admin users only).
+  // An app's data (while Informational is on, Admin users only:
+  // docs/actors.md, "Who may do what").
   {
     table: 'public.app_databases',
     user: 'all',
@@ -1253,8 +1246,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     editCheck: { item: 'app_node_id', insert: 'appdata', update: 'appdata', delete: 'manage' },
   },
 
-  // ── Personal spaces (Phase 2; folded into the brain in W6b, 0267) ────────
-  // Frozen until W10: read and written on the admin pool only.
+  // ── Personal spaces ─────────────────────────────────────────────────────
+  // Read and written on the admin pool only.
   none('public.space_items', 'content'),
   none('public.space_item_bundles', 'content'),
   // Read only through mantle_is_brain_space() (security definer).
@@ -1262,7 +1255,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // The accepted snapshot a member author reads (0183): the admin pool
   // serves it with the author rule in the query (member-accepted.ts).
   none('public.accepted_snapshots'),
-  // The snapshot store's tombstones (A3b part 2, 0284): written by definer
+  // The snapshot store's tombstones: written by definer
   // triggers, read and cleared by the store sweep on the system pool.
   none('public.store_tombstones'),
   none('public.space_uploads', 'content'),
@@ -1270,7 +1263,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.client_comment_ledger', 'content'),
 
   // ── Configuration the turn loop reads (no per-row secrecy) ────────────────
-  // The workspace role (W4b, 0254): an assistant of a workspace in the scope
+  // The workspace role: an assistant of a workspace in the scope
   // or a helper; tool groups never adminOnly outside Admin, connectors only
   // as a resource of a workspace in the scope.
   { table: 'public.agents', user: 'all', writer: 'admin' },
@@ -1280,9 +1273,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { table: 'public.embedding_config', user: 'all', writer: 'admin' },
   { table: 'public.ai_workers', user: 'all', writer: 'admin' },
   // Read: its own login's row and the brain's, every row only in an Admin
-  // scope (0266). Write (plan v3 S3, owner decision 2026-10-17): its own
-  // row, and the brain's only for a login whose scope holds the Settings
-  // area; a member's turn never changes the brain's row.
+  // scope. Write: its own row, and the brain's only for a login whose scope
+  // holds the Settings area; a member's turn never changes the brain's row
+  // (docs/actors.md, "Who may do what").
   {
     table: 'public.profiles',
     user: 'all',
@@ -1299,7 +1292,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // extract queue on the admin pool, read by admin routes only.
   none('public.provider_alerts', 'system'),
   none('public.trace_steps', 'system'),
-  // The per-login stores (R3, W4b 0254): the workspace role reads its own
+  // The per-login stores: the workspace role reads its own
   // login's rows of the workspaces in its scope.
   { ...none('public.tool_results', 'system'), user: 'all' },
   none('public.tool_result_chunks', 'system'),
@@ -1398,7 +1391,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.messenger_calls', 'system'), user: 'all' },
   { ...none('public.messenger_call_participants', 'system'), user: 'all' },
   none('public.messenger_call_webhooks', 'system'),
-  // A public link (A3a, plan 5.2): edit of its item, an app's manage;
+  // A public link: edit of its item, an app's manage;
   // closing it (revoked_at, or the row deleted) also an Admin user with the
   // users area. Its view counter is the brain's (a named read-path write).
   {
@@ -1461,10 +1454,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   userOnly('public.entity_merge_dismissals', 'admin'),
   // The embed edges (0208): written by triggers, read on the admin pool.
   none('public.node_embeds', 'content'),
-  // Old summaries made before always fold (W2, 0247): admin pool only.
+  // Old mixed summaries: admin pool only.
   none('public.node_mixed_summaries', 'content'),
   // A Recall map follows its node; its cards and its revision log follow the
-  // map (A3a: the write role writes them, edit of the map's node; a map
+  // map (the write role writes them, edit of the map's node; a map
   // deleted, manage). A renamed map's cross-map options in other maps are
   // the brain's (mantle_recall_retarget, 0281).
   {
@@ -1497,14 +1490,14 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       delete: 'edit',
     },
   },
-  // Comments (Phase 2): the admin pool only since W8c.
+  // Comments: the admin pool only.
   none('public.node_comments', 'content'),
   none('public.agent_groups'),
   none('public.channels'),
   none('public.curated_models'),
   none('public.prompt_versions'),
-  // An item's history (app versions and snapshots, table snapshots), A3a:
-  // edit of the item, on the write role while the item lives (its row rule
+  // An item's history (app versions and snapshots, table snapshots): edit
+  // of the item, on the write role while the item lives (its row rule
   // follows the node). A deleted app's rows are the brain's (app-trash):
   // the route asks manage of the stored home, the owner for one another
   // login deleted (docs/edit-check.md).
@@ -1519,11 +1512,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.saved_filters'),
   none('public.heartbeats'),
   none('public.sandboxes'),
-  // An app table's export row (plan v3 S3): read and written on the
-  // write role by a manager of the app (its row rule, S3's migration, and
-  // the write check), as the export tools ask; the dirty stamp and the
-  // sync stay the brain's named system step. The edit check asks edit of
-  // the linked Table too (fix round 3, defense in depth): a link made or
+  // An app table's export row: read and written on the write role by a
+  // manager of the app (its row rule and the write check), as the export
+  // tools ask; the dirty stamp and the sync stay the brain's named system
+  // step. The edit check asks edit of the linked Table too (defense in
+  // depth): a link made or
   // moved by a scope points only at a Table it may change, since the sync
   // rewrites that Table's grid as the brain.
   {
@@ -1534,10 +1527,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     editCheck: { item: 'table_node_id', insert: 'edit', update: 'edit' },
   },
 
-  // ── Workspaces (W1, migrations 0241 and 0242) ────────────────────────────
+  // ── Workspaces (migrations 0241 and 0242) ───────────────────────────────
   // The workspace role reads the rows of the workspaces in its scope (and
   // the grants of the items it reads).
-  // Every column since W6a (an Admin user's lists read the workspace chips);
+  // Every column (an Admin user's lists read the workspace chips);
   // the row rule (0242) keeps it to the login's workspaces. The four
   // workspace tables are written by definer calls only, so the runtime role
   // reads them and never writes them.
@@ -1548,7 +1541,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     writer: 'admin',
     runtime: 'read',
     // Never `settings`: a resource's settings may carry configuration the
-    // users of the workspace have no business reading (audit L11).
+    // users of the workspace have no business reading.
     user: ['id', 'workspace_id', 'type', 'ref_id', 'write'],
   },
   {
@@ -1557,7 +1550,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     writer: 'content',
     user: ['node_id', 'workspace_id', 'write', 'is_home', 'via_folder_id', 'excluded'],
     // A folder's rows on its items: made by the propagation triggers
-    // (definers), never by a login's write (A2b2a fix round 2, M-b).
+    // (definers), never by a login's write.
     derived: ['via_folder_id'],
   },
   // Audit of workspace changes, the heads rows and the heads-check log:
@@ -1566,7 +1559,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.workspace_events'), runtime: 'read' },
   none('public.node_acl_head', 'content'),
   none('public.heads_check_misses', 'system'),
-  // The actor-check log (arch A2a, 0275): written by a definer function.
+  // The actor-check log: written by a definer function.
   none('public.actor_check_misses', 'system'),
   // The key the held-heads list is signed with: definer functions only.
   { ...none('public.mantle_heads_key', 'system'), runtime: 'none' },
@@ -1574,10 +1567,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.mantle_moved_nodes', 'system'), runtime: 'none' },
   // The level bridge's per-transaction list of changed nodes (0250).
   { ...none('public.mantle_bridge_pending', 'system'), runtime: 'none' },
-  // The tier levels as they were when grants became the truth (0261, W8).
+  // The tier levels as they were when grants became the truth (0261).
   none('public.archive_node_levels', 'system'),
-  // The review tables as they were when the review flows went (0264, W5c),
-  // and where each space item goes in W6b (recorded, not granted).
+  // The review tables as they were when the review flows went (0264), and
+  // where each space item went when the spaces folded (recorded, not
+  // granted).
   none('public.archive_space_items', 'system'),
   none('public.archive_space_submissions', 'system'),
   none('public.archive_space_item_bundles', 'system'),
@@ -1587,23 +1581,23 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.former_user_workspaces', 'system'), narrow: 'read' },
   { ...none('public.space_item_homes', 'system'), narrow: 'read' },
   // The personal spaces and their items as they folded into the brain
-  // (0267, W6b).
+  // (0267).
   none('public.archive_spaces', 'system'),
   none('public.space_fold_items', 'system'),
   // A team-portal contact's chat rows (no login) as they were when
-  // team_messages folded into assistant_messages (0269, W7c).
+  // team_messages folded into assistant_messages (0269).
   none('public.archive_team_messages', 'system'),
-  // The per-login MCP switch (its table dropped in 0273, W8c) and the agent
+  // The per-login MCP switch (its table dropped in 0273) and the agent
   // and tool-group levels as they were when every login got one MCP
   // surface, and the credential cutoff for a login with no switch row
-  // (0268, W7b).
+  // (0268).
   none('public.archive_mcp_login_access', 'system'),
   none('public.archive_tool_levels', 'system'),
   none('public.archive_mcp_cutoff', 'system'),
   // The client logins, the email-code sign-in, the static login tokens and
   // the role a key or a peer was made under, as they were when logins
-  // stopped carrying anything (0272, W8a). Metadata only. A former client's
-  // workspace rows on a brain already on workspaces (W8a fix round 1).
+  // stopped carrying anything. Metadata only. A former client's workspace
+  // rows on a brain already on workspaces.
   none('public.archive_client_logins', 'system'),
   none('public.archive_client_workspace_users', 'system'),
   none('public.archive_client_private_workspaces', 'system'),
@@ -1614,7 +1608,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.archive_key_roles', 'system'),
   { ...none('public.archive_peer_roles', 'system'), narrow: 'none' },
   // The frozen chat and client tables as they were when they were dropped
-  // (0274, W8d): the portal read cursors, the member notifications, a
+  // (0274): the portal read cursors, the member notifications, a
   // login's own chat read cursor, the client report acknowledgements and
   // the client quota log.
   none('public.archive_team_read_cursors', 'system'),
@@ -1630,7 +1624,7 @@ function quoteTable(table: string): string {
 }
 
 /** Whether a table's column exists now: grants name only those (a test
- *  database migrated up to an older migration lacks a newer column, A3b). */
+ *  database migrated up to an older migration lacks a newer column). */
 export type ColumnExists = (table: string, column: string) => boolean;
 
 /**
@@ -1638,7 +1632,7 @@ export type ColumnExists = (table: string, column: string) => boolean;
  * scratch database migrated up to an older migration, or a box between the
  * grants and the migration that adds them): the grants skip ONLY these when
  * they are missing, each one logged. Any other matrix column the database
- * lacks is an error, as a GRANT naming it would be (A3b fix round 1, L4).
+ * lacks is an error, as a GRANT naming it would be.
  */
 export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
   'public.tables': ['draft_path'], // 0283
@@ -1727,13 +1721,12 @@ export function userGrantStatements(
 }
 
 /**
- * Whether the write role (`mantle_write_user`, workspaces arch A2b2, plan
- * 20.1) writes `t`: a `content` table that the workspace role reads, so it
+ * Whether the write role (`mantle_write_user`) writes `t`: a `content` table that the workspace role reads, so it
  * has a read rule. The write role's row rules ARE that read rule (migration
  * 0278): a row the scope cannot read matches no row. What reading does not
  * decide (edit, manage) is the table's `writeCheck`. A content table with
  * no read rule stays on the system pool and its definer triggers
- * (WRITE_ROLE_SYSTEM_ONLY) until a phase gives it one.
+ * (WRITE_ROLE_SYSTEM_ONLY).
  */
 export function writeRoleWrites(t: TableAccess): boolean {
   return t.writer === 'content' && userReadFor(t) !== 'none';
@@ -1745,7 +1738,8 @@ export const WRITE_ROLE_TABLES: readonly string[] = ACCESS_MATRIX.filter(writeRo
 );
 
 /** Content tables the write role may not touch: no read rule, so login
- *  writes to them stay on the system pool (docs/actors.md, "A2b2b must"). */
+ *  writes to them stay on the system pool (docs/actors.md, "The three
+ *  routes to Postgres"). */
 export const WRITE_ROLE_SYSTEM_ONLY: readonly string[] = ACCESS_MATRIX.filter(
   (t) => t.writer === 'content' && !writeRoleWrites(t),
 ).map((t) => t.table);
@@ -1753,8 +1747,8 @@ export const WRITE_ROLE_SYSTEM_ONLY: readonly string[] = ACCESS_MATRIX.filter(
 /**
  * The tables whose scoped typed writes stay on the system pool, each with
  * its reason (TableAccess.scopedSystemWrite): every other scoped typed
- * write to a table the write role does not hold is refused (plan v3.2
- * S4b). Never a write-role table (access-matrix.test.ts).
+ * write to a table the write role does not hold is refused. Never a
+ * write-role table (access-matrix.test.ts).
  */
 export const SCOPED_SYSTEM_WRITE: Readonly<Record<string, string>> = Object.freeze(
   Object.fromEntries(
@@ -1766,12 +1760,11 @@ export const SCOPED_SYSTEM_WRITE: Readonly<Record<string, string>> = Object.free
 );
 
 /**
- * The role the gap rerun ran a gap table's statement as (A2b2b fix round 2,
- * L2). Plan v3 S3 closed the gap tables (profiles and app_table_exports are
- * write-role tables) and deleted the rerun: nothing runs as it, and
- * applyViewerGrants keeps it holding no right at all (syncGapWriterRights).
- * TODO(plan v3 S3 part 2, one release later): drop the role, its runtime
- * role membership (runtime-role.ts wantedMemberships) and the lock
+ * A role nothing runs as: applyViewerGrants keeps it holding no right at
+ * all (syncGapWriterRights), so a rollback to an image that still uses it
+ * finds it.
+ * TODO: once no image a box can roll back to uses it, drop the role, its
+ * runtime role membership (runtime-role.ts wantedMemberships) and the lock
  * attributes it shares with the viewer roles (viewer-roles.ts).
  */
 export const GAP_WRITER_ROLE = 'mantle_gap_writer';
@@ -1872,14 +1865,14 @@ export function writeCheckArgs(t: TableAccess): string[] | null {
   return t.writeCheck.kind === 'self' ? ['self'] : [t.writeCheck.kind, t.writeCheck.item];
 }
 
-/** One trigger of a table's A3a checks: its name and its CREATE statement. */
+/** One trigger of a table's edit checks: its name and its CREATE statement. */
 export type EditCheckTrigger = { name: string; ddl: string };
 
 /** The read-only refusal (0280): one per item table, made by its migration,
  *  never by editCheckTriggers. */
 export const EDIT_CHECK_RO_TRIGGER = 'mantle_edit_check_ro';
 
-/** A contact share writes its app's data only (0294, A8 matrix F9): one per
+/** A contact share writes its app's data only (0294): one per
  *  item table but app_databases and node_acl_head, made by its migration,
  *  never by editCheckTriggers. */
 export const EDIT_CHECK_CONTACT_TRIGGER = 'mantle_edit_check_contact';
@@ -1917,12 +1910,12 @@ function safeLiteral(v: string | boolean | null): string {
 }
 
 /**
- * The triggers of `t`'s A3a checks (TableAccess.editCheck), given the
+ * The triggers of `t`'s edit checks (TableAccess.editCheck), given the
  * table's columns as the catalog has them (not dropped, not generated) and
  * those whose type lives outside pg_catalog (`textCompare`: a vector, an
  * ltree), which the WHEN compares as text: a restore runs with an empty
- * search_path, where `vector = vector` is not found (the 0204 lesson;
- * dump-restore.db.test.ts). Pure. Each fires for the write role only, BEFORE the row's write, and
+ * search_path, where `vector = vector` is not found
+ * (dump-restore.db.test.ts). Pure. Each fires for the write role only, BEFORE the row's write, and
  * calls mantle_edit_check_trg(need, item, via, mode):
  *  - mantle_edit_check_<need>: the operations that need it;
  *  - mantle_edit_check_cols_<need>: an UPDATE of one of its columns (the
@@ -2056,7 +2049,7 @@ export function editCheckNote(ddl: string): string {
 }
 
 /**
- * Bring one table's A3a triggers to the matrix (editCheckTriggers), inside
+ * Bring one table's edit check triggers to the matrix (editCheckTriggers), inside
  * the caller's transaction (syncWriteRoleRules: lock_timeout 3 s): drop a
  * matrix-made trigger the matrix no longer wants or that changed, make the
  * missing ones, each disabled when the box's edit check is off (so off
@@ -2198,14 +2191,14 @@ export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promi
 }
 
 /** The statement that brings GAP_WRITER_ROLE to its wanted state, every
- *  pass (fix round 3, D): made when missing, its attributes set again
+ *  pass: made when missing, its attributes set again
  *  when it exists, as viewerRoleStatements does the viewer roles'. Pure. */
 export function gapWriterRoleStatement(exists: boolean): string {
   return `${exists ? 'ALTER' : 'CREATE'} ROLE "${GAP_WRITER_ROLE}" WITH NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
 }
 
-/** The error a gap writer row rule change gives after its last try (fix
- *  round 3, F): what happened and what to do. */
+/** The error a gap writer row rule change gives after its last try: what
+ *  happened and what to do. */
 export function gapWriterRuleLockError(table: string, cause: unknown): Error {
   return new Error(
     `migrate: could not take the lock to change the mantle_gap_writer row rule on ${table} ` +
@@ -2216,12 +2209,11 @@ export function gapWriterRuleLockError(table: string, cause: unknown): Error {
 }
 
 /**
- * GAP_WRITER_ROLE, holding nothing (plan v3 S3): made when missing and its
+ * GAP_WRITER_ROLE, holding nothing: made when missing and its
  * lock attributes set again on every pass (gapWriterRoleStatement; a
  * cluster object, like the viewer roles), every table and sequence right
  * revoked, and every row rule that names it dropped, each in its own short
- * transaction (lock_timeout 3 s, with retries), as syncWriteRoleRules. Kept
- * one release so a rollback to the image before S3 finds it (rule 2).
+ * transaction (lock_timeout 3 s, with retries), as syncWriteRoleRules.
  */
 export async function syncGapWriterRights(sql: ReturnType<typeof postgres>): Promise<void> {
   const role = `"${GAP_WRITER_ROLE}"`;
@@ -2267,7 +2259,7 @@ const RETRY_CODES = new Set(['55P03', '40P01']);
 
 /**
  * The write role's row rules and write checks (mantle_write_role_sync_table,
- * 0278) and its A3a checks (syncEditChecks), one table per transaction:
+ * 0278) and its edit checks (syncEditChecks), one table per transaction:
  * every write table, every table with a read rule of the workspace role,
  * and every table that still carries a rule or check of the write role (the
  * matrix's schemas, public and auth). Each waits at most 3 s for its lock and

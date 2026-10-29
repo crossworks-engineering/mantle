@@ -11,7 +11,7 @@ export const pendingToolStatus = pgEnum('pending_tool_status', [
 ]);
 
 /**
- * The scope a pending call was asked in (workspaces arch A5 step 6c, 0288),
+ * The scope a pending call was asked in (0288),
  * set by the server at queue time (@mantle/tools pending-origin.ts): the
  * approval judges it again, and runs it, in this scope met with the asker's
  * rights then (pending-approval.ts originApproval). Version 1.
@@ -27,9 +27,9 @@ export type PendingOrigin = {
     ws: string[];
     modWs: string[];
   } | null;
-  /** How the turn held it: a turn scope (`turn`). `gate` is a stamp from
-   *  before arch A7 (the rollback switch's gate scope, gone): its approval
-   *  runs in a turn scope too (@mantle/tools pending-origin.ts). */
+  /** How the turn held it: a turn scope (`turn`). `gate` is a legacy
+   *  stamp of a gate scope that no longer exists: its approval runs in a
+   *  turn scope too (@mantle/tools pending-origin.ts). */
   enter: 'turn' | 'gate' | null;
   /** The turn scope wrote as an Admin turn does (its request mode). */
   writes: boolean;
@@ -38,9 +38,9 @@ export type PendingOrigin = {
   admin: { holds: boolean; areas: string[] } | null;
   /** The surface the turn ran on: its kind, an owner path's via, the login
    *  it names (no chat or account ids), and a login's own MCP connection:
-   *  how it came in, whether it spends on the owner's keys (lows round, 6c
-   *  L3) and the key, peer or OAuth client id its app data log names (lows
-   *  round 2, L7; no role, no Write). Null: none. */
+   *  how it came in, whether it spends on the owner's keys and the key,
+   *  peer or OAuth client id its app data log names (no role, no Write).
+   *  Null: none. */
   surface: {
     kind: string;
     via?: string;
@@ -53,11 +53,11 @@ export type PendingOrigin = {
       ownerKeysOff?: true;
     };
   } | null;
-  /** The turn ran in a public link's scope (A5 step 6c fix round 1): its
+  /** The turn ran in a public link's scope: its
    *  scope is not stamped (a link's served list and its liveness are not
    *  the approval's to rebuild), so only the owner may approve it. */
   link?: true;
-  /** The actor the asking turn ran as (A5 step 6c fix round 1): what a row
+  /** The actor the asking turn ran as: what a row
    *  that names no asker runs as at approval, never the approving path's.
    *  A row with an asker runs as that login now. Absent: none read. */
   actor?:
@@ -95,21 +95,21 @@ export const pendingToolCalls = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+    /** The workspace this row belongs to (0250), stamped at
      *  insert from its agent (NULL = the Admin workspace), and the login it
      *  was for. The foreign key lives in the migration. */
     workspaceId: uuid('workspace_id'),
     loginId: uuid('login_id'),
-    /** Workspaces arch A5 step 6d (0287, owner decision 1a): the call runs
+    /** The call runs
      *  with more rights than the turn that queued it (a connector write its
      *  scope may not make itself), set by the server at queue time; NULL
      *  for every other call. */
     elevated: jsonb('elevated').$type<{ elevated: true; reason: string } | null>(),
-    /** The turn that queued the call had read text a client wrote (0287,
-     *  A5 step 6d fix round 1): what marked it, for the approver; NULL for
+    /** The turn that queued the call had read text a client wrote (0287):
+     *  what marked it, for the approver; NULL for
      *  a turn that read none. */
     clientSourced: jsonb('client_sourced').$type<{ via: string } | null>(),
-    /** Workspaces arch A5 step 6c (0288): the scope the call was asked in
+    /** The scope the call was asked in
      *  (PendingOrigin), set by the server at queue time; NULL for a row
      *  queued before 0288 or by no turn (the legacy rule: docs/actors.md). */
     origin: jsonb('origin').$type<PendingOrigin | null>(),

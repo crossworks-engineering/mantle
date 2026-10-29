@@ -40,9 +40,9 @@ import { joinedBegin, joinedStatement, writeRoleBegin, writeRoleStatement } from
 
 type PgSql = ReturnType<typeof postgres>;
 
-// ── The login write gateway (workspaces arch A2b2b, plan 20.1) ─────────────
+// ── The login write gateway ────────────────────────────────────────────────
 
-/** The actors whose scoped writes go to the write role (plan 20.1):
+/** The actors whose scoped writes go to the write role:
  *  everything but system work and a peer(share), which writes nothing. */
 const WRITE_ROLE_ACTORS: ReadonlySet<Actor['kind']> = new Set([
   'login',
@@ -69,8 +69,7 @@ function isWriteRoleTable(table: unknown): boolean {
 }
 
 /**
- * Refuse a scoped write the write role holds no right on (plan v3.2 S4b;
- * S4a counted it): the system pool is for system work, never the caller's
+ * Refuse a scoped write the write role holds no right on: the system pool is for system work, never the caller's
  * scoped write. Scoped is loginWriteRoute's test (an actor the write role
  * takes and a write scope), so system work, which binds a system actor, is
  * never refused. A login's write to a table whose matrix row names
@@ -89,7 +88,7 @@ function refuseScopedSystemWrite(table: unknown): void {
 
 /** db.insert, update or delete of a scoped write (the db proxy): the
  *  gateway's handle for a write-role table, the system pool's for any
- *  other (arch A2b2b), which refuses a scoped write (S4b). */
+ *  other, which refuses a scoped write. */
 export function typedWrite(prop: 'insert' | 'update' | 'delete', gateway: boolean): unknown {
   return (table: unknown, ...rest: unknown[]) => {
     const toWriteRole = gateway && isWriteRoleTable(table);
@@ -101,7 +100,7 @@ export function typedWrite(prop: 'insert' | 'update' | 'delete', gateway: boolea
 }
 
 /**
- * The login write gateway's one decision (arch A2b2b; plan v3 S3): the
+ * The login write gateway's one decision: the
  * settings a write that runs now takes on the write role, or null for the
  * system pool. The write role when all hold, in every check mode (the mode
  * decides whether a check refuses or reports, never the pool; it rides in
@@ -110,8 +109,8 @@ export function typedWrite(prop: 'insert' | 'update' | 'delete', gateway: boolea
  *    worker and the stdio MCP server);
  *  - the actor is a login, an assistant, a link or a contact;
  *  - the write carries a scope its reads use too (requestWriteScope: a
- *    login's mutating request scope, an Admin user's too since F4, an
- *    Admin turn). asSystem masks it, and a named repair or an Admin area
+ *    login's mutating request scope, an Admin user's too, an Admin
+ *    turn). asSystem masks it, and a named repair or an Admin area
  *    route binds a system actor: both stay on the system pool.
  */
 function loginWriteRoute(): LoginWriteRoute | null {
@@ -207,15 +206,15 @@ type GatewayPaths<T> = {
   system: () => Promise<T>;
   /** On the write role. */
   write: (route: LoginWriteRoute) => Promise<T>;
-  /** Inside an open write transaction of the same route (M2). */
+  /** Inside an open write transaction of the same route. */
   join: (open: WriteTx) => Promise<T>;
 };
 
 /**
- * Run a write through the gateway (arch A2b2b): `system` when
+ * Run a write through the gateway: `system` when
  * loginWriteRoute says the system pool; inside an open write transaction
  * of the same route, `join`; else `write` on the write role. Every error,
- * a denial included, is the caller's: nothing runs again (plan v3 S3).
+ * a denial included, is the caller's: nothing runs again.
  */
 export async function onLoginWritePool<T>(paths: GatewayPaths<T>): Promise<T> {
   const route = await loginWriteRouteNow();
@@ -223,7 +222,7 @@ export async function onLoginWritePool<T>(paths: GatewayPaths<T>): Promise<T> {
   const open = joinableWriteTx(route);
   if (open) return paths.join(open);
   // A write of the same route left running inside a transaction that has
-  // ended (round 3, A): refused, never sent on a connection of its own.
+  // ended: refused, never sent on a connection of its own.
   const store = currentWriteTx();
   if (store && store.route.setSql === route.setSql && levelEnded(store)) {
     throw new JoinedWriteEndedError();
@@ -282,7 +281,7 @@ function loginWriteDb(): PostgresJsDatabase<typeof schema> {
 }
 
 /** The handle a scoped write goes to: the gateway's when it may route,
- *  else the system pool's, as before A2b2b. */
+ *  else the system pool's. */
 export function systemWriteDb(): PostgresJsDatabase<typeof schema> {
   return loginWritesMayRoute() ? loginWriteDb() : getAdminDb();
 }
@@ -304,14 +303,14 @@ export function uuidArrayLiteral(ids: readonly string[], what: string): string {
 
 /**
  * Each login's private workspace as createHomeFallback last read it on the
- * system pool (arch A2b2b): the login write gateway adds it to a write
+ * system pool: the login write gateway adds it to a write
  * scope that does not hold it yet (writeScopeWithPrivate). A login's scope
  * is read once per request or turn, often before its first create made the
  * private workspace, and the write role needs its Moderator seat in
  * mantle.mod_ws. Only a pair read here counts, never a create home's word
  * alone.
  *
- * Process-global and never cleared, on purpose (A2b2b fix round 1, L3): one
+ * Process-global and never cleared, on purpose: one
  * entry per login that made or read its private workspace in this process
  * (logins are few: a brain's people, never per request), each a pair of
  * ids. A stale pair grants nothing: it counts only when the write's own

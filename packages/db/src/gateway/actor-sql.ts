@@ -78,15 +78,15 @@ const actorPipelines = new Set<Promise<unknown>>();
  *  before 0275 (an operator or a test role), and actor.ts already checked
  *  the value.
  *
- *  The values are inlined as quoted literals, not sent as parameters (fix
- *  round 2): with prepare off, postgres.js sends a statement that has
+ *  The values are inlined as quoted literals, not sent as parameters: with
+ *  prepare off, postgres.js sends a statement that has
  *  parameters in two steps (describe, wait for the answer, then execute),
  *  and nothing queued behind it goes out until the first step is answered.
  *  A statement with no parameters goes out in one step, so the next one is
  *  sent with it: the SET adds no round trip.
  *
  *  Each value is checked against its shape first and refused otherwise
- *  (A2b, defence in depth for the inlined literals): actor.ts builds them,
+ *  (defence in depth for the inlined literals): actor.ts builds them,
  *  so a refusal here is a bug, never a caller's input. Exported for
  *  actor-client.test.ts only (not in index.ts). */
 export function setActorSql(
@@ -178,7 +178,7 @@ export function statementBody(query: string, setsToo: boolean): string {
 }
 
 /**
- * Whether `query` must run outside a transaction block (fix round, M3b):
+ * Whether `query` must run outside a transaction block:
  * matched after its leading comments, whitespace and SET statements.
  */
 export function runsOutsideTransaction(query: string): boolean {
@@ -189,15 +189,14 @@ export function runsOutsideTransaction(query: string): boolean {
  *  without ANALYZE (or ANALYSE), and a WITH that names no write verb. */
 const READ_VERB = /^(select|values|table|show)\b/i;
 const EXPLAIN_NO_ANALYZE = /^explain\b(?![^;]*\banaly[sz]e\b)/i;
-/** A write verb anywhere in a WITH (fix round 2, L4): a false match only
+/** A write verb anywhere in a WITH: a false match only
  *  costs the wrap, a missed one would send a write with no actor. */
 const WITH_WRITES = /\b(insert|update|delete|merge)\b/i;
 /** A `;` with more text after it: more than one statement, unknown. */
 const MORE_STATEMENTS = /;\s*\S/;
 
 /**
- * Whether the system pool sends `query` with the actor set (owner decision,
- * A2a fix round): writes only. INSERT, UPDATE, DELETE, MERGE, TRUNCATE,
+ * Whether the system pool sends `query` with the actor set: writes only. INSERT, UPDATE, DELETE, MERGE, TRUNCATE,
  * COPY, a WITH that names a write verb, more than one statement, and any
  * verb not named here (the safe side) are wrapped; a read runs plain,
  * exactly as with the check off. A SELECT that calls a function that writes
@@ -228,12 +227,11 @@ export function actorParams(): ActorParams | null {
   // too: the workspace definers read mantle.actor to know it
   // (mantle_ws_system_work, 0307), whatever the check's mode. Its mode goes
   // as 'off', the box's own, so no check reads it.
-  // A request exit's system actor too (plan v3.2 S7b): it carries the
-  // login it acts for, which a definer acting for a login with no scope
-  // will read (the second part's definers), whatever the mode. And work at
-  // the acting-login spot (round 13b): its definers refuse a missing acting
-  // login (0322), and a turn's exit is no request exit, so with the check
-  // off its acting login went nowhere. So does work at the
+  // A request exit's system actor too: it carries the login it acts for,
+  // which a definer acting for a login with no scope reads, whatever the
+  // mode. And work at the acting-login spot: its definers refuse a missing
+  // acting login (0322), and a turn's exit is no request exit, so with the
+  // check off nothing else would send its acting login. So does work at the
   // login-credential spot on a narrow exit (the Admin membership definers
   // with no scope, 0330): its entry is the spot's, no request exit. Only
   // those two spots' statements gain the SET in off; every other path sends
@@ -269,8 +267,7 @@ const SET_TRANSACTION_SQL = /^\s*set\s+transaction\b/i;
  *
  * The SET is sent unawaited, right before that first statement, on the
  * transaction's one connection: postgres.js sends both in one write, so
- * warn adds no round trip to a transaction (fix round 2, the owner's
- * scaling rule). A SET that fails is the error reported, not the
+ * warn adds no round trip to a transaction. A SET that fails is the error reported, not the
  * statement's follow-on "current transaction is aborted". Exported for
  * actor-client.test.ts only (not in index.ts).
  */
@@ -282,7 +279,7 @@ export function actorInTransaction(t: PgSql, params: ActorParams): PgSql {
  * A transaction's client that sends `setSql()` (a statement with no
  * parameters that only sets transaction-local settings) unawaited, right
  * before its first statement: actorInTransaction's actor, and the write
- * role's scope and actor (the login write gateway, A2b2b). See
+ * role's scope and actor (the login write gateway). See
  * actorInTransaction.
  */
 export function settingsFirst(t: PgSql, setSql: () => string): PgSql {
@@ -291,7 +288,7 @@ export function settingsFirst(t: PgSql, setSql: () => string): PgSql {
   /** The SET answered without an error: later statements run plain. Until
    *  then each one waits for the SET's answer too, so a statement sent in
    *  parallel with the first reports the SET's own error, not the follow-on
-   *  "current transaction is aborted" (A2b, the A2a audit's LOW). */
+   *  "current transaction is aborted". */
   let setOk = false;
   const sendSet = (): Promise<unknown> =>
     (set ??= t.unsafe(setSql()).then(
@@ -471,7 +468,7 @@ export function settingsPipeline(
 }
 
 /**
- * The system pool's postgres.js client with the actor (arch A2a, plan 4.2):
+ * The system pool's postgres.js client with the actor:
  * while the check is not off and an actor is bound, a transaction (`begin`)
  * sets the actor with its first statement (no round trip of its own), and a
  * write outside one (needsActorWrap) runs pipelined with a session-level
@@ -495,7 +492,7 @@ export function actorClient(base: PgSql): PgSql {
     const open = globalThis.__mantleSql === base;
     const params = open ? actorParams() : null;
     if (params && !runsOutsideTransaction(query) && wrapsStatement(query)) {
-      // A write outside a transaction, as the actor (A2b1 audit, Q1): the
+      // A write outside a transaction, as the actor: the
       // caller waits exactly as long as with the check off.
       return settingsPipeline(
         base,

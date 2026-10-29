@@ -1,8 +1,7 @@
 /**
- * The store brokers' one helper (workspaces arch plan v2, sections 6 and
- * 20.3; A3b; docs/store-brokers.md). Six stores keep data on disk, where no
- * trigger sees it. Each has ONE broker module, the only writer of its disk,
- * and every whole-file write goes the same way (plan 20.3):
+ * The store brokers' one helper (docs/store-brokers.md). Six stores keep
+ * data on disk, where no trigger sees it. Each has ONE broker module, the
+ * only writer of its disk, and every whole-file write goes the same way:
  *
  *  1. stage: the bytes go to a NEW revision name (`revisionToken`), a file
  *     no row points at, so no reader sees it;
@@ -123,7 +122,7 @@ export async function inFlipTransaction<T>(fn: () => Promise<T>): Promise<T> {
  * throw in the transaction's body). Any other error may have committed (a
  * lost COMMIT acknowledgement): the stage is kept, whether a row names it
  * or not. A row never points at a removed stage; one no row names is an
- * unreferenced revision for the sweep (A3b fix round 2, N3). Returns the
+ * unreferenced revision for the sweep. Returns the
  * flip's result.
  */
 export async function stageThenFlip<S, T>(
@@ -154,8 +153,8 @@ export async function stageThenFlip<S, T>(
 // ── A store whose disk path IS its row ──────────────────────────────────
 
 /**
- * Flip, then place: plan 20.3 for the files tree, where there is no pointer
- * to flip (A3b part 2). A file lives at its folder's path and its name,
+ * Flip, then place: the store write for the files tree, where there is no
+ * pointer to flip. A file lives at its folder's path and its name,
  * which the host sees and the files watcher mirrors, so new bytes cannot
  * wait under another name for a row to point at them: the disk follows the
  * row INSIDE the flip. `flip` runs the one short transaction: the checked
@@ -274,8 +273,8 @@ export function revisionNode(name: string, store: RevisionStore): string | null 
   return m[1] ?? null;
 }
 
-/** A table draft written before A3b (`<node>.draft.sqlite`, no revision
- *  token): the sweep never removes one, it reports it. */
+/** A legacy table draft (`<node>.draft.sqlite`, no revision token): the
+ *  sweep never removes one, it reports it. */
 export function isLegacyDraftName(name: string): boolean {
   const m = REVISION_NAME.exec(name);
   return m !== null && m[2] === undefined && m[3] !== undefined;
@@ -294,10 +293,9 @@ export function revisionFiles(dirAbs: string, node: string, store: RevisionStore
 }
 
 /** Which columns of which registry name a store's files: the one spec the
- *  sweep and the backups read, through `storeRows` (A3b fix rounds 2 and
- *  3). The first is the item's current file (a table's published workbook,
+ *  sweep and the backups read, through `storeRows`. The first is the item's current file (a table's published workbook,
  *  an app's database). A table's are relative to TABLE_DB_DIR, an app
- *  database's absolute. The snapshot store (A3b part 2): a snapshot's
+ *  database's absolute. The snapshot store: a snapshot's
  *  database copy (an app's relative to APP_DB_DIR, a table's to
  *  TABLE_DB_DIR; the item is the snapshot row) and an accepted table's
  *  workbook copy (relative to TABLE_DB_DIR; the item is the table). */
@@ -356,7 +354,7 @@ export async function storeRows(store: SweptStore): Promise<SweepRow[]> {
 /** The tombstones of a snapshot store (migration 0284: a file a deleted or
  *  re-pointed row named), as stored (relative to the store's base), with
  *  how long ago its row went (ms), on the database's clock (no skew with
- *  this process's: fix round 1, L5). Read on the caller's handle (the
+ *  this process's). Read on the caller's handle (the
  *  system pool). */
 export async function storeTombstones(
   store: 'appsnap' | 'tablesnap' | 'accepted',
@@ -391,7 +389,7 @@ export async function forgetTombstones(
 
 /** When a revision was made, from its name's token (`revisionToken`: the
  *  time in base 36, then 8 hex characters); 0 for a name with no token (a
- *  file from before A3b, the oldest). */
+ *  legacy file, the oldest). */
 export function revisionTime(name: string): number {
   const m = /\.r-([0-9a-z]+)(?:\.draft)?\.sqlite$/.exec(name);
   if (!m || m[1]!.length <= 8) return 0;
@@ -406,8 +404,7 @@ export function revisionTime(name: string): number {
  *  its readers finish (a reader that resolved it before the flip). */
 export const STORE_SWEEP_GRACE_MS = 60 * 60 * 1000;
 
-/** How long a tombstoned file stays after its row went (A3b part 2, fix
- *  round 1, M2): longer than any backup runs, so a backup whose Postgres
+/** How long a tombstoned file stays after its row went: longer than any backup runs, so a backup whose Postgres
  *  dump still names the row finds the file when it links the history. */
 export const STORE_TOMBSTONE_GRACE_MS = 24 * 60 * 60 * 1000;
 
@@ -462,7 +459,7 @@ export type SweepReport = {
   label: string;
   /** How many files the store's rows name (0 before the rows are read, or
    *  for a held store): none at all is a wrong or empty database to the
-   *  leftovers command (fix round 2, N4). */
+   *  leftovers command. */
   named: number;
   /** Files no row points at, seen for the first time this run. */
   marked: number;
@@ -574,9 +571,8 @@ function readState(root: string): SweepState {
  * by the sweep before `before` (ms): a flip never points a row back at an
  * old revision, so such a file was unreferenced when a Postgres dump taken
  * at `before` ran, and a backup made with that dump may leave it out
- * (bounded backups, A3b fix round 2). Never while a restore's hold is in
- * place: a restore points rows back at older revisions, which an old mark
- * may name (fix round 3, F1). `abs` is any spelling of its path.
+ * (bounded backups). Never while a restore's hold is in place: a restore
+ * points rows back at older revisions, which an old mark may name. `abs` is any spelling of its path.
  */
 export function markedBefore(
   root: string,
@@ -626,8 +622,8 @@ function walkFiles(root: string, rel = '', out: string[] = [], depth = 0): strin
  * failure.
  *
  * Never removed, only reported: a file whose node has no row (a deleted
- * item's, a create that never landed, a file from before A3b of an item
- * long gone; it may be the only copy), the files of a node whose row names
+ * item's, a create that never landed, a legacy file of an item long gone;
+ * it may be the only copy), the files of a node whose row names
  * a file that is missing, and the legacy names (`spare`).
  *
  * Held (nothing removed or marked, `held`, not a failure): a restore's hold
@@ -682,7 +678,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
   }
   const owned = walkFiles(root).filter((f) => spec.nodeOf(f) !== null);
   const rows = await spec.rows();
-  // The time marks are taken at: after the rows were read (fix round 3, F3).
+  // The time marks are taken at: after the rows were read.
   const now = opts.now ?? Date.now();
   const state = readState(root);
   // Every file a row names, as a path relative to the real root.
@@ -712,8 +708,8 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
           `the row of ${row.node} names ${first}, an older revision than on the last run: a restore? Put a hold (${STORE_SWEEP_HOLD_FILE}), or read the dry run (pnpm -C server/web store:sweep --allow-many, without --apply), then run it with --apply --allow-many`,
         );
       }
-      // A name with no revision token (a snapshot's, a file from before
-      // A3b) is never remembered: it can never be newer than another.
+      // A name with no revision token (a snapshot's, a legacy file) is
+      // never remembered: it can never be newer than another.
       if (t > 0) current[row.node] = t;
     }
   }
@@ -753,7 +749,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     const tomb = tombs.get(rel);
     if (!named || named.length === 0) {
       // No row: reported, never removed, unless a tombstone says the row
-      // that named it went (a deleted snapshot, A3b part 2).
+      // that named it went (a deleted snapshot).
       if (!tomb) {
         report.noRow.push(rel);
         continue;
@@ -771,10 +767,10 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     // Younger than the grace period: a stage that may be in flight (its flip
     // may land in a moment). Never marked, so a mark always means "a grace
     // period old and unreferenced" wherever it is read (a backup's
-    // markedBefore among them; A3b fix round 4, L1).
+    // markedBefore among them).
     if (now - mtime < grace) continue;
     // A tombstoned file waits a day after its row went, whatever rule lets
-    // it go (fix round 1, M2: a backup's dump may name the row), then counts
+    // it go (a backup's dump may name the row), then counts
     // as unreferenced since then.
     if (tomb && tomb.age < STORE_TOMBSTONE_GRACE_MS) continue;
     const seen = Math.min(marks[rel] ?? now, tomb ? now - tomb.age : now);
@@ -783,7 +779,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     if (now - seen >= grace) due.push({ rel, seen });
   }
   // The run's budget: the oldest marked first; the rest wait for the next
-  // run (A3b fix round 2, N1: a busy day never stops the sweep).
+  // run (a busy day never stops the sweep).
   const budget = Math.max(opts.budget ?? STORE_SWEEP_BUDGET, Math.floor(owned.length / 2));
   due.sort((a, b) => a.seen - b.seen || (a.rel < b.rel ? -1 : 1));
   const thisRun = due.slice(0, budget);

@@ -1,10 +1,8 @@
 /**
- * One audit row for every tool write, on every surface, written by the gate
- * (workspaces arch A5 step 6d; gateway survey finding 6). Before, only the
- * owner's web routes (their own `api.write` row per request) and an API
- * key's MCP writes left a row; an agent's tool writes (a web or Telegram
- * turn, a heartbeat, a run item, a recipe step, an approved call), an app
- * broker's and a login's own MCP builtin writes left none.
+ * One audit row for every tool write, on every surface, written by the gate:
+ * an agent's tool writes (a web or Telegram turn, a heartbeat, a run item, a
+ * recipe step, an approved call), an app broker's and a login's own MCP
+ * builtin writes, as the owner's web routes and an API key's MCP writes.
  *
  * enterCall runs a call of an audited ref kind (the tool kinds the tools
  * package registers: a builtin, a runtime row, an MCP tool) inside a frame.
@@ -55,7 +53,7 @@ export type AuditedCall = Readonly<{
    *  (CallAuditSpec.notes: an approved call's approver). */
   notes: Readonly<Record<string, unknown>>;
   /** What CallAuditSpec.prepare read before the call ran, when it read
-   *  anything (the items a Recall map's slug names, R0 fix round M1). */
+   *  anything (the items a Recall map's slug names). */
   prepared?: Readonly<Record<string, unknown>> | null;
 }>;
 
@@ -77,19 +75,18 @@ export type CallAuditSpec = Readonly<{
   succeeded: (value: unknown) => boolean;
   /** Whether the call's own run writes, beside the calls in it (default
    *  yes): a recipe row writes only through its steps; a routine write of
-   *  internal state by its arguments (lows round, 6d L5). */
+   *  internal state by its arguments. */
   writesItself?: (call: Pick<AuditedCall, 'ref' | 'input'>) => boolean;
   /** How a nested write is named in its outer call's row. */
   label: (call: Pick<AuditedCall, 'ref' | 'input'>) => string;
   /** What a call notes for the row it is written in (its own, or its
-   *  outer call's when nested): an approved call's approver (A5 step 6d
-   *  fix round 1), so the row of `pending_approve` names it too. */
+   *  outer call's when nested): an approved call's approver, so the row of `pending_approve` names it too. */
   notes?: (call: Pick<AuditedCall, 'ref' | 'input' | 'caller'>) => Record<string, unknown> | null;
   /** What a call's row needs read before the call runs, or null when
    *  nothing (most calls: no promise, no wait): the items a write names by
    *  a reference the database resolves (a Recall map's slug), read while
-   *  they still resolve, so a delete or a rename still names its item (R0
-   *  fix round M1). Asked only for a write whose row this frame writes
+   *  they still resolve, so a delete or a rename still names its item. Asked
+   *  only for a write whose row this frame writes
    *  (not one nested in another call, not one its surface audits), and
    *  only while rows are written; it never fails the call. */
   prepare?: (
@@ -300,7 +297,7 @@ function writeRow(call: AuditedCall, parts: AuditRowParts): void {
   };
   // Once the transaction the call's writes joined commits (a request's
   // write transaction, a scope's): a call whose writes roll back with it
-  // leaves no row (A5 step 6d fix round 1). Outside one (a turn's per-query
+  // leaves no row. Outside one (a turn's per-query
   // transactions, a process's own call) the writes have committed: now.
   void afterOuterCommit(() => startRow(w, row)).catch((err: unknown) => {
     console.error(`[audit] failed to record a tool write (${String(parts.detail.tool)}):`, err);

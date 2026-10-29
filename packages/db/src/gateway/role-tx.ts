@@ -42,12 +42,12 @@ export type LoginWriteRoute = {
 import { lazyQuery, sendIn, workResult, type QueryLike } from './actor-sql';
 export { lazyQuery, sendIn, type QueryMode } from './actor-sql';
 
-// ── Write-role denials (A2b2b fix round 1, H1) ──────────────────────────────
+// ── Write-role denials ──────────────────────────────────────────────────────
 
 /**
  * A right the write role does not hold, met by a login write: noted every
  * time (a caught one too). Tests record it (vitest.setup.ts fails on every
- * one: plan v3 S3 closed the last gap tables); elsewhere it is a miss row
+ * one); elsewhere it is a miss row
  * (check 'write-role-gap') with what was denied and the caller. Never for a
  * refusal the database decided (a write check, a row rule).
  */
@@ -70,7 +70,7 @@ export function noteWriteRoleDenial(route: LoginWriteRoute, what: string): void 
   });
 }
 
-// ── The write-role transaction (A2b2b fix round 1, M1 and M2) ──────────────
+// ── The write-role transaction ─────────────────────────────────────────────
 
 /** A login's write transaction open in this async context, on the write
  *  role. */
@@ -85,15 +85,14 @@ export type WriteTx = {
    *  this transaction commits or rolls back. */
   hooks: TxHooks;
   /** The savepoints at this level (joins, and drizzle's nested
-   *  transactions), one after another (fix round 2, M1; round 3, C):
-   *  settles when the last one queued has. Never rejects. */
+   *  transactions), one after another: settles when the last one queued has. Never rejects. */
   joins: Promise<void>;
   /** Savepoints queued or open at this level: a statement of this level
    *  waits for them (a savepoint between a statement and its answer would
    *  take the statement with it when it rolls back). */
   inFlight: number;
   /** Savepoints in the whole transaction, joins and nested withSystemTx
-   *  alike (NESTED_SAVEPOINT_WARN; round 3, E). */
+   *  alike (NESTED_SAVEPOINT_WARN). */
   saves: { n: number };
   /** The level this savepoint is under; null for the transaction. */
   parent: WriteTx | null;
@@ -115,11 +114,11 @@ export function runInWriteTx<T>(tx: WriteTx, fn: () => T): T {
 
 /**
  * Run `fn` if the transaction the caller's work joined rolls back: an open
- * login write transaction (a request's db.transaction, M2), whose savepoint
+ * login write transaction (a request's db.transaction), whose savepoint
  * the work's own transaction was, or else the scope's (afterRollback: a
  * personal space, a withSystemTx). Outside both the work has committed, and
  * this does nothing. For bytes written beside rows that may never commit (a
- * store broker's stage, A3b fix round 2, N6).
+ * store broker's stage).
  */
 export function afterOuterRollback(fn: () => unknown): void {
   const open = openWriteTx.getStore();
@@ -134,7 +133,7 @@ export function afterOuterRollback(fn: () => unknown): void {
  * Run `fn` once the transaction the caller's work joined COMMITS (the twin
  * of afterOuterRollback); outside one the work has committed and `fn` runs
  * now. For what a store broker keeps until its flip can no longer be rolled
- * back (the old bytes of a file it replaced, A3b part 2).
+ * back (the old bytes of a file it replaced).
  */
 export async function afterOuterCommit(fn: () => unknown): Promise<void> {
   const open = openWriteTx.getStore();
@@ -147,11 +146,10 @@ export async function afterOuterCommit(fn: () => unknown): Promise<void> {
 
 /**
  * Whether the current code runs inside a transaction that is still open:
- * a login write transaction (a request's db.transaction, M2) whose level
+ * a login write transaction (a request's db.transaction) whose level
  * has not ended, or a scope's own (withSystemTx, withScope). Work that runs
  * on a connection of its own (the named system step, system-step.ts) would
- * not see that transaction's rows and could wait behind its locks (F4 fix
- * round 3, L5).
+ * not see that transaction's rows and could wait behind its locks.
  */
 export function inOpenTransaction(): boolean {
   const open = openWriteTx.getStore();
@@ -180,8 +178,7 @@ export function newWriteTx(
 }
 
 /** A statement or a join of a write transaction (or a savepoint of it)
- *  that had already ended or failed: refused before it reaches the driver
- *  (fix round 3, A). */
+ *  that had already ended or failed: refused before it reaches the driver. */
 export class JoinedWriteEndedError extends RuntimeFaultError {
   constructor() {
     super(
@@ -191,7 +188,7 @@ export class JoinedWriteEndedError extends RuntimeFaultError {
   }
 }
 
-/** Statements watchTx handed to the driver (tests: round 4, N1). */
+/** Statements watchTx handed to the driver (for tests). */
 let watchedSends = 0;
 
 /** Tests only (not in index.ts): statements watched write transactions
@@ -220,8 +217,7 @@ function insideBelow(level: WriteTx): boolean {
 const ownSavepoints = new WeakMap<(sp: PgSql) => unknown, WriteTx>();
 
 /**
- * Run `work` in a savepoint of `open` (M2; fix round 2, M1; round 3, A
- * and C): every savepoint at one level, a join's or drizzle's nested
+ * Run `work` in a savepoint of `open`: every savepoint at one level, a join's or drizzle's nested
  * transaction, runs one after another, never two at once (concurrent ones
  * interleave: a rollback to the second takes the first's statement with it
  * after its caller was told it succeeded). Its statements are a level of
@@ -257,7 +253,7 @@ export function joinWriteTx(open: WriteTx, work: (sp: PgSql) => unknown): Promis
           // Ended first: what it left running settles, refused, before the
           // rollback to this savepoint.
           child.done = true;
-          // Uncapped (round 5, N5): every savepoint scope under it must
+          // Uncapped: every savepoint scope under it must
           // finish before its own `rollback to` goes.
           await child.joins;
           throw err;
@@ -301,13 +297,13 @@ export function joinableWriteTx(route: LoginWriteRoute): WriteTx | null {
  * A transaction's client (of `level`, in the transaction `tx`) that
  * watches each statement (wrapped by settingsFirst, so the SET goes first):
  *  - a statement of a level that has ended (or one above it) is refused
- *    before it reaches the driver (fix round 3, A): nothing is sent after
+ *    before it reaches the driver: nothing is sent after
  *    the transaction's ROLLBACK, or a savepoint's;
  *  - a statement of a level with savepoints queued or open goes after them
- *    (fix round 2, M1), unless it runs inside one of them;
+ *    unless it runs inside one of them;
  *  - a right the role does not hold, as Postgres answers it, is noted
  *    (noteWriteRoleDenial) and stays the caller's error: no write runs
- *    again anywhere (plan v3 S3: the gap rerun went with the gap tables).
+ *    again anywhere.
  * A savepoint (drizzle's nested transaction) is one of the level's
  * savepoints (joinWriteTx): in line with the joins, a level of its own.
  */
@@ -328,7 +324,7 @@ export function watchTx(t: PgSql, tx: WriteTx, level: WriteTx): PgSql {
   };
   const direct = (text: string, send: () => Promise<unknown>): Promise<unknown> => {
     // Nothing of an ended level reaches the driver, the gateway's own SET
-    // neither (round 4, N1): sent late it would land on a pooled
+    // neither: sent late it would land on a pooled
     // connection, maybe in another actor's transaction, with this one's
     // scope and actor.
     if (levelEnded(level)) return Promise.reject(new JoinedWriteEndedError());
@@ -360,7 +356,7 @@ export function watchTx(t: PgSql, tx: WriteTx, level: WriteTx): PgSql {
           const fn = a[a.length - 1] as (sp: PgSql) => unknown;
           const child = ownSavepoints.get(fn);
           // Another savepoint (drizzle's nested transaction): one of this
-          // level's, in line (round 3, C).
+          // level's, in line.
           if (!child) {
             if (levelEnded(level)) return Promise.reject(new JoinedWriteEndedError());
             return joinWriteTx(level, fn);
@@ -376,7 +372,7 @@ export function watchTx(t: PgSql, tx: WriteTx, level: WriteTx): PgSql {
   return client;
 }
 
-// ── A bounded wait for the write pool (A2b2b fix round 1, M2) ──────────────
+// ── A bounded wait for the write pool ──────────────────────────────────────
 
 /** How long a write waits for a write-pool connection (openLoginWritePool's size per
  *  process) before it fails: the pool held by stuck work becomes an error,
@@ -462,8 +458,7 @@ export async function boundedReserve(): Promise<Lease> {
 }
 
 /**
- * Nested calls in one outer transaction before a warning (A2b1 fix round 2,
- * L2). Each is a savepoint that postgres.js never releases, and a released
+ * Nested calls in one outer transaction before a warning. Each is a savepoint that postgres.js never releases, and a released
  * one would not help: Postgres keeps a subtransaction's id until the top
  * transaction ends. Past 64 subtransactions that wrote, the backend's
  * subtransaction cache overflows and every snapshot on the box pays for it.

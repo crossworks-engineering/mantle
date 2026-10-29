@@ -1,6 +1,5 @@
 /**
- * An elevated pending call on the system pool (A5 step 6d fix round 1):
- * the row the approval rule judges and then claims, whatever the deciding
+ * An elevated pending call on the system pool: the row the approval rule judges and then claims, whatever the deciding
  * scope reads. The rule (@mantle/tools pending-approval.ts) is who may
  * approve it, the owner or a login whose own scope passes the connector
  * rule, and its asker never: by definition not the login whose row it is,
@@ -9,7 +8,7 @@
  * own MCP). Pending calls are infrastructure (as execute-call.ts inserts
  * them), read here by id and only while elevated and pending; nothing else.
  *
- * Since A5 step 6c it also rejects one for a login the rule lets decide it,
+ * It also rejects one for a login the rule lets decide it,
  * names the live workspaces a re-checked call asked in by a turn that
  * answered no login still reads (liveWorkspaceIds), and reads any other
  * call an approval judges before it claims it (pendingCallToDecide): the
@@ -37,8 +36,7 @@ export async function elevatedPendingCall(
 }
 
 /**
- * A call that is not elevated, while it waits for approval (A5 step 6c fix
- * round 1): the row an approval reads to judge it again before it claims it
+ * A call that is not elevated, while it waits for approval: the row an approval reads to judge it again before it claims it
  * (@mantle/tools pending.ts), on the system pool. The deciding scope's row
  * rule (0254: a login reads only its own rows of the workspaces it holds
  * now) would hide it from the owner's MCP scope, an Admin assistant's turn,
@@ -103,7 +101,7 @@ export async function elevatedCallWorkspace(
 }
 
 /** Reject the elevated call `id` for a login the approval rule lets decide
- *  it (A5 step 6c, 6d's L3: whoever may approve it may also reject it). The
+ *  it (whoever may approve it may also reject it). The
  *  rejected row, or null (decided meanwhile). */
 export async function rejectElevatedPendingCall(
   ownerId: string,
@@ -118,7 +116,7 @@ export async function rejectElevatedPendingCall(
   return row ?? null;
 }
 
-/** Which of `ids` are live workspaces of brain `ownerId` now (A5 step 6c):
+/** Which of `ids` are live workspaces of brain `ownerId` now:
  *  what a pending call asked by a turn that answered no login (a workspace
  *  assistant's heartbeat) still reads at approval. Only names: it grants
  *  nothing. */
@@ -137,12 +135,11 @@ export async function liveWorkspaceIds(ownerId: string, ids: readonly string[]):
   return rows.map((r) => r.id.toLowerCase());
 }
 
-/** Which of `ids` the assistant `agentId` of brain `ownerId` still runs in
- *  (A5 step 6c fix round 1): its workspace now, when it is one of `ids` and
- *  live. What a call asked by its turn that answered no login still holds at
- *  approval (its workspace, and Moderator seats the stamp named there). No
- *  agent (gone, or another brain's): nothing. Only names: it grants
- *  nothing. */
+/** Which of `ids` the assistant `agentId` of brain `ownerId` still runs
+ *  in: its workspace now, when it is one of `ids` and live. What a call
+ *  asked by its turn that answered no login still holds at approval (its
+ *  workspace, and Moderator seats the stamp named there). No agent (gone,
+ *  or another brain's): nothing. Only names: it grants nothing. */
 export async function assistantWorkspaceIds(
   ownerId: string,
   agentId: string,

@@ -33,10 +33,10 @@ import { loginWritesMayRoute, systemWriteDb, typedWrite } from './write-route';
 import { systemPoolTxInScope } from './system-tx';
 import { getDb } from './scope';
 
-// ── The actor on the system pool (workspaces arch A2a) ──────────────────────
+// ── The actor on the system pool ────────────────────────────────────────────
 
 /** The handle properties that send a statement: the TypeScript actor check
- *  (A2a) runs on each access. drizzle's own reads (session, dialect) do
+ *  runs on each access. drizzle's own reads (session, dialect) do
  *  not count. */
 const STATEMENT_PROPS: ReadonlySet<PropertyKey> = new Set([
   'select',
@@ -64,24 +64,24 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     if (STATEMENT_PROPS.has(prop)) checkActorBound(`db.${String(prop)}`);
     const carried = carriedWriteScope();
     if (carried) return systemPoolProp(carried, prop);
-    // A request scope (W6a, plan 2.3): a write leaves the scope's read pool
+    // A request scope: a write leaves the scope's read pool
     // (a login's to the write role while it may route, else the system
     // pool); reads run in the scope. A transaction is
     // a write in a mutating request, and stays in the scope in a read
     // request (a search step that needs one transaction). A raw execute
-    // always runs in the scope (fix round 1, M3): a raw write says so with
+    // always runs in the scope: a raw write says so with
     // executeWrite.
     const mode = currentRequestMode();
     const write = prop === 'insert' || prop === 'update' || prop === 'delete';
     if (mode && !currentScopeTx()) {
       if (write || (prop === 'transaction' && mode.writes)) {
         noteRequestSystemWrite(String(prop));
-        // Bound to the system handle (W6a fix round 2): drizzle's builders
-        // read `this.session`, which on this proxy is the scope's session, so
-        // an unbound method ran the write on the workspace role (a page's
-        // block-id backfill failed with permission denied). The login write
-        // gateway's handle when it may route (A2b2b): it sends a scoped
-        // login write to the write role, anything else here as before.
+        // Bound to the system handle: drizzle's builders read
+        // `this.session`, which on this proxy is the scope's session, so an
+        // unbound method would run the write on the workspace role (and
+        // fail with permission denied). The login write gateway's handle
+        // when it may route: it sends a scoped login write to the write
+        // role, anything else to the system pool.
         if (write) return typedWrite(prop, loginWritesMayRoute());
         const handle = systemWriteDb();
         const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
@@ -105,10 +105,10 @@ function systemPoolProp(scope: WorkspaceScope, prop: string | symbol): unknown {
 }
 
 /**
- * Whether a raw statement writes (W6a): a leading write verb, or a write
- * clause anywhere (a data-modifying CTE, a row lock). No longer routes a
- * request scope's raw statements (fix round 1, M3: a read it took for a
- * write ran unscoped); executeWrite uses it to refuse a statement that does
+ * Whether a raw statement writes: a leading write verb, or a write clause
+ * anywhere (a data-modifying CTE, a row lock). It never routes a request
+ * scope's raw statements (a read it took for a write would run unscoped);
+ * executeWrite uses it to refuse a statement that does
  * not write.
  */
 export function isWriteSql(text: string): boolean {
@@ -154,7 +154,7 @@ export class NotAWriteError extends RuntimeFaultError {
 }
 
 /**
- * A raw WRITE, said so (W6a fix round 1, M3). Inside a request scope
+ * A raw WRITE, said so. Inside a request scope
  * `db.execute` always runs in the scope, on the workspace role, where a
  * write fails loudly; a raw statement that writes comes here and runs on
  * the system pool, as the typed writes (db.insert, update, delete) do there.
@@ -178,7 +178,7 @@ export function executeWrite(
  * pending tool calls, share counters, access logs). NEVER for content reads:
  * that would read past row level security. Only an allowlisted set of
  * infrastructure modules may import it, and inside a turn scope only they
- * may use it (assertSystemDbCaller, workspaces W4b fix round 2).
+ * may use it (assertSystemDbCaller).
  */
 export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {
@@ -201,7 +201,7 @@ export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
 export type MigratorGuard = { readonly sql: SQL; readonly refusal: string };
 
 /**
- * Work the runtime role may not do (arch A9): DDL. With
+ * Work the runtime role may not do: DDL. With
  * MANTLE_DB_RUNTIME_ROLE on it runs on the migrator's URL (DATABASE_URL,
  * the role that runs the migrations) in one transaction of its own, with
  * the actor bound now, on a connection opened for it and closed after.

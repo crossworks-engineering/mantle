@@ -1,6 +1,5 @@
 /**
- * THE one ordered gate (workspaces arch plan v2, section 2, with 20.3; A3c,
- * the gate core). Every way in (an HTTP route, an MCP tool, an assistant
+ * THE one ordered gate. Every way in (an HTTP route, an MCP tool, an assistant
  * tool call, a recipe step, an app tool call, a job) runs the same eight
  * steps, always in this order, through enterCall:
  *
@@ -14,31 +13,26 @@
  *   4. Narrow by surface: an owner-only tool off the owner's surface, the
  *      read-only switch of the credential, a key's areas, a peer's risky
  *      tools, the member-app rules, spending on the owner's keys, the
- *      member turn caps, a connector the scope does not hold (A5 step 6a:
- *      the owner-only and connector checks dispatch made before and after
- *      the gate are narrowers, so a listing reads them too).
+ *      member turn caps, a connector the scope does not hold (the
+ *      owner-only and connector checks are narrowers, so a listing reads
+ *      them too).
  *   5. The Admin step, when the policy names one: the Admin workspace, an
  *      Admin area, or a kind of the Admin workspace only.
  *   6. The create-home intent, when the call may make an item
  *      (createHomeIntent, create-home.ts: ?ws=, the workspace argument, the
  *      folder, the private fallback).
  *   7. Run. The database has the last word: row rules on reads, triggers on
- *      writes. A tool call that wrote leaves one audit row (call-audit.ts,
- *      A5 step 6d).
+ *      writes. A tool call that wrote leaves one audit row (call-audit.ts).
  *   8. Map a refusal with the one mapper (mapAccessError, @mantle/std).
  *
  * Listing equals calling: what a caller may LIST is steps 3 to 5 of the
  * same functions (gateCheck), run without step 7.
  *
- * Layering (plan 20.3): this module holds the step order only. What a
- * policy is comes from the sources that register here (the route rows in
- * A4, the tool policies in A5, the runtime tool row functions of
- * @mantle/tools); the narrowers register from their own packages. Each has
+ * Layering: this module holds the step order only. What a policy is comes
+ * from the sources that register here (the route rows, the tool policies,
+ * the runtime tool row functions of @mantle/tools); the narrowers register from their own packages. Each has
  * a fixed place in the order (NARROWERS): a package adds a check, never a
  * step.
- *
- * A3c builds and proves this; the HTTP routes move onto it in A4, MCP
- * registration and dispatch in A5.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
@@ -60,7 +54,7 @@ export { AccessError, mapAccessError, type AccessRefusal } from '@mantle/std';
  *  it, and the Admin areas it may do. */
 export type AdminView = { holdsAdmin: boolean; areas: ReadonlySet<string> };
 
-/** How the caller came in. HTTP (A4): `token` is a short-lived signed
+/** How the caller came in. HTTP: `token` is a short-lived signed
  *  token on the one path shape it opens (an asset `?at=`, a frame ticket,
  *  the render cookie); `public` is a public route the gate lets in without
  *  judging a credential (the route judges its own); `unjudged` is a
@@ -77,7 +71,7 @@ export type CallerVia =
   | 'turn'
   | 'app'
   | 'process'
-  /** The stdio MCP server: the owner login's own process (A5 step 4). */
+  /** The stdio MCP server: the owner login's own process. */
   | 'stdio'
   | 'token'
   | 'public'
@@ -88,14 +82,14 @@ export type GateCaller = Readonly<{
   /** Who the caller runs as (actor.ts): a login's login(rw | ro | owner),
    *  the link, the contact share, an assistant, system(reason). Null: no
    *  actor was bound where the call came in (a bug: a tool call through
-   *  dispatch, A5 step 3a LOW-2); the call runs with none, as before, so
-   *  the actor check refuses its item writes. */
+   *  dispatch); the call runs with none, so the actor check refuses its
+   *  item writes. */
   actor: Actor | null;
   via: CallerVia;
   /** The login acting, when there is one. */
   loginId?: string | null;
   /** The login's role (admin, member), when there is one (an HTTP
-   *  request's, resolved by the gate since A4 step 3a). */
+   *  request's, resolved by the gate). */
   role?: string | null;
   /** The credential's write switch (a key's access, a peer's Write, an
    *  OAuth grant narrowed to reads). Absent: writes. */
@@ -103,7 +97,7 @@ export type GateCaller = Readonly<{
   /**
    * What the caller's scope holds of Admin (step 5), read at step 1. Null:
    * unscoped (a process, or an HTTP caller whose guard reads the Admin
-   * view itself): the surface's own rules decide, as before. Absent:
+   * view itself): the surface's own rules decide. Absent:
    * unknown, and a policy that names an Admin step is refused (fail
    * closed).
    */
@@ -112,7 +106,7 @@ export type GateCaller = Readonly<{
    *  writes). Absent: the call runs in the scope around it. */
   scope?: WorkspaceScope | null;
   /** How the surface enters its scope, when not as a turn scope (an HTTP
-   *  request enters its request slot, A4). Overrides `scope`. */
+   *  request enters its request slot). Overrides `scope`. */
   enterScope?: <T>(writes: boolean, fn: () => Promise<T>) => Promise<T>;
   /** The create home's fallback (step 6), when the surface resolved it
    *  already (an MCP connection, once when it connects). */
@@ -120,18 +114,18 @@ export type GateCaller = Readonly<{
   /** How this entry names a create home (step 6). Absent: the generic
    *  rule (ownWork 'auto', writes only, a refusal refuses). Null: the entry
    *  names it itself, and step 6 names none (an HTTP request: the session
-   *  guard asks createHomeIntent on its own rules until A4 step 3b). */
+   *  guard asks createHomeIntent on its own rules). */
   createHome?: CreateHomeRule | null;
   /** What the surface narrowers read (a key's areas, the risky tools a
    *  peer may call, an app run's rules). Opaque here. */
   facts?: Readonly<Record<string, unknown>>;
-  /** The surface's own check of one call, first in the pre-run slot (A5
-   *  step 4: the MCP key email guard, a connector row's workspace check).
+  /** The surface's own check of one call, first in the pre-run slot (the
+   *  MCP key email guard, a connector row's workspace check).
    *  enterCall runs it, never gateCheck: it reads the call. It may have a
    *  side effect (a connector row's check writes its `mcp.connector.*`
    *  audit row once it lets the call through), so gateCallRefusal, which
    *  judges a call without running it, refuses a caller that names one
-   *  (PreRunSideEffectError; A5 step 6a, carried round-2 LOW-2). Only an
+   *  (PreRunSideEffectError). Only an
    *  MCP connection names one, and it never asks gateCallRefusal. */
   preRun?: PreRunCheck;
 }>;
@@ -153,7 +147,7 @@ export type CreateHomeRule = Readonly<{
   /** Keep the home for the life of this object once final (an assistant
    *  turn: its scope; the private workspace is made at most once). */
   memo?: object;
-  /** Step 6 runs before the pre-run checks (A5 step 4): the entry's
+  /** Step 6 runs before the pre-run checks: the entry's
    *  fallback was resolved when it connected (`createFallback`), so the
    *  step makes nothing at call time, and it refuses in the order that
    *  surface always had (an MCP connection: a create's workspace argument
@@ -180,9 +174,9 @@ export type PolicyScope =
   /** A scope that holds Admin with this Admin area on. */
   | { area: string };
 
-/** A declared policy (plan sections 7 and 8). */
+/** A declared policy. */
 export type GatePolicy = Readonly<{
-  /** read or write. A read runs read only (plan 4.1: the database knows
+  /** read or write. A read runs read only (the database knows
    *  the write mode), and a read-only credential calls only reads. */
   effect: 'read' | 'write';
   scope: PolicyScope;
@@ -226,7 +220,7 @@ export const NARROWERS = [
 ] as const;
 export type NarrowerName = (typeof NARROWERS)[number];
 
-/** A pre-run check (A5 step 3a): after the Admin step and before the
+/** A pre-run check: after the Admin step and before the
  *  create home, so a refused call never makes a private workspace. Its own
  *  words, or null. Async: it may read the item a call names. */
 export type PreRunCheck = (
@@ -248,8 +242,8 @@ const sources = new Map<string, PolicySource>();
 const narrowers = new Map<NarrowerName, Narrower>();
 const preRunChecks = new Map<PreRunCheckName, PreRunCheck>();
 
-/** Register the policy source of one kind of ref (A4: 'route'; A5:
- *  'tool'; @mantle/tools: 'runtime-tool'). The same source again is a no-op
+/** Register the policy source of one kind of ref ('route', 'tool';
+ *  @mantle/tools: 'runtime-tool'). The same source again is a no-op
  *  (a module loaded twice); another source under a kind that has one is
  *  refused, never a silent replacement. The throw is on purpose: two
  *  sources for one kind would make which one decides an accident of import
@@ -288,8 +282,7 @@ export function registerPreRunCheck(name: PreRunCheckName, check: PreRunCheck): 
   preRunChecks.set(name, check);
 }
 
-/** Whether a policy source is registered for `kind` (A5 step 3a, LOW-4: a
- *  narrower asks whether the owner MCP surface, which registers
+/** Whether a policy source is registered for `kind` (a narrower asks whether the owner MCP surface, which registers
  *  `mcp-tool`, is loaded in this process). */
 export function hasPolicySource(kind: string): boolean {
   return sources.has(kind);
@@ -327,7 +320,7 @@ export function assertGateReady(): void {
   if (missing.length > 0) throw new GateNotReadyError(missing);
 }
 
-/** A job's policy: its system reason (plan 4.3). A reason that is not one
+/** A job's policy: its system reason. A reason that is not one
  *  has no entry. */
 function jobPolicy(ref: PolicyRef): GatePolicy | null {
   if (!SYSTEM_REASON_RE.test(ref.name)) return null;
@@ -359,8 +352,8 @@ export function lookupPolicy(ref: PolicyRef): GatePolicy {
  *  AccessError, mapped. */
 export function scopeStep(caller: GateCaller): void {
   // A caller that enters its own scope and names it too (an MCP
-  // connection, A5 step 4) is held to it here: a login in no workspace
-  // lists nothing and calls nothing (owner decision A, plan 23.5).
+  // connection) is held to it here: a login in no workspace lists nothing
+  // and calls nothing.
   if (!caller.scope) return;
   const problem = turnScopeProblem(caller.scope);
   if (problem) {
@@ -402,8 +395,8 @@ export function adminStep(caller: GateCaller, policy: GatePolicy): void {
   if (!view.areas.has(need.area)) throw new AccessError('area', undefined, { area: need.area });
 }
 
-/** The pre-run slot (A5 step 3a), between steps 5 and 6: the caller's own
- *  check (`preRun`, A5 step 4), then each check of PRE_RUN_CHECKS in
+/** The pre-run slot, between steps 5 and 6: the caller's own check
+ *  (`preRun`), then each check of PRE_RUN_CHECKS in
  *  order; the first refusal refuses the call (`item`, in the check's own
  *  words). */
 export async function preRunStep(
@@ -425,7 +418,7 @@ export async function preRunStep(
 }
 
 /**
- * Steps 3 to 5 for `ref`, without binding or running (plan 2: listing
+ * Steps 3 to 5 for `ref`, without binding or running (listing
  * equals calling): the refusal enterCall would meet before step 6, or
  * null. What a tool list shows is what this lets through. Throws
  * GateNotReadyError while a narrower is not registered (fail closed).
@@ -449,7 +442,7 @@ export function gateLists(caller: GateCaller, ref: PolicyRef): boolean {
   return gateCheck(caller, ref) === null;
 }
 
-/** `actor`, read only (plan 4.1: a call declared a read cannot write). */
+/** `actor`, read only (a call declared a read cannot write). */
 function readOnlyActor(actor: Actor): Actor {
   switch (actor.kind) {
     case 'login':
@@ -500,8 +493,8 @@ const DEFAULT_HOME_RULE: CreateHomeRule = Object.freeze({ ownWork: 'auto' as con
  *
  * The entries, pinned by tests: the HTTP guard (createHomeFor: ownWork by
  * the login, refusal hard), the assistant turn (turnCreateHome: askEvery,
- * reads, soft, memo per turn scope) and an MCP connection (A5 step 4,
- * @mantle/mcp-core gate-policy.ts: the fallback it resolved when it
+ * reads, soft, memo per turn scope) and an MCP connection (@mantle/mcp-core
+ * gate-policy.ts: the fallback it resolved when it
  * connected, `first`, `namedOnly`, reads named too when it has a private
  * workspace, and its creates refused when it has none).
  */
@@ -562,7 +555,7 @@ export function currentCaller(): GateCaller | null {
 }
 
 /**
- * A read-only view over a private Set (A3c audit LOW-3): the bound caller's
+ * A read-only view over a private Set: the bound caller's
  * Sets. Not a Set itself, so nothing reaches the values to change them:
  * `Set.prototype.add.call(view, x)` throws (the view is no Set), where an
  * own `add` that refuses on a frozen Set left the prototype's open.
@@ -634,9 +627,9 @@ type SetAlgebra = Record<
   (other: unknown) => unknown
 >;
 
-/** A read-only view over a private copy of `values` (LOW-3): the bound
- *  caller's Sets, and a fixed list kept as a Set elsewhere (A5 step 2 fix
- *  round 1, LOW-2: the owner MCP surface's views of its definitions). */
+/** A read-only view over a private copy of `values`: the bound caller's
+ *  Sets, and a fixed list kept as a Set elsewhere (the owner MCP surface's
+ *  views of its definitions). */
 export function readOnlySetView<T>(values: Iterable<T>): ReadonlySet<T> {
   return new ReadOnlySetView(values) as unknown as ReadonlySet<T>;
 }
@@ -729,8 +722,8 @@ export async function enterCall<T>(
 /**
  * Steps 1 to 5 and the pre-run checks for one call of `ref` with its
  * arguments, as enterCall runs them (the caller bound, its actor and its
- * scope entered), without naming a create home or running anything (A5
- * step 5 fix round 2): the refusal enterCall would meet before step 6,
+ * scope entered), without naming a create home or running anything: the
+ * refusal enterCall would meet before step 6,
  * mapped, or null. Where gateCheck asks what a caller may list (no
  * arguments), this asks one call, so a call that waits for approval is
  * judged in its own scope, by the same rule, before it is queued. Any other
@@ -739,8 +732,7 @@ export async function enterCall<T>(
  * Only for a caller whose pre-run checks have no side effect: the
  * registered checks only read, and a caller that names its own check
  * (`preRun`, which may write an audit row) is not judged here: it throws
- * PreRunSideEffectError before any step (A5 step 6a, carried round-2
- * LOW-2). Its callers: the tool loop's queue-time check (turnCallRefusal)
+ * PreRunSideEffectError before any step. Its callers: the tool loop's queue-time check (turnCallRefusal)
  * and an app broker's refusal (appToolRefusal); neither names one.
  */
 export async function gateCallRefusal(
@@ -752,8 +744,8 @@ export async function gateCallRefusal(
   return res.ok ? null : res.refusal;
 }
 
-/** Thrown by gateCallRefusal at a caller that names its own pre-run check
- *  (A5 step 6a, carried round-2 LOW-2): such a check may write (a connector
+/** Thrown by gateCallRefusal at a caller that names its own pre-run check:
+ *  such a check may write (a connector
  *  row's audit row), and a judgement that runs nothing must not. */
 export class PreRunSideEffectError extends RuntimeFaultError {
   constructor() {
@@ -787,7 +779,7 @@ async function callSteps<T>(
       const writes = policy.effect === 'write';
       const actor = callActor(bound, policy);
       // No actor (a bug at the entry): none is bound here either, so the
-      // call runs as it came in, with none (A5 step 3a LOW-2).
+      // call runs as it came in, with none.
       const asActor = <R>(fn: () => Promise<R>): Promise<R> =>
         actor ? runAsActor(actor, fn) : fn();
       return asActor(() =>
@@ -810,7 +802,7 @@ async function callSteps<T>(
             const value = home ? await withCreateHome(home, fn) : await fn();
             return { ok: true as const, value };
           };
-          // A tool call (A5 step 6d): its write leaves one audit row
+          // A tool call: its write leaves one audit row
           // (call-audit.ts), from here, after it ran.
           if (!fn || !auditsKind(ref.kind)) return steps();
           // A surface that writes the call's row itself says so on its

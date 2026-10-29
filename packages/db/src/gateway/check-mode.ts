@@ -26,11 +26,11 @@ export const NARROW_SQL_TAG = '/* mantle:narrow */';
 let actorModePool: PgSql | null = null;
 
 /**
- * The pool's first mode read while it is out, else null (A2b, the startup
+ * The pool's first mode read while it is out, else null (the startup
  * race). Until it answers, a write or a transaction that has an actor waits
  * for it, so a process's first writes never go out as off on a box that is
  * warn or on. Reads never wait. A failed read is tried again after 1 s,
- * then 2 s, 4 s ... (A2b1 audit, L5), but nothing waits longer than
+ * then 2 s, 4 s ..., but nothing waits longer than
  * FIRST_MODE_WAIT_MS: then the process goes on with MANTLE_ACTOR_CHECK as
  * the floor. A one-time cost at a process's start, no statement of its own.
  */
@@ -48,7 +48,7 @@ const quietSleep = (ms: number) =>
 /**
  * Read the box's actor check mode when the pool opens, then each minute on
  * an unref'd timer: never inside a statement's path, so a request runs no
- * new query for it (fix round; the owner's no-new-query rule). Until the
+ * new query for it (a statement's path gains no query). Until the
  * first read lands the process uses MANTLE_ACTOR_CHECK alone (off unless
  * set) as a floor: a read runs as before, and a write or a transaction
  * with an actor waits for that first read (firstModeRead). Exported for
@@ -64,7 +64,7 @@ export function refreshActorCheckMode(base: PgSql): void {
       .unsafe(`${ACTOR_SQL_TAG} select "public"."mantle_actor_check_mode"() as m`)
       .then((rows) => {
         // A pool closed (closeDb) while the read was out: its answer is
-        // not the next pool's (fix round 2, L8).
+        // not the next pool's.
         if (actorModePool !== base) return true;
         noteBoxActorCheckMode((rows[0] as { m?: string } | undefined)?.m ?? null);
         return true;
@@ -72,7 +72,7 @@ export function refreshActorCheckMode(base: PgSql): void {
       .catch((err: unknown) => {
         // A database without 0275 yet (the function is missing): off. Any
         // other failure (a dropped connection, a busy pool) keeps the last
-        // mode read (fix round 2, L2).
+        // mode read.
         if (actorModePool === base && (err as { code?: string } | null)?.code === '42883') {
           noteBoxActorCheckMode(null);
           return true;
@@ -109,8 +109,7 @@ export function refreshActorCheckMode(base: PgSql): void {
 }
 
 /**
- * The actor check's triggers against the box mode (0277; A2b1 fix round 2
- * re-audit): one row when they differ. Off wants every mantle_actor_check
+ * The actor check's triggers against the box mode (0277): one row when they differ. Off wants every mantle_actor_check
  * trigger disabled, warn and on want all enabled. A bare ALTER DATABASE or
  * a restore (scripts/db-restore.sh) can leave them apart. Any role may run
  * it (mantle_actor_check_mode and pg_trigger are readable). The integrity
@@ -121,7 +120,7 @@ export const ACTOR_CHECK_DRIFT_SQL = checkDriftSql(
   `g.tgname = 'mantle_actor_check'`,
 );
 
-/** The same for the edit check (arch A3a, 0280): its box mode and every
+/** The same for the edit check (0280): its box mode and every
  *  trigger named mantle_edit_check or mantle_edit_check_* (the matrix's
  *  and the read-only refusal). The integrity row edit_check_drift and the
  *  boot warning read it. */

@@ -45,8 +45,8 @@ type PgSql = ReturnType<typeof postgres>;
  * One short transaction on a fresh connection of the system pool, outside
  * every caller's transaction and scope (never joined to an open login write
  * transaction or a savepoint of one, whose link it would wait behind), with
- * `lock_timeout`: a store broker's put-back after a flip that never landed
- * (A3b part 2 fix round 2, N3). `q` runs one statement in it; a lock wait
+ * `lock_timeout`: a store broker's put-back after a flip that never landed.
+ * `q` runs one statement in it; a lock wait
  * past `lockTimeoutMs` throws (55P03), as does a database that is gone.
  */
 export async function brokerLockTx<T>(
@@ -103,7 +103,7 @@ function writeRoleSystemTx<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
   // One savepoint count for the transaction: its nested withSystemTx and
-  // its joins (round 3, E).
+  // its joins.
   return openSystemTx(
     (run, saves) =>
       writeTxOpen.run({ how: 'write', route, saves }, () => writeTxDb().transaction(run)),
@@ -123,7 +123,7 @@ async function joinedSystemTx<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
   const hooks = newTxHooks();
-  // The transaction's own savepoint count (round 3, E).
+  // The transaction's own savepoint count.
   const nest: SystemTxNest = { ...systemTxKeys(), busy: false, done: false, saves: open.saves };
   let result: T;
   try {
@@ -141,8 +141,7 @@ async function joinedSystemTx<T>(
   return result;
 }
 
-/** A nested system transaction that cannot reuse the open one (arch A2b,
- *  plan 20.2): another actor or create home, a second nested call while one
+/** A nested system transaction that cannot reuse the open one: another actor or create home, a second nested call while one
  *  runs, or a call after the open transaction ended. */
 export class NestedSystemTxError extends RuntimeFaultError {
   readonly code = 'nested-system-tx';
@@ -179,8 +178,7 @@ function systemTxKeys(): Pick<SystemTxNest, 'actor' | 'home'> {
 }
 
 /**
- * withSystemTx nested in an open system transaction (arch A2b, plan 20.2;
- * A2b1 audit M2): a SAVEPOINT of that transaction, never a second one. An
+ * withSystemTx nested in an open system transaction: a SAVEPOINT of that transaction, never a second one. An
  * inner error rolls back the inner writes only, and runs the inner
  * rollback hooks; on success the inner hooks join the outer ones and
  * follow its outcome. One nested call at a time per level, and none after
@@ -203,10 +201,9 @@ async function nestedSystemTx<T>(
     done: false,
     saves: outer.nest.saves,
   };
-  // Counted once (round 4, N2): on the write role its savepoint goes
-  // through joinWriteTx, which counts it in the same count. Only when this
-  // system transaction is that write transaction (round 5, N6): a system
-  // pool one inside a live write transaction counts its own.
+  // Counted once: on the write role its savepoint goes through
+  // joinWriteTx, which counts it in the same count. Only when this system
+  // transaction is that write transaction: a system pool one inside a live write transaction counts its own.
   const onRole = currentWriteTx();
   const countedByJoin = !!onRole && !levelEnded(onRole) && onRole.saves === outer.nest.saves;
   if (!countedByJoin) outer.nest.saves.n += 1;
@@ -252,8 +249,8 @@ export async function withSystemTx<T>(
 ): Promise<T> {
   const outer = currentSystemTx();
   if (outer) return nestedSystemTx(outer, fn);
-  // A request scope (W6a) writes through here: writes stay on the system
-  // pool with their rule in the statement (plan 2.3), in a read request too
+  // A request scope writes through here: writes stay on the system
+  // pool with their rule in the statement, in a read request too
   // (a lazy backfill, a root folder made on first open).
   const inRequest = currentRequestMode() !== null;
   if ((!isSystemScope() && !inRequest) || currentScopeTx()) {
@@ -262,16 +259,16 @@ export async function withSystemTx<T>(
     );
   }
   // Tests and development: a request scope's system transaction is one of
-  // its writes (W6a fix round 2, L-c), pinned by the route sweep with the
+  // its writes, pinned by the route sweep with the
   // file that opened it.
   if (inRequest) noteRequestSystemWrite('withSystemTx');
-  // Arch A2a: the transaction runs as the current actor (actorClient sets
+  // The transaction runs as the current actor (actorClient sets
   // it first); none bound is a miss, logged only.
   checkActorBound('withSystemTx');
   // A scoped write (a login's, an Admin user's write request, an Admin
-  // turn) runs on the write role when the gateway says so (arch A2b2b):
-  // its scope, actor and create home set by one SET LOCAL with its first
-  // statement. Else the system pool, as before.
+  // turn) runs on the write role when the gateway says so: its scope,
+  // actor and create home set by one SET LOCAL with its first statement.
+  // Else the system pool.
   return onLoginWritePool({
     system: () => systemPoolTx(fn),
     write: (route) => writeRoleSystemTx(route, fn),
@@ -330,22 +327,20 @@ export function systemPoolTxInScope<T>(
   });
 }
 
-/** A system transaction as before A2b2b, on the system pool. */
+/** A system transaction on the system pool. */
 function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>): Promise<T> {
   // A login's write request on the system pool (no write pool in this
-  // process; W6a fix round 1, M1, every login's since
-  // F4): the login's scope on the transaction, so the database checks moves
-  // (0241/0245), creates in a folder and deletes (0266) against its
-  // workspaces, as before the write role. mantle.login_id is
-  // left unset: the 0250 and 0269 stamps would otherwise mark trace, run,
+  // process): the login's scope on the transaction, so the database checks
+  // moves (0241/0245), creates in a folder and deletes (0266) against its
+  // workspaces. mantle.login_id is left unset: the 0250 and 0269 stamps would otherwise mark trace, run,
   // chat and digest rows made in the same transaction as this login's, and
   // 0279's audit rows would name it, which nothing asks for. The login goes
-  // in mantle.scope_login instead (arch A6 fix round 1, M1), which only the
+  // in mantle.scope_login instead, which only the
   // scope's checks read (mantle_scope_login_id, 0291: the 0291 definers'
   // per-login item gate and mantle_scope_has_area), never a stamp or a row
   // rule, so the scope's checks answer for this login as in its own scope.
   const writeScope = requestWriteScope();
-  // Where a create lands (W6b): the database's default home reads these.
+  // Where a create lands: the database's default home reads these.
   const home = currentCreateHome();
   const homeSettings = home
     ? [

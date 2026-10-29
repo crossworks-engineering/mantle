@@ -1,6 +1,5 @@
 /**
- * The access adapter's viewer scope (member logins Phase 0b, plan section 2b;
- * workspaces from W1 on).
+ * The access adapter's viewer scope.
  *
  * One idea: no permission check per tool. A scoped caller's queries run as
  * the workspace LOGIN role (`mantle_view_user`) with its workspaces set on
@@ -21,10 +20,9 @@
  *  - A `db.transaction` opened OUTSIDE a scope keeps its admin connection: a
  *    withViewer inside that callback does not change `tx`.
  *
- * The tier levels (admin, team, client, public) decide no read (workspaces
- * W8c): the level roles are retired (viewer-roles.ts RETIRED_POOL_ROLES) and
- * hold no grant and no policy (migration 0273). Their helpers went in arch
- * A7.
+ * The tier levels (admin, team, client, public) decide no read: the level
+ * roles are retired (viewer-roles.ts RETIRED_POOL_ROLES) and hold no grant
+ * and no policy.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
@@ -46,8 +44,7 @@ import { RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { WORKSPACE_AREAS, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
 
 /**
- * A personal-space scope (member logins Phase 2, plan section 2b): the code
- * inside acts for ONE space, on the space role (`mantle_view_space`).
+ * A personal-space scope: the code inside acts for ONE space, on the space role (`mantle_view_space`).
  */
 export type SpaceScope = {
   spaceId: string;
@@ -56,7 +53,7 @@ export type SpaceScope = {
 };
 
 /**
- * A workspace scope (workspaces W1, plan section 2.1): the code inside reads
+ * A workspace scope: the code inside reads
  * what the workspaces in `ws` hold, on the workspace role
  * (`mantle_view_user`), and may edit as a Moderator of `modWs`. `kind` says
  * who the work is for: a signed-in user, an assistant turn (its own
@@ -71,14 +68,14 @@ export type WorkspaceScope = {
   ws: readonly string[];
   /** The workspaces where the login is a Moderator (a subset of `ws`). */
   modWs: readonly string[];
-  /** A link scope only (plan 8.1, R6): the node ids the link serves next to
+  /** A link scope only: the node ids the link serves next to
    *  its own item. The scope reads no workspace; code that serves a link
    *  checks this list. */
   served?: readonly string[];
 };
 
 /**
- * Who a viewer scope acts for (plan R6). `withViewer` builds the scope from
+ * Who a viewer scope acts for. `withViewer` builds the scope from
  * it: a login (a member, a client, an MCP login, an API key, a linked brain
  * acting as its user) reads the union of that login's workspaces; an
  * assistant (the bot channel) reads its own workspace (none without an id
@@ -90,28 +87,26 @@ export type ViewerFor =
   | { link: { served: readonly string[] } };
 
 /**
- * A login running an APP (plan R2; W5b2 part B fix round 1, H1). The app's
+ * A login running an APP. The app's
  * database is shared by every holder, so a run must never read what one
  * holder reads and another does not. The scope is the app's holder
  * workspaces other than Admin, met with the runner's own workspaces, never
  * the runner's whole union:
  * - `{ id }`: a brain app; its holders come from its grants. An app with
  *   no live holder beyond Admin (it runs here only at team rules, the
- *   author ceiling) reads nothing: until 0286 it read the built-in Team
- *   workspace, which is a normal workspace now. An id that is not an app
- *   reads nothing too (fix round 2, L1). Two or more holders beyond Admin
+ *   author ceiling) reads nothing. An id that is not an app reads nothing
+ *   too. Two or more holders beyond Admin
  *   read nothing: the row rule reads any workspace of the scope, not
  *   "every one of them", so no scope expresses their common items yet.
  * - `{ team: true }`: a run at team rules with no brain holders (a member's
- *   own space app, an admin's test run of one): reads nothing (the Team
- *   workspace until 0286).
+ *   own space app, an admin's test run of one): reads nothing.
  * A runner outside the holder reads nothing. No Moderator rights beyond the
  * scope.
  */
 export type AppRunFor = { id: string } | { team: true };
 
 /** What the current code runs as: system work (no scope) or a workspace
- *  scope. (The level scope of the tier model went in W8c.) */
+ *  scope. */
 export type CurrentScope = { kind: 'system' } | ({ kind: ScopeKind } & WorkspaceScope);
 
 /** `tx`: a scope that must run in one transaction (its settings are
@@ -124,26 +119,26 @@ type Scope = {
   tx?: unknown;
   hooks?: TxHooks;
   /** A system transaction's own (withSystemTx): what a nested call must
-   *  match to reuse it (arch A2b, plan 20.2). */
+   *  match to reuse it. */
   nest?: SystemTxNest;
   /** A system transaction opened in a request's own system exit (an Admin
    *  area, the login's own row): that exit, so its route and acting login
    *  hold for the work inside, as they hold for the transaction's own
    *  statements (boundExitEntry). */
   requestExit?: SystemRouteEntry;
-  /** A turn scope (workspaces W4b): no transaction of its own; every query
+  /** A turn scope: no transaction of its own; every query
    *  opens a short one on the workspace role (gateway/scope.ts). */
   perQuery?: true;
-  /** A REQUEST scope (workspaces W6a): the session guard entered it for the
+  /** A REQUEST scope: the session guard entered it for the
    *  rest of the request (enterRequestScope). Reads run as a turn scope's
    *  do; see RequestScopeMode for writes and drafts. */
   request?: RequestScopeMode;
 };
 
 /**
- * How a request scope treats writes and drafts (workspaces W6a, plan 2.3):
+ * How a request scope treats writes and drafts:
  *  - `writes`: a mutating request (POST, PUT, PATCH, DELETE). Writes stay on
- *    the system pool with their rule in the statement (plan 2.3): in any
+ *    the system pool with their rule in the statement: in any
  *    request scope `db` sends insert, update, delete and a writing
  *    `execute` there, and a mutating request's transactions too
  *    (gateway/handles.ts); withSystemTx and the heads helpers stay open.
@@ -152,15 +147,15 @@ type Scope = {
  */
 export type RequestScopeMode = { writes: boolean; drafts: boolean };
 
-/** What the session guard did for this request (the W6a route sweep reads
- *  it): entered the login's scope, let an Admin user through on the system
+/** What the session guard did for this request (the route sweep test
+ *  reads it): entered the login's scope, let an Admin user through on the system
  *  pool (a management area, or the login's own row), or nothing yet. An
  *  Admin user's write enters its scope as a member's does. */
 export type RequestOutcome =
   | { kind: 'user'; loginId: string; writes: boolean }
   // A member route (/api/member/*, kept until the UI reads the normal
-  // routes): its handler holds its own rule, a withViewer per read as since
-  // W5b2, and its writes on the system pool.
+  // routes): its handler holds its own rule, a withViewer per read, and its
+  // writes on the system pool.
   | { kind: 'own-rule'; loginId: string }
   | {
       kind: 'system';
@@ -180,17 +175,17 @@ type RequestSlot = {
   scope: Scope | null;
   outcome: RequestOutcome | null;
   /** The scopes withViewer built in this request, by who they act for: the
-   *  lookup runs once per request, not once per call (W6a; the W5b2 member
-   *  search cost). */
+   *  lookup runs once per request, not once per call (a member search would
+   *  otherwise repeat it per result). */
   memo: Map<string, Promise<WorkspaceScope>>;
   /** Tests and development only: the reads a member route ('own-rule')
-   *  sent to the system pool, by calling file (the W6a route sweep). */
+   *  sent to the system pool, by calling file (the route sweep test). */
   systemReads?: string[];
   /** Tests and development only: the writes a request scope sent to the
    *  system pool through `db` (insert, update, delete, a mutating request's
-   *  transaction), by calling file (W6a fix round 1, L2). */
+   *  transaction), by calling file. */
   systemWrites?: string[];
-  /** Where a create in this request lands (W6b): see CreateHome. */
+  /** Where a create in this request lands: see CreateHome. */
   createHome?: CreateHome;
   /** The route of this request's system exit (noteRequestSystem,
    *  REQUEST_SYSTEM_ROUTE), with the actor reason it binds. */
@@ -201,7 +196,7 @@ type RequestSlot = {
 };
 
 /**
- * Where a new item lands (workspaces W6b, plan 15 and 21.8 row 7), set on
+ * Where a new item lands, set on
  * the system transactions as mantle.create_ws and mantle.private_ws (the
  * database's mantle_default_home reads them). `createWs`: the workspace the
  * login creates in (it moderates it; checked by the caller). `privateWs`:
@@ -212,22 +207,21 @@ export type CreateHome = {
   createWs: string | null;
   privateWs: string | null;
   /** No extractor notify for what is made (mantle.ingest_notify off): a
-   *  read-only copy the migration makes (S3), never a user's create. */
+   *  read-only copy a migration makes, never a user's create. */
   quiet?: boolean;
   /** Keys merged into the data of every item made (mantle.create_stamp,
    *  0267's create stamp trigger), in the insert itself: a snapshot copy's
-   *  snapshot_of and extract_skipped (W6b fix round 1, M4). */
+   *  snapshot_of and extract_skipped. */
   stamp?: Readonly<Record<string, unknown>>;
 };
 
 /**
  * What an open system transaction (or a nested savepoint of one) was opened
- * with (arch A2b, plan 20.2): a nested withSystemTx reuses it only for the
+ * with: a nested withSystemTx reuses it only for the
  * same actor and create home. `busy`: a nested call runs on it now (a
  * second one at the same time is refused). `done`: it ended (a nested call
  * after that is refused). `saves`: the nested calls (savepoints) of the
- * whole outer transaction so far, shared by every level (A2b1 fix round 2,
- * L2). Set and read by gateway/system-tx.ts only.
+ * whole outer transaction so far, shared by every level. Set and read by gateway/system-tx.ts only.
  */
 export type SystemTxNest = {
   readonly actor: string;
@@ -247,8 +241,7 @@ export function newTxHooks(): TxHooks {
 
 /** Run hooks: commit hooks in order, rollback hooks newest first (each
  *  undoes the work after the one before it: two renames of one file in a
- *  transaction that rolls back go back last first; A3b part 2 fix round 1,
- *  L2). Each is best effort: the transaction has already ended, so a
+ *  transaction that rolls back go back last first). Each is best effort: the transaction has already ended, so a
  *  failing hook is logged, never thrown. */
 export async function runTxHooks(list: (() => unknown)[], what: string): Promise<void> {
   const ordered = what === 'rollback' ? [...list].reverse() : list;
@@ -291,7 +284,7 @@ const store = new AsyncLocalStorage<Scope>();
  *  scope lives in its own slot). Never returned by `active()`. */
 const SYSTEM_EXIT: Scope = Object.freeze({ system: true as const });
 
-/** One slot per HTTP request (workspaces W6a): the HTTP gate opens it
+/** One slot per HTTP request: the HTTP gate opens it
  *  around each handler (runInRequestSlot); the session guard fills it
  *  (enterRequestScope) and the scope holds for the rest of the request. */
 const requestSlots = new AsyncLocalStorage<RequestSlot>();
@@ -306,29 +299,27 @@ function active(): Scope | undefined {
 }
 
 /**
- * Run one HTTP handler with a request slot (workspaces W6a). Only the HTTP
- * gate calls this, as its caller's enterScope inside enterCall (A4 step 1);
- * the session guard fills the slot (enterRequestScope).
+ * Run one HTTP handler with a request slot. Only the HTTP gate calls this,
+ * as its caller's enterScope inside enterCall; the session guard fills the slot (enterRequestScope).
  */
 export function runInRequestSlot<T>(
   fn: () => T,
   opts: { memo?: Map<string, Promise<WorkspaceScope>>; startsAs?: Actor } = {},
 ): T {
-  // Arch A2a: a request runs as system(http:no-login) until the session
-  // guard or a share broker names its caller. A4 step 3a: the gate passes
-  // the row's actor (the same system(http:no-login) for every manifest
+  // A request runs as system(http:no-login) until the session guard or a
+  // share broker names its caller. The gate passes the row's actor (the same system(http:no-login) for every manifest
   // route) and the memo its login lookup seeded (withRequestScopeMemo).
   return runInActorSlot(opts.startsAs ?? systemActor('http:no-login'), () =>
     requestSlots.run({ scope: null, outcome: null, memo: opts.memo ?? new Map() }, fn),
   );
 }
 
-/** A request's memo before its slot opens (arch A4 step 3a). */
+/** A request's memo before its slot opens. */
 const pendingMemos = new AsyncLocalStorage<Map<string, Promise<WorkspaceScope>>>();
 
 /**
  * Run `fn` with `memo` as the request's memo of built scopes, before its
- * request slot opens (arch A4 step 3a): the gate finds the request's login
+ * request slot opens: the gate finds the request's login
  * (whose read seeds the login's scope, seedLoginScope) before enterCall
  * opens the slot, and hands the same memo to the slot (runInRequestSlot),
  * so the guard looks nothing up twice.
@@ -347,7 +338,7 @@ export function requestScopeMemo(): Map<string, Promise<WorkspaceScope>> | null 
 }
 
 /**
- * Name who the current request runs as (arch A2a): the HTTP gate starts
+ * Name who the current request runs as: the HTTP gate starts
  * it as system(http:no-login); the session guard or a share gate names the
  * caller once it knows it. No-op outside a request (an actor slot).
  */
@@ -371,7 +362,7 @@ export function hasRequestSlot(): boolean {
 }
 
 /**
- * Enter `ws` for the rest of the request (workspaces W6a, plan 2.4): every
+ * Enter `ws` for the rest of the request: every
  * `db` read after this, after any await, runs on the workspace role in its
  * own short transaction that sets the scope (as a turn scope). Called by the
  * session guard, before the handler touches the database. False outside a
@@ -417,14 +408,14 @@ export function noteRequestSystem(why: Exclude<RequestSystemWhy, 'first-owner'>)
   const slot = requestSlots.getStore();
   if (!slot || slot.scope) return;
   slot.outcome = { kind: 'system', why };
-  // Arch A2a (plan 4.1): an Admin area route and the login's own things run
+  // An Admin area route and the login's own things run
   // as system(reason); an Admin user's write or read on the system pool
   // stays its login (named by the guard).
   const reason = REQUEST_SYSTEM_REASON[why];
   const outer = slotActor();
   setSlotActor(systemUnder(reason, outer));
-  // Plan v3.2 S7a: the exit picks its route (REQUEST_SYSTEM_ROUTE); S7b:
-  // with the login it acts for.
+  // The exit picks its route (REQUEST_SYSTEM_ROUTE) and carries the login
+  // it acts for.
   const login = outer?.kind === 'login' ? outer.loginId : undefined;
   slot.systemRoute = Object.freeze({
     route: REQUEST_SYSTEM_ROUTE[why],
@@ -435,18 +426,17 @@ export function noteRequestSystem(why: Exclude<RequestSystemWhy, 'first-owner'>)
 
 /**
  * The scope a write request is checked in, and the one a login's write runs
- * in on the write role (arch A2b2b; the login write gateway's one rule,
+ * in on the write role (the login write gateway's one rule,
  * loginWriteRoute): the write scope of a scope whose reads are scoped too,
- * a login's mutating request scope (W6b; an Admin user's since F4) or an
- * Admin turn (W7a), else null. Masked by asSystem and by any other scope
- * (their transactions are not this request's writes). Before F4 an Admin
- * user's write request ran on the system pool with only its write scope
- * noted (its reads unscoped), so its edits met no edit check (A8 finding
- * F4); it now enters its request scope as every login's does.
+ * a login's mutating request scope (an Admin user's included) or an Admin
+ * turn, else null. Masked by asSystem and by any other scope (their
+ * transactions are not this request's writes). An Admin user's write
+ * request enters its request scope as every login's does, so its edits
+ * meet the edit check.
  */
 export function requestWriteScope(): WorkspaceScope | null {
   const s = store.getStore();
-  // An Admin turn (W7a): its writes are checked in its own scope.
+  // An Admin turn: its writes are checked in its own scope.
   if (s) return s !== SYSTEM_EXIT && s.perQuery && s.ws && s.request?.writes ? s.ws : null;
   const slot = requestSlots.getStore();
   if (!slot) return null;
@@ -476,7 +466,7 @@ export function carriedWriteScope(): WorkspaceScope | null {
   return systemPoolScope.getStore() ?? null;
 }
 
-/** Record where this request's creates land (W6b; see CreateHome). No-op
+/** Record where this request's creates land (see CreateHome). No-op
  *  outside a slot. */
 export function noteRequestCreateHome(home: CreateHome): void {
   const slot = requestSlots.getStore();
@@ -485,7 +475,7 @@ export function noteRequestCreateHome(home: CreateHome): void {
 
 const createHomes = new AsyncLocalStorage<CreateHome>();
 
-/** Run `fn` with its creates landing in `home` (W6b; the member app tools,
+/** Run `fn` with its creates landing in `home` (the member app tools,
  *  outside an HTTP request). Kept through asSystem: it names a place, it
  *  grants nothing. */
 export function withCreateHome<T>(home: CreateHome, fn: () => T): T {
@@ -502,16 +492,16 @@ export function currentCreateHome(): CreateHome | null {
 }
 
 /**
- * Tests and development only (W6a fix round 1, L2): note a write a request
- * scope sends to the system pool through `db` or a system transaction
- * (withSystemTx and the heads helpers, fix round 2), with the file that
+ * Tests and development only: note a write a request scope sends to the
+ * system pool through `db` or a system transaction (withSystemTx and the
+ * heads helpers), with the file that
  * sent it: the first frame outside @mantle/db (bestEffortWrite and the
  * heads helpers are only the way there). The route sweep pins the list.
  */
 export function noteRequestSystemWrite(what: string): void {
   const slot = requestSlots.getStore();
-  // A mutating request's writes are its job (a member's own write since
-  // W6b): only a READ request's are pinned.
+  // A mutating request's writes are its job (a member's own write
+  // included): only a READ request's are pinned.
   if (!slot?.scope || slot.scope.request?.writes || store.getStore() || !testOrDevelopment())
     return;
   const stack = (new Error().stack ?? '')
@@ -536,7 +526,7 @@ export function noteRequestOwnRule(loginId: string): void {
 }
 
 /**
- * Tests and development only (W6a, the route sweep): note a read a member
+ * Tests and development only (the route sweep test): note a read a member
  * route ('own-rule') sends to the system pool, outside any withViewer or
  * other scope, with the file that sent it. gateway/handles.ts calls it on
  * every read handle `db` hands out; anywhere else it is a no-op.
@@ -559,15 +549,15 @@ export function currentRequestOutcome(): RequestOutcome | null {
 }
 
 /** The request scope's mode when the current code runs in it directly (not
- *  in a narrower scope entered inside it), else null. An Admin turn (W7a:
- *  the Admin assistant, the Admin MCP surface) carries one too: its writes
+ *  in a narrower scope entered inside it), else null. An Admin turn (the
+ *  Admin assistant, the Admin MCP surface) carries one too: its writes
  *  go to the system pool as a mutating request's do. */
 export function currentRequestMode(): RequestScopeMode | null {
   return active()?.request ?? null;
 }
 
 /** What the current code runs as (see CurrentScope). Never 'system' inside
- *  a workspace scope (plan T4). */
+ *  a workspace scope. */
 export function currentScope(): CurrentScope {
   const scope = active();
   if (scope?.ws) return { ...scope.ws };
@@ -580,8 +570,8 @@ export function isSystemScope(): boolean {
   return currentScope().kind === 'system';
 }
 
-/** The areas an Admin workspace user manages (plan 2.4): WORKSPACE_AREAS in
- *  @mantle/client-types, the one list (A10 #13). */
+/** The areas an Admin workspace user manages: WORKSPACE_AREAS in
+ *  @mantle/client-types, the one list. */
 export const SCOPE_AREAS = WORKSPACE_AREAS;
 export type ScopeArea = WorkspaceArea;
 
@@ -637,7 +627,7 @@ export function inScopeTransaction(): boolean {
 }
 
 /**
- * The actor a workspace scope runs as (arch A2a), from the scope and the
+ * The actor a workspace scope runs as, from the scope and the
  * actor around it: a user scope is its login (the mode the caller named for
  * that login kept, so a read-only key stays read-only); an assistant turn
  * that answers a login is that login; one that answers none is the
@@ -667,7 +657,7 @@ function inScope<T>(scope: Scope, fn: () => T): T {
 }
 
 /**
- * Enter the scope `withViewer` built (gateway/viewer-scope.ts, plan R6):
+ * Enter the scope `withViewer` built (gateway/viewer-scope.ts):
  * `fn` and what it awaits read on the workspace role, each query in its own
  * short transaction that sets the scope, as a turn scope does. It replaces a
  * system scope around it (a system transaction keeps its own `tx`). Inside
@@ -676,7 +666,7 @@ function inScope<T>(scope: Scope, fn: () => T): T {
  * gateway/viewer-scope.ts calls this, with a validated, frozen scope.
  *
  * `writes` (a login's app run making a write its app rule allowed: a team
- * app's Table row write, task 2178377a): the scope writes as the login's
+ * app's Table row write): the scope writes as the login's
  * mutating request does, through the login write gateway with this scope
  * on each short write transaction, so the database checks the write
  * against it (requestWriteScope). With `drafts` it reads the draft of an
@@ -698,7 +688,7 @@ export function runInViewerScope<T>(
     if (sameWorkspaceScope(open.ws, ws) && (!writes || open.request?.writes)) return fn();
     // Inside a request scope a narrower scope may be entered (an app run,
     // an assistant of one of the login's workspaces): it reads less, never
-    // more (workspaces W6a).
+    // more.
     if (open.request && narrowsWorkspaceScope(open.ws, ws)) {
       return inScope(scope, async () => await fn());
     }
@@ -726,7 +716,7 @@ export function runInWorkspaceTx<T>(
 }
 
 /**
- * Enter a TURN scope (workspaces W4b): `fn` and everything it awaits read on
+ * Enter a TURN scope: `fn` and everything it awaits read on
  * the workspace role, each query in its own short transaction that sets the
  * scope (gateway/scope.ts). No transaction is held across the turn, so an
  * LLM call inside never holds one. Nested: the same scope runs `fn` as is;
@@ -745,7 +735,7 @@ export function runInTurnScope<T>(
   const open = active();
   if (open) {
     if (open.perQuery && open.ws && sameWorkspaceScope(open.ws, ws)) return fn();
-    // An assistant turn inside a request scope (or an Admin turn, W7a):
+    // An assistant turn inside a request scope (or an Admin turn):
     // only one that reads within the login's own scope (its workspace is
     // one of the login's).
     if (open.request && open.ws && narrowsWorkspaceScope(open.ws, ws)) {
@@ -757,8 +747,7 @@ export function runInTurnScope<T>(
 }
 
 /**
- * Whether a turn scope writes (plan v2 4.2; the A8 finding F2, owner
- * decision a): a turn that answers a login writes with that login's rights,
+ * Whether a turn scope writes: a turn that answers a login writes with that login's rights,
  * in the scope, as the login's mutating request does there (the login write
  * gateway, the scope on each short write transaction, the database's
  * checks against it); a turn that answers no login writes only when it acts
@@ -776,9 +765,8 @@ export function turnScopeWrites(
 
 /** Whether `inner` reads and edits no more than `outer`: its workspaces
  *  and Moderator workspaces are subsets, and a user scope, or an assistant
- *  turn inside one, stays its login's (W7a fix round 1, M1: an assistant
- *  that answered another login, or none, took that login's areas and
- *  rows). */
+ *  turn inside one, stays its login's (else an assistant that answers
+ *  another login, or none, would take that login's areas and rows). */
 export function narrowsWorkspaceScope(outer: WorkspaceScope, inner: WorkspaceScope): boolean {
   if ((inner.kind === 'user' || inner.kind === 'assistant') && inner.loginId !== outer.loginId) {
     return false;
@@ -799,13 +787,12 @@ export function sameWorkspaceScope(a: WorkspaceScope, b: WorkspaceScope): boolea
 }
 
 /**
- * Who a turn's rows belong to (workspaces W4b, R3): the workspace and the
- * login a run, a trace or a tool result is stamped with. Inside a turn scope
- * it is the scope's (one workspace); the Admin assistant, which stays on the
- * system pool until W6a, carries it here. Null = system work (Admin by the
- * stamp trigger's NULL rule). An agent with no workspace (a helper such as
- * the replay agent) run straight from a chat carries a stamp with no
- * workspace (W7c fix round 1, H1): only the login it answers, so a read of
+ * Who a turn's rows belong to: the workspace and the login a run, a trace
+ * or a tool result is stamped with. Inside a turn scope it is the scope's
+ * (one workspace); work outside one carries it here. Null = system work
+ * (Admin by the stamp trigger's NULL rule). An agent with no workspace (a
+ * helper such as the replay agent) run straight from a chat carries a
+ * stamp with no workspace: only the login it answers, so a read of
  * per-login history knows whose it is.
  */
 export type TurnStamp = { workspaceId: string | null; loginId: string | null };
@@ -818,7 +805,7 @@ export function withTurnStamp<T>(stamp: TurnStamp, fn: () => Promise<T>): Promis
 }
 
 /** The current turn's stamp: the turn scope's, else the carried one. The
- *  Admin assistant's turn (W7a) carries its stamp inside its scope: a turn
+ *  Admin assistant's turn carries its stamp inside its scope: a turn
  *  that answers no login acts for the owner, but its rows stay unstamped
  *  by login, as they were on the system pool. */
 export function currentTurnStamp(): TurnStamp | null {
@@ -835,11 +822,10 @@ export function currentTurnStamp(): TurnStamp | null {
 /**
  * Run `fn` on an ADMIN-pool transaction's own connection: every `db` query
  * inside uses `tx`, so work that holds a row lock in `tx` never needs a
- * second connection from the pool (team apps M3 re-audit: a member's
- * parallel app writes each held one connection for the lock and took more
- * for the work, and could empty the pool). With the transaction's `hooks`:
- * `afterCommit` and `afterRollback` inside wait for it to end (follow-up
- * low 1), never run early. Only gateway/system-tx.ts calls this
+ * second connection from the pool (parallel writes that each held one
+ * connection for the lock and took more for the work could empty the
+ * pool). With the transaction's `hooks`: `afterCommit` and `afterRollback`
+ * inside wait for it to end, never run early. Only gateway/system-tx.ts calls this
  * (`withSystemTx`).
  */
 export function runInSystemTx<T>(
@@ -847,9 +833,9 @@ export function runInSystemTx<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   // A request scope around it is fine: a system transaction is the write
-  // path of a mutating request (plan 2.3, the rule in the statement). So is
-  // an open system transaction: a nested one is its savepoint (arch A2b,
-  // gateway/system-tx.ts nestedSystemTx).
+  // path of a mutating request (the rule in the statement). So is an open
+  // system transaction: a nested one is its savepoint (gateway/system-tx.ts
+  // nestedSystemTx).
   const open = active();
   if (open && !open.request && !(open.system && open.tx && open.nest)) {
     return Promise.reject(new RuntimeFaultError('runInSystemTx: only outside a viewer scope'));
@@ -881,13 +867,12 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
 }
 
 /**
- * Why code inside a TURN scope may leave it for the system pool (workspaces
- * W4b fix round 1, M4). A turn scope fails closed: every `db` query runs on
+ * Why code inside a TURN scope may leave it for the system pool. A turn scope fails closed: every `db` query runs on
  * the workspace role. There are two doors out to the admin pool: `asSystem`,
  * which inside a turn must name one of these reasons (each logged once per
  * process), and `systemDb`, the infrastructure handle (tool results, pending
  * calls, traces, logs), which inside a turn only the modules of
- * SYSTEM_DB_MODULES may use (assertSystemDbCaller, fix round 2). Keep both
+ * SYSTEM_DB_MODULES may use (assertSystemDbCaller). Keep both
  * lists small: a new entry is a new way out of the scope and needs review.
  *
  *  - `agent-workspace`: the workspace row and membership an assistant runs
@@ -902,18 +887,14 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *  - `app-data`: the app_data tools on a login's own MCP
  *    (builtins-app-data.ts) run the app's SQLite work, its registry rows and
  *    its undo snapshot as the system, only after the lookup in the login's
- *    scope found the app (as the app brokers run that work). (The member's
- *    my_app_* tools, which used it for an app's files, builds and history,
- *    went with W7b: every login builds apps with the app tools in its own
- *    workspaces.)
- *  - `rule-in-query`: inside a REQUEST scope (W6a), the any-login routes
- *    that hold the workspace rule in their own SQL on the system pool (the
- *    shell, access keys, whoami, the chat routes): the rule is the query's,
- *    as it was before the request scope. Since arch A6 the grants and the
- *    workspace screens read in the scope (their definers, 0291) and no
- *    longer leave it by this reason.
- *  - `brain-bookkeeping`: the named system step (system-step.ts, F4 fix
- *    round 2): the brain-wide bookkeeping a write does after its item check
+ *    scope found the app (as the app brokers run that work).
+ *  - `rule-in-query`: inside a REQUEST scope, the any-login routes that
+ *    hold the workspace rule in their own SQL on the system pool (the
+ *    shell, access keys, whoami, the chat routes): the rule is the query's.
+ *    The grants and the workspace screens read in the scope (their
+ *    definers), not by this reason.
+ *  - `brain-bookkeeping`: the named system step (system-step.ts): the
+ *    brain-wide bookkeeping a write does after its item check
  *    (a table's history prune, an Admin scope's email attachment bytes, a
  *    file's derived items and drawings counted and its confirmed cascade,
  *    the files a flag change or a move re-indexes, an app's export sync).
@@ -921,11 +902,11 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    no, or rows its scope reads.
  *  - `page-refold`: after a grant change, the derived text of every page
  *    the change reaches is folded again, pages the caller may not read or
- *    edit included (lib/grants.ts, arch A6): nothing goes back to the
+ *    edit included (lib/grants.ts): nothing goes back to the
  *    caller.
  *  - `admin-area`: a tool of an Admin area (@mantle/tools admin-gate.ts:
  *    the brain's settings, assistants, connectors, keys) in the Admin
- *    assistant's or the Admin MCP surface's scope (W7a), only AFTER the
+ *    assistant's or the Admin MCP surface's scope, only AFTER the
  *    area check (scopeHasArea): its system tables (model pools, agents,
  *    tool groups, connectors, secrets, peers) are never granted to the
  *    workspace role. It reads no brain items there; brain_capacity counts
@@ -935,43 +916,37 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *  - `keyword-candidates`: in a big workspace scope, the ids of the items
  *    whose text matches the caller's own terms, ranked (the text match is
  *    not leakproof, so under the row rule its index is never used); only the
- *    ids the scope reads are kept, re-read in the scope by id (searchNodes,
- *    W7a). No row leaves the system pool.
+ *    ids the scope reads are kept, re-read in the scope by id
+ *    (searchNodes). No row leaves the system pool.
  *  - `app-trash`: a deleted app's snapshots, which the scope's row rule
- *    hides once the app's row is gone (0265), read only for the deleted
- *    apps whose home the caller moderates, checked first (app_deleted_list
- *    and app_undelete, W7b fix round 1).
- *  - `login-telegram`: a login's own Telegram chats (telegram_chats.login_id,
- *    W7d; until then 'owner-telegram', the anchor's history in its replay,
- *    W7c fix round 2): the Telegram tables are granted to no role. Read for
+ *    hides once the app's row is gone, read only for the deleted apps whose
+ *    home the caller moderates, checked first (app_deleted_list and
+ *    app_undelete).
+ *  - `login-telegram`: a login's own Telegram chats
+ *    (telegram_chats.login_id): the Telegram tables are granted to no role. Read for
  *    the asking login only (replay, pairing, the operator tools), or for the
  *    login a rule in the query checks (a chat's workspace, a bot's
  *    Moderators, the login a queued call's approval card goes to), never
  *    another login's chat rows.
  *  - `audit-log`: the audit row of a connector call made over a login's
  *    MCP (mcp-core login-surface.ts): an admin table, written after the
- *    call, never read back in the scope (arch A2a named it).
+ *    call, never read back in the scope.
  *  - `pending-approval`: an approved pending call leaves the scope of the
  *    path that approves it (a request's, an MCP connection's) only to enter
  *    the scope the call was asked in, met with its asker's rights now
- *    (@mantle/tools pending-approval.ts, arch A5 step 6c): it is judged
+ *    (@mantle/tools pending-approval.ts): it is judged
  *    again and runs there, never in the approver's scope. Nothing is read
  *    on the system pool on the way: the asked scope is entered at once (or,
  *    for a call asked in no scope, the call runs as it was asked).
  *
- * A request scope (W6a) is held to the same list: inside it, `asSystem`
- * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
+ * A request scope is held to the same list: inside it, `asSystem` names a
+ * reason and `systemDb` is for SYSTEM_DB_MODULES only.
  *
- * Retired in plan v3.2 S2b: 'workspace-write' (a change of a workspace's
- * row, look, landing app or archive is a definer call that checks the
- * acting login inside, 0309; lib/workspaces.ts).
- *
- * Retired in arch A6b (docs/actors.md): what each named is read in the
- * scope or by a narrow definer (0293), or is system work that never runs in
- * a scope (systemWork): 'kind-root', 'name-taken', 'export-link',
- * 'contact-sharing', 'login-names', 'owner-preferences', 'lexeme-stats',
- * 'workspace-resources', 'runs-scope-check', 'client-sourced-check',
- * 'client-sourced-mark', 'heartbeat-context'.
+ * No reason here for what the scope can read itself or through a narrow
+ * definer, nor for a change of a workspace's row, look, landing app or
+ * archive (a definer call that checks the acting login inside,
+ * lib/workspaces.ts). System work that never runs in a scope is
+ * systemWork's.
  */
 export const AS_SYSTEM_TURN_REASONS = [
   'agent-workspace',
@@ -991,19 +966,16 @@ export const AS_SYSTEM_TURN_REASONS = [
 ] as const;
 
 /**
- * Reasons of work that never runs inside a turn or request scope (arch
- * A2a: every call names its reason). Since A6b the product ones are
- * systemWork's (it refuses any scope), no longer asSystem calls; an
- * asSystem call inside a turn by one of them counts as unnamed
+ * Reasons of work that never runs inside a turn or request scope (every
+ * call names its reason). The product ones are systemWork's (it refuses
+ * any scope), not asSystem calls; an asSystem call inside a turn by one of them counts as unnamed
  * (TurnScopeExitError in tests).
  *
  *  - `login-notice`: the push worker builds a login's notice (a finished
  *    chat reply, a review result) from rows of that login only
  *    (login-notices.ts, systemWork).
- *  - `space-taken-authors`: no caller since A6b (takenFromOf, who wrote
- *    the items an Admin user took from a personal space, had none and was
- *    deleted with admin-space-taken.ts); the name is kept for the spaces
- *    family (W10).
+ *  - `space-taken-authors`: no caller; the name is kept for the spaces
+ *    family.
  *  - `test`: a test's own setup, in test files only (eslint-rules/
  *    arch-lints.test.ts keeps it out of every counted file).
  */
@@ -1012,17 +984,16 @@ export const AS_SYSTEM_OTHER_REASONS = ['login-notice', 'space-taken-authors', '
 export type AsSystemReason =
   (typeof AS_SYSTEM_TURN_REASONS)[number] | (typeof AS_SYSTEM_OTHER_REASONS)[number];
 
-/** Which system role an exit runs on (plan v3.2 section 2.1): the narrow
+/** Which system role an exit runs on: the narrow
  *  one (mantle_system_narrow: system tables, content read only) or the full
  *  one (the system pool's own login, every table). */
 export type SystemRoute = 'narrow' | 'full';
 
 /**
- * The route of each asSystem reason (plan v3.2 S7a part a2), typed so a new
+ * The route of each asSystem reason, typed so a new
  * reason must pick. A 'narrow' reason runs on mantle_system_narrow.
  * Measured by the DB suites (docs/runtime-role.md, "The narrow route"): a
- * narrow reason the role
- * refuses is routed full here with its why, or granted narrowly in the
+ * narrow reason the role refuses is routed full here with its why, or granted narrowly in the
  * access matrix. systemWork runs full whatever its reason (workers, boot
  * steps).
  *
@@ -1032,7 +1003,7 @@ export type SystemRoute = 'narrow' | 'full';
  *  - `rule-in-query`: the any-login routes hold the workspace rule in their
  *    own SQL and write content rows (chat threads, access keys' items).
  *  - `keyword-candidates`: reads every item's text in a big scope; content
- *    reads stay full until S7c measures the read cells.
+ *    reads stay full until the read cells are measured.
  *  - `app-trash`: a deleted app's snapshots and trash rows (content).
  *  - `page-refold`: folds the derived text of pages (nodes) again.
  *  - `brain-bookkeeping`: the named system step writes content tables (a
@@ -1063,7 +1034,7 @@ export const AS_SYSTEM_ROUTE: Readonly<Record<AsSystemReason, SystemRoute>> = Ob
 
 /** The route of each request system exit (noteRequestSystem,
  *  enterFirstOwnerExit): an Admin area route and the login's own row run
- *  narrow (plan v3.2 section 2.1 point 4). Typed so a new exit must pick.
+ *  narrow. Typed so a new exit must pick.
  *  Full, with why:
  *   - `first-owner`: the first owner's switch onto workspaces
  *     (mantle_ws_migrate_locked) makes the Admin workspace, its users and
@@ -1088,7 +1059,7 @@ export const REQUEST_SYSTEM_REASON: Readonly<Record<RequestSystemWhy, string>> =
 type SystemRouteEntry = {
   readonly route: SystemRoute;
   readonly reason: string;
-  /** The acting login (plan v3.2 S7b): the login whose request or turn
+  /** The acting login: the login whose request or turn
    *  this exit runs for, sent as mantle.acting_login (actingLoginNow). */
   readonly login?: string;
 };
@@ -1127,8 +1098,7 @@ function boundExitEntry(): { entry: SystemRouteEntry; request: boolean } | null 
 }
 
 /**
- * The acting login of the exit the current system work runs in (plan v3.2
- * S7b): the login whose request (an Admin area or login-self exit) or turn
+ * The acting login of the exit the current system work runs in: the login whose request (an Admin area or login-self exit) or turn
  * (an asSystem exit inside a login's scope or exit) it runs for, or null.
  * Held only while the exit's actor is the one bound, as its route is. The
  * gateway sends it as mantle.acting_login with the actor's settings; the
@@ -1158,18 +1128,14 @@ function exitLogin(outer: Actor | null, left?: WorkspaceScope): string | undefin
 
 /**
  * The spots where a narrow exit's own work writes a content table
- * (measured with the switch on, plan v3.2 S7a part a2): each runs on the
+ * (measured with the switch on): each runs on the
  * full route, keeping its actor, with its why (onFullSystemRoute). The rest
  * of the exit stays narrow. A content table is never granted to the narrow
  * role for one of these (access-matrix.ts narrowFor).
  *
- * TODO(S7b): move each to the write role in the caller's scope, or to a
- * definer, and delete its spot; the list only shrinks. The structure items
- * (the Secrets root, a secret, a peer, a sender's contact, a documentation
- * item, a calendar's synced events) moved to one definer
- * (gateway/structure-item.ts, migration 0316); a promotion's personal
- * space and an assistant's delete to theirs (gateway/spot-definers.ts,
- * migration 0317).
+ * TODO: move each to the write role in the caller's scope, or to a
+ * definer, and delete its spot; the list only shrinks. Definers for such
+ * writes live in gateway/structure-item.ts and gateway/spot-definers.ts.
  */
 export const FULL_ROUTE_SPOTS = Object.freeze({
   'profile-row':
@@ -1247,7 +1213,7 @@ export type FullRouteSpot = keyof typeof FULL_ROUTE_SPOTS;
  * switch), keeping the actor; anywhere else (a login's scope, system work)
  * `fn` runs as it is. The actor's SET at the spot also carries
  * `mantle.route` = 'full' (runOnFullRouteSpot, actor.ts); no database rule
- * reads it since the report counts went (0344).
+ * reads it.
  *
  * `when` (a hold's spot, the one rule for them all): asked only when the
  * route is the narrow one; `fn` runs at the spot when it answers yes, else
@@ -1276,9 +1242,8 @@ function atFullRouteSpot<T>(spot: FullRouteSpot, fn: () => PromiseLike<T>): Prom
     // systemDb's infrastructure writes inside a turn or request scope take
     // the narrow route whatever the actor (gateway/handles.ts): a login's
     // turn that parks a call does too. At a spot they take the system pool
-    // (systemDbOnSpot), keeping the actor; nothing else changes (S7b part
-    // b2 round 8: the measured allowlist leaves the narrow login no INSERT
-    // of a pending call).
+    // (systemDbOnSpot), keeping the actor; nothing else changes (the
+    // narrow login holds no INSERT of a pending call).
     return fullRouteSpotNow.run(spot, async () => await fn());
   }
   // Awaited inside: a drizzle query runs when it is awaited, so it must be
@@ -1321,8 +1286,8 @@ export function actingLoginAtSpot(): string | null {
  * The SQL allowlist (mantle_ws_system_work, migrations 0307 and 0313) names
  * exactly these actors, one per real caller, each with the one definer it
  * calls (a listed actor on another definer is refused), each added in the
- * release that moves its caller (at most five). Only systemWork takes one (asSystem with
- * one fails typecheck), and systemWork refuses it inside any scope, request
+ * release that moves its caller (at most five). Only systemWork takes one
+ * (asSystem with one fails typecheck), and systemWork refuses it inside any scope, request
  * or system exit, so these actors are never bound inside a request or turn.
  * eslint-rules/system-work-allowlist.mjs pins the files that pass one;
  * eslint-rules/arch-lints.test.ts refuses the strings anywhere else.
@@ -1378,8 +1343,8 @@ export class TurnScopeExitError extends RuntimeFaultError {
 }
 
 /** A yes outside every scope, or a scoped write sent to the system pool,
- *  that only system work may take, asked with no system actor bound (plan
- *  v3.2 S4b; docs/fail-open.md). `what` names the answer or the table. */
+ *  that only system work may take, asked with no system actor bound
+ *  (docs/fail-open.md). `what` names the answer or the table. */
 export class SystemWorkRequiredError extends RuntimeFaultError {
   readonly code = 'system-work-required';
   constructor(what: string) {
@@ -1403,10 +1368,10 @@ function testOrDevelopment(): boolean {
  * the firing heartbeat's own row). Never for reads. Few call sites,
  * each one audited; grep for `asSystem(` to list them.
  *
- * Every call names its `reason` (arch A2a: a type error without one), and
- * `fn` runs as the actor system(reason). Inside a turn scope (W4b) the
- * reason must be one of AS_SYSTEM_TURN_REASONS (logged once per reason);
- * any other throws TurnScopeExitError, in production too (plan v3.2 S4b).
+ * Every call names its `reason` (a type error without one), and `fn` runs
+ * as the actor system(reason). Inside a turn scope the reason must be one
+ * of AS_SYSTEM_TURN_REASONS (logged once per reason); any other throws
+ * TurnScopeExitError, in production too.
  */
 export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promise<T> {
   if (active()?.perQuery) {
@@ -1418,18 +1383,17 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
       console.info(`[db] a turn scope leaves for the system pool: ${reason}`);
     }
   }
-  // The scope this exit leaves (W7a fix round 2, N1): a nested assistant
+  // The scope this exit leaves: a nested assistant
   // turn started on the system pool answers the caller it left, never the
   // anchor (scopeLeftForSystem, agent-viewer.ts withAgentScope).
   const left = active()?.ws;
-  // A plain-JS caller that passed none still runs (A2a changes no behaviour).
-  // A read-only caller stays read only on the system pool (fix round, M1).
+  // A plain-JS caller that passed none still runs, as system(unnamed).
+  // A read-only caller stays read only on the system pool.
   const actor = systemUnder(
     typeof reason === 'string' && reason ? reason : 'unnamed',
     currentActor(),
   );
-  // Plan v3.2 S7a: the reason's route (AS_SYSTEM_ROUTE); an unknown one
-  // runs full.
+  // The reason's route (AS_SYSTEM_ROUTE); an unknown one runs full.
   const login = exitLogin(currentActor(), left);
   const entry: SystemRouteEntry = Object.freeze({
     route: AS_SYSTEM_ROUTE[reason] ?? 'full',
@@ -1442,7 +1406,7 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
 }
 
 /**
- * System-pool work that never runs in a scope (arch A6b): a worker's, a
+ * System-pool work that never runs in a scope: a worker's, a
  * boot step's, or code reached only inside another named exit (an
  * Admin-area tool runs whole on the system pool). Such code called asSystem
  * as a precaution, though no caller ever ran it in a scope. On the system
@@ -1481,7 +1445,7 @@ export function systemWork<T>(
     );
   }
   const actor = systemUnder(reason, currentActor());
-  // Plan v3.2 S7a: system work runs full, whatever its reason.
+  // System work runs full, whatever its reason.
   const entry: SystemRouteEntry = Object.freeze({ route: 'full', reason });
   return runSystemExit(entry, actor, fn);
 }
@@ -1544,7 +1508,7 @@ export function enterFirstOwnerExit<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * The workspace scope that asSystem left to reach the system pool the
- * current code runs on (W7a fix round 2, N1), or null: no workspace scope is
+ * current code runs on, or null: no workspace scope is
  * open now and an asSystem call left one (a tool call's area work, a named
  * exit). Inside a scope entered since, null. An assistant turn started here
  * answers that scope's login (withAgentScope), so a tool that runs on the
@@ -1556,7 +1520,7 @@ export function scopeLeftForSystem(): WorkspaceScope | null {
 }
 
 /**
- * Run `fn` with no scope left behind (W7 integration fix 2, M5): inside it
+ * Run `fn` with no scope left behind: inside it
  * scopeLeftForSystem is null, as on the tick. For work that must run by its
  * own rules whoever started it: a forced fire of an assistant of a
  * workspace other than Admin answers no login, never the login whose tool
@@ -1568,7 +1532,7 @@ export function withoutLeftScope<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * The modules that may use `systemDb` (workspaces W4b fix round 2): the same
+ * The modules that may use `systemDb`: the same
  * list as eslint-rules/system-db-allowlist.mjs, which refuses the import
  * anywhere else (viewer.test.ts keeps the two equal). Test files may too.
  */
@@ -1584,13 +1548,13 @@ export const SYSTEM_DB_MODULES: readonly string[] = [
   'packages/content/src/share-access-log.ts',
   'packages/content/src/team-access-log.ts',
   'packages/content/src/member-turn-ledger.ts',
-  // The messenger (0335): its own system tables, written and checked in
+  // The messenger: its own system tables, written and checked in
   // its transactions; the names and agents for ids its scoped read gave.
   'packages/content/src/messenger.ts',
-  // People (section 23): the gate's reads by the caller's own login id
+  // People: the gate's reads by the caller's own login id
   // (names, faces, presence, the room rule); writes nothing.
   'packages/content/src/people.ts',
-  // Calls (0342): the call rows, written as the messenger's are.
+  // Calls: the call rows, written as the messenger's are.
   'packages/content/src/messenger-calls.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
@@ -1624,10 +1588,9 @@ export function systemDbCallerOf(stack: string): string | null {
  *  asked for runs: `this.session` and `this.dialect`, and `this.authToken`,
  *  which `execute` reads only when the query is awaited, from a frame with
  *  no caller file. The check already ran when the caller touched the
- *  method, so these skip it (W5a audit W3): one stack per call, not
- *  several, in a turn. Nothing else: `$client` (the raw pool) and `_` stay
- *  checked, so code handed systemDb cannot reach the pool unchecked (fix
- *  round 2, L-2). */
+ *  method, so these skip it: one stack per call, not several, in a turn.
+ *  Nothing else: `$client` (the raw pool) and `_` stay checked, so code
+ *  handed systemDb cannot reach the pool unchecked. */
 const SYSTEM_DB_INTERNAL_PROPS: ReadonlySet<PropertyKey> = new Set([
   'session',
   'dialect',
@@ -1647,12 +1610,11 @@ export function isSystemDbModule(file: string): boolean {
 }
 
 /**
- * `systemDb` inside a turn scope (workspaces W4b fix round 2): the second
- * door out of the scope, so only SYSTEM_DB_MODULES may use it there (the
- * eslint rule holds the import; this holds the call, whatever path the
- * handle took). Anything else throws TurnScopeExitError, in production
- * too (plan v3.2 S4b), as asSystem does. Outside a turn scope: nothing. gateway/handles.ts calls it on
- * every access to `systemDb` in a turn scope; `stack` is for tests.
+ * `systemDb` inside a turn scope: the second door out of the scope, so only
+ * SYSTEM_DB_MODULES may use it there (the eslint rule holds the import;
+ * this holds the call, whatever path the handle took). Anything else
+ * throws TurnScopeExitError, in production too, as asSystem does. Outside
+ * a turn scope: nothing. gateway/handles.ts calls it on every access to `systemDb` in a turn scope; `stack` is for tests.
  */
 export function assertSystemDbCaller(stack?: string): void {
   if (!active()?.perQuery) return;
@@ -1667,8 +1629,8 @@ export function assertSystemDbCaller(stack?: string): void {
 /**
  * Refuse to hand work to another process from inside a workspace scope. A
  * job runs later in a worker that does not inherit this scope, so it would
- * run unscoped. A workspace scope never hands work on without carrying it
- * (plan 5.4, U5): a caller that carries it checks with assertScopeCarried
+ * run unscoped. A workspace scope never hands work on without carrying it:
+ * a caller that carries it checks with assertScopeCarried
  * instead.
  */
 export function assertNoViewer(what: string): void {
@@ -1680,19 +1642,18 @@ export function assertNoViewer(what: string): void {
   }
 }
 
-/** The limited pools: the workspace role (workspaces W1), which reads, and
- *  the write role (workspaces arch A2b2), which writes under the same row
- *  rules. */
+/** The limited pools: the workspace role, which reads, and the write role,
+ *  which writes under the same row rules. */
 export type PoolRole = 'user' | 'write';
 
-/** The retired roles: the personal-space role (W6b) and the three level
- *  roles (W8c). NOLOGIN, no grant and no policy (0273); they stay as roles
- *  because the old migrations name them. */
+/** The retired roles: the personal-space role and the three level roles.
+ *  NOLOGIN, no grant and no policy; they stay as roles because the old
+ *  migrations name them. */
 export type RetiredPoolRole = 'space' | 'team' | 'client' | 'public';
 
 /** The Postgres role of the pool, or of a retired one. Not `mantle_team`:
  *  that name is already the team visitor cookie. The write role is
- *  `mantle_write_user`: 0277's gate and the plan (20.1) name it so. */
+ *  `mantle_write_user`: migration 0277's gate names it so. */
 export function viewerRoleName(level: PoolRole | RetiredPoolRole): string {
   return level === 'write' ? 'mantle_write_user' : `mantle_view_${level}`;
 }

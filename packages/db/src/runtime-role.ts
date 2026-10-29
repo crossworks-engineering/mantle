@@ -1,6 +1,5 @@
 /**
- * The runtime role (workspaces arch A9, plan v2 section 4.2): the app's own
- * pools stop logging in as the superuser that runs the migrations.
+ * The runtime role: the app's own pools stop logging in as the superuser that runs the migrations.
  *
  *  - mantle_owner (NOLOGIN) owns the app's tables and sequences, and
  *    mantle_acl_internal() (the marker mantle_owner_role() asks about, 0241
@@ -28,10 +27,9 @@
  *    to the superuser. So the marker that guard reads is out of its reach.
  *  - mantle_system (NOLOGIN) holds no right and owns nothing. The runtime
  *    role may SET ROLE to it (no INHERIT), and it may SET ROLE to the write
- *    role and the gap writer: the checked rerun's switches, which plan v3
- *    S3 deleted from client.ts (TODO(plan v3 S3 part 2, one release later):
- *    drop both SET memberships and the gap writer role). The
- *    write role's own membership tests (0277, 0278) count only a direct
+ *    role and the gap writer, which nothing does now (TODO: drop both SET
+ *    memberships and the gap writer role once no image a box can roll back
+ *    to uses them). The write role's own membership tests (0277, 0278) count only a direct
  *    membership, so the system pool is still "not the write role's login"
  *    there, as it was as the superuser.
  *  - mantle_system_narrow: the narrow system role. Migrate gives it its
@@ -39,12 +37,10 @@
  *    runtime role's is, another label; NOLOGIN in per-database mode or with
  *    no master key), and the narrow route's own pool logs in as it
  *    (narrowDatabaseUrl, gateway/pools.ts), so a narrow session holds no
- *    other role to go back to. BYPASSRLS, owns nothing (the narrow route's text check refuses
- *    the large-object functions that would make it an owner), member of
- *    nothing, and its rights come
- *    from the access matrix (narrowFor): read only on the content tables
- *    (closed in S7d),
- *    read and write on the system and admin tables, nothing where the
+ *    other role to go back to. BYPASSRLS, owns nothing (the narrow route's
+ *    text check refuses the large-object functions that would make it an
+ *    owner), member of nothing, and its rights come from the access matrix
+ *    (narrowFor): read only on the content tables, read and write on the system and admin tables, nothing where the
  *    runtime role has nothing, and EXECUTE on the runtime role's allowlist
  *    less NARROW_DENIED_FUNCTIONS. The runtime role may SET ROLE to it (no
  *    INHERIT), and the superuser may as any role: the narrow route's
@@ -701,8 +697,8 @@ export function dbRoleMode(row: DbRoleRow): DbRoleMode {
 export function dbRoleNote(row: DbRoleRow, switchOn: boolean): string | null {
   const mode = dbRoleMode(row);
   if (mode === 'runtime') return null;
-  // Plan v3.2 S4a: off (unset or 0) is said loudly at every start; the
-  // default stays off so no existing box flips (new installs write 1).
+  // Off (unset or 0) is said loudly at every start; the default stays off
+  // so no existing box flips (new installs write 1).
   const loud = switchOn ? '' : '[db] SECURITY: MANTLE_DB_RUNTIME_ROLE is unset or 0. ';
   if (mode === 'superuser') {
     return (
@@ -753,9 +749,8 @@ export function wantedMemberships(): readonly Membership[] {
     { member: RUNTIME_ROLE, role: SYSTEM_ROLE, inherit: false, set: true },
     { member: RUNTIME_ROLE, role: NARROW_ROLE, inherit: false, set: true },
     { member: SYSTEM_ROLE, role: viewerRoleName('write'), inherit: false, set: true },
-    // TODO(plan v3 S3 part 2, one release later): nothing SETs these two
-    // since S3 (the checked rerun is gone); kept one release so a rollback
-    // to the image before S3 still finds them (rule 2).
+    // TODO: nothing SETs these two; kept so a rollback to an older image
+    // still finds them. Drop them once no such image is in reach.
     { member: SYSTEM_ROLE, role: GAP_WRITER_ROLE, inherit: false, set: true },
   ];
 }
@@ -1358,8 +1353,7 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       // PUBLIC neither, so this changes nothing there.
       await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA ${schemas} FROM PUBLIC`);
       // Nor a sequence (a nextval or setval on an app sequence) nor CREATE
-      // in any schema but the system's own (round 13b, the re-audit's DB
-      // LOW-4): a fresh migrate grants PUBLIC neither on an app schema, so
+      // in any schema but the system's own: a fresh migrate grants PUBLIC neither on an app schema, so
       // this changes nothing there; a hand grant is taken back every run.
       // The roles that need a sequence hold their own grant (the runtime
       // role's, the write role's, the narrow role's measured ones).

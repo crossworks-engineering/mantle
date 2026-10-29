@@ -1,13 +1,13 @@
 /**
- * What the current workspace scope may do to items (workspaces W7a fix
- * round 1, M2): the one edit check of a write to an item made from a tool,
- * in a turn or on MCP, as the item routes ask it since W6a (the session's
- * item write gate): mantle_may_edit for a content change or a link,
- * mantle_may_manage for a delete or a move (an app's link: assertMayLink), a read for a write that only needs to see
- * the item. A read-only snapshot copy (data.snapshot_of) is never edited.
+ * What the current workspace scope may do to items: the one edit check of a
+ * write to an item made from a tool, in a turn or on MCP, as the item routes
+ * ask it (the session's item write gate): mantle_may_edit for a content
+ * change or a link, mantle_may_manage for a delete or a move (an app's
+ * link: assertMayLink), a read for a write that only needs to see the
+ * item. A read-only snapshot copy (data.snapshot_of) is never edited.
  *
  * A login's typed write in a scope runs on the write role in every check
- * mode (plan v3 S3), where the database checks it (gateway/write-route.ts,
+ * mode, where the database checks it (gateway/write-route.ts,
  * the login write gateway), but only as the write runs: the tool asks it
  * here first, in the caller's scope, for a clear answer before any side
  * effect.
@@ -61,9 +61,8 @@ export function itemIdNotCanonicalError(id: string): string {
 /**
  * Why the current scope may not do `need` to the items `ids`, or null when it
  * may (or when no workspace scope is active). An id that Postgres reads as a
- * uuid but is not canonical (no hyphens, braces) is refused, never dropped
- * (W7a fix round 2): the handler would cast it to the row the check never
- * saw. Any other id that is not a uuid is left to the tool's own error.
+ * uuid but is not canonical (no hyphens, braces) is refused, never dropped:
+ * the handler would cast it to the row the check never saw. Any other id that is not a uuid is left to the tool's own error.
  */
 export async function itemWriteRefusal(
   ids: readonly string[],
@@ -84,8 +83,7 @@ export type ItemWriteRefusal = Readonly<{
   copy?: true;
 }>;
 
-/** itemWriteRefusal, with the edit check's detail (A5 step 4 fix round 2:
- *  a /api/v1 route answers the refusal as the database's, by its detail). */
+/** itemWriteRefusal, with the edit check's detail (a /api/v1 route answers the refusal as the database's, by its detail). */
 export async function itemWriteRefusalOf(
   ids: readonly string[],
   need: ItemNeed,
@@ -110,7 +108,7 @@ export async function itemWriteRefusalOf(
 }
 
 /**
- * The item check of a library write (F4 fix rounds 2 and 3): throws unless
+ * The item check of a library write: throws unless
  * the caller's scope may `need` item `id`, as the database's edit check
  * raises it (editCheckRefusalError), so the one mapper answers it: an item
  * the scope does not read the 404, one it reads but may not change the 403
@@ -138,8 +136,8 @@ export async function assertItemRight(
  * for an item with no home (app_table_exports' read and write rule, 0302;
  * the write check's `manage`, 0278): throws the edit check's refusal
  * unless the current scope may, no_read for an item it does not read,
- * no_edit with `message` for one it reads but may not manage (plan v3 S3
- * fix round 3: an export link is asked this before anything is written).
+ * no_edit with `message` for one it reads but may not manage (an export
+ * link is asked this before anything is written).
  * assertItemRight's manage refuses an item with no home in every scope,
  * so it is not this. System work is not checked.
  */
@@ -190,8 +188,8 @@ function verdictOf(
 }
 
 /**
- * The item check of a write whose items the BODY names (F4 fix round 2: a
- * bulk delete), one verdict per id, as itemWriteRefusalOf asks it for one:
+ * The item check of a write whose items the BODY names (a bulk delete), one
+ * verdict per id, as itemWriteRefusalOf asks it for one:
  * 'ok', 'no_read' (the scope does not read it, or no row has the id: one
  * answer, so the two cannot be told apart) or 'no_edit' (it reads it but
  * may not make the write; a read-only copy's edit too). An id that is not a
@@ -224,7 +222,7 @@ export async function itemWriteVerdicts(
 
 /**
  * Which of `paths` the current scope reads as a folder of `ownerId`'s brain
- * (the queue-time create check, A5 step 6a fix round 1, M1). Asked in the
+ * (the queue-time create check). Asked in the
  * scope, as the rest of this module: a folder it does not read is not
  * returned, whether it exists or not.
  */

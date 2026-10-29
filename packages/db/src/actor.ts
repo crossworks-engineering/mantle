@@ -18,7 +18,7 @@
  *
  * A statement with no actor is a miss (actor_check_misses), in TypeScript
  * here and in SQL (the item tables' write triggers). In warn it only logs;
- * in on it is refused (A2b): ActorMissingError here, 42501 no_actor in SQL
+ * in on it is refused: ActorMissingError here, 42501 no_actor in SQL
  * (migration 0277).
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -59,10 +59,9 @@ export function systemActor(reason: string): Actor {
 /**
  * system(reason) for work done on behalf of `outer` (the caller's actor):
  * read only when the caller is a read-only caller from outside, so leaving
- * the caller's scope never turns one into a writer (arch A2a fix round,
- * M1). Those callers are login(ro) (a read key, a peer with Write off), a
- * public link and a contact share without can_write (A2b, the A2a audit's
- * note). An assistant with no user still does its own system work (its
+ * the caller's scope never turns one into a writer. Those callers are
+ * login(ro) (a read key, a peer with Write off), a public link and a
+ * contact share without can_write. An assistant with no user still does its own system work (its
  * traces, its turn's rows), as a peer(share) does its audit row: they keep
  * write mode rw here. A named repair or backfill does not use this: it
  * writes for any caller (runReadPathWrite, plan 20.3 item 8).
@@ -124,7 +123,7 @@ export function actorSetting(actor: Actor): string {
 
 /** What a binding returns: a thenable `fn` result comes back as the
  *  promise started inside the binding (startedInside), anything else as
- *  it is (fix round, L5). */
+ *  it is. */
 export type Bound<T> = T extends PromiseLike<infer U> ? Promise<U> : T;
 
 const actorStore = new AsyncLocalStorage<Actor>();
@@ -338,8 +337,7 @@ export function noteActorMiss(miss: ActorMiss): void {
   missLogger?.(miss);
 }
 
-/** A statement with no actor bound, refused because the check is on (A2b,
- *  plan 4.2 "Fail closed"). */
+/** A statement with no actor bound, refused because the check is on. */
 export class ActorMissingError extends RuntimeFaultError {
   readonly code = 'actor-missing';
   constructor(what: string) {
@@ -350,7 +348,7 @@ export class ActorMissingError extends RuntimeFaultError {
 
 /** The TypeScript check: a statement about to be sent with no actor bound
  *  is a miss. Off: nothing. Warn: logged. On: logged and refused
- *  (ActorMissingError, A2b), the same three steps as the SQL check. Until
+ *  (ActorMissingError), the same three steps as the SQL check. Until
  *  the pool's first mode read lands the mode is MANTLE_ACTOR_CHECK alone
  *  (the startup race; the SQL check reads the box itself). `what` names
  *  the handle (db.insert, withSystemTx…). Returns the actor, or null. */
@@ -378,9 +376,9 @@ function withoutOwnFrames(stack: string): string {
     .join('\n');
 }
 
-/** Write-role gaps seen in tests (gateway/role-tx.ts noteWriteRoleDenial, arch
- *  A2b2b): a right the write role does not hold, what was denied.
- *  vitest.setup.ts fails a test on any (plan v3 S3: no gap table is left). */
+/** Write-role gaps seen in tests (gateway/role-tx.ts noteWriteRoleDenial): a
+ *  right the write role does not hold, what was denied. vitest.setup.ts
+ *  fails a test on any. */
 const writeRoleGaps: string[] = [];
 
 /** Tests only (gateway/role-tx.ts): note a write-role gap. */
@@ -459,14 +457,14 @@ export function onPgNotice(notice: { message?: string; severity?: string }): voi
   console.log(notice);
 }
 
-// ── Writes inside read paths (plan 4.4) ─────────────────────────────────────
+// ── Writes inside read paths ────────────────────────────────────────────────
 
 /**
  * Every write that runs inside a read request or a read tool, named and
- * pinned (arch A2a; the route sweep pins where each runs:
+ * pinned (the route sweep pins where each runs:
  * REQUEST_SCOPE_SYSTEM_WRITES in server/web/server/w6a-route-sweep.db.test.ts).
  * Each runs as system(<name>), so it writes (write mode rw) even for a
- * read-only key (20.3 item 8). The goal is to move each to a worker; the
+ * read-only key. The goal is to move each to a worker; the
  * scoreboard counts them (readPathWrites) and the count only goes down.
  */
 export const READ_PATH_WRITES = {
