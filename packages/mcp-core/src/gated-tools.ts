@@ -363,7 +363,7 @@ export function registerGatedTool(
       });
     }
   };
-    // The hints a client reads (tool-annotations.ts): advisory, the gate
+  // The hints a client reads (tool-annotations.ts): advisory, the gate
   // above decides what runs.
   const annotations = toolAnnotations(entry, policy);
   server.registerTool(
