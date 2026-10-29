@@ -106,7 +106,8 @@ export function typedWrite(prop: 'insert' | 'update' | 'delete', gateway: boolea
  * decides whether a check refuses or reports, never the pool; it rides in
  * the SET as mantle.actor_check):
  *  - this process opened it (openLoginWritePool: web, api, the runs
- *    worker and the stdio MCP server);
+ *    worker, the Telegram poller and the stdio MCP server; every process
+ *    entry that binds a login opens it, eslint-rules/process-entries.test.ts);
  *  - the actor is a login, an assistant, a link or a contact;
  *  - the write carries a scope its reads use too (requestWriteScope: a
  *    login's mutating request scope, an Admin user's too, an Admin

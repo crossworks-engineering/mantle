@@ -128,6 +128,34 @@ describe('the process inventory (docs/process-inventory.md)', () => {
     }
   });
 
+  it('every entry that binds a login runs in a process that opens the login write pool', () => {
+    // A process that never calls openLoginWritePool sends a login's scoped
+    // writes to the system pool (gateway/write-route.ts loginWriteRoute).
+    // The process of an entry: a worker file is its own process, any other
+    // file of a server its server's main file; a package file runs in its
+    // caller's process.
+    const processOf = (f: string): string | null => {
+      if (/^server\/web\/workers\/[^_/][^/]*\.ts$/.test(f)) return f;
+      if (f.startsWith('server/web/')) return 'server/web/server/main.ts';
+      if (f.startsWith('server/api/')) return 'server/api/src/main.ts';
+      if (f.startsWith('server/mcp/')) return 'server/mcp/src/server.ts';
+      return null;
+    };
+    const doc = readFileSync(join(ROOT, INVENTORY), 'utf8');
+    const block = /```entries\n([\s\S]*?)```/.exec(doc)![1]!;
+    const closed: string[] = [];
+    for (const line of block.split('\n').map((l) => l.trim())) {
+      if (!line || line.startsWith('#')) continue;
+      const [, file, ...rest] = line.split(/\s+/);
+      const actor = rest.join(' ');
+      if (!/\blogin\b/.test(actor) || actor.startsWith('defines the helper')) continue;
+      const main = processOf(file!);
+      const code = main === null ? null : read(main);
+      if (code === null || !/\bopenLoginWritePool\(/.test(codeOf(code))) closed.push(line);
+    }
+    expect(closed).toEqual([]);
+  });
+
   it('every DBOS workflow registers through registerActorWorkflow', () => {
     // The API boot binds no actor, so a workflow registered straight on DBOS
     // would run with none. Only the helper itself registers directly, and
