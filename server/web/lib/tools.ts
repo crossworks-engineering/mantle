@@ -5,7 +5,7 @@
  * routes. Kept as a module so existing `@/lib/tools` imports stand.
  */
 
-import { SECRET_REFS_NEED_KEYS, vaultPairLoginRefusal } from '@mantle/tools';
+import { SECRET_REFS_NEED_KEYS, VAULT_PAIR_NEEDS_KEYS } from '@mantle/tools';
 import { adminFacts } from '@/lib/auth/login';
 import { ownerUserLogin, type SessionUser } from '@/lib/auth/session';
 
@@ -19,29 +19,35 @@ export function toolMakerFor(user: { id: string; actor: { id: string } }): strin
 }
 
 /**
+ * Whether the signed-in login holds the keys area: the brain owner always
+ * does; any other login as its scope answers it (adminFacts of the owner
+ * the handler read, ownerUserLogin; a user no owner answer gave holds none).
+ */
+async function callerHoldsKeys(user: SessionUser): Promise<boolean> {
+  if (!toolMakerFor(user)) return true;
+  const login = ownerUserLogin(user);
+  return !!login && (await adminFacts(login)).areas.has('keys');
+}
+
+/**
  * Why the signed-in login may not write a template that sends a vault key
  * (a {{secret:...}} or {{oauth:...}} ref, or an OAuth2 group's token URL or
  * base URL), or null: that is the keys area's (@mantle/tools
- * secret-ref-gate.ts), as the login's scope answers it (adminFacts of the
- * owner the handler read, ownerUserLogin). The brain owner always may.
+ * secret-ref-gate.ts). The brain owner always may.
  */
 export async function keysAreaRefusal(user: SessionUser): Promise<string | null> {
-  if (!toolMakerFor(user)) return null;
-  const login = ownerUserLogin(user);
-  return login && (await adminFacts(login)).areas.has('keys') ? null : SECRET_REFS_NEED_KEYS;
+  return (await callerHoldsKeys(user)) ? null : SECRET_REFS_NEED_KEYS;
 }
 
 /**
  * Why the signed-in login may not pair a vault key with a host (a key id
  * with a model route's base URL, a {{secret:...}} ref with a URL), or null:
  * that is the keys area's, and the anchor login always may (@mantle/tools
- * secret-ref-gate.ts).
+ * secret-ref-gate.ts). The caller's own area, asked as keysAreaRefusal asks
+ * it; a pairing recorded for another login is vaultPairLoginRefusal's.
  */
-export async function vaultPairRefusalFor(user: {
-  id: string;
-  actor: { id: string };
-}): Promise<string | null> {
-  return vaultPairLoginRefusal(toolMakerFor(user));
+export async function vaultPairRefusalFor(user: SessionUser): Promise<string | null> {
+  return (await callerHoldsKeys(user)) ? null : VAULT_PAIR_NEEDS_KEYS;
 }
 
 export {

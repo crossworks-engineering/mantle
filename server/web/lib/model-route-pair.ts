@@ -15,6 +15,7 @@
  * time the key resolves only while that login holds the keys area.
  */
 import { vaultPairingChanged, type VaultPairing } from '@mantle/tools';
+import type { SessionUser } from '@/lib/auth/session';
 import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 
 type Row = Record<string, unknown>;
@@ -92,7 +93,7 @@ export function modelRoutesRepaired(
 
 /** Why the signed-in login may not write `patch` over `before`, or null. */
 export async function modelRoutesRefusal(
-  user: { id: string; actor: { id: string } },
+  user: SessionUser,
   before: Row | null,
   patch: Row,
   routes: readonly RouteFields[],
