@@ -249,7 +249,7 @@ m247 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m248 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m249 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 10303
+# cells whose guard entry moved to the pipeline: 10327
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -2654,6 +2654,20 @@ first POST /api/keys/test member-cookie=m24
 first POST /api/keys/test admin-bearer=m38
 first POST /api/keys/test member-bearer=m26
 first POST /api/keys/test revoked-bearer=m27
+first GET /api/mcp-calls owner-cookie=m21
+first GET /api/mcp-calls admin-cookie=m22
+first GET /api/mcp-calls limited-cookie=m23
+first GET /api/mcp-calls member-cookie=m49
+first GET /api/mcp-calls admin-bearer=m25
+first GET /api/mcp-calls member-bearer=m50
+first GET /api/mcp-calls revoked-bearer=m27
+first HEAD /api/mcp-calls owner-cookie=m28
+first HEAD /api/mcp-calls admin-cookie=m29
+first HEAD /api/mcp-calls limited-cookie=m30
+first HEAD /api/mcp-calls member-cookie=m58
+first HEAD /api/mcp-calls admin-bearer=m32
+first HEAD /api/mcp-calls member-bearer=m59
+first HEAD /api/mcp-calls revoked-bearer=m34
 first DELETE /api/mcp-clients/:id owner-cookie=m35
 first DELETE /api/mcp-clients/:id admin-cookie=m36
 first DELETE /api/mcp-clients/:id limited-cookie=m43
@@ -8043,6 +8057,16 @@ more POST /api/keys/test bumped-cookie=m27
 more POST /api/keys/test gone-cookie=m27
 more POST /api/keys/test rotated-bearer=m27
 more POST /api/keys/test expired-bearer=m27
+more GET /api/mcp-calls disabled-cookie=m27
+more GET /api/mcp-calls bumped-cookie=m27
+more GET /api/mcp-calls gone-cookie=m27
+more GET /api/mcp-calls rotated-bearer=m27
+more GET /api/mcp-calls expired-bearer=m27
+more HEAD /api/mcp-calls disabled-cookie=m34
+more HEAD /api/mcp-calls bumped-cookie=m34
+more HEAD /api/mcp-calls gone-cookie=m34
+more HEAD /api/mcp-calls rotated-bearer=m34
+more HEAD /api/mcp-calls expired-bearer=m34
 more DELETE /api/mcp-clients/:id disabled-cookie=m27
 more DELETE /api/mcp-clients/:id bumped-cookie=m27
 more DELETE /api/mcp-clients/:id gone-cookie=m27
