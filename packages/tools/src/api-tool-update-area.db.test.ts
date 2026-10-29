@@ -159,7 +159,11 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
             inputSchema: {},
           } as unknown as Tool,
           { slug: secretSlug, description: 'a new description' },
-          { ownerId: anchor, surface: { kind: 'web', loginId: admin } },
+          {
+            ownerId: anchor,
+            surface: { kind: 'web', loginId: admin },
+            caller: callers.turnCaller(),
+          },
         ),
       { writes: true },
     );
