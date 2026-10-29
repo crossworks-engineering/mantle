@@ -46,6 +46,7 @@ vi.mock('../../db/src/gateway/handles', async (importOriginal) => {
 vi.mock('../../db/src/gateway/scope-answers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../db/src/gateway/scope-answers')>()),
   scopeHoldsAdmin: async () => h.holdsAdmin,
+  adminOrSystemScope: async () => h.holdsAdmin,
   scopeHasArea: async () => h.holdsAdmin,
 }));
 vi.mock('../../db/src/gateway/scope', async (importOriginal) => {
@@ -56,10 +57,6 @@ vi.mock('../../db/src/gateway/scope', async (importOriginal) => {
     withTurnScope: (scope: never, fn: () => Promise<unknown>) => viewer.runInViewerScope(scope, fn),
   };
 });
-vi.mock('../../db/src/gateway/scope-answers', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  adminOrSystemScope: async () => h.holdsAdmin,
-}));
 vi.mock('../../db/src/create-home', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   createHomeIntent: async () => ({ createWs: null, privateWs: null }),

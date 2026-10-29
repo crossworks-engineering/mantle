@@ -164,6 +164,10 @@ vi.mock('../../db/src/gateway/scope-answers', async (importOriginal) => {
       const login = scopeLogin();
       return login === null ? true : st.admin.get(login) === true;
     },
+    adminOrSystemScope: async () => {
+      const login = scopeLogin();
+      return login === null ? true : st.admin.get(login) === true;
+    },
     scopeHasArea: async (area: string) => {
       const login = scopeLogin();
       if (login === null) return true;

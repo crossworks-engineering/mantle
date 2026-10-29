@@ -31,6 +31,8 @@ vi.mock('../../../db/src/viewer', async (importOriginal) => {
 vi.mock('../../../db/src/gateway/scope-answers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../db/src/gateway/scope-answers')>()),
   scopeHoldsAdmin: async () => h.view.holdsAdmin,
+  adminOrSystemScope: async () =>
+    !(await import('../../../db/src/viewer')).currentWorkspaceScope() || h.view.holdsAdmin,
   scopeHasArea: async (a: string) => h.view.holdsAdmin && h.view.areas.has(a),
 }));
 vi.mock('@mantle/tracing', async (importOriginal) => ({

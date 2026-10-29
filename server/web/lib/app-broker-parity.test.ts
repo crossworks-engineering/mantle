@@ -109,6 +109,7 @@ vi.mock('../../../packages/db/src/viewer', async (importOriginal) => {
 vi.mock('../../../packages/db/src/gateway/scope-answers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../packages/db/src/gateway/scope-answers')>()),
   scopeHoldsAdmin: async () => !!h.scope?.ws.includes(ADMIN_WS),
+  adminOrSystemScope: async () => !h.scope || h.scope.ws.includes(ADMIN_WS),
   scopeHasArea: async (a: string) => !!h.scope?.ws.includes(ADMIN_WS) && AREAS.includes(a),
   loginHasArea: async (_l: string, a: string) => AREAS.includes(a),
 }));

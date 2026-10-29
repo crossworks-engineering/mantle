@@ -48,6 +48,7 @@ vi.mock('../../../../packages/db/src/viewer', async (importOriginal) => ({
 vi.mock('../../../../packages/db/src/gateway/scope-answers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../packages/db/src/gateway/scope-answers')>()),
   scopeHoldsAdmin: async () => h.view.holdsAdmin,
+  adminOrSystemScope: async () => !h.scope || h.view.holdsAdmin,
   scopeHasArea: async (a: string) => h.view.holdsAdmin && h.view.areas.has(a),
   // No database: every Moderator seat a turn holds is held still (A8 L5).
   moderatorSeatsNow: async (_l: string, ws: readonly string[]) => [...ws],
