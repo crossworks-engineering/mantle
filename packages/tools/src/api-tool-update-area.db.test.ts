@@ -145,20 +145,24 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     expect(refused?.name).toBe('SystemWorkRequiredError');
     expect(refused?.message).toMatch(/public\.tools/);
   });
-  it('an Admin user updates a tool that names a vault key: the vault is read in the area, not refused', async () => {
-    const res = await m.runInRequestSlot(async () => {
-      const scope = await m.loginScopeFor(admin);
-      expect(m.enterRequestScope(scope, { writes: true, drafts: false })).toBe(true);
-      return dispatch.dispatchTool(
-        {
-          slug: 'api_tool_update',
-          handler: { kind: 'builtin', ref: 'api_tool_update' },
-          inputSchema: {},
-        } as unknown as Tool,
-        { slug: secretSlug, description: 'a new description' },
-        { ownerId: anchor, surface: { kind: 'web' }, caller: callers.ownerWebCaller() },
-      );
-    });
+  it('an Admin user updates a tool that names a vault key in a turn (an MCP call): the vault is read in the area, not refused', async () => {
+    // A turn runs its reads on the scoped role, which may not read the
+    // key vault; the update's vault check is the connectors area's.
+    const scope = await m.loginScopeFor(admin);
+    const res = await m.withTurnScope(
+      scope,
+      () =>
+        dispatch.dispatchTool(
+          {
+            slug: 'api_tool_update',
+            handler: { kind: 'builtin', ref: 'api_tool_update' },
+            inputSchema: {},
+          } as unknown as Tool,
+          { slug: secretSlug, description: 'a new description' },
+          { ownerId: anchor, surface: { kind: 'web', loginId: admin } },
+        ),
+      { writes: true },
+    );
     expect(res.ok, res.ok ? '' : String(res.error)).toBe(true);
     const [row] = await su!<{ description: string }[]>`
       select description from tools where owner_id = ${anchor} and slug = ${secretSlug}`;
