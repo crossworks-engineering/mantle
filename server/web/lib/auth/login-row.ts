@@ -53,7 +53,7 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
       // Membership of Admin with the same read: the bound id, as the
       // scope columns take it.
       adminMember: loginIsAdmin(id),
-      // The login's workspaces with the same read (W6a fix round 1): the
+      // The login's workspaces with the same read: the
       // request's scope, so the guard looks nothing up twice.
       ...loginScopeColumns(id, authUsers.disabledAt),
     })

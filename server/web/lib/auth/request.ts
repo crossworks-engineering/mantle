@@ -1,10 +1,9 @@
 /**
  * Reading credentials off a raw Request — the parsing half of lib/auth.
  *
- * Pure string work: no crypto, no DB, no request context. These used to be
- * re-implemented per gate, and the copies had drifted (one tolerated multiple
- * spaces after `Bearer`, two did not), so the surfaces disagreed about what
- * counted as presenting a credential at all.
+ * Pure string work: no crypto, no DB, no request context. Every gate parses
+ * with these, so the surfaces agree on what counts as presenting a credential
+ * at all (per-gate copies drift, e.g. on extra spaces after `Bearer`).
  */
 
 /**

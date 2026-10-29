@@ -1,6 +1,6 @@
 /**
  * The web process after a first owner whose brain is not on workspaces
- * (arch A7, first-owner.ts): it is never served. Its own file, with no
+ * (first-owner.ts): it is never served. Its own file, with no
  * database import: the timer below is a deadline before the process stops,
  * not a loop (eslint-rules/process-entries.test.ts).
  */

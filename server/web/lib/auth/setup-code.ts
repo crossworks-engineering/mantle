@@ -7,8 +7,8 @@
  * cross-site guard passes it, and a box on a public domain would belong to
  * whoever got there first. scripts/install.sh generates MANTLE_SETUP_CODE into
  * .env (never rotated) and prints it; signup asks for it until the first
- * account exists. Unset (local dev, tests, a box installed before the code
- * existed) means no code is asked for, the behaviour before it.
+ * account exists. Unset (local dev, tests, a box whose install made no code)
+ * means no code is asked for.
  *
  * Only the web service receives the variable, and only these booleans and the
  * compare ever touch it.

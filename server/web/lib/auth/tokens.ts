@@ -32,16 +32,16 @@ import {
 } from '@mantle/crypto';
 
 // The signing spine (secret, derivedSecret, signClaims, verifySigned, the
-// base64url helpers) lives in @mantle/crypto signed-claims.ts since the
-// documents engine: a package mints the render cookie for a print, and the
-// verifiers here must read the same bytes. Re-exported for the callers that
-// imported derivedSecret from this module.
+// base64url helpers) lives in @mantle/crypto signed-claims.ts: a package (the
+// documents engine) mints the render cookie for a print, and the verifiers
+// here must read the same bytes. Re-exported for the callers that import
+// derivedSecret from this module.
 export { derivedSecret };
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
-/** The `ep` claim: absent is epoch 0 (a value minted before 0181); anything
- *  but a non-negative integer makes the value invalid (null). */
+/** The `ep` claim: absent is epoch 0; anything but a non-negative integer
+ *  makes the value invalid (null). */
 function epochClaim(claims: SignedClaims): number | null {
   const ep = claims.ep;
   if (ep === undefined) return 0;
@@ -95,11 +95,10 @@ export function verifySessionCookie(
 
 // ── Render cookies (`k:'r'`) ────────────────────────────────────────────────
 // What the browser sidecar carries when it loads a render surface for an
-// export (lib/render-sandbox.ts). It used to be a full kindless session cookie
-// for the anchor, sent as an extra header on EVERY request the page made, so an
-// external image in a printed page handed the anchor's session to that host
-// (audit F01). Now it is its own kind, minted for the ACTING login, set as a
-// cookie on the print origin only, and the gate accepts it for the render
+// export (lib/render-sandbox.ts). It is its own kind, minted for the ACTING
+// login, set as a cookie on the print origin only: never a session value sent
+// as a header on every request the page makes, which would hand the session
+// to the host of any external image in a printed page. The gate accepts it for the render
 // surfaces and the byte routes they load, GET only (the ROUTE_POLICY rows'
 // `renderCookie`, lib/auth/route-policy.ts). The session, asset and bearer verifiers all reject
 // kind 'r', so it is never a session. `n` binds the page it opens: a render
@@ -200,8 +199,7 @@ export function mobileTokenJti(token: string): string | null {
 // paths exclusively, and the session verifier rejects any kinded token.
 
 const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
-/** A member login's asset token (client logins audit B23, W7e fix round 1,
- *  L3): 10 minutes. The shell re-mints it every 60 s, so a live app never
+/** A member login's asset token: 10 minutes. The shell re-mints it every 60 s, so a live app never
  *  sees it expire, while a download URL left in a shared browser's history
  *  dies soon after the login leaves. */
 export const SHORT_ASSET_TOKEN_TTL_SECONDS = 10 * 60;
@@ -246,16 +244,15 @@ export function verifyAssetToken(token: string): { uid: string; act?: string; ep
 }
 
 // ── Team-visitor cookies (`k:'t'`): retired ──────────────────────────────────
-// The share-scoped visitor cookie (`mantle_team`) a team-code holder got at a
-// team link's token prompt went with team links in member logins Phase 6
-// stage 6. Nothing mints or accepts kind 't' any more; the kind stays
-// reserved so an old value can never be read as something else.
+// The share-scoped visitor cookie (`mantle_team`) of the retired team links.
+// Nothing mints or accepts kind 't'; the kind stays reserved so an old value
+// can never be read as something else.
 
 // ── Team-chat cookies (`k:'c'`): retired ─────────────────────────────────────
-// The brain-level team-chat credential (the `mantle_team_chat` cookie, and the
-// same value as a bearer) went with /team, /hub and /api/team/* in member
-// logins Phase 6. Nothing mints or accepts kind 'c' any more; the kind stays
-// reserved so an old value can never be read as something else.
+// The team-chat credential (the `mantle_team_chat` cookie, and the same value
+// as a bearer) of the retired /team, /hub and /api/team/*. Nothing mints or
+// accepts kind 'c'; the kind stays reserved so an old value can never be read
+// as something else.
 
 // ── Contact visitor values (`k:'v'`) ─────────────────────────────────────────
 // Set after a contact types their code at a contact share's prompt (contact
@@ -336,15 +333,14 @@ export function verifyContactVisitorValue(value: string): ContactVisitorClaims |
 
 const APP_FRAME_TICKET_TTL_SECONDS = 120;
 /** A canvas ticket lives shorter: it opens one navigation the parent makes
- *  at once, and the canvas can read its own URL, ticket included (the
- *  canvas audit, 2026-10-24). */
+ *  at once, and the canvas can read its own URL, ticket included. */
 const CANVAS_FRAME_TICKET_TTL_SECONDS = 30;
 
 /** Mint an app-frame ticket. `shareId` set ⇒ share surface (published build
  *  only); `loginId` set ⇒ member surface (a member login, published build
  *  only, /api/member/apps/:id/frame); `loginId` AND `clientEpoch` set ⇒
  *  client surface (a client login, published build only,
- *  /api/client/apps/:id/frame, client logins C6); none ⇒ owner surface
+ *  /api/client/apps/:id/frame); none ⇒ owner surface
  *  (`uid` = the owner, draft build allowed). `loginId` lets the member and
  *  client frame routes re-check the login's liveness: a removed member loses
  *  access at once, not at ticket expiry. `clientEpoch` is the client login's
@@ -405,7 +401,7 @@ export type AppFrameTicket = {
   /** A member login's ticket: only the member frame route may accept it.
    *  Also set on a client's ticket (with `clientEpoch`). */
   loginId?: string;
-  /** A CLIENT login's ticket (client logins C6): the login's session epoch
+  /** A CLIENT login's ticket: the login's session epoch
    *  at mint time. Only the client frame route accepts it; the member frame
    *  refuses a ticket that carries it. */
   clientEpoch?: number;
@@ -442,7 +438,7 @@ export function verifyAppFrameTicket(
     out.reviewTest = true;
   }
   // A contact share's ticket carries both `cid` and `ce`. A `cid` alone (a
-  // team visitor's, retired with team links) is ignored, as before.
+  // team visitor's, retired with team links) is ignored.
   if (
     out.shareId &&
     typeof claims.cid === 'string' &&
@@ -502,15 +498,15 @@ export function verifyCanvasFrameTicket(value: string): AppFrameTicket | null {
 
 // ── App tool confirmations ───────────────────────────────────────────────────
 //
-// An owner's app may call a tool that needs the owner's confirmation (apps
-// audit S1, Jason 2026-10-02: ask in the app, do not refuse). The owner tool
+// An owner's app may call a tool that needs the owner's confirmation: the
+// app asks the owner, the call is not refused. The owner tool
 // broker answers such a call with this ticket instead of running it; the
 // HOST page (never the sandboxed app, which only sees the final answer)
 // shows the owner what will run and, on Yes, sends the same call again with
 // the ticket. It names the owner, the admin login, the app, the tool and a
 // hash of the exact input, and lives five minutes: it confirms one call, as
-// the owner saw it, and nothing else. It is used ONCE (apps audit 2026-10-02,
-// low): each carries a random id, and a verified one is spent in this
+// the owner saw it, and nothing else. It is used ONCE: each carries a random
+// id, and a verified one is spent in this
 // process. The host page alone ever holds it, and it asks again for the
 // next call.
 

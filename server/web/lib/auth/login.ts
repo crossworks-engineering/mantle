@@ -1,5 +1,5 @@
 /**
- * The login (plan v3.2 section 2.2): who a request's credential is, and
+ * The login: who a request's credential is, and
  * nothing it may do. It carries no role and no kind; whether it is an
  * Admin user, and which Admin areas it holds, is adminFacts(login), asked
  * of its scope.

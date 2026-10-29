@@ -1,10 +1,9 @@
 /**
  * Shared preflight for the unauthenticated credential-exchange endpoints:
  * the origin checks of the SSO handoff (`/api/auth/sso`) and the login-CSRF
- * refusal of the public auth posts. (The team-code `/api/team/auth` and
- * `/api/team/sso` were retired in member logins Phase 6.)
+ * refusal of the public auth posts.
  *
- * Their throttles are rows' limits now (A10 #8): each its own named limit
+ * Their throttles are rows' limits: each its own named limit
  * (lib/route-limits.ts RATE_LIMITS), taken by the gate before the handler
  * and answered with the one 429. The cross-site refusal is the gate's too,
  * on the rows that name it (a declaration's `limits.crossSite`), before any limit.
@@ -49,7 +48,7 @@ function isJsonContentType(req: Request): boolean {
 
 /**
  * Login-CSRF guard for the public /api/auth POSTs that take a JSON body and
- * set or use the session cookie (client logins audit B15): login, signup,
+ * set or use the session cookie: login, signup,
  * invite/accept, change-password, the contact code (/s/:token/code), and
  * sign-out by its origin. The gate calls it for the rows that name it
  * (a declaration's `limits.crossSite`), first, before any limiter

@@ -1,9 +1,7 @@
 /**
- * The two answers the item write gate gave (session.ts itemWriteGate, until
- * plan v3.2 S11b took it out), byte for byte, for the handlers that ask its
- * question themselves since the gate's share and deleted-app pre-checks
- * went (plan v3.2 S6 c2: /api/shares/:id, /api/apps/deleted/:id). One text
- * for both, so the answers cannot drift.
+ * The two answers of an item write check, for the handlers that ask it
+ * themselves (/api/shares/:id, /api/apps/deleted/:id). One text for both,
+ * so the answers cannot drift.
  */
 import { sql } from 'drizzle-orm';
 import { db, mayEditSql, mayManageSql } from '@mantle/db';
@@ -33,9 +31,8 @@ export function itemRefused(readOnlyCopy: boolean): NextResponse {
 }
 
 /**
- * A share's link check, asked in the login's scope (the request's, entered
- * by the guard): the gate's answer of a write to /api/shares/:id before
- * part c2. A share is a link: changing or closing it needs edit of its
+ * A share's link check for a write to /api/shares/:id, asked in the login's
+ * scope (the request's, entered by the guard). A share is a link: changing or closing it needs edit of its
  * item, manage for an app's (assertMayLink asks it again, link-serve.ts).
  * A share the scope does not read (none by this id, or its item hidden:
  * the scope reads no link of an item it does not read, 0265) is the one

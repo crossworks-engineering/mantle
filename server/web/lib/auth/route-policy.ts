@@ -1,5 +1,5 @@
 /**
- * ROUTE_POLICY (workspaces arch plan v2, section 7; A4 step 1): one row per
+ * ROUTE_POLICY: one row per
  * route of the manifest and method, the one place the HTTP pipeline reads
  * what a route is. The route loader builds the rows once, when it
  * registers a route; the gate middleware finds the row of a request once,
@@ -9,14 +9,12 @@
  * read the row (currentRoute()).
  *
  * A row's policy is its route file's declaration (`policy = routePolicy({
- * ... })`, route-declaration.ts; plan v3.2 S9): its class, area, who it
+ * ... })`, route-declaration.ts): its class, area, who it
  * opens to, an effect exception, what it creates, the item a write names,
  * its own audit, the named caller it reads, its key area on /api/v1, its
  * limits and an /api/v1 alias's base, read into the manifest by the
- * generator and checked at boot (declaredFacts). The route lists the rows
- * were folded from (route-scope.ts, any-login-routes.ts, member-routes.ts,
- * the key table, ROUTE_GATES and the named rows here) are gone (S9 part
- * 3); the rows are held to __snapshots__/route-policy.rows.json.
+ * generator and checked at boot (declaredFacts). The rows are held to
+ * __snapshots__/route-policy.rows.json.
  *
  * The pages of server/pages (the /s page, class 'link'; the render
  * surfaces, class 'render') have no route file: the loader registers them
@@ -68,7 +66,7 @@ export type PageClass = 'link' | 'render';
  * is the only credential): the app brokers, plus the view/rows pair. They
  * get the same CORS treatment as /api/** and ONLY they: the /s/<token> page
  * and the other sub-paths (a/, evaluate, draw, frame, code) are same-origin
- * surfaces with no CORS headers at all. Was the gate's SHARE_BROKER_RE.
+ * surfaces with no CORS headers at all.
  */
 const LINK_CORS_PATTERNS: ReadonlySet<string> = new Set([
   '/s/:token/bundle',
@@ -86,7 +84,7 @@ export function linkCors(pattern: string): boolean {
   return LINK_CORS_PATTERNS.has(pattern);
 }
 
-/** The class of a route (plan 7). */
+/** The class of a route. */
 export type RoutePolicyClass = 'public' | 'link' | 'render' | 'self' | 'area' | 'content';
 
 /** Whom a route opens to beyond Admin (a declaration's `open`): the owner
@@ -101,23 +99,21 @@ export type RouteLogins = 'owner' | 'any' | 'chat' | 'telegram' | 'member';
  *  'member': the member guard's (getMemberOr401), on the member list;
  *  'login': the any-login guard's (getLoginOr401), on the any-login list;
  *  'chat': the chat guard's (getChatLoginOr401), on the chat and Telegram
- *  lists (A4 step 3b part 5); 'session': the session user's
- *  (getSessionUser: any Admin user, or null, never a refusal), on the rows
- *  open to every Admin user (a declared `caller: 'session'`, A4 hand
- *  batch A).
+ *  lists; 'session': the session user's (getSessionUser: any Admin user,
+ *  or null, never a refusal), on the rows open to every Admin user (a
+ *  declared `caller: 'session'`).
  *
- *  A4 hand batch B:
+ *  And the kinds each read only on rows named for them:
  *  - the asset answers, on the byte routes a browser-native src opens
  *    (a `?at=` asset token, the render cookie): 'ownerAsset'
  *    (getOwnerForAsset) and 'readerAsset' (getReaderForAsset) on owner rows,
  *    and 'loginAsset' (getLoginForAsset: any login, by its session or its
- *    own `?at=` token) on the any-login photo rows (plan page d8954876
- *    section 23);
+ *    own `?at=` token) on the any-login photo rows;
  *  - 'frame': the `?t=` frame ticket of a sandbox frame document, verified
  *    (a declared `caller: 'frame'`), no login and never a refusal;
  *  - the answers taken at the read (ANSWERED_AT_READ): the gate binds the
- *    kind's answer and the handler's first read runs it, once, where the
- *    handler read its guard before, so what the handler does first (a public
+ *    kind's answer and the handler's first read runs it, once, so what the
+ *    handler does first (a public
  *    row's own checks, an /api/v1 key rule) still comes first: 'publicLogin'
  *    (getLoginOr401) and 'cookieUpgrade' (getCookieUpgradeLoginOr401) on a
  *    public row that reads the login, which never refuse (a public row
@@ -139,7 +135,7 @@ export type RouteCaller =
   | 'ownerAtRead';
 
 /** The caller kinds whose answer the gate binds and the handler's first
- *  read runs (A4 hand batch B): the handler runs code that answers before
+ *  read runs: the handler runs code that answers before
  *  it reads (a public row's checks, an /api/v1 key rule), and that order
  *  stays. Every other kind is answered before the handler. */
 export const ANSWERED_AT_READ: ReadonlySet<RouteCaller> = new Set([
@@ -150,7 +146,7 @@ export const ANSWERED_AT_READ: ReadonlySet<RouteCaller> = new Set([
 
 /**
  * The caller kinds the gate's step 5 (the Admin step) answers an area row
- * for (S9 part 2, the guard's area check folded into the gate): the owner
+ * for (the area check is the gate's, not a guard's): the owner
  * guard and its asset form, each with the Admin view of the row's area of
  * the login it answers as (session.ts resolveHttpLogin; on an asset row
  * the login an `?at=` token or the render cookie names). An area row that
@@ -207,13 +203,13 @@ const ASSET_CALLERS: ReadonlySet<RouteCaller> = new Set([
 ]);
 
 /** The /api/v1 rows that run an asset row's handler: the alias of the file
- *  bytes and the download wrapper (A4 hand batch B). */
+ *  bytes and the download wrapper. */
 const ASSET_V1_PATTERNS: ReadonlySet<string> = new Set([
   '/api/v1/files/:id',
   '/api/v1/files/:id/download',
 ]);
 
-/** Whether a row is an asset row (A4 hand batch B fix round 1, M2): a GET,
+/** Whether a row is an asset row: a GET,
  *  or a HEAD, of a byte route the gate takes an asset token on
  *  (isAssetPath, auth-constants.ts), or an /api/v1 row that runs one
  *  (ASSET_V1_PATTERNS). An asset caller is read nowhere else, so a token
@@ -227,19 +223,18 @@ function assetRow(method: string, pattern: string, path: string): boolean {
  * The query GET /api/v1/files/:id/download hands the bytes handler of
  * /api/files/files/:id: `?raw=1` and nothing else. Its route file sets it
  * from here, and the gate answers the asset reader from it
- * (ASSET_QUERY_AS_HANDED): one source, so the two cannot drift (fix round
- * 1, L1; the route's own test drives it).
+ * (ASSET_QUERY_AS_HANDED): one source, so the two cannot drift (the
+ * route's own test drives it).
  */
 export const V1_DOWNLOAD_QUERY = '?raw=1';
 
 /**
  * The asset rows whose handler is handed a request with another query than
- * the one sent (A4 hand batch B): each to the query its route file sets,
- * read from the same constant. GET /api/v1/files/:id/download runs the
- * bytes handler of /api/files/files/:id with V1_DOWNLOAD_QUERY alone, so on
- * main the asset guard never saw a `?at=` sent to it. The gate answers the
- * asset caller from the request as the handler is handed it, so the answer
- * stays.
+ * the one sent: each to the query its route file sets, read from the same
+ * constant. GET /api/v1/files/:id/download runs the bytes handler of
+ * /api/files/files/:id with V1_DOWNLOAD_QUERY alone, so a `?at=` sent to it
+ * never reaches the handler. The gate answers the asset caller from the
+ * request as the handler is handed it, so the gate and the handler agree.
  */
 export const ASSET_QUERY_AS_HANDED: ReadonlyMap<string, string> = new Map([
   ['GET /api/v1/files/:id/download', V1_DOWNLOAD_QUERY],
@@ -259,7 +254,7 @@ export type RouteRow = Readonly<{
   key: string;
   method: string;
   pattern: string;
-  /** The class (plan 7): what the route serves. A link route (/s) and a
+  /** The class: what the route serves. A link route (/s) and a
    *  public one name no login; the others are the scope's. */
   class: RoutePolicyClass;
   /** What the owner session guard does with the route (its class): reads
@@ -294,7 +289,7 @@ export type RouteRow = Readonly<{
   /** An /api/v1 row about the key itself (whoami, its declaration's `keyArea: 'self'`):
    *  every key may call it, whatever its areas. Absent off the key table. */
   keySelf?: boolean;
-  /** A v1 row: the route whose handler it re-exports (D3). */
+  /** A v1 row: the route whose handler it re-exports. */
   aliasOf: string | null;
   /** A /s route a client-origin page may call cross-origin (linkCors). */
   cors: boolean;
@@ -310,26 +305,25 @@ export type RouteRow = Readonly<{
    *  http:no-login for a manifest route, http:share-page for the /s page,
    *  http:render for a render page. */
   startsAs: string;
-  /** Whose answer the pipeline gives before the handler (arch A4 step 3b):
+  /** Whose answer the pipeline gives before the handler:
    *  the guard of that kind (RouteCaller), run once by the gate from this
    *  row (session.ts answerRouteCaller) and refused with there; the handler
    *  reads it (ownerCaller(), memberCaller(), anyLoginCaller(),
    *  chatCaller()) and calls no guard. Set where the route file's
    *  handler for the method reads it (the manifest's `reads`, from the
    *  code: scripts/route-callers.ts); a HEAD row has its GET's. Null: the
-   *  handler's own guard answers, as before. */
+   *  handler's own guard answers. */
   caller: RouteCaller | null;
-  /** A retired route's 410 stub (lib/gone.ts `gone(kind)`, A4 hand batch
-   *  A): its handler reads the caller of the stub's kind and answers 410.
-   *  The gate answers that kind's guard on it, whatever list the row is in:
-   *  the guard the stub called before (the member guard on a retired member
-   *  route no member list names any more, the any-login guard on the
-   *  client portal's). The answer is the guard's own function, so it is the
-   *  stub's as before; the any-login answer writes no audit row on a stub
-   *  (none was written: getLoginOr401 without `audit`). */
+  /** A retired route's 410 stub (lib/gone.ts `gone(kind)`): its handler
+   *  reads the caller of the stub's kind and answers 410. The gate answers
+   *  that kind's guard on it, whatever list the row is in (the member guard
+   *  on a retired member route no member list names, the any-login guard on
+   *  the client portal's). The answer is the guard's own function; the
+   *  any-login answer writes no audit row on a stub (getLoginOr401 without
+   *  `audit`). */
   gone: boolean;
   /** The switch the route is served under, as its route file declares it
-   *  (`routeSwitches`, route-switches.ts; A4 hand batch A): while it is off
+   *  (`routeSwitches`, route-switches.ts): while it is off
    *  the gate answers the route's own off answer before the login's
    *  (routeSwitchedOff). Null: always served. */
   switch: RouteSwitch | null;
@@ -337,20 +331,20 @@ export type RouteRow = Readonly<{
    *  its handler (refuseCrossSiteAuthPost; its declaration's `limits`): a
    *  public auth post that sets or uses the session cookie. Null: none. */
   crossSite: 'json' | 'origin' | null;
-  /** The row's rate limits, by name (route-limits.ts RATE_LIMITS; A10 #8),
+  /** The row's rate limits, by name (route-limits.ts RATE_LIMITS),
    *  taken by the gate once the caller is answered, or, on a public row
    *  that reads its login at the read, a login's limit when the handler
    *  reads it. Answered with the one 429 (rateLimitedResponse). Empty:
    *  none. */
   rateLimit: readonly RateLimitName[];
-  /** The system reason a public route that writes runs as (plan 7, 20.3),
-   *  null on every other row (it runs as its caller). A4 step 3a names the
-   *  actor each runs as today: the request slot's first actor,
-   *  system(http:no-login), until a guard or a share gate names a caller
-   *  (signup, invite accept, sign in, the token routes, OAuth, the /s
-   *  brokers). The OAuth callbacks of a connector and the onboarding seed
-   *  are not public: they run as the login their guard names. The gate's
-   *  step 3 binds it (routeGatePolicy) and the request slot starts as it. */
+  /** The system reason a public route that writes runs as (signup, invite
+   *  accept, sign in, the token routes, OAuth, the /s brokers), null on
+   *  every other row (it runs as its caller): the named actor such a route
+   *  runs as until a guard or a share gate names a caller, in place of the
+   *  request slot's generic system(http:no-login). The OAuth callbacks of
+   *  a connector and the onboarding seed are not public: they run as the
+   *  login their guard names. The gate's step 3 binds it (routeGatePolicy)
+   *  and the request slot starts as it. */
   actor: string | null;
 }>;
 
@@ -403,15 +397,14 @@ function gatesOf(
 const SELF_SCOPE: RouteClass = Object.freeze({ kind: 'self' });
 
 /**
- * The switches a route is served under (A4 hand batch A): its handler
- * checked the switch FIRST, before its guard, so while the switch is off
- * every credential that reached the handler got the route's off answer,
- * whatever its guard would have said. The gate answers it at the same
- * point now (routeSwitchedOff, the gate middleware, before the login's
- * answer and the Admin step), so the handler can read the caller first
- * and every answer stays: a member, a revoked token or an Admin user
- * without the row's area still gets the off answer while the switch is
- * off. Each to its check and its off answer, the handler's words.
+ * The switches a route is served under: the switch is answered FIRST, so
+ * while it is off every credential that reaches the route gets the route's
+ * off answer, whatever its guard would say. The gate answers it
+ * (routeSwitchedOff, the gate middleware) before the login's answer and
+ * the Admin step, so the handler can read the caller first: a member, a
+ * revoked token or an Admin user without the row's area still gets the off
+ * answer while the switch is off. Each to its check and its off answer, the
+ * handler's words.
  *
  * A route declares its switch in its own file (`routeSwitches`,
  * route-switches.ts), read into the manifest by the generator, so the
@@ -453,9 +446,9 @@ export function routeSwitchedOff(
  * documents (`caller: 'frame'`); the owner guard and its asset and at-read
  * forms a row with a scope, the at-read form none that manages an Admin
  * area (the gate's Admin step comes before the handler); every other kind
- * the rows it opens to (CALLER_LOGINS). The kinds of A4 hand batch B
- * are each read on rows named for them (fix round 1, M2), as the frame
- * answer and the session user's are: a class of rows is never enough.
+ * the rows it opens to (CALLER_LOGINS). The asset and at-read kinds are
+ * each read on rows named for them, as the frame answer and the session
+ * user's are: a class of rows is never enough.
  */
 function callerServes(
   caller: RouteCaller,
@@ -520,8 +513,7 @@ type RowFacts = Readonly<{
 
 /**
  * The facts of a page's row (server/pages: no route file, so no
- * declaration; S9 part 3, where the lists' row was read before, the same
- * values): a page names no login list, no item, no key area, no limit and
+ * declaration): a page names no login list, no item, no key area, no limit and
  * no audit of its own; it is public where the gate lets its path in with
  * no credential (PUBLIC_PATHS: the /s page), and a page under /s is a link
  * row. A render page is classed by its list alone (buildRouteRow).
@@ -554,7 +546,7 @@ function declaredEffect(p: MethodPolicy, method: string): 'read' | 'write' {
 }
 
 /**
- * The facts of a row from its route file's declaration (part 2), the
+ * The facts of a row from its route file's declaration, the
  * declaration of the method whose handler answers (`answeredAs`: a HEAD the
  * GET handler answers takes its GET's). Every value is checked here, at
  * boot (validateMethodPolicy, the generator's check too, and what needs the
@@ -596,7 +588,7 @@ function declaredFacts(
       bad(`${baseKey} as its base, which the manifest does not serve`);
     // (An alias's base is the route its file re-exports: the generator
     // checks it, route-callers.ts aliasMismatches. A `base` is the one
-    // source of a v1 row's base since the key table went, S9 part 3.)
+    // source of a v1 row's base.)
     // The base's values are read from its own checked copy, as the row's.
     base = validateMethodPolicy(
       declaredOf(baseKey) ?? bad(`${baseKey} as its base, which declares no policy`),
@@ -659,8 +651,8 @@ function declaredFacts(
   // back. The A8 route cells (server/web/server/test-support/a8-route-cells.ts) are
   // generated from it.
   // The key area an API key needs (an /api/v1 row only: the validator): the
-  // one source since the key table went (S9 part 3). A v1 row that declares
-  // none is not in the API (keyOnRow: 'not-in-api').
+  // one source. A v1 row that declares none is not in the API (keyOnRow:
+  // 'not-in-api').
   const keyArea = d.keyArea;
   return {
     scope,
@@ -716,8 +708,7 @@ export function buildRouteRow(
     standIn?: boolean;
     /** The route file's declaration for the method whose handler answers
      *  (a HEAD the GET handler answers: its GET's): the row's policy is
-     *  read from it. Required but on a page (S9 part 3: no list is left to
-     *  read a row from). */
+     *  read from it. Required but on a page (a row has no other source). */
     declared?: MethodPolicy;
     /** The declaration of another row (`METHOD pattern`; a HEAD the GET
      *  handler answers: its GET's), for a declared alias's base. */
@@ -730,12 +721,11 @@ export function buildRouteRow(
   // cannot spell fails when the rows are built (at boot).
   compileSpelling(pattern);
   // HEAD is answered by the GET handler, so it has GET's class and GET's
-  // logins (the owner's decision of 2026-10-14, 2a, the open question M3):
-  // a login outside Admin that may GET a row may HEAD it, under the same
-  // rule (the any-login, chat and Telegram rows: its own scope, not the
-  // system pool). Only where the GET handler answers it: a route that
+  // logins (an owner decision): a login outside Admin that may GET a row
+  // may HEAD it, under the same rule (the any-login, chat and Telegram
+  // rows: its own scope, not the system pool). Only where the GET handler answers it: a route that
   // exports its own HEAD (`ownHead`) has its own handler, and its HEAD row
-  // is that method's declaration's (fix round 1, L3).
+  // is that method's declaration's.
   const answeredAs = m === 'HEAD' && !opts.ownHead ? 'GET' : m;
   const path = markedPath(pattern);
   let facts: RowFacts;
@@ -775,10 +765,10 @@ export function buildRouteRow(
   // serves (CALLER_LOGINS): the owner guard a session route of the owner
   // (self, content or area), open to Admin or to the owner lists (a
   // member's open reads and writes are the owner guard's too); the member,
-  // any-login and chat guards the rows of their own lists (A4 step 3b part
-  // 5). A link or render row judges its own credential, and so does a
-  // public row, which reads at most the login its own checks ask for at the
-  // read (A4 hand batch B: callerServes). The owner guard serves only a row
+  // any-login and chat guards the rows of their own lists. A link or render
+  // row judges its own credential, and so does a public row, which reads at
+  // most the login its own checks ask for at the read (callerServes). The
+  // owner guard serves only a row
   // its prefix classes (scope); the others read no scope of the row.
   const caller: RouteCaller | null = opts.reads ?? null;
   // A gone row (a retired route's stub) is answered by the guard its stub
@@ -816,8 +806,8 @@ export function buildRouteRow(
       `ROUTE_POLICY: ${key} reads the ${caller} caller, but the ${caller} guard does not serve its row`,
     );
   }
-  // A4 exit (hand batch B fix round 1, M1): every row that is not public
-  // and not a page reads the caller the gate answers. A handler that reads
+  // Every row that is not public and not a page reads the caller the gate
+  // answers. A handler that reads
   // nothing would run behind the gate's signature check alone, with no
   // login's answer: a new method of a route file that reads none is refused
   // here, at boot, whatever else its file reads. A public row judges its own
@@ -827,8 +817,8 @@ export function buildRouteRow(
       `ROUTE_POLICY: ${key} reads no caller: a row that is not public reads the caller the gate answers (A4 exit)`,
     );
   }
-  // Every area row's caller is answered by the gate's Admin step (S9 part
-  // 2): its kind is one step 5 holds the area for (ADMIN_STEP_CALLERS). A
+  // Every area row's caller is answered by the gate's Admin step: its kind
+  // is one step 5 holds the area for (ADMIN_STEP_CALLERS). A
   // public row asks no area; a test's stand-in rows call the guards
   // themselves.
   if (
@@ -843,7 +833,7 @@ export function buildRouteRow(
   }
   // A catch-all route also matches its bare prefix, where the loader may
   // answer 404 before the handler (route-loader.ts): the gate's answer
-  // would come first there. Such a route keeps its guard (the hand batch).
+  // would come first there. Such a route keeps its guard.
   if (caller && pattern.endsWith('*')) {
     throw new Error(`ROUTE_POLICY: ${key} is a catch-all: it keeps its guard (hand batch)`);
   }
@@ -920,9 +910,9 @@ export function servedMethods(entry: RouteManifestEntry): string[] {
 
 /** Every route file of the app's manifest declares its policy, one for
  *  each method it exports, and each holds (validateRoutePolicy), whichever
- *  source the rows are read from (S9 part 1: the codemod wrote them; lint
- *  holds a new file to it, route-plumbing.mjs route-policy-declared).
- *  registerRoutes asks it of every manifest it registers (S9 part 2): the
+ *  source the rows are read from (lint holds a new file to it,
+ *  route-plumbing.mjs route-policy-declared). registerRoutes asks it of
+ *  every manifest it registers: the
  *  app's at boot, a test's hand-built one too (server/test-support.ts).
  *  Throws naming each route that does not. */
 export function requireRouteDeclarations(manifest: readonly RouteManifestEntry[]): void {
@@ -994,7 +984,7 @@ export function buildRoutePolicy(
       // HEAD is answered by the GET handler: it reads what GET reads.
       const as = m === 'HEAD' && !entry.methods.includes('HEAD') ? 'GET' : m;
       const read = reads[as] ?? null;
-      // Part 2: every method a route file exports declares its policy;
+      // Every method a route file exports declares its policy;
       // one that does not is refused at boot (and by lint,
       // route-plumbing.mjs route-policy-declared).
       const policy = declared
@@ -1051,8 +1041,8 @@ export function compileSpelling(pattern: string): RegExp {
  * (compileSpelling). The router matches the path with its percent-escapes
  * decoded; the gate's credential checks always read it as sent. A request
  * whose path spells a static segment with escapes (`/s/x/%76iew`) is
- * routed, but the gate answers it by the path checks, as before (arch A4
- * step 2), and a key is not in the API there (requestKeyRoute). The one
+ * routed, but the gate answers it by the path checks, and a key is not in
+ * the API there (requestKeyRoute). The one
  * place that answers whether the raw path spells a row's pattern.
  */
 export function spellsPattern(pattern: string, path: string): boolean {
@@ -1063,10 +1053,10 @@ export function spellsPattern(pattern: string, path: string): boolean {
 
 /** A row's declared policy (the gate's step 3). The Admin step names the
  *  row's area. The gate refuses with it on a row whose handler reads the
- *  pipeline's caller (A4 step 3b part 4: the HTTP caller carries an Admin
- *  login's view of the area); elsewhere the HTTP caller is unscoped
- *  (`admin: null`) and the session guard decides from the Admin view the
- *  gate resolved (adminRouteGate), as before. A public row that writes
+ *  pipeline's caller (the HTTP caller carries an Admin login's view of the
+ *  area); elsewhere the HTTP caller is unscoped (`admin: null`) and the
+ *  session guard decides from the Admin view the gate resolved
+ *  (adminRouteGate). A public row that writes
  *  names the actor it runs as. */
 export function routeGatePolicy(row: RouteRow): GatePolicy {
   return Object.freeze({
@@ -1105,9 +1095,9 @@ export function registerRouteSource(): void {
 }
 
 /** The ROUTE_POLICY row of the current request, as the gate middleware
- *  found it and set it on the request context (fix round 1, M1: on the
- *  request, not the bound caller, so a call nested inside the request with
- *  a caller of its own still reads it); null outside a routed request (a
+ *  found it and set it on the request context (on the request, not the
+ *  bound caller, so a call nested inside the request with a caller of its
+ *  own still reads it); null outside a routed request (a
  *  test calling a handler, a worker). The session guards read this, and
  *  refuse a request slot that has no row (session.ts guardRoute). */
 export function currentRoute(): RouteRow | null {
@@ -1130,10 +1120,10 @@ export function rowKeyRoute(row: RouteRow | null): KeyRoute | null {
  * What an API key is held to on a request: the row's (rowKeyRoute), where
  * the RAW path spells the row's pattern (spellsPattern), else null (not in
  * the API: the 404). Hono decodes the path before routing, so an encoded
- * spelling (`/api/v1/%73earch`) finds the search row; before A4 a key was
- * judged on the raw path, where such a spelling names no v1 route, and
- * that answer stays. The raw path only filters the row: it never picks
- * another (docs/actors.md, "the routed row is the request's only row").
+ * spelling (`/api/v1/%73earch`) finds the search row, but a key is judged
+ * on the raw path, where such a spelling names no v1 route: not in the API.
+ * The raw path only filters the row: it never picks another (the routed
+ * row is the request's only row).
  * The gate (gateAccessKey) and the login lookup (findKeyLogin) both ask
  * this, through keyOnRow.
  */
@@ -1142,7 +1132,7 @@ export function requestKeyRoute(row: RouteRow | null, rawPath: string): KeyRoute
 }
 
 /**
- * The one judgment of an API key on a request's row (arch A4 step 3a):
+ * The one judgment of an API key on a request's row:
  * keyMayCall on what the row holds a key to where the raw path spells its
  * pattern (requestKeyRoute). The gate (gateAccessKey) answers its refusal;
  * the login lookup (session.ts findKeyLogin) lets a key's login in only

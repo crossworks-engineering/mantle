@@ -1,5 +1,5 @@
 /**
- * The Admin seat, asked one way (plan v3.2 S8b, the gateway lens): who is
+ * The Admin seat, asked one way: who is
  * an Admin user, and which workspace is the brain's live Admin one.
  *
  * In SQL the one base read is mantle_admin_seat(login) (0330), which

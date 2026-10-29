@@ -137,7 +137,7 @@ export type SessionUser = { id: string; email: string; actor: Actor };
 export type AuthSource = 'web' | 'mobile' | 'api';
 
 /**
- * A MEMBER login on a member route (member logins, Phase 1): what
+ * A MEMBER login on a member route: what
  * memberCaller() answers. Deliberately has no `id`: the 280+ call sites that
  * scope by `user.id` cannot take a member by mistake, because the type
  * checker refuses it. A member reaches only the member routes, which read
@@ -161,8 +161,7 @@ export type MemberCaller = {
 export const ROTATE_WHEN_UNDER_SECONDS = 23 * 24 * 60 * 60;
 
 /** Whether a login row may hold a session at all: not disabled, and it has
- *  an email. Admin and member alike (member logins are always on since
- *  Phase 6; the MANTLE_MEMBERS flag is gone). */
+ *  an email. Admin and member alike. */
 export function loginUsable(row: { disabledAt: Date | null; email: string | null }): boolean {
   return !!row.email && !row.disabledAt;
 }
@@ -206,7 +205,7 @@ export function sessionRole(login: Login): LoginRole {
  *  Admin user now (`admin`: adminLogin(row), membership; the role is not
  *  asked). One shape for every login (no kind). `epoch`: the
  *  login's session epoch on the row the credential was just checked
- *  against. A login carries no permission of its own (workspaces W8a): what
+ *  against. A login carries no permission of its own: what
  *  it reads and may do is its workspaces'. */
 type Resolved = Readonly<{
   loginId: string;
@@ -240,8 +239,8 @@ function memberOf(res: Resolved): MemberCaller {
 export async function getOwnerForAsset(req: Request): Promise<SessionUser | NextResponse> {
   const user = await ownerForAsset(req);
   if (user instanceof NextResponse) return user;
-  // The bytes of an item are a read of that item: the Admin user's scope
-  // (W6a), as on the other owner routes (a render cookie acts for the admin
+  // The bytes of an item are a read of that item: the Admin user's scope,
+  // as on the other owner routes (a render cookie acts for the admin
   // who asked for the print).
   const refused = await adminRouteGate(user.actor.id);
   return refused ?? user;
@@ -251,9 +250,9 @@ async function ownerForAsset(req: Request): Promise<SessionUser | NextResponse> 
   const user = await getSessionUser();
   if (user) return user;
   // An `?at=` asset token opens a GET only (byte serving; the gate admits it
-  // on a GET alone): a HEAD's token is not read (S9 part 3, the area fold
-  // audit's L4; HEAD with a token answered 401 at the gate before, so only
-  // a direct call of this function sees the stricter answer).
+  // on a GET alone): a HEAD's token is not read (the gate answers a HEAD
+  // with only a token 401 first, so only a direct call of this function
+  // sees this answer).
   const at = req.method === 'GET' ? new URL(req.url).searchParams.get('at') : null;
   if (at) {
     const asset = await requestLogins().ownerAsset(req.url);
@@ -280,7 +279,7 @@ async function ownerForAsset(req: Request): Promise<SessionUser | NextResponse> 
  * to it. Byte-serving is GET-only, so the synthetic actor never reaches the
  * mutation/audit choke point. `act` names the LOGIN the token was minted
  * for, so per-login asset routes (the profile photo) can address that row;
- * absent, the actor is the anchor itself (the pre-claim behavior).
+ * absent, the actor is the anchor itself.
  */
 async function findOwnerAsset(url: string): Promise<SessionUser | 'refused' | null> {
   const at = new URL(url).searchParams.get('at');
@@ -305,7 +304,7 @@ async function findOwnerAsset(url: string): Promise<SessionUser | 'refused' | nu
  *  (findRender), the request's actor named after it. */
 async function renderCaller(): Promise<{ user: SessionUser; nodeId: string } | null> {
   const found = await requestLogins().render();
-  // Arch A2a: the render runs as the login the cookie names.
+  // The render runs as the login the cookie names.
   if (found) setRequestActor(loginActor(found.user.actor.id, 'rw'));
   return found;
 }
@@ -329,7 +328,7 @@ async function findRender(): Promise<{ user: SessionUser; nodeId: string } | nul
 }
 
 /**
- * The byte routes of brain items for EVERY login (W7e): an Admin user as
+ * The byte routes of brain items for EVERY login: an Admin user as
  * getOwnerForAsset (its session, an asset token, the render cookie; `member`
  * null); a member by its session or a member `?at=` token (an <img> src
  * carries no bearer), on a route open to it (memberOpenRead), in its own
@@ -362,7 +361,7 @@ export async function getReaderForAsset(req: Request): Promise<AssetReader | Nex
 }
 
 /**
- * Where a member route's handler runs (W7e): a route that reads brain items
+ * Where a member route's handler runs: a route that reads brain items
  * (route-scope.ts classes /api/member as 'content') runs in the login's
  * request scope, as an owner route a member may read does; only the login's
  * own things ('self': the home pin, its MCP clients, push devices, the live
@@ -597,12 +596,12 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
 
 /**
  * A login row as the request's login: its brain handle (id = the anchor)
- * and whether it is an Admin user. Membership decides (S8b): an Admin
+ * and whether it is an Admin user. Membership decides: an Admin
  * login is a user of the brain's live Admin workspace now, the login
  * enabled (adminLogin, the row's adminMember, loginIsAdmin read with the
  * row), never the role column, which follows membership. Only an Admin
  * login's actor may say it is the anchor (isOwner). A row with a role this
- * code does not know (the CHECK admits admin and member only since 0272) is
+ * code does not know (the CHECK admits admin and member only, 0272) is
  * no login (null), never an admin. Null too when the brain has no anchor (a
  * corrupt state).
  */
@@ -629,11 +628,11 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
  * A key is taken ONLY from the request context, where the gate leaves it
  * after every check passed (server/middleware/access-key-gate.ts: the
  * failed-try budget, the key itself, its rate budget, its scope). It is
- * never verified again here (audit item 3): a request that reached a route
+ * never verified again here: a request that reached a route
  * without the gate's grant (a public prefix such as /api/auth, or a path
  * shape the gate lets through) has no key login at all.
  *
- * The scope guard runs again here (audit item 1), on the request's
+ * The scope guard runs again here, on the request's
  * ROUTE_POLICY row (keyOnRow, the one judgment of a key on a row, the
  * gate's own), so a `source: 'api'` login exists only for a /api/v1 route
  * the key may call: the route's area, and a write only for a read_write
@@ -650,11 +649,11 @@ async function findKeyLogin(): Promise<FoundLogin | undefined> {
   const grant = ctx?.accessKey;
   if (!ctx || !grant || !keyOnRow(grant, currentRoute(), ctx.path).ok) return NO_LOGIN;
   const resolved = await resolvedFor(grant.login, 'api');
-  // Arch A2a: a read key's request runs as login(ro).
+  // A read key's request runs as login(ro).
   return { ...NO_LOGIN, resolved, mode: grant.access === 'read_write' ? 'rw' : 'ro' };
 }
 
-/** Name the request's actor (arch A2a, plan 4.1): the login the guard
+/** Name the request's actor: the login the guard
  *  resolved, read-write unless a read key. The guard's later notes keep it
  *  (an Admin write) or replace it (an area route: system). */
 function nameRequestLogin(res: Resolved, mode: 'rw' | 'ro'): void {
@@ -711,7 +710,7 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
     if (data) {
       const row = await loadLoginRow(data.uid);
       // The epoch check is what ends a cookie: a password change, a disable,
-      // a role change or "sign out everywhere" bumps the row (F06).
+      // a role change or "sign out everywhere" bumps the row.
       // A cookie the bearer upgrade minted lives only while its device does.
       const deviceOk = !data.dj || (await cookieDeviceAlive(data.dj, data.uid));
       if (row && loginUsable(row) && row.sessionEpoch === data.ep && deviceOk) {
@@ -730,9 +729,9 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
   };
 }
 
-/** A found login's effects, each time a guard reads it (as each guard call
- *  resolved the login before A4 step 3a): the device token's, then the
- *  request's actor named. */
+/** A found login's effects, each time a guard reads it (as if the guard
+ *  resolved the login itself): the device token's, then the request's
+ *  actor named. */
 async function applyLogin(found: FoundLogin): Promise<Resolved | null> {
   await applyBearerEffects(found);
   if (found.resolved && found.mode) nameRequestLogin(found.resolved, found.mode);
@@ -740,24 +739,24 @@ async function applyLogin(found: FoundLogin): Promise<Resolved | null> {
 }
 
 /** Resolve the calling login, admin or member, cookie first then bearer:
- *  the request's login (the gate found it once, A4 step 3a), its effects
+ *  the request's login (the gate found it once), its effects
  *  applied. */
 async function resolveLogin(): Promise<Resolved | null> {
   const logins = requestLogins();
   const found = await logins.login();
   // The gate applied this login's effects before its Admin step
-  // (enterRouteLogin, A4 step 3b part 4): the first read takes them as
-  // applied, so the device token is stamped once, as before.
+  // (enterRouteLogin): the first read takes them as applied, so the device
+  // token is stamped once.
   if (logins.takeApplied(found)) return found.resolved;
   return applyLogin(found);
 }
 
-// ── The request's logins, found once (arch A4 step 3a) ──────────────────────
+// ── The request's logins, found once ────────────────────────────────────────
 
 /**
  * Keep `p` until it fails: a failed find is asked again next time. `drop`
  * gets the failed promise and clears its slot only while the slot still
- * holds that one (A4 step 3a re-audit L-c): a find the request forgot
+ * holds that one: a find the request forgot
  * (forget) and replaced with a fresh one may fail after the fresh one is
  * stored, and must not clear it.
  */
@@ -771,15 +770,14 @@ function keepUntilFailed<T>(p: Promise<T>, drop: (failed: Promise<T>) => void): 
  * request: the login (findLogin: a key, the session cookie, a device
  * token), the device token on its own (the cookie upgrade), an `?at=`
  * asset token (admin or member) and the render cookie. Finding has no
- * effect; each guard read applies the effects it applied before (applyLogin,
- * applyBearerEffects, renderCaller), so a guard answers as it did when it
- * resolved the login itself. A failed find is not kept: the next read asks
- * again, as a guard did.
+ * effect; each guard read applies its effects (applyLogin,
+ * applyBearerEffects, renderCaller), so a guard answers as if it resolved
+ * the login itself. A failed find is not kept: the next read asks again.
  *
  * The gate makes one for each routed request and binds it on the caller
  * (resolveHttpLogin); requestLogins() reads it. Outside a routed request
- * (a test calling a handler, a script) each read makes a fresh one: the
- * guards resolve as before.
+ * (a test calling a handler, a script) each read makes a fresh one: each
+ * guard resolves on its own.
  */
 export class RequestLogins {
   #login: Promise<FoundLogin> | null = null;
@@ -792,11 +790,11 @@ export class RequestLogins {
   /** The gate's failed find, kept for the first guard read (keepFailure). */
   #failure: Promise<FoundLogin> | null = null;
   /** The guard's answer the pipeline gave before the handler
-   *  (answerRouteCaller, A4 step 3b), which the row's reader reads
+   *  (answerRouteCaller), which the row's reader reads
    *  (ownerCaller(), memberCaller(), anyLoginCaller(), chatCaller()). */
   #answered: PipelineAnswer | null = null;
   /** The found login whose effects the gate applied before its Admin step
-   *  (enterRouteLogin, A4 step 3b part 4), until a read takes them. */
+   *  (enterRouteLogin), until a read takes them. */
   #applied: FoundLogin | null = null;
 
   /** Whether the request changed a login since the gate resolved it
@@ -805,10 +803,9 @@ export class RequestLogins {
     return this.#changed;
   }
 
-  /** Drop every login found so far (A4 step 3a audit L1): the request
-   *  ended a login's sessions or changed its role or switch, so the next
-   *  guard read finds each credential afresh, as every guard call did
-   *  before step 3a. Already-applied effects stay applied. */
+  /** Drop every login found so far: the request ended a login's sessions
+   *  or changed its role or switch, so the next guard read finds each
+   *  credential afresh. Already-applied effects stay applied. */
   forget(): void {
     this.#login = null;
     this.#bearer = null;
@@ -821,10 +818,9 @@ export class RequestLogins {
     this.#changed = true;
   }
 
-  /** The gate's find of the login failed (the database, A4 step 3a audit
-   *  L4): the first guard read is answered with that failure instead of
-   *  asking again, so a request looks the login up once, as each guard
-   *  call did before step 3a. A read after that one asks again. */
+  /** The gate's find of the login failed (the database): the first guard
+   *  read is answered with that failure instead of asking again, so a
+   *  request looks the login up once. A read after that one asks again. */
   keepFailure(failed: Promise<FoundLogin>): void {
     this.#failure = failed;
   }
@@ -836,8 +832,7 @@ export class RequestLogins {
   }
 
   /** Whether the gate applied `found`'s effects and no read took them
-   *  yet; the first read takes them, a later one applies them again, as
-   *  each guard read did. */
+   *  yet; the first read takes them, a later one applies them again. */
   takeApplied(found: FoundLogin): boolean {
     if (this.#applied === null || this.#applied !== found) return false;
     this.#applied = null;
@@ -918,21 +913,19 @@ const HTTP_ADMIN_FOR = 'httpAdminFor';
 
 /** The request's logins, as the gate bound them on the caller; a fresh set
  *  outside a routed request (and inside a call nested in one with a caller
- *  of its own), where the guards resolve as before. */
+ *  of its own), where each guard resolves on its own. */
 function requestLogins(): RequestLogins {
   return boundLogins(currentCaller()) ?? new RequestLogins();
 }
 
 /**
- * The request changed a login (A4 step 3a audit L1): its sessions ended
+ * The request changed a login: its sessions ended
  * (endLoginSessions), its role or disabled switch changed (updateLogin), or
  * a key or device token it may have come in on was revoked. The request's
  * logins forget what they found, so a later guard read in the same request,
  * or work it started and did not await, finds the login afresh and sees the
- * change, as each guard call did when it looked the login up itself. Any
- * login, not only the request's own: finding again is what a guard did
- * before, and costs one read on these rare paths. A revoked key is the
- * exception, as on main: findKeyLogin reads the gate's grant and never
+ * change. Any login, not only the request's own: finding again costs one
+ * read on these rare paths. A revoked key is the exception: findKeyLogin reads the gate's grant and never
  * checks the key again, so the login a key resolved to is found again for
  * the rest of the request. No-op outside a routed request.
  */
@@ -958,7 +951,7 @@ export type HttpLogin = Readonly<{
   mode: 'rw' | 'ro' | null;
   /** What the login the row's guard answers as holds of the row's Admin
    *  area (the Admin step's answer: the gate's step 5 holds every area row
-   *  to it, S9 part 2), for an Admin login on a row that manages an area;
+   *  to it), for an Admin login on a row that manages an area;
    *  else null (a member, no login, a row with no area). */
   admin: AdminView | null;
   /** The facts the caller carries: the logins and the Admin view, under
@@ -967,7 +960,7 @@ export type HttpLogin = Readonly<{
 }>;
 
 /**
- * The gate's step 1 for a routed request (arch A4 step 3a): the request's
+ * The gate's step 1 for a routed request: the request's
  * logins, and, where the gate judged a credential (a row that is not
  * public), the login found once now, with what it holds of the row's Admin
  * area. The same functions the guards read, so the two cannot drift. A
@@ -989,7 +982,7 @@ export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
   // A frame document's row (route-policy.ts findsNoLogin, the frame caller):
   // opened by the `?t=` frame ticket the gate admitted, its handler reads
   // the login the ticket names (frameTicketCaller()), so nothing would
-  // read one found here (A4 step 3a audit L4).
+  // read one found here.
   if (row.public || findsNoLogin(row)) return none;
   let found: FoundLogin;
   const finding = logins.login();
@@ -1001,8 +994,8 @@ export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
     return none;
   }
   const res = found.resolved;
-  // The Admin step's answer on a row that manages an area (S9 part 2: the
-  // guard's own area check folded into the gate's step 5): requireArea's,
+  // The Admin step's answer on a row that manages an area (the gate's step
+  // 5 checks the area, not the guard): requireArea's,
   // for the login the row's guard answers as: the request's Admin login,
   // or on an asset row the one its asset guard answers as (assetViewLogin).
   // The view holds the row's area or nothing; a login without it is
@@ -1049,7 +1042,7 @@ export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
  * cookie's on a byte route a render page loads), found with no effect, as
  * the guard finds it (the same kept finds: RequestLogins); null where the
  * guard refuses (no credential it takes, a token it refuses). The gate's
- * Admin step holds the row's area for this login (S9 part 2).
+ * Admin step holds the row's area for this login.
  */
 async function assetViewLogin(
   row: RouteRow,
@@ -1060,7 +1053,7 @@ async function assetViewLogin(
   const req = assetRequest(row);
   const url = new URL(req.url);
   try {
-    // A GET only, as ownerForAsset reads the token (L4).
+    // A GET only, as ownerForAsset reads the token.
     if (req.method === 'GET' && url.searchParams.get('at')) {
       const asset = await logins.ownerAsset(req.url);
       if (asset === 'refused') return null;
@@ -1076,14 +1069,13 @@ async function assetViewLogin(
   return null;
 }
 
-// ── The caller the pipeline answers (arch A4 step 3b) ───────────────────────
+// ── The caller the pipeline answers ─────────────────────────────────────────
 
 /**
  * The login's effects failed before the gate's Admin step (enterRouteLogin:
  * the database, stamping a device token). Thrown out of enterCall for the
  * gate middleware, which answers the error it carries in the handler's
- * place, where the owner guard threw it before (onError, with the gate's
- * CORS headers).
+ * place (onError, with the gate's CORS headers).
  */
 export class RouteLoginError extends Error {
   constructor(readonly error: unknown) {
@@ -1093,11 +1085,11 @@ export class RouteLoginError extends Error {
 }
 
 /**
- * The gate's step before its Admin step (A4 step 3b part 4), on a row
+ * The gate's step before its Admin step, on a row
  * whose handler reads the pipeline's caller and whose Admin step the gate
  * enforces (an Admin login on an area row: the HTTP caller's `admin`): the
  * login's effects applied in the request slot, before step 5 refuses or
- * lets it through, as the owner guard applied them before its area check:
+ * lets it through, as the owner guard applies them before its area check:
  * a device token's stamp, the login named as the request's actor. The
  * answer the pipeline gives next (answerRouteCaller) takes them as applied,
  * so nothing is done twice. Runs `fn` (the gate's steps 4 to 7) after.
@@ -1113,8 +1105,8 @@ export async function enterRouteLogin<T>(fn: () => Promise<T>): Promise<T> {
     if (!logins) throw new Error('enterRouteLogin: the request has no logins bound');
     const found = await logins.login();
     await applyLogin(found);
-    // TODO(A4 exit): the markApplied/takeApplied handshake folds into the
-    // gate when the last guard goes (the gate applies the effects, once).
+    // TODO: fold the markApplied/takeApplied handshake into the gate once
+    // no guard is left (the gate applies the effects, once).
     logins.markApplied(found);
   } catch (error) {
     throw new RouteLoginError(error);
@@ -1152,12 +1144,11 @@ type PipelineAnswer =
 export type AssetReader = { user: SessionUser; member: MemberCaller | null };
 
 /**
- * An answer the gate binds for the handler's first read to run (A4 hand
- * batch B, route-policy.ts ANSWERED_AT_READ): the guard of the row's kind,
- * run once, in the handler's own place, where the handler called it before,
- * so whatever the handler did first still comes first and the effects of
- * the answer (a device token's stamp, the actor named, an audit row) fall
- * where they fell. Every later read is the same answer. A read with other
+ * An answer the gate binds for the handler's first read to run
+ * (route-policy.ts ANSWERED_AT_READ): the guard of the row's kind, run
+ * once, in the handler's own place, so whatever the handler does first
+ * still comes first and the effects of the answer (a device token's stamp,
+ * the actor named, an audit row) fall at the read. Every later read is the same answer. A read with other
  * options than the first throws: a row has one answer.
  */
 class AtRead<T, O> {
@@ -1180,9 +1171,8 @@ class AtRead<T, O> {
 }
 
 /**
- * The refusal of an answer taken at the read (ownerCallerAtRead, A4 hand
- * batch B): thrown out of the handler, where the guard's refusal was
- * returned before, and answered by the app's onError as it is
+ * The refusal of an answer taken at the read (ownerCallerAtRead): thrown
+ * out of the handler and answered by the app's onError as it is
  * (server/app-error.ts), with the gate's CORS headers. The handler cannot
  * answer anything else in its place.
  */
@@ -1203,11 +1193,11 @@ export class RouteRefusal extends Error {
  * stamp), the scope entered or the system reason noted (self, area, an
  * Admin write), the item a write names checked, the
  * create home named, the audit row of a write. The member guard
- * (getMemberOr401, A4 step 3b part 5): the member named, its scope entered
+ * (getMemberOr401): the member named, its scope entered
  * or its own rule noted, a key's write audited. The any-login guard
  * (getLoginOr401) and the chat guard (getChatLoginOr401): the login named,
  * its scope entered or the system reason noted (anyLoginScope), the audit
- * row each role's own gate writes. The asset guards (A4 hand batch B) on
+ * row each role's own gate writes. The asset guards on
  * the request as the handler is handed it. A refusal is the gate's answer
  * (the handler does not run); otherwise the answer is kept on the
  * request's logins for the row's reader. A kind answered at the read
@@ -1230,10 +1220,9 @@ export async function answerRouteCaller(row: RouteRow): Promise<NextResponse | n
 const LOGIN_SCOPE: ReadonlySet<'login'> = new Set(['login']);
 
 /**
- * The login a row's login limit counts (route-limits.ts; A10 #8), from the
- * answer the pipeline gave (answerRouteCaller): the owner guard's login (a
- * member's own id where a member called, as the app runner counted it; an
- * Admin user's actor), the member, the any-login and chat logins, a byte
+ * The login a row's login limit counts (route-limits.ts), from the answer
+ * the pipeline gave (answerRouteCaller): the owner guard's login (a
+ * member's own id where a member called; an Admin user's actor), the member, the any-login and chat logins, a byte
  * route's reader. Null where the answer names none (no answer yet, a kind
  * answered at the read, which takes its limit there).
  */
@@ -1308,9 +1297,8 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
       return member instanceof NextResponse ? member : { caller, member };
     }
     case 'login': {
-      // The any-login answer writes the generic api.write row its rows
-      // wrote by hand after the guard before (A4 hand batch A); a gone stub
-      // never wrote one.
+      // The any-login answer writes the generic api.write row of its rows;
+      // a gone stub writes none.
       const login = await getLoginOr401({ audit: !row.gone });
       return login instanceof NextResponse ? login : { caller, login };
     }
@@ -1319,9 +1307,9 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
       return chat instanceof NextResponse ? chat : { caller, chat };
     }
     case 'session':
-      // Any Admin user, or null (A4 hand batch A): never a refusal, the
-      // handler answers a null as it did (the rows open to every Admin
-      // user: their declaration's `caller: 'session'`).
+      // Any Admin user, or null: never a refusal, the handler answers a
+      // null (the rows open to every Admin user: their declaration's
+      // `caller: 'session'`).
       return { caller, user: await getSessionUser() };
     case 'ownerAsset': {
       const user = await getOwnerForAsset(assetRequest(row));
@@ -1336,17 +1324,16 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
       return login instanceof NextResponse ? login : { caller, login };
     }
     case 'frame': {
-      // The ticket only (A4 hand batch B): the handler checks it names this
-      // app and that its login is still active, as it did.
+      // The ticket only: the handler checks it names this app and that its
+      // login is still active.
       const req = getRequestContext()?.req;
       if (!req) throw new Error(`answerRouteCaller: ${row.key} has no request`);
       return { caller, ticket: frameTicketOf(req) };
     }
     case 'publicLogin':
       // A login limit of the row (route-limits.ts) is taken here, at the
-      // read, where the handler took it after its read before (A10 #8): no
-      // login spends nothing, and what the handler checked first still
-      // comes first. Over the limit, the read throws the one 429.
+      // read: no login spends nothing, and what the handler checks first
+      // still comes first. Over the limit, the read throws the one 429.
       return {
         caller,
         atRead: new AtRead(async (opts) => {
@@ -1378,8 +1365,8 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
 
 /**
  * The owner the pipeline answered for this request (answerRouteCaller):
- * the owner guard's user (getOwnerOr401WithLogin, which replaced
- * getOwnerOr401 at A4 exit), read from the bound caller, with no lookup
+ * the owner guard's user (getOwnerOr401WithLogin), read from the bound
+ * caller, with no lookup
  * and no effect (the gate did both). A handler reads it in place of the
  * guard:
  *
@@ -1397,9 +1384,8 @@ export function ownerCaller(): SessionUser {
 }
 
 /**
- * The owner guard's owner and how the request authenticated (what the
- * retired getOwnerOr401WithSource answered), read from the pipeline's answer as ownerCaller() reads
- * it: no lookup, no effect, and the same throw where the pipeline answered
+ * The owner guard's owner and how the request authenticated, read from
+ * the pipeline's answer as ownerCaller() reads it: no lookup, no effect, and the same throw where the pipeline answered
  * no owner. A handler reads it in place of the guard:
  *
  *     const { user, source } = ownerCallerWithSource();
@@ -1410,7 +1396,7 @@ export function ownerCallerWithSource(): { user: SessionUser; source: AuthSource
 }
 
 /**
- * The login of an owner row as the Login itself (plan v3.2 section 2.2):
+ * The login of an owner row as the Login itself:
  * the Admin user's or the member's, the very object the owner guard
  * answered with, so adminFacts(login) asks its scope. No lookup, no
  * effect, and the same throw as ownerCaller() where the pipeline answered
@@ -1432,7 +1418,7 @@ export function ownerAnswerLogin(owner: OwnerRouteLogin): Login | null {
 }
 
 /**
- * The member the pipeline answered for this request (A4 step 3b part 5):
+ * The member the pipeline answered for this request:
  * what getMemberOr401 answers, on a member route (the member list), read
  * from the pipeline's answer as ownerCaller() reads the owner: no lookup,
  * no effect, and a throw where the pipeline answered no member. A handler
@@ -1446,8 +1432,8 @@ export function memberCaller(): MemberCaller {
 
 /**
  * The login the pipeline answered for this request on an any-login route
- * (A4 step 3b part 5; the any-login list), as the Login itself (plan v3.2
- * section 2.2): the very object getLoginOr401 answered, so adminFacts(login)
+ * (the any-login list), as the Login itself: the very object
+ * getLoginOr401 answered, so adminFacts(login)
  * asks its scope. No lookup, no effect, and a throw where the pipeline
  * answered no login. A handler that decides Admin reads this and asks
  * adminFacts.
@@ -1460,8 +1446,8 @@ export function anyLoginCaller(): Login {
 }
 
 /**
- * The chat login the pipeline answered for this request (A4 step 3b part
- * 5): what getChatLoginOr401 answers, on a chat or Telegram chat route, with
+ * The chat login the pipeline answered for this request: what
+ * getChatLoginOr401 answers, on a chat or Telegram chat route, with
  * its Login (`asLogin`): what the chat helpers take, asking
  * adminFacts(caller.asLogin) whether it is an Admin user. Read from the
  * pipeline's answer as ownerCaller() reads the owner: no lookup, no
@@ -1475,13 +1461,13 @@ export function chatCaller(): ChatCaller {
 }
 
 /**
- * The session user the pipeline answered for this request (A4 hand batch
- * A): what getSessionUser answers, any Admin user or null (a member, no
+ * The session user the pipeline answered for this request: what
+ * getSessionUser answers, any Admin user or null (a member, no
  * login), on a row open to every Admin user (its declaration's
  * `caller: 'session'`), read from the pipeline's answer as ownerCaller() reads
  * the owner: no lookup, no effect, and a throw where the pipeline answered
  * no session user. The gate refuses nothing for it: the handler answers a
- * null, as it did after the guard.
+ * null.
  *
  *     const user = sessionUserCaller();
  *     if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -1492,7 +1478,7 @@ export function sessionUserCaller(): SessionUser | null {
 
 /**
  * The Admin user (or a member's view) the pipeline answered for a byte
- * route (A4 hand batch B): what getOwnerForAsset answers, its session, a
+ * route: what getOwnerForAsset answers, its session, a
  * `?at=` asset token or the render cookie, read from the pipeline's answer
  * as ownerCaller() reads the owner: no lookup, no effect, and a throw where
  * the pipeline answered none.
@@ -1502,7 +1488,7 @@ export function ownerAssetCaller(): SessionUser {
 }
 
 /**
- * Who reads a byte route of brain items (A4 hand batch B): what
+ * Who reads a byte route of brain items: what
  * getReaderForAsset answers, an Admin user (`member` null) or a member on a
  * read open to it, read from the pipeline's answer as ownerCaller() reads
  * the owner.
@@ -1512,8 +1498,8 @@ export function readerAssetCaller(): AssetReader {
 }
 
 /**
- * Any login on a byte route of an any-login row (a person's photo, plan
- * page d8954876 section 23): what getLoginForAsset answers, its session or
+ * Any login on a byte route of an any-login row (a person's photo): what
+ * getLoginForAsset answers, its session or
  * its own `?at=` asset token, read from the pipeline's answer as
  * anyLoginCaller() reads it.
  */
@@ -1522,8 +1508,8 @@ export function anyLoginAssetCaller(): Login {
 }
 
 /**
- * The frame ticket a sandbox frame document was opened with (A4 hand batch
- * B): the `?t=` the gate admitted, verified (verifyAppFrameTicket), or null.
+ * The frame ticket a sandbox frame document was opened with: the `?t=` the
+ * gate admitted, verified (verifyAppFrameTicket), or null.
  * No login is resolved for these rows; the handler checks the ticket names
  * its app and that its login is still active.
  */
@@ -1532,13 +1518,12 @@ export function frameTicketCaller(): AppFrameTicket | null {
 }
 
 /**
- * The login a public row reads (A4 hand batch B), as the Login itself (plan
- * v3.2 section 2.2): what getLoginOr401 answers, taken at this read, where
- * the handler called the guard before (its own checks come first: the
+ * The login a public row reads, as the Login itself: what getLoginOr401
+ * answers, taken at this read, after the handler's own checks (the
  * cross-site refusal, the body, the remote MCP switch and the client's
  * validation), so adminFacts(login) asks about it (a public row enters no
  * scope: the row's answer). Never a refusal: no login is null, and the
- * handler answers it as it did (unauthorizedRefusal(), its own words, or
+ * handler answers it (unauthorizedRefusal(), its own words, or
  * carrying on). `audit`: the generic api.write row of a write, as the
  * guard's `audit` (POST /api/auth/pair). The first read runs the answer; a
  * later one is the same answer.
@@ -1549,8 +1534,7 @@ export function frameTicketCaller(): AppFrameTicket | null {
 export async function publicLoginItself(opts: { audit?: boolean } = {}): Promise<Login | null> {
   const atRead = pipelineAnswer('publicLoginItself', 'publicLogin').atRead;
   const got = await atRead.take({ audit: opts.audit === true });
-  // Over the row's login limit (A10 #8): the one 429, answered by the app
-  // as the handler's 429 was returned.
+  // Over the row's login limit: the one 429, answered by the app.
   if (got instanceof RouteRefusal) throw got;
   return got instanceof NextResponse ? null : got;
 }
@@ -1562,10 +1546,10 @@ export type CookieUpgradeLogin = Exclude<
 >;
 
 /**
- * The login POST /api/auth/sso turns into a session cookie (A4 hand batch
- * B): what getCookieUpgradeLoginOr401 answers (the device token only),
- * taken at this read, after the route's throttle and origin check, as the
- * guard was called. Null where it refused (no device token).
+ * The login POST /api/auth/sso turns into a session cookie: what
+ * getCookieUpgradeLoginOr401 answers (the device token only), taken at
+ * this read, after the route's throttle and origin check. Null where it
+ * refused (no device token).
  */
 export async function cookieUpgradeCaller(): Promise<CookieUpgradeLogin | null> {
   const got = await pipelineAnswer('cookieUpgradeCaller', 'cookieUpgrade').atRead.take(null);
@@ -1574,11 +1558,10 @@ export async function cookieUpgradeCaller(): Promise<CookieUpgradeLogin | null> 
 
 /**
  * The owner of a row whose handler runs checks of its own before it reads
- * the owner (A4 hand batch B: PATCH /api/pages/:id, whose /api/v1 wrapper
- * holds an API key to its rules first): the owner guard's user, taken
- * at this read, with its effects (the item a write names checked, the
- * audit row) where the guard had them. A refusal is thrown (RouteRefusal)
- * and answered by the app as the guard's was returned: the handler goes no
+ * the owner (PATCH /api/pages/:id, whose /api/v1 wrapper holds an API key
+ * to its rules first): the owner guard's user, taken at this read, with
+ * its effects (the item a write names checked, the audit row). A refusal
+ * is thrown (RouteRefusal) and answered by the app: the handler goes no
  * further and cannot answer in its place.
  */
 export async function ownerCallerAtRead(): Promise<SessionUser> {
@@ -1588,8 +1571,7 @@ export async function ownerCallerAtRead(): Promise<SessionUser> {
 }
 
 /** The 401 a session guard answers no login with (`unauthorized`, the one
- *  mapper): what a handler answers a null public login with, as its guard's
- *  refusal was. */
+ *  mapper): what a handler answers a null public login with. */
 export function unauthorizedRefusal(): NextResponse {
   return accessRefusal(new AccessError('unauthorized'));
 }
@@ -1628,14 +1610,14 @@ function pipelineAnswer<K extends RouteCaller>(
 }
 
 /**
- * Whether `loginId` holds `area`, for the guard (S9 part 2): the gate's
- * Admin view of the row's area, the one resolveHttpLogin read and the
- * gate's step 5 held the row to, where it answers this read; else the area
- * asked again (loginHoldsArea), as main's guard asked it. The view does not
+ * Whether `loginId` holds `area`, for the guard: the gate's Admin view of
+ * the row's area, the one resolveHttpLogin read and the gate's step 5 held
+ * the row to, where it answers this read; else the area asked again
+ * (loginHoldsArea). The view does not
  * answer a read for another login than the view's, after the request
  * changed a login (forgetRequestLogins), or with no view (a test's stand-in
- * route). A view mismatch is never a refusal of its own (CEO ruling, round
- * 2): only a failed area read fails closed, thrown here as in the gate.
+ * route). A view mismatch is never a refusal of its own: only a failed
+ * area read fails closed, thrown here as in the gate.
  */
 async function guardHoldsArea(
   loginId: string,
@@ -1670,15 +1652,15 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   return (await getSessionUserWithSource())?.user ?? null;
 }
 
-/** Control-flow login redirect (was next/navigation's redirect signal) — the
- *  Hono app's onError turns a RedirectError into a real 307. */
+/** Control-flow login redirect: the Hono app's onError turns a
+ *  RedirectError into a real 307. */
 function redirect(to: string): never {
   throw new RedirectError(to);
 }
 
 /**
  * Gate for the render surfaces (/print/pages, /print/draws, /render/draws).
- * An admin session opens them as before; otherwise the render cookie the
+ * An admin session opens them; otherwise the render cookie the
  * browser sidecar carries, and only for the node that cookie names. Redirects
  * to /login.
  */
@@ -1727,7 +1709,7 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
   const route = currentRoute();
   const mutating = auditsAsWrite(method, route?.effect ?? null);
   // A route that logs its own richer event: its row says so (`audit: 'own'`,
-  // its declaration; S9 part 2, was a list of paths).
+  // its declaration).
   if (!mutating || route?.audit === 'own' || skip?.(path)) return;
   // A write made with an API key names the key (never its secret).
   const key = getRequestContext()?.accessKey;
@@ -1737,10 +1719,10 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
     action: 'api.write',
     method,
     path,
-    // The proxy-appended address, not the caller's leftmost (audit B16).
+    // The proxy-appended address, not the caller's leftmost.
     ...(await requestMeta()),
     // The key's maker too: a key that acts as a member logs its
-    // writes under that login, and the maker is who to ask (audit item 8).
+    // writes under that login, and the maker is who to ask.
     ...(key
       ? { detail: { keyId: key.id, keyPrefix: key.prefix, keyCreatedBy: key.createdBy } }
       : {}),
@@ -1758,11 +1740,11 @@ export type OwnerRouteLogin = Readonly<{
 }>;
 
 /**
- * The owner guard (A4 exit: the gate runs it for an owner row,
- * answerRouteCaller; a handler reads ownerCaller() and its projections): the
+ * The owner guard (the gate runs it for an owner row, answerRouteCaller;
+ * a handler reads ownerCaller() and its projections): the
  * owner, how the request authenticated ('web' cookie, 'mobile' bearer,
  * 'api' key), and WHO the login is: `member` set for a login that is not
- * an Admin user, on an owner route open to it (W7e: the app runner routes run a
+ * an Admin user, on an owner route open to it (the app runner routes run a
  * member at the team rules, an Admin user at the app's). A refusal is a 401
  * JSON response, never a redirect: a revoked or expired bearer slips past
  * the stateless gate check and is caught here.
@@ -1772,8 +1754,8 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
   if (!res) return accessRefusal(new AccessError('unauthorized'));
   if (!res.admin) {
     // A member reaches an owner route to read brain items in its
-    // own scope (W6a, its row's `open: 'owner'`; drafts where it may edit,
-    // W6b), or to create, edit and delete them there (W6b, the same); every
+    // own scope (its row's `open: 'owner'`; drafts where it may edit), or
+    // to create, edit and delete them there (the same); every
     // other owner route refuses it (member routes use getMemberOr401; the
     // sweeps check both).
     const route = guardRoute();
@@ -1804,7 +1786,7 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
  *  so a handler asks adminFacts(login). */
 const ownerLogins = new WeakMap<OwnerRouteLogin, Login>();
 
-// ── The request scope (workspaces W6a, plan 2.4 and T4) ─────────────────────
+// ── The request scope ───────────────────────────────────────────────────────
 
 /** No request slot: a test calling a handler, a worker (guardRoute). */
 const OUTSIDE = 'outside';
@@ -1812,7 +1794,7 @@ const OUTSIDE = 'outside';
 const UNROUTED = 'unrouted';
 
 /**
- * The ROUTE_POLICY row a session guard serves (A4 step 1 fix round 1, M1):
+ * The ROUTE_POLICY row a session guard serves:
  * the routed request's row (currentRoute(): on the request context, so a
  * call nested inside the request with a caller of its own still reads
  * it); OUTSIDE when no request slot is open, where nothing changes;
@@ -1863,10 +1845,10 @@ async function loginHoldsArea(
 }
 
 /**
- * What an Admin login's owner request runs as (W6a): a management route
+ * What an Admin login's owner request runs as: a management route
  * needs its area and runs on the system pool; the login's own things run
  * there too; a read or a write of brain items enters the login's scope
- * (a write since F4, as a member's: enterLoginWrite).
+ * (a write as a member's: enterLoginWrite).
  * Outside a request slot (a test calling a handler) nothing changes; a
  * request slot with no row is refused (guardRoute). Returns the refusal,
  * or null to go on.
@@ -1876,14 +1858,14 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
   if (route === UNROUTED) return unroutedRefusal();
   if (route === OUTSIDE) return null;
   const cls = route.scope;
-  // The gate's refusals, answered by the one mapper (arch A3c): no route
+  // The gate's refusals, answered by the one mapper: no route
   // class is step 3 (no policy), an area the login lacks step 5.
   if (!cls) return accessRefusal(new AccessError('unclassified'));
   if (cls.kind === 'area') {
-    // The gate's step 5 refused a login without the row's area (S9 part 2:
-    // every area row's caller, route-policy.ts ADMIN_STEP_CALLERS). The
-    // guard reads the view the gate held it to; a read that view does not
-    // answer asks the area again, as before (guardHoldsArea).
+    // The gate's step 5 refused a login without the row's area (every area
+    // row's caller, route-policy.ts ADMIN_STEP_CALLERS). The guard reads the
+    // view the gate held it to; a read that view does not answer asks the
+    // area again (guardHoldsArea).
     if (!(await guardHoldsArea(loginId, cls.area))) {
       return accessRefusal(new AccessError('area', undefined, { area: cls.area }));
     }
@@ -1900,10 +1882,9 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
 }
 
 /**
- * A login's write request to brain items (W6b for a member; an Admin user's
- * since F4, which ran on the system pool with its reads unscoped before):
- * the create home recorded (createHomeFor: an Admin user without ?ws= creates as
- * before, the folder's home else Admin; a member's private workspace is
+ * A login's write request to brain items, a member's or an Admin user's:
+ * the create home recorded (createHomeFor: an Admin user without ?ws=
+ * creates in the folder's home else Admin; a member's private workspace is
  * its fallback), then the request runs in the login's scope for the rest
  * of the request, reads and writes alike: its reads on the workspace role,
  * its writes through the login write gateway (loginWriteRoute: the write
@@ -1913,7 +1894,7 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
  * mantle_scope_has_admin, mantle_scope_has_area), so the database answers
  * for them too. Returns the refusal, or null to go on.
  *
- * No write is kept on the system pool since plan v3.2 S6 c3: the Admin acts
+ * No write is kept on the system pool: the Admin acts
  * (a contact's sharing, sharing with contacts, Revoke all of a contact's
  * shares, an entity merge; the share close by the users area, a contact
  * share's "Can write", the deleted apps' trash) run in the login's scope,
@@ -1928,7 +1909,7 @@ async function enterLoginWrite(
   // login's scope: no route has a TypeScript pre-check (a declared item
   // states intent only, route-declaration.ts).
   // A create lands in the request's workspace (?ws=) when the login
-  // moderates it (W6b); else by the login's default home rule.
+  // moderates it; else by the login's default home rule.
   const home = await createHomeFor(loginId, route, !opts.admin);
   if (home instanceof NextResponse) return home;
   noteRequestCreateHome(home);
@@ -1937,14 +1918,13 @@ async function enterLoginWrite(
 }
 
 /**
- * Where a create through `method pattern` lands (W6b, plan 15 and 21.8 row
- * 7), or a refusal. `?ws=<id>` names the request's workspace: a login that
+ * Where a create through `method pattern` lands, or a refusal. `?ws=<id>` names the request's workspace: a login that
  * is not in it is refused (403 workspace); one that moderates it creates
  * there; one that only reads it creates as if it had not named one. For a
  * non-Admin login (`ownWork`) the private workspace is the fallback (made
  * now when it has none): the folder it creates in when it may edit that,
  * else its private workspace, never Admin. An Admin user without ?ws=
- * creates as before. Not a create: nothing to record (null createWs, and
+ * creates in the folder's home, else Admin. Not a create: nothing to record (null createWs, and
  * the private workspace only for a non-Admin login's other writes, which
  * may make an item too, such as a commit that makes a copy).
  */
@@ -1953,14 +1933,13 @@ async function createHomeFor(
   route: RouteRow,
   ownWork: boolean,
 ): Promise<CreateHome | NextResponse> {
-  // THE create-home intent (arch A3c): @mantle/db createHomeIntent, shared
+  // THE create-home intent: @mantle/db createHomeIntent, shared
   // with assistant turns and MCP.
   const home = await createHomeIntent(
     ...requestCreateHomeArgs(loginId, route, getRequestContext()?.req?.url ?? null, ownWork),
   );
   if ('refused' in home) {
-    // Answered by the one mapper: 400 invalid, else 403 workspace, the
-    // bodies as before.
+    // Answered by the one mapper: 400 invalid, else 403 workspace.
     return accessRefusal(
       new AccessError(home.refused === 'invalid' ? 'invalid' : 'workspace', home.message),
     );
@@ -1973,12 +1952,11 @@ async function createHomeFor(
  * from its ROUTE_POLICY row (`creates`, `makesItems`): whether it is a
  * create route (only then is its `?ws=` read) and whether it may make an
  * item. A write that makes no item (a delete, a pin, an opened mark) never
- * makes the private workspace (W6b fix round 1): its existing one, if any,
- * else none. Any other write may make it: a create, and also an edit, a
- * move or a copy (fix round 2: such a write may land a new item, and with
- * no private workspace named its home would fall back to the rule before
- * W6b, the folder's home else Admin, so it is not narrowed to the create
- * routes). create-home-parity.test.ts pins the gate's step 6 with the same
+ * makes the private workspace: its existing one, if any, else none. Any
+ * other write may make it: a create, and also an edit, a move or a copy
+ * (such a write may land a new item, and with no private workspace named
+ * its home would fall back to the folder's home else Admin, so it is not
+ * narrowed to the create routes). create-home-parity.test.ts pins the gate's step 6 with the same
  * two fields against this.
  */
 export function requestCreateHomeArgs(
@@ -1992,7 +1970,7 @@ export function requestCreateHomeArgs(
 }
 
 /** A refusal of the gate as its HTTP answer: the one mapper's
- *  (@mantle/std mapAccessError, arch A3c), the bodies the guards sent. */
+ *  (@mantle/std mapAccessError), the bodies the guards send. */
 function accessRefusal(err: AccessError): NextResponse {
   const { status, body } = mapAccessError(err)!.http!;
   return NextResponse.json(body, { status });
@@ -2009,7 +1987,7 @@ export function loginRefused(admin: boolean): NextResponse {
 }
 
 /**
- * The member gate (member logins, Phase 1): a MEMBER login, or 401 (no
+ * The member gate: a MEMBER login, or 401 (no
  * session) / 403 (an admin: member routes are member-specific, never a
  * shared owner route). Only for the member routes (their declaration's
  * `open: 'member'`); run the handler's reads under
@@ -2021,11 +1999,10 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
   // A member and nothing else: an Admin user gets admin-login.
   if (res.admin) return loginRefused(true);
   // A write made with an API key is always on the trail, whoever the key
-  // acts as (audit item 5); a member's own session writes are not audited
-  // here, as before.
+  // acts as; a member's own session writes are not audited here.
   if (res.source === 'api') await auditMutation(res.user);
-  // A member route that reads brain items runs in the login's request scope
-  // (W7e); one about the login's own things holds its own rule (W6a).
+  // A member route that reads brain items runs in the login's request
+  // scope; one about the login's own things holds its own rule.
   return (await memberRouteScope(res.loginId)) ?? memberOf(res);
 }
 
@@ -2064,8 +2041,7 @@ export async function sessionCookieExpiryMs(): Promise<number | null> {
  * always, a member's write when it was made with an API key. Reads are not
  * logged, and a path that logs its own richer event is skipped
  * (auditMutation). Written inside the guard, as the member and chat guards
- * write theirs (A4 hand batch A: before, each caller wrote it by hand after
- * the guard).
+ * write theirs.
  */
 async function auditLoginMutation(res: Resolved): Promise<void> {
   if (res.admin || res.source === 'api') await auditMutation(res.user);
@@ -2098,7 +2074,7 @@ export function loginAdminPair(login: Login): boolean {
  *  `audit`: write the generic api.write row of a write once the login is
  *  let through (auditLoginMutation): the any-login rows (the answer step)
  *  and POST /api/auth/pair ask for it; the routes about the login's own
- *  session (sign out, change password, OAuth consent) never wrote one. */
+ *  session (sign out, change password, OAuth consent) write none. */
 export async function getLoginOr401(opts: { audit?: boolean } = {}): Promise<Login | NextResponse> {
   const res = await resolveLogin();
   if (!res) return accessRefusal(new AccessError('unauthorized'));
@@ -2110,8 +2086,8 @@ export async function getLoginOr401(opts: { audit?: boolean } = {}): Promise<Log
 }
 
 /**
- * The any-login guard of a byte route an <img> src opens (plan page
- * d8954876 section 23: a person's photo in the desktop app and the phone,
+ * The any-login guard of a byte route an <img> src opens (a person's
+ * photo in the desktop app and the phone,
  * which send no cookie and whose <img> carries no bearer): the request's
  * login as getLoginOr401 finds it (cookie, device token), else on a GET
  * the `?at=` asset token the login's shell mints for its byte srcs, the
@@ -2151,12 +2127,12 @@ function answeredLogin(res: Resolved): Login {
 }
 
 /**
- * Who calls a chat route (/api/assistant/*, workspaces W7c): any login, for
+ * Who calls a chat route (/api/assistant/*): any login, for
  * its own threads only. `user` keeps the owner-route shape (`id` is the
  * brain's anchor, `actor` the login), so the chat helpers take one shape;
  * `asLogin` is the very Login the chat guard answered, so a chat helper
- * asks adminFacts(caller.asLogin) whether it is an Admin user (plan v3.2
- * section 2.2: no kind).
+ * asks adminFacts(caller.asLogin) whether it is an Admin user (a Login
+ * carries no kind).
  */
 export type ChatCaller = Readonly<{
   /** The brain (the anchor login's id). */
@@ -2171,7 +2147,7 @@ export type ChatCaller = Readonly<{
 }>;
 
 /**
- * The chat gate (W7c, the owner's answer of 2026-10-11): every login chats
+ * The chat gate (an owner decision): every login chats
  * with the assistants of its workspaces, each in its own thread, and reads
  * only its own threads. The chat routes are any-login routes
  * (`open: 'chat'`): a read runs in the login's scope, where row security
@@ -2201,13 +2177,12 @@ export async function getChatLoginOr401(): Promise<ChatCaller | NextResponse> {
 }
 
 /**
- * The request scope of getLoginOr401 (W6a). On an any-login route
+ * The request scope of getLoginOr401. On an any-login route
  * (`open: 'any'`: shell, workspaces, grants, access keys, whoami; the
  * chat and Telegram pairing routes) every login enters its scope, reads and
- * writes alike: an Admin user's write too since plan v3.2 S6 c3 (its keys,
- * its chat threads and Telegram pairings ran on the system pool with no
- * scope before; the grants and workspaces writes since F4 and S2a a2). The
- * grants and workspace libraries read in the scope (arch A6); the shell,
+ * writes alike: an Admin user's write too (its keys, its chat threads and
+ * Telegram pairings, the grants and workspaces writes). The grants and
+ * workspace libraries read in the scope; the shell,
  * the access keys, whoami, the chat and the pairings hold their rule in
  * their own SQL or definers and leave the scope by name where the scope's
  * roles hold no right (asSystem 'rule-in-query', 'login-telegram'). Anywhere
@@ -2261,7 +2236,7 @@ export async function getCookieUpgradeLoginOr401(): Promise<
  * A bcrypt hash (cost 12, same as every login) of a throwaway string. An
  * unknown email is compared against it, so a missing login costs the same
  * bcrypt time as a real one: the answer's timing does not say whether the
- * email has an account (F31).
+ * email has an account.
  */
 const DUMMY_HASH = '$2b$12$9jl0x3pjTchfqR4xdz2.b.iR/Ncv3n26E/ZAv4NPdmSPdYW.8YW3m';
 
@@ -2295,8 +2270,8 @@ export async function authenticatePassword(
   if (!row?.hash) return null;
   // Check the password first, so a disabled login answers like a wrong one
   // (no account-state oracle), then refuse it.
-  // Password sign-in is for admins and members (the only roles since
-  // workspaces W8a): a role this code does not know never signs in.
+  // Password sign-in is for admins and members (the only roles): a role
+  // this code does not know never signs in.
   // Refused like a wrong password (no role oracle).
   const role: string = row.role;
   const passwordRole = isLoginRole(role);
@@ -2363,7 +2338,7 @@ export async function verifyPassword(userId: string, password: string): Promise<
   return bcrypt.compare(password, row.hash);
 }
 
-// ── Ending a login's sessions (F06) ──────────────────────────────────────────
+// ── Ending a login's sessions ────────────────────────────────────────────────
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -2387,11 +2362,10 @@ export async function endLoginSessions(
     removedRoutingTokens?: string[];
     /** Also revoke every inbound API key of the login (migration 0232)
      *  and every OAuth grant it holds (its MCP connectors, admin ones
-     *  included: M2 audit N4). For the deliberate security actions: a
-     *  password change or reset, "sign out everywhere", an admin's End
-     *  sessions, disable or role change (M2 audit F4), and a stolen device
-     *  token presented again (N5). NOT a plain sign-out (M1 audit item
-     *  9). */
+     *  included). For the deliberate security actions: a password change
+     *  or reset, "sign out everywhere", an admin's End sessions, disable or
+     *  role change, and a stolen device token presented again. NOT a plain
+     *  sign-out. */
     endKeys?: boolean;
     /** Who ended them, for the keys' revoked_by (default: the login). */
     actorId?: string;
@@ -2447,10 +2421,10 @@ export async function endLoginSessions(
       const now = new Date();
       // The login's MCP connectors: every live OAuth grant and every code
       // not yet exchanged. An admin's grant has no session epoch, so only
-      // this ends it (M2 audit N4). Under the login's OAuth lock, the one a
-      // refresh and a code exchange take (final audit F3), so a grant minted
-      // at the same moment is either seen here or refused there. The keys
-      // under the lock a mint takes (audit LOW-6), for the same reason.
+      // this ends it. Under the login's OAuth lock, the one a refresh and a
+      // code exchange take, so a grant minted at the same moment is either
+      // seen here or refused there. The keys under the lock a mint takes,
+      // for the same reason.
       await lockOauthActor(tx, loginId);
       await lockLoginKeys(tx, loginId);
       const keys = await tx
@@ -2478,7 +2452,7 @@ export async function endLoginSessions(
     opts.unboundPeerIds?.push(...unbound);
     return epoch;
   }
-  // Once more if it met a busy lock (last check F3): the caller has often
+  // Once more if it met a busy lock: the caller has often
   // committed its first step already (a new password), and leaving the old
   // sessions alive after it must not happen silently. A second failure is
   // thrown: the request fails loudly (409 busy), never a quiet success.
@@ -2494,16 +2468,16 @@ export async function endLoginSessions(
     unbound.length = 0;
     epoch = await onLoginHoldSpot(loginId, () => db.transaction((tx) => run(tx)));
   }
-  // The request's logins are found afresh on the next guard read (L1).
+  // The request's logins are found afresh on the next guard read.
   forgetRequestLogins();
-  // After the commit, so a rolled-back end leaves no row (final audit).
+  // After the commit, so a rolled-back end leaves no row.
   auditKeysEnded(loginId, opts.actorId ?? loginId, ended);
   auditPeersUnbound(loginId, opts.actorId ?? loginId, unbound, 'sessions-ended');
   opts.unboundPeerIds?.push(...unbound);
   return epoch;
 }
 
-/** One key.revoked row for the keys a session end revoked (M2 audit N7):
+/** One key.revoked row for the keys a session end revoked:
  *  which login, how many, which. Call it after the revoking transaction
  *  commits. No row when there were none. `reason` says what ended them, as
  *  the peer rows do: the login's MCP switch turned off is 'mcp-off'
@@ -2591,7 +2565,7 @@ export async function presentRotatedToken(
 
   const removedRoutingTokens: string[] = [];
   // A stolen token is the strongest theft signal there is: the login's API
-  // keys and MCP connectors end with its sessions (M2 audit N5).
+  // keys and MCP connectors end with its sessions.
   await endLoginSessions(tok.userId, { removedRoutingTokens, endKeys: true });
   // Loaded here, not at the top: the session layer must not load the push
   // store (and its table columns) on every import.
@@ -2621,8 +2595,8 @@ export async function presentRotatedToken(
 /** An `?at=` asset token for the anchor's bytes, minted for the login
  *  `loginId` and signed with `sessionEpoch`: the epoch the request's own
  *  credential was checked at (Login.sessionEpoch), read with the login's
- *  row by the session guard (A6b: the row was read again on the system pool
- *  before, which no scope reads). `ttlSeconds` shortens it (a member's:
+ *  row by the session guard, never read again here (on the system pool:
+ *  no scope reads auth.users). `ttlSeconds` shortens it (a member's:
  *  SHORT_ASSET_TOKEN_TTL_SECONDS). */
 export function mintAssetToken(
   anchorId: string,

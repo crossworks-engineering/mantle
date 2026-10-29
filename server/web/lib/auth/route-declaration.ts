@@ -1,5 +1,5 @@
 /**
- * A route's policy, declared in its own file (plan v3.2, the route declarations): what each
+ * A route's policy, declared in its own file: what each
  * method of the route is, beside its handler, so the declaration moves with
  * the file and no list elsewhere has to name the route.
  *
@@ -12,9 +12,8 @@
  * (scripts/route-callers.ts handlerPolicy) into the manifest (`policy`), so
  * the loader has it when it registers the route, without loading the
  * module; a declaration is data, literals only. buildRouteRow reads every
- * row from it (part 2); the lists the codemod wrote the declarations from
- * are gone (part 3), and route-policy-declarations.test.ts holds every row
- * to __snapshots__/route-policy.rows.json.
+ * row from it, and route-policy-declarations.test.ts holds every row to
+ * __snapshots__/route-policy.rows.json.
  *
  * One shape source: the const arrays below give the type, the checks of
  * validateMethodPolicy (the generator's, at pretypecheck, and the boot's,
@@ -100,20 +99,20 @@ export type DeclaredOpen = (typeof DECLARED_OPEN)[number];
 export const ITEM_NEEDS = ['read', 'edit', 'manage'] as const;
 /** The keys of an item a write names, and of an item it does not. A write
  *  with no one need whose path still names an item (a grant change) says
- *  none and the param that holds the item's id: the A8 coverage counts it
- *  (cells by the guide action it is, or a8Exempt). */
+ *  none and the param that holds the item's id: the A8 cells count it
+ *  (by the guide action it is, or a8Exempt). */
 export const ITEM_KEYS = ['param', 'need'] as const;
 export const ITEM_NONE_KEYS = ['none', 'param'] as const;
 
-/** The reason part 1 wrote where the facts gave none: a write whose path
- *  names an item no check read yet. Each is decided now (a param and
- *  need, or a reason); validateMethodPolicy refuses it, at the generator and at
+/** The placeholder reason of a write whose path names an item no check
+ *  reads. Every such write must decide (a param and need, or a reason);
+ *  validateMethodPolicy refuses the placeholder, at the generator and at
  *  boot, and the itemNonePlaceholders count holds it at 0. */
 export const ITEM_NONE_PLACEHOLDER = 'not decided yet: the write names an item no check reads';
 
 /** The item a write names (RouteRow `item`): the path param that holds
  *  its id and what the write needs of it; or none, with the reason. Every
- *  write says one (plan v3.2 S11b); a read says none. */
+ *  write says one; a read says none. */
 export type DeclaredItem =
   | Readonly<{ param: string; need: (typeof ITEM_NEEDS)[number]; none?: never }>
   | Readonly<{ none: string; param?: string; need?: never }>;

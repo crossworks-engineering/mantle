@@ -1,10 +1,9 @@
 /**
- * The switches a route can be served under (A4 hand batch A): a route
- * whose handler checked a switch FIRST, before its guard, so while the
- * switch is off every credential that reached it got the route's off
- * answer. The gate answers that switch now, before the login's answer
- * (route-policy.ts routeSwitchedOff), and the handler reads the caller
- * first.
+ * The switches a route can be served under: a route whose switch is
+ * answered FIRST, before any login's answer, so while the switch is off
+ * every credential that reaches it gets the route's off answer. The gate
+ * answers that switch before the login's answer (route-policy.ts
+ * routeSwitchedOff), and the handler reads the caller first.
  *
  * A route declares its switch in its own file, beside its handler, so the
  * declaration moves with the file (a rename cannot drop it):

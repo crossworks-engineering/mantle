@@ -1,8 +1,8 @@
 /**
- * The classes of a route's scope and the audit rule by effect (workspaces
- * W6a, plan 2.4 and 11). What the session guard does with each owner route
- * is its row's scope (route-policy.ts RouteRow.scope), from its route
- * file's declaration (`class`, `area`; plan v3.2 S9):
+ * The classes of a route's scope and the audit rule by effect. What the
+ * session guard does with each owner route is its row's scope
+ * (route-policy.ts RouteRow.scope), from its route file's declaration
+ * (`class`, `area`):
  *
  *  - `content`: brain items. A read enters the login's scope for the rest
  *    of the request: the union of its workspaces, on the workspace role
@@ -10,17 +10,13 @@
  *    scope: its writes on the write role (mantle_write_user) while the
  *    actor check is not off, where the database checks each one.
  *  - an area (`settings`, `users`, `assistants`, `connectors`, `keys`):
- *    management (plan 2.4). The login must hold the area (the gate's Admin
- *    step); the route then runs on the system pool, as management always
- *    did.
+ *    management. The login must hold the area (the gate's Admin step); the
+ *    route then runs on the system pool.
  *  - `self`: the login's own things (its profile, push devices, its chat
  *    with the Admin assistant, pairing a phone, the version and help).
  *
- * The prefix table and the login lists that classed the routes before
- * (ROUTE_PREFIXES, the member open reads and writes, the creates, the
- * read posts and write gets, the writes that make no item) are gone (S9
- * part 3): each route file declares it, and route-policy.rows.json holds
- * every row.
+ * Each route file declares its class; route-policy.rows.json holds every
+ * row.
  */
 import type { WorkspaceArea } from '@mantle/client-types/dto/workspaces';
 import { auditsByMethod } from './route-declaration';

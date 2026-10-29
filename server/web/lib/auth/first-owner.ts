@@ -9,7 +9,7 @@
  * first-run signups with different emails cannot both land. The brain is
  * then put on workspaces (lib/workspaces-migrate.ts).
  *
- * Since arch A7 the code has no rule for a brain off workspaces, and the
+ * The code has no rule for a brain off workspaces, and the
  * boot refuses one (server/main.ts). A fresh install starts with no owner
  * (it may: it serves the signup), so its first owner's switch is the one
  * that counts: when it fails (a time budget, the switch guard, a database
@@ -72,7 +72,7 @@ export async function createFirstOwner(
     if (isUniqueViolation(err)) return { ok: false, reason: 'exists' };
     throw err;
   }
-  // A fresh install starts on workspaces (W5b1 audit M1): Admin and the
+  // A fresh install starts on workspaces: Admin and the
   // bridges, with the owner in Admin. Then asked: a brain the switch left
   // off workspaces is not served (see the top). A database that cannot be
   // read here throws (the route answers 500, and the boot asks again).

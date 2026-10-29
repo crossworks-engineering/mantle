@@ -39,7 +39,7 @@ export function isRenderAssetPath(path: string): boolean {
  *  ones, but the same can't-carry-a-bearer link shape. The gate admits the
  *  token here (GET only), and ROUTE_POLICY lets the asset caller kinds be
  *  read only on a GET or HEAD row of these paths (route-policy.ts
- *  callerServes, A4 hand batch B fix round 1). */
+ *  callerServes). */
 export function isAssetPath(path: string): boolean {
   return (
     path.startsWith('/api/files/files/') ||
@@ -48,33 +48,30 @@ export function isAssetPath(path: string): boolean {
     // The user's profile photo: a private <img> src (the rail), same
     // can't-carry-a-bearer shape. GET-only byte serving, owner-scoped.
     path === '/api/profile/photo' ||
-    // Another person's photo (plan page d8954876 section 23), and the
-    // messenger's older path for it: any login, the same <img> shape.
+    // Another person's photo, and the messenger's older path for it: any
+    // login, the same <img> shape.
     // The route reads anyLoginAssetCaller (getLoginForAsset).
     /^\/api\/people\/[^/]+\/photo$/.test(path) ||
     /^\/api\/messenger\/photo\/[^/]+$/.test(path) ||
-    // Drawing SVGs: the route has ALWAYS called getOwnerForAsset and its
-    // header promises `?at=` auth for detached clients, but this list never
-    // admitted the path, so the gate 401'd the token before the route ran
-    // (worked same-origin via cookie, broken only detached). Registering an
-    // asset route means BOTH ends: getOwnerForAsset in the route AND here.
+    // Drawing SVGs: the route calls getOwnerForAsset and promises `?at=`
+    // auth for detached clients. Registering an asset route means BOTH ends:
+    // getOwnerForAsset in the route AND here. A path missing here has its
+    // token refused with a 401 by the gate before the route runs (same-origin
+    // still works via the cookie, so only detached clients break).
     /^\/api\/draws\/[^/]+\/svg$/.test(path) ||
     // A Present canvas's snapshot, the picture a page embeds (the route
     // reads readerAssetCaller, as the drawing's SVG).
     /^\/api\/presents\/[^/]+\/poster$/.test(path) ||
-    // Member Library bytes (member logins): file bytes and drawing SVGs a
-    // member could read. No route serves these paths any more.
+    // Member Library bytes: file bytes and drawing SVGs a member could read.
+    // No route serves these paths.
     path.startsWith('/api/member/files/') ||
     /^\/api\/member\/draws\/[^/]+\/svg$/.test(path) ||
-    // A member's own private file (member logins Phase 2). No route serves
-    // this path any more.
+    // A member's own private file. No route serves this path.
     /^\/api\/member\/space\/[^/]+\/bytes$/.test(path) ||
-    // An admin's own private file (member logins Phase 7). No route serves
-    // this path any more.
+    // An admin's own private file. No route serves this path.
     /^\/api\/admin\/space\/[^/]+\/bytes$/.test(path)
-    // The client byte routes (/api/client/files, draws, space bytes) were
-    // removed in workspaces W5c: no token opens them; they answer 410 to a
-    // client session.
+    // The client byte routes (/api/client/files, draws, space bytes) are not
+    // listed: no token opens them; they answer 410 to a client session.
   );
 }
 
@@ -114,19 +111,19 @@ export const PUBLIC_PATHS = [
   '/api/oauth',
   '/.well-known/oauth-authorization-server',
   '/.well-known/oauth-protected-resource',
-  // LiveKit's webhook (calls plan section 9): no session, the body is
+  // LiveKit's webhook: no session, the body is
   // signed with the API secret and verified on the raw bytes before any
   // write. See server/web/app/api/livekit/webhook/route.ts.
   '/api/livekit/webhook',
-  // /team, /hub and /api/team/* (the team-code portal) were retired in member
-  // logins Phase 6: their old page URLs redirect to /login BEFORE this gate
-  // (server/pages/stubs.ts mountRetiredTeamPages) and the API paths are gone.
+  // /team, /hub and /api/team/* (the retired team-code portal) are not listed:
+  // their page URLs redirect to /login BEFORE this gate (server/pages/stubs.ts
+  // mountRetiredTeamPages) and no route serves the API paths.
 ];
 
 /**
  * Whether `path` is under PUBLIC_PATHS: the one function that reads the
  * list. ROUTE_POLICY builds each row's `public` with it; the gate asks it
- * only for a request no row answers (arch A4 step 2).
+ * only for a request no row answers.
  */
 export function isPublicPath(path: string): boolean {
   return PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
