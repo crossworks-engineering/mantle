@@ -64,7 +64,7 @@ const LABELS: Record<string, string> = {
     "request system exits, reason 'admin-write' (an Admin user's write)",
   requestSystemExits_other:
     'request system exits with any other reason, or one the count cannot read',
-  scopeHoldsAdminCalls: 'scopeHoldsAdmin calls (an Admin ask in code; done: the gates only)',
+  scopeHoldsAdminCalls: 'scopeHoldsAdmin and adminOrSystemScope calls (an Admin ask in code)',
   sqlAreaRules:
     "SQL that decides an Admin area or user itself: functions reading the 'areas' limits, and SQL text in code",
   workspaceTableRawWrites:
@@ -234,6 +234,7 @@ const measured = measure(ROOT) as {
       requestSystemExitProblems?: string[];
       asSystemRouteProblems?: string[];
       adminCountProblems?: string[];
+      adminPastGateProblems?: string[];
     };
     cleanup?: { problems?: string[] };
     gateway?: { overLimit?: string[]; cycles?: string[] };
@@ -269,6 +270,7 @@ const problems = [
   ...(measured.perFile.rights?.requestSystemExitProblems ?? []),
   ...(measured.perFile.rights?.asSystemRouteProblems ?? []),
   ...(measured.perFile.rights?.adminCountProblems ?? []),
+  ...(measured.perFile.rights?.adminPastGateProblems ?? []),
   ...(measured.perFile.cleanup?.problems ?? []),
   ...(measured.perFile.gateway?.overLimit ?? []).map((p) => `${p} lines, over the gateway's limit`),
   ...(measured.perFile.gateway?.cycles ?? []).map((p) => `${p}: on an import cycle`),

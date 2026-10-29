@@ -109,6 +109,11 @@ export async function scopeHoldsAdmin(): Promise<boolean> {
  * reads, a queue-time rule an Admin scope skips). Outside every workspace
  * scope (a system transaction too) yes for system work, and with no system
  * actor bound it throws (SystemWorkRequiredError); in one, scopeHoldsAdmin.
+ * So in a system transaction, or in a scope with no workspace, it says yes
+ * to whatever system actor is bound, whoever the work is for: call it inside
+ * the workspace scope of the work it decides for. The turn assembly
+ * (buildConversationContext) and resolveAgentToolGroups reach it only inside
+ * such a scope in normal work; unscoped, they are the owner's own system work.
  */
 export async function adminOrSystemScope(): Promise<boolean> {
   if (!currentWorkspaceScope()) return systemYes('adminOrSystemScope outside every scope');

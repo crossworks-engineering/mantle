@@ -147,15 +147,97 @@ export function requestSystemExits(files) {
 
 // ── Admin asks ──────────────────────────────────────────────────────────────
 
-/** Calls of scopeHoldsAdmin in `text` (its definition is not a call). */
-export function scopeHoldsAdminCalls(text) {
+/** Calls of `name` in `text` (its definition is not a call). */
+function callsOf(text, name) {
   const code = stripComments(text);
   let n = 0;
-  for (const m of code.matchAll(/\bscopeHoldsAdmin\s*\(/g)) {
+  for (const m of code.matchAll(new RegExp(`\\b${name}\\s*\\(`, 'g'))) {
     if (/\bfunction\s+$/.test(code.slice(Math.max(0, m.index - 20), m.index))) continue;
     n += 1;
   }
   return n;
+}
+
+/** Calls of scopeHoldsAdmin in `text` (its definition is not a call). */
+export function scopeHoldsAdminCalls(text) {
+  return callsOf(text, 'scopeHoldsAdmin');
+}
+
+/** Calls of adminOrSystemScope in `text` (its definition is not a call). */
+export function adminOrSystemScopeCalls(text) {
+  return callsOf(text, 'adminOrSystemScope');
+}
+
+/**
+ * The files that call adminOrSystemScope (packages/db/src/gateway/
+ * scope-answers.ts), each with its count of calls and why the policy gate
+ * cannot answer it: the gate let the call in, and what is left is a
+ * context, a listing or a read decision made inside the work. A file not
+ * named here, or a count that moved, fails arch:check
+ * (adminPastGateProblems): name the new call with its why, or ask the gate.
+ *
+ * @type {Readonly<Record<string, { count: number, why: string }>>}
+ */
+export const ADMIN_PAST_GATE_SITES = Object.freeze({
+  'packages/runtime/src/heartbeats/tools.ts': {
+    count: 2,
+    why: 'a read decision: which heartbeat rows a heartbeat tool reads (every owner heartbeat through the assistants area, or the firing one only)',
+  },
+  'packages/runtime/src/agent/conversation.ts': {
+    count: 1,
+    why: 'a context: which prompt arms a turn assembles (entities, graph, the owner thread) before any tool is called',
+  },
+  'packages/runtime/src/agent/skills.ts': {
+    count: 1,
+    why: 'a listing: which adminOnly tool groups resolve into the tool list of an agent',
+  },
+  'packages/content/src/table-snapshots.ts': {
+    count: 1,
+    why: 'a read decision inside a commit: whether it keeps the replaced version in the history',
+  },
+  'packages/files/src/ops/files.ts': {
+    count: 1,
+    why: 'a read decision: whether the bytes of an email attachment are read after the file node passed the item check',
+  },
+  'packages/tools/src/item-args.ts': {
+    count: 1,
+    why: 'a read decision: whether a missing recall map is named to the caller or left to the tool error',
+  },
+  'packages/tools/src/item-write-gate.ts': {
+    count: 1,
+    why: 'a read decision: whether the folder a create names is checked against the folders the scope reads',
+  },
+  'packages/tools/src/outside-admin.ts': {
+    count: 1,
+    why: 'a listing and a context: scopeOutsideAdmin, read by the author ceiling of the app tools and by the delegation turn',
+  },
+});
+
+/** The files whose adminOrSystemScope calls are not as ADMIN_PAST_GATE_SITES
+ *  names them: a new file, a moved count, an entry left with no call. */
+export function adminPastGateProblems(files) {
+  const problems = [];
+  const seen = new Set();
+  for (const { path, text } of files) {
+    const n = adminOrSystemScopeCalls(text);
+    if (n === 0) continue;
+    seen.add(path);
+    const site = ADMIN_PAST_GATE_SITES[path];
+    if (!site) {
+      problems.push(
+        `${path}: calls adminOrSystemScope ${n}x, not named in ADMIN_PAST_GATE_SITES (eslint-rules/rights-counts.mjs)`,
+      );
+    } else if (site.count !== n) {
+      problems.push(
+        `${path}: calls adminOrSystemScope ${n}x, ADMIN_PAST_GATE_SITES says ${site.count}`,
+      );
+    }
+  }
+  for (const path of Object.keys(ADMIN_PAST_GATE_SITES)) {
+    if (!seen.has(path))
+      problems.push(`${path}: named in ADMIN_PAST_GATE_SITES, calls no adminOrSystemScope`);
+  }
+  return problems;
 }
 
 /** The index of the quote that closes the string opening at `code[i]` (or
@@ -578,7 +660,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
   let tsSetAssistant = 0;
   let undated = 0;
   for (const { path, text } of texts) {
-    holdsAdmin += scopeHoldsAdminCalls(text);
+    holdsAdmin += scopeHoldsAdminCalls(text) + adminOrSystemScopeCalls(text);
     if (!isTestSupport(path)) {
       const k = tsAdminSqlKinds(text);
       tsAreaSql += k.rules;
@@ -656,6 +738,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
       adminCountProblems: admin.problems,
       requestSystemExits: exits,
       requestSystemExitProblems: requestExits.problems,
+      adminPastGateProblems: adminPastGateProblems(texts),
       workspaceTableWriterFns: writers.map((f) => ({
         fn: `${f.schema}.${f.name}(${f.args})`,
         definer: f.definer,

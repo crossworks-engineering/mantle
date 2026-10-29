@@ -12,6 +12,9 @@ import { countedFiles, readRepoFile } from './arch-counts.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { asSystemExits } from './as-system-exits.mjs';
 import {
+  ADMIN_PAST_GATE_SITES,
+  adminOrSystemScopeCalls,
+  adminPastGateProblems,
   legacyPrecheckUndated,
   migrationFunctions,
   readsAreaLimits,
@@ -259,6 +262,57 @@ describe('scopeHoldsAdminCalls', () => {
     `;
     expect(scopeHoldsAdminCalls(text)).toBe(2);
   });
+
+  it('counts adminOrSystemScope calls the same way', () => {
+    const text = `
+      export async function adminOrSystemScope(): Promise<boolean> { return x; }
+      import { adminOrSystemScope } from '@mantle/db';
+      if (await adminOrSystemScope()) go();
+      // adminOrSystemScope() here is prose
+    `;
+    expect(adminOrSystemScopeCalls(text)).toBe(1);
+  });
+});
+
+describe('adminPastGateProblems', () => {
+  const [named, site] = Object.entries(
+    ADMIN_PAST_GATE_SITES as Record<string, { count: number; why: string }>,
+  )[0]!;
+  const calls = (n: number) => 'await adminOrSystemScope();\n'.repeat(n);
+  const all = (over: Record<string, string>) =>
+    Object.entries(ADMIN_PAST_GATE_SITES as Record<string, { count: number }>).map(([path, s]) => ({
+      path,
+      text: over[path] ?? calls(s.count),
+    }));
+
+  it('names no problem when every file and count is as listed', () => {
+    expect(adminPastGateProblems(all({}))).toEqual([]);
+  });
+
+  it('fails a call in a file the list does not name', () => {
+    const problems = adminPastGateProblems([
+      ...all({}),
+      { path: 'packages/x/new.ts', text: calls(1) },
+    ]);
+    expect(problems).toEqual([
+      expect.stringContaining('packages/x/new.ts: calls adminOrSystemScope 1x, not named'),
+    ]);
+  });
+
+  it('fails a count that moved, and an entry left with no call', () => {
+    expect(adminPastGateProblems(all({ [named]: calls(site.count + 1) }))).toEqual([
+      expect.stringContaining(`${named}: calls adminOrSystemScope ${site.count + 1}x`),
+    ]);
+    expect(adminPastGateProblems(all({ [named]: '' }))).toEqual([
+      expect.stringContaining(`${named}: named in ADMIN_PAST_GATE_SITES, calls no`),
+    ]);
+  });
+
+  it('gives each entry a why', () => {
+    for (const s of Object.values(ADMIN_PAST_GATE_SITES as Record<string, { why: string }>)) {
+      expect(s.why.length).toBeGreaterThan(20);
+    }
+  });
 });
 
 describe('tsAdminRuleSql', () => {
@@ -481,6 +535,10 @@ describe('the repo', () => {
         numbers.requestSystemExits_adminWrite! +
         detail.requestSystemExits['first-owner']!,
     );
+  });
+
+  it('names every adminOrSystemScope call past a gate', () => {
+    expect(adminPastGateProblems(texts)).toEqual([]);
   });
 
   it('keeps no legacy pre-check without an owner and an end date', () => {
