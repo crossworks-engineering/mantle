@@ -334,8 +334,8 @@ runs (`WRITERS`, `packages/db/src/ws-user-definers.db.test.ts`; pin `workspaceTa
   `actor` argument, not only the acting login (section 9). Owner: `packages/db`. By 2026-11-30.
 - The seven Admin acts' definers (0308, 0310) run by `loginDefinerCall` on the system pool: the
   write role holds no EXECUTE on them yet. Owner: `packages/db`. By 2026-11-30.
-- The narrow role writes no item but still reads the `content` tables (`narrowFor`): at least 17
-  code sites read content on a narrow exit (the measured list:
+- The narrow role writes no item but still reads the `content` tables (`narrowFor`): at least 18
+  code sites read content on a narrow exit (`keyword-candidates` and the measured list:
   [_archive/plan-v3-s7c-handover.md](./_archive/plan-v3-s7c-handover.md)); each moves to a read
   definer, the caller's scope or a named full-route spot. Owner: `packages/db`. By 2026-12-15.
 - Accepted: any role can `set_config('mantle.actor', ...)`, so the settings are no credential;

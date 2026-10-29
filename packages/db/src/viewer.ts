@@ -996,8 +996,8 @@ export type SystemRoute = 'narrow' | 'full';
  * steps).
  *
  * `keyword-candidates` is narrow though it reads content: it only reads
- * the ids of `nodes` (a content table is 'read' on the narrow role) and
- * writes nothing.
+ * the ids of `nodes` (a content table is 'read' on the narrow role, a
+ * known limit in docs/actors.md) and writes nothing.
  *
  * Full, each with why:
  *  - `app-data`: an app's registry rows, its data tables' exports and its
