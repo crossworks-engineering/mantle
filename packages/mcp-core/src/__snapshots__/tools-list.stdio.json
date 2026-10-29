@@ -11378,7 +11378,7 @@
  },
  {
   "name": "model_catalog",
-  "description": "Look up models with pricing: OpenRouter's FULL catalog — chat, image/video generators, speech (TTS) and transcription (STT) engines, embeddings, rerank — each with slug, live input/output $ per 1M, context, `kind`, and `inputModalities`/`outputModalities` (the output side separates an image READER from a GENERATOR). Plus the voice models Mantle reaches through its own adapters (ElevenLabs, Deepgram, AssemblyAI, Google). Pricing is NULL wherever a model is not token-billed — per-minute audio and video routes, those adapter rows — so leave that snapshot empty rather than invent a rate. THE source for slugs and pricing when writing `model_pool_set` entries; each row's `provider` is the route to record. Filter by `kind` per pool; `q` searches name/slug, `ids` fetches exact slugs. Keyless; cached ~5 minutes.",
+  "description": "Look up models with pricing: OpenRouter's FULL catalog (chat, image/video generators, speech and transcription engines, embeddings, rerank), each with slug, live input/output $ per 1M, context, `kind`, and `inputModalities`/`outputModalities` (the output side separates an image READER from a GENERATOR). Plus the voice models Mantle's own adapters reach, and Microsoft Foundry's seed (provider `foundry`; the route's model is the owner's deployment name). Pricing is NULL wherever a model is not token-billed; leave that snapshot empty rather than invent a rate. THE source for slugs and pricing when writing `model_pool_set` entries; each row's `provider` is the route to record. Filter by `kind` per pool; `q` searches name/slug, `ids` fetches exact slugs. Keyless; cached ~5 minutes.",
   "inputSchema": {
    "type": "object",
    "properties": {
