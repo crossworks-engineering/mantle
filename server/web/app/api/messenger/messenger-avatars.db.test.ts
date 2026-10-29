@@ -207,6 +207,7 @@ describe.skipIf(!URL)('the messenger faces: avatars and the photo route', () => 
       online: false,
       avatar: { style: 'lorelei', seed: 'ben-seed', parts: null },
       photoVersion: null,
+      description: null,
     });
     expect(entries.find((e) => e.id === E)).toMatchObject({ avatar: null, photoVersion: null });
     expect(entries.find((e) => e.id === tess)).toEqual({

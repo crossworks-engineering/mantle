@@ -206,7 +206,7 @@ describe.skipIf(!URL)('who may see whom (loginVisibleTo, peopleVisibleTo)', () =
     const cards = await pp.personCards(actor(adminB));
     const ben = cards.find((c) => c.id === B)!;
     expect(Object.keys(ben).sort()).toEqual(
-      ['avatar', 'id', 'name', 'photoVersion', 'presence', 'status'].sort(),
+      ['avatar', 'description', 'id', 'name', 'photoVersion', 'presence', 'status'].sort(),
     );
     expect(ben).toMatchObject({
       name: 'Ben',

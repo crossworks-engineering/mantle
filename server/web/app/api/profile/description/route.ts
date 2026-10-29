@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { ownerCaller } from '@/lib/auth';
-import { savePreferencesFor } from '@mantle/content';
+import { anyLoginCaller } from '@/lib/auth';
+import { updateProfilePreferences } from '@mantle/content';
 import {
   PERSON_DESCRIPTION_MAX,
   personDescriptionTooLongError,
@@ -11,7 +11,12 @@ import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  PUT: { class: 'self', item: { none: "the login's own things, not an item" } },
+  PUT: {
+    class: 'self',
+    scope: null,
+    open: 'any',
+    item: { none: "the login's own things, not an item" },
+  },
 });
 
 /**
@@ -19,9 +24,13 @@ export const policy = routePolicy({
  * team ("Developer", "Project manager", "Jason's wife"), on its own person
  * card. The card is the team's to read: every login and agent that may see
  * it reads the description (GET /api/people, messenger_directory), which is
- * how an agent finds "the developer". A PERSONAL key, on the caller's own
- * profile row (savePreferencesFor). null or '' clears it. Over
+ * how an agent finds "the developer". null or '' clears it. Over
  * PERSON_DESCRIPTION_MAX characters (after trimming) is refused, never cut.
+ *
+ * Open to every login (`open: 'any'`, anyLoginCaller), a member as an Admin
+ * user: the description is the login's own. A PERSONAL key, written on the
+ * login's own profile row only (updateProfilePreferences, the profile-row
+ * spot), never the brain's.
  */
 const Body = z.object({
   // A generous bound on the payload; the real limit is checked trimmed.
@@ -32,7 +41,7 @@ const Body = z.object({
 });
 
 export async function PUT(req: Request) {
-  const user = ownerCaller();
+  const login = anyLoginCaller();
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
@@ -47,6 +56,6 @@ export async function PUT(req: Request) {
       { status: 400 },
     );
   }
-  const preferences = await savePreferencesFor(user.actor.id, { description: text });
+  const preferences = await updateProfilePreferences(login.loginId, { description: text });
   return NextResponse.json({ description: projectPersonDescription(preferences.description) });
 }

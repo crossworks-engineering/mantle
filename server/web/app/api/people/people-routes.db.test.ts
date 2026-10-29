@@ -339,13 +339,7 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
     const own = await send('PUT', '/api/profile/description', B, { description: ' Developer ' });
     expect(await json(own)).toEqual({ description: 'Developer' });
     expect(await card(A, B)).toBe('Developer');
-    expect(
-      (
-        (await json(await get('/api/profile', cookie(B)))) as {
-          preferences: { description?: string };
-        }
-      ).preferences.description,
-    ).toBe('Developer');
+    expect(await card(B, B)).toBe('Developer');
 
     // Over the limit is refused, never cut; the card keeps what it had.
     const long = await send('PUT', '/api/profile/description', B, { description: 'x'.repeat(501) });

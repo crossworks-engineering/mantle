@@ -890,6 +890,7 @@
 "PUT /api/profile/backgrounds": {"class":"self","scope":{"kind":"self"},"effect":"write","caller":"owner"},
 "PUT /api/profile/color-theme": {"class":"self","scope":{"kind":"self"},"effect":"write","caller":"owner"},
 "PUT /api/profile/default-mode": {"class":"self","scope":{"kind":"self"},"effect":"write","caller":"owner"},
+"PUT /api/profile/description": {"class":"self","scope":null,"open":"login","logins":"any","effect":"write","caller":"login"},
 "PUT /api/profile/fonts": {"class":"self","scope":{"kind":"self"},"effect":"write","caller":"owner"},
 "PUT /api/profile/home-desk": {"class":"self","scope":null,"open":"login","logins":"any","effect":"write","caller":"login"},
 "PUT /api/profile/logo": {"class":"self","scope":{"kind":"self"},"effect":"write","caller":"owner"},
