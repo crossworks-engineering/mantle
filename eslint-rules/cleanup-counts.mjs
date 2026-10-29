@@ -562,10 +562,15 @@ const CELL_SHAPE = /^[A-Z][0-9]{1,2}$/;
 export const HISTORY_CODE_STOPLIST = Object.freeze([
   {
     code: 'S3',
-    why: 'the object-store service (an S3 backend, S3-compatible, plain S3 calls), not plan v3 S3',
-    line: /object[- ]?store|\bbuckets?\b|\bbackend\b|\bendpoint\b|\bS3[- ](?:compatible|client|calls?|stores?|CreateBucket)\b|\b(?:any|other|another|external|plain|self-hosted) S3\b/i,
+    why: 'the object-store service (an S3 backend, S3-compatible, plain S3 calls, the S3 API or SDK, an S3 URL), not plan v3 S3',
+    line: /object[- ]?store|\bbuckets?\b|\bbackend\b|\bendpoint\b|\bS3[- ](?:compatible|client|calls?|stores?|CreateBucket|URLs?|SDK|API|presigned)\b|\b(?:any|other|another|external|plain|self-hosted|AWS) S3\b/i,
   },
-  { code: 'A4', why: 'the paper size', line: /\bA4 (?:paper|pages?|sheets?|size)\b/i },
+  {
+    code: 'A4',
+    why: 'the paper size',
+    line: /\bA4 (?:paper|pages?|sheets?|size|landscape|portrait)\b/i,
+  },
+  { code: 'S1', why: 'a Sentry severity, not plan v3 S1', line: /\bSentry S1\b|\bS1 severity\b/ },
   {
     code: 'A8',
     why: "the access matrix suite's own name (A8 matrix, A8 grid, A8 cells, A8 report, A8 exempt, A8 tool cells)",

@@ -455,7 +455,7 @@ describe('history codes in comments', () => {
   });
 
   it('the stoplist: S3 the store, A4 the paper, the A8 suite names', () => {
-    const wide = new Set(['S3', 'A4', 'A8']);
+    const wide = new Set(['S3', 'A4', 'A8', 'S1']);
     const w = (t: string, path = 'x.ts') => historyCommentLines(path, t, wide);
     expect(
       w(
@@ -474,9 +474,28 @@ describe('history codes in comments', () => {
     ).toEqual([7, 8, 9]);
     expect(w('// the bucket for S3', 'x.ts')).toEqual([]);
     expect(w('// S3 is the default', 'packages/storage/src/index.ts')).toEqual([]);
+    // None of these counts: the store's API, SDK and URLs, the paper's
+    // orientation, a Sentry severity.
+    expect(
+      w(
+        [
+          '// RustFS on 9000 (S3 API)',
+          '// the AWS S3 SDK pointed at the store',
+          '// an S3 SDK client',
+          '// an S3 URL, or S3 presigned links',
+          '// A4 landscape, 10mm margins',
+          '// an A4 portrait print',
+          '// a Sentry S1 alert',
+          '// raised at S1 severity',
+        ].join('\n'),
+      ),
+    ).toEqual([]);
+    // Next to them the plan steps still count.
+    expect(w('// the S1 step\n// in S3 the export moved')).toEqual([1, 2]);
     expect((HISTORY_CODE_STOPLIST as { code: string }[]).map((s) => s.code)).toEqual([
       'S3',
       'A4',
+      'S1',
       'A8',
       'Dn',
     ]);
