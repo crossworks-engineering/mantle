@@ -183,7 +183,7 @@ request scope `asSystem(fn, reason)` takes only a reason of `AS_SYSTEM_TURN_REAS
 | app-data           | full   | an app's SQLite work after the scope found the app        |
 | rule-in-query      | full   | any-login routes holding the rule in their own SQL        |
 | admin-area         | narrow | an Admin area tool's system tables, after the area check  |
-| keyword-candidates | full   | ranked ids of a text match, re-read in the scope by id    |
+| keyword-candidates | narrow | ranked ids of a text match, re-read in the scope by id    |
 | app-trash          | full   | a deleted app's snapshots, after the manage check         |
 | login-telegram     | narrow | a login's own Telegram chats (no role holds those tables) |
 | audit-log          | narrow | a connector call's audit row                              |

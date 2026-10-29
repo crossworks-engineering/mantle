@@ -495,11 +495,11 @@ counters and logs); outside every scope it is system work and runs full.
 
 Narrow: `admin-area` (the `systemWhole` tools and `areaSystem`),
 `agent-workspace`, `connector-binding`, `connector-call`,
-`heartbeat-own-row`, `login-telegram`, `audit-log`, `pending-approval`, and
-the request exits `area` and `login-self`. Full, each with its why in
-`AS_SYSTEM_ROUTE`'s comment: `app-data`, `rule-in-query`,
-`keyword-candidates`, `app-trash`, `page-refold`, `brain-bookkeeping`, and
-the system-work and test reasons.
+`heartbeat-own-row`, `login-telegram`, `audit-log`, `pending-approval`,
+`keyword-candidates` (ids of `nodes` only, a read), and the request exits
+`area` and `login-self`. Full, each with its why in `AS_SYSTEM_ROUTE`'s
+comment: `app-data`, `rule-in-query`, `app-trash`, `page-refold`,
+`brain-bookkeeping`, and the system-work and test reasons.
 
 Where a narrow exit's own work writes a content table (measured), that
 work runs on the full route, keeping its actor, at a spot named in

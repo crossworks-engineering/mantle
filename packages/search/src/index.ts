@@ -228,8 +228,8 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
       // A big workspace scope: the text match is not leakproof, so
       // under the row rule Postgres may not use the text index; it walked
       // every item of the scope and matched each (30 to 40 ms on a large
-      // brain copy for one search). The ranked match runs on the system
-      // pool for ids only (a wider pool), and only the ids the scope reads
+      // brain copy for one search). The ranked match runs on the narrow
+      // system route for ids only (a read), and only the ids the scope reads
       // are kept, re-read in the scope by id, in the match's order. Nothing
       // outside the scope is returned or used.
       // Residual signal (accepted): the candidate pool is cut

@@ -974,12 +974,10 @@ export const AS_SYSTEM_TURN_REASONS = [
  *  - `login-notice`: the push worker builds a login's notice (a finished
  *    chat reply, a review result) from rows of that login only
  *    (login-notices.ts, systemWork).
- *  - `space-taken-authors`: no caller; the name is kept for the spaces
- *    family.
  *  - `test`: a test's own setup, in test files only (eslint-rules/
  *    arch-lints.test.ts keeps it out of every counted file).
  */
-export const AS_SYSTEM_OTHER_REASONS = ['login-notice', 'space-taken-authors', 'test'] as const;
+export const AS_SYSTEM_OTHER_REASONS = ['login-notice', 'test'] as const;
 
 export type AsSystemReason =
   (typeof AS_SYSTEM_TURN_REASONS)[number] | (typeof AS_SYSTEM_OTHER_REASONS)[number];
@@ -997,19 +995,20 @@ export type SystemRoute = 'narrow' | 'full';
  * access matrix. systemWork runs full whatever its reason (workers, boot
  * steps).
  *
+ * `keyword-candidates` is narrow though it reads content: it only reads
+ * the ids of `nodes` (a content table is 'read' on the narrow role) and
+ * writes nothing.
+ *
  * Full, each with why:
  *  - `app-data`: an app's registry rows, its data tables' exports and its
  *    undo snapshot, written for the app's caller: content tables.
  *  - `rule-in-query`: the any-login routes hold the workspace rule in their
  *    own SQL and write content rows (chat threads, access keys' items).
- *  - `keyword-candidates`: reads every item's text in a big scope; content
- *    reads stay full until the read cells are measured.
  *  - `app-trash`: a deleted app's snapshots and trash rows (content).
  *  - `page-refold`: folds the derived text of pages (nodes) again.
  *  - `brain-bookkeeping`: the named system step writes content tables (a
  *    table's history, a file's derived counts, the reap of derived items).
  *  - `login-notice`: systemWork only (full by rule).
- *  - `space-taken-authors`: no caller (kept for the spaces family).
  *  - `test`: a test's own setup.
  */
 export const AS_SYSTEM_ROUTE: Readonly<Record<AsSystemReason, SystemRoute>> = Object.freeze({
@@ -1020,7 +1019,7 @@ export const AS_SYSTEM_ROUTE: Readonly<Record<AsSystemReason, SystemRoute>> = Ob
   'app-data': 'full',
   'rule-in-query': 'full',
   'admin-area': 'narrow',
-  'keyword-candidates': 'full',
+  'keyword-candidates': 'narrow',
   'app-trash': 'full',
   'login-telegram': 'narrow',
   'audit-log': 'narrow',
@@ -1028,7 +1027,6 @@ export const AS_SYSTEM_ROUTE: Readonly<Record<AsSystemReason, SystemRoute>> = Ob
   'page-refold': 'full',
   'brain-bookkeeping': 'full',
   'login-notice': 'full',
-  'space-taken-authors': 'full',
   test: 'full',
 });
 
