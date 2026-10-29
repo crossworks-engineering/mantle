@@ -337,8 +337,8 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
 
     // Ben writes his own, naming the login he wrote it as; Ann (sharing W)
     // reads it on his card.
-    const mine = (description: string | null, loginId: unknown = B) =>
-      send('PUT', '/api/profile/description', B, { description, loginId });
+    const mine = (description: string | null) =>
+      send('PUT', '/api/profile/description', B, { description, loginId: B });
     const own = await mine(' Developer ');
     expect(await json(own)).toEqual({ description: 'Developer' });
     expect(await card(A, B)).toBe('Developer');
@@ -352,11 +352,19 @@ describe.skipIf(!URL)('the people routes (the gate, the card, presence, the phot
 
     // A body naming no login, or another one, writes nothing (the Desk's
     // rule): a tab left on one login never writes another's card.
-    for (const loginId of [undefined, A, 'not-a-uuid']) {
-      const res = await mine('Finance manager', loginId);
-      expect(res.status, String(loginId)).toBe(403);
+    const named = (loginId: string) =>
+      send('PUT', '/api/profile/description', B, { description: 'Finance manager', loginId });
+    const unnamed = () =>
+      send('PUT', '/api/profile/description', B, { description: 'Finance manager' });
+    for (const [what, res] of [
+      ['none', await unnamed()],
+      ['another', await named(A)],
+      ['no uuid', await named('not-a-uuid')],
+    ] as const) {
+      expect(res.status, what).toBe(403);
       expect(await res.json()).toMatchObject({ code: 'login-mismatch' });
     }
+    expect(await card(A, B)).toBe('\u{1F600}'.repeat(500));
 
     // One line of visible text: a NUL, a bidi override, zero-width and
     // newlines are dropped or folded, never stored (jsonb refuses U+0000).
