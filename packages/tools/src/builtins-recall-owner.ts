@@ -1,10 +1,9 @@
 /**
- * Recall v2: the OWNER's acts, on the MCP surface only.
+ * Recall: the OWNER's acts, on the MCP surface only.
  *
- * Jason, 2026-09-30: "I still want to be able to confirm it through mcp if
- * needed." Every owner route under /api/recall has a twin here, so everything
- * the Recall editor does can be done from an MCP client too. An MCP client
- * holds the owner's token and acts for the owner, exactly like
+ * Every owner route under /api/recall has a twin here, so everything the Recall
+ * editor does, confirming included, can be done from an MCP client. An MCP
+ * client holds the owner's token and acts for the owner, exactly like
  * `pending_approve` (builtins-pending.ts), so these run with an OWNER actor
  * named 'mcp'; the revision log shows "owner, via mcp".
  *

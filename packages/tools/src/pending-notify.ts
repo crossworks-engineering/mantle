@@ -8,7 +8,7 @@
  *               repaints the sidebar badge + /pending live, no refresh.
  *               The push-notify worker also LISTENs and (for `mobile`
  *               operators) sends a device push deep-linking to /pending.
- *   - Telegram → (since workspaces W7d: only to a chat paired to the call's
+ *   - Telegram → (only to a chat paired to the call's
  *               own login, the anchor's for system calls and for a call
  *               its asker may not approve (elevated), and only while that
  *               login holds the settings area)
@@ -91,8 +91,8 @@ export async function notifyPendingCreated(input: {
   args: Record<string, unknown>;
   via?: string;
   /** The call needs an Admin user's approval, its asker's rights not
-   *  reaching it (pending_tool_calls.elevated, owner decision 1a, A5 step
-   *  6d): its card goes to the owner, never to its asker. */
+   *  reaching it (pending_tool_calls.elevated): its card goes to the owner,
+   *  never to its asker. */
   elevated?: { elevated: true; reason: string };
   /** The turn that queued it read text a client wrote (0287): the card
    *  says so. */
@@ -108,12 +108,11 @@ export async function notifyPendingCreated(input: {
   // companion app's /pending queue (woken by the push above), so skip the
   // card to avoid notifying on two channels.
   try {
-    // The card goes to the login that decides the call (W7d; an elevated
-    // call's to the anchor, A5 step 6d fix round 1): its chat, its last
-    // channel. Both by their definer (mantle_pending_card_route, 0293: in a
-    // scope only a call the scope's own login asked; A6b: system work
-    // before, refused in a scope). The bot's row (accountById) is read in
-    // the caller's scope, as on main.
+    // The card goes to the login that decides the call (an elevated call's
+    // to the anchor): its chat, its last channel. Both by their definer
+    // (mantle_pending_card_route, 0293: in a scope only a call the scope's
+    // own login asked). The bot's row (accountById) is read in the caller's
+    // scope.
     const [route] = (await db.execute(
       sql`select login_id::text as "loginId", account_id::text as "accountId",
                  telegram_chat_id as "telegramChatId"

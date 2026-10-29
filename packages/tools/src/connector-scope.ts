@@ -1,23 +1,21 @@
 /**
- * A connector tool in a workspace scope (workspaces W4b, plan section 6):
- * the connector must be a resource of the scope's workspace, and a tool
- * not marked read-only needs that resource's Write tick AND the asking login
- * a Moderator there; a stale mark is refused; a link scope holds no
- * workspace, so it reaches no connector.
+ * A connector tool in a workspace scope: the connector must be a resource
+ * of the scope's workspace, and a tool not marked read-only needs that
+ * resource's Write tick AND the asking login a Moderator there; a stale mark
+ * is refused; a link scope holds no workspace, so it reaches no connector.
  *
- * Since A5 step 6a (carried L1) this is a gate narrower (`connector`,
- * gate-narrowers.ts), so a tool loop's listing (turnListedTools) and its
- * call read the same rule: what the scope may not call is not offered. The
- * caller carries what the rule reads (`facts.connector`, loaded by
- * gateCallerFor for a connector row in a workspace scope:
- * connectorScopeFacts); connectorScopeRefusal is the rule. A connector whose
- * group is missing, unbound or disabled carries no answer here: dispatch
- * answers it in its own words first, as before.
+ * This is a gate narrower (`connector`, gate-narrowers.ts), so a tool loop's
+ * listing (turnListedTools) and its call read the same rule: what the scope
+ * may not call is not offered. The caller carries what the rule reads
+ * (`facts.connector`, loaded by gateCallerFor for a connector row in a
+ * workspace scope: connectorScopeFacts); connectorScopeRefusal is the rule. A
+ * connector whose group is missing, unbound or disabled carries no answer
+ * here: dispatch answers it in its own words first.
  *
  * What stays at dispatch: the marked inputs (a read-only mark holds only
  * for the inputs it was marked with), which only a call's arguments show,
  * and, for an owner MCP connection, the whole rule after its own pre-run
- * check (loginConnectorRefused), in the order that surface always had.
+ * check (loginConnectorRefused), in that surface's order.
  */
 import type { Tool, WorkspaceScope } from '@mantle/db';
 import { connectorGroupOf, connectorResources, LINK_NO_CONNECTORS } from './external-access';
@@ -92,9 +90,8 @@ export function connectorScopeRefusal(
 }
 
 /** What an approval of a connector write the asking scope may not make
- *  itself says (owner decision 1a, A5 step 6d; the approval rule since fix
- *  round 1, pending-approval.ts): who may approve it, and that its asker
- *  may not. */
+ *  itself says (the approval rule: pending-approval.ts): who may approve
+ *  it, and that its asker may not. */
 export const CONNECTOR_ELEVATED_REASON =
   'The person asking cannot make this connector write themselves (its Write is off in their workspace, or they are not a Moderator there), so they cannot approve it either: an Admin user must, the owner or someone with write rights on this connector, and it runs with their rights.';
 
@@ -103,9 +100,9 @@ export const CONNECTOR_ELEVATED_REASON =
 export type ElevatedApproval = Readonly<{ elevated: true; reason: string }>;
 
 /**
- * The facts of `facts` with the connector write's own rule lifted (owner
- * decision 1a, A5 step 6d): every workspace of the scope that holds the
- * connector holds it with its Write tick, the login a Moderator there. The
+ * The facts of `facts` with the connector write's own rule lifted: every
+ * workspace of the scope that holds the connector holds it with its Write
+ * tick, the login a Moderator there. The
  * rest of the rule stands: a link, a connector the scope does not hold, a
  * stale mark. Read only for a call that waits for an approver (a
  * requires_confirm tool, or a turn whose writes wait: client-sourced), whose

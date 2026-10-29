@@ -1,9 +1,9 @@
 /**
- * Which tools a MEMBER's run of an app may call (member logins Phase 4b, plan
- * v3.1 section 4a). `dispatchTool` checks none of this (no group, no enabled
- * group, no requiresConfirm), so the member tool broker asks here first, at
- * dispatch time, every call. `app_tools_set` asks the same question to warn
- * the author, so the warning and the refusal can never disagree.
+ * Which tools a MEMBER's run of an app may call. `dispatchTool` checks none
+ * of this (no group, no enabled group, no requiresConfirm), so the member
+ * tool broker asks here first, at dispatch time, every call. `app_tools_set`
+ * asks the same question to warn the author, so the warning and the refusal
+ * can never disagree.
  *
  * A tool is allowed only when ALL hold:
  *   1. the app declares it (manifest.toolSlugs);
@@ -17,15 +17,13 @@
  *      call) and is marked read-only (`readOnly`, the default-deny flag the
  *      read-only turn uses): an app loop has no model in between, so a
  *      writing or spending builtin an admin put in a system-wide group for
- *      chat must not become callable 60 times a minute (audit 2026-09-27;
- *      `spends` since audit F17, as a read can spend too). One exception
- *      (task 2178377a, 2026-10-22): a Table write the policy marks
+ *      chat must not become callable 60 times a minute (`spends` too, as a
+ *      read can spend). One exception: a Table write the policy marks
  *      `table-rows` (add a row or rows, upsert rows, update a row, set a
  *      cell, and commit the draft, table_commit),
  *      on a Table homed in the workspace that holds the app (rule 6);
  *   5. an ENABLED system-wide tool group holds it (not an adminOnly one:
- *      those run only in the Admin workspace; tool-group levels went in
- *      workspaces W7b, plan 5.4);
+ *      those run only in the Admin workspace);
  *   6. a Table write names, in its item argument (`table_id`, or `id` for
  *      table_commit), a Table homed in the workspace that holds the app
  *      (appHolderHomes in @mantle/db: the one holder beyond Admin an app
@@ -36,17 +34,16 @@
  * An OUTSIDE tool takes another path after rule 2 (external-access.ts). A
  * CONNECTOR tool (mcp): the workspaces that hold its connector decide (the
  * runner's login's workspaces, and with `check.appId` every workspace that
- * holds the app; W5b2), and the admin's read-only mark makes it a read, its
- * absence a write (team apps Phase 2, Jason 2026-10-08). An http tool: an
- * admin switched on "External access" on it and confirmed it only reads
- * (widened 2026-10-02). Either counts only while the handler is the one the
- * admin confirmed and the tool needs no confirmation. Never for recipe or
- * shell tools.
- * The caller then dispatches inside `withViewer(…)` on a team surface
- * that carries the login, so row security still decides what the tool reads.
+ * holds the app), and the admin's read-only mark makes it a read, its absence
+ * a write. An http tool: an admin switched on "External access" on it and
+ * confirmed it only reads. Either counts only while the handler is the one
+ * the admin confirmed and the tool needs no confirmation. Never for recipe or
+ * shell tools. The caller then dispatches inside `withViewer(…)` on a team
+ * surface that carries the login, so row security still decides what the tool
+ * reads.
  *
  * These are a member's rules for a team or public app. The brokers pick the
- * rules in app-tool-level.ts (client tier audit L1): a client-level app gets
+ * rules in app-tool-level.ts: a client-level app gets
  * the client rules instead, for every runner.
  */
 import { and, eq, sql } from 'drizzle-orm';
@@ -66,7 +63,7 @@ import { builtinPolicy } from './tool-policy';
 
 /** Retired builtins with no definition here (the system manifest's
  *  RETIRED_BUILTIN_TOOL_SLUGS: my_items_list, my_item_open,
- *  team_request_create): refused by name, as before, with no policy to
+ *  team_request_create): refused by name, with no policy to
  *  carry the rule. Kept: without them an app that declares one gets a 404
  *  (its row is disabled) instead of this 403, and a brain whose row is not
  *  yet disabled would reach the row rules. */
@@ -93,15 +90,14 @@ const TEAM_TOOLS_REFUSED: readonly string[] = [
  * - read_result opens a spilled result of an agent turn by handle.
  *
  * Read from each builtin's policy (`memberApp: 'refused'`), plus
- * TEAM_TOOLS_REFUSED, the retired names with no policy (A5 step 6a deleted
- * the MEMBER_APP_REFUSED_SLUGS view).
+ * TEAM_TOOLS_REFUSED, the retired names with no policy.
  */
 export function memberAppRefusedName(name: string): boolean {
   return TEAM_TOOLS_REFUSED.includes(name) || builtinPolicy(name)?.memberApp === 'refused';
 }
 
 /** `write`: an outside call that writes (a connector tool without the
- *  read-only mark, team apps Phase 2); the broker logs its input. */
+ *  read-only mark); the broker logs its input. */
 export type MemberAppToolVerdict =
   { ok: true; tool: Tool; write?: boolean } | { ok: false; status: 403 | 404; reason: string };
 
@@ -175,7 +171,7 @@ export async function memberAppToolVerdict(
   if (tool.handler.kind !== 'builtin') {
     // An outside tool (external-access.ts): a connector tool by the
     // workspaces that hold its connector, read or write by the admin's
-    // read-only mark (team apps Phase 2; W5b2); any other outside tool by
+    // read-only mark; any other outside tool by
     // External access, the admin's read-only confirmation. Recipe and shell
     // tools, a write method, a tool that needs confirmation and a handler
     // changed since are refused.
@@ -189,8 +185,8 @@ export async function memberAppToolVerdict(
     spends: isBuiltinSpending(tool.handler.ref),
     tableRows: isBuiltinTeamTableRowWrite(tool.handler.ref),
   };
-  // Rules 2 to 4 on the row: the app tool's policy (runtime-policy.ts, arch
-  // A3c), the one reading of them.
+  // Rules 2 to 4 on the row: the app tool's policy (runtime-policy.ts), the
+  // one reading of them.
   const policy = appToolPolicy(tool, builtin, memberAppRefusedName);
   const refused = policy?.fields?.memberApp;
   if (typeof refused === 'string') return { ok: false, status: 403, reason: refused };
@@ -212,8 +208,8 @@ export async function memberAppToolVerdict(
 }
 
 /**
- * An app tool (ref kind `app-tool`, arch A3c fix round 2, M-B): what an
- * app's run calls through a broker (A5). The member-app rule is NOT read
+ * An app tool (ref kind `app-tool`): what an app's run calls through a
+ * broker. The member-app rule is NOT read
  * again here: the ref carries `verdict`, what memberAppToolVerdict (the
  * live rule, above) said for this call, and the policy's `memberApp` is its
  * answer (null: allowed; else its reason). No verdict: no answer, and the
@@ -224,7 +220,7 @@ export async function memberAppToolVerdict(
  * A call the verdict refused before any row was read (not declared, a
  * refused slug) is a write here (the strictest), refused by the narrower in
  * the verdict's words. The brokers ask it for every refusal but a missing
- * tool (A5 step 3b, appToolRefusal in app-tool-level.ts): that one answers
+ * tool (appToolRefusal in app-tool-level.ts): that one answers
  * 404 before the gate (no row, no ref); every other is the gate's narrowed
  * 403. Any broker's verdict (an admin's run, a contact's) carries its answer
  * the same way.

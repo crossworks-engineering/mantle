@@ -1,8 +1,6 @@
 /**
- * Builtins: entity_* and graph_path — the knowledge graph.
- *
- * Split out of builtins.ts on 2026-09-02 (audit, bloat B6) with behaviour
- * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
+ * Builtins: entity_* and graph_path: the knowledge graph. builtins.ts
+ * assembles BUILTIN_TOOLS from these groups.
  */
 
 import {

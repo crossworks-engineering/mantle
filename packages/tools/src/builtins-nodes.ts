@@ -1,8 +1,7 @@
 /**
  * Builtins: node_read, brain_capacity, content_supersede, process_extraction — generic node reads + curation + ingest.
  *
- * Split out of builtins.ts on 2026-09-02 (audit, bloat B6) with behaviour
- * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
+ * builtins.ts assembles BUILTIN_TOOLS from these groups.
  */
 
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
@@ -35,7 +34,7 @@ export const brain_capacity: BuiltinToolDef = {
     "Corpus size vs the split policy: document and passage-vector counts with a zone per axis — 'green' (no action), 'watch' (run recall checks, identify the growing category), 'split' (break the dominant category into a federated breakout brain). Use for capacity/health checks and scheduled monitoring; alert the user when the zone is not green. Read-only.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
-    // The split policy is the whole brain's (W7a fix round 2): two counts on
+    // The split policy is the whole brain's: two counts on
     // the system pool after the settings area check, numbers and never a
     // row; the latest recall score's note is read in the caller's scope.
     const capacity = await corpusCapacity(ctx.ownerId, {
@@ -331,7 +330,7 @@ export const process_extraction: BuiltinToolDef = {
       sql`${nodes.type} <> 'secret'`,
       sql`(${nodes.data}->>'summary' is null or ${nodes.embedding} is null)`,
       // A row the clean-derived mark flagged has no summary on purpose (its
-      // old one is set aside, workspaces plan 5.3). Re-folded ones too: they
+      // old one is set aside). Re-folded ones too: they
       // get a summary only from their next edit or a per-node call (node_id
       // above), never from a sweep, so a sweep never spends a model call on
       // the marked rows of a whole brain at once (cost).

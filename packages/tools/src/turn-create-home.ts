@@ -1,8 +1,8 @@
 /**
- * Where an assistant turn's creates land (workspaces arch A0; F12): the
+ * Where an assistant turn's creates land: the
  * home rule of docs/workspaces.md ("Where a new item lands"), through THE
  * create-home intent the web routes and MCP use (@mantle/db
- * createHomeIntent, arch A3c), so a create made from a tool in a turn lands
+ * createHomeIntent), so a create made from a tool in a turn lands
  * where the same login's create from the web would.
  *
  *  - Every assistant's turn, the Admin assistant's too: the assistant's
@@ -45,7 +45,7 @@ export async function turnCreateHome(creates: boolean): Promise<CreateHome | nul
   const kept = homes.get(scope);
   if (kept && (kept.final || !creates)) return kept.home;
   // The turn's current workspace: the assistant's own (one rule for every
-  // assistant, CEO answer 2026-10-12).
+  // assistant).
   const askedWs = scope.ws.length === 1 ? scope.ws[0]! : null;
   let home: Awaited<ReturnType<typeof createHomeIntent>>;
   try {

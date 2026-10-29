@@ -1,11 +1,9 @@
 /**
  * The gate's policy of a built-in tool called through dispatch (ref kind
- * `tool`, by its handler ref; workspaces arch A5 step 3a). It is the
- * builtin's declared policy (toGatePolicy), with the Admin step that
- * adminToolGate asked before step 3a (A5 step 6a deleted that function and
- * its lists: the step reads the policies of the tools the row names, its
- * slug and its handler ref), so gate step 5 refuses exactly what dispatch
- * refused, in the same words:
+ * `tool`, by its handler ref). It is the builtin's declared policy
+ * (toGatePolicy), with the Admin step (it reads the policies of the tools
+ * the row names, its slug and its handler ref), so gate step 5 refuses
+ * exactly what dispatch refuses, in the same words:
  *
  *  - an Admin area (the policy's area, the row's slug's first, then its
  *    ref's): the area;
@@ -15,15 +13,14 @@
  *  - else a create of a kind of the Admin workspace only (`admin-kind`:
  *    contact_create, journal_create, location_save), as the `mcp-tool`
  *    source declares it: a turn outside Admin is refused at the gate, in
- *    ADMIN_KIND_CREATE_ERROR's words, before the handler runs (A5 step 5),
- *    where before the database refused the row the handler wrote;
+ *    ADMIN_KIND_CREATE_ERROR's words, before the handler runs;
  *  - else none.
  *
  * `fields.systemWhole`: a tool whose policy says `systemWhole` (by the
  * row's slug or its ref), which dispatch runs whole on the system pool
  * after the area check (runGated). `fields.ownerOnly`: the builtin (by its
- * ref) is owner-only, which the gate's owner-only narrower reads (A5 step
- * 6a); `fields.loginTurns`: a login's workspace turn runs it too.
+ * ref) is owner-only, which the gate's owner-only narrower reads;
+ * `fields.loginTurns`: a login's workspace turn runs it too.
  *
  * A row's slug is matched as well as its ref because a row may rename a
  * builtin; one named with ANOTHER builtin's slug never runs
@@ -54,7 +51,7 @@ export function builtinToolRef(ref: string, slug: string): PolicyRef {
   return Object.freeze({ kind: 'tool', name: ref, slug });
 }
 
-/** A builtin called on the owner MCP surface (A5 step 4): the `mcp-tool`
+/** A builtin called on the owner MCP surface: the `mcp-tool`
  *  ref it is listed under (@mantle/mcp-core gate-policy.ts), by its name
  *  there, with the builtin it runs (`builtin`, its handler ref), which the
  *  item pre-check reads. */
@@ -85,7 +82,7 @@ export function builtinToolGatePolicy(ref: PolicyRef): GatePolicy | null {
     fields: Object.freeze({
       ...base.fields,
       ...(systemWhole ? { systemWhole: true } : {}),
-      // The owner-only narrower reads it (A5 step 6a, carried L1).
+      // The owner-only narrower reads it.
       ...(def.ownerOnly === true ? { ownerOnly: true } : {}),
       // A login's workspace turn runs it too (the owner-only narrower).
       ...(def.ownerOnly === true && def.loginTurns === true ? { loginTurns: true } : {}),

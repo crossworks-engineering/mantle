@@ -1,7 +1,6 @@
 /**
- * Runner-queue builtins — the responder's handle on durable, inspectable
- * execution plans (docs/runs.md; design: "Runner queues & worker agents —
- * implementation plan v1").
+ * Runner-queue builtins: the responder's handle on durable, inspectable
+ * execution plans (docs/runs.md).
  *
  * RESPONDER-ONLY by grant (the `runs` tool group is never given to workers or
  * specialists) and by guard (an invoked child agent is refused here). A run's
@@ -59,29 +58,28 @@ import { builtinPolicy, policyRunItemBanned } from './tool-policy';
 import { CS } from './client-sourced-rule';
 
 /* A tool may never run as a queue item when its builtin's policy says
- * `recipe.runItem: 'banned'` (policyRunItemBanned; A5 step 6a deleted the
- * BANNED_ITEM_TOOLS view): the run tools themselves (no recursion:
- * `run_audit` especially, or a queue item could rubber-stamp the audit gate
- * headlessly) and delegation (a headless item has no parent-agent context:
- * fail at PLAN time with a clear error, not at execution). The plan check
- * below and `execute-item.ts`'s execution-time re-check (defense in depth)
- * both read the policy, and `builtins-runs.test.ts` asserts every RUN_TOOLS
- * slug's policy bans it: add a run_* tool and the test fails until its
- * policy bans it too. */
+ * `recipe.runItem: 'banned'` (policyRunItemBanned): the run tools themselves
+ * (no recursion: `run_audit` especially, or a queue item could rubber-stamp
+ * the audit gate headlessly) and delegation (a headless item has no
+ * parent-agent context: fail at PLAN time with a clear error, not at
+ * execution). The plan check below and `execute-item.ts`'s execution-time
+ * re-check (defense in depth) both read the policy, and
+ * `builtins-runs.test.ts` asserts every RUN_TOOLS slug's policy bans it: add
+ * a run_* tool and the test fails until its policy bans it too. */
 
 const MAX_PLAN_DEPTH = 4;
 const MAX_PLAN_NODES = 50;
 
-// ── ask_human questionnaire form (WP1) ───────────────────────────────────────
+// ── ask_human questionnaire form ─────────────────────────────────────────────
 // A question can carry a structured `form` instead of one flat option list.
 // The shape and its caps are single-sourced in @mantle/client-types so the
 // parser, the answer path and the renderer cannot drift.
 const L = ASK_HUMAN_FORM_LIMITS;
 
 /** A boolean flag that must be an ACTUAL boolean. `allow_other: "false"` (a
- *  plausible model slip) silently fell through to the default before, which
- *  meant the operator got an escape hatch the plan thought it had removed —
- *  or vice versa. Refuse instead of guessing. */
+ *  plausible model slip) would silently fall through to the default, giving
+ *  the operator an escape hatch the plan thought it had removed, or the
+ *  reverse. Refuse instead of guessing. */
 function boolFlag(v: unknown, name: string, at: string): { value?: boolean; error?: string } {
   if (v === undefined || v === null) return {};
   if (typeof v === 'boolean') return { value: v };
@@ -236,7 +234,7 @@ function surfaceLogin(surface: ToolHandlerContext['surface']): string | null {
 
 /** The Telegram chat a planning turn came from, for the run's origin
  *  channel (0134): a Telegram surface's chat, or the chat a workspace
- *  assistant's Telegram turn carries on its team surface (W7d+e). Both are
+ *  assistant's Telegram turn carries on its team surface. Both are
  *  set by the runtime from the chat row, never from model arguments. */
 export function originTelegramChatOf(surface: ToolHandlerContext['surface']): string | undefined {
   if (surface?.kind === 'telegram') return surface.telegramChatId;
@@ -246,7 +244,7 @@ export function originTelegramChatOf(surface: ToolHandlerContext['surface']): st
 
 /** A planning agent of a workspace other than Admin may not create or
  *  extend a run: its items execute on the system pool, past that
- *  workspace's scope (audit A3, B3). The executor re-checks. */
+ *  workspace's scope. The executor re-checks. */
 async function refuseBelowAdminAgent(ctx: ToolHandlerContext): Promise<ToolHandlerResult | null> {
   if (!ctx.agent) return null;
   const grant = await loadAgentGrant(ctx.ownerId, { slug: ctx.agent.slug });
@@ -263,10 +261,10 @@ const DISABLED_ERROR =
   'Runner queues are disabled on this brain (MANTLE_RUNS is not set). ' +
   'Do the work inline with ordinary tool calls instead.';
 
-/** run_* is a responder affordance — a delegated child agent must not open
+/** run_* is a responder affordance: a delegated child agent must not open
  *  side channels of queued work its parent never sees. A turn below admin
  *  (a member's or a client's) is refused too: a run's items execute later on
- *  the admin pool, which would read past the turn's level (audit A3). */
+ *  the admin pool, which would read past the turn's level. */
 async function refuseIfDelegated(ctx: ToolHandlerContext): Promise<ToolHandlerResult | null> {
   if (!(await scopeHasArea('assistants'))) {
     return {
@@ -497,10 +495,10 @@ export function parsePlan(raw: unknown): ParsedPlan {
 }
 
 /** Reject plan-time references to tools the owner doesn't have (missing,
- *  disabled) so the failure is a teaching error now, not a dead item later.
- *  A planning agent may only queue tools its own groups grant: an item runs
- *  on the agent's behalf, so a plan is no way round the grant (access matrix
- *  T1). The executor re-checks at run time. */
+ *  disabled) so the failure is a teaching error now, not a dead item later. A
+ *  planning agent may only queue tools its own groups grant: an item runs on
+ *  the agent's behalf, so a plan is no way round the grant. The executor
+ *  re-checks at run time. */
 async function checkPlanTools(ctx: ToolHandlerContext, slugs: string[]): Promise<string | null> {
   const unique = [...new Set(slugs)];
   if (unique.length === 0) return null;
@@ -523,8 +521,8 @@ async function checkPlanTools(ctx: ToolHandlerContext, slugs: string[]): Promise
   );
 }
 
-/** Resolve worker routing at plan time (§6b — the roster is a routing
- *  table): explicit `worker` slugs must name enabled worker agents; steps
+/** Resolve worker routing at plan time (the roster is a routing table):
+ *  explicit `worker` slugs must name enabled worker agents; steps
  *  without one run on the default Worker (lazily created on first use).
  *  Mutates the tree's worker_invoke leaves with the resolved agent id.
  *  Returns a teaching error string, or null on success. */
@@ -565,10 +563,10 @@ async function resolveWorkerRouting(ownerId: string, plan: PlanGroup): Promise<s
 }
 
 /**
- * WP5 macro-expansion — runs BEFORE routing resolution. A worker_invoke
+ * Worker-group macro-expansion: runs BEFORE routing resolution. A worker_invoke
  * carrying `panel_group` (the parser's marker for `group:'<slug>'`) is
  * replaced IN PLACE by `par(one worker_invoke per member)` followed by a
- * PANEL audit — so the engine only ever sees shapes it already executes,
+ * PANEL audit, so the engine only ever sees shapes it already executes,
  * and the par-audit redo refusal is never hit (the panel audit sits in the
  * enclosing seq; a blocking panel verdict escalates needs_human).
  * Returns a teaching error string, or null on success.
@@ -650,7 +648,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       effect: 'write',
       spends: 'none',
       scope: 'admin',
-      // A run queues tool calls and workers that execute later as the owner, outside a key's or peer's narrowing (audit H1).
+      // A run queues tool calls and workers that execute later as the owner,
+      // outside a key's or peer's narrowing.
       peerRisky: true,
       recipe: { runItem: 'banned' },
       clientSourced: CS.always(CS.LATER),
@@ -715,7 +714,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       const originChat = originTelegramChatOf(ctx.surface);
       // The login the run is for. A delegated child whose parent chat named
       // none would make a run for nobody, which later runs as the owner:
-      // refused, as a link is (A0 fix round 3, L-b; M-1).
+      // refused, as a link is.
       const runLogin = currentTrace()?.loginId ?? surfaceLogin(ctx.surface);
       if (!runLogin && ctx.surface?.kind === 'owner' && ctx.surface.via === 'delegate') {
         return {
@@ -732,10 +731,10 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
           createRun(db, {
             ownerId: ctx.ownerId,
             agentId,
-            // The login the planning turn serves (R3), from its trace; a call
-            // with no trace (MCP) names it on its surface (A0 fix round 2,
-            // L-1). The 0250 stamp falls back to mantle.login_id, which a
-            // typed write on the system pool does not carry.
+            // The login the planning turn serves, from its trace; a call with
+            // no trace (MCP) names it on its surface. The 0250 stamp falls back
+            // to mantle.login_id, which a typed write on the system pool does
+            // not carry.
             loginId: runLogin,
             title,
             plan: parsed.plan,
@@ -743,7 +742,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
             // Channel-routed resumes (0134): remember where the run came from
             // so the final report is delivered back there. A workspace
             // assistant's Telegram turn runs on a team surface that carries
-            // its chat (W7d+e).
+            // its chat.
             ...(originChat
               ? { originChannel: { kind: 'telegram' as const, chat_id: originChat } }
               : {}),
@@ -759,8 +758,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       ctx.step?.setMeta({ run_id: runId });
       return {
         ok: true,
-        // A state that holds third-party content is fenced as data (A5 step
-        // 6a, carried L4; a fresh run holds none yet, a resumed tree may).
+        // A state that holds third-party content is fenced as data (a fresh
+        // run holds none yet, a resumed tree may).
         ...(compiled && runStateUntrusted(compiled) ? { untrusted: true } : {}),
         output: {
           run_id: runId,
@@ -780,7 +779,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       effect: 'write',
       spends: 'none',
       scope: 'admin',
-      // A run queues tool calls and workers that execute later as the owner, outside a key's or peer's narrowing (audit H1).
+      // A run queues tool calls and workers that execute later as the owner,
+      // outside a key's or peer's narrowing.
       peerRisky: true,
       recipe: { runItem: 'banned' },
       clientSourced: CS.always(CS.LATER),
@@ -909,7 +909,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         const compiled = await compileRunState(db, run.id);
         if (!compiled) return notFound('run', run.id, 'run_state');
         // A state that holds third-party content (an item's result the tool
-        // loop fences) is fenced as data too (A5 step 6a, carried L4).
+        // loop fences) is fenced as data too.
         return {
           ok: true,
           output: { text: renderRunStateText(compiled), ...compiled },

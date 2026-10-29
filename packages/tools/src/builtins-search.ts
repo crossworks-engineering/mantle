@@ -1,8 +1,7 @@
 /**
  * Builtins: search_nodes / search_chunks / read_section / tree_list — retrieval over the brain.
  *
- * Split out of builtins.ts on 2026-09-02 (audit, bloat B6) with behaviour
- * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
+ * builtins.ts assembles BUILTIN_TOOLS from these groups.
  */
 
 import { and, desc, eq, notInArray, sql } from 'drizzle-orm';
@@ -53,7 +52,7 @@ export const search_nodes: BuiltinToolDef = {
       type: {
         type: 'string',
         description: 'node type filter',
-        // The kind registry's `searchTool` field (A10 #12).
+        // The kind registry's `searchTool` field.
         enum: [...SEARCH_TOOL_KINDS],
       },
       tags: {
@@ -199,7 +198,7 @@ export const search_chunks: BuiltinToolDef = {
       // is on, fetch a wider pool so the scorer has something to choose from
       // (the use's `pool` setting, see passageScoringPool). Off = the exact
       // pool it always fetched. A direct MCP, key or peer call of a login
-      // outside an Admin scope never scores (W7b fix round 2, M-a): each
+      // outside an Admin scope never scores: each
       // scoring is paid decider requests on the owner's keys, so it gets
       // the plain ranking.
       const scoringUse = ownerKeysOff(ctx)
@@ -242,8 +241,8 @@ export const search_chunks: BuiltinToolDef = {
       trace.stage('search', found.length, found.length);
       // Score every passage 0-3 for "does it answer q" in one decision call.
       // `live`: drop the weak ones, order by score, return the top `limit`.
-      // `shadow`: the answer lands in the trace only; the reply is what it
-      // always was (the first `limit` in search order). Null = as before.
+      // `shadow`: the answer lands in the trace only; the reply is the first
+      // `limit` in search order. Null: no scoring, the same plain reply.
       let hits = found.slice(0, limit);
       let scores: Map<string, { score: number; confidence: number }> | null = null;
       if (scoringUse) {

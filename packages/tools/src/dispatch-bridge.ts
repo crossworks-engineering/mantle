@@ -1,12 +1,12 @@
 /**
  * One-way bridge so a module the registry can reach can call dispatchTool
- * without importing dispatch.ts — which imports the registry, which imports
- * every builtin, which closed a 6-file cycle (2026-09-02 audit, complexity C6).
- * dispatch.ts registers itself at module init; same shape as agent-bridge.ts.
+ * without importing dispatch.ts, which imports the registry, which imports
+ * every builtin: an import cycle. dispatch.ts registers itself at module
+ * init; same shape as agent-bridge.ts.
  *
- * Two callers: the toolsmith's api_tool_test / recipe_tool_test, and pending.ts
- * — which builtins-pending.ts imports, so its static `./dispatch` import had
- * closed the cycle again since v0.232.134. module-graph.test.ts now fails if
+ * Two callers: the toolsmith's api_tool_test / recipe_tool_test, and
+ * pending.ts, which builtins-pending.ts imports, so a static `./dispatch`
+ * import there would close the cycle again. module-graph.test.ts fails if
  * any of these entrypoints stops being importable on its own.
  */
 import type { Tool } from '@mantle/db';

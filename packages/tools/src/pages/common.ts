@@ -1,8 +1,6 @@
 /**
  * Shared page helpers: the id preconditions,
  * the editing-baseline pick, and the draft-conflict reply.
- *
- * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
 import type { ToolHandlerContext, ToolPrecondition } from '../types';
@@ -27,7 +25,7 @@ export const NOTE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'note_id', nodeType: 'note', lookup: 'note_list / search_nodes' },
 ];
 
-/** A pages folder to file a new page in (folder phase 7): a `branch` row. */
+/** A pages folder to file a new page in: a `branch` row. */
 export const FOLDER_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'tree_folders' },
 ];
@@ -64,7 +62,7 @@ export const DRAFT_REVIEW_HINT = (pageId: string) =>
 /**
  * The draft moved between our read and our conditional save — a user autosave
  * (or another agent op) bumped `draft_rev` under us, so `saveDraft` refused
- * rather than clobber it (optimistic concurrency, audit item #3). The block ops
+ * rather than clobber it (optimistic concurrency). The block ops
  * computed their new doc from the stale baseline, so a blind retry would clobber
  * just the same: the correct merge point is the AGENT re-reading. Bounce it back
  * with that instruction — never auto-retry here.
@@ -80,7 +78,7 @@ export const draftConflict = (pageId: string): { ok: false; error: string } => (
     `then re-issue.`,
 });
 
-/** Where a new page goes (folder phase 7): a folder of the pages tree. */
+/** Where a new page goes: a folder of the pages tree. */
 export const FOLDER_ID_PROP = {
   type: 'string',
   format: 'uuid',

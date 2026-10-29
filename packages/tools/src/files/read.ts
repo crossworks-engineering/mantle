@@ -1,8 +1,6 @@
 /**
  * Reading the tree: list folders and files, read a file's text, fetch
  * one by id, resolve a folder by path.
- *
- * Split out of builtins-files.ts; bodies moved verbatim.
  */
 
 import { and, asc, eq } from 'drizzle-orm';
@@ -164,7 +162,7 @@ export const file_read: BuiltinToolDef = {
     // tool-result store and get re-sent every loop iteration. Return the
     // opening + a section outline + a pointer to read_section instead — unless
     // forced with full:true, or there are no chunks to navigate by (then the
-    // full text is the only option, returned as before).
+    // full text is the only option).
     if (!full && text && text.length > FILE_LARGE_TEXT_CHARS) {
       const chunkRows = await db
         .select({ ordinal: contentChunks.ordinal, heading: contentChunks.headingPath })

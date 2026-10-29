@@ -13,11 +13,9 @@
  *    purely of brain builtins stays unfenced — its data is the user's own.
  *
  * One rule: the loop and dispatchRecipe both read the tool's policy
- * (policyUntrusted); no list of names is kept (A5 step 6a deleted
- * UNTRUSTED_CONTENT_TOOL_SLUGS, its view). Today: the web fetch and
+ * (policyUntrusted); no list of names is kept. Today: the web fetch and
  * search, a mini app's error log (its SQL and messages can come from a
- * public visitor, apps audit 2026-10-02, item 12), a mini app's rows over
- * MCP (written by the app's users, team apps Phase 1), mail, Telegram's
- * inbound messages and a linked brain's reads (A5 step 5).
+ * public visitor), a mini app's rows over MCP (written by the app's users),
+ * mail, Telegram's inbound messages and a linked brain's reads.
  */
 export { policyUntrusted } from './tool-policy';

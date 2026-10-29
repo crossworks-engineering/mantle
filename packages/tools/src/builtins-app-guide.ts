@@ -1,13 +1,13 @@
 /**
- * `app_authoring_guide`: the mini-app authoring guide (docs/app-authoring-guide.md)
- * for an MCP client, on demand (task 603f6970, 2026-10-05).
+ * `app_authoring_guide`: the mini-app authoring guide
+ * (docs/app-authoring-guide.md) for an MCP client, on demand.
  *
  * Inside the brain, Appsmith carries the `app_authoring` skill. An outside
- * Claude driving the app_* tools over MCP had nothing but the tool
- * descriptions, so it could not learn `host.me()`, the `:host_me_*` SQL
- * parameters or the level rules, and told a member "user session detail is
- * not available in the app". This serves the canonical guide (baked into the
- * image under MANTLE_DOCS_ROOT=/app/docs) as a read, whole or one section.
+ * client driving the app_* tools over MCP has nothing else but the tool
+ * descriptions, so without this it cannot learn `host.me()`, the `:host_me_*`
+ * SQL parameters or the level rules. This serves the canonical guide (baked
+ * into the image under MANTLE_DOCS_ROOT=/app/docs) as a read, whole or one
+ * section.
  *
  * `mcpOnly`: in-app agents have the skill, so it is never seeded or granted.
  * Read-only, no model call, no database: one file read.
@@ -79,8 +79,7 @@ export function findGuideSections(sections: GuideSection[], query: string): Guid
   return sections.filter((s) => norm(s.heading).includes(q));
 }
 
-/** The guide, whole or one section (every login's MCP since W7b; the
- *  member-only my_app_guide was retired). */
+/** The guide, whole or one section (on every login's MCP). */
 export async function appGuideHandler(input: Record<string, unknown>): Promise<ToolHandlerResult> {
   const md = await readGuide();
   if (md === null) {

@@ -1,26 +1,23 @@
 /**
- * The gate's pre-run checks (@mantle/db gate.ts, PRE_RUN_CHECKS; workspaces
- * arch A5 step 3a), registered from here with the narrowers
- * (gate-narrowers.ts), so every process that dispatches has them. They run
- * after the Admin step and before the create home: a refused call never
- * makes a private workspace (owner decision, A3c audit).
+ * The gate's pre-run checks (@mantle/db gate.ts, PRE_RUN_CHECKS), registered
+ * from here with the narrowers (gate-narrowers.ts), so every process that
+ * dispatches has them. They run after the Admin step and before the create
+ * home: a refused call never makes a private workspace.
  *
  *  - `item-precheck`: first, for a write call of a turn or a run item in
- *    an assistant turn scope that holds a Moderator seat, the seat read
- *    again (moderator-seat.ts, A8 fix
- *    round 1, L5); then a built-in's declared preconditions (a uniform
- *    teaching error for an id that names a missing or wrong-type node),
- *    then, before a call is queued for approval, a create's target folder
- *    (createFolderRefusal) and the items the call names (queueItemRefusal,
- *    R0 fix round L2: a call its run would refuse, in the run's words), in
- *    that order. No tool item pre-check is left at run time (the pre-check
- *    removal took the last 29 in Part 3, docs/actors.md): the database's
- *    checks and the libraries' own item check (assertItemRight) refuse a
- *    write the scope may not make. A check that throws refuses in the
- *    error's words, as dispatch's catch answered.
+ *    an assistant turn scope that holds a Moderator seat, the seat read again
+ *    (moderator-seat.ts); then a built-in's declared preconditions (a uniform
+ *    teaching error for an id that names a missing or wrong-type node), then,
+ *    before a call is queued for approval, a create's target folder
+ *    (createFolderRefusal) and the items the call names (queueItemRefusal: a
+ *    call its run would refuse, in the run's words), in that order. No tool
+ *    item pre-check runs at run time (docs/actors.md, "11. Tools"): the
+ *    database's checks and the libraries' own item check (assertItemRight)
+ *    refuse a write the scope may not make. A check that throws refuses in the
+ *    error's words, as dispatch's catch would.
  *  - `key-shared-content`: an API key or a linked brain never changes the
  *    content of an item others can read (key-shared-content.ts), on the
- *    owner MCP surface (A5 step 4).
+ *    owner MCP surface.
  *
  * Each answers only the ref kinds it knows (`tool`, and the owner MCP
  * surface's `mcp-tool`: for the item pre-check only one that runs a
@@ -41,19 +38,18 @@ import type { ToolHandlerContext } from './types';
 export type PreRunContext = Readonly<{
   ownerId: string;
   surface?: ToolHandlerContext['surface'];
-  /** The entry answers a thrown error itself (a /api/v1 route: app.onError,
-   *  A5 step 4 fix round 1, M1): a check that throws throws on. */
+  /** The entry answers a thrown error itself (a /api/v1 route: app.onError):
+   *  a check that throws throws on. */
   throws?: boolean;
-  /** A /api/v1 route (A5 step 4 fix round 2): its answer to a write the
-   *  edit check refuses is the database's, as before it ran through
-   *  dispatch, never the pre-check's words as a 400. */
+  /** A /api/v1 route: its answer to a write the edit check refuses is the
+   *  database's, never the pre-check's words as a 400. */
   entry?: 'api-v1';
   /** A turn's or a run item's call (dispatch): a write asks its Moderator
-   *  seat again first (moderator-seat.ts, A8 fix round 1, L5). */
+   *  seat again first (moderator-seat.ts). */
   seat?: true;
-  /** Asked before a call is queued for approval (turnCallRefusal, A5 step
-   *  6a, carried round-2 LOW-1): a reference by slug or path that names
-   *  nothing the queuing scope reads is refused, never queued. */
+  /** Asked before a call is queued for approval (turnCallRefusal): a
+   *  reference by slug or path that names nothing the queuing scope reads
+   *  is refused, never queued. */
   queue?: boolean;
 }>;
 
@@ -104,17 +100,16 @@ export const itemPrecheck: PreRunCheck = async (caller, policy, ref, call) => {
         policy?.makesFolders === true,
       );
       if (folder) return folder;
-      // A call its run would refuse for an item it names (R0 fix round,
-      // L2): refused now, in the run's words, never queued for an approver.
+      // A call its run would refuse for an item it names: refused now, in the
+      // run's words, never queued for an approver.
       if (policy?.effect === 'write') {
         const item = await queueItemRefusal(itemArgsOf(builtin.handler), input, ctx.ownerId);
         if (item) return item;
       }
     }
   } catch (err) {
-    // An MCP call's surface answers a thrown error itself, as it always
-    // has (A5 step 4), and so does a /api/v1 route (its app.onError, as
-    // before it ran through dispatch: never a 400 with a database error's
+    // An MCP call's surface answers a thrown error itself, and so does a
+    // /api/v1 route (its app.onError: never a 400 with a database error's
     // text); every other entry reads it as the check's words.
     if (mcpVia(caller) || ctx.throws === true) throw err;
     return errorMessage(err);

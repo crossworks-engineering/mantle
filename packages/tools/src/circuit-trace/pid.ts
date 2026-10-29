@@ -113,7 +113,7 @@ export type PidInput = {
    *  per `<tableId>:<join key>` (check-keys.ts joinKey). A yes writes
    *  CHECKED BY IMAGE (a help, not a guarantee); a no keeps GUESS and says
    *  the image disagreed, or, when it named what the guess is, draws that
-   *  FROM IMAGE; unsure, or no check, keeps GUESS as before. Plain words. */
+   *  FROM IMAGE; unsure, or no check, keeps GUESS. Plain words. */
   checked?: PidChecks;
   /** Filled when given: each chain's role on the drawing, per
    *  `<tableId>:<chain id>` (the image check colours its crops by it). */
@@ -203,8 +203,8 @@ export function buildPid(
   /** What an image check's no said of an end only near equipment: the
    *  equipment tag it named (`tag`), or a break, a continuation, an open
    *  end. Such an end is never taken as at the tag it was near; one that
-   *  names a tag is a reading of THAT tag, FROM IMAGE (phase 6: the main
-   *  line is re-picked without the contradicted end). */
+   *  names a tag is a reading of THAT tag, FROM IMAGE (the main line is
+   *  re-picked without the contradicted end). */
   const imageEnd = new Map<string, { tag?: string; word?: string; sheet?: string }>();
   /** Ends the image check contradicted: no longer readings of their tag. */
   const contradicted = new Set<string>();
@@ -222,8 +222,8 @@ export function buildPid(
         const tag = end.equipmentUnconfirmed;
         if (end.equipment.length) join(k, `EQ:${end.equipment[0]!}`);
         else if (tag && registerNames(registerTags, tag)) {
-          // The register names the tag: the end is drawn at it, as before
-          // the image check could say anything. A no from the image is kept
+          // The register names the tag: the end is drawn at it, whatever
+          // the image check says. A no from the image is kept
           // in the Checks tab and the trace's `checks` and said here; it
           // never outweighs the site register.
           join(k, `EQ:${tag}`);

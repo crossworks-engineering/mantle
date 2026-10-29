@@ -1,12 +1,11 @@
 /**
  * `diagram_types` + `diagram_guide`: the diagram design system as two reads
- * (docs/diagrams.md, 2026-10-23).
+ * (docs/diagrams.md).
  *
- * The per-type drawing guides used to be the opt-in `diagram-guides` docs
- * collection, reached through search_chunks + read_section. A brain that never
- * enabled it (most of them) left the Draftsman searching four times for guides
- * that were not indexed, then drawing a P&ID from the short skill rules alone.
- * These tools read the guide files baked into the image (MANTLE_DOCS_ROOT,
+ * The per-type drawing guides are not a docs collection: a brain that never
+ * enabled one would leave the Draftsman searching for guides that are not
+ * indexed, then drawing from the short skill rules alone. These tools read
+ * the guide files baked into the image (MANTLE_DOCS_ROOT,
  * /app/docs in prod) directly: no collection, no index, no model call, no
  * database.
  *

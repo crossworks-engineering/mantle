@@ -1,5 +1,5 @@
 /**
- * Tool cards + a code-only ranker for `tool_search` (PROTOTYPE, 2026-10-05).
+ * Tool cards + a code-only ranker for `tool_search`.
  *
  * A card is the small, brain-authored text a model (or BM25) reads to decide
  * whether a tool fits: slug, flow, group, and the first sentences of the

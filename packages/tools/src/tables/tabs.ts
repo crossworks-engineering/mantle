@@ -1,7 +1,5 @@
 /**
  * Tabs within a workbook: add, rename, delete.
- *
- * Split out of builtins-tables.ts; bodies moved verbatim.
  */
 
 import { applyTableOps } from '@mantle/content';

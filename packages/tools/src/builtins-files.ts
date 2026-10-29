@@ -1,13 +1,10 @@
 /**
- * Builtins: file_* and folder_* — the file tree.
+ * Builtins: file_* and folder_*: the file tree. builtins.ts assembles
+ * BUILTIN_TOOLS from these groups.
  *
- * Split out of builtins.ts on 2026-09-02 (audit, bloat B6) with behaviour
- * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
- *
- * FILE_OPERATOR_TOOLS at the bottom were hand-written MCP tools until tier 3
- * of the same audit. They create and DESTROY tree entries, and no in-app group
- * has ever granted them, so they are `mcpOnly`: one implementation, still only
- * the owner's own client can call them.
+ * FILE_OPERATOR_TOOLS at the bottom create and DESTROY tree entries, and no
+ * in-app group grants them, so they are `mcpOnly`: only the owner's own
+ * client can call them.
  */
 
 import type { BuiltinToolDef } from './types';

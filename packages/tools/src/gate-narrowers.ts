@@ -1,6 +1,6 @@
 /**
- * Every narrower of the one gate (@mantle/db gate.ts, step 4; arch A3c fix
- * round 2, M-A), registered from here: @mantle/tools is the package every
+ * Every narrower of the one gate (@mantle/db gate.ts, step 4), registered
+ * from here: @mantle/tools is the package every
  * process that dispatches a tool already loads (server/web, server/api and
  * its workers, the stdio MCP server through @mantle/mcp-core), so none of
  * them fails closed for a narrower it never loaded.
@@ -29,7 +29,7 @@ import { registerToolCallAudit } from './call-audit';
 import { connectorScopeRefusal, type ConnectorScopeFacts } from './connector-scope';
 import { OWNER_ONLY_ERROR } from './surface';
 import { policySpendsOwnerKey } from './tool-policy';
-// The `tool` source (a builtin called through dispatch, A5 step 3a) and the
+// The `tool` source (a builtin called through dispatch) and the
 // runtime rows' sources, registered with the narrowers in every process.
 import './tool-gate-policy';
 import './runtime-policy';
@@ -37,7 +37,7 @@ import './runtime-policy';
 /** The refusal of a tool outside a key's areas. */
 export const KEY_AREA_ERROR = 'This API key is limited to areas this tool is not in.';
 /** A connector row judged against the facts loaded for another connector
- *  group (A5 step 6a fix round 1, LOW-5): never judged, refused. */
+ *  group: never judged, refused. */
 export const CONNECTOR_FACTS_MISMATCH_ERROR =
   "This connector call was checked against another connector's rules, so it doesn't run.";
 
@@ -82,8 +82,8 @@ function mcpConnection(caller: GateCaller): boolean {
  *  about the key itself (`keySelf`: the whoami route) is open to every
  *  key, as keyMayCall answers (server/web lib/api-v1.ts; pinned against it
  *  for every v1 row by route-policy.test.ts, with the areas set on the
- *  caller by hand). The tools' policies carry their key area; A4's route
- *  rows carry their own, but on HTTP this narrows nothing yet: the gate's
+ *  caller by hand). The tools' policies carry their key area; the route
+ *  rows carry their own, but on HTTP this narrows nothing: the gate's
  *  HTTP caller (server/web gate.ts httpCaller) sets no `facts.keyAreas`,
  *  so a key's areas there are judged by gateAccessKey and the login
  *  lookup's findKeyLogin (both keyOnRow, keyMayCall), not here. */
@@ -97,10 +97,9 @@ const keyNarrower: Narrower = (caller, policy) => {
 
 /**
  * A key's or a peer's risky tools and Write switch, on a tool, from what its
- * policy declares (A5 step 2): the rule the MCP listing ran by name
- * (ownerPeerAllows, deleted in A5 step 6a), read from the policy, never
- * from a list keyed by name. A risky tool (`fields.peerRisky`) the owner did not name on the key
- * or the peer is refused; with Write off, a tool that is not a read is.
+ * policy declares, never from a list keyed by name. A risky tool
+ * (`fields.peerRisky`) the owner did not name on the key or the peer is
+ * refused; with Write off, a tool that is not a read is.
  * Pinned against the listing by gate-policy.test.ts, and for every tool and
  * every key and peer caller by tool-policy-sweep.test.ts.
  *
@@ -109,7 +108,7 @@ const keyNarrower: Narrower = (caller, policy) => {
  * refused for a key or a peer, whatever the owner named.
  *
  * A connector's tool (its policy carries the admin's read-only `mark`) is
- * judged by its effect like any tool (A5 step 5, owner decision Q1 b): one
+ * judged by its effect like any tool: one
  * an Admin marked read-only reads, so a read-only key or peer lists and
  * calls it, as a read-only OAuth login does. A stale mark is a write
  * (connectorToolPolicy), so it stays hidden. The connector's own checks
@@ -122,9 +121,8 @@ const peerNarrower: Narrower = (caller, policy, ref) => {
   if (typeof declared !== 'boolean') return RISKY_TOOL_ERROR;
   // A connector's tool is not risky by the owner MCP surface's family rule
   // (no family holds an mcp_* name), which it declares on its row. In a
-  // process without that surface (no `mcp-tool` source: server/api), the
-  // answer before A5 step 2 holds: risky unless the owner named it (fail
-  // closed; A5 step 2 fix round 1, LOW-4).
+  // process without that surface (no `mcp-tool` source: server/api), it is
+  // risky unless the owner named it (fail closed).
   const risky = declared || (connectorPolicy(policy) && !hasPolicySource('mcp-tool'));
   const riskyAllowed = (caller.facts?.riskyAllowed ?? []) as readonly string[];
   if (risky && !riskyAllowed.includes(ref.name)) return RISKY_TOOL_ERROR;
@@ -132,7 +130,7 @@ const peerNarrower: Narrower = (caller, policy, ref) => {
 };
 
 /**
- * The member-app rule, fail closed (fix round 2, M-B): a run at team rules
+ * The member-app rule, fail closed: a run at team rules
  * (`facts.appRules === 'team'`) calls only an app tool (ref kind
  * `app-tool`, member-app-tools.ts appToolGatePolicy), and only when the
  * policy carries the live rule's answer and that answer allows it
@@ -141,7 +139,7 @@ const peerNarrower: Narrower = (caller, policy, ref) => {
  * memberAppToolVerdict itself (member-app-parity.test.ts).
  *
  * An app tool whose verdict refused it is refused in the verdict's words at
- * every rules (A5 step 3b): the brokers' refusals (an admin's run, a
+ * every rules: the brokers' refusals (an admin's run, a
  * contact's, a member's) are the gate's narrowed 403 (appToolRefusal,
  * app-tool-level.ts). Every other caller passes.
  */
@@ -157,8 +155,8 @@ const memberAppNarrower: Narrower = (caller, policy, ref) => {
 
 /** Spending on the owner's keys, on an MCP connection: only a scope that
  *  holds Admin (an unscoped caller keeps its own rules). A workspace
- *  assistant's turn keeps its own rules (the member turn ledger), as today:
- *  it is not narrowed here; its delegated child is not given such a tool at
+ *  assistant's turn keeps its own rules (the member turn ledger): it is not
+ *  narrowed here; its delegated child is not given such a tool at
  *  all, by the same predicate (policySpendsOwnerKey, workspaceChildDrop). */
 const spendingNarrower: Narrower = (caller, policy) =>
   mcpConnection(caller) && policySpendsOwnerKey(policy) && caller.admin && !caller.admin.holdsAdmin
@@ -166,20 +164,16 @@ const spendingNarrower: Narrower = (caller, policy) =>
     : null;
 
 /**
- * An owner-only tool off the owner's surface (client logins C4; A5 step 6a,
- * carried L1): the policy says `ownerOnly` (the `tool` source, by the
- * builtin's handler ref), and the call's surface is not the owner's (a team
- * or contact surface, or none: `facts.ownerSurface` false, set by
- * gateCallerFor from the call or the loop that lists). Before step 6a
- * dispatch refused it before the gate, so a tool loop listed it and the
- * call was refused; first in the order, it answers the same calls in the
- * same words. A caller that does not say (an MCP connection, whose surface
- * is the owner's) is not narrowed. A tool whose policy also says
- * `loginTurns` (the app tools) is not narrowed on a login's workspace turn
- * either (`facts.loginTurn`, gateCallerFor: a team surface naming the login
- * its turn scope answers): the turn's scope and the database decide, as on
- * the login's own MCP connection (owner rule 2026-10-26: a user's agents may
- * write what the user may, never more).
+ * An owner-only tool off the owner's surface: the policy says `ownerOnly` (the
+ * `tool` source, by the builtin's handler ref), and the call's surface is not
+ * the owner's (a team or contact surface, or none: `facts.ownerSurface` false,
+ * set by gateCallerFor from the call or the loop that lists). First in the
+ * order. A caller that does not say (an MCP connection, whose surface is the
+ * owner's) is not narrowed. A tool whose policy also says `loginTurns` (the app
+ * tools) is not narrowed on a login's workspace turn either (`facts.loginTurn`,
+ * gateCallerFor: a team surface naming the login its turn scope answers): the
+ * turn's scope and the database decide, as on the login's own MCP connection (a
+ * user's agents may write what the user may, never more).
  */
 const ownerOnlyNarrower: Narrower = (caller, policy) =>
   policy.fields?.ownerOnly === true &&
@@ -189,14 +183,13 @@ const ownerOnlyNarrower: Narrower = (caller, policy) =>
     : null;
 
 /**
- * A connector tool the workspace scope may not call (W4b; A5 step 6a,
- * carried L1): connector-scope.ts connectorScopeRefusal, on what
- * gateCallerFor loaded for the row (`facts.connector`: the scope's resource
- * rows for its group, its Moderator workspaces). Last in the order: before
- * step 6a dispatch judged it after the gate. A caller with no such facts (an
+ * A connector tool the workspace scope may not call: connector-scope.ts
+ * connectorScopeRefusal, on what gateCallerFor loaded for the row
+ * (`facts.connector`: the scope's resource rows for its group, its
+ * Moderator workspaces). Last in the order. A caller with no such facts (an
  * MCP connection: its own pre-run check and dispatch judge it; outside a
  * workspace scope) is not narrowed here. Facts loaded for another group
- * than the row's are refused (fail closed, fix round 1, LOW-5): they say
+ * than the row's are refused (fail closed): they say
  * nothing about this row's workspaces.
  */
 const connectorNarrower: Narrower = (caller, policy, ref) => {
@@ -209,11 +202,11 @@ const connectorNarrower: Narrower = (caller, policy, ref) => {
   return connectorScopeRefusal(facts, mark);
 };
 
-/** The member turn caps: an explicit no-op until A5. TODO(A5): the caps
- *  are the member turn ledger (claimMemberTurn, a daily count and tokens
- *  per member turn, packages/content/src/member-turn-ledger.ts), claimed
- *  once per turn by workspace-turn.ts, not per tool call; A5 decides
- *  whether a call checks the claim here. */
+/** The member turn caps: an explicit no-op. The caps are the member turn
+ *  ledger (claimMemberTurn, a daily count and tokens per member turn,
+ *  packages/content/src/member-turn-ledger.ts), claimed once per turn by
+ *  workspace-turn.ts, not per tool call, so a call does not check the
+ *  claim here. */
 const turnCapsNarrower: Narrower = () => null;
 
 /** Every narrower of NARROWERS but the gate's own read-only one. */
@@ -229,7 +222,7 @@ export const GATE_NARROWERS: Readonly<Record<Exclude<NarrowerName, 'read-only'>,
   });
 
 /** Register every narrower, the pre-run checks (gate-prerun.ts) and how a
- *  tool call is audited (call-audit.ts, A5 step 6d); the same functions
+ *  tool call is audited (call-audit.ts); the same functions
  *  again are a no-op. */
 export function registerGateNarrowers(): void {
   for (const [name, narrower] of Object.entries(GATE_NARROWERS)) {
@@ -241,8 +234,8 @@ export function registerGateNarrowers(): void {
 
 /** Boot: register every narrower and assert the gate is ready. Each process
  *  main calls it. Throws GateNotReadyError naming what is missing: every
- *  HTTP request a route of the manifest answers runs through enterCall
- *  (A4 step 1), so a gate that is not ready stops the boot, never the first
+ *  HTTP request a route of the manifest answers runs through enterCall, so
+ *  a gate that is not ready stops the boot, never the first
  *  request. */
 export function ensureGateReady(): void {
   registerGateNarrowers();

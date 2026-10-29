@@ -72,7 +72,7 @@ export const CANVAS_LIBRARIES: readonly CanvasLibrary[] = [
 
 /**
  * What the frame itself gives a canvas, with no library and no import:
- * `data`, the canvas data store (`mantle.data`, DWG phase 7a). Its guide is
+ * `data`, the canvas data store (`mantle.data`). Its guide is
  * the canvas_authoring skill's own section (CANVAS_DATA_HOWTO, one text for
  * the in-app agents and an MCP client), with its example set in a whole
  * canvas, which the browser test renders as it renders every guide's.

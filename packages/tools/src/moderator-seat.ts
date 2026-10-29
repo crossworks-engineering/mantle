@@ -1,7 +1,7 @@
 /**
- * The Moderator seat of a turn, read again at each write (the A8 fix round
- * 1, L5). An assistant turn's scope carries the Moderator seats its login
- * held when the turn began (modWs, agent-viewer.ts withAgentScope), and the
+ * The Moderator seat of a turn, read again at each write. An assistant
+ * turn's scope carries the Moderator seats its login held when the turn
+ * began (modWs, agent-viewer.ts withAgentScope), and the
  * database's checks read them from the scope for the whole turn. A seat
  * taken away during a long turn would still count there, so the gate's
  * pre-run check (gate-prerun.ts) asks the seats again before each write

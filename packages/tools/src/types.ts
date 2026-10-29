@@ -11,13 +11,12 @@ import type { ToolPolicy } from './tool-policy';
 export type ToolHandlerContext = {
   /** The owner running this tool. Every handler scopes its work to one owner. */
   ownerId: string;
-  /** Who calls the tool, by its entry (workspaces arch A5 steps 3a, 3b
-   *  and 4; gate-callers.ts): an assistant turn, a run item, a pending
-   *  approval, the owner MCP surface, a /api/v1 route, an app tool broker,
-   *  the dev console. dispatchTool runs every call through the one gate
-   *  (@mantle/db enterCall), and a nested call (a recipe's step, a tool a
-   *  handler dispatches) passes it on. Absent: the caller of the dispatch
-   *  the code runs in, if any; a call with none is refused (A5 step 3b). */
+  /** Who calls the tool, by its entry (gate-callers.ts): an assistant
+   *  turn, a run item, a pending approval, the owner MCP surface, a /api/v1
+   *  route, an app tool broker, the dev console. dispatchTool runs every call
+   *  through the one gate (@mantle/db enterCall), and a nested call (a recipe's
+   *  step, a tool a handler dispatches) passes it on. Absent: the caller of the
+   *  dispatch the code runs in, if any; a call with none is refused. */
   caller?: ToolCaller;
   /** Optional trace step handle — the runtime opens a step around the call;
    *  handlers can enrich its meta/output. A handler that calls a provider
@@ -49,16 +48,16 @@ export type ToolHandlerContext = {
      *  specialist inherits the operator's per-user thinking preference. The
      *  child re-clamps it against its OWN max_tokens. Unset/0 ⇒ no thinking. */
     thinkingBudget?: number;
-    /** The turn's client-sourced taint (client logins C4, plan N18),
-     *  shared by reference: invoke_agent hands it to the child, so a child
-     *  that reads client-written text holds the parent back too, and a
-     *  tainted parent's child cannot lower anything on its own either. */
+    /** The turn's client-sourced taint, shared by reference: invoke_agent
+     *  hands it to the child, so a child that reads client-written text holds
+     *  the parent back too, and a tainted parent's child cannot lower anything
+     *  on its own either. */
     taint?: TurnTaint;
     /** The turn's latest USER message (text parts joined). invoke_agent
      *  attaches it to the child prompt as ground-truth intent — the one-shot
      *  hand-off's main miscommunication gap is a parent under-packing the
-     *  prompt, and the child never sees the conversation (2026-07-18
-     *  delegation review). Absent for background callers with no user turn. */
+     *  prompt, and the child never sees the conversation. Absent for
+     *  background callers with no user turn. */
     lastUserMessage?: string;
   };
   /** Which surface this turn is running on. Populated by the agent
@@ -80,14 +79,14 @@ export type ToolHandlerContext = {
     | {
         kind: 'telegram';
         telegramChatId: string;
-        /** The login the chat is paired to (telegram_chats.login_id,
-         *  workspaces W7d): set by the runtime from the chat row, never from
+        /** The login the chat is paired to (telegram_chats.login_id):
+         *  set by the runtime from the chat row, never from
          *  model arguments. The turn answers it; outbound sends reach only
          *  its own chats. Absent on a path that names none (a run resumed
          *  into its origin chat, a heartbeat's surface). */
         loginId?: string;
-        /** The bot account the chat belongs to (telegram_chats.account_id,
-         *  W7d fix round 1, L7): set by the runtime from the chat row, so a
+        /** The bot account the chat belongs to (telegram_chats.account_id):
+         *  set by the runtime from the chat row, so a
          *  tool sends through the chat's own bot, never the first enabled
          *  one. Absent on a path that names none. */
         accountId?: string;
@@ -98,16 +97,15 @@ export type ToolHandlerContext = {
       }
     | {
         kind: 'web';
-        /** The signed-in login the chat turn serves (W6b fix round 2, M-2):
-         *  set by the server from the session, never from model arguments.
-         *  Absent when the path names none. */
+        /** The signed-in login the chat turn serves: set by the server from
+         *  the session, never from model arguments. Absent when the path
+         *  names none. */
         loginId?: string;
       }
     | {
         /** A team member is on the other end, not the owner: a member
          *  login's chat turn (POST /api/member/chat) or app tool call.
-         *  (Team-mode shared apps on /s, which also ran here, are retired:
-         *  member logins Phase 6 stage 6.) `team_request_create`
+         *  `team_request_create`
          *  reads its provenance from here (never from model args, which an
          *  injected prompt could forge); owner-only and send tools must
          *  refuse on this surface. */
@@ -133,9 +131,9 @@ export type ToolHandlerContext = {
         /** The inbound team_messages row that started this turn — stamped
          *  into a request task so the specialist can jump to the ask. */
         inboundMessageId?: string;
-        /** The member's own MCP connection (team apps Phase 1). */
+        /** The member's own MCP connection. */
         mcp?: LoginMcpChannel;
-        /** A workspace assistant's Telegram turn (W7d+e): the chat the turn
+        /** A workspace assistant's Telegram turn: the chat the turn
          *  came from, set by the runtime from the chat row, never from model
          *  arguments. Only run_plan reads it, to stamp the run's origin
          *  channel so the run's report goes back to that chat (delivered only
@@ -153,43 +151,42 @@ export type ToolHandlerContext = {
         shareId: string;
       }
     | {
-        /** The OWNER, on a path that is not a chat channel (client logins
-         *  C4, plan section 8): MCP, a run, a delegated child, an approved
-         *  pending call, the dev tool console, an owner app. Since C4 a
-         *  missing surface is NOT the owner (see surface.ts): every owner
-         *  path names itself with this, or with 'web' / 'telegram'. */
+        /** The OWNER, on a path that is not a chat channel: MCP, a run, a
+         *  delegated child, an approved pending call, the dev tool console, an
+         *  owner app. A missing surface is NOT the owner (see surface.ts):
+         *  every owner path names itself with this, or with 'web' /
+         *  'telegram'. */
         kind: 'owner';
         /** Which owner path (telemetry and the owner-regression sweep). */
         via: OwnerSurfaceVia;
-        /** The login acting on this path (W6b fix round 2, M-2): an MCP
+        /** The login acting on this path: an MCP
          *  connection's login, an API key's login. Set by the server from
          *  the credential, never from model arguments. Absent when the path
          *  names none (stdio, a run, a pending approval). */
         loginId?: string;
-        /** The login's own MCP connection (workspaces W7b: every login has
-         *  this surface): how it connected and its Write switch, for the
+        /** The login's own MCP connection (every login has this
+         *  surface): how it connected and its Write switch, for the
          *  app_data_* tools. Set by the server, never from model arguments. */
         mcp?: LoginMcpChannel;
         /** An approved call that was asked on a connection that spends
-         *  nothing on the brain owner's provider keys (lows round 2, L6):
-         *  the approval's own surface keeps that rule (ownerKeysOff). Set
-         *  by the server from the row's stamp, never from model arguments. */
+         *  nothing on the brain owner's provider keys: the approval's own
+         *  surface keeps that rule (ownerKeysOff). Set by the server from the
+         *  row's stamp, never from model arguments. */
         ownerKeysOff?: true;
       };
 };
 
 /**
- * A login's own MCP connection (team apps Phase 1; every login since
- * workspaces W7b): stamped by the login MCP surface
- * (packages/mcp-core/src/login-surface.ts) from the caller the route
+ * A login's own MCP connection (every login has one): stamped by the login MCP
+ * surface (packages/mcp-core/src/login-surface.ts) from the caller the route
  * resolved, never from model arguments. Absent on every other path (a chat
- * turn, an app run), so a tool that needs it (the app_data_* tools) runs
- * only on MCP.
+ * turn, an app run), so a tool that needs it (the app_data_* tools) runs only
+ * on MCP.
  */
 export type LoginMcpChannel = {
   /** How the bearer was issued. */
   via: 'oauth' | 'peer' | 'key';
-  /** The login's role (W8 integration): what `:host_me_kind` says it is in
+  /** The login's role: what `:host_me_kind` says it is in
    *  an app, as the app's own broker does in the browser. Absent = member. */
   role?: LoginRole;
   /** The login's Write switch (and for a key or a peer, theirs too). */
@@ -199,18 +196,18 @@ export type LoginMcpChannel = {
   keyId?: string;
   peerId?: string;
   oauthClientId?: string;
-  /** The connection's login is outside an Admin scope (W7b fix round 2,
-   *  M-a): nothing on it spends on the brain owner's provider keys, so a
-   *  listed tool with a paid step (search_chunks' passage scoring) runs
-   *  its plain path. Stamped by the login surface, never from arguments. */
+  /** The connection's login is outside an Admin scope: nothing on it
+   *  spends on the brain owner's provider keys, so a listed tool with a paid
+   *  step (search_chunks' passage scoring) runs its plain path. Stamped by the
+   *  login surface, never from arguments. */
   ownerKeysOff?: boolean;
-  /** The connection was restored for an approved call (pending-origin.ts,
-   *  lows round 2, L7): its Write is off whatever it was when the call was
+  /** The connection was restored for an approved call (pending-origin.ts):
+   *  its Write is off whatever it was when the call was
    *  asked, so a tool that needs Write says the approval ran without it. */
   approval?: true;
 };
 
-/** The owner paths that carry an explicit owner surface (client logins C4). */
+/** The owner paths that carry an explicit owner surface. */
 export type OwnerSurfaceVia =
   | 'mcp'
   | 'run'
@@ -309,7 +306,7 @@ export type ToolPrecondition =
       nodeType?: string;
       /** The node must sit at or under this root path ('files'): every kind's
        *  folders are branch rows, and a Files folder tool must not be handed
-       *  another kind's (folder audit X1). Unset ⇒ anywhere. */
+       *  another kind's. Unset ⇒ anywhere. */
       pathRoot?: string;
       /** Lookup tools quoted in the teaching error, e.g. 'page_list / search_nodes'. */
       lookup: string;
@@ -340,14 +337,14 @@ export type BuiltinToolDef = {
   /** Granted at boot to the conversational agents (responder, assistant)
    *  of its family's auto-grant list (CONTACT_, JOURNAL_ and
    *  FORMULA_AUTO_GRANT_SLUGS, read by the system manifest). Set on each
-   *  tool by name, never inferred (A5 step 6a fix round 1, LOW-7): a new
+   *  tool by name, never inferred: a new
    *  tool of the family is not granted to every agent until it says so.
    *  Never on a delete. */
   autoGrant?: true;
-  /** What the tool is, for every check that asks (A5, tool-policy.ts):
+  /** What the tool is, for every check that asks (tool-policy.ts):
    *  read or write, what it spends, its Admin step, what it creates, what
    *  it reaches outside the database. Required: a builtin with no policy
-   *  does not build. The access lists of this package are views of it. */
+   *  does not build. */
   policy: ToolPolicy;
   /** SAFE FOR A READ-ONLY TURN: `policy.effect === 'read'`, read through
    *  this accessor (withPolicyFlags); never set it on a definition. Consumed
@@ -383,23 +380,20 @@ export type BuiltinToolDef = {
    *
    *  Use it for owner-only operator surface. `pending_approve` is the clearest
    *  case: an agent that could approve its own queued call would defeat the
-   *  very gate that queued it. Everything here was hand-written on the MCP side
-   *  before the audit; the flag preserves that exposure exactly while the
-   *  implementation stops being a second copy. */
+   *  very gate that queued it. */
   mcpOnly?: true;
-  /** Runs only for the brain owner (client logins C4, plan section 8).
-   *  dispatchTool refuses it with OWNER_ONLY_ERROR unless `isOwnerSurface`
-   *  holds, before preconditions and the handler: a team, client or missing
-   *  surface never reaches it. The handler keeps its own check too, because
-   *  the MCP server calls `def.handler` directly. */
+  /** Runs only for the brain owner. dispatchTool refuses it with
+   *  OWNER_ONLY_ERROR unless `isOwnerSurface` holds, before preconditions and
+   *  the handler: a team, client or missing surface never reaches it. The
+   *  handler keeps its own check too, because the MCP server calls
+   *  `def.handler` directly. */
   ownerOnly?: true;
   /** With `ownerOnly`: a login's workspace turn runs it too (a team surface
    *  naming the login its turn scope answers: the login's web chat with a
    *  workspace assistant, its run, a delegated child of either). The
    *  turn's scope and the database decide what it may change, as on the
-   *  login's own MCP connection. The app tools carry it (owner rule
-   *  2026-10-26: a user's agents may write what the user may, never
-   *  more). */
+   *  login's own MCP connection. The app tools carry it (a user's agents
+   *  may write what the user may, never more). */
   loginTurns?: true;
   /** Registered on the owner MCP surface only when the box opts in (not
    *  access policy: what the surface offers, build-server.ts). `toolsmithWrite`:
@@ -408,13 +402,12 @@ export type BuiltinToolDef = {
    *  MANTLE_MCP_TERMINAL on. */
   optIn?: 'toolsmithWrite' | 'terminal';
   /** How often the fleet calls it, coarse: round(log2(calls)) over 90 days
-   *  to 2026-10-05 on four brains (A5 step 6d moved it here from the
-   *  deferred selection's USAGE_TIERS). A tie-break prior of `tool_search`
+   *  on four brains. A tie-break prior of `tool_search`
    *  only (pseudo-usage 2^tier, selection/deferred.ts); never access.
    *  Unset: none. Refresh from traces when the tool set moves. */
   usageTier?: number;
-  /** A heartbeat control tool (@mantle/runtime heartbeats/tools.ts; A5 step
-   *  6d: one source for the lists that named them). `firing`: it changes
+  /** A heartbeat control tool (@mantle/runtime heartbeats/tools.ts; the one
+   *  source for the lists that name them). `firing`: it changes
    *  the firing heartbeat, so a heartbeat turn in any scope is granted it
    *  and a responder turn on a surface with active heartbeats is offered
    *  it, in `responderOrder`; `every`: it reaches every heartbeat (an
@@ -452,10 +445,10 @@ export type ToolCallRecord = {
   error?: string;
   /** The artifact a successful write-style call touched (node id + title from
    *  the tool's own output), captured so the NEXT turn's history can say what
-   *  this turn actually did — the reply prose alone often doesn't (context-
-   *  transfer audit, dev-brain task 64170cb0). Absent for reads and failures. */
+   *  this turn actually did: the reply prose alone often doesn't. Absent
+   *  for reads and failures. */
   target?: { id: string; title?: string };
-  /** The call's outcome carried third-party text (outcomeIsThirdParty,
-   *  A5 step 6a fix round 1, LOW-6): a reply written after it is marked. */
+  /** The call's outcome carried third-party text (outcomeIsThirdParty):
+   *  a reply written after it is marked. */
   untrusted?: true;
 };

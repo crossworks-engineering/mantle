@@ -1,8 +1,6 @@
 /**
  * The HTTP API tool CRUD surface: list, get, create, update, delete,
  * test, plus the masked vault key references authoring needs.
- *
- * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
 import { isUniqueViolation, type ToolHandler } from '@mantle/db';
@@ -220,7 +218,7 @@ export const api_tool_create: BuiltinToolDef = {
     const built = buildHandlerFromInput(input, { integration: group?.integration ?? null });
     if ('error' in built) return { ok: false, error: built.error };
     const { handler, inherited } = built;
-    // A template that sends a vault key needs the keys area (W7a fix round 3).
+    // A template that sends a vault key needs the keys area.
     const keysRefused = await secretRefsWriteRefusal(handler);
     if (keysRefused) return { ok: false, error: keysRefused };
     // When the owner has turned on "require approval for agent-built tools",
@@ -403,13 +401,12 @@ export const api_tool_update: BuiltinToolDef = {
     // workspace's users: an in-brain agent turning it on, or clearing its
     // confirm, would open it (or its writes) to all of them on the agent's
     // say-so, and an agent can be steered by what it reads. That always
-    // waits for the owner, whatever "require approval" says (access matrix
-    // N5). On approval the call runs again with no agent context, so this
-    // branch is skipped. The same for any other tool with External access
-    // (access matrix T8): switching it off, or adding a confirm, is how an
-    // admin closes it to shared apps. An API key or a peer acting as the
-    // owner is refused outright, as for switching External access on
-    // (access matrix T9).
+    // waits for the owner, whatever "require approval" says. On approval the
+    // call runs again with no agent context, so this branch is skipped. The
+    // same for any other tool with External access: switching it off, or
+    // adding a confirm, is how an admin closes it to shared apps. An API key
+    // or a peer acting as the owner is refused outright, as for switching
+    // External access on.
     const keyOrPeer = keyOrPeerVia(ctx);
     if (ctx.agent || keyOrPeer) {
       let opening: string | null = null;
@@ -525,9 +522,9 @@ export const api_tool_update: BuiltinToolDef = {
         integration: group?.integration ?? null,
       });
       if ('error' in built) return { ok: false, error: built.error };
-      // A template that sends a vault key needs the keys area (W7a fix round
-      // 3), and the tool is then the writer's: its refs resolve while the
-      // writer holds that area.
+      // A template that sends a vault key needs the keys area, and the tool
+      // is then the writer's: its refs resolve while the writer holds that
+      // area.
       const keysRefused = await secretRefsWriteRefusal(built.handler);
       if (keysRefused) return { ok: false, error: keysRefused };
       patch.handler = built.handler;
@@ -656,7 +653,7 @@ export const api_tool_test: BuiltinToolDef = {
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const slug = str(input.slug).trim();
-    // The tool row is a system table (W7a fix round 2): read after the
+    // The tool row is a system table: read after the
     // connectors area check. The test call itself runs in the caller's
     // scope, as the agents that will use the tool run it.
     const row = await areaSystem('connectors', () => toolRowBySlug(ctx.ownerId, slug));
@@ -668,14 +665,14 @@ export const api_tool_test: BuiltinToolDef = {
         error: `api_tool_test only runs http tools — '${slug}' is ${handler.kind}`,
       };
     }
-    // Running a tool that sends a vault key is the keys area's (W7a fix
-    // round 3), as writing one is.
+    // Running a tool that sends a vault key is the keys area's, as writing
+    // one is.
     const keysRefused = await secretRefsWriteRefusal(handler);
     if (keysRefused) return { ok: false, error: keysRefused };
     const args = rec(input.input) ?? {};
     const t0 = performance.now();
     // The test call runs for whoever asked for the test: it inherits the
-    // surface, and the caller (A5 step 3a: through the gate as the test ran).
+    // surface, and the caller (through the gate as the test ran).
     const result = await dispatchTool(row, args, {
       ownerId: ctx.ownerId,
       step: ctx.step,

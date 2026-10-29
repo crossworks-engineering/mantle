@@ -1,7 +1,5 @@
 /**
  * web_fetch — read a service's API docs before authoring against them.
- *
- * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
 import { parserText } from '@mantle/files';
@@ -63,8 +61,8 @@ export const web_fetch: BuiltinToolDef = {
       // guardedFetch blocks private/loopback/link-local/metadata targets and
       // re-checks each redirect hop, so an injected agent can't turn web_fetch
       // into an SSRF probe of internal services or the cloud-metadata endpoint.
-      // The body is read up to FETCH_MAX_BYTES and no further (A10 part 1):
-      // the same first bytes as before, without holding the rest.
+      // The body is read up to FETCH_MAX_BYTES and no further: the first
+      // bytes, without holding the rest.
       const res = await guardedFetch(
         url,
         {

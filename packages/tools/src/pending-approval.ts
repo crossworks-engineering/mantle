@@ -1,6 +1,6 @@
 /**
- * Who may approve a pending call, and with whose rights it then runs (A5
- * step 6d fix round 1; owner decision 1a). The one place this rule lives:
+ * Who may approve a pending call, and with whose rights it then runs. The
+ * one place this rule lives:
  * approvePendingCall (pending.ts) asks it on every path that approves (the
  * web's /api/pending, MCP pending_approve, a Telegram card's tap), so no
  * surface judges an approval itself.
@@ -20,22 +20,22 @@
  * (gateCallRefusal) with the caller dispatch then runs the call as, so a
  * refused approver leaves the call pending for one who may.
  *
- * In this order (A5 step 6c, 6d's lows): the owner first, so the owner may
- * always approve (even a call it asked itself, L4); then a row that names
- * no asker is the owner's alone (L2), and so is a call whose tool is gone
- * or has no policy, which no gate step can judge (L1).
+ * In this order: the owner first, so the owner may always approve (even a
+ * call it asked itself); then a row that names no asker is the owner's
+ * alone, and so is a call whose tool is gone or has no policy, which no
+ * gate step can judge.
  *
  * Whoever may approve an elevated call may also reject it
- * (elevatedRejection, L3); its asker may withdraw it (deciderFilter).
+ * (elevatedRejection); its asker may withdraw it (deciderFilter).
  *
  * Every other call keeps its rule of who decides (deciderFilter): a login
  * other than the owner decides only the calls queued for it, and the call
- * runs as its asker. Since A5 step 6c a call stamped with the scope it was
- * asked in (pending_tool_calls.origin, 0288) is judged again before it is
- * claimed (originApproval): the queue-time check, in that scope met with
- * its asker's rights now, and it runs there. A row with no stamp (queued
- * before 0288, or by no turn) keeps the legacy rule: its asker's current
- * rights in the scope of the path that approves.
+ * runs as its asker. A call stamped with the scope it was asked in
+ * (pending_tool_calls.origin, 0288) is judged again before it is claimed
+ * (originApproval): the queue-time check, in that scope met with its
+ * asker's rights now, and it runs there. A row with no stamp (queued
+ * before the stamp existed, or by no turn) is judged by its asker's
+ * current rights in the scope of the path that approves.
  */
 import {
   elevatedCallWorkspace,
@@ -79,29 +79,29 @@ export const ELEVATED_NO_APPROVER_ERROR =
   'This call needs an Admin user to approve it, and this approval names no one: approve it signed in as the owner or as someone with write rights on this connector.';
 
 /** The refusal of a non-owner's approval of an elevated call that names no
- *  asker (6d L2): no rule can tell the approver is not the one who asked. */
+ *  asker: no rule can tell the approver is not the one who asked. */
 export const ELEVATED_NO_ASKER_ERROR =
   'This call names no one who asked for it, so only the owner may approve it.';
 
 /** The refusal of an approval of a call asked in a public link's scope by
- *  anyone but the owner (A5 step 6c fix round 1): the link's scope is not
+ *  anyone but the owner: the link's scope is not
  *  rebuilt at approval, so no one else's rights can be told to reach it. */
 export const PENDING_LINK_OWNER_ERROR =
   'This call was asked through a public link, so only the owner may approve it.';
 
 /** The refusal of an approval of a stamped call whose tool is gone or
- *  disabled now (A5 step 6c fix round 1): no re-check can judge it, and it
+ *  disabled now: no re-check can judge it, and it
  *  never runs by the rule of a call with no stamp. */
 export const PENDING_NO_TOOL_ERROR =
   'This call’s tool is gone or disabled, so it cannot be checked again where it was asked and does not run: reject it, or enable the tool and approve it again.';
 
 /** The refusal of an approval that claimed a stamped call it had not
- *  judged (A5 step 6c fix round 1): the call is put back, pending. */
+ *  judged: the call is put back, pending. */
 export const PENDING_NOT_RECHECKED_ERROR =
   'This call could not be checked again in the workspace it was asked in, so it does not run and is pending again: approve it again, or reject it.';
 
 /** The refusal of a non-owner's approval of an elevated call whose tool is
- *  gone, disabled or has no policy (6d L1): no gate step can judge it. */
+ *  gone, disabled or has no policy: no gate step can judge it. */
 export const ELEVATED_NO_TOOL_ERROR =
   'This call’s tool is gone, disabled or has no policy, so only the owner may decide it.';
 
@@ -163,10 +163,10 @@ export async function elevatedApproval(
   context: Readonly<Record<string, unknown>>,
 ): Promise<ElevatedRun> {
   if (decider === null) throw new ApprovalRefusedError(ELEVATED_NO_APPROVER_ERROR);
-  // The owner first (6d L4): the owner may always approve, even a call it
+  // The owner first: the owner may always approve, even a call it
   // asked itself (an owner's own turn is no Moderator of a workspace whose
   // connector Write is off). Anyone else: never its asker, and never a row
-  // that names none (6d L2: no rule can tell it is not the one who asked).
+  // that names none (no rule can tell it is not the one who asked).
   const owner = isBrainOwner(ownerId, decider);
   if (!owner) {
     if (!row.loginId) throw new ApprovalRefusedError(ELEVATED_NO_ASKER_ERROR);
@@ -175,7 +175,7 @@ export async function elevatedApproval(
     }
   }
   const asked = tool ? gateRefOf(tool) : null;
-  // A tool gone, disabled or with no policy (6d L1): no gate step judges
+  // A tool gone, disabled or with no policy: no gate step judges
   // it, so only the owner decides it (the approval then records that the
   // tool is gone, running nothing).
   if (!owner && !asked) throw new ApprovalRefusedError(ELEVATED_NO_TOOL_ERROR);
@@ -211,7 +211,7 @@ export async function elevatedApproval(
 }
 
 /**
- * Whether `decider` may reject the elevated call `row` (6d L3): whoever may
+ * Whether `decider` may reject the elevated call `row`: whoever may
  * approve it may reject it. The owner always may (a call it could not run
  * still goes); anyone else when elevatedApproval lets it approve. Its asker
  * withdraws its own call by the ordinary rule (deciderFilter), before this
@@ -234,8 +234,8 @@ export async function elevatedRejection(
   }
 }
 
-/** What an approved call stamped with its asked scope runs with (A5 step
- *  6c): the scope (OriginRun), the caller dispatch runs it as, and the
+/** What an approved call stamped with its asked scope runs with: the scope
+ *  (OriginRun), the caller dispatch runs it as, and the
  *  actor it is bound to there. */
 export type OriginApproval = Readonly<{
   run: OriginRun;
@@ -257,7 +257,7 @@ async function adminNarrowed(run: OriginRun): Promise<string[]> {
 
 /**
  * The approval re-check of a call stamped with the scope it was asked in
- * (A5 step 6c; pending_tool_calls.origin, 0288), on every path that
+ * (pending_tool_calls.origin, 0288), on every path that
  * approves, before the row is claimed: the scope the stamp names met with
  * its asker's rights now (originRunFor: a workspace the asker left, a
  * Moderator seat it lost, are gone; a right it gained since is not the
@@ -271,7 +271,7 @@ async function adminNarrowed(run: OriginRun): Promise<string[]> {
  * The actor is the asker as it is now; a row with no asker runs as the
  * actor its turn ran as (the stamp's: an assistant's, the owner's for an
  * Admin assistant that answered no one, the system's), never the approving
- * path's (fix round 1). A call asked through a public link is the owner's
+ * path's. A call asked through a public link is the owner's
  * alone to approve (PENDING_LINK_OWNER_ERROR).
  */
 export async function originApproval(
@@ -309,7 +309,7 @@ export async function originApproval(
   return { run, caller: judged.caller, actor };
 }
 
-/** The actor a row with no asker runs as (A5 step 6c fix round 1): the one
+/** The actor a row with no asker runs as: the one
  *  its turn ran as, as the stamp keeps it. A login is that login now (owner
  *  mode only for the brain owner); with none stamped, the asking assistant. */
 async function stampedActor(

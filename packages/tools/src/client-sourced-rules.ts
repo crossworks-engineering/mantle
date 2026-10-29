@@ -1,6 +1,5 @@
 /**
- * The lowering guard, by TARGET (client logins C5 audit fixes, L2 and I1;
- * docs/client-logins.md section 8).
+ * The lowering guard, by TARGET.
  *
  * A turn marked client-sourced (client-sourced.ts) may read freely. What
  * waits at /pending is any call that would put brain content in front of a
@@ -9,10 +8,10 @@
  *    `email_page` with a link);
  *  - a write INTO an item a client or the public already reads: a page,
  *    note, table, drawing, file, folder, formula or app, its blocks, rows,
- *    draft, commit, title or place. Since workspaces W5b2 that is its
- *    grants: a workspace with a client user holds it (its own grant or its
- *    folder's), or a live open link shows it (its item or its served list).
- *    An embed changes no one's access any more, so the target alone decides;
+ *    draft, commit, title or place. That is its grants: a workspace with a
+ *    client user holds it (its own grant or its folder's), or a live open
+ *    link shows it (its item or its served list). An embed changes no one's
+ *    access, so the target alone decides;
  *  - a destination folder a client workspace reads (what lands there takes
  *    its rows);
  *  - a write into an agent or tool group at client or public level (a new
@@ -20,12 +19,11 @@
  *  - anything whose target cannot be read from its input (a command, a run,
  *    a recipe with a write step, a connector's tool).
  *
- * Every built-in write declares its rule on its policy (`clientSourced`,
- * the shapes in client-sourced-rule.ts; A5 step 6d moved them there from
- * WRITE_RULES). The sweep (client-sourced-rules.test.ts) fails when one is
- * missing, so a new write tool cannot slip past silently; at run time an
- * unclassified write (a builtin registered elsewhere) waits too. The owner
- * approving the pending entry runs the original call.
+ * Every built-in write declares its rule on its policy (`clientSourced`, the
+ * shapes in client-sourced-rule.ts). The sweep (client-sourced-rules.test.ts)
+ * fails when one is missing, so a new write tool cannot slip past silently; at
+ * run time an unclassified write (a builtin registered elsewhere) waits too.
+ * The owner approving the pending entry runs the original call.
  */
 import { sql } from 'drizzle-orm';
 import { db, wsArraySql } from '@mantle/db';
@@ -36,8 +34,7 @@ import { UUID_RE } from '@mantle/std';
 type Input = Record<string, unknown>;
 
 /** The rule the guard applies to a builtin: its policy's `clientSourced`,
- *  or the lowering its policy declares (A5 step 6d: the rules moved onto
- *  the policies; WRITE_RULES is gone). */
+ *  or the lowering its policy declares. */
 export type WriteRule = { kind: 'lowering' } | ClientSourcedRule;
 
 const LOWERING: WriteRule = Object.freeze({ kind: 'lowering' });
@@ -178,8 +175,8 @@ async function decide(p: {
   }
 }
 
-/** The verdict of a write rule for one call (exported for the oracle test
- *  of A5 step 6d, which runs main's WRITE_RULES through it). */
+/** The verdict of a write rule for one call (exported for
+ *  client-sourced-rules.oracle.test.ts). */
 export async function writeVerdict(
   ownerId: string,
   rule: ClientSourcedWriteRule,
@@ -208,7 +205,7 @@ export async function writeVerdict(
   // The rule in SQL, by its definer (mantle_client_sourced_gate, 0293): the
   // targets, an app's exported Tables, the destination folders, the
   // assistants and tool groups, over every row of the brain whatever the
-  // turn reads (A6b: on the system pool before, 'client-sourced-check').
+  // turn reads.
   const [row] = (await db.execute(
     sql`select "public"."mantle_client_sourced_gate"(${ownerId}::uuid,
           ${wsArraySql(nodeIds)}, ${wsArraySql(appIds)}, ${textArray(paths)}::text[],

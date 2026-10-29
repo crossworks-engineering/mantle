@@ -1,10 +1,9 @@
 /**
- * The policies of the runtime tool rows (workspaces arch plan v2, section 8;
- * A3c). A built-in tool declares its policy where it is defined (A5:
- * ToolPolicy on BuiltinToolDef). A tool that only exists at run time (a
- * connector's tool, an API tool, a recipe, a shell tool, a tool an app
- * calls, a sandbox's toolbelt tool, a peer's tool) gets its policy from ONE
- * function per row type, here. No runtime tool runs without one: dispatch
+ * The policies of the runtime tool rows. A built-in tool declares its policy
+ * where it is defined (ToolPolicy on BuiltinToolDef). A tool that only exists
+ * at run time (a connector's tool, an API tool, a recipe, a shell tool, a tool
+ * an app calls, a sandbox's toolbelt tool, a peer's tool) gets its policy from
+ * ONE function per row type, here. No runtime tool runs without one: dispatch
  * refuses a row with no policy, and the sandbox and peer calls ask theirs
  * before they reach the remote tool.
  *
@@ -30,7 +29,7 @@ import { handlerCarriesSecretRefs } from './secret-ref-gate';
 
 export { connectorToolPolicy, type ConnectorToolPolicy } from './external-access';
 
-/** The runtime tool row types (plan section 8). */
+/** The runtime tool row types. */
 export type RuntimeRowType =
   'connector' | 'api' | 'recipe' | 'shell' | 'app' | 'sandbox-mcp' | 'peer';
 
@@ -92,10 +91,10 @@ export function recipeToolPolicy(row: Row): RuntimeToolPolicy {
 /**
  * A shell tool: an operator-authored command on the brain's own host, a
  * write. Agents cannot author or edit one (recipe.ts AGENT_GRANTABLE_KINDS).
- * It runs only for a user of the Admin workspace (A5 step 5, owner
- * decision Q2 b): the gate's Admin step refuses it in a scope that does
- * not hold Admin (a member's turn), in ADMIN_ONLY_ERROR's words; an agent
- * a group grants it to runs it there behind its confirm.
+ * It runs only for a user of the Admin workspace: the gate's Admin step
+ * refuses it in a scope that does not hold Admin (a member's turn), in
+ * ADMIN_ONLY_ERROR's words; an agent a group grants it to runs it there
+ * behind its confirm.
  */
 export function shellToolPolicy(row: Row): RuntimeToolPolicy {
   return Object.freeze({
@@ -125,7 +124,7 @@ export const TEAM_APP_TOOLS_ALLOWED =
  *  them: memberAppToolVerdict and appToolPolicy both ask it.
  *
  *  A write is refused, but for a Table write the policy marks `table-rows`
- *  (task 2178377a, 2026-10-22; table_commit since Jason's yes): on its
+ *  (table_commit too): on its
  *  own workspace's Tables a team app is held to what the running user may
  *  do there, no more. A team app's database is shared by every
  *  holder, so it changes only rows of a Table homed in a workspace that

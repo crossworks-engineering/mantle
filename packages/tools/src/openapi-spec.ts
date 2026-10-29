@@ -429,7 +429,7 @@ export function compileOperations(
 
   const tools: CompiledOperation[] = [];
   for (const op of selected) {
-    // Every tool URL stays under the connector's base_url (W7a fix round 5):
+    // Every tool URL stays under the connector's base_url:
     // a path key that is not relative ('https://host/x', 'host/x') would
     // send the group's auth to a host the spec chose, so it is not compiled.
     if (!op.path.startsWith('/')) {

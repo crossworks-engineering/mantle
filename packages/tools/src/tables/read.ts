@@ -1,7 +1,5 @@
 /**
  * Reading a table: list, get, the schema digest, raw SQL, and row reads.
- *
- * Split out of builtins-tables.ts; bodies moved verbatim.
  */
 
 import {
@@ -117,9 +115,9 @@ export const table_get: BuiltinToolDef = {
     const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
     let listed = listRows(doc, { offset, limit });
-    // Past the materialize window the doc is a leading slice — totals and
-    // pages beyond it come from the file, not the slice (audit finding 4:
-    // table_get reported 10k totals and empty pages for a 50k table).
+    // Past the materialize window the doc is a leading slice: totals and
+    // pages beyond it come from the file, not the slice (else a 50k table
+    // reports 10k totals and empty pages).
     if (table.docClipped) {
       const file = await windowFile(ctx.ownerId, id);
       const win = file

@@ -1,8 +1,6 @@
 /**
  * Authoring and naming: create a file from text, rename either kind,
  * describe a folder, set indexing mode.
- *
- * Split out of builtins-files.ts; bodies moved verbatim.
  */
 
 import {
@@ -72,9 +70,9 @@ export const file_create: BuiltinToolDef = {
     }
     try {
       // Bring the folder into existence rather than refusing the write. A skill
-      // can name a folder the brain has never had (the Draftsman's
-      // `files/diagrams` was one), and refusing sent the agent off to file the
-      // artifact somewhere the instructions never meant. Capped and confined to
+      // can name a folder the brain has never had (`files/diagrams`, say), and
+      // refusing sends the agent off to file the artifact somewhere the
+      // instructions never meant. Capped and confined to
       // `files` inside the helper, so a malformed path is still an error.
       // Folders nest three deep: a deeper path lands in its third folder.
       const folderPath = await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
@@ -331,8 +329,8 @@ export const folder_set_indexing: BuiltinToolDef = {
     scope: 'any',
     itemArgs: [{ param: 'folder_id' }],
     // A folder's switch reaches every file under it: manage of the folder,
-    // asked by setIndexingMode (assertItemRight, F4 fix round 3, M1) in
-    // every mode, so no pre-check entry here (pre-check removal).
+    // asked by setIndexingMode (assertItemRight) in every mode, so no
+    // pre-check entry here.
     keyArea: 'files',
     clientSourced: CS.onNodes('folder_id'),
   },

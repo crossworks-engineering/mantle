@@ -2,7 +2,7 @@
  * Generic sharing builtins: the tool-surface counterpart of the editor's
  * ShareControl. `createShare` owns the rules (owned node, shareable type,
  * folders only under the files root) and link-serve.ts who may open a link
- * and what its served list may hold (workspaces plan 8.1); these are thin,
+ * and what its served list may hold; these are thin,
  * type-agnostic wrappers so the assistant can mint/revoke viewable links for
  * ANY shareable item (notes, tasks, events, files, apps, tables, folders),
  * not just pages. `page_share`/`page_unshare` remain the page-specific pair.
@@ -55,18 +55,17 @@ export function serveInput(v: unknown): string[] | undefined | string {
 }
 
 /**
- * The login a link is opened or closed as (audit 2026-10-12): the CALLER,
- * as POST /api/shares passes the session's actor. An ALLOWLIST (A0 fix
- * round, M2): a surface that names its login (an owner surface's MCP
- * connection, API key, web or Telegram chat, a run or delegated child that
- * carries its login; a member login's turn) links as that login. The brain's
- * owner only on an owner path that names no login AND has no MCP channel,
- * and only via stdio MCP, a run with no login or the owner's own pending
- * approval (never a delegated child, whose parent chat may name none). Anything
- * else is refused, never read as the owner: a missing surface (the C4 rule
- * in surface.ts), a chat that names no login, a team or contact surface with
- * no login of its own, an MCP connection that names none (a peer bound to an
- * Admin login, W6b fix round 3).
+ * The login a link is opened or closed as: the CALLER, as POST /api/shares
+ * passes the session's actor. An ALLOWLIST: a surface that names its login
+ * (an owner surface's MCP connection, API key, web or Telegram chat, a run or
+ * delegated child that carries its login; a member login's turn) links as
+ * that login. The brain's owner only on an owner path that names no login AND
+ * has no MCP channel, and only via stdio MCP, a run with no login or the
+ * owner's own pending approval (never a delegated child, whose parent chat
+ * may name none). Anything else is refused, never read as the owner: a
+ * missing surface (the rule in surface.ts), a chat that names no login, a
+ * team or contact surface with no login of its own, an MCP connection that
+ * names none (a peer bound to an Admin login).
  */
 /** The owner paths that may link as the brain owner when they name no
  *  login. */
@@ -82,7 +81,7 @@ export function linkLoginId(ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>
     // Only the owner paths that are the owner's own by construction: stdio
     // MCP, a run with no login, the owner's own pending approval. Never a
     // delegated child (its parent chat may name no login), nor any other
-    // via (A0 fix round 2, M-1).
+    // via.
     if (s?.kind === 'owner' && !s.mcp && OWNER_FALLBACK_VIAS.has(s.via)) return ctx.ownerId;
   }
   throw new LinkRefusedError(
@@ -192,11 +191,10 @@ const node_share: BuiltinToolDef = {
 };
 
 /**
- * What the public level on one item did to CLIENT items it embeds (audit
- * A10): they went down to public with it and left client logins' view. Said
- * out loud in access_set's answer, never silently. Null when no client item
- * moved. (A link no longer lowers anything: only the old level path uses
- * this.)
+ * What the public level on one item did to CLIENT items it embeds: they
+ * went down to public with it and left client logins' view. Said out loud
+ * in access_set's answer, never silently. Null when no client item moved.
+ * (A link lowers nothing: only setting the level uses this.)
  */
 export function clientLeftWarning(alsoLowered: readonly LoweredItem[]): string | null {
   const moved = alsoLowered.filter((l) => l.from === 'client');
@@ -210,8 +208,8 @@ export function clientLeftWarning(alsoLowered: readonly LoweredItem[]): string |
 }
 
 /**
- * The share tools' answer to a link mode other than public. Team links are
- * retired (member logins Phase 6 stage 6), so 'team' names what to do
+ * The share tools' answer to a link mode other than public. There are no
+ * team links, so 'team' names what to do
  * instead; anything else unknown is refused too, never read as public. Null
  * when the mode is absent or public.
  */
@@ -228,7 +226,7 @@ async function mayCloseAnyLink(ctx: Pick<ToolHandlerContext, 'surface'>): Promis
   if (!isOwnerSurface(ctx.surface) || !callerScope()) return false;
   // An API key or a linked brain has no users area of its own (its areas
   // are content areas, key-scope.ts): it closes only links it may edit,
-  // whatever its login holds (A0 fix round 2, L-5).
+  // whatever its login holds.
   if (keyOrPeerVia(ctx)) return false;
   return callerHasArea('users');
 }
@@ -240,7 +238,7 @@ export async function closeLink(
   id: string,
 ): Promise<{ id: string; unshared: boolean }> {
   const login = linkLoginId(ctx);
-  // The rights check first (A0 fix round, L4): a caller that may not link
+  // The rights check first: a caller that may not link
   // the item learns nothing about whether it has a link. An Admin user with
   // the users area may close any link (docs/workspaces.md), as DELETE
   // /api/shares/:id lets it.

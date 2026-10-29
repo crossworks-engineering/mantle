@@ -460,7 +460,7 @@ export function parseMcpBinding(
       oauth.lastError = lastErrorRaw.trim().slice(0, 500);
     }
     // Kept through a re-parse, or a settings save would forget which account
-    // signed in and the next reconnect could not tell (M4 audit, medium 3).
+    // signed in and the next reconnect could not tell.
     const accountHashRaw = pickO('accountHash', 'account_hash');
     if (typeof accountHashRaw === 'string' && /^[0-9a-f]{64}$/.test(accountHashRaw)) {
       oauth.accountHash = accountHashRaw;

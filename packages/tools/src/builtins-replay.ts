@@ -115,13 +115,13 @@ function stepSummary(
 }
 
 /**
- * Whose history a replay reads (W7c fix round 1, H1): each user reads only
+ * Whose history a replay reads: each user reads only
  * their own threads, the owner included. The asker is the turn's stamp
  * (the login the turn answers), else the login an owner surface names (the
  * web chat's, an MCP connection's, an API key's), else the login
  * whose own MCP call this is (its user scope). The anchor is used only
  * where the surface IS the anchor: its own stdio MCP (the owner surface
- * with no login). A Telegram chat names its paired login (W7d). Anything
+ * with no login). A Telegram chat names its paired login. Anything
  * else (a heartbeat, a run, a Telegram surface or a peer that names no
  * login) gets null and the tool refuses: it never falls back to the
  * anchor's history.
@@ -146,7 +146,7 @@ export const REPLAY_NO_LOGIN_ERROR =
   'replay needs the user it reads for: this call names no login, and a chat is read only by its own user.';
 
 /**
- * Replay reads the Admin workspace only (workspaces S4, W4b): a trace or a
+ * Replay reads the Admin workspace only: a trace or a
  * message of another workspace's assistant (the Team assistant's turns) is
  * never replayed, and of the Admin rows only the asking login's and the
  * system's (no login).
@@ -281,7 +281,7 @@ const find_window: BuiltinToolDef = {
       // Digests, and the one summary note per archived chat thread (0231).
       sql`(${nodes.tags} @> ARRAY['conversation-digest']::text[] or ${nodes.data}->>'kind' = 'chat_archive')`,
       sql`${nodes.embedding} is not null`,
-      // The asker's own digests and threads only (W7c fix round 1, H1).
+      // The asker's own digests and threads only.
       sql`${nodes.data}->>'login_id' = ${asker}`,
     ];
     // Keep digests whose [period_start, period_end] overlaps the rough range.
@@ -392,13 +392,12 @@ const replay_window: BuiltinToolDef = {
 
     const turns: RecallTurn[] = [];
 
-    // Telegram: the asker's own messages only (W7d): each message's node
-    // carries its chat's login (nodes.login_id); one from before W7d has
-    // none and was the anchor's chat. Per message, not per chat, so a chat
-    // paired to another user later never hands over its old messages. No
-    // role is granted the Telegram tables: by their definer
-    // (mantle_tg_replay, 0293: in a scope, the scope's own login only; A6b:
-    // on the system pool before, 'login-telegram').
+    // Telegram: the asker's own messages only: each message's node carries
+    // its chat's login (nodes.login_id); one with none is the anchor's chat.
+    // Per message, not per chat, so a chat paired to another user later
+    // never hands over its old messages. No role is granted the Telegram
+    // tables: by their definer (mantle_tg_replay, 0293: in a scope, the
+    // scope's own login only).
     if (surface === 'all' || surface === 'telegram') {
       const tg = (
         (await db.execute(

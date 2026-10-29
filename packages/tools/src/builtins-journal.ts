@@ -440,8 +440,8 @@ export const JOURNAL_TOOL_SLUGS: readonly string[] = JOURNAL_TOOLS.map((t) => t.
 
 /** Subset auto-granted to conversational agents (responder/assistant) at boot.
  *  Read + add/update/resolve — NOT delete (destructive ops are explicit grants):
- *  the journal tools whose definition says `autoGrant` (fix round 1, LOW-7:
- *  each by name, so a new tool is not granted until it says so). */
+ *  the journal tools whose definition says `autoGrant` (each by
+ *  name, so a new tool is not granted until it says so). */
 export const JOURNAL_AUTO_GRANT_SLUGS: readonly string[] = JOURNAL_TOOLS.filter(
   (t) => t.autoGrant === true,
 ).map((t) => t.slug);

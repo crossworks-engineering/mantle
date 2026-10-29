@@ -1,7 +1,5 @@
 /**
  * Per-group integration state: stored API docs and the usage skill.
- *
- * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
 import { and, eq } from 'drizzle-orm';
@@ -38,7 +36,7 @@ async function groupForIntegrationWrite(
   if (!SLUG_RE.test(slug)) {
     return { ok: false, error: 'group_slug must be lowercase letters/digits/dash/underscore' };
   }
-  // The group row is a system table (W7a fix round 2, N3): read after the
+  // The group row is a system table: read after the
   // connectors area check; the docs FILE is read and written in the scope.
   const group = await areaSystem('connectors', () => getGroupIntegration(ownerId, slug));
   if (!group) {
@@ -380,7 +378,7 @@ export const api_skill_set: BuiltinToolDef = {
     });
     await setGroupIntegration(ctx.ownerId, groupSlug, { skillSlug });
     // A heartbeat that runs this skill (or an agent granted the group) now
-    // runs the caller's words: it becomes the caller's (W7a fix round 4).
+    // runs the caller's words: it becomes the caller's.
     await restampHeartbeatMakers(ctx.ownerId, toolMaker(ctx.ownerId), {
       skillSlug,
       toolGroupSlug: groupSlug,

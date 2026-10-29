@@ -17,7 +17,7 @@ export const CONFIRM_INPUT = {
 } as const;
 
 /** The refusal text for a TreeVisibilityError (or a busy write: another
- *  change held the rows, review F7), or null for anything else. */
+ *  change held the rows), or null for anything else. */
 export function visibilityRefusal(err: unknown): string | null {
   if (isBusy(err)) return busyMessage(err);
   if (!(err instanceof TreeVisibilityError)) return null;
@@ -29,8 +29,8 @@ export function visibilityRefusal(err: unknown): string | null {
         c.alsoVisibleTo.length ? `also visible to ${names(c.alsoVisibleTo)}` : '',
         c.removedFrom.length ? `no longer in ${names(c.removedFrom)}` : '',
       ].filter(Boolean);
-      // A new item says where it is homed and who only reads it (A0 fix
-      // round 3, L-c): a folder homed elsewhere passes its home as a read.
+      // A new item says where it is homed and who only reads it: a folder
+      // homed elsewhere passes its home as a read.
       const placed = [
         c.home ? `This will be homed in ${c.home.name}.` : '',
         c.readOnly?.length ? `${names(c.readOnly)} can read it (not edit).` : '',
@@ -45,6 +45,6 @@ export function visibilityRefusal(err: unknown): string | null {
 }
 
 /** Said by every agent tool that writes a note's or a page's content
- *  (migration 0208; Jason, 2026-09-30): an embed is shared with the item. */
+ *  (migration 0208): an embed is shared with the item. */
 export const EMBEDS_SHARED =
   " What it embeds (images, files, drawings, child pages, any item by id) is readable by whoever reads it, a shared folder's readers included, whatever kind it is, for as long as it stays shared.";

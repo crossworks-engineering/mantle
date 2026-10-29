@@ -1,7 +1,5 @@
 /**
  * page_blocks_apply — the batched block editor and its op cap.
- *
- * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
 import {
@@ -29,10 +27,10 @@ import { CS } from '../client-sourced-rule';
  *  refused with guidance instead of accepted. */
 const MAX_APPLY_OPS = 50;
 
-/* No 'move' op (deliberately deferred, 2026-08-02): full restructures already
+/* No 'move' op, deliberately: full restructures already
  * route to page_update_draft per the page_editing strategy ladder; a move is
- * the most anchor-churn-prone batch op there is (the same chaining incident
- * class the created_ids map exists for); and with wrap + insert_before +
+ * the most anchor-churn-prone batch op there is (the same stale-anchor
+ * failure the created_ids map exists for); and with wrap + insert_before +
  * insert_after available, small moves are losslessly expressible without it.
  * Revisit with usage evidence, not speculation. */
 
@@ -135,11 +133,11 @@ export const page_blocks_apply: BuiltinToolDef = {
     // user autosave lands while the batch is assembling.
     const baseRev = page.draftRev ?? 0;
     const counts = { updated: 0, inserted: 0, deleted: 0, wrapped: 0 };
-    // Chaining record: multi-batch jobs died on stale anchors in the wild (a
-    // 2026-07-08 pilot-deployment turn burned 4 batches re-listing after its own
-    // earlier chunks consumed the anchors). markdownToDoc parse-mints ids, so the ids
-    // of every block this batch creates are known BEFORE save — returning
-    // them lets the next batch anchor on this one's output with no re-list.
+    // Chaining record: multi-batch jobs die on stale anchors (a turn can burn
+    // batches re-listing after its own earlier chunks consumed the anchors).
+    // markdownToDoc parse-mints ids, so the ids of every block this batch
+    // creates are known BEFORE save; returning them lets the next batch
+    // anchor on this one's output with no re-list.
     const createdIds: Array<{ op: number; ids: string[] }> = [];
     const deletedIds: string[] = [];
     // On a not-found failure, pre-scan the REMAINING ops against the evolved

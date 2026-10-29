@@ -1,8 +1,6 @@
 /**
  * Workbook lifecycle: create (blank, from a file, from text), update
  * metadata, delete, and commit a draft.
- *
- * Split out of builtins-tables.ts; bodies moved verbatim.
  */
 
 import {
@@ -181,7 +179,7 @@ export const table_from_file: BuiltinToolDef = {
       meta.filename.replace(/\.(xlsx|xls|csv)$/i, '') ||
       'Imported table'
     ).slice(0, 200);
-    // One workbook per file (v2.1 P2): sheets become tabs, not sibling tables.
+    // One workbook per file: sheets become tabs, not sibling tables.
     const tabs = sheets.map((sheet, i) => ({
       ...tableDocFromGrid(sheet),
       name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
@@ -412,7 +410,7 @@ export const table_commit: BuiltinToolDef = {
     keyArea: 'tables',
     clientSourced: CS.onNodes('id'),
     // A team app may publish its own workspace's Table (runtime-policy.ts
-    // memberAppRefusal; task 2178377a, Jason's yes).
+    // memberAppRefusal).
     memberApp: 'table-rows',
   },
   preconditions: TABLE_NODE_ID_PRE,

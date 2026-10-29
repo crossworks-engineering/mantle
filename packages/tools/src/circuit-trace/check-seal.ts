@@ -19,10 +19,10 @@
  * guesses again (docs/scripts.md, rotate:master-key). A key rotated out is
  * never kept to vouch for rows: it may be the reason for the rotation.
  *
- * The alternative a no names (phase 6, the Alternative column) is sealed
- * with the row when it has one: appended to the sealed list, so a row with
- * no alternative (every row written before phase 6) seals exactly as it
- * did, and its seal still holds. Adding an alternative to such a row by
+ * The alternative a no names (the Alternative column) is sealed with the
+ * row when it has one: appended to the sealed list, so a row with no
+ * alternative (every row written before the column existed) seals exactly
+ * as it did, and its seal still holds. Adding an alternative to such a row by
  * hand, or taking one off a sealed row, breaks the seal. The By column
  * (who ran the call, a kind and a keyed hash, which the guard against a
  * second call reads) is sealed the same way, after it, tagged.
@@ -100,11 +100,12 @@ function hmac(k: Buffer, f: SealedFields): string {
     f.revision,
     f.checkedAt,
     f.crops,
-    // Only when there is one: a row without it seals as before phase 6.
+    // Only when there is one: a row without it seals as a row filed before
+    // the field existed, so its seal still holds.
     ...(f.alt ? [f.alt] : []),
     // Only when there is one, and tagged (a list, never a string), so it
-    // never reads as an alternative: a row filed before By was sealed
-    // seals as it did, and blanking a sealed row's By breaks its seal.
+    // never reads as an alternative: a row sealed without By still seals
+    // the same, and blanking a sealed row's By breaks its seal.
     ...(f.by ? [['by', f.by]] : []),
   ]);
   return createHmac('sha256', k).update(body, 'utf8').digest('hex');

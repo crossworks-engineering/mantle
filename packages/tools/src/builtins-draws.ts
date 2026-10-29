@@ -1,13 +1,11 @@
 /**
  * Draw builtins — read access to the whiteboard workspace (/draw).
  *
- * READ-ONLY by design (Phase 5 of docs/draw-plan.md): a draw's scene is
+ * READ-ONLY by design: a draw's scene is
  * Excalidraw JSON that only the canvas can author safely, so agents read the
  * committed derived text (`scene_text` — frame names as headings, shape
  * labels, bound arrows as `A -> B: label` relations, plus any folded OCR from
- * pasted images) and never touch the scene itself. Authoring is Phase 6, a
- * separate decision. Mirrors the MCP posture for pages before their agent
- * landed.
+ * pasted images) and never touch the scene itself.
  *
  * The text loses positions, colours, ticks and layout, so `draw_get` can also
  * hand back the committed snapshot as a PNG (`image: true`). That is an
@@ -200,7 +198,7 @@ const draw_get: BuiltinToolDef = {
       // Metadata only: no scene, and above all no DRAFT. One helper decides
       // what this reader may get, for the text and the picture alike
       // (draw-reader.ts in @mantle/content).
-      // A team surface on the system pool reads no drawing (W8 final).
+      // A team surface on the system pool reads no drawing.
       const readFor = { teamSurface: ctx.surface?.kind === 'team' };
       const draw = await readableDraw(ctx.ownerId, id, readFor);
       if (!draw) return notFound('drawing', id, 'draw_list / search_nodes');

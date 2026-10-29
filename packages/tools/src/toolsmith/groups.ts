@@ -1,7 +1,5 @@
 /**
  * Tool groups and the agent grants that turn a group into an ability.
- *
- * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
 import { and, eq, sql } from 'drizzle-orm';
@@ -248,9 +246,8 @@ export const tool_group_ensure: BuiltinToolDef = {
     }
 
     // A group an assistant of another workspace than Admin holds: a tool
-    // added to it reaches that workspace's users (tool-group levels went in
-    // workspaces W7b). An agent never changes its tools on its own say-so
-    // (client logins C5 audit, L3): the call waits in Pending for the
+    // added to it reaches that workspace's users. An agent never changes its
+    // tools on its own say-so: the call waits in Pending for the
     // operator, as agent_grant_tool_group does, and on approval runs again
     // with no agent, as the owner. Only the owner changes it directly.
     const reachesOthers = existing
@@ -288,7 +285,7 @@ export const tool_group_ensure: BuiltinToolDef = {
           agentId: requester?.id ?? null,
           toolSlug: 'tool_group_ensure',
           args: input,
-          // The scope the asking turn runs in (A5 step 6c, 0288).
+          // The scope the asking turn runs in.
           origin: await pendingOriginNow(ctx.surface),
         });
         if (pendingId) {
@@ -320,7 +317,7 @@ export const tool_group_ensure: BuiltinToolDef = {
     }
 
     // Integration binding. Only touched when the call carries one of its fields,
-    // so a plain capability-bundle ensure leaves `integration` NULL as before.
+    // so a plain capability-bundle ensure leaves `integration` as it is (NULL).
     // Merged onto whatever is already there: re-declaring auth must not drop the
     // docs pointer, and attaching docs must not require restating the service.
     const wantsIntegration =
@@ -359,8 +356,8 @@ export const tool_group_ensure: BuiltinToolDef = {
       // The group's vault key (secret_ref, the auth template's refs, OAuth2
       // credentials) goes to its base URL and token URL, for every tool
       // authored into it: setting or changing either side while the other
-      // is present is the keys area's, and the group records who did (W7a
-      // fix rounds 3 and 4, secret-ref-gate.ts).
+      // is present is the keys area's, and the group records who did
+      // (secret-ref-gate.ts).
       const before = integrationPairing(existing?.integration);
       const after = integrationPairing(parsed.value);
       if (vaultPairingChanged(before, after)) {
@@ -394,9 +391,8 @@ export const tool_group_ensure: BuiltinToolDef = {
         db.update(toolGroups).set(set).where(eq(toolGroups.id, existing.id)),
       );
       // A new usage skill on the group is what its grantees' heartbeats now
-      // run: they become the caller's (W7a fix round 5, heartbeat-maker.ts).
-      // So is a changed tool list: the tools their turns may call (W7
-      // integration fix 2, M2).
+      // run: they become the caller's (heartbeat-maker.ts). So is a changed
+      // tool list: the tools their turns may call.
       const skillBefore = existing.integration?.skillSlug ?? null;
       const skillAfter = integration?.skillSlug ?? null;
       const before = new Set(existing.toolSlugs ?? []);
@@ -545,7 +541,7 @@ export const agent_grant_tool_group: BuiltinToolDef = {
       .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, agentSlug)))
       .limit(1);
     if (!agent) return { ok: false, error: `agent '${agentSlug}' not found` };
-    // No level rule since workspaces W7b: an adminOnly group runs only in a
+    // No level rule: an adminOnly group runs only in a
     // turn of the Admin workspace, whoever holds it (skills.ts).
     const [group] = await db
       .select({ id: toolGroups.id, toolSlugs: toolGroups.toolSlugs })
@@ -609,7 +605,7 @@ export const agent_grant_tool_group: BuiltinToolDef = {
         agentId: requester?.id ?? null,
         toolSlug: 'agent_grant_tool_group',
         args: grantArgs,
-        // The scope the asking turn runs in (A5 step 6c, 0288).
+        // The scope the asking turn runs in.
         origin: await pendingOriginNow(ctx.surface),
       });
       if (pendingId) {
@@ -642,7 +638,7 @@ export const agent_grant_tool_group: BuiltinToolDef = {
         .where(eq(agents.id, agent.id)),
     );
     // The group's tools and usage skill now ride with the agent's heartbeats:
-    // they become the granting login's (W7a fix round 5, heartbeat-maker.ts).
+    // they become the granting login's (heartbeat-maker.ts).
     await restampHeartbeatMakers(ctx.ownerId, toolMaker(ctx.ownerId), { agentSlug });
     ctx.step?.setOutput({ agentSlug, groupSlug });
     return {
@@ -730,7 +726,7 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
         agentId: requester?.id ?? null,
         toolSlug: 'agent_set_thinking_effort',
         args,
-        // The scope the asking turn runs in (A5 step 6c, 0288).
+        // The scope the asking turn runs in.
         origin: await pendingOriginNow(ctx.surface),
       });
       if (pendingId) {

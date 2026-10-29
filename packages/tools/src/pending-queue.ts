@@ -28,7 +28,7 @@ export async function queueAgentCallForApproval(
     agentId: requester?.id ?? null,
     toolSlug,
     args,
-    // The scope the asking turn runs in (A5 step 6c, 0288).
+    // The scope the asking turn runs in (0288).
     origin: await pendingOriginNow(ctx.surface),
   });
   if (pendingId) {

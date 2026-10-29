@@ -73,8 +73,8 @@ export type CreateToolInput = {
   handler: ToolHandler;
   requiresConfirm?: boolean;
   enabled?: boolean;
-  /** The login that wrote its templates when not the brain owner (W7a fix
-   *  round 3, tools.created_by); null or absent: the brain owner's. */
+  /** The login that wrote its templates when not the brain owner
+   *  (tools.created_by); null or absent: the brain owner's. */
   createdBy?: string | null;
 };
 
@@ -148,7 +148,7 @@ export async function updateTool(
     );
   }
   // OpenAPI-mirrored rows are ordinary http tools whose definition MAY be
-  // edited (the plan's deliberate difference from mcp), but their provenance
+  // edited (deliberately unlike mcp), but their provenance
   // is the sync's bookkeeping: it must survive every edit, an edit stamps
   // `editedAt` so the next sync leaves the row alone, and no other row can be
   // dressed up as a mirror.
@@ -208,10 +208,10 @@ export async function updateTool(
     // a new one goes off until an admin confirms again (external-access.ts; the
     // broker would refuse it anyway, as the signature no longer matches).
     if (externalAccessHandlerSig(patch.handler) !== externalAccessHandlerSig(existing.handler)) {
-      // A connector tool's switch is its read-only mark (team apps Phase 2):
+      // A connector tool's switch is its read-only mark:
       // clearing it would turn a read into a write. Its mark is VOIDED
       // instead (kept, signature 'voided'): a voided mark refuses every call
-      // below the owner until an admin marks it again (M2 audit, low 5).
+      // below the owner until an admin marks it again.
       next.externalAccess =
         patch.handler.kind === 'mcp' && existing.externalAccess
           ? { ...existing.externalAccess, handlerSig: VOIDED_MARK_SIG }
@@ -219,7 +219,7 @@ export async function updateTool(
     }
   }
   // A connector tool whose description or input schema changed is not the
-  // tool the admin marked either (access matrix N4): its mark is voided.
+  // tool the admin marked either: its mark is voided.
   // Schemas by content (jsonb reorders keys); the mark from the stored row,
   // as `existing` is the summary, which drops the signature.
   if (

@@ -1,12 +1,9 @@
 /**
- * ToolPolicy (workspaces arch plan v2, sections 8 and 23.2; A5): what a
- * built-in tool is, for every check that asks, declared ONCE on its
- * definition (BuiltinToolDef.policy). It replaced the lists keyed by tool
- * name: A5 step 1 made each @mantle/tools access list a view of the policy
- * table, and A5 step 6a deleted the views: every consumer reads the tool's
- * policy (packages/runtime/src/tool-policy-snapshot.test.ts still holds
- * every list's literal value from before the policies existed, and derives
- * each from the policies it now reads).
+ * ToolPolicy: what a built-in tool is, for every check that asks, declared
+ * ONCE on its definition (BuiltinToolDef.policy). No list keyed by tool
+ * name is kept beside it: every consumer reads the tool's policy
+ * (packages/runtime/src/tool-policy-snapshot.test.ts pins the tool sets
+ * each check derives from the policies).
  *
  * The policy table is the builtin registry (registry.ts fills it with every
  * builtin, and registerBuiltin adds a process's own, the heartbeat tools).
@@ -18,7 +15,7 @@
  *
  * The gate (@mantle/db gate.ts) reads a tool's policy as a GatePolicy:
  * toGatePolicy, which the owner MCP surface registers as its `mcp-tool`
- * source (A5 step 2). The surface's own hand-written tools are definitions
+ * source. The surface's own hand-written tools are definitions
  * with a policy too (@mantle/mcp-core mcp-defs.ts); their policies are the
  * leaf mcp-surface-policies.ts, loaded here as the surface table in every
  * process (namedToolPolicy reads it).
@@ -47,11 +44,11 @@ export type ToolScope =
   | Readonly<{ area: ScopeArea; systemWhole?: true; adminOnly?: true }>;
 
 /**
- * One argument that names an item a write touches (R0 fix round, M1 and
- * L2): the one declaration the call audit reads for the row's `targets`
- * and the queue-time check reads before a call is queued for approval. It
- * decides nothing at run time: the database's checks and the libraries'
- * own item check (assertItemRight) decide the write.
+ * One argument that names an item a write touches: the one declaration the
+ * call audit reads for the row's `targets` and the queue-time check reads
+ * before a call is queued for approval. It decides nothing at run time:
+ * the database's checks and the libraries' own item check (assertItemRight)
+ * decide the write.
  */
 export type ToolItemArg = Readonly<{
   /** The argument (a list of ids for an array argument). */
@@ -89,7 +86,7 @@ export type ToolOutside = Readonly<{
   untrusted?: true;
   /** It reaches out (heartbeats/fire.ts reads it): an unattended
    *  heartbeat fire parks it for
-   *  approval when the egress gate is on. Since A5 step 5: the mail, web,
+   *  approval when the egress gate is on. Set on the mail, web,
    *  Telegram and linked-brain sends (docs/actors.md says which and why the
    *  peer reads are not). Marking another one changes what a heartbeat fire
    *  does. */
@@ -100,7 +97,7 @@ export type ToolOutside = Readonly<{
 }>;
 
 /**
- * What the A8 matrix asks of a tool (plan v3.2 S11a): the guide action its
+ * What the A8 matrix asks of a tool: the guide action its
  * call is, the argument that names the item, and the kinds it takes (unset:
  * every workspace kind); or `none` and why no item cell fits it. It states
  * intent only. No check reads it at run time (it is not a pre-check): the
@@ -180,13 +177,13 @@ type ToolPolicyFields = Readonly<{
   idempotent?: true;
   /** A create that lands in a folder named by its path (an ltree path, e.g.
    *  `parent_path`): the argument. Before a call is queued for approval the
-   *  folder must resolve in the queuing turn's scope (A5 step 6a, carried
-   *  round-2 LOW-1: the approver's scope runs the create). */
+   *  folder must resolve in the queuing turn's scope (the approver's scope
+   *  runs the create). */
   createsIn?: string;
   /** The create makes the missing folders of its `createsIn` path itself
    *  (file_create: ensureFolderPath, cut to FILES_MAX_FOLDER_DEPTH), so
    *  the queue-time check asks the deepest folder of the path the scope
-   *  reads, not the path (A5 step 6a fix round 1, M1). */
+   *  reads, not the path. */
   makesFolders?: true;
   /** The arguments that name the items its write touches (ToolItemArg):
    *  the audit row's targets, and the queue-time check of a call that
@@ -214,41 +211,38 @@ type ToolPolicyFields = Readonly<{
   /** What a client-sourced turn may do with a call of this write: run it,
    *  or queue it for the owner (client-sourced-rules.ts; the rule shapes in
    *  client-sourced-rule.ts). Every builtin write declares one, unless its
-   *  `lowering` decides; `createsIn` is read as a destination too (A5 step
-   *  6d: it replaced WRITE_RULES, the registry keyed by name). Unset on a
-   *  write: the call waits. */
+   *  `lowering` decides; `createsIn` is read as a destination too. Unset on
+   *  a write: the call waits. */
   clientSourced?: ClientSourcedRule;
   /** A team app may call it (default, by its other rules), never
-   *  (member-app-tools.ts memberAppRefusedName), or, for a write,
-   *  `table-rows`: a row write a team app may make to a Table homed in a
-   *  workspace that holds the app, as the running login, whose own rights
-   *  the database checks (runtime-policy.ts memberAppRefusal; task
-   *  2178377a, 2026-10-22). Only the row writes and table_commit
-   *  carry it: no table create, delete or rename, no column, tab or
-   *  snapshot change, no row delete. */
+   *  (member-app-tools.ts memberAppRefusedName), or, for a write, `table-rows`:
+   *  a row write a team app may make to a Table homed in a workspace that holds
+   *  the app, as the running login, whose own rights the database checks
+   *  (runtime-policy.ts memberAppRefusal). Only the row writes and table_commit
+   *  carry it: no table create, delete or rename, no column, tab or snapshot
+   *  change, no row delete. */
   memberApp?: 'ok' | 'refused' | 'table-rows';
   /** It reads the owner's PRIVATE corpus (mail, the Journal): a turn that
    *  serves a workspace user (a team turn, a workspace run or Telegram
    *  turn) is offered it only when the owner opted in (teamPrivateReads),
-   *  and a workspace run never (assemble-turn.ts excludePrivateCorpus; A5
-   *  step 6a). @mantle/content-core TEAM_PRIVATE_READ_SLUGS, the published
+   *  and a workspace run never (assemble-turn.ts excludePrivateCorpus).
+   *  @mantle/content-core TEAM_PRIVATE_READ_SLUGS, the published
    *  contract's list for the client, names the same tools (a test pins
    *  it). */
   privateCorpus?: true;
   /** Its write is routine internal state, not a change anyone reads or
-   *  shares: the gate's tool call audit writes no row for it (A5 step 6d
-   *  fix round 1, call-audit.ts), so `audit_log`, which nothing prunes, does
-   *  not grow per fire. `false`: never a row. `{ unlessArg }`: no row only
-   *  when the call leaves that argument out (lows round, 6d L5:
-   *  heartbeat_update_state skips its row only inside a fire, on the firing
-   *  heartbeat; a call naming a heartbeat by `slug`, as a responder turn
-   *  must, may move another login's heartbeat to its own and keeps its row).
-   *  Never on a write of content, sharing or access. The tools that carry it
-   *  are pinned (@mantle/runtime audit-row-allowlist.test.ts). */
+   *  shares: the gate's tool call audit writes no row for it (call-audit.ts),
+   *  so `audit_log`, which nothing prunes, does not grow per fire. `false`:
+   *  never a row. `{ unlessArg }`: no row only when the call leaves that
+   *  argument out (heartbeat_update_state skips its row only inside a fire, on
+   *  the firing heartbeat; a call naming a heartbeat by `slug`, as a responder
+   *  turn must, may move another login's heartbeat to its own and keeps its
+   *  row). Never on a write of content, sharing or access. The tools that carry
+   *  it are pinned (@mantle/runtime audit-row-allowlist.test.ts). */
   auditRow?: false | Readonly<{ unlessArg: string }>;
 }>;
 
-/** The gate's policy of a builtin (plan 23.2): its effect, Admin step,
+/** The gate's policy of a builtin: its effect, Admin step,
  *  spending and create; the rest in `fields` for the narrowers and the
  *  pre-run checks. */
 export function toGatePolicy(tp: ToolPolicy): GatePolicy {
@@ -370,7 +364,7 @@ export function builtinPolicy(slug: string): ToolPolicy | null {
 // ── The surface table ───────────────────────────────────────────────────────
 
 /** A tool a surface defines beside the builtins, by its name and policy:
- *  the hand-written MCP tools (@mantle/mcp-core mcp-defs.ts, A5 step 2).
+ *  the hand-written MCP tools (@mantle/mcp-core mcp-defs.ts).
  *  A builtin's definition is one too. */
 export type SurfaceToolDef = Readonly<{
   slug: string;
@@ -379,7 +373,7 @@ export type SurfaceToolDef = Readonly<{
 }>;
 
 /** The MCP surface's own tools, by name and policy (mcp-surface-policies.ts),
- *  loaded in every process (A5 step 2 fix round 1, LOW-1): a check that
+ *  loaded in every process: a check that
  *  names them (the Admin step of the responder tools that write into the
  *  owner's conversation) says the same with or without mcp-core. */
 const SURFACE: ReadonlyMap<string, SurfaceToolDef> = new Map(
@@ -403,8 +397,8 @@ export function namedToolPolicy(
 }
 
 // ── What a policy says ──────────────────────────────────────────────────────
-// Every check reads these off the tool's policy (A5 step 6a: no list of
-// names is kept beside the policies).
+// Every check reads these off the tool's policy: no list of names is kept
+// beside the policies.
 
 /** The Admin area a policy's scope names, or null. */
 export function policyArea(tp: ToolPolicy): ScopeArea | null {

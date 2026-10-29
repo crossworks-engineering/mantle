@@ -1,20 +1,18 @@
 /**
  * Builtins: telegram_send plus each user's Telegram operator surface.
  *
- * Split out of builtins.ts on 2026-09-02 (audit, bloat B6) with behaviour
- * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
+ * builtins.ts assembles BUILTIN_TOOLS from these groups.
  *
  * The operator tools below (pending / react / edit / mark_processed / pair)
- * were hand-written on the MCP side until tier 3 of the same audit. They are
- * `mcpOnly`: the caller is a USER working their own Telegram chats by hand,
+ * are `mcpOnly`: the caller is a USER working their own Telegram chats by hand,
  * and `telegram_pair` in particular moves the allowlist, the trust boundary
  * that decides who may talk to the brain at all, so no agent is granted
  * them. The in-brain path into Telegram stays the runtime's own turn handler.
  *
- * Telegram per paired user (workspaces W7d): a paired chat belongs to one
- * login (telegram_chats.login_id). Every tool here acts only on chats paired
- * to the caller's own login (the anchor: its own chats, no longer every
- * chat), and telegram_pair pairs a chat to the caller and nobody else.
+ * Telegram per paired user: a paired chat belongs to one login
+ * (telegram_chats.login_id). Every tool here acts only on chats paired to
+ * the caller's own login (the anchor too: its own chats, not every chat),
+ * and telegram_pair pairs a chat to the caller and nobody else.
  */
 
 import { and, asc, eq } from 'drizzle-orm';
@@ -49,14 +47,14 @@ import { CS } from './client-sourced-rule';
  * the named reason 'login-telegram' (the workspace role reads none of them).
  * Every tool here is an Admin-area tool that runs whole on the system pool
  * (`systemWhole`: dispatch runs it inside the 'admin-area' exit), so these
- * reads never run in a scope: systemWork refuses one (A6b: no exit).
+ * reads never run in a scope: systemWork refuses one (no exit).
  */
 function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
   return systemWork(fn, 'login-telegram');
 }
 
 /**
- * The login this call acts for (workspaces W7d): the login its surface
+ * The login this call acts for: the login its surface
  * names (a web or Telegram chat, an MCP connection, an API key), else the
  * login of the scope it runs in (or the scope its system-pool work left),
  * else the turn's stamp, else the
@@ -81,7 +79,7 @@ export const TELEGRAM_NO_LOGIN_ERROR =
   'this call names no user, and a Telegram chat is worked only by the user it is paired to.';
 
 /**
- * The outbound gate for a chat (W7d): it must be allowlisted AND paired to
+ * The outbound gate for a chat: it must be allowlisted AND paired to
  * the caller's own login. Returns the chat with the bot it is on, so the
  * send goes out on that bot (one Telegram chat id can sit on two bots).
  * Another user's chat answers like an unknown one: nothing about it leaks.
@@ -115,7 +113,7 @@ export const telegram_send: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
-    // A message out of the brain (A5 step 5).
+    // A message out of the brain.
     outside: { egress: true },
     peerRisky: true,
     clientSourced: CS.always(CS.OUTWARD),
@@ -168,7 +166,7 @@ export const telegram_pending: BuiltinToolDef = {
     effect: 'read',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
-    // Inbound messages from outside the brain: fenced as data (A5 step 5).
+    // Inbound messages from outside the brain: fenced as data.
     outside: { untrusted: true },
     peerRisky: true,
   },
@@ -407,10 +405,9 @@ export const telegram_pair: BuiltinToolDef = {
     required: ['code'],
   },
   handler: async (input, ctx) => {
-    // Only the user pairs their own chat (the owner's answer 1A, W7d): the
-    // chat is paired to the login this call acts for, whoever that is. Two
-    // steps (W7d fix round 1, M3): someone else's code shows whose chat it
-    // is before it pairs anything.
+    // Only the user pairs their own chat: the chat is paired to the login
+    // this call acts for, whoever that is. Two steps: someone else's code
+    // shows whose chat it is before it pairs anything.
     const loginId = telegramCallerLogin(ctx);
     if (!loginId) return { ok: false, error: TELEGRAM_NO_LOGIN_ERROR };
     const code = str(input.code);
@@ -418,8 +415,8 @@ export const telegram_pair: BuiltinToolDef = {
     if (bool(input.confirm) !== true) {
       const p = await previewChatPairing({ ownerId: ctx.ownerId, loginId, code });
       if (!p.ok) return { ok: false, error: p.error };
-      // The checked label only (noticeLabelOf), never the chat's free title
-      // (W7d+e): the title is the chat owner's text, and a model reads this.
+      // The checked label only (noticeLabelOf), never the chat's free title:
+      // the title is the chat owner's text, and a model reads this.
       const what = `Telegram ${p.preview.chat.label} (id ${p.preview.chat.telegramChatId}) on bot ${p.preview.bot.name}${p.preview.agentName ? `, answered by ${p.preview.agentName}` : ''}`;
       return {
         ok: true,
@@ -428,8 +425,8 @@ export const telegram_pair: BuiltinToolDef = {
           : `Nothing is paired yet. This code is for ${what}. Ask the user whether this is their own chat; only if it is, call telegram_pair again with confirm: true and preview_token: "${p.previewToken}".`,
       };
     }
-    // A confirm needs the preview's token (W7d+e): the user saw whose chat
-    // it is first.
+    // A confirm needs the preview's token: the user saw whose chat it is
+    // first.
     const token = strOpt(input.preview_token) ?? null;
     if (!token) {
       return {
@@ -441,7 +438,7 @@ export const telegram_pair: BuiltinToolDef = {
     const r = await pairChatWithCode({ ownerId: ctx.ownerId, loginId, code, previewToken: token });
     if (!r.ok) return { ok: false, error: r.error };
     if (r.already) return { ok: true, output: 'already paired to you' };
-    // Never the chat's free title (W7d+e): its owner chose it, and this
+    // Never the chat's free title: its owner chose it, and this
     // output is read by a model.
     return {
       ok: true,

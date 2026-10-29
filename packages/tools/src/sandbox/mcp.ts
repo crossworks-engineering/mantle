@@ -1,7 +1,5 @@
 /**
  * Driving an MCP server running inside a sandbox: list its tools, call one.
- *
- * Split out of builtins-sandbox.ts; bodies moved verbatim.
  */
 
 import { getSandboxByRef, touchSandbox } from '@mantle/content';
@@ -122,7 +120,7 @@ export const sandbox_mcp_call: BuiltinToolDef = {
     const notYours = sandboxRefusal(row, ctx.ownerId);
     if (notYours) return { ok: false, error: notYours };
     const tool = typeof input.tool === 'string' ? input.tool : '';
-    // No runtime tool runs without a policy (arch A3c, runtime-policy.ts).
+    // No runtime tool runs without a policy (runtime-policy.ts).
     if (!sandboxMcpToolPolicy(tool)) {
       return { ok: false, error: 'tool is required — list names with sandbox_mcp_tools' };
     }

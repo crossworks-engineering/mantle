@@ -21,9 +21,9 @@ import {
   type ResultBinding,
 } from './tool-results';
 
-/** A member's turn reads only the spills its own turn wrote (client logins
- *  C4, plan section 8): the trace IS the turn, so the handle is bound to
- *  that turn and its login. Owner paths read by handle as before. */
+/** A member's turn reads only the spills its own turn wrote: the trace IS
+ *  the turn, so the handle is bound to that turn and its login. Owner paths
+ *  read by handle alone. */
 export function resultBindingFor(ctx: ToolHandlerContext): ResultBinding | undefined {
   const kind = ctx.surface?.kind;
   if (kind !== 'team') return undefined;

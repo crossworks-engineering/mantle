@@ -144,10 +144,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Task CRUD — mirrors the MCP task tools so Saskia can capture and
   // manage tasks from chat. None require_confirm (trivially reversible).
   ...TASK_TOOLS,
-  // App data on a login's own MCP connection (team apps Phase 1; every
-  // login since workspaces W7b). In no agent's group: only MCP offers them.
+  // App data on a login's own MCP connection (every login). In no agent's
+  // group: only MCP offers them.
   ...LOGIN_APP_DATA_TOOLS,
-  // The caller's workspaces (W7b): where a create may land. mcpOnly.
+  // The caller's workspaces: where a create may land. mcpOnly.
   ...WORKSPACE_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").
@@ -192,8 +192,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // page_delete is requires_confirm (irreversible).
   ...PAGE_TOOLS,
   // Draw — READ-ONLY access to the whiteboard workspace: list + read the
-  // committed scene as text. Authoring stays on the canvas (Phase 6 is its
-  // own decision; see docs/draw-plan.md).
+  // committed scene as text. Authoring stays on the canvas (see
+  // docs/draw-plan.md).
   ...DRAW_TOOLS,
   // Generic sharing — mint/revoke a viewable link for ANY shareable item
   // (note/task/event/file/app/table/folder); the type-agnostic counterpart
@@ -285,19 +285,17 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
 // gate here, where every process that lists builtins passes.
 registerDocumentToolServices();
 
-// Each definition's `readOnly` and `spends` read its policy (A5).
+// Each definition's `readOnly` and `spends` read its policy.
 for (const def of BUILTIN_TOOLS) withPolicyFlags(def);
 
-// P6: there is no flat "default assistant grant" anymore. A generalist persona's
+// There is no flat "default assistant grant": a generalist persona's
 // capability is the union of its granted tool GROUPS (the manifest persona's
-// `toolGroupSlugs`; see server/web/lib/system-manifest/manifest.ts). The old
-// DEFAULT_ASSISTANT_TOOL_SLUGS / ASSISTANT_TOOL_DENY pair was removed with the
-// `agents.tool_slugs` column (migration 0083); the specialist/destructive split
-// it encoded now lives in the group taxonomy (terminal / research / federation /
-// replay-search groups + the `*-admin` delete groups).
+// `toolGroupSlugs`; see server/web/lib/system-manifest/manifest.ts). The
+// specialist/destructive split lives in the group taxonomy (terminal /
+// research / federation / replay-search groups + the `*-admin` delete groups).
 
-// The group constants moved with their tools (2026-09-02 split); index.ts and
-// mcp-core keep importing them from here.
+// The group constants live with their tools; index.ts and mcp-core import
+// them from here.
 export { SEARCH_TOOLS } from './builtins-search';
 export { ENTITY_TOOLS } from './builtins-entities';
 export { NODE_READ_TOOLS, CONTENT_CURATION_TOOLS, INGEST_TOOLS } from './builtins-nodes';

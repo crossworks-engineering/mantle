@@ -94,7 +94,7 @@ import { CS } from './client-sourced-rule';
 import { scopeOutsideAdmin } from './outside-admin';
 
 /**
- * This file's one system door (arch A6): the trash of deleted apps (their
+ * This file's one system door: the trash of deleted apps (their
  * snapshots, homes and restore) is reached on the system pool by the named
  * reason 'app-trash', after the scope's own manage check. Every call below
  * goes through it.
@@ -106,15 +106,15 @@ function appTrashSystem<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * The app write tools (everything that writes an app's code, manifest,
  * schema, data or exports outside the brokers) run on a login's own
- * surfaces (client tier audit I8): an owner surface (web, Telegram, its MCP
- * connection), and since 2026-10-26 a login's workspace turn too (a team
+ * surfaces: an owner surface (web, Telegram, its MCP connection), and a
+ * login's workspace turn too (a team
  * surface naming the login its turn scope answers: its chat with a
  * workspace assistant, its run, a delegated Appsmith), where the turn's
  * scope and the database decide, as on its MCP connection (`loginTurns`).
  * Marked `ownerOnly` + `loginTurns` so the gate refuses a client, a
  * contact, a team surface with no login (a heartbeat) or a missing one
  * first; this is the handler's own check, for the MCP path that calls
- * handlers directly. Before, only the column grant held it (a limited role
+ * handlers directly. Underneath, the column grant holds too (a limited role
  * cannot read `apps.draft_source`).
  */
 function ownerOnlyRefusal(
@@ -210,8 +210,8 @@ const app_create: BuiltinToolDef = {
     const name = str(input.name).trim();
     if (!name) return { ok: false, error: 'name is required' };
     try {
-      // A user outside the Admin workspace (W7b): at team rules, its author
-      // named, as the web create route makes it.
+      // A user outside the Admin workspace: at team rules, its author named,
+      // as the web create route makes it.
       const author = actingLoginId(ctx.surface);
       const member = author && (await outsideAdmin());
       const app = await createApp(ctx.ownerId, {
@@ -700,7 +700,7 @@ const app_tools_set: BuiltinToolDef = {
     const manifest = await setManifest(ctx.ownerId, id, { toolSlugs: slugs });
     if (!manifest) return { ok: false, error: `app ${id} not found` };
     const warnings = await appToolWarnings(ctx.ownerId, id);
-    // Apps audit S1: such a tool never runs on the app's word alone.
+    // Such a tool never runs on the app's word alone.
     for (const slug of confirmGated) {
       warnings.push(
         `The tool '${slug}' needs the owner's confirmation: every call from this app pauses and asks the admin running it (member, client and share runs refuse it). Call it only from a deliberate user action, never on load or in a loop.`,
@@ -761,13 +761,13 @@ const app_db_schema_set: BuiltinToolDef = {
     }
     const app = await getApp(ctx.ownerId, id);
     if (!app) return { ok: false, error: `app ${id} not found` };
-    // The app's manage first (pre-check removal Part 3): the schema is on the manifest,
-    // the app's code (D4), and the trial copy and the pre_schema snapshot
-    // below come before the declare's checked write (lockAppRow).
+    // The app's manage first: the schema is on the manifest, part of the
+    // app's code, which takes manage, and the trial copy and the pre_schema
+    // snapshot below come before the declare's checked write (lockAppRow).
     await assertItemRight(id, 'manage');
     // Then try it on a copy of the app's live database: once declared it runs
     // on the live file at the app's next statement, and a script that fails
-    // there stops every read and write of the app (apps audit D2).
+    // there stops every read and write of the app.
     try {
       await checkAppSchemaScript(ctx.ownerId, id, schemaSql);
     } catch (err) {
@@ -1039,7 +1039,7 @@ const app_delete: BuiltinToolDef = {
       // Only a delete provably by the brain's anchor login (its chat turn,
       // its MCP connection, its API key) is purged after 30 days; any other
       // caller's, or one whose path names no login, waits in the trash for
-      // the owner (CEO decision 1; W6b fix round 2, M-2). The anchor
+      // the owner. The anchor
       // login's id is the brain's id.
       const by = actingLoginId(ctx.surface);
       const ok = await deleteApp(ctx.ownerId, id, {
@@ -1064,15 +1064,14 @@ const app_delete: BuiltinToolDef = {
 
 /** On a team surface, the apps at team level or lower; null on owner surfaces
  *  (no filter). A team member must not read the data of an admin-level app
- *  (member logins Phase 4b: the level is the access, not a share). A client
- *  or a missing surface reaches no app at all (client logins C4): no client
- *  app level exists yet, so fail closed. */
+ *  (the level is the access, not a share). A client or a missing surface
+ *  reaches no app at all: no client app level exists, so fail closed. */
 async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) {
   // Below admin, row level security limits app databases to apps the viewer
   // can READ, and an embed in a shared item opens reading: the app's own
-  // database must not follow it (access matrix audit, M6). So the list holds
+  // database must not follow it. So the list holds
   // only apps used at the viewer's level (own level or a folder share).
-  // A workspace turn scope (W4b): the apps the scope holds by their OWN
+  // A workspace turn scope: the apps the scope holds by their OWN
   // grant (an app's grants never follow an embed), as the row rule reads them.
   if (currentWorkspaceScope()) {
     const rows = await scopedDb
@@ -1081,8 +1080,8 @@ async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) 
       .where(andWhere(eqWhere(nodesTable.ownerId, ctx.ownerId), eqWhere(nodesTable.type, 'app')));
     return new Set(rows.map((r) => r.id));
   }
-  // Outside a workspace scope it is system work (the level scope went in
-  // W8c); anything else reaches no app.
+  // Outside a workspace scope it is system work; anything else reaches no
+  // app.
   if (currentScope().kind !== 'system') return new Set<string>();
   // An admin-level agent serving a non-owner surface.
   if (isOwnerSurface(ctx.surface)) return null;
@@ -1156,7 +1155,7 @@ const app_db_query: BuiltinToolDef = {
       // `items` is mandatory, not decoration: Google validates every function
       // declaration before the model runs and 400s the WHOLE request when an
       // array property omits it, so one itemless schema takes down every tool
-      // the agent has (a client box, 2026-09-16). Enforced by
+      // the agent has. Enforced by
       // schema-provider-compat.test.ts.
       params: {
         type: 'array',
@@ -1301,8 +1300,8 @@ const app_table_export_remove: BuiltinToolDef = {
     const table = str(input.table).trim();
     if (!id) return { ok: false, error: 'id is required' };
     if (!table) return { ok: false, error: 'table is required' };
-    // A scope that does not manage the app: the refusal throws (fix round 3),
-    // answered by dispatch's one mapper, never "no export link".
+    // A scope that does not manage the app: the refusal throws, answered by
+    // dispatch's one mapper, never "no export link".
     const removed = await removeAppTableExport(ctx.ownerId, id, table);
     if (!removed) {
       return {
@@ -1319,7 +1318,7 @@ const app_table_export_remove: BuiltinToolDef = {
 export const APP_DATA_TOOLS: BuiltinToolDef[] = [app_db_list, app_db_query];
 export const APP_DATA_TOOL_SLUGS: string[] = APP_DATA_TOOLS.map((t) => t.slug);
 
-// ── History: versions and snapshots (apps snapshots, Phase 2) ───────────────
+// ── History: versions and snapshots ─────────────────────────────────────────
 
 const app_snapshot_create: BuiltinToolDef = {
   slug: 'app_snapshot_create',
@@ -1561,13 +1560,12 @@ const app_snapshot_delete: BuiltinToolDef = {
 
 /**
  * In a workspace scope, the deleted apps the caller may manage, by id, with
- * the workspace each was homed in (W7b fix round 1), and their trash rows:
- * a home the caller moderates (mantle_may_manage; for the brain's anchor
- * login, every workspace it moderates: its own chat's turn scope holds only
- * Admin, W7 integration fix 2), or, for a snapshot that names no home
- * (taken before W6a), the anchor login. By their definer
- * (manageableDeletedApps, 0293; A6b: read on the system pool before,
- * 'app-trash'). Outside a workspace scope: null (the trash as before).
+ * the workspace each was homed in, and their trash rows: a home the caller
+ * moderates (mantle_may_manage; for the brain's anchor login, every
+ * workspace it moderates: its own chat's turn scope holds only Admin), or,
+ * for a snapshot that names no home, the anchor login. By their definer
+ * (manageableDeletedApps, 0293). Outside a workspace scope: null (the whole
+ * trash).
  */
 async function manageableDeleted(ownerId: string): Promise<{
   homes: Map<string, string | null>;
@@ -1659,7 +1657,7 @@ const app_undelete: BuiltinToolDef = {
   },
 };
 
-// ── Copies (apps first-class plan, Phase 3) ─────────────────────────────────
+// ── Copies ──────────────────────────────────────────────────────────────────
 
 const app_duplicate: BuiltinToolDef = {
   slug: 'app_duplicate',
@@ -1700,8 +1698,8 @@ const app_duplicate: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     const name = str(input.name).trim();
     try {
-      // A user outside the Admin workspace (W7b): the copy is made at team
-      // rules, its author named (W7b fix round 1), never lowered after.
+      // A user outside the Admin workspace: the copy is made at team rules,
+      // its author named, never lowered after.
       const author = actingLoginId(ctx.surface);
       const member = author && (await outsideAdmin());
       const copy = await duplicateApp(ctx.ownerId, id, {
@@ -1725,7 +1723,7 @@ const app_duplicate: BuiltinToolDef = {
   },
 };
 
-// ── Export and import as brain files (apps first-class plan, Phase 3) ───────
+// ── Export and import as brain files ────────────────────────────────────────
 
 const app_export: BuiltinToolDef = {
   slug: 'app_export',
@@ -1853,8 +1851,8 @@ const app_import: BuiltinToolDef = {
     const fileId = str(input.file_id).trim();
     if (!fileId) return { ok: false, error: 'file_id is required' };
     const name = str(input.name).trim();
-    // One turn of the per-process import limit, shared with the upload route
-    // (apps audit 2026-10-02, item 13): each holds its package in memory.
+    // One turn of the per-process import limit, shared with the upload route:
+    // each holds its package in memory.
     const release = takeAppImportSlot();
     if (!release)
       return { ok: false, error: 'another import is running: try again when it is done' };
@@ -1869,7 +1867,7 @@ const app_import: BuiltinToolDef = {
       }
       const bytes = await readStreamCapped(file.stream, file.size, appPackageMaxBytes());
       // Imported code always starts at team rules; a user outside the Admin
-      // workspace (W7b) is named its author (W7b fix round 1).
+      // workspace is named its author.
       const author = actingLoginId(ctx.surface);
       const member = author && (await outsideAdmin());
       const res = await importAppPackage(ctx.ownerId, bytes, {
@@ -1925,7 +1923,7 @@ async function readStreamCapped(
   return at === out.length ? out : out.subarray(0, at);
 }
 
-// ── Errors (apps first-class plan, Phase 3, G4) ─────────────────────────────
+// ── Errors ──────────────────────────────────────────────────────────────────
 
 const app_errors: BuiltinToolDef = {
   slug: 'app_errors',
@@ -1996,15 +1994,15 @@ const app_errors: BuiltinToolDef = {
   },
 };
 
-// ─── The author ceiling for a user outside the Admin workspace (W7b) ─────────
+// ─── The author ceiling for a user outside the Admin workspace ───────────────
 
 /** Whether the call runs in a scope that does not hold the Admin workspace
- *  (a member's MCP, workspaces W7b; a user's workspace turn). */
+ *  (a member's MCP, a user's workspace turn). */
 const outsideAdmin = scopeOutsideAdmin;
 
 /** Put app `id` at team rules (the author ceiling, apps.author_level) when
  *  the caller may manage it: never lifted here, only lowered. Manage, as
- *  the code write asks (D4; F4 fix round 3, M3: lockAppRow): a caller that
+ *  the code write asks (lockAppRow): a caller that
  *  may only edit the app changes no code, so it lowers nothing. */
 async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
   const rows = (await scopedDb.execute(
@@ -2016,22 +2014,19 @@ async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
 }
 
 /**
- * The app tools run in any user's scope since workspaces W7b (one MCP
- * surface; the my_app_* tools are retired). For a user outside the Admin
- * workspace an app keeps the author ceiling the member app tools kept: an
- * app it makes runs its tools at team rules at most (app_create,
- * app_duplicate and app_import make it so, author named), and so does an
- * app whose code or tools it changes (lowered first, never lifted: only the
- * owner's app update route lifts it). A change the caller may not make
- * lowers nothing (W7b fix round 1, H1): the one gate's item pre-check runs
- * before any handler for a code tool that keeps one, and lowerToTeamRules
- * asks the manage itself (the pre-check removal: docs/actors.md, "Pre-check
- * deletion"); the database then refuses a code write the caller may not
- * make (D4: a Moderator of the app's home).
+ * The app tools run in any user's scope (one MCP surface). For a user outside
+ * the Admin workspace an app keeps the author ceiling the member app tools
+ * kept: an app it makes runs its tools at team rules at most (app_create,
+ * app_duplicate and app_import make it so, author named), and so does an app
+ * whose code or tools it changes (lowered first, never lifted: only the owner's
+ * app update route lifts it). A change the caller may not make lowers nothing:
+ * lowerToTeamRules asks the manage itself, and the database refuses a code
+ * write the caller may not make (it takes a Moderator of the app's home;
+ * docs/actors.md, "11. Tools").
  */
 function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
   // The app tools whose change reaches what the app's code or tools do:
-  // their policy says so (`outside.appCode`, A5; the CODE_TOOLS list before).
+  // their policy says so (`outside.appCode`).
   if (def.policy.outside?.appCode !== true) return def;
   return {
     ...def,

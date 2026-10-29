@@ -1,6 +1,6 @@
 /**
- * Import a `.mantleapp` package as a NEW app (apps first-class plan, Phase 3;
- * the format is @mantle/content/app-package's). Everything is checked before
+ * Import a `.mantleapp` package as a NEW app (the format is
+ * @mantle/content/app-package's). Everything is checked before
  * anything is written: the package, its schema (on an empty trial database
  * when it brings no data) and its database (quick_check, then a clean copy).
  *
@@ -61,7 +61,7 @@ export async function importAppPackage(
     title?: string;
     withData?: boolean;
     actor?: AppHistoryActor;
-    /** The importing login when it is not an Admin user (W7b fix round 1). */
+    /** The importing login when it is not an Admin user. */
     authorLoginId?: string;
   } = {},
 ): Promise<AppPackageImportResult> {
@@ -86,15 +86,15 @@ export async function importAppPackage(
     }
   }
   // The new app's code is built (and its draft written) next, which asks
-  // manage of the app (D4): asked of its create home before anything is
-  // made (F4 fix round 4, L-b; before: made, then the build refused).
+  // manage of the app: asked of its create home before anything is made,
+  // so a refused build leaves nothing behind.
   await assertNewAppCodeRight(ownerId);
   const data = withData ? await opened.extractData() : null;
 
   try {
     // The declared schema runs over the data it came with when it is newer
     // (the first statement applies it): it must run there, or the new app
-    // could not open its own data (apps audit 2026-10-02, low).
+    // could not open its own data.
     const declared = pkg.manifest.sqlite?.schemaVersion ?? 0;
     if (schemaSql && data && declared > data.schemaVersion) {
       try {

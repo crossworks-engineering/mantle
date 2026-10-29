@@ -187,8 +187,7 @@ async function runWebSearch(
     return { ok: true, output: { query, model, answer, citations } };
   } catch (err) {
     // OpenRouter's SDK error carries the upstream body and metadata: the
-    // model hears the fixed sentence, the detail goes to the server log
-    // (A10 #10 fix round 2).
+    // model hears the fixed sentence, the detail goes to the server log.
     return { ok: false, error: publicProviderErrorMessage(err, kind, ctx.step) };
   }
 }
@@ -223,7 +222,7 @@ const web_search_pro: BuiltinToolDef = {
     startsModelWork: true,
     scope: 'any',
     // As web_search: the public web's answer, fenced as data, and the query
-    // goes out to the search provider (A5 step 5).
+    // goes out to the search provider.
     outside: { untrusted: true, egress: true },
     peerRisky: true,
     clientSourced: CS.free(CS.WEB),

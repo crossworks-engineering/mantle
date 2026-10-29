@@ -1,8 +1,6 @@
 /**
  * Shared table helpers: preconditions, column and cell resolution,
  * tab loading, paging metadata, and the draft-ops editor.
- *
- * Split out of builtins-tables.ts; bodies moved verbatim.
  */
 
 import {
@@ -120,9 +118,9 @@ export async function windowFile(ownerId: string, tableId: string): Promise<stri
   const surface = await tableSqlSurface(ownerId, tableId).catch(() => null);
   if (!surface) return null;
   // The row's rule (draftAllowed): below admin, and for an Admin user's
-  // scope on a table it may not edit, the published file only (W6a).
+  // scope on a table it may not edit, the published file only.
   if (!readsDrafts() || !surface.draftOk) return surface.abs;
-  // The draft the row points at (store brokers, A3b).
+  // The draft the row points at (docs/store-brokers.md).
   const draftAbs = surface.draftAbs;
   return draftAbs && existsSync(draftAbs) ? draftAbs : surface.abs;
 }
@@ -203,10 +201,9 @@ export async function resolveRefTarget(
 }
 
 /** Validate against the target tab's baseline doc, then dispatch draft OPS —
- *  the structural (column/view/aggregate) tools' shape since v2.1: the op
- *  path targets any tab and scales past the materialize window (the old
- *  whole-doc save refused clipped tables and would have dropped sibling
- *  tabs). */
+ *  the structural (column/view/aggregate) tools' shape: the op path
+ *  targets any tab and scales past the materialize window (a whole-doc save
+ *  refuses clipped tables and can drop sibling tabs). */
 export async function editViaOps(
   ownerId: string,
   tableId: string,

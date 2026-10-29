@@ -1,6 +1,6 @@
 /**
  * circuit_verify, the store: each answer is filed with its evidence next to
- * the drawing it is about. No new database (owner, 2026-10-25): every DWG
+ * the drawing it is about. No new database: every DWG
  * import already has its own workbook (the auto-import table), and the
  * check adds a Checks tab to it, one row per answer: the key, the
  * question, the answer (and, after a no, the alternative the image named)

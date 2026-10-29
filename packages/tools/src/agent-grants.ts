@@ -1,11 +1,10 @@
 /**
  * The tools an agent holds, read straight from its granted tool groups: the
  * union of every ENABLED group in `agents.tool_group_slugs`. Used where a
- * tool call runs on an agent's behalf outside its tool loop, the run queue
- * (access matrix T1): a queued item may only call what the planning agent
- * could call inline. Agents and tool groups have no level since workspaces
- * W7b: what an agent may do in a turn is its workspace's scope and the
- * adminOnly groups (skills.ts).
+ * tool call runs on an agent's behalf outside its tool loop, the run queue:
+ * a queued item may only call what the planning agent could call inline.
+ * Agents and tool groups have no level: what an agent may do in a turn is
+ * its workspace's scope and the adminOnly groups (skills.ts).
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { agents, db, toolGroups } from '@mantle/db';

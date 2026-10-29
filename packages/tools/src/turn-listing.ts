@@ -1,23 +1,19 @@
 /**
- * What a tool loop lists (workspaces arch A5 step 5, owner pick B,
- * plan 23.5): only the tools the one gate lets the loop call. Asked in one
- * place, the loop's own tool rows (loopToolRows in
- * packages/runtime/src/agent/tool-loop.ts), so an assistant turn, a
- * delegated child, a heartbeat fire and a run's worker turn all follow. A tool its
- * grants give but the gate refuses in this scope (an Admin-only tool or an
- * Admin-area tool in a workspace that does not hold Admin or the area, a
- * shell tool outside Admin, a create of an Admin-only kind outside Admin, a
- * row with no policy, and since A5 step 6a an owner-only tool off the
- * owner's surface and a connector the scope does not hold or may not write)
- * is not offered to the model at all, where before the
- * model saw it and its call was refused. Listing equals calling: each tool
- * is asked by the ref dispatch calls it by (builtinToolRef for a builtin,
- * the `runtime-tool` ref for a row), for the turn's own caller
- * (gateCallerFor(turnCaller()), the scope the turn runs in).
+ * What a tool loop lists: only the tools the one gate lets the loop call. Asked
+ * in one place, the loop's own tool rows (loopToolRows in
+ * packages/runtime/src/agent/tool-loop.ts), so an assistant turn, a delegated
+ * child, a heartbeat fire and a run's worker turn all follow. A tool its grants
+ * give but the gate refuses in this scope (an Admin-only tool or an Admin-area
+ * tool in a workspace that does not hold Admin or the area, a shell tool
+ * outside Admin, a create of an Admin-only kind outside Admin, a row with no
+ * policy, an owner-only tool off the owner's surface, a connector the scope
+ * does not hold or may not write) is not offered to the model at all. Listing
+ * equals calling: each tool is asked by the ref dispatch calls it by
+ * (builtinToolRef for a builtin, the `runtime-tool` ref for a row), for the
+ * turn's own caller (gateCallerFor(turnCaller()), the scope the turn runs in).
  *
  * The listing changes with the scope, so an agent's tool list (and with it
- * the prompt cache's prefix) differs once per agent and scope from what it
- * was before this step: the cache resets once, then holds.
+ * the prompt cache's prefix) differs per agent and scope.
  */
 import {
   gateCallRefusal,
@@ -65,23 +61,23 @@ function callerKey(tool: Tool, policy: GatePolicy): string {
   return `${view}|connector:${String(group)}`;
 }
 
-/** What a loop's listing knows of its turn (A5 step 6a, carried L1): its
+/** What a loop's listing knows of its turn: its
  *  owner, and its surface, read by surfaceGateFacts as turnCallRefusal reads
- *  the call's (fix round 1, LOW-3: one rule). No `surface` key: not known,
+ *  the call's (one rule). No `surface` key: not known,
  *  and an owner-only tool is not narrowed by it here; a `surface` key that
  *  holds undefined is a missing surface, never the owner's. */
 export type TurnListingFacts = Readonly<{
   ownerId?: string;
   surface?: ToolHandlerContext['surface'];
   /** Every write of the loop waits for approval (its turn is
-   *  client-sourced already: plan N18, client-sourced-rules.ts), so a
-   *  connector write it may not make itself is offered (owner decision 1a,
-   *  A5 step 6d), as a requires_confirm one is. */
+   *  client-sourced already: client-sourced-rules.ts), so a connector
+   *  write it may not make itself is offered, as a requires_confirm one
+   *  is: an approver who may make it runs it. */
   queuesWrites?: boolean;
 }>;
 
-/** `caller` with the connector write's own rule lifted (owner decision 1a,
- *  A5 step 6d: elevatedConnectorFacts), or null when it carries no
+/** `caller` with the connector write's own rule lifted
+ *  (elevatedConnectorFacts), or null when it carries no
  *  connector facts (not a connector row, or no workspace scope). */
 function elevatedCaller(caller: GateCaller): GateCaller | null {
   const connector = caller.facts?.connector as ConnectorScopeFacts | undefined;
@@ -128,7 +124,7 @@ export async function turnListedTools<T extends Tool>(
       out.push(tool);
       continue;
     }
-    // Owner decision 1a (A5 step 6d): a connector write the scope may not
+    // A connector write the scope may not
     // make itself (no Write tick, or not a Moderator) is offered when its
     // call waits for an approver anyway, who runs it with Admin rights
     // (turnCallRefusal's `queue`). Only that rule is lifted.
@@ -139,26 +135,25 @@ export async function turnListedTools<T extends Tool>(
 }
 
 /**
- * The refusal the one gate gives a tool loop's call of `tool` with `input`
- * in the current scope before it runs anything (steps 3 to 5, the
- * owner-only and connector narrowers among them since A5 step 6a, and the
- * gate's pre-run checks: the item pre-check reads the call's arguments),
- * in the words dispatch would answer; null when it lets the call through.
- * Asked before a call that needs approval is queued (A5 step 5 fix rounds
- * 1 and 2): the approved call runs later in the approver's scope, so a call
- * the loop's own scope may not make (a workspace heartbeat's
- * `telegram_send`, a member turn's shell row, a `page_delete` of an item
- * only Admin may change) is refused here, in the gate's words, and never
- * queued. For the caller dispatch uses (turnCaller), through the gate's own
- * steps (gateCallRefusal), so queue time and dispatch read one rule. A
- * connector's marked inputs are checked at dispatch, after approval.
+ * The refusal the one gate gives a tool loop's call of `tool` with `input` in
+ * the current scope before it runs anything (steps 3 to 5, the owner-only and
+ * connector narrowers among them, and the gate's pre-run checks: the item
+ * pre-check reads the call's arguments), in the words dispatch would answer;
+ * null when it lets the call through. Asked before a call that needs approval
+ * is queued: the approved call runs later in the approver's scope, so a call
+ * the loop's own scope may not make (a workspace heartbeat's `telegram_send`, a
+ * member turn's shell row, a `page_delete` of an item only Admin may change) is
+ * refused here, in the gate's words, and never queued. For the caller dispatch
+ * uses (turnCaller), through the gate's own steps (gateCallRefusal), so queue
+ * time and dispatch read one rule. A connector's marked inputs are checked at
+ * dispatch, after approval.
  *
- * `queue` (owner decision 1a, A5 step 6d): the call is being queued for
- * approval. A connector write the scope may not make itself (no Write
- * tick, or not a Moderator) that the rest of the gate lets through is not
- * refused then: `queue.elevated` is set, and the pending row says the call
- * runs with Admin rights. The approved call meets the gate again in the
- * approver's scope, so only an approver who may make it runs it.
+ * `queue`: the call is being queued for approval. A connector write the scope
+ * may not make itself (no Write tick, or not a Moderator) that the rest of the
+ * gate lets through is not refused then: `queue.elevated` is set, and the
+ * pending row says the call runs with Admin rights. The approved call meets the
+ * gate again in the approver's scope, so only an approver who may make it runs
+ * it.
  */
 export async function turnCallRefusal(
   tool: Tool,
@@ -170,16 +165,15 @@ export async function turnCallRefusal(
 }
 
 /**
- * The queue-time check again, at approval (A5 step 6c, the approval
- * re-check): the same gate steps turnCallRefusal ran when the call was
- * queued (steps 3 to 5, the narrowers, the pre-run checks with the item
- * pre-check and the queue's reference rule), for the call's arguments and
- * the surface it was asked on, with `caller`: the approved call's own
- * (pendingCaller, its Admin view capped by what it held when asked), run
- * in the scope it was asked in met with its asker's rights now
- * (pending-origin.ts withOriginScope). Nothing is lifted: an elevated call
- * keeps its own rule (pending-approval.ts elevatedApproval). The refusal in
- * the gate's words, or null.
+ * The queue-time check again, at approval: the same gate steps turnCallRefusal
+ * ran when the call was queued (steps 3 to 5, the narrowers, the pre-run checks
+ * with the item pre-check and the queue's reference rule), for the call's
+ * arguments and the surface it was asked on, with `caller`: the approved call's
+ * own (pendingCaller, its Admin view capped by what it held when asked), run in
+ * the scope it was asked in met with its asker's rights now (pending-origin.ts
+ * withOriginScope). Nothing is lifted: an elevated call keeps its own rule
+ * (pending-approval.ts elevatedApproval). The refusal in the gate's words, or
+ * null.
  */
 export async function approvalCallRefusal(
   caller: ToolCaller,
@@ -191,7 +185,7 @@ export async function approvalCallRefusal(
 }
 
 /** turnCallRefusal's steps for `caller`; with `queue`, a connector write
- *  the scope may not make itself is lifted (owner decision 1a). */
+ *  the scope may not make itself is lifted. */
 async function callRefusal(
   caller: ToolCaller,
   tool: Tool,
@@ -202,8 +196,8 @@ async function callRefusal(
   const h = tool.handler as ToolHandler | null;
   const call = {
     args: input,
-    // `queue`: a reference by slug or path must resolve in this scope (A5
-    // step 6a, carried round-2 LOW-1; gate-prerun.ts).
+    // `queue`: a reference by slug or path must resolve in this scope
+    // (gate-prerun.ts): the approver's scope runs the call.
     context: {
       ownerId: ctx.ownerId,
       ...(ctx.surface ? { surface: ctx.surface } : {}),

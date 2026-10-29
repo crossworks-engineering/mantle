@@ -1,9 +1,7 @@
 /**
- * Tools whose result is a member's PRIVATE content (member logins, audit S3):
- * none since workspaces W6b (the my-space tools that read a member's personal
- * items went with the personal spaces; a member's own items are brain items
- * in its private workspace, which no assistant reads). Kept as the one list a
- * future such tool joins: wherever a turn keeps
+ * Tools whose result is a member's PRIVATE content: none today (a member's
+ * own items are brain items in its private workspace, which no assistant
+ * reads). Kept as the one list a future such tool joins: wherever a turn keeps
  * or shows tool results beyond the turn itself, these are left out:
  *
  *  · the tool step is not journaled by the durable engine (a read, safe to

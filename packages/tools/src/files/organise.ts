@@ -1,9 +1,9 @@
 /**
  * Moving and copying files and folders around the tree.
  *
- * Split out of builtins-files.ts. A move or copy into (or out of) a shared
- * folder changes who can see the files: refused with the list until the
- * call repeats with `confirm: true` (docs/folder-tree.md, "Confirm first").
+ * A move or copy into (or out of) a shared folder changes who can see the
+ * files: refused with the list until the call repeats with `confirm: true`
+ * (docs/folder-tree.md, "Confirm first").
  */
 
 import { moveFileById, moveFolderById, copyFileById, copyFolderById } from '@mantle/files';

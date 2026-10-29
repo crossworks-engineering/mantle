@@ -5,7 +5,7 @@
  *
  * Design notes:
  *
- * 1. Modality-matched automatic pipelines still run as before
+ * 1. Modality-matched automatic pipelines run on their own
  *    (voice-in → voice-out, photo → vision ingest). These tools are
  *    for cases where the *model* decides to invoke a worker on its
  *    own initiative — e.g. "send that as a voice note", "look at the
@@ -450,7 +450,7 @@ export function buildSummarizeTextInput(
     `You are a precise summarizer. Output a clean ${maxWords}-word summary in the same language as the source. No preamble, no closing remarks \u2014 just the summary.`;
   // The source may be anyone's text (an email, a page, a document): fenced
   // (markers carrying a per-call nonce), its forged markers defanged; the
-  // focus is the caller's own ask and stays outside (A10 part 1).
+  // focus is the caller's own ask and stays outside.
   const fenced = fence.wrap(source);
   const user = focus ? `${fenced}\n\n---\n\nFocus the summary on: ${focus}` : fenced;
   return { system: withFenceNote(system, fence), user };

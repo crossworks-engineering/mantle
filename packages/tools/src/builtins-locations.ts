@@ -294,8 +294,7 @@ const route_map: BuiltinToolDef = {
     }
 
     try {
-      // The deadline covers the image body too (A10 #10; before, the
-      // headers only).
+      // The deadline covers the image body too, not only the headers.
       const res = await fetch(url, { signal: timeoutSignal(STATIC_TIMEOUT_MS) });
       if (!res.ok) {
         const body = (await res.text().catch(() => '')).slice(0, 200);
@@ -346,7 +345,7 @@ const route_map: BuiltinToolDef = {
     } catch (err) {
       const msg =
         // The deadline (timeoutSignal) raises a TimeoutError; a bare abort,
-        // AbortError (A10 #10 fix round 2).
+        // AbortError.
         err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
           ? 'static map request timed out'
           : errorMessage(err);

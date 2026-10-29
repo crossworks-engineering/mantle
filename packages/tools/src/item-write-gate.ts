@@ -1,14 +1,13 @@
 /**
- * The queue-time folder rule of a create (A5 step 6a, carried round-2
- * LOW-1): before a call is queued for approval, a create whose target
- * folder is named by its path is asked of the queuing scope. The one gate's
- * pre-run check (gate-prerun.ts itemPrecheck) is its only caller.
+ * The queue-time folder rule of a create: before a call is queued for
+ * approval, a create whose target folder is named by its path is asked of the
+ * queuing scope. The one gate's pre-run check (gate-prerun.ts itemPrecheck)
+ * is its only caller.
  *
- * No tool item pre-check is left here: the pre-check removal (docs/actors.md,
- * "Pre-check deletion", Part 1 and Part 3) took every one, each once the
+ * Tools have no item pre-check (docs/actors.md, "11. Tools"): the
  * database's checks, or the library's own item check before any side effect
- * (assertItemRight, @mantle/db item-rights.ts), refused the same write.
- * A new tool relies on those and declares no item list (the arch pin
+ * (assertItemRight, @mantle/db item-rights.ts), refuse an item write. A new
+ * tool relies on those and declares no item list (the arch pin
  * itemPrecheckTools is 0).
  */
 import { foldersReadOf, scopeHoldsAdmin } from '@mantle/db';
@@ -16,9 +15,8 @@ import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { clampFilesFolderPath } from '@mantle/files';
 
 /** The refusal, before a call is queued for approval, of a reference (a
- *  Recall map by its slug, a create's target folder by its path) the
- *  queuing scope does not read (A5 step 6a, carried round-2 LOW-1; worded
- *  in fix round 1, M1): it says what to name instead, never that the thing
+ *  Recall map by its slug, a create's target folder by its path) the queuing
+ *  scope does not read: it says what to name instead, never that the thing
  *  exists or where to look for it. */
 export function refNotInScopeError(what: string, lookup: string): string {
   return `${what} is not one in your workspaces, so this call is not queued for approval: name one of yours (${lookup} lists them).`;
@@ -34,14 +32,14 @@ function folderPrefixes(path: string): string[] {
 }
 
 /**
- * Before a call is queued for approval (A5 step 6a, carried round-2 LOW-1):
+ * Before a call is queued for approval:
  * a create whose target folder is named by its path (the policy's
  * `createsIn`) is asked of the queuing scope, in the item check's words.
  * The approved call runs in the approver's scope, which may read (and
  * create in) a folder this scope does not.
  *
  *  - A create that makes the missing folders of its path itself
- *    (`makesFolders`: file_create, fix round 1, M1) is asked of the
+ *    (`makesFolders`: file_create) is asked of the
  *    deepest folder of the path, cut to the depth its handler cuts it to
  *    (clampFilesFolderPath), that the scope reads: one there, the create
  *    queues (a new subfolder of a folder of the scope's lands inside it,

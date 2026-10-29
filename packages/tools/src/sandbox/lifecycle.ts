@@ -1,9 +1,7 @@
 /**
  * Sandbox lifecycle: create, exec, list, stop, remove, autostart.
  *
- * Split out of builtins-sandbox.ts; bodies moved verbatim.
- *
- * In a workspace scope (W7a fix round 2) a sandbox records the login that
+ * In a workspace scope a sandbox records the login that
  * made it, and exec, stop, rm and autostart work only on the caller's own
  * sandboxes (the brain owner's login: on every one). Only the brain owner's
  * login mounts a Files folder.
@@ -123,7 +121,7 @@ export const sandbox_create: BuiltinToolDef = {
     // host-absolute root, which is the only path the docker daemon can resolve.
     let inboxSub: string | undefined;
     const inboxId = typeof input.inbox_folder_id === 'string' ? input.inbox_folder_id.trim() : '';
-    // The login that makes it (W7a fix round 2): recorded on the row, so in
+    // The login that makes it: recorded on the row, so in
     // a workspace scope only it (and the brain owner) works in the sandbox.
     const maker = sandboxCaller();
     if (inboxId) {
@@ -132,8 +130,8 @@ export const sandbox_create: BuiltinToolDef = {
       if (maker !== undefined && maker !== ctx.ownerId) {
         return { ok: false, error: MOUNT_OWNER_ONLY_ERROR };
       }
-      // The folder to mount is read in the caller's scope (W7a fix round 1,
-      // H1): a folder the scope does not read is not found.
+      // The folder to mount is read in the caller's scope: a folder the
+      // scope does not read is not found.
       const folder = await folderById({ ownerId: ctx.ownerId, folderId: inboxId });
       if (!folder) return notFound('folder', inboxId, 'folder_list / tree_list');
       const abs = diskPathForLtree(folder.path);

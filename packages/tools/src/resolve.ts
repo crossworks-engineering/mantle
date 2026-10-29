@@ -1,7 +1,7 @@
 /**
- * Tool-row lookups by slug. Pulled out of dispatch.ts on 2026-09-02 (audit,
- * complexity C6): the app/run builtins need only these, and importing them
- * from dispatch.ts dragged in the registry and closed the cycle
+ * Tool-row lookups by slug, apart from dispatch.ts: the app/run builtins
+ * need only these, and importing them from dispatch.ts would drag in the
+ * registry and close the cycle
  * registry → builtins → builtins-{apps,runs} → dispatch → registry.
  */
 import { and, eq } from 'drizzle-orm';

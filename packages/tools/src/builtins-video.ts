@@ -11,8 +11,7 @@
  * before any byte is read.
  *
  * No links: the tool fetches nothing. A video on the web is downloaded by the
- * user and uploaded (the media sidecar that fetched links, with yt-dlp, was
- * removed with the parser service on 2026-10-27). ffmpeg runs in the parser
+ * user and uploaded. ffmpeg runs in the parser
  * service (server/parser), never in this process.
  *
  * Owner-only (tool group `video-ingest`, never the team responder): it
@@ -280,7 +279,7 @@ async function transcribeStep(
         return { ok: true as const, markdown: r.text.trim() };
       } catch (err) {
         // The detail for the owner's trace: a refused key's provider and
-        // status only, never its body (errorDetail, A10 lows).
+        // status only, never its body (errorDetail).
         h.setMeta({ error: errorDetail(err) });
         return {
           ok: false as const,

@@ -23,7 +23,7 @@
  * no keeps it a guess and says the image disagreed; anything unclear is
  * unsure. Engineers verify on the drawing.
  *
- * A no also asks "what is it then?" in the same request (phase 6): each
+ * A no also asks "what is it then?" in the same request: each
  * question names the alternatives it takes (`alts`: a valve type, an
  * equipment tag seen near the end, a break or a continuation, another
  * sheet), and a reply's `alt` is kept only when it is one of them. The
@@ -89,7 +89,7 @@ export type CheckQuestion = {
    *  none): a closed list, so the trace can use it. */
   alts: string[];
   /** The "what is it then?" line of the prompt (never part of `question`,
-   *  so an answer stored before phase 6 still matches its question). */
+   *  so an answer stored without it still matches its question). */
   altAsk: string;
 };
 
@@ -797,8 +797,8 @@ export type StoredCheck = {
   crops?: string;
   /** circuit_verify's seal of the row (./check-seal.ts); '' when none. */
   seal?: string;
-  /** What the image said it is instead, after a no (phase 6; '' on older
-   *  rows and on a yes or unsure). */
+  /** What the image said it is instead, after a no ('' on older rows and
+   *  on a yes or unsure). */
   alt?: string;
   /** Who ran the call that filed it (builtins-circuits.ts callerOf: the
    *  caller's kind and a keyed hash of its id, never the raw id); '' on

@@ -1,11 +1,7 @@
 /**
  * A key or a linked brain never changes the content of an item others can
- * read (M2 audit N3; access matrix M3): what it embeds would become
- * readable to them with no confirm. The rule the owner MCP surface asked
- * itself (register/context.ts), moved here in A5 step 3a so the gate's
- * pre-run slot runs it for every surface (gate-prerun.ts); the MCP bridge
- * reads the same two functions until it registers through the gate (A5
- * step 4).
+ * read: what it embeds would become readable to them with no confirm. The
+ * gate's pre-run slot runs this rule for every surface (gate-prerun.ts).
  */
 import { UUID_RE } from '@mantle/std';
 import { othersCanRead } from './shared-item';
@@ -14,7 +10,7 @@ import { othersCanRead } from './shared-item';
  * The item a content tool names (`page_id`, else `id`), trimmed, and the
  * field it came from; `id: null` when the field is there but is not a
  * UUID (the guard refuses that: a padded or odd id must never slip past
- * the check and then be trimmed by the handler, final audit F1). Null when
+ * the check and then be trimmed by the handler). Null when
  * neither field is given (the tool answers its own error).
  */
 export function contentToolTarget(

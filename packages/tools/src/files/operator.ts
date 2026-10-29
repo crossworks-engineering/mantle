@@ -1,8 +1,6 @@
 /**
  * Owner-operator surface (mcpOnly): create and delete folders, upload
  * and delete files. Never granted to an in-brain agent.
- *
- * Split out of builtins-files.ts; bodies moved verbatim.
  */
 
 import {
@@ -80,9 +78,9 @@ export const folder_create: BuiltinToolDef = {
     const indexing = raw as 'full' | 'metadata' | undefined;
     await ensureFilesRootBranch(ctx.ownerId);
     try {
-      // The new folder's own switch follows its create rule (F4 fix round 4):
-      // the row is born with it, one act, so a refusal makes nothing and no
-      // manage is asked (the folder is empty: nothing else is touched).
+      // The new folder's own switch follows its create rule: the row is born
+      // with it, one act, so a refusal makes nothing and no manage is asked
+      // (the folder is empty: nothing else is touched).
       const folder = await createFolder({
         ownerId: ctx.ownerId,
         parentPath,
@@ -284,8 +282,7 @@ export const file_delete: BuiltinToolDef = {
       const res = await deleteFileWithDerived(ctx.ownerId, fileId);
       if (!res.ok) return { ok: false, error: undeletableReason(res.reason, res.drawings) };
       const skipped = res.skipped > 0 ? ` (${res.skipped} derived node(s) skipped)` : '';
-      // Derived items the caller may not delete stay (F4 fix round 3, H1):
-      // a count, never a name.
+      // Derived items the caller may not delete stay: a count, never a name.
       const kept =
         res.kept > 0
           ? `; ${res.kept} derived item(s) in workspaces you do not manage were kept`

@@ -12,7 +12,7 @@
  * more often (Claude 89 vs 86 right first tool). The model then calls the tool by its own name or
  * through `use_tool`; the tool loop dispatches either against the real schema.
  *
- * Measured 2026-10-05 (dev-brain plan page dab162c0): 143 tools = 58.5k Claude
+ * Measured: 143 tools = 58.5k Claude
  * tokens per call; this set = about 11k. Right first tool on a 101-case bench:
  * Claude 89 vs 91 (full list), Grok 90 vs 81.
  *
@@ -37,7 +37,7 @@ export const TOOL_SEARCH_SLUG = 'tool_search';
 export const USE_TOOL_SLUG = 'use_tool';
 
 // The core (CORE_TOOL_SLUGS) lives in core.ts, its own file, so the
-// architecture count can leave exactly it out (fix round 1, LOW-9).
+// architecture count can leave exactly it out.
 export { CORE_TOOL_SLUGS } from './core';
 
 /** Per-turn affordances (heartbeat continuity) stay in full: they are only
@@ -45,8 +45,7 @@ export { CORE_TOOL_SLUGS } from './core';
 const ALWAYS_FULL_PREFIXES = ['heartbeat_'];
 
 /** The usage prior of `tool_search`: each builtin's own `usageTier`
- *  (BuiltinToolDef; A5 step 6d moved the tiers onto the definitions from
- *  USAGE_TIERS here), as pseudo-usage 2^tier; a tool with none gets none.
+ *  (BuiltinToolDef), as pseudo-usage 2^tier; a tool with none gets none.
  *  Read at each search, from the registry. */
 export function toolUsagePrior(): Readonly<Record<string, number>> {
   return Object.fromEntries(
@@ -104,7 +103,7 @@ export function isAlwaysFull(slug: string): boolean {
   return CORE_TOOL_SLUGS.includes(slug) || ALWAYS_FULL_PREFIXES.some((p) => slug.startsWith(p));
 }
 
-// Tested 2026-10-05: with this rule Grok called tool_search in 24 of 30 dev probe
+// Tested: with this rule Grok called tool_search in 24 of 30 dev probe
 // turns, often for information it then fetched with search_nodes. Two softer
 // openings ("tool_search only for an ACTION ...; for INFORMATION use
 // search_nodes") cut Claude's right-first-tool score on the bench by 2 to 3

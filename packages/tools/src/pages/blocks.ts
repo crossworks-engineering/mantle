@@ -1,7 +1,5 @@
 /**
  * Block-level editing: list, get, update, insert, append, delete.
- *
- * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
 import {
@@ -88,9 +86,9 @@ export const page_blocks_list: BuiltinToolDef = {
 
     // List from the SAME baseline the block-edit tools use (draft when one
     // exists). Listing page.doc here while get/update/delete edited the draft
-    // is exactly how an agent once declared a broken draft "clean" — the
-    // listing hid the draft's state and every id it returned was potentially
-    // stale for the tools that followed (SOP-restructure incident, 2026-07-06).
+    // lets an agent declare a broken draft "clean": the listing hides the
+    // draft's state and every id it returns is potentially stale for the
+    // tools that follow.
     const baseline = pickEditingBaseline(page);
     const blocks = listBlocks(baseline, {
       ...(maxDepth !== undefined ? { maxDepth } : {}),

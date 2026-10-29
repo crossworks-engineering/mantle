@@ -1,9 +1,9 @@
 /**
  * The client-sourced write rule a tool's policy declares (`clientSourced`,
- * tool-policy.ts; A5 step 6d, gateway survey finding 14). A leaf: the tool
- * definitions import the rule shapes from here, and the guard that reads
- * them (client-sourced-rules.ts) imports this module's type. It replaced
- * WRITE_RULES, a second per-tool registry keyed by name beside the policies.
+ * tool-policy.ts). A leaf: the tool definitions import the rule shapes from
+ * here, and the guard that reads them (client-sourced-rules.ts) imports
+ * this module's type. The rule lives on the policy: there is no second
+ * per-tool registry keyed by name.
  *
  * What a MARKED turn (client-sourced.ts) may do with a write: run it, or
  * send it to the owner's approval. Two parts are not declared here, the

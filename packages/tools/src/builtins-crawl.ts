@@ -127,8 +127,7 @@ type CrawledDoc = {
 const web_map: BuiltinToolDef = {
   slug: 'web_map',
   // A site's own links and titles: fenced as data; the url the model
-  // picks goes out to the crawler, as web_crawl's (A5 step 5, owner
-  // decision 1a).
+  // picks goes out to the crawler, as web_crawl's.
   policy: {
     matrix: { none: 'names no item' },
     effect: 'write',
@@ -200,7 +199,7 @@ const web_map: BuiltinToolDef = {
 const web_crawl: BuiltinToolDef = {
   slug: 'web_crawl',
   // Its reply names the site's own paths: fenced as data; the url goes out
-  // to the crawler (A5 step 5).
+  // to the crawler.
   policy: {
     matrix: { none: 'names no item' },
     effect: 'write',

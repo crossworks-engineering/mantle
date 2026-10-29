@@ -186,16 +186,15 @@ export type RecipeStepVerdict = 'ok' | 'missing' | 'forbidden' | 'shell' | 'conf
  *  (reject up-front, all violations at once) and the executor (defense-in-depth,
  *  in case a tool was edited after the recipe was authored).
  *
- * A recipe step may NOT call a builtin whose policy says
- * `recipe.step: 'forbidden'` (policyRecipeForbidden; A5 step 6a deleted the
- * RECIPE_FORBIDDEN_SLUGS view). These are the privilege / meta / escape
- * surfaces: composing them would let an agent-authored recipe escalate past
- * the "agents author safe compositions only" boundary. Shell-kind tools and
- * any confirm-gated tool are refused separately (by kind / flag), so the
- * mark is only on the dangerous *builtins* (which are kind:'builtin', not
- * 'shell'): shell-equivalents and host escapes (run_terminal, the sandbox
- * tools), secrets and privilege, delegation into other agents, the
- * tool-authoring and grant kit, web_fetch, and recipe authoring itself.
+ * A recipe step may NOT call a builtin whose policy says `recipe.step:
+ * 'forbidden'` (policyRecipeForbidden). These are the privilege / meta / escape
+ * surfaces: composing them would let an agent-authored recipe escalate past the
+ * "agents author safe compositions only" boundary. Shell-kind tools and any
+ * confirm-gated tool are refused separately (by kind / flag), so the mark is
+ * only on the dangerous *builtins* (which are kind:'builtin', not 'shell'):
+ * shell-equivalents and host escapes (run_terminal, the sandbox tools), secrets
+ * and privilege, delegation into other agents, the tool-authoring and grant
+ * kit, web_fetch, and recipe authoring itself.
  */
 export function classifyRecipeStepTool(opts: {
   slug: string;

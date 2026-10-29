@@ -1,8 +1,6 @@
 /**
  * The query and aggregate surface: filtering, grouping and rollups over
  * rows without pulling them all back.
- *
- * Split out of builtins-tables.ts; bodies moved verbatim.
  */
 
 import {
@@ -152,7 +150,7 @@ export const table_query: BuiltinToolDef = {
       .filter((c): c is Column => c !== null);
     const projCols = wantCols.length ? wantCols : doc.columns;
 
-    // SQL pushdown (P3): file-backed + no formula columns + parity-safe
+    // SQL pushdown: file-backed + no formula columns + parity-safe
     // filters/sort → the query runs in SQLite (draft-first) and never
     // materializes the doc. Falls back to the doc path otherwise; a clipped
     // table whose filters can't push down errors with the recovery move.

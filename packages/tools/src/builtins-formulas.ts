@@ -59,11 +59,11 @@ function compact(n: FormulaRow) {
 }
 
 /**
- * The evaluable targets with their full calling contract — id, what it
- * produces, and the inputs it needs. This used to list ids and result symbols
- * only, which left the agent to reconstruct the resolution ladder by hand from
- * the variable table and guess which symbols it had to supply; `signatureOf`
- * derives that statically and is not allowed to disagree with the evaluator.
+ * The evaluable targets with their full calling contract: id, what it
+ * produces, and the inputs it needs, so the agent never has to reconstruct
+ * the resolution ladder from the variable table or guess which symbols to
+ * supply. `signatureOf` derives that statically and is not allowed to
+ * disagree with the evaluator.
  */
 function targetsOf(n: FormulaRow) {
   return n.spec ? signatureOf(n.spec) : [];
@@ -399,8 +399,8 @@ export const FORMULA_TOOLS: BuiltinToolDef[] = [
 export const FORMULA_TOOL_SLUGS: readonly string[] = FORMULA_TOOLS.map((t) => t.slug);
 
 /** Read + evaluate + author, but NOT delete (destructive ops are explicit):
- *  the formula tools whose definition says `autoGrant` (fix round 1, LOW-7:
- *  each by name, so a new tool is not granted until it says so). */
+ *  the formula tools whose definition says `autoGrant` (each by
+ *  name, so a new tool is not granted until it says so). */
 export const FORMULA_AUTO_GRANT_SLUGS: readonly string[] = FORMULA_TOOLS.filter(
   (t) => t.autoGrant === true,
 ).map((t) => t.slug);

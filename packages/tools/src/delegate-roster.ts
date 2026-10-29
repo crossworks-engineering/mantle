@@ -9,8 +9,8 @@
  * Security invariant: only BRAIN-AUTHORED text may enter the roster — group
  * names + group descriptions. Never tool slugs, tool descriptions, or remote
  * `serverInfo` strings: MCP connector tools carry third-party prose, and
- * pasting that into the persona's system prompt would re-open the injection
- * door the connectors audit closed (docs/mcp-connectors.md). Group name +
+ * pasting that into the persona's system prompt would open an injection
+ * door (docs/mcp-connectors.md). Group name +
  * description are written by the brain (manifest or Toolsmith), so they are
  * the safe carrier — and they already hold the "when to use" prose.
  *
@@ -92,7 +92,7 @@ function renderLine(label: string, chunks: string[], detail: LineDetail): string
  *
  * Over the total budget, every delegate STAYS: lines shrink instead, lowest
  * rank first (rank = `delegate_to` order), first to one group chunk, then to
- * the bare name. Dropping the tail used to hide whole specialists from the
+ * the bare name. Dropping the tail would hide whole specialists from the
  * parent; a name with no description still tells it the delegate exists.
  * Only when even all-names overflows (dozens of delegates) is the tail elided,
  * and that self-announces (`+N more delegates`). Returns '' when there is

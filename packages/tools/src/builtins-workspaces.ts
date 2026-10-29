@@ -1,5 +1,5 @@
 /**
- * `workspaces_list` (workspaces W7b, plan 7.4): the workspaces the caller
+ * `workspaces_list`: the workspaces the caller
  * reads, each with whether the caller is a Moderator there. On the one MCP
  * surface every login has, it is how a client finds the `workspace` a create
  * may name (a create may name only a workspace its caller moderates).

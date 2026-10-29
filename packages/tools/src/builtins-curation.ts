@@ -120,13 +120,11 @@ type CatalogModel = {
  * per character/minute, not per token, and inventing a per-M figure would
  * poison the pool snapshots. Exported for unit tests.
  *
- * It used to also carry hand-written rows for OpenRouter's own voice slugs
- * (`x-ai/grok-voice-tts-1.0`, `openai/gpt-4o-mini-transcribe`) because the
- * bare `/models` call is the text-out slice and omits them. `loadCatalog`
- * now asks for `output_modalities=all`, which returns all 18 speech and 20
- * transcription routes — both of those slugs among them, and both token-billed,
- * so they arrive with real per-1M pricing. Those two rows are gone, along with
- * the obligation to keep them in sync with MANIFEST_WORKERS by hand.
+ * OpenRouter's own voice slugs (`x-ai/grok-voice-tts-1.0`,
+ * `openai/gpt-4o-mini-transcribe`) are not listed here: the bare `/models`
+ * call is the text-out slice and omits them, so `loadCatalog` asks for
+ * `output_modalities=all`, which returns the speech and transcription routes
+ * token-billed, with real per-1M pricing.
  */
 export function voiceCatalogSupplement(): CatalogModel[] {
   const base = {
@@ -157,9 +155,9 @@ export function voiceCatalogSupplement(): CatalogModel[] {
 
 /** The catalog as model_catalog and the pool fit check read it: the one
  *  OpenRouter catalog cache (@mantle/tracing openRouterCatalogRows, 6 hours,
- *  the full `output_modalities=all` roster; A10 #15), where this file kept
- *  a copy of its own for 5 minutes. The rows are parsed per call (a few
- *  hundred, cheap); the last good rows hold through a failed refresh. */
+ *  the full `output_modalities=all` roster), never a copy of its own. The
+ *  rows are parsed per call (a few hundred, cheap); the last good rows hold
+ *  through a failed refresh. */
 async function loadCatalog(): Promise<
   { ok: true; models: CatalogModel[] } | { ok: false; error: string }
 > {
@@ -636,8 +634,7 @@ const model_pool_set: BuiltinToolDef = {
       .limit(1);
     // An entry added, edited or removed (which models a pool offers, so a
     // combo may pick it: where a turn's spend goes) is not the narrow
-    // login's: the full-route spot model-route, as its HTTP twins
-    // (the re-audit's DB LOW-4 and app LOW-2).
+    // login's: the full-route spot model-route, as its HTTP twins.
     if (existing) {
       const [row] = await onFullSystemRoute('model-route', () =>
         db

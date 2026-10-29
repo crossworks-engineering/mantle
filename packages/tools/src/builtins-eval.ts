@@ -54,8 +54,8 @@ type RunSummary = {
   search: RecallScores;
   /** Passages through the HYBRID search agents use (vector + keyword arm). */
   chunks: RecallScores;
-  /** What `chunks` measured. Runs before 2026-10-03 have no field: their
-   *  `chunks` was vector-only, so no chunks drift is read against them. */
+  /** What `chunks` measured. Older runs have no field: their `chunks` was
+   *  vector-only, so no chunks drift is read against them. */
   chunksPath?: 'hybrid';
   /** Secondary line: the vector arm alone (the old `chunks` number). */
   chunksVector?: RecallScores;

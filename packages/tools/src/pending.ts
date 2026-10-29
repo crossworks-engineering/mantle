@@ -66,22 +66,20 @@ export type PendingSummary = {
   createdAt: string;
   decidedAt: string | null;
   executedAt: string | null;
-  /** The call runs with more rights than the turn that queued it (owner
-   *  decision 1a, A5 step 6d, 0287): a connector write the asking scope
-   *  may not make itself. Its asker may not approve it; the owner or a
-   *  login with write rights on the connector may, and it runs with their
-   *  rights (pending-approval.ts). Set by the server at queue time; null
-   *  for every other call. */
+  /** The call runs with more rights than the turn that queued it: a
+   *  connector write the asking scope may not make itself. Its asker may not
+   *  approve it; the owner or a login with write rights on the connector may,
+   *  and it runs with their rights (pending-approval.ts). Set by the server at
+   *  queue time; null for every other call. */
   elevated: { elevated: true; reason: string } | null;
-  /** The turn that queued it had read text a client wrote (0287, A5 step
-   *  6d fix round 1): what marked it, so an approver can tell a request
-   *  they made from one a client's text led to. Null for a turn that read
-   *  none. */
+  /** The turn that queued it had read text a client wrote: what marked it,
+   *  so an approver can tell a request they made from one a client's text
+   *  led to. Null for a turn that read none. */
   clientSourced: { via: string } | null;
   /** The login the call was queued for, its asker (pending_tool_calls.
    *  login_id); null for a call no login asked (system work, a turn that
    *  answered no one). An approver's screen hides Approve on an elevated
-   *  call for its asker, who may not approve it (lows round). */
+   *  call for its asker, who may not approve it. */
   loginId: string | null;
 };
 
@@ -125,9 +123,8 @@ export async function listPendingCalls(
 }
 
 /** The brain's pending approvals, every login's (the shell's badge, a
- *  push's count), by its definer (mantle_pending_count, 0293): on the system
- *  pool, and in a scope that holds Admin (A6b: the shell left the scope for
- *  it before, 'rule-in-query'); 0 in any other scope. */
+ *  push's count), by its definer (mantle_pending_count): on the system
+ *  pool, and in a scope that holds Admin; 0 in any other scope. */
 export async function countPending(ownerId: string): Promise<number> {
   const [row] = (await db.execute(
     sql`select "public"."mantle_pending_count"(${ownerId}::uuid) as n`,
@@ -145,8 +142,8 @@ export async function getPendingCall(ownerId: string, id: string): Promise<Pendi
 }
 
 /**
- * A runner-queue `ask_human` question (slice 3 WP3) — these rows are created
- * by the runs engine at promote, never by the tool loop, and their
+ * A runner-queue `ask_human` question: these rows are created by the runs
+ * engine at promote, never by the tool loop, and their
  * "execution" is completing the run ITEM with the human's decision instead
  * of dispatching a tool. The branch runs BEFORE tool resolution: there is no
  * registered 'ask_human' tool, by design.
@@ -167,15 +164,15 @@ function formQuestionCount(row: PendingToolCall): number {
   return Array.isArray(qs) ? qs.length : 0;
 }
 
-/** The decided-but-unsettled recovery (final audit F3): the row flips
- *  approved/rejected BEFORE its run-side effect applies, so a crash or db
- *  error in between would strand an operator-visible "approved" that never
- *  took effect — with no retry path (`pending_approve` refuses decided
- *  rows). On a settle error the row REVERTS to 'pending' with the error
- *  recorded, so the operator just decides again; the sweep's janitor (duty
- *  4c) does the same for the crash window. Double-application is impossible
- *  either way — the engine's completeItem/cancelRun CAS makes a re-settle
- *  of an already-applied decision a no-op that expires the row. */
+/** The decided-but-unsettled recovery: the row flips approved/rejected
+ *  BEFORE its run-side effect applies, so a crash or db error in between would
+ *  strand an operator-visible "approved" that never took effect, with no retry
+ *  path (`pending_approve` refuses decided rows). On a settle error the row
+ *  REVERTS to 'pending' with the error recorded, so the operator just decides
+ *  again; the sweep's janitor (duty 4c) does the same for the crash window.
+ *  Double-application is impossible either way: the engine's
+ *  completeItem/cancelRun CAS makes a re-settle of an already-applied decision
+ *  a no-op that expires the row. */
 async function revertToPending(rowId: string, error: string): Promise<PendingSummary | null> {
   const reverted = await revertPendingCall(rowId, error);
   return reverted ? toSummary(reverted) : null;
@@ -218,7 +215,7 @@ async function settleAskHuman(
   let res: Awaited<ReturnType<typeof applyHumanAnswer>>;
   try {
     // ownerId from the ROW (owner-scoped by the approve/reject CAS);
-    // applyHumanAnswer verifies the item's run belongs to that owner (F2).
+    // applyHumanAnswer verifies the item's run belongs to that owner.
     // The item's state and the run's next park (completeItem, promote) at
     // the full-route spot run-control: the narrow login holds no write of
     // either (a pending approval is a narrow reason).
@@ -265,7 +262,7 @@ async function settleAskHuman(
   return updated ? toSummary(updated) : null;
 }
 
-/** A runner budget pause (WP4): approve raises the budget and resumes the
+/** A runner budget pause: approve raises the budget and resumes the
  *  run; reject cancels it. The row expires with a teaching error when the
  *  run left 'paused' first. */
 async function settleBudget(
@@ -282,7 +279,7 @@ async function settleBudget(
   }
   let res: Awaited<ReturnType<typeof applyBudgetDecision>>;
   try {
-    // ownerId from the ROW; applyBudgetDecision verifies run ownership (F2).
+    // ownerId from the ROW; applyBudgetDecision verifies run ownership.
     // A run's status (resume or cancel) at the full-route spot run-control.
     res = await onFullSystemRoute('run-control', () =>
       applyBudgetDecision(db, { runId, ownerId: row.ownerId, decision }),
@@ -320,15 +317,14 @@ async function settleBudget(
 }
 
 /**
- * Whose pending calls the deciding login may decide (W7 integration fix 2):
- * in the scope of a login other than the brain owner (its own, or the one a
- * tool's system-pool work left), or named by the route (`decider`), only
- * the calls queued for that login (pending_tool_calls.login_id; a scope
- * with no login only those queued for none). The brain owner and a call
- * with no scope and no decider (the owner's Telegram card, system work):
- * no narrowing. Who decides: deciderOf (pending-approval.ts). An elevated
- * call is not decided by this rule but by elevatedApproval (A5 step 6d fix
- * round 1).
+ * Whose pending calls the deciding login may decide: in the scope of a login
+ * other than the brain owner (its own, or the one a tool's system-pool work
+ * left), or named by the route (`decider`), only the calls queued for that
+ * login (pending_tool_calls.login_id; a scope with no login only those queued
+ * for none). The brain owner and a call with no scope and no decider (the
+ * owner's Telegram card, system work): no narrowing. Who decides: deciderOf
+ * (pending-approval.ts). An elevated call is not decided by this rule but by
+ * elevatedApproval.
  */
 function deciderFilter(ownerId: string, decider?: string | null): SQL | undefined {
   const login = deciderOf(ownerId, decider);
@@ -337,9 +333,9 @@ function deciderFilter(ownerId: string, decider?: string | null): SQL | undefine
   return eq(pendingToolCalls.loginId, login);
 }
 
-/** deciderFilter's rule for a row already read (A5 step 6c fix round 1):
- *  whether the deciding login may decide `row`. The same rule, in code, for
- *  the row an approval reads on the system pool to judge it. */
+/** deciderFilter's rule for a row already read: whether the deciding login
+ *  may decide `row`. The same rule, in code, for the row an approval reads
+ *  on the system pool to judge it. */
 function decidesRow(
   ownerId: string,
   decider: string | null | undefined,
@@ -359,7 +355,7 @@ function decidesRow(
  * `run_budget` pauses: cancels the run (the "or cancel" arm).
  * Returns the updated summary or null if not found / already decided.
  *
- * Who may reject (A5 step 6c, 6d's L3): whoever decides it by
+ * Who may reject: whoever decides it by
  * deciderFilter (the owner every call, any other login the calls queued
  * for it: an elevated call's asker withdraws its own), and for an elevated
  * call also whoever may approve it (elevatedRejection: a login whose own
@@ -381,7 +377,7 @@ export async function rejectPendingCall(
       decider: deciderFilter(ownerId, deciderLoginId),
     })) ?? undefined;
   if (!row) {
-    // An elevated call another login may approve (6d L3): it may reject it
+    // An elevated call another login may approve: it may reject it
     // too, read and flipped on the system pool as its approval is.
     const queued = await elevatedPendingCall(ownerId, id);
     const decider = deciderOf(ownerId, deciderLoginId);
@@ -414,7 +410,7 @@ export async function rejectPendingCall(
  * the result. Wraps the dispatch in a `manual`-kind trace so the
  * execution shows up in /traces with its inputs + output + duration.
  *
- * Runner `ask_human` questions (slice 3 WP3) branch BEFORE tool resolution:
+ * Runner `ask_human` questions branch BEFORE tool resolution:
  * approval completes the run item `done` with `opts.answer` riding the item
  * result (free-text questions; omitted = plain approval for yes/no and
  * option-pick shapes). If the run moved on first, the row expires with a
@@ -431,8 +427,8 @@ export async function approvePendingCall(
     answer?: string;
     answers?: readonly HumanFormAnswer[];
     /** The login approving it (its session's actor, its MCP connection's
-     *  login), set by the server, never from model arguments (W6b fix round
-     *  3, L-2): the call runs naming it, so the owner's own confirmed
+     *  login), set by the server, never from model arguments: the call runs
+     *  naming it, so the owner's own confirmed
      *  app_delete is purged after 30 days and anyone else's is held. */
     approverLoginId?: string;
   },
@@ -440,12 +436,12 @@ export async function approvePendingCall(
   // Who approves (deciderOf): the scope's login, else the one the path
   // names, else the owner. Named in the call's audit row on every path.
   const approver = deciderOf(ownerId, opts?.approverLoginId);
-  // The approval re-check (A5 step 6c), before the claim: a call stamped
-  // with the scope it was asked in (0288) is judged again there, met with
-  // its asker's rights now (originApproval); a refusal throws
-  // ApprovalRefusedError and leaves it pending. A row with no stamp keeps
-  // the legacy rule (the asker's current rights, in this path's scope).
-  // Read on the system pool (fix round 1): the deciding scope's row rule
+  // The approval re-check, before the claim: a call stamped with the scope
+  // it was asked in is judged again there, met with its asker's rights now
+  // (originApproval); a refusal throws ApprovalRefusedError and leaves it
+  // pending. A row with no stamp keeps the legacy rule (the asker's current
+  // rights, in this path's scope). Read on the system pool: the deciding
+  // scope's row rule
   // shows a login only its own rows of the workspaces it holds now, so the
   // owner's MCP scope, an Admin assistant's turn, or an asker who left the
   // workspace would read nothing and the call would run unjudged. Who may
@@ -465,7 +461,7 @@ export async function approvePendingCall(
     origin = await originApproval(ownerId, waiting, judgedTool, approver);
   }
   // Atomic claim: only act if still pending. Every call but an elevated
-  // one: by whose calls the approver decides (deciderFilter), as before.
+  // one: by whose calls the approver decides (deciderFilter).
   // On the system pool with the rule in the WHERE (pending-calls.ts).
   let claimed =
     (await decidePendingCall({
@@ -475,8 +471,8 @@ export async function approvePendingCall(
       decider: deciderFilter(ownerId, opts?.approverLoginId),
       notElevated: true,
     })) ?? undefined;
-  // A call queued with more rights than its asker's scope (owner decision
-  // 1a, 0287) meets the approval rule first (elevatedApproval), before it
+  // A call queued with more rights than its asker's scope meets the
+  // approval rule first (elevatedApproval), before it
   // is claimed, so a refused approver (its asker, or a login without write
   // rights on its connector) leaves it pending for one who may: it throws
   // ApprovalRefusedError, which every path answers as a refusal.
@@ -498,7 +494,7 @@ export async function approvePendingCall(
     claimed = (await claimElevatedPendingCall(ownerId, id)) ?? undefined;
   }
   if (!claimed) return null;
-  // Fail closed (fix round 1): a stamped call this approval claimed without
+  // Fail closed: a stamped call this approval claimed without
   // judging it (not read, or decided between the read and the claim) is put
   // back, pending, and refused: it never runs by the legacy rule.
   if (claimed.origin && !runnerRow(claimed.toolSlug) && !origin && !elevated) {
@@ -515,7 +511,7 @@ export async function approvePendingCall(
     return settleAskHuman(claimed, 'answered', opts?.answer, opts?.answers);
   }
   // Runner budget pause? Raise + resume (there is no 'run_budget' tool
-  // either — WP4's "raise or cancel?" surface).
+  // either: the pause is answered "raise or cancel?").
   if (claimed.toolSlug === RUN_BUDGET_TOOL_SLUG) {
     return settleBudget(claimed, 'raise');
   }
@@ -533,11 +529,11 @@ export async function approvePendingCall(
     return errRow ? toSummary(errRow) : null;
   }
 
-  // Arch A2a: the call runs as the login whose turn asked for it, as that
-  // login is now; a row with no login keeps the caller's actor. An elevated
-  // call runs with its approver's rights (A5 step 6d fix round 1): the
-  // owner's, or the login whose own scope passed the connector rule. A
-  // re-checked call (A5 step 6c) runs as it was judged: its actor, in the
+  // The call runs as the login whose turn asked for it, as that login is
+  // now; a row with no login keeps the caller's actor. An elevated call
+  // runs with its approver's rights: the owner's, or the login whose own
+  // scope passed the connector rule. A re-checked call runs as it was
+  // judged: its actor, in the
   // scope it was asked in met with its asker's rights now.
   const callActor = origin
     ? origin.actor
@@ -578,14 +574,14 @@ export async function approvePendingCall(
           const res = await asCallLogin(() =>
             dispatchTool(tool, (claimed.args ?? {}) as Record<string, unknown>, {
               ownerId,
-              // Through the one gate, as the approved call (A5 step 3a),
-              // naming its approver (its audit row's `approver`); an
-              // elevated call with the scope its connector rule reads; a
-              // re-checked call with the Admin view it may not exceed and
-              // what its asker lost since (A5 step 6c).
+              // Through the one gate, as the approved call, naming its
+              // approver (its audit row's `approver`); an elevated call
+              // with the scope its connector rule reads; a re-checked call
+              // with the Admin view it may not exceed and what its asker
+              // lost since it asked.
               caller: origin?.caller ?? elevated?.caller ?? pendingCaller({ approver }),
               // A re-checked call runs on the surface it was asked on (its
-              // asker's kind and login, fix round 1), so a handler's author
+              // asker's kind and login), so a handler's author
               // and owner-only rule see the asker; its approver is named on
               // the caller (the audit row's own field). Any other call: an
               // Admin user approves it, so it runs on the owner surface,
@@ -635,8 +631,7 @@ function runnerRow(slug: string): boolean {
  * surface. An Admin user approves it, so the owner's pending path, naming
  * the approver when the path names one. A call asked on a connection that
  * spends nothing on the owner's provider keys (its stamp's ownerKeysOff, a
- * member's MCP connection) keeps that rule (lows round 2, L6: main ran it
- * spending on them).
+ * member's MCP connection) keeps that rule: it never spends on them.
  */
 function approvalSurface(
   row: Pick<PendingToolCall, 'origin'>,

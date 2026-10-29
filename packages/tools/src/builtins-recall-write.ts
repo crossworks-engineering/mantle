@@ -20,14 +20,12 @@
  * surface they are always registered (packages/mcp-core/src/build-server.ts),
  * like the rest of the owner's tools there: an MCP client holds the owner's
  * token, and the agent-kind actor still keeps publish, prompt minting and map
- * delete with the owner (decided 2026-09-30, audit finding M1).
+ * delete with the owner.
  *
  * Versions: every read (recall_open, recall_go) returns the map's `version`.
  * Replacing or deleting a card REQUIRES it, so an agent writing from a stale
  * read is refused instead of silently overwriting the owner's newer edit.
  * Adding a card or retitling the map takes it when sent.
- *
- * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
  */
 
 import { and, arrayContains, eq, isNotNull } from 'drizzle-orm';
@@ -60,7 +58,7 @@ function actorOf(ctx: ToolHandlerContext): RecallActor {
 
 /** Resolve a map by slug, a slug it answered to before a rename, or its id,
  *  and hand back its id and current version. A map row with no tree item is a
- *  leftover page-built (v1) map, retired in R5: it does not resolve. */
+ *  leftover page-built (v1) map: it does not resolve. */
 export async function mapRef(
   ownerId: string,
   ref: string,
@@ -229,7 +227,7 @@ const recall_map_create: BuiltinToolDef = {
         output: {
           map: made.slug,
           // The map's item id (its node): the MCP create reply names where
-          // it landed from it (W7b fix round 1).
+          // it landed from it.
           id: made.mapId,
           version: made.version,
           published: made.published,
@@ -301,7 +299,7 @@ const recall_card_put: BuiltinToolDef = {
       const card = str(input.card).trim() || null;
       const sent = versionOf(input);
       // Replacing needs the version the caller READ: a fresh one would always
-      // match and let a stale read overwrite a newer edit (audit H3). Adding a
+      // match and let a stale read overwrite a newer edit. Adding a
       // card cannot clobber anything, so it may go without.
       if (card && sent === undefined) return { ok: false, error: needVersion(map.slug, 'replace') };
       const res = await putRecallCard(

@@ -1,8 +1,6 @@
 /**
  * Page lifecycle: create, replace from a file, update metadata and
  * draft body, commit, discard, delete.
- *
- * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
 import { CONFIRM_INPUT, EMBEDS_SHARED, visibilityRefusal } from '../visibility-refusal';
@@ -207,7 +205,7 @@ export const page_replace_from_file: BuiltinToolDef = {
 
       // Body: bytes → doc → draft. saveDraft runs ensureBlockIds so the
       // imported content lands with stable per-block ids, ready for the
-      // Phase 2b block tools + the editor diff view.
+      // block tools + the editor diff view.
       // Intentionally UNCONDITIONAL (no baseRev): the new body is built wholesale
       // from the file bytes, never from a read of the page's current draft — this
       // tool's contract is a full-body replace, so there is no concurrent edit to

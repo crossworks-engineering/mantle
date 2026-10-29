@@ -1,6 +1,6 @@
 /**
  * Whether the current code runs in a workspace scope that does not hold the
- * Admin workspace: a user's MCP scope outside Admin (workspaces W7b), or the
+ * Admin workspace: a user's MCP scope outside Admin, or the
  * turn scope of a workspace other than Admin (a workspace assistant's turn,
  * its run, a delegated child of either). Unscoped work is not outside Admin.
  * One reading for the app tools' author ceiling and the delegation gateway

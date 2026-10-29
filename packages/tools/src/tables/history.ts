@@ -1,10 +1,9 @@
 /**
- * Table history (apps first-class plan, Phase 4): the line of versions a
- * table keeps. Each commit keeps the published table it replaces; the owner
- * can take a snapshot by hand; a restore puts a version back into the DRAFT
- * (and commits it when asked). The store is @mantle/content/table-snapshots.
- * Owner only: the history is admin data. Restore and delete are
- * confirm-gated.
+ * Table history: the line of versions a table keeps. Each commit keeps the
+ * published table it replaces; the owner can take a snapshot by hand; a
+ * restore puts a version back into the DRAFT (and commits it when asked).
+ * The store is @mantle/content/table-snapshots. Owner only: the history is
+ * admin data. Restore and delete are confirm-gated.
  */
 import { commitTable } from '@mantle/content';
 import {

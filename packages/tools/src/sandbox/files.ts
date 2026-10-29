@@ -1,17 +1,15 @@
 /**
  * Moving work in and out of a sandbox: export, import, ls, publish.
  *
- * Split out of builtins-sandbox.ts; bodies moved verbatim.
- *
- * Export and import run in the caller's scope (W7a fix round 1, H1): the
+ * Export and import run in the caller's scope: the
  * file they read or write is an item. Their sandbox row is a system table,
  * read through areaSystem. ls and publish read no item and run whole on
  * the system pool (their policy's `systemWhole`).
  *
  * In a workspace scope each works only on a sandbox its caller made, or, for
- * the brain owner, on any (W7a fix round 2, sandboxRefusal).
+ * the brain owner, on any (sandboxRefusal).
  *
- * Publish (W7a fix round 3) binds only a sandbox's own tool group: an
+ * Publish binds only a sandbox's own tool group: an
  * existing group whose integration is not this sandbox's (a connector's
  * base URL and credential) is refused, never repointed. It vaults the proxy
  * key only for a caller that holds the keys area.
@@ -114,7 +112,7 @@ export const sandbox_export: BuiltinToolDef = {
         ? rawName
         : `${rawName}.tgz`;
 
-    // In the caller's scope (W7a fix round 1, H1): a same-named file the
+    // In the caller's scope: a same-named file the
     // scope cannot edit is refused (upsertFile's name check), never
     // overwritten from the system pool.
     await ensureExportsFolder(ctx.ownerId);
@@ -191,8 +189,8 @@ export const sandbox_import: BuiltinToolDef = {
     if (notYours) return { ok: false, error: notYours };
 
     const fileId = typeof input.file_id === 'string' ? input.file_id : '';
-    // Read in the caller's scope (W7a fix round 1, H1): a file the scope does
-    // not read is not found, and nothing reaches the sandbox.
+    // Read in the caller's scope: a file the scope does not read is not
+    // found, and nothing reaches the sandbox.
     const found = await readFileById({ ownerId: ctx.ownerId, fileId });
     if (!found) return notFound('file', fileId, 'file_list');
 
@@ -329,7 +327,7 @@ export const sandbox_publish: BuiltinToolDef = {
       };
     }
 
-    // Only this sandbox's own group (W7a fix round 3): publishing onto any
+    // Only this sandbox's own group: publishing onto any
     // other group would repoint its base URL and credential (a connector's,
     // say) at the sandbox, for whoever may publish.
     const service = `sandbox-${row.name}`;
@@ -352,7 +350,7 @@ export const sandbox_publish: BuiltinToolDef = {
     // Vault the proxy token under a stable ref so the authored tools' auth
     // template resolves through the normal secret machinery (the token is
     // stripped by the proxy before reaching the sandbox service). Writing
-    // the vault is the keys area's (W7a fix round 3): a caller without it
+    // the vault is the keys area's: a caller without it
     // leaves the vault as it is, and is told when the key is not there yet.
     let keyNote: string | null = null;
     if (await callerHasArea('keys')) {

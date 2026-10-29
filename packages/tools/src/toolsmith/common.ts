@@ -1,8 +1,6 @@
 /**
  * Shared toolsmith helpers: input coercion, slug/method validation,
  * handler construction, and the authoring-group plumbing.
- *
- * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
 import { and, eq } from 'drizzle-orm';
@@ -50,7 +48,7 @@ export const URL_RE = /^https?:\/\/\S+$/i;
 
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 
-/** Slugs no authored tool may take (final audit F2). `pending_approve` /
+/** Slugs no authored tool may take. `pending_approve` /
  *  `pending_reject` branch on these BEFORE tool resolution — a
  *  `requires_confirm` tool squatting one would let an agent mint pending
  *  rows whose args (`item_id` / `run_id`) reach the runner's answer/budget

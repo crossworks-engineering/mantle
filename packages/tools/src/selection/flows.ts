@@ -5,8 +5,6 @@
  * catalog lists every granted tool by NAME under its flow, and `tool_search`
  * ranks inside it. Flows are derived from the grant (group slug -> flow), so
  * nothing here is stored per agent and a new group only needs one line.
- *
- * PROTOTYPE (tool selection research, 2026-10-05). Not wired into a turn.
  */
 
 export type ToolFlow = {

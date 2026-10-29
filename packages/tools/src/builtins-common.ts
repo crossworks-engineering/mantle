@@ -1,8 +1,6 @@
 /**
- * Builtins: helpers shared by the split builtins files (id-shape preconditions, strArr).
- *
- * Split out of builtins.ts on 2026-09-02 (audit, bloat B6) with behaviour
- * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
+ * Builtins: helpers shared by the builtins files (id-shape preconditions,
+ * strArr). builtins.ts assembles BUILTIN_TOOLS from these groups.
  */
 
 import { type ToolPrecondition } from './types';

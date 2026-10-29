@@ -1,6 +1,6 @@
 /**
- * How a tool call is audited (A5 step 6d; gateway survey finding 6): the
- * spec the gate's call audit reads (@mantle/db call-audit.ts). The gate
+ * How a tool call is audited: the spec the gate's call audit reads
+ * (@mantle/db call-audit.ts). The gate
  * writes one `api.write` row for every tool write that succeeded, on every
  * surface, after it ran: a builtin (`tool`), a runtime row (`runtime-tool`:
  * an http, recipe, shell or connector row) and a tool of the owner MCP
@@ -70,9 +70,9 @@ function targetsOf(call: AuditedCall): string[] {
   };
   const builtin = builtinOf(call.ref);
   const args = call.input.args ?? {};
-  // The item arguments (the policy's `itemArgs`, R0 fix round M1: the one
-  // declaration, as main's item lists named them, so a delete, a move of
-  // several items or a Recall map's change is audited by its item).
+  // The item arguments (the policy's `itemArgs`, the one declaration), so a
+  // delete, a move of several items or a Recall map's change is audited by
+  // its item.
   if (builtin) add(idArgTargets(itemArgsOf(builtin), args));
   add((call.prepared as { targets?: unknown } | null | undefined)?.targets);
   const output = (call.value as { output?: { id?: unknown } } | null)?.output;
@@ -128,7 +128,7 @@ function describe(call: AuditedCall): AuditRowParts | null {
 }
 
 /** What a call notes for its row: an approved pending call names its
- *  approver (A5 step 6d fix round 1), on every path that approves (the
+ *  approver, on every path that approves (the
  *  web, MCP `pending_approve`, a Telegram tap). The row's actor is whose
  *  rights the call ran with: its asker's, or for an elevated call its
  *  approver's. */
@@ -136,7 +136,7 @@ function notes(): Record<string, unknown> | null {
   const caller = currentToolCaller();
   if (caller?.entry !== 'pending' || !caller.approval) return null;
   const narrowed = caller.approval.narrowed ?? [];
-  // A call the re-check judged in the scope it was asked in (A5 step 6c):
+  // A call the re-check judged in the scope it was asked in:
   // what its asker had then and no more, when anything.
   return {
     approver: caller.approval.approver,
@@ -146,9 +146,9 @@ function notes(): Record<string, unknown> | null {
 
 /** Whether a call's own run is a write the row records: not a recipe row
  *  (it writes only through its steps), and not a builtin whose policy says
- *  its write is routine internal state (`auditRow`, A5 step 6d fix round 1;
- *  `{ unlessArg }` only when the call leaves that argument out, lows round
- *  6d L5: heartbeat_update_state inside a fire, on the firing heartbeat). */
+ *  its write is routine internal state (`auditRow`; `{ unlessArg }` only
+ *  when the call leaves that argument out: heartbeat_update_state inside a
+ *  fire, on the firing heartbeat). */
 function writesItself(call: Pick<AuditedCall, 'ref' | 'input'>): boolean {
   const ref = call.ref;
   if (ref.kind === 'runtime-tool') {

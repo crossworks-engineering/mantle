@@ -13,7 +13,7 @@ import { listSeedableBuiltins } from './registry';
 
 /**
  * Close a builtin's top-level schema: `additionalProperties: false` unless the
- * def already took a position. Audited 2026-07-07: every builtin's TOP-level
+ * def already took a position. Every builtin's TOP-level
  * keys are fixed — dynamic-key inputs (table cells, app source files) all live
  * one level down in nested object props that declare their own
  * `additionalProperties` — so closing the top level is universally correct.

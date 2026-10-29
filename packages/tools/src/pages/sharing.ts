@@ -1,11 +1,10 @@
 /**
  * Public sharing: share and unshare.
  *
- * Split out of builtins-pages.ts. The `children` option (share the page's
- * sub-pages too) went with folder phase 7: pages do not nest. A page's link
- * shows the page plus its served list (workspaces plan 8.1): the embeds and
- * named items on that list. A link is not a grant: to show pages to members
- * or clients, grant them (or their folder) to the workspace.
+ * Pages do not nest, so a share never takes sub-pages. A page's link shows
+ * the page plus its served list: the embeds and named items on that list.
+ * A link is not a grant: to show pages to members or clients, grant them
+ * (or their folder) to the workspace.
  */
 
 import { getPage, shareUrlForToken } from '@mantle/content';

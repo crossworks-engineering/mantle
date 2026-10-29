@@ -1,5 +1,5 @@
 /**
- * Who may point the key vault at a host (workspaces W7a fix round 3).
+ * Who may point the key vault at a host.
  *
  * An http tool's templates may carry `{{secret:service/label}}` refs and an
  * `{{oauth:<group>}}` ref, which the dispatcher decrypts from the API-key
@@ -16,7 +16,7 @@
  *    resolve only while that login holds the keys area
  *    (secretRefsRunRefusal), whoever runs the tool.
  *
- * The brain owner's tools (no maker) and system work are as before.
+ * The brain owner's tools (no maker) and system work are not held to it.
  */
 import { loginHasArea, type ToolHandler } from '@mantle/db';
 import { callerHasArea, callerScope } from './admin-gate';
@@ -50,7 +50,7 @@ export function toolMaker(ownerId: string): string | null {
 }
 
 /**
- * The maker of a tool authored into an integration group (W7a fix round 4):
+ * The maker of a tool authored into an integration group:
  * the writer (`writer`, null for the anchor) when it is not the anchor;
  * else, when the stored handler carries a vault ref the group's template
  * may have put there, the login that configured the group
@@ -81,7 +81,7 @@ export async function secretRefsRunRefusal(
 }
 
 /**
- * A vault key paired with a destination (W7a fix round 4). One rule for
+ * A vault key paired with a destination. One rule for
  * every place that sends a key from the API-key vault to a host it names: a
  * {{secret:...}} or {{oauth:...}} ref, a group's or connector's secretRef,
  * an OAuth2 group's client credentials, or a model route's key id (the KEY
@@ -140,7 +140,7 @@ type IntegrationLike = {
  * The key and destination of a tool group's integration: its secretRef, the
  * vault refs of its auth template and its OAuth2 credentials, sent to its
  * base URL and its OAuth2 token URL. An OpenAPI connector's spec URL is part
- * of the destination too, base URL or not (W7a fix round 5): without one the
+ * of the destination too, base URL or not: without one the
  * connector adopts the spec's server, and with one the spec still chooses
  * the paths and parameters its synced tools send the key with. An MCP
  * connector's binding is mcpPairing.

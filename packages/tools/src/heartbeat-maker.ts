@@ -1,11 +1,10 @@
 /**
  * A heartbeat runs the prompt of its skill and of its agent (the agent's
  * system prompt, persona notes and skills) in its maker's scope
- * (heartbeats.created_by, W7a fix round 3). So a login other than the brain
- * owner that writes one of those prompts has set up what the heartbeat
- * does: the heartbeats that run it become that login's (W7a fix round 4),
- * and the tick fires them as that login, never as the anchor with the
- * other login's words.
+ * (heartbeats.created_by). So a login other than the brain owner that writes
+ * one of those prompts has set up what the heartbeat does: the heartbeats
+ * that run it become that login's, and the tick fires them as that login,
+ * never as the anchor with the other login's words.
  *
  * The anchor's own saves leave every maker as it is.
  */
@@ -15,7 +14,7 @@ import { agents, db, heartbeats, toolGroups, onFullSystemRoute } from '@mantle/d
 export type HeartbeatPromptSource = {
   /** A skill saved: the heartbeats that run it, those of every agent that
    *  carries it among its own skills, and those of every agent granted a
-   *  group whose usage skill it is (W7a fix round 5). */
+   *  group whose usage skill it is. */
   skillSlug?: string;
   /** An integration group whose usage skill was saved: the heartbeats of
    *  every agent granted the group (the skill rides with the grant). */
@@ -25,10 +24,10 @@ export type HeartbeatPromptSource = {
 };
 
 /**
- * A heartbeat's columns when its maker becomes `login` (W7 integration fix
- * 3, F1): its state is its maker's only (what earlier fires kept for that
- * login), so a heartbeat that moves to another login starts again from {},
- * in the same statement. One already `login`'s keeps its state.
+ * A heartbeat's columns when its maker becomes `login`: its state is its
+ * maker's only (what earlier fires kept for that login), so a heartbeat that
+ * moves to another login starts again from {}, in the same statement. One
+ * already `login`'s keeps its state.
  */
 export function makerChangeSet(login: string | null): {
   createdBy: string | null;
@@ -47,7 +46,7 @@ export function makerChangeSet(login: string | null): {
  * the anchor (`login` null or the brain owner). Returns how many changed.
  * Runs on the pool its caller is on: a route's, or an area tool's system
  * pool. A brain-wide prompt part (the house style, the purpose) restamps
- * nothing: only the brain owner changes it (W7 integration fix 3, F1).
+ * nothing: only the brain owner changes it.
  */
 export async function restampHeartbeatMakers(
   ownerId: string,

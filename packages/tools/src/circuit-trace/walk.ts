@@ -1,6 +1,6 @@
 /**
  * circuit_trace, the pure part: one circuit's geometry from the DWG bones
- * tabs (Segments, Nodes, Inserts, Blocks, Texts, Circuits; phase 1, see
+ * tabs (Segments, Nodes, Inserts, Blocks, Texts, Circuits; see
  * server/parser/cad/dwg_bones.py) walked into ordered runs, sheet links,
  * a `pid` template input and, when an outside register is given, the
  * differences both ways.

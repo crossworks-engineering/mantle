@@ -1,14 +1,8 @@
 /**
- * Recall — the four serving tools over the memory-map system (S2 of the
- * Recall plan; docs/recall.md, roadmap task 97cf7850).
+ * Recall: the four serving tools over the memory-map system (docs/recall.md).
  *
- * v2 (task 5d6ce06a) makes the rows below the SOURCE rather than a compiled
- * artifact, and a map an item in the Recall tree. These four tools keep their
- * names and their payload shapes; the changes are additive fields (`folder` on
- * a catalog entry, `map` on a cross-map option) plus filters that hide what an
- * owner has not published. Two were bugs rather than additions: recall_open
- * looked for its entry card by id, which is only true of a page-built map, and
- * recall_match promised a score floor it never applied.
+ * The rows below are the SOURCE, not a compiled artifact, and a map is an
+ * item in the Recall tree. Filters hide what an owner has not published.
  *
  *   recall_index()             → the catalog: which maps exist, enter when
  *   recall_open(map)           → a map's index node: content + options
@@ -17,9 +11,9 @@
  *
  * Every read is one indexed row off the serving tables (recall_maps /
  * recall_nodes), written directly by the native path
- * (packages/content/src/recall-native.ts). The page-built (v1) maps were
- * retired in R5; a map row without its tree item is never served (the
- * filter on `node_id` below). No ProseMirror parsing, no LLM; recall_match is one
+ * (packages/content/src/recall-native.ts). A map row without its tree item
+ * (a leftover page-built v1 map) is never served (the filter on `node_id`
+ * below). No ProseMirror parsing, no LLM; recall_match is one
  * ANN probe over the partial prompt index plus one (cached) embed of the
  * query line. Bodies are budget-capped at write time, so responses are small
  * by construction.
@@ -27,11 +21,11 @@
  * Owner surfaces only (web, Telegram, owner paths such as MCP). The grant
  * already keeps these away from team and client agents; the check here is the
  * second lock, so an owner who widens `recall-read` by mistake does not open
- * every prompt to a team agent before team sharing exists (R6).
+ * every prompt to a team agent before team sharing exists.
  *
  * `intent` on every tool is the flight-recorder line (why the caller came).
- * Accepted now for schema stability; RECORDED from S3 — until then it is
- * deliberately dropped, never stored, never echoed.
+ * Accepted for schema stability and deliberately dropped: never stored,
+ * never echoed.
  *
  * Options are affordances ("use when …"), never commands: the tools present
  * the map's signposts, the caller decides. All four are read-only.
@@ -62,7 +56,7 @@ const MATCH_LIMIT = 3;
  */
 const MATCH_FLOOR = 0.35;
 
-/** Shared arg — see the header: accepted for S3's recorder, unused today. */
+/** Shared arg (see the header): accepted, never stored. */
 const INTENT_PROP = {
   intent: {
     type: 'string',
@@ -430,7 +424,7 @@ const recall_match: BuiltinToolDef = {
     // is ordered-by-distance with a limit, so dropping rows afterwards would
     // silently lose a prompt that ranked just outside the limit and report it
     // as "no prompt covers this". The same holds for the reader filter when
-    // team sharing lands (R6) — it joins here, it does not post-filter.
+    // team sharing lands: it joins here, it does not post-filter.
     const rows = (await db.execute(sql`
       select ${recallNodes.slug}, ${recallNodes.title}, ${recallNodes.useWhen},
              ${recallMaps.slug} as map_slug,
@@ -445,7 +439,7 @@ const recall_match: BuiltinToolDef = {
          eq(recallNodes.promptPending, false),
          // A map an agent created and the owner has not published.
          eq(recallMaps.published, true),
-         // A leftover page-built (v1) map: retired in R5, never served.
+         // A leftover page-built (v1) map: never served.
          isNotNull(recallMaps.nodeId),
        )}
          and 1 - (${recallNodes.embedding} <=> ${vec}::vector) >= ${MATCH_FLOOR}

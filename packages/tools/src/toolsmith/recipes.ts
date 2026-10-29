@@ -1,7 +1,5 @@
 /**
  * Composable recipe tools and the catalog an author browses to build one.
- *
- * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
 import { isUniqueViolation, type ToolHandler } from '@mantle/db';
@@ -283,7 +281,7 @@ export const recipe_tool_test: BuiltinToolDef = {
     const args = rec(input.input) ?? {};
     const t0 = performance.now();
     // The test call runs for whoever asked for the test: it inherits the
-    // surface, and the caller (A5 step 3a: through the gate as the test ran).
+    // surface and the caller, so it goes through the gate as the test does.
     const result = await dispatchTool(row, args, {
       ownerId: ctx.ownerId,
       step: ctx.step,

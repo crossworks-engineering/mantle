@@ -2,7 +2,8 @@
  * Folder builtins for every kind whose folders are rows only (the item tree,
  * docs/folder-tree.md): notes, draw, tables, formulas, tasks, events, contacts
  * and secrets. One set for all of them, told apart by `kind`; Files keeps its
- * own folder_* tools, whose folders are real directories. Apps joined in phase 3.
+ * own folder_* tools, whose folders are real directories. Apps use this set
+ * too.
  *
  * The same rules as the screens: three folder levels at most, names unique
  * per folder, a rename or move carries everything inside, deleting a folder
@@ -265,7 +266,7 @@ export const tree_folder_update: BuiltinToolDef = {
     run(input, ctx, async (kind) => {
       const folderId = str(input.folder_id);
       if (!folderId) return { ok: false, error: 'folder_id required' };
-      // A folder share is a grant now (workspaces W5b2).
+      // A folder is shared by a grant, never by this tool.
       if ('share' in input) return { ok: false, error: FOLDER_SHARE_GONE };
       const patch: TreeFolderPatch = {};
       const name = str(input.name);
@@ -351,7 +352,7 @@ export const tree_item_move: BuiltinToolDef = {
         };
       }
       // An app's folder can set the level it is used at (a client-shared
-      // folder, M5): say which declared tools its runs now refuse (N11).
+      // folder): say which declared tools its runs now refuse.
       if (kind === 'apps' && result.moved) {
         const failed = new Set(result.failed.map((f) => f.id));
         const warnings = await movedAppToolWarnings(

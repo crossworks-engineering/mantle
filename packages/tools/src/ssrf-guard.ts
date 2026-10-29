@@ -15,7 +15,7 @@ import { assertEgressUrl, egressFetch, isBlockedIp as egressBlocked } from '@man
 import { env } from '@mantle/config';
 
 /** Is a literal IP in a blocked range? Unparseable → blocked (fail closed).
- *  The ranges live in @mantle/std/egress (A10 part 1). */
+ *  The ranges live in @mantle/std/egress. */
 export function isBlockedIp(ip: string): boolean {
   return egressBlocked(ip);
 }
@@ -58,7 +58,7 @@ export async function assertFetchableUrl(rawUrl: string): Promise<void> {
 /**
  * fetch that runs the SSRF guard on the initial URL and on every redirect
  * target (following manually so a public URL can't 302 into private space).
- * One egress fetch since A10 part 1 (egressFetch), so a hop to another
+ * Through the one egress fetch (egressFetch), so a hop to another
  * origin also drops Authorization and cookies.
  */
 export async function guardedFetch(

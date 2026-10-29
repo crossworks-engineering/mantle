@@ -52,7 +52,7 @@ const peer_query: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
     // What a linked brain's people wrote: fenced as data, as peer_call's
-    // and peer_tools' results (A5 step 5 fix round 1, owner decision 2a).
+    // and peer_tools' results.
     outside: { via: 'peer', untrusted: true },
     peerRisky: true,
   },
@@ -101,7 +101,7 @@ const peer_search_chunks: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
     // What a linked brain's people wrote: fenced as data, as peer_call's
-    // and peer_tools' results (A5 step 5 fix round 1, owner decision 2a).
+    // and peer_tools' results.
     outside: { via: 'peer', untrusted: true },
     peerRisky: true,
   },
@@ -145,7 +145,7 @@ const peer_node_get: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
     // What a linked brain's people wrote: fenced as data, as peer_call's
-    // and peer_tools' results (A5 step 5 fix round 1, owner decision 2a).
+    // and peer_tools' results.
     outside: { via: 'peer', untrusted: true },
     peerRisky: true,
   },

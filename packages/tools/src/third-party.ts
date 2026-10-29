@@ -1,8 +1,8 @@
 /**
- * Whether a call's outcome carries third-party text (A5 step 6a fix round
- * 1, LOW-6): the one rule a run item's stored result and a worker turn's
- * reply are marked by, so a model that later reads the run state (run_state,
- * run_plan, the resume turn) reads it fenced as data.
+ * Whether a call's outcome carries third-party text: the one rule a run
+ * item's stored result and a worker turn's reply are marked by, so a model
+ * that later reads the run state (run_state, run_plan, the resume turn)
+ * reads it fenced as data.
  *
  *  - A result the tool loop fences: the tool's policy says `outside.untrusted`
  *    (a web builtin), or dispatch flagged its provenance (`untrusted` on an

@@ -38,7 +38,7 @@ import {
   isBuiltinSpending,
   isBuiltinTeamTableRowWrite,
 } from './registry';
-// The `app-tool` policy source (an app broker's call, A5 step 6a).
+// The `app-tool` policy source (an app broker's call).
 import './member-app-tools';
 import {
   applyInputDefaults,
@@ -88,19 +88,19 @@ import { errorMessage, NET_TIMEOUTS, timeoutSignal, toolThrowText } from '@mantl
 
 const HTTP_TIMEOUT_MS_DEFAULT = NET_TIMEOUTS.httpTool;
 
-// The Admin gate's words live in admin-gate.ts (W7a: the Admin MCP surface
-// says them too).
+// The Admin gate's words live in admin-gate.ts (the Admin MCP surface says
+// them too).
 export { ADMIN_ONLY_ERROR } from './admin-gate';
 
-/** The answer to a call that names no caller (A5 step 3b): every entry
+/** The answer to a call that names no caller: every entry
  *  names one (dispatch-entries.test.ts sweeps them), so none is a bug at
  *  the entry, and the call is refused, as the gate refuses a caller it
  *  cannot resolve (step 1), never run with dispatch's own checks. */
 export const NO_TOOL_CALLER_ERROR =
   'This tool call names no caller, so it does not run (a bug at its entry: report it to an admin).';
 
-/** The answer to an app broker's call whose caller and surface disagree
- *  (A5 step 3b fix round 1, LOW-1): appBrokerCaller derives `masks` from
+/** The answer to an app broker's call whose caller and surface disagree:
+ *  appBrokerCaller derives `masks` from
  *  the surface the broker passes, so a caller that unmasks (the owner's
  *  own web) on any other surface is a bug at the broker. The call is
  *  refused, never run unmasked. */
@@ -114,11 +114,10 @@ let warnedNoCaller = false;
  * turn, a run item, a pending approval, the owner MCP surface, a /api/v1
  * route, an app tool broker, the dev console; gate-callers.ts), and a call
  * nested in one (a recipe's step, a tool a handler dispatches) reuses it:
- * each runs through the one gate (@mantle/db enterCall, workspaces arch A5
- * steps 3a, 3b and 4): the tool's declared policy, the narrowers, the
- * Admin step, the pre-run checks, the create home, then the handler. A call
- * that names none is refused (NO_TOOL_CALLER_ERROR): there is no ungated
- * path since A5 step 3b.
+ * each runs through the one gate (@mantle/db enterCall): the tool's
+ * declared policy, the narrowers, the Admin step, the pre-run checks, the
+ * create home, then the handler. A call that names none is refused
+ * (NO_TOOL_CALLER_ERROR): there is no ungated path.
  */
 export async function dispatchTool(
   tool: Tool,
@@ -137,7 +136,7 @@ export async function dispatchTool(
   }
   // An app broker's caller unmasks a database error only on the owner's
   // own web (appBrokerCaller reads the surface it is given), and dispatch
-  // runs on ctx.surface: the two may never disagree (fix round 1, LOW-1).
+  // runs on ctx.surface: the two may never disagree.
   if (caller.entry === 'app' && caller.masks === false && ctx.surface?.kind !== 'web') {
     console.error(
       `[tools] an app broker call unmasked off the owner's web (${tool.slug}, surface ${ctx.surface?.kind ?? 'none'}): refused`,
@@ -149,20 +148,19 @@ export async function dispatchTool(
   const nested = nestedToolCaller(caller);
   const call = { ...ctx, caller: nested };
   const gated = () => withToolCaller(nested, () => dispatchGated(caller, tool, input, call, depth));
-  // An app broker's call, not one nested in a call: its `app-tool` ref first
-  // (A5 step 6a, carried LOW-2), as a refused call's is asked.
+  // An app broker's call, not one nested in a call: its `app-tool` ref first,
+  // as a refused call's is asked.
   const run =
     caller.entry === 'app' && currentToolCaller() === null
       ? () => appToolRun(caller, tool, gated)
       : gated;
-  // A caller outside the server never reads a database error's text (W3):
-  // the one masking (tool-error-mask.ts). An MCP connection by its via; an
-  // app tool broker below the owner's own web (A5 step 5 fix round 1, M3)
-  // and a call nested in a /api/v1 route call (L3) by their caller's
-  // `masks`. A turn, a run item and an approved pending call on every
-  // surface, the owner's too (the A8 finding F2: a refused write's database
-  // or runtime text never reaches the model or the person; the tool loop
-  // masks again around the whole call).
+  // A caller outside the server never reads a database error's text: the
+  // one masking (tool-error-mask.ts). An MCP connection by its via; an app
+  // tool broker below the owner's own web and a call nested in a /api/v1
+  // route call by their caller's `masks`. A turn, a run item and an
+  // approved pending call on every surface, the owner's too (a refused
+  // write's database or runtime text never reaches the model or the
+  // person; the tool loop masks again around the whole call).
   if (mcpVia(caller) || caller.masks === true || MODEL_ENTRIES.has(caller.entry)) {
     return maskToolDatabaseErrors(`${maskLabel(caller)} ${tool.slug}`, run, ctx.step);
   }
@@ -170,18 +168,16 @@ export async function dispatchTool(
 }
 
 /**
- * An app broker's call (A5 step 6a, carried LOW-2), judged by the one gate
- * on its `app-tool` ref, which carries the broker's own verdict (the
- * caller's `appVerdict`, fix round 1, M2: never one made up here; none
- * refuses) and the rules it was judged at (`facts.appRules`): the
+ * An app broker's call, judged by the one gate on its `app-tool` ref, which
+ * carries the broker's own verdict (the caller's `appVerdict`: never one made
+ * up here; none refuses) and the rules it was judged at (`facts.appRules`): the
  * member-app narrower refuses a call its verdict refused, in the verdict's
- * words, even where a broker forgot its own pre-check (appToolRefusal on
- * the same ref), and judges the run it lets through by the rule it refuses
- * with. Then the call runs through the gate on its own ref (the tool's
- * policy, the Admin step, the item pre-check), as before. Nothing changes
- * for an allowed call: its verdict allowed it, and the outer caller names no
- * scope, no Admin step and no create home. A throw goes on to the broker,
- * past the outer gate's mapper, as before.
+ * words, even where a broker forgot its own pre-check (appToolRefusal on the
+ * same ref), and judges the run it lets through by the rule it refuses with.
+ * Then the call runs through the gate on its own ref (the tool's policy, the
+ * Admin step, the item pre-check). Nothing changes for an allowed call: its
+ * verdict allowed it, and the outer caller names no scope, no Admin step and no
+ * create home. A throw goes on to the broker, past the outer gate's mapper.
  */
 async function appToolRun(
   caller: ToolCaller,
@@ -225,8 +221,8 @@ async function appToolRun(
   return res.value ?? { ok: false, error: 'the tool gave no result' };
 }
 
-/** Why an app broker's call carries no usable verdict (A5 step 6a fix
- *  round 1, M2): none at all, or one for another tool. Refused, never run. */
+/** Why an app broker's call carries no usable verdict: none at all, or one
+ *  for another tool. Refused, never run. */
 export const APP_VERDICT_MISSING_ERROR =
   "This app call carries no verdict for the tool it runs, so it doesn't run.";
 
@@ -240,7 +236,7 @@ function brokerVerdictFor(caller: ToolCaller, tool: Tool): AppBrokerVerdict {
 }
 
 /** A turn's or a run item's call asks its Moderator seat again before a
- *  write (gate-prerun.ts, the A8 fix round 1, L5). */
+ *  write (gate-prerun.ts). */
 function seatContext(caller: ToolCaller): { seat?: true } {
   return caller.entry === 'turn' || caller.entry === 'run' ? { seat: true } : {};
 }
@@ -249,7 +245,7 @@ function seatContext(caller: ToolCaller): { seat?: true } {
  *  person): an assistant turn, a run item, an approved pending call. */
 const MODEL_ENTRIES: ReadonlySet<ToolCaller['entry']> = new Set(['turn', 'run', 'pending']);
 
-/** The masking's log label of a caller's call (as before step 3b). */
+/** The masking's log label of a caller's call. */
 function maskLabel(caller: ToolCaller): string {
   if (mcpVia(caller)) return 'mcp';
   if (MODEL_ENTRIES.has(caller.entry)) return caller.entry;
@@ -261,7 +257,7 @@ function keyOrPeer(caller: ToolCaller): boolean {
   return caller.via === 'key' || caller.via === 'peer';
 }
 
-/** What a call tells the gate caller beyond its entry (A5 step 6a): what
+/** What a call tells the gate caller beyond its entry: what
  *  its surface says (surfaceGateFacts: the owner-only narrower) and its
  *  owner (the connector narrower's resource rows). */
 function callFacts(ctx: ToolHandlerContext): GateCallFacts & { ownerId: string } {
@@ -269,10 +265,10 @@ function callFacts(ctx: ToolHandlerContext): GateCallFacts & { ownerId: string }
 }
 
 /**
- * One call through the gate (A5 step 3a; see dispatchTool). What it answers
- * is what dispatch answered before, word for word (dispatch-parity.test.ts):
- * a refusal of the gate is its tool text, and the item pre-check's own
- * words; a handler that throws is its message.
+ * One call through the gate (see dispatchTool). Its answers are pinned word
+ * for word (dispatch-parity.test.ts): a refusal of the gate is its tool
+ * text, and the item pre-check's own words; a handler that throws is its
+ * message.
  */
 async function dispatchGated(
   caller: ToolCaller,
@@ -282,18 +278,18 @@ async function dispatchGated(
   depth: number,
 ): Promise<ToolHandlerResult> {
   const h = tool.handler as ToolHandler;
-  // An MCP call (A5 step 4): an error a step or the handler throws goes to
-  // the surface, which answers it as it always has (a database error in
-  // the one mapper's words, any other as the SDK says it), never as text.
+  // An MCP call: an error a step or the handler throws goes to the
+  // surface, which answers it (a database error in the one mapper's words,
+  // any other as the SDK says it), never as text.
   const mcp = caller.entry === 'mcp';
-  // So does a /api/v1 route's (A5 step 4 fix round 1, M1): app.onError
-  // answers it as before the route ran through here (an edit check refusal
-  // its 403 or 404, any other the opaque 500), never a 400 with its text.
+  // So does a /api/v1 route's: app.onError answers it (an edit check
+  // refusal its 403 or 404, any other the opaque 500), never a 400 with
+  // its text.
   const rethrows = mcp || caller.entry === 'api-v1';
   // A key or a peer acting as the owner never confirms for the owner: a
   // level change a builtin would cause is refused instead of confirmed by
   // its own flag (the owner MCP surface's rule; a connector's row takes
-  // the arguments its schema lists, as before).
+  // the arguments its schema lists).
   let args = input;
   if (h.kind === 'builtin' && keyOrPeer(caller) && 'confirm' in input) {
     args = { ...input };
@@ -307,13 +303,13 @@ async function dispatchGated(
         error: `builtin handler '${h.ref}' not registered in this process`,
       };
     }
-    // A builtin row named with another builtin's slug runs nothing (A5).
+    // A builtin row named with another builtin's slug runs nothing.
     const clash = builtinRowSlugError(tool.slug, h.ref);
     if (clash) return { ok: false, error: clash };
-    // Owner-only tools refuse anyone but the owner before any other work
-    // (client logins C4): a team or MISSING surface is not the owner. The
-    // gate's first narrower since A5 step 6a (owner-only), from the call's
-    // surface (`ownerSurface`), so a listing reads the same rule.
+    // Owner-only tools refuse anyone but the owner before any other work: a
+    // team or MISSING surface is not the owner. The gate's first narrower
+    // (owner-only), from the call's surface (`ownerSurface`), so a listing
+    // reads the same rule.
     const toolRef = builtinToolRef(h.ref, tool.slug);
     const policy = builtinToolGatePolicy(toolRef);
     // An MCP call is called as the surface lists it (listing equals
@@ -328,13 +324,13 @@ async function dispatchGated(
           try {
             const run = () => fn(args, ctx);
             // A `systemWhole` tool runs whole on the system pool after its
-            // area check, in a workspace scope (W7a fix round 1, H1).
+            // area check, in a workspace scope.
             const whole = policy?.fields?.systemWhole === true && !!currentWorkspaceScope();
             return await runGated({ system: whole }, run);
           } catch (err) {
             // A provider's failure is its fixed sentence, never its body
-            // (logged server side; A10 #10 fix round 2; the detail on the
-            // owner's trace, A10 lows); our own errors keep their text.
+            // (logged server side; the detail on the owner's trace); our
+            // own errors keep their text.
             // (toolThrowText, then the exported errorMessage, which the
             // read-only sweep observes: a5-read-tools-ro.db.test.ts.)
             if (!rethrows)
@@ -354,7 +350,7 @@ async function dispatchGated(
             ...(ctx.surface ? { surface: ctx.surface } : {}),
             ...(rethrows ? { throws: true } : {}),
             // A /api/v1 route answers an item refusal as the database's
-            // (gate-prerun.ts, A5 step 4 fix round 2).
+            // (gate-prerun.ts).
             ...(caller.entry === 'api-v1' ? { entry: 'api-v1' } : {}),
             ...seatContext(caller),
           },
@@ -364,8 +360,7 @@ async function dispatchGated(
       if (!res.ok) {
         // A /api/v1 route: a refusal the database raised, or the item
         // pre-check raised as the database's (gate-prerun.ts), goes on to
-        // app.onError, which answers it as before the route ran through
-        // dispatch: 403 item-workspace, or 404 (A5 step 4 fix round 2).
+        // app.onError, which answers it: 403 item-workspace, or 404.
         if (caller.entry === 'api-v1' && res.refusal.kind === 'database') throw res.error;
         return { ok: false, error: res.refusal.toolText };
       }
@@ -378,9 +373,8 @@ async function dispatchGated(
       };
     }
   }
-  // No runtime tool runs without a policy (arch A3c, plan section 8): one
-  // function per row type gives it (runtime-policy.ts), and the gate's step
-  // 3 refuses a row with none, in the words dispatch said before.
+  // No runtime tool runs without a policy: one function per row type gives
+  // it (runtime-policy.ts), and the gate's step 3 refuses a row with none.
   const ref = Object.freeze({ kind: 'runtime-tool', name: tool.slug, row: tool });
   let thrown: { err: unknown } | null = null;
   const res = await enterCall(
@@ -390,13 +384,13 @@ async function dispatchGated(
       try {
         return await dispatchRuntime(h, tool, args, ctx, depth);
       } catch (err) {
-        // Thrown on, past the gate's mapper, as before step 3a.
+        // Thrown on, past the gate's mapper.
         thrown = { err };
         return null;
       }
     },
     // The call's arguments, for the surface's own check (an MCP connector
-    // row's, A5 step 4); the registered pre-run checks read no runtime row.
+    // row's); the registered pre-run checks read no runtime row.
     {
       args,
       context: {
@@ -439,8 +433,7 @@ const MCP_RESULT_TEXT_CAP = 80_000;
  *  return first inside one): `login` for a login's surface (a member's) in
  *  system work, `link` for a contact link or any scope that is not system
  *  work (fails closed), null for the owner's own paths (system work on no
- *  such surface). The tier levels went in W8c and their helpers in arch A7:
- *  this is the answer the level rule gave (team, public, none). */
+ *  such surface). */
 function nonOwnerRun(ctx: ToolHandlerContext): 'login' | 'link' | null {
   const s = ctx.surface;
   if (currentScope().kind !== 'system') return 'link';
@@ -449,12 +442,12 @@ function nonOwnerRun(ctx: ToolHandlerContext): 'login' | 'link' | null {
 
 /**
  * The arguments of a call that the tool's stored input schema does not
- * declare (access matrix T6). A read-only mark is for the schema the admin
+ * declare. A read-only mark is for the schema the admin
  * looked at, but the remote server may add a parameter (one that writes)
  * long before the next sync rewrites the row and voids the mark. Below the
  * owner a marked tool takes only the arguments it was marked with: an open
  * schema (`additionalProperties`) counts as closed, and one level down an
- * object argument takes only the keys its schema lists (audit B2). An
+ * object argument takes only the keys its schema lists. An
  * undeclared key comes back as `name`, a nested one as `name.key`.
  */
 export function undeclaredToolArgs(schema: unknown, input: Record<string, unknown>): string[] {
@@ -481,8 +474,8 @@ export function undeclaredToolArgs(schema: unknown, input: Record<string, unknow
 }
 
 /** What a connector tool's read-only mark refuses (one copy for the scope
- *  rule, the rule below the owner, arch A3c, and an MCP connection that
- *  only reads, A5 step 5 fix round 1 L2): a stale mark, or a marked tool
+ *  rule, the rule below the owner, and an MCP connection that only reads):
+ *  a stale mark, or a marked tool
  *  called with an input it was not marked with. Null for a write. */
 export function connectorMarkRefusal(
   mark: 'read' | 'write' | 'stale',
@@ -496,16 +489,14 @@ export function connectorMarkRefusal(
   return `This connector tool was marked read-only with the inputs it had then, and ${extra.map((k) => `'${k}'`).join(', ')} is not one of them. Call it with only the inputs it lists, or ask an admin to sync the connector and mark the tool again.`;
 }
 
-/** Why a connector call is refused in a workspace turn scope (W4b, plan
- *  section 6), or null: the connector must be a resource of the scope's
- *  workspace; a tool not marked read-only needs that resource's Write on AND
- *  the asking login a Moderator there; a stale mark is refused
- *  (connector-scope.ts). Since A5 step 6a the gate's connector narrower
- *  judges that, before the call runs, for every entry but an owner MCP
+/** Why a connector call is refused in a workspace turn scope, or null: the
+ *  connector must be a resource of the scope's workspace; a tool not marked
+ *  read-only needs that resource's Write on AND the asking login a Moderator
+ *  there; a stale mark is refused (connector-scope.ts). The gate's connector
+ *  narrower judges that, before the call runs, for every entry but an owner MCP
  *  connection, so here only a call's arguments are left: a tool marked
- *  read-only takes only the inputs it was marked with. An MCP connection
- *  keeps the whole rule here, after its own pre-run check
- *  (loginConnectorRefused), as that surface always answered. */
+ *  read-only takes only the inputs it was marked with. An MCP connection keeps
+ *  the whole rule here, after its own pre-run check (loginConnectorRefused). */
 async function connectorScopeRefused(
   ctx: ToolHandlerContext,
   tool: Tool,
@@ -524,7 +515,7 @@ async function connectorScopeRefused(
 
 /**
  * Why a connector call is refused for a non-owner run outside a workspace
- * scope, or null (W5b2). The connector's level decides nothing (it only
+ * scope, or null. The connector's level decides nothing (it only
  * says which agents may hold the group): the workspaces that hold the
  * connector do. A call on a login's surface (a member's)
  * takes the login's workspace rule (loginConnectorRefused); a contact link
@@ -587,23 +578,22 @@ async function dispatchMcp(
     };
   }
   // The workspaces that hold the connector and the read-only mark hold on
-  // EVERY path below the owner (team apps M2 audit, low 6; W5b2): a chat
-  // turn whose agent holds the tool through another group, an app run, a
-  // login's MCP. A public run (a public agent) only ever reads (Jason,
-  // 2026-10-08), so an unmarked tool is refused there.
+  // EVERY path below the owner: a chat turn whose agent holds the tool
+  // through another group, an app run, a login's MCP. A public run (a
+  // public agent) only ever reads, so an unmarked tool is refused there.
   const refused =
     (await connectorCallRefused(ctx, group.slug, tool, input)) ??
     (await connectorScopeRefused(ctx, tool, input)) ??
     // The connector's key goes to its URL only while the login that paired
-    // them holds the keys area (W7a fix round 4, secret-ref-gate.ts).
+    // them holds the keys area (secret-ref-gate.ts).
     (await vaultPairRunRefusal(group.configuredBy, ctx.ownerId, !!mcpPairing(mcp).key));
   if (refused) return { ok: false, error: refused };
   try {
     // asSystem: the remote call reads and, for an OAuth connector, refreshes
     // the connector's OWN credentials (api_keys), which a limited role may
     // not write. A shared app's call to a tool with External access
-    // (external-access.ts) runs under the team role, and the token refresh failed
-    // there. Nothing of the brain's content is read here: the result comes
+    // (external-access.ts) runs under the team role, where the token refresh
+    // would fail. Nothing of the brain's content is read here: the result comes
     // from the remote server, and the call stays on the caller's surface.
     const res = await asSystem(
       () => mcpCallRemoteTool(ctx.ownerId, h.group, mcp, h.toolName, input),
@@ -674,8 +664,8 @@ async function dispatchRecipe(
     agent: ctx.agent,
     ...(ctx.surface ? { surface: ctx.surface } : {}),
   };
-  // The recipe's caller calls each step too (A5 step 3a; undefined for an
-  // entry that names none yet: its steps run as it ran).
+  // The recipe's caller calls each step too (undefined for an entry that
+  // names none: its steps run as it ran).
   const trace: { tool: string; ms: number }[] = [];
   // Provenance: once ANY step pulls third-party content (an http tool, or a
   // web builtin like web_search — which the safety envelope permits), the
@@ -852,8 +842,8 @@ async function resolveOauthBinding(
     };
   }
   // The group's OAuth2 credentials go to its token URL and base URL only
-  // while the login that paired them holds the keys area (W7 integration
-  // fix 2): the same run-time check as an MCP connector's key.
+  // while the login that paired them holds the keys area: the same run-time
+  // check as an MCP connector's key.
   const pairRefused = await vaultPairRunRefusal(group.configuredBy, ownerId, true);
   if (pairRefused) return { error: pairRefused };
   let origin: string;
@@ -903,7 +893,7 @@ async function dispatchHttp(
   tool?: { createdBy?: string | null },
 ): Promise<ToolHandlerResult> {
   // A tool another Admin login wrote resolves its vault refs only while
-  // that login holds the keys area (W7a fix round 3, secret-ref-gate.ts).
+  // that login holds the keys area (secret-ref-gate.ts).
   const makerRefused = await secretRefsRunRefusal(tool, h, ctx.ownerId);
   if (makerRefused) return { ok: false, error: makerRefused };
   const resolved = await resolveHandlerSecrets(ctx.ownerId, h);

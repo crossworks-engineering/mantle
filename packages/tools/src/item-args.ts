@@ -1,5 +1,5 @@
 /**
- * The items a write names (R0 fix round, M1 and L2): read from its policy's
+ * The items a write names: read from its policy's
  * `itemArgs` (tool-policy.ts ToolItemArg), the one declaration, for two
  * readers that decide nothing a call's run does not:
  *
@@ -119,7 +119,7 @@ function runAnswer(detail: 'no_read' | 'no_edit'): string {
 }
 
 /**
- * Before a call is queued for approval (L2): the refusal its run would give
+ * Before a call is queued for approval: the refusal its run would give
  * for an item it names, or null. Asked in the queuing scope, which the
  * approved call runs in (pending-origin.ts), with the same rights read the
  * libraries' item check uses (itemWriteRefusalOf):
@@ -135,10 +135,9 @@ function runAnswer(detail: 'no_read' | 'no_edit'): string {
  *    own (`refused`: a link's), as the run answers it.
  *
  * A list argument and a Recall revision are not asked (the module comment).
- * Outside a workspace scope nothing is asked. Asked in every check mode, as
- * main's item pre-check was: on a box whose edit check is warn or off (an
- * operator's lowering) the run would make such a write and log a miss; the
- * queue refuses it, as main did and as the A8 oracle answers.
+ * Outside a workspace scope nothing is asked. Asked in every check mode:
+ * on a box whose edit check is warn or off (an operator's lowering) the
+ * run would make such a write and log a miss; the queue still refuses it.
  */
 export async function queueItemRefusal(
   args: readonly ToolItemArg[],

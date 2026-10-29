@@ -1,5 +1,5 @@
 /**
- * The image check overview of a traced P&ID canvas (DWG bones phase 6 v2):
+ * The image check overview of a traced P&ID canvas:
  * what the app shows beside a saved drawing, outside its frame, and what
  * present_get returns as `image_checks`. One read, no spend.
  *

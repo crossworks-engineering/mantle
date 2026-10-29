@@ -1,7 +1,5 @@
 /**
  * Column edits plus the aggregate and view settings that ride on them.
- *
- * Split out of builtins-tables.ts; bodies moved verbatim.
  */
 
 import {

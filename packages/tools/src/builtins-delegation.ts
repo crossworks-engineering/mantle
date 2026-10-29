@@ -1,8 +1,7 @@
 /**
  * Builtins: invoke_agent — specialist delegation.
  *
- * Split out of builtins.ts on 2026-09-02 (audit, bloat B6) with behaviour
- * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
+ * builtins.ts assembles BUILTIN_TOOLS from these groups.
  */
 
 import { and, eq } from 'drizzle-orm';
@@ -33,7 +32,7 @@ export function childSurface(
   surface: ToolHandlerContext['surface'],
 ): ToolHandlerContext['surface'] {
   if (!isOwnerSurface(surface)) return surface;
-  // The child acts as the parent's login (A0 fix round, M1): a tool that
+  // The child acts as the parent's login: a tool that
   // stamps or checks the caller (a link, an author) sees the same login,
   // never the brain owner in its place.
   const loginId = ownerSurfaceLoginId(surface);
@@ -189,7 +188,7 @@ export const invoke_agent: BuiltinToolDef = {
       };
     }
 
-    // Auto-bundled delegation context (2026-07-18 delegation review): the
+    // Auto-bundled delegation context: the
     // child sees ONLY this prompt, and under-packed prompts are the hand-off's
     // main miscommunication gap. Attach the explicit subject ids and the
     // user's verbatim ask mechanically instead of trusting every parent to
@@ -231,10 +230,10 @@ export const invoke_agent: BuiltinToolDef = {
       parentTraceId: ctx.agent.parentTraceId ?? null,
       // Inherit the parent turn's thinking budget; the child re-clamps it.
       ...(ctx.agent.thinkingBudget ? { thinkingBudget: ctx.agent.thinkingBudget } : {}),
-      // The child works for the parent's caller (client logins C4), so a team
+      // The child works for the parent's caller, so a team
       // or client turn cannot reach owner-only tools by delegating.
       ...(surface ? { surface } : {}),
-      // One taint for the whole delegation tree (plan N18).
+      // One taint for the whole delegation tree.
       ...(ctx.agent.taint ? { taint: ctx.agent.taint } : {}),
     }).catch((err: unknown) => {
       releaseWorkspaceDelegation(turnKey);
@@ -266,10 +265,10 @@ export const invoke_agent: BuiltinToolDef = {
  *  hand-writing twins — see mcp-core's no-duplicate-tools test for why twins
  *  rot. In-app registration still comes from BUILTIN_TOOLS below. */
 /**
- * The tools that used to live only in this catch-all with no exported group,
- * which is the sole reason the MCP surface could not bridge them (see
- * packages/mcp-core/src/build-server.ts). Grouped by what they do, not by which
- * agent holds them — a group here is an addressable bundle, never a grant.
+ * Every tool here sits in an exported group, so the MCP surface can bridge
+ * it (see packages/mcp-core/src/build-server.ts). Grouped by what they do,
+ * not by which agent holds them: a group here is an addressable bundle,
+ * never a grant.
  */
 
 /** Invoke a specialist sub-agent. */

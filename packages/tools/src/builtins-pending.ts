@@ -1,9 +1,8 @@
 /**
  * Builtins: the operator-approval queue and the runner's worker groups.
  *
- * Promoted from hand-written MCP tools on 2026-09-02 (audit, tier 3) so the
- * approval surface has ONE implementation instead of a second copy nobody ran
- * in development. Every def here is `mcpOnly`: the MCP client is the OWNER, and
+ * The approval surface has ONE implementation: no hand-written MCP twin.
+ * Every def here is `mcpOnly`: the MCP client is the OWNER, and
  * these are the owner's controls over what agents queued. An agent that could
  * call `pending_approve` would approve its own gated call, which is exactly the
  * gate these rows exist to impose — so they are never seeded and never
@@ -141,10 +140,10 @@ export const pending_approve: BuiltinToolDef = {
       answer || answers?.length
         ? { ...(answer ? { answer } : {}), ...(answers?.length ? { answers } : {}) }
         : undefined;
-    // The approver is this connection's login (W6b fix round 3, L-2). A
-    // connection that names none to the tools (a peer bound to an Admin
-    // login) still runs in that login's scope: the scope names it, so the
-    // approved call never runs as the bare owner (A0 fix round 3, L-a).
+    // The approver is this connection's login. A connection that names none
+    // to the tools (a peer bound to an Admin login) still runs in that
+    // login's scope: the scope names it, so the approved call never runs as
+    // the bare owner.
     const approver = ownerSurfaceLoginId(ctx.surface) ?? currentWorkspaceScope()?.loginId ?? null;
     let row;
     try {

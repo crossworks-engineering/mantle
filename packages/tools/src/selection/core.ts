@@ -3,8 +3,7 @@
  * sends in full, in a fixed order. It never adds, removes or narrows a
  * grant, so it decides no access: on its own file so the architecture
  * count of tool policy lists (eslint-rules/arch-counts.mjs toolPolicySwept)
- * leaves exactly this list out, and any list deferred.ts holds is counted
- * (A5 step 6a fix round 1, LOW-9).
+ * leaves exactly this list out, and any list deferred.ts holds is counted.
  */
 
 /** Granted tools that are always sent in full: the tools that carry most

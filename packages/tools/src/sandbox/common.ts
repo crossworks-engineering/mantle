@@ -1,15 +1,13 @@
 /**
  * The sandboxd HTTP client and the exports-folder plumbing every
  * sandbox tool goes through.
- *
- * Split out of builtins-sandbox.ts; bodies moved verbatim.
  */
 
 import { autoFiledSourcePath, ensureAutoFiledFolder } from '@mantle/files';
 import { env, serviceEnabled } from '@mantle/config';
 import { callerScope } from '../admin-gate';
 
-/* ── whose sandbox (W7a fix round 2) ─────────────────────────────────── */
+/* ── whose sandbox ───────────────────────────────────────────────────── */
 
 /** The refusal of a sandbox another login made. */
 export const NOT_YOUR_SANDBOX_ERROR =
@@ -28,8 +26,8 @@ export function sandboxCaller(): string | null | undefined {
 }
 
 /**
- * Why the current caller may not work in sandbox `row`, or null (W7a fix
- * round 2): in a workspace scope the login that made it and the brain owner
+ * Why the current caller may not work in sandbox `row`, or null: in a
+ * workspace scope the login that made it and the brain owner
  * (the anchor login, `ownerId`) only; a row with no maker is the brain
  * owner's. Outside a workspace scope: null.
  */

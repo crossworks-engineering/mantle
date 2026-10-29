@@ -188,10 +188,9 @@ const note_get: BuiltinToolDef = {
   },
 };
 
-// Edit-in-place was a real gap: with only note_create, "add today's entries to
-// the work log" forced a duplicate note or a copy-paste handoff (a client box
-// 2026-07-18 — the responder flagged it herself). `append` covers the recurring
-// log-style flow in one call without re-emitting the whole body.
+// Edit in place: with only note_create, "add today's entries to the work log"
+// would force a duplicate note or a copy-paste handoff. `append` covers the
+// recurring log-style flow in one call without re-emitting the whole body.
 const note_update: BuiltinToolDef = {
   slug: 'note_update',
   usageTier: 3,
@@ -475,9 +474,8 @@ const note_from_page: BuiltinToolDef = {
   },
 };
 
-/** Destroys an owner note. Hand-written on the MCP side until tier 3 of the
- *  2026-09-02 audit; `mcpOnly` because no in-app group has ever granted a note
- *  delete — the assistant creates and updates, the owner removes. */
+/** Destroys an owner note. `mcpOnly` because no in-app group grants a note
+ *  delete: the assistant creates and updates, the owner removes. */
 export const note_delete: BuiltinToolDef = {
   slug: 'note_delete',
   policy: {

@@ -64,7 +64,7 @@ const BRACKET_MARKER_RE = /\[\s*(?:system|user|assistant|tool|developer)\s*\]/gi
 export function sanitizeToolError(msg: string): string {
   if (!msg) return msg;
   let s = msg;
-  // The fence's own defang (@mantle/std, A10 part 1): one marker pattern.
+  // The fence's own defang (@mantle/std): one marker pattern.
   s = stripFenceMarkers(s);
   s = s.replace(ROLE_TAG_RE, '');
   s = s.replace(BRACKET_MARKER_RE, '[external marker removed]');

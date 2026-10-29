@@ -1,8 +1,7 @@
 /**
  * Builtins: secret_create — sealed credentials.
  *
- * Split out of builtins.ts on 2026-09-02 (audit, bloat B6) with behaviour
- * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
+ * builtins.ts assembles BUILTIN_TOOLS from these groups.
  */
 
 import { sql } from 'drizzle-orm';
@@ -81,9 +80,9 @@ export const secret_create: BuiltinToolDef = {
     const kind = (SECRET_KIND_VALUES as readonly string[]).includes(kindRaw) ? kindRaw : 'other';
 
     // Lazy-create the `secrets` ltree root the same way the UI does. Heads
-    // first (plan U1), here and for the secret below. The root is structure
-    // with no content, made on the system pool after the keys area check
-    // (W7a fix round 2); the secret itself is created in the caller's scope,
+    // first, here and for the secret below. The root is structure with no
+    // content, made on the system pool after the keys area check; the
+    // secret itself is created in the caller's scope,
     // with the database's create check.
     // A structure item (packages/db gateway/structure-item.ts): on the keys
     // area's narrow exit, the definer makes it.
@@ -148,7 +147,7 @@ export const secret_create: BuiltinToolDef = {
           // this node id so an attacker who swaps the bytea column can't
           // replay another secret's ciphertext into this row.
           const sealed = seal(payload, `secret:${row.id}`);
-          // Through the one definer (arch A3a, 0281): a login's turn holds
+          // Through the one definer (0281): a login's turn holds
           // no right on the secrets table.
           await tx.execute(
             sql`select mantle_secret_put(${row.id}, ${sealed.ciphertext}::bytea, ${sealed.keyVersion})`,

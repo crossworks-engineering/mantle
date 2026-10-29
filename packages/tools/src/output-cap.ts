@@ -2,12 +2,10 @@
  * The cap on command output shown to a model.
  *
  * `run_terminal` and `sandbox_exec` are the same tool with different blast
- * radii — one runs on the host, one inside a container — and they had the same
- * capping function, byte for byte, in both files. The 2026-09 audit counted it
- * among five `truncate` definitions; it is the one pair that genuinely was a
- * duplicate. (The other three cap a string and return it; this one reports
- * WHETHER it cut, because both callers put that in the tool result so the model
- * knows the output it can see is partial. Different function, same name.)
+ * radii (one runs on the host, one inside a container), so they share this
+ * one capping function. Unlike the string `truncate` helpers, it reports
+ * WHETHER it cut, because both callers put that in the tool result so the
+ * model knows the output it can see is partial.
  */
 
 /** Per stream, per call. 64 KiB is roughly 16k tokens — already more than a

@@ -50,7 +50,7 @@ import { lowersEmailPage } from './client-sourced';
 import { CS } from './client-sourced-rule';
 
 /**
- * The email tools run in the caller's scope (W7a fix round 1, H1): the
+ * The email tools run in the caller's scope: the
  * page, the files and the contacts they read are items, and the mail rows
  * follow their item (an Admin kind: a scope that holds Admin reads them).
  * The mail accounts (sealed credentials), the Microsoft accounts and the
@@ -362,12 +362,12 @@ const email_page: BuiltinToolDef = {
     if (!pageId) return { ok: false, error: 'pageId is required' };
     if (!to) return { ok: false, error: 'to is required' };
 
-    // Read in the caller's scope (W7a fix round 1, H1): a page the scope does
-    // not read is not found, and nothing is sent.
+    // Read in the caller's scope: a page the scope does not read is not
+    // found, and nothing is sent.
     const page = await getPage(ctx.ownerId, pageId);
     if (!page) return { ok: false, error: `page ${pageId} not found` };
     // A public link is a link on the page: a user who may edit it, as
-    // page_share (docs/workspaces.md, A0). Refused before anything is sent.
+    // page_share (docs/workspaces.md). Refused before anything is sent.
     if (input.includeLink === true) {
       const refused = await itemWriteRefusal([pageId], 'edit');
       if (refused) return { ok: false, error: `Nothing was sent: ${refused}` };
@@ -393,9 +393,9 @@ const email_page: BuiltinToolDef = {
         const share = await openLink(ctx, pageId, undefined);
         shareUrl = shareUrlForToken(share.token);
       } catch (err) {
-        // A link the caller may not open is refused BEFORE anything is sent
-        // (audit A20), so the mail never goes out promising a link it does
-        // not carry. The check runs before any write.
+        // A link the caller may not open is refused BEFORE anything is sent,
+        // so the mail never goes out promising a link it does not carry. The
+        // check runs before any write.
         if (err instanceof LinkRefusedError) {
           return {
             ok: false,
@@ -480,7 +480,7 @@ const email_page: BuiltinToolDef = {
 const email_list: BuiltinToolDef = {
   slug: 'email_list',
   usageTier: 3,
-  // Mail from outside the brain: fenced as data (A5 step 5). The owner's
+  // Mail from outside the brain: fenced as data. The owner's
   // private corpus: a workspace user's turn only with teamPrivateReads.
   policy: {
     effect: 'read',
@@ -525,10 +525,10 @@ const email_list: BuiltinToolDef = {
         : 50;
 
     // `emails` carries no owner column: it scopes through account_id to
-    // email_accounts.user_id, so the join IS the scope. Without it this listed
-    // every email row on the box. See builtins-read-scope.test.ts.
+    // email_accounts.user_id, so the join IS the scope. Without it this would
+    // list every email row on the box. See builtins-read-scope.test.ts.
     // The owner's accounts are read on the system pool (their credentials are
-    // sealed there); the mail rows in the caller's scope (W7a fix round 1).
+    // sealed there); the mail rows in the caller's scope.
     const accountIds = await ownerAccountIds(ctx.ownerId);
     if (accountIds.length === 0) return { ok: true, output: [] };
     const conds = [inArray(emails.accountId, accountIds)] as ReturnType<typeof eq>[];
@@ -569,7 +569,7 @@ const email_list: BuiltinToolDef = {
 const email_get: BuiltinToolDef = {
   slug: 'email_get',
   usageTier: 3,
-  // Mail from outside the brain: fenced as data (A5 step 5). The owner's
+  // Mail from outside the brain: fenced as data. The owner's
   // private corpus: a workspace user's turn only with teamPrivateReads.
   policy: {
     matrix: { none: 'a mail message: an Admin kind, not a workspace kind' },
@@ -603,11 +603,11 @@ const email_get: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const accountIds = await ownerAccountIds(ctx.ownerId);
-      // Explicit columns — the full row carries body_html, which for a typical
+      // Explicit columns: the full row carries body_html, which for a typical
       // newsletter/marketing mail is ~50 KB of markup wrapping a few hundred
-      // chars of text. Shipping it blew past the inline tool-result cap, forced
-      // a spill, and sent the model paging through HTML soup (2026-06-11 turn
-      // that 500'd on an empty reply). body_text is canonical (it's what the
+      // chars of text. Shipping it blows past the inline tool-result cap,
+      // forces a spill, and sends the model paging through HTML soup.
+      // body_text is canonical (it's what the
       // extractor indexes); HTML is only a fallback source, converted to text.
       //
       // Match on EITHER the email-row id OR the node id: `email_list` hands the

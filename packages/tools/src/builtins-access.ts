@@ -1,10 +1,10 @@
 /**
  * Builtins: access_get / access_set, owner-side only. A brain item has no
- * level any more (workspaces W5b2): access_get answers its grants (the
- * workspaces that read it), and access_set refuses an item, since grants are
- * set in its Grant Access panel. Agents and tool groups have no level either
- * since workspaces W7b: an assistant reads its workspace, and a tool group is
- * system-wide or Admin only (the manifest's adminOnly groups).
+ * level: access_get answers its grants (the workspaces that read it), and
+ * access_set refuses an item, since grants are set in its Grant Access
+ * panel. Agents and tool groups have no level either: an assistant reads its
+ * workspace, and a tool group is system-wide or Admin only (the manifest's
+ * adminOnly groups).
  */
 import { alias } from 'drizzle-orm/pg-core';
 import { and, asc, desc, eq } from 'drizzle-orm';
@@ -22,7 +22,7 @@ export const ITEM_LEVEL_GONE =
   'Brain items have no sharing level any more: the workspaces that read an item are its grants. ' +
   "Use Grant Access (the item's Grant Access panel) to add or remove a workspace.";
 
-/** access_set's answer for an agent or a tool group (workspaces W7b). */
+/** access_set's answer for an agent or a tool group. */
 export const AGENT_LEVEL_GONE =
   'Agents and tool groups have no level any more: an assistant reads the workspace it answers in, ' +
   'and a tool group is either system-wide or Admin only. Change who uses an assistant on its workspace screen.';
@@ -123,8 +123,8 @@ export const access_get: BuiltinToolDef = {
             item: row,
             home,
             grants,
-            // Contact shares (0214), read only: who it is shared with, by
-            // name and right. No tool makes one (v1).
+            // Contact shares, read only: who it is shared with, by name and
+            // right. No tool makes one.
             ...(contactShares.length
               ? {
                   contactShares: contactShares.map((c) => ({

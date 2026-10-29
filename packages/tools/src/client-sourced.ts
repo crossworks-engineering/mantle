@@ -1,6 +1,5 @@
 /**
- * Client-sourced text and the lowering guard (client logins C4, plan section
- * 8, review 1 R12, review 2 N18).
+ * Client-sourced text and the lowering guard.
  *
  * Text a CLIENT wrote reaches staff agents: a client request (a task,
  * `data.source = 'client-request'`) and a client login's chat thread (read by
@@ -14,24 +13,24 @@
  * "Read" is decided by ids: every tool call's input and output, and the
  * retrieval context of the turn, are scanned for uuids, and one query asks
  * whether any names a client request task, a client login or an item a
- * client wrote (client logins C5). Tools name the
+ * client wrote. Tools name the
  * items they return by id, so text that reaches the model from a client
  * request carries its id with it. A false positive only costs a click on
  * /pending; a missed read would cost the guard, so the scan errs wide.
  *
- * What waits once a turn is marked (client logins C5 audit fixes, L2/I1) is
+ * What waits once a turn is marked is
  * decided by the call's TARGET, not by a list of tool names: every built-in
  * write tool is classified in client-sourced-rules.ts, and a write into an
  * item at client or public level, or a lowering to client or public, waits.
  * The mark also outlives the turn: it is kept on the conversation for 24
- * hours after the last client-sourced read (I9), and a node a marked turn
- * creates carries it too (L10, `client_sourced_nodes`).
+ * hours after the last client-sourced read, and a node a marked turn
+ * creates carries it too (`client_sourced_nodes`).
  *
- * Client apps (client logins C6): a client writes an app's SQLite at client
+ * Client apps: a client writes an app's SQLite at client
  * level, and an app-table export copies those rows into an admin-level brain
  * Table. Such a table is client-sourced while its app is at client level, and
  * after a client has written the app, whatever its level
- * (mantle_client_sourced_among, client tier audit I3).
+ * (mantle_client_sourced_among).
  */
 import { sql } from 'drizzle-orm';
 import { db, wsArraySql } from '@mantle/db';
@@ -39,8 +38,7 @@ import { db, wsArraySql } from '@mantle/db';
 /**
  * The client-sourced check reads and marks by its definers (0293:
  * mantle_client_sourced_any and _among, mantle_conversation_taint and
- * _keep, mantle_mark_created_client_sourced; A6b: on the system pool before,
- * 'client-sourced-check'). Each answers as the system pool did, over every
+ * _keep, mantle_mark_created_client_sourced). Each answers over every
  * row of the brain whatever the scope reads (the rule is in the query; a
  * guard held to the scope would mark less), for the owner it is asked
  * about, with no extra scope rule. Their id lists are uuid[] parameters,
@@ -54,7 +52,7 @@ export type TurnTaint = {
   clientSourced: boolean;
   /** What tainted it first, for the pending card and the trace. */
   via?: string;
-  /** The conversation the mark is kept on (I9): a read in this turn renews
+  /** The conversation the mark is kept on: a read in this turn renews
    *  the conversation's mark, so its next turn starts marked. Absent for a
    *  loop with no conversation (a heartbeat, a run worker, a simulation). */
   conversation?: { ownerId: string; key: string };
@@ -69,7 +67,8 @@ export function newTurnTaint(): TurnTaint {
 
 const UUID_G = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 /** Ids one query checks. Every id of a result is checked, in batches of this
- *  many (L8: a cut-off list let a request deep in a big task_list through). */
+ *  many (a cut-off list would let a request deep in a big task_list
+ *  through). */
 export const ID_BATCH = 1000;
 
 /** Every distinct uuid in `text`, lower-cased. */
@@ -88,14 +87,13 @@ function batches<T>(list: readonly T[]): T[][] {
 /**
  * Whether any of `ids` names client-sourced text: a client request task of
  * this brain, a former client login (its old chat thread; listed in
- * archive_client_logins since 0272), an item a client wrote
- * (client logins C5): a `space_items` row stamped `author_role` 'client',
- * in any state (submitted, taken over, accepted into the brain), or a node a
- * marked staff turn created (`client_sourced_nodes`, L10), or a Table
- * exported from an app at client level or one a client wrote (C6: clients
- * write its rows). The stamp
- * outlives the client login, so an item accepted from a client's space still
- * counts after that login is deleted. By its definer
+ * archive_client_logins, 0272), an item a client wrote: a `space_items`
+ * row stamped `author_role` 'client', in any state (submitted, taken over,
+ * accepted into the brain), or a node a marked staff turn created
+ * (`client_sourced_nodes`), or a Table exported from an app at client level
+ * or one a client wrote (clients write its rows). The stamp outlives the
+ * client login, so an item accepted from a client's space still counts
+ * after that login is deleted. By its definer
  * (mantle_client_sourced_any): the tasks are admin level and the check must
  * see them whatever the turn reads. It answers yes or no and returns no
  * content. Every id is checked, in batches.
@@ -118,7 +116,7 @@ export async function namesClientSourced(
  * Which of `ids` (node ids) are client-sourced items: client request tasks,
  * items a client wrote, nodes a marked turn created, tables exported from a
  * client-level or client-written app. For callers that must
- * leave such items out rather than mark a turn (the owner's corpus map, L4).
+ * leave such items out rather than mark a turn (the owner's corpus map).
  * By its definer (mantle_client_sourced_among), like namesClientSourced.
  */
 export async function clientSourcedAmong(
@@ -138,7 +136,7 @@ export async function clientSourcedAmong(
 }
 
 /**
- * `rows` without the client-sourced items among them (L4). The owner's corpus
+ * `rows` without the client-sourced items among them. The owner's corpus
  * map (the recent titles every owner prompt carries) uses this rather than
  * marking the turn: a map that held a client request would mark nearly every
  * owner turn, and a guard that always asks trains the owner to approve
@@ -188,7 +186,7 @@ export async function taintFromText(
   }
 }
 
-// ── The conversation's mark (I9) ─────────────────────────────────────────────
+// ── The conversation's mark ──────────────────────────────────────────────────
 
 /** How long a conversation stays marked after its last client-sourced read. */
 export const CONVERSATION_TAINT_HOURS = 24;
@@ -247,7 +245,7 @@ async function keepConversationTaint(
   }
 }
 
-// ── Nodes a marked turn creates (L10) ───────────────────────────────────────
+// ── Nodes a marked turn creates ─────────────────────────────────────────────
 
 /**
  * Mark the nodes a call of a marked turn just created: the ids in its output
@@ -281,7 +279,7 @@ export async function markCreatedClientSourced(
   return marked;
 }
 
-/** A level as `access_set` reads it: trimmed, and lower-cased on top (L9), so
+/** A level as `access_set` reads it: trimmed, and lower-cased on top, so
  *  no spelling the tool might accept slips past the check. */
 function normalLevel(v: unknown): string {
   return typeof v === 'string' ? v.trim().toLowerCase() : '';

@@ -1,8 +1,8 @@
 /**
- * The Admin gate of a tool call in a workspace scope (workspaces W4b, plan
- * 5.4; W7a). Since W7a the Admin assistant and the Admin MCP surface run in
- * a scope like every other user, so a tool's call is gated by the scope it
- * runs in, never by who the caller says it is:
+ * The Admin gate of a tool call in a workspace scope. The Admin assistant
+ * and the Admin MCP surface run in a scope like every other user, so a
+ * tool's call is gated by the scope it runs in, never by who the caller
+ * says it is:
  *
  *  - an ownerOnly or adminOnly tool runs only in a scope that holds the
  *    Admin workspace (scopeHoldsAdmin);
@@ -11,8 +11,8 @@
  *    do that area (scopeHasArea: it holds Admin, its login is a user there
  *    and its limits leave the area on).
  *
- * After the area check an area tool still runs IN THE CALLER'S SCOPE (W7a
- * fix round 1, H1): its item reads and writes (a file it imports or
+ * After the area check an area tool still runs IN THE CALLER'S SCOPE: its
+ * item reads and writes (a file it imports or
  * exports, a page it mails, a folder it mounts, a recipe's steps) are the
  * scope's, with the normal edit and create checks. Its own system tables
  * (sandbox rows, peers, mail accounts, tool groups), which the workspace
@@ -24,7 +24,7 @@
  * an item: fail closed.
  *
  * Outside any workspace scope (system work) the gate lets everything
- * through: the surface rules decide, as before.
+ * through: the surface rules decide.
  */
 import {
   asSystem,
@@ -38,7 +38,7 @@ import {
 import { ADMIN_ONLY_ERROR, adminAreaError } from '@mantle/std';
 
 /**
- * This file's one system door (arch A6): an Admin-area tool's own system tables,
+ * This file's one system door: an Admin-area tool's own system tables,
  * after its area check, by the named reason 'admin-area' (runGated and
  * areaSystem below).
  */
@@ -46,13 +46,13 @@ function adminAreaSystem<T>(fn: () => Promise<T>): Promise<T> {
   return asSystem(fn, 'admin-area');
 }
 
-/** What a scope may list (workspaces W7b): whether it holds Admin, and the
+/** What a scope may list: whether it holds Admin, and the
  *  Admin areas it may do. Read once per MCP connection. */
 export type AdminGateView = { holdsAdmin: boolean; areas: ReadonlySet<ScopeArea> };
 
 /** The refusals of an adminOnly tool outside the Admin workspace and of an
  *  Admin-area tool for a scope without that area: the words of the one
- *  mapper (@mantle/std access-error.ts, arch A3c), said the same by the
+ *  mapper (@mantle/std access-error.ts), said the same by the
  *  gate. */
 export { ADMIN_ONLY_ERROR, adminAreaError } from '@mantle/std';
 
@@ -62,25 +62,24 @@ export function isAdminGateRefusal(text: string): boolean {
 }
 
 /*
- * The Admin areas (W7a). The same idea as the API key areas
+ * The Admin areas. The same idea as the API key areas
  * (@mantle/mcp-core key-scope.ts), for the areas an Admin workspace user
- * manages (plan 2.4). A tool with no area reads and writes brain items in
- * its caller's scope. A tool's area is its policy's scope (tool-policy.ts
- * policyArea; A5 step 6a deleted the list view). The areas: the brain's
+ * manages. A tool with no area reads and writes brain items in its
+ * caller's scope. A tool's area is its policy's scope (tool-policy.ts
+ * policyArea). The areas: the brain's
  * settings (model routes and pools, capacity, sandboxes, the server
  * shell); assistants (agents, personas, tool and worker groups, the
  * owner's heartbeats: the /api/heartbeats routes are this area; the firing
  * heartbeat's own tools are not, a non-Admin assistant's fire reaches its
  * own row, heartbeats/tools.ts); connectors (API tools, recipes, linked
  * brains, Telegram, and the brain's mail, an Admin-only kind whose sealed
- * mail account credentials the workspace role never reads, W6a); keys and
+ * mail account credentials the workspace role never reads); keys and
  * secrets.
  */
 
 /*
  * The Admin-area tools that run WHOLE on the system pool after the area
- * check (W7a fix round 1, H1; re-checked handler by handler in fix round 2).
- * Each reads and writes system tables only, takes no item id, reads and
+ * check. Each reads and writes system tables only, takes no item id, reads and
  * writes no brain item (nodes, chunks, facts, windows, grants, files,
  * Journal, contacts, mail) and runs no other tool or assistant turn:
  *
@@ -90,7 +89,7 @@ export function isAdminGateRefusal(text: string): boolean {
  *    sandbox_mcp_call, sandbox_mcp_tools, sandbox_publish, sandbox_rm,
  *    sandbox_stop: sandbox rows and the sandbox daemon (publish: the proxy
  *    API key, only with the keys area, and the sandbox's own tool group,
- *    never another group, fix round 3). A sandbox is its maker's: the brain owner's login
+ *    never another group). A sandbox is its maker's: the brain owner's login
  *    works in every one, any other login only in its own (callerScope), and
  *    only the brain owner mounts a folder (sandbox/common.ts).
  *  - agent_list, agent_grant_tool_group, agent_set_thinking_effort,
@@ -107,9 +106,9 @@ export function isAdminGateRefusal(text: string): boolean {
  *    ids they take name the PEER's items, never this brain's).
  *  - telegram_send, telegram_edit, telegram_react, telegram_pending,
  *    telegram_mark_processed: Telegram accounts, chats and messages, and
- *    the Bot API (text only), each on the caller's own paired chats only
- *    (W7d). telegram_pair has no area: any user pairs their own chat (the
- *    owner's answer 1A); it leaves the scope itself, by name.
+ *    the Bot API (text only), each on the caller's own paired chats only.
+ *    telegram_pair has no area: any user pairs their own chat; it leaves
+ *    the scope itself, by name.
  *
  * Every other area tool runs in the caller's scope and takes areaSystem only
  * around its own system tables: sandbox_create (its folder), sandbox_import
@@ -122,7 +121,7 @@ export function isAdminGateRefusal(text: string): boolean {
  * rows), run_terminal (no database). A test runs each listed tool with item
  * tables closed to the system pool (server/web/server/w7a-area-system-sweep.db.test.ts).
  * Declared on each tool's policy: an area scope marked `systemWhole`
- * (tool-policy.ts policySystemWhole; A5 step 6a deleted the list view).
+ * (tool-policy.ts policySystemWhole).
  */
 
 /** Run `fn` as the gate said: whole on the system pool for an
@@ -133,7 +132,7 @@ export function runGated<T>(gate: { system: boolean }, fn: () => Promise<T>): Pr
 }
 
 /**
- * An Admin-area tool's own system-table work (W7a fix round 1, H1): its
+ * An Admin-area tool's own system-table work: its
  * sandbox row, its peer, its mail account. In a workspace scope it runs on
  * the system pool by the named reason 'admin-area', and only when the scope
  * may do `area` (the gate checked it; asked again here so a helper reached
@@ -147,9 +146,9 @@ export async function areaSystem<T>(area: ScopeArea, fn: () => Promise<T>): Prom
 }
 
 /**
- * The workspace scope of the call the current code serves (W7a fix round
- * 2): the open one, or, on the system pool (an `systemWhole` tool run
- * whole, an areaSystem block), the one its asSystem left. Null outside any
+ * The workspace scope of the call the current code serves: the open one,
+ * or, on the system pool (an `systemWhole` tool run whole, an areaSystem
+ * block), the one its asSystem left. Null outside any
  * workspace scope: system work, where the surface rules decide.
  */
 export function callerScope(): WorkspaceScope | null {
@@ -157,12 +156,12 @@ export function callerScope(): WorkspaceScope | null {
 }
 
 /**
- * Whether the caller of the current code may do Admin `area` (W7a fix round
- * 3): asked in the open workspace scope, or, on the system pool (an
- * `systemWhole` tool run whole, an areaSystem block), in the scope its
+ * Whether the caller of the current code may do Admin `area`: asked in the
+ * open workspace scope, or, on the system pool (an `systemWhole` tool run
+ * whole, an areaSystem block), in the scope its
  * asSystem left, so a connectors-area tool can ask whether its caller also
  * holds the keys area. Outside any workspace scope (system work): yes, the
- * surface rules decide, as before.
+ * surface rules decide.
  */
 export async function callerHasArea(area: ScopeArea): Promise<boolean> {
   if (currentWorkspaceScope()) return scopeHasArea(area);

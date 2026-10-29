@@ -18,14 +18,14 @@ import { policySpendsOwnerKey, type ToolPolicy } from './tool-policy';
 export const MAX_AGENT_DEPTH = 2;
 
 /** The ONE sanctioned exception to MAX_AGENT_DEPTH: a child agent may go a
- *  single level deeper when its target is a TERMINAL specialist — an agent
+ *  single level deeper when its target is a TERMINAL specialist: an agent
  *  with no delegates of its own, so the chain provably ends there (a depth-3
  *  child could only ever reach depth 4 via a terminal target, which this cap
- *  refuses). Motivating case: chat-initiated app builds — responder →
- *  appsmith → toolsmith — which otherwise ping-pong the "needs a data tool"
- *  requirement back through the responder (observed on a client brain,
- *  2026-07-20). The edge still has to be DECLARED: `checkDelegationAllowed`
- *  runs first, so only operator-authorised pairs ever reach this exception. */
+ *  refuses). Why: chat-initiated app builds (responder → appsmith →
+ *  toolsmith) otherwise ping-pong the "needs a data tool" requirement back
+ *  through the responder. The edge still has to be DECLARED:
+ *  `checkDelegationAllowed` runs first, so only operator-authorised pairs ever
+ *  reach this exception. */
 export const MAX_TERMINAL_EDGE_DEPTH = 3;
 
 export type DepthCheckResult = { ok: true; childDepth: number } | { ok: false; reason: string };
@@ -74,8 +74,8 @@ export function checkAgentDepth(
 export type AllowlistCheckResult = { ok: true } | { ok: false; reason: string };
 
 /**
- * The specialists a WORKSPACE turn may delegate to (owner decision
- * 2026-10-26): Draftsman, Presenter and Appsmith. A workspace turn is a turn
+ * The specialists a WORKSPACE turn may delegate to: Draftsman, Presenter
+ * and Appsmith. A workspace turn is a turn
  * whose scope does not hold the Admin workspace, or that is not on an owner
  * surface (a team surface, a missing one): the assistant of any workspace
  * other than Admin, the shipped Team responder, and a delegated child of

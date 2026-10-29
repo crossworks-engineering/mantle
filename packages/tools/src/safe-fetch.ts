@@ -21,7 +21,7 @@
 import { egressFetch } from '@mantle/std/egress';
 import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
 
-/** The one egress fetch (@mantle/std/egress, A10 part 1) with this path's
+/** The one egress fetch (@mantle/std/egress) with this path's
  *  secrets: every hop guarded, secret-bearing headers dropped across
  *  origins, 303 and POST-on-301/302 downgraded to GET as the platform does.
  *  No deadline or byte cap of its own: the caller's `init.signal` or

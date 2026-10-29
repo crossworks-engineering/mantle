@@ -33,7 +33,7 @@ import {
   currentScope,
 } from '@mantle/db';
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
-// turn under a limited role (member logins Phase 0b) still records them.
+// turn under a limited role still records them.
 import { embed, embedBatch } from '@mantle/embeddings';
 import { envNum } from '@mantle/config';
 
@@ -43,8 +43,7 @@ import { envNum } from '@mantle/config';
 
 /** The stored level of a spill (tool_results.viewer_level) written outside
  *  a workspace scope: null for system work (Admin), 'public' for any other
- *  scope, the narrowest (fails closed). The level scope went in W8c and the
- *  level helpers in arch A7; the column keeps its values. */
+ *  scope, the narrowest (fails closed). */
 function spillLevelOutsideWorkspace(): 'public' | null {
   return currentScope().kind === 'system' ? null : 'public';
 }
@@ -190,12 +189,11 @@ export async function spillToolResult(args: {
 }): Promise<{ handle: string; bytes: number }> {
   const handle = newHandle();
   const bytes = byteLen(args.content);
-  // The level it was written at (audit A27): a spill holds what a tool read
-  // at that level, so only a reader whose level covers it may page it back.
-  // In a workspace turn scope (W4b) the row carries the turn's workspace and
-  // login (R3) and is read back through the workspace role's rule; its level
-  // is team, the level the one non-Admin workspace (Team) mirrors, for the
-  // level readers that remain until W6a.
+  // The level it was written at: a spill holds what a tool read at that
+  // level, so only a reader whose level covers it may page it back. In a
+  // workspace turn scope the row carries the turn's workspace and login and
+  // is read back through the workspace role's rule; its stored level is
+  // team.
   const inWorkspace = currentWorkspaceScope() !== null;
   const stamp = currentTurnStamp();
   await systemDb.insert(toolResults).values({
@@ -316,7 +314,7 @@ export async function processToolResultForModel(args: {
 
 type ResultRow = { content: string; bytes: number; chunked: boolean; toolSlug: string };
 
-/** A reader bound to one turn (client logins C4): a client or team turn
+/** A reader bound to one turn: a client or team turn
  *  reads only the spills its OWN trace wrote, so a handle from another
  *  login's turn (or an owner turn at the same level) reads as not found.
  *  `traceId` null = the reader has no trace: nothing matches. */
@@ -340,7 +338,7 @@ async function loadResult(
   };
   const where = and(eq(toolResults.id, handle), eq(toolResults.ownerId, ownerId));
   if (currentWorkspaceScope()) {
-    // A workspace turn scope (R3): the workspace role's rule decides (the
+    // A workspace turn scope: the workspace role's rule decides (the
     // scope's workspaces, the scope's own login; a row with no login or no
     // workspace is Admin's).
     const [row] = await db.select(cols).from(toolResults).where(where).limit(1);

@@ -1,7 +1,6 @@
 /**
- * App data over a login's own MCP connection (team apps Phase 1, plan page
- * b6dd688e, section B): `app_data_list`, `app_data_schema`,
- * `app_data_query` and `app_data_write`.
+ * App data over a login's own MCP connection: `app_data_list`,
+ * `app_data_schema`, `app_data_query` and `app_data_write`.
  *
  * The rule: MCP gives a login exactly what the app's own broker gives them in
  * the browser, minus schema changes, and only on an app whose MCP access
@@ -10,7 +9,7 @@
  * Write switch decides whether `app_data_write` is offered at all.
  *
  * These tools are in no agent's tool group: only MCP offers them, to every
- * login since workspaces W7b (one surface, packages/mcp-core), stamping the
+ * login (one surface, packages/mcp-core), stamping the
  * login and its connection on the surface (`surface.mcp`). Any other caller
  * (an agent turn) finds no one to act for and is refused.
  *
@@ -18,7 +17,7 @@
  * inside withViewer), so row security holds as a second lock. The SQLite
  * work runs as the system (`asSystem`), like the app's own broker:
  * it writes the app's database registry rows, which a viewer role cannot.
- * The login's scope is a workspace scope since W5b2, so each of those exits
+ * The login's scope is a workspace scope, so each of those exits
  * names its door ('app-data', AS_SYSTEM_TURN_REASONS), always after the
  * lookup in the scope found the app.
  *
@@ -58,7 +57,7 @@ import type {
 import { str } from './coerce';
 
 /**
- * This file's one system door (arch A6): an app's database registry and its
+ * This file's one system door: an app's database registry and its
  * SQLite run on the system pool after the tool's own check, by the named reason
  * 'app-data'. Every call below goes through it.
  */
@@ -69,7 +68,7 @@ function appDataSystem<T>(fn: () => Promise<T>): Promise<T> {
 const NO_LOGIN =
   "No one to act for: the app_data tools work on a team member's own MCP connection only.";
 
-/** The refusal of an approved app_data_write (lows round 2, L7): an
+/** The refusal of an approved app_data_write: an
  *  approval restores the asking connection with its Write off. */
 export const APP_DATA_APPROVAL_WRITE_OFF =
   'An approved call runs with your MCP connection’s Write off, so app_data_write does not run on approval: run the write again on your own connection.';
@@ -79,7 +78,7 @@ const NOT_FOUND =
 
 /** An app data read's provisioning (its database's registry row, its
  *  declared schema, its viewer salt) as the named read-path write
- *  `repair:app-db` (A5 step 4): only that, never the read itself. */
+ *  `repair:app-db`: only that, never the read itself. */
 function provisionAppDb<T>(fn: () => Promise<T>): Promise<T> {
   return runReadPathWrite('repair:app-db', fn);
 }
@@ -108,9 +107,9 @@ export function appDataCaller(ctx: ToolHandlerContext): Who | null {
   if (s?.kind === 'team' && s.loginId && s.mcp) {
     return { role: 'member', loginId: s.loginId, name: s.contactName ?? null, mcp: s.mcp };
   }
-  // The one MCP surface (W7b): any login's own connection, as a user of its
-  // workspaces. The app sees the login's real role in `:host_me_kind` (W8
-  // integration): an admin is an admin there, as in the browser.
+  // The one MCP surface: any login's own connection, as a user of its
+  // workspaces. The app sees the login's real role in `:host_me_kind`: an
+  // admin is an admin there, as in the browser.
   if (s?.kind === 'owner' && s.loginId && s.mcp) {
     return { role: s.mcp.role ?? 'member', loginId: s.loginId, name: null, mcp: s.mcp };
   }
@@ -118,7 +117,7 @@ export function appDataCaller(ctx: ToolHandlerContext): Who | null {
 }
 
 /** One statement at a time per login, shared with the login's browser
- *  broker (tier audit I1). */
+ *  broker. */
 function callerKey(who: Who): string {
   return `${who.role}:${who.loginId}`;
 }
@@ -242,7 +241,7 @@ export const app_data_list: BuiltinToolDef = {
         // One app's trouble (a lost file) is that app's line, not the end
         // of the list.
         try {
-          // One row per app reached (M1 audit, low 1): a list is a read,
+          // One row per app reached: a list is a read,
           // sampled like a query (app-access-log.ts).
           recordAppAccess({
             ownerId: ctx.ownerId,
@@ -302,8 +301,8 @@ export const app_data_schema: BuiltinToolDef = {
       if (!app) return { ok: false, error: NOT_FOUND };
       // A read that provisions the app's database (its registry row, its
       // declared schema): that provisioning, and only it, is a named
-      // read-path write (A5 step 4; fix round 1, LOW-4), so a read on a
-      // read-only actor still brings the app up.
+      // read-path write, so a read on a read-only actor still brings the
+      // app up.
       const details = await appDataSystem(() =>
         appDbTableDetails(ctx.ownerId, app.id, {
           callerKey: callerKey(who),
@@ -386,8 +385,7 @@ export const app_data_query: BuiltinToolDef = {
       try {
         // The query provisions the app's database and its viewer salt
         // first: that provisioning, never the caller's SQL, is a named
-        // read-path write (A5 step 4; fix round 1, LOW-4), as
-        // app_data_schema.
+        // read-path write, as app_data_schema.
         const rows = await appDataSystem(() =>
           appDbQuery(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
             callerKey: callerKey(who),
@@ -447,7 +445,7 @@ export const app_data_write: BuiltinToolDef = {
     // The surface offers this tool only with write on; this is the tool's
     // own check, should a path ever offer it otherwise. An approved call
     // runs on its connection restored with Write off (pending-origin.ts), so
-    // it never writes here, and says so (lows round 2, L7).
+    // it never writes here, and says so.
     if (!who.mcp.write) {
       return {
         ok: false,
@@ -507,9 +505,9 @@ export const app_data_write: BuiltinToolDef = {
             'The write was not run: the undo snapshot that comes first could not be taken. Try again later, or ask an admin.',
         };
       }
-      // Reach and the write rule again, right before the write (M1 audit,
-      // low 2): the snapshot can take a while, and an admin may have turned
-      // MCP access off or switched its grant's Write off meanwhile.
+      // Reach and the write rule again, right before the write: the snapshot
+      // can take a while, and an admin may have turned MCP access off or
+      // switched its grant's Write off meanwhile.
       const still = await reach(ctx, who, appId);
       if (!still?.writable) {
         recordAppAccess({

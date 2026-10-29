@@ -1,8 +1,6 @@
 /**
  * Deriving a page from something else: a file, a note, several notes,
  * or a journal window.
- *
- * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
 import {

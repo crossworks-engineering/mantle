@@ -47,8 +47,8 @@ export type IntegrationGroup = {
   name: string;
   toolSlugs: string[];
   integration: ToolGroupIntegration | null;
-  /** The login that paired the group's vault key with its host (W7a fix
-   *  round 4); null: the brain owner's. */
+  /** The login that paired the group's vault key with its host; null: the
+   *  brain owner's. */
   configuredBy: string | null;
 };
 

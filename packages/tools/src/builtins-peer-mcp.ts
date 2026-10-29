@@ -1,5 +1,5 @@
 /**
- * Peer tools over the peer's MCP endpoint (plan page e5b854dd, Part 2).
+ * Peer tools over the peer's MCP endpoint.
  *
  * A peer bound to a login on ITS side (owner, a member or a client, with a
  * write switch) accepts our token on its `/api/mcp`, and runs every call as
@@ -30,12 +30,12 @@ const RESULT_TEXT_CAP = 80_000;
  *  64 MB for an owner's file_upload). */
 const COPY_MAX_BYTES = 48 * 1024 * 1024;
 
-/** The fetch the peer's MCP transport runs on: the one egress fetch (A10
- *  part 1) with `allowLan`, because the owner may link a brain on a private
+/** The fetch the peer's MCP transport runs on: the one egress fetch with
+ *  `allowLan`, because the owner may link a brain on a private
  *  or tailnet address. Every hop is checked, so a redirect to link-local
  *  space (the cloud metadata address) is refused, and Authorization is
  *  dropped on a hop to another origin. Up to 20 redirects, the platform's
- *  limit it followed before the fold. Exported for the egress proof table
+ *  limit. Exported for the egress proof table
  *  (egress-proof.test.ts). */
 export const peerMcpFetch: typeof fetch = async (input, init) => {
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
@@ -58,7 +58,7 @@ const PEER_MCP_REPLY_MAX_BYTES = 32 * 1024 * 1024;
 type PeerSession = { client: Client; peerName: string; close: () => Promise<void> };
 
 async function openPeer(ownerId: string, ref: string): Promise<PeerSession | { error: string }> {
-  // The peer row and its token are system tables (W7a fix round 1, H1):
+  // The peer row and its token are system tables:
   // peer_file_copy runs in the caller's scope and reads only them here.
   const target = await areaSystem('connectors', () => peerCallTarget(ownerId, ref));
   if ('error' in target) return target;
@@ -206,8 +206,7 @@ const peer_call: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
-    // Its arguments go out to the linked brain, and it may change it there
-    // (A5 step 5).
+    // Its arguments go out to the linked brain, and it may change it there.
     outside: { via: 'peer', egress: true },
     peerRisky: true,
     clientSourced: CS.always(CS.OUTWARD),
@@ -235,7 +234,7 @@ const peer_call: BuiltinToolDef = {
   handler: (input, ctx) =>
     withPeer(ctx.ownerId, str(input.peer), async ({ client, peerName }) => {
       const tool = str(input.tool).trim();
-      // No runtime tool runs without a policy (arch A3c, runtime-policy.ts).
+      // No runtime tool runs without a policy (runtime-policy.ts).
       if (!peerToolPolicy(tool)) {
         return { ok: false, error: 'tool is required: a name from `peer_tools`.' };
       }
@@ -288,8 +287,8 @@ const peer_file_copy: BuiltinToolDef = {
   },
   handler: async (input, ctx) => {
     const fileId = str(input.file_id).trim();
-    // Read in the caller's scope (W7a fix round 1, H1): a file the scope does
-    // not read is not found here, and nothing leaves for the peer.
+    // Read in the caller's scope: a file the scope does not read is not
+    // found here, and nothing leaves for the peer.
     const file = await readFileById({ ownerId: ctx.ownerId, fileId }).catch(() => null);
     if (!file) {
       return {

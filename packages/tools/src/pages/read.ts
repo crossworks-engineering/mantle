@@ -1,7 +1,5 @@
 /**
  * Reading pages: list and get.
- *
- * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
 import { getPage, listPages, docToText, nodeUrl } from '@mantle/content';

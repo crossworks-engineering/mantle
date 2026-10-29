@@ -112,10 +112,10 @@ const update_persona: BuiltinToolDef = {
         error: 'update_persona can only run inside an agent turn (no agent context).',
       };
     }
-    // Persona notes (and the learned Journal lane they moved to) are learned
-    // from the anchor's own thread and ride only there (W7c fix round 2,
-    // M-a): another user's turn, or a turn that answers nobody, does not
-    // write them (W7 integration fix). Same asker rule as replay.
+    // Persona notes (and their learned Journal lane) are learned from the
+    // anchor's own thread and ride only there: another user's turn, or a
+    // turn that answers nobody, does not write them. Same asker rule as
+    // replay.
     if (replayAsker(ctx.ownerId, ctx.surface) !== ctx.ownerId) {
       return { ok: false, error: UPDATE_PERSONA_ANCHOR_ONLY };
     }
@@ -147,7 +147,7 @@ const update_persona: BuiltinToolDef = {
       };
     }
 
-    // The agent row is a system table (W7a fix round 2, N3): read and
+    // The agent row is a system table: read and
     // written after the assistants area check. The Journal entries this
     // writes, and the older rules it retires, are items: in the scope.
     const [row] = await areaSystem('assistants', () =>
@@ -244,7 +244,7 @@ const update_persona: BuiltinToolDef = {
       );
       // The persona notes are in this agent's prompt, which its heartbeats
       // run: a login other than the anchor writing them makes those
-      // heartbeats its own (W7a fix round 4, heartbeat-maker.ts).
+      // heartbeats its own (heartbeat-maker.ts).
       await restampHeartbeatMakers(ctx.ownerId, toolMaker(ctx.ownerId), { agentSlug: slug });
     });
 

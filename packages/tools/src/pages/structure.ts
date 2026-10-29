@@ -1,8 +1,7 @@
 /**
  * Reshaping a page: split, extract a section, move, mention.
  *
- * Split out of builtins-pages.ts; bodies moved verbatim. Pages do not nest
- * (folder phase 7): a split or an extract makes pages NEXT TO the source,
+ * Pages do not nest: a split or an extract makes pages NEXT TO the source,
  * and a move files a page in a folder of the pages tree.
  */
 

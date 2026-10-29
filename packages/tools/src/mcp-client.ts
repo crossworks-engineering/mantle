@@ -103,7 +103,7 @@ export const mcpConnectorFetch: typeof fetch = async (input, init) => {
       'accept',
     ) ?? '';
   const isSseGet = method === 'GET' && accept.includes('text/event-stream');
-  // The one egress fetch (A10 part 1): the address check on the request's
+  // The one egress fetch: the address check on the request's
   // URL, and any redirect refused (redirect 'error').
   const egress = {
     redirect: 'error',

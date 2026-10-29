@@ -1,6 +1,6 @@
 /**
  * The one way a circuit drawn from the uploaded P&IDs is made, for every
- * author (DWG bones phase 6, "same check for every author"): an internal
+ * author (the same check for every author): an internal
  * agent (Draftsman, Presenter) and a client over MCP read the same steps,
  * from this file: the skills (server/web prompts.ts diagram_design and
  * canvas_authoring), circuit_trace's result (`workflow`, which a client

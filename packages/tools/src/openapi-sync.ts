@@ -254,8 +254,8 @@ export async function fetchSpecText(specUrl: string): Promise<{ text: string; ha
 }
 
 async function readSpecText(specUrl: string): Promise<{ text: string; hash: string }> {
-  // A deadline over the whole fetch, body included (A10 part 1 fix round
-  // 1): a spec host that never answers no longer holds the sync open.
+  // A deadline over the whole fetch, body included: a spec host that never
+  // answers cannot hold the sync open.
   const res = await safeFetch(specUrl, { method: 'GET' }, [], undefined, {
     timeoutMs: OPENAPI_SPEC_TIMEOUT_MS,
   });
@@ -413,8 +413,8 @@ export async function syncOpenapiConnector(
 
   const now = new Date();
   // The tools carry the connector's auth template, so they are the login's
-  // that paired its key with its host (tool_groups.configured_by, W7a fix
-  // round 4): their refs resolve while that login holds the keys area
+  // that paired its key with its host (tool_groups.configured_by): their
+  // refs resolve while that login holds the keys area
   // (secretRefsRunRefusal), whoever runs the sync. Null: the brain owner's.
   const createdBy = group.configuredBy ?? null;
   // The connector's tools made, changed or disabled carry their handler (where a call and its vault key go): the narrow login holds no INSERT of a tool nor its handler (access-matrix.ts NARROW_NEVER_INSERT), so they run at the full-route spot tool-config.
@@ -497,7 +497,7 @@ export type CreateOpenapiConnectorInput = {
   authTemplate?: { headers?: Record<string, string>; query?: Record<string, string> };
   selection?: { tags?: string[]; operations?: string[] };
   /** The login that paired the connector's key with its host, when it is
-   *  not the brain owner (tool_groups.configured_by, W7a fix round 4). The
+   *  not the brain owner (tool_groups.configured_by). The
    *  caller checks the keys area first (secret-ref-gate.ts). */
   configuredBy?: string | null;
 };
@@ -552,8 +552,7 @@ export async function createOpenapiConnector(
   if (existing) throw new InputError(taken);
 
   // A create that raced this one past the check above meets the unique
-  // index: the same words as a ConflictError (409), not the opaque 500
-  // (A10 lows, part 2 #3).
+  // index: the same words as a ConflictError (409), not the opaque 500.
   // A new group: the full-route spot tool-group-grant on a narrow exit
   // (no INSERT on tool_groups for the narrow login).
   await conflictOnUnique(taken, () =>

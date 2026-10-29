@@ -1,6 +1,5 @@
 /**
- * The policies of the hand-written MCP tools (workspaces arch plan v2,
- * sections 8 and 23.3; A5 step 2 fix round 1, LOW-1). Their definitions
+ * The policies of the hand-written MCP tools. Their definitions
  * (name, group, schema, body) are @mantle/mcp-core mcp-defs.ts, and each
  * takes its policy from here by its name: one policy per tool, declared
  * once, as on a builtin.
@@ -8,7 +7,7 @@
  * Here and not in mcp-core: tool-policy.ts loads this table as the surface
  * table in EVERY process, so a check that names a hand-written tool answers
  * the same with or without the MCP surface loaded (the Admin step holds the
- * two responder writes in server/api too, as it did before A5).
+ * two responder writes in server/api too).
  * A leaf: type imports only, so tool-policy.ts imports it with no cycle.
  *
  * Eleven share a builtin's name and carry that builtin's policy (mcp-core

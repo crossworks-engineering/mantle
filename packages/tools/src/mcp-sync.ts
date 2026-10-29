@@ -165,8 +165,7 @@ export function planMcpSync(args: {
       // reordered, and a schema that only looks different must not count as
       // a change (it would void the tool's read-only mark on every sync).
       // Nor enum order: an enum is a set of allowed values, so a server that
-      // lists the same values in another order changed nothing (A10 #12 put
-      // the MCP `search` tool's `type` enum in registry order).
+      // lists the same values in another order changed nothing.
       if (schemaKey(row.inputSchema) !== schemaKey(inputSchema)) {
         patch.inputSchema = inputSchema;
       }
@@ -242,7 +241,7 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
   }
 
   // The connector's key goes to its URL only while the login that paired
-  // them holds the keys area (W7a fix round 4, secret-ref-gate.ts).
+  // them holds the keys area (secret-ref-gate.ts).
   const keyRefused = await vaultPairRunRefusal(group.configuredBy, ownerId, !!mcpPairing(mcp).key);
   if (keyRefused) throw new Error(keyRefused);
   const { tools: remote, serverInfo } = await mcpListRemoteTools(ownerId, groupSlug, mcp);
@@ -268,10 +267,9 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
 
   const now = new Date();
   // A connector a workspace other than Admin holds gives its tools to the
-  // users of that workspace (W5b2; team apps Phase 2 said "below admin"): a
-  // tool the remote server adds later arrives DISABLED there, unmarked,
-  // until an admin looks at it and enables it (M2 audit, low 5). Held by
-  // Admin alone it arrives enabled, as before.
+  // users of that workspace: a tool the remote server adds later arrives
+  // DISABLED there, unmarked, until an admin looks at it and enables it.
+  // Held by Admin alone it arrives enabled.
   const openBelowAdmin = await connectorOpensBeyondAdmin(ownerId, groupSlug);
   // The connector's tools made, changed or disabled carry their handler (where a call and its vault key go): the narrow login holds no INSERT of a tool nor its handler (access-matrix.ts NARROW_NEVER_INSERT), so they run at the full-route spot tool-config.
   await onFullSystemRoute('tool-config', async () => {
@@ -290,7 +288,7 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
     for (const upd of plan.updates) {
       const { slug, ...fields } = upd;
       // The remote tool changed (its description or input schema), or it came
-      // back after it vanished (access matrix N4): a read-only mark was for
+      // back after it vanished: a read-only mark was for
       // the tool the admin looked at, so it is voided (kept, refused below the
       // owner until marked again). Beyond Admin a returning tool also comes
       // back DISABLED, as a new one arrives, until an admin looks at it.
@@ -365,7 +363,7 @@ export type CreateMcpConnectorInput = {
   /** OAuth scope override (implies `oauth`). */
   oauthScope?: string;
   /** The login that paired the connector's key with its URL, when it is not
-   *  the brain owner (tool_groups.configured_by, W7a fix round 4). The
+   *  the brain owner (tool_groups.configured_by). The
    *  caller checks the keys area first (secret-ref-gate.ts). */
   configuredBy?: string | null;
 };

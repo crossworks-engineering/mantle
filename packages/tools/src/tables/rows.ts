@@ -1,7 +1,5 @@
 /**
  * Row edits: add one or many, upsert, update, delete, and per-cell set.
- *
- * Split out of builtins-tables.ts; bodies moved verbatim.
  */
 
 import { coerceCell, applyTableOps, type CellValue, type Column } from '@mantle/content';
@@ -96,10 +94,9 @@ export const table_row_add: BuiltinToolDef = {
   },
 };
 
-// Bulk twin of table_row_add. Born from a real incident (a client box 2026-07-28):
-// appending 101 rows one call at a time ran into the tool-loop's same-tool cap,
-// took 6 delegation retries and ~18 minutes, and the cap guidance pushed the
-// agent into table_from_text — which CREATES a table — leaving a stray import.
+// Bulk twin of table_row_add. Appending many rows one call at a time runs
+// into the tool-loop's same-tool cap, and the cap guidance pushes the agent
+// into table_from_text, which CREATES a table and leaves a stray import.
 // One call, one atomic applyTableOps batch, one draft rev.
 const ROWS_ADD_MAX = 200;
 
@@ -188,10 +185,10 @@ export const table_rows_add: BuiltinToolDef = {
   },
 };
 
-// The real shape of "refresh this table from an export" (a client box 2026-07-28):
-// diff incoming rows against the current grid by key, then insert the new and
-// patch the changed — without the agent hand-computing the diff via table_sql
-// plus a row-by-row write loop. Whole batch = one atomic applyTableOps.
+// The real shape of "refresh this table from an export": diff incoming rows
+// against the current grid by key, then insert the new and patch the changed,
+// without the agent hand-computing the diff via table_sql plus a row-by-row
+// write loop. Whole batch = one atomic applyTableOps.
 export const table_rows_upsert: BuiltinToolDef = {
   slug: 'table_rows_upsert',
   policy: {

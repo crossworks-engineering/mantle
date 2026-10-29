@@ -1,6 +1,6 @@
 /**
  * The scope a pending call was asked in, and the scope its approval judges
- * and runs it in (workspaces arch A5 step 6c, the approval re-check; 0288).
+ * and runs it in (the approval re-check; migration 0288).
  *
  * At queue time (pendingOriginNow) the server stamps the row with the
  * asking turn's scope whole: its login, its workspaces and Moderator
@@ -20,34 +20,33 @@
  * re-check and for the run, whatever scope the approving path runs in (a
  * web request's, an MCP connection's, a Telegram tap's none).
  *
- * Fix round 1: the call is judged and dispatched on the surface it was
- * asked on (the stamp's kind and login; a Telegram chat's as an owner path
- * naming its login, the chat id not being stamped), so a handler that reads
- * its author or an owner-only rule off the surface sees the asker, never
- * the approver (the audit row names the approver on its own field). Lows
- * round (6c L1 to L3): the surface's login is the row's asker (login_id),
- * never the stamp's alone, and a stamp naming another login refuses the
- * approval; a Telegram chat that named no login is an owner path that names
- * none and is no fallback to the owner (a delegated child's, so no link is
- * opened as the owner); a login's own MCP connection is stamped (how it came
- * in, and whether it spends on the owner's provider keys) and restored, so an
- * approved call of a member's MCP turn still spends nothing on the owner's
- * keys (ownerKeysOff) and is never read as the owner's own stdio path. A turn
- * that answered no login keeps the workspaces its assistant still runs in,
- * and the Moderator seats the stamp named there; it runs as the actor the
- * turn ran as (the stamp's), never the approving path's. A turn in a public
- * link's scope is stamped with no scope and marked (`link`): rebuilding a
- * link's scope needs its share and its served list as they are now, which
- * the approval does not hold, so only the owner may approve such a call,
- * and it runs in no scope, as before the stamp.
+ * The call is judged and dispatched on the surface it was asked on (the
+ * stamp's kind and login; a Telegram chat's as an owner path naming its
+ * login, the chat id not being stamped), so a handler that reads its author
+ * or an owner-only rule off the surface sees the asker, never the approver
+ * (the audit row names the approver on its own field). The surface's login is
+ * the row's asker (login_id), never the stamp's alone, and a stamp naming
+ * another login refuses the approval; a Telegram chat that named no login is
+ * an owner path that names none and is no fallback to the owner (a delegated
+ * child's, so no link is opened as the owner); a login's own MCP connection
+ * is stamped (how it came in, and whether it spends on the owner's provider
+ * keys) and restored, so an approved call of a member's MCP turn still spends
+ * nothing on the owner's keys (ownerKeysOff) and is never read as the owner's
+ * own stdio path. A turn that answered no login keeps the workspaces its
+ * assistant still runs in, and the Moderator seats the stamp named there; it
+ * runs as the actor the turn ran as (the stamp's), never the approving
+ * path's. A turn in a public link's scope is stamped with no scope and marked
+ * (`link`): rebuilding a link's scope needs its share and its served list as
+ * they are now, which the approval does not hold, so only the owner may
+ * approve such a call, and it runs in no scope.
  *
- * Second lows round (lows-approvals-2): a peer's connection that named no
- * login names none at approval either, whatever asker its row got from its
- * session (L1: no link is opened as that login); a stamp of an MCP
- * connection by a way in this code does not know refuses the approval (L4);
- * the connection's key, peer and OAuth client id are stamped and restored
- * for the app data log, and the restored connection says it is an
- * approval's (`approval`), so app_data_write says why it does not run (L7).
+ * A peer's connection that named no login names none at approval either,
+ * whatever asker its row got from its session (no link is opened as that
+ * login); a stamp of an MCP connection by a way in this code does not know
+ * refuses the approval; the connection's key, peer and OAuth client id are
+ * stamped and restored for the app data log, and the restored connection
+ * says it is an approval's (`approval`), so app_data_write says why it does
+ * not run.
  */
 import {
   asSystem,
@@ -97,20 +96,19 @@ export const PENDING_RECHECK_ERROR =
   'This call no longer passes the checks of the workspace it was asked in, so it does not run: ';
 
 /** The refusal of an approval of a stamped call whose surface names a login
- *  other than its asker (lows round, 6c L2): the call would run as someone
+ *  other than its asker: the call would run as someone
  *  it was not asked by. */
 export const PENDING_SURFACE_LOGIN_ERROR =
   'This call’s record names a different person than the one who asked for it, so it does not run: reject it.';
 
 /** The refusal of an approval of a call stamped on a login's own MCP
- *  connection that came in by a way this code does not know (lows round 2,
- *  L4): its Write switch and its keys rule cannot be restored, so it does
- *  not run rather than run without them. */
+ *  connection that came in by a way this code does not know: its Write switch
+ *  and its keys rule cannot be restored, so it does not run rather than run
+ *  without them. */
 export const PENDING_SURFACE_MCP_ERROR =
   'This call was asked on a connection this server cannot restore, so it does not run: reject it, or ask them to ask again.';
 
-/** The ids of a login's own MCP connection the app data log names it by
- *  (lows round 2, L7). */
+/** The ids of a login's own MCP connection the app data log names it by. */
 const MCP_IDS = ['keyId', 'peerId', 'oauthClientId'] as const;
 
 /** The connection ids of `mcp` that are non-empty strings, by name. */
@@ -125,8 +123,8 @@ function mcpIds(mcp: Record<string, unknown>): { [K in (typeof MCP_IDS)[number]]
 
 /** The stamp's surface: its kind, an owner path's via, the login it names,
  *  and a login's own MCP connection by how it came in, whether it spends
- *  on the owner's keys (6c L3) and the key, peer or OAuth client id its app
- *  data log names (lows round 2, L7); never a chat or account id, a role or
+ *  on the owner's keys and the key, peer or OAuth client id its app data
+ *  log names; never a chat or account id, a role or
  *  its Write switch. */
 function stampSurface(surface: ToolHandlerContext['surface']): PendingOrigin['surface'] {
   if (!surface) return null;
@@ -157,8 +155,8 @@ async function scopeAreas(): Promise<string[]> {
 }
 
 /**
- * The stamp of a call queued now, from the scope the queuing turn runs in
- * (A5 step 6c, 0288). Asked by every path that queues a turn's call: the
+ * The stamp of a call queued now, from the scope the queuing turn runs in.
+ * Asked by every path that queues a turn's call: the
  * tool loop's (execute-call.ts) and the agent queue helpers (pending-queue.ts,
  * the Toolsmith's group tools).
  */
@@ -204,18 +202,17 @@ function stampActor(): PendingOrigin['actor'] {
 const MCP_VIAS: ReadonlySet<string> = new Set(['oauth', 'peer', 'key']);
 
 /**
- * The surface a stamped call is judged and run on: the stamp's, its login
- * the row's asker (6c L2: a stamp naming another login refuses; a row with
- * no asker keeps a stamp's login only when it is the brain owner's). A
- * Telegram chat's is an owner path naming its login (the chat id is not
- * stamped, so no tool may send into it at approval); one that named no
- * login is a delegated child's path, never the owner's own (6c L1: no link
- * is opened as the owner). A login's own MCP connection comes back with
- * its Write off, marked an approval's, with its ownerKeysOff and its ids
- * as stamped (6c L3, lows round 2 L7); one by a way in this code does not
- * know refuses (L4). A peer's connection that named no login (a peer an
- * Admin login did not register for the anchor) names none here either,
- * whatever asker its row got from its session (L1): as on the connection,
+ * The surface a stamped call is judged and run on: the stamp's, its login the
+ * row's asker (a stamp naming another login refuses; a row with no asker
+ * keeps a stamp's login only when it is the brain owner's). A Telegram chat's
+ * is an owner path naming its login (the chat id is not stamped, so no tool
+ * may send into it at approval); one that named no login is a delegated
+ * child's path, never the owner's own (no link is opened as the owner). A
+ * login's own MCP connection comes back with its Write off, marked an
+ * approval's, with its ownerKeysOff and its ids as stamped; one by a way in
+ * this code does not know refuses. A peer's connection that named no login (a
+ * peer an Admin login did not register for the anchor) names none here
+ * either, whatever asker its row got from its session: as on the connection,
  * no link is opened as that login. None: none.
  */
 function runSurface(
@@ -304,9 +301,9 @@ export async function originRunFor(
       ws,
       modWs,
     }),
-    // A stamp from before arch A7 may say `gate` (the rollback switch's
-    // gate scope, gone): it runs in a turn scope of the met scope, as every
-    // stamp does now, never on the system pool.
+    // An older stamp may say `gate` (a scope kind this code no longer
+    // makes): it runs in a turn scope of the met scope, as every stamp
+    // does, never on the system pool.
     enter: 'turn',
     // An approved call of a login is that login's write request in the
     // asked scope: it writes as a login's mutating request does there (the
