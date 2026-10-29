@@ -2,8 +2,8 @@ import { defineConfig } from 'vitest/config';
 import base from './vitest.config';
 
 /**
- * The database suites with the app's pools on the runtime role (workspaces
- * arch A9, docs/runtime-role.md): MANTLE_DB_RUNTIME_ROLE=1, so the system
+ * The database suites with the app's pools on the runtime role
+ * (docs/runtime-role.md): MANTLE_DB_RUNTIME_ROLE=1, so the system
  * pool and the LISTEN connections log in as mantle_runtime, while each
  * test's own fixtures keep the superuser URL. What a box runs after its
  * roll. `pnpm test:runtime-role`.

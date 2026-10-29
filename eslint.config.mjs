@@ -54,12 +54,10 @@ export default tseslint.config(
       // gitignored) — not ours to lint.
       '**/next-env.d.ts',
       'server/web/public/app-runtime/**',
-      // Same bundles under the client tree. `.gitignore` has covered this path
-      // since the kit landed, but the lint ignore only ever named server/web —
-      // so any checkout that had built the client once could not push: the
-      // pre-push `pnpm verify` walked 19 minified files and produced ~750
-      // errors in code nobody wrote. Untracked here in any case; the client
-      // lives in the jackdaw repo and lints itself there.
+      // Same bundles under the client tree: gitignored, but flat config does
+      // not read .gitignore, so a checkout that built the client once would
+      // lint minified files nobody wrote. The client lints itself in its own
+      // repo.
       'client/web/public/app-runtime/**',
       // Generated share-surface bundle + route manifest (gitignored).
       'server/web/public/share-runtime/**',
@@ -72,23 +70,17 @@ export default tseslint.config(
       // Sibling git worktrees live under .claude/ in the integrator clone
       // (gitignored). Each worktree lints itself; never lint them from here.
       '.claude/**',
-      // The pre-v0.202 tree (apps/web, apps/api, apps/mcp, apps/agent) was
-      // renamed to server/* + client/*. A leftover apps/ is untracked AND
-      // ungitignored, so `eslint .` walks it and parses its minified
-      // app-runtime bundles as source — 752 errors from a directory that is
-      // not part of the repo. That turned the pre-push gate into a wolf-cry
-      // (v0.206.3 had to be pushed from a worktree). Deleted 2026-07-27; this
-      // stays so a stale checkout can never re-break the gate.
+      // A leftover apps/ tree in an old checkout is untracked and not
+      // gitignored, so `eslint .` would parse its minified app-runtime
+      // bundles as source and fail the pre-push gate.
       'apps/**',
       // The docs site (Astro + Starlight) is its own pnpm workspace with its
       // own toolchain; the root config has no parser setup for it.
       'docs-site/**',
-      // Agent-tooling trees (.agents/, .codex/, .github/{agents,hooks,skills}).
-      // Same wolf-cry as apps/** above: these carry minified vendor bundles that
-      // `eslint .` parses as source — 2,428 errors on main, 2026-08-04, entirely
-      // from .agents/skills/impeccable + .github/skills/impeccable. Note these
-      // are ALREADY gitignored and that is NOT sufficient: flat config does not
-      // read .gitignore, so the ignore has to be repeated here.
+      // Agent-tooling trees (.agents/, .codex/, .github/{agents,hooks,skills})
+      // carry minified vendor bundles that `eslint .` would parse as source.
+      // They are gitignored, which is NOT enough: flat config does not read
+      // .gitignore, so the ignore is repeated here.
       '.agents/**',
       '.codex/**',
       '.github/agents/**',
@@ -102,14 +94,13 @@ export default tseslint.config(
     rules: {
       // noUnusedLocals is OFF in tsconfig, so ESLint is the only thing catching
       // dead variables/imports. Allow intentional `_`-prefixed throwaways.
-      // Backlog burned down (audit #4) — now `error` so CI blocks new dead code.
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
       ],
       // `any` is a smell; the few pragmatic untyped-boundary uses carry an
-      // inline `eslint-disable` with a reason. Backlog burned down (audit #4) —
-      // now `error` so new `any` must be justified explicitly.
+      // inline `eslint-disable` with a reason, so a new `any` must be
+      // justified explicitly.
       '@typescript-eslint/no-explicit-any': 'error',
       // The `cond ? a() : b()` / `cond && side()` statement idiom is used
       // deliberately for side effects across the UI — allow it while still
@@ -127,18 +118,12 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node } },
   },
   {
-    // React/Next linting for the web app. These resolve the inline
-    // `eslint-disable react-hooks/*` / `@next/next/*` directives left from the
-    // old `next lint` setup, and add real value (hook-deps, next foot-guns).
-    // exhaustive-deps backlog triaged + burned down (audit #4) — now `error`;
-    // intentional omissions carry an inline `eslint-disable` with a reason.
-    //
-    // packages/web-ui IS included, and was the gap that proved it matters: the
-    // shared components moved there over time while this glob still named only
-    // the two apps, so ~30 hook-using components — every provider, the sandbox,
-    // the share presenters — were silently unlinted. A missing `tint` dep in
-    // the avatar component shipped a picker whose previews never repainted:
-    // the state changed, the memo did not.
+    // React/Next linting for the web app and the shared components (hook
+    // deps, next foot-guns). It resolves the inline `eslint-disable
+    // react-hooks/*` / `@next/next/*` directives. Intentional exhaustive-deps
+    // omissions carry an inline `eslint-disable` with a reason. The shared
+    // components need it as much as the app: a missing hook dep there ships a
+    // memo that never repaints.
     files: ['server/web/**/*.{ts,tsx}', 'packages/share-ui/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     rules: {
@@ -148,9 +133,8 @@ export default tseslint.config(
     },
   },
   {
-    // A themed fill must carry an ink that is legible on it. The style guide has
-    // said so for months and it still shipped invisible text twice (v0.205.7,
-    // v0.206.1) — found by a user, not CI. See eslint-rules/ for why the rule is
+    // A themed fill must carry an ink that is legible on it, or text ships
+    // invisible and only a user finds it. See eslint-rules/ for why the rule is
     // deliberately narrow: the common `text-muted-foreground hover:bg-accent
     // hover:text-accent-foreground` idiom is CORRECT and must not be flagged.
     files: ['server/web/**/*.{ts,tsx}', 'packages/share-ui/**/*.{ts,tsx}'],
@@ -195,13 +179,13 @@ export default tseslint.config(
         },
         {
           // The database's test fixtures (scratch databases, the superuser
-          // client, the Admin seat by hand) likewise (S8b r6 app L5).
+          // client, the Admin seat by hand) likewise.
           selector: 'ImportExpression[source.value=/test-support/]',
           message: 'test fixtures only: @mantle/db/test-support is for tests, bench and scripts',
         },
         {
           // The A8 matrix fixtures (src/matrix/test-support, exported as
-          // @mantle/db/matrix/a8-*): S8b r7 app LOW-4.
+          // @mantle/db/matrix/a8-*) likewise.
           selector: 'ImportExpression[source.value=/^@mantle.db.matrix.a8-/]',
           message: 'test fixtures only: the A8 matrix fixtures are for tests',
         },
@@ -209,22 +193,22 @@ export default tseslint.config(
     },
   },
   {
-    // systemDb reads past row level security (member logins Phase 0b): only
+    // systemDb reads past row level security: only
     // the infrastructure modules allowlisted in the rule file may import it.
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
     plugins: { 'mantle-db': mantleDbPlugin },
     rules: { 'mantle-db/system-db-allowlist': 'error' },
   },
   {
-    // Writers of the rows that carry access lock heads first (workspaces
-    // plan U1, V5): withHeads and friends from @mantle/db, or a function
+    // Writers of the rows that carry access lock heads first: withHeads and
+    // friends from @mantle/db, or a function
     // marked @heads-held (its caller holds them). No exemption marker.
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
     plugins: { 'mantle-heads': mantleHeadsPlugin },
     rules: { 'mantle-heads/heads-writers': 'error' },
   },
   {
-    // No product code reads the tier levels (workspaces plan S2, W5b1 on):
+    // No product code reads the tier levels:
     // access comes from grants and currentScope(). What is left is pinned,
     // file by file, in the rule file's allowlist (level-reads.test.ts).
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'scripts/**/*.{ts,mjs,js}'],
@@ -232,7 +216,7 @@ export default tseslint.config(
     rules: { 'mantle-levels/level-reads': 'error' },
   },
   {
-    // The architecture ratchets (workspaces arch plan v2, section 11; A0):
+    // The architecture ratchets:
     // raw ACL column reads outside packages/db, and asSystem call sites,
     // pinned per file in the rule files; arch-lints.test.ts pins them
     // exactly, so a count only goes down. Tests are not product code.
@@ -249,37 +233,36 @@ export default tseslint.config(
     rules: {
       'mantle-acl/no-raw-acl-columns': 'error',
       'mantle-system/as-system-allowlist': 'error',
-      // systemWork runs as the system: each file pinned for review (A6b).
+      // systemWork runs as the system: each file pinned for review.
       'mantle-system-work/system-work-allowlist': 'error',
       // A login scope set by hand, or carried onto the system pool: pinned
-      // per file for review (S2a a1+a2).
+      // per file for review.
       'mantle-scope-settings/scope-settings-in-client': 'error',
       'mantle-scope-settings/system-pool-scope-sites': 'error',
-      // Only a store's broker reaches its write API (A3b).
+      // Only a store's broker reaches its write API.
       'mantle-stores/store-brokers': 'error',
       // Raw write SQL: pinned per file, each leaves as a typed write or a
-      // definer call (plan v3.2 section 3.2).
+      // definer call.
       'mantle-raw-write/no-raw-write-sql': 'error',
     },
   },
   {
-    // Only packages/db sets who a statement runs as (workspaces arch A2a):
+    // Only packages/db sets who a statement runs as:
     // the actor settings and their setter functions, named anywhere else.
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'scripts/**/*.{ts,mjs,js}'],
     plugins: { 'mantle-actor': mantleActorSettersPlugin },
     rules: { 'mantle-actor/actor-setters-in-db-only': 'error' },
   },
   {
-    // No database transaction is held across a model call or a stream
-    // (workspaces arch A2b, plan 4.2): it would hold its connection and its
-    // heads for the whole call.
+    // No database transaction is held across a model call or a stream: it
+    // would hold its connection and its heads for the whole call.
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'scripts/**/*.{ts,mjs,js}'],
     plugins: { 'mantle-tx': mantleNoModelInTxPlugin },
     rules: { 'mantle-tx/no-model-in-transaction': 'error' },
   },
   {
-    // The caller the HTTP pipeline answers (ownerCaller(), workspaces arch A4
-    // step 3b) is imported only in an app/api route file, by its own name:
+    // The caller the HTTP pipeline answers (ownerCaller()) is imported only
+    // in an app/api route file, by its own name:
     // the manifest generator reads the route files to learn which rows the
     // gate answers.
     // Every script file under server/web, not only .ts and .tsx: a helper
@@ -290,8 +273,8 @@ export default tseslint.config(
     rules: { 'mantle-caller/owner-caller-imports': 'error' },
   },
   {
-    // No session guard is called outside session.ts (workspaces arch A4
-    // exit): a route reads the caller the gate answered for its row. The
+    // No session guard is called outside session.ts: a route reads the
+    // caller the gate answered for its row. The
     // render pages keep their own redirecting guard (named in the rule).
     files: ['server/web/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
@@ -299,7 +282,7 @@ export default tseslint.config(
     rules: { 'mantle-guards/no-guard-calls': 'error' },
   },
   {
-    // One egress fetch (A10 part 1, docs/egress.md): product code under
+    // One egress fetch (docs/egress.md): product code under
     // packages/ and server/{web,api,mcp,sandboxd}/ uses the platform fetch,
     // or loads a raw HTTP client (undici, node:http(s), axios, got,
     // node-fetch), only in the files the rule file lists (the inventories),
@@ -314,7 +297,7 @@ export default tseslint.config(
     rules: { 'mantle-egress/no-bare-fetch': 'error' },
   },
   {
-    // Provider HTTP plumbing (A10 #10, docs/provider-http.md): deadlines,
+    // Provider HTTP plumbing (docs/provider-http.md): deadlines,
     // retries and Retry-After go through @mantle/std (timeoutSignal and the
     // timeout tables, withRetry, parseRetryAfterMs, withTimeout). The files
     // that keep a pattern are named in the rule file, each with its reason.
@@ -333,8 +316,8 @@ export default tseslint.config(
     },
   },
   {
-    // Small helpers and process plumbing from one place (A10 #15,
-    // docs/std-helpers.md): UUID_RE and errorMessage from @mantle/std, one
+    // Small helpers and process plumbing from one place
+    // (docs/std-helpers.md): UUID_RE and errorMessage from @mantle/std, one
     // dedupeTags, onShutdown for signals, the advisory lock helper, TtlCache,
     // CACHE_CONTROL. The files that keep a copy are named in the rule file,
     // each with its reason.
@@ -355,7 +338,7 @@ export default tseslint.config(
     },
   },
   {
-    // Flags and env from one place (A10 #11, docs/configuration.md "Flags
+    // Flags and env from one place (docs/configuration.md "Flags
     // and env"): no raw process.env read, no hand parse of an env value, no
     // isXEnabled definition, no hand profile boolean default. Read through
     // @mantle/config (env, envNum, feature) and profileFlag. The files that
@@ -374,7 +357,7 @@ export default tseslint.config(
     },
   },
   {
-    // Spend is recorded in one place (A10 #5, docs/spend-recording.md): the
+    // Spend is recorded in one place (docs/spend-recording.md): the
     // @mantle/voice registry hands out every adapter wrapped to record its
     // call through @mantle/tracing recordUsage. No hand spend recording, no
     // provider call around the registry; the files that keep one are named.
@@ -390,7 +373,7 @@ export default tseslint.config(
     },
   },
   {
-    // A route reads its body through the one reader (A10 part 2):
+    // A route reads its body through the one reader:
     // readBody(req, Schema) or readJson(req), never req.json() and the
     // like. The files that read it another way are named in the rule.
     files: ['server/web/app/**/route.ts'],
@@ -399,21 +382,21 @@ export default tseslint.config(
     rules: {
       'mantle-plumbing/no-direct-body-reads': 'error',
       // A route never puts a caught error's text in a reply: it throws and
-      // app.onError answers (fold 2). The files not yet moved are named.
+      // app.onError answers. The files not yet moved are named.
       'mantle-plumbing/no-error-text-replies': 'error',
       // A route answers no cross-site refusal of its own: it is its
-      // ROUTE_POLICY row's (A10 #8, lib/route-limits.ts).
+      // ROUTE_POLICY row's (lib/route-limits.ts).
       'mantle-plumbing/no-route-rate-limits': 'error',
-      // Plan v3.2 S9: every route file declares its policy (the rows' one
-      // source since part 3 deleted the route lists); a new route file
-      // without one fails here, and at boot (requireRouteDeclarations).
+      // Every route file declares its policy (the rows' one source); a new
+      // route file without one fails here, and at boot
+      // (requireRouteDeclarations).
       'mantle-plumbing/route-policy-declared': 'error',
     },
   },
   {
     // No file takes a rate limit but the gate and the named budgets: a limit
-    // is the route's row's (A10 #8, lib/route-limits.ts), and a limiter in a
-    // helper the handler calls first is one too (low round, L2). The budgets
+    // is the route's row's (lib/route-limits.ts), and a limiter in a
+    // helper the handler calls first is one too. The budgets
     // that are not gates on the request are named in the rule.
     files: ['server/web/**/*.{ts,tsx,mts,mjs,js}'],
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
@@ -421,8 +404,8 @@ export default tseslint.config(
     rules: { 'mantle-plumbing/no-route-rate-limits': 'error' },
   },
   {
-    // A list of kinds is a filter over the kind registry (A10 #12,
-    // packages/client-types/src/kind-lists.ts), never a literal of 3 or more
+    // A list of kinds is a filter over the kind registry
+    // (packages/client-types/src/kind-lists.ts), never a literal of 3 or more
     // node types (an array, a union, an object's keys, a comparison chain,
     // a switch's shared cases, a SQL list). The files that must keep one are
     // named in the rule.
@@ -436,7 +419,7 @@ export default tseslint.config(
     rules: { 'mantle-kinds/no-hand-kind-lists': 'error' },
   },
   {
-    // A running app's calls go through once (A10 #9): a write schedules its
+    // A running app's calls go through once: a write schedules its
     // exports' sync on the one write path (@mantle/content/app-db-write), and
     // a tool call is parsed, judged and dispatched in the one broker
     // (server/web/lib/app-tool-broker.ts). The files that must schedule the
@@ -450,8 +433,8 @@ export default tseslint.config(
     },
   },
   {
-    // A role, area or actor name list is read from its source (A10 #13,
-    // packages/client-types/src/role-names.ts and the dto lists), never a
+    // A role, area or actor name list is read from its source
+    // (packages/client-types/src/role-names.ts and the dto lists), never a
     // literal list, union, comparison chain, shared switch cases or SQL list
     // of those names.
     files: [
@@ -464,8 +447,8 @@ export default tseslint.config(
     rules: { 'mantle-roles/no-hand-role-lists': 'error' },
   },
   {
-    // A write re-indexes through markContentChanged (A10 #7,
-    // packages/db/src/content-changed.ts), never by a hand notify, vector
+    // A write re-indexes through markContentChanged
+    // (packages/db/src/content-changed.ts), never by a hand notify, vector
     // reset or summary clear. The files that must keep one are named in the
     // rule.
     files: [
@@ -510,14 +493,14 @@ export default tseslint.config(
             },
             {
               // The database's test fixtures (the superuser client, the
-              // Admin seat by hand, scratch databases): S8b r6 app L5; any
-              // depth and any file in a test-support folder (r7 LOW-4).
+              // Admin seat by hand, scratch databases), at any depth, and
+              // any file in a test-support folder.
               regex: '(^|/)test-support(/|$)',
               message:
                 'test fixtures only: @mantle/db/test-support is for tests, bench and scripts',
             },
             {
-              // The A8 matrix fixtures (src/matrix/test-support): r7 LOW-4.
+              // The A8 matrix fixtures (src/matrix/test-support).
               regex: '^@mantle/db/matrix/a8-(grid|tool-cells|tool-content)$',
               message: 'test fixtures only: the A8 matrix fixtures are for tests',
             },
@@ -555,9 +538,8 @@ export default tseslint.config(
   {
     // Every PUBLISHED contract package may depend only on its published
     // siblings. Any other @mantle/* import is a private workspace name that
-    // does not exist on npm: the v0.232.122-153 app-build tarballs shipped
-    // @mantle/std@0.0.1 and @mantle/config@0.0.1 dependencies and could not
-    // be installed. scripts/publish-contract.mjs refuses the same at publish
+    // does not exist on npm, so a tarball that depends on one cannot be
+    // installed. scripts/publish-contract.mjs refuses the same at publish
     // time; this catches it at lint time, before the tag.
     files: [
       'packages/client-types/**/*.{ts,tsx}',
@@ -607,22 +589,22 @@ export default tseslint.config(
               message: 'server tier must not import the client app',
             },
             {
-              // Plan v3.2 S6 c3 (c1 audit LOW-6): the owner functions that
+              // The owner functions that
               // skip the Admin check are for test fixtures only; a route
               // calls the definers (@mantle/content admin-acts).
               group: ['@mantle/content/test-support'],
               message: 'test fixtures only: a route calls the Admin act definers',
             },
             {
-              // S8b r6 app L5: the database's test fixtures (the superuser
-              // client, the Admin seat by hand) never reach shipped code;
-              // any path into a test-support folder too (r7 LOW-4).
+              // The database's test fixtures (the superuser client, the
+              // Admin seat by hand) never reach shipped code; any path into a
+              // test-support folder too.
               regex: '(^|/)test-support(/|$)',
               message:
                 'test fixtures only: @mantle/db/test-support is for tests, bench and scripts',
             },
             {
-              // The A8 matrix fixtures (src/matrix/test-support): r7 LOW-4.
+              // The A8 matrix fixtures (src/matrix/test-support).
               regex: '^@mantle/db/matrix/a8-(grid|tool-cells|tool-content)$',
               message: 'test fixtures only: the A8 matrix fixtures are for tests',
             },

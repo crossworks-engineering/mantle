@@ -311,7 +311,7 @@ async function persist(account: TelegramAccount, inbound: InboundMessage): Promi
     console.error(`[telegram-sync] missing chat row for ${account.id}/${inbound.chatId}`);
     return false;
   }
-  // A chat paired to nobody stores nothing (W7d fix round 1, L4): its
+  // A chat paired to nobody stores nothing: its
   // message would be a node no user owns, and no turn runs for it. The gate
   // sends such a chat back to pending first; this holds if one slips by.
   if (!chat.loginId) return false;

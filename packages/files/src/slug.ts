@@ -31,7 +31,7 @@ export function slugifyFolder(raw: string): string | null {
  * The slug of a folder a PERSON names (the tree's folders, every kind): as
  * slugifyFolder, but a name with no Latin letters or digits (Cyrillic, Greek,
  * Arabic, CJK, emoji) gets a short stable slug from its text instead of
- * being refused (folder audit C6). The display name is kept apart from the
+ * being refused. The display name is kept apart from the
  * slug, so people still see their own name. Null only for a blank name.
  * (Machine paths keep slugifyFolder: their slugs must not change.)
  */
@@ -113,12 +113,11 @@ export const ODF_EXTS = new Set<string>(['odt', 'ods', 'odp']);
  *  anydoc (packages/files/src/legacy-sheet.ts). */
 export const LEGACY_SHEET_EXTS = new Set<string>(['xls', 'xlsb']);
 /** Mostly tags, real content inside: tags stripped by the markup reader.
- *  `.xml` used to be unreadable (indexed by its filename alone), and as plain
- *  text the summary, embedding and chunks would all be dominated by element
- *  names, so retrieval would get *worse* while appearing to work (matching
- *  `<title>` rather than titles). Project's MSPDI export is recognised by
- *  content before the generic read. `.html`/`.htm` are saved web pages, the
- *  same shape. */
+ *  Read as plain text, the summary, embedding and chunks would all be
+ *  dominated by element names, so retrieval would get *worse* while
+ *  appearing to work (matching `<title>` rather than titles). Project's
+ *  MSPDI export is recognised by content before the generic read.
+ *  `.html`/`.htm` are saved web pages, the same shape. */
 export const MARKUP_EXTS = new Set<string>(['html', 'htm', 'xml']);
 /** TEXT_EXTS + every binary type the extractor can pull readable text from,
  *  all of them through the parser service. */

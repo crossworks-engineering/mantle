@@ -41,8 +41,8 @@ export type SweepResult = {
   resumesResent: number;
   /** Pending ask_human rows expired because their item went terminal (4). */
   questionsExpired: number;
-  /** Decided-but-unsettled runner rows reverted to pending (4c — the
-   *  crash-mid-settle window; final audit F3). */
+  /** Decided-but-unsettled runner rows reverted to pending (4c: the
+   *  crash-mid-settle window). */
   settlesReverted: number;
   actions: PostCommitAction[];
 };
@@ -224,7 +224,7 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
     )
     .returning({ id: p.id });
 
-  // 4c. Decided-but-unsettled recovery (final audit F3). approve/reject
+  // 4c. Decided-but-unsettled recovery. approve/reject
   //     flips the row BEFORE the run-side settle applies; a crash in that
   //     window strands an operator-visible decision that never took effect
   //     — for run_budget the run would sit paused forever with nothing left

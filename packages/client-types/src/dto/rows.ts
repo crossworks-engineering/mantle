@@ -140,8 +140,8 @@ export type PageRow = {
   summary: string | null;
   visibility: PageVisibility;
   width: PageWidth;
-  /** A read-only snapshot copy of an accepted item (data.snapshot_of,
-   *  workspaces W6b fix round 1): nobody edits it, moves it out of its
+  /** A read-only snapshot copy of an accepted item (data.snapshot_of):
+   *  nobody edits it, moves it out of its
    *  private workspace or shares it; its author may delete it. Absent on
    *  every other item. */
   readOnly?: true;

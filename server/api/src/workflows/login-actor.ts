@@ -1,7 +1,7 @@
 /**
- * Who a runner turn runs as (workspaces arch A2a). Deferred work done for a
- * login runs as that login as it is NOW, read when the work runs. A2a only
- * logs: a login disabled since is bound anyway and named in one warning.
+ * Who a runner turn runs as. Deferred work done for a login runs as that
+ * login as it is NOW, read when the work runs. A login disabled since is
+ * bound anyway and named in one warning.
  */
 import { loginActor, systemActor, type Actor } from '@mantle/db';
 

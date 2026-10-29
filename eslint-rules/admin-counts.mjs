@@ -1,7 +1,7 @@
 /**
  * The Admin counts of the scoreboard: where code, not the scope, decides
  * that a caller is an Admin user or holds an Admin area, and the system
- * exits that come with it (plan v3.2 sections 2.1 and 2.2). Read by
+ * exits that come with it. Read by
  * rights-counts.mjs, pinned in scripts/arch-scoreboard.pins.json, tested
  * in admin-counts.test.ts. Syntax trees (the TypeScript parser, no type
  * checker), comments and strings never count:
@@ -723,8 +723,8 @@ function heldAsk(use) {
 
 // ── the login type test ─────────────────────────────────────────────────────
 
-/** The type test of the login's shape (plan v3.2 section 2.2: no `kind`,
- *  no `role`): the compiler holds its pin to the type. */
+/** The type test of the login's shape (no `kind`, no `role`): the
+ *  compiler holds its pin to the type. */
 export const LOGIN_SHAPE_TEST = 'server/web/lib/auth/login-shape.test.ts';
 
 /** The lines the pin is held by, whitespace aside: the login is the return
@@ -766,7 +766,7 @@ export function loginShapePin(root, text = readRepoFile(root, LOGIN_SHAPE_TEST))
 
 /**
  * The Admin counts of the counted files' texts ([{ path, text }]):
- * `{ numbers, detail }`. The named role reads the plan moves in S8c
+ * `{ numbers, detail }`. The named login role decision reads
  * (mcp-auth.ts, pair-code.ts) are listed in detail.loginRoleDecisionReads.
  */
 export function adminCounts(root, texts) {

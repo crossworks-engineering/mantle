@@ -1,6 +1,6 @@
 /**
- * The name lists of a file, read from its syntax tree (arch plan A10 #12 and
- * #13, low round): the sites where a list of names is written by hand, each
+ * The name lists of a file, read from its syntax tree: the sites where a
+ * list of names is written by hand, each
  * with its own string entries and its place. no-hand-kind-lists and
  * no-hand-role-lists (and the scoreboard counts in arch-counts.mjs) judge
  * the entries; this module only finds the lists. It parses with the

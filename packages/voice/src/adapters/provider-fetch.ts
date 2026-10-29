@@ -17,19 +17,19 @@
  * at most {@link PROVIDER_CONNECTIONS} connections per origin. The cap is a
  * ceiling, not a driver: callers still decide how many requests they send.
  *
- * Deadlines (A10 #10): the caller names one
+ * Deadlines: the caller names one
  * (`{ timeoutMs: PROVIDER_TIMEOUTS.discover }`, @mantle/std timeouts.ts).
  * A call that names none AND brings no signal of its own gets
  * `PROVIDER_TIMEOUTS.default` (180 s). A call that brings its own signal (an
  * `init.signal`, or a Request, which always carries one) and names no
  * deadline gets no default: its signal is its deadline, and a default could
- * only ever cut it SHORTER than the caller asked (fix round 1: a 300 s local
- * model call cut at 180 s, retried, then failed over to a paid cloud route).
+ * only ever cut it SHORTER than the caller asked (a 300 s local model call
+ * cut at 180 s would retry, then fail over to a paid cloud route).
  * The deadline covers the whole exchange of an ordinary answer, and only the
  * headers of a stream: every stream call says so (`timeoutScope: 'headers'`),
  * and an answer typed `text/event-stream` is treated the same as a fallback,
  * so a long healthy stream is never cut: the stream's own idle guard (sse.ts)
- * bounds it after that. Before, a call with no signal waited on undici's
+ * bounds it after that. Without a deadline a call would wait on undici's
  * defaults only (300 s for the headers, 300 s of body silence, no total).
  *
  * `undici` is Node-only (it pulls in node:net) and the `@mantle/voice` barrel

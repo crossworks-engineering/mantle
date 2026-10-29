@@ -254,12 +254,12 @@ async function _runReembedInner(ownerId: string, opts: ReembedOpts): Promise<Ree
     if (includeUnembedded) {
       // Repopulation: embed every node that SHOULD carry a vector regardless
       // of current null state — excluding the kinds that never do. Digests
-      // are included since 2026-06-10 (the summarizer embeds them at insert
+      // are included (the summarizer embeds them at insert
       // for find_window), so a dimension migration repopulates them too.
       conds.push(sql`${nodes.type}::text not in ('branch','telegram_message')`);
       // Nor the extract-exempt ones (Forum archive pages, a team request no
       // admin has acted on): they are never indexed, and a null embedding
-      // there is by design, not a dimension migration's hole (audit F27).
+      // there is by design, not a dimension migration's hole.
       conds.push(not(extractExemptSql()));
     } else {
       conds.push(isNotNull(nodes.embedding));

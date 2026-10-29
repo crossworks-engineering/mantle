@@ -14,15 +14,14 @@
  *    (@mantle/content-core/profile-projections), teamHidden;
  *  - MEMBER_ITEM_KINDS and CLIENT_ITEM_KINDS (./member-kinds), library: kept
  *    one pair release, then they go with the field;
- *  - the lists of ./kind-lists (A10 #12): extract, corpusMap, contextRef,
+ *  - the lists of ./kind-lists: extract, corpusMap, contextRef,
  *    embeds, mentionTarget, linkServes, exportAs, accepted, searchTool,
  *    peerPick, documentTitle. A literal list of kind names anywhere else is
  *    an arch count pinned at 0 (eslint-rules/arch-counts.mjs handKindLists);
- *  - what a write re-indexes (A10 #7): `indexed`, read by markContentChanged
+ *  - what a write re-indexes: `indexed`, read by markContentChanged
  *    (@mantle/db) and indexWorkFor below; a hand re-index anywhere else is
  *    an arch count pinned at 0 (eslint-rules/no-hand-reindex.mjs).
  *
- * Each field holds the value the code had when the registry came in (A1).
  * Who may share or see a kind changes here only as a reviewed diff of the
  * snapshot tests (kinds.test.ts and the tests next to each derived list),
  * never as a side effect of another list.
@@ -75,20 +74,19 @@ export type KindSpec = {
   /** The kind's item routes: the content prefix (`:id` follows it; the
    *  member route lists are generated from it, route-scope.ts) and the
    *  public API v1 prefix. Null where the kind has none. Nothing reads `v1`
-   *  yet: A4 generates the content rows of ROUTE_POLICY from both (plan v2,
-   *  section 7; D3, v1 answers as its base route). */
+   *  yet. */
   readonly route: { readonly content: string | null; readonly v1: string | null };
   /** Hidden from a team surface: 'never' (opt-in or not), 'private-corpus'
    *  (unless the owner opted in, teamPrivateReads), or not. */
   readonly teamHidden: 'never' | 'private-corpus' | false;
   /** The old Library lists: in MEMBER_ITEM_KINDS at `order`, and in
-   *  CLIENT_ITEM_KINDS too when `client`. Kept one pair release (A1), then
+   *  CLIENT_ITEM_KINDS too when `client`. Kept one pair release, then
    *  removed with them. */
   readonly library: { readonly order: number; readonly client: boolean } | false;
 
-  // ── A10 #12: the hand kind lists, now fields (./kind-lists derives them).
-  // Each holds the value its list had on main v0.300.46 (kind-lists.test.ts
-  // RECORDED), except the changes that test names.
+  // ── The kind lists, as fields (./kind-lists derives them).
+  // Each holds the value kind-lists.test.ts RECORDED, except the changes
+  // that test names.
 
   /** The extractor reads it by default (DEFAULT_EXTRACT_TYPES, a worker's
    *  `target_types` overrides), and the integrity view lists it
@@ -123,20 +121,19 @@ export type KindSpec = {
   /** Its title names a document, not a thing the user does (entity-names). */
   readonly documentTitle: boolean;
 
-  // ── A10 #7: what a write re-indexes.
+  // ── What a write re-indexes.
 
   /** Every field a write of this kind may change, with the index work its
    *  change redoes (markContentChanged, @mantle/db): 'embed', 'extract', or
    *  false (the field feeds no index). A write names the fields it changed;
    *  the most work any of them asks for is done once. Each value holds what
-   *  main did at v0.300.48, where a10-content-changed.main.json was
-   *  recorded, except the cells
+   *  a10-content-changed.main.json recorded, except the cells
    *  a10-content-changed.changes.json names. Turning a field to 'extract'
    *  makes every save of it a model call: a cost decision, never a tidy-up. */
   readonly indexed: Readonly<Record<string, IndexWork | false>>;
 };
 
-/** What a change of an indexed field makes the extractor redo (A10 #7).
+/** What a change of an indexed field makes the extractor redo.
  *  'embed': the vector only, rebuilt from the title and the summary the item
  *  keeps, or with none from the title and the text read locally (one
  *  embedding on the local embedder, never a model call; a table also
@@ -840,7 +837,7 @@ export type KindsWhere<P> = { [K in ItemKind]: Kinds[K] extends P ? K : never }[
  *  the lists derived here (their snapshot tests say so). Frozen: several
  *  names share one list (DEFAULT_EXTRACT_TYPES and LANDED_TYPES are both
  *  EXTRACT_KINDS), so a caller that sorted or pushed onto its own would
- *  change every other's (low round, F4). */
+ *  change every other's. */
 export function kindsWhere<K extends ItemKind = ItemKind>(
   pick: (spec: KindSpec, type: ItemKind) => boolean,
 ): readonly [K, ...K[]] {
@@ -900,7 +897,7 @@ export function treeKindsBy(key: 'order' | 'liveOrder'): readonly RegistryTreeKi
     .map((t) => t.kind as RegistryTreeKind);
 }
 
-// ── A10 #7: what a write re-indexes ─────────────────────────────────────────
+// ── What a write re-indexes ─────────────────────────────────────────────────
 
 /** The fields a write of kind `K` may name (its `indexed` keys). */
 export type IndexedField<K extends ItemKind> = keyof Kinds[K]['indexed'] & string;

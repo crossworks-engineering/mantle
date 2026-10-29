@@ -131,9 +131,9 @@ function completeDurable(
  * crash-recovery replay re-runs everything that isn't journaled.
  *
  * The two halves need opposite treatment:
- *  - **queue jobs** stay bare glue — re-enqueuing is the design (duplicates
- *    no-op at the engine's CAS) and the F4 contract depends on the replay
- *    re-emitting them.
+ *  - **queue jobs** stay bare glue: re-enqueuing is the design (duplicates
+ *    no-op at the engine's CAS) and the action-replay contract depends on
+ *    the replay re-emitting them.
  *  - **the approval fan-out is JOURNALED** — a notice has no CAS to no-op
  *    against, so an un-journaled replay would send the operator a second
  *    Telegram card / device push for a question they have already seen. The
@@ -150,8 +150,8 @@ async function emitDurable(actions: PostCommitAction[]): Promise<void> {
 }
 
 /** Exported for tests ONLY (the registered workflow below is what runs in
- *  production) — see the note on `runsResumeTurnImpl`: tests replay this with
- *  a journal-backed `DBOS.runStep` to guard the F4 action-replay contract. */
+ *  production); see the note on `runsResumeTurnImpl`: tests replay this with
+ *  a journal-backed `DBOS.runStep` to guard the action-replay contract. */
 export async function runsWorkerTurnImpl(
   input: RunsWorkerTurnInput,
 ): Promise<RunsWorkerTurnResult> {
@@ -164,17 +164,14 @@ export async function runsWorkerTurnImpl(
     async (): Promise<RunsWorkerTurnResult> => {
       // The claim happened in the runs worker (ready → running CAS under the
       // per-run cap). Anything else here is a stale wake-up: swept, cancelled,
-      // or already completed — ack by returning (the §5b idempotency
-      // discipline, applied to DBOS deliveries).
+      // or already completed: ack by returning (idempotent DBOS deliveries).
       //
-      // JOURNALED (final audit F4): this stale check reads state the workflow
-      // itself mutates (completeItem). As bare glue it re-decided on a
-      // crash-recovery replay — the item, completed by the journaled
-      // complete_item pre-crash, read as terminal and the replay exited
-      // 'stale' before re-reaching the journaled actions, so
-      // enqueueRunActionsSafe never re-ran and the recorded PostCommitActions
-      // were dropped (sweep-healed, but the "replays the recorded actions"
-      // contract was false). Journaling the load pins the decision: a replay
+      // JOURNALED: this stale check reads state the workflow itself mutates
+      // (completeItem). As bare glue it would re-decide on a crash-recovery
+      // replay: the item, completed by the journaled complete_item
+      // pre-crash, reads as terminal and the replay exits 'stale' before
+      // re-reaching the journaled actions, so the recorded PostCommitActions
+      // are dropped. Journaling the load pins the decision: a replay
       // walks the same path to complete_item and re-enqueues its recorded
       // actions (duplicates no-op at the engine CAS).
       const item = await runDurableStep('load_item', async () => {
@@ -331,7 +328,7 @@ export async function runsWorkerTurnImpl(
         const groupTools = await resolveAgentToolGroups(run.ownerId, worker.toolGroupSlugs ?? []);
         const allowedTools = await resolveAgentTools(run.ownerId, effectiveToolSlugs(groupTools));
 
-        // Arch A2a: the turn runs as the run's login as it is now, else the
+        // The turn runs as the run's login as it is now, else the
         // owner (login(owner)).
         const turnActor = run.loginId
           ? await loginActorNow(run.loginId, 'workflow:runs-worker-turn')
@@ -383,9 +380,8 @@ export async function runsWorkerTurnImpl(
                 ...workerThinking(worker),
                 initialMessages,
                 tools: allowedTools,
-                // The owner's own run (client logins C4): a missing surface is
-                // not the owner. It carries the run's login (A0 fix round,
-                // M1), as the item path does.
+                // The owner's own run: a missing surface is not the owner. It
+                // carries the run's login, as the item path does.
                 surface: run.loginId
                   ? { kind: 'owner', via: 'run', loginId: run.loginId }
                   : { kind: 'owner', via: 'run' },
@@ -419,7 +415,7 @@ export async function runsWorkerTurnImpl(
           ...(tc.error ? { error: tc.error.slice(0, 200) } : {}),
         }));
         // A reply written after the worker read third-party text (a tool
-        // result or failure outcomeIsThirdParty marks, fix round 1, LOW-6)
+        // result or failure outcomeIsThirdParty marks)
         // is stored marked, as a tool_call item's result is: a model that
         // reads the run state (run_state, run_plan, the resume turn) reads
         // it fenced as data.
@@ -475,7 +471,7 @@ export async function runsWorkerTurnImpl(
         DBOS.span?.setAttribute('mantle.error', msg);
         DBOS.logger.error(`[runs_worker_turn] FAILED (item=${item.id}): ${msg}`);
         // The stored result says a provider failure's fixed sentence; its
-        // body stays in the log above (A10 #10 fix round 2). Our own errors
+        // body stays in the log above. Our own errors
         // keep their text.
         const message = isProviderHttpFailure(err)
           ? publicProviderErrorMessage(err, 'runs_worker_turn')
@@ -486,7 +482,7 @@ export async function runsWorkerTurnImpl(
   );
 }
 
-// Arch A2a: the workflow's bookkeeping is the runner's own work; the turn
+// The workflow's bookkeeping is the runner's own work; the turn
 // itself binds the run's login.
 export const runsWorkerTurnWorkflow = registerActorWorkflow(
   RUNS_WORKER_TURN_WORKFLOW,

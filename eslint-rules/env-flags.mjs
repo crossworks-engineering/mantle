@@ -1,7 +1,7 @@
 /**
- * Flags and env from one place (A10 #11, docs/configuration.md "Flags and
- * env"). Four patterns had copies across the repo; each is now counted, and
- * outside its named list the count is 0:
+ * Flags and env from one place (docs/configuration.md "Flags and
+ * env"). Four patterns are counted, and outside its named list each count
+ * is 0:
  *
  *  - a raw `process.env.X` / `process.env[...]` read (the ESLint
  *    no-restricted-syntax rule already refused most; this count names every

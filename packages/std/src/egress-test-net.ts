@@ -1,5 +1,5 @@
 /**
- * A fake network for the egress proof tables (A10 part 1, docs/egress.md):
+ * A fake network for the egress proof tables (docs/egress.md):
  * test support, never imported by product code.
  *
  * It stands in for the two things an outbound fetch touches outside the

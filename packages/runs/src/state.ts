@@ -34,8 +34,8 @@ export type CompiledRunItem = {
   label: string;
   /** One-line outcome for terminal items (truncated result / failure). */
   outcome?: string;
-  /** Its result is third-party content (A5 step 6a, carried L4: a tool
-   *  whose result the tool loop fences, stored with the item): a model that
+  /** Its result is third-party content (a tool whose result the
+   *  tool loop fences, stored with the item): a model that
    *  reads the run state reads it fenced as data (runStateUntrusted). */
   untrusted?: true;
   sideEffecting?: boolean;
@@ -218,8 +218,7 @@ export async function compileRunState(db: Db, runId: string): Promise<CompiledRu
   };
 }
 
-/** Whether any item of a compiled run holds third-party content (A5 step
- *  6a, carried L4): a model that reads its state reads it fenced as data
+/** Whether any item of a compiled run holds third-party content: a model that reads its state reads it fenced as data
  *  (run_state and run_plan answer `untrusted`, the resume turn fences the
  *  state it puts in its prompt). */
 export function runStateUntrusted(compiled: CompiledRun): boolean {

@@ -73,7 +73,7 @@ export function startTicker<T>(opts: TickerOpts<T>): Ticker {
   const { name, everyMs, backoffCapMs, run, onSuccess } = opts;
   const logger = opts.logger ?? defaultLogger;
 
-  // Arch A2a: each tick runs as system(tick:<name>), e.g. tick:heartbeat-tick.
+  // Each tick runs as system(tick:<name>), e.g. tick:heartbeat-tick.
   const actor = systemActor(`tick:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`);
 
   // Backoff state, previously a pair of `let`s per call site: the failures

@@ -1,14 +1,12 @@
 /**
- * Every feature switch, its source and its default, in one table (A10 #11;
- * docs/configuration.md, "Flags and env"). `feature(name)` is the one
+ * Every feature switch, its source and its default, in one table
+ * (docs/configuration.md, "Flags and env"). `feature(name)` is the one
  * reader: an env switch in the one flag dialect (parse.ts), a profile
  * boolean through `profileFlag` (@mantle/client-types/profile-flags), an
  * optional service through `serviceEnabled` (services.ts).
  *
- * Why: the survey (A10 #11) found 7 `isXEnabled()` functions each parsing
- * its own env var, the runs gate checked in five places, and one variable
- * (MANTLE_TURN_STREAMING) read twice with two answers: the SSE route's
- * reader ignored the legacy name its replay buffer honoured. A switch named
+ * Why: a switch parsed at each site can answer differently in two places
+ * (one reader honouring a legacy name another ignores). A switch named
  * here has one answer wherever it is read. An `isXEnabled` definition
  * outside this file is a lint error (eslint-rules/env-flags.mjs).
  */

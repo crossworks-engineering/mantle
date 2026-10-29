@@ -1,5 +1,5 @@
 /**
- * no-raw-acl-columns (workspaces arch plan v2, section 11; A0): code outside
+ * no-raw-acl-columns: code outside
  * packages/db does not read the raw ACL columns (read_ws, write_ws, home_ws,
  * and their camelCase names). Access goes through @mantle/db: the row rules,
  * item-rights.ts, the grant helpers. Comments are exempt.
@@ -12,8 +12,8 @@
 import { rawAclLines, rawAclSwept, repoPathOf, pinnedRule } from './arch-counts.mjs';
 
 /**
- * @type {Record<string, number>} lines per file: none since A6 (25 files,
- * 86 lines at A0). The rules come from the database (item-acl.ts: the scope
+ * @type {Record<string, number>} lines per file: none. The rules come from
+ * the database (item-acl.ts: the scope
  * forms, and the array forms for a login asked on the system pool and the
  * previews); the facts (an item's home, the workspaces holding it) from
  * item-acl.ts too. A new read is a lint error anywhere outside packages/db.

@@ -89,8 +89,8 @@ export type AgentSpend = {
   tokensIn: number;
   tokensOut: number;
   cacheReadTokens: number;
-  /** Embedding input tokens, apart from the completion tokens above (A10 #5).
-   *  Absent from a server before it. */
+  /** Embedding input tokens, apart from the completion tokens above.
+   *  Absent from an older server. */
   tokensEmbed?: number;
   runs: number;
 };
@@ -127,8 +127,8 @@ export type DailySpend = {
   tokensIn: number;
   tokensOut: number;
   cacheReadTokens: number;
-  /** Embedding input tokens, apart from the completion tokens above (A10 #5).
-   *  Absent from a server before it. */
+  /** Embedding input tokens, apart from the completion tokens above.
+   *  Absent from an older server. */
   tokensEmbed?: number;
   runs: number;
 };
@@ -646,11 +646,10 @@ export type SystemHealth = {
     connections: number | null;
     cacheHitPct: number | null;
     topTables: { name: string; bytes: number }[];
-    /** Who the app's system pool logs in as (workspaces arch A9):
-     *  'runtime' = mantle_runtime, not a superuser and owning no table (a
-     *  box after its roll, MANTLE_DB_RUNTIME_ROLE=1); 'superuser' = the
-     *  migrator's superuser (before the roll); 'other' = anything else.
-     *  Absent from a server before A9. */
+    /** Who the app's system pool logs in as: 'runtime' = mantle_runtime,
+     *  not a superuser and owning no table (MANTLE_DB_RUNTIME_ROLE=1);
+     *  'superuser' = the migrator's superuser; 'other' = anything else.
+     *  Absent from an older server. */
     role?: { mode: 'runtime' | 'superuser' | 'other'; user: string } | null;
   };
   storage: {
@@ -812,8 +811,8 @@ export type ModeratedTelegramChat = AgentTelegramChat & {
   agentSlug: string | null;
 };
 
-/** What POST /api/telegram/pair answers WITHOUT `confirm` (W7d fix round 1,
- *  M3): what the code would pair, so the user sees whose chat it is before it
+/** What POST /api/telegram/pair answers WITHOUT `confirm`: what the code
+ *  would pair, so the user sees whose chat it is before it
  *  becomes theirs. Nothing is paired. Confirm with the same code,
  *  `confirm: true` and this `previewToken` (a confirm without it is 400). */
 export type TelegramPairPreview = {
@@ -1003,8 +1002,8 @@ export type Traffic = {
   tokensIn: number;
   tokensOut: number;
   tokensCacheRead: number;
-  /** Embedding input tokens, apart from the completion tokens above (A10 #5).
-   *  Absent from a server before it. */
+  /** Embedding input tokens, apart from the completion tokens above.
+   *  Absent from an older server. */
   tokensEmbed?: number;
 };
 

@@ -1,16 +1,15 @@
 /**
- * Route plumbing (A10 part 2, A10 #8; docs/request-plumbing.md): what a
+ * Route plumbing (docs/request-plumbing.md): what a
  * route file of the HTTP tier (server/web/app/**\/route.ts) does not do
  * itself: read its body, put a caught error's text in a reply, take a rate
  * limit.
  *
- * no-direct-body-reads (fold 1, one body reader): a route reads its body
+ * no-direct-body-reads (one body reader): a route reads its body
  * with readBody(req, Schema) or readJson(req) (server/web/lib/read-body.ts),
  * never `req.json()`, `req.text()`, `req.formData()`, `req.arrayBuffer()`,
  * `req.blob()` or the `req.body` stream. The reader gives the one 400 for a
  * body that is not JSON, and the route loader caps every read at the
- * route's ceiling (capRequestBody). Before: 178 route files called
- * `req.json()` with a fallback of their own. The files that read the body
+ * route's ceiling (capRequestBody). The files that read the body
  * another way are named below with the reason (BODY_READ_ALLOW); the
  * scoreboard pins both numbers (arch-counts.mjs).
  *
@@ -47,14 +46,12 @@ export const BODY_READ_ALLOW = Object.freeze({
 });
 
 /**
- * no-error-text-replies (fold 2, one error answer): a route never puts a
+ * no-error-text-replies (one error answer): a route never puts a
  * caught error's text in its reply. It throws, and app.onError answers:
  * a domain error by the one table (@mantle/std domain-errors.ts: its
  * status and public text, the same a tool says), a refusal by the one
- * mapper, anything else with the opaque 500 and a log line. 86 route files
- * did on main; fold 2 moved 58 of them (the first tranche, then the typed
- * catches, the slug-taken catches and the catch-alls). The files that still
- * do are named here, each with its reason: none may be added, and the list
+ * mapper, anything else with the opaque 500 and a log line. The files that
+ * still do are named here, each with its reason: none may be added, and the list
  * only shrinks (eslint-rules/arch-lints.test.ts holds it to the files that
  * still do).
  *
@@ -62,7 +59,7 @@ export const BODY_READ_ALLOW = Object.freeze({
  * it is the answer of a service the owner set up and came to test or fix
  * (a model provider, a connector's server, the relay, a parser of the
  * owner's own file). NOT_YET: the route answers a dialog in a shape of its
- * own, and the move needs the client (jackdaw) to read the one error
+ * own, and the move needs the client to read the one error
  * answer first (docs/request-plumbing.md, "What stays named").
  */
 const MODEL_TEST =
@@ -114,20 +111,18 @@ export const ERROR_TEXT_ALLOW = Object.freeze({
 });
 
 /**
- * no-route-rate-limits (A10 #8, rate limits on the ROUTE_POLICY row): a
+ * no-route-rate-limits (rate limits on the ROUTE_POLICY row): a
  * route file takes no rate limit and answers no cross-site refusal of its
  * own. A limit is a row's (server/web/lib/route-limits.ts: a named limit in
  * RATE_LIMITS, the route file's declaration's `limits`), taken by the gate once the
  * caller is answered and answered with the one 429; the cross-site refusal
  * of a public auth post is the row's `crossSite`, answered by the gate
- * before any limit. Before: 38 limits, 32 calls in 26 route files and more
- * in the helpers their handlers called first, each with its own max,
- * window and 429. The files that still take one are named here with the
+ * before any limit. The files that still take one are named here with the
  * reason: a budget around a check inside the handler, not a gate on the
  * request. The rule and the count read every server/web file, not only
- * route files (A10 #8 low round, L2: a limiter in a helper the handler calls
- * first was invisible), so the gate itself and the key budgets are named
- * too. The scoreboard pins both numbers (arch-counts.mjs).
+ * route files (a limiter in a helper the handler calls first is a limit
+ * too), so the gate itself and the key budgets are named too. The
+ * scoreboard pins both numbers (arch-counts.mjs).
  */
 export const RATE_LIMIT_ALLOW = Object.freeze({
   'server/web/lib/route-limits.ts':
@@ -214,11 +209,11 @@ function catchBlocks(code) {
 
 /**
  * The catch blocks of `code` (comments stripped) that put the caught
- * error's text in a reply (fold 2): a statement that builds a reply (a
+ * error's text in a reply: a statement that builds a reply (a
  * `json(` or `.json(`, a `Response`, a redirect, a `body:`, a `return` of
  * anything, such as a route's own `bad(...)` or HTML page helper, or an
  * `error:` or `message:` field, such as an item of a `failed` list the
- * reply carries; fix round 1, L5) and carries the error's message
+ * reply carries) and carries the error's message
  * (`err.message`, `errorMessage(err)`, `String(err)`, `${err}`) or a name
  * made of it. A text heuristic, for the counts; logging is not a reply.
  */
@@ -350,8 +345,8 @@ export const noRouteRateLimits = {
     const file = context.filename;
     const path = webPath(file);
     if (!path || /\.test\.[cm]?[jt]sx?$/.test(file)) return {};
-    // Any server/web file: a limiter in a helper is a limit too (A10 #8 low
-    // round, L2). The cross-site refusal is a route file's question only.
+    // Any server/web file: a limiter in a helper is a limit too. The
+    // cross-site refusal is a route file's question only.
     const route = isRoutePath(file);
     const allowed = Object.hasOwn(RATE_LIMIT_ALLOW, path);
     return {
@@ -395,7 +390,7 @@ const HTTP_METHODS = new Set(DECLARED_METHODS);
 export { ROUTE_POLICY_EXPORT };
 
 /**
- * route-policy-declared (the route declarations, plan v3.2): every route file declares its
+ * route-policy-declared: every route file declares its
  * policy beside its handlers, `export const policy = routePolicy({ ... })`
  * (server/web/lib/auth/route-declaration.ts), naming each method it exports
  * and no other (a HEAD the GET handler answers takes its GET's). The boot

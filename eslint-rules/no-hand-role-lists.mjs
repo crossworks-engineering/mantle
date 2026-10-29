@@ -1,5 +1,5 @@
 /**
- * no-hand-role-lists (arch plan A10 #13): a role, area or actor name list is
+ * no-hand-role-lists: a role, area or actor name list is
  * read from its source (ROLE_NAME_SOURCES in eslint-rules/arch-counts.mjs:
  * LOGIN_ROLES, HISTORY_ACTORS and RECALL_ACTOR_KINDS in
  * packages/client-types/src/role-names.ts; WORKSPACE_AREAS, ACCESS_LEVELS
@@ -21,8 +21,8 @@
  *
  * The same count is the scoreboard's handRoleLists (pinned at 0). The names
  * are read from the source files of the repo this rule file is in, found
- * from the rule file and not from ESLint's working directory (low round,
- * L2); a missing source is an error, never a silent pass.
+ * from the rule file and not from ESLint's working directory; a missing
+ * source is an error, never a silent pass.
  */
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

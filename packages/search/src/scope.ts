@@ -1,11 +1,11 @@
 /**
- * The small-scope exact path (workspaces plan section 3, phase W3).
+ * The small-scope exact path.
  *
  * Under a workspace scope, row security keeps the rows whose node the scope
  * reads. An HNSW scan walks the WHOLE graph and drops the rows the rule
  * hides, so for a scope that holds a small share of a big brain it returns
- * short or poor results (recall@50 was 0.54 for a client role in the
- * 2026-09 spike) and walks far to fill its pool. For such a scope the vector
+ * short or poor results (recall@50 measured 0.54 for a client
+ * role) and walks far to fill its pool. For such a scope the vector
  * arms search exactly instead: the scope's items by the GIN index on
  * nodes.read_ws, then their chunks, windows or facts by node id, ordered by
  * the true distance. A few thousand vectors are a few milliseconds.
@@ -57,7 +57,7 @@ const recentCounts = new Map<string, { at: number; byTable: Map<ScopeTable, Prom
 function countsFor(scope: WorkspaceScope): Map<ScopeTable, Promise<number>> {
   const own = counted.get(scope);
   if (own) return own;
-  // Everything that changes what the scope reads (W7a fix round 1): its
+  // Everything that changes what the scope reads: its
   // kind, workspaces, Moderator workspaces (drafts), login and a link's
   // served list.
   const key = [

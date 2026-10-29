@@ -6,8 +6,8 @@ import { env } from '@mantle/config';
 /**
  * Storage layout: sqlite workbook files per Table node, under
  *   ${TABLE_DB_DIR}/<ownerId>/<nodeId>.r-<token>[.draft].sqlite
- * (a new name per revision since the store brokers, A3b; files from before
- * keep <nodeId>.sqlite and <nodeId>.draft.sqlite). The registry row names a
+ * (a new name per revision; older files keep <nodeId>.sqlite and
+ * <nodeId>.draft.sqlite). The registry row names a
  * table's files (tables.storage_path, tables.draft_path): readers resolve
  * them through it (@mantle/content table-storage.ts draftAbsOf), never by
  * deriving a name here.

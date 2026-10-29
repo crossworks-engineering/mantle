@@ -1,6 +1,5 @@
 /**
- * The files store's object bytes (workspaces arch A3b part 2, plan 20.3;
- * docs/store-brokers.md): the ONLY importer, for file bytes, of the object
+ * The files store's object bytes (docs/store-brokers.md): the ONLY importer, for file bytes, of the object
  * store's write API (@mantle/storage/write; the store-brokers lint pins
  * it). An email attachment's bytes and a OneDrive or SharePoint file's are
  * stored here first, under their content address, then the row that names
@@ -17,7 +16,7 @@ import { putContent } from '@mantle/storage/write';
 
 /** Store `bytes` under their content address, before the row that names
  *  them: returns the key the row records. Never inside a transaction (a
- *  network write: plan 20.3). */
+ *  network write). */
 export async function stageFileObject(bytes: Buffer, mimeType: string): Promise<{ key: string }> {
   const { key } = await putContent(bytes, mimeType);
   return { key };

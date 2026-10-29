@@ -1,6 +1,6 @@
 /**
  * Every number the tree reads from the environment, with its default and its
- * range, in one table (A10 #11; docs/configuration.md, "Flags and env").
+ * range, in one table (docs/configuration.md, "Flags and env").
  * A site reads `envNum('NAME')`; the default never appears at the site, so
  * two sites reading one variable cannot disagree (MANTLE_SALIENCE_LAMBDA is
  * read in three places, MANTLE_EXTRACT_EXPIRE_MIN in three, the member

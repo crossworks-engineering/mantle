@@ -168,11 +168,11 @@ async function resolveResponderAgent(
 }
 
 /**
- * Arch A2a: who the Telegram turn for `messageId` runs as. The login its chat
+ * Who the Telegram turn for `messageId` runs as. The login its chat
  * is paired to, as it is now (the owner's own chat as login(owner)); a chat
  * with no login is refused by the turn, which runs as system until then. A
  * lookup that fails runs the turn as system too, so the turn's own handling
- * meets the error as it did before the lookup existed. With the check off
+ * meets the error itself. With the check off
  * there is no lookup: system(workflow:telegram-turn).
  */
 export async function telegramTurnActor(messageId: string): Promise<Actor> {
@@ -354,7 +354,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     logger.error(
       `telegram chat refused (${loginRefused ?? 'no_login'}): ${messageId}. The chat's user pairs it again with a new code.`,
     );
-    // Back to pending (W7d fix round 1, L4): the next message gets a fresh
+    // Back to pending: the next message gets a fresh
     // code, so the person can pair it again; until then nothing is stored.
     if (loginRefused !== 'no_assistant') {
       await unpairRefusedChat({ ownerId, chatId: row.chatPk, loginId }).catch((err: unknown) =>
@@ -709,7 +709,7 @@ function runSummarize(ownerId: string, agentId: string): void {
 function scheduleSummarize(ownerId: string, agentId: string): void {
   summarizePending.add(agentId);
   if (summarizeTimer) return;
-  // Arch A2a: the summarizer is the runner's own work.
+  // The summarizer is the runner's own work.
   summarizeTimer = setTimeout(() => {
     summarizeTimer = null;
     const batch = [...summarizePending];
@@ -771,7 +771,7 @@ export interface AgentRuntimeOptions {
 }
 
 /**
- * Arch A2a: a LISTEN handler for `reason`. A notification arrives on the
+ * A LISTEN handler for `reason`. A notification arrives on the
  * listen connection's own socket, with no actor, so each one runs `handler`
  * as system(reason) (listen:telegram-message …); what it starts carries it.
  */
@@ -785,7 +785,7 @@ export function listenAs(
   };
 }
 
-/** Arch A2a: the boot runs as system(boot:agent-runtime); each listener and
+/** The boot runs as system(boot:agent-runtime); each listener and
  *  tick binds its own reason. */
 export function startAgentRuntime(opts: AgentRuntimeOptions) {
   return runAsSystem('boot:agent-runtime', () => bootAgentRuntime(opts));

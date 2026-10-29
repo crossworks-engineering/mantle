@@ -3,7 +3,7 @@
  * hand-written verbs stay hand-written because their MCP argument names
  * differ from the builtin's (id vs file_id, path vs folder id) and renaming
  * them would break shipped connectors: their definitions, policy and bodies
- * are in mcp-defs.ts (A5 step 2).
+ * are in mcp-defs.ts.
  */
 
 import { FILE_MANAGE_TOOLS, FILE_OPERATOR_TOOLS } from '@mantle/tools';
@@ -15,9 +15,9 @@ export function registerFileTools(ctx: McpRegisterContext): void {
 
   // ─── files / folders ──────────────────────────────────────────────────────
 
-  // Create and destroy: bridged from `mcpOnly` builtins since tier 3 of the
-  // 2026-09-02 audit. No in-app tool group grants these, so promoting them
-  // shared the implementation without widening what any agent can reach.
+  // Create and destroy: bridged from `mcpOnly` builtins. No in-app tool
+  // group grants these, so sharing the implementation widens nothing an
+  // agent can reach.
   registerBuiltinTools(FILE_OPERATOR_TOOLS);
 
   // folder_describe, folder_rename: hand-written (mcp-defs.ts).

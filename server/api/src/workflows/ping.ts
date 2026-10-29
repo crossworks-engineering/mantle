@@ -33,7 +33,7 @@ async function pingImpl(note: string): Promise<{ ok: true; note: string; dbNow: 
   return { ok: true, note, dbNow };
 }
 
-// Arch A2a: the runner's own work.
+// The runner's own work.
 export const pingWorkflow = registerActorWorkflow(
   'pingWorkflow',
   systemEntry('workflow:ping'),

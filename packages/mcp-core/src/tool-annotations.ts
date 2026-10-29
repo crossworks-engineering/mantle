@@ -7,14 +7,12 @@
  *
  * Why: Claude Desktop and claude.ai offer "Always allow" only on a tool
  * that carries `readOnlyHint: true`. Without hints every tool looked like a
- * write, and a user had to approve every search again and again
- * (2026-10-28, a Teams account on a client box).
+ * write, and a user had to approve every search again and again.
  *
- * The rules (dev-brain task b5bdb402). Every fact is DECLARED on the
- * tool's policy (@mantle/tools tool-policy.ts; the hand-written MCP
- * definitions' in mcp-surface-policies.ts), never derived from a name
- * here (workspaces arch plan v2 section 11: access policy is not a list
- * of slugs):
+ * The rules. Every fact is DECLARED on the tool's policy (@mantle/tools
+ * tool-policy.ts; the hand-written MCP definitions' in
+ * mcp-surface-policies.ts), never derived from a name here (access policy
+ * is not a list of slugs):
  *
  *  - `title`: the slug.
  *  - `readOnlyHint`: true exactly when the policy's `effect` is `read` (a

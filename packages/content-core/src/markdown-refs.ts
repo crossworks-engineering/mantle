@@ -110,7 +110,7 @@ export function inlineMediaImageIds(source: string | undefined | null): Set<stri
 }
 
 /** The node type each scheme requires (`mention:node:` takes any node, so it
- *  has none): the one place the scheme names a kind (A10 #12). */
+ *  has none): the one place the scheme names a kind. */
 const SCHEME_NODE_TYPE = {
   media: 'file',
   page: 'page',

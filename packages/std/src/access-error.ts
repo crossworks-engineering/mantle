@@ -1,13 +1,10 @@
 /**
- * Access refusals and THE one mapper (workspaces arch plan v2, sections 2
- * and 10; A3c, the gate core). Every refusal, from the gate's own steps or
- * from the database, is read here into what each surface says:
+ * Access refusals and THE one mapper. Every refusal, from the gate's own
+ * steps or from the database, is read here into what each surface says:
  *
- *  - an HTTP answer: the status and the body, exactly as the routes answer
- *    today (the wire stays { error, reason, message }; a `code` is there
- *    where the route already sends one, A4 adds it to the rest with the
- *    jackdaw pair release);
- *  - a tool's error text, exactly as the tools say it today.
+ *  - an HTTP answer: the status and the body ({ error, reason, message },
+ *    and a `code` where the route sends one);
+ *  - a tool's error text.
  *
  * The HTTP layer (server/web/server/scope-refusal.ts), the tool error text
  * (databaseErrorPublic, publicToolError) and the gate (@mantle/db gate.ts)
@@ -61,9 +58,9 @@ export const ADMIN_KIND_CREATE_ERROR =
   'This kind of item (a contact, a journal entry, a saved place) lives in the Admin workspace only, and you are not a user of it. Make a note or a page instead.';
 
 /** The refusal of a caller whose scope reads no workspace: one constant,
- *  in the words the owner MCP surface says today (@mantle/mcp-core mcp-scope.ts,
- *  NO_WORKSPACE_ERROR). It names MCP; a subject-neutral wording for the
- *  other surfaces is A5's (a text change users see). */
+ *  in the words of the owner MCP surface (@mantle/mcp-core mcp-scope.ts,
+ *  NO_WORKSPACE_ERROR). It names MCP on every surface; rewording it is a
+ *  text change users see. */
 export const NO_SCOPE_ERROR =
   'This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one.';
 
@@ -128,7 +125,7 @@ export const DATABASE_ERROR_PUBLIC =
   'the database could not run this request (the details are in the server log)';
 
 /** What a person sees when a folder move or delete is refused because the
- *  folder holds items they cannot read (arch A3a, migration 0282). */
+ *  folder holds items they cannot read (migration 0282). */
 export const HIDDEN_ROWS_PUBLIC = 'This folder holds items you cannot move.';
 
 /** A Postgres error's fields that callers read. */
@@ -175,13 +172,12 @@ const SCOPE_WRITE_REFUSALS = new RegExp(
 /**
  * A write the workspace checks refused (42501 with one of their own
  * messages): an Admin user's move, create in a folder or delete of an item
- * its workspaces may not change (0241, 0245, 0266, W6a fix round 1); a
- * change to, or a share of, a read-only snapshot copy (0267, W6b fix round
- * 1); the create home's refusals (mantle_default_home, 0267); the write
+ * its workspaces may not change (0241, 0245, 0266); a change to, or a share
+ * of, a read-only snapshot copy (0267); the create home's refusals (mantle_default_home, 0267); the write
  * role's own checks (0278, 0279: edit, create, grant, a kind change, an
  * app's placement) and its row rule ("new row violates row-level security
- * policy", a row moved out of what the scope reads; arch A2b2b); the edit
- * check's (arch A3a, 0280 and 0281), which also carry a detail the mapper
+ * policy", a row moved out of what the scope reads); the edit check's (0280
+ * and 0281), which also carry a detail the mapper
  * reads (editRefusalDetail). Matched by message too, so a missing grant
  * (also 42501, isPermissionGap) stays a 500.
  */
@@ -217,9 +213,9 @@ export function editRefusalDetail(err: unknown): EditRefusalDetail | null {
  * The edit check's refusal of a write to an item, raised in process as the
  * database raises it (mantle_edit_refuse, 0280: 42501, the detail, the
  * check's own words), so the one mapper reads it as the database's: no_read
- * a 404, no_edit a 403 item-workspace. For an entry whose answer to that
- * write was the database's refusal before the gate asked first (a /api/v1
- * route, whose app.onError maps it: A5 step 4 fix round 2).
+ * a 404, no_edit a 403 item-workspace. For an entry whose answer must match
+ * the database's own refusal of that write (a /api/v1 route, whose
+ * app.onError maps it).
  */
 export function editCheckRefusalError(detail: 'no_read' | 'no_edit'): Error {
   return Object.assign(new Error('not allowed to edit this item'), {
@@ -309,13 +305,13 @@ const GATE_CODES: Record<AccessKind, string> = {
 };
 
 /** The words of the database's refusals that name a reason (the HTTP
- *  body's message, and since A5 step 5 a tool's text too). */
+ *  body's message and a tool's text). */
 export const READ_ONLY_APP_MESSAGE = 'This app is Informational: its data is read only.';
 const RO_ACTOR_MESSAGE = 'This caller only reads: it cannot change anything.';
 export const ITEM_WORKSPACE_MESSAGE = 'You cannot change this item in your workspaces.';
 
-/** The words of a refused edit of a read-only snapshot copy (W6b fix round
- *  1): the HTTP body's message (with `readOnly: true`, which jackdaw reads)
+/** The words of a refused edit of a read-only snapshot copy: the HTTP
+ *  body's message (with `readOnly: true`, which the client reads)
  *  and a tool's text. */
 export const READ_ONLY_COPY_MESSAGE =
   'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.';
@@ -323,12 +319,12 @@ export const READ_ONLY_COPY_MESSAGE =
 /** The database's refusal of an edit of a snapshot copy (0267's triggers,
  *  and SnapshotCopyReadOnlyError in @mantle/db, which raises its words
  *  first). A share or a grant of a copy has its own words ("not allowed to
- *  share this item"): the generic item-workspace answer, as before. */
+ *  share this item"): the generic item-workspace answer. */
 const SNAPSHOT_COPY_EDIT_REFUSAL =
   /^not allowed to change this item: it is a read-only snapshot copy/;
 
-/** What a tool says for a CREATE the workspace checks refused (A5 step 5
- *  fix round 1, L6), by the database's message: the HTTP answer stays the
+/** What a tool says for a CREATE the workspace checks refused, by the
+ *  database's message: the HTTP answer stays the
  *  item-workspace 403 (its body, byte for byte), but "You cannot change
  *  this item" misleads a tool that made nothing. The create home's two
  *  refusals (mantle_default_home, 0267), the write role's create check
@@ -351,8 +347,8 @@ const CREATE_REFUSAL_TOOL_TEXT: ReadonlyArray<readonly [RegExp, string]> = [
 ];
 
 /** Every text a tool says for an item-workspace refusal of the database:
- *  ITEM_WORKSPACE_MESSAGE, and a create's own words (A5 step 5 fix round
- *  2: for a reader that names them, the .db sweeps). */
+ *  ITEM_WORKSPACE_MESSAGE, and a create's own words (for a reader that
+ *  names them, the .db sweeps). */
 export const ITEM_WORKSPACE_TOOL_TEXTS: readonly string[] = Object.freeze([
   ITEM_WORKSPACE_MESSAGE,
   ...CREATE_REFUSAL_TOOL_TEXT.map(([, text]) => text),
@@ -408,8 +404,8 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
   }
   if (!scoped) return null;
   // An Informational app's data, or a caller that only reads: 403,
-  // reason read-only. A tool says the same words (A5 step 5, owner
-  // decision Q3 b: the mapper's clear reason, as the HTTP answer).
+  // reason read-only. A tool says the same words (the owner's rule: a tool
+  // hears the mapper's clear reason, as the HTTP answer).
   if (detail === 'read_only' || detail === 'ro_actor') {
     const message = detail === 'read_only' ? READ_ONLY_APP_MESSAGE : RO_ACTOR_MESSAGE;
     return {
@@ -422,10 +418,8 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
       toolText: message,
     };
   }
-  // An edit of a read-only snapshot copy (pre-check removal part 2, the
-  // CEO's decision to keep its answer): the item-workspace 403 in the
-  // copy's words, with readOnly, as the session's item gate answered it
-  // before the routes' pre-checks went. The one place that says it.
+  // An edit of a read-only snapshot copy: the item-workspace 403 in the
+  // copy's words, with readOnly. The one place that says it.
   const message = typeof pg.message === 'string' ? pg.message : '';
   if (SNAPSHOT_COPY_EDIT_REFUSAL.test(message)) {
     return {
@@ -444,10 +438,9 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
       toolText: READ_ONLY_COPY_MESSAGE,
     };
   }
-  // no_edit, or no detail (the workspace checks before A3a): 403, reason
-  // item-workspace, as before (jackdaw shows the message; no button keys on
-  // the reason since the "Add yourself" answer went, F4). A tool says the
-  // same words (A5 step 5, Q3 b).
+  // no_edit, or no detail (a workspace check that sets none): 403, reason
+  // item-workspace (the client shows the message; no button keys on the
+  // reason). A tool says the same words.
   return {
     kind: 'database',
     code: 'forbidden',
@@ -477,8 +470,8 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
  *    read-only), and any other workspace check (403 item-workspace). The
  *    HTTP answer needs the workspace check's own message (a 42501 that is a
  *    missing grant stays a 500). The tool text is the HTTP body's message
- *    for a read-only and an item-workspace refusal (A5 step 5, owner
- *    decision Q3 b), "not found" for an item the caller does not read, and
+ *    for a read-only and an item-workspace refusal (the owner's rule),
+ *    "not found" for an item the caller does not read, and
  *    the generic DATABASE_ERROR_PUBLIC for what the mapper does not name.
  */
 export function mapAccessError(err: unknown): AccessRefusal | null {

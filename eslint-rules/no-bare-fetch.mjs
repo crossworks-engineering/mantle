@@ -1,5 +1,5 @@
 /**
- * no-bare-fetch (A10 part 1, docs/egress.md): an outbound fetch of a URL a
+ * no-bare-fetch (docs/egress.md): an outbound fetch of a URL a
  * user, a model, a remote server or a linked peer gave goes through the one
  * egress fetch (`egressFetch` in @mantle/std/egress, or the tools'
  * guardedFetch / safeFetch over it): the address check on every hop, the
@@ -16,13 +16,14 @@
  * which kind of host it reaches and why, and no-bare-fetch.test.ts holds the
  * list to exactly the files that do.
  *
- * It flags a raw HTTP client the same way (fix round 2): an import, a
+ * It flags a raw HTTP client the same way: an import, a
  * require, a dynamic import or a createRequire load of `undici`,
  * `node:http`, `node:https`, `http`, `https`, `axios`, `got` or
  * `node-fetch` (a type-only import is not a use). RAW_HTTP_ALLOWED is that
  * inventory, held to exactly the files that do by the same test.
- * scripts/arch-scoreboard.ts still pins the bare fetch sites of the first
- * three packages swept (bareFetchSites), so that count can only go down.
+ * scripts/arch-scoreboard.ts also pins the bare fetch sites of three
+ * packages (bareFetchSites, BARE_FETCH_PACKAGES), so that count can only
+ * go down.
  */
 import { bareFetchSites, repoPathOf, stripComments } from './arch-counts.mjs';
 

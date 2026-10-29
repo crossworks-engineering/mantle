@@ -1,5 +1,5 @@
 /**
- * The one spend recorder (A10 #5, docs/spend-recording.md).
+ * The one spend recorder (docs/spend-recording.md).
  *
  * Every provider call's usage is written by `recordUsage`, in one shape
  * ({@link ProviderUsage}), from one place: the adapter registry of
@@ -17,7 +17,7 @@
  * Completion tokens and embedding tokens land apart: a completion's (chat,
  * stream, decision, vision, research) in the trace's tokens in/out, which the
  * member token budget reads; an embedding call's input tokens in the trace's
- * embed tokens, which it does not (A10 #5 fix round 1). Cost is one total:
+ * embed tokens, which it does not. Cost is one total:
  * every priced call counts toward a run budget.
  *
  * Cost: the provider's reported cost when it gave one, else the static price

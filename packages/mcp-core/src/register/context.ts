@@ -1,7 +1,7 @@
 /**
  * The closure every registrar shares: the server handle, the owner id, the
  * response-hygiene helpers, and the registration of builtins and
- * hand-written tools through the one gate (gated-tools.ts, A5 step 4).
+ * hand-written tools through the one gate (gated-tools.ts).
  *
  * registerMantleTools was one 921-line function whose helpers were captured
  * lexically by every registration in it. Each registrar now destructures this
@@ -37,13 +37,13 @@ export function makeRegisterContext(
   ownerId: string,
   transport: MantleMcpTransport,
   /** The owner path the builtins name: 'mcp', or 'federation' for a peer
-   *  that acts as the owner (plan page e5b854dd). */
+   *  that acts as the owner. */
   via: OwnerSurfaceVia = 'mcp',
   /** The login of this connection (its OAuth consent, its API key, the
-   *  login a peer is bound to), from the credential the route resolved
-   *  (W6b fix round 2, M-2). Absent on stdio. */
+   *  login a peer is bound to), from the credential the route resolved.
+   *  Absent on stdio. */
   loginId?: string,
-  /** The login's own connection (W7b): how it connected and its Write
+  /** The login's own connection: how it connected and its Write
    *  switch, for the app_data_* tools. Absent on stdio. */
   mcp?: LoginMcpChannel,
   /** The registration opt-ins the box holds besides the terminal (a
@@ -57,7 +57,7 @@ export function makeRegisterContext(
   const surface: ToolSurface = via === 'mcp' ? MCP_OWNER_SURFACE : { kind: 'owner', via };
   // The handlers get the connection's login with it: who deletes an app
   // decides whether the trash keeps it for the owner (app_delete). The
-  // channel goes with or without a login (W7b fix round 3): a peer bound to
+  // channel goes with or without a login: a peer bound to
   // an admin login that is not the owner's own peer has no loginId here,
   // and its `ownerKeysOff` must still reach the tools.
   const callSurface: ToolSurface = loginId
@@ -74,7 +74,7 @@ export function makeRegisterContext(
     gate ?? defaultMcpGate(loginId ?? ownerId, { transport, via, loginNamed: loginId });
 
   /** Run one builtin for this connection, through dispatch and the one
-   *  gate (A5 step 4): the call of a hand-written tool that runs a builtin
+   *  gate: the call of a hand-written tool that runs a builtin
    *  (`search` runs search_nodes), nested in that tool's own call. */
   async function callBuiltin(def: BuiltinToolDef, args: Record<string, unknown>) {
     return dispatchMcpBuiltin(
@@ -130,8 +130,7 @@ export function makeRegisterContext(
     server,
     ownerId,
     /** The connection's login (absent on stdio, and for a peer that names
-     *  none): whose thread a responder tool reads and writes (W7c fix
-     *  round 1, M1). */
+     *  none): whose thread a responder tool reads and writes. */
     loginId,
     transport,
     gate: callGate,

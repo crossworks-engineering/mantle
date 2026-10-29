@@ -105,7 +105,7 @@ export const xaiImageAdapter: ImageGenDispatcher = {
     if (!first?.b64_json) {
       if (first?.url) {
         // A URL in the provider's answer, not a fixed host: it goes through
-        // the one egress fetch (A10 part 1 fix round 1), so a URL that points
+        // the one egress fetch, so a URL that points
         // into private or metadata space is refused, and the read has a
         // deadline and a cap.
         const imgRes = await egressFetch(

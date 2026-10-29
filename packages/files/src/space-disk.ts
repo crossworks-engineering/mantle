@@ -1,6 +1,6 @@
 /**
- * The disk home of personal-space file bytes (member logins Phase 2, plan
- * v3.1 section 2: "file bytes have no owner segment").
+ * The disk home of personal-space file bytes (file bytes have no owner
+ * segment).
  *
  * Brain files mirror their ltree path under MANTLE_FILES_ROOT, and the
  * external-edit watcher files anything it finds there as the brain's. A
@@ -75,7 +75,7 @@ export function spaceFilePath(spaceId: string, nodeId: string): string {
 }
 
 /**
- * Where the bytes of a FOLDED file live (workspaces W6b, migration 0267): a
+ * Where the bytes of a FOLDED file live (migration 0267): a
  * member's file became a brain file, its bytes stayed in its old space's
  * directory, and `data.space_file` names that space. Null for every other
  * file (its bytes are where its tree path says). Rows change, bytes do not:
@@ -158,7 +158,7 @@ export async function removeSpaceFile(spaceId: string, nodeId: string): Promise<
   );
 }
 
-/** Thumbnails of one space's images (audit S9): inside the space, keyed by
+/** Thumbnails of one space's images: inside the space, keyed by
  *  node id, never in the brain's shared cache. */
 export function spaceThumbsDir(spaceId: string): string {
   return path.join(spaceDir(spaceId), 'thumbs');

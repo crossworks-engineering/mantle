@@ -15,9 +15,9 @@
  *    functions the migrations leave that write them;
  *  - the copies of "set the assistant of a workspace";
  *  - tool item pre-checks kept as legacy entries with no owner or end date;
- *  - the raw write SQL allowlist, capped at its pin. (The A8 coverage,
+ *  - the raw write SQL allowlist, capped at its pin. (The access matrix coverage,
  *    a8Uncovered and a8Exempt, is measured by the generator itself:
- *    server/web/server/a8-coverage.test.ts, S11a.)
+ *    server/web/server/a8-coverage.test.ts.)
  *
  * The SQL functions are read from the migrations in journal order (create,
  * replace, rename, drop, security definer), so the count needs no
@@ -621,7 +621,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
       requestSystemExits_loginSelf: exits['login-self'] ?? 0,
       requestSystemExits_adminWrite: exits['admin-write'] ?? 0,
       requestSystemExits_other: exitTotal - known,
-      // Plan v3.2 S7a: the exits whose why REQUEST_SYSTEM_ROUTE routes narrow.
+      // The exits whose why REQUEST_SYSTEM_ROUTE routes narrow.
       requestSystemExits_narrow: Object.entries(exits)
         .filter(([why]) => requestRoutes[why] === 'narrow')
         .reduce((a, [, n]) => a + n, 0),

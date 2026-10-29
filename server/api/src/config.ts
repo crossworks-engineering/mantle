@@ -75,7 +75,7 @@ export function runsTurnConcurrency(): number {
 
 /** Concurrency cap for MEMBER_TURN_QUEUE: in-flight member chat turns across
  *  every member, off the owner's RUNNER_QUEUE so members never queue ahead of
- *  the owner (audit F31). Low by default; a member turn waiting a little is
+ *  the owner. Low by default; a member turn waiting a little is
  *  fine. Override with MANTLE_MEMBER_TURN_CONCURRENCY. */
 export function memberTurnConcurrency(): number {
   return envNum('MANTLE_MEMBER_TURN_CONCURRENCY');

@@ -6,7 +6,7 @@
  * a durable table is a later step, once a shadow week says the hit rate is
  * worth a migration.
  *
- * The one TTL cache of @mantle/std (TtlCache, A10 #15), bounded and least
+ * The one TTL cache of @mantle/std (TtlCache), bounded and least
  * recently used, with the key this package hashes (node:crypto stays here:
  * std is bundled for the browser too).
  */

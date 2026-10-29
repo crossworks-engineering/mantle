@@ -29,7 +29,7 @@ export default defineConfig({
     environment: 'node',
     // Writes the route manifest the security sweeps need (vitest.global-setup.ts).
     globalSetup: ['./vitest.global-setup.ts'],
-    // Fails a test on any actor miss (workspaces arch A2a): the suite runs
+    // Fails a test on any actor miss: the suite runs
     // the actor check in warn and proves zero misses.
     setupFiles: ['./vitest.setup.ts'],
     env: { MANTLE_ACTOR_CHECK: 'warn' },

@@ -103,7 +103,7 @@ async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTu
   return dto;
 }
 
-/** Arch A2a: the turn runs as the login it answers, as that login is now;
+/** The turn runs as the login it answers, as that login is now;
  *  with no login, as the owner. */
 async function assistantTurnActor(input: AssistantTurnInput) {
   const entry = 'workflow:assistant-turn';

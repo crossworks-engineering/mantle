@@ -132,7 +132,7 @@ export async function qualifyingAgents(ownerId: string, since: Date): Promise<Ag
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.direction, 'outbound'),
         ne(assistantMessages.channel, REFLECTOR_SKIPPED_CHANNEL),
-        // The owner's own thread only (W7c fix round 1, M2).
+        // The owner's own thread only (see loadReflectionTurns).
         eq(assistantMessages.loginId, ownerId),
         gt(assistantMessages.createdAt, since),
         inArray(
@@ -201,7 +201,7 @@ export function buildReflectorInput(args: {
   // The transcript carries other people's words and tool output (an email
   // quoted in a reply, a fetched page): fenced (markers carrying a per-call
   // nonce), its forged markers defanged, and the system prompt says what the
-  // fence means (A10 part 1).
+  // fence means.
   const user =
     `Existing ${target === 'journal' ? 'Journal entries' : 'persona_notes'}:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${fence.wrap(transcript)}` +
     (target === 'journal' ? `\n${JOURNAL_SCOPE_INSTRUCTION}` : '');
@@ -311,7 +311,7 @@ export async function reflect(ownerId: string): Promise<void> {
 
 /** The agent's recent turns, newest first, as the reflector reads them: every
  *  channel but 'mcp' (REFLECTOR_SKIPPED_CHANNEL), both directions, of the
- *  owner's own thread only (W7c fix round 1, M2): persona notes describe the
+ *  owner's own thread only: persona notes describe the
  *  owner, as "About the user" does, and another user's chat with the same
  *  assistant is private to that user, never folded into them. */
 export async function loadReflectionTurns(

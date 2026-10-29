@@ -208,7 +208,7 @@ export { credentialOf } from '@mantle/voice-client/provider-credential';
 // adapters when a route is flagged "via tailnet".
 export { tailnetFetch, tailnetProxyConfigured } from './tailnet';
 
-// The one "is the local model up" probe (A10 #10).
+// The one "is the local model up" probe.
 export { providerHealth, sameLocalModel, type ProviderHealth } from './provider-health';
 
 // Chat error classification — exposed so the agent-runtime failover layer
@@ -216,7 +216,7 @@ export { providerHealth, sameLocalModel, type ProviderHealth } from './provider-
 // wrapper uses (429 / 5xx / network → transient; 4xx bad-input → permanent).
 export { ChatHttpError, classifyChatError, parseRetryAfterMs } from './retry';
 
-// The built-in adapter objects are NOT exported (A10 #5 fix round 1): a raw
+// The built-in adapter objects are NOT exported: a raw
 // adapter's call records no spend. Callers reach a provider through the
 // lookups above, which hand each adapter out wrapped to record its call; a
 // test of one adapter imports it from its own module.

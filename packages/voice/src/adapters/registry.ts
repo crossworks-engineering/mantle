@@ -32,7 +32,7 @@ import {
 } from './spend';
 
 // The lookups below shadow the contract package's unwrapped ones of the same
-// name: every adapter handed out here records its spend (./spend.ts, A10 #5).
+// name: every adapter handed out here records its spend (./spend.ts).
 export * from '@mantle/voice-client/adapters/registry';
 
 /**

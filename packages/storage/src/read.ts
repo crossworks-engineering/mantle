@@ -1,6 +1,6 @@
 /**
- * The object store's READ API, the package's root entry (workspaces arch
- * A3b, docs/store-brokers.md). What writes the store (put, delete, make the
+ * The object store's READ API, the package's root entry
+ * (docs/store-brokers.md). What writes the store (put, delete, make the
  * bucket, copy from another) is `@mantle/storage/write`, which only the
  * brokers import (the store-brokers lint pins them).
  */

@@ -1,6 +1,6 @@
 /**
- * actor-setters-in-db-only (workspaces arch plan v2, sections 4.2 and 11;
- * A2a): only packages/db sets who a statement runs as. Anywhere else, a
+ * actor-setters-in-db-only: only packages/db sets who a statement runs as.
+ * Anywhere else, a
  * string that names the actor settings (mantle.actor, mantle.write_mode,
  * mantle.actor_check) or their setter functions (mantle_set_actor,
  * mantle_operator_actor) is refused. Code binds an actor with the
@@ -8,8 +8,8 @@
  * packages/db/src/gateway/actor-sql.ts sets the settings.
  *
  * Not a secret: any role can set a mantle.* setting. The protection is this
- * lint, the runtime role (A9) and the read predicate on the write role
- * (plan 20.1, 20.3 item 6). Tests may set them (the matrix does).
+ * lint, the runtime role and the read predicate on the write role. Tests
+ * may set them (the matrix does).
  */
 export const ACTOR_SETTER_PATTERN =
   /\bmantle_set_actor\b|\bmantle_operator_actor\b|\bmantle\.(actor|write_mode|actor_check)\b/;

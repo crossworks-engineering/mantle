@@ -69,9 +69,8 @@ export class TableTooLargeError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): the
-// caller asked for more rows than a table loads whole, as the commit route
-// answered by hand.
+// The one error answer (@mantle/std domain-errors.ts): the caller asked
+// for more rows than a table loads whole.
 defineDomainError(TableTooLargeError, {
   reason:
     'the table is over the rows a whole read or an import may take; the message says what to do',

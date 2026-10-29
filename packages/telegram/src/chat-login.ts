@@ -1,5 +1,5 @@
 /**
- * Telegram per paired user (workspaces W7d, plan 5.4).
+ * Telegram per paired user.
  *
  * A bot belongs to an assistant (channels.agent_id), so to one workspace. A
  * paired chat belongs to a USER (telegram_chats.login_id): the user pairs it
@@ -7,21 +7,20 @@
  * is an assistant of a workspace the user is in. A turn on the chat runs as
  * that login in that workspace. A chat whose login is gone, disabled, or no
  * longer a user of the workspace is refused on its next message. Any
- * workspace's assistant may answer on Telegram (the old rule, only an
- * admin-level agent, is gone).
+ * workspace's assistant may answer on Telegram.
  *
  * "The workspace of the chat" is the workspace of every assistant the chat
  * runs as: the bot's own assistant and the chat's responder override, when
  * it has one. An assistant with no workspace (a helper) counts the Admin
- * workspace. With no Admin workspace (the boot refuses such a brain, arch
- * A7) a helper's chat matches no workspace and is refused.
+ * workspace. With no Admin workspace (the boot refuses such a brain) a
+ * helper's chat matches no workspace and is refused.
  *
  * Moderators of the bot's workspace and Admin users with the users area may
  * block or unpair any chat of that bot, never pair it to someone else.
  *
  * The Telegram tables are granted to no role, and each rule is held in the
  * query itself. Every read here runs on the system pool by the named reason
- * 'login-telegram', never in a scope (systemWork refuses one, A6b).
+ * 'login-telegram', never in a scope (systemWork refuses one).
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, liveWorkspaceSql, systemWork, telegramChats } from '@mantle/db';
@@ -34,8 +33,8 @@ import { botAgentIdSql } from './chat-assistant';
  * system pool by the named reason 'login-telegram' (the workspace role reads
  * none of them). Every caller here runs on the system pool: the Telegram
  * turn and the poller, an Admin area's route or tool, the pairing door.
- * systemWork runs them as asSystem did and refuses a scope (A6b: no exit;
- * the moderated chats screen reads by its definer, 0293).
+ * systemWork refuses a scope (the moderated chats screen reads by its
+ * definer, 0293).
  */
 function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
   return systemWork(fn, 'login-telegram');
@@ -175,8 +174,8 @@ export async function pairedChatOf(args: {
 
 /**
  * Send a chat whose turn was refused because it has no login, or its login
- * is no longer a user of the assistant's workspace, back to pending (W7d fix
- * round 1, L4): its login is cleared, so the person's next message gets a
+ * is no longer a user of the assistant's workspace, back to pending: its login
+ * is cleared, so the person's next message gets a
  * fresh code and they can pair it again. Only while it is still allowed for
  * that same login: a chat paired again in the meantime is left alone.
  */

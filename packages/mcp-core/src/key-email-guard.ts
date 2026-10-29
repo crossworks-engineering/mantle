@@ -36,8 +36,7 @@ const ID_FIELDS = [
 const ID_LIST_FIELDS = ['file_ids', 'table_ids'] as const;
 const PATH_FIELDS = ['parent_path', 'parent', 'path', 'dest_path', 'dest_parent_path'] as const;
 /** Whether `slug` is a list that drops the attachment rows rather than
- *  refuse: its policy says `keyEmail` (A5 step 6a deleted the LIST_TOOLS
- *  view). */
+ *  refuse: its policy says `keyEmail`. */
 function dropsAttachmentRows(slug: string): boolean {
   return mcpToolPolicyOf(slug)?.keyEmail === true;
 }

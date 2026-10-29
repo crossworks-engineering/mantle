@@ -1,7 +1,7 @@
 /**
  * Runs in every test file (vitest.config.ts setupFiles).
  *
- * The actor check (workspaces arch A2a): the suite runs in warn
+ * The actor check: the suite runs in warn
  * (MANTLE_ACTOR_CHECK, vitest.config.ts: the TypeScript check, and the SQL
  * check raised on every statement the app's pool sends), and a test fails
  * when any statement it caused ran with no actor bound: a process entry that forgot
@@ -22,7 +22,7 @@ import {
   takeWriteRoleGaps,
 } from './packages/db/src/actor';
 
-// Arch A2b2b: the suite runs the login write gateway as web and api do
+// The suite runs the login write gateway as web and api do
 // (openLoginWritePool in packages/db/src/client.ts reads this flag), so
 // every scoped login write in a test goes to the write role (in warn).
 (globalThis as { __mantleLoginWritePool?: boolean }).__mantleLoginWritePool = true;
@@ -30,14 +30,14 @@ import {
 beforeAll(() => enterTestActor());
 beforeEach(() => enterTestActor());
 
-// Plan v3.2 S7a: MANTLE_NARROW_DUMP=<file> lists the narrow route's uses
+// MANTLE_NARROW_DUMP=<file> lists the narrow route's uses
 // by actor (one JSON line per test file and actor, with the count) and its
 // denials: how each reason routed 'narrow' was measured (docs/runtime-role.md,
 // "The narrow route").
 const narrowDump = process.env.MANTLE_NARROW_DUMP;
 
 afterEach(() => {
-  // Plan v3.2 S7a: a right the narrow role does not hold, met on the narrow
+  // A right the narrow role does not hold, met on the narrow
   // route (a caught one too). None may: each is a reason to route full with
   // its why (viewer.ts AS_SYSTEM_ROUTE), or a table to grant narrowly.
   const denied = takeNarrowDenials();
@@ -62,10 +62,9 @@ afterEach(() => {
 });
 
 afterEach(() => {
-  // Arch A2b2b: a right the write role does not hold, met by a login write
-  // (the gateway notes every one, a caught one too). None may since plan
-  // v3 S3 (no gap table is left): each is a table to add to the matrix, or
-  // a bug.
+  // A right the write role does not hold, met by a login write (the
+  // gateway notes every one, a caught one too). None may: each is a table
+  // to add to the matrix, or a bug.
   const gaps = takeWriteRoleGaps();
   if (gaps.length > 0) {
     throw new Error(

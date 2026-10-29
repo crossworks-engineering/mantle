@@ -1,12 +1,11 @@
 /**
  * The kinds of item a member works with: what a personal space holds and
  * what the Library lists. The ONE list, for the brain (member-space.ts,
- * member-library.ts) and the client alike (audit M2); a runtime constant, so
+ * member-library.ts) and the client alike; a runtime constant, so
  * it is the `@mantle/client-types/member-kinds` subpath.
  *
- * DEPRECATED (workspaces arch A1): derived from the kind registry's `library`
- * field (./kinds) and kept exported for one pair release, then removed. Use
- * the registry.
+ * DEPRECATED: derived from the kind registry's `library` field (./kinds)
+ * and kept exported for one pair release, then removed. Use the registry.
  */
 import {
   ITEM_KINDS,

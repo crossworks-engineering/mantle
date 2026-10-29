@@ -30,12 +30,12 @@ export async function recordTerminalSkip(
 }
 
 /** Merge `data.extract_skipped = { reason, at: now() }` onto the node, and
- *  drop the work a reset stamped (A10 #7, `data.index_work`): the verdict is
+ *  drop the work a reset stamped (`data.index_work`): the verdict is
  *  the answer to it, so a later rename re-embeds without a model call. Only
  *  the stamp the job saw (`seen`) is dropped: a content change that landed
  *  while the job ran keeps its 'extract' stamp for its own job, so a rename
- *  before that job runs still summarises the new content (fix round 2, L6;
- *  dropIndexWork says what a value check cannot tell apart). Leaves
+ *  before that job runs still summarises the new content (dropIndexWork
+ *  says what a value check cannot tell apart). Leaves
  *  `updated_at` alone: the stamp must not look like a content change. Best
  *  effort: a failed stamp only means the drain re-queues the node once more. */
 export async function stampExtractSkipped(

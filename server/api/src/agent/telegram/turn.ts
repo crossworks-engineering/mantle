@@ -121,10 +121,10 @@ export async function runTelegramTurn(args: {
   const audioTagInstructions = args.textOnly ? '' : await audioTagInstructionsFor(ownerId, agent);
   const prefs = await loadProfilePreferences(ownerId);
   // An assistant of a workspace other than Admin runs as its web chat does
-  // (runTeamTurn, W7c): no identity or Journal block, no persona notes, no
+  // (runTeamTurn): no identity or Journal block, no persona notes, no
   // owner thinking budget, no delegation, the private reads behind the
   // owner's switch (default off), and a team surface, so an owner-only tool
-  // refuses (W7d fix round 1, M1). The reply still goes back to this chat:
+  // refuses. The reply still goes back to this chat:
   // delivery below is keyed off the chat row, never the surface kind.
   const workspaceTurn = args.textOnly === true;
   const privateReads = workspaceTurn && isTeamPrivateReadsEnabled(prefs);

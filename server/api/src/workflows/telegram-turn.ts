@@ -63,7 +63,7 @@ async function telegramTurnImpl(input: TelegramTurnInput): Promise<void> {
   DBOS.logger.info(`[telegram_turn] done (message=${messageId})`);
 }
 
-/** Arch A2a: the turn runs as the login its chat is paired to, as it is now. */
+/** The turn runs as the login its chat is paired to, as it is now. */
 export const telegramTurnWorkflow = registerActorWorkflow(
   TELEGRAM_TURN_WORKFLOW,
   (input: TelegramTurnInput) => telegramTurnActor(input.messageId),

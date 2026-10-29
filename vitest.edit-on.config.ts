@@ -2,10 +2,11 @@ import { defineConfig } from 'vitest/config';
 import onBase from './vitest.actor-on.config';
 
 /**
- * The write-path cells with both checks on (workspaces arch A3a): the
+ * The write-path cells with both checks on: the
  * actor check on (vitest.actor-on.config.ts) and the edit check on, each
  * scratch database switched by MANTLE_TEST_EDIT_CHECK (test-support.ts) as
- * an operator switches a box (mantle_set_edit_check). The A3a cells too.
+ * an operator switches a box (mantle_set_edit_check). The folder edit
+ * cells too.
  * vitest.setup.ts still fails a test on a miss. `pnpm test:edit-on`.
  */
 export default defineConfig({
@@ -17,23 +18,22 @@ export default defineConfig({
       'packages/db/src/edit-check*.test.ts',
       'packages/db/src/a2b-nested-tx.db.test.ts',
       'server/web/server/a3a-folders.db.test.ts',
-      // A3b: the store brokers (it sets both checks on itself, too).
+      // The store brokers (it sets both checks on itself, too).
       'server/web/server/a3b-store-brokers.db.test.ts',
-      // A3b part 2: the files and snapshot stores.
+      // The files and snapshot stores.
       'server/web/server/a3b2-store-brokers.db.test.ts',
-      // A8 fix round 1 (L6): the A8 findings' cells with both checks on.
+      // The A8 findings' cells with both checks on.
       'server/web/server/a8-findings.db.test.ts',
-      // A8 matrix F9 (0294): a contact share's write and its export sync.
+      // A contact share's write and its export sync (0294).
       'server/web/server/f9-contact-export.db.test.ts',
       // The runs worker, the stdio MCP server and the Telegram poller on the
-      // write role (pre-check deletion blocker 2).
+      // write role.
       'server/web/server/worker-write-role.db.test.ts',
-      // An Admin user's write request on the write role (F4, pre-check
-      // deletion blocker 1).
+      // An Admin user's write request on the write role.
       'server/web/server/f4-admin-write-role.db.test.ts',
-      // F4 fix round 1: the owner's management flows on the write role.
+      // The owner's management flows on the write role.
       'server/web/server/f4-owner-flows.db.test.ts',
-      // Plan v3.2 S4b: the fail-closed branches with both checks on.
+      // The fail-closed branches with both checks on.
       'packages/db/src/fail-closed.db.test.ts',
       // The parser keys the extractor keeps on a file node (the failure
       // count, the native PDF read that found nothing), both checks on.

@@ -104,8 +104,8 @@ export function registerChatAdapter(adapter: ChatDispatcher): void {
 /**
  * The chat adapter as registered, WITHOUT the retry wrapper. Callers use
  * `getChatAdapter` from @mantle/voice, which wraps the native-fetch adapters
- * in withChatRetry (A10 #10 moved the retry out of this zero-dependency
- * contract package, to sit on @mantle/std's withRetry).
+ * in withChatRetry (on @mantle/std's withRetry, kept out of this
+ * zero-dependency contract package).
  */
 export function registeredChatAdapter(providerId: string): ChatDispatcher | null {
   return CHAT.get(providerId as ProviderId) ?? null;

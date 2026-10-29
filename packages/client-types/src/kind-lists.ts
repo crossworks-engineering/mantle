@@ -1,11 +1,10 @@
 /**
- * The kind lists that were written by hand across the repo (arch plan A10
- * #12), each now a filter over one field of the kind registry (./kinds).
+ * The kind lists of the repo, each a filter over one field of the kind
+ * registry (./kinds).
  * Every list is in registry order (the Drizzle enum's) unless it says
  * otherwise; the code asks each one for membership only.
  *
- * kind-lists.test.ts pins every list to its value on main v0.300.46 and
- * names, cell by cell, the few that changed with the move.
+ * kind-lists.test.ts pins every list's value.
  *
  * Pure and dependency free: the `@mantle/client-types/kind-lists` subpath.
  */

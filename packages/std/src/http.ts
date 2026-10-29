@@ -1,10 +1,7 @@
 /**
- * HTTP plumbing (A10 #10, docs/provider-http.md "Timeouts, retries and
- * health"): the timeout, retry and Retry-After helpers every network caller
- * used to carry its own copy of. The 2026-10 survey counted 63 inline
- * `AbortSignal.timeout(` calls with 17 distinct values, three private
- * `withTimeout` copies, about ten backoff loops with different rules and
- * four Retry-After parsers.
+ * HTTP plumbing (docs/provider-http.md "Timeouts, retries and health"): the
+ * one timeout, retry and Retry-After helpers every network caller uses
+ * instead of a copy of its own.
  *
  *  - {@link timeoutSignal}: the one deadline signal (optionally combined with
  *    a caller's own signal, a user Stop). The values come from the tables in
@@ -13,8 +10,8 @@
  *    there is no second fetch path.
  *  - {@link withTimeout}: race a promise against a deadline.
  *  - {@link withRetry} and {@link backoffMs}: one attempt loop; each caller
- *    states its own attempt budget, delays and retry set as options, so the
- *    fold changed no caller's numbers (the record tests pin them).
+ *    states its own attempt budget, delays and retry set as options (the
+ *    record tests pin them).
  *  - {@link parseRetryAfterMs}: the one Retry-After reader.
  *
  * No node builtins and no package imports: the browser bundles that import

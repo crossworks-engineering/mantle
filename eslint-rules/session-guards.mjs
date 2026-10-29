@@ -1,6 +1,6 @@
 /**
  * The session guards and the readers of the caller the pipeline answers
- * (server/web/lib/auth/session.ts; workspaces arch A4 step 3b): the one
+ * (server/web/lib/auth/session.ts): the one
  * list of their names. Each reads it from here:
  *
  *  - the route manifest generator (server/web/scripts/route-callers.ts): a
@@ -40,11 +40,10 @@ export const SESSION_GUARDS = Object.freeze([
  *    RouteCaller): the gate runs that kind's guard for the row. The owner
  *    guard serves the owner rows (self, content, area); the member guard
  *    the member list; the any-login guard the any-login list; the chat
- *    guard the chat and Telegram lists (A4 step 3b part 5); the session
- *    user's guard (getSessionUser: any Admin user, or null) the rows open to
- *    every Admin user (a declared caller: 'session', A4 hand batch A).
- *    A4 hand batch B: the asset guards (getOwnerForAsset,
- *    getReaderForAsset) the byte routes; the frame
+ *    guard the chat and Telegram lists; the session user's guard
+ *    (getSessionUser: any Admin user, or null) the rows open to every Admin
+ *    user (a declared caller: 'session'); the asset guards
+ *    (getOwnerForAsset, getReaderForAsset) the byte routes; the frame
  *    ticket the frame documents; and, answered at the read (`atRead`), the
  *    login a public row reads (getLoginOr401, getCookieUpgradeLoginOr401)
  *    and the owner of a row whose handler runs a key's checks first.
@@ -58,8 +57,8 @@ export const SESSION_GUARDS = Object.freeze([
  *    it, where the handler called its guard (route-policy.ts
  *    ANSWERED_AT_READ): such a read may follow code, and is awaited.
  *    The Login readers (anyLoginCaller, ownerLoginCaller, chatCaller,
- *    publicLoginItself: plan v3.2 section 2.2) keep the entries of the
- *    legacy readers they replaced (S8d), and the guard sweep logs the
+ *    publicLoginItself) keep the entries of the legacy readers they
+ *    replaced, and the guard sweep logs the
  *    answer in the legacy shape it rebuilds from the Login
  *    (a4-guard-sweep.test.ts), so the recorded files compare one answer
  *    byte for byte.
@@ -138,10 +137,8 @@ export const READER_ANSWERS = Object.freeze({
 /**
  * The guards session.ts no longer has, which a reader still names
  * (READER_ANSWERS `guard`): the guard sweep's recorded files spell the
- * answers of their rows under that name. getOwnerOr401 went at A4 exit
- * with getOwnerOr401WithSource (A4 hand batch B): every route reads the
- * caller the pipeline answers. requireOwner and requireOwnerWithSource went
- * too: nothing called them, and no reader names them.
+ * answers of their rows under that name. Every route reads the caller the
+ * pipeline answers instead.
  */
 export const RETIRED_GUARDS = Object.freeze(['getOwnerOr401', 'getOwnerOr401WithSource']);
 

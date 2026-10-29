@@ -74,8 +74,8 @@ export async function createFolder(args: {
    *  null is none). The caller validates them; this only stores them. */
   icon?: string | null;
   color?: string | null;
-  /** Its own indexing switch from the start (F4 fix round 4, the owner's
-   *  decision): the new folder's, so it follows the create rule (a login
+  /** Its own indexing switch from the start (the owner's rule): the new
+   *  folder's, so it follows the create rule (a login
    *  that may create here may set it, without manage). The row is born
    *  with it, one act: an empty folder has no file to reconcile. An
    *  existing folder's switch is `setIndexingMode`, which asks manage. */
@@ -110,7 +110,7 @@ export async function createFolder(args: {
   }
 
   // DB first — if the unique index trips, we don't want a leftover dir
-  // confusing the next attempt. Heads first (workspaces plan U1): the parent
+  // confusing the next attempt. Heads first: the parent
   // folder, shared.
   const [row] = await withDeadlockRetry(() =>
     withNodeInsertHeads(args.ownerId, [{ type: 'branch', path: childPath }], (tx) =>
@@ -287,8 +287,7 @@ export async function deleteFolder(args: {
   if (!folder || folder.type !== 'branch') {
     return { ok: false, reason: 'not-found' };
   }
-  // Manage first (pre-check removal fix round A, M1): a caller that may not
-  // delete the folder learns nothing of it past that (hidden rows, its
+  // Manage first: a caller that may not delete the folder learns nothing of it past that (hidden rows, its
   // emptiness, files on disk). The cheap rights read; the database's
   // refusal below stays the authority.
   await assertItemRight(folder.id, 'manage');
@@ -314,7 +313,7 @@ export async function deleteFolder(args: {
   // clash) or never watches has no row, and the recursive rm below would
   // destroy it unseen. Refuse; OS chaff (._x, .DS_Store, ~, .swp) still goes.
   // The count only, never the names: a name could be a file the caller
-  // cannot read (arch A3a fix round 3).
+  // cannot read.
   const untracked = await untrackedFilesOnDisk(folder.path);
   if (untracked.length > 0) {
     return {
@@ -325,9 +324,8 @@ export async function deleteFolder(args: {
   // Members' drafts and folders in it move up to the parent (never deleted).
   // Checked again under the lock: an upload filing into it meanwhile (the
   // insert takes the same lock, shared) is committed by then and seen here,
-  // so its bytes are never removed with the directory (review F9). Heads
-  // first (workspaces plan U1), then the share lock. No retry: the check
-  // reads the disk.
+  // so its bytes are never removed with the directory. Heads first, then
+  // the share lock. No retry: the check reads the disk.
   const refused = await withNodeDeleteHeads([args.folderId], async (tx) => {
     await takeShareWriteLock(tx, args.ownerId);
     await tx.execute(
@@ -343,9 +341,9 @@ export async function deleteFolder(args: {
     }
     const parent = folder.path.slice(0, folder.path.lastIndexOf('.'));
     await carrySpaceRows(tx, args.ownerId, folder.path, parent, { lift: true });
-    // The checked statement (A3b part 2): exactly one row. A delete the row
-    // rules left at none is refused (the rollback takes the lift back), and
-    // the directory stays; it used to be removed whatever the delete did.
+    // The checked statement: exactly one row. A delete the row rules left
+    // at none is refused (the rollback takes the lift back), and the
+    // directory stays.
     const gone = await tx
       .delete(nodes)
       .where(eq(nodes.id, args.folderId))
@@ -359,8 +357,8 @@ export async function deleteFolder(args: {
   if (refused) return { ok: false, reason: refused };
   // The directory moves aside now, so a folder made again under the name in
   // the same outer transaction gets its own; it goes once the delete has
-  // committed (inside an outer transaction, once that one has: fix round 1,
-  // L1), and comes back if that one rolls back (fix round 2, N2).
+  // committed (inside an outer transaction, once that one has), and comes
+  // back if that one rolls back.
   const aside = await setFolderAside(folder.path);
   if (aside) {
     afterOuterRollback(() => aside.restore());
@@ -545,7 +543,7 @@ async function withTrailRows(
  * listFolders for a login's own session (the Files screen): the folders it
  * reads under `parentPath`, and the ones it does not read but that hold
  * something it reads, as structure (folderTrail; never for a key, a peer or
- * a turn, nor the owner, which read listFolders as before). Nothing else of
+ * a turn, nor the owner, which read listFolders). Nothing else of
  * those folders, and no write path, changes: a folder the login does not
  * read is still not found by every write.
  */
@@ -669,14 +667,13 @@ export async function renameFolderById(args: {
     throw new InputError(`renameFolderById: a folder named '${slug}' already exists here`);
   }
 
-  // A3b part 2 (store-broker.ts flipThenPlace): the DB cascade first, in one
-  // transaction (the folder's own row the checked statement), then the
-  // directory's rename (atomic) as its last step; a flip that never landed
-  // puts the directory back. It used to rename the directory first, so a
-  // rename the database refused had already moved it.
+  // The DB cascade first (store-broker.ts flipThenPlace), in one transaction
+  // (the folder's own row the checked statement), then the directory's
+  // rename (atomic) as its last step; a flip that never landed puts the
+  // directory back, so a rename the database refuses never moves it.
   await flipThenPlace({
     flip: (place) =>
-      // Heads first (workspaces plan U1): the folder, its subtree and both
+      // Heads first: the folder, its subtree and both
       // parents, then the share lock.
       withDeadlockRetry(() =>
         withNodeMoveHeads(
@@ -690,7 +687,7 @@ export async function renameFolderById(args: {
               // (folders and files: a file's path IS its parent folder's
               // path). One definer moves every row below the folder, those
               // the caller's scope does not read too, so a file's row keeps
-              // its disk path (arch A3a fix round 2). Filing is not editing:
+              // its disk path. Filing is not editing:
               // only the folder itself is stamped, by its label update below.
               await tx.execute(
                 sql`select mantle_subtree_rewrite(${args.ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,

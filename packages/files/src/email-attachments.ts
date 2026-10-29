@@ -74,7 +74,7 @@ export async function emailAttachmentFolders(
 /** Whether a folder path is, is inside, or holds a mail's attachments. A
  *  path in a mail account's branch counts as a whole: a key that reaches
  *  email only with Search must not make an `attachments` folder there and
- *  move files in, which would hide them as attachments (audit C3). */
+ *  move files in, which would hide them as attachments. */
 async function pathReaches(ownerId: string, path: string): Promise<boolean> {
   // Through the definer (0296): `email_accounts` is no table a scope reads.
   // NULL: a path where the scope reads nothing at or above it, answered

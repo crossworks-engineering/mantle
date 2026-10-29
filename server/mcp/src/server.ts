@@ -50,7 +50,7 @@ registerRecallEmbedder(embedBatch);
 // browser sidecar (BROWSER_WS_ENDPOINT) as the web and the agent turns.
 registerCanvasRenderer(renderCanvas);
 
-// The one gate (arch A3c fix round 2, M-A): every narrower registered, or
+// The one gate: every narrower registered, or
 // the server stops here at boot (ensureGateReady throws), not at its first
 // tool call.
 // gate-boot.test.ts pins this call in every process entry.
@@ -58,12 +58,12 @@ ensureGateReady();
 // Boot smoke (scripts/boot-smoke.mjs): every import above linked and the
 // gate is ready; exit 0 before the audit, the owner lookup or the transport.
 if (isBootSmoke()) await bootSmokeExit('mcp-stdio');
-// One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts).
+// One audit row for every tool write (@mantle/db call-audit.ts).
 startCallAudit();
-// Arch A2b2b: each call runs in the anchor login's turn scope (mcp-core
-// mcp-scope.ts), so its writes go to the write role as the HTTP MCP
-// surface's do, and the database's write and edit checks hold them to that
-// scope (docs/actors.md, "The login write gateway"). A small pool: one
+// Each call runs in the anchor login's turn scope (mcp-core mcp-scope.ts),
+// so its writes go to the write role as the HTTP MCP surface's do, and the
+// database's write and edit checks hold them to that scope (docs/actors.md,
+// "The three routes to Postgres"). A small pool: one
 // client's calls, and the role's 20 connections are the whole box's
 // (connection-ceiling.test.ts).
 openLoginWritePool({ max: 2 });
@@ -73,7 +73,7 @@ openLoginWritePool({ max: 2 });
 // needs no env var. The MCP server is started on demand by Claude Desktop /
 // Code, normally after the web-app account already exists; if it truly doesn't
 // yet, exit with a clear message rather than scope every query to nothing.
-// Arch A2a: the boot reads run as system(boot:mcp-stdio).
+// The boot reads run as system(boot:mcp-stdio).
 const OWNER_ID = await runAsSystem('boot:mcp-stdio', () => resolveSingleOwnerId());
 if (!OWNER_ID) {
   console.error(
@@ -99,8 +99,8 @@ if (!OWNER_ID) {
   }
 }
 
-// Arch A2a: every message runs as the owner login this process is started
-// for, login(owner), never system.
+// Every message runs as the owner login this process is started for,
+// login(owner), never system.
 const server = buildMantleMcpServer(OWNER_ID);
 const transport = new StdioServerTransport();
 await connectStdioAs(stdioOwnerActor(OWNER_ID), server, transport);

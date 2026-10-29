@@ -1,5 +1,5 @@
 /**
- * raw-write-allowlist (plan v3.2 section 3.2): the files whose raw write SQL
+ * raw-write-allowlist: the files whose raw write SQL
  * is not scoped code, so it stays raw. Each entry is pinned with its count
  * of sites and why; eslint-rules/no-raw-write-sql.mjs flags a file over its
  * pin, and eslint-rules/arch-lints.test.ts holds each count exact and the

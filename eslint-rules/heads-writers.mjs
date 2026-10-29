@@ -46,14 +46,14 @@ export const HEADS_CALLEES = new Set([
   'withNodeInsertHeads',
   'withNodeMoveHeads',
   'withNodeDeleteHeads',
-  // In the brain it takes heads; inside a personal space (removed in W6b)
-  // it writes on the space's own transaction.
+  // In the brain it takes heads; inside a personal space it writes on the
+  // space's own transaction.
   'headsOrSpace',
   // Rows of the current personal space only (throws outside withSpace); the
-  // database exempts them from the heads check (0244). Removed in W6b.
+  // database exempts them from the heads check (0244).
   'withSpaceRows',
   // Personal-space rows written outside a space scope (checks the ids are
-  // personal spaces; the database still checks any brain row). W6b.
+  // personal spaces; the database still checks any brain row).
   'onSpaceRows',
 ]);
 
@@ -67,7 +67,7 @@ const DYNAMIC_TABLE_WRITE = /\b(insert\s+into|delete\s+from|update|merge\s+into|
 /**
  * Files whose `.unsafe(...)` takes SQL that is not a literal, each reviewed:
  * none of them writes the guarded tables. A new dynamic `.unsafe` elsewhere
- * is an error (W1 audit, LOW 6): write the SQL as a literal or a tagged
+ * is an error: write the SQL as a literal or a tagged
  * template, or add the file here with its reason.
  */
 // Whole-file: a NEW dynamic .unsafe added to one of these files is not checked.

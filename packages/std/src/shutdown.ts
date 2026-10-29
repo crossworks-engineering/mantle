@@ -1,10 +1,8 @@
 /**
- * The one shutdown helper (A10 #15). Three processes wired SIGINT and
- * SIGTERM by hand, each a little differently: the workers' runner had a
- * guard and a 15 s exit deadline, the web server a 5 s one and no guard,
- * and the API process neither guard nor deadline, so a teardown that hung
- * (a pg-boss drain, DBOS) held the process forever where nothing sends a
- * SIGKILL (a dev shell, a systemd unit without a stop timeout). Under
+ * The one shutdown helper for SIGINT and SIGTERM. Without an exit deadline a
+ * teardown that hangs (a pg-boss drain, DBOS) holds the process forever
+ * where nothing sends a SIGKILL (a dev shell, a systemd unit without a stop
+ * timeout). Under
  * Docker the SIGKILL comes after the container's stop_grace_period, so each
  * service names one past its process's deadline (docker-compose.yml).
  *

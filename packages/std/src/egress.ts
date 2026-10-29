@@ -1,5 +1,5 @@
 /**
- * One egress fetch (A10 part 1, docs/egress.md): every fetch of a URL that a
+ * One egress fetch (docs/egress.md): every fetch of a URL that a
  * user, a model, a remote server or a linked peer gave goes through
  * `egressFetch`. Node only (`@mantle/std/egress`), so the browser bundles
  * that import `@mantle/std` stay free of node builtins.
@@ -84,8 +84,7 @@ export class EgressTooLargeError extends Error {
 const DEFAULT_MAX_REDIRECTS = 5;
 
 /** The platform fetch's own redirect limit (the fetch spec's 20): for a
- *  caller that followed redirects with `redirect: 'follow'` before the fold
- *  and keeps the same reach. */
+ *  caller that wants the reach of `redirect: 'follow'`. */
 export const PLATFORM_MAX_REDIRECTS = 20;
 
 /** Dropped by name on a hop to another origin, matching the platform. */
@@ -556,8 +555,7 @@ export async function egressFetch(
     // The deadline covers the body read too, so it stays armed after the
     // headers arrive; unref'd, it never holds the process open, and firing
     // after a finished read aborts nothing. A plain abort, so the error reads
-    // as the callers' own timers read before the fold ("This operation was
-    // aborted").
+    // as a caller's own timer would ("This operation was aborted").
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs);
     (timer as { unref?: () => void }).unref?.();

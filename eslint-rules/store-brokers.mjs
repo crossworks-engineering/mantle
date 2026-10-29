@@ -1,6 +1,6 @@
 /**
- * store-brokers (workspaces arch plan v2, sections 6 and 11; A3b;
- * docs/store-brokers.md): only a store's broker writes its disk. Each store
+ * store-brokers (docs/store-brokers.md): only a store's broker writes its
+ * disk. Each store
  * splits its API: readers keep the read entry, and the WRITE API
  * (arch-counts.mjs STORES: @mantle/tabledb/write, @mantle/storage/write,
  * the app SQL runner's writing functions and APP_DB_DIR) is reached only by
@@ -27,7 +27,7 @@ export const STORE_PINS = {
     // An imported package's data, checked into a TEMP file
     // (adoptAppDbFile); the store write is the broker's restore.
     'packages/content/src/app-package.ts',
-    // THE snapshot store's broker (A3b part 2): snapshot and accepted
+    // THE snapshot store's broker: snapshot and accepted
     // copies (copyAppDbFile), staged before the row that names them.
     'packages/content/src/snapshot-broker.ts',
     // The trash sweep's description names the directory.
@@ -35,7 +35,7 @@ export const STORE_PINS = {
   ],
   objectstore: [
     // THE files store's object bytes (email attachments, OneDrive and
-    // SharePoint files): stored before the row that names them (A3b part 2).
+    // SharePoint files): stored before the row that names them.
     'packages/files/src/file-broker.ts',
     // THE app build broker: bundles, after the app row's checked write.
     'packages/tools/src/app-build-stage.ts',

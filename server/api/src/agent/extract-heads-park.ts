@@ -23,7 +23,7 @@ export async function parkHeadsFailure(
   nodeId: string,
   deps: {
     /** Stamp `data.extract_parked` on the node: the durable record, which
-     *  the boot and recovery drains skip (W1 audit, LOW 4). */
+     *  the boot and recovery drains skip. */
     stamp: (nodeId: string) => Promise<void>;
     /** The row on HEADS_DEAD_QUEUE; null when the queue is gone (the agent
      *  is stopping), and then the stamp alone is the record. */

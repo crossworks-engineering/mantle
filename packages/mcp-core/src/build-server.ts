@@ -108,10 +108,9 @@ import { defaultMcpGate } from './gate-policy';
 import type { McpGate } from './gated-tools';
 
 /** Mutating Toolsmith tools, gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
- *  ON): the builtins whose definition opts in by `toolsmithWrite` (A5 step
- *  2: registration reads each definition's `optIn`; A5 step 3a, LOW-A: only
- *  a builtin declares one, so the builtin's definition is the one copy that
- *  decides; A5 step 6a deleted the TOOLSMITH_WRITE_SLUGS view). The env is
+ *  ON): the builtins whose definition opts in by `toolsmithWrite`
+ *  (registration reads each definition's `optIn`; only a builtin declares
+ *  one, so the builtin's definition is the one copy that decides). The env is
  *  read at module scope (process-stable) so the gate is evaluated once, not
  *  per build: for the HTTP transport a server is built per request. */
 const toolsmithWriteEnabled = feature('mcpToolsmithWrite');
@@ -137,7 +136,7 @@ export type MantleMcpTransport = 'stdio' | 'http';
  *  by the caller. `transport` defaults to the SAFER of the two: a caller that
  *  forgets to say gets the network posture, never the trusted-local one.
  *
- *  Every tool registers through the one gate (gated-tools.ts, A5 step 4):
+ *  Every tool registers through the one gate (gated-tools.ts):
  *  listed when the connection's gate lists it, each call through enterCall.
  *  Without `gate`, the anchor's own (stdio: login(owner), every call in the
  *  anchor's scope). */
@@ -149,7 +148,7 @@ export function registerMantleTools(
     /** Which owner path the bridged builtins name (default 'mcp'). */
     via?: OwnerSurfaceVia;
     /** The login of this connection, handed to the builtins on their owner
-     *  surface (W6b fix round 2, M-2). Absent on stdio. */
+     *  surface. Absent on stdio. */
     loginId?: string;
     /** The login's own MCP connection, stamped on the builtins' surface
      *  (the app_data_* tools read it). */
@@ -182,12 +181,11 @@ export function registerMantleTools(
   registerFileTools(ctx);
 
   // ─── owner-operator surface: approvals, panels, the Telegram inbox ────────
-  // Bridged from `mcpOnly` builtins since tier 3 of the 2026-09-02 audit; they
-  // were hand-written here until then, which made them the one part of the
-  // surface with no in-repo test and no shared implementation. `mcpOnly` keeps
-  // the exposure identical: registered here, never seeded, never grantable —
-  // an agent that could call `pending_approve` would approve its own gated
-  // call, which is the gate these rows exist to impose.
+  // Bridged from `mcpOnly` builtins, so they share the tested in-app
+  // implementation. `mcpOnly` keeps them here only: registered here, never
+  // seeded, never grantable, because an agent that could call
+  // `pending_approve` would approve its own gated call, which is the gate
+  // these rows exist to impose.
   registerBuiltinTools(PENDING_TOOLS);
   registerBuiltinTools(WORKER_GROUP_TOOLS);
   registerBuiltinTools(TELEGRAM_OPERATOR_TOOLS);
@@ -230,17 +228,17 @@ export function registerMantleTools(
   // match your task" nudge. Every read here is one indexed row.
   registerBuiltinTools(RECALL_TOOLS);
   // And the v2 authoring tools, so an external agent can keep a map current
-  // rather than only read it. ALWAYS registered here, deliberately (decided
-  // 2026-09-30, Recall audit M1): an MCP client holds the owner's token, like
-  // for every other owner tool on this surface. Inside the app they stay the
+  // rather than only read it. ALWAYS registered here, deliberately: an MCP
+  // client holds the owner's token, like for every other owner tool on this
+  // surface. Inside the app they stay the
   // `recall-write` grant, in no default. Either way they run as an AGENT, so
   // publishing a map, minting a prompt and deleting a map stay the owner's act.
   registerBuiltinTools(RECALL_WRITE_TOOLS);
   // And the OWNER's Recall acts (builtins-recall-owner.ts): confirm a prompt,
   // publish or delete a map, reorder, restore, change a slug, and the owner's
   // own reads of what waits. mcpOnly, like pending_approve: the MCP client is
-  // the owner, and no in-app agent can ever hold them (Jason, 2026-09-30:
-  // "I still want to be able to confirm it through mcp if needed").
+  // the owner, and no in-app agent can ever hold them (the owner may still
+  // confirm a prompt through MCP).
   registerBuiltinTools(RECALL_OWNER_TOOLS);
   registerBuiltinTools(JOURNAL_TOOLS);
   registerBuiltinTools(PEER_TOOLS);
@@ -339,15 +337,14 @@ export function registerMantleTools(
   // Reads. node_read fetches any node by id (the typed getters cover one type
   // each); brain_capacity is the corpus-vs-split-policy self-check.
   registerBuiltinTools(NODE_READ_TOOLS);
-  // 2026-09-02 (audit): the search / entity / file-read / telegram groups now
-  // exist in @mantle/tools, so their MCP twins are bridged from the one tested
-  // handler each. Deliberately still hand-written (read-shape divergence, or a schema MCP
+  // The search / entity / file-read / telegram groups are bridged from the
+  // one tested @mantle/tools handler each. Deliberately hand-written (read-shape divergence, or a schema MCP
   // clients already depend on): tree_list, file_get/file_read/file_rename (id
   // vs file_id), folder_describe/folder_rename (accept a path as well as an
   // id): definitions in mcp-defs.ts, and registerBuiltinTools skips a builtin
   // a definition names. `search_nodes` is skipped here because MCP registers it
-  // under its shipped name `search` (mcp-defs.ts) — a REGISTRATION alias since
-  // v0.232.171, not a second implementation: it runs this same def through
+  // under its shipped name `search` (mcp-defs.ts): a REGISTRATION alias,
+  // not a second implementation: it runs this same def through
   // callBuiltin.
   registerBuiltinTools(SEARCH_TOOLS, {
     skip: (def) => def.slug === 'search_nodes',
@@ -358,10 +355,10 @@ export function registerMantleTools(
   registerBuiltinTools(TOOL_RESULT_TOOLS);
   registerBuiltinTools(IMAGE_TOOLS);
   registerBuiltinTools(APP_DATA_TOOLS);
-  // The caller's workspaces (W7b): where a create may land (`workspace`).
+  // The caller's workspaces: where a create may land (`workspace`).
   registerBuiltinTools(WORKSPACE_TOOLS);
-  // App data on the login's own connection (team apps Phase 1): every login
-  // since W7b, on the apps its scope holds with MCP access on.
+  // App data on the login's own connection: every login, on the apps its
+  // scope holds with MCP access on.
   registerBuiltinTools(LOGIN_APP_DATA_TOOLS);
 
   // Pure computation — no I/O, no spend.
@@ -381,7 +378,7 @@ export function registerMantleTools(
   registerBuiltinTools(DIAGRAM_RENDER_TOOLS);
   registerBuiltinTools(PRESENT_TOOLS);
   registerBuiltinTools(CANVAS_LIBRARY_TOOLS);
-  // The messenger (Messenger V1, plan page d8954876 section 12): every
+  // The messenger: every
   // login's chats, as the caller; messenger_wait long-polls up to 60 s.
   registerBuiltinTools(MESSENGER_TOOLS);
 

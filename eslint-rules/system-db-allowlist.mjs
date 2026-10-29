@@ -22,7 +22,7 @@ export const SYSTEM_DB_ALLOWLIST = [
   // The contact share trail (0214): written for any visitor, like the above.
   'packages/content/src/share-access-log.ts',
   'packages/content/src/team-access-log.ts',
-  // The member chat traces' token sums (audit F09); the ledger itself is
+  // The member chat traces' token sums; the ledger itself is
   // written through its definers (0326, login-definer.ts).
   'packages/content/src/member-turn-ledger.ts',
   // The messenger (0335): its own tables (writer system), written in the
@@ -79,8 +79,8 @@ export const rule = {
 export default { rules: { 'system-db-allowlist': rule } };
 
 /**
- * The route each file's systemDb uses take (plan v3.2 S7a, section 2.1
- * point 7): inside a turn or request scope systemDb runs on the narrow
+ * The route each file's systemDb uses take: inside a turn or request scope
+ * systemDb runs on the narrow
  * system role, outside every scope (a worker, a script, boot) on the full
  * one (gateway/handles.ts). 'narrow': the file is reached in a scope, so
  * its statements hold on the narrow role (measured by the DB suites: no
@@ -106,7 +106,7 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   'packages/content/src/team-access-log.ts': 'narrow',
   'packages/content/src/team-messages.ts': 'narrow',
   // An assistant's and an AI worker's use counters (last_used_at,
-  // usage_count), bumped in the turn or request that used them (S4a list).
+  // usage_count), bumped in the turn or request that used them.
   'packages/db/src/agents-resolve.ts': 'narrow',
   'packages/db/src/ai-workers-resolve.ts': 'narrow',
   // The audit row of a tool write, written by the gate in the turn.
@@ -125,7 +125,7 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   // The approval queue, decided in the approver's scope.
   'packages/db/src/pending-elevated.ts': 'narrow',
   // The approval queue's park (at the full-route spot pending-park), claim,
-  // return and settle, in the asking or deciding scope (S4a list).
+  // return and settle, in the asking or deciding scope.
   'packages/db/src/pending-calls.ts': 'narrow',
   // The conversation store's turn rows (recordTurn, a turn's outcome, the
   // cancel route's supersede at the full-route spot turn-supersede), in

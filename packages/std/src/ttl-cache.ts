@@ -1,14 +1,11 @@
 /**
- * The one in-process TTL cache (A10 #15). The repo carried about seventeen
- * by hand, each a Map of `{ at, value }` and an age check against its own
- * constant (`Date.now() - hit.at < TTL_MS`), some bounded, some not, two
- * with the opposite boundary. This is the decision cache of
- * @mantle/decisions made general: a value is fresh while its age is under
+ * The one in-process TTL cache, used instead of a hand-rolled Map of
+ * `{ at, value }` and an age check: a value is fresh while its age is under
  * its TTL, a stale one is dropped when it is read, and a bound (when given)
  * evicts the least recently used entry.
  *
- * Per process only, as every hand copy was. No node builtins (this package
- * is bundled for the browser too).
+ * Per process only. No node builtins (this package is bundled for the
+ * browser too).
  */
 export type TtlCacheOptions = {
   /** How long a value stays fresh, in ms (a set may name its own). */

@@ -1,47 +1,43 @@
 /**
- * Runs resume-turn runner (slice 3 WP2, docs/runs-slice-3-plan.md §4) — "the
- * queue is the memory", now durable. Two modes, keyed by the target item:
+ * Runs resume-turn runner (docs/runs.md): "the queue is the memory", made
+ * durable. Two modes, keyed by the target item:
  *
- * ROOT — the run finished: the responder is woken with the COMPILED run state
+ * ROOT: the run finished: the responder is woken with the COMPILED run state
  * and runs one ordinary traced turn: report to the user, or extend the run
  * (`run_append`). The reply lands in the unified conversation as an outbound
- * turn (the reminders pattern — no synthetic user bubble).
+ * turn (the reminders pattern: no synthetic user bubble).
  *
- * AUDIT — a pending audit item (plan §7): same machinery, adversarial
+ * AUDIT: a pending audit item: same machinery, adversarial
  * framing; the turn records its verdict via `run_audit` and posts nothing.
  *
- * DURABILITY (the audited WP2 design — plan §4, bindings; REVISED by the
- * slice-3 final audit, v0.157.14):
+ * DURABILITY:
  *   - The turn body runs under `withDurableSteps`, so every LLM call + tool
  *     dispatch (including the `run_audit` verdict) is a journaled step.
- *   - REPLAY DETERMINISM (the final audit's F1 fix): DBOS recovery re-runs
- *     this function from the top — journaled steps return their recorded
- *     results, but plain glue re-executes against CURRENT db state. Any
- *     early-return before the claim that reads mutable state therefore
- *     re-decides on replay: the original build's non-journaled "cheap
- *     duplicate check" read `resumed_at` — set by this workflow's OWN claim
- *     — and exited 'duplicate' on every post-claim recovery, silently
- *     losing the wake-up (the exact handover-§5 gap, reproduced 2026-07-21).
- *     Every pre-claim decision now lives in ONE journaled `resume_preflight`
- *     step, so a replay takes the identical path back to the claim.
+ *   - REPLAY DETERMINISM: DBOS recovery re-runs this function from the top:
+ *     journaled steps return their recorded results, but plain glue
+ *     re-executes against CURRENT db state. Any early-return before the
+ *     claim that reads mutable state therefore re-decides on replay: a
+ *     non-journaled duplicate check reading `resumed_at` (set by this
+ *     workflow's OWN claim) would exit 'duplicate' on every post-claim
+ *     recovery, silently losing the wake-up. Every pre-claim decision lives
+ *     in ONE journaled `resume_preflight` step, so a replay takes the
+ *     identical path back to the claim.
  *   - `claimResume` is a journaled step placed AFTER the fallible
- *     preconditions and BEFORE the loop — the v0.157.5 ordering, preserved:
- *     a preflight failure returns WITHOUT claiming, so the sweep re-sends
+ *     preconditions and BEFORE the loop: a preflight failure returns WITHOUT claiming, so the sweep re-sends
  *     and a transient hiccup never swallows the report. Past the claim, a
  *     crash RESUMES the turn from its last journaled step.
  *   - `record_outbound` (recordTurn) is a journaled step, so a crash between
  *     it and workflow completion replays WITHOUT double-posting.
- *   ACCEPTANCE GATE (plan §8 amendment 2, tightened by the final audit):
- *   the crash-test must pass at BOTH kill points — between the journaled
- *   claim and record_outbound (the loss window: the report must still
- *   arrive, exactly once), and between record_outbound and completion (the
- *   double-post window) — against this workflow's step shape.
+ *   ACCEPTANCE GATE: the crash-test must pass at BOTH kill points, between
+ *   the journaled claim and record_outbound (the loss window: the report
+ *   must still arrive, exactly once), and between record_outbound and
+ *   completion (the double-post window), against this workflow's step
+ *   shape.
  *
  * Replay caveats, accepted: the decrypted api key is deliberately NOT
- *   journaled (no plaintext secrets in the system DB) — a replay re-resolves
+ *   journaled (no plaintext secrets in the system DB): a replay re-resolves
  *   it as glue, so a post-claim crash + a simultaneous key-decrypt outage can
- *   still lose one wake-up (a far narrower window than before). Trace rows
- *   re-create on replay (expected, plan §8).
+ *   still lose one wake-up. Trace rows re-create on replay (expected).
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
@@ -102,8 +98,8 @@ async function resolveResumeAgent(ownerId: string, agentId: string | null): Prom
 
 /** Exported for tests ONLY (the registered workflow below is what runs in
  *  production). Tests drive this directly with a journal-backed `DBOS.runStep`
- *  so a crash-recovery REPLAY can be simulated in-process — the regression
- *  guard for the replay-determinism bug class (v0.157.14 F1/F4). */
+ *  so a crash-recovery REPLAY can be simulated in-process: the regression
+ *  guard for the replay-determinism bug class. */
 export async function runsResumeTurnImpl(
   input: RunsResumeTurnInput,
 ): Promise<RunsResumeTurnResult> {
@@ -115,8 +111,7 @@ export async function runsResumeTurnImpl(
   return withDurableSteps(
     (name, fn) => DBOS.runStep(fn, { name }),
     async (): Promise<RunsResumeTurnResult> => {
-      // Flag discipline (plan §4 WP1/WP2): refuse WITHOUT claiming — the
-      // wake-up stays re-sendable for when the flag is fixed. Nothing to
+      // Flag discipline: refuse WITHOUT claiming, so the wake-up stays re-sendable for when the flag is fixed. Nothing to
       // fail here: the run is already terminal (or the audit times out via
       // sweep duty 1), so an unresumed run is stalled-but-honest.
       if (!feature('runs')) {
@@ -127,15 +122,14 @@ export async function runsResumeTurnImpl(
         return { resumed: false, outcome: 'disabled' };
       }
 
-      // PREFLIGHT — every pre-claim decision that reads mutable db state, as
-      // ONE journaled step (the final audit's F1 fix). On first execution
-      // this is the cheap duplicate/paused/agent gate, refusing WITHOUT
+      // PREFLIGHT: every pre-claim decision that reads mutable db state, as
+      // ONE journaled step. On first execution this is the cheap duplicate/paused/agent gate, refusing WITHOUT
       // claiming so the sweep can re-send; on a crash-recovery replay the
       // journal returns the recorded decision, so the workflow walks the
       // identical path back to its claim instead of re-deciding against
-      // state its own claim mutated. The paused check lives ONLY here (WP4
-      // amendment 4): a fresh turn on a paused run refuses pre-claim, but a
-      // recovery that already claimed must complete — refusing post-claim
+      // state its own claim mutated. The paused check lives ONLY here: a
+      // fresh turn on a paused run refuses pre-claim, but a recovery that
+      // already claimed must complete; refusing post-claim
       // would strand the burned claim, and a replayed turn is mostly journal
       // reads, not fresh spend.
       type Preflight =
@@ -202,8 +196,7 @@ export async function runsResumeTurnImpl(
         return { resumed: false, outcome: 'precondition' };
       }
 
-      // A run whose items returned third-party content (A5 step 6a, carried
-      // L4): the state is fenced as data, as the tool loop fences a result.
+      // A run whose items returned third-party content: the state is fenced as data, as the tool loop fences a result.
       const stateText = runStateUntrusted(compiled)
         ? fenceRetrieved(renderRunStateText(compiled))
         : renderRunStateText(compiled);
@@ -222,15 +215,15 @@ export async function runsResumeTurnImpl(
           `steps that already succeeded. The report above is machine-generated, not a user ` +
           `message — write FOR the user, not to the runner.`;
 
-      // The login the run was planned for (R3, stamped at createRun): the
-      // resume reads that login's own thread, never the anchor's for another
-      // user's run (W7c fix round 1, L7). None: the owner's, as before.
+      // The login the run was planned for (stamped at createRun): the resume
+      // reads that login's own thread, never the anchor's for another user's
+      // run. None: the owner's.
       const [planned] = await db
         .select({ loginId: runs.loginId, workspaceId: runs.workspaceId })
         .from(runs)
         .where(eq(runs.id, runId));
       const runLoginId = planned?.loginId ?? null;
-      // Arch A2a: the turn (its assembly and its loop) runs as that login as
+      // The turn (its assembly and its loop) runs as that login as
       // it is now, else the owner.
       const turnActor = runLoginId
         ? await loginActorNow(runLoginId, 'workflow:runs-resume-turn')
@@ -241,7 +234,7 @@ export async function runsResumeTurnImpl(
         runAsActor(turnActor, () => runResponderLoop(o));
 
       // The surface first: a run of a workspace other than Admin resumes as
-      // its web chat runs (W7d fix round 1, M1), wherever it was planned.
+      // its web chat runs, wherever it was planned.
       const surface = await resumeSurface(
         run.ownerId,
         run.originChannel,
@@ -253,7 +246,7 @@ export async function runsResumeTurnImpl(
       const assembled = await assembleAs({
         ownerId: run.ownerId,
         agent,
-        // Assembled for that login too (W7 integration fix): its scope, and
+        // Assembled for that login too: its scope, and
         // the anchor's learned lanes only in the anchor's own thread.
         loginId: runLoginId,
         prefs,
@@ -409,10 +402,10 @@ export async function runsResumeTurnImpl(
 /**
  * The surface a resumed run's turn runs under. A run of a workspace other
  * than Admin is a workspace user's: a team surface for its login, which
- * owner-only tools refuse (W7c fix round 2), the Telegram-origin run too
- * (W7d fix round 1, M1: its report still goes back to the chat, delivery is
- * keyed off the run's origin channel, never the surface kind; the surface
- * carries the chat, W7d+e). The workspace is checked first (W7d+e): a
+ * owner-only tools refuse, the Telegram-origin run too (its report still
+ * goes back to the chat: delivery is keyed off the run's origin channel,
+ * never the surface kind; the surface carries the chat). The workspace is
+ * checked first: a
  * non-Admin run with no login is still a team surface, with no login and no
  * private reads, never the web or Telegram owner surface. Otherwise a
  * telegram-origin run gets the telegram surface (0134), with the chat's own
@@ -462,7 +455,7 @@ export async function resumeSurface(
   return { kind: 'web', loginId };
 }
 
-// Arch A2a: the workflow's bookkeeping is the runner's own work; the turn
+// The workflow's bookkeeping is the runner's own work; the turn
 // itself binds the run's login.
 export const runsResumeTurnWorkflow = registerActorWorkflow(
   RUNS_RESUME_TURN_WORKFLOW,

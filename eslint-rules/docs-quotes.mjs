@@ -15,8 +15,8 @@
  * What counts as a heading: a markdown heading, or the bold lead of a
  * paragraph or list item (`**Label.** text`). A quote names one when it is
  * the heading's text or a whole-word prefix of it (headings carry a date, a
- * migration or a suffix: "Pre-check deletion" names "Pre-check deletion (A4
- * step 4)"), ignoring case, backticks and a leading section number ("4b.").
+ * migration or a suffix: "Pre-check deletion" names "Pre-check deletion
+ * (0280)"), ignoring case, backticks and a leading section number ("4b.").
  * A word ends at a space or a mark, never a hyphen: "Pre" names no
  * "Pre-check ..." heading. A quote that is no heading's whole text and a
  * prefix of two or more different headings of its doc names none: it fails
@@ -28,9 +28,9 @@
  * pinned in scripts/arch-scoreboard.pins.json, only down) are the quotes
  * that resolve only through the archive, and every quote of a docs/_archive/
  * file (counted, not refused: pointing a quote at the archive by name moves
- * no count). Step refs (actorsStepRefs, the same pins, only down; D2 takes
- * them to 0) are the unquoted pointers to the history by a step's code:
- * `docs/actors.md, A4 step 3b`, `(docs/actors.md, fixed by A6)`.
+ * no count). Step refs (actorsStepRefs, the same pins, only down) are the
+ * unquoted pointers to the history by a step's code:
+ * `docs/actors.md, B4 step 3b`, `(docs/actors.md, fixed by B6)`.
  *
  * Scanned: every tracked text file except the history (docs/_archive,
  * docs/_changelog, CHANGELOG.md), whose quotes name headings as they were,
@@ -49,9 +49,8 @@ import { join } from 'node:path';
 export const SPEC = 'docs/actors.md';
 export const ARCHIVE = 'docs/_archive/actors-history.md';
 
-/** `file: doc, "quote"` of each quote that named no heading on main at
- *  v0.300.83, less the ones fixed since. docs/actors.md's go with D2's
- *  retarget. */
+/** `file: doc, "quote"` of each known quote that names no heading. The
+ *  list only shrinks: an entry that no longer dangles is a problem. */
 export const DANGLING = [
   'eslint-rules/as-system-allowlist.mjs: docs/actors.md, "A6"',
   'packages/db/migrations/0213_mobile_roles_push.sql: docs/mobile-companion-backend.md, "Three roles on the phone"',
@@ -80,7 +79,7 @@ const BODY = String.raw`(?:\\?"((?:[^"\\\n]|${CONT})+?)\\?"|“((?:[^”\n]|${CO
 const QUOTE = new RegExp(PATH + SEP + BODY, 'g');
 // An unquoted pointer to the history by a step's code: the spec or an
 // archive file, a comma, colon or `(`, at most two lower-case words
-// ("the", "fixed by"), then a code (A4, A6b, F1, S3, R0, W7c).
+// ("the", "fixed by"), then a code (B4, B6b, C1, X7c).
 const STEP = new RegExp(
   String.raw`docs\/(actors\.md|_archive\/[A-Za-z0-9_./-]+\.md)(?:[,:](?:[ \t]*|${CONT})|[ \t]*\([ \t]*)((?:[a-z]+[ \t]+){0,2}[A-Z]{1,2}\d+[a-z]?)(?![A-Za-z0-9])`,
   'g',

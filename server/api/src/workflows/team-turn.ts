@@ -66,7 +66,7 @@ async function teamTurnImpl(input: TeamTurnInput): Promise<TeamTurnRunResult> {
   return dto;
 }
 
-/** Arch A2a: the turn runs as the member login it answers, as it is now. */
+/** The turn runs as the member login it answers, as it is now. */
 export const teamTurnWorkflow = registerActorWorkflow(
   TEAM_TURN_WORKFLOW,
   (input: TeamTurnInput) => loginActorNow(input.options.loginId, 'workflow:team-turn'),

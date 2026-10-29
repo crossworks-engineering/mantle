@@ -117,7 +117,7 @@ async function createTranscript(
   const parsed = (await res.json()) as CreateTranscriptResponse;
   if (!parsed.id) throw new Error('assemblyai create-transcript: no id in response');
   if (parsed.status === 'error') {
-    // A 2xx that reports a failure in the provider's words (A10 lows): a
+    // A 2xx that reports a failure in the provider's words: a
     // ProviderHttpError, so a member or the model hears the fixed sentence
     // and the log keeps the words.
     throw new ProviderHttpError({

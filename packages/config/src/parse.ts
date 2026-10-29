@@ -1,6 +1,6 @@
 /**
- * The two env dialects, as pure functions of the raw string (A10 #11;
- * docs/configuration.md, "Flags and env"). Every flag and every number the
+ * The two env dialects, as pure functions of the raw string
+ * (docs/configuration.md, "Flags and env"). Every flag and every number the
  * tree reads from the environment goes through one of these, through
  * `envFlag` / `envInt` / `envNumber` (index.ts) or the registries
  * (features.ts, numbers.ts). A hand parse elsewhere is a lint error

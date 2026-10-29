@@ -1,20 +1,19 @@
 /**
- * The owner MCP surface's side of the one gate (workspaces arch A3c; plan
- * sections 2, 8 and 20.3): what an MCP tool's policy is (the `mcp-tool`
- * source), and the gate caller of a prepared MCP connection. The surface
- * narrowers (a key's areas, a key's or peer's risky tools and Write switch,
- * spending on the owner's keys) live in @mantle/tools (gate-narrowers.ts),
- * so every process that dispatches registers them (fix round 2, M-A); they
- * read what this policy declares, and nothing else (A5 step 2: the peer
- * narrower reads the policy's `peerRisky` and effect, no rule by name).
+ * The owner MCP surface's side of the one gate: what an MCP tool's policy
+ * is (the `mcp-tool` source), and the gate caller of a prepared MCP
+ * connection. The surface narrowers (a key's areas, a key's or peer's risky
+ * tools and Write switch, spending on the owner's keys) live in
+ * @mantle/tools (gate-narrowers.ts), so every process that dispatches
+ * registers them; they read what this policy declares, and nothing else
+ * (the peer narrower reads the policy's `peerRisky` and effect, no rule by
+ * name).
  *
- * The policy is DECLARED (A5 step 2): a builtin's ToolPolicy, or a
- * hand-written MCP tool's (mcp-defs.ts), read by toGatePolicy. Nothing is
- * derived from a list. Since A5 step 4 the surface registers, lists and
- * calls through the gate (gated-tools.ts) with the callers here:
- * gate-policy.test.ts pins the listing to the one A5 step 2 snapshotted,
- * for every tool and every kind of caller, and that the call runs exactly
- * when the listing shows it.
+ * The policy is DECLARED: a builtin's ToolPolicy, or a hand-written MCP
+ * tool's (mcp-defs.ts), read by toGatePolicy. Nothing is derived from a
+ * list. The surface registers, lists and calls through the gate
+ * (gated-tools.ts) with the callers here: gate-policy.test.ts pins the
+ * listing for every tool and every kind of caller, and that the call runs
+ * exactly when the listing shows it.
  */
 import {
   enterCall,
@@ -48,7 +47,7 @@ export function mcpToolPolicy(ref: PolicyRef): GatePolicy | null {
 }
 
 /**
- * The create home rule of an MCP connection (gate step 6; A5 step 4): its
+ * The create home rule of an MCP connection (gate step 6): its
  * fallback was resolved when it connected (the login's private workspace
  * when its scope does not hold Admin, made then), so the step makes
  * nothing at call time and runs first, before the pre-run checks: a
@@ -56,9 +55,8 @@ export function mcpToolPolicy(ref: PolicyRef): GatePolicy | null {
  * the surface always answered. A home that names no place is not set (an
  * Admin user's create with no `workspace`: the folder's, else Admin, the
  * database's own default). A login outside Admin with a private workspace
- * runs every call under it, reads too (W7b fix round 1, H2); one with
- * none has its creates refused, with a reply that says why (W7b fix round
- * 2).
+ * runs every call under it, reads too; one with none has its creates
+ * refused, with a reply that says why.
  */
 export function mcpCreateHomeRule(privateWs: string | null, noHome: boolean): CreateHomeRule {
   return Object.freeze({
@@ -102,7 +100,7 @@ export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller {
     facts: Object.freeze({
       keyAreas: caller.areas ?? null,
       riskyAllowed: caller.riskyAllowed ?? [],
-      // What a tool write's audit row names (A5 step 6d, call-audit.ts),
+      // What a tool write's audit row names (call-audit.ts),
       // and whether the route writes the call's row itself (`byRoute`: an
       // API key's call, auditMcpKeyCall), so the gate writes none.
       audit: Object.freeze({

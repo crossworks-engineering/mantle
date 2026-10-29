@@ -1,5 +1,5 @@
 /**
- * The recording point (A10 #5, docs/spend-recording.md): every adapter the
+ * The recording point (docs/spend-recording.md): every adapter the
  * registry hands out is wrapped here, per capability, so each provider call
  * that returns writes its usage through the one recorder (@mantle/tracing
  * recordUsage). Callers record nothing by hand; which trace and step the
@@ -12,7 +12,7 @@
  * Recording never costs a call its result: every recording, from reading the
  * result and the options to the recorder itself, runs inside `record`, which
  * swallows and logs any throw. A paid result is always returned, so a broken
- * recording can never turn into a retry that pays again (A10 #5 fix round 1).
+ * recording can never turn into a retry that pays again.
  */
 import { errorMessage } from '@mantle/std';
 import { recordUsage, type ProviderUsage } from '@mantle/tracing';

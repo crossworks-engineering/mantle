@@ -1,13 +1,8 @@
 /**
- * THE timeout table (A10 #10, docs/provider-http.md): every network deadline
- * by name, at the value its call site had before the fold. A call site names
- * an entry (`PROVIDER_TIMEOUTS.discover`) instead of writing a number, so a
- * deadline is changed here, once, and the table shows them side by side.
- *
- * Two kinds of entry are new, each a named behaviour change: the provider
- * pool's own default (`default`), and the deadlines of calls that had none
- * (`embed`, `transcribe`, and `speech` on the two speech adapters that had
- * none).
+ * THE timeout table (docs/provider-http.md): every network deadline by name.
+ * A call site names an entry (`PROVIDER_TIMEOUTS.discover`) instead of
+ * writing a number, so a deadline is changed here, once, and the table shows
+ * them side by side.
  */
 
 /** Model-provider calls (`@mantle/voice` adapters, through providerFetch). */
@@ -51,18 +46,17 @@ export const PROVIDER_TIMEOUTS = {
   imageCold: 180_000,
   /** A local embedding sub-batch (MANTLE_LOCAL_EMBED_TIMEOUT_MS overrides). */
   localEmbed: 120_000,
-  /** NEW: a hosted embedding call. Before, none (undici's 300 s header and
-   *  300 s body-idle defaults only), so a hung call stalled a worker. The
-   *  longest embedding deadline we already had (localEmbed). */
+  /** A hosted embedding call. Without one, undici's 300 s header and 300 s
+   *  body-idle defaults let a hung call stall a worker. Matches localEmbed. */
   embed: 120_000,
-  /** NEW: a speech-to-text call (the audio upload and the transcript). Before,
-   *  none. Generous: an hour of audio is a large upload. */
+  /** A speech-to-text call (the audio upload and the transcript). Generous:
+   *  an hour of audio is a large upload. */
   transcribe: 600_000,
   /**
-   * NEW: providerFetch's own default for a call that names none. Applied to
-   * the whole exchange of an ordinary response and to the headers only of an
-   * event stream, so a long healthy stream is never cut. The longest provider
-   * deadline we already had (imageCold).
+   * providerFetch's own default for a call that names none. Applied to the
+   * whole exchange of an ordinary response and to the headers only of an
+   * event stream, so a long healthy stream is never cut. Matches imageCold,
+   * the longest provider deadline.
    */
   default: 180_000,
 } as const;

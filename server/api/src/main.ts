@@ -92,7 +92,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 async function main(): Promise<void> {
-  // The one gate (arch A3c fix round 2, M-A): every narrower registered, or
+  // The one gate: every narrower registered, or
   // the boot fails here (ensureGateReady throws), not at the first tool call
   // of a turn.
   // gate-boot.test.ts pins this call in every process entry.
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   // Boot smoke (scripts/boot-smoke.mjs): every import above linked and the
   // gate is ready; exit 0 before a pool, a listener or DBOS starts.
   if (isBootSmoke()) await bootSmokeExit('api');
-  // One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts): Telegram,
+  // One audit row for every tool write (@mantle/db call-audit.ts): Telegram,
   // heartbeat, team and worker turns, runs.
   startCallAudit();
   // Liveness: the api runner exposes no HTTP port (DBOS 5 has no admin
@@ -109,7 +109,7 @@ async function main(): Promise<void> {
   // covered by the restart policy. Measures event-loop liveness, not workflow
   // progress — an idle runner with no queued turns is still healthy.
   startProcessHeartbeat();
-  // Arch A2b2b: this process sends scoped login writes (an Admin turn's) to
+  // This process sends scoped login writes (an Admin turn's) to
   // the write role (docs/actors.md; the connection ceiling counts its pool
   // for each process that opens it).
   openLoginWritePool();
@@ -167,11 +167,11 @@ async function main(): Promise<void> {
   // the owner's interactive assistant/telegram turns (the starvation isolation;
   // see RUNS_TURN_QUEUE in @mantle/runs). Deliberately low concurrency.
   await DBOS.registerQueue(RUNS_TURN_QUEUE, { concurrency: runsTurnConcurrency() });
-  // Member chat turns get their own queue too (audit F31): a few busy members
+  // Member chat turns get their own queue too: a few busy members
   // must not queue ahead of the owner's turns. Low concurrency by default.
   await DBOS.registerQueue(MEMBER_TURN_QUEUE, { concurrency: memberTurnConcurrency() });
-  // The client chat's queue ('mantle.client') is no longer registered
-  // (workspaces W5c). Its row persists in the DBOS system database on a box
+  // The client chat's queue ('mantle.client') is not registered. Its row
+  // persists in the DBOS system database on a box
   // that had it, so any turn left on it still dispatches, into the retired
   // stub.
   DBOS.logger.info(
@@ -188,10 +188,10 @@ async function main(): Promise<void> {
   // cycle (the workflow imports handleTelegramMessage from runtime.ts).
   await startAgentRuntime({ enqueueTelegramTurn });
 
-  // The one shutdown helper (@mantle/std/shutdown, A10 #15). Drain the
-  // extractor queue first (finish in-flight pg-boss jobs), then stop DBOS,
-  // then exit 0; a teardown past API_EXIT_DEADLINE_MS exits 1 (main had no
-  // deadline: a hung drain held the process).
+  // The one shutdown helper (@mantle/std/shutdown). Drain the extractor
+  // queue first (finish in-flight pg-boss jobs), then stop DBOS, then exit 0;
+  // a teardown past API_EXIT_DEADLINE_MS exits 1, so a hung drain never
+  // holds the process.
   onShutdown({
     name: 'api',
     deadlineMs: API_EXIT_DEADLINE_MS,
@@ -214,7 +214,7 @@ async function main(): Promise<void> {
  *  compose-env.test.ts holds the grace period past this deadline. */
 const API_EXIT_DEADLINE_MS = 45_000;
 
-// Arch A2a: no actor around the boot, so the DBOS dispatch loop carries
+// No actor around the boot, so the DBOS dispatch loop carries
 // none: each workflow binds its own at its entry (docs/actors.md), and one
 // that forgot shows as a miss. The boot's own database work binds its own
 // (startAgentRuntime: system(boot:agent-runtime)).

@@ -111,7 +111,7 @@ export const huggingfaceImageAdapter: ImageGenDispatcher = {
       // HF sometimes returns a JSON error body with a 200 — the
       // server says "everything's fine" but the body is `{error:
       // 'Model X is not deployed', ...}`. Detect and surface: the body is
-      // the provider's, so it rides on a ProviderHttpError (A10 lows): the
+      // the provider's, so it rides on a ProviderHttpError: the
       // log keeps it, a member or the model hears the fixed sentence.
       const text = await res.text().catch(() => '');
       throw new ProviderHttpError({

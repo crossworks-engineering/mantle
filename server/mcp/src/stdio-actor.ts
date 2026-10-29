@@ -1,5 +1,5 @@
 /**
- * The stdio MCP server's actor (workspaces arch A2a). The process is started
+ * The stdio MCP server's actor. The process is started
  * for the owner login, so it runs as login(owner): the connect, and every
  * message the transport hands the server (each arrives on stdin's own
  * events, with no actor), never system. Kept apart from server.ts, which

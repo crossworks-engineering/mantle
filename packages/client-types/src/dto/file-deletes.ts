@@ -1,6 +1,6 @@
 /**
- * A file delete's answers (F4 fix rounds 2 and 3; docs/actors.md, "F4 fix
- * round 3", the bulk delete's contract): what jackdaw reads back from
+ * A file delete's answers (docs/actors.md, "Who may do what"): what the
+ * client reads back from
  * DELETE /api/files/files (bulk) and DELETE /api/files/files/:id?cascade=1.
  *
  * No name or id of an item the caller's scope does not read is ever in an
@@ -60,7 +60,7 @@ export type BulkDeleteCascadeResponse = {
   reapedTotal: number;
   /** Derived items kept because the caller may not delete them (in a
    *  workspace it does not manage, or one it does not read): left in place,
-   *  over every file (F4 fix round 3). */
+   *  over every file. */
   keptTotal: number;
   refused: BulkDeleteRefusal[];
 };
@@ -72,6 +72,6 @@ export type FileCascadeDeleteResponse = {
   /** Derived items the reap could not delete (audit-visible). */
   skipped: number;
   /** Derived items kept because the caller may not delete them: a count,
-   *  never a name (F4 fix round 3). */
+   *  never a name. */
   kept: number;
 };

@@ -126,7 +126,7 @@ export function buildExtractorInput(
   // The node's title and text came from outside (an email subject and body,
   // a fetched page, an upload's filename, other people's words): both are
   // fenced (markers carrying a per-call nonce), their forged markers
-  // defanged, and the system prompt says what the fence means (A10 part 1).
+  // defanged, and the system prompt says what the fence means.
   // The type and the table hint are ours and stay outside.
   return {
     system: withFenceNote(workerSystemPrompt || DEFAULT_EXTRACTOR_PROMPT, fence),
@@ -137,9 +137,8 @@ export function buildExtractorInput(
 /**
  * Whether the model step reuses a table's summary instead of calling the
  * model: a table that keeps a summary (hasSummary: an empty one is none, so
- * an empty summary runs the model, as on main). The gate admits such a table
- * with an 'embed' stamp before the key pre-flight (A10 #7 fix round 2, L5),
- * so this path needs no key and no chat adapter.
+ * an empty summary runs the model). The gate admits such a table with an
+ * 'embed' stamp before the key pre-flight, so this path needs no key and no chat adapter.
  */
 export function reusesTableSummary(
   node: { readonly type: string },

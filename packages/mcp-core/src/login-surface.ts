@@ -1,10 +1,9 @@
 /**
- * MCP as a login (plan page e5b854dd, 2026-10-03), one surface for every
- * login since workspaces W7b (plan 7.4).
+ * MCP as a login: one surface for every login.
  *
  * `/api/mcp` serves any LOGIN the same owner surface (build-server.ts), each
- * tool listed and called through the one gate (gated-tools.ts, arch A5
- * step 4) as the connection's caller (gate-policy.ts mcpGateCaller): each
+ * tool listed and called through the one gate (gated-tools.ts) as the
+ * connection's caller (gate-policy.ts mcpGateCaller): each
  * call in that login's own scope (mcp-scope.ts: the union of its
  * workspaces, Moderator where it is one):
  *
@@ -88,8 +87,8 @@ export type McpCaller = {
   riskyAllowed?: readonly string[];
   /** The peer whose token this is (its own rate budget). */
   peerId?: string;
-  /** A peer bound to the owner that the owner registered itself (W6b fix
-   *  round 3, M-1): only then is its app_delete the owner's (purged after
+  /** A peer bound to the owner that the owner registered itself: only
+   *  then is its app_delete the owner's (purged after
    *  30 days). Any other peer's waits in the trash for the owner. */
   peerByOwner?: boolean;
   /** The inbound API key this is (migration 0232): its own rate budget. */
@@ -112,16 +111,14 @@ export function callerAreasAllow(slug: string, caller: Pick<McpCaller, 'areas'>)
 /*
  * Owner tools a PEER or an API key bound to the owner never gets unless the
  * owner named them on it: anything that sends outside the box or spends,
- * runs a shell or a container, publishes, or hands out privilege (Jason,
- * 2026-10-03), every tool that starts paid model work, waits for the
+ * runs a shell or a container, publishes, or hands out privilege, every
+ * tool that starts paid model work, waits for the
  * owner's confirm in the app (deletes, restores: the owner surface does not
  * hold that gate) or changes a mini app's code or grants (a published app
  * runs the change at once). The owner's own OAuth connector is not filtered
  * by this. Each such tool's policy says `peerRisky` (the builtins' and the
  * hand-written MCP tools'), and the gate's peer narrower reads it
- * (@mantle/tools gate-narrowers.ts). A5 step 6a deleted the
- * PEER_RISKY_TOOL_SLUGS view and the name-keyed isPeerRiskyTool,
- * ownerPeerAllows and isMcpToolReadOnly: a name no policy table holds (a
+ * (@mantle/tools gate-narrowers.ts). A name no policy table holds (a
  * connector's tool) is judged by its row's own policy at the gate.
  */
 
@@ -167,11 +164,10 @@ export type PreparedCallerTools = {
   view: AdminGateView;
   /** The login's private workspace when its scope does not hold Admin. */
   privateWs: string | null;
-  /** The connector tools of the login's workspaces (team apps Phase 2),
-   *  listed as the gate lists them (gateLists, like any tool). */
+  /** The connector tools of the login's workspaces, listed as the gate lists them (gateLists, like any tool). */
   connectors: Tool[];
-  /** The login's scope (A5 step 4): a login in no workspace lists no tools
-   *  at all (owner decision A). Absent: not read (a test's prepared
+  /** The login's scope: a login in no workspace lists no tools at all.
+   *  Absent: not read (a test's prepared
    *  connection; each call still enters the scope it reads). */
   scope?: WorkspaceScope;
 };
@@ -195,13 +191,12 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
   const view = await gateViewFor(caller.loginId);
   const scope = await loginScopeFor(caller.loginId);
   let privateWs: string | null = null;
-  // The create rule's fallback for a user outside Admin (the W6b route
-  // rule): made with the login, so only once it is in a workspace.
+  // The create rule's fallback for a user outside Admin (the route rule):
+  // made with the login, so only once it is in a workspace.
   if (!view.holdsAdmin && scope.ws.length > 0) {
-    // THE create-home intent's fallback (@mantle/db createHomeIntent, arch
-    // A3c), once per connection: it makes the private workspace when there
-    // is none, and the login write gateway knows the pair from it (arch
-    // A2b2b). Each create then asks the same function with it.
+    // THE create-home intent's fallback (@mantle/db createHomeIntent), once
+    // per connection: it makes the private workspace when there is none,
+    // and the login write gateway knows the pair from it. Each create then asks the same function with it.
     // As the connection's login (createHomeFallback makes only the bound
     // login's own private workspace).
     const home = await runAsActor(loginActor(caller.loginId, caller.write ? 'rw' : 'ro'), () =>
@@ -209,10 +204,10 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
     );
     privateWs = 'refused' in home ? null : home.privateWs;
   }
-  // Connector tools (team apps Phase 2; W5b2): the connector a resource of
+  // Connector tools: the connector a resource of
   // one of the login's workspaces (the call's scope checks it again, and a
   // write tool's Write tick and Moderator there, in dispatch). Listed as
-  // the gate lists them (A5 step 4, registerPreparedTools): a tool with the
+  // the gate lists them (registerPreparedTools): a tool with the
   // admin's read-only mark reads, one without writes and needs the
   // connection's write; a connector tool is in no key area, so only an
   // all-areas key reaches it.
@@ -224,13 +219,11 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
 
 /*
  * The tools that spend on the brain owner's provider keys: every tool whose
- * policy spends `ownerKey` (A5 step 6a deleted the OWNER_KEY_SPENDING_TOOLS
- * view and spendsOwnerKeys; the gate's spending narrower reads the policy):
+ * policy spends `ownerKey` (the gate's spending narrower reads the policy):
  * the spending builtins (all but search_chunks), a crawl (Firecrawl
  * credits), a re-run of the extractor (model work per node), a turn of
- * another agent or of a responder (W7b fix round 1, M4), and a route map
- * (the owner's Mapbox key, W7 integration fix 2, M4). Outside an Admin
- * scope such a tool is not listed on MCP (a CEO default, reversible), so a
+ * another agent or of a responder, and a route map (the owner's Mapbox
+ * key). Outside an Admin scope such a tool is not listed on MCP, so a
  * direct MCP, key or peer call of a user who is not a user of the Admin
  * workspace cannot reach it. A workspace assistant's turn keeps its own
  * rules (the member turn ledger limits), untouched here.
@@ -239,12 +232,12 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
  * `ownerKey`: search_chunks' query embedding is the one search_nodes makes
  * too, and its one paid step (the passage_scoring decider, up to 8
  * requests per search) is skipped on a connection outside an Admin scope
- * (`ownerKeysOff`, W7b fix round 2, M-a): such a login gets the plain
+ * (`ownerKeysOff`): such a login gets the plain
  * ranking.
  */
 
 /** Whether the prepared surface is outside an Admin scope: nothing on it
- *  spends on the brain owner's keys (M4 lists no such tool; M-a: a listed
+ *  spends on the brain owner's keys (no such tool is listed, and a listed
  *  tool skips its paid step). */
 export function preparedKeysOff(prepared: PreparedCallerTools): boolean {
   return !prepared.view.holdsAdmin;
@@ -268,8 +261,8 @@ export function preparedLists(prepared: PreparedCallerTools, name: string): bool
   return gateLists(mcpGateCaller(prepared), listedRef(prepared, name));
 }
 
-/** One audit row per connector call a login makes over its own MCP (team
- *  apps Phase 2): the login, the tool and its connector, read or write,
+/** One audit row per connector call a login makes over its own MCP: the
+ *  login, the tool and its connector, read or write,
  *  the connection, and for a write its input (capped; it can hold what
  *  the login typed, and the audit log is admins only). Best effort. */
 function logConnectorCall(
@@ -288,7 +281,7 @@ function logConnectorCall(
   }
   const handler = row.handler as { kind: 'mcp'; group: string; toolName: string };
   // This row is the call's audit row: the gate writes no `api.write` for it
-  // (A5 step 6d, one row per write).
+  // (one row per write).
   markCallAudited();
   try {
     // As the system: the audit log is an admin table, and the caller runs
@@ -325,9 +318,8 @@ function logConnectorCall(
 const CONNECTOR_LOG_INPUT_MAX = 2048;
 
 /**
- * A connector row's own check, in its call's pre-run slot (A5 step 4): the
- * connector as a workspace resource (W4b fix round 1, M3), checked here
- * too: it must be one of the login's workspaces' resources, and a write
+ * A connector row's own check, in its call's pre-run slot: the connector
+ * as a workspace resource, checked here too: it must be one of the login's workspaces' resources, and a write
  * needs that resource's Write tick in a workspace the login moderates
  * (dispatch checks the call's scope again). Then the call's audit row.
  * Whether the connection may write at all is the gate's read-only
@@ -336,14 +328,14 @@ const CONNECTOR_LOG_INPUT_MAX = 2048;
  */
 export function connectorCheck(caller: McpCaller) {
   return async (row: Tool, args: Record<string, unknown>): Promise<string | null> => {
-    // The connector tool's policy (arch A3c, runtime-policy.ts): a stale
+    // The connector tool's policy (runtime-policy.ts): a stale
     // (voided) mark counts as a write here; dispatch refuses it below the
     // owner anyway.
     const policy = connectorToolPolicy(row);
     const write = policy.effect === 'write';
     // A connection that only reads (a read-only key, peer or login) calls a
     // tool an Admin marked read-only with only the inputs it was marked
-    // with, in any scope (A5 step 5 fix round 1, L2): dispatch applies the
+    // with, in any scope: dispatch applies the
     // mark below the owner and in a workspace scope, not to an owner
     // surface outside one, which a read-only admin key or peer can be.
     if (!caller.write) {
@@ -380,11 +372,11 @@ export function peerNamesNoLogin(caller: Pick<McpCaller, 'via' | 'role' | 'peerB
 }
 
 /**
- * Register the one surface for this caller (W7b): the owner tools and the
+ * Register the one surface for this caller: the owner tools and the
  * connector tools of its workspaces, each listed when the one gate lists
- * it for the connection and called through it (gated-tools.ts, A5 step 4;
- * the caller: gate-policy.ts mcpGateCaller). A login in no workspace lists
- * nothing (owner decision A: the server instructions say why).
+ * it for the connection and called through it (gated-tools.ts; the
+ * caller: gate-policy.ts mcpGateCaller). A login in no workspace lists
+ * nothing (the server instructions say why).
  */
 export function registerPreparedTools(
   server: McpServer,
@@ -415,8 +407,7 @@ export function registerPreparedTools(
     gate,
   });
   // The connectors, on the same server as every other tool: in the
-  // login's scope and gate, and under its create home (W7b fix round 2,
-  // L-a).
+  // login's scope and gate, and under its create home.
   const surface: ToolSurface = { kind: 'owner', via, loginId: caller.loginId, mcp: channel };
   for (const row of prepared.connectors) {
     registerGatedTool(server, gate, caller.anchorId, { kind: 'connector', row, surface });
@@ -424,23 +415,21 @@ export function registerPreparedTools(
 }
 
 /** Whether a prepared connection is a login's in no workspace on a brain
- *  on workspaces: it lists no tools (owner decision A). */
+ *  on workspaces: it lists no tools. */
 function inNoWorkspace(prepared: PreparedCallerTools | undefined): boolean {
   return prepared?.kind === 'owner' && !!prepared.scope && prepared.scope.ws.length === 0;
 }
 
 /** The server instructions: Recall's hook, plus where creates land; for a
- *  login in no workspace, why it has no tools (A5 step 4, owner decision
- *  A). */
+ *  login in no workspace, why it has no tools. */
 export function mcpInstructionsFor(_caller: McpCaller, prepared?: PreparedCallerTools): string {
   if (inNoWorkspace(prepared)) return MCP_NO_WORKSPACE_INSTRUCTIONS;
   return `${MANTLE_MCP_INSTRUCTIONS} ${MCP_WORKSPACE_INSTRUCTIONS}`;
 }
 
-/** What every login is told about its workspaces (W7b). */
+/** What every login is told about its workspaces. */
 export const MCP_WORKSPACE_INSTRUCTIONS =
   'You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).';
 
-/** What a login in no workspace is told (A5 step 4, owner decision A): it
- *  lists no tools, and why: the gate's no-scope words, then what follows. */
+/** What a login in no workspace is told: it lists no tools, and why: the gate's no-scope words, then what follows. */
 export const MCP_NO_WORKSPACE_INSTRUCTIONS = `${NO_SCOPE_ERROR} Until then this connection lists no tools.`;

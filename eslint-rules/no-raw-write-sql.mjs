@@ -1,5 +1,5 @@
 /**
- * no-raw-write-sql (plan v3.2 section 3.2): scoped code writes through a
+ * no-raw-write-sql: scoped code writes through a
  * typed drizzle write or a definer call, never SQL text it writes by hand,
  * so the database routes and checks every write the same way.
  *

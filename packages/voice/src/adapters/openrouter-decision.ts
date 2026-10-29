@@ -123,7 +123,7 @@ export const openrouterDecisionAdapter: DecisionDispatcher = {
     }
     if (!res.ok) {
       // The provider's words stay on the error (the log, the owner's trace);
-      // a member or the model hears the fixed sentence (A10 lows).
+      // a member or the model hears the fixed sentence.
       const msg = json?.error?.message ?? text.slice(0, 300);
       throw new ProviderHttpError({
         provider: 'openrouter',

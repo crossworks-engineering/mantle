@@ -1,5 +1,5 @@
 /**
- * The level-reads sweep (workspaces plan S2, from phase W5b1 on). Access is
+ * The level-reads sweep. Access is
  * decided by workspace grants, not by the tier levels: no product code may
  * read the level columns (nodes.audience, share_level, inherited_level,
  * embedded_level, agents.audience, tool_groups.audience), the helpers that
@@ -13,14 +13,12 @@
  * tests, packages/db/migrations/, packages/db/rollback/ (a revert copies a
  * migration's old bodies verbatim) and any archive/ folder.
  *
- * A permanent guard since W8c, which took the last level read out of the
- * code (the columns stay in the database, frozen, until W10 drops them).
- * The allowlist below holds files where the word means something else
- * (an OAuth audience, plain English), with the number of matching lines
- * pinned (the one frozen read, the persona reconcile of a brain not on
- * workspaces, went with the switch-over code in arch A7): eslint-rules/level-reads.test.ts fails on any other count, so a
- * new read in a listed file fails too, and on any `audience` line outside
- * the list.
+ * A permanent guard: no code reads a level (the columns stay in the
+ * database, frozen). The allowlist below holds files where the word means
+ * something else (an OAuth audience, plain English), with the number of
+ * matching lines pinned: eslint-rules/level-reads.test.ts fails on any
+ * other count, so a new read in a listed file fails too, and on any
+ * `audience` line outside the list.
  *
  * Adding a file or raising a count is a review decision: say why in the PR.
  */

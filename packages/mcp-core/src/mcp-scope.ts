@@ -1,7 +1,6 @@
 /**
- * How an owner MCP call enters its login's scope (workspaces W7a; arch A5
- * step 4: the caller's `enterScope`, run by the one gate, @mantle/db
- * gate.ts). Every login's MCP (OAuth, an API key, a peer bound to it, and
+ * How an owner MCP call enters its login's scope (the caller's
+ * `enterScope`, run by the one gate, @mantle/db gate.ts). Every login's MCP (OAuth, an API key, a peer bound to it, and
  * stdio, which runs as the anchor login) reads what that login's
  * workspaces hold, like every other user, never the whole system pool:
  *
@@ -12,10 +11,9 @@
  *    create and delete checks);
  *  - a login in no workspace has no scope: refused (NO_SCOPE_ERROR).
  *
- * The scope is read per call, as it always was (an HTTP request reads it
- * once: loginScopeFor keeps it for the request), so a login taken out of
- * its last workspace is refused at its next call. Since arch A7 there is
- * no system-pool path here (no rollback switch, no brain off workspaces).
+ * The scope is read per call (an HTTP request reads it once: loginScopeFor
+ * keeps it for the request), so a login taken out of its last workspace is
+ * refused at its next call. There is no system-pool path here.
  *
  * Also what an Admin step reads of the scope, for a caller read per call
  * (stdio): mcpAdminView, the reads adminToolGate made.
@@ -33,12 +31,12 @@ import { NO_SCOPE_ERROR } from '@mantle/std';
 
 /** The refusal when the login holds no workspace at all: the gate's own
  *  no-scope refusal (@mantle/std NO_SCOPE_ERROR, one constant, in the
- *  words this surface has always said). Since A5 step 4 such a login lists
- *  no tools at all (owner decision A) and the connection's instructions
+ *  words this surface has always said). Such a login lists no tools at
+ *  all and the connection's instructions
  *  say why (login-surface.ts MCP_NO_WORKSPACE_INSTRUCTIONS). A login that
  *  loses its last workspace mid-session does not read these words on its
  *  next call: each HTTP request lists afresh, so the tool is not registered
- *  and the SDK answers "Tool X not found" (fix round 1, LOW-2). */
+ *  and the SDK answers "Tool X not found". */
 export const NO_WORKSPACE_ERROR = NO_SCOPE_ERROR;
 
 /**

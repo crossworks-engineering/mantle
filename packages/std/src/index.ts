@@ -1,8 +1,7 @@
 /**
- * @mantle/std — the four helpers every package used to carry its own copy of
- * (2026-09-02 audit, sloppiness A7): the error-to-message idiom appeared 322
- * times inline, the UUID regex 21 times, `sleep` twice by name and a dozen
- * times inline. No package dependencies, no node builtins (the share runtime
+ * @mantle/std: the small helpers every package shares instead of a copy of
+ * its own (the error-to-message idiom, the UUID regex, `sleep`). No package
+ * dependencies, no node builtins (the share runtime
  * bundles this file for the browser); safe to import from anywhere. The published contract packages (client-types, content-core,
  * share-ui, voice-client) stay dependency-free and are deliberately NOT
  * consumers.
@@ -75,8 +74,8 @@ export const RUNTIME_ERROR_PUBLIC =
   'the server could not run this request (the details are in the server log)';
 
 /**
- * An error our own runtime raises for its plumbing (the A8 finding F2, fix
- * round 1 M2): a scope or transaction guard of @mantle/db (withSystemTx, the
+ * An error our own runtime raises for its plumbing: a scope or transaction
+ * guard of @mantle/db (withSystemTx, the
  * scope runners, a lost turn scope, the actor check), the gate not being
  * ready. Its words never reach a model or a person: RUNTIME_ERROR_PUBLIC
  * goes out, the detail stays in the server log. Known by its class (the
@@ -201,9 +200,9 @@ export {
  * The message of `err` for a caller outside the server (a tool reply, an MCP
  * client): a database error never goes out as its own text, which can carry
  * SQL, parameters or (with a row rule in force) something about a row the
- * caller may not read (workspaces W3, defence in depth). Logged in full
- * under `where`. A domain error says its row's text (the table the HTTP
- * answer reads, domain-errors.ts, A10 part 2). Anything else keeps its
+ * caller may not read (defence in depth). Logged in full under `where`. A
+ * domain error says its row's text (the table the HTTP answer reads,
+ * domain-errors.ts). Anything else keeps its
  * message.
  */
 export function publicErrorMessage(err: unknown, where: string): string {
@@ -211,8 +210,7 @@ export function publicErrorMessage(err: unknown, where: string): string {
   if (domain) return domain.toolText;
   if (!isDatabaseError(err)) {
     // Our runtime's own fault (a scope guard's, by its class): a fixed text
-    // out, the detail in the log (the A8 finding F2). Anything else keeps
-    // its message.
+    // out, the detail in the log. Anything else keeps its message.
     if (!isRuntimeFault(err)) return err instanceof Error ? err.message : String(err);
     console.error(`[${where}] runtime fault:`, err);
     return RUNTIME_ERROR_PUBLIC;
@@ -223,14 +221,14 @@ export function publicErrorMessage(err: unknown, where: string): string {
 
 /**
  * {@link publicErrorMessage} for work that called a model provider (a team
- * turn's error, a speech, vision, image or summary tool; A10 #10 fix round
- * 1): a provider's answer can carry an account id, an organisation name or
+ * turn's error, a speech, vision, image or summary tool): a provider's
+ * answer can carry an account id, an organisation name or
  * part of a key, so it never reaches a member or a model. A domain error
  * (ProviderHttpError) says its row's fixed sentence; any other error the
  * provider classifier names (an SDK's own error, a timeout, a network
  * failure) says its class's fixed sentence. A provider failure the
  * classifier does not name (an OpenRouter 400 not about the model, a 403
- * moderation refusal, a 413, a body that did not parse; fix round 2) says
+ * moderation refusal, a 413, a body that did not parse) says
  * PROVIDER_ERROR_PUBLIC with its status when known, never its message.
  * Either way the detail is logged under `where`, server side, except for an
  * auth refusal (401, 403): its provider and status only. Anything else
@@ -239,19 +237,17 @@ export function publicErrorMessage(err: unknown, where: string): string {
 export function publicProviderErrorMessage(err: unknown, where: string, step?: StepMeta): string {
   if (isDatabaseError(err)) return publicErrorMessage(err, where);
   const domain = domainErrorAnswer(err);
-  // A10 lows: the provider's sentence only on evidence of a provider failure
+  // The provider's sentence only on evidence of a provider failure
   // (providerFailureText); a status or a body that did not parse in work that
   // called one says a neutral fixed sentence (serviceFailureText); a
   // TypeError with no network words is our own bug: the runtime's text.
-  // Before, any status, any "failed NNN", any SyntaxError and any TypeError
-  // read as the provider's ("The brain cannot reach the provider.").
   const text =
     (domain ? domain.toolText : providerFailureText(err)) ??
     serviceFailureText(err) ??
     (hasTypeError(err) ? RUNTIME_ERROR_PUBLIC : null);
   if (text === null) return publicErrorMessage(err, where);
   // An auth refusal logs its provider and status only: its body can echo
-  // part of the refused key (model picker fix round 1, L2).
+  // part of the refused key.
   const refusal = providerAuthRefusal(err);
   if (refusal) {
     console.error(
@@ -264,8 +260,8 @@ export function publicProviderErrorMessage(err: unknown, where: string, step?: S
 
 /**
  * {@link publicProviderErrorMessage} for a text a person reads, not the
- * model (a member's thread and stream for a failed team turn; A10 lows fix
- * round 1, L1): the same fixed sentences, except a bad-arguments 400 says
+ * model (a member's thread and stream for a failed team turn): the same
+ * fixed sentences, except a bad-arguments 400 says
  * the neutral "The model provider refused the request." (personProviderText).
  */
 export function personProviderErrorMessage(err: unknown, where: string): string {
@@ -287,18 +283,18 @@ function hasTypeError(err: unknown): boolean {
 }
 
 /**
- * The text of a caught error for a member or the model, in one call (A10
- * lows): a model provider's HTTP failure ({@link isProviderHttpFailure})
+ * The text of a caught error for a member or the model, in one call: a
+ * model provider's HTTP failure ({@link isProviderHttpFailure})
  * says its fixed sentence (publicProviderErrorMessage, the detail logged
  * under `where` and, with `step`, kept on the owner's trace); a domain error
- * says its row's text; anything else is errorMessage, as before (a database
- * error is still collected for the surface's own check). Its pair for the
- * log and the trace is {@link errorDetail}. The helper a pinned catch
- * converts to (provider-error-gap.test.ts); no production catch calls it
- * yet: dispatch's catch spells out the same two steps (toolThrowText, then
- * the exported errorMessage, which the read-only sweep observes), so it is
- * one way among the masking and the provider tools' own calls, not the one
- * gateway (fix round 1, L3).
+ * says its row's text; anything else is errorMessage (a database error is
+ * still collected for the surface's own check). Its pair for the log and
+ * the trace is {@link errorDetail}. The helper a pinned catch converts to
+ * (provider-error-gap.test.ts); no production catch calls it yet:
+ * dispatch's catch spells out the same two steps (toolThrowText, then the
+ * exported errorMessage, which the read-only sweep observes), so it is one
+ * way among the masking and the provider tools' own calls, not the one
+ * gateway.
  */
 export function publicErrorText(err: unknown, where: string, step?: StepMeta): string {
   if (isProviderHttpFailure(err)) return publicProviderErrorMessage(err, where, step);
@@ -309,7 +305,7 @@ export function publicErrorText(err: unknown, where: string, step?: StepMeta): s
  * The DETAIL of a caught error, for the server log and the owner's trace
  * (ctx.step setMeta): its message, except a refused key's, which names the
  * provider and status only (its body can echo part of the key). The refusal
- * is read on every error, as the log line does (A10 lows fix round 1, M1):
+ * is read on every error, as the log line does:
  * a wrapper that copied an adapter's message (`<p> embeddings failed: 401
  * Unauthorized - <body>`, `<p> chat 401: Incorrect API key provided: ...`)
  * is a refused key too, though no ProviderHttpError is left on it. Broad on
@@ -332,12 +328,12 @@ function messageOf(err: unknown): string {
 }
 
 /**
- * A tool's text for an error a builtin threw (the dispatcher's catch; A10 #10
- * fix round 2), or null for the caller's errorMessage. A provider's HTTP
+ * A tool's text for an error a builtin threw (the dispatcher's catch), or
+ * null for the caller's errorMessage. A provider's HTTP
  * failure ({@link isProviderHttpFailure}) says its fixed sentence
  * (publicProviderErrorMessage, detail logged under `where`); a domain error
  * says its row's text (the message, for every row but the provider's).
- * Anything else is null: the caller keeps errorMessage, as before, so a
+ * Anything else is null: the caller keeps errorMessage, so a
  * database error is still collected for the surface's own check.
  */
 export function toolThrowText(err: unknown, where: string, step?: StepMeta): string | null {
@@ -347,11 +343,11 @@ export function toolThrowText(err: unknown, where: string, step?: StepMeta): str
 
 /**
  * What a tool says for a database error: the tool text of THE one mapper
- * (mapAccessError, access-error.ts; arch A3c). An item the caller may not
- * read (the edit check's detail no_read) is "not found" (owner decision
- * D2); a folder that holds items the caller cannot move (detail
- * hidden_rows) says so in plain words; a read-only or item-workspace
- * refusal says the HTTP answer's reason (A5 step 5, owner decision Q3 b);
+ * (mapAccessError, access-error.ts). An item the caller may not read (the
+ * edit check's detail no_read) is "not found" (the owner's rule: a hidden
+ * item is the 404 of none); a folder that holds items the caller cannot
+ * move (detail hidden_rows) says so in plain words; a read-only or
+ * item-workspace refusal says the HTTP answer's reason;
  * any other database error is DATABASE_ERROR_PUBLIC, never its text.
  */
 export function databaseErrorPublic(err: unknown): string {
@@ -367,7 +363,7 @@ export function databaseErrorPublic(err: unknown): string {
  * pass through. Logged in full under `where`. With `step` (the call's
  * trace step, where the surface has one: dispatch's masking), a provider
  * failure's detail lands on the owner's trace as `error_detail`
- * (errorDetail; A10 lows fix round 1, L2).
+ * (errorDetail).
  */
 export function publicToolError(
   text: string,
@@ -379,12 +375,12 @@ export function publicToolError(
   const at = texts.findIndex((t) => text.includes(t));
   if (!FAILED_QUERY_RE.test(text) && at < 0) return text;
   if (at >= 0 && isWatchedProviderFailure(errors[at])) {
-    // A provider's HTTP failure a tool caught and replied with (A10 lows):
+    // A provider's HTTP failure a tool caught and replied with:
     // its fixed sentence, never the body (logged under `where`).
     return publicProviderErrorMessage(errors[at], where, step);
   }
   if (at >= 0 && !isDatabaseError(errors[at]) && isRuntimeFault(errors[at])) {
-    // A runtime fault's text the reply repeats (the A8 finding F2).
+    // A runtime fault's text the reply repeats.
     console.error(`[${where}] runtime fault in a tool reply:`, text);
     return RUNTIME_ERROR_PUBLIC;
   }
@@ -414,15 +410,13 @@ export function sleep(ms: number): Promise<void> {
 
 /**
  * Cap a string at `max` characters, marking the cut with an ellipsis that
- * COUNTS toward the cap — so the result is never longer than `max`, which is
+ * COUNTS toward the cap, so the result is never longer than `max`, which is
  * what a caller passing a column width or a column's storage limit needs.
  *
- * The 2026-09 audit counted five `truncate` definitions and called them
- * duplicates. Three were: this one. The other two are a different function that
- * reports whether it cut (see `capOutput` in @mantle/tools) and belong apart.
- * Callers that also want the text on one line flatten it first — the two that
- * do disagree about whether a run of spaces collapses, and neither should
- * silently change to suit the other.
+ * Not `capOutput` (@mantle/tools): that one also reports whether it cut, and
+ * belongs apart. Callers that also want the text on one line flatten it
+ * first: the two that do disagree about whether a run of spaces collapses,
+ * and neither should silently change to suit the other.
  */
 export function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;

@@ -210,8 +210,8 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   // The ProseMirror doc lives in `pages.doc`. Its text is computed here from
   // the doc, the way a save computes `pages.doc_text` (pageDocText: a marker
   // per embed, filtered by the workspaces that hold it), never read from the stored
-  // copy: a row saved before always fold may still hold an embed's words in
-  // doc_text until the re-fold runs (workspaces plan 5.3, W2 audit).
+  // copy: an older row may still hold an embed's words in doc_text until the
+  // re-fold runs.
   if (node.type === 'page') {
     const [row] = await db
       .select({ doc: pages.doc })
@@ -240,7 +240,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   // names as headings, shape labels, bound arrows as `A -> B: label`
   // relations, a marker per placed image) is computed here the way a commit
   // computes `draws.scene_text` (drawSceneText), never read from the stored
-  // copy, which may predate always fold (workspaces plan 5.3, W2 audit).
+  // copy, which may be an older, unfolded one.
   // Only committed scenes ever reach this point: drafts never fire
   // node_ingested.
   if (node.type === 'draw') {

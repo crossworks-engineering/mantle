@@ -37,7 +37,7 @@ function feedUrl(account: CalendarAccount): string {
 }
 
 /**
- * The feed through the one egress fetch (A10 part 1, docs/egress.md): the
+ * The feed through the one egress fetch (docs/egress.md): the
  * URL is one an owner pasted, so every hop is checked (a feed or a redirect
  * into private or metadata space is refused) and the body is read up to
  * MAX_FEED_BYTES and no further.

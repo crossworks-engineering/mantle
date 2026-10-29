@@ -1,11 +1,9 @@
 /**
  * @mantle/config — the ONE place the server tree reads its environment.
  *
- * Why (2026-09-02 audit, sloppiness A5): 135 distinct variables were read raw
- * in 134 files, 106 of them documented nowhere; three names in .env.example
- * did not match the name the code read; seven `NEXT_PUBLIC_*` names survived
- * from the Next.js era in a server that no longer has Next. Nothing listed
- * what the system actually consumes.
+ * Why: variables read raw at each site go undocumented, drift from the
+ * names in .env.example, and leave nothing that lists what the system
+ * actually consumes.
  *
  * What this module gives you:
  *   - `env(name)`: the raw read, but `name` must be a {@link KnownEnvName}.

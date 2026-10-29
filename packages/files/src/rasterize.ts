@@ -174,7 +174,7 @@ export async function rasterizePdfToPngs(
   const { createCanvas } = await import('@napi-rs/canvas');
   return withPdf(bytes, renderParams(), async ({ pdfjs, doc }) => {
     // Only a file that declares an over-cap image pays for the extra operator
-    // list below; every other PDF renders exactly as before. Read here, after
+    // list below; every other PDF skips it. Read here, after
     // `withPdf` has refused a file over `PDF_MAX_BYTES`, so such a file is
     // never scanned.
     const mayDropImages = declaresOversizeImage(bytes);

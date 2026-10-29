@@ -1,6 +1,6 @@
 // The OpenAI speech calls themselves (transcribeAudio, synthesizeSpeech) are
 // not exported: they are reached through the registry's openai adapters,
-// which record their spend (A10 #5, docs/spend-recording.md).
+// which record their spend (docs/spend-recording.md).
 export { filenameForMime } from './transcribe';
 
 export { mimeForFormat, isTtsVoice } from './synthesize';

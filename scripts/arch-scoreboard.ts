@@ -1,6 +1,6 @@
 /**
- * The architecture scoreboard (workspaces arch plan v2, section 3; A0): the
- * numbers that come from the repo, measured by eslint-rules/arch-counts.mjs.
+ * The architecture scoreboard: the numbers that come from the repo,
+ * measured by eslint-rules/arch-counts.mjs.
  *
  *   node scripts/arch-scoreboard.ts            print the numbers
  *   node scripts/arch-scoreboard.ts --check    fail when one went UP from
@@ -201,11 +201,10 @@ const LABELS: Record<string, string> = {
 };
 
 /** Numbers that may go up without failing: the route counts grow with
- *  every new feature; retiring a route to a 410 stub is fine (A0 fix round
- *  2, M-2); the reads of the caller the pipeline answers grow with every
- *  batch of the A4 step 3b codemod. The guard calls and the files holding
- *  them may not grow since step 3b: the codemod takes them down batch by
- *  batch, and a new owner route reads the pipeline's caller (ownerCaller()). */
+ *  every new feature; retiring a route to a 410 stub is fine; the reads of
+ *  the caller the pipeline answers grow with every route that reads it. The
+ *  guard calls and the files holding them may not grow: a new owner route
+ *  reads the pipeline's caller (ownerCaller()). */
 const MAY_GROW = new Set([
   'routeFiles',
   'apiRouteFiles',
@@ -215,8 +214,8 @@ const MAY_GROW = new Set([
   'asSystemNarrow',
   'systemDbUses_narrow',
   'requestSystemExits_narrow',
-  // File counts of a counter pinned by itself: a file split (S5's of
-  // client.ts) moves sites to more files, not more sites.
+  // File counts of a counter pinned by itself: a file split moves sites to
+  // more files, not more sites.
   'rawWriteSqlFiles',
   'inHandlerAreaCheckFiles',
 ]);
@@ -323,8 +322,8 @@ if (mode === '--pin') {
   } catch {
     old = {};
   }
-  // The pins a test measures, not arch-counts (the A8 coverage, S11a:
-  // server/web/server/a8-coverage.test.ts reads them): kept as they are.
+  // The pins a test measures, not arch-counts
+  // (server/web/server/a8-coverage.test.ts reads them): kept as they are.
   const tested = Object.fromEntries(TESTED_PINS.map((k) => [k, old[k]]));
   const notes = keptNotes(old._notes, old, numbers) as Record<string, string>;
   const all = { ...numbers, ...tested };

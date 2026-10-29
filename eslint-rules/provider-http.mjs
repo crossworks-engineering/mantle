@@ -1,17 +1,17 @@
 /**
- * Provider HTTP plumbing (A10 #10, docs/provider-http.md "Timeouts, retries
+ * Provider HTTP plumbing (docs/provider-http.md "Timeouts, retries
  * and health"): one deadline helper, one attempt loop, one Retry-After
- * reader, all in @mantle/std http.ts. Four patterns had copies across the
- * repo; each is now counted, and outside its named list the count is 0:
+ * reader, all in @mantle/std http.ts. Each pattern below is counted, and
+ * outside its named list the count is 0:
  *
- *  - an inline `AbortSignal.timeout(` (62 before): a deadline names a table
+ *  - an inline `AbortSignal.timeout(`: a deadline names a table
  *    entry (PROVIDER_TIMEOUTS / NET_TIMEOUTS) and goes through
  *    `timeoutSignal`, or through a fetch wrapper's `timeoutMs`;
- *  - a hand abort timer, `setTimeout(() => x.abort(...))` (14 before): the
+ *  - a hand abort timer, `setTimeout(() => x.abort(...))`: the
  *    same, except a headers-only deadline that is cleared when the headers
  *    arrive (a stream), which `timeoutSignal` cannot express;
- *  - a private `function withTimeout` (3 before): `withTimeout` from std;
- *  - a Retry-After header read (3 before, plus Telegram's body field):
+ *  - a private `function withTimeout`: `withTimeout` from std;
+ *  - a Retry-After header read (or Telegram's body field):
  *    `parseRetryAfterMs` from std;
  *  - a sleeping `for (let attempt ...)` retry loop (the HTTP ones folded into
  *    std `withRetry`): the database retry loops stay, named below, because

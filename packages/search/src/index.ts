@@ -232,7 +232,7 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
       // pool for ids only (a wider pool), and only the ids the scope reads
       // are kept, re-read in the scope by id, in the match's order. Nothing
       // outside the scope is returned or used.
-      // Residual signal (W7a audit L3, accepted): the candidate pool is cut
+      // Residual signal (accepted): the candidate pool is cut
       // at pool * 4 on the system pool, so items outside the scope that match
       // the same terms better can push the scope's own matches out of it.
       // How many FTS hits a query gets therefore depends, faintly, on what

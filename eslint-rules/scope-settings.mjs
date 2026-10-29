@@ -1,6 +1,6 @@
 /**
  * scope-settings: who sets a login's scope by hand, and who carries one onto
- * the system pool (plan v3.2 S2a a1+a2, audit L1 and L7).
+ * the system pool.
  *
  * The scope settings (mantle.ws, mantle.mod_ws, mantle.scope_login) decide
  * what a workspace definer takes as the acting login (0307). They are set in

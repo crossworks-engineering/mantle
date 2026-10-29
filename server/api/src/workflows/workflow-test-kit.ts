@@ -1,9 +1,8 @@
 /**
  * TEST-ONLY kit for the runs workflows (nothing in production imports it).
  *
- * Two pieces, both aimed at the bug class the slice-3 final audit found the
- * hard way (v0.157.14 F1/F4): a durable workflow is re-run FROM THE TOP on
- * crash recovery — journaled steps hand back recorded results, but ordinary
+ * Two pieces, both aimed at one bug class: a durable workflow is re-run FROM
+ * THE TOP on crash recovery: journaled steps hand back recorded results, but ordinary
  * glue re-executes against the database as it is NOW. Glue that reads state
  * the workflow itself mutated therefore re-decides on replay, and the classic
  * symptom is a workflow that "succeeds" while silently dropping its work.

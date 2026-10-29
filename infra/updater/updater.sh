@@ -593,7 +593,7 @@ persist_env() {
   fi
 }
 
-# ── The runtime role's line in .env (plan v3.2 S4a) ──────────────────────────
+# ── The runtime role's line in .env ──────────────────────────────────────────
 # A new install writes MANTLE_DB_RUNTIME_ROLE=1 (scripts/install.sh); the code
 # default (features.ts) and compose's ${MANTLE_DB_RUNTIME_ROLE:-} stay off, so
 # a box that never had the line keeps running as it does. So that no later
@@ -989,10 +989,10 @@ client_floor_refusal() {
 }
 
 # ── the workspaces switch: a box with clients is set up by hand first ──────
-# From the workspaces switch (W5b2, migration 0261) the grants alone decide
+# From the workspaces switch (migration 0261) the grants alone decide
 # who reads what. A brain that is NOT on workspaces because it has clients
-# (an anchor, no Admin workspace, and client logins or client-level items;
-# plan 21.9) is left on its levels by 0261, but the code of that release
+# (an anchor, no Admin workspace, and client logins or client-level items)
+# is left on its levels by 0261, but the code of that release
 # reads no level: its members, clients and assistants would read nothing.
 # So a request for v$WS_SWITCH_FLOOR or later (`latest` and tags that are
 # not a release version count as later) is refused, with nothing changed,
@@ -1053,11 +1053,11 @@ ws_switch_refusal() {
 }
 
 # ── the checks' floor: both checks on before the pre-checks go ─────────────
-# From the release that removes the tools' TypeScript item pre-checks (the
-# migration named *_check_mode_floor.sql; docs/actors.md, "Pre-check
-# deletion") the database's actor and edit checks are a tool write's only
-# item check, and that release's migrate raises a check below on that no
-# recorded lowering covers (docs/update-prod.md, "The checks' floor"). A
+# From the release that ships the migration named *_check_mode_floor.sql
+# the database's actor and edit checks are a tool write's only item check
+# (docs/actors.md, "Checks and modes"), and that release's migrate raises a
+# check below on that no recorded lowering covers (docs/update-prod.md,
+# "The checks' floor"). A
 # roll is never how a box's checks change, so a request is refused, with
 # nothing changed, on a box whose actor or edit check is not on, unless the
 # stack .env says MANTLE_CHECK_FLOOR=keep (kept below on on purpose: its
@@ -1136,7 +1136,7 @@ check_floor_refusal() {
   return 0
 }
 
-# ── S8b: no Admin seat without role admin before 0330 ───────────────────────
+# ── no Admin seat without role admin before 0330 ────────────────────────────
 # From migration 0330 (the role follows Admin membership) the seat alone
 # makes an Admin user, so its migrate refuses (42501) while any login holds
 # an Admin seat without role admin, a disabled one and a former client too.
@@ -1945,7 +1945,7 @@ while true; do
       continue
     fi
 
-    # S8b: no Admin seat without role admin before 0330's migrate.
+    # No Admin seat without role admin before 0330's migrate.
     if s8b_seat_refusal "$TARGET"; then
       write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $SSR_ERR"
       echo "[updater] ROLL REFUSED before any change: $SSR_ERR" | tee -a "$SIG/update.log"
@@ -1974,7 +1974,7 @@ while true; do
     # replaces is kept: a refusal below puts it back.
     ROLL_PREV_TAG=$(env_val MANTLE_IMAGE_TAG)
     [ "$TARGET" = latest ] || persist_env MANTLE_IMAGE_TAG "$TARGET"
-    # Before compose recreates mantle_web: the runtime role's line (S4a).
+    # Before compose recreates mantle_web: the runtime role's line.
     ensure_runtime_role_line >> "$SIG/update.log" 2>&1 || true
 
     # Refresh the (pristine) compose from the target image BEFORE `compose

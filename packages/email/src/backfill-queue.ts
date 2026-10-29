@@ -47,7 +47,7 @@ export async function enqueueBackfill(userId: string, target: string): Promise<v
   // The enabled accounts, ids and providers only, by their definer
   // (mantle_mail_backfill_accounts, 0299): no workspace scope reads
   // email_accounts, and a contact is added in its caller's scope (a
-  // request's since F4, an assistant's turn). In a scope it answers only
+  // request's, an assistant's turn). In a scope it answers only
   // for one that holds Admin; on the system pool as the table read did.
   const accounts = (await db.execute(
     sql`select id::text as id, provider from "public"."mantle_mail_backfill_accounts"(${userId}::uuid)`,

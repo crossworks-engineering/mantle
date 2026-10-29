@@ -1,25 +1,24 @@
 /**
- * Small helpers and process plumbing copied back (A10 #15, gateway survey
- * finding 15; docs/std-helpers.md). Each helper has one home now, and each
- * hand copy is counted; outside its named list the count is 0:
+ * Small helpers and process plumbing copied back (docs/std-helpers.md).
+ * Each helper has one home, and each hand copy is counted; outside its
+ * named list the count is 0:
  *
- *  - uuidCopy: an anchored UUID regex literal; UUID_RE is @mantle/std's
- *    (28 copies before, 34 with the inline ones);
+ *  - uuidCopy: an anchored UUID regex literal, inline ones too; UUID_RE is
+ *    @mantle/std's;
  *  - errorIdiom: `err instanceof Error ? err.message : …` by hand;
  *    errorMessage(err) (@mantle/std) where the fallback is String(err).
  *    The files below keep one whose fallback differs (the value itself, a
  *    fixed text), or cannot import std;
- *  - dedupeTagsCopy: a `function dedupeTags` (12 before): @mantle/content
+ *  - dedupeTagsCopy: a `function dedupeTags`: @mantle/content
  *    tags.ts;
  *  - signalHandler: a SIGINT or SIGTERM listener on any receiver, the
- *    event a string or a name bound to one (3 before; read from the syntax
- *    tree): onShutdown (@mantle/std/shutdown), with its exit deadline;
- *  - advisoryLock: an advisory lock in SQL (11 before): advisoryXactLock
- *    and tryAdvisoryXactLock (@mantle/db advisory-lock.ts), each site's key
- *    and hash as on main;
+ *    event a string or a name bound to one (read from the syntax tree):
+ *    onShutdown (@mantle/std/shutdown), with its exit deadline;
+ *  - advisoryLock: an advisory lock in SQL: advisoryXactLock and
+ *    tryAdvisoryXactLock (@mantle/db advisory-lock.ts);
  *  - ttlAgeCheck: a hand TTL cache's age check (`<clock> - <stamp>` against
  *    a TTL-ish bound or with a cache stamp, an `expiresAt` against the
- *    clock; 16 before; read from the syntax tree): TtlCache (@mantle/std);
+ *    clock; read from the syntax tree): TtlCache (@mantle/std);
  *  - cacheControlLiteral: a Cache-Control value not from CACHE_CONTROL
  *    (server/web/lib/cache-control.ts), however the header is set (a call,
  *    an object key, a [name, value] pair, an index assignment; read from the
@@ -234,7 +233,7 @@ export function dedupeTagsCopies(code) {
   return (code.match(/\bfunction\s+dedupeTags\s*\(/g) ?? []).length;
 }
 
-// ── the AST counts (fix round 1, L2): a respelling does not hide a site ──
+// ── the AST counts: a respelling does not hide a site ───────────────────
 
 /** @param {string} code @param {string} [path] */
 function parse(code, path = 'x.ts') {

@@ -76,7 +76,7 @@ export type StartStepInit = {
   input?: Record<string, unknown>;
   /** false: never route this step through the durable executor, so its
    *  result is not journaled. For a read whose result must not be kept (a
-   *  member's private item, audit S3); a resume simply runs it again. */
+   *  member's private item); a resume simply runs it again. */
   durable?: false;
 };
 
@@ -586,7 +586,7 @@ export function emitTurnLifecycle(
   }
 }
 
-// ─── Spend attribution (A10 #5) ──────────────────────────────────────────────
+// ─── Spend attribution ───────────────────────────────────────────────────────
 //
 // Provider usage is recorded in ONE place, the adapter registry of
 // @mantle/voice (docs/spend-recording.md), through recordUsage (spend.ts),
@@ -610,7 +610,7 @@ export type UsageAttribution = {
 };
 
 // null: no target here. startTrace runs its work with null, so a trace opened
-// inside a chargeTo scope takes its own usage (A10 #5 fix round 1).
+// inside a chargeTo scope takes its own usage.
 const chargeStore = new AsyncLocalStorage<TraceContext | null>();
 
 /** A trace that spend can be charged to (see chargeTo). */
@@ -728,7 +728,7 @@ function logErr(scope: string, err: unknown): void {
 /**
  * Merge `patch` into the current trace's `data` (a no-op outside a trace):
  * a fact known only once the trace's work is under way (the tools a loop
- * lists in its scope, A5 step 5 fix round 2). Fire-and-forget, like every
+ * lists in its scope). Fire-and-forget, like every
  * trace write; startTrace awaited the row's insert before its work began,
  * so the row is there.
  */

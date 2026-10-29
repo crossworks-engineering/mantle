@@ -16,7 +16,7 @@ import type { AttachmentContext, FileAttachment, InboundRow } from './types';
 
 export async function ingestTelegramAttachment(args: {
   ownerId: string;
-  /** The login the chat is paired to (W7d fix round 1, M2): the saved file
+  /** The login the chat is paired to: the saved file
    *  is private to it (nodes.login_id; its chunks and facts follow), so no
    *  other user, another Admin included, reads it. */
   loginId: string;

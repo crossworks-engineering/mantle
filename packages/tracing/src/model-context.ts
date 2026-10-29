@@ -117,8 +117,7 @@ let inFlight: Promise<void> | null = null;
 let inFlightTimeoutMs = 0;
 /** The catalog's rows as OpenRouter sent them (every field), for a reader
  *  that wants more than this module keeps: the curation tools' model_catalog
- *  (A10 #15: one OpenRouter catalog cache, one TTL, where the tools kept a
- *  copy of their own for 5 minutes). */
+ *  (one OpenRouter catalog cache, one TTL). */
 let liveRows: readonly unknown[] | null = null;
 /** Why the last refresh failed, cleared by a refresh that lands. */
 let lastRefreshError: string | null = null;

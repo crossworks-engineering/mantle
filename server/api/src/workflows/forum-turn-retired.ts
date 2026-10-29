@@ -31,7 +31,7 @@ export async function retiredForumTurn(input: unknown): Promise<RetiredForumTurn
   return { retired: true };
 }
 
-// Arch A2a: every workflow names its actor; this one sends no statement.
+// Every workflow names its actor; this one sends no statement.
 export const retiredForumTurnWorkflow = registerActorWorkflow(
   RETIRED_FORUM_TURN_WORKFLOW,
   systemEntry('workflow:forum-turn-retired'),

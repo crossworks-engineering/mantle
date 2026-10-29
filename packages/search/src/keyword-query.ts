@@ -197,11 +197,11 @@ export function lexemesToTsqueryText(lexemes: readonly string[]): string {
  * null for the uncounted. A lexeme holding a backslash is left uncounted: the
  * in-SQL quoting below only doubles quotes.
  *
- * Table-wide in any scope (W7a), by a definer (A6b): the frequencies are
- * the vocabulary's, table-wide by design, and Postgres hides `pg_stats` of a
+ * Table-wide in any scope, by a definer: the frequencies are the
+ * vocabulary's, table-wide by design, and Postgres hides `pg_stats` of a
  * table under row security from every role that does not bypass it, so in a
- * workspace scope every lexeme read as untracked and was counted under the
- * row rule (10 ms on a dev copy, 46 ms on a large one, per query). The
+ * workspace scope every lexeme would read as untracked and be counted under
+ * the row rule (tens of milliseconds per query). The
  * definer returns numbers for the caller's own query terms only, never a
  * row; the search itself runs in the caller's scope.
  */
@@ -209,12 +209,11 @@ async function lexemeFrequencies(
   text: string,
   table: 'content_chunks' | 'nodes',
 ): Promise<LexemeDf[]> {
-  // Residual signal (W7a audit L4, accepted): the document frequencies are
+  // Residual signal (accepted): the document frequencies are
   // the whole table's, so which of the caller's terms the keyword arm ORs
   // can shift with what other workspaces hold: a faint existence signal by
   // count for the caller's own terms, never a row. By its definer
-  // (mantle_lexeme_df, 0293: pg_stats and the capped counts, numbers only;
-  // A6b: on the system pool before, 'lexeme-stats').
+  // (mantle_lexeme_df, 0293: pg_stats and the capped counts, numbers only).
   const rows = (await db.execute(
     sql`select lexeme, rows, df
           from "public"."mantle_lexeme_df"(${text}, ${table}, ${COUNT_LEXEMES}::int,

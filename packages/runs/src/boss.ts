@@ -118,7 +118,7 @@ export async function enqueueRunJobs(actions: readonly PostCommitAction[]): Prom
  *  current scope. The runs' workspaces by their definer
  *  (mantle_runs_workspaces, 0293: workspace ids only; the scope's row rule
  *  would hide another login's run and a run with none, which this must
- *  see to refuse; A6b: on the system pool before, 'runs-scope-check'). */
+ *  see to refuse). */
 export async function assertRunsCarryScope(
   jobs: readonly Exclude<PostCommitAction, { type: 'pending_created' }>[],
 ): Promise<void> {

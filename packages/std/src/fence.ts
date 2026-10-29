@@ -1,5 +1,5 @@
 /**
- * The untrusted fence (A10 part 1, docs/egress.md): text a model reads that
+ * The untrusted fence (docs/egress.md): text a model reads that
  * someone other than the owner wrote (an email, a fetched page, an uploaded
  * document, a peer's reply, a third-party tool result) goes between two
  * markers, so the model treats it as data and never as instructions, and any
@@ -205,7 +205,7 @@ function plainSkeleton(text: string): string {
 }
 
 /**
- * The pre-screen (fix round 2, L7): every marker's skeleton holds
+ * The pre-screen: every marker's skeleton holds
  * RETRIEVED, separators, CONTENT. The loose fold finds that core with the
  * runtime's own native passes (NFKD on the whole text, the invisible
  * characters and every combining mark dropped, lowercased) and a pattern

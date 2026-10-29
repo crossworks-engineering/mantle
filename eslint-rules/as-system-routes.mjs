@@ -1,6 +1,6 @@
 /**
  * Which pool each asSystem exit runs on: the full system role (every table)
- * or the narrow one (plan v3.2 section 2.1). The route of a reason is read
+ * or the narrow one. The route of a reason is read
  * from `AS_SYSTEM_ROUTE` in packages/db/src/viewer.ts once that map exists
  * (a typed Record<AsSystemReason, 'narrow' | 'full'>, so a new reason must
  * pick); until then from AS_SYSTEM_ROUTE_SEED below, where every reason is
@@ -121,7 +121,7 @@ export function asSystemRouteCounts(holders, { routes, reasons, source = VIEWER 
 }
 
 /** The route of each request system exit: viewer.ts's REQUEST_SYSTEM_ROUTE
- *  (plan v3.2 S7a), `{ [why]: 'narrow' | 'full' }`; empty when absent. */
+ *  `{ [why]: 'narrow' | 'full' }`; empty when absent. */
 export function requestSystemRouteMap(root) {
   const code = stripComments(readRepoFile(root, VIEWER) ?? '');
   const at = code.search(/\bconst\s+REQUEST_SYSTEM_ROUTE\b/);
@@ -141,8 +141,7 @@ export function requestSystemRouteMap(root) {
  * Alias-proof: a file not listed that names the function, an aliased import
  * or any other binding of it, a call whose spot is not a literal, and a
  * listed spot the file does not hold are problems that fail arch:check.
- * The list only shrinks (S7b moves each spot to the write role or a
- * definer).
+ * The list only shrinks (each spot moves to the write role or a definer).
  */
 export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/content/src/profile-preferences.ts': ['profile-row'],
@@ -236,8 +235,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
  * (`wrapperCalls`, pinned down only): a call from a file not listed, the
  * helper imported under another name, or named any other way than by its
  * definition, its import and a call (an alias, a reference passed on), is
- * a problem. TODO(S7b): each write
- * moves to the write role or a definer and the helper goes.
+ * a problem. TODO: each write moves to the write role or a definer and the
+ * helper goes.
  */
 export const FULL_ROUTE_SPOT_WRAPPERS = Object.freeze({
   profileWrite: {
@@ -589,11 +588,11 @@ export function tableSpotCalls(path, body, tables, tableSpots) {
 }
 
 /**
- * The full-route spots (plan v3.2 S7a): the entries of viewer.ts's
+ * The full-route spots: the entries of viewer.ts's
  * FULL_ROUTE_SPOTS (where a narrow exit's own work writes a content table),
  * the onFullSystemRoute calls outside tests (packages/db included, where
  * the definition is not a call), and the calls of the wrappers
- * (FULL_ROUTE_SPOT_WRAPPERS). All only go down (S7b moves each to the
+ * (FULL_ROUTE_SPOT_WRAPPERS). All only go down (each moves to the
  * write role or a definer). `problems`: what FULL_ROUTE_SPOT_FILES and
  * FULL_ROUTE_SPOT_WRAPPERS refuse.
  */

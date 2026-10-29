@@ -97,7 +97,7 @@ export async function thumbnailFor(args: {
   sizeBytes?: number | null;
   maxDim?: number;
   /** Where the derivative is cached; default the brain's shared cache. A
-   *  member's private file passes its own space's folder (audit S9), so the
+   *  member's private file passes its own space's folder, so the
    *  thumbnail never sits in the shared cache and goes with the file. */
   cacheDir?: string;
 }): Promise<Buffer | null> {

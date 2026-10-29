@@ -1,5 +1,5 @@
 /**
- * system-work-allowlist (arch A6b fix round, L2): systemWork runs its work on
+ * system-work-allowlist: systemWork runs its work on
  * the system pool and refuses any scope (packages/db/src/viewer.ts). It is
  * no exit, yet each use is a place that reads or writes as the system: a new
  * caller needs review, as an asSystem site does (as-system-allowlist.mjs).
@@ -12,7 +12,7 @@
  */
 import { isCounted, pinnedRule, repoPathOf, systemWorkSites } from './arch-counts.mjs';
 
-/** @type {Record<string, { count: number, why: string[] }>} A6b: 7 sites in 7 files;: 8 in 8;: 9 in 9. */
+/** @type {Record<string, { count: number, why: string[] }>} */
 export const SYSTEM_WORK_PINS = {
   // The push worker builds a login's notice from that login's rows.
   'packages/content/src/login-notices.ts': { count: 1, why: ['login-notice'] },

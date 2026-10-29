@@ -27,7 +27,7 @@ export type Shell = {
   loginId: string;
   /** Whether this login is the brain's owner (its anchor login): only the
    *  owner's app deletes are purged after 30 days; anyone else's stay in the
-   *  trash until the owner deletes them for good (W6b fix round 2). */
+   *  trash until the owner deletes them for good. */
   isOwner: boolean;
   /** Always true for a member or a client: onboarding is an admin's. */
   onboarded: boolean;

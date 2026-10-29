@@ -1,9 +1,8 @@
 /**
- * The architecture counts (workspaces arch plan v2, sections 3 and 11; A0):
- * one place that measures the repo, read by the pinned-count lints in this
- * folder (their tests) and by scripts/arch-scoreboard.ts. Text heuristics
- * and syntax trees (the TypeScript parser) over product files,
- * deterministic, no type checker:
+ * The architecture counts: one place that measures the repo, read by the
+ * pinned-count lints in this folder (their tests) and by
+ * scripts/arch-scoreboard.ts. Text heuristics and syntax trees (the
+ * TypeScript parser) over product files, deterministic, no type checker:
  *
  *  - asSystem call sites per file, with the reasons they pass, and the
  *    exits: the uses of the functions holding them (as-system-exits.mjs,
@@ -13,37 +12,37 @@
  *    builtin tool slugs) and their entries;
  *  - route policy lists (a list literal holding 3 or more route patterns);
  *  - route files, 410 stubs, guard calls, and reads of the caller the
- *    pipeline answers (ownerCaller(), A4 step 3b);
- *  - hand kind lists (A10 #12): any list of 3 or more node_type values
+ *    pipeline answers (ownerCaller());
+ *  - hand kind lists: any list of 3 or more node_type values
  *    (an array, a union, an object's keys, a comparison chain, a switch's
  *    shared cases, a SQL list: name-lists.mjs reads them from the syntax
  *    tree) outside the kind registry, pinned at 0 outside KIND_LIST_ALLOW;
- *  - hand role lists (A10 #13): the same forms (not an object's keys) of
+ *  - hand role lists: the same forms (not an object's keys) of
  *    role, area or actor names outside its source file (ROLE_NAME_SOURCES),
  *    pinned at 0;
  *  - switch-over code (brainOnWorkspacesNow calls, MANTLE_ADMIN_READS);
- *  - store write API importers (the disk stores of plan section 6);
- *  - route files that read their request body directly (A10 part 2, fold
- *    1), and that put a caught error's text in a reply (fold 2), outside
- *    and inside the named lists (route-plumbing.mjs);
- *  - rate limit calls in any product file (A10 #8), outside the named list,
+ *  - store write API importers (the disk stores, STORES);
+ *  - route files that read their request body directly, and that put a
+ *    caught error's text in a reply, outside and inside the named lists
+ *    (route-plumbing.mjs);
+ *  - rate limit calls in any product file, outside the named list,
  *    and the named files (route-plumbing.mjs RATE_LIMIT_ALLOW);
- *  - the provider HTTP copies (A10 #10): inline deadlines, hand abort
+ *  - the provider HTTP copies: inline deadlines, hand abort
  *    timers, private withTimeout copies, Retry-After reads and sleeping
  *    retry loops, outside and inside the named lists (provider-http.mjs);
- *  - the app brokers (A10 #9): hand calls of the export sync outside the
+ *  - the app brokers: hand calls of the export sync outside the
  *    one write path and the named files, and the files holding app tool
  *    broker logic outside the one broker (app-broker.mjs);
- *  - flags and env (A10 #11): raw process.env reads, hand parses of an env
+ *  - flags and env: raw process.env reads, hand parses of an env
  *    value, isXEnabled definitions and hand profile boolean defaults,
  *    outside and inside the named lists (env-flags.mjs);
- *  - hand re-index lines (A10 #7): notifyNodeIngested calls and raw
+ *  - hand re-index lines: notifyNodeIngested calls and raw
  *    node_ingested notifies, `embedding: null` resets and summary clears,
  *    outside markContentChanged and the files no-hand-reindex.mjs names;
- *  - spend recording (A10 #5): hand spend recording and provider calls that
+ *  - spend recording: hand spend recording and provider calls that
  *    bypass the recording point, outside and inside the named lists
  *    (spend-recording.mjs);
- *  - small helpers copied back (A10 #15): UUID regex copies, the hand
+ *  - small helpers copied back: UUID regex copies, the hand
  *    error-to-message idiom, dedupeTags copies, signal handlers, advisory
  *    locks, hand TTL age checks and Cache-Control values not from the table,
  *    outside and inside the named lists; console calls outside scripts, a
@@ -51,8 +50,8 @@
  *    down only (std-helpers.mjs);
  *  - the rights counts (rights-counts.mjs): request system exits by reason,
  *    Admin asks and area rules in code and SQL, workspace table writers,
- *    the assistant copies, undated legacy pre-checks, A8 coverage and the
- *    capped exemption lists; the asSystem exits by route and the Admin
+ *    the assistant copies, undated legacy pre-checks, the access matrix
+ *    coverage and the capped exemption lists; the asSystem exits by route and the Admin
  *    counts (as-system-routes.mjs, admin-counts.mjs);
  *  - raw write SQL and history codes in comments (cleanup-counts.mjs).
  *  - the gateway split out of packages/db/src/client.ts: its modules'
@@ -111,7 +110,7 @@ export function isCounted(path) {
   // Archive, build, public and dist folders are not product code, except
   // under server/web/app/, where such a folder is a route segment
   // (/api/apps/:id/build, /api/workspaces/:id/archive): those route files
-  // count (A4 step 3b part 4).
+  // count.
   if (!path.startsWith('server/web/app/') && /(^|\/)(archive|dist|build|public)\//.test(path)) {
     return false;
   }
@@ -125,7 +124,7 @@ export function isCounted(path) {
 export function countedFiles(root) {
   const out = execFileSync(
     'git',
-    // Tracked files only (A0 fix round 2, L-7): an untracked local file
+    // Tracked files only: an untracked local file
     // would make a local run differ from CI's.
     ['ls-files', 'packages', 'server', 'scripts'],
     { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
@@ -295,8 +294,8 @@ export function asSystemSites(text) {
 
 const SYSTEM_WORK_CALL = /\bsystemWork\s*(?:<[^>()]*>)?\s*\(/g;
 
-/** The systemWork call sites of `text` (arch A6b fix round, L2: system work
- *  refuses any scope, and each file that runs it is pinned for review), as
+/** The systemWork call sites of `text` (system work refuses any scope, and
+ *  each file that runs it is pinned for review), as
  *  asSystemSites counts asSystem's. */
 export function systemWorkSites(text) {
   return reasonedCallSites(text, SYSTEM_WORK_CALL);
@@ -341,9 +340,9 @@ export function rawAclSwept(path) {
 // ── policy lists ────────────────────────────────────────────────────────────
 
 /** Every builtin tool slug with an underscore (`slug: 'note_create'` in
- *  packages/tools/src, and the heartbeat tools of packages/runtime/src: A5
- *  step 6d, a list of those was not seen): a one-word slug ('search') is
- *  too common a word to say a list is about tools. */
+ *  packages/tools/src, and the heartbeat tools of packages/runtime/src, so
+ *  a list of those is seen too): a one-word slug ('search') is too common a
+ *  word to say a list is about tools. */
 export function builtinSlugs(root, files = countedFiles(root)) {
   const slugs = new Set();
   for (const f of files) {
@@ -357,7 +356,7 @@ export function builtinSlugs(root, files = countedFiles(root)) {
 
 /** Whether a list literal is a list of definition objects (`[{ slug:
  *  'run_plan', handler, ... }, ...]`, RUN_TOOLS): definitions, each with its
- *  own policy (A5), not a policy list keyed by name. A real definition has a
+ *  own policy, not a policy list keyed by name. A real definition has a
  *  `handler` or an `inputSchema` besides its slug, so the list needs one of
  *  them per slug: a list of slug-only objects (`[{ slug: 'a' }, { slug: 'b'
  *  }]`), or one real definition among them, is a policy list and counts. */
@@ -382,9 +381,8 @@ export function toolPolicyLists(text, slugs) {
  *  not policy), nor the deferred tool selection's core, alone on its file
  *  (packages/tools/src/selection/core.ts CORE_TOOL_SLUGS: which granted
  *  tools a turn sends in full, in a fixed order the prompt cache needs; it
- *  never adds, removes or narrows a grant, so it decides no access: A5 step
- *  6a). The rest of the selection (deferred.ts) is counted (fix round 1,
- *  LOW-9). */
+ *  never adds, removes or narrows a grant, so it decides no access). The
+ *  rest of the selection (deferred.ts) is counted. */
 export function toolPolicySwept(path) {
   return (
     isCounted(path) &&
@@ -396,11 +394,10 @@ export function toolPolicySwept(path) {
 const ROUTE_ENTRY = /^(?:(?:GET|POST|PUT|PATCH|DELETE|HEAD) \/|\/api(?:\/|$))/;
 
 /**
- * The route declarations' undecided writes (plan v3.2 S9 part 1): each
+ * The route declarations' undecided writes: each
  * `item: { none: ITEM_NONE_PLACEHOLDER }` the codemod wrote where a write
  * names an item no check reads (server/web/lib/auth/route-declaration.ts).
- * A count that only goes down: S11b gives each a check or a reason, then
- * the lint forbids the string.
+ * A count that only goes down: each gets a check or a reason.
  */
 export function itemNonePlaceholderCount(code) {
   return code.split(ITEM_NONE_PLACEHOLDER).length - 1;
@@ -430,8 +427,7 @@ export function routePolicyLists(text, notPolicy = []) {
  *  no policy, each with why. */
 const ROUTE_LISTS_NOT_POLICY = Object.freeze({
   // The session sweep's expectations, each route's answer per role: test
-  // data under server/, read by the sweeps only (the route declarations,
-  // plan v3.2: the owner's decision of 2026-10-22).
+  // data under server/, read by the sweeps only.
   'server/web/server/public-session-routes.ts': 'test data',
 });
 
@@ -440,11 +436,9 @@ const ROUTE_LISTS_NOT_POLICY = Object.freeze({
 const ROUTE_LIST_NAMES_NOT_POLICY = Object.freeze({
   // The request body's ceiling by the decoded path: how many bytes a
   // request may send, read by the gate before a row is found and by the
-  // loader, never who may call (plan v3.2 S9 part 3: the owner's decision
-  // of part 0 round 2 kept the ceilings a list, and they name no caller,
-  // open, item or area). Out of the policy count: accepted at part 3's
-  // review, since they limit sizes, not who may call. Only these three
-  // constants: a route list added to the file beside them is counted.
+  // loader, never who may call (they name no caller, open, item or area),
+  // so they are out of the policy count. Only these three constants: a
+  // route list added to the file beside them is counted.
   'server/web/lib/body-limit.ts': Object.freeze([
     'UPLOAD_PATHS',
     'MULTIPART_CEILINGS',
@@ -472,8 +466,7 @@ export function routePolicySwept(path) {
 // ── kinds ───────────────────────────────────────────────────────────────────
 
 /** The node_type values (packages/db/src/schema/nodes.ts), or an error: a
- *  lint or a count with no kinds to judge by would pass everything (A10 #13
- *  low round, L2). */
+ *  lint or a count with no kinds to judge by would pass everything. */
 export function nodeTypes(root) {
   const path = 'packages/db/src/schema/nodes.ts';
   const text = readRepoFile(root, path) ?? '';
@@ -485,7 +478,7 @@ export function nodeTypes(root) {
   return types;
 }
 
-// ── hand kind lists (A10 #12) ───────────────────────────────────────────────
+// ── hand kind lists ─────────────────────────────────────────────────────────
 
 /** The files that may hold a literal list of kind names, each with why. Every
  *  other list of kinds is a filter over the kind registry
@@ -559,14 +552,14 @@ export function mayHoldNameList(names) {
   };
 }
 
-// ── hand role lists (A10 #13) ───────────────────────────────────────────────
+// ── hand role lists ─────────────────────────────────────────────────────────
 
 /** The source of each name list (role, area and actor names): the file and
  *  the `export const NAME = [` list in it. A literal list, a string union, a
  *  comparison chain, the shared cases of a switch or a SQL list whose own
  *  strings are all names of one concept, `min` or more of them (a negative
  *  `min` counts back from the whole list), is a hand copy of it anywhere but
- *  its source file (docs/actors.md, "Role and area names"). With
+ *  its source file. With
  *  `superset`, a list holding every name of the concept and more is one
  *  too (`'admin' | 'member' | 'client'`): build it from the source and name
  *  the extras (`LoginRole | 'client'`). */
@@ -604,8 +597,7 @@ export const ROLE_NAME_SOURCES = Object.freeze({
 
 /** Each concept's names and the count that makes a copy, read from the
  *  source files of `root`. A source that is missing, or holds no list, is
- *  an error: a lint with no names to judge by would pass everything (A10
- *  #13 low round, L2). */
+ *  an error: a lint with no names to judge by would pass everything. */
 export function roleNameSets(root) {
   const out = {};
   for (const [concept, src] of Object.entries(ROLE_NAME_SOURCES)) {
@@ -686,16 +678,16 @@ export function guardCalls(text) {
 
 const CALLER_READ = callRegex(CALLER_READERS);
 
-/** A route file's reads of the caller the pipeline answers (A4 step 3b:
- *  ownerCaller(), where a guard call was). The gate answered the caller
- *  before the handler ran, so a file that reads it is guarded. */
+/** A route file's reads of the caller the pipeline answers (ownerCaller(),
+ *  no guard call). The gate answered the caller before the handler ran, so
+ *  a file that reads it is guarded. */
 export function callerReads(text) {
   return (stripComments(text).match(CALLER_READ) ?? []).length;
 }
 
 /** Whether a route file is a retired route's 410 stub: it answers through
  *  lib/gone.ts (gone(), goneResponse()), which logs each hit. A raw 410 for
- *  a missing resource is not a stub (A0 fix round 2, L-8). */
+ *  a missing resource is not a stub. */
 export function isGoneStub(text) {
   return /\bgone(?:Response)?\s*\(/.test(stripComments(text));
 }
@@ -704,7 +696,7 @@ export function isGoneStub(text) {
  * The route files a route file takes a handler from (an /api/v1 alias:
  * `export { GET } from '../../notes/route'`, or `import { GET as base }
  * from '...'`), repo-relative: each relative specifier naming a route file.
- * A4 hand batch B: such a file reads the caller where the handler it takes
+ * Such a file reads the caller where the handler it takes
  * reads it (the manifest generator follows it the same way), so it is no
  * live route calling no guard.
  */
@@ -741,8 +733,8 @@ export function namesAdminReads(text) {
 
 // ── store brokers ───────────────────────────────────────────────────────────
 
-/** The disk stores (plan section 6) and how a file reaches each one's
- *  WRITE API (A3b): the write entry of the package, or the app SQL runner's
+/** The disk stores and how a file reaches each one's
+ *  WRITE API: the write entry of the package, or the app SQL runner's
  *  writing functions and the store's directory setting. Readers keep the
  *  read entries (@mantle/tabledb, @mantle/storage) and are not counted. */
 export const STORES = {
@@ -766,7 +758,7 @@ export function storesReached(text) {
   return Object.keys(STORES).filter((k) => STORES[k].test.test(code));
 }
 
-// ── egress (A10 part 1) ─────────────────────────────────────────────────────
+// ── egress ──────────────────────────────────────────────────────────────────
 
 /** The packages whose fetches take outside URLs (eslint-rules/no-bare-fetch.mjs
  *  sweeps the same ones). */
@@ -822,7 +814,7 @@ export function pinnedRule({ description, message, pins, swept, count, repoPath 
   };
 }
 
-// ── writes inside read paths (plan 4.4; A2a) ────────────────────────────────
+// ── writes inside read paths ────────────────────────────────────────────────
 
 /** The named writes inside read paths: the keys of READ_PATH_WRITES in
  *  packages/db/src/actor.ts (each runs as system(repair:…) or
@@ -835,7 +827,7 @@ export function readPathWrites(root) {
   return [...m[1].matchAll(/^\s*'((?:repair|backfill):[a-z0-9-]+)':/gm)].map((x) => x[1]).sort();
 }
 
-// ── item pre-checks (A4 step 4, A5 step 6b) ─────────────────────────────────
+// ── item pre-checks ─────────────────────────────────────────────────────────
 
 /** Where the item pre-check's helpers live: the target makers (edit, manage,
  *  read) and the resolvers a policy's `items` may name. */
@@ -859,8 +851,8 @@ export function itemResolverNames(root) {
 }
 
 /** The tool item pre-checks of `text` (comments exempt): every policy
- *  `legacyItemPrecheck` (pre-check removal fix round A: the kept ones are
- *  named so, never like a normal policy field), and the old form a policy
+ *  `legacyItemPrecheck` (the kept ones are named so, never like a normal
+ *  policy field), and the old form a policy
  *  `items` value, a list of targets (edit(, manage(, read( or a literal
  *  `{ param`) or a resolver of `resolvers`. A schema's `items:` (a JSON
  *  schema array) is neither. */
@@ -908,7 +900,7 @@ export function itemPrecheckRouteEntries(root) {
 /**
  * The `_notes` a re-pin keeps (scripts/arch-scoreboard.ts --pin): a note
  * says why a pin went up, so it stays while its number is at or above that
- * pin and goes once the number came back down (A1 low, done in A2a).
+ * pin and goes once the number came back down.
  */
 export function keptNotes(notes, oldPins, now) {
   const out = {};
@@ -922,17 +914,16 @@ export function keptNotes(notes, oldPins, now) {
 }
 
 /**
- * The write-role gap reruns (plan v3 S3, the `gapTables` pin): each role
+ * The write-role gap reruns (the `gapTables` pin): each role
  * switch in counted source (`set local role X`, `set role X`, `set session
  * role X`, `set role to X`, `set_config('role', X, ...)`, comments blanked)
  * to a role other than the pool's own (the write role, the workspace role).
- * Main's one was the checked rerun on a gap table as mantle_gap_writer
- * (client.ts); S3 closed the gap tables and removed it, so 0. It counts the
- * switch itself, not a list of tables: renaming a list or a role const does
- * not hide a rerun, since any target but the pool's own counts.
+ * There are no gap tables, so the pin is 0. It counts the switch itself,
+ * not a list of tables: renaming a list or a role const does not hide a
+ * rerun, since any target but the pool's own counts.
  *
- * Fix round 4: the plain and session forms (`SET ROLE`, `SET SESSION
- * ROLE`) count too. Their target must read as a role name (ROLE_NAME: an
+ * The plain and session forms (`SET ROLE`, `SET SESSION ROLE`) count
+ * too. Their target must read as a role name (ROLE_NAME: an
  * interpolation, a name with an underscore as every role here has,
  * postgres, quoted or not), so a column update (`set role = 'admin'`) and
  * prose in a message (`SET ROLE to the shared viewer roles`) are no switch.
@@ -943,7 +934,7 @@ export function gapRerunCount(files) {
   const ROLE_NAME = /^["']?(?:\$\{[^}]+\}|[a-z0-9]*_[a-z0-9_]*|postgres)["']?$/i;
   // The pool's own roles are no rerun: the write role, the workspace role a
   // read switches to (a test grid's reads, matrix/test-support), and the
-  // narrow system role the narrow route takes (plan v3.2 S7a).
+  // narrow system role the narrow route takes.
   const WRITE =
     /^['"]?(?:\$\{(?:WRITE|VIEW|NARROW)_ROLE\}|mantle_(?:write|view)_user|mantle_system_narrow)['"]?$/;
   let n = 0;
@@ -958,7 +949,7 @@ export function gapRerunCount(files) {
 }
 
 /**
- * The role resets outside the gateway (plan v3.2 S7a, the a1 audit): each
+ * The role resets outside the gateway: each
  * `set_config('role', ...)` or `set_config('session_authorization', ...)`
  * whatever the value, `RESET ROLE`, `SET [LOCAL|SESSION] ROLE NONE` (the
  * name bare or quoted), an UPDATE of pg_settings (set_config by its rule),
@@ -1021,11 +1012,11 @@ export function migrationSqlTexts(root) {
 }
 
 /**
- * The tables whose scoped typed writes stay on the system pool (plan v3.2
- * S4a, the `scopedSystemWriteTables` pin): each access matrix row that
- * names a `scopedSystemWrite` reason (packages/db/src/access-matrix.ts,
- * comments blanked). Every other scoped typed write to a system table is
- * refused (S4b); it only goes down, or up with a
+ * The tables whose scoped typed writes stay on the system pool (the
+ * `scopedSystemWriteTables` pin): each access matrix row that names a
+ * `scopedSystemWrite` reason (packages/db/src/access-matrix.ts, comments
+ * blanked). Every other scoped typed write to a system table is refused;
+ * the pin only goes down, or up with a
  * reviewed reason (access-matrix.test.ts holds each reason non-empty).
  */
 export function scopedSystemWriteCount(files) {
@@ -1038,13 +1029,12 @@ export function scopedSystemWriteCount(files) {
   return n;
 }
 
-/** The lines of one file (plan v3 section 6: dbClientLines). */
+/** The lines of one file (dbClientLines). */
 function lineCount(root, path) {
   return readFileSync(join(root, path), 'utf8').split('\n').length - 1;
 }
 
-/** Every repo number of plan section 3, plus the per-file maps the lints
- *  pin. */
+/** Every repo number, plus the per-file maps the lints pin. */
 /** The systemDb uses of the files marked `route` (SYSTEM_DB_ROUTE). */
 function systemDbByRoute(systemDb, route) {
   return Object.fromEntries(Object.entries(systemDb).filter(([f]) => SYSTEM_DB_ROUTE[f] === route));
@@ -1052,7 +1042,7 @@ function systemDbByRoute(systemDb, route) {
 
 /** A file with systemDb uses and no route mark, or a mark that is neither
  *  'narrow' nor 'full', or a mark for a file with no uses: each a problem
- *  that fails arch:check (plan v3.2 S7a). */
+ *  that fails arch:check. */
 function systemDbRouteProblems(systemDb) {
   const out = [];
   for (const f of Object.keys(systemDb)) {
@@ -1187,7 +1177,7 @@ export function measure(root) {
       if (r) readFiles += 1;
       if (g) guardFiles += 1;
       else if (!r && !gone && f.startsWith('server/web/app/api/')) {
-        // An alias reads where the handler it takes reads (A4 hand batch B).
+        // An alias reads where the handler it takes reads.
         const taken = routesTaken(text, f).some(
           (t) => callerReads(readRepoFile(root, t) ?? '') > 0,
         );
@@ -1197,9 +1187,8 @@ export function measure(root) {
         }
       }
     }
-    // Every limiter call, route file or not (A10 #8 low round, L2): a limit
-    // taken in a helper the handler calls first was invisible to a count of
-    // route files only.
+    // Every limiter call, route file or not: a limit taken in a helper the
+    // handler calls first is invisible to a count of route files only.
     const limits = rateLimitCalls(stripComments(text));
     if (limits) {
       if (Object.hasOwn(RATE_LIMIT_ALLOW, f)) rateLimitAllowed.push(f);
@@ -1258,9 +1247,8 @@ export function measure(root) {
   }
   const sum = (o, k) => Object.values(o).reduce((a, v) => a + (k ? v[k] : v), 0);
   const reasons = new Set(Object.values(asSystem).flatMap((v) => v.reasons));
-  // The real system-pool exits (arch A6 fix round 1, L1), file by file:
-  // every use of a function holding an asSystem call (as-system-exits.mjs).
-  // This one number is what the plan's "at most 40" is about.
+  // The real system-pool exits, file by file: every use of a function
+  // holding an asSystem call (as-system-exits.mjs).
   const exits = asSystemExits(texts);
   const exitsByFile = exits.byFile;
   const routePrechecks = itemPrecheckRouteEntries(root);
@@ -1283,7 +1271,7 @@ export function measure(root) {
       asSystemExits: sum(exitsByFile),
       systemDbUses: sum(systemDb),
       systemDbFiles: Object.keys(systemDb).length,
-      // Plan v3.2 S7a: each file's uses by the route they take
+      // Each file's uses by the route they take
       // (system-db-allowlist.mjs SYSTEM_DB_ROUTE).
       systemDbUses_narrow: sum(systemDbByRoute(systemDb, 'narrow')),
       systemDbUses_full: sum(systemDbByRoute(systemDb, 'full')),

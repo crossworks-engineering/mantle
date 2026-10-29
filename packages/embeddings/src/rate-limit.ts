@@ -3,12 +3,11 @@ import { classifyProviderError } from './provider-error';
 
 /**
  * Rate-limit backoff for one embed request. The provider pool
- * (@mantle/voice provider-fetch.ts) lets parallel embed calls run side by side
- * where Node's built-in fetch had sent them one at a time, so a burst (the
- * extractor pool, a windows backfill) can now meet a provider's rate limit.
- * A 429 waits and retries, at most {@link RATE_LIMIT_RETRIES} times
- * (2 s, 4 s, 8 s, 16 s, with jitter); anything else throws at once, as before.
- * The loop is @mantle/std withRetry since A10 #10, with these numbers.
+ * (@mantle/voice provider-fetch.ts) runs parallel embed calls side by side,
+ * so a burst (the extractor pool, a windows backfill) can meet a provider's
+ * rate limit. A 429 waits and retries, at most {@link RATE_LIMIT_RETRIES}
+ * times (2 s, 4 s, 8 s, 16 s, with jitter); anything else throws at once.
+ * The loop is @mantle/std withRetry, with these numbers.
  *
  * A 429 that says the account has no credits (OpenAI's `insufficient_quota`)
  * is not a rate limit: no wait fixes it, so it throws at once too

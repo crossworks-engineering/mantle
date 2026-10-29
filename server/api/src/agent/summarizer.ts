@@ -115,8 +115,8 @@ export function buildSummarizerMessages(
     })
     .join('\n');
   // The transcript carries other people's words and tool output: fenced
-  // (markers carrying a per-call nonce), its forged markers defanged (A10
-  // part 1). buildChatMessages ends the system prompt with the standing
+  // (markers carrying a per-call nonce), its forged markers defanged.
+  // buildChatMessages ends the system prompt with the standing
   // data-boundary rule, told this fence's markers and nonce, so no note is
   // added here.
   return buildChatMessages({

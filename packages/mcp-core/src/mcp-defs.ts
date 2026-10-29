@@ -1,15 +1,14 @@
 /**
- * The hand-written MCP tools as definitions (workspaces arch plan v2,
- * sections 8 and 23.3, A5 step 2): the sixteen tools the owner MCP surface
- * registers itself rather than bridging a builtin, each with its policy
- * (a ToolPolicy, required, as on every builtin), its group (where in the
- * surface's order it registers) and its body, moved here as it was.
+ * The hand-written MCP tools as definitions: the sixteen tools the owner
+ * MCP surface registers itself rather than bridging a builtin, each with
+ * its policy (a ToolPolicy, required, as on every builtin), its group
+ * (where in the surface's order it registers) and its body.
  * Registration reads this table (registerMcpTools, from register/*.ts), and
  * the surface's own lists are views of it and of the builtin policy table
  * (mcp-policy.ts).
  *
  * Each definition takes its policy by its name from @mantle/tools
- * mcp-surface-policies.ts (fix round 1, LOW-1): that leaf is the surface
+ * mcp-surface-policies.ts: that leaf is the surface
  * table every process loads, so the Admin gate knows the two responder
  * tools that write into the owner's conversation (adminOnly)
  * with or without this package loaded. A name here with no policy there
@@ -90,7 +89,7 @@ function mcpTool<S extends z.ZodRawShape>(def: {
   return Object.freeze({
     ...rest,
     policy: MCP_SURFACE_POLICIES[def.slug],
-    // Registered through the one gate (gated-tools.ts, A5 step 4): listed
+    // Registered through the one gate (gated-tools.ts): listed
     // as the gate lists it, each call its body inside enterCall.
     register: (ctx: McpRegisterContext) =>
       ctx.registerDefinition(
@@ -158,8 +157,8 @@ function searchNodesBuiltin(): BuiltinToolDef {
  *   · `journal` missing from its type filter
  *
  * It now runs the builtin, through `callBuiltin`: dispatch and the one gate,
- * nested in its own call (A5 step 4). The MCP-facing NAME, description and argument names are kept
- * exactly, because connectors depend on them; the reply gains `url` and
+ * nested in its own call. The MCP-facing NAME, description and argument
+ * names are kept exactly, because connectors depend on them; the reply gains `url` and
  * `superseded_by`, which is additive.
  */
 const SEARCH = mcpTool({
@@ -170,7 +169,7 @@ const SEARCH = mcpTool({
   shape: {
     q: z.string().optional(),
     branch: z.string().optional(),
-    // The kind registry's `searchTool` field (A10 #12).
+    // The kind registry's `searchTool` field.
     type: z.enum(SEARCH_TOOL_KINDS).optional(),
     tags: z.array(z.string()).optional(),
     since: z.string().datetime().optional(),
@@ -214,8 +213,8 @@ const FOLDER_DESCRIBE = mcpTool({
         };
       }
       // The scope's edit of the folder, found by its id or its path, is the
-      // database's write check (0278): the pre-check went (docs/actors.md,
-      // "Pre-check deletion").
+      // database's write check (0278), with no tool pre-check
+      // (docs/actors.md, "Tools").
       const updated = await updateFolderDescription({
         ownerId: ownerId,
         folderId: id,
@@ -267,8 +266,8 @@ const FOLDER_RENAME = mcpTool({
         }
         return jsonReply(updated);
       } catch (err) {
-        // A database error is never its text (W3; A5 step 4 fix round 1):
-        // the one mapper's words, as a thrown one is answered.
+        // A database error is never its text: the one mapper's words, as a
+        // thrown one is answered.
         const msg = thrownToolDatabaseError('mcp folder_rename', err) ?? errorMessage(err);
         return { content: [{ type: 'text', text: `folder_rename failed: ${msg}` }], isError: true };
       }
@@ -335,8 +334,8 @@ const FILE_RENAME = mcpTool({
         }
         return jsonReply(row);
       } catch (err) {
-        // A database error is never its text (W3; A5 step 4 fix round 1):
-        // the one mapper's words, as a thrown one is answered.
+        // A database error is never its text: the one mapper's words, as a
+        // thrown one is answered.
         const msg = thrownToolDatabaseError('mcp file_rename', err) ?? errorMessage(err);
         return { content: [{ type: 'text', text: `file_rename failed: ${msg}` }], isError: true };
       }
@@ -463,7 +462,7 @@ const TABLE_ROWS_LIST = mcpTool({
 // answered as the agent.
 
 /**
- * Whose thread these tools read and write (W7c fix round 1, M1): the
+ * Whose thread these tools read and write: the
  * connection's own login. The anchor only on its own stdio (which names no
  * login); any other connection that names none (a peer the owner did not
  * register) gets null and the call is refused, never the anchor's thread.
@@ -791,7 +790,7 @@ const RESPONDER_TURN_RECORD = mcpTool({
       if (!threadLogin) return NO_LOGIN;
       try {
         const res = await recordMcpResponderTurn(ownerId, {
-          // The connection's own thread (R3, W7c fix round 1, M1).
+          // The connection's own thread.
           loginId: threadLogin,
           message: a.message,
           reply: a.reply,

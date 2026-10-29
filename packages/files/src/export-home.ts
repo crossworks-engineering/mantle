@@ -5,7 +5,7 @@
  *
  *  - The system, and a caller that may change the Files root and the
  *    Exports folder (the owner, an Admin user, in a scope that reads them):
- *    Auto-filed / Exports / <month>, as before.
+ *    Auto-filed / Exports / <month>.
  *  - Anyone else (a member, or a scope that does not hold Admin, such as a
  *    workspace assistant's turn): the Files root, so the new file takes the
  *    create home a new item takes there (the call's workspace when the

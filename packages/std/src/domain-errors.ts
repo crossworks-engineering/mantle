@@ -1,6 +1,5 @@
 /**
- * The domain errors (A10 part 2, fold 2: one error answer;
- * docs/request-plumbing.md): THE table of the errors a caller may hear,
+ * The domain errors (one error answer; docs/request-plumbing.md): THE table of the errors a caller may hear,
  * by class, each with its HTTP status, its public text and why it is
  * public. Read by the HTTP tier's one error answer (answerAppError,
  * server/web/server/app-error.ts) and by the tool surface's public text
@@ -80,8 +79,8 @@ export function domainErrorAnswer(err: unknown): DomainAnswer | null {
  * What a reply says for one item of a batch that failed (an entry of a
  * `failed` list the route answers with its other results): a domain error's
  * public text, as the route would answer it alone; anything else is a
- * fault, logged under `where`, and the item says `fallback` (A10 part 2
- * fix round 1, L5). A route never puts a caught error's text there itself.
+ * fault, logged under `where`, and the item says `fallback`. A route never
+ * puts a caught error's text there itself.
  */
 export function itemErrorText(err: unknown, where: string, fallback: string): string {
   const domain = domainErrorAnswer(err);

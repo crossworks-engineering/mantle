@@ -15,11 +15,11 @@
  * covered without opting in. OpenRouter is NOT wrapped: its SDK already
  * retries, and double-wrapping would compound attempt counts.
  *
- * A10 #10: the loop is @mantle/std withRetry, the retry rule is std's
- * retryDecision and the error is std's ProviderHttpError, with the numbers
- * this file always had (500 ms base, 8 s cap, 2 retries, Retry-After capped
- * at 30 s; pinned in retry.test.ts). Moved here from @mantle/voice-client,
- * a published zero-dependency contract package that may not import std.
+ * The loop is @mantle/std withRetry, the retry rule is std's retryDecision
+ * and the error is std's ProviderHttpError (500 ms base, 8 s cap, 2
+ * retries, Retry-After capped at 30 s; pinned in retry.test.ts). It lives
+ * here, not in @mantle/voice-client: that is a published zero-dependency
+ * contract package that may not import std.
  */
 import {
   ProviderHttpError,

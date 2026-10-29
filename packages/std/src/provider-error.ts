@@ -1,25 +1,21 @@
 /**
- * Provider errors (A10 #10, docs/provider-http.md): THE structured error a
+ * Provider errors (docs/provider-http.md): THE structured error a
  * model-provider call throws on a non-2xx answer, and THE module that reads
- * a provider failure. Three questions were answered by three classifiers in
- * three packages; they live here now, over one status reader:
+ * a provider failure. Three questions, three classifiers, one status reader:
  *
  *  - {@link classifyProviderError}: WHAT failed, for the alert banner and the
- *    extract queue's circuit (was @mantle/embeddings provider-error.ts,
- *    2026-10-04). An account problem (no credits, a refused key, a model the
+ *    extract queue's circuit. An account problem (no credits, a refused key, a model the
  *    provider does not offer, no key, an Anthropic key that names no
  *    workspace) is permanent; a rate limit, a server
  *    error, a network failure or a timeout is transient; anything else (a bad
  *    input, a parse error) is null: it says nothing about the provider.
- *  - {@link retryDecision}: retry this chat call now, and after how long (was
- *    classifyChatError in @mantle/voice-client retry.ts).
- *  - {@link isRouteDownError}: fail an embedding over to the backup route (was
- *    in @mantle/embeddings index.ts).
+ *  - {@link retryDecision}: retry this chat call now, and after how long.
+ *  - {@link isRouteDownError}: fail an embedding over to the backup route.
  *
- * The three keep their exact rules (each answers a different question, and
+ * The three keep their own rules (each answers a different question, and
  * merging them would move a failover or a retry edge: the chat retry set has
  * 409 and 425 and not 501; failover takes any 5xx; the classifier names 408 a
- * timeout). What they now share is the reading: the status from
+ * timeout). What they share is the reading: the status from
  * {@link ProviderHttpError} first, the adapters' message prefix after.
  *
  * `reason` and the public text are fixed sentences, never the provider's
@@ -67,14 +63,14 @@ export const PROVIDER_ERROR_PUBLIC = 'The model provider answered with an error.
 
 /**
  * A provider's refusal of this one request, in words the model can act on
- * (A10 lows): too long, refused under a content policy, or bad arguments.
+ * too long, refused under a content policy, or bad arguments.
  * The classifier names none of these (they say nothing about the provider:
  * no alert, no failover); the sentence is picked by the status and a pattern
  * over the body, server side, and is fixed: never the body.
  *
  * `bad_request` asks the model to fix its arguments, so it is said only when
- * the body points at an argument and not at the request's own shape (fix
- * round 1, L1): a 400 over a tool definition, the messages or max_tokens is
+ * the body points at an argument and not at the request's own shape: a 400
+ * over a tool definition, the messages or max_tokens is
  * ours to fix, and a model told to retry it would only spend calls. Any
  * other 400 or 422 says `rejected`, and so does every one a person reads
  * (a failed team turn: {@link personProviderText}).
@@ -95,7 +91,7 @@ const ARGS_RE =
   /\b(?:invalid|unsupported|unknown|unrecognized)\s+(?:value|parameter|argument|field|enum)|\bargument|\bparameter|\bis required\b|\bmust be (?:one of|a |an |between|less|greater|at (?:least|most)|positive|non-negative)|\bnot one of\b|supported values|invalid_type/i;
 /** A 400 about the request's own shape (the tool definitions, the messages,
  *  the output budget): never the model's arguments, whatever words it uses.
- *  In dot or bracket notation (fix round 2, L-A): Anthropic's `tools.0`,
+ *  In dot or bracket notation: Anthropic's `tools.0`,
  *  OpenAI's `tools[0].function.parameters` and `messages.[1].content`,
  *  Gemini's `contents.0` and `tools[0].function_declarations[0]`. */
 const REQUEST_SHAPE_RE =
@@ -103,7 +99,7 @@ const REQUEST_SHAPE_RE =
 
 /**
  * The text a person reads for a provider failure (a member's thread for a
- * failed team turn, its stream's error event; fix round 1, L1): the model's
+ * failed team turn, its stream's error event): the model's
  * sentence, except that the bad-arguments one, which asks for a retry with
  * other arguments, says the neutral `rejected`. `text` is a fixed sentence
  * already (publicProviderErrorMessage's), never provider words.
@@ -226,9 +222,9 @@ function errorChain(err: unknown): object[] {
  * True when `err` is a model provider's HTTP answer whose message carries the
  * provider's body: a {@link ProviderHttpError}, or an SDK's own HTTP error (a
  * numeric `statusCode` with its `body`, OpenRouter's), on the error or a
- * cause below it (A10 #10 fix round 2). Narrow on purpose: a surface that
- * also carries the caller's own errors (the tool dispatcher) maps only these,
- * so a validation message or a non-provider fetch's 404 still reads as before.
+ * cause below it. Narrow on purpose: a surface that also carries the
+ * caller's own errors (the tool dispatcher) maps only these, so a validation
+ * message or a non-provider fetch's 404 keeps its own text.
  */
 export function isProviderHttpFailure(err: unknown): boolean {
   return errorChain(err).some(
@@ -241,12 +237,12 @@ export function isProviderHttpFailure(err: unknown): boolean {
 
 /**
  * The status of a provider failure the classifier does not name, when it is
- * one by its shape (A10 #10 fix round 2): a numeric `status` or `statusCode`
+ * one by its shape: a numeric `status` or `statusCode`
  * on the error or a cause, the adapters' message prefix, or a body that did
  * not parse (V8's SyntaxError quotes the body). `body` is the first body on
  * the chain. Null: not provider shaped, the error is the caller's own.
  *
- * Broad on purpose, and since the A10 lows only for the log
+ * Broad on purpose, and so only for the log
  * ({@link providerAuthRefusal}: a refused key's log line names provider and
  * status only, so a wrong yes costs a line of detail, never a key). The
  * public text asks for evidence instead ({@link providerFailureText}).
@@ -271,7 +267,7 @@ export function providerFailureShape(err: unknown): { status?: number; body?: st
 
 /**
  * The provider and status of a refused key (an HTTP 401 or 403 the
- * classifier names `auth`), or null (model picker fix round 1, L2). Its
+ * classifier names `auth`), or null. Its
  * message carries up to 400 chars of the provider's body, and a refused
  * key's body can echo part of that key, so a log line names only these two
  * fields. A 403 that is not about the key (a moderation refusal, no
@@ -300,8 +296,8 @@ export function providerAuthRefusal(err: unknown): { provider?: string; status: 
 }
 
 /**
- * Key looking literals in a text, each cut to its prefix plus `[masked]`
- * (A10 lows fix round 1, M1): the backstop under errorDetail for a body
+ * Key looking literals in a text, each cut to its prefix plus `[masked]`:
+ * the backstop under errorDetail for a body
  * that echoes a key with a status that is no refused key's (a 400 that
  * quotes the header, a 403 moderation answer that quotes the request). By
  * the providers' own key prefixes (OpenAI, Anthropic, OpenRouter `sk-`;
@@ -315,7 +311,7 @@ export function providerAuthRefusal(err: unknown): { provider?: string; status: 
  * of 32 or more hex characters, or of 32 or more letters and digits that
  * mixes upper case, lower case and digits. A literal starts after any
  * character that is no letter or digit, or after a percent escape, so the
- * URL-encoded `Bearer%20sk-...` is masked too (fix round 2, L-B). A safety
+ * URL-encoded `Bearer%20sk-...` is masked too. A safety
  * net, not the rule: a refused key's detail never carries its body at all.
  * `mark` replaces each literal (the MCP call log writes `[redacted]`); a
  * named value that is the mark already is left as it is.
@@ -359,7 +355,7 @@ const BARE_KEY_RE = new RegExp(
  * The status a copy of an adapter's message carries (a wrapper that kept the
  * text but not the error): `<p> chat <status>: `, `openrouter-chat <status>
  * on `, `<p> embeddings failed: <status> <text> \u2014 `, `stream error
- * <status>: `. Narrow on purpose (A10 lows): our own "fetch failed: 404 Not
+ * <status>: `. Narrow on purpose: our own "fetch failed: 404 Not
  * Found" or "download failed: HTTP 500" is no provider's answer.
  */
 const ADAPTER_PROSE_RE =
@@ -391,7 +387,7 @@ const TIMEOUT_NAMES = new Set([
 
 /**
  * A provider call that never got its answer, by evidence on the error or a
- * cause (A10 lows): a deadline's or an abort's name, a network failure's
+ * cause: a deadline's or an abort's name, a network failure's
  * words or code, the SDK's ConnectionError, undici's `terminated` (a body
  * cut off). A bare TypeError is no evidence: it is as likely our own bug.
  */
@@ -421,8 +417,8 @@ function transportFailure(err: unknown): 'timeout' | 'network' | null {
 
 /**
  * The fixed sentence a member or the model hears for a provider failure, or
- * null when `err` is none. Since the A10 lows it asks for evidence first, so
- * our own errors no longer read as the provider's:
+ * null when `err` is none. It asks for evidence first, so our own errors
+ * never read as the provider's:
  *
  *  - an HTTP answer: a ProviderHttpError or an SDK's own HTTP error on the
  *    chain ({@link isProviderHttpFailure}), or a copy of an adapter's
@@ -465,7 +461,7 @@ export function providerFailureText(err: unknown): string | null {
 }
 
 /** What a caller hears for an error that carries an HTTP status but is no
- *  model provider's answer (A10 lows): the status, never the text. */
+ *  model provider's answer: the status, never the text. */
 export const SERVICE_ERROR_PUBLIC = 'A service the brain called answered with an error.';
 
 /** What a caller hears for a body that did not parse (V8's SyntaxError
@@ -474,7 +470,7 @@ export const UNREADABLE_ANSWER_PUBLIC = 'An answer could not be read: it is not 
 
 /**
  * The fixed sentence for an error in work that called a provider that is no
- * provider failure by evidence but must still not say its text (A10 lows):
+ * provider failure by evidence but must still not say its text:
  * a status on the chain or in the message (the status reader's prose) says
  * SERVICE_ERROR_PUBLIC with it; a body that did not parse says
  * UNREADABLE_ANSWER_PUBLIC. Null otherwise (a TypeError is the caller's:
@@ -541,7 +537,7 @@ const TIMEOUT_RE = /ETIMEDOUT|timed? ?out/i;
 
 /**
  * Classify a provider call's error. Null = not a provider-level problem (see
- * the module header): the caller treats it as before.
+ * the module header): the caller handles it as its own.
  */
 export function classifyProviderError(err: unknown): ProviderErrorClass | null {
   if (err === null || err === undefined) return null;

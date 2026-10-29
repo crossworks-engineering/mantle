@@ -134,7 +134,7 @@ export async function writeContentIndex(
   persistedText: string | undefined,
   tableSchemaDigest: string | null,
   rowVersion: string | null,
-  /** The work stamp read with `rowVersion` (A10 #7 fix round 3, M1). */
+  /** The work stamp read with `rowVersion`. */
   seenWork: IndexWork | null,
 ): Promise<void> {
   // Embed against title + summary. The summary already condenses the
@@ -191,9 +191,9 @@ export async function writeContentIndex(
       const updated = await db
         .update(nodes)
         .set({
-          // The work a reset stamped (A10 #7, data.index_work) is done: the
-          // stamp read with the row version this write is guarded on, so the
-          // one on the row it lands on (fix round 3, M1).
+          // The work a reset stamped (data.index_work) is done: the stamp
+          // read with the row version this write is guarded on, so the one
+          // on the row it lands on.
           data: sql`${dropIndexWork(nodes.data, seenWork)} || ${JSON.stringify(indexPatch)}::jsonb`,
           ...(embedding ? { embedding } : {}),
           // A summary from folded text: the W2 mark clears (0247).

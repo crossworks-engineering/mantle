@@ -1,6 +1,6 @@
 /**
  * Tables: the three hand-written reads (table_list, table_get,
- * table_rows_list: definitions in mcp-defs.ts, A5 step 2), then the bridged
+ * table_rows_list: definitions in mcp-defs.ts), then the bridged
  * write group, less the three the surface defines itself
  * (registerBuiltinTools skips a builtin a definition names).
  */

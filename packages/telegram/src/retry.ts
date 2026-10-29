@@ -22,7 +22,7 @@ export function telegramRetryAfterMs(err: unknown): number | null {
 }
 
 /** Run a Bot API call, waiting out 429s up to {@link MAX_RETRIES} times
- *  (@mantle/std withRetry since A10 #10). */
+ *  (@mantle/std withRetry). */
 export function withTelegramRetry<T>(call: () => Promise<T>): Promise<T> {
   return withRetry(call, {
     retries: MAX_RETRIES,

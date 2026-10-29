@@ -641,8 +641,8 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
  * recorder adds them to the trace's input total). OpenRouter's `prompt_tokens`
  * is the whole prompt and `prompt_tokens_details` "a breakdown of prompt
  * tokens" (its API reference, ResponseUsage), so the writes are inside it:
- * taken out once here, or a cache-writing call counted them twice (A10 #5
- * fix round 1). Cache reads stay inside, as every OpenAI-shaped adapter
+ * taken out once here, or a cache-writing call would count them twice.
+ * Cache reads stay inside, as every OpenAI-shaped adapter
  * reports them: the price table prices them out of the input total.
  */
 export function orPromptTokens(

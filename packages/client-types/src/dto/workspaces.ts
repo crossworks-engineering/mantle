@@ -10,8 +10,8 @@
 import type { AppTint } from '../app-nav';
 import type { LoginRole } from '../role-names';
 
-/** The Admin areas (plan 1.4), the one list of them (A10 #13: the brain's
- *  SCOPE_AREAS, adminUserSql and the route classes read it). An Admin
+/** The Admin areas, the one list of them (the brain's SCOPE_AREAS,
+ *  adminUserSql and the route classes read it). An Admin
  *  workspace user has all of them unless a per-user switch turns one off
  *  (none can be switched off yet). In this order on the wire (the shell's
  *  `areas`). */
@@ -224,8 +224,8 @@ export type ShellWorkspace = WorkspaceLook & {
   name: string;
   isAdmin: boolean;
   moderator: boolean;
-  /** The login's own private workspace ("<name> (only you)", W6b): match
-   *  on this, never on the name (W6b fix round 1). Absent on any other. */
+  /** The login's own private workspace ("<name> (only you)"): match on
+   *  this, never on the name. Absent on any other. */
   private?: true;
 };
 export type ShellWorkspaces = { workspaces: ShellWorkspace[]; areas: WorkspaceArea[] };

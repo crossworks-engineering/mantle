@@ -127,7 +127,7 @@ export const MAX_EMBEDDED_IMAGES_PER_DOC = 30;
  *  browser renders them, so storing one produces a file node that can never
  *  be shown — worse than not having it. Office often embeds an EMF *fallback*
  *  beside a modern raster of the same picture, so dropping these usually
- *  loses nothing. (Jason's call, 2026-07-30.) */
+ *  loses nothing (the owner's rule). */
 export const SKIPPED_IMAGE_EXTS = new Set(['emf', 'wmf', 'emz', 'wmz']);
 
 /** Why an image was dropped — surfaced on the trace so "this manual produced
@@ -349,10 +349,10 @@ export function buildImageTitles(images: EmbeddedImage[], sourceTitle: string): 
  *
  * The extension is part of the slug, not stripped from it. A drawing ingested
  * as both `90-10-01.dwg` and `90-10-01.dxf` (cross-format twins are routine in
- * CAD hand-offs) used to slugify to the same folder AND the same image
- * filenames, so the second document's saves all collided with the first's and
- * every image was silently lost. `90-10-01-dwg` vs `90-10-01-dxf` can never
- * share a path.
+ * CAD hand-offs) would otherwise slugify to the same folder AND the same image
+ * filenames, so the second document's saves would collide with the first's and
+ * every image would be silently lost. `90-10-01-dwg` vs `90-10-01-dxf` can
+ * never share a path.
  *
  * The extension is appended AFTER the stem is slugged (and capped), so a stem
  * long enough to hit `slugifyFolder`'s 64-char cap cannot truncate the

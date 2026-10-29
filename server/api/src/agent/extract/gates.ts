@@ -28,15 +28,15 @@
  *  - Metadata-only runs BEFORE the key pre-flight (it needs no LLM) and
  *    BEFORE the already-extracted guard (it carries its own idempotency, and
  *    a mode flip must re-run).
- *  - A re-embed only (A10 #7: a write stamped `data.index_work = 'embed'`,
- *    a new title) runs after metadata-only (a name-only file re-runs its
+ *  - A re-embed only (a write stamped `data.index_work = 'embed'`, a new
+ *    title) runs after metadata-only (a name-only file re-runs its
  *    spine) and BEFORE the cost guard and the key pre-flight: it needs no
  *    model, with a summary to keep or without one (embedWork). A table
  *    keeping its summary is admitted there too: the model step reuses the
  *    summary, so it needs no key; one no assistant workspace reads goes to
- *    the cost guard's local index instead, as before the stamp.
+ *    the cost guard's local index instead, as with no stamp.
  *  - A type off the list is indexed from its published summary when it has
- *    one (Journal v3 J9). A published app without one gets it in that
+ *    one. A published app without one gets it in that
  *    branch: the one model call this gate makes itself, behind the
  *    worker and the type list, with the cost guard and the summary hash
  *    checked before it (app-summary.ts); a failed call is a terminal skip.
@@ -122,7 +122,7 @@ async function indexLocalOnly(
 }
 
 /**
- * What an 'embed' stamp (A10 #7: markContentChanged stamped
+ * What an 'embed' stamp (markContentChanged stamped
  * `data.index_work = 'embed'`, a new title or a table's cell commit) asks of
  * a node with no vector. Never a model call:
  *
@@ -131,12 +131,11 @@ async function indexLocalOnly(
  *    title and that summary;
  *  - 'table_summary': a table keeping its summary: admitted at once, before
  *    the cost guard and the key pre-flight, and the model step reuses the
- *    summary (no model call, no key) and rebuilds its profile passages (fix
- *    round 2, L5);
+ *    summary (no model call, no key) and rebuilds its profile passages;
  *  - 'local': no summary (an empty one is none, hasSummary), and the item
  *    was indexed before: a terminal skip (a page too short to summarise), a
  *    pass that completed without one, or a vector the reset cleared (an item
- *    from before the completion marker, fix round 2, L4): the vector from the
+ *    from before the completion marker): the vector from the
  *    title and the text read locally, on the embedder;
  *  - null: not an embed (no stamp, a vector already, or an 'extract' stamp a
  *    rename never downgrades), or an item never indexed (its first pass runs,
@@ -157,7 +156,7 @@ export function embedWork(
  * vector was made from: no vector yet, the same title, and `also` (the
  * summary it was made from, or still none). A write that landed meanwhile
  * keeps its own reset and its own job; a stale job for an older title never
- * lands over a newer one (fix round 1 of A10 #7, L1). Drops the 'embed'
+ * lands over a newer one. Drops the 'embed'
  * stamp: the work is done. Leaves `updated_at` alone, like any derived
  * write. Returns whether the vector was written.
  */
@@ -201,8 +200,8 @@ async function reembedFromSummary(
 /** The vector of an item with no summary, from its title and the text read
  *  locally (a file: its name spine, its bytes are not parsed again), written
  *  while it still has no summary: an empty one is none, as the gate reads it
- *  (hasSummarySql; fix round 2, M3: the guard read `summary: ''` as a
- *  summary, so nothing was written and the stamp stayed). */
+ *  (hasSummarySql: read as a summary, `summary: ''` would write nothing and
+ *  leave the stamp). */
 async function embedTitleLocally(
   node: typeof nodes.$inferSelect,
   ownerId: string,
@@ -220,9 +219,8 @@ async function embedTitleLocally(
  * The vector of an authored summary note the extractor never reads (a
  * conversation digest, a chat archive), when it has none: from its topic and
  * summary as the summarizer embeds it (digestEmbedText). A rename or a hand
- * edit may have cleared it; without this the terminal skip below left the
- * note out of vector search and find_window for good (fix round 1 of A10 #7,
- * M2). Returns whether a vector was written, or null when the embed failed
+ * edit may have cleared it; without this the terminal skip below would
+ * leave the note out of vector search and find_window for good. Returns whether a vector was written, or null when the embed failed
  * (not terminal: the drain retries it).
  */
 async function embedAuthoredSummary(
@@ -731,7 +729,7 @@ export async function admitForExtraction(
     }
   }
 
-  // A re-embed (A10 #7, markContentChanged stamped 'embed': a new title, a
+  // A re-embed (markContentChanged stamped 'embed': a new title, a
   // table's cell commit). Never a model call: the vector from the title and
   // the kept summary, or, with no summary on an item indexed before, from the
   // title and the text read locally (embedWork). Before the cost guard and
@@ -739,7 +737,7 @@ export async function admitForExtraction(
   // summary is admitted here too: the model step reuses the summary (no model
   // call, so no key) and rebuilds its profile passages, unless no workspace
   // with an assistant reads it: then the cost guard below indexes it locally,
-  // as it did before the stamp (fix round 3, L1).
+  // as with no stamp.
   const work = embedWork(node);
   let allowed: boolean | undefined;
   const workAllowed = async () => (allowed ??= await llmWorkAllowed(node.id));
@@ -831,8 +829,8 @@ export async function admitForExtraction(
   // this only costs a stray duplicate notify on an old node) and get
   // stamped.
   //
-  // An 'extract' stamp (A10 #7) is a content change still waiting: never
-  // skipped, whatever else the row holds (fix round 3, M1, defence in depth).
+  // An 'extract' stamp is a content change still waiting: never skipped,
+  // whatever else the row holds (defence in depth).
   // The pass it admits drops the stamp in its xmin-guarded write, so the next
   // notify skips here again: one pass, never a loop.
   const existingData = (node.data ?? {}) as Record<string, unknown>;

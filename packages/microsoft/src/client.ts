@@ -28,7 +28,7 @@ function graphError(status: number, message: string): GraphError {
  *  any non-2xx so callers can branch on auth (401) vs throttling vs the rest.
  *  The URL must be on graph.microsoft.com: an absolute URL can come from
  *  Graph's own answer (`@odata.nextLink`, a stored `@odata.deltaLink`), and
- *  the bearer token goes nowhere else (A10 part 1 fix round 2). */
+ *  the bearer token goes nowhere else. */
 export async function graphFetchRaw(
   url: string,
   accessToken: string,

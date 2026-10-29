@@ -102,11 +102,11 @@ export type MemberSpaceList = {
   pageSize: number;
 };
 
-// ── An admin's private space and Take over (audit F07) ──────────────────
+// ── An admin's private space and Take over ──────────────────────────────
 
 /** Who wrote an item an admin took over from the Review queue (Take over
- *  and review were removed in workspaces W5c; an item taken before that
- *  still names its author). */
+ *  and the queue are gone; an item taken over earlier still names its
+ *  author). */
 export type AdminTakenFrom = {
   /** The member login; null once that login is deleted. */
   loginId: string | null;

@@ -13,9 +13,9 @@
  *   cancel — `cancelRun` (accepts paused, amendment 2); the janitor expires
  *            whatever the cancellation orphans.
  *
- * Owner scoping is enforced HERE against the run row (final audit F2): the
- * pending row is owner-scoped by approve/reject, but its ARGS are only
- * trustworthy when the runs engine wrote them — a slug-squatted `run_budget`
+ * Owner scoping is enforced HERE against the run row: the pending row is
+ * owner-scoped by approve/reject, but its ARGS are only trustworthy when
+ * the runs engine wrote them: a slug-squatted `run_budget`
  * tool could mint a row whose `run_id` points at someone else's run, and
  * "reject" would cancel it. The run must belong to `ownerId` or the
  * decision refuses.

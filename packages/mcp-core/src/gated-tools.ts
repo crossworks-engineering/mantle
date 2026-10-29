@@ -1,6 +1,5 @@
 /**
- * THE registration of the owner MCP surface (workspaces arch plan v2,
- * sections 8 and 23.3; A5 step 4). One function for every tool the
+ * THE registration of the owner MCP surface. One function for every tool the
  * surface has: a builtin, a hand-written MCP definition (mcp-defs.ts), a
  * connector row of the login's workspaces. Listing equals calling:
  *
@@ -247,7 +246,7 @@ export function registerGatedTool(
   const policy = lookupPolicy(ref);
   // A create takes `workspace` and names where its item landed; on a
   // connection with no home for an item its creates are refused (gate step
-  // 6) and take no `workspace` (W7b fix round 2).
+  // 6) and take no `workspace`.
   const creates =
     entry.kind !== 'connector' && Boolean(policy.creates) && !gate.lists.createHome?.refuseCreates;
   const description =
@@ -292,8 +291,7 @@ export function registerGatedTool(
           },
           // Its `workspace` argument (a create's, at step 6) and the owner
           // the pre-run checks read (the item pre-check, a key's change to
-          // shared content), as a builtin's call names them (fix round 1,
-          // LOW-1): no definition creates or changes shared content today,
+          // shared content), as a builtin's call names them: no definition creates or changes shared content today,
           // and one that does keeps both.
           { args: input, ask, context: { ownerId } },
         );

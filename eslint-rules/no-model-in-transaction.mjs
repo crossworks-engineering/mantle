@@ -1,6 +1,6 @@
 /**
- * no-model-in-transaction (workspaces arch A2b, plan 4.2 and REVIEW B M6):
- * no database transaction is held across a model call or a stream. A turn
+ * no-model-in-transaction: no database transaction is held across a model
+ * call or a stream. A turn
  * waits seconds on a model; a transaction open that long holds its
  * connection and its locks (the heads) for all of it, and the pool runs
  * dry as users grow. Read and write before and after the call, each in its

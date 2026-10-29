@@ -171,8 +171,8 @@ export async function upsertFile(args: {
   tags?: string[];
   /** The login a new file is private to (nodes.login_id: only it reads the
    *  file, and its chunks and facts follow), for a create a channel makes on
-   *  a login's behalf outside its scope: a Telegram chat's attachment (W7d
-   *  fix round 1, M2). Set on insert, and on the watcher's row when this
+   *  a login's behalf outside its scope: a Telegram chat's attachment. Set
+   *  on insert, and on the watcher's row when this
    *  create lost the race to it; an existing file keeps its own. */
   loginId?: string | null;
 }): Promise<FileRow> {
@@ -189,9 +189,8 @@ export async function upsertFile(args: {
 
   // Make sure parent branch exists in the DB. The files root is structure
   // (homed in Admin): its id is read whatever the caller's scope holds, by
-  // the definer ensureFilesRootBranch asks (mantle_kind_root_id, 0293; A6b:
-  // the system pool before, 'kind-root'); a folder below it in the caller's
-  // scope.
+  // the definer ensureFilesRootBranch asks (mantle_kind_root_id, 0293); a
+  // folder below it in the caller's scope.
   const [parent] = args.parentPath.includes('.')
     ? await db
         .select({ id: nodes.id })
@@ -231,18 +230,18 @@ export async function upsertFile(args: {
   }
   // Look up any existing DB row for this (folder, filename) BEFORE touching
   // disk, so we can tell a real duplicate from an orphaned disk file. The
-  // lookup is on the system pool (W6b fix round 1, H3), existence only: a
-  // caller in a workspace scope (a member, an Admin user) does not see a
-  // file it may not read, and took the name for free, so its write landed
-  // on that file's bytes. Now a name taken by a file the caller cannot
-  // read, or one it may read but not change, is refused before the disk.
+  // lookup is on the system pool, existence only: a caller in a workspace
+  // scope (a member, an Admin user) does not see a file it may not read, and
+  // would take the name for free, its write landing on that file's bytes.
+  // A name taken by a file the caller cannot read, or one it may read but
+  // not change, is refused before the disk.
   const taken = await fileNameTaken(args.ownerId, args.parentPath, filename);
   let existing: Node | undefined;
   if (taken) {
     if ((await callerSeesNode(taken.id)) === false) throw new FileNameTakenError(filename);
     const [seen] = await db.select().from(nodes).where(eq(nodes.id, taken.id)).limit(1);
     if (!seen) throw new FileNameTakenError(filename);
-    // A folded member file's bytes are not in the tree (W6b), so the disk
+    // A folded member file's bytes are not in the tree, so the disk
     // cannot tell its name is taken: refuse here, whatever the case.
     if (taken.folded && (!taken.exact || !args.overwrite)) {
       throw new FileNameTakenError(filename);
@@ -250,8 +249,8 @@ export async function upsertFile(args: {
     if (taken.exact) {
       existing = seen;
       if (args.overwrite) {
-        // A read-only snapshot copy is never overwritten (W6b fix round 1),
-        // nor a file the caller may read but not change.
+        // A read-only snapshot copy is never overwritten, nor a file the
+        // caller may read but not change.
         assertNotSnapshotCopy(existing);
         // A drawing check's crop is never written over, by anyone: its
         // bytes are what the image check saw (the Checks tab opens them).
@@ -274,15 +273,14 @@ export async function upsertFile(args: {
 
   // The bytes are staged beside their final name, under a name the watcher
   // ignores, whatever the write. A create places them once its node insert
-  // wins (W8b): two creates racing for one name used to both write the
-  // final path first, so the loser's bytes could end up under the winner's
-  // row. A disk file with NO node is orphan residue from an interrupted
-  // upload: the placing rename replaces it, so a re-upload self-heals
-  // instead of being stuck forever on "already exists". Over a file a row
-  // owns (A3b part 2, store-broker.ts flipThenPlace): the row is checked
-  // and changed first, and the stage goes over the file as the LAST step of
-  // that transaction, so a write the database refuses never touches the
-  // file (it used to be written in place before the row's update).
+  // wins: two creates racing for one name that both wrote the final path
+  // first could leave the loser's bytes under the winner's row. A disk file
+  // with NO node is orphan residue from an interrupted upload: the placing
+  // rename replaces it, so a re-upload self-heals instead of being stuck
+  // forever on "already exists". Over a file a row owns (store-broker.ts
+  // flipThenPlace): the row is checked and changed first, and the stage goes
+  // over the file as the LAST step of that transaction, so a write the
+  // database refuses never touches the file.
   if (existing && !args.overwrite) {
     const finalPath = diskPathForFile(args.parentPath, filename);
     const there =
@@ -343,7 +341,7 @@ export async function upsertFile(args: {
     let placed = false;
     let inserted: Node | undefined;
     try {
-      // Heads first (workspaces plan U1): the folder it lands in, shared.
+      // Heads first: the folder it lands in, shared.
       [inserted] = await withDeadlockRetry(() =>
         withNodeInsertHeads(args.ownerId, [{ type: 'file', path: args.parentPath }], async (tx) => {
           const rows = await tx
@@ -371,7 +369,7 @@ export async function upsertFile(args: {
           } else if (rows[0] && !(await placedBytesIntact(toPlace))) {
             // A retry (a deadlock after the bytes were placed rolled the
             // insert back): another create may have put its own bytes under
-            // the name in between (fix round 1). This insert would then name
+            // the name in between. This insert would then name
             // bytes that are not its own: refused as a taken name, and its
             // row goes with the rollback.
             throw new FileNameTakenError(filename);
@@ -404,14 +402,14 @@ export async function upsertFile(args: {
       )
       .limit(1);
     // No row the caller reads: the create that won is not the caller's to
-    // see (fix round 1), or it went again. Either way the name was taken.
+    // see, or it went again. Either way the name was taken.
     if (!target) throw new FileNameTakenError(filename);
     if ((target.data as Record<string, unknown> | null)?.sha256 !== written.sha256) {
       throw new FileNameTakenError(filename);
     }
     // The same bytes: this create updates the row it lost to (its title,
     // data, tags), so it must be a row the caller may change, as an
-    // overwrite must (fix round 1): never a snapshot copy, never a file the
+    // overwrite must: never a snapshot copy, never a file the
     // caller may read but not edit.
     assertNotSnapshotCopy(target);
     const wonId = target.id;
@@ -420,27 +418,27 @@ export async function upsertFile(args: {
     }
     raced = true;
   }
-  // A create that names a stamp and a home (a snapshot copy, W6b) and lost
-  // the race to the watcher: its row is stamped and homed here, as its own
-  // insert would have been (fix round 2, L-4), so a copy is never left
+  // A create that names a stamp and a home (a snapshot copy) and lost the
+  // race to the watcher: its row is stamped and homed here, as its own
+  // insert would have been, so a copy is never left
   // editable or homed where its create did not put it.
   const home = raced ? currentCreateHome() : null;
   const stamp = home?.stamp && Object.keys(home.stamp).length > 0 ? home.stamp : null;
 
   const oldData = { ...((target.data ?? {}) as Record<string, unknown>) };
-  // A folded member file (W6b) overwritten: its new bytes are in the tree
-  // now (written above, at its folder and name), so it no longer reads
-  // from its old space's directory (fix round 1, H1).
+  // A folded member file overwritten: its new bytes are in the tree now
+  // (written above, at its folder and name), so it stops reading from its
+  // old space's directory.
   if (foldedFilePath(target)) delete oldData.space_file;
-  // Merge onto the node's data (as syncFileFromDisk does). Rebuilding it
-  // from the storage fields dropped the per-file `indexing: 'metadata'`
-  // privacy flag on every editor save, so an excluded file went to full
+  // Merge onto the node's data (as syncFileFromDisk does): rebuilding it
+  // from the storage fields would drop the per-file `indexing: 'metadata'`
+  // privacy flag on every editor save, so an excluded file would go to full
   // indexing. On new bytes the extractor's output is cleared for a fresh run.
   const sameContent = oldData.sha256 === written.sha256;
   // Title: an explicit one wins; otherwise keep whatever the node already
   // carries when it differs from the filename (something deliberately
-  // named it), and fall back to the filename. Blindly resetting to the
-  // filename here used to erase a caller's title on every re-upsert.
+  // named it), and fall back to the filename. Resetting to the filename
+  // here would erase a caller's title on every re-upsert.
   const existingTitle = typeof target.title === 'string' ? target.title : '';
   const nextTitle =
     args.title?.trim() || (existingTitle && existingTitle !== filename ? existingTitle : filename);
@@ -449,23 +447,23 @@ export async function upsertFile(args: {
   // a create that lost the race to a row holding its bytes has nothing to
   // place (its stage went above).
   const placement = existing ? overwriteSteps(row.id, staged) : null;
-  // Heads first (workspaces plan U1): the chunk delete below needs them.
+  // Heads first: the chunk delete below needs them.
   const flip = (place: (() => Promise<void>) | null) =>
     withDeadlockRetry(() =>
       withHeads([row.id], 'update', (tx) =>
         inFlipTransaction(async () => {
           // Only the watcher's own row takes a create's stamp and home: a row
           // another create made in the meantime is that create's item, never
-          // turned into this one's copy (W6b fix round 3, L-3), and the
-          // watcher's row holds the bytes this create wrote (fix round 4,
-          // L-2). Checked under its heads, before anything is written;
+          // turned into this one's copy, and the watcher's row holds the
+          // bytes this create wrote. Checked under its heads, before
+          // anything is written;
           // refused as a taken name (409).
           const watcherRow = raced && (await isWatcherInsert(tx, row.id, written.sha256));
           if (stamp && !watcherRow) {
             throw new FileNameTakenError(filename);
           }
-          // The checked statement (A3b part 2): exactly one row, else a
-          // refusal (a 404), with the file untouched.
+          // The checked statement: exactly one row, else a refusal (a 404),
+          // with the file untouched.
           const rows = await tx
             .update(nodes)
             .set({
@@ -479,8 +477,7 @@ export async function upsertFile(args: {
                 : {}),
               // The watcher's row of a create made for a login: that login's
               // too. Only the watcher's: a row another create made is that
-              // create's file, never made private to this one's login (fix
-              // round 1).
+              // create's file, never made private to this one's login.
               ...(watcherRow && args.loginId && !row.loginId ? { loginId: args.loginId } : {}),
               updatedAt: new Date(),
               ...(sameContent ? {} : columnsAfterContentChange(row)),
@@ -525,7 +522,7 @@ export async function upsertFile(args: {
  * this write's bytes and the row does not name them: a write that landed
  * meanwhile (another caller's, once this one's transaction let the row go)
  * is never undone. Otherwise the old bytes are left to the staged-leftover
- * sweep and it is logged (A3b part 2 fix round 1, M1). The residual: when
+ * sweep and it is logged. The residual: when
  * this write (A) skips because B's bytes are in the file and B's own flip
  * then fails too, B puts back the bytes it kept, A's never-landed ones; the
  * true old bytes are in A's kept copy until the reaper takes it.
@@ -553,12 +550,12 @@ export function overwriteSteps(
     settle: async () => (await rowNow(id)).sha256 === staged.sha256,
     unplace: async () => {
       // Decided inside the lock: never the bytes-only branch after that,
-      // whatever the read-only transaction's COMMIT does (fix round 2, N1).
+      // whatever the read-only transaction's COMMIT does.
       let decided = false;
       try {
         // A fresh system connection, never joined to the caller's open
         // transaction (its link would wait behind this one), and a bounded
-        // lock wait (fix round 2, N3).
+        // lock wait.
         await lockTx(async (q) => {
           const rows = await q(
             `select data->>'sha256' as sha from nodes where id = $1 for update`,
@@ -596,8 +593,7 @@ export function overwriteSteps(
  * has one, is where the database homes a create that names no workspace
  * (its folder's home, else Admin), never a workspace a create chose; and
  * its bytes (data.sha256) are the ones this create wrote, `sha256`, as the
- * watcher read them off disk. Any other row is another create's item (W6b
- * fix round 3, L-3; fix round 4, L-2).
+ * watcher read them off disk. Any other row is another create's item.
  * @heads-held by upsertFile (withHeads on the row).
  */
 async function isWatcherInsert(
@@ -674,10 +670,10 @@ export async function restampRacedCreate(
  */
 async function storageBytesForNode(nodeId: string): Promise<Buffer | null> {
   // An email attachment is part of the private corpus: never readable below
-  // admin (member logins Phase 0b): the system, or a scope that holds the
-  // Admin workspace (an Admin user's request, in its scope since F4: F4 fix
-  // round 2; isSystemScope() alone answered null there, so an attachment's
-  // copy was a 400 and a folder copy stopped partway). The caller read the
+  // admin: the system, or a scope that holds the Admin workspace (an Admin
+  // user's request runs in its scope, where isSystemScope() alone would
+  // answer null, so an attachment's copy would be a 400 and a folder copy
+  // would stop partway). The caller read the
   // file node first (readFileById, openFileById: the item check); the
   // attachment row and its object are the named system step.
   if (!isSystemScope() && !(await scopeHoldsAdmin())) return null;
@@ -705,12 +701,11 @@ async function storageBytesForNode(nodeId: string): Promise<Buffer | null> {
  * Three sources, in order: inline `data.content` (text files), the
  * host-mirrored disk tree, then object storage. That last fallback exists
  * because an email attachment has NO disk presence at all and no
- * `data.filename` to build a path from — so this used to return null for every
- * one of them, and `/api/files/files/<id>?raw=1` answered a chat link with
- * `{"error": "not found"}`. The document was found and linked correctly; only
- * the bytes 404'd. (2026-09-10: 267 of 268 attachments on jason-prod.)
+ * `data.filename` to build a path from: without it,
+ * `/api/files/files/<id>?raw=1` would answer a chat link to an attachment
+ * with `{"error": "not found"}`.
  *
- * `path` is null when the bytes did not come from disk — no caller reads it,
+ * `path` is null when the bytes did not come from disk: no caller reads it,
  * but returning a disk path we never touched would be a lie.
  */
 export async function readFileById(args: {
@@ -725,7 +720,7 @@ export async function readFileById(args: {
   if (!node || node.type !== 'file') return null;
   const data = (node.data ?? {}) as Record<string, unknown>;
   const filename = String(data.filename ?? '');
-  // A folded member file (W6b) keeps its bytes in its old space's directory.
+  // A folded member file keeps its bytes in its old space's directory.
   const filePath = foldedFilePath(node) ?? diskPathForFile(node.path, filename);
 
   // Prefer cached content for text files to avoid disk reads in the hot path.
@@ -790,17 +785,17 @@ export async function openFileById(args: {
 
 /**
  * Count the nodes ingest derived from this file (extracted images,
- * auto-imported tables, pages/notes/tables from the *_from_file tools) —
+ * auto-imported tables, pages/notes/tables from the *_from_file tools):
  * everything whose `data.sourceFileId` points here. One GROUP BY, served by
- * the partial index from migration 0141. Module-private since F4 fix round
- * 3 (M2): deleteFileById's has_derived refusal is its one caller;
+ * the partial index from migration 0141. Module-private:
+ * deleteFileById's has_derived refusal is its one caller;
  * `@mantle/content`'s `reapDerivedFromFile` is the matching delete.
  */
 async function countDerivedFromFile(args: {
   ownerId: string;
   fileId: string;
 }): Promise<DerivedCounts> {
-  // Every derived item, brain-wide (F4 fix round 2): one the caller's scope
+  // Every derived item, brain-wide: one the caller's scope
   // does not read is stranded by the file's delete all the same. Numbers
   // only, by the named system step, after the file's manage check (the
   // step's own).
@@ -823,7 +818,7 @@ async function drawsReferencingFile(
   ownerId: string,
   fileId: string,
 ): Promise<{ drawings: { id: string; title: string }[]; hidden: number }> {
-  // Every drawing that places the image, brain-wide (F4 fix round 2): one
+  // Every drawing that places the image, brain-wide: one
   // the caller's scope does not read breaks all the same (and reads the
   // working draft only where the scope may edit). Found by the named
   // system step after the file's manage check (the step's own: only a
@@ -910,9 +905,9 @@ export type FileDeleteBlock =
     };
 
 /**
- * The refusals of a file's delete that no confirm resolves (F4 fix round 3,
- * L1: one place for deleteFileById and the confirmed cascade, which asks it
- * BEFORE its irreversible reap). Asked after the file's manage check (the
+ * The refusals of a file's delete that no confirm resolves (one place for
+ * deleteFileById and the confirmed cascade, which asks it BEFORE its
+ * irreversible reap). Asked after the file's manage check (the
  * drawings' step asks it again).
  */
 export async function fileDeleteBlock(
@@ -939,9 +934,9 @@ export async function fileDeleteBlock(
   if (attachment) return { reason: 'attachment' };
   // Block deletion of an image a drawing still places on its canvas. There is
   // no FK to lean on: `draws.file_refs` is a jsonb map (BinaryFile id → file
-  // node id), so a bare delete used to succeed and leave the drawing quietly
-  // broken: the canvas lost the image on next open while the committed
-  // snapshot kept showing it, because exportToSvg inlines image bytes. Two
+  // node id), so a bare delete would succeed and leave the drawing quietly
+  // broken: the canvas loses the image on next open while the committed
+  // snapshot keeps showing it, because exportToSvg inlines image bytes. Two
   // surfaces disagreeing forever, with no error anywhere. Refuse instead, and
   // name the drawings so the caller can say where to remove it.
   const inDrawings = await drawsReferencingFile(ownerId, fileId);
@@ -969,7 +964,7 @@ export async function deleteFileById(args: {
    *  image that the caller reads. */
   drawings?: { id: string; title: string }[];
   /** On the in_drawing refusal: how many more place it that the caller
-   *  does not read (F4 fix round 2), when any. */
+   *  does not read, when any. */
   hiddenDrawings?: number;
   /** Populated on the has_derived refusal so the caller can show what a
    *  cascade would remove before asking again with `deleteDerived: true`. */
@@ -981,7 +976,7 @@ export async function deleteFileById(args: {
     .where(and(eq(nodes.id, args.fileId), eq(nodes.ownerId, args.ownerId)))
     .limit(1);
   if (!node || node.type !== 'file') return { ok: false, reason: 'not_found' };
-  // The item check first (F4 fix round 2): a delete is the manage of the
+  // The item check first: a delete is the manage of the
   // file (its home's Moderators), asked in the caller's scope before any
   // brain-wide count below; refused as the delete statement refused it
   // (not found). System work is not checked.
@@ -1002,13 +997,12 @@ export async function deleteFileById(args: {
   }
   const data = (node.data ?? {}) as Record<string, unknown>;
   const filename = String(data.filename ?? '');
-  // Heads first (workspaces plan U1): the file and its folder.
-  // The checked statement (A3b part 2): exactly one row. A delete the
-  // database's row rules left at none (a caller that may read the file but
-  // not delete it) is a refusal, and the bytes stay; they used to be
-  // unlinked whatever the delete did.
+  // Heads first: the file and its folder.
+  // The checked statement: exactly one row. A delete the database's row
+  // rules left at none (a caller that may read the file but not delete it)
+  // is a refusal, and the bytes stay.
   // What the bytes are, read under the row's lock: the commit hook below
-  // unlinks only these (fix round 2, N2).
+  // unlinks only these.
   let was: FileIdentity | null = null;
   try {
     await withDeadlockRetry(() =>
@@ -1027,14 +1021,14 @@ export async function deleteFileById(args: {
   }
   // The bytes go once the row's delete has committed (a crash in between
   // leaves a file the watcher brings back, never a row without bytes).
-  // A folded member file (W6b) has its bytes in its old space's directory,
-  // named by its id: the tree path its name builds is another file's (fix
-  // round 1, H1). Its bytes stay where they are.
+  // A folded member file has its bytes in its old space's directory, named
+  // by its id: the tree path its name builds is another file's. Its bytes
+  // stay where they are.
   // Inside an outer transaction (a login's open write transaction, a
   // personal space) the delete was a savepoint: the bytes go once that one
-  // commits, never before (fix round 1, L1).
+  // commits, never before.
   // Only the bytes the delete saw: a file made again under the name in the
-  // same outer transaction is another inode and stays (fix round 2, N2).
+  // same outer transaction is another inode and stays.
   const seen = was as FileIdentity | null;
   if (seen) await afterOuterCommit(() => deleteFileIfSame(node.path, filename, seen));
   // Reap the cached thumbnail derivatives too — keyed by content hash, so a
@@ -1122,9 +1116,8 @@ export async function syncFileFromDisk(args: {
         eq(nodes.type, 'file'),
         sql`${nodes.path}::text = ${args.parentPath}`,
         sql`lower(${nodes.data}->>'filename') = lower(${filename})`,
-        // A folded member file (W6b) is not in the tree: its bytes are in
-        // its old space's directory, and a tree file of its name is another
-        // file (fix round 1, H1).
+        // A folded member file is not in the tree: its bytes are in its old
+        // space's directory, and a tree file of its name is another file.
         sql`not coalesce(${nodes.data} ? 'space_file', false)`,
       ),
     )
@@ -1158,7 +1151,7 @@ export async function syncFileFromDisk(args: {
     // extraction fields ARE cleared (fileDataAfterWrite), and the node's old
     // chunks with them: content changed, so all of it is recomputed by the
     // node_ingested notify below.
-    // Heads first (workspaces plan U1): the chunk delete needs them.
+    // Heads first: the chunk delete needs them.
     const [updated] = await withDeadlockRetry(() =>
       withHeads([existing.id], 'update', async (tx) => {
         const rows = await tx
@@ -1180,12 +1173,12 @@ export async function syncFileFromDisk(args: {
     if (!updated) throw new Error('syncFileFromDisk: update returned no row');
     return { status: 'updated', nodeId: updated.id };
   }
-  // No tree row of this name: a folded member file (W6b) of this name in
+  // No tree row of this name: a folded member file of this name in
   // this folder, any case, has its bytes in its old space's directory, so
   // the disk cannot see the name is taken. A disk file of that name never
   // becomes a brain file beside it (a second file of one name, or, on an
   // exact name, the folded row's own by the conflict below): skipped and
-  // logged, the disk file left as it is (fix round 2, L-3).
+  // logged, the disk file left as it is.
   const [folded] = await db
     .select({ id: nodes.id })
     .from(nodes)
@@ -1206,7 +1199,7 @@ export async function syncFileFromDisk(args: {
     return { status: 'skipped', nodeId: null };
   }
 
-  // Heads first (workspaces plan U1): the folder it lands in, shared.
+  // Heads first: the folder it lands in, shared.
   const [inserted] = await withDeadlockRetry(() =>
     withNodeInsertHeads(args.ownerId, [{ type: 'file', path: args.parentPath }], (tx) =>
       tx
@@ -1259,20 +1252,20 @@ export async function deleteFileByPath(args: {
   // One statement, the path and name in its WHERE: a move that commits
   // while this waits on the row lock is re-checked against the moved row
   // (READ COMMITTED re-evaluates the WHERE), so the watcher's unlink for the
-  // old path never deletes a file that just moved (folder audit C1). A
-  // select-then-delete by id did.
+  // old path never deletes a file that just moved, as a select-then-delete
+  // by id could.
   const where = and(
     eq(nodes.ownerId, args.ownerId),
     eq(nodes.type, 'file'),
     sql`${nodes.path}::text = ${args.parentPath}`,
     sql`lower(${nodes.data}->>'filename') = lower(${args.filename})`,
-    // A tree file gone from disk is never a folded member file (W6b): its
-    // bytes are not in the tree (fix round 1, H1).
+    // A tree file gone from disk is never a folded member file: its bytes
+    // are not in the tree.
     sql`not coalesce(${nodes.data} ? 'space_file', false)`,
   );
-  // Heads first (workspaces plan U1): the ids are read only to know whose
-  // heads to take; the delete keeps the path and name in its WHERE, and a
-  // move holds the same heads, so the re-check above still holds.
+  // Heads first: the ids are read only to know whose heads to take; the
+  // delete keeps the path and name in its WHERE, and a move holds the same
+  // heads, so the re-check above still holds.
   const ids = (await db.select({ id: nodes.id }).from(nodes).where(where)).map((r) => r.id);
   if (ids.length === 0) return { ok: false };
   const done = await withDeadlockRetry(() =>
@@ -1296,7 +1289,7 @@ async function ensureBranchChain(ownerId: string, ltreePath: string): Promise<vo
     const prefix = segments.slice(0, i).join('.');
     const label = segments[i - 1]!;
     const slug = label.replace(/_/g, '-');
-    // Heads first (workspaces plan U1): the folder it lands in, shared.
+    // Heads first: the folder it lands in, shared.
     await withDeadlockRetry(() =>
       withNodeInsertHeads(ownerId, [{ type: 'branch', path: prefix }], async (tx) => {
         await tx
@@ -1330,8 +1323,7 @@ export async function renameFileById(args: {
     .where(and(eq(nodes.id, args.fileId), eq(nodes.ownerId, args.ownerId)))
     .limit(1);
   if (!node || node.type !== 'file') return null;
-  // Edit first (pre-check removal fix round A): a caller that may not rename
-  // the file learns nothing of the folder (a name taken by a file it does
+  // Edit first: a caller that may not rename the file learns nothing of the folder (a name taken by a file it does
   // not read). The database's refusal stays the authority.
   await assertItemRight(node.id, 'edit');
   const data = (node.data ?? {}) as Record<string, unknown>;
@@ -1341,21 +1333,21 @@ export async function renameFileById(args: {
   if (!sanitisedStem) return null;
   const newFilename = sanitisedStem;
   if (newFilename === oldFilename) return fileRowFromNode(node);
-  // A read-only snapshot copy keeps its name (W6b fix round 1).
+  // A read-only snapshot copy keeps its name.
   assertNotSnapshotCopy(node);
-  // A folded member file (W6b): its bytes are named by its id, not its name,
-  // so the disk does not refuse a name another file in the folder has. Its
-  // name stays unique there, ignoring case (fix round 1, H1); and a tree
+  // A folded member file: its bytes are named by its id, not its name, so
+  // the disk does not refuse a name another file in the folder has. Its
+  // name stays unique there, ignoring case; and a tree
   // file does not take a folded file's name either.
   const taken = await fileNameTaken(args.ownerId, node.path, newFilename);
   if (taken && taken.id !== node.id && (taken.folded || foldedFilePath(node))) {
     throw new ConflictError(`renameFile: '${newFilename}' already exists in this folder`);
   }
-  // A3b part 2 (store-broker.ts flipThenPlace): the row first, the checked
-  // statement (exactly one row, else a refusal with the disk untouched),
-  // then the rename on disk as the transaction's last step; a flip that
-  // never landed puts the name back. It used to rename the disk first, so a
-  // rename the database refused had already moved the file.
+  // The row first (store-broker.ts flipThenPlace), the checked statement
+  // (exactly one row, else a refusal with the disk untouched), then the
+  // rename on disk as the transaction's last step; a flip that never landed
+  // puts the name back, so a rename the database refuses never moves the
+  // file.
   const onDisk = !foldedFilePath(node);
   const updated = await flipThenPlace({
     flip: (place) =>
@@ -1435,12 +1427,12 @@ export type BulkDeleteRefusal = {
 };
 
 /**
- * The item check of a bulk delete (F4 fix round 2): every id the body names
+ * The item check of a bulk delete: every id the body names
  * passes the manage check the single delete asks (DELETE
  * /api/files/files/:id, assertItemRight), in the caller's scope, before
  * anything is deleted: the ones that pass, and a refusal for each that does
- * not. Before, an id the scope did not read or manage came back not found
- * from the delete and was left out of the answer, silently.
+ * not, so no id the scope does not read or manage is left out of the answer
+ * silently.
  */
 export async function bulkDeleteGate(
   fileIds: readonly string[],
@@ -1523,9 +1515,8 @@ async function assertCropDeletable(ownerId: string): Promise<void> {
 }
 
 /** A file name a caller may not write over: a file it cannot read, or one
- *  it may read but not change (W6b fix round 1, H3). */
-/** A ConflictError (A10 part 2): 409 and its message by the one domain
- *  error table, as the upload route answered `already exists` by hand. */
+ *  it may read but not change. A ConflictError: 409 and its message by the
+ *  one domain error table. */
 export class FileNameTakenError extends ConflictError {
   constructor(filename: string) {
     super(`writeFile: '${filename}' already exists in this folder`);
@@ -1538,8 +1529,7 @@ export class FileNameTakenError extends ConflictError {
  * whatever the caller's scope: its id, whether it is a folded member file
  * and whether its name is exactly `filename`, never its content
  * (structure). The exact match first, then a tree file before a folded one.
- * By its definer (mantle_file_name_taken, 0293; A6b: on the system pool
- * before, 'name-taken').
+ * By its definer (mantle_file_name_taken, 0293).
  */
 export async function fileNameTaken(
   ownerId: string,

@@ -37,7 +37,7 @@ export async function ensureRoot(): Promise<string> {
 //
 // A create writes its bytes under a temporary name in the file's own folder
 // (same directory, so the placing rename is atomic) and renames them to the
-// final name only once its node insert has won (W8b). The temporary name is
+// final name only once its node insert has won. The temporary name is
 // dot-prefixed and ends in `.tmp`, so the disk-sync watcher and the untracked
 // scan ignore it (`isDiskChaff`), and a create that loses the race to another
 // one unlinks it: the loser's bytes never land under the winner's row.
@@ -112,7 +112,7 @@ export async function placeStaged(staged: StagedFile): Promise<void> {
 
 /**
  * Staged bytes put over a file a row owns: the place step of an overwrite's
- * flip (A3b part 2, store-broker.ts flipThenPlace). `place` keeps the old
+ * flip (store-broker.ts flipThenPlace). `place` keeps the old
  * bytes under a staging name (a hard link: no copy) and renames the stage
  * over the file, atomically; `unplace` puts the old bytes back (or removes
  * the new ones when there were none: a row whose bytes were lost);
@@ -127,8 +127,7 @@ export function overwritePlacement(staged: StagedFile): {
   discard: () => Promise<void>;
 } {
   // The old bytes keep their own times (a hard link); the name says when
-  // they were kept, which the staged-leftover sweep goes by (fix round 1,
-  // L3).
+  // they were kept, which the staged-leftover sweep goes by.
   const keep = path.join(
     path.dirname(staged.finalPath),
     `.${randomUUID()}.kept-${Date.now().toString(36)}.tmp`,
@@ -173,7 +172,7 @@ export async function discardStaged(staged: StagedFile): Promise<void> {
 /** Whether the final name still holds the bytes `staged` placed there. A
  *  create whose transaction is retried after its bytes were placed asks this
  *  before its insert wins again: in between, another create may have put
- *  its own bytes under the name (fix round 1). False when the file is gone. */
+ *  its own bytes under the name. False when the file is gone. */
 export async function placedBytesIntact(staged: StagedFile): Promise<boolean> {
   try {
     const hash = createHash('sha256');
@@ -198,7 +197,7 @@ export async function placedBytesIntact(staged: StagedFile): Promise<boolean> {
 export const STAGED_LEFTOVER_NAME = /^\.[0-9a-f-]{36}\.(?:staged|kept-[0-9a-z]{1,12})\.tmp$/;
 
 /** When a staging file was made: the time in a kept file's name (a hard link
- *  keeps the old bytes' write time: A3b part 2 fix round 1, L3), else its
+ *  keeps the old bytes' write time), else its
  *  write time. */
 function stagedAt(name: string, mtimeMs: number): number {
   const m = /\.kept-([0-9a-z]+)\.tmp$/.exec(name);
@@ -361,8 +360,8 @@ export async function renameFolder(fromLtree: string, toLtree: string): Promise<
     throw new Error('renameFolder: refusing to rename the files root');
   }
   if (from === to) return { path: from };
-  // A folder with no directory (a member's folder folded into the brain,
-  // W6b: its files' bytes stay in their space's directory) has nothing to
+  // A folder with no directory (a member's folder folded into the brain:
+  // its files' bytes stay in their space's directory) has nothing to
   // move on disk: the destination is made, empty, as a new folder's is.
   if (
     !(await fs.stat(from).then(
@@ -505,7 +504,7 @@ export async function diskNamesIn(ltreePath: string): Promise<Set<string>> {
 
 /** What a file's bytes ARE on disk now (its inode, its change time, its
  *  size), or null when there are none: a delete's commit hook unlinks only
- *  these bytes (A3b part 2 fix round 2, N2). */
+ *  these bytes. */
 export type FileIdentity = { dev: number; ino: number; ctimeMs: number; size: number };
 
 export async function fileIdentity(
@@ -524,7 +523,7 @@ export async function fileIdentity(
 
 /** Unlink a file only while its name still holds the bytes `was` saw: a
  *  file made under the name since (a create in the same outer transaction
- *  as the delete) is a new inode and stays (fix round 2, N2). */
+ *  as the delete) is a new inode and stays. */
 export async function deleteFileIfSame(
   parentLtreePath: string,
   filename: string,
@@ -546,7 +545,7 @@ export async function deleteFileIfSame(
 /**
  * A deleted folder's directory moved aside now (`.<uuid>.kept-<time>.tmp`
  * beside it), so a folder made again under its name in the same outer
- * transaction gets a directory of its own (fix round 2, N2): `remove` once
+ * transaction gets a directory of its own: `remove` once
  * the delete commits, `restore` if it rolls back (only while nothing has
  * taken the name). Null when there is no directory.
  */
@@ -602,8 +601,8 @@ export class UploadTooLargeError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what the
-// upload route answered by hand. A rejected recording gets the path that
+// The one error answer (@mantle/std domain-errors.ts). A rejected recording
+// gets the path that
 // works: a file under the cap (the audio track alone is far smaller), then
 // video_ingest with its file id. video_ingest takes uploaded files only.
 defineDomainError(UploadTooLargeError, {

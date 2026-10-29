@@ -1,15 +1,14 @@
 /**
- * Where an MCP create lands (workspaces W7b, plan 7.4; the owner's answer 3
- * of 2026-10-11). One MCP surface for every login: a create tool takes an
- * optional `workspace` (the id or name of a workspace the caller moderates)
- * and, without one, follows the W6b route rule (mantle_default_home): the
- * folder's workspace when the item is made in a folder the caller may edit,
- * else the caller's private workspace; for a user of the Admin workspace,
- * the folder's workspace else Admin, as before. Every create reply then
+ * Where an MCP create lands. One MCP surface for every login: a create tool
+ * takes an optional `workspace` (the id or name of a workspace the caller
+ * moderates) and, without one, follows the route rule (mantle_default_home):
+ * the folder's workspace when the item is made in a folder the caller may
+ * edit, else the caller's private workspace; for a user of the Admin
+ * workspace, the folder's workspace else Admin. Every create reply then
  * names the workspace the item landed in (`landedIn`).
  *
- * Since A5 step 4 the one gate names the home (step 6, THE create-home
- * intent @mantle/db createHomeIntent, by the connection's rule:
+ * The one gate names the home (step 6, THE create-home intent @mantle/db
+ * createHomeIntent, by the connection's rule:
  * gate-policy.ts mcpCreateHomeRule). What is here is the surface's own
  * shape: the `workspace` argument a create advertises and takes
  * (withWorkspaceArg), and the line a create's reply gains (withLanding,
@@ -23,21 +22,20 @@ import { UUID_RE } from '@mantle/std';
 /*
  * The create tools that make an item of a workspace kind take `workspace`
  * and name where the item landed: their policy says `creates` (one rule for
- * MCP and assistant turns, A0 fix round 2). The create tools whose kind
+ * MCP and assistant turns). The create tools whose kind
  * lives in the Admin workspace only (a contact, a journal entry, a saved
  * place: mantle_kind_class 'admin_only') declare scope `admin-kind`: a user
- * outside Admin is refused them (W7b fix round 1, H2): not listed (gate
- * step 5), and the database's create home refuses the row (every call of
- * such a user runs under its private workspace). A5 step 6a deleted the
- * MCP_CREATE_TOOL_SLUGS and ADMIN_KIND_CREATE_TOOL_SLUGS views.
+ * outside Admin is refused them: not listed (gate step 5), and the
+ * database's create home refuses the row (every call of such a user runs
+ * under its private workspace).
  */
 
 /** The refusal of an Admin-only kind's create outside Admin: the one
- *  mapper's words (@mantle/std access-error.ts, arch A3c), gate step 5. */
+ *  mapper's words (@mantle/std access-error.ts), gate step 5. */
 export { ADMIN_KIND_CREATE_ERROR } from '@mantle/std';
 
 /** The refusal of a create by a user outside Admin who has no private
- *  workspace (W7b fix round 2): an item it made would have no home. Said by
+ *  workspace: an item it made would have no home. Said by
  *  the gate's step 6 (mcpCreateHomeRule) rather than left to the
  *  database's refusal. */
 export const NO_WORKSPACE_CREATE_ERROR =

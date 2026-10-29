@@ -10,10 +10,9 @@
  * The answer rides `result.answer` into the compiled run state, so later
  * steps and the resume prompt see it verbatim.
  *
- * Owner scoping is enforced HERE against the run row (final audit F2): the
- * pending row is owner-scoped by `approvePendingCall`/`rejectPendingCall`,
- * but the row's ARGS are only trustworthy when the runs engine wrote them —
- * a slug-squatted `ask_human` tool could mint a row whose `item_id` points
+ * Owner scoping is enforced HERE against the run row: the pending row is
+ * owner-scoped by `approvePendingCall`/`rejectPendingCall`, but the row's
+ * ARGS are only trustworthy when the runs engine wrote them: a slug-squatted `ask_human` tool could mint a row whose `item_id` points
  * at someone else's run. The item's run must belong to `ownerId` or the
  * decision refuses.
  */

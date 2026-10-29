@@ -74,8 +74,7 @@ export async function sendApprovalCard(
     /** A runner question (`ask_human`): NOTIFY ONLY — see below. */
     question?: string;
     /** The call needs an Admin user's approval, its asker's rights not
-     *  reaching it (owner decision 1a, A5 step 6d:
-     *  pending_tool_calls.elevated): why, and who may approve, in a line. */
+     *  reaching it (pending_tool_calls.elevated): why, and who may approve, in a line. */
     elevated?: string;
     /** The turn that asked read text a client wrote (0287): what marked
      *  it. The card warns, so a request a client's text led to is spotted. */
@@ -382,11 +381,10 @@ export async function editMessage(
 }
 
 /**
- * The enabled bot a tool on a Telegram surface sends through (W7d fix round
- * 1, L7): the chat's own account, which the runtime stamps on the surface
- * from the chat row. None stamped, or that bot off: null, never the first
- * enabled bot of the box (that was `accountForChat`, which ignored the chat
- * and could reach a chat through another user's bot).
+ * The enabled bot a tool on a Telegram surface sends through: the chat's own
+ * account, which the runtime stamps on the surface from the chat row. None
+ * stamped, or that bot off: null, never the first enabled bot of the box
+ * (which ignores the chat and could reach it through another user's bot).
  */
 export async function accountForSurface(
   accountId: string | null | undefined,

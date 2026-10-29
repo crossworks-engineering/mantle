@@ -96,7 +96,7 @@ export async function suggestFollowUp(ctx: TurnSuggestionContext): Promise<strin
 
     const routes = resolveChatRoutes(worker);
     // The suggestion runs after the turn's trace closed: its spend is
-    // charged to that trace (A10 #5, docs/spend-recording.md).
+    // charged to that trace (docs/spend-recording.md).
     const { result } = await chargeTo(ctx.spend ?? null, () =>
       chatWithFailover(ctx.ownerId, routes, {
         messages: [

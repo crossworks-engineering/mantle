@@ -1,6 +1,6 @@
 /**
  * Two cleanup counts of the scoreboard, in count mode until their lints
- * exist (plan v3.2 sections 3.2 and 4.3). Read by arch-counts.mjs
+ * exist. Read by arch-counts.mjs
  * measure(), pinned in scripts/arch-scoreboard.pins.json, tested in
  * cleanup-counts.test.ts.
  *
@@ -533,15 +533,15 @@ function rawWriteAllowed(root) {
 
 // ── history codes in comments ───────────────────────────────────────────────
 
-/** The always-findings: a fix round, a round code, an audit finding code.
- *  A bare `round N` counts only in a finding's shape: closed by punctuation
- *  (`round 3, H1`, `(round 2)`, `round 4:`, `"round 3"`) or with a finding
- *  code after it (`round 1 M1`, `round 2 L7`), so `round 2 decimals` is no
- *  history. */
+/** The always-findings: the words fix and round together, a round code, an
+ *  audit finding code. A bare round and number counts only in a finding's
+ *  shape: closed by punctuation (a comma, a closing bracket, a colon, a
+ *  quote) or followed by a finding code (a letter and a number), so
+ *  `round 2 decimals` is no history. */
 const HISTORY_WORDS =
   /fix round|\bround (?:[0-9]{1,2}[A-Za-z]?|[A-Z])(?=\s*[,):;"']|\s*$|\.(?:\s|$)|\s+[A-Z]-?[0-9]{1,2}\b)|\baudit [HLMN][0-9]+\b/gi;
 /** A code in a comment: a letter, a number, and its sub-step letters and
- *  numbers (A4, R0, D1, P1a, A2b1, A2b2b, W5b2). Case-sensitive. */
+ *  numbers (B4, C0, P2a, B2b1, B2b2c, X5b2). Case-sensitive. */
 const CODE = /\b[A-Z][0-9]{1,2}(?:[a-z][0-9]?)*\b/g;
 /** A step code of the arch and workspaces plans (A, W, F): a finding next to
  *  a provenance word. */
@@ -569,7 +569,8 @@ export const HISTORY_CODE_STOPLIST = Object.freeze([
   {
     code: 'A8',
     why: "the access matrix suite's own name (A8 matrix, A8 grid, A8 cells, A8 report, A8 exempt, A8 tool cells)",
-    // A finding of the suite after its name (A8 matrix F9) is history.
+    // A finding code right after the suite's name (a letter and a number)
+    // is history.
     line: /\bA8 (?:matrix|grid|cell|cells|report|exempt|tool cells)\b(?! [A-Z][0-9])/,
   },
   {
@@ -618,7 +619,7 @@ function historyFiles(root) {
 
 /** The codes named in the history files' headings (docs/_archive/
  *  actors-history.md and docs/_archive/plan-v3-*-handover.md), any letter
- *  (R0, D1, S3, P1a, A2b1, A2b2b), each with the first file that names it;
+ *  (B4, C0, P2a, B2b1), each with the first file that names it;
  *  a `#` line in a fenced code block is no heading. `openFences`, when
  *  given, gets each file whose last fence is never closed.
  *  Read only to check the frozen list (headingCodeProblems); the count
@@ -717,7 +718,7 @@ export function headingCodeProblems(root) {
 
 /** The history findings of one comment's text (its lines): the line
  *  offsets within the comment that hold one. `path` picks the file-wide
- *  stoplist entries (the storage package's S3). */
+ *  stoplist entries (the storage package's S3, the object store). */
 export function historyFindings(comment, codes, { sheet = false, path = '' } = {}) {
   const lines = comment.split('\n');
   const hits = [];
@@ -729,8 +730,8 @@ export function historyFindings(comment, codes, { sheet = false, path = '' } = {
     }
     // A cell reference: a cell-shaped code in a sheet file or on a line
     // that says sheet, formula or cell. Next to a provenance word only the
-    // line's own sheet words make it a cell (a sheet file's `A10 part 2` is
-    // the step).
+    // line's own sheet words make it a cell (a sheet file's `A31 part 2` is
+    // a step).
     const sheetLine = SHEET_WORDS.test(line);
     for (const m of line.matchAll(CODE)) {
       if (stoplisted(m[0], line, path, m.index)) continue;

@@ -1,14 +1,13 @@
 /**
- * The app brokers (A10 #9; docs/request-plumbing.md, "App tool broker"):
+ * The app brokers (docs/request-plumbing.md, "App tool broker"):
  * what a running app's calls go through once, never by hand.
  *
  * no-hand-export-sync: an app's database write schedules its linked
  * app-table exports' sync on the one write path
  * (packages/content/src/app-db-write.ts appDbWrite and appDbSeed). A call
  * of scheduleAppTableExportSync anywhere else is an error, outside the
- * files named below with their reason. Before: five writers (the three db
- * brokers, app_data_write and app_db_seed) each called it by hand after
- * the write; a writer that forgot left the app's Tables stale.
+ * files named below with their reason: a writer that calls it by hand can
+ * forget, and the app's Tables go stale.
  *
  * no-app-broker-logic: an app's tool call is parsed, judged, dispatched and
  * logged in one place (server/web/lib/app-tool-broker.ts
@@ -16,8 +15,7 @@
  * the HTTP tier (server/), a call of a verdict step (appToolVerdict,
  * contactAppToolVerdict, appToolRefusal, appBrokerCaller, appToolScope,
  * appToolLevel) outside that file is an error, and so is a tool-broker
- * route file that reads or parses its body or dispatches. Before: three
- * copies (the owner route, app-runner.ts, the link route).
+ * route file that reads or parses its body or dispatches.
  *
  * The scoreboard pins both counts at 0 (handExportSyncCalls,
  * appToolBrokerLogicFiles; arch-counts.mjs), and

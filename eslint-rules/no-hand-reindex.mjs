@@ -1,5 +1,5 @@
 /**
- * no-hand-reindex (arch plan A10 #7): a write re-indexes its item through
+ * no-hand-reindex: a write re-indexes its item through
  * ONE call, markContentChanged (packages/db/src/content-changed.ts), which
  * reads what each changed field feeds from the kind registry (`indexed`,
  * packages/client-types/src/kinds.ts). A hand re-index in product code is an
@@ -9,10 +9,8 @@
  *  - an `embedding: null` (a hand vector reset);
  *  - a hand summary clear: `delete <x>.summary` or `- 'summary'` on jsonb.
  *
- * Why: before A10 #7, 18 files did it by hand (23 notify calls, 24 vector
- * resets, 11 files dropping the summary keys) and they disagreed: a rename
- * re-indexed a task or an event, never a note, a journal, a formula, a page
- * or a table, so search and recall kept the old titles.
+ * Why: hand re-indexes disagree by kind (a rename that re-indexes a task
+ * but not a note), so search and recall keep the old titles.
  *
  * The same counts are the scoreboard's reindexNotifyCalls,
  * reindexEmbeddingResets and reindexSummaryClears (each pinned at 0), and

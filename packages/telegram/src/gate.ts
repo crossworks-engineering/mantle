@@ -24,7 +24,7 @@ export async function gate(account: TelegramAccount, message: InboundMessage): P
   // An allowed chat paired to nobody (its login was removed, or a row from
   // before 0271 it could not stamp) is not delivered: nothing is stored for
   // it and no turn could run. It goes back to pending, so this message gets
-  // a code and its person can pair it again (W7d fix round 1, L4).
+  // a code and its person can pair it again.
   if (chat.allowlistStatus === 'allowed' && !chat.loginId) {
     const [back] = await db
       .update(telegramChats)
@@ -107,7 +107,7 @@ async function upsertChat(account: TelegramAccount, message: InboundMessage) {
   return inserted[0]!;
 }
 
-/** Pending chats of the bot that hold a LIVE code (W7d fix round 1, L4): a
+/** Pending chats of the bot that hold a LIVE code: a
  *  chat whose code expired no longer holds a slot, so three stale codes
  *  never stop a real person from getting one. */
 export async function countPendingForAccount(accountId: string): Promise<number> {

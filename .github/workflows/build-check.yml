@@ -196,8 +196,8 @@ jobs:
           packages/content/src/workspaces-bridge-writers
           /ws-
 
-      # The A8 matrix (workspaces arch plan v2, section 12 A8; docs/actors.md,
-      # "A8 matrix"): the SQL grid against the guide oracle, the surface
+      # The A8 matrix (docs/actors.md, "Proof"): the SQL grid against the
+      # guide oracle, the surface
       # cells on every way in, and the tool cells (each tool through a turn
       # and the MCP surface, in warn and on). About 90 s on the workstation,
       # the tool cells 70 s of it.

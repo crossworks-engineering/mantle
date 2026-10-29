@@ -1,5 +1,5 @@
 /**
- * The honest count of system-pool exits (arch A6 fix round 1, L1), read by
+ * The honest count of system-pool exits, read by
  * arch-counts.mjs (asSystemExits) and pinned in
  * scripts/arch-scoreboard.pins.json.
  *
@@ -681,7 +681,7 @@ export function holderProblems(holders, call = 'asSystem') {
 /**
  * Direct uses of `systemDb` (the admin pool whatever the scope) in one
  * file: every use of the name but its declaration, imports and exports
- * (A6 fix round 1, L1: pinned apart from the asSystem exits, as
+ * (pinned apart from the asSystem exits, as
  * systemDbUses). eslint-rules/system-db-allowlist.mjs names the files that
  * may import it.
  */

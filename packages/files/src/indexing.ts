@@ -113,12 +113,12 @@ export function metadataSpineText(node: Pick<Node, 'title' | 'path' | 'tags' | '
  * every file whose EFFECTIVE mode this changes and queue its re-extraction.
  * Returns how many of those files the caller reads were queued.
  *
- * Who may switch (F4 fix round 3, M1): a folder's switch is the manage of
+ * Who may switch: a folder's switch is the manage of
  * the folder (its home's Moderators: it reaches every file under it); a
  * file's is the edit of the file. Asked here, in the caller's scope, before
  * the flag changes (assertItemRight), and again by the named step.
  *
- * What it reaches (M1, the owner's decision):
+ * What it reaches (the owner's rule):
  *  - a switch that REMOVES content indexing (the file's effective mode
  *    turns metadata, name only) reaches every file under the folder, ones
  *    the caller's scope does not read included: their content index is
@@ -210,8 +210,8 @@ export async function setIndexingMode(args: {
  * no longer matches its effective one, after a MOVE (a file dragged into a
  * name-only gallery must shed its content index, one dragged out must gain
  * it, exactly as if the flag had been flipped) or a file's own switch. The
- * named step (F4 fix round 3, M2: the checked door, so no caller skips the
- * check): each file must be one the caller's scope reads (`need`: read for
+ * named step (the checked door, so no caller skips the check): each file
+ * must be one the caller's scope reads (`need`: read for
  * a move, whose files the caller moved; edit for a file's own switch); the
  * step reads each file's whole folder chain, folders the caller's scope
  * does not read included. Returns how many were queued.

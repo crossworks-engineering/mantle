@@ -1,5 +1,5 @@
 /**
- * Spend recording (A10 #5, docs/spend-recording.md): every provider call's
+ * Spend recording (docs/spend-recording.md): every provider call's
  * usage is written by one recorder (@mantle/tracing recordUsage) from one
  * recording point (the @mantle/voice adapter registry, which wraps every
  * capability). Two patterns are counted, and outside its named list each is
@@ -7,8 +7,7 @@
  *
  *  - hand spend recording: a call of the recorder or its attribution
  *    (recordUsage, captureLlmUsage, attributeUsage), or a hand addition to a
- *    usage total (`costMicroUsd +=`, `tokens.in +=` and the like). Before:
- *    three recorders called from eight files, and three hand cost sinks;
+ *    usage total (`costMicroUsd +=`, `tokens.in +=` and the like);
  *  - a provider call that bypasses the recording point: the contract
  *    package's unwrapped registry (any spelling of its path, with or without
  *    `src/` and a file suffix), the OpenRouter SDK constructed outside an

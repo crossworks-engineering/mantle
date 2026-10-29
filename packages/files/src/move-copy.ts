@@ -1,15 +1,13 @@
 /**
- * Move and copy — the operations a two-pane file manager stands on.
- *
- * Until these existed the files tree supported rename only: a file lived
- * where it was uploaded, forever. The invariants each op protects:
+ * Move and copy: the operations a two-pane file manager stands on.
+ * The invariants each op protects:
  *
  *   - **Disk and DB never diverge.** Same discipline as renameFolderById
- *     (A3b part 2, store-broker.ts flipThenPlace): the rows first, checked,
+ *     (store-broker.ts flipThenPlace): the rows first, checked,
  *     then the rename on disk (atomic within the tree) as the transaction's
  *     last step, and a flip that never landed puts the disk back.
  *   - **A move follows the indexing rules of where it LANDS.** Effective
- *     indexing (P1) resolves by folder chain, so moving a file into a
+ *     indexing resolves by folder chain, so moving a file into a
  *     name-only gallery must shed its content index and moving it out must
  *     regain one — `reconcileFilesIndexing` runs after every move, exactly
  *     as if the flag had been flipped.
@@ -103,8 +101,8 @@ async function fileInFolder(
 
 /** A file name taken in `parentPath` that the disk cannot see, or the
  *  caller cannot: a folded member file's (its bytes are outside the tree),
- *  any case; any file the caller's scope does not read (W6b fix round 1,
- *  H1 and H3). Asked on the system pool, existence only. */
+ *  any case; any file the caller's scope does not read. Asked on the system
+ *  pool, existence only. */
 async function hiddenNameTaken(
   ownerId: string,
   parentPath: string,
@@ -143,8 +141,7 @@ export async function moveFileById(args: {
       'moveFileById: file not found — find the id with file_list / search_nodes',
     );
   }
-  // Manage first (pre-check removal fix round A): a caller that may not move
-  // the file learns nothing of the destination (a name taken there by a
+  // Manage first: a caller that may not move the file learns nothing of the destination (a name taken there by a
   // file it does not read). The database's refusal stays the authority.
   await assertItemRight(node.id, 'manage');
   const data = (node.data ?? {}) as Record<string, unknown>;
@@ -172,18 +169,17 @@ export async function moveFileById(args: {
   }
 
   const oldPath = node.path;
-  // A folded member file (W6b) keeps its bytes in its old space's directory,
+  // A folded member file keeps its bytes in its old space's directory,
   // named by its id: the move changes only its row.
   const onDisk = !foldedFilePath(node);
-  // A3b part 2 (store-broker.ts flipThenPlace): the row first, the checked
-  // statement (exactly one row, else a refusal with the disk untouched),
-  // then the move on disk as the transaction's last step; a flip that never
-  // landed moves it back. It used to move the disk first, so a move the
-  // database refused had already moved the file (and the watcher could
-  // read the old path's unlink before the row moved).
+  // The row first (store-broker.ts flipThenPlace), the checked statement
+  // (exactly one row, else a refusal with the disk untouched), then the move
+  // on disk as the transaction's last step; a flip that never landed moves
+  // it back. Disk first would move a file the database then refuses (and the
+  // watcher could read the old path's unlink before the row moved).
   await flipThenPlace({
     flip: (place) =>
-      // Heads first (workspaces plan U1): the file and both folders. Then
+      // Heads first: the file and both folders. Then
       // the share lock (shared) before the row: see takeShareReadLock.
       withDeadlockRetry(() =>
         withNodeMoveHeads(
@@ -273,8 +269,7 @@ export async function moveFolderById(args: {
   if (!node || node.type !== 'branch') {
     throw new InputError('moveFolderById: folder not found — find the id with folder_list');
   }
-  // Manage first (pre-check removal fix round A, M1): a caller that may not
-  // move the folder learns nothing of what it holds (hidden rows) or of the
+  // Manage first: a caller that may not move the folder learns nothing of what it holds (hidden rows) or of the
   // destination. The database's refusal below stays the authority.
   await assertItemRight(node.id, 'manage');
   if (node.path === FILES_ROOT_LABEL) {
@@ -310,8 +305,8 @@ export async function moveFolderById(args: {
     );
   }
   await assertSubtreeFits(args.ownerId, oldPath, args.destParentPath, 'moveFolderById');
-  // Brain-wide (mantle_name_taken, F4 fix round 2): a folder the caller's
-  // scope does not read holds the path all the same (its unique index).
+  // Brain-wide (mantle_name_taken): a folder the caller's scope does not
+  // read holds the path all the same (its unique index).
   if (await nameTaken('folder', args.ownerId, newPath)) {
     throw new ConflictError(
       `moveFolderById: a folder named '${label}' already exists under '${args.destParentPath}' — rename one of them first`,
@@ -319,18 +314,18 @@ export async function moveFolderById(args: {
   }
 
   // A folder holding rows the caller cannot read is not moved (the owner's
-  // rule, arch A3a): asked first, in a write transaction (the gateway: the
+  // rule): asked first, in a write transaction (the gateway: the
   // system pool, never refused, when the actor check is off), so the disk
   // never moves for nothing. The definer below stays the authority.
   await refuseHiddenRows(args.ownerId, oldPath);
-  // A3b part 2 (store-broker.ts flipThenPlace): the rows first, in one
-  // transaction (the definer's 409 on hidden rows, the folder's own row the
-  // checked statement), then the directory's rename as its last step; a
-  // flip that never landed moves it back. It used to move the directory
-  // first, so a move the database refused had already moved it.
+  // The rows first (store-broker.ts flipThenPlace), in one transaction (the
+  // definer's 409 on hidden rows, the folder's own row the checked
+  // statement), then the directory's rename as its last step; a flip that
+  // never landed moves it back, so a move the database refuses never moves
+  // the directory.
   await flipThenPlace({
     flip: (place) =>
-      // Heads first (workspaces plan U1): the folder, its subtree and both
+      // Heads first: the folder, its subtree and both
       // parents, then the share lock.
       withDeadlockRetry(() =>
         withNodeMoveHeads(
@@ -342,8 +337,7 @@ export async function moveFolderById(args: {
               await takeShareWriteLock(tx, args.ownerId);
               // One definer moves every row below the folder; a move of a
               // folder holding rows the caller cannot read is refused there
-              // (409, the owner's rule, arch A3a fix round 2), before the
-              // disk moves.
+              // (409, the owner's rule), before the disk moves.
               await tx.execute(
                 sql`select mantle_subtree_rewrite(${args.ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
               );
@@ -411,7 +405,7 @@ export async function copyFileById(args: {
   // The raw node, for what FileRow doesn't carry: tags and the file's OWN
   // indexing flag. A copy of a name-only file must stay name-only wherever
   // it lands — dropping the flag would content-index something the owner
-  // explicitly marked don't-index, silently (2026-08-22 audit).
+  // explicitly marked don't-index, silently.
   const [srcNode] = await db
     .select({ tags: nodes.tags, data: nodes.data })
     .from(nodes)
@@ -484,9 +478,9 @@ export async function copyFolderById(args: {
   }
   await assertSubtreeFits(args.ownerId, node.path, args.destParentPath, 'copyFolderById');
   const label = node.path.split('.').at(-1)!;
-  // Brain-wide (mantle_name_taken, F4 fix round 2): a folder the caller's
-  // scope does not read holds the path all the same; its unique index was a
-  // 500 here. The copy's own create is the backstop (conflictOnUnique below).
+  // Brain-wide (mantle_name_taken): a folder the caller's scope does not
+  // read holds the path all the same; asked first, so its unique index is
+  // no 500. The copy's own create is the backstop (conflictOnUnique below).
   const taken = `a folder named '${label}' already exists under '${args.destParentPath}' — rename one of them first`;
   if (await nameTaken('folder', args.ownerId, `${args.destParentPath}.${label}`)) {
     throw new InputError(`copyFolderById: ${taken}`);
@@ -504,10 +498,10 @@ export async function copyFolderById(args: {
     // ('branch' < 'file' happens to sort right; stated explicitly so nobody
     // "simplifies" it away).
     .orderBy(sql`nlevel(${nodes.path}) asc`, sql`${nodes.type} asc`);
-  // Only what lands in a folder the copy makes (F4 fix round 2): a folder or
-  // a file the scope reads under a subfolder it does not read is left out,
-  // as the subfolder is (it failed the copy partway, a 400 after the first
-  // folders and files were made). Parents come first, so one pass places
+  // Only what lands in a folder the copy makes: a folder or a file the scope
+  // reads under a subfolder it does not read is left out, as the subfolder
+  // is (else the copy would fail partway, after the first folders and files
+  // were made). Parents come first, so one pass places
   // each row or leaves it out.
   const placed = new Set<string>([node.path]);
   const subtree = readable.filter((n) => {

@@ -71,7 +71,7 @@ export function docsRoot(): string {
  * The effective brain depth for a node. Documentation defaults to
  * retrieval-only (L5 index, no L4 facts/entities/graph) unless its collection
  * is explicitly 'full'. A Table stamped 'retrieval' is retrieval-only too:
- * an app-table export of an app clients write (client tier audit I2), so
+ * an app-table export of an app clients write, so
  * client text never becomes graph facts. Every other node is always 'full'.
  * Pure: the extractor calls this to decide whether to run the L4 passes.
  */
@@ -140,7 +140,7 @@ async function ensureDocBranchChain(ownerId: string, ltreePath: string): Promise
     const prefix = segments.slice(0, i).join('.');
     const label = segments[i - 1]!;
     const slug = ltreeToDash(label);
-    // Heads first (workspaces plan U1): the folder it lands in, shared. A
+    // Heads first: the folder it lands in, shared. A
     // structure item (packages/db gateway/structure-item.ts).
     await withDeadlockRetry(() =>
       insertStructureItem('docs-folder', {
@@ -223,7 +223,7 @@ export async function upsertDocFromDisk(args: {
   }
 
   await ensureDocBranchChain(ownerId, loc.parentPath);
-  // Heads first (workspaces plan U1): the folder it lands in, shared.
+  // Heads first: the folder it lands in, shared.
   const inserted = await withDeadlockRetry(() =>
     insertStructureItem('docs-item', {
       ownerId,
@@ -258,7 +258,7 @@ export async function deleteDocByRelPath(args: {
     )
     .limit(1);
   if (!node) return { ok: false };
-  // Heads first (workspaces plan U1).
+  // Heads first.
   // content_chunks cascade via FK.
   await withDeadlockRetry(() => deleteStructureItems('docs-item', args.ownerId, [node.id]));
   return { ok: true };
@@ -461,7 +461,7 @@ export async function purgeCollection(ownerId: string, collectionKey: string): P
     eq(nodes.type, 'documentation'),
     sql`${nodes.data}->>'collection' = ${collectionKey}`,
   );
-  // Heads first (workspaces plan U1): read the ids to know whose heads to
+  // Heads first: read the ids to know whose heads to
   // take, then delete only those.
   const ids = (await db.select({ id: nodes.id }).from(nodes).where(where)).map((r) => r.id);
   if (ids.length === 0) return 0;
@@ -509,10 +509,9 @@ const BUILTIN_COLLECTIONS: ReadonlyArray<{
     rootPath: '_changelog',
     brainDepth: 'retrieval',
   },
-  // `diagram-guides` was a built-in collection until 2026-10-23. The Draftsman
-  // now reads docs/diagram-guides/ through the diagram_types / diagram_guide
-  // tools, straight from disk (docs/diagrams.md), so a fresh brain no longer
-  // gets the row. A row an existing brain already has is left as it is: a
+  // No `diagram-guides` collection: the Draftsman reads docs/diagram-guides/
+  // through the diagram_types / diagram_guide tools, straight from disk
+  // (docs/diagrams.md). A row an existing brain already has is left as it is: a
   // disabled one is inert, an enabled one keeps indexing the same files
   // harmlessly, and the operator may switch it off at /docs.
 ];

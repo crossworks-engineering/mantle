@@ -1,10 +1,7 @@
 /**
- * What the owner MCP surface knows of a tool (workspaces arch plan v2,
- * sections 8 and 23.3, A5 step 2): its policy, read from the hand-written
- * MCP definitions (mcp-defs.ts) and the builtin policy table (@mantle/tools
- * tool-policy.ts), never from a list keyed by name. A5 step 6a deleted the
- * surface's own lists (PEER_RISKY_TOOL_SLUGS, OWNER_KEY_SPENDING_TOOLS,
- * KEY_SHARED_CONTENT_TOOLS and the rest, views of the two tables): each
+ * What the owner MCP surface knows of a tool: its policy, read from the
+ * hand-written MCP definitions (mcp-defs.ts) and the builtin policy table
+ * (@mantle/tools tool-policy.ts), never from a list keyed by name: each
  * consumer reads the tool's policy (mcpToolPolicyOf). Key content changes
  * are the policy's `keySharedContent` (a key cannot confirm, so on an item
  * others can read such a tool refuses a key: the gate's key-shared-content
@@ -12,7 +9,7 @@
  *
  * A name neither table holds is a connector's tool (mcp_*, its policy is
  * connectorToolPolicy, on its row) or no tool at all: the surface's
- * functions answer it by its family as before (familyKeyArea, and
+ * functions answer it by its family (familyKeyArea, and
  * login-surface.ts familyPeerRisky), never as a tool with a policy.
  */
 import { builtinPolicy, type ToolPolicy } from '@mantle/tools';
@@ -28,7 +25,7 @@ export function mcpToolPolicyOf(name: string): ToolPolicy | null {
 
 /** The area a tool belongs to (its policy's `keyArea`), or null (open only
  *  to an all-areas key). A conversion tool (`page_from_journal`,
- *  `note_from_file`) declares none (M2 audit F2): in the target's area it
+ *  `note_from_file`) declares none: in the target's area it
  *  would let a pages key read the journal through `page_from_journal`. A
  *  name no table holds: by its family (key-scope.ts familyKeyArea). */
 export function toolKeyArea(slug: string): KeyArea | null {

@@ -215,8 +215,8 @@ async function ingestOne(
   // throw DuplicateRaceError. The catch around the transaction below treats
   // it as "already exists" — same outcome as the SELECT fast-path.
   // The attachments' bytes first, under their content address (the files
-  // store's broker, A3b part 2): the object is the stage, the rows below the
-  // flip. Never inside the transaction (a network write: plan 20.3). An
+  // store's broker): the object is the stage, the rows below the flip.
+  // Never inside the transaction (a network write). An
   // email whose rows never land leaves objects nothing names, shared by
   // content and never swept.
   const stagedKeys: string[] = [];

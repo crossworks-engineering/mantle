@@ -7,14 +7,14 @@
 #   1. preflight: the updater is idle, no request is pending
 #   2. count apps, sandboxes (Postgres) and app-db files (mantle_web) BEFORE;
 #      refuse a roll to the workspaces switch (v0.239.90 on) on a box with
-#      clients that is not on workspaces yet (2a, plan 21.9), a box that
+#      clients that is not on workspaces yet (2a), a box that
 #      still has a page-built (v1) Recall map (2b), and one
 #      where the roll would open connector write tools to members, clients or
-#      apps (2c, team apps Phase 2) unless --ack-connector-writes, or
+#      apps (2c) unless --ack-connector-writes, or
 #      breaks a live app's run-time schema SQL for members, clients or
 #      contacts (2c, rows only below admin) unless --ack-app-ddl; refuse a
-#      roll to a release that ships the checks' floor (the pre-check
-#      removal, *_check_mode_floor.sql in the target's tree; a target this
+#      roll to a release that ships the checks' floor
+#      (*_check_mode_floor.sql in the target's tree; a target this
 #      checkout cannot tell counts as one) on a box whose actor or edit
 #      check is not on, unless its .env says MANTLE_CHECK_FLOOR=keep (2d);
 #      refuse a roll to a release that ships 0330 (the role follows Admin
@@ -32,8 +32,8 @@
 #      its own strict pre-roll backup (see pre_roll_backup in
 #      infra/updater/updater.sh), which it then must have done.
 #   3b. the runtime role's line: a .env with no MANTLE_DB_RUNTIME_ROLE line
-#      gets one holding the value the running mantle_web has (plan v3.2 S4a;
-#      the functions are this checkout's infra/updater/updater.sh). A failure
+#      gets one holding the value the running mantle_web has (the
+#      functions are this checkout's infra/updater/updater.sh). A failure
 #      is said and the roll goes on: nothing on the box changes its value.
 #   4. request: request.json holding only {"target": <tag>}, written into the
 #      updater's signal dir by a throwaway alpine container (the dir is
@@ -195,10 +195,10 @@ read -r APPS0 SBX0 FILES0 <<< "$C0"
 echo "before: apps=$APPS0 sandboxes=$SBX0 app-db files=$FILES0"
 
 # ── 2a. workspaces: a box with clients is set up by hand first ─────────────
-# From the workspaces switch (W5b2, migration 0261) the grants alone decide
+# From the workspaces switch (migration 0261) the grants alone decide
 # who reads what. A brain that is NOT on workspaces because it has clients
-# (an anchor, no Admin workspace, and client logins or client-level items;
-# plan 21.9) is left on its levels by 0261, but the code of that release
+# (an anchor, no Admin workspace, and client logins or client-level items)
+# is left on its levels by 0261, but the code of that release
 # reads no level: its members, clients and assistants would read nothing.
 # So a roll to v$WS_SWITCH_FLOOR or later (`latest` and any tag that is not
 # a release version count as later) is refused on such a box until its
@@ -402,11 +402,11 @@ if [ "$DDL_BELOW" -gt 0 ] || [ "$DDL_SHARED" -gt 0 ]; then
 fi
 
 # ── 2d. the checks' floor: both checks on before the pre-checks go ────────
-# From the release that removes the tools' TypeScript item pre-checks (the
-# migration named *_check_mode_floor.sql; docs/actors.md, "Pre-check
-# deletion") the database's actor and edit checks are a tool write's only
-# item check, and that release's migrate raises a check below on that no
-# recorded lowering covers (docs/update-prod.md, "The checks' floor"). A
+# From the release that ships the migration named *_check_mode_floor.sql
+# the database's actor and edit checks are a tool write's only item check
+# (docs/actors.md, "Checks and modes"), and that release's migrate raises a
+# check below on that no recorded lowering covers (docs/update-prod.md,
+# "The checks' floor"). A
 # roll is never how a box's checks change: a box below on is refused unless
 # its stack .env says MANTLE_CHECK_FLOOR=keep (kept below on on purpose: its
 # migrate leaves it and records why), or the TARGET release does not ship
@@ -478,7 +478,7 @@ else
   echo "checks: $TAG is older than any release with the checks' floor (v$CHECK_FLOOR_NOT_BEFORE); not checked"
 fi
 
-# ── 2e. S8b: no Admin seat without role admin before 0330 ────────────────
+# ── 2e. no Admin seat without role admin before 0330 ─────────────────────
 # From migration 0330 (the role follows Admin membership) the seat alone
 # makes an Admin user, so its migrate refuses (42501) while any login holds
 # an Admin seat without role admin, a disabled one and a former client
@@ -717,7 +717,7 @@ else
   grep -q '✔ Wrote .*mantle-[0-9-]*\.dump' "$DUMP_LOG" || die "BACKUP FAILED: no Postgres dump reported. Nothing was requested."
 fi
 
-# ── 3b. the runtime role's line in .env (plan v3.2 S4a) ──────────────────────
+# ── 3b. the runtime role's line in .env ──────────────────────────────────────
 # The box's own updater writes it on the roll too, once it runs this release.
 # Sent from this checkout's updater.sh so the two never differ.
 RRL_FUNCS=$(sed -n -e '/^file_owner() /p' -e '/^file_mode() /p' \

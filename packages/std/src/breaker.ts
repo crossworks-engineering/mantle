@@ -1,6 +1,6 @@
 /**
- * THE in-process circuit breaker (A10 #10: moved here from @mantle/decisions,
- * where it guards the decider endpoint). A DEAD endpoint fails fast; a SLOW
+ * THE in-process circuit breaker (@mantle/decisions guards the decider
+ * endpoint with it). A DEAD endpoint fails fast; a SLOW
  * one makes every caller wait out its full timeout. After `threshold` failures
  * in a row for a key the breaker opens: `allow()` says no for `cooldownMs`,
  * and the caller runs its fallback at once. When the cooldown ends, one call
@@ -8,8 +8,7 @@
  * that never reports cannot wedge it open). A success closes it; a failed
  * probe keeps it open for another cooldown. In-process, per key.
  *
- * Chat has no breaker (A10 #10 names that gap; adding one is its own step).
- * The extract queue's ProviderCircuit (server/api provider-circuit.ts) is a
+ * Chat has no breaker. The extract queue's ProviderCircuit (server/api provider-circuit.ts) is a
  * different job: a database-backed pause of a queue with admin alerts and a
  * probe schedule, not a per-call fail-fast.
  */

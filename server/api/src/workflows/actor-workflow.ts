@@ -1,5 +1,5 @@
 /**
- * The one way a DBOS workflow registers (workspaces arch A2a). The API boot
+ * The one way a DBOS workflow registers. The API boot
  * binds no actor, so the DBOS dispatch loop carries none: each workflow names
  * its own here, at its entry, and runs inside it. A workflow registered
  * without this has no actor, and its statements show as misses

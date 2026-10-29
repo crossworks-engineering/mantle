@@ -33,7 +33,7 @@ import { chatLoginRefusal, TELEGRAM_NOT_A_USER_CODE } from './chat-login';
 import { sendMessage } from './outbound';
 
 /**
- * This file's one system door (arch A6): the pairing rows (a chat's code, its
+ * This file's one system door: the pairing rows (a chat's code, its
  * login) are read and written on the system pool by the named reason
  * 'login-telegram'. The preview and the pairing go through it; a block or
  * an unpair is its definer's (setChatPairing).
@@ -106,12 +106,12 @@ async function botAgentName(accountId: string): Promise<string | null> {
   return (await botAgent(accountId))?.name ?? null;
 }
 
-/** What a pairing code is for, shown BEFORE it pairs (W7d fix round 1, M3):
+/** What a pairing code is for, shown BEFORE it pairs:
  *  the Telegram chat, the bot and its assistant, so a user handed someone
  *  else's code sees whose chat it is before it becomes theirs.
  *
  *  `chat.label` is the only chat text an assistant reads (noticeLabelOf: a
- *  checked @username, else the chat id; W7d+e). `chat.title` is the chat's
+ *  checked @username, else the chat id). `chat.title` is the chat's
  *  free title, capped at PREVIEW_TITLE_MAX characters, for a screen to show
  *  as plain text and never for a model: its owner chose it, so it may carry
  *  instructions. */
@@ -152,7 +152,7 @@ function previewMacOf(
     .slice(0, 24);
 }
 
-/** Binds a confirm to the preview it follows (W7d fix round 1, M3; W7d+e):
+/** Binds a confirm to the preview it follows:
  *  the chat the code named then, for this login and this code, for
  *  PREVIEW_TOKEN_TTL_MS. 32 hex: the expiry (8) and the MAC (24). Not the
  *  secret (the code is); a confirm without it, after it expires, or whose
@@ -301,9 +301,9 @@ const TOO_MANY: PairingRefusal = {
 };
 
 /**
- * What `code` would pair, without pairing it (step one of two, W7d fix round
- * 1, M3): the chat, the bot and its assistant, and a token the confirm may
- * carry back so it pairs that chat and no other. The same checks as the
+ * What `code` would pair, without pairing it (step one of two): the chat,
+ * the bot and its assistant, and a token the confirm may carry back so it
+ * pairs that chat and no other. The same checks as the
  * pairing; a wrong code counts a failure here too.
  */
 export async function previewChatPairing(args: {
@@ -425,10 +425,10 @@ export async function pairChatWithCode(args: {
 }
 
 /**
- * Tell the login in the app that a chat was paired to it (W7d fix round 1,
- * M3): one message in its own thread with the bot's assistant (the per-login
- * thread, 0269; a member's also reaches its phone as a chat push), naming the
- * chat and the bot, so a pairing it did not mean is seen. Best effort: the
+ * Tell the login in the app that a chat was paired to it: one message in
+ * its own thread with the bot's assistant (the per-login thread, 0269; a
+ * member's also reaches its phone as a chat push), naming the chat and the
+ * bot, so a pairing it did not mean is seen. Best effort: the
  * chat stays paired whatever happens here. No model runs.
  */
 async function notifyPaired(args: {

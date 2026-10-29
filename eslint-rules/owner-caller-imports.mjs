@@ -1,10 +1,9 @@
 /**
- * owner-caller-imports (workspaces arch A4 step 3b): the caller the HTTP
- * pipeline answers is read only in a route handler, by its reader's own
- * name: every reader of the one list (session-guards.mjs CALLER_READERS),
- * the owner's (ownerCaller and its two projections) and, since part 5, the
- * member's (memberCaller), the any-login's (anyLoginCaller) and the chat
- * login's (chatCaller). The
+ * owner-caller-imports: the caller the HTTP pipeline answers is read only
+ * in a route handler, by its reader's own name: every reader of the one
+ * list (session-guards.mjs CALLER_READERS), the owner's (ownerCaller and
+ * its two projections), the member's (memberCaller), the any-login's
+ * (anyLoginCaller) and the chat login's (chatCaller). The
  * route manifest generator reads each route file to learn which handlers
  * read it (server/web/scripts/route-callers.ts) and the gate answers only
  * those rows; a read it cannot see (a helper of lib, a renamed import, a
@@ -18,8 +17,7 @@
  *    `auth['ownerCaller']`, a template literal key with no expression) or
  *    destructured (`const { ownerCaller } = await import(...)`).
  *
- *
- * A4 hand batch B fix round 1 (L3): a reader answered at the read
+ * A reader answered at the read
  * (READER_ANSWERS `atRead`: publicLoginItself, cookieUpgradeCaller,
  * ownerCallerAtRead) runs the gate's answer when it is called, so in a
  * route file
@@ -68,7 +66,7 @@ export function isApiRouteFile(filename) {
 }
 
 /** Whether `filename` is exempt: the definition, tests, and the gone stubs'
- *  handler (server/web/lib/gone.ts `gone()`, A4 hand batch A): the
+ *  handler (server/web/lib/gone.ts `gone()`): the
  *  generator reads `export const GET = gone('owner')` in the route file as
  *  a read of the stub's kind (lib/gone-kinds.ts GONE_KINDS), so the read
  *  it makes is one the generator sees. */

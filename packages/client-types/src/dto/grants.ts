@@ -96,7 +96,7 @@ export type GrantsResponse = {
   app?: { mcpAccess: boolean };
   /** Folders, when the caller may add items there: every workspace a new
    *  item placed in it takes (its rows not removed there, the home's
-   *  included), named even where the caller is not a user (S6). */
+   *  included), named even where the caller is not a user. */
   placesInto?: GrantWorkspaceRef[];
 };
 
@@ -195,8 +195,7 @@ export type GrantError = { error: string; code: GrantErrorCode };
 export type ListWorkspace = WorkspaceLook & { id: string; name: string };
 
 /**
- * What the caller may do with an item, and what the item is (W6b fix round
- * 1): on every list row and item response of pages, notes, drawings,
+ * What the caller may do with an item, and what the item is: on every list row and item response of pages, notes, drawings,
  * tables, files and apps, on the tree's items and folders, and on GET
  * /api/nodes/:id. Set by the server on each of those; optional in the type
  * only so older shapes still parse.

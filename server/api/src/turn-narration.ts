@@ -72,7 +72,7 @@ export async function narrateStatus(ownerId: string, grounded: string): Promise<
     const routes = resolveChatRoutes(worker);
     // Narration runs beside the step it narrates and may finish after the
     // turn: its spend counts toward the turn's trace totals, never the meta
-    // of whichever step is running (A10 #5, docs/spend-recording.md).
+    // of whichever step is running (docs/spend-recording.md).
     const { result } = await chargeTo(spendTarget(), () =>
       chatWithFailover(ownerId, routes, {
         messages: [

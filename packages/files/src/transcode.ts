@@ -36,7 +36,7 @@ export function isHeic(mimeType?: string | null, filename?: string | null): bool
  * that cannot read it. The extractor's job fails and is retried; a chat
  * turn says to try again. A verdict on the image (corrupt, unsupported,
  * the second failure) returns the original bytes, and the vision call's
- * own failure is handled upstream as before.
+ * own failure is handled upstream.
  */
 export async function transcodeImageForVision(
   bytes: Buffer,

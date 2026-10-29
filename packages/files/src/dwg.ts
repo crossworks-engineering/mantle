@@ -6,8 +6,8 @@
  * (ASCII or binary). Both are read by the parser service's CAD tier, never
  * in this process: everything comes from ONE parser exchange
  * (`parserDwgRender`), whose worker sniffs the bytes: DWG magic takes the
- * converter chain (dwg2dxf primary, ezdwg fallback — the 2026-08-31 bake-off
- * found real files each converter fails and the other saves), a DXF is read
+ * converter chain (dwg2dxf primary, ezdwg fallback: there are real files each
+ * converter fails and the other saves), a DXF is read
  * natively by ezdxf (converter "none") — and extracts with ezdxf either way.
  * The three extractor passes (text digest, auto-table workbook, image node)
  * all consume the SAME memoised reply, so a drawing costs one upload
@@ -155,12 +155,11 @@ const DIGEST_CIRCUIT_LINE_CHARS = 600;
  *  `raw <= 0` is UNSET, not "smallest allowed". The compose env anchor passes
  *  `DWG_RENDER_DPI: ${DWG_RENDER_DPI:-}`, so an operator who never sets the
  *  dial hands this function the EMPTY STRING — and `Number('')` is 0, which is
- *  finite. Without the `<= 0` arm (the guard ./dwf.ts has always had) that 0
- *  clamped up to the 50 floor instead of falling back to 300, and every DWG on
- *  every default box rendered at 50 dpi: an 800×500 smudge of a P&ID, small
- *  enough (~1 KB) that the embedded-image gate then dropped it as
- *  `too_few_bytes` and the drawing got no picture at all. Found on a client brain
- *  2026-09-02 — a 563 KB P&ID rendered 1003 bytes at 50 dpi, 15 KB at 300. */
+ *  finite. Without the `<= 0` arm (the guard ./dwf.ts has too) that 0 would
+ *  clamp up to the 50 floor instead of falling back to 300, and every DWG on
+ *  every default box would render at 50 dpi: an 800×500 smudge of a P&ID,
+ *  small enough (~1 KB) that the embedded-image gate drops it as
+ *  `too_few_bytes` and the drawing gets no picture at all. */
 export function dwgRenderDpi(): number {
   return envNum('DWG_RENDER_DPI');
 }
@@ -177,7 +176,7 @@ export function dwgRenderDpi(): number {
  * extract, the parser scope it ran under: packages/files/src/parser-client.ts
  * `withParserScope`), so the extract's later passes neither ask the parser
  * again nor count the same failure twice. A later run (the extract's retry)
- * asks afresh; outside any scope a failure is forgotten at once, as before.
+ * asks afresh; outside any scope a failure is forgotten at once.
  * Its message is kept (per hash) so a later pass can explain the missing
  * image.
  */

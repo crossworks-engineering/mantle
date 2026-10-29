@@ -48,8 +48,8 @@ export async function storeRemoteFileAsNode(args: {
   if (existing) return { nodeId: existing.id, sha256, deduped: true };
 
   await ensureBranchPath(args.ownerId, args.path);
-  // The bytes first, under their content address (the files store's broker,
-  // A3b part 2): the object is the stage, the node's INSERT below the flip.
+  // The bytes first, under their content address (the files store's broker):
+  // the object is the stage, the node's INSERT below the flip.
   await stageFileObject(args.bytes, args.mimeType ?? 'application/octet-stream');
 
   const filename = sanitizeFilename(args.filename) ?? 'file';

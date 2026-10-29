@@ -1,5 +1,5 @@
 /**
- * no-hand-kind-lists (arch plan A10 #12): a list of kinds is a filter over
+ * no-hand-kind-lists: a list of kinds is a filter over
  * the kind registry (packages/client-types/src/kinds.ts, the derived lists
  * in kind-lists.ts), never a literal. A literal list of 3 or more node_type
  * values in product code is an error, outside the files KIND_LIST_ALLOW
@@ -18,9 +18,9 @@
  * eslint-rules/arch-lints.test.ts holds the allowed files to exactly the
  * ones that still hold a list. The node types are read from the schema enum
  * (packages/db/src/schema/nodes.ts) of the repo this rule file is in, found
- * from the rule file and not from ESLint's working directory (low round,
- * L2: run from another directory the rule found no enum and passed
- * everything); no enum there is an error, never a silent pass.
+ * from the rule file and not from ESLint's working directory (run from
+ * another directory it would find no enum); no enum there is an error,
+ * never a silent pass.
  */
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

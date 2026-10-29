@@ -33,7 +33,7 @@ export async function extractPdfTextWithPassword(
   try {
     // `withPdf` destroys the loading task (which owns the worker side since
     // pdfjs 6) on every path, the wrong-password one included: that is this
-    // function's most common outcome, and it used to leak a worker each time.
+    // function's most common outcome, and a leak there costs a worker each time.
     return await withPdf(
       bytes,
       { password, useSystemFonts: true },

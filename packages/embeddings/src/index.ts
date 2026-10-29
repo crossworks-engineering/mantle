@@ -165,13 +165,13 @@ export interface EmbeddingRoute {
   apiKeyId: string | null;
   /** Operator-facing label for the failover UI ("Mac Ollama", "HF endpoint"). */
   label: string | null;
-  /** The login that paired the route's key with its base URL (W7a fix round
-   *  5, embedding_config.configured_by). Null or absent: the brain owner's. */
+  /** The login that paired the route's key with its base URL
+   *  (embedding_config.configured_by). Null or absent: the brain owner's. */
   configuredBy?: string | null;
 }
 
 /**
- * The vault key a route sends (W7a fix round 5): the pinned key, else the
+ * The vault key a route sends: the pinned key, else the
  * provider's, else the keyless `local` sentinel, else null. A route with a
  * base URL resolves a vault key only while the login that paired them
  * (`configuredBy`, null for the brain owner) holds the keys area; refused, a
@@ -352,7 +352,7 @@ export async function probeEmbeddingRoute(
     model: string;
     baseUrl?: string | null;
     apiKeyId?: string | null;
-    /** The login answering for the key-to-host pairing (W7a fix round 5):
+    /** The login answering for the key-to-host pairing:
      *  a saved route's configurer, or the login probing an unsaved one.
      *  Null: the brain owner. Required, so a caller cannot leave it out and
      *  probe as the owner by accident. */
@@ -736,7 +736,7 @@ async function doEmbed(
 }
 
 /** The failover rule (route down: network, timeout, 5xx) lives in @mantle/std
- *  provider-error.ts since A10 #10, beside the other provider readers. */
+ *  provider-error.ts, beside the other provider readers. */
 export { isRouteDownError };
 
 /** Best-effort stamp of the last primary→backup failover for the UI. Never

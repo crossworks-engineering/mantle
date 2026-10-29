@@ -99,13 +99,11 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
       ? rawBody.slice(0, TEXT_STORE_MAX_CHARS)
       : undefined;
 
-  // Resolve the chat adapter for this worker's provider. Phase-3
-  // change: was `new OpenRouter({apiKey})` regardless of what the
-  // worker said. Now the worker.provider field actually steers the
-  // dispatch. If no adapter is wired for the provider, surface a
+  // Resolve the chat adapter for this worker's provider: the
+  // worker.provider field steers the dispatch. If no adapter is wired for the provider, surface a
   // clear skipped trace rather than crashing — operators see what's
   // missing in /traces. A table reusing its summary calls no model, so it
-  // needs no adapter (A10 #7 fix round 2, L5: nor a key).
+  // needs no adapter (nor a key).
   const adapter = getChatAdapter(worker.provider);
   const reuse = reusesTableSummary(node, existingData);
   if (!adapter && !reuse) {
@@ -144,12 +142,12 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
   // vision/OCR passes above persisted their own data.text writes, so only
   // foreign writes during the LLM window trip it.
   //
-  // The work stamp (A10 #7, data.index_work) is read in the same select: the
+  // The work stamp (data.index_work) is read in the same select: the
   // update_index write lands only on this row version, so the stamp it drops
   // is the one read here, not the one admission saw. A content change that
   // committed while the body loaded set an 'extract' stamp after admission;
-  // dropping only admission's stamp left it on the row for good, and every
-  // later rename then ran a full model pass (fix round 3, M1).
+  // dropping only admission's stamp would leave it on the row for good, and
+  // every later rename would run a full model pass.
   const verRows = await db.execute(
     sql`select xmin::text as v, ${indexWorkSql()} as w from ${nodes} where id = ${node.id}`,
   );

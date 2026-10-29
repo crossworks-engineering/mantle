@@ -1,13 +1,12 @@
 /**
- * Tests only: the owner MCP surface's former list views and name-keyed
- * functions, rebuilt from the policies (workspaces arch A5 step 6a deleted
- * them from @mantle/tools and @mantle/mcp-core: every consumer reads the
- * tool's policy). The snapshot and sweep tests read the old names from here,
- * so what each list held is still pinned to the literal committed before the
- * policies existed (mcp-surface-snapshot.test.ts, __snapshots__/), now
- * derived from the policies the consumers read.
+ * Tests only: list views and name-keyed functions of the owner MCP surface,
+ * rebuilt from the policies (no product code has them: every consumer
+ * reads the tool's policy). The snapshot and sweep tests read them by name,
+ * so what each list holds stays pinned to the committed snapshot
+ * (mcp-surface-snapshot.test.ts, __snapshots__/), derived from the
+ * policies the consumers read.
  *
- * Each is what its view was: the builtins whose policy `pick` holds, plus
+ * Each list is the builtins whose policy `pick` holds, plus
  * the MCP surface's own definitions (not builtins) it holds for.
  */
 import {
@@ -77,7 +76,7 @@ export function spendsOwnerKeys(slug: string): boolean {
 
 /** Risky for a peer or a key: the policy's `peerRisky`; a name no table
  *  holds, by its family (a risky family, or a mini app's, not its data's,
- *  tool), as before A5. */
+ *  tool). */
 export function isPeerRiskyTool(slug: string): boolean {
   const policy = mcpToolPolicyOf(slug);
   if (policy) return policy.peerRisky === true;

@@ -26,11 +26,6 @@ import { envNum } from '@mantle/config';
  * Not re-checked by: Telegram (already bounded by the Bot API's ~20 MB getFile
  * limit) or the disk-sync watcher (it ingests local files the operator placed
  * intentionally).
- *
- * History: 25 → 64 MB after a real 1094-task Microsoft Project MSPDI export
- * came in at 25.8 MB (task rows cost ~24 KB each in MSPDI). 64 MB streamed →
- * 512 MB streamed on 2026-09-02, when a 250 MB SQL Server backup spun for half
- * an hour in the uploader with no error and no progress.
  */
 export const MAX_UPLOAD_BYTES = 64 * 1024 * 1024; // 64 MB
 

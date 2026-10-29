@@ -1,6 +1,6 @@
 /**
  * Pages: the two hand-written reads that return the raw ProseMirror
- * document (page_list, page_get: definitions in mcp-defs.ts, A5 step 2),
+ * document (page_list, page_get: definitions in mcp-defs.ts),
  * then the bridged authoring group, less the two the surface defines
  * itself (registerBuiltinTools skips a builtin a definition names).
  */

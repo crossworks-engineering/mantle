@@ -56,8 +56,8 @@ export type FileRow = {
   /** Which mode the extractor LAST ran for this file ('metadata' spine vs full
    *  content). Null until first extraction. What a listing should badge. */
   indexingApplied: 'full' | 'metadata' | null;
-  /** A read-only snapshot copy of an accepted item (data.snapshot_of,
-   *  workspaces W6b fix round 1): nobody edits it, moves it out of its
+  /** A read-only snapshot copy of an accepted item (data.snapshot_of):
+   *  nobody edits it, moves it out of its
    *  private workspace or shares it; its author may delete it. Absent on
    *  every other item. */
   readOnly?: true;
@@ -79,10 +79,9 @@ export type FileRow = {
 export async function ensureFilesRootBranch(ownerId: string): Promise<{ id: string } | null> {
   // The root is structure, not content: its id is read whatever the
   // reader's scope holds (a member's scope does not hold the Admin-homed
-  // root, W6b), so a reader that does not see it never makes it again. In
-  // the scope, by the definer that answers only that id
-  // (mantle_kind_root_id, 0293; A6b: it left for the system pool before,
-  // 'kind-root').
+  // root), so a reader that does not see it never makes it again. In the
+  // scope, by the definer that answers only that id (mantle_kind_root_id,
+  // 0293).
   const readRoot = async (): Promise<{ id: string }[]> => {
     const rows = (await db.execute(
       sql`select "public"."mantle_kind_root_id"(${ownerId}::uuid, ${FILES_ROOT_LABEL}) as id`,
@@ -100,7 +99,7 @@ export async function ensureFilesRootBranch(ownerId: string): Promise<{ id: stri
   // is the arbiter, so swallow the loser's 23505 and re-read the winner's row.
   let row: Node | undefined;
   try {
-    // Heads first (workspaces plan U1); a root has no folder above it.
+    // Heads first; a root has no folder above it.
     [row] = await withDeadlockRetry(() =>
       runReadPathWrite('repair:files-root', () =>
         withNodeInsertHeads(ownerId, [{ type: 'branch', path: FILES_ROOT_LABEL }], (tx) =>
@@ -225,7 +224,7 @@ export function fileRowFromNode(row: Node): FileRow {
 
 /** An item row's path, and a file's name and bytes, as the database holds
  *  them now, read in the caller's scope: what a flip that may have
- *  committed settles by (store-broker.ts flipThenPlace, A3b part 2).
+ *  committed settles by (store-broker.ts flipThenPlace).
  *  Throws when the row cannot be read (the flip's outcome is unknown). */
 export async function rowNow(
   id: string,

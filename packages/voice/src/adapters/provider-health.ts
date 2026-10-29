@@ -1,10 +1,9 @@
 /**
- * THE "is the local model up" probe (A10 #10). The dashboard pill, the
- * sanity check, the capabilities panel and the services switch each carried
- * their own copy: GET `<base>/models` with a short deadline, read the
- * OpenAI-compatible `data[].id` list, and match the configured model with
- * Ollama's `:latest` tolerated on either side. One probe now; each caller
- * still words its own answer.
+ * THE "is the local model up" probe, for the dashboard pill, the sanity
+ * check, the capabilities panel and the services switch: GET
+ * `<base>/models` with a short deadline, read the OpenAI-compatible
+ * `data[].id` list, and match the configured model with Ollama's `:latest`
+ * tolerated on either side. Each caller words its own answer.
  *
  * Through providerFetch: a local model is a configured provider base URL, the
  * same host the embed and chat calls reach.
