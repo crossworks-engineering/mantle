@@ -42,7 +42,7 @@ export type ClaimMemberTurnResult =
  * (default 100) and MANTLE_MEMBER_DAILY_TOKENS tokens (default 2,000,000; 0
  * turns the budget off). The same reading as server/web
  * lib/member-daily-cap.ts, for a path outside the web tier: a Telegram turn
- * of a login that is not an Admin user (workspaces W7d).
+ * of a login that is not an Admin user.
  */
 export function memberDailyLimits(): MemberTurnLimits {
   return {

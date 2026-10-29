@@ -245,7 +245,7 @@ export function buildAttachmentContextText(
  * Reduce a `ChatMessage[]` (the rich agent-runtime shape with vision +
  * tool-call hooks) to the plain `Array<{role, content: string}>` shape
  * the chat adapter contract accepts. Used by the chat-shaped workers
- * (extractor, summarizer, reflector) for their single-turn calls — they
+ * (extractor, summarizer, reflector) for their single-turn calls: they
  * never carry images or tool messages, so the
  * flattening is lossless for them.
  *

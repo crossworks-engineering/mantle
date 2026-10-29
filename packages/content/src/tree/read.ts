@@ -121,12 +121,12 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
  *  id takes the same scope: a parent the reader does not read is null.
  *
  *  The parents and both counts are read once for all the folders, not once
- *  per folder (W6a): under a workspace scope the planner cannot see how many
+ *  per folder: under a workspace scope the planner cannot see how many
  *  items the scope holds and guesses a handful, so each per-folder count
  *  re-read every item of the scope (an Admin user: 9 ms for 12 folders,
  *  1.5 ms read once; faster on the system pool too).
  *
- *  `others` (with `ws`; task f26a516e): the caller's other workspaces. Each
+ *  `others` (with `ws`): the caller's other workspaces. Each
  *  folder then also counts the items in it that one of them reads and `ws`
  *  does not (`itemsElsewhere`), under the same read rule, so a client can
  *  open a folder whose items all live in another workspace and say so.
@@ -344,7 +344,7 @@ function sortOf(sort: TreeSort): { key: SQL; desc: boolean } {
     case 'due':
       // Open tasks first, soonest due first, undated last; done tasks after.
       // The instant in UTC, not the stored text: '...T23:00+10:00' is before
-      // '...T14:00Z' (audit C5), as the task list's own order has it.
+      // '...T14:00Z', as the task list's own order has it.
       return {
         // Byte order (C collation): '~' sorts after every digit there, and
         // the cursor compares with the same collation as the order.

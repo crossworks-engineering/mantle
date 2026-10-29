@@ -1,6 +1,6 @@
 /**
  * Pages · where a page sits. Create (in a folder of the pages tree) and
- * delete. Since folder phase 7 (docs/folder-tree.md, "Pages") a page is
+ * delete. A page (docs/folder-tree.md, "Pages") is
  * never the parent of another page: its place is its folder's path, exactly
  * like a note's, and moving it is the tree's job (`moveTreeItems`, the
  * `POST /api/tree/pages/move` route, `page_move`), which asks first when
@@ -57,7 +57,7 @@ async function ensureRootNow(ownerId: string): Promise<void> {
 }
 
 /** ensureRoot inside a member's space (withSpace): the space's own rows,
- *  on its transaction (withSpaceRows; personal spaces go in W6b). */
+ *  on its transaction (withSpaceRows). */
 async function ensureSpaceRoot(ownerId: string): Promise<void> {
   await withSpaceRows((tx) =>
     tx.insert(nodes).values(rootRow(ownerId)).onConflictDoNothing(ROOT_CONFLICT),
@@ -79,9 +79,9 @@ export type CreatePageInput = {
    *  already is, so its own row is not asked about; what its document newly
    *  opens (a draft-only embed) still is. Takes precedence over `folderId`. */
   siblingOf?: string;
-  /** DEPRECATED (folder phase 7): pages no longer nest. An id here puts the
-   *  new page in the SAME FOLDER as that page, so a caller from before the
-   *  tree still lands near where it meant to. Ignored when `folderId` or
+  /** DEPRECATED: pages do not nest. An id here puts the new page in the
+   *  SAME FOLDER as that page, so an older caller still lands near where it
+   *  meant to. Ignored when `folderId` or
    *  `siblingOf` is given. */
   parentId?: string | null;
   /** A page in a shared folder is read at the folder's share at once, and
@@ -127,7 +127,7 @@ type Via = Pick<typeof db, 'execute'>;
  * here is the folder the insert lands in). A folder must be a `branch` row
  * under `pages` (never the root's own row: that is the top level, null)
  * owned by the caller or by the brain: a member's draft sits at a brain
- * folder's path (docs/folder-tree.md, phase 5). Wider than the member
+ * folder's path (docs/folder-tree.md). Wider than the member
  * tree's own check (memberFilingPath, which also asks whether the member
  * sees the folder): no member reaches this with a folder id, the member
  * routes resolve the path first and pass it on as `opts.path`.
@@ -165,7 +165,7 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
   const title = input.title.trim().slice(0, 200) || 'Untitled page';
 
   // A personal-space page: its own words and a marker per embed (always
-  // fold, workspaces plan 5.3); no workspace holds it, so nothing is hidden.
+  // fold); no workspace holds it, so nothing is hidden.
   if (currentSpaceScope())
     return createSpacePage(ownerId, input, title, doc, await pageDocText(ownerId, [], doc));
 
@@ -192,7 +192,7 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
 }
 
 /** createPage inside a member's space (withSpace): the space's own rows,
- *  on its transaction (withSpaceRows; personal spaces go in W6b). */
+ *  on its transaction (withSpaceRows). */
 async function createSpacePage(
   ownerId: string,
   input: CreatePageInput,
@@ -274,7 +274,7 @@ export async function deletePage(ownerId: string, id: string): Promise<boolean> 
 }
 
 /** deletePage inside a member's space (withSpace): the space's own rows,
- *  on its transaction (withSpaceRows; personal spaces go in W6b). */
+ *  on its transaction (withSpaceRows). */
 async function deleteSpacePage(id: string): Promise<void> {
   await withSpaceRows((tx) => tx.delete(nodes).where(eq(nodes.id, id))); // `pages` row cascades.
 }

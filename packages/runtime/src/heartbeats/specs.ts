@@ -13,7 +13,7 @@ export type HeartbeatToolSpec = Omit<BuiltinToolDef, 'handler'>;
 
 /** Default cap on heartbeat_list output. The full state jsonb can
  *  be sizable for skills that accumulate (interview answers, daily
- *  log entries, …) — multiplied by N rows it'd blow context. */
+ *  log entries, …): multiplied by N rows it'd blow context. */
 export const HEARTBEAT_LIST_DEFAULT_LIMIT = 20;
 export const HEARTBEAT_LIST_MAX_LIMIT = 100;
 

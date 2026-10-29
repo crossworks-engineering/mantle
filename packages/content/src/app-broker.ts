@@ -4,7 +4,7 @@
  * never reach another app's data (there is no path input — only the
  * authenticated app node id, resolved to a registry row here).
  *
- * Uses the built-in `node:sqlite` (DatabaseSync) — no native dependency
+ * Uses the built-in `node:sqlite` (DatabaseSync), no native dependency
  * (engines >=26). Dynamic-imported so
  * merely importing content elsewhere doesn't trip the experimental-module
  * warning. Server-only.
@@ -1114,7 +1114,7 @@ export async function snapshotAllAppDatabases(
       });
     }
     // The live layout under APP_DB_DIR (<owner>/<app>.sqlite as
-    // storage_path records it): an app folded in from a member's space (W6b)
+    // storage_path records it): an app folded in from a member's space
     // keeps its file under the space's directory while its row's owner is
     // the brain, and the restore script puts it back where storage_path says.
     const live = path.relative(appDbRoot(), r.storagePath);

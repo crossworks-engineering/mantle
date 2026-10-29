@@ -1,6 +1,5 @@
 /**
- * Which apps a login's MCP connection may reach (team apps Phase 1, plan
- * page b6dd688e, section B; workspaces W5b2). The rule: MCP gives a login
+ * Which apps a login's MCP connection may reach. The rule: MCP gives a login
  * exactly what the app's own broker gives them in the browser, and only on
  * an app whose MCP access switch is on: an app a workspace of theirs holds
  * (member-apps.ts), with a green PUBLISHED build (never a draft) and

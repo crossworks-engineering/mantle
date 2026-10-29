@@ -14,8 +14,8 @@
  *    images whose file the current scope reads (row rules on the grants
  *    decide), by the same rule as the SVG byte route (`scopedDrawSvg`).
  *
- * Every read is the current scope's (workspaces W8d): the member and client
- * readers, which read on other pools, are gone. Kept in one place on
+ * Every read is the current scope's: no reader reads on another pool. Kept
+ * in one place on
  * purpose: `readerVisibleFileIds` and `readableDraw` are the bodies the text
  * and the picture both follow.
  */
@@ -52,7 +52,7 @@ export type ReadableDraw = {
 
 /** A drawing's metadata, as the current scope may read it. Null when it is
  *  not a drawing this scope reaches, and for a team surface that reaches
- *  the system pool (W8 final): a member's read never gets the owner's
+ *  the system pool: a member's read never gets the owner's
  *  drawing, its text included. */
 export async function readableDraw(
   ownerId: string,
@@ -234,11 +234,10 @@ export async function readableDrawSvg(
 
 /**
  * The drawing's saved SVG as a non-Admin login receives it on the byte
- * routes (workspaces W7e): only the images whose file the CURRENT scope
+ * routes: only the images whose file the CURRENT scope
  * reads (the login's request scope, where row security on the grants
  * decides). Call it inside that scope: every read here is the scope's (the
  * drawing's image refs, then which of their files exist for the reader).
- * Moved here from member-draw-images.ts (removed in W8d) unchanged.
  */
 export async function scopedDrawSvg(
   anchorId: string,

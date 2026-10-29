@@ -345,7 +345,7 @@ export async function createPresent(
   await ensureRoot(ownerId);
   const title = (input.title ?? '').trim().slice(0, 200) || read.title || 'Untitled canvas';
 
-  // Heads first (workspaces plan U1): the folder the canvas lands in. A new
+  // Heads first: the folder the canvas lands in. A new
   // item is indexed by the extractor's drain and sweep, as a new drawing is;
   // only later text changes wait for the quiet period.
   return headsOrSpace<PresentDetail>(

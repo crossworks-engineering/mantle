@@ -1,6 +1,5 @@
 /**
- * Calls between people (calls plan page 886126b4, sections 5, 8, 9, 11 and
- * 12; P1 M1): a call is a LiveKit room named after the conversation. One
+ * Calls between people: a call is a LiveKit room named after the conversation. One
  * function per action, each one transaction on the system pool, as the
  * messenger's own writes (messenger.ts), whose participant rule, seq and
  * system lines a call takes.

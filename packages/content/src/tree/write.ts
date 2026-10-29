@@ -173,7 +173,7 @@ async function refusing<T>(run: () => Promise<T>): Promise<T> {
   } catch (first) {
     // Another write held these rows (a deadlock broken, or the share lock's
     // timeout): its transaction rolled back, so once more, then a plain
-    // "busy" (review F7). Never the SQL text.
+    // "busy". Never the SQL text.
     if (!isBusy(first)) return refusingError(first);
     // A pool's wait run out: not again (it would wait the whole bound twice).
     if (isPoolBusy(first)) throw new TreeError('conflict', busyMessage(first));
@@ -254,7 +254,7 @@ export type TreeFolderPatch = {
   parentId?: string | null;
   /** Reorder among its siblings: directly after this sibling; null = first. */
   after?: string | null;
-  /** RETIRED (workspaces W5b2): a folder share is a grant now, set in the
+  /** RETIRED: a folder share is a grant, set in the
    *  folder's Grant Access panel. Any value is refused with `gone`. */
   share?: TreeShareLevel | null;
 };
@@ -279,7 +279,7 @@ async function checkVisibility(
   opts: TreeWriteOpts,
 ): Promise<VisibilityDiff> {
   // What the items embed counts as a change of its own: a note already read
-  // at the folder's share still opens its embeds there (review F6).
+  // at the folder's share still opens its embeds there.
   const d = await withEmbedChanges(ownerId, await diff);
   const n = changeCount(d);
   const refused =
@@ -351,7 +351,7 @@ async function followShares(
 /** Ids per refold: each names a pattern the refold matches page docs by. */
 const REFOLD_BATCH = 200;
 
-/** The refusal of a folder share (workspaces W5b2). */
+/** The refusal of a folder share. */
 export const FOLDER_SHARE_GONE =
   "Folder sharing levels are gone. Use the folder's Grant Access panel to share it with a workspace.";
 
@@ -364,7 +364,7 @@ export async function updateTreeFolder(
   patch: TreeFolderPatch,
   opts: TreeWriteOpts = {},
 ): Promise<TreeFolder> {
-  // A folder share is a grant now (workspaces W5b2): refused before
+  // A folder share is a grant: refused before
   // anything else is written, so the rest of the patch does not half apply.
   if (patch.share !== undefined) throw new TreeError('gone', FOLDER_SHARE_GONE);
   const ops = opsFor(kind);

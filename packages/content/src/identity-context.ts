@@ -135,7 +135,7 @@ export function renderIdentityBlock(entries: IdentityEntry[]): string {
  * Returns '' when nothing renders.
  *
  * An agent sees its own lessons and expectations plus those no agent owns
- * (2026-09-23: persona notes, which were per agent, moved into the Journal).
+ * (persona notes, which are per agent, live in the Journal).
  * Open gaps stay brain-wide and render as an "Open questions" tail,
  * attributed when another agent raised them, so the agent knows what the
  * brain is missing and can ask when it fits the conversation.

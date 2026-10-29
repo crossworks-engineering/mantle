@@ -35,7 +35,7 @@ export function decodeTreeCursor(
 }
 
 /**
- * A member tree's draft cursor (./member-tree, removed in W8d): a folder's pages run through
+ * A member tree's draft cursor: a folder's pages run through
  * the member's drafts at that folder first, then the brain's items. Drafts
  * are few and read whole per call, so this cursor is the number shown so
  * far; the brain's items keep the keyset cursor above.

@@ -115,11 +115,11 @@ export async function getTable(
     .select({
       node: nodes,
       data: tables.data,
-      // Whether this caller may read the draft at all (W6a: the draft file
-      // on disk follows the same rule as the draft columns).
+      // Whether this caller may read the draft at all (the draft file on
+      // disk follows the same rule as the draft columns).
       draftOk: askedPublished ? sql<boolean>`false` : draftAllowed(),
       // An Admin user's request scope reads a draft only of an item it may
-      // edit (draftColumn: the rule is in the query, W6a).
+      // edit (draftColumn: the rule is in the query).
       draft: askedPublished ? sql<null>`null` : draftColumn<unknown>(tables.draftData),
       storagePath: tables.storagePath,
       // The draft the row points at (the store broker), under the draft

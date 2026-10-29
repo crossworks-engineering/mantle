@@ -190,7 +190,7 @@ async function fireActor(hb: Heartbeat, login: string | null | undefined): Promi
   const reason = 'heartbeat:fire';
   // The check off: nothing is checked or set, so no query decides the actor
   // (the owner's rule: no new query on a hot path with the check off).
-  // system keeps the answer of a write with no scope as it was before A2a.
+  // system keeps the answer of a write with no scope unchanged.
   if (actorCheckMode() === 'off') return systemActor(reason);
   const owner = (): Actor => loginActor(hb.ownerId, 'owner');
   try {
@@ -282,7 +282,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
         kind: 'heartbeat_fire',
         subjectKind: 'heartbeat',
         subjectId: hb.id,
-        // The login the fire answers, as a fired trace names it (W7e): the
+        // The login the fire answers, as a fired trace names it: the
         // skip is listed to that login only, the anchor's (null) to the
         // anchor (traceListedFor).
         loginId: answeredBy,

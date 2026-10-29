@@ -83,7 +83,7 @@ export type LinkRights = {
   edit: boolean;
   /** A Moderator of the home. */
   manage: boolean;
-  /** A read-only snapshot copy (W6b): it never carries a link. */
+  /** A read-only snapshot copy: it never carries a link. */
   snapshotCopy?: boolean;
 };
 

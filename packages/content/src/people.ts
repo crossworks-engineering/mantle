@@ -1,5 +1,5 @@
 /**
- * People (Messenger V1 plan page d8954876, section 23): the one gate of
+ * People: the one gate of
  * every person-to-person read, and the card a login shares with its team.
  *
  * Mantle is a team system and every login is approved by hand, so what a

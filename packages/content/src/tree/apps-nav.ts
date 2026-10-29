@@ -1,8 +1,8 @@
 /**
- * Apps join the item tree (folder plan phase 3). Until now the Apps sidebar
- * kept its folders in one JSON document on the brain's profile
- * (`preferences.appNav`) and each login's pins and open counts in its own
- * preferences. Here they become what every other kind uses: folders are
+ * Apps in the item tree. The Apps sidebar's older layout kept its folders
+ * in one JSON document on the brain's profile (`preferences.appNav`) and
+ * each login's pins and open counts in its own preferences. Here they
+ * become what every other kind uses: folders are
  * `branch` rows under `apps`, an app's place is its `path`, and pins and
  * opens are `item_marks` rows.
  *

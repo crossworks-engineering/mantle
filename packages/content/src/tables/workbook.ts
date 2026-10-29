@@ -52,8 +52,8 @@ export function effectiveTabCount(row: {
 }
 
 /** First tab's display name in draft-then-published order — bare-doc rebuilds
- *  must keep it (audit: the whole-doc fallback renamed "Inventory" back to
- *  'Sheet1', flipping the shape hash and forcing a re-summarize). */
+ *  must keep it (a whole-doc fallback that renames "Inventory" back to
+ *  'Sheet1' flips the shape hash and forces a re-summarize). */
 export function effectiveTabName(row: {
   storagePath: string | null;
   draftPath: string | null;

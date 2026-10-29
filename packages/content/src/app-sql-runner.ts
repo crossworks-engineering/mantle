@@ -1,15 +1,15 @@
 /**
  * Runs ONE app-supplied SQL statement against an app's SQLite file, off the
- * event loop (audit 2026-09-27, Phase 4b). App SQL comes from app bundles,
- * members and anonymous public-share visitors alike, and it used to run on
- * the main thread through `DatabaseSync`, which has no timeout: one endless
- * recursive CTE froze the whole web process for every user.
+ * event loop. App SQL comes from app bundles, members and anonymous
+ * public-share visitors alike, and `DatabaseSync` on the main thread has no
+ * timeout: one endless recursive CTE would freeze the whole web process for
+ * every user.
  *
- * It runs in a CHILD PROCESS, not a worker thread (2026-09-28). A worker
- * thread could be terminated at the time limit, but terminating it did not
- * close its SQLite connection: a write stopped at the limit kept the app's
- * write lock, and every later write to that app failed with "database is
- * locked" until the web process restarted. A killed process always lets go:
+ * It runs in a CHILD PROCESS, not a worker thread. A worker thread can be
+ * terminated at the time limit, but terminating it does not close its
+ * SQLite connection: a write stopped at the limit keeps the app's write
+ * lock, and every later write to that app fails with "database is locked"
+ * until the web process restarts. A killed process always lets go:
  * the OS closes its file descriptors, which drops its locks, and SQLite rolls
  * the unfinished write back from the WAL on the next open.
  *
@@ -36,7 +36,7 @@
  *    fails with SQLITE_FULL ("database or disk is full") and rolls back.
  *
  * One caller (a client login, a member login, a share link) runs at most one
- * statement at a time (`callerKey`, client tier audit I1): its next statement
+ * statement at a time (`callerKey`): its next statement
  * waits its turn, so one caller cannot hold every child while other callers'
  * statements run on the rest.
  *
@@ -77,7 +77,7 @@ export const APP_SQL_MAX_REPLY_BYTES = 8 * 1024 * 1024;
  *  copies in a few seconds; this leaves room for a slow disk). */
 export const APP_DB_COPY_TIMEOUT_MS = 120_000;
 /** A restore marker (`<file>.restoring`) older than this is a crash's
- *  leftover and is ignored (apps snapshots, Phase 2). */
+ *  leftover and is ignored. */
 export const APP_DB_RESTORE_MARKER_TTL_MS = 5 * 60_000;
 /** The reply a child gives for a file under restore; the parent turns it
  *  into AppDbRestoringError. */
@@ -278,7 +278,7 @@ function run(job) {
       }
     }
     db.setAuthorizer((action, arg1) => {
-      // Data only (an MCP write, team apps Phase 1): rows, never the
+      // Data only (an MCP write): rows, never the
       // schema. An allowlist: reading, selecting, functions, a recursive
       // CTE and the three row writes. Every CREATE, DROP, ALTER, trigger,
       // view, index, transaction, savepoint, ANALYZE and REINDEX is refused,
@@ -609,7 +609,7 @@ type ChildJob = Omit<Parameters<typeof runAppSql>[1], 'mode'> & {
 /**
  * Run the server's own statements against an app's file in ONE transaction,
  * in a SQL child, under the same authorizer, caps and time limit as app SQL
- * (apps audit P5: the authoring-time seed used to run on the main thread).
+ * (never on the main thread).
  * Returns each statement's change count. Nothing stays when one fails.
  */
 export async function runAppSqlBatch(

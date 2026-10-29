@@ -2,7 +2,7 @@
  * Node-level supersession — the content-currency lineage layer (write side).
  *
  * The problem this solves: source files whose content was migrated into
- * corrected pages would keep ranking at full weight — the stale file often
+ * corrected pages would keep ranking at full weight: the stale file often
  * carries MORE chunks than its successor page, so passage queries prefer the
  * dead document and the responder cites outdated sources. Facts have
  * first-class supersession (facts.superseded_by); this lifts the same

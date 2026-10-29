@@ -1,8 +1,8 @@
 /**
  * Block-addressed editing helpers: find / replace / insert (before, after,
  * start/end) / delete / wrap blocks in a ProseMirror doc by stable id.
- * Foundation for the Phase 2b page_block_* tools (find via page_blocks_list,
- * then mutate via these), and (later) for the Phase 3a editor's diff view.
+ * Foundation for the page_block_* tools (find via page_blocks_list, then
+ * mutate via these).
  *
  * Pure. No DB, no markdown parsing — the caller arrives with already-
  * parsed PM block nodes and an id. The functions return a NEW doc with the

@@ -1,8 +1,7 @@
 /**
  * Tool loop: every LLM round of one turn — the normal rounds, the empty-reply
  * retry and the forced final answer — on the ACTIVE route, with the sticky
- * primary→backup failover. Lifted out of runToolLoop on 2026-09-02 (audit,
- * complexity C1); step names, inputs and the failover rule are unchanged.
+ * primary→backup failover.
  */
 import {
   step,
@@ -224,7 +223,7 @@ export function createModelCaller(deps: {
             // partial one, which reads as the assistant answering twice. The
             // stream's own idle guard raises a retryable TimeoutError mid-flight
             // (voice/adapters/sse.ts), so this is the common way in, not a
-            // corner case. Fail the turn loudly instead. (2026-09-03 audit.)
+            // corner case. Fail the turn loudly instead.
             if (streamed.emitted) {
               h.setMeta({ failover_skipped: 'deltas_already_streamed' });
               console.warn(
@@ -309,9 +308,9 @@ export function createModelCaller(deps: {
 
     retryEmpty(reason) {
       // Empty-reply backstop. Some models return literally zero output tokens on
-      // a text-only call whose transcript ends in tool results — observed on
-      // gemini-3.5-flash in the force-final pass (2026-06-11 web turn that 500'd
-      // with 'assistant: empty reply from model'). One retry with an explicit
+      // a text-only call whose transcript ends in tool results (seen in the
+      // force-final pass, which then fails with 'assistant: empty reply from
+      // model'). One retry with an explicit
       // user-role nudge gives the model something concrete to respond to; runs on
       // the ACTIVE route. Still-empty after the retry is returned as-is — the
       // caller decides how to degrade (the web assistant substitutes a fallback

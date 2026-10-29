@@ -1,6 +1,5 @@
 /**
- * A page's indexed text (workspaces plan 5.3: derived text holds only the
- * item's own words). `pages.doc_text` is what the extractor summarises,
+ * A page's indexed text (derived text holds only the item's own words). `pages.doc_text` is what the extractor summarises,
  * chunks and embeds and what search matches, so:
  *
  *  - an embedded file, drawing or child page is a plain marker
@@ -65,7 +64,7 @@ async function servedTitles(
 }
 
 /**
- * A page document as an open link shows it (workspaces plan 8.1): a mention,
+ * A page document as an open link shows it: a mention,
  * a link or a child page card of an item not in `served` (lower-case ids:
  * the link's item and its served list) reads "Private item", and an embed of
  * one is left out. A served item's mention carries its current title.

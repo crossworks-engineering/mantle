@@ -1,12 +1,11 @@
 /**
  * How to record a turn that ended under an abort with NOTHING to show.
  *
- * Such a turn used to finalize 'complete' with a 0-character reply, which left
- * a dead turn indistinguishable from a successful one: no error, no failed
- * status, nothing any failure count or alert would ever pick up. On 2026-09-09
- * a stalled OpenRouter call sat for 3606s (the SDK's one-hour retry envelope,
- * to the second) and then recorded exactly that — twice in one morning — so the
- * only symptom anyone could see was a composer stuck on "Thinking…".
+ * Finalized 'complete' with a 0-character reply, such a turn would be
+ * indistinguishable from a successful one: no error, no failed status,
+ * nothing any failure count or alert would ever pick up. A stalled provider
+ * call can sit for an hour (the SDK's retry envelope) and end that way, and
+ * the only symptom would be a composer stuck on "Thinking…".
  *
  * The rule is deliberately narrow: a stop that DID stream something keeps its
  * partial reply and still finalizes 'complete', because a partial answer is an

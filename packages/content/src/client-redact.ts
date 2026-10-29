@@ -28,7 +28,7 @@
  * the database, once, in the reader's scope). External links stay as
  * they are.
  *
- * Fail closed (audit B25): every reference embed-refs.ts REFUSES is hidden
+ * Fail closed: every reference embed-refs.ts REFUSES is hidden
  * too, not only an entity mention: a scheme it does not know, a `javascript:`
  * link, an external image, an id that is not a uuid. A scheme is read
  * case-insensitively (`PAGE:<id>` is `page:<id>`), and an absolute URL into

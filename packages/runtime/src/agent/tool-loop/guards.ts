@@ -1,9 +1,8 @@
 /**
  * Tool loop: the per-turn guard state and the decisions it makes about one
  * tool call. Pure (no I/O), so every rule is unit-tested in guards.test.ts.
- * Lifted out of runToolLoop on 2026-09-02 (audit, complexity C1) with the
- * decision ORDER preserved exactly — see the numbered checks in `preParse`
- * and `postParse` — because the order is the contract the tests pin.
+ * The decision ORDER matters (see the numbered checks in `preParse` and
+ * `postParse`), because the order is the contract the tests pin.
  *
  * ── Tool-volume guards (structural backstop against tool-spam runaways) ──
  * A misbehaving model (notably Grok-4.x fixating on one tool) can emit
@@ -14,9 +13,9 @@
  *
  * Enforcement is at BATCH boundaries: a response that STARTS under its caps
  * executes in full (bounded by MAX_TOOL_CALLS_PER_RESPONSE). Cutting a batch
- * halfway severed a coherent write batch once — 10 page_block_deletes cut at
- * 1-of-10 left a production SOP draft half-edited (2026-07-06) — and a
- * bounded overshoot is strictly better than a half-applied edit. A batch
+ * halfway severs a coherent write batch (a run of page_block_deletes cut
+ * after the first leaves a draft half-edited), and a bounded overshoot is
+ * strictly better than a half-applied edit. A batch
  * that starts AT/OVER a cap is skipped call-by-call with guidance.
  *
  * The turn/per-tool caps are per-agent overridable via memory_config

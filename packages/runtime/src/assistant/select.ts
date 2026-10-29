@@ -7,9 +7,9 @@
  * the enabled chat-capable candidates; this picks the winner deterministically.
  *
  * Transport is decoupled from `role` (channels own that now); `role` here is
- * ONLY a soft tiebreak that preserves the historical "assistant first" feel
- * without letting it gate the surface. Equal-priority agents used to resolve
- * non-deterministically — the slug tiebreak below makes the pick stable.
+ * ONLY a soft tiebreak that keeps an "assistant first" feel without letting
+ * it gate the surface. The slug tiebreak below makes the pick among
+ * equal-priority agents stable.
  */
 
 /** Soft role tiebreak — applied only when priorities are equal. Lower wins. */

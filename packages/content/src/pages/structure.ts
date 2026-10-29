@@ -10,7 +10,7 @@
  * and the published doc is untouched until the user commits. All three operate
  * on `draft ?? doc`, the current working content.
  *
- * Pages do not nest (folder phase 7): a page made here lands in the SAME
+ * Pages do not nest: a page made here lands in the SAME
  * FOLDER as the page it came from, and the card left behind (`childPage`, the
  * page link card) is a link, not a parent-child bond.
  */
@@ -45,7 +45,7 @@ export type SplitPageResult = {
 };
 
 /**
- * Split a long page into pages along its headings (Phase 4b). Each heading
+ * Split a long page into pages along its headings. Each heading
  * of `by` becomes a page of its own (title = heading text, body = the blocks
  * under it) in the same folder as the source; the source's body is replaced
  * with a table-of-contents of `childPage` link cards pointing at them.
@@ -121,7 +121,7 @@ export class SectionNotFoundError extends Error {
 export type ExtractSectionResult = { childId: string; title: string };
 
 /**
- * Lift a single heading + its body into a page of its own (Phase 4c), next
+ * Lift a single heading + its body into a page of its own, next
  * to the source page. The section runs from the heading until the next
  * heading of equal-or-higher level; its heading text becomes the new title,
  * the blocks under it the new body, and a `childPage` link card replaces the

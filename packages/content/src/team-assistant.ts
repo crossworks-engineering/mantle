@@ -1,14 +1,13 @@
 /**
- * The assistants a login chats with (workspaces W5c, W7c): each workspace's
+ * The assistants a login chats with: each workspace's
  * assistant, its workspace_resources row of type 'assistant'. No agent
  * level is read: who answers in a workspace is a resource of that
  * workspace, set on the workspace page, never the agent's own level.
  *
- * Until migration 0286 a member's chat with no assistant named went to the
- * built-in Team workspace's assistant. Team is a normal workspace now (owner
- * decision 2026-10-13) and a new brain has none: the default is the
- * assistant of the login's oldest workspace beyond Admin that has one
- * (defaultWorkspaceAssistant), which is Team's on a brain switched before.
+ * Team is a normal workspace (0286) and a new brain has none: a member's
+ * chat with no assistant named goes to the assistant of the login's oldest
+ * workspace beyond Admin that has one (defaultWorkspaceAssistant), which is
+ * Team's on a brain that has a Team workspace.
  *
  * Read on the system pool, before any turn scope is entered.
  */
@@ -32,7 +31,7 @@ export type WorkspaceAssistant = {
 };
 
 /**
- * The enabled assistants of the brain's live workspaces (workspaces W7c):
+ * The enabled assistants of the brain's live workspaces:
  * each workspace's assistant resource, Admin's first, then by the age of
  * their workspace (oldest first), then by name. With `loginId`, only those
  * of the workspaces that login is a user of: the assistants it may chat

@@ -1,6 +1,5 @@
 /**
- * Four Admin acts as definers (workspaces arch plan v3.2, part c1;
- * migration 0308): a contact's sharing, Revoke all of a contact's shares,
+ * Four Admin acts as definers (migration 0308): a contact's sharing, Revoke all of a contact's shares,
  * sharing an item with contacts, and an entity merge. Each calls its
  * SECURITY DEFINER function in the acting login's scope (loginDefinerCall,
  * @mantle/db), and the function checks inside that the login is an Admin

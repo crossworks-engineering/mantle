@@ -439,7 +439,7 @@ const heldBeyondAdmin = sql<boolean>`exists (
 export type AppRuntime = {
   id: string;
   title: string;
-  /** What its holders allow its tools (R2). */
+  /** What its holders allow its tools. */
   toolRules: AppToolRules;
   manifest: AppManifest;
   draftBuild: BuildRef | null;

@@ -260,7 +260,7 @@ export async function contactEmails(ownerId: string): Promise<string[]> {
 
 /**
  * Every active ADMIN and MEMBER login's email address, lower-cased: staff are
- * contacts in user form (Jason, 2026-09-26). Both email gates allow them,
+ * contacts in user form. Both email gates allow them,
  * inbound and outbound, next to the contact list. A disabled login's address
  * does not count. Logins all belong to this one brain, so there is no owner
  * filter.

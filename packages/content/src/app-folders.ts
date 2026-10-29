@@ -1,7 +1,6 @@
 /**
  * The Apps launcher of a member login (GET /api/member/apps): the apps the
  * reader may RUN, and the admin's Apps folders those apps sit in, read only.
- * (The client launcher went with the client portal in workspaces W5c.)
  *
  * The rule is the list's own. The apps are read as the reader
  * (`listMemberAppsPlaced`: the workspace rule and the green published

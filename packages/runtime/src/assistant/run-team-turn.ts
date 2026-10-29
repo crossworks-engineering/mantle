@@ -126,8 +126,8 @@ export type RunTeamTurnOptions = {
   ledgerTurnId?: string;
 };
 
-/** A CLIENT login's turn (client logins C4). Client chat went in W5c: the
- *  type stays only so a queued turn's input still parses. */
+/** A CLIENT login's turn. There is no client chat: the type stays only so a
+ *  queued turn's input still parses. */
 export type RunClientTurnOptions = Omit<RunTeamTurnOptions, 'attachments'> & {
   /** The login's session epoch when the turn was queued: the turn runs only
    *  while it is still the login's epoch (sign-out everywhere, End sessions
@@ -152,8 +152,8 @@ async function resolveAgentById(ownerId: string, id: string): Promise<Agent | nu
 
 /**
  * The agent a workspace turn runs: the assistant a workspace holds, never one
- * picked by level (workspaces W5c). With a slug, it must be the assistant of
- * a workspace other than Admin that the login is a user of (W7c); without
+ * picked by level. With a slug, it must be the assistant of
+ * a workspace other than Admin that the login is a user of; without
  * one, the login's default (defaultWorkspaceAssistant). The route resolves it too; this is the engine's
  * own check, so no caller can hand a login another agent. The Admin
  * assistant never runs here (the owner turn engine runs it).
@@ -235,8 +235,8 @@ export function historyBeforeInbound<T extends { id: string }>(rows: T[], inboun
 }
 
 /**
- * A CLIENT login's chat turn: removed with client chat in workspaces W5c. A
- * turn still queued from before refuses before anything is written and no
+ * A CLIENT login's chat turn: there is no client chat. A turn still queued
+ * refuses before anything is written and no
  * model is called.
  */
 export async function runClientTurn(
@@ -248,7 +248,7 @@ export async function runClientTurn(
 }
 
 /** Whether `loginId` is a row with a role this code does not name (one
- *  still marked client: none is left after migration 0272, workspaces W8a).
+ *  still marked client: none is left after migration 0272).
  *  Such a row is no login, and has no chat. */
 async function hasUnknownRole(loginId: string): Promise<boolean> {
   const rows = (await db

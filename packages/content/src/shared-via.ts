@@ -1,6 +1,5 @@
 /**
- * The folder an item takes its sharing from (folder plan phase 4; workspaces
- * W5b2): the nearest folder granted by hand to a workspace other than Admin
+ * The folder an item takes its sharing from: the nearest folder granted by hand to a workspace other than Admin
  * whose grant the item takes (its grant rows "via folder", not removed
  * there). The Access
  * control names it ("Shared via Clients / Acme"): moving the item out of the
@@ -59,8 +58,7 @@ export async function sharedViaFolder(
 }
 
 /**
- * What an item is read through by embeds. Nothing, since workspaces W5b2:
- * an embed gives no reads (no magic); the Grant Access panel lists the
+ * What an item is read through by embeds. Nothing: an embed gives no reads (no magic); the Grant Access panel lists the
  * embeds an item's workspaces cannot read ("Grant these too"). Kept for the
  * callers of the old Access control until they go.
  */

@@ -2,7 +2,7 @@
  * App navigation, server side: the read older clients make (`loadAppNavView`,
  * GET /api/app-nav), per-login pins, and the open counter.
  *
- * Since folder plan phase 3 the apps live in the item tree like every other
+ * The apps live in the item tree like every other
  * kind (docs/folder-tree.md): folders are `branch` rows under `apps`, an
  * app's place is its `path`, and pins and opens are `item_marks` rows. The
  * old places (the brain's `preferences.appNav` document, each login's
@@ -90,7 +90,7 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       // frame-ticket route applies before it will render the app.
       hasBuild: r.publishedBuild?.ok === true || r.draftBuild?.ok === true,
       updatedAt: r.updatedAt.toISOString(),
-      // The R and R/W pill (team apps Phase 3): the admin's own broker
+      // The R and R/W pill: the admin's own broker
       // writes every app, informational ones too (that flag binds members
       // and clients), so an admin's sidebar reads and writes.
       dataAccess: ADMIN_DATA_ACCESS,

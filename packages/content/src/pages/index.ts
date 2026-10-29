@@ -5,7 +5,7 @@
  *   nodes.title           display name
  *   nodes.data.icon       optional emoji / icon
  *   nodes.data.summary    extractor-written summary
- *   nodes.data.visibility 'private' | 'public' (read-only sharing, phase 5)
+ *   nodes.data.visibility 'private' | 'public' (read-only sharing)
  *   pages.doc             ProseMirror JSON (source of truth)
  *   pages.doc_text        derived plaintext (the extractor + FTS read this)
  *
@@ -16,14 +16,13 @@
  */
 
 /**
- * Split out of the 1244-line pages.ts on 2026-09-02 (audit, tier 3) along its
- * five natural seams: shared spine, read, tree, draft/commit, structure, and
+ * Split along five natural seams: shared spine, read, tree, draft/commit, structure, and
  * embedded-asset text. The dependency order is acyclic and one-way —
  * shared <- embed <- read <- tree <- draft <- structure — so no module here
  * imports this barrel.
  *
- * The export list below is CURATED, not `export *`, and is UNCHANGED from the
- * single file it replaces: `@mantle/content/pages` is a public sub-path, so a
+ * The export list below is CURATED, not `export *`:
+ * `@mantle/content/pages` is a public sub-path, so a
  * helper that had to become cross-module (rowOf, detailOf, dedupeTags,
  * embeddedAssetText) must NOT leak into it as API nobody chose to promise.
  * `pages-exports.test.ts` pins the list.

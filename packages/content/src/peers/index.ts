@@ -14,15 +14,12 @@
  */
 
 /**
- * Split out of the 787-line peers.ts on 2026-09-02 (audit, tier 3) into
- * peers/{registry,grants,query}.ts — the three sections the file already
- * marked with its own banner comments. Dependency order is one-way:
+ * Split into peers/{registry,grants,query}.ts. Dependency order is one-way:
  * registry standalone, grants standalone, query <- grants.
  *
  * Curated, not `export *`: `@mantle/content/peers` is a public package
- * sub-path. The split forced `toTypeShareRow` and `toPeerHit` (row mappers)
- * to become cross-module exports; neither is API. The list below is UNCHANGED
- * from the single file it replaces; `peers-exports.test.ts` pins it.
+ * sub-path. `toTypeShareRow` and `toPeerHit` (row mappers) are cross-module
+ * exports; neither is API. `peers-exports.test.ts` pins the list below.
  */
 
 export { hashToken, mintInboundToken, tokenMatchesHash, PEER_TOKEN_PREFIX } from '../peers-crypto';

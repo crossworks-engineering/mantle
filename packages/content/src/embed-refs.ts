@@ -177,7 +177,7 @@ export function noteRefs(markdown: string, ownUrl?: OwnUrl): EmbedRefs {
  * wherever the note shows an image (migration 0208,
  * mantle_note_embed_refs), which is more than markdownToDoc lifts; the
  * gate checks a superset of those, so nothing it lets through can open an
- * item the member could not share (review F1).
+ * item the member could not share.
  */
 export function noteGateRefs(markdown: string, ownUrl?: OwnUrl): EmbedRefs {
   const refs = noteRefs(markdown, ownUrl);

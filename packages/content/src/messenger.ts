@@ -1,6 +1,5 @@
 /**
- * The messenger (Messenger V1, plan page d8954876, sections 3, 4, 8, 10, 11
- * and 20): direct chats and groups between the logins of one brain.
+ * The messenger: direct chats and groups between the logins of one brain.
  *
  * One function per action, each one transaction. The rules that hold for
  * every function:
@@ -19,8 +18,8 @@
  *    are read on the system pool for ids that read returned.
  *  - Not a participant reads as "not found", never "forbidden": a chat's
  *    existence is not told to an outsider. There is no Admin exception.
- *  - Nothing here starts LLM work: a mention is stored and enqueues nothing
- *    (Phase 3 adds the group turn), and no trigger spends.
+ *  - Nothing here starts LLM work: a mention is stored and enqueues
+ *    nothing, and no trigger spends.
  *  - Every write takes the login's budget here (takeBudget), where the
  *    routes and the MCP tools meet: one bucket per login, whichever path
  *    the call came by.
@@ -56,24 +55,24 @@ import { APP_TINTS, LUCIDE_ICON_PREFIX, isAppTint } from '@mantle/client-types/a
 import { projectAppIcon } from '@mantle/content-core/app-nav';
 import { workspaceAssistants } from './team-assistant';
 
-// ── Limits (plan section 14) ─────────────────────────────────────────────────
+// ── Limits ───────────────────────────────────────────────────────────────────
 
 export const MESSENGER_BODY_MAX = 8000;
 export const MESSENGER_PARTICIPANTS_MAX = 200;
 export const MESSENGER_TITLE_MAX = 200;
-/** A group's info (0343, plan section 24): what it is for and its rules. */
+/** A group's info (0343): what it is for and its rules. */
 export const MESSENGER_INFO_MAX = 2000;
 export const MESSENGER_PAGE_DEFAULT = 20;
 export const MESSENGER_PAGE_MAX = 100;
 export const MESSENGER_PREVIEW_CHARS = 140;
 export const MESSENGER_CLIENT_MSG_MAX = 100;
 export const MESSENGER_EMOJI_MAX = 32;
-/** "Online": active within this long (plan section 7; the people module's). */
+/** "Online": active within this long (the people module's). */
 export const MESSENGER_ONLINE_MS = PEOPLE_ONLINE_MS;
 /** Roles that hold a back-and-forth chat (mirrors listAssistantAgents). */
 const CHATTABLE_ROLES = ['assistant', 'responder', 'custom'] as const;
 
-/** A login's budget a minute (plan section 14): sends, and every other
+/** A login's budget a minute: sends, and every other
  *  write (a create, a read cursor, an edit, membership, pins). The routes'
  *  gate takes its own limits as well (server/web/lib/route-limits.ts,
  *  the same numbers); this one is the bucket an MCP call and a route
@@ -122,7 +121,7 @@ defineDomainError(MessengerRateLimitedError, {
   status: 429,
 });
 
-// ── The budget (plan section 14) ─────────────────────────────────────────────
+// ── The budget ───────────────────────────────────────────────────────────────
 
 type BudgetKind = 'send' | 'write';
 /** A fixed window per login and kind, in this process (as the routes' own
@@ -358,7 +357,7 @@ export const messengerIsAdmin = loginIsAdmin;
 export { loginVisibleTo, peopleVisibleTo };
 
 /**
- * The agents a login may chat with (plan sections 4 and 5): the assistant of
+ * The agents a login may chat with: the assistant of
  * each workspace it is a user of; for an Admin user every chat-capable
  * agent except the assistants of non-Admin workspaces it is not in. The
  * rule of server/web/lib/assistant-chat.ts listChatAgents, read here so the
@@ -511,8 +510,7 @@ export function requireGroupAdmin(conv: ConversationRow, me: ParticipantRow): vo
 }
 
 /** A login that leaves the chat, or is removed from it, is out of the
- *  chat's open call too (calls plan section 11: the gate holds for the
- *  room): its open stay closes here, in the same transaction, and the
+ *  chat's open call too (the gate holds for the room): its open stay closes here, in the same transaction, and the
  *  caller tells the room after commit (dropFromRoom). Answers the room's
  *  name when the chat has an open call, else null. */
 async function dropFromOpenCall(
@@ -783,7 +781,7 @@ export type MessengerSendInput = {
  * same clientMsgId from the same login in the same conversation stores one
  * row and answers it again (`created: false`). A mention names a live
  * participant; it moves that login's mention_seq and starts nothing
- * (Phase 1: no agent turn). The author's own read cursor moves to the new
+ * (no agent turn). The author's own read cursor moves to the new
  * seq.
  */
 export async function sendMessengerMessage(
@@ -1072,7 +1070,7 @@ export async function markMessengerRead(
   return { lastReadSeq: num(row.lastReadSeq) };
 }
 
-/** Clear for me (plan section 10): I see nothing up to the last seq;
+/** Clear for me: I see nothing up to the last seq;
  *  nobody else is affected; my unread resets. */
 export async function clearMessengerForMe(
   actor: MessengerActor,
@@ -1107,7 +1105,7 @@ export type MessengerPatchInput = {
 /** PATCH /api/messenger/c/:id: the title, the icon, the colour and the
  *  info (group admins; a change of any raises the room's participants
  *  event; a title or info change writes a system line too), and my own
- *  mute. The picture, the workspace and the agent are Phase 3 and 4. */
+ *  mute. The picture, the workspace and the agent are not set here. */
 export async function patchMessengerConversation(
   actor: MessengerActor,
   conversationId: string,
@@ -1178,7 +1176,7 @@ export async function patchMessengerConversation(
   });
 }
 
-/** Delete history for everyone (plan section 10): a group admin removes
+/** Delete history for everyone: a group admin removes
  *  every message of the group, or those older than `before`. A system line
  *  records it. A direct chat has no delete-for-everyone in V1.
  *
@@ -1238,7 +1236,7 @@ export async function deleteMessengerHistory(
   });
 }
 
-// ── Membership (plan section 4) ──────────────────────────────────────────────
+// ── Membership ───────────────────────────────────────────────────────────────
 
 /** Add logins to a group (a group admin). Each must be in the actor's
  *  directory; one who left comes back (and reads the group again). */
@@ -1261,7 +1259,7 @@ export async function addMessengerParticipants(
     const { conv, me } = await lockForActor(tx, actor, conversationId);
     requireGroupAdmin(conv, me);
     if (conv.agent_id) {
-      // Phase 3: a group with an agent takes only users of its workspace.
+      // A group with an agent takes only users of its workspace.
       throw new MessengerRefusedError(
         'This group has an agent; adding people arrives with agents in groups.',
       );
@@ -1814,8 +1812,7 @@ type ListRow = {
   fav_rank: number | null;
 };
 
-/** My people chats and groups with their unread arithmetic (plan section
- *  8): last seq I may read minus the greater of my read cursor and my clear,
+/** My people chats and groups with their unread arithmetic: last seq I may read minus the greater of my read cursor and my clear,
  *  never below zero. */
 async function myConversationRows(actor: MessengerActor, unreadOnly = false): Promise<ListRow[]> {
   return q<ListRow>(
@@ -1846,7 +1843,7 @@ type AgentThreadRow = {
   fav_rank: number | null;
 };
 
-/** My agent threads (assistant_messages, plan section 5): each agent I may
+/** My agent threads (assistant_messages): each agent I may
  *  chat with that has a thread with me or that I pinned, with the replies
  *  after my read cursor as unread. My own rows only (login_id). */
 async function myAgentThreadRows(actor: MessengerActor): Promise<AgentThreadRow[]> {
@@ -1969,7 +1966,7 @@ export async function listMessengerConversations(
 }
 
 /** GET /api/messenger/unread: the badge. People chats and groups (unmuted
- *  rows count too: muted chats count but never pop, plan section 8) plus
+ *  rows count too: muted chats count but never pop) plus
  *  the agent threads' replies after my cursor. */
 export async function messengerUnread(
   actor: MessengerActor,
@@ -2039,7 +2036,7 @@ export async function touchLoginPresence(loginId: string): Promise<void> {
     });
 }
 
-/** Raise a typing event (plan section 7): a NOTIFY, stored nowhere. Only a
+/** Raise a typing event: a NOTIFY, stored nowhere. Only a
  *  live participant's. */
 export async function messengerTyping(
   actor: MessengerActor,
@@ -2063,7 +2060,7 @@ export const MESSENGER_SEQ_DRIFT_SQL = `select c.id, c.last_seq, max(m.seq) as m
   from messenger_conversations c join messenger_messages m on m.conversation_id = c.id
  group by c.id, c.last_seq having max(m.seq) > c.last_seq`;
 
-// ── The via label (plan section 6, section 20 item 3) ────────────────────────
+// ── The via label ────────────────────────────────────────────────────────────
 
 /** The label and ref of the credential an MCP call came through: the OAuth
  *  client's name, the API key's name, the peer's name. Read on the system
@@ -2097,7 +2094,7 @@ export async function messengerViaFor(cred: {
   return null;
 }
 
-// ── Wait (messenger_wait, plan sections 6 and 12) ────────────────────────────
+// ── Wait (messenger_wait) ────────────────────────────────────────────────────
 
 /** messenger_wait's longest wait. */
 export const MESSENGER_WAIT_MAX_MS = 60_000;
@@ -2105,7 +2102,7 @@ export const MESSENGER_WAIT_MAX_MS = 60_000;
 type Listener = (payload: { c: string; seq: number | null; kind: string }) => void;
 const waitListeners = new Set<Listener>();
 let listening: Promise<void> | null = null;
-/** One open wait per credential (plan section 14): a new wait from the
+/** One open wait per credential: a new wait from the
  *  same credential ends the older one with nothing. */
 const openWaits = new Map<string, () => void>();
 

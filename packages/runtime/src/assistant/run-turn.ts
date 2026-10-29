@@ -229,7 +229,7 @@ export type RunAssistantTurnOptions = {
    *  runs (see docs/live-turn-streaming.md). Omit → no live stream; the poll
    *  fallback still works. */
   streamId?: string;
-  /** The login this turn serves (workspaces R3): stamped on its messages and
+  /** The login this turn serves: stamped on its messages and
    *  its trace. The owner's chat passes the signed-in login. */
   loginId?: string | null;
 };

@@ -16,11 +16,10 @@ import { statusBeforeDoneOf } from '../task-status';
 /** The kinds the tree serves on this brain, derived from the kind registry
  *  (@mantle/client-types/kinds, each kind's `tree.liveOrder`). A client
  *  offers the tree for these and keeps its older screen for the rest (the
- *  shell lists them). Apps joined in phase 3, their old layout document
- *  moved in by tree/apps-nav.ts. Recall joined with Recall v2 R3: the tree
- *  lists maps, never cards (cards are rows, not nodes). Pages joined in
- *  phase 7: a page is never the parent of another page any more; migration
- *  0210 filed the old sub-pages into folders. */
+ *  shell lists them). Apps: their old layout document is moved in by
+ *  tree/apps-nav.ts. Recall: the tree lists maps, never cards (cards are
+ *  rows, not nodes). Pages: a page is never the parent of another page;
+ *  migration 0210 filed the old sub-pages into folders. */
 export const TREE_LIVE_KINDS: readonly TreeKind[] = treeKindsBy('liveOrder');
 
 export function isTreeLiveKind(kind: TreeKind): boolean {

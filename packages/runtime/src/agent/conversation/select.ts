@@ -243,7 +243,7 @@ export function selectContentHits(rows: ContentRow[]): {
  * literal match that embeds poorly sits past it: the keyword arm (and the
  * rescue floor) found it, then the cutoff threw it away (docs/recall-eval.md,
  * "eval:route"). Gated by `eval:route` before it became the default.
- *  - `off`: the cutoff applies to every passage (before 2026-10-04).
+ *  - `off`: the cutoff applies to every passage.
  *  - `exempt`: a keyword-found passage skips the cosine cutoff; the order
  *    and the chunk_limit cut are unchanged.
  *  - `slots`: `exempt`, plus up to KEYWORD_SLOTS keyword-found passages past

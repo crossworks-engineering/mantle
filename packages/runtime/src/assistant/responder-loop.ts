@@ -1,5 +1,5 @@
 /**
- * Shared responder-loop CORE — the traced middle of one
+ * Shared responder-loop CORE: the traced middle of one
  * conversational turn, between "inbound persisted" and "deliver/persist the
  * reply". All three surfaces (web /assistant, Telegram, Team Chat) run this
  * one implementation:
@@ -220,7 +220,7 @@ export function loadContextStep(
  *  tool it dispatches reads through row level security for a below-admin
  *  agent, whoever called it. */
 export function runResponderLoop(opts: RunResponderLoopOptions): Promise<ResponderLoopResult> {
-  // A Telegram turn names the login its chat is paired to (W7d), as a web
+  // A Telegram turn names the login its chat is paired to, as a web
   // turn names its signed-in login: the surface carries it.
   return withAgentViewer(opts.agent, () => runResponderLoopAtLevel(opts), {
     loginId: surfaceLoginId(opts.surface),

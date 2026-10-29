@@ -2,13 +2,10 @@
  * Recall v2 — the NATIVE write path. A map is one `recall` item in the tree;
  * its cards are rows in `recall_nodes`, written here directly.
  *
- * This path replaced v1 (retired in R5), which compiled a page tree into
- * these rows and treated them as a build artifact, so its checks ran AFTER
- * the commit: a page that broke its map published anyway, the map kept
- * serving its last good rev, and the only sign was a note on every agent read.
- * The dev brain's registry served a two-week-old revision that way. So here
- * the checks run INSIDE the write and refuse it — nothing is ever served that
- * failed one, and there is no stale rev to explain.
+ * The checks run INSIDE the write and refuse it: nothing is ever served
+ * that failed one, and there is no stale revision to explain. (Checking
+ * after the commit, as a build step would, lets a broken map publish while
+ * the old revision keeps serving, with only a note on every agent read.)
  *
  * Every refusal is a `RecallWriteError` whose message names the fix, per this
  * repo's error style guide: the reader is usually an LLM mid-turn, and an
@@ -246,8 +243,8 @@ async function mapOr404(tx: Tx, ownerId: string, mapId: string) {
   const [map] = await tx
     .select()
     .from(recallMaps)
-    // A row with no tree item is a leftover page-built (v1) map, retired in
-    // R5 (migration 0209 deletes them): not a map this path knows.
+    // A row with no tree item is a leftover page-built map (migration 0209
+    // deletes them): not a map this path knows.
     .where(
       and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.id, mapId), isNotNull(recallMaps.nodeId)),
     )
@@ -1332,8 +1329,7 @@ export async function reorderRecallCards(
     // owner check below says anything.
     const map = await mapOr404(tx, ownerId, mapId);
     // The card order is the owner's (the map's shape a reader walks), as
-    // the recall_cards_reorder tool is owner-only on MCP (workspaces arch
-    // A1).
+    // the recall_cards_reorder tool is owner-only on MCP.
     if (actor.kind !== 'owner') {
       throw new RecallWriteError(
         'reorder_is_owners',

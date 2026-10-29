@@ -1,6 +1,6 @@
 /**
- * A Files folder delete that lifts what it holds one level up and MERGES
- * (folder plan section 5, Jason's option B, folder audit C2). Files are
+ * A Files folder delete that lifts what it holds one level up and MERGES.
+ * Files are
  * directories on disk, and a directory cannot be renamed onto an existing
  * one, so a merge moves children one by one through the Files package's
  * disk-safe operations (disk first, then the database), as move-copy.ts does.

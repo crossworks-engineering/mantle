@@ -1,5 +1,5 @@
 /**
- * The canvas data store (DWG phase 7a; the table: @mantle/db canvas_data,
+ * The canvas data store (the table: @mantle/db canvas_data,
  * migration 0338; the contract: @mantle/content-core/canvas-data). What a
  * Present canvas keeps through `mantle.data`, read and written for ONE login
  * on ONE canvas, both named by the caller (the route's session, an agent's

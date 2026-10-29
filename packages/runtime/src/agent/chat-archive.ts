@@ -542,8 +542,8 @@ function tagSlug(s: string): string {
 }
 
 /**
- * Run `fn` with the notes it makes landing in the agent's workspace (0269,
- * W7c): a digest or an archived chat summary of the Team assistant's chat is
+ * Run `fn` with the notes it makes landing in the agent's workspace (0269):
+ * a digest or an archived chat summary of the Team assistant's chat is
  * read in the Team workspace's turns, so it is made there, as the login's own
  * row (nodes.login_id). An agent with no workspace keeps the default home.
  */

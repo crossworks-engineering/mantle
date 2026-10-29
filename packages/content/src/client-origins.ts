@@ -1,5 +1,5 @@
 /**
- * The hosts this brain answers on (client logins, audit B25): an absolute URL
+ * The hosts this brain answers on: an absolute URL
  * to one of them inside a body is read as the brain's own path, so a link to
  * a team item written as `https://<brain>/n/<id>` is redacted like `/n/<id>`
  * (client-redact.ts `clientOwnUrl`). The localhost origin is what an agent

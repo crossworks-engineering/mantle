@@ -76,7 +76,7 @@ export async function guardFileCopyTo(
 }
 
 /** A Files folder COPIED under `destParentPath`: every file's copy takes the
- *  share where it lands, never the shares inside the source (review F1). */
+ *  share where it lands, never the shares inside the source. */
 export async function guardFolderCopyTo(
   ownerId: string,
   folderId: string,

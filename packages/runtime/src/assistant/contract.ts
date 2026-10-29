@@ -18,8 +18,8 @@ export const ASSISTANT_TURN_WORKFLOW = 'assistantTurnWorkflow';
 /** Team Chat turn workflow (external team-member surface). */
 export const TEAM_TURN_WORKFLOW = 'teamTurnWorkflow';
 
-/** The retired client chat turn workflow's name (client logins C4; the
- *  client portal and its chat were removed in workspaces W5c). No one enqueues
+/** The retired client chat turn workflow's name (there is no client portal
+ *  or client chat). No one enqueues
  *  it any more; server/api keeps a no-op stub registered under it so a client
  *  turn still queued, or in flight, on a box when it upgrades finishes
  *  cleanly instead of failing on every boot. */

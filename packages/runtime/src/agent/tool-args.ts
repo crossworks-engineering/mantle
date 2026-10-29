@@ -1,11 +1,11 @@
 /**
  * Pure parser for the `arguments` string an LLM emits on a tool call.
  *
- * Two failure modes the model can hit and we previously swallowed:
+ * Two failure modes the model can hit, which must never be swallowed:
  *
- *   1. Malformed JSON — used to leave `input = {}` and dispatch as if
- *      the call succeeded, so the model would re-issue the same broken
- *      call indefinitely.
+ *   1. Malformed JSON: dispatched as `input = {}` as if the call
+ *      succeeded, the model would re-issue the same broken call
+ *      indefinitely.
  *   2. A valid JSON value that isn't an object (null, an array, a
  *      bare number) — same outcome.
  *

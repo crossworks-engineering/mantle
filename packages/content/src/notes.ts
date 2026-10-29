@@ -39,7 +39,7 @@ export type NoteRow = {
   content: string;
   tags: string[];
   summary: string | null;
-  // Who reads it is its workspace grants (workspaces W5b2): the list's
+  // Who reads it is its workspace grants: the list's
   // chips (`workspaces`, `hasLink`), not a level on the row.
   /** A read-only snapshot copy of an accepted item (data.snapshot_of):
    *  nobody edits it, moves it out of its
@@ -104,7 +104,7 @@ type ListNotesOpts = {
   /** Leave out email attachments and items made from one (an API key
    *  without the Search area: access matrix M4, T4). */
   withoutEmailCopies?: boolean;
-  /** Only the notes this workspace reads (`?ws=`, W5b2): a checked id. */
+  /** Only the notes this workspace reads (`?ws=`): a checked id. */
   ws?: string;
 };
 
@@ -281,7 +281,7 @@ async function updateNoteOnce(
     ? <R>(body: (tx: NoteTx) => Promise<R>) =>
         withWriterHeads([id], (tx) => body(tx as unknown as NoteTx))
     : <R>(body: (tx: NoteTx) => Promise<R>) => db.transaction(body);
-  // An embed changes no one's access (W5b2): the database keeps the edges.
+  // An embed changes no one's access: the database keeps the edges.
   const updated = await open(async (tx) => {
     const [row] = await tx
       .update(nodes)

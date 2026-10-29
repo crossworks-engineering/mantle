@@ -1,7 +1,7 @@
 /**
  * The surface a heartbeat's turn names (fire.ts, the runToolLoop call in
- * fireAs), as one pure function so a test can ask it (the A8 surface cells
- * send what it answers).
+ * fireAs), as one pure function so a test can ask it (the surface matrix
+ * cells send what it answers).
  */
 import type { ToolHandlerContext } from '@mantle/tools';
 

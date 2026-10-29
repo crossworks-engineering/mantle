@@ -9,9 +9,7 @@
  * (server/web/lib/realtime.ts, admins only) and the push worker (admin
  * devices only). Notify-only: nothing listening can start LLM work.
  *
- * The review queue and team requests that the "needs you" summary also
- * counted were removed in workspaces W5c (review went; a team request is a
- * task on the Tasks board).
+ * There is no review queue; a team request is a task on the Tasks board.
  */
 import type { ProviderAlert } from '@mantle/client-types';
 import { countExtractBacklog, isAlertShown, listOpenProviderAlerts } from '@mantle/db';

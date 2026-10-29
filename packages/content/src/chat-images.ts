@@ -15,9 +15,6 @@
  *    not recognise. A member is never pointed at an admin route, and never
  *    made to load a picture from another site.
  *
- * The client chat (and its picture routes) went with the client portal in
- * workspaces W5c.
- *
  * What an image names is embed-refs.ts's reading (the one the redactors
  * use): the app's schemes (`media:`, `draw:`), any relative path with ONE
  * id, and an absolute URL into this brain read as its path. A

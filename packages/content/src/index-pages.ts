@@ -3,11 +3,9 @@
  *
  * Pages — the TipTap document surface: CRUD, blocks, mentions, embedded assets and the docx/email renderers.
  *
- * Split out of the 962-line index.ts on 2026-09-02 (audit, tier 3). The
- * export lists are UNCHANGED — this package's public surface is exactly what
- * it was. What changed is that adding one export now touches one small file
- * instead of the single barrel that saw 102 commits in 90 days, so two
- * sessions adding a DTO no longer collide. Curation is deliberate here: the
+ * One of the package index's export lists, split by area so adding one
+ * export touches one small file and two sessions adding a DTO do not
+ * collide. Curation is deliberate here: the
  * alternative, `export *`, would publish every module's internals (tuning
  * constants like EMBED_TEXT_PER_FILE, helpers like renderIdentityBlock) as
  * API nobody chose to promise.

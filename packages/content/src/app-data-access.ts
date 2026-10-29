@@ -1,5 +1,5 @@
 /**
- * The R and R/W pill (team apps Phase 3): what the VIEWER may do with an
+ * The R and R/W pill: what the VIEWER may do with an
  * app's data, worked out on the brain with the rule its database brokers
  * apply, so a client only shows it:
  *

@@ -14,10 +14,9 @@
  * space from then on (`mantle_member_space`, 0180), and the purge takes its
  * private items 30 days after `spaces.orphaned_at`.
  *
- * Since workspaces W6b (0267) a personal space holds no item on a brain on
- * workspaces, so this finds nothing there; it still settles a brain not yet
- * switched. Row writes only, on the caller's admin-pool transaction: the
- * personal-space change event went in W8d (nothing listened to it).
+ * A personal space holds no item on a brain on workspaces (0267), so this
+ * finds nothing there; it still settles a brain not yet switched. Row
+ * writes only, on the caller's admin-pool transaction.
  */
 import { and, eq, inArray, or } from 'drizzle-orm';
 import {

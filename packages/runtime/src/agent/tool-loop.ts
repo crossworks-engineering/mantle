@@ -407,7 +407,7 @@ export type ToolLoopArgs = ProviderCredential & {
    *  /pending UI can show which agent proposed each call. Optional —
    *  callers without an agent context (manual scripts) can skip it. */
   agentId?: string;
-  /** agents.workspace_id (workspaces W4b): an assistant of a workspace runs
+  /** agents.workspace_id: an assistant of a workspace runs
    *  the loop in a turn scope of that workspace (withAgentScope). Unset or
    *  null: a helper, in its caller's scope. */
   agentWorkspaceId?: string | null;
@@ -709,7 +709,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // True once the user hit Stop (the turn's AbortController fired). The signal
   // is already threaded into every LLM call (dispatchChat) so generation
   // halts; these loop-level checks are what stop the REST of the turn — tool
-  // execution and further rounds — which would otherwise run to completion
+  // execution and further rounds, which would otherwise run to completion
   // after a Stop. Delegated sub-agents run this same
   // loop with the same turnId, so they inherit every check.
   const turnAborted = () => currentTurnAbortSignal()?.aborted === true;

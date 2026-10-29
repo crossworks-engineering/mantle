@@ -2,7 +2,7 @@
  * Inbound email allowlist, derived from the contacts list. This is the SOLE
  * gate for what mail reaches the brain: a message is ingested iff its From
  * address matches a contact (an exact address OR a `@domain` wildcard), an
- * active login (users are contacts in user form, 2026-09-26), or one of the
+ * active login (users are contacts in user form), or one of the
  * owner's own account addresses. Everything else is silently rejected —
  * never fetched, never stored.
  *

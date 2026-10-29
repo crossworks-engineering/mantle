@@ -59,11 +59,11 @@ const BLOCK_TYPES = new Set([
   'tableCell',
   'tableHeader',
   'figure',
-  // Page link card (Phase 4a): its `title` attr is surfaced via
+  // Page link card: its `title` attr is surfaced via
   // LABEL_KEYS; this just gives it a trailing newline so adjacent cards'
   // titles don't run together in the indexed plaintext.
   'childPage',
-  // Folder index (folder phase 7): lists a folder's pages live for the
+  // Folder index: lists a folder's pages live for the
   // reader; nothing of it is the page's own text, so it indexes as nothing.
   'folderIndex',
   // Mermaid diagram atom — its `source` attr is surfaced via LABEL_KEYS.
@@ -76,8 +76,7 @@ const BLOCK_TYPES = new Set([
  *  does the same for Mermaid diagrams (label-dense, so usefully recallable). */
 const LABEL_KEYS = ['label', 'title', 'alt', 'text', 'name', 'filename', 'latex', 'source'];
 
-/** The marker an embed of another item indexes as (always fold, workspaces
- *  plan 5.3), or null when `node` embeds nothing (a URL image, a mention). */
+/** The marker an embed of another item indexes as (always fold), or null when `node` embeds nothing (a URL image, a mention). */
 function embedMarker(node: PMNode): string | null {
   const a = node.attrs ?? {};
   const set = (k: string) => typeof a[k] === 'string' && (a[k] as string).length > 0;
@@ -133,8 +132,8 @@ function render(node: PMNode | null | undefined, markers = false): string {
 /** Render a ProseMirror document object to plaintext. Returns '' for anything
  *  that isn't a non-null object. `embedMarkers`: an embed of another item (an
  *  uploaded image, a file embed, a drawing, a child page card) renders as a
- *  plain marker instead of its label, as the indexed text must (always fold,
- *  workspaces plan 5.3). */
+ *  plain marker instead of its label, as the indexed text must (always
+ *  fold). */
 export function docToText(doc: unknown, opts: { embedMarkers?: boolean } = {}): string {
   if (!doc || typeof doc !== 'object') return '';
   return render(doc as PMNode, opts.embedMarkers === true)

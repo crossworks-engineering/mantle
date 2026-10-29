@@ -337,7 +337,7 @@ export async function getDraw(ownerId: string, id: string): Promise<DrawDetail |
     .select({
       node: nodes,
       scene: draws.scene,
-      // The rule is in the query (W6a): a draft only where the caller may.
+      // The rule is in the query: a draft only where the caller may.
       draft: draftColumn<Record<string, unknown>>(draws.draftScene),
       draftUpdatedAt: draftColumn<Date>(draws.draftUpdatedAt),
       draftRev: draftColumn<number>(draws.draftRev),
@@ -762,7 +762,7 @@ async function commitDrawOnce(
       if (decision.conflict) {
         return { ok: false as const, conflict: true as const, rev: decision.rev };
       }
-      // An embed changes no one's access (W5b2): the database keeps the
+      // An embed changes no one's access: the database keeps the
       // edges a committed scene places.
       // A commit is a new scene: the whole index again (the kind registry's
       // `indexed`), announced when this transaction commits.

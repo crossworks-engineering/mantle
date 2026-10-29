@@ -135,7 +135,7 @@ export function symbolFileIds(tag: string): string[] {
 
 /**
  * A drawing's saved SVG with every embedded image the reader may not see
- * taken out (member logins: a team-level drawing may hold an admin image).
+ * taken out (a team-level drawing may hold an admin image).
  * exportToSvg puts each scene image in a `<symbol id="image-<fileId>">`
  * holding one `<image href="data:…">` (the bytes themselves), and draws it
  * with `<use href="#…">`. An `<image>` stays only inside a symbol whose file

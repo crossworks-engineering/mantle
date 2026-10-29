@@ -169,7 +169,7 @@ async function updatePageOnce(
       const doc = input.doc as Record<string, unknown>;
       // Its own words and a marker per embed; a mention or link of an item
       // not every workspace holding the page holds is "Private item"
-      // (level-text.ts). An embed changes no one's access (W5b2).
+      // (level-text.ts). An embed changes no one's access.
       const docText = await pageDocText(ownerId, await pageHolders(id, tx), doc, tx);
       await tx
         .update(pages)

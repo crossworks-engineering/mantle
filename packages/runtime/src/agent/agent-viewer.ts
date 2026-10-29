@@ -19,7 +19,7 @@
  *    other workspace never counts here); no login (a heartbeat) reads only
  *    (turnScopeWrites, shared with an approved pending call); a login with
  *    no user row in that workspace is refused;
- *  - the Admin assistant (W7a) runs its turn in a turn scope of the Admin
+ *  - the Admin assistant runs its turn in a turn scope of the Admin
  *    workspace too, like every other assistant: it reads what Admin holds,
  *    never another user's private workspace. It writes as an Admin user's
  *    mutating request does (the system pool, with the turn's scope set on
@@ -202,7 +202,7 @@ export async function agentTurnScoped(agent: ScopedAgent): Promise<boolean> {
 
 /**
  * Run `fn` in the agent's scope (see the module comment). `loginId` is the
- * login the turn answers (its R3 rows and its write rights), or null.
+ * login the turn answers (the rows it stamps and its write rights), or null.
  */
 export async function withAgentScope<T>(
   agent: ScopedAgent,
@@ -276,7 +276,7 @@ export async function withAgentScope<T>(
   }
   if (open) {
     if (open.ws.length === 1 && open.ws[0] === wsId) return fn();
-    // Inside a user's own scope (an Admin login's MCP call, W7a; a request
+    // Inside a user's own scope (an Admin login's MCP call; a request
     // scope): an assistant of one of its workspaces narrows it, never widens
     // it (runInTurnScope checks the narrowing again).
     if (!(currentRequestMode() && open.kind === 'user' && open.ws.includes(wsId))) {
@@ -390,8 +390,8 @@ export function withAgentViewer<T>(
 }
 
 /** The login an owner surface names (the web chat's signed-in login, an MCP
- *  connection's or an API key's), if any: whom the Admin assistant answers
- *  (W7a). Never read from model arguments. */
+ *  connection's or an API key's), if any: whom the Admin assistant answers.
+ *  Never read from model arguments. */
 export function ownerSurfaceLogin(surface: unknown): string | null {
   const s = surface as { kind?: string; loginId?: unknown } | null | undefined;
   if (

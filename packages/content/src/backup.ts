@@ -541,7 +541,7 @@ async function runBackupInner(
     console.error(`[backup] ⚠ app-database snapshot pass crashed: ${msg(err)}`);
   }
 
-  // Personal-space file bytes (member logins): plain files, written once per
+  // Personal-space file bytes: plain files, written once per
   // upload and never edited in place, so a tar is consistent enough. Same
   // timestamp + rotation. Loud but non-fatal, like the passes above.
   try {

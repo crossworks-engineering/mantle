@@ -37,7 +37,7 @@ import { copySqliteFile } from './snapshot-broker';
 import { flipTable, stageDoc, stagedTableWrite, tableRevisionPath } from './table-broker';
 
 /**
- * File-side plumbing for sqlite-native tables — the pieces
+ * File-side plumbing for sqlite-native tables, the pieces
  * tables.ts composes:
  *
  *   - the REGISTRY LOCK SPINE: every draft-create, draft write
@@ -150,8 +150,8 @@ export function loadDocsFromFile(
   // The draft the row points at (the store broker): none, no draft.
   const draftAbs = draftAbsOf(draftPath);
   // A commit in the other process can consume the draft between the exists
-  // check and the open — that's "no draft now", not an error.
-  // Below admin the draft is never read (member logins): a Library reader, a
+  // check and the open: that's "no draft now", not an error.
+  // Below admin the draft is never read: a Library reader, a
   // teammate reading a shared table, or a team-level agent sees the published
   // workbook only. Only the owner and the item's own space read the draft,
   // and `publishedOnly` keeps it from a reader on the admin pool who must not

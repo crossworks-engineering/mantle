@@ -98,9 +98,9 @@ export type ResponderLoopOverrides = {
 export type AssembleResponderTurnOptions = {
   ownerId: string;
   agent: Agent;
-  /** The login the turn answers (workspaces W4b): its scope's login. */
+  /** The login the turn answers: its scope's login. */
   loginId?: string | null;
-  /** The owner surface's signed-in login (W7a): whom the Admin assistant
+  /** The owner surface's signed-in login: whom the Admin assistant
    *  answers when `loginId` is not set. */
   ownerLoginId?: string | null;
   /** Pre-loaded profile preferences. Loaded by the caller because the web
@@ -279,8 +279,8 @@ async function assembleResponderTurnAtLevel(
   // another agent learned is not ours. docs/journal.md "Tiers".
   //
   // The learned lanes (tier 1, the identity block, working notes) are
-  // learned from the anchor's own thread and ride only a turn in it (W7
-  // integration fix): another user's turn gets none of them. The Journal
+  // learned from the anchor's own thread and ride only a turn in it:
+  // another user's turn gets none of them. The Journal
   // entries themselves are left as they are.
   const journalLive = journalTiersOf(memoryConfig) === 'live';
   const learnedLanes =

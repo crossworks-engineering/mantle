@@ -329,7 +329,7 @@ export async function liftDiff(
 }
 
 /**
- * A COPY of Files content landing under `destPath` (review F1): one file, or
+ * A COPY of Files content landing under `destPath`: one file, or
  * every file of a folder's subtree. Copies are new rows that take where they
  * land (the folder's rows and its home, else Admin); grants inside the
  * source do not come along. Listed: each source file whose copy would be

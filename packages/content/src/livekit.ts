@@ -1,6 +1,5 @@
 /**
- * The brain's one door to LiveKit (calls plan page 886126b4, sections 3,
- * 4, 9 and 11): the token mint, the room admin client and the webhook
+ * The brain's one door to LiveKit: the token mint, the room admin client and the webhook
  * verifier of livekit-server-sdk, behind a small interface so the call
  * store (messenger-calls.ts) and its tests never touch the SDK.
  *

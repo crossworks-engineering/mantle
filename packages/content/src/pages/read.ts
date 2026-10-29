@@ -32,7 +32,7 @@ type ListPagesOpts = {
   /** Leave out email attachments and items made from one (an API key
    *  without the Search area: access matrix M4, T4). */
   withoutEmailCopies?: boolean;
-  /** Only the pages this workspace reads (`?ws=`, W5b2): a checked id. */
+  /** Only the pages this workspace reads (`?ws=`): a checked id. */
   ws?: string;
 };
 
@@ -75,7 +75,7 @@ export async function listPages(
   opts: ListPagesOpts & { limit?: number; offset?: number } = {},
 ): Promise<PageRow[]> {
   // Only the node columns are used: selecting the whole pages row would also
-  // read the draft, which a below-admin viewer may not (member logins 0b).
+  // read the draft, which a below-admin viewer may not.
   const rows = await db
     .select({ nodes })
     .from(nodes)
@@ -123,7 +123,7 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
       node: nodes,
       doc: pages.doc,
       // An Admin user's request scope reads a draft only of an item it may
-      // edit (draftColumn: the rule is in the query, W6a).
+      // edit (draftColumn: the rule is in the query).
       draft: published ? sql<null>`null` : draftColumn<unknown>(pages.draftDoc),
       draftUpdatedAt: published ? sql<null>`null` : draftColumn<Date>(pages.draftUpdatedAt),
       draftRev: published ? sql<null>`null` : draftColumn<number>(pages.draftRev),
@@ -137,7 +137,7 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
     .limit(1);
   if (!row) return null;
 
-  // Lazy block-id backfill — legacy docs without block ids come back
+  // Lazy block-id backfill: legacy docs without block ids come back
   // through this read path enriched with stable per-block ids. ensureBlockIds
   // returns the SAME reference when ids are already present, so we use
   // reference inequality to detect "we just injected something" and persist
@@ -244,7 +244,7 @@ export type BlockIdRepairSeen = {
  * read path, never re-extracts (deliberately no notifyNodeIngested, no
  * version bump, no updatedAt touch: this is maintenance, not an edit).
  *
- * A compare-and-set (W8b): the row is written only while its doc, draft and
+ * A compare-and-set: the row is written only while its doc, draft and
  * draft_rev are still what the read saw. An autosave or commit that lands
  * between the read and this write wins, and the repair writes nothing; the
  * next read injects the ids again. Answers whether it wrote.

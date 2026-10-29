@@ -1,6 +1,5 @@
 /**
- * App identity (2026-10-02; docs/app-authoring-guide.md, "Who is running the
- * app"). Two things a running mini app gets about the person running it:
+ * App identity (docs/app-authoring-guide.md, "Who is running the app"). Two things a running mini app gets about the person running it:
  *
  *  - `host.me()`: `{ id, name, kind }` for display, baked into the frame
  *    document by the frame route (resolveAppViewer below).
@@ -16,8 +15,7 @@
  * `contact:<id>`, keyed with the app's random `app_databases.viewer_salt`
  * (migration 0217). Stable for one person inside one app, different in every
  * other app, and the app cannot reverse it. A login keeps its id when its
- * role changes (every login role hashes `login:`; so did the client role
- * while it was one, W8a removed it).
+ * role changes (every login role hashes `login:`).
  */
 import { createHmac, randomBytes } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';

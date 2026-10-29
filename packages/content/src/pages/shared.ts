@@ -34,7 +34,7 @@ export type PageDetail = PageRow & {
    *  and `commitPage` populate it; other write paths (create/update) leave it
    *  undefined and the client defaults to 0. */
   draftRev?: number;
-  /** The folder of the pages tree the page sits in (folder phase 7): a
+  /** The folder of the pages tree the page sits in: a
    *  `branch` id, or null at the top level. Only `getPage` populates it;
    *  write paths that synthesize a PageDetail from the row they just wrote
    *  leave it undefined. */
@@ -45,8 +45,8 @@ export function rowOf(n: Node): PageRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   return {
     id: n.id,
-    // Pages do not nest (folder phase 7): always null; kept on the wire for
-    // clients from before the tree, which built a hierarchy from it.
+    // Pages do not nest: always null; kept on the wire for older clients,
+    // which built a hierarchy from it.
     parentId: null,
     title: n.title,
     // Treat a blank icon as "none" so a cleared icon (stored as '') falls back

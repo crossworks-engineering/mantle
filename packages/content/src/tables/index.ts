@@ -18,16 +18,15 @@
  */
 
 /**
- * Split out of the 951-line tables.ts on 2026-09-02 (audit, tier 3) into
- * tables/{shared,workbook,read,write,draft}.ts. The dependency order is
+ * Split into tables/{shared,workbook,read,write,draft}.ts. The dependency
+ * order is
  * one-way — shared <- workbook, shared <- read, shared <- write,
  * {shared,workbook} <- draft — so no seam imports this barrel.
  *
  * Curated, not `export *`: `@mantle/content/tables` is a public package
- * sub-path, and the split forced a dozen internals (rowOf, detailOf, docsOf,
- * assertTableWritable, the workbook guards, …) to become cross-module
- * exports. None of them is API. The list below is UNCHANGED from the single
- * file it replaces; `tables-exports.test.ts` pins it.
+ * sub-path, and a dozen internals (rowOf, detailOf, docsOf,
+ * assertTableWritable, the workbook guards, …) are cross-module exports.
+ * None of them is API; `tables-exports.test.ts` pins the list below.
  */
 
 export type {

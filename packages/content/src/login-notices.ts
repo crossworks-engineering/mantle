@@ -11,9 +11,8 @@
  *
  *  - chat: the reply as the reader's own chat route returns it (pictures of
  *    items the reader may not read are already out, chat-images.ts). A
- *    member's only: the client chat went with the client portal (W5c).
- *    The reply is a row of the member's own thread in assistant_messages
- *    (0269, W7c), with the assistant's name as the title.
+ *    member's only (there is no client chat). The reply is a row of the
+ *    member's own thread in assistant_messages (0269), with the assistant's name as the title.
  *  - review: the author's own item. Its title while an admin holds it is
  *    the title it had when it was taken, never the admin's working title.
  *  - comment: no longer raised to anyone (a 'comment' payload parses to

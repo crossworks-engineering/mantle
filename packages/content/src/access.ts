@@ -1,11 +1,9 @@
 /**
- * What is left of the levels (member logins Phase 0b): nothing decides access
- * by a level any more. Brain items are read by their grants (workspaces
- * W5b2), and since workspaces W7b agents and tool groups have no level
+ * What is left of the levels: nothing decides access by a level. Brain
+ * items are read by their grants, and agents and tool groups have no level
  * either: an assistant reads the workspace it answers in, and a tool group
  * is system-wide or Admin only (tool_groups.admin_only, the manifest's
- * adminOnly groups). The level columns are frozen, archived by migration
- * 0268, and dropped in W8.
+ * adminOnly groups). The level columns are archived by migration 0268.
  */
 import { WORKSPACE_NODE_TYPES } from '@mantle/db';
 import { revokeShareTree } from './shares';
@@ -36,7 +34,7 @@ export type UnshareItemResult = {
 /**
  * Turn an item's link or contact share off (the share DELETE route,
  * `node_unshare`, `page_unshare`): a plain revoke. Who reads the item is its
- * grants, which a link never changed since workspaces W5b2. Revokes by share
+ * grants, which a link never changes. Revokes by share
  * id, so an expired link is retired too.
  */
 export async function unshareItem(ownerId: string, shareId: string): Promise<UnshareItemResult> {

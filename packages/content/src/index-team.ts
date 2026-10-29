@@ -2,13 +2,11 @@
  * @mantle/content · team
  *
  * Team: member chat threads, requests, membership, invites, levels, personal
- * spaces and share links (the team-code portal and forum retired in Phase 6).
+ * spaces and share links.
  *
- * Split out of the 962-line index.ts on 2026-09-02 (audit, tier 3). The
- * export lists are UNCHANGED — this package's public surface is exactly what
- * it was. What changed is that adding one export now touches one small file
- * instead of the single barrel that saw 102 commits in 90 days, so two
- * sessions adding a DTO no longer collide. Curation is deliberate here: the
+ * One of the package index's export lists, split by area so adding one
+ * export touches one small file and two sessions adding a DTO do not
+ * collide. Curation is deliberate here: the
  * alternative, `export *`, would publish every module's internals (tuning
  * constants like EMBED_TEXT_PER_FILE, helpers like renderIdentityBlock) as
  * API nobody chose to promise.
@@ -184,7 +182,7 @@ export {
   isFormerClientLogin,
 } from './former-clients';
 
-// The plain unshare (agent and tool-group levels went in workspaces W7b).
+// The plain unshare (agents and tool groups have no level).
 export { AccessError, isWorkspaceKind, unshareItem, type UnshareItemResult } from './access';
 export {
   defaultWorkspaceAssistant,
@@ -192,7 +190,7 @@ export {
   workspaceAssistants,
   type WorkspaceAssistant,
 } from './team-assistant';
-// What an item embeds (W5b2: an embed never changes who reads anything).
+// What an item embeds (an embed never changes who reads anything).
 // LoweredItem is a deprecated type: callers go in the writers/links helpers.
 export { EMBEDDING_KINDS, drawPlacedFileIds, type LoweredItem } from './embed-closure';
 export {
@@ -207,7 +205,7 @@ export {
   type LibraryRow,
 } from './member-library';
 export { acceptedItemForCopy, type AcceptedItem, type AcceptedRow } from './member-accepted';
-// Paging one list merged from several sources (moved out of member-items, W8d).
+// Paging one list merged from several sources.
 export { listSortCompare, mergeSorted, type ListSort, type PagedSource } from './list-merge';
 export {
   SNAPSHOT_TABLE_OWNER,

@@ -274,7 +274,7 @@ export async function recordTurn(args: {
    *  currently the device `{ location }` ping the companion app attaches to
    *  inbound turns. Omitted ⇒ left at the column default. */
   data?: Record<string, unknown> | null;
-  /** The login whose thread this turn is in (workspaces R3, 0269). With a
+  /** The login whose thread this turn is in (0269). With a
    *  login actor bound it is that login (another is refused:
    *  @mantle/db threadLoginFor); unset with none, the database stamps the
    *  anchor's (the owner's thread): no chat row is left without a login,
@@ -580,8 +580,8 @@ async function recallOlderExchanges(o: {
 }
 
 /**
- * Load the turn's retrieval context AT THE AGENT'S LEVEL (member logins Phase
- * 0b): a team-level agent's retrieval runs on the team viewer role, so row
+ * Load the turn's retrieval context AT THE AGENT'S LEVEL: a team-level
+ * agent's retrieval runs on the team viewer role, so row
  * level security decides what it reads, whoever the caller is.
  */
 export function loadConversationContext(
@@ -613,9 +613,9 @@ async function loadConversationContextAtLevel(args: {
    *  passes it: below admin the owner's assistant_messages is not readable,
    *  and a team turn without it enriches nothing. */
   recentTurnTexts?: readonly string[];
-  /** The login the turn answers (workspaces W4b): its scope's login. */
+  /** The login the turn answers: its scope's login. */
   loginId?: string | null;
-  /** The owner surface's signed-in login (W7a): whom the Admin assistant
+  /** The owner surface's signed-in login: whom the Admin assistant
    *  answers when `loginId` is not set. */
   ownerLoginId?: string | null;
   /** false: the caller reads the thread itself (the workspace turn engine,
@@ -635,11 +635,11 @@ async function loadConversationContextAtLevel(args: {
   // entity names and the relation graph (learned from every source, email
   // included), the owner's own chat history and Journal. Those arms are
   // skipped, not left to fail on a permission error. The Admin assistant
-  // (W7a: a turn scope of Admin) reads them: the scope holds Admin.
+  // (a turn scope of Admin) reads them: the scope holds Admin.
   const belowAdmin = !(await scopeHoldsAdmin());
-  // Whose thread this turn reads (0269, W7c): the login it answers, else the
+  // Whose thread this turn reads (0269): the login it answers, else the
   // owner surface's login, else the anchor (a turn that answers no login acts
-  // for the owner, W7a). Every history, thread and digest read names it.
+  // for the owner). Every history, thread and digest read names it.
   const threadLogin = args.loginId ?? args.ownerLoginId ?? ownerId;
   // Below Admin a turn reads its own login's thread only (row security says
   // the same); a turn that answers no login there reads none.
@@ -830,7 +830,7 @@ async function loadConversationContextAtLevel(args: {
     // The recency-adjusted ranking distance, also selected for the trace.
     const factRankDist = sql<number>`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`;
     let factPooled = 0;
-    // A workspace turn scope (W4b): the small-scope exact path (the scope's
+    // A workspace turn scope: the small-scope exact path (the scope's
     // items' facts and its own chat facts, by true distance) or the HNSW
     // order pinned (scope.ts). The row rule decides what is read either way.
     const inWorkspace = currentWorkspaceScope() !== null;
@@ -847,7 +847,7 @@ async function loadConversationContextAtLevel(args: {
         // Below admin the pool JOINS the visible source nodes: with a selective
         // row rule the HNSW scan alone stops short (spike: recall@50 0.54 for
         // a client-level role); the join makes it an exact search over the
-        // visible facts (recall 1.00, plan section 14b).
+        // visible facts (recall 1.00).
         const vecDist = sql`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`;
         const pooled = (await tx.execute(
           inWorkspace
@@ -1003,7 +1003,7 @@ async function loadConversationContextAtLevel(args: {
     // The salience + recency ranking distance, also selected for the trace.
     const hitRankDist = sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`;
     let hitPooled = 0;
-    // A workspace turn scope (W4b): exact over the scope's items when small,
+    // A workspace turn scope: exact over the scope's items when small,
     // else the HNSW order pinned (scope.ts).
     const contentExact = currentWorkspaceScope() !== null ? await smallScope('nodes') : false;
     const rows = await withHnswPool(
@@ -1675,8 +1675,8 @@ async function loadConversationContextAtLevel(args: {
   }
 
   // ─── Conversation digests for THIS thread (per agent and login) ─────────
-  // Filtered by the digest note's data.agent_id and data.login_id (0269,
-  // W7c): a digest summarises one login's turns and is read only for that
+  // Filtered by the digest note's data.agent_id and data.login_id (0269): a
+  // digest summarises one login's turns and is read only for that
   // login (nodes.login_id says the same to row security).
   const digestRows =
     digestLimit > 0 && readsThread

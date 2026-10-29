@@ -581,7 +581,7 @@ export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): 
   if (existing) clearTimeout(existing.timer);
   const firstAt = existing?.firstAt ?? Date.now();
   const wait = exportSyncDelay(firstAt, Date.now());
-  // The timer runs as system(app-export), whoever scheduled it (F9), and on
+  // The timer runs as system(app-export), whoever scheduled it, and on
   // the system pool outside the scheduler's scope (exportSyncStep).
   const timer = setTimeout(() => void runScheduledSync(ownerId, appNodeId, key), wait);
   // Never hold a process open for a pending sync (dev servers, tests, CLIs).

@@ -65,8 +65,7 @@ export function envMbBytes(
 }
 
 /**
- * Prune one node's pruneable history rows in ONE statement (apps audit
- * 2026-10-02, items 3, 5 and 11): of the rows with one of `triggers`, keep
+ * Prune one node's pruneable history rows in ONE statement: of the rows with one of `triggers`, keep
  * the newest `keep`, and of those only as many as fit in `maxBytes` (the
  * newest always stays, whatever its size). Returns the removed rows' file
  * paths: the caller removes the files after the rows.

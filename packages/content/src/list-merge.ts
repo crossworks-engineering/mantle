@@ -1,8 +1,7 @@
 /**
  * Paging one list merged from several sources (item-list alignment): the
  * brain's rows and the caller's own private rows in one list
- * (server/web/lib/admin-private-rows.ts). Moved unchanged out of the
- * member's one list (member-items.ts, removed in workspaces W8d).
+ * (server/web/lib/admin-private-rows.ts).
  */
 
 /** One source of a merged list: a page of its rows in the list's order, and

@@ -3,9 +3,7 @@
  * `team_request_create` as a task tagged `team-request` carrying a
  * `data.teamRequest` provenance block (contactId, contactName,
  * threadMessageId, attachments); an admin works it on the Tasks board. This
- * module holds the open count. The Team admin Requests list and its reply
- * were removed in workspaces W5c; the unused caps and the client request
- * ledger helpers in W8d.
+ * module holds the open count.
  */
 import { and, count, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';

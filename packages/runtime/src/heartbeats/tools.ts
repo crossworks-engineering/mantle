@@ -94,8 +94,8 @@ async function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {
  * of the caller's scope (or of the scope its area work left for the system
  * pool), else the login its owner surface names; null for the brain owner
  * (the anchor login) and for a call that names none (the anchor's stdio
- * MCP). With no workspace scope the login is its turn stamp's (W7
- * integration fix 3, L3), so heartbeat_fire still answers the real caller.
+ * MCP). With no workspace scope the login is its turn stamp's, so
+ * heartbeat_fire still answers the real caller.
  */
 function callerLogin(ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>): string | null {
   const scope = currentWorkspaceScope() ?? scopeLeftForSystem();
@@ -307,7 +307,7 @@ const heartbeat_update_state: BuiltinToolDef = {
       heartbeat_id: target.hb.id,
       patched_keys: patchedKeys,
     });
-    // The merged state goes back to the heartbeat's maker only (F2): a
+    // The merged state goes back to the heartbeat's maker only: a
     // login that is not the maker (a firer of another login's heartbeat, the
     // brain owner on a heartbeat another login made) learns the keys it
     // patched, never the maker's other keys.

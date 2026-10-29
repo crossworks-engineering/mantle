@@ -1,6 +1,5 @@
 /**
- * Apps for members (member logins Phase 4b, plan v3.1 section 4a; workspaces
- * W5b2). A member RUNS apps; a member never creates, edits, builds,
+ * Apps for members. A member RUNS apps; a member never creates, edits, builds,
  * publishes, shares or deletes one. What a member may run: an app a
  * workspace of theirs holds (its grant), with a green PUBLISHED build. Never
  * a draft. A public link tells nothing about who else runs it: a member with

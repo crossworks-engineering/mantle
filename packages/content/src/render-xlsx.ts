@@ -11,10 +11,9 @@
  *
  * ## A workbook, not a worksheet
  *
- * A Mantle table is a WORKBOOK: since Tables v2.1 every sheet of an imported
- * spreadsheet becomes a tab of the same table. The export used to flatten that
- * to a single worksheet, so downloading a six-tab table silently gave you one
- * tab. `renderXlsxWorkbook` takes the tabs and writes one worksheet each;
+ * A Mantle table is a WORKBOOK: every sheet of an imported spreadsheet
+ * becomes a tab of the same table. Flattened to a single worksheet, a
+ * six-tab table would download as one tab, silently. `renderXlsxWorkbook` takes the tabs and writes one worksheet each;
  * `renderXlsx` is the one-tab convenience wrapper it is built from.
  *
  * ## Styling
