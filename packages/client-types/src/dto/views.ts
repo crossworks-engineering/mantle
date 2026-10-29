@@ -782,15 +782,15 @@ export type AgentTelegramChat = {
   label: string;
   status: 'pending' | 'allowed' | 'denied';
   lastMessageAt: string | null;
-  /** The user the chat is paired to (workspaces W7d), null when none
+  /** The user the chat is paired to, null when none
    *  (pending, blocked, or its login is gone). */
   loginId: string | null;
   /** That user's name, else email, for the list; null with no login. */
   pairedTo: string | null;
 };
 
-/** One of the signed-in user's own paired Telegram chats (workspaces W7d,
- *  GET /api/telegram/my-chats). */
+/** One of the signed-in user's own paired Telegram chats (GET
+ *  /api/telegram/my-chats). */
 export type MyTelegramChat = {
   id: string;
   telegramChatId: string;
@@ -802,7 +802,7 @@ export type MyTelegramChat = {
   lastMessageAt: string | null;
 };
 
-/** A chat on a bot the signed-in user moderates (workspaces W7d, GET
+/** A chat on a bot the signed-in user moderates (GET
  *  /api/telegram/moderated-chats): a Moderator of the bot's assistant's
  *  workspace, or an Admin user with the users area, blocks or unpairs it. */
 export type ModeratedTelegramChat = AgentTelegramChat & {
@@ -822,20 +822,20 @@ export type TelegramPairPreview = {
   /** True when the chat is already paired to this user. */
   already: boolean;
   /** The Telegram chat: `label` is its checked @username, else "chat <id>"
-   *  (W7d+e: never the free title); `title` is its free title, at most 64
+   *  (never the free title); `title` is its free title, at most 64
    *  characters, or null: show it as plain text only, never as markup or a
    *  link; and its id. */
   chat: { label: string; title: string | null; telegramChatId: string };
   /** The bot the chat is on (its @username). */
   bot: { name: string };
   agentName: string | null;
-  /** Send back with the confirm (required since W7d+e): it then pairs this
+  /** Send back with the confirm (required): it then pairs this
    *  chat and no other, for this code, within ten minutes of the preview. */
   previewToken: string;
 };
 
-/** What POST /api/telegram/pair answers with `confirm: true` (workspaces
- *  W7d): the chat is paired to this user. */
+/** What POST /api/telegram/pair answers with `confirm: true`: the chat is
+ *  paired to this user. */
 export type TelegramPairResult = {
   ok: true;
   /** True when the chat was already paired to this user (no change). */

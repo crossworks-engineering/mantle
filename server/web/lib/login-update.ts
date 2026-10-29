@@ -90,7 +90,7 @@ export type LoginChangeDone = {
 
 /** The login row a change is about, or null. Its `role` is the one Admin
  *  membership gives (loginRole: 'admin' for a user of the live
- *  Admin workspace, else 'member'; S8b), never the column: a change is
+ *  Admin workspace, else 'member'), never the column: a change is
  *  decided from membership, so a row whose column drifted is put right by
  *  the role change that names what membership should be. */
 export async function loadLoginTarget(id: string): Promise<LoginTarget | null> {
@@ -183,7 +183,7 @@ export async function applyLoginChange(
     }
     // The contact of a former client (archived by 0272) is not linked to
     // another login: that would bring the client back as a member by itself,
-    // as an invite or a new login on it would (W8a leftover, closed in W8d).
+    // as an invite or a new login on it would.
     if (await isFormerClientContact(change.contactId, db, targetId)) {
       return {
         ok: false,

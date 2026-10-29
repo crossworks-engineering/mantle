@@ -44,7 +44,7 @@ export async function withHnswPool<T>(
   fn: (tx: Tx) => Promise<T>,
   opts: {
     /**
-     * Keep the planner on the HNSW order (workspaces W3). Under a workspace
+     * Keep the planner on the HNSW order. Under a workspace
      * scope the row rule's selectivity is unknown at plan time (the scope is
      * a run-time setting), so the planner guesses a tiny share of nodes and
      * picks "every node, then its chunks, then sort": 0.6 to 2.7 s on a 50k

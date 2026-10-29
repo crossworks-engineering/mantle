@@ -55,7 +55,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   }
   const contactId = share.contactId ?? null;
 
-  // Capped (apps audit S2): a chunked body declares no length for the gate
+  // Capped: a chunked body declares no length for the gate
   // to refuse, so the read itself stops at the ceiling (413).
   const parsed = AppDbBody.safeParse(await readJson(req, { empty: null }));
   if (!parsed.success)
@@ -127,11 +127,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     });
   }
 
-  // One statement at a time per link (client tier audit I1).
+  // One statement at a time per link.
   const caller = {
     callerKey: `share:${share.id}`,
     viewer: contactId ? { kind: 'contact' as const, contactId } : { kind: 'public' as const },
-    // Rows only (access matrix audit, M1): below admin a write changes rows,
+    // Rows only: below admin a write changes rows,
     // never the schema, a trigger or a view; the schema is the author's
     // (app_db_schema_set). The same authorizer as the MCP app_data_write.
     dataOnly: true,

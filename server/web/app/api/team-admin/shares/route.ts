@@ -1,10 +1,9 @@
 /**
  * GET /api/team-admin/shares — the Shared-links tab: every active share,
  * shaped exactly as SharedLinksPanel expects (the old SSR page's mapping),
- * no `level` since workspaces W5b2 (a link does not follow one). `retired`
- * (the old client links C3 retired) is always [] since workspaces W5c: the
- * client portal is gone, and a retired link answers a plain 410. The field
- * stays so the wire shape does not change.
+ * no `level` (a link does not follow one). `retired` (the old client links)
+ * is always []: the client portal is gone, and a retired link answers a
+ * plain 410. The field stays so the wire shape does not change.
  */
 import type { RetiredClientLinkRow, SharedLinkRow } from '@mantle/client-types';
 import { NextResponse } from '@/server/http-compat';

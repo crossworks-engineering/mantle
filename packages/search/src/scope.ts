@@ -12,7 +12,7 @@
  *
  * "Small" is in ROWS of the table the arm searches, not in items: a scope
  * of 400 sermons holds 13,000 chunks and 34,000 windows, and the exact
- * search costs per row (the W3 bench: about 5 microseconds a chunk, so
+ * search costs per row (measured: about 5 microseconds a chunk, so
  * 15,000 chunks is about 70 ms). The scope's items (on the GIN index on
  * nodes.read_ws) and then their rows in the searched table (by node id) are
  * counted once per transaction, each bounded at the threshold + 1. Over the
@@ -137,7 +137,7 @@ export async function smallScope(table: ScopeTable = 'nodes'): Promise<boolean> 
   if ((await count('nodes')) > max) return false;
   // The exact path filters each item's rows by `node_id = any(<the scope's
   // items>)`, checked per item: its cost grows with the square of the item
-  // count (W6a: an Admin user's 1,600 items took 400 ms on a dev copy). A
+  // count (an Admin user's 1,600 items took 400 ms on a dev copy). A
   // scope with more items than scopeExactMaxItems() takes the HNSW path.
   if ((await count('nodes')) > scopeExactMaxItems()) return false;
   return table === 'nodes' || (await count(table)) <= max;

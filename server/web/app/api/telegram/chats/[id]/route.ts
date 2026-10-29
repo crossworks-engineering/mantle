@@ -52,7 +52,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!chat) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
 
   // If setting an override, verify the agent belongs to this owner, and that
-  // a paired chat's user is a user of its workspace too (workspaces W7d): a
+  // a paired chat's user is a user of its workspace too: a
   // turn runs as that user, in the workspace of every assistant the chat
   // runs as, so an override never moves a user's chat into a workspace they
   // are not in.

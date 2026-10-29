@@ -132,7 +132,7 @@ export const PEER_RISKY_TOOL_PREFIXES: readonly string[] = [
   'peer_',
 ];
 
-// ── One surface for every login (workspaces W7b) ─────────────────────────────
+// ── One surface for every login ──────────────────────────────────────────────
 
 /** The connection as the builtins see it: how it connected and its Write
  *  switch (app_data_*), what the audit names it by, and whether it is
@@ -352,7 +352,7 @@ export function connectorCheck(caller: McpCaller) {
  * owner, who alone deletes it for good.
  *
  * The caller's role is its bound login's Admin membership (peer-access.ts
- * asks loginIsAdmin since S8b; the role column follows the same membership).
+ * asks loginIsAdmin; the role column follows the same membership).
  * A named login is what app_delete, app_create, the share, Telegram,
  * replay, runs, pending and delegation builtins act for; the anchor never
  * leaves Admin (the removal definer keeps it), so its peer's app_delete

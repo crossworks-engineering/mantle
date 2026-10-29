@@ -1,6 +1,6 @@
 /**
- * Built app bundles held as text in memory, by storage key (apps audit P3).
- * Opening an app read its bundle (and CSS sidecar) back from object storage on
+ * Built app bundles held as text in memory, by storage key, so opening an
+ * app does not read its bundle (and CSS sidecar) back from object storage on
  * every frame load. The keys are content-addressed (sha256 of the bytes), so a
  * key's text never changes and can be kept without any invalidation: a new
  * build is a new key. Bounded by total characters; the least recently used

@@ -1,6 +1,6 @@
 /**
  * GET /api/telegram/my-chats: the signed-in user's own paired Telegram chats
- * (workspaces W7d), `{ chats: MyTelegramChat[] }`. Any login; a client has
+ * `{ chats: MyTelegramChat[] }`. Any login; a client has
  * none.
  */
 import { NextResponse } from '@/server/http-compat';

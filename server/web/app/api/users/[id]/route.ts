@@ -38,8 +38,8 @@ const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z
   .object({
     displayName: z.string().trim().max(120).nullable().optional(),
-    /** Never 'member' on the anchor or yourself (there is no client role
-     *  since workspaces W8a). */
+    /** Never 'member' on the anchor or yourself (there is no client
+     *  role). */
     role: LoginRoleSchema.optional(),
     /** true = the login cannot sign in or use a session it holds. */
     disabled: z.boolean().optional(),

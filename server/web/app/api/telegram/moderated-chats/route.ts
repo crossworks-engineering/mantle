@@ -1,6 +1,6 @@
 /**
  * GET /api/telegram/moderated-chats: the chats of every Telegram bot the
- * signed-in user moderates (workspaces W7d), `{ chats:
+ * signed-in user moderates, `{ chats:
  * ModeratedTelegramChat[] }`: bots whose assistant's workspace they are a
  * Moderator of, or every bot for an Admin user with the users area. They
  * may block or unpair these (POST /api/telegram/chats/:id/block|unpair),

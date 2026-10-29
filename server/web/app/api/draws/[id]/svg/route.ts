@@ -69,7 +69,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       'content-security-policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'",
       'x-content-type-options': 'nosniff',
       // A member's bytes were read in its scope, which a Moderator may
-      // narrow at any time: a cache revalidates before reuse (W7d+e).
+      // narrow at any time: a cache revalidates before reuse.
       'Cache-Control': reader.member ? CACHE_CONTROL.privateRevalidate : CACHE_CONTROL.private5m,
     },
   });

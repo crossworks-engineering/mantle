@@ -176,7 +176,7 @@ export async function auditsSettled(): Promise<void> {
  *  route-handler context). The ip is the hop our proxy appended to
  *  X-Forwarded-For (`clientIp`, as the rate limiter keys it), never the
  *  leftmost entry: the caller writes that one, so an audit row naming it
- *  could be forged (client logins audit B16). */
+ *  could be forged. */
 export async function requestMeta(): Promise<{ ip: string | null; userAgent: string | null }> {
   return metaOf(await headers());
 }

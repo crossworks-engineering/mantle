@@ -201,8 +201,8 @@ export function registerRoutes(
   given?: ReadonlyMap<string, RouteRow> | Readonly<{ standIn: boolean }>,
   opts: Readonly<{ standInModules?: boolean }> = {},
 ): void {
-  // Every route declares its policy, one for each method it exports (S9
-  // part 2: here, so it holds for every caller, the app's boot and a
+  // Every route declares its policy, one for each method it exports (here,
+  // so it holds for every caller, the app's boot and a
   // test's hand-built manifest alike; fail closed). A test's routes on
   // patterns the app serves take the real declarations
   // (server/test-support.ts withRealPolicies), the loader's own a stand-in

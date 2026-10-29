@@ -36,7 +36,7 @@ export interface ApprovalDecisionResult {
  */
 export interface PollHandlers {
   /** Apply an approve/reject decision for the user who taps the button:
-   *  the login the chat is paired to (workspaces W7d), never the callback's
+   *  the login the chat is paired to, never the callback's
    *  own sender id. */
   onApproval?: (input: {
     ownerId: string;

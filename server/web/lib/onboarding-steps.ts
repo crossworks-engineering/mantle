@@ -639,8 +639,7 @@ export async function testKey(userId: string, service: string): Promise<KeyTest>
 }
 
 /** `configuredBy`: the login running the step (null for the anchor); it
- *  answers for the Azure route's key-to-endpoint pairing, if any (W7
- *  integration fix). */
+ *  answers for the Azure route's key-to-endpoint pairing, if any. */
 export async function provision(userId: string, configuredBy: string | null) {
   const result = await provisionDefaults(userId, { configuredBy });
   await savePreferencesFor(userId, { onboardingStep: 'sanity' });

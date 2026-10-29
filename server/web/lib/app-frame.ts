@@ -19,7 +19,7 @@ import { feature } from '@mantle/config';
 import { BundleTextCache } from './bundle-text-cache';
 import { CACHE_CONTROL } from './cache-control';
 
-/** Bundle and CSS text by content-addressed key (apps audit P3): one read
+/** Bundle and CSS text by content-addressed key: one read
  *  from object storage per build per process, not one per frame load. */
 const bundleText = new BundleTextCache();
 const loadText = (key: string) =>

@@ -77,7 +77,7 @@ async function findReminderChat(
         and(
           eq(telegramChats.userId, ownerId),
           // The owner's events remind the owner (the anchor login): only a
-          // chat paired to it (workspaces W7d), never another user's.
+          // chat paired to it, never another user's.
           eq(telegramChats.loginId, ownerId),
           eq(telegramChats.chatType, 'private'),
           eq(telegramChats.allowlistStatus, 'allowed'),

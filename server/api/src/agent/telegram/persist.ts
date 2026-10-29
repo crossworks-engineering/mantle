@@ -48,7 +48,7 @@ export async function persistOutbound(args: {
               .insert(nodes)
               .values({
                 ownerId,
-                // Read only by the chat's login (W7d, nodes.login_id).
+                // Read only by the chat's login (nodes.login_id).
                 loginId,
                 type: 'telegram_message',
                 title: titleStem,
@@ -96,7 +96,7 @@ export async function persistOutbound(args: {
     await recordTurn({
       ownerId,
       agentId: agent.id,
-      // The chat's own login (R3, W7d).
+      // The chat's own login.
       loginId,
       direction: 'outbound',
       text: reply,

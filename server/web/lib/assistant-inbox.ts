@@ -55,7 +55,7 @@ export async function markAssistantRead(
  * (`agentIds`; every chat-capable agent when omitted, the Admin user's
  * inbox) with its own thread's latest message preview and unread count
  * (outbound messages newer than its read cursor). Sorted by most-recent
- * activity. Never another login's thread (0269, W7c).
+ * activity. Never another login's thread (0269).
  */
 export async function assistantConversations(
   ownerId: string,

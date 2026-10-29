@@ -51,8 +51,8 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
       systemPrompt: 'sweep',
     },
   },
-  // An edit that names a run limit, the description and a turn-on (round 13b
-  // items C, D and F: assistant-grant and skill-text).
+  // An edit that names a run limit, the description and a turn-on
+  // (assistant-grant and skill-text).
   'PATCH /api/agents/:id': {
     body: {
       name: 'sweep2',

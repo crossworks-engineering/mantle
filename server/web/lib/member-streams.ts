@@ -1,5 +1,5 @@
 /**
- * Open member realtime streams, per login (audit S8). One shared LISTEN
+ * Open member realtime streams, per login. One shared LISTEN
  * serves them all, so a stream costs no Postgres connection, but each is a
  * held socket and a subscriber: a login may hold a few (tabs, windows), not
  * any number.

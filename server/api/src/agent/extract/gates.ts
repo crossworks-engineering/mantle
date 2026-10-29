@@ -388,8 +388,8 @@ export async function admitForExtraction(
     });
     return { proceed: false };
   }
-  // A page or drawing the W2 mark flagged (0247, 0248) that the hand-run
-  // re-fold has not rewritten yet: its stored chunks may still hold an
+  // A page or drawing the derived_mixed mark flagged (0247, 0248) that the
+  // hand-run re-fold has not rewritten yet: its stored chunks may still hold an
   // embed's words, and a summary written now would clear the mark. So no
   // model and no side pass: it is indexed locally from its LIVE text (the
   // body comes from pages.doc or draws.scene, folded), which is the

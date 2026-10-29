@@ -1,6 +1,6 @@
 /**
  * The retired client chat turn, kept as a no-op under its old workflow name
- * (workspaces W5c removed the client portal and its chat).
+ * (the client portal and its chat are gone).
  *
  * The client turn's runner is gone, but a box can hold client turns in its
  * DBOS system database when it upgrades: ENQUEUED on the `mantle.client`

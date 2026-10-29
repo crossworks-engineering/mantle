@@ -238,8 +238,8 @@ export function isRateLimitName(name: string): name is RateLimitName {
 }
 
 /** What the gate checks of a request before its handler, on one row: a
- *  route file's declaration states it (`limits`, route-declaration.ts; S9
- *  part 3, was ROUTE_GATES here), an /api/v1 alias takes its base's. A row
+ *  route file's declaration states it (`limits`, route-declaration.ts), an
+ *  /api/v1 alias takes its base's. A row
  *  that is reachable by a caller that is not an Admin user and has no limit
  *  is named in the docs and pinned (route-limits.test.ts), so a new one is a
  *  decision. */

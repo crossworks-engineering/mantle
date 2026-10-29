@@ -91,9 +91,9 @@ async function keyIdByService(ownerId: string): Promise<Record<string, string>> 
  * `opts.configuredBy`: the login provisioning (null for the anchor). On the
  * Azure route the provisioner pairs the vault's 'custom' key with the Azure
  * endpoint, so the route it writes records it as configured_by and resolves
- * the key at run time only while that login holds the keys area (W7
- * integration fix; the route handler refuses a provision of an Azure route
- * by a login without the keys area).
+ * the key at run time only while that login holds the keys area (the route
+ * handler refuses a provision of an Azure route by a login without the keys
+ * area).
  */
 export async function provisionDefaults(
   ownerId: string,
@@ -221,7 +221,7 @@ export async function provisionDefaults(
     seededSpecialists = await seedSpecialistStack(ownerId);
   }
   // The persona now exists: put it on Admin (a fresh install was migrated at
-  // signup, before it existed; W5b1 M-new). A fresh install has no Team
+  // signup, before it existed). A fresh install has no Team
   // workspace (0286), so the team responder stays on no workspace until an
   // Admin user attaches it to one. In the scope of the login provisioning
   // (the anchor's when configuredBy is null): the attach asks it the

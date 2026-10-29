@@ -1,6 +1,6 @@
 /**
- * POST /api/telegram/chats/:id/unpair: unpair a Telegram chat (workspaces
- * W7d): back to pending with no user, so the person pairs it again with a
+ * POST /api/telegram/chats/:id/unpair: unpair a Telegram chat: back to
+ * pending with no user, so the person pairs it again with a
  * new code. By its own user, a Moderator of its bot's workspace, or an
  * Admin user with the users area. 404 for a chat the login may not touch.
  */

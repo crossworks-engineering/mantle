@@ -53,7 +53,7 @@ export async function handleTokenLogin(
     defaultLabel: string;
     /** Refuse a non-Admin login (the old mobile companion: every route it
      *  calls is an admin route, so a member bearer would only collect 403s).
-     *  Since workspaces W7e it answers 426 "Update the app": the phone build
+     *  It answers 426 "Update the app": the phone build
      *  that serves every login signs in through /api/auth/device-login. */
     adminsOnly?: boolean;
     /** Name the login in the answer (`role`, `loginId`): the phone app must
@@ -89,7 +89,7 @@ export async function handleTokenLogin(
     opts.adminsOnly || opts.withRole
       ? await db
           .select({
-            // The display role (loginRole: Admin membership, S8b), never
+            // The display role (loginRole: Admin membership), never
             // the column.
             shownRole: loginRole(userId),
             adminMember: loginIsAdmin(userId),

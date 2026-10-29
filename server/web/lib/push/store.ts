@@ -127,7 +127,7 @@ export async function listAdminSubscriptions(
     .where(
       and(
         eq(pushSubscriptions.ownerId, ownerId),
-        // An Admin user now, the login enabled (membership decides, S8b).
+        // An Admin user now, the login enabled (membership decides).
         loginIsAdmin(authUsers.id),
         isNull(authUsers.disabledAt),
         or(
@@ -160,7 +160,7 @@ export async function listLoginSubscriptions(
       and(
         eq(pushSubscriptions.ownerId, ownerId),
         eq(pushSubscriptions.loginId, loginId),
-        // Not an Admin user (membership decides, S8b): a member.
+        // Not an Admin user (membership decides): a member.
         sql`${loginRole(authUsers.id)} = 'member'`,
         isNull(authUsers.disabledAt),
         eq(mobileTokens.userId, loginId),
@@ -180,7 +180,7 @@ export async function listAdminDeviceList(ownerId: string): Promise<DeviceRow[]>
     .where(
       and(
         eq(pushSubscriptions.ownerId, ownerId),
-        // An Admin user's device, enabled or not (the display role, S8b).
+        // An Admin user's device, enabled or not (the display role).
         or(isNull(pushSubscriptions.loginId), sql`${loginRole(authUsers.id)} = 'admin'`),
       ),
     );

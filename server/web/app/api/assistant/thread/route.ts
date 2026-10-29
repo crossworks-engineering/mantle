@@ -23,7 +23,7 @@ export const policy = routePolicy({
  * OWN open thread with it (messages and thread row), and (an Admin user) its
  * assigned assistant and the agent's level badge.
  *
- * Any login (W7c, the owner's answer of 2026-10-11): each user has their own
+ * Any login: each user has their own
  * thread with each assistant and reads only that. A member or a client
  * reaches the assistants of its workspaces other than Admin; an agent it may
  * not chat with answers as none (`agent: null`).

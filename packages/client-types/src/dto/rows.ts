@@ -57,7 +57,7 @@ export type TaskTodo = {
 
 /** Mirrors @mantle/db `NodeCommentAuthorKind`. `client` stays for the wire
  *  contract (additive only) and for the comments a client login wrote
- *  before workspaces W8a removed the role; no new comment gets it. */
+ *  before the role was removed; no new comment gets it. */
 export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent' | 'client';
 
 /**
@@ -162,7 +162,7 @@ export type PageListRow = PageRow & {
 };
 
 /** A row of GET /api/pages (and of /api/notes, on its note row): the item
- *  with its workspace chips and link pill (W5b2 contract changes 5 and 14).
+ *  with its workspace chips and link pill.
  *  The caller's own private rows carry them too, empty. */
 export type PagesListRow = PageRow & ListChips;
 
@@ -225,7 +225,7 @@ export type AppRow = {
 /** A workspace as a list row's chip names it (the same as ListWorkspace). */
 export type WorkspaceChip = ListWorkspace;
 
-/** One row of GET /api/apps (workspaces W5b2): the chips every list row
+/** One row of GET /api/apps: the chips every list row
  *  carries (ListChips, lib/list-workspaces.ts). */
 export type AppListRow = AppRow & ListChips;
 

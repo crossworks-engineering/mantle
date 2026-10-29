@@ -6,8 +6,8 @@
  *   - mantle.email.backfill   — per-sender 90-day backfill when a sender is approved
  *   - mantle.email.scheduler  — fan-out: enqueues a `sync` job for every enabled account
  *
- * (The client sign-in code queue, mantle.client.code, went with email-code
- * sign-in in workspaces W8a. The sync still skips every old code mail.)
+ * (No client sign-in code mail is sent; the sync still skips every old
+ * one.)
  *
  * The scheduler is itself a recurring pg-boss job (every 2 minutes). The
  * sync queue uses `singletonKey: accountId` so two ticks can't stomp on

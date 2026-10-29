@@ -7,10 +7,9 @@
  *
  * Two locks: the rule is written in the query (@mantle/content member-apps),
  * and the query runs in the login's own workspace scope, so row security
- * holds as well. Since W6b a member-built app is a brain item in its
- * author's private workspace (the personal space is folded into the brain),
- * so this one lookup finds it; the space-app lookup on the system pool went
- * with W7e.
+ * holds as well. A member-built app is a brain item in its author's private
+ * workspace (the personal space is folded into the brain), so this one
+ * lookup finds it.
  */
 import { NextResponse } from '@/server/http-compat';
 import { withViewer } from '@mantle/db';

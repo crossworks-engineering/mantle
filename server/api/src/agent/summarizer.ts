@@ -177,7 +177,7 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
     .limit(1);
   const agentSlug = agentRow?.slug ?? agentId;
   // An assistant of another workspace with its digests off: nothing reads
-  // a digest of it, so none is made (no model call; cost safety, W7c).
+  // a digest of it, so none is made (no model call; cost safety).
   if (
     agentRow?.workspaceId &&
     agentRow.workspaceIsAdmin === false &&

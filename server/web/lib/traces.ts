@@ -135,8 +135,8 @@ export async function countTraces(
 }
 
 /**
- * The login whose turn trace `traceId` records, or null for system work (W7
- * integration fix 2, H2): a heartbeat fire's answerer
+ * The login whose turn trace `traceId` records, or null for system work: a
+ * heartbeat fire's answerer
  * (heartbeat_fires.answered_by, null the anchor), else the login the trace
  * names (traces.login_id), else the login of the run it planned or ran
  * (runs.login_id, by origin_turn_id or an item's trace_ref). The brain

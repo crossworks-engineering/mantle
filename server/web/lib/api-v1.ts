@@ -72,8 +72,7 @@ export type KeyScopeRefusal = 'not-in-api' | 'key-area' | 'key-read-only';
 
 /** What keyMayCall reads of a v1 route, as its ROUTE_POLICY row carries
  *  it (route-policy.ts rowKeyRoute): the row's effect, and the key area
- *  its route file declares (`keyArea`; S9 part 3, was the key table
- *  API_V1_ROUTES here). */
+ *  its route file declares (`keyArea`). */
 export type KeyRoute = Readonly<{
   access: 'read' | 'write';
   /** null = about the key itself (`self`), or open only to a key with

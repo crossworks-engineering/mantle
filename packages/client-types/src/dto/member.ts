@@ -113,7 +113,7 @@ export type AdminTakenFrom = {
   /** Display name, else the email's local part; "Removed member" once the
    *  login is deleted. */
   name: string;
-  /** Always false since W5c: Give back was removed. */
+  /** Always false: Give back was removed. */
   canGiveBack: boolean;
   takenAt: string | null;
 };
@@ -225,8 +225,8 @@ export type MemberAcceptedItem =
 /** Where a row of the one list comes from; it picks the item view that
  *  opens it: `own` the member's editor, `library` the brain item, `accepted`
  *  the version this member wrote and an admin accepted, which the member's
- *  Library does not hold. (`team` and `client-request` rows went with review
- *  in workspaces W5c.) */
+ *  Library does not hold. (`team` and `client-request` rows went with
+ *  review.) */
 export type MemberItemSource = 'own' | 'library' | 'accepted';
 
 /** The small state pill a row wears beside its actions. Brain items (the

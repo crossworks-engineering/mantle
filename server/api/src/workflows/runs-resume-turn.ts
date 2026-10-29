@@ -294,7 +294,7 @@ export async function runsResumeTurnImpl(
                 agent,
                 inboundText: promptText,
                 loginId: runLoginId,
-                // A workspace run reads as its web chat does (W7d+e): no
+                // A workspace run reads as its web chat does: no
                 // Journal, and the private corpus hidden (a run turn never
                 // reads the owner's switch: off).
                 ...(workspaceTurn
@@ -308,8 +308,8 @@ export async function runsResumeTurnImpl(
                 provider: agent.provider,
                 systemPrompt: assembled.effectiveSystemPrompt,
                 volatileContext: assembled.volatileContext,
-                // A workspace run: no owner persona notes or Journal
-                // (W7d+e, as the Telegram and web workspace turns).
+                // A workspace run: no owner persona notes or Journal (as
+                // the Telegram and web workspace turns).
                 personaNotes: workspaceTurn ? [] : c.personaNotes,
                 journalBlock: workspaceTurn ? '' : assembled.journalBlock,
                 journalRelevant: workspaceTurn ? undefined : c.journalRelevant,
@@ -346,7 +346,7 @@ export async function runsResumeTurnImpl(
         if (run.originChannel?.kind === 'telegram') {
           const chatId = run.originChannel.chat_id;
           const sent = await runDurableStep('deliver_telegram', async () => {
-            // Only a chat paired to the run's own login (W7d; none = the
+            // Only a chat paired to the run's own login (none = the
             // anchor's run): a report never reaches another user's chat.
             const chat = await pairedChatOf({
               ownerId: run.ownerId,

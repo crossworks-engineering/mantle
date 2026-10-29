@@ -28,7 +28,7 @@ import { loginIsAdmin, loginRole } from '@/lib/auth/admin-seat';
  * claim is one conditional UPDATE (unclaimed AND unexpired) so two claims of
  * the same frame cannot both win; it is bound to the login that asked for
  * it, and claims only while that login is not disabled and is still an
- * admin, or (workspaces W7e) a member claiming from a phone build that
+ * admin, or a member claiming from a phone build that
  * serves every login (`nonAdmin`). Every failure to claim is the same
  * `null`: the phone shows one line. A member's code scanned by an older
  * phone app is `'update-app'` (426 "Update the app"), and the code stays
@@ -107,7 +107,7 @@ export async function claimPairCode(
     // use it. Only a live, unclaimed code of a non-Admin login says so.
     const [peek] = await db
       .select({
-        // Admin membership (loginRole, S8b), never the column.
+        // Admin membership (loginRole), never the column.
         inAdmin: sql<boolean>`${loginRole(pairingCodes.userId)} = 'admin'`,
       })
       .from(pairingCodes)
@@ -120,8 +120,8 @@ export async function claimPairCode(
         ),
       )
       .limit(1);
-    // A member's code only (a login outside Admin: membership decides,
-    // S8b; no client login is left since 0272).
+    // A member's code only (a login outside Admin: membership decides; no
+    // client login is left since 0272).
     if (peek && !peek.inAdmin) return 'update-app';
   }
   // Single-use, atomically: only an unclaimed, unexpired row flips.
@@ -154,7 +154,7 @@ export async function claimPairCode(
     .where(eq(authUsers.id, won.userId))
     .limit(1);
   const admin = !!user && adminLogin({ adminMember: user.adminMember === true });
-  // Not an Admin user is a member (membership decides, S8b): for an
+  // Not an Admin user is a member (membership decides): for an
   // enabled login the column said the same, and a disabled one is refused.
   const member = !!user && !admin && opts.nonAdmin === true;
   if (!user || user.disabledAt || (!admin && !member)) return null;

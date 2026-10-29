@@ -13,8 +13,8 @@ import type { AccessContactShare } from './contact-shares';
 export const ACCESS_LEVELS = ['admin', 'team', 'client', 'public'] as const;
 export type AccessLevel = (typeof ACCESS_LEVELS)[number];
 
-/** One item as the old Access control listed it (gone since W5b2: the
- *  routes answer 410). Its level went from the wire in W8c. */
+/** One item as the old Access control listed it (gone: the routes answer
+ *  410). It carries no level on the wire. */
 export type AccessItemView = {
   id: string;
   type: string;
@@ -43,7 +43,7 @@ export type MemberItemAuthor = {
   name: string;
   acceptedAt: string | null;
   /** `client` stays for the wire contract (additive only): the client role
-   *  is gone since workspaces W8a and no brain answers it now. */
+   *  is gone and no brain answers it now. */
   role?: 'member' | 'client' | null;
 };
 
@@ -131,7 +131,7 @@ export type AccessLoweredView = {
   to: AccessLevel;
 };
 
-/** The old PATCH /api/access/nodes/:id (gone since W5b2: 410).
+/** The old PATCH /api/access/nodes/:id (gone: 410).
  *  `withClosure` only mattered for a folder (its contents). */
 export type AccessNodeUpdate = {
   item: AccessItemView;
@@ -266,9 +266,9 @@ export type SharedLinkRow = {
   canWrite?: boolean;
 };
 
-/** An old client link the brain retired (client logins C3, migration 0192):
- *  it answers a plain 410 now. No token: the link is dead. GET
- *  /api/team-admin/shares sends `retired: []` since workspaces W5c. */
+/** An old client link the brain retired (migration 0192): it answers a
+ *  plain 410 now. No token: the link is dead. GET /api/team-admin/shares
+ *  always sends `retired: []`. */
 export type RetiredClientLinkRow = {
   id: string;
   nodeId: string;

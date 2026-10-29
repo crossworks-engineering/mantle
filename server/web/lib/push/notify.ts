@@ -363,8 +363,7 @@ export async function pushApproval(ownerId: string): Promise<PushResult> {
  * pushes (see needsYouArrivals): the same NOTIFY fires when something
  * clears. `seen` is the caller's per-process memory of what was pushed; the
  * caller runs one call at a time. Fixed text only (and sealed to the device
- * like every push). The review and team request pushes were removed in
- * workspaces W5c.
+ * like every push).
  * Gated by the approvals toggle ("things waiting for you"); unlike an
  * approval it does not follow reminderChannel: there is no Telegram card for
  * it to double. Collapses on "needs-you" so a newer notice replaces an older.

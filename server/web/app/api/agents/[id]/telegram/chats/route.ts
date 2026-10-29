@@ -19,7 +19,7 @@ const Body = z.object({
   chatId: z.string().uuid(),
   /** 'denied' blocks the chat; 'pending' unpairs it (back to pending, no
    *  user). 'allowed' is refused: only the user pairs their own chat, with
-   *  its code (POST /api/telegram/pair, workspaces W7d). */
+   *  its code (POST /api/telegram/pair). */
   status: z.enum(['allowed', 'denied', 'pending']),
 });
 

@@ -35,7 +35,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if ((await hiddenFromKey(user.id, [id])).size > 0) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  // draftOk: whether this caller may read the draft (W6a: the rule is in
+  // draftOk: whether this caller may read the draft (the rule is in
   // the query, mantle_may_edit in a workspace scope; false below admin).
   const [row] = await db
     .select({

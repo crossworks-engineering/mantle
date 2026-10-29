@@ -21,8 +21,8 @@ export const policy = routePolicy({
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
 /**
- * GET /api/shell: chrome data for the one (app) shell, for EVERY login (plan
- * 7.1, workspaces W5c): the avatar, the brand, the workspaces switcher, the
+ * GET /api/shell: chrome data for the one (app) shell, for EVERY login: the
+ * avatar, the brand, the workspaces switcher, the
  * pending-approvals badge and the onboarding gate. Fetched client-side by
  * `AppShell`, so `(app)/layout.tsx` stays data-free and the same shell loads
  * in a detached client (Electron / DB-less).

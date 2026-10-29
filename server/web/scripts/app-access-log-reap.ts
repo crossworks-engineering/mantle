@@ -1,5 +1,5 @@
 /**
- * Trim the app access log (client tier audit I4) and the contact share
+ * Trim the app access log and the contact share
  * trail (share_access_log, migration 0214): the CLI face of the
  * `app-access-log-reap` maintenance sweep. The rules live in
  * @mantle/content app-access-log.ts (reapAppAccessLog) and

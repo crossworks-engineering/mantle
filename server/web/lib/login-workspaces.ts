@@ -1,6 +1,6 @@
 /**
- * The workspaces part of GET /api/shell, for any login (workspaces W5a,
- * W7e): the login's live workspaces (the switcher), its Admin areas (an
+ * The workspaces part of GET /api/shell, for any login: the login's live
+ * workspaces (the switcher), its Admin areas (an
  * Admin user's only) and whether it is the brain's anchor login. ONE builder
  * for the shell and GET /api/auth/whoami (the phone's first call), so both
  * answer the same. The read never fails the route: a failed read is logged

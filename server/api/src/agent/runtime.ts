@@ -122,7 +122,7 @@ const logger = log('agent');
 const TELEGRAM_TEXT_ONLY_REPLY =
   'This assistant takes typed messages only here. Please send your message as text.';
 
-/** A login past its daily turn cap (the member turn ledger, W7d). */
+/** A login past its daily turn cap (the member turn ledger). */
 const TELEGRAM_DAILY_CAP_REPLY = 'Daily message limit reached for this chat. Try again tomorrow.';
 
 /** Midnight UTC today: where the daily cap's window starts. */
@@ -335,7 +335,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     await sendApology(row, 'This chat is turned off for now. Ask the owner to turn it on.');
     return;
   }
-  // The chat's user (workspaces W7d): a turn runs as the login the chat is
+  // The chat's user: a turn runs as the login the chat is
   // paired to, in the workspace of its assistant. Any workspace's assistant
   // answers, for a user of that workspace only: a chat with no login, or
   // whose login is gone, disabled or no longer a user of the workspace of
@@ -365,7 +365,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     return;
   }
   // An assistant of a workspace other than Admin takes text only, as on the
-  // web (the workspace turn engine, W7c): nothing is saved into the brain,
+  // web (the workspace turn engine): nothing is saved into the brain,
   // no voice is transcribed or spoken.
   const workspaceAssistant = (await agentWorkspaceKind(agent)) === 'workspace';
   if (workspaceAssistant && (wasVoice || fileAttachment)) {

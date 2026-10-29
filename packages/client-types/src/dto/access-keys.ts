@@ -71,10 +71,10 @@ export type AccessKeyList = {
   /** The expiry a key gets when the create names none. */
   defaultExpiryDays: number;
   /** The longest expiry the caller may pick, in days; null = any, "never"
-   *  included: a login in the Admin workspace with its keys area (W8a, never
-   *  the role). Everyone else's keys last at most 90 days. */
+   *  included: a login in the Admin workspace with its keys area (never the
+   *  role). Everyone else's keys last at most 90 days. */
   maxExpiryDays: number | null;
-  /** Whether the create needs the caller's password: always since W8a. */
+  /** Whether the create needs the caller's password: always. */
   needsPassword: boolean;
 };
 

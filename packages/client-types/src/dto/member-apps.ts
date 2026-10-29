@@ -113,7 +113,7 @@ export type MemberChatRow = {
   active: boolean;
   /** The login's role, named (0.232.333 on): 'member' for the team; absent
    *  for a former member who is an admin now (its old thread still shows).
-   *  (No login is a client since workspaces W8a.) */
+   *  (No login is a client.) */
   role?: 'member';
   lastMessageAt: string | null;
   lastMessageText: string | null;

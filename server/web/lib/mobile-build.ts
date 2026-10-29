@@ -1,6 +1,6 @@
 /**
- * The phone app's build, and the "Update the app" answer (workspaces W7e,
- * plan 7.3 and 12). An older phone app (Admin only, it calls the owner
+ * The phone app's build, and the "Update the app" answer. An older phone
+ * app (Admin only, it calls the owner
  * routes) gets HTTP 426 for a non-Admin login, never a vague error; the
  * workspace-aware build (any login, the workspace switcher) says so with
  * the `X-Jackdaw-Mobile` request header on its sign-in calls.

@@ -3,8 +3,7 @@
 // 0230) the admins' paired devices get one notice with the fixed reason,
 // never provider text; and when the workspaces heads check parks an
 // extraction. Driven by the "needs you" NOTIFY (migration 0186), which also
-// fires when something clears; only an arrival pushes. The review and team
-// request pushes went with review and Team admin > Requests in workspaces W5c.
+// fires when something clears; only an arrival pushes.
 
 import type { ProviderAlert } from '@mantle/client-types';
 

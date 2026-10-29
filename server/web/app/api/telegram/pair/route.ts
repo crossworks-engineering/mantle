@@ -8,7 +8,7 @@
  *    `title`, at most 64 characters, for plain text only), the bot and its
  *    assistant.
  *  - `{ code, confirm: true, previewToken }`: pairs: TelegramPairResult.
- *    The preview's token is required (W7d+e; 400 without it): only the chat
+ *    The preview's token is required (400 without it): only the chat
  *    that preview showed, for this code, within ten minutes of it (else 409
  *    preview_mismatch). The user is then told in the app.
  *

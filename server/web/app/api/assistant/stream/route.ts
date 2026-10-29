@@ -50,7 +50,7 @@ export async function GET(req: Request): Promise<Response> {
       enc(': connected\n\n');
       unsubscribe = await subscribeConversations((c: ConversationChange) => {
         if (c.ownerId !== login.ownerId) return;
-        // Each login hears its own threads only (0269, W7c). A payload with
+        // Each login hears its own threads only (0269). A payload with
         // no login (from before 0269) is the anchor's thread.
         if ((c.loginId ?? c.ownerId) !== login.loginId) return;
         enc(`data: ${JSON.stringify({ agentSlug: c.agentSlug, direction: c.direction })}\n\n`);

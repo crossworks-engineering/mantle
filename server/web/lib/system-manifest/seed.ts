@@ -221,7 +221,7 @@ async function upsertToolGroup(
     .from(toolGroups)
     .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, def.slug)))
     .limit(1);
-  // adminOnly (workspaces W4b) only ever turns ON from the manifest, in every
+  // adminOnly only ever turns ON from the manifest, in every
   // mode: it narrows who may run the group, never widens.
   const adminOnly = MANIFEST_ADMIN_ONLY_GROUPS.includes(def.slug);
   if (existing && adminOnly && !existing.adminOnly) {
@@ -507,8 +507,8 @@ async function syncPersonaSkills(
  * seeds this before the persona so a group grant never dangles (resolves to 0
  * tools) even if a later step fails. applyManifest runs it as its first step.
  */
-/** The builtin tool rows and the tool groups (onboarding's provision, plan
- *  v3.2 S7b part b2 round 8 B): a tool made names its handler and a group
+/** The builtin tool rows and the tool groups (onboarding's provision): a
+ *  tool made names its handler and a group
  *  its tools, neither the narrow login's to write, so the seed runs at the
  *  full-route spot tool-group-grant. */
 export async function seedToolCapabilities(

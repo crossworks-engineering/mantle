@@ -1,7 +1,7 @@
 /**
  * Old client sign-in code mails must never enter the brain: a code in the
- * corpus is a code the agents can read and repeat. Email-code sign-in went
- * in workspaces W8a and no code mail is sent any more, but the copies the
+ * corpus is a code the agents can read and repeat. Email-code sign-in is
+ * gone and no code mail is sent any more, but the copies the
  * brain sent before stay in mailboxes (a Sent folder, Gmail's All Mail), and
  * a reply or forward quotes one. Every code mail carried a marker in its
  * Message-ID (and an X-Mantle-Client-Code header), which every folder and
@@ -43,8 +43,8 @@ export function touchesClientCodeMail(message: {
 const SIGNIN_CODE_IN_LINK =
   /((?:client-signin|invite)(?:\?|#)(?:[^\s"'<>#]*?[&;])?code=)[A-Za-z0-9_%-]+/gi;
 
-/** Ingested mail text with sign-in link codes blanked (client logins audit
- *  K6): a link an admin mailed from a synced mailbox must not bring a live
+/** Ingested mail text with sign-in link codes blanked: a link an admin
+ *  mailed from a synced mailbox must not bring a live
  *  code into the brain (a member invite's code is live still). */
 export function redactSigninCodes<T extends string | null | undefined>(text: T): T {
   if (!text) return text;

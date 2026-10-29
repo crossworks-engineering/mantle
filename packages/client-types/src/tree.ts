@@ -128,7 +128,7 @@ export type TreeFolder = {
    *  from a brain before it. */
   itemsElsewhere?: number;
   /** The workspaces that read the folder (ListChips): filled by the owner's
-   *  tree routes; empty in the member tree until W5c. */
+   *  tree routes. */
   workspaces: ListWorkspace[];
   /** A live open public link exists. */
   hasLink: boolean;
@@ -176,7 +176,7 @@ export type TreeItem = {
   updatedAt: string;
   meta?: TreeItemMeta;
   /** The workspaces that read the item (ListChips): filled by the owner's
-   *  tree routes; empty in the member tree until W5c. */
+   *  tree routes. */
   workspaces: ListWorkspace[];
   /** A live open public link exists (the "Public" pill). */
   hasLink: boolean;
@@ -272,8 +272,8 @@ export type TreeMarkList = {
   items: Array<TreeItem & { crumbs: TreeCrumb[] }>;
 };
 
-/** One item a tree write would change (W5b2: in workspaces, from the
- *  grants). A new item is compared with one at the kind's root (Admin). */
+/** One item a tree write would change (in workspaces, from the grants). A
+ *  new item is compared with one at the kind's root (Admin). */
 export type TreeWorkspaceChange = {
   /** '' for an item not made yet (a create or upload). */
   id: string;
@@ -290,8 +290,8 @@ export type TreeWorkspaceChange = {
   readOnly?: GrantWorkspaceRef[];
 };
 
-/** A level change, as the member review's accept still lists it (until
- *  W5c). The tree's own refusal lists TreeWorkspaceChange. */
+/** A level change, as the member review's accept listed it. The tree's own
+ *  refusal lists TreeWorkspaceChange. */
 export type TreeVisibilityChange = {
   id: string;
   title: string;
@@ -312,10 +312,10 @@ export type TreeVisibilityRefusal = {
   changes: TreeWorkspaceChange[];
   /** How many items change in all. */
   total: number;
-  /** @deprecated Never sent since W5b2: embeds no longer open with what
+  /** @deprecated Never sent: embeds no longer open with what
    *  embeds them (grants are never added for you). */
   alsoEmbeds?: TreeVisibilityChange[];
-  /** @deprecated Never sent since W5b2. */
+  /** @deprecated Never sent. */
   embedsTotal?: number;
   /** @deprecated Never sent: an unreleased first form of `alsoEmbeds`, when
    *  a share still lowered embeds for good. */

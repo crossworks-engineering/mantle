@@ -32,7 +32,7 @@ import {
 
 type Status = 'loading' | 'ready' | 'nobuild' | 'error';
 
-/** A tool call the owner must confirm before it runs (apps audit S1): what
+/** A tool call the owner must confirm before it runs: what
  *  the owner tool broker named in its 409 `reason: 'confirm'` answer, and the
  *  input the app sent. */
 export type AppToolConfirmRequest = {
@@ -128,7 +128,7 @@ export function AppSandbox({
    *  plain "Loading…" line. Kept a slot so this package needs no animation
    *  dependency. */
   loader?: ReactNode;
-  /** Ask the owner whether a confirm-gated tool may run (apps audit S1);
+  /** Ask the owner whether a confirm-gated tool may run;
    *  resolve true to run it. Only the owner surface ever gets asked (member,
    *  client and share brokers refuse such tools). Absent ⇒ the browser's
    *  own confirm dialog. The app never sees the ticket: this host sends the

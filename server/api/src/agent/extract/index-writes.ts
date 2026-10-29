@@ -176,8 +176,8 @@ export async function writeContentIndex(
         summary_model: summaryModel,
         summary_at: new Date().toISOString(),
         entities: uniqueMentions.map((m) => m.name),
-        // Made from folded text (always fold, workspaces plan 5.3): the
-        // W2 mark (0247) never marks this summary again.
+        // Made from folded text (always fold): the derived_mixed mark
+        // (0247) never marks this summary again.
         summary_folded: true,
         ...(persistedText ? { text: persistedText } : {}),
         ...(tableSchemaDigest ? { schemaDigest: tableSchemaDigest } : {}),
@@ -196,7 +196,7 @@ export async function writeContentIndex(
           // on the row it lands on.
           data: sql`${dropIndexWork(nodes.data, seenWork)} || ${JSON.stringify(indexPatch)}::jsonb`,
           ...(embedding ? { embedding } : {}),
-          // A summary from folded text: the W2 mark clears (0247).
+          // A summary from folded text: the derived_mixed mark clears (0247).
           derivedMixed: false,
           updatedAt: new Date(),
         })

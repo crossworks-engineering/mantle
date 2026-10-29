@@ -259,8 +259,8 @@ export function actorParams(): ActorParams | null {
 const SET_TRANSACTION_SQL = /^\s*set\s+transaction\b/i;
 
 /**
- * A transaction's client that sets the actor with its first statement (fix
- * round, M3a): after a SET TRANSACTION (drizzle's isolation level, access
+ * A transaction's client that sets the actor with its first statement:
+ * after a SET TRANSACTION (drizzle's isolation level, access
  * mode, deferrable), which Postgres refuses after any query. Covers
  * drizzle's path (`unsafe`), a savepoint opened first, and a tagged-template
  * statement (which then returns a plain promise).

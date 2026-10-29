@@ -10,8 +10,8 @@
  *              what the page shows around the picture (a canvas with no
  *              poster yet, a newer version than the picture).
  *
- * Read in the caller's scope (readerAssetCaller: every login since W7e,
- * as a drawing's snapshot): a canvas the login does not read is a 404 in
+ * Read in the caller's scope (readerAssetCaller: every login, as a
+ * drawing's snapshot): a canvas the login does not read is a 404 in
  * both shapes, the answer of an id no row has, so a page never tells a
  * reader anything of a canvas it may not read. The picture is never
  * rendered here: a page view spends no sidecar time (the poster is drawn

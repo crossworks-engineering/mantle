@@ -7,7 +7,7 @@
  *
  * Each such route is listed here with an explicit answer per role, and the
  * sweeps drive each one (role-sweep: an unknown role, and a row still marked
- * client, which is no login since workspaces W8a; member-sweep: member).
+ * client, which is no login; member-sweep: member).
  * A completeness test reads the source of every OTHER public route
  * and fails if it calls a session reader: a new public route that reads the
  * session must be added here, with its answers.
@@ -99,7 +99,7 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     expect: { member: { status: 200 }, unknown: { status: 200 } },
   },
   {
-    // "Sign in on your phone": an admin or, since workspaces W7e, a member
+    // "Sign in on your phone": an admin or a member
     // pairs its own phone (the member sweep stands the code store in).
     key: 'POST /api/auth/pair',
     path: '/api/auth/pair',

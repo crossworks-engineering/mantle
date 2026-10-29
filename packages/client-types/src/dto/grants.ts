@@ -188,7 +188,7 @@ export type GrantErrorCode =
 
 export type GrantError = { error: string; code: GrantErrorCode };
 
-// ── Lists (W5b2 contract changes 5 and 14) ───────────────────────────────────
+// ── Lists ────────────────────────────────────────────────────────────────────
 
 /** A workspace chip on a list row, with the workspace's look (its colour
  *  and icon, WorkspaceLook) from a brain that has one. */

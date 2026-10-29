@@ -66,7 +66,7 @@ registerCanvasRenderer(renderCanvas);
 registerLogSink(DBOS.logger);
 import './workflows/assistant-turn';
 import './workflows/team-turn';
-// The retired client turn (workspaces W5c): a no-op under the old name, so a
+// The retired client turn: a no-op under the old name, so a
 // client turn still queued or in flight on this box ends cleanly.
 import './workflows/client-turn-retired';
 // The retired forum turn: a no-op under the old name, so a forum turn still

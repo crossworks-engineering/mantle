@@ -77,7 +77,7 @@ export const policy = routePolicy({
  */
 /** The roles whose bearer rotates here, named: a role this code does not
  *  know is no login (a row still marked client too: none is left after
- *  migration 0272, workspaces W8a). */
+ *  migration 0272). */
 const BEARER_ROLES: ReadonlySet<string> = new Set(LOGIN_ROLES);
 
 const NO_STORE = { 'Cache-Control': CACHE_CONTROL.none } as const;

@@ -18,8 +18,8 @@ export interface InboundRow {
   accountId: string;
   responderAgentId: string | null;
   channelAgentId: string | null | undefined;
-  /** The login the chat is paired to (telegram_chats.login_id, workspaces
-   *  W7d), read now: the turn runs as it, or is refused when it is none or
+  /** The login the chat is paired to (telegram_chats.login_id), read now:
+   *  the turn runs as it, or is refused when it is none or
    *  no longer a user of the assistant's workspace. */
   chatLoginId?: string | null;
   /** The chat's allowlist state now: a chat turned off after its message

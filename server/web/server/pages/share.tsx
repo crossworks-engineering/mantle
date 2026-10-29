@@ -65,8 +65,8 @@ function retiredTeamLinkPage(): string {
   );
 }
 
-/** The page an old client link shows (410, client logins C3; workspaces W5c
- *  removed the client sign-in pages, so it links nowhere). No item title:
+/** The page an old client link shows (410; there are no client sign-in
+ *  pages, so it links nowhere). No item title:
  *  the token says nothing about what it named. */
 function retiredClientLinkPage(): string {
   const heading = 'This link has ended';

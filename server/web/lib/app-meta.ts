@@ -1,7 +1,7 @@
 /**
  * The fields that name and dress an app, one definition for every route that
- * takes them (POST /api/apps, POST /api/apps/import). The import route used
- * to carry its own looser copy (apps audit G6).
+ * takes them (POST /api/apps, POST /api/apps/import), so the import route
+ * never accepts looser fields than the create.
  */
 import { z } from 'zod';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';

@@ -41,8 +41,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   // Not there (FormulaNotFoundError) answers 404, a stored spec that no longer
-  // validates (FormulaSpecError) 400 with its list, by the one table (A10
-  // part 2).
+  // validates (FormulaSpecError) 400 with its list, by the one table.
   const spec = await readFormulaSpec(user.id, id);
   const result = evaluateSpec(
     spec,

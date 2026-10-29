@@ -1,6 +1,6 @@
 /**
  * DELETE /api/telegram/my-chats/:id: unpair one of the signed-in user's own
- * Telegram chats (workspaces W7d). The chat goes back to pending with no
+ * Telegram chats. The chat goes back to pending with no
  * user; the person pairs it again with a new code. 404 when the chat is not
  * one the login may touch.
  */

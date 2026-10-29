@@ -1,5 +1,5 @@
 /**
- * The client wire shapes left after workspaces W5c. The client portal
+ * The client wire shapes left after the client portal went. The portal
  * (/api/client/*), admin-issued sign-in links and Team admin > Clients were
  * removed: a client login uses the one (app) shell (`Shell`, GET /api/shell).
  * What stays: the email sign-in codes (any client login signs in with one),
@@ -83,8 +83,8 @@ export type ClientSenderRefusedReason =
  */
 export type ClientItemSource = 'own' | 'accepted';
 
-/** One row of the client's My requests (GET /api/client/items, 410 since
- *  W5c; the member files still build it). No level, no staff name. */
+/** One row of the client's My requests (GET /api/client/items, 410 now;
+ *  the member files still build it). No level, no staff name. */
 export type ClientItemRow = {
   id: string;
   type: ClientItemKind;
@@ -100,7 +100,7 @@ export type ClientItemRow = {
   acceptedAt: string | null;
 };
 
-/** GET /api/client/accepted/:id (410 since W5c) -> { item }: the version
+/** GET /api/client/accepted/:id (410 now) -> { item }: the version
  *  the client wrote and an admin accepted (the snapshot taken at Accept, never the brain's
  *  current version). A file's bytes: /api/client/files/:id while the brain
  *  file still holds the bytes accepted (`changedByAdmin` otherwise). */

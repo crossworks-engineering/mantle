@@ -397,8 +397,7 @@ export async function accountForSurface(
 /**
  * The account (bot) a known message arrived on. Inbound rows carry the
  * `account_id` of the bot that received them, so replies + file downloads use
- * the *same* bot: the multi-bot-correct lookup (the old
- * `accountForChat` returned the first enabled account; removed in W7d).
+ * the *same* bot: the multi-bot-correct lookup.
  */
 export async function accountById(id: string): Promise<TelegramAccount | null> {
   const [account] = await db

@@ -56,8 +56,7 @@ export type Workspace = WorkspaceLook & {
   isAdmin: boolean;
   /** The built-in workspace: Admin only since migration 0286 (Team too
    *  before). It cannot be renamed or archived (hide Rename and Archive
-   *  there). Its connectors are attached here like any workspace's since
-   *  W5b2. */
+   *  there). Its connectors are attached here like any workspace's. */
   builtIn: boolean;
   /** Always false since migration 0286 (it marked the built-in Team
    *  workspace, where every Admin workspace user was a Moderator). */
@@ -87,7 +86,7 @@ export type WorkspaceUser = {
    *  Team workspace by being an Admin user). Only an Admin user ticks or
    *  clears Moderator now (403 admin_only for anyone else). */
   adminViaArea: boolean;
-  /** Who added them ("Added by NAME on DATE", plan S1): `name` is the
+  /** Who added them ("Added by NAME on DATE"): `name` is the
    *  display name or else the email. null when unknown (the adder's login
    *  is gone, or a migration or bridge added them). */
   addedBy: { loginId: string; name: string } | null;
@@ -231,8 +230,8 @@ export type ShellWorkspace = WorkspaceLook & {
 export type ShellWorkspaces = { workspaces: ShellWorkspace[]; areas: WorkspaceArea[] };
 
 /**
- * GET /api/auth/whoami (the phone app's first call with a bearer, workspaces
- * W7e): who the credential is, and the same workspaces, areas and owner
+ * GET /api/auth/whoami (the phone app's first call with a bearer): who the
+ * credential is, and the same workspaces, areas and owner
  * flag GET /api/shell gives (its builder). `areas` is empty for a login
  * outside the Admin workspace; `isOwner` is the brain's anchor login.
  * `brainId` is left out only while the database is behind the code.

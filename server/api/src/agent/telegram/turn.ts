@@ -94,7 +94,7 @@ export async function runTelegramTurn(args: {
     recordTurn({
       ownerId,
       agentId: agent.id,
-      // The chat's own login (R3, W7d): its thread, never another's.
+      // The chat's own login: its thread, never another's.
       loginId,
       direction: 'inbound',
       text: row.text,
@@ -109,7 +109,7 @@ export async function runTelegramTurn(args: {
   );
   // Telegram is reminder-capable, so messaging a bot makes Telegram the
   // reminder and approval destination of THIS login (until it next messages
-  // from the app; per login since W7d). Best-effort, must never break the
+  // from the app; per login). Best-effort, must never break the
   // inbound. See reminder-delivery-routing.md.
   void noteInboundChannel(loginId, 'telegram');
 
@@ -137,7 +137,7 @@ export async function runTelegramTurn(args: {
   // workspace, when the owner grants the assistant `apps`: the turn's
   // scope and the database decide, as on the login's web chat and MCP
   // connection (they spend nothing on the owner's keys).
-  // The team surface carries the chat (W7d+e), so a run planned here
+  // The team surface carries the chat, so a run planned here
   // reports back to it; no send tool reads it.
   const surface: ToolSurface = workspaceTurn
     ? { kind: 'team', loginId, privateReads, originTelegramChatId: row.telegramChatId }

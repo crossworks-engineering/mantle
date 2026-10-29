@@ -123,8 +123,8 @@ async function classifyAndApplyFact(
   if (decision.decision === 'NOOP') {
     // Re-confirmed by this extraction — clear the suspect flag so the
     // re-extract sweep (H4) keeps it rather than retiring it as stale.
-    // A fact of this node re-asserted from its folded text (always fold,
-    // workspaces plan 5.3) holds no embed's words: its W2 mark clears.
+    // A fact of this node re-asserted from its folded text (always fold)
+    // holds no embed's words: its derived_mixed mark clears.
     if (target)
       await db
         .update(facts)

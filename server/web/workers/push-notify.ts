@@ -2,7 +2,7 @@
  * Push-notify worker. LISTENs on `conversation_changed` (the trigger from
  * migration 0091, also driving the SSE live stream), `pending_changed`
  * (approvals) and `needs_you_changed` (migration 0186: a provider outage or a
- * parked extraction since W5c) and, for every **outbound** turn, seals a teaser
+ * parked extraction) and, for every **outbound** turn, seals a teaser
  * to the ADMIN devices and hands it to Mantle Push (push-notifications.md
  * §8/§10). Those three are the owner's side: admin devices only.
  *

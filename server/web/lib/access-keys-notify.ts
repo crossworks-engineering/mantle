@@ -34,8 +34,8 @@ export type KeyMadeNotice = {
 /**
  * The notice text: plain, short, and never the secret or its prefix.
  * `withName`: the key's name is the caller's own text, so it is left out of
- * a message that lands in a thread the login's assistant reads (final audit
- * F5: no caller-chosen text in a model-facing context). An admin's push
+ * a message that lands in a thread the login's assistant reads (no
+ * caller-chosen text in a model-facing context). An admin's push
  * never reaches a model and keeps it.
  */
 export function keyMadeText(

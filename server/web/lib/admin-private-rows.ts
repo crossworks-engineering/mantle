@@ -33,7 +33,7 @@ export function isPrivateRow(row: object): row is AdminPrivateListRow {
 }
 
 /** The caller's own private items of `kind` as rows of a brain list:
- *  none since workspaces W6b (migration 0267). Every personal item is a
+ *  none (migration 0267). Every personal item is a
  *  brain item now, homed in its login's private workspace, so the brain
  *  list itself serves it to that login (the request scope holds the
  *  private workspace). `?state=private` lists nothing; `all` is the brain

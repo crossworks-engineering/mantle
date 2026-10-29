@@ -1,10 +1,9 @@
 /**
- * GET /api/shell: the chrome of the one (app) shell, for EVERY login (plan
- * 7.1, workspaces W5c). An admin, a member and a client get the same shape;
- * `role` says which. The brand (site name, theme, fonts, logo) is the
- * brain's; the face (avatar, photo, starred screens) is the login's own.
- * Before W5c a member read /api/member/shell and a client /api/client/shell;
- * both now answer 410 code gone.
+ * GET /api/shell: the chrome of the one (app) shell, for EVERY login. An
+ * admin, a member and a client get the same shape; `role` says which. The
+ * brand (site name, theme, fonts, logo) is the brain's; the face (avatar,
+ * photo, starred screens) is the login's own. /api/member/shell and
+ * /api/client/shell answer 410 code gone.
  */
 import type { TreeKind } from '../tree';
 import type { LoginRole } from '../role-names';

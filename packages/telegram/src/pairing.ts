@@ -1,6 +1,5 @@
 /**
- * Pairing, blocking and unpairing a Telegram chat (workspaces W7d; the
- * owner's answer 1A of 2026-10-11).
+ * Pairing, blocking and unpairing a Telegram chat.
  *
  * Only the user pairs their own chat: the chat's code (the bot sent it to
  * the person on Telegram) entered while signed in (the web, the phone, or
@@ -121,7 +120,7 @@ export type PairingPreview = {
   agentName: string | null;
 };
 
-/** The longest chat title a preview carries (W7d+e). */
+/** The longest chat title a preview carries. */
 export const PREVIEW_TITLE_MAX = 64;
 
 function previewTitleOf(chat: Pick<TelegramChat, 'title'>): string | null {
@@ -134,7 +133,7 @@ function previewTitleOf(chat: Pick<TelegramChat, 'title'>): string | null {
   return title ? Array.from(title).slice(0, PREVIEW_TITLE_MAX).join('').trim() : null;
 }
 
-/** How long a preview's token may confirm (W7d+e). */
+/** How long a preview's token may confirm. */
 export const PREVIEW_TOKEN_TTL_MS = 10 * 60 * 1000;
 
 /** The MAC of a preview token: keyed by the chat's row id, which nothing
@@ -229,8 +228,8 @@ async function pairingTarget(args: {
     return NO_SUCH_CODE;
   }
   // A login that no longer exists pairs nothing (no login carries a role
-  // that grants or refuses this since workspaces W8a: chatLoginRefusal
-  // below asks its workspaces).
+  // that grants or refuses this: chatLoginRefusal below asks its
+  // workspaces).
   const [who] = await db
     .select({ id: authUsers.id })
     .from(authUsers)
@@ -346,7 +345,7 @@ export async function previewChatPairing(args: {
  * Pair the chat holding `code` to `loginId` (the caller, never anyone
  * else; step two of two, after previewChatPairing). The chat must be pending
  * with a live code, on this brain, on a bot whose assistant's workspace the
- * login is a user of. `previewToken` is required (W7d+e): the token of a
+ * login is a user of. `previewToken` is required: the token of a
  * preview of this code by this login, under PREVIEW_TOKEN_TTL_MS old, whose
  * chat the code still names; else preview_mismatch. A chat already paired
  * to this login answers `already` (no change); one paired to another login

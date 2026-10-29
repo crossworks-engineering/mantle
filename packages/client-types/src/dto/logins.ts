@@ -1,6 +1,6 @@
 /**
- * Login kinds on the wire. Two: an admin and a member. The client login and
- * its email-code sign-in went in workspaces W8a: a login carries no
+ * Login kinds on the wire. Two: an admin and a member. There is no client
+ * login and no email-code sign-in: a login carries no
  * permission of its own, what it reads and may do comes from its
  * workspaces. A route that is not for the caller's kind answers 403 with
  * one of the reasons below.

@@ -1,6 +1,6 @@
 /**
- * POST /api/telegram/chats/:id/block: block a Telegram chat (workspaces
- * W7d): its messages are dropped and it has no user, until a Moderator
+ * POST /api/telegram/chats/:id/block: block a Telegram chat: its messages
+ * are dropped and it has no user, until a Moderator
  * unpairs it. By its own user, a Moderator of its bot's workspace, or an
  * Admin user with the users area. 404 for a chat the login may not touch.
  */

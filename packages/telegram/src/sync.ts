@@ -93,7 +93,7 @@ export async function pollOnce(
       const ok = await persist(account, inbound);
       if (ok) delivered++;
     } else if (result.action === 'pair') {
-      // Only the user pairs their own chat (workspaces W7d): signed in to
+      // Only the user pairs their own chat: signed in to
       // Mantle, they enter this code (the web, the phone, or the
       // telegram_pair tool from their own MCP client).
       const lead = result.isResend ? 'Still not paired' : 'This chat is not paired yet';
@@ -164,7 +164,7 @@ async function handleCallback(
     await answerCallback(account, cq.id, 'Not authorised.');
     return;
   }
-  // A tap decides as the chat's login (workspaces W7d), so it holds only
+  // A tap decides as the chat's login, so it holds only
   // where a turn would run: a chat whose login is no longer a user of its
   // assistant's workspace gets neither.
   const refused = await chatLoginRefusal({
@@ -331,7 +331,7 @@ async function persist(account: TelegramAccount, inbound: InboundMessage): Promi
         .insert(nodes)
         .values({
           ownerId: account.userId,
-          // A paired chat's messages are its login's (W7d, nodes.login_id):
+          // A paired chat's messages are its login's (nodes.login_id):
           // no other user reads them.
           loginId: chat.loginId,
           type: 'telegram_message',

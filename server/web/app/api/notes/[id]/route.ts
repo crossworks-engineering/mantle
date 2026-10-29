@@ -51,7 +51,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const { id } = await ctx.params;
   // An item made from an email attachment is not found for a key without
-  // Search, its writes too (access matrix T4, audit B1).
+  // Search, its writes too (access matrix T4).
   if ((await hiddenFromKey(user.id, [id])).size > 0) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
@@ -69,7 +69,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const user = ownerCaller();
   const { id } = await ctx.params;
   // An item made from an email attachment is not found for a key without
-  // Search, its writes too (access matrix T4, audit B1).
+  // Search, its writes too (access matrix T4).
   if ((await hiddenFromKey(user.id, [id])).size > 0) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }

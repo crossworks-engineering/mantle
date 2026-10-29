@@ -2,7 +2,7 @@
 // docs/mobile-companion-backend.md "Every login on the phone"): the same
 // steps as the admin's /api/push/*, for the caller's OWN devices and its own
 // toggles. The route files under /api/member/push gate the login
-// (getMemberOr401) and call these. (The client login went in W8a.)
+// (getMemberOr401) and call these. (There is no client login.)
 //
 // A device is enrolled by the phone app, which signs in with a device token:
 // the enrol step needs that bearer, records its token, and the send path

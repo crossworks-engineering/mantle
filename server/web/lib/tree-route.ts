@@ -40,7 +40,7 @@ export async function treeKindOr404(ctx: {
  *  its own marks. */
 /** What this process has already ensured (owner, kind, login): the root,
  *  and the once-only moves below, are done for good once done, so a tree read
- *  after the first skips the writes (audit P9). */
+ *  after the first skips the writes. */
 const ensured = new Set<string>();
 
 /** A tree read never needs write rights (docs/folder-tree.md, "Reading"):

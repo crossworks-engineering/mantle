@@ -11,8 +11,8 @@ export const policy = routePolicy({
   },
 });
 
-/** Archive a workspace. Refused while it is any item's home, for the Admin
- *  workspace, and for the workspaces the level bridge keeps (until W5b). */
+/** Archive a workspace. Refused while it is any item's home, and for the
+ *  Admin workspace. */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = anyLoginCaller();
   const { id } = await ctx.params;

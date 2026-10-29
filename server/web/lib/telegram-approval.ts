@@ -5,7 +5,7 @@
  * decisions without importing @mantle/tools (which would close a dependency
  * cycle).
  *
- * Workspaces W7d: a tap decides as the login the tapped chat is paired to
+ * A tap decides as the login the tapped chat is paired to
  * (resolved by the poller from the chat row, never from the callback), by
  * the rule of /api/pending: only a login holding the settings area decides,
  * and it decides only the calls queued for it (pending_tool_calls.login_id;
