@@ -573,7 +573,7 @@ per-caller budget are budgets of their handlers, above.
 <!-- UNLIMITED_NON_OWNER_ROWS start -->
 
 ```
-any logins (31):
+any logins (32):
   DELETE /api/access-keys/:id
   DELETE /api/grants/:nodeId/:wsId
   DELETE /api/workspaces/:id/resources/:kind/:refId
@@ -604,6 +604,7 @@ any logins (31):
   POST /api/workspaces/:id/archive
   POST /api/workspaces/:id/resources
   POST /api/workspaces/:id/users
+  PUT /api/profile/description
   PUT /api/profile/home-desk
 chat logins (11):
   GET /api/assistant/conversations
