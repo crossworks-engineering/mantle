@@ -22,12 +22,12 @@ type SessionModule = {
   loginAdminPair: (login: Login) => boolean;
 };
 
-export function standInSession<M extends SessionModule>(real: M, standIn: () => unknown): M {
+export function standInSession<M extends SessionModule>(real: M, sessionOf: () => unknown): M {
   const made = new WeakSet<Login>();
   return {
     ...real,
     ownerUserLogin: (user: SessionUser) => {
-      if (user !== standIn() || !user?.actor) return real.ownerUserLogin(user);
+      if (user !== sessionOf() || !user?.actor) return real.ownerUserLogin(user);
       const login = {
         loginId: user.actor.id,
         brainId: user.id,
