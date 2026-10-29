@@ -39,7 +39,7 @@ import {
 import type { ChatOptions } from './types';
 
 const KEY = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
-const ROOT = 'https://res-example.openai.azure.com';
+const ROOT = 'https://foundry-a.example.invalid';
 
 const realFetch = globalThis.fetch;
 beforeEach(() => {
@@ -259,21 +259,21 @@ describe('foundry-chat registration', () => {
 
 describe('foundry endpoint rules', () => {
   it.each([
-    ['https://res.openai.azure.com', 'https://res.openai.azure.com'],
-    ['https://res.openai.azure.com/', 'https://res.openai.azure.com'],
-    ['https://res.openai.azure.com/openai/v1/', 'https://res.openai.azure.com'],
-    ['https://res.services.ai.azure.com/openai', 'https://res.services.ai.azure.com'],
-    ['  https://gw.example.com/aoai/openai/v1  ', 'https://gw.example.com/aoai'],
+    ['https://foundry-a.example.invalid', 'https://foundry-a.example.invalid'],
+    ['https://foundry-a.example.invalid/', 'https://foundry-a.example.invalid'],
+    ['https://foundry-a.example.invalid/openai/v1/', 'https://foundry-a.example.invalid'],
+    ['https://foundry-b.example.invalid/openai', 'https://foundry-b.example.invalid'],
+    ['  https://gw.example.invalid/aoai/openai/v1  ', 'https://gw.example.invalid/aoai'],
   ])('reduces %s to its resource root', (input, root) => {
     expect(foundryResourceRoot(input)).toBe(root);
   });
 
   it.each([
-    'http://res.openai.azure.com',
-    'https://user:pass@res.openai.azure.com',
-    'https://res.openai.azure.com/?api-key=x',
-    'https://res.openai.azure.com/#x',
-    'res.openai.azure.com',
+    'http://foundry-a.example.invalid',
+    'https://user:pass@foundry-a.example.invalid',
+    'https://foundry-a.example.invalid/?api-key=x',
+    'https://foundry-a.example.invalid/#x',
+    'foundry-a.example.invalid',
     '',
   ])('refuses %j', (input) => {
     expect(foundryResourceRoot(input)).toBeNull();
@@ -317,6 +317,14 @@ describe('foundry-chat routing + auth', () => {
     for (const c of [calls[0]!, one[0]!, list[0]!]) expect(c.init?.redirect).toBe('error');
   });
 
+  it('a viaTailnet route goes through the tailnet path, redirects still refused', async () => {
+    // No proxy configured here: tailnetFetch falls back to the direct pool.
+    const calls = scriptFetch({ kind: 'json', body: COMPLETION });
+    await foundryChatAdapter.chat(base({ viaTailnet: true }));
+    expect(calls[0]!.url).toBe(`${ROOT}/openai/v1/chat/completions`);
+    expect(calls[0]!.init?.redirect).toBe('error');
+  });
+
   it('POSTs to <resource>/openai/v1/chat/completions with the api-key header only', async () => {
     const calls = scriptFetch({ kind: 'json', body: COMPLETION });
     await foundryChatAdapter.chat(base({ model: 'my-gpt4o-mini' }));
@@ -330,10 +338,8 @@ describe('foundry-chat routing + auth', () => {
 
   it('uses the route Base URL over MANTLE_FOUNDRY_ENDPOINT', async () => {
     const calls = scriptFetch({ kind: 'json', body: COMPLETION });
-    await foundryChatAdapter.chat(
-      base({ baseUrl: 'https://other.services.ai.azure.com/openai/v1' }),
-    );
-    expect(calls[0]!.url).toBe('https://other.services.ai.azure.com/openai/v1/chat/completions');
+    await foundryChatAdapter.chat(base({ baseUrl: 'https://foundry-b.example.invalid/openai/v1' }));
+    expect(calls[0]!.url).toBe('https://foundry-b.example.invalid/openai/v1/chat/completions');
   });
 
   it('adds ?api-version=preview for the preview version', async () => {
@@ -605,6 +611,33 @@ describe('foundry-chat reasoning models', () => {
     );
     await foundryChatAdapter.chat(base({ maxTokens: 500 }));
     expect(bodyOf(calls[1]!).reasoning_effort).toBe('low');
+  });
+
+  it('thinking off, a model that wants max_completion_tokens and takes no reasoning_effort: keeps the budget there', async () => {
+    const calls = scriptFetch(
+      { kind: 'error', status: 400, body: ERR_MAX_TOKENS },
+      { kind: 'error', status: 400, body: ERR_EFFORT },
+      { kind: 'json', body: COMPLETION },
+    );
+    const r = await foundryChatAdapter.chat(base({ maxTokens: 500 }));
+    expect(r.text).toBe('Hello there.');
+    expect(calls).toHaveLength(3);
+    const last = bodyOf(calls[2]!);
+    expect(last.max_completion_tokens).toBe(500);
+    expect(last.max_tokens).toBeUndefined();
+    expect(last.reasoning_effort).toBeUndefined();
+  });
+
+  it('thinking on, a model that takes no reasoning_effort but wants max_completion_tokens: ends there', async () => {
+    const calls = scriptFetch(
+      { kind: 'error', status: 400, body: ERR_EFFORT },
+      { kind: 'error', status: 400, body: ERR_MAX_TOKENS },
+      { kind: 'json', body: COMPLETION },
+    );
+    await foundryChatAdapter.chat(base({ thinkingBudget: 4000, maxTokens: 800 }));
+    const last = bodyOf(calls[2]!);
+    expect(last.max_completion_tokens).toBe(800);
+    expect(last.reasoning_effort).toBeUndefined();
   });
 
   it('makes each fix once: the budget swaps never undo each other', () => {

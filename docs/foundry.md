@@ -167,12 +167,19 @@ deployment named after a known model id and records $0 otherwise.
   `max_completion_tokens` and adds `reasoning_effort: low`, so the model's
   default reasoning cannot eat the whole budget and leave empty text;
   `max_completion_tokens` refused moves it back; `temperature` or `top_p`
-  refused drops both. The two budget moves never undo each other. Nothing
+  refused drops both. When the `reasoning_effort` refused was our own `low`
+  from the `max_tokens` move, only it is dropped and the budget stays in
+  `max_completion_tokens`. Each kind is made once, so the fixes always end.
+  Nothing
   has reached the user at that point (the 400 comes before the stream).
 - Redirects are refused. The key rides the `api-key` header, which a
   redirect to another origin would carry along.
+- A route flagged "via tailnet" goes through the Tailscale proxy, for a
+  gateway in front of the resource that only the tailnet reaches.
 - The agent Test chat and the Studio sandbox send the agent's own Base URL
-  (under the same key pairing gate as a real turn), as every turn does.
+  and tailnet flag under the same key pairing gate as a real turn (a
+  refused `local` agent runs keyless there too). This fixes the test for
+  `custom` and `local` agents as well, which never sent their Base URL.
 - The empty first stream chunk is skipped by the shared streamer.
 
 **Outages.** Foundry errors are the shared `ChatHttpError`, so the

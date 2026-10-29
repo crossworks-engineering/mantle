@@ -46,7 +46,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (!credential) throw new Error('api key not found or could not decrypt');
     // The agent's own host, as a real turn sends it (a custom, local or
     // Foundry route), under the same key pairing gate.
-    const host = await agentChatHost(user.id, id);
+    const host = await agentChatHost(user.id, id, credential);
     if (!host) throw new Error('agent not found');
     if (!host.ok) throw new Error(host.refusal);
 
@@ -65,7 +65,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const params = agent.params as { temperature?: number; max_tokens?: number };
 
     const result = await adapter.chat({
-      ...credential,
+      ...host.credential,
       model: agent.model,
       baseUrl: host.baseUrl,
       viaTailnet: host.viaTailnet,

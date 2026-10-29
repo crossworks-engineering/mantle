@@ -83,7 +83,7 @@ export async function POST(req: Request) {
       );
     // The agent's own host, as a real turn sends it, under the same key
     // pairing gate.
-    const host = await agentChatHost(user.id, agentId);
+    const host = await agentChatHost(user.id, agentId, credential);
     if (!host) return NextResponse.json({ error: 'agent not found' }, { status: 404 });
     if (!host.ok) return NextResponse.json({ error: host.refusal }, { status: 400 });
 
@@ -98,7 +98,7 @@ export async function POST(req: Request) {
     const params = agent.params as { temperature?: number; max_tokens?: number };
 
     const result = await adapter.chat({
-      ...credential,
+      ...host.credential,
       model: agent.model,
       baseUrl: host.baseUrl,
       viaTailnet: host.viaTailnet,
