@@ -5,11 +5,11 @@
  * (the policy's `createsIn`) must resolve in the queuing scope, or the call
  * is refused in the item check's words and never queued. Since fix round 1
  * (M1) a create that makes its own folders (`makesFolders`) needs only the
- * deepest folder of its path the scope reads. A Recall map named by its
- * slug was asked here too until the pre-check removal (docs/actors.md,
- * "Pre-check deletion"): an approved call runs in the scope it was asked in
- * since A5 step 6c, where the database refuses it, so such a call queues
- * now and its approval answers the tool's own "not found".
+ * deepest folder of its path the scope reads. A Recall map named by its slug
+ * was asked here too until the pre-check removal: an approved call runs in
+ * the scope it was asked in since A5 step 6c, where the database refuses it,
+ * so such a call queues now and its approval answers the tool's own "not
+ * found".
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

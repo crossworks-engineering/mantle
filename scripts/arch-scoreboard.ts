@@ -54,9 +54,9 @@ const LABELS: Record<string, string> = {
   adminReadsFiles: 'files naming MANTLE_ADMIN_READS',
   readPathWrites: 'named writes inside read paths',
   itemPrecheckTools:
-    'tool item pre-checks: policy `items` entries (A5 step 6b; exit 0, see docs/actors.md "Pre-check deletion")',
+    'tool item pre-checks: policy `items` entries (A5 step 6b; exit 0, see docs/actors.md "Tools")',
   itemPrecheckRoutes:
-    'HTTP item pre-check list entries in route-scope.ts (A4 step 4; exit 0, see docs/actors.md "Pre-check deletion")',
+    'HTTP item pre-check list entries in route-scope.ts (A4 step 4; exit 0, see docs/actors.md "HTTP")',
   requestSystemExits: 'request paths that leave the login scope for the system pool (all reasons)',
   requestSystemExits_area: "request system exits, reason 'area' (an Admin area row)",
   requestSystemExits_loginSelf: "request system exits, reason 'login-self' (the login's own row)",

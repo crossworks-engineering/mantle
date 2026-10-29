@@ -14,7 +14,7 @@
  *    scope, actor, write mode and create home set in the transaction by the
  *    gateway's own statement (writeRoleSettingsSql), the heads taken first,
  *    as the login write gateway sends a scoped write (docs/actors.md, "The
- *    login write gateway");
+ *    three routes to Postgres");
  *  - an Admin user's write request twice: on the write role as above, and
  *    as the product sends it (since F4: the session guard enters its
  *    request scope, enterLoginWrite), on the write role in the login's

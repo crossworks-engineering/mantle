@@ -259,11 +259,10 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
         adminMapSlug = r.json.slug as string;
       }
     }
-    // Both checks on, as every box since the pre-check removal part 2
-    // (docs/actors.md, "Pre-check removal Part 2 (HTTP)"): the item gate of
-    // these routes is gone, so a reader's edit is the database's to refuse
-    // (this process's actor check on: the login's write on the write role;
-    // the scratch database's edit check on).
+    // Both checks on, as on every box (docs/actors.md, "The floor"): the item
+    // gate of these routes is gone, so a reader's edit is the database's to
+    // refuse (this process's actor check on: the login's write on the write
+    // role; the scratch database's edit check on).
     suiteMode = process.env.MANTLE_ACTOR_CHECK;
     process.env.MANTLE_ACTOR_CHECK = 'on';
     await (

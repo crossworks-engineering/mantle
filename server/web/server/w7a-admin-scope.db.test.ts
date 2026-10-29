@@ -302,11 +302,10 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     await x(
       sql`insert into entities (owner_id, kind, name) values (${owner}, 'person', ${`${tag} Ada`})`,
     );
-    // Both checks on, as every box since the pre-check removal
-    // (docs/actors.md, "Pre-check deletion"): a tool's write to an item the
-    // scope may not change is the database's to refuse now. This process's
-    // actor check on (a login's scoped write on the write role, its check
-    // on) and the scratch database's edit check on.
+    // Both checks on, as on every box (docs/actors.md, "The floor"): a tool's
+    // write to an item the scope may not change is the database's to refuse.
+    // This process's actor check on (a login's scoped write on the write
+    // role, its check on) and the scratch database's edit check on.
     suiteMode = process.env.MANTLE_ACTOR_CHECK;
     process.env.MANTLE_ACTOR_CHECK = 'on';
     await (

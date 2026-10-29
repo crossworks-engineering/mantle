@@ -414,7 +414,7 @@ describe('the architecture ratchets (pinned counts)', () => {
 
   it('no-hand-role-lists (A10 #13): no role, area or actor name list outside its source', () => {
     // Each list is written once, in its source file (ROLE_NAME_SOURCES);
-    // every other copy imports it (docs/actors.md, "Role and area names").
+    // every other copy imports it.
     expect(got.perFile.handRoles).toEqual({});
     expect(got.numbers.handRoleLists).toBe(0);
     const files = (Object.values(ROLE_NAME_SOURCES) as { file: string }[]).map((s) => s.file);
@@ -598,8 +598,8 @@ describe('the counters', () => {
   it('asSystem exits: one honest count, pinned, no unreadable holder', () => {
     // Pinned in scripts/arch-scoreboard.pins.json (asSystemExits), so no
     // exit is added unseen, by a new site or a new use of an old one. The
-    // plan v2 exit, at most 40, is not met yet: docs/actors.md, A6, lists
-    // the holders and their uses.
+    // plan v2 exit, at most 40, is not met yet; the reasons and their
+    // holders: docs/actors.md, "Exits".
     const n = got.numbers;
     expect(n.asSystemExits).toBeGreaterThanOrEqual(n.asSystemSites);
     expect(got.perFile.asSystemExitProblems).toEqual([]);

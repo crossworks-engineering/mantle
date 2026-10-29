@@ -1,6 +1,6 @@
 /**
  * The pre-check removal's proof, part 2: the HTTP entries (docs/actors.md,
- * "Pre-check removal Part 2 (HTTP)"). The sibling of
+ * "HTTP"). The sibling of
  * precheck-removal.db.test.ts (the tool entries, part 1), in its own file so
  * the two parts' cells land without touching each other's.
  *

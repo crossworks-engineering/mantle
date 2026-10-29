@@ -577,7 +577,7 @@ const moved = new Map<string, string>();
  *  3b part 4). */
 const movedWrites = new Map<string, string>();
 /**
- * The owner's decision of 2026-10-14 (docs/actors.md, A4 step 3b part 4):
+ * The owner's decision of 2026-10-14:
  * GET and HEAD /api/updates/status and POST /api/updates/check need the
  * settings area their rows name (before: any Admin user; a member and no
  * login the handler's 401). Their cells in the recorded files changed on
@@ -591,16 +591,15 @@ const OWNER_DECISION_ROWS: ReadonlySet<string> = new Set([
 ]);
 const ownerDecision = new Map<string, string>();
 /**
- * The owner's decision of 2026-10-14, 1a (docs/actors.md, A4 hand batch
- * A): the any-login handlers of the four ruleInQuery files read the login
- * the pipeline answered before they leave the request scope by name
- * (asSystem 'rule-in-query'). Before, the whole handler ran inside the
- * exit, the guard included, so the actor the sweep notes after the guard
- * was system:rule-in-query; the gate answers outside it, so a refusal is
- * noted as system:http:no-login and a login let through as the login.
- * Nothing on the wire changes, and the body still runs inside the exit.
- * Their cells in the recorded files changed there, and only there; each is
- * recorded as driven in a file of its own
+ * The owner's decision of 2026-10-14, 1a: the any-login handlers of the four
+ * ruleInQuery files read the login the pipeline answered before they leave
+ * the request scope by name (asSystem 'rule-in-query'). Before, the whole
+ * handler ran inside the exit, the guard included, so the actor the sweep
+ * notes after the guard was system:rule-in-query; the gate answers outside
+ * it, so a refusal is noted as system:http:no-login and a login let through
+ * as the login. Nothing on the wire changes, and the body still runs inside
+ * the exit. Their cells in the recorded files changed there, and only there;
+ * each is recorded as driven in a file of its own
  * (`__snapshots__/a4-guard-sweep-rule-in-query.txt`).
  */
 const RULE_IN_QUERY_ROWS: ReadonlySet<string> = new Set([
@@ -615,14 +614,14 @@ const RULE_IN_QUERY_ROWS: ReadonlySet<string> = new Set([
 ]);
 const ruleInQueryCells = new Map<string, string>();
 /**
- * The owner's decision of 2026-10-14, 2a (docs/actors.md, A4 hand batch A,
- * the open question M3): a HEAD row has its GET row's logins. The HEADs of
- * the any-login, chat and Telegram lists' GET rows ran the GET handler on
- * the system pool (login-self) for every login; they run under the login's
- * own rule now, as their GET does (its scope; an Admin user's read too, on
- * a workspaces brain). Their cells in the recorded files changed in the
- * actor and the request outcome the sweep notes after the login's answer,
- * and only there; each is recorded as driven in a file of its own
+ * The owner's decision of 2026-10-14, 2a (the open question M3): a HEAD row
+ * has its GET row's logins. The HEADs of the any-login, chat and Telegram
+ * lists' GET rows ran the GET handler on the system pool (login-self) for
+ * every login; they run under the login's own rule now, as their GET does
+ * (its scope; an Admin user's read too, on a workspaces brain). Their cells
+ * in the recorded files changed in the actor and the request outcome the
+ * sweep notes after the login's answer, and only there; each is recorded as
+ * driven in a file of its own
  * (`__snapshots__/a4-guard-sweep-head-logins.txt`). The member list's HEADs
  * have its logins too, but the member guard reads the row's scope, not its
  * logins: no cell of theirs changed.

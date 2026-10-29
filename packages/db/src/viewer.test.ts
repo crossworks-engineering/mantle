@@ -547,7 +547,7 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // after a grant change ('page-refold'), where they left it whole by
     // 'rule-in-query' before. 14 since arch A6b: the reads that left the
     // scope for one answer read it in the scope or by a narrow definer
-    // (0293), so twelve reasons name no exit any more (docs/actors.md, A6b).
+    // (0293), so twelve reasons name no exit any more.
     // 15 since F4 fix round 2: the named system step ('brain-bookkeeping',
     // system-step.ts), the one door for the brain-wide bookkeeping a write
     // does after its item check. 14 since plan v3.2 S2b: a workspace's row

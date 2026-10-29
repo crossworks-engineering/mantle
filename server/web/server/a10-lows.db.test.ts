@@ -93,9 +93,8 @@ const BAD_ID_CELLS = [
   'POST /api/heartbeats/:id/fire',
   'POST /api/journal/:id/resolve',
 ];
-/** The [id] cells whose HTTP item gate went in the pre-check removal part 2
- *  (docs/actors.md, "Pre-check removal Part 2 (HTTP)"): the params
- *  gateway's 404 answers them now, where the gate's answered first
+/** The [id] cells whose HTTP item gate went in the pre-check removal part 2:
+ *  the params gateway's 404 answers them now, where the gate's answered first
  *  (`{"ok":false,"error":"not found"}`, the same status). */
 const PRECHECK_HTTP_404 =
   'precheck-http-404 (the item gate went; the params gateway answers an [id] that is not a uuid)';

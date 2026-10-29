@@ -65,8 +65,8 @@ substrate. Incorporated here:
   runtime zod** (matches the split's #3b decision: first-party producers + DTO drift-as-compile-error
   instead of blanket response validation).
 - **Endpoint follows the route recipe**: the handler reads the owner the gate answered for its
-  row, `const user = ownerCaller();` (the gate refuses before the handler; docs/actors.md, A4
-  exit; it was `await getOwnerOr401()` until that guard went).
+  row, `const user = ownerCaller();` (the gate refuses before the handler; docs/actors.md,
+  "HTTP").
 - **⚠️ The in-process `EventEmitter` bus is INVALID, corrected to Postgres `NOTIFY` from day one.**
   An earlier draft of §2 assumed a single instance could bridge the producer and the SSE socket
   with an in-process emitter. It can't: **`server/api` (the DBOS runner, no HTTP) and `server/web` (which

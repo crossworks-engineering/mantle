@@ -115,13 +115,12 @@ const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
- * The builtins whose item pre-check went in the pre-check removal
- * (docs/actors.md, "Pre-check deletion"): the database refuses the same
- * write itself, with both checks on, on the write role where the pre-check
- * ran (server/web/server/precheck-removal.db.test.ts proves each). For
- * each: the argument that names the item (null for one named another way:
- * a Recall map by its slug, a revision), what the write needs of it, and
- * the database's check that refuses it.
+ * The builtins whose item pre-check went in the pre-check removal: the
+ * database refuses the same write itself, with both checks on, on the write
+ * role where the pre-check ran (server/web/server/precheck-removal.db.test.ts
+ * proves each). For each: the argument that names the item (null for one
+ * named another way: a Recall map by its slug, a revision), what the write
+ * needs of it, and the database's check that refuses it.
  */
 type DatabaseChecked = Readonly<{
   param: string | null;

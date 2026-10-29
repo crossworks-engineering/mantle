@@ -1,5 +1,5 @@
 /**
- * A8 matrix F9 (migration 0294; docs/actors.md, "A8 matrix"): a contact
+ * A8 matrix F9 (migration 0294; docs/actors.md, "Who may do what"): a contact
  * share with Can write writes its app's data and nothing else, and its
  * write still reaches the app's exported Table. On a migrated scratch
  * database with both checks on, end to end through the product's own path:

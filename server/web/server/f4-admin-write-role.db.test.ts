@@ -1,7 +1,7 @@
 /**
  * An Admin user's write request runs in its scope on the write role (A8
- * finding F4; pre-check deletion blocker 1, docs/actors.md, "Admin writes
- * on the write role (F4)"). Before F4 the session guard let an Admin user's
+ * finding F4, pre-check deletion blocker 1; docs/actors.md, "The three
+ * routes to Postgres"). Before F4 the session guard let an Admin user's
  * write request through on the system pool, its reads unscoped and only its
  * scope on the write's transactions: the database checked a move, a create
  * in a folder, a delete and a grant there, and nothing else, so the

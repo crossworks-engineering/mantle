@@ -29,10 +29,10 @@
  *   - pool closed (main's shape of these three processes): the read-only
  *     edit is made, unchecked, in warn and on alike: the gap closed here.
  *   - off: the write role too since plan v3 S3 (its check reports, as warn).
- *   - (the pre-check in place, the same answer pool open or closed, went
- *     with note_update's item pre-check: the pre-check removal,
- *     docs/actors.md "Pre-check deletion". The database's refusal above is
- *     the answer now; the bypass switch below changes nothing for it.)
+ *   - (the pre-check in place, the same answer pool open or closed, went with
+ *     note_update's item pre-check in the pre-check removal. The database's
+ *     refusal above is the answer now; the bypass switch below changes
+ *     nothing for it.)
  *
  * `pnpm test:edit-on` and `pnpm test:runtime-role` run this file too.
  *

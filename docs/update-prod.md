@@ -1144,8 +1144,7 @@ hand.
 
 ## Rolling to A7: the switch-over code goes (migration 0295)
 
-Arch A7 (docs/actors.md, "Remove the switch-over code (A7)"). For a box on
-workspaces nothing a user sees changes. Before the roll:
+For a box on workspaces nothing a user sees changes. Before the roll:
 
 - **The box must be on workspaces.** roll.sh's preflight says "workspaces:
   nothing stops the switch here" on such a box. A brain that is not (a box
@@ -1172,9 +1171,9 @@ workspaces nothing a user sees changes. Before the roll:
 
 ## Admin writes on the write role (F4, migrations 0298 and 0299)
 
-F4 (docs/actors.md, "Admin writes on the write role (F4)"): every login's
-write request, an Admin user's and the owner's included, runs in its
-workspaces on the write role while the actor check is warn or on.
+Every login's write request, an Admin user's and the owner's included,
+runs in its workspaces on the write role while the actor check is warn or
+on (docs/actors.md, "The three routes to Postgres").
 
 - **Migration 0298** ticks Moderator on the Admin workspace for every
   Admin user who was not one (owner decision: every Admin user is a
@@ -1193,9 +1192,9 @@ l.role = 'admin' where not u.moderator;` (after the roll: 0).
 ## The checks' floor (migration 0301, the pre-check removal)
 
 From this release the tools' TypeScript item pre-checks go, family by
-family (docs/actors.md, "Pre-check deletion"): the database's actor check
-and edit check are then the only check of a tool's write to an item. Every
-box runs both `on`. Roll this release only on a box whose two checks are
+family: the database's actor check and edit check are then the only check
+of a tool's write to an item (docs/actors.md, "Tools"). Every box runs
+both `on`. Roll this release only on a box whose two checks are
 already on (`scripts/arch-scoreboard-box.sh <alias>` prints both, or
 `select mantle_actor_check_mode(), mantle_edit_check_mode();`: both `on`).
 A box that is not would be raised at the roll's migrate (below).

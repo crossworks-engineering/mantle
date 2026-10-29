@@ -25,7 +25,7 @@
  *    Admin workspace's row, was hidden from a member's scope: 409 "not set
  *    up"), so that read is answered too where the scope hides it; since A6
  *    it is a definer (mantle_ws_admin_id) and the scope reads it.
- * The answers are pinned; docs/actors.md, "A8 matrix", reports them (F7).
+ * The answers are pinned.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test:matrix
  */
@@ -243,7 +243,7 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
         ].join('\n'),
       );
       expect(misses.length, JSON.stringify(misses)).toBe(MISSES[mode]);
-      // Pinned as found (docs/actors.md, "A8 matrix", the grants panel).
+      // Pinned as found.
       expect(
         Object.fromEntries(Object.entries(seen).map(([c, a]) => [c, a.outcome])),
         JSON.stringify(seen, null, 1),
@@ -253,8 +253,8 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
 });
 
 /**
- * What the database does with the wrong TypeScript decision (finding F7 in
- * docs/actors.md, fixed by A6): refused on both paths in every mode.
+ * What the database does with the wrong TypeScript decision (finding F7,
+ * fixed by A6): refused on both paths in every mode.
  *  - route, the product's path: the panel's writes run in the member's
  *    scope (A6 F7 a), so mantle_grant_change and mantle_grant_move_home
  *    hold the change to it, and the one refusal mapper answers 403

@@ -1,8 +1,7 @@
 /**
  * F4 fix round 1: the owner's and every Admin user's management flows that
  * broke when F4 moved an Admin user's write request into its scope on the
- * write role (docs/actors.md, "Admin writes on the write role (F4)", "Fix
- * round 1"). Each cell sends a real request through the full HTTP pipeline
+ * write role. Each cell sends a real request through the full HTTP pipeline
  * (runRoute) on a migrated scratch database, as the owner, in warn and in on:
  *
  *  - H1: a contact's sharing switched on, its code made again, an item the

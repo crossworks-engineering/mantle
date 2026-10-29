@@ -46,7 +46,7 @@ export const noHandRoleLists = {
         'A role, area or actor name list is read from its source, not written by hand (arch plan A10 #13).',
     },
     messages: {
-      list: 'A hand copy of {{n}} {{concept}} names: import the list or its type from its source (eslint-rules/arch-counts.mjs ROLE_NAME_SOURCES; docs/actors.md, "Role and area names"). A membership test is isLoginRole / isWorkspaceArea; a zod enum is z.enum(THE_LIST).',
+      list: 'A hand copy of {{n}} {{concept}} names: import the list or its type from its source (eslint-rules/arch-counts.mjs ROLE_NAME_SOURCES). A membership test is isLoginRole / isWorkspaceArea; a zod enum is z.enum(THE_LIST).',
       superset:
         "Every {{concept}} name and more, by hand: build it from the source (LoginRole | 'extra') so a new role reaches it (eslint-rules/arch-counts.mjs ROLE_NAME_SOURCES).",
     },

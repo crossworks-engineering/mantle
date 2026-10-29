@@ -16,8 +16,7 @@
  * this is a SOURCE classification, not proof. The one item table write
  * found (the app data reads' provisioning) runs on a real database in
  * server/web/server/a5-app-data-read-only.db.test.ts; each other read
- * builtin run read only with the edit check on is carried to the A8 matrix
- * (docs/actors.md, "Step 4 must-dos").
+ * builtin run read only with the edit check on is carried to the A8 matrix.
  *
  * Found, and how each is handled:
  *

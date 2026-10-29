@@ -17,7 +17,7 @@ if (!process.env.MANTLE_TEST_DATABASE_URL) {
       bar,
       'A8 MATRIX SKIPPED: MANTLE_TEST_DATABASE_URL is not set.',
       'The SQL grid, the surface cells and the grants panel test did not run.',
-      'Run `pnpm test:matrix` with a test database (docs/actors.md, "A8 matrix").',
+      'Run `pnpm test:matrix` with a test database (docs/actors.md, "Proof").',
       bar,
     ].join('\n'),
   );

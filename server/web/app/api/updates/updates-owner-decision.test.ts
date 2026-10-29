@@ -1,9 +1,9 @@
 /**
- * The owner's decision of 2026-10-14 (docs/actors.md, A4 step 3b part 4),
- * through the full pipeline (runRoute) with no database: GET and HEAD
- * /api/updates/status and POST /api/updates/check need the settings area
- * their rows name, and the gate answers it; GET /api/updates/check, the
- * cached update banner, stays open to every Admin user (a carve-out).
+ * The owner's decision of 2026-10-14, through the full pipeline (runRoute)
+ * with no database: GET and HEAD /api/updates/status and POST
+ * /api/updates/check need the settings area their rows name, and the gate
+ * answers it; GET /api/updates/check, the cached update banner, stays open to
+ * every Admin user (a carve-out).
  *
  * Before: all three answered any Admin user, area or not, and a member the
  * handler's 401.

@@ -163,7 +163,7 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     'logins by name or email: the users area, or a Moderator with 3 characters, 10 at most, the first page',
   // A6b (0293): where a library left the scope for one answer, a definer
   // returns exactly that answer, held to the scope; the workspace role's,
-  // so the write role's too (docs/actors.md, A6b).
+  // so the write role's too (docs/actors.md, "Definers").
   'mantle_kind_root_id(uuid,text)':
     'a kind root folder’s id (structure, no content), the brain’s only',
   'mantle_agent_experience(uuid,uuid[])':

@@ -24,8 +24,7 @@
  * an [id] of `members`), whose params gateway answers it the 404.
  *
  * The stub hits a box still sees are counted by scripts/arch-scoreboard-box.sh
- * (numbers only, per stub family); docs/actors.md, "Remove the switch-over
- * code (A7)".
+ * (numbers only, per stub family).
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

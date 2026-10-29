@@ -17,11 +17,11 @@
  * makes them (an Admin user, a member with a private workspace, a member
  * with none, a key without Search, a peer, a login in no workspace) and
  * stdio. The two connections of the switch-over (an Admin user on a brain
- * not on workspaces, and on the rollback switch) went in arch A7. No database: every read the surface makes is answered here, by
- * module path, so the same answers reach the code before and after the
- * change. The handlers of the builtins called are replaced on their
- * definitions (the one object the surface and the registry share). The
- * pre-check removal (docs/actors.md, "Pre-check deletion", Parts 1 and 3)
+ * not on workspaces, and on the rollback switch) went in arch A7. No
+ * database: every read the surface makes is answered here, by module path, so
+ * the same answers reach the code before and after the change. The handlers
+ * of the builtins called are replaced on their definitions (the one object
+ * the surface and the registry share). The pre-check removal (Parts 1 and 3)
  * re-recorded the calls of a tool whose item pre-check went on the REFUSED
  * item: its handler runs now (the library's check or the database, stubbed
  * here, refuses it on a box; the removal's own proof is

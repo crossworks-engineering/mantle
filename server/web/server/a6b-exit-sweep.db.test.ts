@@ -268,11 +268,10 @@ const S3_CHANGES: ReadonlyArray<S3Change> = [
 ];
 
 /**
- * The F4 changes (docs/actors.md, "Admin writes on the write role (F4)"),
- * in every section: an Admin user's write request enters its scope, its
- * reads with it, as a member's does (it ran on the system pool with only
- * its scope noted before). A library called in an Admin user's write
- * context answers as main answered it in the same login's READ context
+ * The F4 changes, in every section: an Admin user's write request enters its
+ * scope, its reads with it, as a member's does (it ran on the system pool
+ * with only its scope noted before). A library called in an Admin user's
+ * write context answers as main answered it in the same login's READ context
  * (its reads in the same scope); the writes themselves are named below.
  */
 const F4_CHANGES: ReadonlyArray<{

@@ -2,8 +2,7 @@
  * The owner's decisions on the A8 findings (workspaces arch plan v2,
  * section 32), on a migrated scratch database, through the product's own
  * paths. Each cell prints its answer, so a run on the code before the fix
- * records the answers it changes (docs/actors.md, "The owner's decisions
- * on the A8 findings").
+ * records the answers it changes.
  *
  *  F1 (a): a key of a login outside Admin on /api/v1 answers as the v1
  *      route's base route answers that login (D3): every route family, a
@@ -275,11 +274,10 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
       await toolRow(slug);
     }
     m.takeActorMisses();
-    // Both checks on, as every box since the pre-check removal
-    // (docs/actors.md, "Pre-check deletion"): a tool's write to an item the
-    // scope may not change is the database's to refuse now. This process's
-    // actor check on (a login's scoped write on the write role, its check
-    // on) and the scratch database's edit check on.
+    // Both checks on, as on every box (docs/actors.md, "The floor"): a tool's
+    // write to an item the scope may not change is the database's to refuse.
+    // This process's actor check on (a login's scoped write on the write
+    // role, its check on) and the scratch database's edit check on.
     suiteMode = process.env.MANTLE_ACTOR_CHECK;
     process.env.MANTLE_ACTOR_CHECK = 'on';
     await (

@@ -1093,7 +1093,7 @@ const V1_BASES: Readonly<Record<string, string | null>> = {
   'POST /api/v1/documents/pdfengines/metadata/write': null,
 };
 
-/** The v1 rows a login outside Admin reaches (docs/actors.md, F1's changed
+/** The v1 rows a login outside Admin reaches (A8 finding F1's changed
  *  cells): every other v1 row answers it 403 member-login. */
 const V1_MEMBER_REACH: readonly string[] = [
   'GET /api/v1/search',

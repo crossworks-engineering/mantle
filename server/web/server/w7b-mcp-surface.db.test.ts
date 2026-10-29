@@ -385,11 +385,10 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     await grantRead(adminApp, teamWs);
     readOnly.set('app', adminApp);
     await noteIn(memPrivate, MARK.own);
-    // Both checks on, as every box since the pre-check removal
-    // (docs/actors.md, "Pre-check deletion"): a tool's write to an item the
-    // scope may not change is the database's to refuse now. This process's
-    // actor check on (a login's scoped write on the write role, its check
-    // on) and the scratch database's edit check on.
+    // Both checks on, as on every box (docs/actors.md, "The floor"): a tool's
+    // write to an item the scope may not change is the database's to refuse.
+    // This process's actor check on (a login's scoped write on the write
+    // role, its check on) and the scratch database's edit check on.
     suiteMode = process.env.MANTLE_ACTOR_CHECK;
     process.env.MANTLE_ACTOR_CHECK = 'on';
     await (
