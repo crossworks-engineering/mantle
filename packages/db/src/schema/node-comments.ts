@@ -42,7 +42,7 @@ export const nodeComments = pgTable(
     /** Display-name snapshot at post time. */
     authorName: text('author_name').notNull(),
     body: text('body').notNull(),
-    /** On a personal item (0171, audit S6): 'team' = written while the item
+    /** On a personal item (0171): 'team' = written while the item
      *  was shared with the team (teammates read it); 'review' = the author's
      *  review talk while it was private and submitted (never teammates).
      *  'client' (0194, decision 8) = the thread on a client-level brain item:

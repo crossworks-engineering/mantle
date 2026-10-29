@@ -1,16 +1,13 @@
 /**
- * A live workspace (A10 #15): the one spelling of "not archived", where
- * `w.archived_at is null` was written by hand in about twenty-five queries
- * and `isNull(workspaces.archivedAt)` in ten drizzle where clauses. Three
- * forms of the one rule, for the three kinds of query:
+ * A live workspace: the one spelling of "not archived". Three forms of the
+ * one rule, for the three kinds of query:
  *
  *  - liveWorkspace(): a drizzle condition (`isNull(workspaces.archivedAt)`,
  *    the same SQL the where clauses wrote);
  *  - liveWorkspaceSql(alias): a sql`` fragment, `<alias>.archived_at is null`;
  *  - liveWorkspaceText(alias): the same text for a plain SQL string.
  *
- * Each writes the text its sites wrote before, so a query reads exactly as it
- * did; the rule has one place to change.
+ * The rule has one place to change.
  *
  * eslint-rules/std-helpers.mjs counts every hand spelling (pinned, down
  * only): the ones left are in a plain string (test support) or a

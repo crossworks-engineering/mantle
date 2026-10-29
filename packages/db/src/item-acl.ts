@@ -1,6 +1,6 @@
 /**
- * The item access rules and the item access facts as SQL (arch A6, plan v2
- * page fcc4aee4, sections 5.1 and 11: no hand-written grant logic). Outside
+ * The item access rules and the item access facts as SQL (no hand-written
+ * grant logic). Outside
  * packages/db no code names the raw ACL columns (home_ws, read_ws,
  * write_ws: the lint no-raw-acl-columns, pinned at 0): it asks here.
  *
@@ -136,7 +136,7 @@ export function itemHoldersTextSql(alias?: string): SQL<string> {
 
 // ── A deleted item's home ───────────────────────────────────────────────────
 
-/** The meta key a snapshot keeps the item's home under (W6a fix round 1). */
+/** The meta key a snapshot keeps the item's home under. */
 const SNAPSHOT_HOME_KEY = 'homeWs';
 
 /** The home a snapshot row (alias `alias` of node_snapshots) names, or

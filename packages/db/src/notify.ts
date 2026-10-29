@@ -18,10 +18,10 @@ import { currentCreateHome, currentSpaceScope } from './viewer';
  */
 export async function notifyNodeIngested(nodeId: string): Promise<void> {
   // A write inside a personal-space scope is a personal item: never announced
-  // (member logins Phase 2; cost-safety: no save may start LLM work). The
+  // (cost-safety: no save may start LLM work). The
   // extractor gate's owner check stays the lock behind this.
   if (currentSpaceScope()) return;
-  // A quiet create (a read-only snapshot copy, W6b S3): never announced.
+  // A quiet create (a read-only snapshot copy): never announced.
   if (currentCreateHome()?.quiet) return;
   try {
     await executeWrite(sql`SELECT pg_notify('node_ingested', ${nodeId}::text)`);

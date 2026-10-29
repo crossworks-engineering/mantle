@@ -1,5 +1,5 @@
 /**
- * Workspaces (plan page 4887b8e7, phase W1; migrations 0241 and 0242).
+ * Workspaces (migrations 0241 and 0242).
  *
  * A workspace has users (each with a Moderator tick), at most one assistant
  * and any number of connectors (workspace_resources). An item is shared by a
@@ -75,8 +75,7 @@ export const workspaces = pgTable(
     uniqueIndex('workspaces_bridge_key_uq')
       .on(t.ownerId, t.bridgeKey)
       .where(sql`${t.bridgeKey} is not null`),
-    // Only the Admin name is reserved (0255, W5a audit M3; "Team" too until
-    // 0286).
+    // Only the Admin name is reserved (0255).
     uniqueIndex('workspaces_reserved_name_uq')
       .on(t.ownerId, sql`lower(btrim(${t.name}))`)
       .where(sql`${t.archivedAt} is null and lower(btrim(${t.name})) = 'admin'`),
@@ -218,7 +217,7 @@ export const headsCheckMisses = pgTable(
 );
 
 /**
- * Statements that ran with no actor (workspaces arch A2a, migration 0275):
+ * Statements that ran with no actor (migration 0275):
  * 'ts' when the app sent one with no actor bound, 'sql' when an item
  * table's write trigger found no mantle.actor. Written after the statement,
  * on another connection, at most 100 rows an hour per check
@@ -238,7 +237,7 @@ export const actorCheckMisses = pgTable(
 );
 
 /**
- * The key the held-heads list is signed with (audit L6). One row, read only by
+ * The key the held-heads list is signed with. One row, read only by
  * the security definer functions of 0241: no grant to any role, row security
  * on with no policy. The app never reads or writes it.
  */
@@ -258,7 +257,7 @@ const xid8 = customType<{ data: string }>({ dataType: () => 'xid8' });
 /**
  * The rows a statement moved, keyed by transaction id: written by the move
  * row trigger, taken by the statement trigger of the same transaction
- * (audit M2: never a session temp table). Unlogged, empty outside a running
+ * (never a session temp table). Unlogged, empty outside a running
  * statement; definer functions only.
  */
 export const mantleMovedNodes = pgTable(

@@ -1,6 +1,6 @@
 /**
  * What the migrator does around the migrations that the app's runtime role
- * may not (arch A9): one place for migrate.ts, the test scratch databases
+ * may not: one place for migrate.ts, the test scratch databases
  * and the restore test, so each runs the same steps.
  *
  *  - before the migrations: the viewer roles and the runtime roles (cluster

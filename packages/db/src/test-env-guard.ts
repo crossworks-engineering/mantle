@@ -1,6 +1,5 @@
 /**
- * CI never runs the suite with its database tests skipped (client logins
- * audit A31). Every `*.db.test.ts` file is `describe.skipIf(!URL)` on one of
+ * CI never runs the suite with its database tests skipped. Every `*.db.test.ts` file is `describe.skipIf(!URL)` on one of
  * these variables, so a CI job that forgets to set one reports green without
  * running a single row security, grant or route test. vitest.global-setup.ts
  * calls this before any test file loads and throws on a CI run with one

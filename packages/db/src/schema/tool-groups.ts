@@ -230,12 +230,12 @@ export const toolGroups = pgTable(
     integration: jsonb('integration').$type<ToolGroupIntegration>(),
     enabled: boolean('enabled').default(true).notNull(),
     // The group's old tier level stays in the database, frozen (0268,
-    // archived in archive_tool_levels), until W10; Drizzle no longer names it
-    // (W8c). A group is system-wide or adminOnly.
-    /** Workspaces W4b (0254): the group runs only in a turn whose scope holds
-     *  the Admin workspace (plan 5.4). Written from the manifest. */
+    // archived in archive_tool_levels); Drizzle does not name it. A group is
+    // system-wide or adminOnly.
+    /** The group runs only in a turn whose scope holds the Admin workspace
+     *  (0254). Written from the manifest. */
     adminOnly: boolean('admin_only').notNull().default(false),
-    /** Workspaces W7a fix round 4 (0270): the login that last paired the
+    /** The login (0270) that last paired the
      *  integration's vault key with its host (base URL, connector URL, token
      *  URL), when that is not the brain owner. The tools a connector sync
      *  writes, and the tools authored into the group, take it as their maker,

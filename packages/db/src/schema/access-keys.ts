@@ -50,8 +50,8 @@ export const accessKeys = pgTable(
     lastUsedIp: text('last_used_ip'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedBy: uuid('revoked_by'),
-    /** The key works on /api/v1 only, never on /api/mcp (migration 0268,
-     *  W7b fix round 2): set on a member's key made before the
+    /** The key works on /api/v1 only, never on /api/mcp (migration 0268):
+     *  set on a member's key made before the
      *  per-login MCP switch went, when that login never had MCP. A new key
      *  is made without it. */
     apiOnly: boolean('api_only').notNull().default(false),

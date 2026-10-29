@@ -1,6 +1,5 @@
 /**
- * Which migrations a run applies, and what it refuses (arch A6 fix round 1,
- * H1). The ledger keeps one row per applied migration: its hash and its
+ * Which migrations a run applies, and what it refuses. The ledger keeps one row per applied migration: its hash and its
  * journal `when` (created_at). A run applies every journal entry whose
  * `when` is above the highest one applied (the high-water mark), in order,
  * as drizzle's migrator always did.

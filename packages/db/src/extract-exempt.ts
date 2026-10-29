@@ -121,13 +121,13 @@ export function extractSkippedSql(): SQL {
 }
 
 /**
- * A job the workspaces heads check refused (plan V5, 0241): the extraction
+ * A job the workspaces heads check refused (0241): the extraction
  * ran, its write failed the check, and the job was parked (never retried, so
  * the extraction model is not called again). `data.extract_parked = { at }`
  * keeps the boot drain and the provider-recovery drain from queueing the node
  * again (each re-queue would run the model for a write that fails the same
  * way). Like the terminal skip, it holds while the node is unchanged; a
- * successful pass removes it. W1 audit, LOW 4.
+ * successful pass removes it.
  */
 export const EXTRACT_PARKED_KEY = 'extract_parked';
 

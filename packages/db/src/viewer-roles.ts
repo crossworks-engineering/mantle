@@ -26,21 +26,20 @@ import {
 } from './viewer';
 import { errorMessage } from '@mantle/std';
 
-/** The LOGIN roles: the workspace role (workspaces W1), which sees what the
- *  workspaces of its transaction's scope hold, and the write role
- *  (`mantle_write_user`, workspaces arch A2b2, plan 20.1), which writes under
+/** The LOGIN roles: the workspace role, which sees what the workspaces of
+ *  its transaction's scope hold, and the write role (`mantle_write_user`),
+ *  which writes under
  *  the same row rules: no BYPASSRLS, so a row the scope cannot read matches
  *  no row. One code path makes both: the lock attributes, the password from
  *  the master key, the connection limit, the per-database login and the
  *  owner note. */
 export const POOL_ROLES: readonly PoolRole[] = ['user', 'write'];
 
-/** Roles that no longer log in: the personal-space role (W6b, when the
- *  spaces were folded into the brain, 0267) and the three level roles
- *  (W8c: no read is decided by a level any more). Each brain run makes the
- *  shared role NOLOGIN with no password, and creates it so on a fresh
- *  cluster (W6b fix round 1: old migrations grant to them, so a fresh
- *  install failed to migrate without them); a per-database login is never
+/** Roles that no longer log in: the personal-space role (the spaces are
+ *  folded into the brain, 0267) and the three level roles (no read is
+ *  decided by a level). Each brain run makes the shared role NOLOGIN with
+ *  no password, and creates it so on a fresh cluster (old migrations grant
+ *  to them, so a fresh install cannot migrate without them); a per-database login is never
  *  created, only retired where it exists. Their grants and policies are
  *  gone (0273, and applyViewerGrants revokes what an old migration grants
  *  them again); the roles stay because the old migrations name them. */
@@ -72,9 +71,8 @@ function retireStatement(role: string, exists = true): string {
  *  min(), and the box under 90% of max_connections. */
 export const ROLE_CONNECTION_LIMIT: Readonly<Record<PoolRole, number>> = { user: 54, write: 20 };
 
-/** The attributes that make a viewer role a lock (and the gap writer:
- *  access-matrix.ts gapWriterRoleStatement; it holds nothing since plan v3
- *  S3, TODO(plan v3 S3 part 2): goes one release later). */
+/** The attributes that make a viewer role a lock (and the gap writer, which
+ *  holds nothing: access-matrix.ts gapWriterRoleStatement). */
 export const LOCK_ATTRS = `NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION`;
 
 /** The statements that bring one LOGIN role to its wanted state. Pure, so a
@@ -305,7 +303,7 @@ export async function ensureViewerRoles(
   masterKey: string | null,
   perDatabase = false,
 ): Promise<'ok' | 'not-permitted'> {
-  // A caller that may not manage roles (the runtime role, arch A9, or any
+  // A caller that may not manage roles (the runtime role, or any
   // non-superuser without CREATEROLE) changes nothing: the migrator, as the
   // superuser, keeps them (migrator-steps.ts warns when it cannot).
   const [may] = await sql<{ ok: boolean; su: boolean }[]>`

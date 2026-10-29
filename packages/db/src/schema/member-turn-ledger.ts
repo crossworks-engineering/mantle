@@ -2,7 +2,7 @@ import { bigint, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-co
 
 /**
  * One row per member chat turn, written when the turn is QUEUED (migration
- * 0182, audit F09). The member daily cap counts these, not the inbound
+ * 0182). The member daily cap counts these, not the inbound
  * `team_messages` rows the workflow writes later, so turns still waiting on a
  * busy queue count too. `turn_id` is the workflow id (login plus the
  * Idempotency-Key), unique: a retry with the same key is the same turn and is

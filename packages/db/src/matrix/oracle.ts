@@ -1,15 +1,15 @@
 /**
- * The access oracle (workspaces arch plan v2, section 12 A8): what
+ * The access oracle: what
  * docs/workspaces.md says a login may do with an item, written from the guide
  * alone. It imports NOTHING from the kind registry, the access matrix or the
  * SQL, so the grid that checks the database against it tests two independent
  * readings of the guide, not one reading twice.
  *
- * A1 started it with two actions (read, create) at SQL level
- * (expectedReadCreate) and A3a added the writes (expectedWrite); A8's full
- * oracle, expectedAccess, is ./guide-oracle.ts (13 actions, 4 placements,
- * every actor kind, the surfaces). These stay for the A1 and A3a grids and
- * read the guide through it: expectedReadCreate is expectedAccess's read
+ * Two actions (read, create) at SQL level (expectedReadCreate) and the
+ * writes (expectedWrite); the full oracle, expectedAccess, is
+ * ./guide-oracle.ts (13 actions, 4 placements, every actor kind, the
+ * surfaces). These serve the read and write grids and read the guide
+ * through it: expectedReadCreate is expectedAccess's read
  * and create, and expectedWrite takes a caller's standing and the rules of
  * "Items and grants" from guide-oracle.ts (guideStanding, GUIDE_RULES), so
  * the guide's seat rules and kinds are written once.
@@ -85,8 +85,8 @@ export function guideWorkspaceKinds(): string[] {
   return [...GUIDE_WORKSPACE_KINDS];
 }
 
-/** `role`'s standing on the fixture's item (guide-oracle.ts): the A1 and
- *  A3a fixtures grant as the A8 fixture's root and folder placements. */
+/** `role`'s standing on the fixture's item (guide-oracle.ts): the read and
+ *  write fixtures grant as the full fixture's root and folder placements. */
 const standingOf = (role: OracleWriteRole, placement: OraclePlacement = 'root') =>
   guideStanding(role, placement satisfies GuidePlacement);
 
@@ -198,7 +198,7 @@ export function expectedFolderCount(
   };
 }
 
-// ── Writes (workspaces arch A3a) ────────────────────────────────────────────
+// ── Writes ──────────────────────────────────────────────────────────────────
 
 /**
  * The write grid's logins: the six above, and two Admin users who are also

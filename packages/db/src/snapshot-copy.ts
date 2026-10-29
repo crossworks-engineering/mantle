@@ -1,7 +1,6 @@
 /**
- * The author's snapshot copy of an accepted item (workspaces W6b, plan S3)
- * is read only for everyone, its author included (CEO decision, W6b fix
- * round 1). It carries data.snapshot_of (the brain item it copies). Its
+ * The author's snapshot copy of an accepted item is read only for everyone,
+ * its author included (docs/actors.md, "Who may do what"). It carries data.snapshot_of (the brain item it copies). Its
  * author may delete it; nobody edits it, moves it out of its private (or
  * Former user) workspace, or shares it. Migration 0267's triggers refuse
  * every such write in the database; the app refuses first with this error
@@ -24,8 +23,8 @@ export function isSnapshotCopy(node: { data?: unknown } | null | undefined): boo
 export const SNAPSHOT_COPY_READ_ONLY_MESSAGE =
   'not allowed to change this item: it is a read-only snapshot copy';
 
-/** Why a snapshot copy carries no link and no contact share (fix round 2,
- *  L-1): the database's own words (0267, shares_snapshot_copy). */
+/** Why a snapshot copy carries no link and no contact share: the
+ *  database's own words (0267, shares_snapshot_copy). */
 export const SNAPSHOT_COPY_NO_SHARE =
   'not allowed to share this item: it is a read-only snapshot copy in its private workspace';
 

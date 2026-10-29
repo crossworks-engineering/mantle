@@ -43,8 +43,8 @@ export const authUsers = authSchema.table('users', {
   sessionEpoch: integer('session_epoch').notNull().default(0),
 });
 
-/** Every role a login can hold: LOGIN_ROLES in @mantle/client-types/role-names
- *  (A10 #13), the one list (role-names.test.ts pins it to users_role_ck). A
+/** Every role a login can hold: LOGIN_ROLES in @mantle/client-types/role-names,
+ *  the one list (role-names.test.ts pins it to users_role_ck). A
  *  role grants nothing: what a login reads and may do comes from its
  *  workspaces. */
 export type { LoginRole };

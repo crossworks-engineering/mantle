@@ -139,7 +139,7 @@ export const recallNodes = pgTable(
  * the editor and the audit of AGENT edits, which matters because v2 serves an
  * agent's card edit immediately (there is no compile gate to hold it back).
  *
- * Not the flight recorder (v1 S3, still unbuilt) and not a walk log: this
+ * Not a flight recorder and not a walk log: this
  * records what CHANGED, never who read what.
  */
 export const recallRevisions = pgTable(
@@ -180,7 +180,7 @@ export type RecallRevision = typeof recallRevisions.$inferSelect;
 export const RECALL_NODE_KINDS = ['index', 'knowledge', 'prompt'] as const;
 
 // v2: who wrote a revision is RECALL_ACTOR_KINDS in
-// @mantle/client-types/role-names (A10 #13), the CHECK's values.
+// @mantle/client-types/role-names, the CHECK's values.
 
 /** v2: revisions kept per map; the write path prunes beyond this. */
 export const RECALL_REVISIONS_PER_MAP = 50;

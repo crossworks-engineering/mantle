@@ -1,5 +1,5 @@
 /**
- * The edit check (workspaces arch A3a, docs/edit-check.md): the keys of
+ * The edit check (docs/edit-check.md): the keys of
  * nodes.data only the brain sets, and where each is written. The SQL list
  * is mantle_node_derived_keys() (migration 0281): edit-check.db.test.ts
  * holds the two equal, and edit-check.test.ts holds this inventory to the
@@ -77,13 +77,13 @@ export const NODE_EXTRACTOR_KEYS: readonly string[] = [
 
 /** The presentation keys of nodes.data (mantle_node_presentation_keys):
  *  a change of these alone needs edit of the item OR of its folder (a
- *  board drag, a sibling rebalance; plan 20.3). `tree_rank` is an item's
+ *  board drag, a sibling rebalance). `tree_rank` is an item's
  *  place in its folder's custom order (0337, docs/folder-tree.md). */
 export const NODE_PRESENTATION_KEYS: readonly string[] = ['rank', 'tree_rank'];
 
 /**
- * Keys of nodes.data a user's own write sets, through one gateway only (A10
- * #7, the work stamp): not derived, since a non-system write sets them, so
+ * Keys of nodes.data a user's own write sets, through one gateway only (the
+ * work stamp): not derived, since a non-system write sets them, so
  * the edit check lets them through. Each names the module that alone spells
  * the key (edit-check.test.ts holds every other product file to it), and
  * how it is set.

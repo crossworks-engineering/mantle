@@ -28,7 +28,7 @@ type NodeType = (typeof nodeType.enumValues)[number];
 
 /**
  * The kinds a context ref may name: the kind registry's `contextRef` field
- * (A10 #12, `@mantle/client-types/kind-lists`), in registry order. Jackdaw's
+ * (`@mantle/client-types/kind-lists`), in registry order. Jackdaw's
  * `CONTEXT_KINDS` (`client/web/components/assistant/assistant-dock.tsx`) is
  * still a hand copy of the same list; it can read the registry's
  * CONTEXT_REF_KINDS once the ref rides the wire as a structured block rather

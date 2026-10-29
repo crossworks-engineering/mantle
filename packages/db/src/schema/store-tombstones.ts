@@ -2,8 +2,7 @@ import { sql } from 'drizzle-orm';
 import { pgTable, primaryKey, text, timestamp } from 'drizzle-orm/pg-core';
 
 /**
- * The snapshot store's tombstones (workspaces arch A3b part 2, migration
- * 0284; docs/store-brokers.md): a file a deleted or re-pointed row named (a
+ * The snapshot store's tombstones (migration 0284; docs/store-brokers.md): a file a deleted or re-pointed row named (a
  * snapshot's database copy, an accepted table's workbook copy), recorded by
  * a trigger in the row's own transaction. The one store sweep removes the
  * file a grace period later, while no row names it, then the tombstone.

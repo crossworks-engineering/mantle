@@ -91,12 +91,12 @@ async function writeTxOf(
           await tx.joins;
           return value;
         } catch (err) {
-          // Ended first (round 3, A): what it left running settles,
+          // Ended first: what it left running settles,
           // refused before the driver, before postgres.js sends the
           // ROLLBACK and hands the connection back.
           tx.done = true;
-          // Uncapped (round 5, N5): a capped wait let postgres.js send a
-          // late `rollback to` on a connection already handed on.
+          // Uncapped: a capped wait would let postgres.js send a late
+          // `rollback to` on a connection already handed on.
           await tx.joins;
           throw err;
         } finally {

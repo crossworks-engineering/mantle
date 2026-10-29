@@ -139,7 +139,7 @@ export function getDb(): PostgresJsDatabase<typeof schema> {
 }
 
 /**
- * Run `fn` in ONE workspace scope (workspaces W1, plan section 2.1): a short
+ * Run `fn` in ONE workspace scope: a short
  * transaction on the workspace role (`mantle_view_user`) that sets
  * `mantle.ws`, `mantle.mod_ws` and `mantle.login_id`; every `db` query inside
  * runs in it, so row security shows only what those workspaces hold (and a
@@ -183,8 +183,7 @@ export async function withScope<T>(scope: WorkspaceScope, fn: () => Promise<T>):
 }
 
 /**
- * Run `fn` as an assistant TURN in one workspace scope (workspaces W4b, plan
- * 5.1): every `db` query inside, after any await, runs on the workspace role
+ * Run `fn` as an assistant TURN in one workspace scope: every `db` query inside, after any await, runs on the workspace role
  * (`mantle_view_user`) in its own short transaction that sets the scope, so
  * no transaction is held across an LLM call. Fails closed: a query built
  * here that runs after the turn ended (or from a callback that lost it) is

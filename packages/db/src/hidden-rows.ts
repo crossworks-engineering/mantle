@@ -1,5 +1,5 @@
 /**
- * The folder rule of arch A3a (migration 0282), asked from TypeScript: a
+ * The folder rule (migration 0282), asked from TypeScript: a
  * folder move or delete that would leave behind rows the caller cannot read
  * is refused (42501, detail hidden_rows: a 409 on HTTP, the same words in
  * the tools). ONE helper for every pre-check (node folders ask it inside

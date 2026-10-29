@@ -29,10 +29,10 @@ import { db } from './handles';
 import { sqlState } from './heads';
 
 /**
- * login(rw | owner) for `loginId`, read as that login is NOW (arch A2a, plan
- * 4.1): deferred work done for a login (a run, a heartbeat, a pending call,
- * a turn) binds this when it runs, not what the login was when the work was
- * queued. A2a refuses nothing: a login disabled since (or gone) is still
+ * login(rw | owner) for `loginId`, read as that login is NOW: deferred work
+ * done for a login (a run, a heartbeat, a pending call, a turn) binds this
+ * when it runs, not what the login was when the work was queued. This
+ * refuses nothing: a login disabled since (or gone) is still
  * bound and named in one warning. `entry` is the system reason of the entry
  * asking (worker:runs); a bad id gives system(entry).
  */
@@ -47,8 +47,8 @@ export async function loginActorNow(
   } catch {
     return systemActor(entry);
   }
-  // With the check off nothing reads the actor: no query (fix round, L1;
-  // the owner's rule, no new query on a hot path while off).
+  // With the check off nothing reads the actor: no query (no new query on
+  // a hot path while off).
   if (actorCheckMode() === 'off') return actor;
   try {
     const rows = (await runAsSystem(entry, () =>
@@ -188,7 +188,7 @@ export async function clientHeldFromNarrow(clientId: string): Promise<boolean> {
 
 /**
  * Whether `loginId` is a user of this brain's live Admin workspace now, its
- * login enabled (W7 integration fix 3, L1), never the admin role alone (a
+ * login enabled, never the admin role alone (a
  * login taken out of Admin keeps its role): mantle_login_is_admin (0304).
  * Fails closed. Admin pool.
  */
@@ -206,8 +206,8 @@ export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
 
 /**
  * Whether login `loginId` holds Admin `area` now, asked on the system pool
- * for a login other than the current caller (W7a fix round 3: the maker of
- * an API tool, when the tool's secret refs resolve at run time): the area
+ * for a login other than the current caller (the maker of an API tool,
+ * when the tool's secret refs resolve at run time): the area
  * rule, mantle_area_rule (0304). Fails closed.
  */
 export async function loginHasArea(loginId: string, area: ScopeArea): Promise<boolean> {
@@ -238,8 +238,8 @@ export async function loginAreas(loginId: string): Promise<ScopeArea[]> {
 }
 
 /**
- * Which of `wsIds` `loginId` holds a Moderator seat in now (A8 fix round 1,
- * L5), for a turn's write (@mantle/tools moderator-seat.ts): one indexed
+ * Which of `wsIds` `loginId` holds a Moderator seat in now, for a turn's
+ * write (@mantle/tools moderator-seat.ts): one indexed
  * read of workspace_users, in the turn's scope (its seats are in its ws).
  */
 export async function moderatorSeatsNow(

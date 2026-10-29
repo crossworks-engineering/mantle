@@ -30,7 +30,7 @@ export async function withHeads<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
   const list = uuidArrayLiteral(ids, 'withHeads');
-  // Nested in a system transaction (arch A2b, plan 20.2): the database
+  // Nested in a system transaction: the database
   // decides (mantle_lock_heads_nested, 0277): more heads where it holds
   // some (FOR UPDATE NOWAIT; a busy one fails with 55P03 and the outermost
   // call retries), else the first lock with its rules. Never a second
@@ -60,14 +60,14 @@ export async function withSubtreeHeads<T>(
   return withSystemTx(async (tx) => {
     // A first lock: nested in a transaction that holds heads, the database
     // refuses it (55000, mantle_lock_heads); lock the subtree in the
-    // outermost call (arch A2b, plan 20.2).
+    // outermost call.
     await tx.execute(sqlTag`select mantle_lock_subtree_heads(${root}::uuid, ${list}::uuid[])`);
     return fn(tx);
   });
 }
 
 /** The open system transaction (it sees its own rows), else the system
- *  pool: where a heads helper reads which heads to take (arch A2b). */
+ *  pool: where a heads helper reads which heads to take. */
 function systemTxOrPool(): PostgresJsDatabase<typeof schema> {
   return (currentSystemTx()?.tx as PostgresJsDatabase<typeof schema> | undefined) ?? getAdminDb();
 }
@@ -257,19 +257,19 @@ export async function lockMoreHeads(
 const RETRYABLE = new Set(['40P01', '40001', '55P03']);
 
 /** The SQLSTATE on the error or its cause chain: pg-error.ts pgErrorCode,
- *  the one walk (round 13b: two walkers had grown apart). */
+ *  the one walk. */
 export function sqlState(err: unknown): string | null {
   return pgErrorCode(err);
 }
 
 /**
  * Run a whole transaction again when it failed for a retryable reason
- * (plan V1: every retry is at the caller, never inside a function). `run`
+ * (every retry is at the caller, never inside a function). `run`
  * must start its own transaction each time (withHeads, withScope,
  * withSystemTx), so nothing of a failed attempt survives.
  */
 export async function withDeadlockRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
-  // Inside an open system transaction (arch A2b, plan 20.2) a retry cannot
+  // Inside an open system transaction a retry cannot
   // start afresh: the error goes to the outermost call, which retries.
   if (currentSystemTx()) return run();
   for (let attempt = 1; ; attempt++) {

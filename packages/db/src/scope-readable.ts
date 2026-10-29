@@ -1,6 +1,6 @@
 /**
  * Which of some items the caller's scope reads, asked inside a write
- * transaction (workspaces arch A1 fix round, L1). A login's write runs on
+ * transaction. A login's write runs on
  * the system pool with its scope set on the transaction (mantle.ws, see
  * withSystemTx); a lookup there sees every row, so a write that reports on
  * OTHER items (a warning naming a map, a target that is "gone") must ask
@@ -120,9 +120,8 @@ export function itemReadByWorkspace(ws: string, nodeId: SQLWrapper): SQL {
  *    the random suffix. A scope can be hidden here: inside a system
  *    transaction (withNodeInsertHeads, asSystem) the request's and the
  *    turn's scopes are masked, so a member's assistant that makes a map
- *    reaches this branch (A2b1 audit, M3). The actor rule does not depend
- *    on the check's mode for an entry that binds one actor in every mode.
- *    A2b2 revisits it once every scoped write carries its scope.
+ *    reaches this branch. The actor rule does not depend on the check's
+ *    mode for an entry that binds one actor in every mode.
  */
 export async function scopeLacksAdmin(tx: Exec): Promise<boolean> {
   const scope = requestWriteScope() ?? currentWorkspaceScope();

@@ -65,7 +65,7 @@ export type ReviewState = (typeof REVIEW_STATES)[number];
  * Accept). A submitted item is FROZEN: the row rules refuse every write to it
  * until Accept, Return or Recall.
  *
- * submitted -> taken (audit F07, migration 0183): an admin took the item
+ * submitted -> taken (migration 0183): an admin took the item
  * (and its bundle) into their own private space to work on it. The row
  * stays and still names the author; `taken_by` is the admin, `taken_root`
  * the item it was taken with (NULL on the root itself). taken -> accepted
@@ -171,7 +171,7 @@ export const clientCommentLedger = pgTable(
 );
 
 /**
- * The bundle a submitted item was submitted with (migration 0180, audit F04):
+ * The bundle a submitted item was submitted with (migration 0180):
  * the item itself and everything that renders inside it, recorded at Submit.
  * While the root is submitted every item here is frozen too (the row rules'
  * `mantle_space_item_frozen`), and Accept moves exactly these items. Recall,
@@ -219,7 +219,7 @@ export const spaceUploads = pgTable(
 
 /**
  * The accepted SAVED version of a member-authored item, for its author
- * (audit F07, migration 0183). Written at every Accept of a member's item;
+ * (migration 0183). Written at every Accept of a member's item;
  * what /api/member/accepted serves, never the brain's current version. A
  * table's workbook is a copy under TABLE_DB_DIR (`table_path`); a file keeps
  * its sha256 only. `pending`: a pre-0183 table or file the migration could

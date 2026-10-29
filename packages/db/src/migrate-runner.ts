@@ -1,5 +1,5 @@
 /**
- * The ledger part of migrate.ts (arch A6 fix round 1, H1): read the ledger,
+ * The ledger part of migrate.ts: read the ledger,
  * plan the run (migrate-plan.ts), refuse a gap from 0290 on, warn on an
  * older one, then apply each pending migration in its own transaction and
  * record it. Apart from migrate.ts so a database test runs the real thing
@@ -72,7 +72,7 @@ async function applyPending(
   for (const migration of pending) {
     // Each migration in its OWN transaction (see migrate.ts's header).
     await sql.begin(async (tx) => {
-      // Arch A2a: a migration's writes run as system(migration).
+      // A migration's writes run as system(migration).
       await tx`select set_config('mantle.actor', 'system:migration', true),
                       set_config('mantle.write_mode', 'rw', true)`;
       for (const stmt of migration.sql) {

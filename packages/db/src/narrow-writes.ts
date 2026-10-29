@@ -1,6 +1,6 @@
 /**
- * Whether a write needs its full-route spot (plan v3.2 S7b part b2 round 8,
- * the full audit's LOW 5: one helper instead of a predicate per caller).
+ * Whether a write needs its full-route spot: one helper instead of a
+ * predicate per caller.
  * The narrow login may write only its measured allowlist
  * (access-matrix.ts NARROW_WRITES); a write it may not make runs at the
  * caller's named spot (viewer.ts FULL_ROUTE_SPOTS). The caller names the

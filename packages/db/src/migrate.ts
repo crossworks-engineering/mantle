@@ -41,7 +41,7 @@
  * without blocking writes is built CONCURRENTLY after the migrations
  * (concurrent-indexes.ts).
  *
- * ── A migration below the high-water mark (arch A6 fix round 1, H1) ──────────
+ * ── A migration below the high-water mark ────────────────────────────────────
  * drizzle's gating skips any entry whose `when` is at or below the highest
  * applied one, so an entry that was never applied but sits below the mark
  * (a lower number merged after a higher one, or a `when` stamped too low)
@@ -82,7 +82,7 @@ async function main() {
   try {
     const migrations = readMigrationFiles({ migrationsFolder: './migrations' });
 
-    // The viewer LOGIN roles and the runtime roles (arch A9) first:
+    // The viewer LOGIN roles and the runtime roles first:
     // migrations grant to them and name them in row level policies, and
     // roles are cluster objects a restore does not bring back. Idempotent;
     // also re-derives the passwords from the key (migrator-steps.ts).

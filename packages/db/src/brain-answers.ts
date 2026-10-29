@@ -1,9 +1,9 @@
 /**
  * Brain-wide answers a write asks in the caller's scope after its item check
- * (F4 fix round 2, migration 0300): yes or no, or a number, never a row.
- * The scope reads only the rows it reads, so a name a hidden row holds read
- * as free (then its unique index answered a 500, or two rows answered to one
- * name) and a budget summed only the history the scope reads.
+ * (migration 0300): yes or no, or a number, never a row. The scope reads
+ * only the rows it reads, so asked there a name a hidden row holds would
+ * read as free (then its unique index answers a 500, or two rows answer to
+ * one name) and a budget would sum only the history the scope reads.
  *
  * Each runs on the executor given (a transaction's, so it sees the
  * transaction's own writes), else on `db`; on the system pool (no scope) the

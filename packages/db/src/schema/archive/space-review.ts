@@ -1,6 +1,6 @@
 /**
- * The review tables as they were when the review flows went (migration 0264,
- * W5c, plan 9.3 and 9.5): every row of space_items, space_submissions and
+ * The review tables as they were when the review flows went (migration
+ * 0264): every row of space_items, space_submissions and
  * space_item_bundles, copied before the states resolved and the submission
  * and bundle rows were cleared. Each table has its source's columns (the
  * types and NOT NULLs, no foreign key, no check) plus archived_at; the

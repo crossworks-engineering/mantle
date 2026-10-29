@@ -1,14 +1,13 @@
 /**
- * The LLM-work cost guard (workspaces plan 5.3, phase W2): model work derived
+ * The LLM-work cost guard: model work derived
  * from an item (a summary, facts, a vision or OCR read) runs only for an item
  * that at least one workspace with an assistant reads. Chunks and embeddings
  * (the local embedder) run for every item, so search works everywhere, and a
  * private workspace without an assistant costs nothing in LLM work, as a
- * personal space does today.
+ * personal space does.
  *
- * Works under today's levels too: until grants are written (W4) an item's
- * read_ws is empty, and the brain's items keep today's rule (they are the
- * Admin assistant's). Personal-space items never reach the extractor (its
+ * An item with an empty read_ws (no grant written) keeps the brain's rule
+ * (it is the Admin assistant's). Personal-space items never reach the extractor (its
  * owner check).
  */
 import { sql } from 'drizzle-orm';

@@ -73,7 +73,7 @@ export const traces = pgTable(
     tokensOut: integer('tokens_out').default(0).notNull(),
     tokensCacheRead: integer('tokens_cache_read').default(0).notNull(),
     /** Embedding input tokens, kept apart from the completion tokens above
-     *  (tokens_in/out feed the member token budget; these do not). A10 #5,
+     *  (tokens_in/out feed the member token budget; these do not).
      *  docs/spend-recording.md. */
     tokensEmbed: integer('tokens_embed').default(0).notNull(),
     stepCount: integer('step_count').default(0).notNull(),

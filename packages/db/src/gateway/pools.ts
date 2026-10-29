@@ -49,11 +49,11 @@ declare global {
    *  per transaction on the system pool instead. */
   var __mantleNarrowSql: ReturnType<typeof postgres> | null | undefined;
 
-  /** The turn-scope handle (workspaces W4b), over the workspace role's pool. */
+  /** The turn-scope handle, over the workspace role's pool. */
   var __mantleTurnDb: PostgresJsDatabase<typeof schema> | undefined;
 
   /** This process sends scoped login writes to the write role
-   *  (openLoginWritePool, arch A2b2b). */
+   *  (openLoginWritePool). */
   var __mantleLoginWritePool: boolean | undefined;
 
   /** The write role's pool size in this process (openLoginWritePool's
@@ -190,7 +190,7 @@ const NARROW_STARTUP_KEYS = [
  */
 export function getAdminDb(): PostgresJsDatabase<typeof schema> {
   if (globalThis.__mantleDb) return globalThis.__mantleDb;
-  // DATABASE_URL, or the runtime role on it (arch A9, runtime-role.ts).
+  // DATABASE_URL, or the runtime role on it (runtime-role.ts).
   const url = systemDatabaseUrl();
   // onnotice: an item table's write trigger reports a statement with no
   // actor as a NOTICE (0275); every other notice prints as postgres.js's
@@ -218,7 +218,7 @@ export function getAdminDb(): PostgresJsDatabase<typeof schema> {
   return client;
 }
 
-/** Who the system pool logs in as (arch A9, DB_ROLE_SQL), asked on the
+/** Who the system pool logs in as (DB_ROLE_SQL), asked on the
  *  system pool itself whatever scope the caller is in: system health
  *  reports it. Null when the pool cannot answer. */
 export async function systemPoolRole(): Promise<DbRoleRow | null> {
@@ -231,7 +231,7 @@ export async function systemPoolRole(): Promise<DbRoleRow | null> {
   }
 }
 
-/** Who the system pool logs in as, once per process at its start (arch A9):
+/** Who the system pool logs in as, once per process at its start:
  *  a warning on a box whose app runs as the superuser (MANTLE_DB_RUNTIME_ROLE
  *  off), or as any role but the runtime role. Production only (a test
  *  process opens many pools); never in a statement's path. */
@@ -402,7 +402,7 @@ export function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> 
 }
 
 /**
- * Open the login write gateway in this process (arch A2b2b): every process
+ * Open the login write gateway in this process: every process
  * that runs a login's tool or request writes in a workspace scope, so the
  * database's write and edit checks hold them there as they do in web:
  *

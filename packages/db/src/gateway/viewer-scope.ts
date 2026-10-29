@@ -152,7 +152,7 @@ function memoScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope> {
 
 /**
  * The login's workspaces and Moderator ones, as SQL columns of a query on
- * auth.users (W6a fix round 1, the bench): the session's one login read
+ * auth.users: the session's one login read
  * carries them, and seedLoginScope keeps them as this request's scope, so
  * the guard needs no second lookup. The same rule as viewerScopeFor: live
  * workspaces only, none for a disabled login. The login is a bound id, not
@@ -210,12 +210,12 @@ export async function loginScopeFor(loginId: string): Promise<WorkspaceScope> {
 
 /**
  * The fallback of a login's create home (docs/workspaces.md, "Where a new
- * item lands"; W6b): for a login outside the Admin workspace (`ownWork`;
+ * item lands"): for a login outside the Admin workspace (`ownWork`;
  * 'auto' asks the database) its private workspace, made now when
  * `makePrivate` and it has none; with no workspace to make one in,
  * refused. An Admin user has no private fallback (null): the folder's home,
  * else Admin. Only createHomeIntent (create-home.ts, the one create-home
- * intent of arch A3c) calls it; not exported from the package.
+ * intent) calls it; not exported from the package.
  *
  * Admin pool: it names a place, it grants nothing (the database's create
  * checks still run).

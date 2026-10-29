@@ -31,8 +31,8 @@ function scopeMayEdit(): SQL<boolean> | null {
 }
 
 /**
- * A draft column, read only where the caller may read drafts (workspaces
- * W6a, plan 14): null below that (readsDrafts() false); the column itself
+ * A draft column, read only where the caller may read drafts: null below
+ * that (readsDrafts() false); the column itself
  * on the system pool or in a personal space; inside a workspace scope the
  * column only for an item the user may edit (a Moderator of its home, or
  * a grant with Write on in the scope: scopeMayEdit), else null. The query
@@ -49,7 +49,7 @@ export function draftColumn<T>(column: AnyPgColumn): SQL<T | null> {
 
 /** Whether the item row in the query may show its draft to the caller (the
  *  same rule as draftColumn), as a boolean expression. Never for a
- *  read-only snapshot copy (W6b fix round 1): nobody edits it, so no read
+ *  read-only snapshot copy: nobody edits it, so no read
  *  repairs it either. */
 export function draftAllowed(): SQL<boolean> {
   if (!readsDrafts()) return sql<boolean>`false`;

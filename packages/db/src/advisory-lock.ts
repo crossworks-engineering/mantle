@@ -1,17 +1,17 @@
 /**
- * Advisory locks (A10 #15): every transaction-scoped advisory lock the
- * product takes goes through here, where eleven sites wrote the SQL by hand.
+ * Advisory locks: every transaction-scoped advisory lock the product takes
+ * goes through here.
  *
  * A lock's key is a hash of a key text, and two hash functions are in use:
  * `hashtextextended(text, 0)` (64 bit) at most sites, `hashtext(text)` (32
- * bit) at the older ones. Each site names its own and KEEPS it: the key a
+ * bit) at the rest. Each site names its own and KEEPS it: the key a
  * lock takes is the hash function's value of the text, so two versions of
  * the code exclude each other during a roll only when both hash the same
  * text with the same function (advisory-lock-keys.test.ts holds every site
  * to the function, hash and text recorded on main). A new lock uses
  * 'hashtextextended'.
  *
- * Not in @mantle/std, as the survey had it: std takes no dependency and is
+ * Not in @mantle/std: std takes no dependency and is
  * bundled for the browser; a lock needs drizzle's sql and a transaction,
  * both of this package.
  *

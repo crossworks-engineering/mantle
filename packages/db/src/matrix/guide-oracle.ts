@@ -1,5 +1,5 @@
 /**
- * The A8 oracle (workspaces arch plan v2, section 12 A8): what the guide says
+ * The matrix oracle: what the guide says
  * a caller may do with an item, written from the guide's text alone. It
  * imports NOTHING (no kind registry, no access matrix, no SQL, no gate), so
  * the grid that checks the database against it, and the surface cells that
@@ -9,8 +9,8 @@
  * ("Items and grants", "The home rule", "Folders", "Assistants and chats",
  * "MCP, API keys and linked brains", "Apps"), docs/actors.md ("Actor
  * kinds") for who a statement runs as, and docs/update-prod.md ("Snapshot
- * copies (plan S3)") for the snapshot copy, which docs/workspaces.md does not
- * describe (a gap the A8 report names).
+ * copies") for the snapshot copy, which docs/workspaces.md does not
+ * describe.
  *
  * THE FIXTURE it speaks of (test-support/a8-grid.ts builds it; the grid pins it):
  *
@@ -34,7 +34,7 @@
  *               admin: an item at its kind's root homed in Admin, no other
  *                 grant (what an Admin user keeps to the brain's managers).
  *               Every item but a snapshot copy has an open public link.
- *   Actions     the 13 of the plan (section 12 A8; v1's list): read, list,
+ *   Actions     these 13: read, list,
  *               search, edit content, edit draft, delete, move (H to T), add
  *               a grant (to T), remove a grant (R's), the Write switch (on
  *               for R), a public link (open one), create (in the item's
@@ -185,10 +185,10 @@ export type GuideAnswer =
 export type GuideWorkspace = 'admin' | 'H' | 'W' | 'R' | 'T' | 'O' | 'private';
 
 /**
- * The A3a write grid's two more logins (oracle.ts expectedWrite): Admin
+ * The write grid's two more logins (oracle.ts expectedWrite): Admin
  * users who are also users of W (Write on) or of R (Write off), so the
  * rules that ask "an Admin user" meet one who reads the item. Not in
- * GUIDE_ROLES: the A8 grid does not run them; they read the guide here so
+ * GUIDE_ROLES: the matrix grid does not run them; they read the guide here so
  * the two oracles read it once.
  */
 export type GuideSeatRole = GuideRole | 'adminWriteGrant' | 'adminReadGrant';
@@ -316,8 +316,8 @@ const deny = (why: string): GuideAnswer => ({ allow: false, why });
 /**
  * A caller's standing on the fixture's item, as "Items and grants" reads
  * it from its seats and the item's grants: the one reading of the guide's
- * seat rules, which expectedAccess and the A1 and A3a oracles (oracle.ts)
- * share.
+ * seat rules, which expectedAccess and the read and write oracles
+ * (oracle.ts) share.
  */
 export type GuideStanding = {
   /** "Read the item: to be a user of a workspace it is granted to". */
@@ -556,7 +556,7 @@ function narrowedAnswer(
   // update-prod.md: "A copy is read only for everyone, its author included:
   // the database refuses any change to it, a move out of its private
   // workspace and any new grant; its author may delete it." A link on it
-  // would share it (0267 fix round 2, "nobody ... shares it").
+  // would share it ("nobody ... shares it", 0267).
   const readOnlyCopy = deny('a snapshot copy is read only for everyone');
   switch (action) {
     case 'edit':

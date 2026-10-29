@@ -86,7 +86,7 @@ export const heartbeats = pgTable(
       .notNull(),
     status: heartbeatStatus('status').default('active').notNull(),
     completionReason: text('completion_reason'),
-    /** The login that set up what it does (0270, W7a fix round 3), when not
+    /** The login that set up what it does (0270), when not
      *  the brain owner: the tick fires it in that login's scope. Null = the
      *  brain owner's (the anchor login). */
     createdBy: uuid('created_by'),
@@ -159,7 +159,7 @@ export const heartbeatFires = pgTable(
     replyText: text('reply_text'),
     replySurfaceRef: jsonb('reply_surface_ref').$type<Record<string, unknown> | null>(),
     errorMessage: text('error_message'),
-    /** The login this fire answered (0270, W7 integration fix 2): the
+    /** The login this fire answered (0270): the
      *  firer for Fire now and heartbeat_fire, the maker for the tick. Null
      *  = the brain owner (the anchor login). Only that login reads the
      *  fire's reply, state and trace. */

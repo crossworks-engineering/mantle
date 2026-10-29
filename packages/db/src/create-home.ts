@@ -1,10 +1,7 @@
 /**
- * THE create-home intent (workspaces arch plan v2, section 2 step 6; A3c):
- * where a login's create lands, decided by one function for every way in.
- * Before A3c there were three copies (the HTTP guard's createHomeFor, the
- * MCP create-home proxy with its own workspace lookup, the assistant
- * turn's turnCreateHome over a fourth, resolveCreateHome); the F12 bug was
- * one entry that set no intent at all.
+ * THE create-home intent (the gate's step 6): where a login's create lands,
+ * decided by one function for every way in (the HTTP guard, an MCP
+ * connection, an assistant turn), so no entry can set no intent at all.
  *
  * The rule (docs/workspaces.md, "Where a new item lands"):
  *

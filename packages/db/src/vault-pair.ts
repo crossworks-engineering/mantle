@@ -1,6 +1,6 @@
 /**
- * The run-time half of the vault key pairing rule (workspaces W7a fix
- * rounds 4 and 5; the whole rule is @mantle/tools secret-ref-gate.ts). It
+ * The run-time half of the vault key pairing rule (the whole rule is
+ * @mantle/tools secret-ref-gate.ts). It
  * lives here, below @mantle/tools, so the model route resolvers
  * (@mantle/runtime resolveChatKey, @mantle/embeddings) answer to the same
  * check as connectors and API tools.

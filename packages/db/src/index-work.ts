@@ -1,5 +1,5 @@
 /**
- * The work stamp (workspaces arch A10 #7, fix round 2): `data.index_work`,
+ * The work stamp: `data.index_work`,
  * set, read and dropped here and nowhere else, with the one meaning of "the
  * item has a summary" its reader and its writers share.
  *
@@ -7,16 +7,16 @@
  * stamp: 'embed' (a new title, a table's cell commit) or 'extract' (a content
  * change). The extractor reads it (embedWork, server/api/src/agent/extract/
  * gates.ts) and drops it when the work is done: the summary write, the
- * re-embed, a terminal skip, the local index, the metadata-only index. Before
- * round 2 each of those dropped it by hand with its own idea of what "no
- * summary" meant; an empty summary (`summary: ''`, a model reply that was not
- * JSON) was "no summary" to the reader and "a summary" to the local path's
- * guard, so the vector was never written and the stamp never dropped.
+ * re-embed, a terminal skip, the local index, the metadata-only index. All
+ * of them ask this file what "no summary" means: an empty summary
+ * (`summary: ''`, a model reply that was not JSON) must mean the same to the
+ * reader and to the local path's guard, or the vector is never written and
+ * the stamp never dropped.
  *
  * An 'embed' stamp on a row that HAD a vector before the reset also carries
  * `index_work_had_vector: true`: the item was indexed before, so with no
- * summary it re-embeds locally and never runs a first pass (fix round 2, L4:
- * an item from before the completion marker, with an empty summary).
+ * summary it re-embeds locally and never runs a first pass (an item with no
+ * completion marker and an empty summary).
  *
  * Neither key is derived (edit-check.ts): the user's own write sets them,
  * through markContentChanged only (edit-check.test.ts pins it).
@@ -73,7 +73,7 @@ export function parseIndexWork(work: unknown): IndexWork | null {
 /**
  * The stamp of `data` in SQL, as text (null with none). The extractor reads
  * it in the same select as the row's xmin, so the stamp its xmin-guarded
- * write drops is the one on the row it writes (fix round 3, M1).
+ * write drops is the one on the row it writes.
  */
 export function indexWorkSql(data: DataExpr = nodes.data): SQL {
   return sql`${data}->>${INDEX_WORK_KEY}::text`;
@@ -113,7 +113,7 @@ export function stampIndexWork(work: IndexWork, dropSummary: SQL): SQL {
  * `data` without the stamp, the work being done. `seen` is the stamp the job
  * read when it loaded the row: the stamp is dropped only while it is still
  * that one, so a newer write's stamp (a content change that landed while the
- * job ran) survives for its own job (fix round 2, L6). A newer stamp equal
+ * job ran) survives for its own job. A newer stamp equal
  * to the one seen (a second content change) cannot be told apart and is
  * dropped; that change's own job still runs its whole pass (no stamp, no
  * summary).

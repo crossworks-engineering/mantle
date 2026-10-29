@@ -1,6 +1,6 @@
 /**
- * The one way a write re-indexes its item (workspaces arch A10 #7;
- * docs/content.md, "Re-index after a write").
+ * The one way a write re-indexes its item (docs/content.md,
+ * "Re-index after a write").
  *
  * A service that changed an item calls `markContentChanged(tx, node, fields)`
  * inside the write's own transaction, after the write, naming the fields it
@@ -22,8 +22,8 @@
  * holds. An 'extract' stamp is never downgraded: a rename that lands while a
  * content change still waits for its pass keeps 'extract', so the new
  * content is still summarised. The extractor drops the stamp when it has done
- * the work (fix round 1 of A10 #7, M1). The stamp is set, read and dropped
- * through index-work.ts only (fix round 2), and this file is its only setter.
+ * the work. The stamp is set, read and dropped through index-work.ts only,
+ * and this file is its only setter.
  *
  * The announcement is a `pg_notify` on the write's transaction, so Postgres
  * delivers it once the write commits and drops it when the write rolls back:
@@ -36,10 +36,8 @@
  * calls notifyNodeIngested, clears an embedding or drops a summary by hand
  * (pinned at 0 outside the named files, eslint-rules/arch-counts.mjs).
  *
- * Before A10 #7 each of 18 files did this by hand: 23 notify calls, 24
- * embedding resets and 11 files dropping the summary keys, and they
- * disagreed (a rename re-indexed a task or an event, never a note, a
- * journal, a formula, a page or a table). The extractor's boot drain and
+ * One door, so every kind re-indexes alike (hand-rolled copies disagree: a
+ * rename re-indexing a task but never a note). The extractor's boot drain and
  * periodic sweep (server/api/src/agent/runtime.ts) stay as the safety net for
  * a notify lost while the agent was down.
  */

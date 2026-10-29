@@ -1,7 +1,6 @@
 /**
  * Every answer of the access oracles over every input, as lines, so a change
- * to an oracle shows as a diff of its answers (A8 fix round 3). The A8 fix
- * rounds compared them by a one-off script; `oracle-answers.test.ts` pins a
+ * to an oracle shows as a diff of its answers. `oracle-answers.test.ts` pins a
  * hash per oracle, and `pnpm -C packages/db oracle:answers` prints the lines
  * or the inputs whose answer changed (oracle-answers-cli.ts).
  *

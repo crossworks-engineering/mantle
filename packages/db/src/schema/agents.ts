@@ -301,9 +301,9 @@ export const agents = pgTable(
     viaTailnet: boolean('via_tailnet').default(false).notNull(),
     backupBaseUrl: text('backup_base_url'),
     backupViaTailnet: boolean('backup_via_tailnet').default(false).notNull(),
-    /** Workspaces W7a fix round 5 (0270): the login that last paired this
-     *  row's model routes' vault key with a base URL of its choosing, when
-     *  that is not the brain owner. A route with a base URL resolves its key
+    /** The login (0270) that last paired this row's model routes' vault
+     *  key with a base URL of its choosing, when that is not the brain
+     *  owner. A route with a base URL resolves its key
      *  only while that login holds the keys area. Null: the brain owner's. */
     configuredBy: uuid('configured_by'),
     /** Per-agent VOICE: which `kind='tts'` ai_worker synthesises this agent's

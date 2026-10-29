@@ -1,5 +1,5 @@
 /**
- * Indexes built CONCURRENTLY, after the migrations (workspaces plan W3).
+ * Indexes built CONCURRENTLY, after the migrations.
  *
  * A migration runs in one transaction, and CREATE INDEX CONCURRENTLY cannot.
  * A plain CREATE INDEX on a busy table blocks every write to it for the whole

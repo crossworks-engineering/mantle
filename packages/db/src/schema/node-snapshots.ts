@@ -105,14 +105,12 @@ export type AppSnapshotMeta = {
   icon?: string;
   color?: string;
   tags: string[];
-  /** The workspace the app was homed in when it was taken (workspaces W6a
-   *  fix round 1): a deleted app's purge and restore are checked against
+  /** The workspace the app was homed in when it was taken: a deleted app's purge and restore are checked against
    *  it (mantle_may_manage). Absent on older snapshots: the Admin
    *  workspace. */
   homeWs?: string;
-  /** On a pre_delete snapshot (CEO decision 1, W6b fix round 1): the app
-   *  was deleted by a login other than the brain's owner, or by a caller
-   *  that named no login (fix round 2), so it stays in the trash until the
+  /** On a pre_delete snapshot: the app was deleted by a login other than
+   *  the brain's owner, or by a caller that named no login, so it stays in the trash until the
    *  owner purges it (the nightly purge skips it). */
   keepForOwner?: true;
   /** Who deleted it, with keepForOwner: null when the caller named no

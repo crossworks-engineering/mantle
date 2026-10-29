@@ -53,7 +53,7 @@ export function isHeadsCheckError(err: unknown): boolean {
 
 /**
  * The database's refusals, read by THE one mapper (mapAccessError,
- * @mantle/std access-error.ts; arch A3c): a write a workspace check refused
+ * @mantle/std access-error.ts): a write a workspace check refused
  * (isScopeWriteRefusal), the edit check's detail (editRefusalDetail) and a
  * folder that holds rows the caller cannot read (isHiddenRowsRefusal). One
  * reading of each, there; re-exported here for the callers of @mantle/db.
@@ -72,9 +72,8 @@ export { HIDDEN_ROWS_PUBLIC as HIDDEN_ROWS_MESSAGE } from '@mantle/std';
  * A privilege the role lacks (42501 "permission denied for ..."): a table,
  * a column, a function, a sequence or a schema it holds no grant on. Never
  * a refusal a check or a row rule decided (those carry their own message).
- * The login write gateway (gateway/role-tx.ts and role-runner.ts, arch
- * A2b2b) notes every one and runs nothing again (plan v3 S3): each is a
- * bug, an error.
+ * The login write gateway (gateway/role-tx.ts and role-runner.ts) notes
+ * every one and runs nothing again: each is a bug, an error.
  */
 export function isPermissionGap(err: unknown): boolean {
   return permissionGapOf(err) !== null;
@@ -101,9 +100,8 @@ export function refusalOf(err: unknown): string | null {
  * Any 42501 insufficient_privilege on the error or its cause chain (drizzle
  * wraps the driver's error in `.cause`): a privilege gap, or a refusal a
  * check, a row rule or a definer raised with that code. The one detector of
- * a refused write for a caller that must rethrow it, never swallow it
- * (round 13b, the app re-audit's L1: three callers read `.code` on the
- * wrapper and so never saw one).
+ * a refused write for a caller that must rethrow it, never swallow it (a
+ * caller that reads `.code` on the wrapper never sees one).
  */
 export function isRefusedRight(err: unknown): boolean {
   return pgErrorCode(err) === '42501';
@@ -126,9 +124,8 @@ export function isUniqueViolation(err: unknown): boolean {
 /**
  * `fn`, with a unique violation (a slug or a name already taken) as a
  * ConflictError saying `message`: 409 `{ error: message }` by its row in the
- * one domain error table (A10 part 2 fix round 1, L7). The one place a route
- * says "already exists" for a write that raced or skipped a pre-check, where
- * 13 routes each caught it by hand.
+ * one domain error table. The one place a route says "already exists" for
+ * a write that raced or skipped a pre-check.
  */
 export async function conflictOnUnique<T>(message: string, fn: () => Promise<T>): Promise<T> {
   try {
@@ -149,7 +146,7 @@ export function isForeignKeyViolation(err: unknown): boolean {
  * `fn`, with a violation of one of the foreign keys `refs` names (the body
  * named a row that is not there: a key id) as an InputError saying that
  * key's message: 400 `{ error: message }` by its row in the one domain
- * error table (A10 lows, part 2 #3), where it was the opaque 500. Any other
+ * error table, not an opaque 500. Any other
  * violation is no typo of the caller's and stays a fault. Around a create
  * or an update whose body names other rows.
  */
@@ -174,7 +171,7 @@ export function isCheckViolation(err: unknown): boolean {
 
 /** 40P01 deadlock_detected or 55P03 lock_not_available (a lock_timeout):
  *  another write held what this one needed. Safe to retry once; never to
- *  show a person as SQL (folder audit review F7). */
+ *  show a person as SQL. */
 export function isBusy(err: unknown): boolean {
   // Ours, or one a query builder wrapped (drizzle: the cause).
   if (causeChain(err, MAX_DEPTH).some((e) => e instanceof BusyError)) return true;

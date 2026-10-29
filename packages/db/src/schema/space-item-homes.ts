@@ -1,10 +1,10 @@
 /**
- * Where each personal-space item goes when W6b moves it into the brain, and
- * the grants it then gets (migration 0264, W5c, plan 9.3). Recorded, not
- * granted: until W6b the items stay in their spaces, and item_grants refuses
- * a node a personal space owns (0244 rule 2). Written by
- * mantle_ws_review_off() only (the migration, and mantle_ws_migrate when a
- * brain switches later); read by W6b. No grant to any role: definer
+ * Where each personal-space item goes when the spaces fold (0267) moves it
+ * into the brain, and the grants it then gets (migration 0264). Recorded,
+ * not granted: until the fold the items stay in their spaces, and
+ * item_grants refuses a node a personal space owns (0244 rule 2). Written
+ * by mantle_ws_review_off() only (the migration, and mantle_ws_migrate when
+ * a brain switches later); read by the fold. No grant to any role: definer
  * functions and the admin pool only.
  *
  *  - private_workspaces: the login's private workspace, "<name> (only
@@ -19,15 +19,15 @@
  *    No foreign key: the record outlives the login and a purged space.
  *  - space_item_homes: one row per space item. home_workspace_id is the
  *    private (or Former user) workspace; for an accepted item, its author's,
- *    where the author's snapshot copy goes (S3); for an accepted item whose
+ *    where the author's snapshot copy goes; for an accepted item whose
  *    author was erased before 0264, the home it has in the brain (no Former
  *    user workspace). A home that stops being a registered private or Former
- *    user workspace is moved on the next run. grant_admin, grant_team
- *    and write are the grants W6b writes besides the home (write is always
- *    false: Write off). state_before, sharing_before and author_role are the
- *    item's review state, sharing and author role before 0264. snapshot
- *    (W6b RULE): W6b makes the author's snapshot copy (S3) of the item in
- *    its home only when snapshot is true, which is only for an accepted
+ *    user workspace is moved on the next run. grant_admin, grant_team and
+ *    write are the grants the fold writes besides the home (write is
+ *    always false: Write off). state_before, sharing_before and author_role
+ *    are the item's review state, sharing and author role before 0264.
+ *    snapshot (the fold's RULE): the fold makes the author's snapshot copy
+ *    of the item in its home only when snapshot is true, which is only for an accepted
  *    item whose home is a private or Former user workspace. An accepted
  *    item kept in a brain workspace (Admin, Team, any other) gets no copy.
  *    Every run sets it by that rule; a check keeps it off any item that
@@ -36,8 +36,8 @@
  * The grant flags are not frozen: they come from state_before and from what
  * is live (sharing, the trash, the logins), and every run of
  * mantle_ws_review_off() refreshes them (app sharing and the app trash
- * still change until W6b). W6b runs it first, or applies the same rule,
- * when it moves the items (W5c contract).
+ * still change until the fold). The fold runs it first, or applies the same
+ * rule, when it moves the items.
  */
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
@@ -81,7 +81,7 @@ export const spaceItemHomes = pgTable(
     sharingBefore: text('sharing_before').notNull(),
     authorRole: text('author_role'),
     snapshot: boolean('snapshot').notNull().default(false),
-    /** The author's snapshot copy (S3) once the app made it (0267, W6b:
+    /** The author's snapshot copy once the app made it (0267:
      *  snapshot-copies.ts). No foreign key: a copy the author deletes leaves
      *  the record. */
     snapshotNodeId: uuid('snapshot_node_id'),

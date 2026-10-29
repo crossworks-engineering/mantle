@@ -47,7 +47,7 @@ export const tables = pgTable('tables', {
   // so a stale debounced doc can't overwrite newer agent ops.
   draftRev: integer('draft_rev').default(0).notNull(),
   /** The draft workbook's current revision, relative to TABLE_DB_DIR; null
-   *  when there is no draft (store brokers, arch A3b, migration 0283). */
+   *  when there is no draft (store brokers, migration 0283). */
   draftPath: text('draft_path'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

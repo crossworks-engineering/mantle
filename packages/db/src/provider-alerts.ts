@@ -157,9 +157,9 @@ export async function recordProviderProbeFailure(
 /** An admin's "Try again" or a key save: every open alert that is shown or
  *  holds the queue paused probes on the agent's next tick (within 30 s).
  *  Returns how many rows it touched. A blip (open, not yet shown, not
- *  paused) is left alone and not counted (A10 lows fix round 2, L-C): the
- *  agent never probes one (retries handle it), and counting it let a key
- *  saved during a blip send the recover NOTIFY, a probe and a dead-letter
+ *  paused) is left alone and not counted: the agent never probes one
+ *  (retries handle it), and counting it would let a key saved during a
+ *  blip send the recover NOTIFY, a probe and a dead-letter
  *  re-drive. */
 export async function requestProviderProbeNow(
   ownerId: string,

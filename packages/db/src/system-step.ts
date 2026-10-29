@@ -1,6 +1,5 @@
 /**
- * The named system step (F4 fix rounds 2 and 3, docs/actors.md "F4 fix
- * round 2" and "F4 fix round 3"): the one door for the brain-wide
+ * The named system step (docs/actors.md, "Exits"): the one door for the brain-wide
  * bookkeeping a write does AFTER its item check. The owner's rule:
  * cascades, subtree work, re-indexing, history and its pruning, budgets,
  * export syncs and provisioning are the brain's, not the caller's; run in
@@ -9,7 +8,7 @@
  * here, on the system pool by the reason 'brain-bookkeeping'
  * (AS_SYSTEM_TURN_REASONS), never in the caller's scope.
  *
- * The contract is code, not a comment (round 3, M2): every step names the
+ * The contract is code, not a comment: every step names the
  * items it is about and what the caller needs of them (StepItems), and the
  * door asks that (itemWriteVerdicts) in the caller's scope BEFORE it leaves
  * it:
@@ -30,7 +29,7 @@
  * no, or nothing, and a row it reads goes back to the caller only once the
  * caller's scope reads that row too (the library re-reads it there).
  *
- * Never inside an open transaction of a scope (round 3, L5): the step would
+ * Never inside an open transaction of a scope: the step would
  * leave it for a connection of its own, which would not see the
  * transaction's rows and could wait behind its locks. It throws there
  * (RuntimeFaultError). System work (no workspace scope) has no scope to
@@ -44,7 +43,7 @@ import { inOpenTransaction } from './client';
 import { itemWriteVerdicts, type ItemNeed } from './item-rights';
 import { asSystem, isSystemScope } from './viewer';
 
-/** What a named system step does (docs/actors.md, "F4 fix round 2"). */
+/** What a named system step does (docs/actors.md, "Exits"). */
 export type SystemStep =
   /** A table commit's history line pruned (keep and size limits), after the
    *  commit, which recorded its own row with edit of the table. */

@@ -73,7 +73,7 @@ export const embeddingConfig = pgTable('embedding_config', {
    *  windows only from the manual `chunk-windows` maintenance task. */
   chunkWindows: boolean('chunk_windows').notNull().default(false),
 
-  /** Workspaces W7a fix round 5 (0270): the login that last paired a route's
+  /** The login (0270) that last paired a route's
    *  vault key with a base URL of its choosing, when that is not the brain
    *  owner. A route with a base URL resolves its key only while that login
    *  holds the keys area. Null: the brain owner's. */
