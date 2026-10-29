@@ -21,6 +21,9 @@ const h = vi.hoisted(() => ({
   apiKeyByServiceReturn: 'k' as string | null,
   // Whole credentials by key id (a row's workspace id rides with its key).
   credentialsById: {} as Record<string, { apiKey: string; anthropicWorkspaceId?: string }>,
+  // The box-level key the `envkeyed` provider's adapter offers (a stand-in
+  // for Microsoft Foundry's MANTLE_FOUNDRY_API_KEY), or none.
+  envKey: null as string | null,
 }));
 
 vi.mock('@mantle/voice', async (importOriginal) => {
@@ -40,6 +43,12 @@ vi.mock('@mantle/voice', async (importOriginal) => {
         h.lastPrimaryOpts = opts as Record<string, unknown>;
         return h.primaryChat(opts);
       },
+      ...(provider === 'envkeyed'
+        ? {
+            envCredential: (baseUrl: string | null) =>
+              baseUrl?.trim() || !h.envKey ? null : { apiKey: h.envKey },
+          }
+        : {}),
     }),
   };
 });
@@ -285,6 +294,47 @@ describe('resolveChatKey — the single source of truth for chat credentials', (
   beforeEach(() => {
     h.apiKeyByIdReturn = 'k';
     h.apiKeyByServiceReturn = 'k';
+    h.envKey = null;
+  });
+
+  describe("an adapter's box-level key (envCredential)", () => {
+    const route = (baseUrl?: string | null) => ({
+      provider: 'envkeyed',
+      apiKeyId: null,
+      configuredBy: null,
+      ...(baseUrl === undefined ? {} : { baseUrl }),
+    });
+
+    it('is used for a route with no vault key and no base URL', async () => {
+      h.apiKeyByServiceReturn = null;
+      h.envKey = 'env-k';
+      expect(await resolveChatKey('o', route(null))).toEqual({
+        ok: true,
+        credential: { apiKey: 'env-k' },
+      });
+    });
+
+    it('never goes to a route with its own base URL', async () => {
+      h.apiKeyByServiceReturn = null;
+      h.envKey = 'env-k';
+      const r = await resolveChatKey('o', route('https://elsewhere.invalid'));
+      expect(r.ok).toBe(false);
+    });
+
+    it('is not used when the caller did not say which base URL the route has', async () => {
+      h.apiKeyByServiceReturn = null;
+      h.envKey = 'env-k';
+      const r = await resolveChatKey('o', route(undefined));
+      expect(r.ok).toBe(false);
+    });
+
+    it('loses to a vault key', async () => {
+      h.envKey = 'env-k';
+      expect(await resolveChatKey('o', route(null))).toEqual({
+        ok: true,
+        credential: { apiKey: 'k' },
+      });
+    });
   });
 
   it('returns the local-keyless sentinel for provider=local with no key', async () => {

@@ -214,6 +214,15 @@ export async function resolveChatKey(
   const credential = await resolveProviderKey(ownerId, route.provider, route.apiKeyId);
   if (credential) return { ok: true, credential };
   if (keyless) return { ok: true, credential: { apiKey: 'local' } };
+  // A box-level key from the environment (Microsoft Foundry's
+  // MANTLE_FOUNDRY_API_KEY), only for a route with no base URL of its own:
+  // the adapter decides, so the key goes only to the box-level endpoint. A
+  // caller that did not say which base URL the route has gets none.
+  const fromEnv =
+    route.baseUrl === undefined
+      ? null
+      : getChatAdapter(route.provider)?.envCredential?.(route.baseUrl);
+  if (fromEnv) return { ok: true, credential: fromEnv };
 
   // A non-keyless provider with no usable key. Distinguish "never configured"
   // from "configured but the stored key is gone / undecryptable" so traces stay

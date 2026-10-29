@@ -56,6 +56,7 @@ export const WIRED_PROVIDERS: Record<WiredCapability, ReadonlySet<ProviderId>> =
     'huggingface',
     'deepseek',
     'mammouth',
+    'foundry',
     'copilot',
     'custom',
     'local',

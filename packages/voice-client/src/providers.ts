@@ -34,6 +34,7 @@ export type ProviderId =
   | 'huggingface'
   | 'deepseek'
   | 'mammouth'
+  | 'foundry'
   | 'copilot'
   | 'mistral'
   | 'cohere'
@@ -212,6 +213,15 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     capabilities: ['stt'],
     signupUrl: 'https://www.assemblyai.com/dashboard',
     docsUrl: 'https://www.assemblyai.com/docs',
+  },
+  {
+    id: 'foundry',
+    label: 'Microsoft Foundry',
+    description:
+      'Azure AI Foundry and Azure OpenAI: your own deployments of OpenAI, DeepSeek, Grok, Llama and other models on your Azure resource. The model id is the deployment name. Endpoint per route (Base URL) or MANTLE_FOUNDRY_ENDPOINT; key from the resource’s Keys and Endpoint page.',
+    capabilities: ['chat'],
+    signupUrl: 'https://ai.azure.com',
+    docsUrl: 'https://learn.microsoft.com/azure/ai-foundry/openai/api-version-lifecycle',
   },
   {
     id: 'custom',

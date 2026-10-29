@@ -29,6 +29,10 @@ const BOX_FLAGS = [
   'MANTLE_CALLS_HOST',
   'MANTLE_LIVEKIT_API_KEY',
   'MANTLE_LIVEKIT_API_SECRET',
+  // Microsoft Foundry chat routes (docs/foundry.md).
+  'MANTLE_FOUNDRY_ENDPOINT',
+  'MANTLE_FOUNDRY_API_KEY',
+  'MANTLE_FOUNDRY_API_VERSION',
 ];
 
 describe('compose passes the box flags to the app services', () => {

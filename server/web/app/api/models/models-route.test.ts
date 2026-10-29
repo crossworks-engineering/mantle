@@ -12,6 +12,8 @@ const WORK = '11111111-1111-4111-8111-111111111111';
 const TEAM = '22222222-2222-4222-8222-222222222222';
 const OPENAI = '44444444-4444-4444-8444-444444444444';
 const THEIRS = '55555555-5555-4555-8555-555555555555';
+const FOUNDRY = '77777777-7777-4777-8777-777777777777';
+const FOUNDRY_ROOT = 'https://res-example.openai.azure.com';
 
 const VAULT: Record<
   string,
@@ -21,6 +23,7 @@ const VAULT: Record<
   [TEAM]: { owner: OWNER, service: 'anthropic', plaintext: 'sk-ant-team' },
   [OPENAI]: { owner: OWNER, service: 'openai', plaintext: 'sk-openai' },
   [THEIRS]: { owner: 'someone-else', service: 'anthropic', plaintext: 'sk-theirs' },
+  [FOUNDRY]: { owner: OWNER, service: 'foundry', plaintext: 'foundry-key-1' },
 };
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -54,11 +57,13 @@ type Body = { models: { id: string }[]; needsKey?: boolean; error?: string };
 
 const refused = new Set<string>();
 const calls: string[] = [];
+const urls: string[] = [];
 const workspaceSeen: Array<string | null> = [];
 const unscoped = new Set<string>();
 
 beforeEach(() => {
   calls.length = 0;
+  urls.length = 0;
   workspaceSeen.length = 0;
   refused.clear();
   unscoped.clear();
@@ -70,8 +75,10 @@ beforeEach(() => {
       // context windows: not a provider key call, not counted.
       if (String(url).includes('openrouter.ai')) return Response.json({ data: [] });
       const headers = new Headers(init?.headers);
-      const key = headers.get('x-api-key') ?? '';
+      // Anthropic's header, or Microsoft Foundry's.
+      const key = headers.get('x-api-key') ?? headers.get('api-key') ?? '';
       calls.push(key);
+      urls.push(String(url));
       workspaceSeen.push(headers.get('anthropic-workspace-id'));
       if (unscoped.has(key) && !headers.get('anthropic-workspace-id')) {
         return new Response(
@@ -95,6 +102,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   clearModelCache();
 });
 
@@ -181,5 +189,33 @@ describe('GET /api/models with a picked key', () => {
     const ok = (await (await get(`provider=anthropic&keyId=${TEAM}`)).json()) as Body;
     expect(ok.models).toHaveLength(1);
     expect(workspaceSeen).toEqual([null, 'wrkspc_test']);
+  });
+});
+
+describe('GET /api/models for Microsoft Foundry (docs/foundry.md)', () => {
+  it("lists the endpoint's base models with the key in the api-key header", async () => {
+    vi.stubEnv('MANTLE_FOUNDRY_ENDPOINT', `${FOUNDRY_ROOT}/openai/v1/`);
+    const body = (await (await get(`provider=foundry&keyId=${FOUNDRY}`)).json()) as Body;
+    expect(urls).toEqual([`${FOUNDRY_ROOT}/openai/v1/models`]);
+    expect(calls).toEqual(['foundry-key-1']);
+    expect(body.models.map((m) => m.id)).toEqual(['model-for-foundry-key-1']);
+  });
+
+  it('says a refused key in a fixed sentence, never the provider body', async () => {
+    vi.stubEnv('MANTLE_FOUNDRY_ENDPOINT', FOUNDRY_ROOT);
+    refused.add('foundry-key-1');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const body = (await (await get(`provider=foundry&keyId=${FOUNDRY}`)).json()) as Body;
+    errSpy.mockRestore();
+    expect(body.models).toEqual([]);
+    expect(body.error).toBe('The provider refused the API key. (foundry, HTTP 401)');
+    expect(JSON.stringify(body)).not.toMatch(/SECRET|acct_|foundry-key-1/);
+  });
+
+  it('shows the static seed and calls nothing when no endpoint is set', async () => {
+    vi.stubEnv('MANTLE_FOUNDRY_ENDPOINT', '');
+    const body = (await (await get(`provider=foundry&keyId=${FOUNDRY}`)).json()) as Body;
+    expect(calls).toEqual([]);
+    expect(body.models.map((m) => m.id)).toContain('gpt-4o-mini');
   });
 });

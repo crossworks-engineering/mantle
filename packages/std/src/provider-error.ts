@@ -517,8 +517,11 @@ function make(code: ProviderErrorCode, status?: number): ProviderErrorClass {
 /** A 429 or 403 body that means "the account is out of money", not "slow down". */
 const QUOTA_RE =
   /insufficient_quota|insufficient[ _]credits|no credits|credits? (?:remaining|exhausted|balance)|exceeded your current quota|quota exceeded|billing|payment required|out of credits/i;
-/** A 403 about this one input (OpenRouter moderation), not about the account. */
-const INPUT_REFUSED_RE = /moderation|flagged|content policy|safety system/i;
+/** A refusal of this one input (OpenRouter moderation; Azure's content
+ *  filter, a 400 with code `content_filter` and "content management
+ *  policy"), not about the account. */
+const INPUT_REFUSED_RE =
+  /moderation|flagged|content policy|safety system|content_filter|content management policy/i;
 /** A 400/404 about the model itself. */
 const MODEL_RE =
   /model[^.]{0,80}(?:not (?:be )?found|does not exist|not exist|is not (?:a )?valid|invalid|not supported|unknown|not available)|(?:unknown|invalid) model|no endpoints found|model_not_found/i;

@@ -300,6 +300,11 @@ x-app-env: &app-env
   # The /settings/network status tile + peer dropdown read `status` over it.
   # Absent socket → the reader reports "tailnet not running" (never throws).
   MANTLE_TAILSCALE_SOCK: ${MANTLE_TAILSCALE_SOCK:-/var/run/tailscale/tailscaled.sock}
+  # Microsoft Foundry chat routes (docs/foundry.md): the box-level resource
+  # URL, a fallback key (the vault key wins) and the API version (v1 if unset).
+  MANTLE_FOUNDRY_ENDPOINT: ${MANTLE_FOUNDRY_ENDPOINT:-}
+  MANTLE_FOUNDRY_API_KEY: ${MANTLE_FOUNDRY_API_KEY:-}
+  MANTLE_FOUNDRY_API_VERSION: ${MANTLE_FOUNDRY_API_VERSION:-}
   # Microsoft / Outlook (docs/microsoft-graph-ingest.md). The Azure app
   # registration's credentials — WITHOUT these the /settings/microsoft connect
   # flow cannot work on a deployed box at all, which is why the feature has

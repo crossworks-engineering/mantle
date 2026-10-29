@@ -21,10 +21,15 @@
 import { findProviderKeyId, getApiKeyById } from '@mantle/api-keys';
 import {
   anthropicHeaders,
+  FOUNDRY_CHAT_MODELS,
+  foundryModelsUrl,
+  foundryResourceRoot,
   isProviderId,
+  parseFoundryApiVersion,
   type ProviderCredential,
   type ProviderId,
 } from '@mantle/voice';
+import { env } from '@mantle/config';
 import {
   contextLimitForRoute,
   contextSourceForRoute,
@@ -404,6 +409,31 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
       const body = rec(
         await getJson('https://api.mammouth.ai/v1/models', {
           headers: { authorization: `Bearer ${credential?.apiKey ?? ''}` },
+        }),
+      );
+      return parseOpenAiLike(asArray(body.data));
+    },
+  },
+  // Microsoft Foundry (docs/foundry.md): the base models the box-level
+  // resource can deploy (MANTLE_FOUNDRY_ENDPOINT), key in the `api-key`
+  // header. Deployment names are the owner's, so with no endpoint set the
+  // static seed stands in rather than a call to nowhere.
+  foundry: {
+    needsKey: true,
+    fetch: async (credential) => {
+      const root = foundryResourceRoot(env('MANTLE_FOUNDRY_ENDPOINT'));
+      const version = parseFoundryApiVersion(env('MANTLE_FOUNDRY_API_VERSION'));
+      if (!root || !version) {
+        return FOUNDRY_CHAT_MODELS.map((m): ExplorerModel => ({
+          id: m.id,
+          name: m.label,
+          kind: 'chat',
+          raw: m,
+        }));
+      }
+      const body = rec(
+        await getJson(foundryModelsUrl(root, version), {
+          headers: { 'api-key': credential?.apiKey ?? '' },
         }),
       );
       return parseOpenAiLike(asArray(body.data));

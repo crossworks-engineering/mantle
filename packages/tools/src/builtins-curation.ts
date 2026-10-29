@@ -44,6 +44,7 @@ import {
 import { DEEPGRAM_STT_MODELS } from '@mantle/voice-client/catalogs/deepgram';
 import { ASSEMBLYAI_STT_MODELS } from '@mantle/voice-client/catalogs/assemblyai';
 import { XAI_TTS_MODEL_ID, XAI_STT_MODELS } from '@mantle/voice-client/catalogs/xai';
+import { FOUNDRY_CHAT_MODELS } from '@mantle/voice-client/catalogs/foundry';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { refuseNonOwner } from './builtins-crawl';
 import { resolveOpenRouterKey } from './builtins-research';
@@ -151,6 +152,30 @@ export function voiceCatalogSupplement(): CatalogModel[] {
   add('xai', 'tts', XAI_TTS_MODEL_ID, 'Grok Voice');
   for (const m of XAI_STT_MODELS) add('xai', 'stt', m.id, m.label);
   return out;
+}
+
+/**
+ * Microsoft Foundry's seed (docs/foundry.md) as chat rows with provider
+ * `foundry`, so a curator can record a Foundry route in a pool. The id is the
+ * model id, which is the deployment name only when the owner kept the
+ * portal's suggestion. Pricing is null on purpose: Foundry bills by
+ * deployment type and region and its answers carry no cost. Exported for
+ * unit tests.
+ */
+export function foundryCatalogSupplement(): CatalogModel[] {
+  return FOUNDRY_CHAT_MODELS.map((m) => ({
+    id: m.id,
+    name: m.label,
+    provider: 'foundry',
+    kind: 'chat' as const,
+    inputPerM: null,
+    outputPerM: null,
+    contextTokens: null,
+    modality: m.capabilities?.includes('vision') ? 'text+image->text' : 'text->text',
+    inputModalities: m.capabilities?.includes('vision') ? ['text', 'image'] : ['text'],
+    outputModalities: ['text'],
+    created: null,
+  }));
 }
 
 /** The catalog as model_catalog and the pool fit check read it: the one
@@ -396,7 +421,7 @@ const model_catalog: BuiltinToolDef = {
   ownerOnly: true,
   name: 'Model catalog with pricing',
   description:
-    "Look up models with pricing: OpenRouter's FULL catalog — chat, image/video generators, speech (TTS) and transcription (STT) engines, embeddings, rerank — each with slug, live input/output $ per 1M, context, `kind`, and `inputModalities`/`outputModalities` (the output side separates an image READER from a GENERATOR). Plus the voice models Mantle reaches through its own adapters (ElevenLabs, Deepgram, AssemblyAI, Google). Pricing is NULL wherever a model is not token-billed — per-minute audio and video routes, those adapter rows — so leave that snapshot empty rather than invent a rate. THE source for slugs and pricing when writing `model_pool_set` entries; each row's `provider` is the route to record. Filter by `kind` per pool; `q` searches name/slug, `ids` fetches exact slugs. Keyless; cached ~5 minutes.",
+    "Look up models with pricing: OpenRouter's FULL catalog (chat, image/video generators, speech (TTS) and transcription (STT) engines, embeddings, rerank), each with slug, live input/output $ per 1M, context, `kind`, and `inputModalities`/`outputModalities` (the output side separates an image READER from a GENERATOR). Plus the voice models Mantle reaches through its own adapters (ElevenLabs, Deepgram, AssemblyAI, Google) and Microsoft Foundry's seed (provider `foundry`; its route's model is the owner's deployment name). Pricing is NULL wherever a model is not token-billed (per-minute audio and video routes, those adapter rows), so leave that snapshot empty rather than invent a rate. THE source for slugs and pricing when writing `model_pool_set` entries; each row's `provider` is the route to record. Filter by `kind` per pool; `q` searches name/slug, `ids` fetches exact slugs. Keyless; cached ~5 minutes.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -432,7 +457,7 @@ const model_catalog: BuiltinToolDef = {
       : null;
     const limit = typeof input.limit === 'number' ? input.limit : 25;
     const kind = str(input.kind).trim();
-    let models = [...res.models, ...voiceCatalogSupplement()];
+    let models = [...res.models, ...voiceCatalogSupplement(), ...foundryCatalogSupplement()];
     if (ids && ids.size > 0) models = models.filter((m) => ids.has(m.id));
     else if (q) {
       models = models.filter(
