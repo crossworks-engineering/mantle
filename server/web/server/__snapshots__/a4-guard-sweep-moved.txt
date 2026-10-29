@@ -249,7 +249,7 @@ m247 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m248 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m249 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 10339
+# cells whose guard entry moved to the pipeline: 10375
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -4280,6 +4280,27 @@ first PUT /api/profile/share-neat member-cookie=m24
 first PUT /api/profile/share-neat admin-bearer=m87
 first PUT /api/profile/share-neat member-bearer=m26
 first PUT /api/profile/share-neat revoked-bearer=m27
+first GET /api/profile/sounds owner-cookie=m1
+first GET /api/profile/sounds admin-cookie=m2
+first GET /api/profile/sounds limited-cookie=m3
+first GET /api/profile/sounds member-cookie=m4
+first GET /api/profile/sounds admin-bearer=m5
+first GET /api/profile/sounds member-bearer=m6
+first GET /api/profile/sounds revoked-bearer=m7
+first PUT /api/profile/sounds owner-cookie=m8
+first PUT /api/profile/sounds admin-cookie=m9
+first PUT /api/profile/sounds limited-cookie=m10
+first PUT /api/profile/sounds member-cookie=m11
+first PUT /api/profile/sounds admin-bearer=m12
+first PUT /api/profile/sounds member-bearer=m13
+first PUT /api/profile/sounds revoked-bearer=m7
+first HEAD /api/profile/sounds owner-cookie=m14
+first HEAD /api/profile/sounds admin-cookie=m15
+first HEAD /api/profile/sounds limited-cookie=m16
+first HEAD /api/profile/sounds member-cookie=m17
+first HEAD /api/profile/sounds admin-bearer=m18
+first HEAD /api/profile/sounds member-bearer=m19
+first HEAD /api/profile/sounds revoked-bearer=m20
 first POST /api/push/connect owner-cookie=m84
 first POST /api/push/connect admin-cookie=m85
 first POST /api/push/connect limited-cookie=m86
@@ -9219,6 +9240,21 @@ more PUT /api/profile/share-neat bumped-cookie=m27
 more PUT /api/profile/share-neat gone-cookie=m27
 more PUT /api/profile/share-neat rotated-bearer=m27
 more PUT /api/profile/share-neat expired-bearer=m27
+more GET /api/profile/sounds disabled-cookie=m7
+more GET /api/profile/sounds bumped-cookie=m7
+more GET /api/profile/sounds gone-cookie=m7
+more GET /api/profile/sounds rotated-bearer=m7
+more GET /api/profile/sounds expired-bearer=m7
+more PUT /api/profile/sounds disabled-cookie=m7
+more PUT /api/profile/sounds bumped-cookie=m7
+more PUT /api/profile/sounds gone-cookie=m7
+more PUT /api/profile/sounds rotated-bearer=m7
+more PUT /api/profile/sounds expired-bearer=m7
+more HEAD /api/profile/sounds disabled-cookie=m20
+more HEAD /api/profile/sounds bumped-cookie=m20
+more HEAD /api/profile/sounds gone-cookie=m20
+more HEAD /api/profile/sounds rotated-bearer=m20
+more HEAD /api/profile/sounds expired-bearer=m20
 more POST /api/push/connect disabled-cookie=m27
 more POST /api/push/connect bumped-cookie=m27
 more POST /api/push/connect gone-cookie=m27

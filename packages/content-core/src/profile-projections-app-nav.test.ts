@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { projectAppOpens, projectAppPins, projectNavFavorites } from './profile-projections';
+import {
+  projectAppOpens,
+  projectAppPins,
+  projectNavFavorites,
+  projectSounds,
+} from './profile-projections';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -30,5 +35,23 @@ describe('projectAppOpens', () => {
       bad: { n: 5, at: '2026-09-20T00:00:00.000Z' },
     })!;
     expect(Object.keys(out)).toEqual([id(2), id(1)]);
+  });
+});
+
+describe('projectSounds', () => {
+  it('is unset for anything but an object', () => {
+    expect(projectSounds(undefined)).toBeUndefined();
+    expect(projectSounds('on')).toBeUndefined();
+    expect(projectSounds([true, 1])).toBeUndefined();
+  });
+
+  it('keeps a stored choice, clamps the volume, defaults what is missing', () => {
+    expect(projectSounds({ enabled: false, volume: 0.3 })).toEqual({ enabled: false, volume: 0.3 });
+    expect(projectSounds({ enabled: true, volume: 4 })).toEqual({ enabled: true, volume: 1 });
+    expect(projectSounds({ volume: -1 })).toEqual({ enabled: true, volume: 0 });
+    expect(projectSounds({ enabled: 'no', volume: Number.NaN })).toEqual({
+      enabled: true,
+      volume: 0.7,
+    });
   });
 });

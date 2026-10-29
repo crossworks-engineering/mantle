@@ -493,10 +493,12 @@ describe('the architecture ratchets (pinned counts)', () => {
     // /api/mcp-calls with its HEAD (owner, open to every login).
     // A person's description (+1): PUT /api/profile/description (self,
     // open to every login).
-    expect(rows.filter((r) => r.caller).length).toBe(846);
+    // UI sounds (+3, every one with a caller): GET /api/profile/sounds with
+    // its HEAD, and PUT (self, any login).
+    expect(rows.filter((r) => r.caller).length).toBe(849);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
-    // rows + the 2 call log rows + the description row.
-    expect(rows.length).toBe(907);
+    // rows + the 2 call log rows + the description row + the 3 sounds rows.
+    expect(rows.length).toBe(910);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

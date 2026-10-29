@@ -47,6 +47,7 @@ import {
   projectOnboardingModels,
   projectPeerName,
   projectSiteName,
+  projectSounds,
   projectTeamHubAppId,
   projectTeamHubTags,
   projectThinkingBudget,
@@ -206,6 +207,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     appNav: projectAppNav(prefs.appNav),
     appPins: projectAppPins(prefs.appPins),
     navFavorites: projectNavFavorites(prefs.navFavorites),
+    sounds: projectSounds(prefs.sounds),
     appOpens: projectAppOpens(prefs.appOpens),
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
@@ -359,6 +361,9 @@ export async function updateProfilePreferences(
   if (patch.navFavorites !== undefined) {
     patch = { ...patch, navFavorites: projectNavFavorites(patch.navFavorites) ?? [] };
   }
+  if (patch.sounds !== undefined) {
+    patch = { ...patch, sounds: projectSounds(patch.sounds) };
+  }
 
   const merge = JSON.stringify(patch);
   const [row] = await profileWrite(() =>
@@ -431,6 +436,7 @@ export async function updateProfilePreferences(
     appNav: projectAppNav(merged.appNav),
     appPins: projectAppPins(merged.appPins),
     navFavorites: projectNavFavorites(merged.navFavorites),
+    sounds: projectSounds(merged.sounds),
     appOpens: projectAppOpens(merged.appOpens),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
     contentKindGroupsGranted: projectGrantedGroups(merged.contentKindGroupsGranted),

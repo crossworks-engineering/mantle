@@ -23,6 +23,7 @@ import type {
   OnboardingModelChoices,
   ProfilePreferences,
   ReminderChannel,
+  SoundPreference,
   ThoughtTrailMode,
 } from '@mantle/client-types';
 import { kindsWhere } from '@mantle/client-types/kinds';
@@ -507,6 +508,20 @@ export function projectNavFavorites(raw: unknown): string[] | undefined {
     if (out.length >= NAV_FAVORITES_MAX) break;
   }
   return out.length > 0 ? out : undefined;
+}
+
+/** Project stored `sounds`: an object with a boolean `enabled` (else on) and
+ *  a finite `volume` clamped to 0..1 (else 0.7, the client's default).
+ *  Anything that is not an object is unset: the client's default applies. */
+export function projectSounds(raw: unknown): SoundPreference | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const v = raw as { enabled?: unknown; volume?: unknown };
+  const enabled = typeof v.enabled === 'boolean' ? v.enabled : true;
+  const volume =
+    typeof v.volume === 'number' && Number.isFinite(v.volume)
+      ? Math.min(1, Math.max(0, v.volume))
+      : 0.7;
+  return { enabled, volume };
 }
 
 /** The Desk's bounds. Generous (a full desk is a few KB); they bound

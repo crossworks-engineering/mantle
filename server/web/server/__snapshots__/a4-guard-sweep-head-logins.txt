@@ -9,6 +9,8 @@
 # (the any-login HEAD rows above, actor= and out= masked).
 # 2026-10-28 (calls P1): GET /api/messenger/capabilities and /c/:id/calls had no
 # route on main; their HEAD cells are held to /api/messenger/unread and /c/:id.
+# 2026-10-29 (UI sounds): GET /api/profile/sounds had no route on main; its HEAD
+# cells are held to /api/profile/home-desk (the same any-login self row).
 # answers
 h1 401 content-type=application/json cache-control=no-store 
 h2 500 content-type=application/json cache-control=no-store  [getLoginOr401 ok {"email":"admin-3333@example.invalid","kind":"admin","loginId":"33333333-3333-4333-8333-333333333333","sessionEpoch":0,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:false]
@@ -522,7 +524,7 @@ more HEAD /api/workspaces/user-search key-revoked=h1 main=o1
 # rows added since main (no answer on main: each cell names, like=, the main answer of
 # a sibling row that takes the same gate path, and is held to it as the cells
 # above are held to theirs)
-# cells: 180
+# cells: 200
 first HEAD /api/messenger/c/:id/calls none=h1 like=o1
 first HEAD /api/messenger/c/:id/calls owner-cookie=h2 like=o2
 first HEAD /api/messenger/c/:id/calls admin-cookie=h3 like=o3
@@ -627,6 +629,19 @@ first HEAD /api/profile/home-desk key-write=h1 like=o1
 first HEAD /api/profile/home-desk key-read-area=h1 like=o1
 first HEAD /api/profile/home-desk key-write-area=h1 like=o1
 first HEAD /api/profile/home-desk key-member=h1 like=o1
+first HEAD /api/profile/sounds none=h1 like=o1
+first HEAD /api/profile/sounds owner-cookie=h2 like=o16
+first HEAD /api/profile/sounds admin-cookie=h3 like=o17
+first HEAD /api/profile/sounds limited-cookie=h4 like=o18
+first HEAD /api/profile/sounds member-cookie=h5 like=o19
+first HEAD /api/profile/sounds admin-bearer=h6 like=o20
+first HEAD /api/profile/sounds member-bearer=h7 like=o21
+first HEAD /api/profile/sounds revoked-bearer=h8 like=o22
+first HEAD /api/profile/sounds key-read=h1 like=o1
+first HEAD /api/profile/sounds key-write=h1 like=o1
+first HEAD /api/profile/sounds key-read-area=h1 like=o1
+first HEAD /api/profile/sounds key-write-area=h1 like=o1
+first HEAD /api/profile/sounds key-member=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options none=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options owner-cookie=h2 like=o16
 first HEAD /api/workspaces/:id/connector-options admin-cookie=h3 like=o17
@@ -696,6 +711,13 @@ more HEAD /api/profile/home-desk rotated-bearer=h8 like=o22
 more HEAD /api/profile/home-desk expired-bearer=h8 like=o22
 more HEAD /api/profile/home-desk key-unknown=h1 like=o1
 more HEAD /api/profile/home-desk key-revoked=h1 like=o1
+more HEAD /api/profile/sounds disabled-cookie=h8 like=o22
+more HEAD /api/profile/sounds bumped-cookie=h8 like=o22
+more HEAD /api/profile/sounds gone-cookie=h8 like=o22
+more HEAD /api/profile/sounds rotated-bearer=h8 like=o22
+more HEAD /api/profile/sounds expired-bearer=h8 like=o22
+more HEAD /api/profile/sounds key-unknown=h1 like=o1
+more HEAD /api/profile/sounds key-revoked=h1 like=o1
 more HEAD /api/workspaces/:id/connector-options disabled-cookie=h8 like=o22
 more HEAD /api/workspaces/:id/connector-options bumped-cookie=h8 like=o22
 more HEAD /api/workspaces/:id/connector-options gone-cookie=h8 like=o22

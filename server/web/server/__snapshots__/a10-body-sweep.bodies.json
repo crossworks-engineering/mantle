@@ -471,6 +471,9 @@
   "PUT /api/profile/nav-favorites": {
     "navFavorites": []
   },
+  "PUT /api/profile/sounds": {
+    "sounds": { "enabled": true, "volume": 0.7 }
+  },
   "PUT /api/profile/neat-background": {
     "neatBackground": "sweep"
   },
