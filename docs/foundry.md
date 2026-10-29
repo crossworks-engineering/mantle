@@ -130,8 +130,10 @@ answer chat pick a vault key in their form, so give an agent a vault key.
 no query. `preview`: the v1 route with `?api-version=preview`. A date
 (`2024-10-21`, `2025-04-01-preview`): the old deployments route,
 `/openai/deployments/<deployment>/chat/completions?api-version=<date>`,
-for a resource that is not on v1 yet. Anything else is refused at call
-time with a plain message.
+for a resource that is not on v1 yet. Dates before `2024-09-01` are refused:
+they reject `stream_options` (every stream sends it) and
+`max_completion_tokens`. Anything else is refused at call time with a plain
+message.
 
 **Model ids.** A route's model is the deployment name. The adapter sends it
 as given (v1) or puts it in the path (dated route, URL-encoded). The model
@@ -154,12 +156,23 @@ deployment named after a known model id and records $0 otherwise.
 
 **Quirks handled in the adapter.**
 
-- Reasoning models refuse `max_tokens` and a set `temperature` or `top_p`.
-  With thinking on, the adapter sends `max_completion_tokens` and no
-  sampling parameters. With thinking off, it sends `max_tokens`; when the
-  answer is a 400 that names `max_completion_tokens`, `temperature` or
-  `top_p` as unsupported, it resends ONCE with the fix. Nothing has reached
-  the user at that point (the 400 comes before the stream).
+- Reasoning models refuse `max_tokens` and a set `temperature` or `top_p`;
+  other models may refuse `reasoning_effort` or `max_completion_tokens`.
+  With thinking on, the adapter sends `reasoning_effort`,
+  `max_completion_tokens` and no sampling parameters. With thinking off, it
+  sends `max_tokens`. A 400 that names a refused parameter gets a resend
+  with that one fix, each kind at most once and three in all:
+  `reasoning_effort` refused (no reasoning on that model) drops it and puts
+  the budget back in `max_tokens`; `max_tokens` refused moves the budget to
+  `max_completion_tokens` and adds `reasoning_effort: low`, so the model's
+  default reasoning cannot eat the whole budget and leave empty text;
+  `max_completion_tokens` refused moves it back; `temperature` or `top_p`
+  refused drops both. The two budget moves never undo each other. Nothing
+  has reached the user at that point (the 400 comes before the stream).
+- Redirects are refused. The key rides the `api-key` header, which a
+  redirect to another origin would carry along.
+- The agent Test chat and the Studio sandbox send the agent's own Base URL
+  (under the same key pairing gate as a real turn), as every turn does.
 - The empty first stream chunk is skipped by the shared streamer.
 
 **Outages.** Foundry errors are the shared `ChatHttpError`, so the
@@ -168,6 +181,14 @@ route and the `provider_alerts` circuit (migration 0230) treat it like any
 other provider. No Foundry code lives in any of them.
 
 ## Not done
+- A missing or invalid endpoint, or a bad API version, is a plain error: it
+  does not fail over to the backup route and raises no provider alert. The
+  message names the fix.
+- The key test and the model list have no route, so they use
+  `MANTLE_FOUNDRY_ENDPOINT`. A vault key meant for another resource (a
+  route Base URL) reads as refused there; the chat itself works.
+- After a parameter fix, a 429 retry starts again from the unfixed request,
+  costing one extra 400 round trip.
 
 - Entra ID (token) auth. Needs a token refresh flow per box.
 - The Responses API. Mantle speaks chat completions to every provider.

@@ -183,8 +183,8 @@ export function parseRetryAfterMs(
   let raw: string | number | null | undefined;
   if (typeof source === 'string' || typeof source === 'number') raw = source;
   else {
-    const msRaw = source?.get?.('retry-after-ms');
-    const ms = msRaw == null || msRaw === '' ? NaN : Number(msRaw);
+    const msRaw = source?.get?.('retry-after-ms')?.trim();
+    const ms = msRaw ? Number(msRaw) : NaN;
     if (Number.isFinite(ms)) return Math.max(0, ms);
     raw = source?.get?.('retry-after');
   }

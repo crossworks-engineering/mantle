@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { getAgent } from '@/lib/agents';
+import { agentChatHost, getAgent } from '@/lib/agents';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
@@ -44,6 +44,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (!agent.apiKeyId) throw new Error('agent has no api_key configured');
     const credential = await getApiKeyById(agent.apiKeyId);
     if (!credential) throw new Error('api key not found or could not decrypt');
+    // The agent's own host, as a real turn sends it (a custom, local or
+    // Foundry route), under the same key pairing gate.
+    const host = await agentChatHost(user.id, id);
+    if (!host) throw new Error('agent not found');
+    if (!host.ok) throw new Error(host.refusal);
 
     const adapter = getChatAdapter(agent.provider);
     if (!adapter) {
@@ -62,6 +67,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const result = await adapter.chat({
       ...credential,
       model: agent.model,
+      baseUrl: host.baseUrl,
+      viaTailnet: host.viaTailnet,
       messages: [
         ...(agent.systemPrompt ? [{ role: 'system' as const, content: agent.systemPrompt }] : []),
         { role: 'user', content: trimmed },

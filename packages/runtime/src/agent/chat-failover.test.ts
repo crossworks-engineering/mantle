@@ -328,6 +328,15 @@ describe('resolveChatKey — the single source of truth for chat credentials', (
       expect(r.ok).toBe(false);
     });
 
+    it('never stands in for a pinned key that is gone', async () => {
+      h.apiKeyByIdReturn = null;
+      h.apiKeyByServiceReturn = null;
+      h.envKey = 'env-k';
+      const r = await resolveChatKey('o', { ...route(null), apiKeyId: 'gone' });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.disposition).toBe('api_key_not_decryptable');
+    });
+
     it('loses to a vault key', async () => {
       h.envKey = 'env-k';
       expect(await resolveChatKey('o', route(null))).toEqual({
