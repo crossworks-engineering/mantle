@@ -461,14 +461,10 @@ describe('the repo', () => {
       text(path)
         .split('\n')
         .findIndex((l) => l.includes(needle)) + 1;
-    // mcp-auth.ts: a peer's risky tools ask adminLogin; mcpLoginUsable reads no role.
+    // mcp-auth.ts: a peer's risky tools ask adminLogin.
     const risky = lineOf('server/web/lib/mcp-auth.ts', 'riskyAllowed: adminLogin(row)');
-    const enabled = lineOf('server/web/lib/mcp-auth.ts', 'export async function mcpLoginUsable');
     expect(risky).toBeGreaterThan(0);
-    expect(enabled).toBeGreaterThan(0);
     expect(reads['server/web/lib/mcp-auth.ts'] ?? []).not.toContain(risky);
-    for (const n of [enabled, enabled + 1, enabled + 2])
-      expect(reads['server/web/lib/mcp-auth.ts'] ?? []).not.toContain(n);
     // The member path (memberMcpCaller, mcpTargetLogin) asks Admin
     // membership too: mcp-auth.ts reads no role at all.
     expect(reads['server/web/lib/mcp-auth.ts']).toBeUndefined();

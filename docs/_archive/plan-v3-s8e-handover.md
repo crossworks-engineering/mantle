@@ -103,3 +103,20 @@ This commit adds this file only.
   call: keep it (the role column is out of every decision), or put the
   role back at these five as a narrowing only (role member AND not an
   Admin user), which keeps five role reads and the Known limits bullet.
+
+## Audit round 1 (LOWs)
+
+- L1: `mcpTargetLogin` refuses a login that is not usable (disabled, or
+  no email): a disabled Admin user reads as no Admin user and had come
+  back as a member target. `mcpLoginUsable` had no other job and went;
+  the consent route asks `mcpTargetLogin` alone.
+- L2: one helper, `memberLogin(row)` (`session.ts`, beside `adminLogin`):
+  `loginUsable(row) && !adminLogin(row)`. `memberMcpCaller`,
+  `mcpTargetLogin` and `memberLoginActive` ask it. `loginUsable` takes an
+  email that may be null.
+- L3: the pin `actorsMdLines` lowered 346 to 344 (the Known limits bullet
+  went); no other pin moved.
+- L4: `admin-facts-handlers.db.test.ts` adds a member OAuth grant cell
+  (the drift admin outside Admin is a member caller);
+  `admin-membership.db.test.ts` adds a disabled Admin user to the
+  `memberLoginActive` and `mcpTargetLogin` cells (refused, null).

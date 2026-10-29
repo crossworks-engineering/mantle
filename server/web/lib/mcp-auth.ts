@@ -30,7 +30,7 @@ import { isLoginRole } from '@mantle/client-types/role-names';
 import { bearerFrom } from './auth/request';
 import { loadLoginRow } from './auth/login-row';
 import { loginIsAdmin } from './auth/admin-seat';
-import { adminLogin } from './auth/session';
+import { adminLogin, memberLogin } from './auth/session';
 import {
   auditKeyRefusal,
   countFailedKey,
@@ -71,9 +71,8 @@ async function loadLogin(loginId: string): Promise<LoginRow | null> {
   return row ? { ...row, adminMember: row.adminMember === true } : null;
 }
 
-/** A member's caller from its login row (a login that is not an Admin
- *  user, adminLogin), or null. Its writes are whatever its scope may write
- *  (W7b: no per-login switch). */
+/** A member's caller from its login row (memberLogin), or null. Its writes
+ *  are whatever its scope may write (W7b: no per-login switch). */
 function memberMcpCaller(
   row: LoginRow,
   anchorId: string,
@@ -82,8 +81,7 @@ function memberMcpCaller(
   /** The grant was narrowed to read-only (0268, MCP_READ_ONLY_SCOPE). */
   readOnly = false,
 ): McpCaller | null {
-  if (adminLogin(row)) return null;
-  if (row.disabledAt || !row.email) return null;
+  if (!memberLogin(row)) return null;
   return {
     role: 'member',
     anchorId,
@@ -278,23 +276,12 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
 
 // ── The OAuth consent and the token check ───────────────────────────────────
 
-/** Whether this login is usable for an MCP connection now: not disabled
- *  and with an email. It does not ask Admin membership, so it answers true
- *  for an Admin user too: it is not "may connect". The consent route asks
- *  it on its member path only, and mcpTargetLogin reads the row again right
- *  after (not an Admin user); a login changed between the two reads
- *  answers by the second, which refuses anything but a member. */
-export async function mcpLoginUsable(loginId: string): Promise<boolean> {
-  const row = await loadLogin(loginId);
-  return !!row && !row.disabledAt && !!row.email;
-}
-
-/** A member login by id: one that is not an Admin user (adminLogin). The
- *  consent route checks it first. */
+/** A member login by id (memberLogin: usable, not an Admin user), or null.
+ *  The consent route asks it on its member path. */
 export async function mcpTargetLogin(
   loginId: string,
 ): Promise<{ id: string; role: 'member'; sessionEpoch: number } | null> {
   const row = await loadLogin(loginId);
-  if (!row || adminLogin(row)) return null;
+  if (!row || !memberLogin(row)) return null;
   return { id: row.id, role: 'member', sessionEpoch: row.sessionEpoch };
 }
