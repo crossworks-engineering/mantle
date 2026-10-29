@@ -12,7 +12,7 @@
  *    workspace, an Admin-area tool only where that area is on (the gate's
  *    Admin step);
  *  - an API key or a peer is narrowed further by its write switch and the
- *    risky-tool rule (the gate's narrowers, from the policy), a key by its areas too (plan 7.5 and 7.6: a key or a
+ *    risky-tool rule (the gate's narrowers, from the policy), a key by its areas too (a key or a
  *    peer acts as its login and only narrows it). The login's own OAuth
  *    consent is not;
  *  - a create takes an optional `workspace` and names where it landed

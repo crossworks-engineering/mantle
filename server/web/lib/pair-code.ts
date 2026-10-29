@@ -143,8 +143,7 @@ export async function claimPairCode(
   // bearer for a login that is gone, disabled or of a role this phone build
   // cannot serve. An Admin login always (adminLogin: a user of Admin
   // now, read with the row); a member only from a build that
-  // serves every login. A client signs in with its emailed code
-  // instead.
+  // serves every login.
   const [user] = await db
     .select({
       email: authUsers.email,

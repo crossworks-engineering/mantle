@@ -193,7 +193,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...PAGE_TOOLS,
   // Draw — READ-ONLY access to the whiteboard workspace: list + read the
   // committed scene as text. Authoring stays on the canvas (see
-  // docs/draw-plan.md).
+  // docs/draw.md).
   ...DRAW_TOOLS,
   // Generic sharing — mint/revoke a viewable link for ANY shareable item
   // (note/task/event/file/app/table/folder); the type-agnostic counterpart
