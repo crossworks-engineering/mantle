@@ -13,8 +13,10 @@
 /** P1. Below on (an emergency only: the checks' floor, migration 0301,
  *  docs/actors.md, "Checks and modes"): a tool's edit of an item the scope
  *  reads and may not change is made, because no TypeScript item pre-check
- *  runs and the database refuses it only with the checks on (warn logs it as a miss, off makes it silently). The same
- *  cells pass in `on`, the only mode a box runs in on this release. */
+ *  runs and the database refuses it only with the checks on (warn logs it
+ *  as a miss, off makes it silently). The same cells pass in `on`, the only
+ *  mode a box runs in. The owner accepted it as a known limit of the
+ *  emergency modes. */
 const P1 = 'P1 below on: a tool edit the database refuses only when on';
 
 /** The surface cells P1 fails (the pairwise pick is stable: a8-grid.ts),
