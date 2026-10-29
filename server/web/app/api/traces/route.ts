@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     statuses: statuses.length > 0 ? statuses : DEFAULT_STATUSES,
     sinceHours: hours,
   };
-  // Only the traces the signed-in login may read (W7 integration fix 3, L2).
+  // Only the traces the signed-in login may read.
   const reader = toolMakerFor(user);
   const [traces, total] = await Promise.all([
     listTraces(user.id, reader, {

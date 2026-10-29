@@ -21,9 +21,8 @@ export const policy = routePolicy({
  * path and response shape. The web client uses /api/auth/token (30d + refresh).
  * Admins only: the companion calls admin routes only, so a non-Admin login
  * is refused here instead of getting a broken app: a member gets 426
- * `update-app` "Update the app" since workspaces W7e (the build that serves
- * every login signs in through /api/auth/device-login or QR pairing). There
- * is no client login since W8a.
+ * `update-app` "Update the app" (a build that serves every login signs in
+ * through /api/auth/device-login or QR pairing). There is no client login.
  */
 export async function POST(req: Request) {
   return handleTokenLogin(req, {

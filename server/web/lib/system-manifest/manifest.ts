@@ -122,8 +122,8 @@ export type ManifestAgent = {
    *  evaluated string, UTF-8). The boot reconcile replaces a live prompt with
    *  the current default only when it hashes to one of these: the operator
    *  never edited it. An edited prompt hashes to none of them and is kept
-   *  (prompts are operator-owned; see CLAUDE.md). Owner decision 2026-10-26:
-   *  every specialist lists all of its earlier defaults, so an untouched old
+   *  (prompts are operator-owned; see CLAUDE.md). Every specialist lists all
+   *  of its earlier defaults, so an untouched old
    *  prompt follows the product on every box. Add the old default's hash here
    *  in the change that rewrites a prompt. */
   retiredPromptSha256?: readonly string[];
@@ -525,20 +525,18 @@ export const MANIFEST_HTTP_TOOL_SLUGS: readonly string[] = MANIFEST_HTTP_TOOLS.m
  * points at a row breaks.
  *
  *   team-notify / team_member_list / team_notify: member-to-member
- *   notifications from the forum era, attached to no agent by default
- *   (member logins Phase 6).
+ *   notifications, attached to no agent by default.
  *   task_comments_list / task_comment_add: the task comment thread, gone
- *   with every other comment surface (2026-10-09; user-to-user talk moves
- *   to the coming forum, progress goes in the task body via task_update).
+ *   with every other comment surface (user-to-user talk goes to the forum,
+ *   progress in the task body via task_update).
  *   my_app_share: sharing a member's app with the team is the member's own
- *   click in the app, never a tool a key, peer or model calls (access
- *   matrix N1, T24).
+ *   click in the app, never a tool a key, peer or model calls.
  *   my-space-write / my_note_create / my_page_create / my_file_upload /
  *   my_item_submit, and my_app_submit / my_app_recall: a login's MCP drafts
- *   and submits for review (plan R7), gone with review in workspaces W5c.
+ *   and submits for review, gone with review.
  *   client-read / client_shared_list / client_shared_search /
  *   client_shared_open / client_request_create: the client chat's tools,
- *   gone with the client portal (workspaces W5c). The client-responder
+ *   gone with the client portal. The client-responder
  *   agent row lives on (agents are add-only); with its group disabled it
  *   holds no tool, and nothing runs a client turn.
  */
@@ -559,7 +557,7 @@ export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
   'my_page_create',
   'my_file_upload',
   'my_item_submit',
-  // Workspaces W6b: the personal spaces are folded into the brain. A
+  // The personal spaces are folded into the brain. A
   // member's own items are brain items in its private workspace, read with
   // the normal tools in its scope; sharing an app is a grant.
   'my_items_list',
@@ -571,10 +569,9 @@ export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
   'client_shared_search',
   'client_shared_open',
   'client_request_create',
-  // Workspaces W7b: one MCP surface for every login. A member builds apps
-  // with the app_* tools in its own scope (builtins-my-apps.ts retired), and
-  // the owner-side team tools went (builtins-team.ts): every user reads only
-  // their own chats (owner answer 2), and a member's change is made where
+  // One MCP surface for every login. A member builds apps with the app_*
+  // tools in its own scope, and the owner-side team tools went: every user
+  // reads only their own chats, and a member's change is made where
   // they may edit, not filed as a request.
   'team_request_create',
   'team_chat_list',
@@ -601,7 +598,7 @@ export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
 ];
 
 /**
- * The adminOnly tool groups (workspaces W4b, plan 5.4): they run only in a
+ * The adminOnly tool groups: they run only in a
  * turn whose scope holds the Admin workspace (email, Journal, contacts,
  * secrets, calendar, the graph, settings, keys, users, maintenance, runs,
  * replay, export, linked brains, Telegram). The seed and the boot reconcile
@@ -2257,9 +2254,8 @@ export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a
  * BUILTIN_TOOLS array (heartbeat controls register only in the agent process via
  * @mantle/runtime/heartbeats). The validator treats these as known so a future manifest
  * entry referencing them doesn't false-fail; none are referenced today. Read
- * off the heartbeat definitions (A5 step 6d), never named here: their data
- * module (heartbeats/specs.ts, fix round 1), so this data module loads no
- * heartbeat runtime.
+ * off the heartbeat definitions, never named here: their data module
+ * (heartbeats/specs.ts), so this data module loads no heartbeat runtime.
  */
 export const KNOWN_EXTERNAL_TOOL_SLUGS: readonly string[] = HEARTBEAT_TOOL_SPECS.map((d) => d.slug);
 

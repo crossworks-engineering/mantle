@@ -231,7 +231,7 @@ async function tick(): Promise<void> {
             ownerId,
             agentId: agent.id,
             // A reminder answers no one's turn: it lands in the owner's own
-            // thread, named explicitly (the anchor login, W7c fix round 1, L7).
+            // thread, named explicitly (the anchor login).
             loginId: ownerId,
             direction: 'outbound',
             text: formatReminder(evt),

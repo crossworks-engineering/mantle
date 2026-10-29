@@ -51,7 +51,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       },
     });
   } finally {
-    // A failed snapshot is a fault: the opaque 500, logged (A10 part 2).
+    // A failed snapshot is a fault: the opaque 500, logged.
     await rm(snap, { force: true }).catch(() => {});
   }
 }

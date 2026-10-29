@@ -47,13 +47,13 @@ type Entry = {
   pattern: string;
   methods: string[];
   /** Each method whose handler reads the caller the pipeline answers, to
-   *  the caller kind its reader reads (arch A4 step 3b; route-callers.ts). */
+   *  the caller kind its reader reads (route-callers.ts). */
   reads: HandlerCallers;
   /** Each method exported as a retired route's 410 stub (`gone(kind)`,
-   *  lib/gone.ts; A4 hand batch A): its row is a gone row. */
+   *  lib/gone.ts): its row is a gone row. */
   gone: string[];
   /** Each method to the switch its route file declares (`routeSwitches`,
-   *  lib/auth/route-switches.ts; A4 hand batch A): its rows' switch. */
+   *  lib/auth/route-switches.ts): its rows' switch. */
   switches: HandlerSwitches;
   /** The policy the route file declares (`policy`,
    *  lib/auth/route-declaration.ts), or null: none. */
@@ -144,8 +144,7 @@ function toEntry(absFile: string): Entry {
   const pattern = '/' + segments.join('/');
   const methods = exportedMethods(src, file);
   const policy = handlerPolicy(src, file, { pattern, methods });
-  // A declared alias is the route file the handler comes from (round 3
-  // LOW-1): the boot checks the base is served and declared, this that it
+  // A declared alias is the route file the handler comes from: the boot checks the base is served and declared, this that it
   // is the one re-exported.
   const aliases = aliasMismatches(src, file, policy, (spec) =>
     specPattern(file, spec, existsInWeb),

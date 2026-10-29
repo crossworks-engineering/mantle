@@ -19,8 +19,8 @@ export const policy = routePolicy({
 });
 
 export async function POST(req: NextRequest) {
-  // A bare read, its value unused: it is here for the route manifest only
-  // (A10 lows, #8 L4). The generator (scripts/route-callers.ts) finds the
+  // A bare read, its value unused: it is here for the route manifest only.
+  // The generator (scripts/route-callers.ts) finds the
   // reader and gives the row its caller, 'owner', which the gate answers
   // and whose login the row's per-login limit counts (lib/route-limits.ts
   // pushEnrol). Without it the row reads no caller, which buildRoutePolicy

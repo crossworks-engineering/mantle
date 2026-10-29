@@ -74,7 +74,7 @@ export async function POST(req: Request) {
   const { oauthClient, scope, ...rest } = parsed.data;
   const oauth = !!(rest.oauth || oauthClient || scope);
   // A connector with a vault key sends it to its URL: pairing the two is the
-  // keys area's (W7a fix round 4, @mantle/tools secret-ref-gate.ts). An OAuth
+  // keys area's (@mantle/tools secret-ref-gate.ts). An OAuth
   // connector's token is minted for its URL by the authorization itself.
   const configuredBy = toolMakerFor(user);
   if (mcpPairing({ url: rest.url, secretRef: rest.secretRef }).key) {
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
   // A binding the connector refuses (InputError) answers 400, a connector
-  // already there (ConflictError) 409, by the one table (A10 part 2).
+  // already there (ConflictError) 409, by the one table.
   const result = await createMcpConnector(user.id, {
     ...rest,
     configuredBy,

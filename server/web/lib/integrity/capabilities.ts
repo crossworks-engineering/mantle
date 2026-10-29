@@ -54,7 +54,7 @@ async function embeddingCap(ownerId: string): Promise<Capability> {
     env('MANTLE_LOCAL_EMBEDDING_URL') ||
     'http://localhost:11434/v1'
   ).replace(/\/+$/, '');
-  // THE local model probe (@mantle/voice providerHealth, A10 #10).
+  // THE local model probe (@mantle/voice providerHealth).
   const probe = await providerHealth(base, { timeoutMs: NET_TIMEOUTS.localProbe, model });
   if (!probe.up && probe.reason === 'http') {
     return { available: false, detail: `local embedder unreachable (HTTP ${probe.status})` };

@@ -49,7 +49,7 @@ import { log } from '@mantle/tracing';
  */
 
 /** A login role in a request body: the users routes' zod enum over
- *  LOGIN_ROLES (A10 #13), so a role added there is accepted here too. */
+ *  LOGIN_ROLES, so a role added there is accepted here too. */
 export const LoginRoleSchema = z.enum(LOGIN_ROLES);
 
 export type LoginChange = {
@@ -116,8 +116,7 @@ export type LoginTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * membership definer the caller runs in `firstInTx` or `inTx`. `inTx` runs
  * last inside the same transaction (the workspace screen writes its own
  * rows there). `firstInTx` runs first in it, before any write: the
- * workspace screen locks the workspace and checks its rules there (W5a
- * audit L2), and the Users screen adds to or removes from Admin there.
+ * workspace screen locks the workspace and checks its rules there, and the Users screen adds to or removes from Admin there.
  * What a callback throws ends the transaction and is thrown on.
  */
 export async function applyLoginChange(
@@ -143,7 +142,7 @@ export async function applyLoginChange(
     };
   }
   // A former client login (archived by 0272) stays disabled: enabling it
-  // would bring a client back as a member by itself (W8a fix round 1).
+  // would bring a client back as a member by itself.
   if (change.disabled === false && (await isFormerClientLogin(target.id))) {
     return {
       ok: false,
@@ -243,7 +242,7 @@ export async function applyLoginChange(
     // login already has changes nothing and needs no spot. An enable
     // (disabled_at back to NULL) lets the login in again: the narrow login
     // may only set disabled_at (0319), so an enable runs at the spot too.
-    // A rename too (round 13b): the display name reaches the prompts as the
+    // A rename too: the display name reaches the prompts as the
     // user's name, so the narrow login holds no write of it.
     const roleChange = change.role !== undefined && change.role !== target.role;
     // Only a real promotion settles (a login already admin by membership
@@ -288,7 +287,7 @@ export async function applyLoginChange(
           });
         }
         // A member made admin: what they shared or submitted as a member goes
-        // back to private drafts (audit F21). An admin's items are never team
+        // back to private drafts. An admin's items are never team
         // drafts or reviewed, and a later demotion must not bring them back.
         if (promotes) await settleSpaceOnPromotion(tx, targetId);
         // Cookies re-read the row every request, so they stop at once. Bearers
@@ -336,8 +335,8 @@ export async function applyLoginChange(
     }
     throw err;
   }
-  // The login changed: a later guard read in this request finds it afresh
-  // (A4 step 3a audit L1), now that the change is committed.
+  // The login changed: a later guard read in this request finds it afresh,
+  // now that the change is committed.
   forgetRequestLogins();
   // After the commit, as the single unpair route does: tell the relay.
   await forgetRelayDevices(pushTokens);

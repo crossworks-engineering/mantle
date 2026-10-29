@@ -1,10 +1,9 @@
 /**
  * /api/apps/[id] — get (GET), update metadata (PATCH), delete (DELETE).
- * PATCH also sets the informational flag (`dataReadOnly`, client logins C6)
- * and MCP access (`mcpAccess`, team apps Phase 1), and "trust its tools"
- * (`trustTools`, team apps Phase 3): the author ceiling. Those three are an
- * Admin user's only (403 admin-only for a member or a client, W6b fix
- * round 1); a member edits its own app's name and look.
+ * PATCH also sets the informational flag (`dataReadOnly`), MCP access
+ * (`mcpAccess`) and "trust its tools" (`trustTools`): the author ceiling.
+ * Those three are an Admin user's only (403 admin-only for a member or a
+ * client); a member edits its own app's name and look.
  */
 import { NextResponse } from '@/server/http-compat';
 import { cappedOne } from '@/lib/list-workspaces';
@@ -25,9 +24,9 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
- *  handler (lib/route-params.ts). Since arch A7 the old `GET
- *  /api/apps/members` (a 410 stub until then) reaches this route as an
- *  [id] of `members`, and answers this 404, not the database's 500. */
+ *  handler (lib/route-params.ts): `GET /api/apps/members` reaches this
+ *  route as an [id] of `members`, and answers this 404, not the database's
+ *  500. */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
@@ -86,7 +85,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   const body = await readBody(req, PatchBody);
   const { name, trustTools, ...rest } = body;
-  // The three admin switches (W6b fix round 1, H2): a member or a client
+  // The three admin switches: a member or a client
   // edits its own app's name and look here (its row's `open: 'owner'`), never its
   // author ceiling, its MCP access or the informational flag.
   if (
@@ -103,8 +102,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
   // The caller's edit of the app (manage with a description) is asked by
-  // updateAppMeta first, before anything is written (pre-check removal
-  // parts 2 and 3, asked once since the R0 integration): an app the scope
+  // updateAppMeta first, before anything is written: an app the scope
   // does not read is the mapper's 404, as an id no row has; one it may not
   // edit the 403 item-workspace (an Admin switch's included).
   let app = await updateAppMeta(user.id, id, { ...(name ? { title: name } : {}), ...rest });
@@ -122,7 +120,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const user = ownerCaller();
   const { id } = await ctx.params;
   // A delete by a login other than the brain's owner stays in the trash
-  // until the owner purges it (CEO decision 1, W6b fix round 1).
+  // until the owner purges it (docs/actors.md, "Who may do what").
   const ok = await deleteApp(user.id, id, {
     deletedBy: { loginId: user.actor.id, owner: user.actor.isOwner },
   });

@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   }
   // A slug or name taken answers 409 with this route's own text
   // (conflictOnUnique, a ConflictError); anything else answers by the one
-  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  // table: a domain error its status, a fault the opaque 500.
   return conflictOnUnique(
     `A worker group with slug "${parsed.data.slug}" already exists.`,
     async () => {

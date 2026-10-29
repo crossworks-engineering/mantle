@@ -14,7 +14,7 @@ export const policy = routePolicy({
 
 /** GET /api/debug/telegram?page=&q= — Telegram chats (paginated) plus the agent
  *  list for the per-chat responder override dropdown. Only the chats the
- *  caller may see (W7d fix round 1, L6): the anchor every chat, any other
+ *  caller may see: the anchor every chat, any other
  *  Admin user its own and those of the bots it moderates. */
 const PAGE_SIZE = 50;
 

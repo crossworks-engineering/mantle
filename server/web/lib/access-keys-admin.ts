@@ -20,17 +20,17 @@ export function accessKeyStatus(
 }
 
 /** Ended keys (revoked or expired) shown, newest first; every LIVE key is
- *  always shown (M3 audit item 9: an old live key must never drop off the
- *  list), and live keys are bounded by MAX_LIVE_KEYS_PER_LOGIN per login
- *  (final audit F7: an expired key counts as ended, not live). */
+ *  always shown (an old live key must never drop off the list), and live
+ *  keys are bounded by MAX_LIVE_KEYS_PER_LOGIN per login (an expired key
+ *  counts as ended, not live). */
 const ENDED_LIST_LIMIT = 200;
 
 /** Keys newest first, with their login and maker: one login's (`loginId`),
  *  or every key (null, an Admin user's view). Every live key, then the
  *  newest ended ones. By their definer (mantle_access_keys_seen, 0293): the
  *  workspace role reads neither the keys nor a login's email; in a scope
- *  only the scope's own login's keys, or every key for an Admin user (A6b:
- *  on the system pool before, 'rule-in-query'). Never the key's hash. */
+ *  only the scope's own login's keys, or every key for an Admin user. Never
+ *  the key's hash. */
 export async function listAccessKeys(loginId: string | null): Promise<AccessKeyView[]> {
   const rows = (await db.execute(
     sql`select * from "public"."mantle_access_keys_seen"(${loginId}::uuid, ${ENDED_LIST_LIMIT})`,
@@ -122,7 +122,7 @@ export function accessKeyView(
       id: r.loginId,
       email: login?.email ?? null,
       displayName: login?.displayName ?? null,
-      // The login as it is now (W8a: a key keeps no role of its own).
+      // The login as it is now: a key keeps no role of its own.
       role: login?.role === 'admin' ? 'admin' : ('member' as AccessKeyRole),
     },
     access: r.access as AccessKeyAccess,

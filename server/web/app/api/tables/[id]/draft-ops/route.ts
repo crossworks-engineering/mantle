@@ -45,8 +45,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
   // A refused op (InputError: no such tab, a column already there) answers
-  // 400, an app table 409, by the one table (A10 part 2); a fault the opaque
-  // 500.
+  // 400, an app table 409, by the one table; a fault the opaque 500.
   const result = await applyTableOps(user.id, id, parsed.data.ops as unknown as TableOp[], {
     ...(parsed.data.if_rev !== undefined ? { ifRev: parsed.data.if_rev } : {}),
   });

@@ -22,7 +22,7 @@ export const policy = routePolicy({
  * built-in member home. A member in no shared workspace gets nulls.
  *
  * It reads team items, so it runs in the member's request scope
- * (route-scope classes it 'content', W7e fix round 1, L1).
+ * (route-scope classes it 'content').
  */
 export async function GET() {
   const member = memberCaller();

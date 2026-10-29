@@ -2,9 +2,8 @@
  * What a peer's token may do on /api/mcp (plan page e5b854dd): the body
  * fields the peer routes take, and the check that the login it is to act as
  * exists. `actsAs` is 'owner' (the anchor login), a member login id, or
- * null (a share-only peer, as before). A bound peer acts as its login as
- * that login is now, in its workspaces (workspaces W8a: no role is kept on
- * the peer).
+ * null (a share-only peer). A bound peer acts as its login as that login
+ * is now, in its workspaces (no role is kept on the peer).
  */
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
@@ -23,7 +22,7 @@ export const PeerAccessBody = z.object({
 });
 
 /** The refusal an Admin user who is not the owner gets for a peer that acts
- *  as the owner (W6b fix round 3, M-1). */
+ *  as the owner. */
 export const PEER_OWNER_ONLY = 'Only the brain owner may link a brain that acts as the owner.';
 
 /**
@@ -31,7 +30,7 @@ export const PEER_OWNER_ONLY = 'Only the brain owner may link a brain that acts 
  * `actor.isOwner`): binding it to the owner, naming risky owner tools on it,
  * or, on a peer bound to the owner now (`boundToOwner`), its Write switch,
  * its risky tools and a new token. Each of these hands its holder the
- * owner's tools; any other Admin user gets 403 (W6b fix round 3, M-1).
+ * owner's tools; any other Admin user gets 403.
  */
 export function peerChangeNeedsOwner(
   change: {
@@ -72,7 +71,7 @@ export async function resolvePeerActsAs(
     .select({
       id: authUsers.id,
       disabledAt: authUsers.disabledAt,
-      // Admin membership (loginIsAdmin, S8b), never the role column.
+      // Admin membership (loginIsAdmin), never the role column.
       admin: loginIsAdmin(authUsers.id),
     })
     .from(authUsers)
@@ -81,8 +80,7 @@ export async function resolvePeerActsAs(
   if (!row) return { error: 'No such login.' };
   if (row.disabledAt) return { error: 'That login is disabled.' };
   // Another Admin login is not offered: a peer acts as the owner or as a
-  // member (as before W8a), a login that is no Admin user (membership
-  // decides, S8b). What the bound login reads is its workspaces'.
+  // member, a login that is no Admin user (membership decides). What the bound login reads is its workspaces'.
   if (actsAs !== 'owner' && row.admin) {
     return { error: "Pick 'owner' or a member." };
   }

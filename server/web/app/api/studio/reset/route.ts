@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     );
   }
   // A manifest refusal (InputError: no key for it) answers 400 by the one
-  // table (A10 part 2); a fault the opaque 500.
+  // table; a fault the opaque 500.
   await applyManifest(user.id, { only: [slug], mode: 'overwrite' });
   return NextResponse.json({ ok: true });
 }

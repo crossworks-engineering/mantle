@@ -186,7 +186,7 @@ export async function POST(req: Request) {
   }
 
   // A disabled login cannot keep a session alive by refreshing it. Only the
-  // roles that hold a bearer rotate one, named (client logins audit A15).
+  // roles that hold a bearer rotate one, named.
   const why = row.revokedAt
     ? 'revoked'
     : row.userId !== claims.uid

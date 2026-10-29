@@ -58,8 +58,8 @@ async function pgHealth() {
       ? tablesResult
       : ((tablesResult as { rows?: PgTableRow[] }).rows ?? [])
   ) as PgTableRow[];
-  // Who the system pool logs in as (arch A9): the runtime role after a
-  // box's roll, the superuser before it.
+  // Who the system pool logs in as: the runtime role where the box runs it
+  // (MANTLE_DB_RUNTIME_ROLE), else the superuser.
   const roleRow = await systemPoolRole();
   return {
     dbSizeBytes: stats ? Number(stats.db_size) : null,
@@ -129,7 +129,7 @@ async function embedderHealth(userId: string): Promise<SystemHealth['embedder']>
     env('MANTLE_LOCAL_EMBEDDING_URL') ||
     DEFAULT_LOCAL_EMBED_URL
   ).replace(/\/+$/, '');
-  // THE local model probe (@mantle/voice providerHealth, A10 #10).
+  // THE local model probe (@mantle/voice providerHealth).
   const probe = await providerHealth(base, { timeoutMs: NET_TIMEOUTS.healthPill, model });
   if (!probe.up && probe.reason === 'http') {
     return {

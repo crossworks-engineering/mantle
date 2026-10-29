@@ -43,12 +43,12 @@ export async function GET() {
     badges,
     privateReads: isTeamPrivateReadsEnabled(prefs),
     // An older client's Team settings still render a member home app picker
-    // from these two (audit M3): empty, so it shows the built-in Desk and
+    // from these two: empty, so it shows the built-in Desk and
     // offers nothing. Remove both after the next client pair.
     hubAppId: null,
     hubCandidates: [],
-    // No workspace is the members' since 0286 (an older client's Member
-    // chat line shows "none"; it showed only on the built-in Team).
+    // No workspace is the members' (an older client's Member chat line
+    // shows "none").
     teamAssistant: null,
   });
 }

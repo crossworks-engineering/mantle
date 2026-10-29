@@ -82,12 +82,12 @@ export async function GET() {
 export async function POST(req: Request) {
   const user = ownerCaller();
   const body = await readBody(req, CreateBody);
-  // A key with a base URL of the writer's choosing is the keys area's (W7a
-  // fix round 4, lib/model-route-pair.ts).
+  // A key with a base URL of the writer's choosing is the keys area's
+  // (lib/model-route-pair.ts).
   const keysRefused = await modelRoutesRefusal(user, null, body, AGENT_ROUTES);
   if (keysRefused) return NextResponse.json({ error: keysRefused }, { status: 403 });
-  // Save-time catalog check: a bad OpenRouter id fails SILENTLY at call time
-  // (the 2026-08-31 vision incident), so the save is where it must be caught.
+  // Save-time catalog check: a bad OpenRouter id fails SILENTLY at call time,
+  // so the save is where it must be caught.
   // Fail-open when the catalog is unreachable.
   for (const [provider, model] of [
     [body.provider, body.model],
@@ -98,8 +98,7 @@ export async function POST(req: Request) {
   }
   // A slug or name taken answers 409 with this route's own text
   // (conflictOnUnique, a ConflictError); a key id that names no key 400
-  // (inputOnMissingRef, A10 lows); anything else answers by the one
-  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  // (inputOnMissingRef); anything else answers by the one table: a domain error its status, a fault the opaque 500.
   return conflictOnUnique('A worker with that slug already exists.', async () => {
     const { params, ...rest } = body;
     // createAiWorker honours isDefault atomically in its own transaction.

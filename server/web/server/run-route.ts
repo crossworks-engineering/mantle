@@ -1,5 +1,5 @@
 /**
- * runRoute (arch plan v2, section 7, Tests; A4 step 3a): one request
+ * runRoute: one request
  * through the FULL HTTP pipeline, the way a client's request runs: the
  * gate middleware, the request's ROUTE_POLICY row, enterCall with the
  * caller the gate resolved (the login found once), the request slot, the

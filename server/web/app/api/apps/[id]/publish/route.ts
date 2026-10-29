@@ -32,8 +32,7 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The ids are uuids: any other names nothing, the params gateway's one
- *  404 before the handler (lib/route-params.ts; the item gate answered it
- *  until the pre-check removal part 2). */
+ *  404 before the handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
@@ -54,8 +53,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const existing = await getApp(user.id, id);
   if (!existing) return NextResponse.json({ error: 'app not found' }, { status: 404 });
-  // The caller's edit (the pre-check removal part 2: the HTTP gate asked
-  // it), before the draft is looked at: a reader is refused (403
+  // The caller's edit, before the draft is looked at: a reader is refused (403
   // item-workspace), not told "nothing to publish".
   await assertItemRight(id, 'edit');
   // The body after the item: a caller who may not edit it is told so first.
@@ -79,7 +77,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
 
-  // NoGreenBuildError answers 409 by the one table (A10 part 2).
+  // NoGreenBuildError answers 409 by the one table.
   const app = await publishApp(user.id, id, { summary });
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
   return NextResponse.json({ app });

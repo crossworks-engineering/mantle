@@ -1,8 +1,7 @@
 /**
  * POST /api/telegram/pair: pair the Telegram chat holding `code` to the
- * signed-in user (workspaces W7d; the owner's answer 1A), in two steps (W7d
- * fix round 1, M3: someone else's code must not quietly pair their chat to
- * you).
+ * signed-in user, in two steps (someone else's code must not quietly pair
+ * their chat to you).
  *
  *  - `{ code }`: a preview, nothing paired: TelegramPairPreview, naming the
  *    chat (its checked @username or its id as `label`, its free title as

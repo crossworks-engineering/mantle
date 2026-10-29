@@ -56,10 +56,10 @@ export async function POST(req: Request) {
   const result = await onFullSystemRoute('console-tool', () =>
     dispatchTool(tool, parsed.data.input, {
       ownerId: user.id,
-      // The signed-in login (A0 fix round 2, L-6): a tool that checks the
+      // The signed-in login: a tool that checks the
       // caller (a link) sees it.
       surface: { kind: 'web', loginId: user.actor.id },
-      // Through the one gate as the owner's own web call (A5 step 3b).
+      // Through the one gate as the owner's own web call.
       caller: ownerWebCaller(),
     }),
   );

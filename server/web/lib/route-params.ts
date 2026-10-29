@@ -1,11 +1,10 @@
 /**
- * A route's params schema (A10 lows, part 2 #1; docs/request-plumbing.md,
- * "Path params"): what each dynamic segment of its path must be. The route
+ * A route's params schema (docs/request-plumbing.md, "Path params"): what each dynamic segment of its path must be. The route
  * loader reads it once the handler's module is loaded and the caller is
  * answered, and a request whose segment is not what the schema says gets
  * the one 404 (`{ error: 'not found' }`) before the handler runs: an id
  * that is not a uuid names nothing, so it never reaches the database, where
- * the uuid cast refused it as an opaque 500.
+ * the uuid cast would refuse it as an opaque 500.
  *
  * A route declares it in its own file, beside its handlers, so it moves
  * with the file:

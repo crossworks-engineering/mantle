@@ -48,10 +48,10 @@ const sameHost = (a: string | null | undefined, b: string | null | undefined) =>
 
 /**
  * Whether `input` points the account's sealed password at a host or port
- * other than the stored ones (W7a fix round 5): the IMAP host or port, or an
+ * other than the stored ones: the IMAP host or port, or an
  * SMTP host or port set and different. Removing the SMTP server sends
  * nothing anywhere. Turning TLS off on either side (secure or smtpSecure,
- * true to false) is a move too (W7 integration fix): the same host, reached
+ * true to false) is a move too: the same host, reached
  * without implicit TLS, can be a different listener or an interceptor.
  */
 function mailDestinationMoved(
@@ -84,8 +84,7 @@ function mailDestinationMoved(
  *
  * A blank password reuses the sealed one, and the probe (test or save) sends
  * it to the host and port in the body. That is a vault secret paired with a
- * host of the writer's choosing (W7a fix round 5, @mantle/tools
- * secret-ref-gate.ts): with a host or port other than the stored ones, or
+ * host of the writer's choosing (@mantle/tools secret-ref-gate.ts): with a host or port other than the stored ones, or
  * with TLS turned off, the password must be typed again, unless the login
  * holds the keys area.
  */

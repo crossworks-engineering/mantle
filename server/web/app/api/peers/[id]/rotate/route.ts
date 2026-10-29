@@ -18,15 +18,14 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const { id } = await ctx.params;
   // A new token for a peer that acts as the owner is an owner credential:
-  // the owner's to mint (W6b fix round 3, M-1).
+  // the owner's to mint.
   if (
     !user.actor.isOwner &&
     peerChangeNeedsOwner({ rotate: true }, await peerBoundToOwner(user.id, id))
   ) {
     return NextResponse.json({ error: PEER_OWNER_ONLY }, { status: 403 });
   }
-  // Checked again in the write: the owner may bind it in between (fix
-  // round 4, L-4).
+  // Checked again in the write: the owner may bind it in between.
   const guard = !user.actor.isOwner;
   const token = await rotateInboundToken(user.id, id, guard ? { unlessBoundTo: user.id } : {});
   if (!token) {

@@ -1,6 +1,6 @@
 /**
- * Trim the actor check's miss log (maintenance sweep `actor-misses-reap`,
- * workspaces arch A2a; plain SQL, no model). A statement that ran with no
+ * Trim the actor check's miss log (maintenance sweep `actor-misses-reap`;
+ * plain SQL, no model). A statement that ran with no
  * actor lands a row in actor_check_misses (capped at 100 an hour per
  * check), and nothing else removes them. A row older than
  * {@link ACTOR_MISSES_RETENTION_DAYS} days goes, in batches so a first run

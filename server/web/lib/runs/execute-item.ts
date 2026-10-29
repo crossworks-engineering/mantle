@@ -179,7 +179,7 @@ async function runResolved(
   }
   // A run item runs on the admin pool, so only an admin-level agent's run
   // may run at all: a lower agent's run would read with admin visibility
-  // (run_plan refuses a limited turn as well; audit A3).
+  // (run_plan refuses a limited turn as well).
   if (grant && !grant.admin) {
     return fail({
       type: 'below_admin',
@@ -222,12 +222,12 @@ async function runResolved(
   );
   const input = validation.input;
 
-  // Arch A2a: the tool runs as the run's login as it is now, else the owner.
+  // The tool runs as the run's login as it is now, else the owner.
   const itemActor = await runItemActor(run.ownerId, run.loginId);
   const asRunLogin = <T>(fn: () => Promise<T>) =>
     runAsActor(itemActor, () => withRunScope(run, fn));
 
-  // The item's usage is its own trace's (A10 #5): every provider call the
+  // The item's usage is its own trace's: every provider call the
   // tool makes is recorded there by the adapter registry, so the item row
   // reads the trace's totals once the tool returns (docs/spend-recording.md).
   let itemTrace = null as ReturnType<typeof currentTrace>;
@@ -243,16 +243,15 @@ async function runResolved(
       return step(
         { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: input, run_id: run.id } },
         async (handle) => {
-          // The run's own scope (W4b fix round 1, L1): a run stamped with a
-          // workspace other than Admin runs its tool in a turn scope of it
-          // (read only unless the run's login moderates there); dispatch
-          // refuses owner-only and adminOnly tools there. Admin or no
-          // workspace: a turn scope of Admin since W7a (the run's login,
-          // else the owner).
+          // The run's own scope: a run stamped with a workspace other than
+          // Admin runs its tool in a turn scope of it (read only unless the
+          // run's login moderates there); dispatch refuses owner-only and
+          // adminOnly tools there. Admin or no workspace: a turn scope of
+          // Admin (the run's login, else the owner).
           const res = await asRunLogin(() =>
             dispatchTool(tool, input, {
               ownerId: run.ownerId,
-              // Through the one gate, as a run item (A5 step 3a).
+              // Through the one gate, as a run item.
               caller: runCaller(),
               step: {
                 setMeta: (m) => handle.setMeta(m),
@@ -260,11 +259,11 @@ async function runResolved(
               },
               // The planning agent (see above). invoke_agent is banned as an
               // item, so the empty delegation list never matters. The run is
-              // owner-side work, so it names the owner surface (client logins
-              // C4); it is no delivery channel, so send-to-user tools still
+              // owner-side work, so it names the owner surface; it is no
+              // delivery channel, so send-to-user tools still
               // refuse cleanly.
               agent,
-              // It carries the run's login (A0 fix round, M1): a tool that
+              // It carries the run's login: a tool that
               // checks the caller (a link) sees that login, not the owner.
               surface: run.loginId
                 ? { kind: 'owner', via: 'run', loginId: run.loginId }
@@ -295,7 +294,7 @@ async function runResolved(
   };
 
   if (result.ok) {
-    // Third-party content (A5 step 6a, carried L4): a tool whose result the
+    // Third-party content: a tool whose result the
     // tool loop fences (its policy's `outside.untrusted`, or dispatch's
     // provenance flag on an http, connector or recipe result) is stored
     // with the mark, so a model that later reads the run state reads it
@@ -321,7 +320,7 @@ async function runResolved(
     if (retry) return { claimed: true, actions: [retry] };
   }
   // A failure that quotes a remote answer (an http or connector row's, a
-  // recipe's: fix round 1, LOW-6) reaches the state's outcome line and the
+  // recipe's) reaches the state's outcome line and the
   // resume prompt: stored marked, as a third-party result is.
   const failureUntrusted = outcomeIsThirdParty(
     policyUntrusted(builtinPolicy(slug)),
@@ -338,8 +337,8 @@ async function runResolved(
   return { claimed: true, actions };
 }
 
-/** Arch A2a: who a run item runs as. The run's login, read as it is now (a
- *  login disabled since is bound anyway, A2a refuses nothing, and logged);
+/** Who a run item runs as. The run's login, read as it is now (a login
+ *  disabled since is bound anyway, nothing is refused here, and logged);
  *  no login: the owner, login(owner). */
 async function runItemActor(ownerId: string, loginId: string | null): Promise<Actor> {
   const entry = 'worker:runs';

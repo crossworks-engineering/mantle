@@ -31,7 +31,7 @@ const ListQuery = z.object({
 
 /** A folder path as ltree spells it (labels of letters, digits, `_` and
  *  `-`, joined by dots): only such a parent is asked for the folders on
- *  the way; any other is listed as before (the folders matching it). */
+ *  the way; any other lists the folders matching it. */
 const LTREE_PATH = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/;
 
 /** GET /api/files/folders?parent=|tree=: the Files folders the caller reads
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
   }
   // A slug or name taken answers 409 with this route's own text
   // (conflictOnUnique, a ConflictError); anything else answers by the one
-  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  // table: a domain error its status, a fault the opaque 500.
   return conflictOnUnique(`A folder with that slug already exists under this parent.`, async () => {
     const folder = await createFolder({
       ownerId: user.id,

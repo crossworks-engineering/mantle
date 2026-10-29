@@ -10,8 +10,7 @@ import { toolMakerFor } from '@/lib/tools';
  * whole brain, everyone's header and every share link. Like the brand keys
  * of PUT /api/profile, they are the brain owner's (the anchor login, always
  * allowed) or a login's with the settings area. `what` names the setting
- * in the refusal (plan v3 S3 fix round 3: the reminder channel, a brain key
- * on the same rule).
+ * in the refusal (the reminder channel too: a brain key on the same rule).
  */
 export async function brandSettingsRefusal(
   user: {

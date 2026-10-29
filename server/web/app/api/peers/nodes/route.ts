@@ -13,7 +13,7 @@ export const policy = routePolicy({
  * Excludes structural/sensitive types — branches (folders), peer records
  * themselves, and secrets (their content is sealed; share deliberately by
  * another route if ever needed, not via a casual picker). The kind registry's
- * `peerPick` field (A10 #12).
+ * `peerPick` field.
  */
 const EXCLUDED = PEER_PICK_EXCLUDED_KINDS;
 

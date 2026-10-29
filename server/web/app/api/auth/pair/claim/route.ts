@@ -25,7 +25,7 @@ export const policy = routePolicy({
  * can show who it is). Every failure — unknown, expired, already used,
  * malformed — is one 401 with one line, so nothing can be enumerated.
  *
- * Any login since workspaces W7e: a member's code is claimed by a phone
+ * Any login: a member's code is claimed by a phone
  * build that sends `X-Jackdaw-Mobile` at or above the minimum build
  * (lib/mobile-build.ts); an older app gets 426 "Update the app" and the code
  * stays unused.

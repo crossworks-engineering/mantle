@@ -1,12 +1,12 @@
 /**
- * Running an app as a non-Admin login (workspaces W7e). The owner runner
- * routes (/api/apps/:id/{frame-ticket,frame,db-broker,tool-broker}) are open
- * to every login since W7e; an Admin user runs an app as before, a member
+ * Running an app as a non-Admin login. The owner runner routes
+ * (/api/apps/:id/{frame-ticket,frame,db-broker,tool-broker}) are open to
+ * every login; an Admin user runs an app as the owner runner does, a member
  * through these functions. The member runner routes (/api/member/apps/:id/*)
  * call the same functions: they are deprecated and kept this release only,
  * for an older UI.
  *
- * The rules (member logins Phase 4b, plan R2, unchanged):
+ * The rules:
  *  - the app: one a workspace of the login holds, with a green PUBLISHED
  *    build (never the draft), read in the login's own scope
  *    (memberAppOr404). Anything else is the same plain 404.
@@ -49,12 +49,12 @@ import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
 
 /**
- * This file's one system door (arch A6): a member's app run reaches its app's
+ * This file's one system door: a member's app run reaches its app's
  * database, and the tool broker's verdict reads the tool registry, on the system
  * pool by the named reason 'app-data'. Every call below goes through it, and
- * the Admin branch of the owner db broker's (F4 fix round 2: an Admin user's
- * run, in its scope since F4, after the app's lookup there; its data writes
- * follow ADMIN_DATA_ACCESS, the registry, schema and salt are the app's
+ * the Admin branch of the owner db broker's (an Admin user's run, in its
+ * scope, after the app's lookup there; its data writes follow
+ * ADMIN_DATA_ACCESS, the registry, schema and salt are the app's
  * bookkeeping, as for a member's run).
  */
 export function appDataSystem<T>(fn: () => Promise<T>): Promise<T> {
@@ -170,12 +170,12 @@ export async function memberDbBroker(
     kind: 'db',
     detail: { via: 'member', op },
   });
-  // One statement at a time per login (client tier audit I1): a second
+  // One statement at a time per login: a second
   // waits its turn, so one login never holds every SQL process.
   const caller = {
     callerKey: `member:${member.loginId}`,
     viewer: { kind: 'member' as const, loginId: member.loginId, name: member.displayName },
-    // Rows only (access matrix audit, M1): below admin a write changes rows,
+    // Rows only: below admin a write changes rows,
     // never the schema, a trigger or a view; the schema is the author's
     // (app_db_schema_set). The same authorizer as the MCP app_data_write.
     dataOnly: true,
@@ -206,7 +206,7 @@ export async function memberDbBroker(
 
 /**
  * host.tools.call() of a member's run: the one app tool broker
- * (lib/app-tool-broker.ts, A10 #9) at the team rules (see the top of this
+ * (lib/app-tool-broker.ts) at the team rules (see the top of this
  * file), checked at dispatch time, every call. Refused calls are logged.
  */
 export async function memberToolBroker(

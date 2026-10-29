@@ -36,8 +36,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // Another key may be another account: a connector's marks were for the
   // old one (access matrix T7).
   await afterVaultKeyReplaced(user.id, row.service, row.label);
-  // A new model provider key value: an open provider alert probes now (A10
-  // lows; no alert open, nothing is sent).
+  // A new model provider key value: an open provider alert probes now (no
+  // alert open, nothing is sent).
   await retryProvidersAfterKeyChange(user.id, row.service);
   return NextResponse.json({ id: row.id, updatedAt: row.updatedAt });
 }

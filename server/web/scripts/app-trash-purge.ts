@@ -6,7 +6,7 @@
  * @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the cron
  * worker and this script. Plain SQL and file removal, no model. The
  * snapshot files of the rows it removes go with the store sweep a day later
- * (their tombstones; arch A3b part 2, docs/store-brokers.md).
+ * (their tombstones; docs/store-brokers.md).
  *
  * Usage:
  *   pnpm app-trash:purge           # DRY RUN: counts only, removes nothing

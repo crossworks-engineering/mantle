@@ -13,9 +13,9 @@
  * (kind 'admin'); a value the browser sends for one is refused.
  *
  * An Admin user's run: the app found in its scope, then its SQLite work by
- * the 'app-data' door (lib/app-runner.ts, F4 fix round 2).
+ * the 'app-data' door (lib/app-runner.ts).
  *
- * Every login since W7e: a member's run goes through lib/app-runner.ts (an
+ * Every login: a member's run goes through lib/app-runner.ts (an
  * app its workspaces hold, its data written only with the grant's Write and
  * not informational, rows only). A client login is refused (403
  * client-login), never the admin path below.
@@ -33,8 +33,7 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The ids are uuids: any other names nothing, the params gateway's one
- *  404 before the handler (lib/route-params.ts; the item gate answered it
- *  until the pre-check removal part 2). */
+ *  404 before the handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
@@ -71,7 +70,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // The app was found in the Admin user's scope (getAppRuntime: the item
   // check, a read; the gate asked the same). Its SQLite work is the app's
   // bookkeeping on the system pool, by the 'app-data' door, as a member's
-  // run's is (F4 fix round 2): an Admin user's data write is never refused
+  // run's is: an Admin user's data write is never refused
   // (ADMIN_DATA_ACCESS), and the write sequence, the lazy schema and the
   // per-app salt (app_databases) are the app's rows, not the caller's
   // edit. In its scope an Admin user who only reads the app was refused.

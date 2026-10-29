@@ -1,6 +1,5 @@
 /**
- * Who chats with which assistant (workspaces W7c, plan section 4; the owner's
- * answer of 2026-10-11). Every login chats with the assistant of each
+ * Who chats with which assistant. Every login chats with the assistant of each
  * workspace it is a user of, each in its own thread, and reads only its own
  * threads. The chat routes (/api/assistant/*) resolve the agent here, after
  * getChatLoginOr401:
@@ -12,7 +11,7 @@
  *  - a member reaches only the assistants of its own workspaces other than
  *    Admin (its oldest workspace's first, defaultWorkspaceAssistant): never
  *    the Admin assistant, never a helper;
- *  - a client has no chat at all (W7c fix round 1, M4): clients do not exist
+ *  - a client has no chat at all: clients do not exist
  *    as chat users yet, so every chat route answers as if there were no
  *    assistant.
  *
@@ -87,17 +86,14 @@ export async function resolveChatAgent(
 }
 
 /**
- * resolveChatAgent for a chat WRITE (mark read, archive, a turn). Since plan
- * v3.2 S6 c3 an Admin user's write runs in its scope, as its reads did:
- * there an explicit slug of an assistant the scope does not read (another
- * workspace's, the user not in it) finds no row and would fall through to
- * the default agent, so the write would land on an agent it did not name.
- * On the system pool (before c3) that slug's row was found and refused
- * (another workspace's assistant, only for its users): "no agent". So an
- * explicit slug that does not resolve to itself answers null, as a
- * member's always did (memberAssistants: no fall-through). An unknown or
- * disabled slug fell through to the default before; it answers null now
- * too (narrower: the write names an agent it cannot reach).
+ * resolveChatAgent for a chat WRITE (mark read, archive, a turn). An Admin
+ * user's write runs in its scope, as its reads do: there an explicit slug
+ * of an assistant the scope does not read (another workspace's, the user
+ * not in it) finds no row and would fall through to the default agent, so
+ * the write would land on an agent it did not name. So an explicit slug
+ * that does not resolve to itself answers null, as a member's does
+ * (memberAssistants: no fall-through), and so does an unknown or disabled
+ * slug: the write names an agent it cannot reach.
  */
 export async function resolveChatAgentToWrite(
   login: ChatCaller,
@@ -154,14 +150,12 @@ export async function chatAgentIds(login: ChatCaller): Promise<string[] | undefi
 }
 
 /**
- * Chat messages as this login receives them (W7c fix round 1, M3; client
- * logins C6): for a login that is not an Admin user every picture in a text
+ * Chat messages as this login receives them: for a login that is not an Admin user every picture in a text
  * points at its own routes, and only at an item it may read; never at an
  * admin route or an outside address. An Admin user's messages are as stored.
  * The image lookup runs in the reader's own scope (chatImagesFor): the
  * request already runs in it (a member's chat routes read in its scope), so
- * the helper's own scope adds nothing (A6b: it left the scope by
- * 'rule-in-query' only to enter the same one again).
+ * the helper's own scope adds nothing.
  */
 export async function messagesForReader<T extends { text: string }>(
   login: ChatCaller,

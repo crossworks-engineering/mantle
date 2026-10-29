@@ -10,11 +10,11 @@ export { printOrigin };
  *
  * A render loads one of our own render surfaces (/print/pages, /print/draws,
  * /render/draws) as an admin, so whatever that page pulls in is fetched with
- * that admin's credential. Until audit F01 the credential was a full session
- * cookie for the anchor, set with setExtraHTTPHeaders, which Chromium attaches
- * to EVERY request: a page image with an outside src handed the anchor's
- * session to that host, and the sidecar has internet egress. Three locks now,
- * each enough on its own for the outside-host case:
+ * that admin's credential. A full session cookie set with
+ * setExtraHTTPHeaders would be attached by Chromium to EVERY request: a page
+ * image with an outside src would hand the session to that host, and the
+ * sidecar has internet egress. Three locks, each enough on its own for the
+ * outside-host case:
  *
  *  - The credential is a render cookie (kind 'r', lib/auth/tokens.ts) minted
  *    for the acting admin, accepted only on the render surfaces and the byte

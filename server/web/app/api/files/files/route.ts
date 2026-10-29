@@ -56,9 +56,9 @@ export async function GET(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid query' }, { status: 400 });
   }
-  // `?state=brain|private|all` (item-list alignment, lib/admin-private-rows):
+  // `?state=brain|private|all` (lib/admin-private-rows):
   // the caller's own private files join the ROOT folder (by name) and Recent
-  // (by time); no other folder holds any. Default brain, as before.
+  // (by time); no other folder holds any. Default brain.
   const state = listStateOf(url.searchParams);
   // An API key without the Search area does not see email attachments
   // (access matrix M4): they are file nodes, so Files would list them.
@@ -129,23 +129,23 @@ export async function POST(req: Request) {
   const multipart = contentType.includes('multipart/form-data');
   // The JSON body (an inline text file): this upload path has no loader
   // ceiling (its multipart upload streams under its own cap), so the read
-  // takes the JSON one (A10 part 2). Read before the try below, whose catch
+  // takes the JSON one. Read before the try below, whose catch
   // answers the write's errors, not the body's.
   const raw = multipart ? null : await readJson(req, { maxBytes: JSON_BODY_CEILING_BYTES });
 
   // A slug or name taken answers 409 with this route's own text
   // (conflictOnUnique, a ConflictError); anything else answers by the one
-  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  // table: a domain error its status, a fault the opaque 500.
   return conflictOnUnique('a file with that name already exists in this folder', async () => {
     if (multipart) {
       // Streamed: the body spools to disk as it arrives (see lib/upload-stream),
-      // so the cap here is a disk/UX number, not a memory one: the old
-      // `req.formData()` path buffered the whole file (and a copy) before it
-      // could even say "too large".
+      // so the cap here is a disk/UX number, not a memory one:
+      // `req.formData()` buffers the whole file (and a copy) before it can
+      // even say "too large".
       void sweepSpool();
       const maxBytes = maxStreamedUploadBytes();
       // Over the cap (UploadTooLargeError): 413 with the cap, by the one
-      // table (A10 part 2); a malformed body is an InputError (400, the
+      // table; a malformed body is an InputError (400, the
       // parser's text); a spool that failed is a fault.
       const parsed: ParsedUpload = await readMultipartUpload(req, { maxBytes });
       const parentPath = parsed.fields.parentPath ?? '';
@@ -297,7 +297,7 @@ const BulkDeleteBody = z.object({
 
 export async function DELETE(req: Request) {
   const user = ownerCaller();
-  // No loader ceiling on this path (the upload's): the JSON one (A10 part 2).
+  // No loader ceiling on this path (the upload's): the JSON one.
   const raw = await readJson(req, { maxBytes: JSON_BODY_CEILING_BYTES });
   const parsed = BulkDeleteBody.safeParse(raw);
   if (!parsed.success) {
@@ -307,7 +307,7 @@ export async function DELETE(req: Request) {
     const { deleteFileWithDerived } = await import('@mantle/content');
     const { bulkDeleteGate, bulkRefusalOf } = await import('@/lib/files');
     // Every id passes the item check first, and each one not deleted is
-    // reported (F4 fix round 2: they were left out, silently).
+    // reported, never left out silently.
     const { allowed, refused } = await bulkDeleteGate(parsed.data.ids);
     let deleted = 0;
     let reapedTotal = 0;
@@ -319,8 +319,8 @@ export async function DELETE(req: Request) {
       reapedTotal += res.reaped.total;
       keptTotal += res.kept;
     }
-    // The contract (docs/actors.md, "F4 fix round 3"): keptTotal counts the
-    // derived items the caller may not delete, kept (F4 fix round 3, H1).
+    // keptTotal counts the derived items the caller may not delete, left in
+    // place: a count, never a name.
     const body: BulkDeleteCascadeResponse = {
       deleted,
       hasDerived: [],

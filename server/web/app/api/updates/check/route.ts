@@ -18,9 +18,9 @@ export const policy = routePolicy({
 });
 
 /** The cached release check: open to every Admin user, whatever its areas
- *  (the owner's carve-out, 2026-10-14: its row is the login's own,
- *  its declaration's `caller: 'session'`). The gate answers the session user
- *  (getSessionUser: an Admin user, or null; A4 hand batch A). */
+ *  (its row is the login's own, its declaration's `caller: 'session'`).
+ *  The gate answers the session user (getSessionUser: an Admin user, or
+ *  null). */
 export async function GET() {
   const user = sessionUserCaller();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });

@@ -18,10 +18,10 @@
  * which fires on the saved node. Extraction failures don't kill the turn; they
  * fall back to a "[… couldn't be read: <reason>]" marker.
  *
- * Any login (workspaces W7c): every user chats with the assistant of each
+ * Any login: every user chats with the assistant of each
  * workspace it is a user of, in its own thread (lib/assistant-chat.ts). The
  * Admin assistant and the owner's helpers run on the owner turn engine (an
- * Admin user only, as before); an assistant of another workspace runs on the
+ * Admin user only); an assistant of another workspace runs on the
  * workspace turn engine (lib/workspace-turn.ts: no Journal, no "About the
  * user", the member limits for a login that is not an Admin user), text
  * only, answering 202 `{ turnId }`.
@@ -229,7 +229,7 @@ type TurnResult = { status: number; body: unknown; headers?: HeadersInit };
 // result instead of saving the file and running the LLM again. Single-process
 // scope (one web instance); lost on restart, which is fine: duplicates only
 // matter within seconds. Keyed by the signed-in login AND the key, and read
-// only after the request is authenticated (W7c fix round 1, L1): one login's
+// only after the request is authenticated: one login's
 // key never replays another login's turn, nor answers an unauthenticated
 // request.
 const TURN_DEDUP_TTL_MS = 2 * 60_000;
@@ -266,7 +266,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 }
 
 /** The owner engine's workflow id for a turn with an Idempotency-Key: the
- *  login is part of it (W7c fix round 1, L1), so another login reusing the
+ *  login is part of it, so another login reusing the
  *  key starts its own turn and never lands on this one. */
 function ownerTurnWorkflowId(loginId: string, key: string): string {
   return `turn-${loginId}.${key}`;
@@ -294,8 +294,7 @@ async function runTurn(
   };
   const multipart = contentType.includes('multipart/form-data');
   // The JSON body: this upload path has no loader ceiling (its multipart
-  // attachment has its own cap), so the read takes the JSON one (A10 part
-  // 2). Read before the try below, whose catch answers the turn's errors.
+  // attachment has its own cap), so the read takes the JSON one. Read before the try below, whose catch answers the turn's errors.
   const raw = multipart ? null : await readJson(req, { maxBytes: JSON_BODY_CEILING_BYTES });
 
   try {
@@ -519,7 +518,7 @@ async function runTurn(
     logger.error(msg);
     // The failed turn's text is mostly the provider's answer: an Admin user
     // reads it (it set the provider up), a member or a client gets a fixed
-    // sentence and the detail stays in the log (fix round 1, L6).
+    // sentence and the detail stays in the log.
     return { status: 500, body: { error: admin ? msg : TURN_FAILED_MESSAGE } };
   }
 }

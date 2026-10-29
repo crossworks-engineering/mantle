@@ -41,14 +41,14 @@ export async function POST(req: Request) {
   const body = await readBody(req, CreateBody);
   const { actsAs, writeEnabled, allowedRiskyTools, ...input } = body;
   // A brain that acts as the owner, or one with risky owner tools, is the
-  // owner's to link (W6b fix round 3, M-1).
+  // owner's to link.
   if (!user.actor.isOwner && peerChangeNeedsOwner({ actsAs, allowedRiskyTools })) {
     return NextResponse.json({ error: PEER_OWNER_ONLY }, { status: 403 });
   }
   const bound = actsAs ? await resolvePeerActsAs(user.id, actsAs) : null;
   if (bound && 'error' in bound) return NextResponse.json({ error: bound.error }, { status: 400 });
-  // A base URL that is not http(s) (InputError) answers 400 by the one table
-  // (A10 part 2); a fault the opaque 500.
+  // A base URL that is not http(s) (InputError) answers 400 by the one
+  // table; a fault the opaque 500.
   // `inboundToken` is the plaintext to hand the peer — surfaced ONCE here.
   const created = await createPeer(user.id, { ...input, createdBy: user.actor.id });
   let peer = created.peer;

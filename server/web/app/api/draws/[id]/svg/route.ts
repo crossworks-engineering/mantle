@@ -30,8 +30,8 @@ export const policy = routePolicy({
  * cache: a drawing whose snapshot is missing or stale is re-rendered by the
  * browser sidecar on first view.
  *
- * Every login since W7e (readerAssetCaller: the gate's answer of
- * getReaderForAsset, A4 hand batch B): a member reads a drawing its
+ * Every login (readerAssetCaller: the gate's answer of
+ * getReaderForAsset): a member reads a drawing its
  * workspaces hold, the cache only, with only the images it may read; a
  * drawing it does not read is a 404 (raw) or `{ svg: null }` (JSON), the
  * same answer as an id no row has.

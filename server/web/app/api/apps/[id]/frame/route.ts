@@ -6,18 +6,17 @@
  *
  * An owner ticket (an Admin user's) serves the DRAFT build when present
  * (preview of unpublished work), else the published build: the same choice as
- * /bundle. A member ticket (W7e: every login runs apps here) serves the
+ * /bundle. A member ticket (every login runs apps here) serves the
  * PUBLISHED build of an app the member's workspaces hold, after re-checking
  * the login (lib/app-runner.ts).
  *
  * An owner ticket opens the frame only while the login it names (`act`) is
  * an active Admin user, re-read here as the member frame re-reads its
- * member (W7e fix round 1, M1): a ticket that names a client, a member, a
+ * member: a ticket that names a client, a member, a
  * disabled login or nobody is refused, so no non-Admin login reaches the
- * draft through it. A client's own ticket (`cep`) is refused as before.
+ * draft through it. A client's own ticket (`cep`) is refused.
  *
- * The ticket is the caller the gate answers (frameTicketCaller, A4 hand
- * batch B): the `?t=` verified, or null. What it may open is checked here.
+ * The ticket is the caller the gate answers (frameTicketCaller): the `?t=` verified, or null. What it may open is checked here.
  */
 import { NextResponse } from '@/server/http-compat';
 import { adminLoginActive, frameTicketCaller } from '@/lib/auth';

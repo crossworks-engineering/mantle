@@ -16,8 +16,7 @@ export const policy = routePolicy({
  * this login's pins and open counts, and every app, slim. The first read of a
  * brain moves its old layout document into the tree (tree/apps-nav.ts).
  *
- * The layout is the tree's, changed through /api/tree/apps. The old save
- * (PUT), a 410 stub since the tree, went with the stubs in arch A7.
+ * The layout is the tree's, changed through /api/tree/apps.
  */
 export async function GET() {
   const user = ownerCaller();

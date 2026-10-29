@@ -121,8 +121,7 @@ async function handleUpsert(absPath: string): Promise<void> {
   }
 }
 
-/** How long an unlink waits before it is believed (A3b part 2 fix round 1,
- *  L4): a rename, move or overwrite whose commit failed puts the file back
+/** How long an unlink waits before it is believed: a rename, move or overwrite whose commit failed puts the file back
  *  within milliseconds (store-broker.ts flipThenPlace); deleting its row in
  *  between and making it again on the add would lose its id, grants, tags
  *  and passages (a folder move: the whole subtree's). */

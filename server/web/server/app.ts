@@ -20,21 +20,21 @@ export async function createApp(): Promise<Hono> {
   // The retired team-code pages (/team, /hub) redirect to /login, gate or not.
   mountRetiredTeamPages(app);
   mountStatic(app);
-  // Cache-Control: no-store on every /api answer that names none (A10 #15).
+  // Cache-Control: no-store on every /api answer that names none .
   app.use('*', apiCacheDefault());
   app.use('*', gate());
 
   // The generated manifest is imported lazily so `createApp` stays importable
   // in unit tests without a generation step having run.
   const { routeManifest } = await import('./route-manifest.gen');
-  // Every route file declares its policy (S9): registerRoutes refuses one
+  // Every route file declares its policy: registerRoutes refuses one
   // that does not (requireRouteDeclarations), so the app does not start.
   registerRoutes(app, routeManifest);
 
   // Render surfaces (after the API routes: /s/:token must not shadow the
   // /s/:token/* brokers registered from the manifest). The /s page and the
   // render pages register with their ROUTE_POLICY rows, so the gate runs
-  // them through enterCall (arch A4 step 2); the stubs have no row.
+  // them through enterCall; the stubs have no row.
   const [{ SHARE_PAGES }, { PRINT_PAGES }, { mountStubs }] = await Promise.all([
     import('./pages/share'),
     import('./pages/print'),

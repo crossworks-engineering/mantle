@@ -38,8 +38,8 @@ export async function POST() {
       continue;
     }
     try {
-      // Present is present brain-wide (mantle_name_taken, F4 fix round 2):
-      // one in a workspace the caller's scope does not read was seeded again.
+      // Present is present brain-wide (mantle_name_taken): one in a
+      // workspace the caller's scope does not read is not seeded again.
       if (await nameTaken('formula-spec', user.id, seed.slug)) {
         skipped.push(seed.slug);
         continue;
@@ -49,7 +49,7 @@ export async function POST() {
     } catch (err) {
       // One malformed seed must not deny the owner the other four. A spec
       // the schema refuses (FormulaSpecError) says its text; a fault is
-      // logged and the item says so (fix round 1, L5).
+      // logged and the item says so.
       failed.push({
         slug: seed.slug,
         error: itemErrorText(

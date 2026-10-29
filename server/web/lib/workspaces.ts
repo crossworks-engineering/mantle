@@ -1,43 +1,39 @@
 /**
- * Workspace management (workspaces plan page 4887b8e7, phase W5a; sections
- * 1.1, 1.4, 2.4, 15, R7, S1, 18.8, 18.13 Q3, 21.8, 21.9; Q1 reversed by the
- * owner decision of 2026-10-13, migration 0286).
+ * Workspace management.
  *
  * Users are flat. Every permission is set on a workspace: its users, each
  * user's Moderator tick, and its resources (one assistant, connectors with a
- * Write tick). From W5b an item's Grant Access panel is the second and last
- * place. Nothing here changes who reads what: no read path reads a row this
- * module writes in a way it did not before (memberships and resources were
- * already the truth for workspace turns and connectors since W4).
+ * Write tick). An item's Grant Access panel is the second and last place.
+ * Memberships and resources are the truth for workspace turns and
+ * connectors.
  *
  * Who may do what:
  *  - An Admin user (a user of the Admin workspace) holds the Admin areas
  *    (requireArea; every area today, per-user switches later). With 'users'
  *    they see every workspace and manage its users, name, look and contact; with
  *    'assistants' its assistant; with 'connectors' its connectors. They may
- *    add anyone anywhere, themselves included, private workspaces too (S1,
- *    which replaces 17 R7): logged (subject.self) and shown on the screen as
+ *    add anyone anywhere, themselves included, private workspaces too:
+ *    logged (subject.self) and shown on the screen as
  *    "Added by NAME on DATE".
  *  - A Moderator of a workspace manages its users (add by search, remove a
- *    plain user) and its name, description and look (colour and icon, task
- *    5edc9149: the same rule as the name).
+ *    plain user) and its name, description and look (colour and icon: the
+ *    same rule as the name).
  *  - Only an Admin user ticks or clears Moderator (setModerator, an add with
- *    the tick, and removing a Moderator, owner answer Q2), on every
- *    workspace (owner decision 2026-10-13). Nobody becomes a Moderator by
+ *    the tick, and removing a Moderator), on every workspace (docs/actors.md,
+ *    "Who may do what"). Nobody becomes a Moderator by
  *    themselves, with one exception: any login may make a workspace, and
  *    becomes its only user and a Moderator. Any login may leave one,
  *    except as its last Moderator.
  *  - The only built-in workspace is Admin: it keeps its name, cannot be
  *    archived and keeps a Moderator. Team is a workspace like any other
- *    since 0286 (renamed, archived and moderated by the same rules).
+ *    (renamed, archived and moderated by the same rules).
  *
  * A user of the Admin workspace IS an admin login: membership decides, and
- * the role column follows it (S8b, 0330: the membership definers write the
- * row and the role in one transaction). Adding one or removing one is the
+ * the role column follows it (0330: the membership definers write the row
+ * and the role in one transaction). Adding one or removing one is the
  * same change the Users screen makes, through applyLoginChange (its
  * lockout and audit).
- * Connectors are attached here only: since W5b2 (0261) no level attaches
- * one.
+ * Connectors are attached here only: no level attaches one.
  *
  * Every refusal is a WsError: `{ error, code }` with its status. A workspace
  * or login the caller may not see is 404, never 403. Every change writes a
@@ -98,8 +94,7 @@ export class WsError extends Error {
   }
 }
 
-// What the workspace routes answered by hand (wsRoute, A10 part 2 fix round
-// 1, L7): its status and `{ error, code }`.
+// A workspace route's refusal (wsRoute): its status and `{ error, code }`.
 defineDomainError(WsError, {
   reason: 'a workspace request the caller can fix or may not make; the code says which',
   status: (e) => e.status,
@@ -120,7 +115,7 @@ export type WsCaller = {
 
 /**
  * The caller lib/workspaces.ts and lib/grants.ts take, projected from the
- * login the pipeline answered (A4 hand batch A): the route handler reads
+ * login the pipeline answered: the route handler reads
  * it first (anyLoginCaller()) and passes it in. No guard and no effect: the
  * gate's any-login answer step resolved the login, entered its scope and
  * wrote the api.write row.
@@ -131,10 +126,9 @@ export function workspaceCaller(login: Login): WsCaller {
 
 /** Run a workspace route for the login the handler read (anyLoginCaller()):
  *  answer the result as JSON. A WsError answers `{ error, code }` by its
- *  row in the one table (A10 part 2 fix round 1, L7); anything else is the
- *  opaque 500.
+ *  row in the one table; anything else is the opaque 500.
  *
- *  It runs where the gate put the request (arch A6): a login's read and
+ *  It runs where the gate put the request: a login's read and
  *  write in the login's own scope (an Admin user's write too). What a
  *  scope cannot read goes through the definers of 0291, each held to the
  *  scope: the workspaces the caller sees
@@ -143,12 +137,12 @@ export function workspaceCaller(login: Login): WsCaller {
  *  user search (mantle_ws_login_search). A change of a workspace's users is
  *  a definer call in the caller's own transaction (mantle_ws_add_user,
  *  mantle_ws_set_moderator, mantle_ws_remove_user, mantle_ws_create, and
- *  the resources' mantle_ws_resource_add, _set_write, _remove; 0307, plan
- *  v3.2 S2a), which checks the acting login inside; so is a change of its
+ *  the resources' mantle_ws_resource_add, _set_write, _remove; 0307),
+ *  which checks the acting login inside; so is a change of its
  *  row: the name and look, the contact, the assistant, the landing app
  *  and the archive (mantle_ws_update_about, mantle_ws_set_contact,
  *  mantle_ws_set_assistant, mantle_ws_set_landing, mantle_ws_archive;
- *  0309, S2b). No TypeScript writes the workspace tables. */
+ *  0309). No TypeScript writes the workspace tables. */
 export async function wsRoute(
   login: Login,
   fn: (caller: WsCaller) => Promise<unknown>,
@@ -439,12 +433,12 @@ async function detail(
 }
 
 /**
- * The screen's landing page (task d78e7bde). The home app is named (id and
- * title) only to a user of the workspace and only while the workspace holds
- * it: an Admin user outside the workspace learns only that one is set
- * (audit L1), and a pointer to an app the workspace lost names nothing, so
- * the screen can offer the clear (audit M2; the item_grants trigger of 0276
- * clears such a pointer at commit, this covers one left from before).
+ * The screen's landing page. The home app is named (id and title) only to a
+ * user of the workspace and only while the workspace holds it: an Admin user
+ * outside the workspace learns only that one is set, and a pointer to an app
+ * the workspace lost names nothing, so the screen can offer the clear (the
+ * item_grants trigger of 0276 clears such a pointer at commit; this covers
+ * one it did not).
  */
 function landingAppOf(seen: Seen): WorkspaceLandingApp | null {
   const r = seen.row;
@@ -469,10 +463,9 @@ async function reread(caller: WsCaller, id: string): Promise<WorkspaceDetailResp
 
 // ── Create and change ────────────────────────────────────────────────────────
 
-/** Names are not unique (0255, audit M3): a clash with a workspace the
- *  caller cannot see would tell them it exists. Only the name of the Admin
- *  workspace is reserved, and everybody knows it ("Team" too until 0286:
- *  it is a name like any other now). */
+/** Names are not unique (0255): a clash with a workspace the caller cannot
+ *  see would tell them it exists. Only the name of the Admin workspace is
+ *  reserved, and everybody knows it ("Team" is a name like any other). */
 const RESERVED = () =>
   new WsError(
     409,
@@ -487,15 +480,15 @@ function nameError(err: unknown): WsError | null {
   return null;
 }
 
-/** The reserved name, in code (fix round 2, L-3): for any workspace but
+/** The reserved name, in code: for any workspace but
  *  Admin. The index (0255, 0286) is the backstop. */
 function refuseReservedName(name: string): void {
   if (name.trim().toLowerCase() === 'admin') throw RESERVED();
 }
 
-/** POST /api/workspaces: the maker is its only user and a Moderator (plan
- *  15; kept by the owner decision of 2026-10-13: the one way to become a
- *  Moderator without an Admin user). */
+/** POST /api/workspaces: the maker is its only user and a Moderator (the
+ *  one way to become a Moderator without an Admin user; docs/actors.md,
+ *  "Who may do what"). */
 export async function createWorkspace(
   caller: WsCaller,
   body: { name: string; description?: string },
@@ -571,9 +564,9 @@ export async function patchWorkspace(
     throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can change it.');
   }
   if (body.name !== undefined && body.name !== w.name) {
-    // Admin keeps its name (fix round 2, L-3): a renamed Admin would free
-    // "Admin" for anyone, and a later clash would tell them it exists.
-    // Every other workspace, Team too (0286), is renamed.
+    // Admin keeps its name: a renamed Admin would free "Admin" for anyone,
+    // and a later clash would tell them it exists. Every other workspace,
+    // Team too, may be renamed.
     if (w.is_admin) {
       throw new WsError(409, 'reserved_name', 'The Admin workspace keeps its name.');
     }
@@ -756,7 +749,7 @@ export async function archiveWorkspace(
 type LoginRow = { id: string };
 
 /** The login `loginId` names, or null: its id only (the column the
- *  workspace role reads; arch A6). */
+ *  workspace role reads). */
 async function loginOf(q: Exec, loginId: string): Promise<LoginRow | null> {
   if (!UUID_RE.test(loginId)) return null;
   const [r] = await rows<LoginRow>(q, sql`select id from auth.users where id = ${loginId}`);
@@ -765,8 +758,7 @@ async function loginOf(q: Exec, loginId: string): Promise<LoginRow | null> {
 
 // ── The definers' refusals ──────────────────────────────
 
-/** A definer's refusal as the WsError the route answered before the rule
- *  moved to SQL (0307): its SQLSTATE and the code its message starts with
+/** A definer's refusal (0307) as the route's WsError: its SQLSTATE and the code its message starts with
  *  (`mantle_ws:<code>`), one row each. Anything else is thrown as it is (a
  *  call with no acting login and no system work is no answer a route gives:
  *  it is a fault). */
@@ -863,7 +855,7 @@ const WS_REFUSALS: Readonly<
     state: 'P0002',
     error: () => new WsError(404, 'not_found', 'This assistant is not on this workspace.'),
   },
-  // The workspace row (0309, S2b).
+  // The workspace row (0309).
   about_forbidden: {
     state: '42501',
     error: () => new WsError(403, 'forbidden', 'Only a Moderator of this workspace can change it.'),
@@ -956,8 +948,8 @@ function loginParam(loginId: string): string | null {
   return UUID_RE.test(loginId) ? loginId.toLowerCase() : null;
 }
 
-/** Every Admin user is a Moderator of the Admin workspace, always (owner
- *  decision, F4 fix round 1): its tick is never cleared there, and an add
+/** Every Admin user is a Moderator of the Admin workspace, always
+ *  (docs/actors.md, "Who may do what"): its tick is never cleared there, and an add
  *  to Admin is one with the tick. To take it away, remove the user from
  *  Admin (the role change to member). Migration 0298 ticked every Admin
  *  user who was not. */
@@ -976,12 +968,12 @@ const LAST_MOD = () =>
   );
 
 /**
- * Who changes who is an Admin user (owner decision, F4 fix round 4): an
- * Admin user with the users area only, as for the Moderator tick. The rule
+ * Who changes who is an Admin user: an Admin user with the users area only,
+ * as for the Moderator tick (docs/actors.md, "Who may do what"). The rule
  * is mantle_ws_add_user's and mantle_ws_remove_user's (0307); this is the
- * Admin add's early answer, in the caller's scope, in the order the route
- * answered before the role change's own checks (applyLoginChange: the
- * anchor, the caller itself) and before the login is looked up.
+ * Admin add's early answer, in the caller's scope, before the role change's
+ * own checks (applyLoginChange: the anchor, the caller itself) and before
+ * the login is looked up.
  * The Users screen's role change, the login create and the invites sit
  * under /api/users and /api/team-admin, whose route class is the same users
  * area (route-scope.ts), so no path makes an Admin user without it.
@@ -1074,10 +1066,9 @@ async function roleChangeOnSystemPool(
  *  the Moderator tick; an Admin user adds anyone anywhere, itself included,
  *  private workspaces too (S1), with or without it: logged with
  *  subject.self and shown as "Added by NAME on DATE". On the Admin
- *  workspace the add is the role change to admin (W5a), a Moderator there
- *  always: an add there with the tick off is refused (409 admin_workspace,
- *  owner decision, F4 fix round 1), and any add there is an Admin user's
- *  with the users area (F4 fix round 4). The rule is mantle_ws_add_user's
+ *  workspace the add is the role change to admin, a Moderator there
+ *  always: an add there with the tick off is refused (409 admin_workspace),
+ *  and any add there is an Admin user's with the users area. The rule is mantle_ws_add_user's
  *  (0307). */
 export async function addUser(
   caller: WsCaller,
@@ -1305,7 +1296,7 @@ export async function addResource(
 ): Promise<WorkspaceDetailResponse> {
   const pre = await seeWorkspace(caller, id);
   // An Admin user only (its area): refused here, in the caller's scope,
-  // before the change (arch A6), and again by the definer.
+  // before the change, and again by the definer.
   mayManageResource(pre, body.kind);
   const wid = pre.row.id;
   await resourceDefiner(

@@ -124,7 +124,7 @@ const PERSONAL_ITEM_PATH = /^(\/api\/(?:admin|member)\/space)\/[^/?#]+/;
 
 /**
  * The path as the trail keeps it. Every admin reads the audit log, and a
- * personal item's id belongs to its owner alone (final audit F31): it is
+ * personal item's id belongs to its owner alone: it is
  * what a same-origin request for the item would need. So the id in a
  * personal-space path is kept as `:id`; the route and the actor still say
  * who did what.

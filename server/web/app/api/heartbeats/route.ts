@@ -18,7 +18,7 @@ export const policy = routePolicy({
 });
 
 /** List the owner's heartbeats (summaries). A heartbeat's state shows only
- *  to its maker (W7 integration fix 2). */
+ *  to its maker. */
 export async function GET() {
   const user = ownerCaller();
   const heartbeats = await listHeartbeats(user.id, toolMakerFor(user));
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   }
   // A slug or name taken answers 409 with this route's own text
   // (conflictOnUnique, a ConflictError); anything else answers by the one
-  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  // table: a domain error its status, a fault the opaque 500.
   return conflictOnUnique(
     `A heartbeat with slug "${parsed.data.slug}" already exists.`,
     async () => {

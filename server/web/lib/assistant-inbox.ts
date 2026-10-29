@@ -19,10 +19,9 @@ export type ConversationSummary = {
   unreadCount: number;
 };
 
-/** This login's read cursors, keyed by agentId (per login since 0269). The
- *  login's own rows, by their definer (mantle_read_cursors, 0293: the
- *  workspace role holds no grant on the table; A6b: on the system pool
- *  before, 'rule-in-query'). */
+/** This login's read cursors, keyed by agentId (per login). The login's
+ *  own rows, by their definer (mantle_read_cursors, 0293: the workspace
+ *  role holds no grant on the table). */
 export async function getReadCursors(ownerId: string, loginId: string): Promise<Map<string, Date>> {
   const rows = (await db.execute(
     sql`select agent_id::text as "agentId", last_read_at as "lastReadAt"

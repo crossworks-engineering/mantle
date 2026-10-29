@@ -32,7 +32,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     written = await writeAppPackage(user.id, id, file, { withData });
   } catch (err) {
     // The work file goes; a lost database file (AppDbMissingError) answers
-    // 409, reason 'db-missing', by the one table (A10 part 2).
+    // 409, reason 'db-missing', by the one table.
     await rm(file, { force: true });
     throw err;
   }

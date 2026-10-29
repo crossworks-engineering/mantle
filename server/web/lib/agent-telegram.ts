@@ -41,7 +41,7 @@ import type {
 /**
  * An assistant's bots and their chats are read on the system pool by the
  * named reason 'login-telegram' where a caller never runs in a scope (an
- * Admin area's screen); systemWork refuses a scope (A6b: no exit). A
+ * Admin area's screen); systemWork refuses a scope. A
  * login's own screens read by their definers (0293).
  */
 function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
@@ -68,8 +68,8 @@ export class TelegramTokenError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// the telegram routes answered by hand.
+// The one error answer (@mantle/std domain-errors.ts) for the telegram
+// routes.
 defineDomainError(TelegramTokenError, {
   reason: 'a problem the owner fixes in the form (a bad token, a name taken, a chat not found)',
   status: (e) => (e.code === 'not_found' ? 404 : 400),
@@ -151,7 +151,7 @@ export async function connectAgentTelegram(
 ): Promise<AgentTelegramBinding> {
   const trimmed = token.trim();
   if (!trimmed) throw new TelegramTokenError('Paste a bot token.');
-  // Any workspace's assistant may have a bot (workspaces W7d): its chats are
+  // Any workspace's assistant may have a bot: its chats are
   // paired to users of its workspace, each answered as that user.
   const me = await getMe(trimmed);
   const branchPath = `inbox.telegram_${me.username.toLowerCase()}`;
@@ -260,7 +260,7 @@ function nameOf(row: { displayName: string | null; email: string | null }): stri
 /**
  * Chats this agent's bot has seen — pending pairing requests first, then
  * allowed, then denied; recent within each, each with the user it is
- * paired to (workspaces W7d). For the Settings screen of the bot, where a
+ * paired to. For the Settings screen of the bot, where a
  * Moderator or an Admin user blocks or unpairs a chat; pairing itself is the
  * user's own, with the chat's code (pairMyTelegramChat).
  */
@@ -277,7 +277,7 @@ export async function listAgentTelegramChats(
  *  for a list. The caller has checked who may see them. */
 async function chatsOfBot(ownerId: string, accountId: string): Promise<AgentTelegramChat[]> {
   // The assistants area's screen of the bot (GET /api/agents/:id/telegram),
-  // on the system pool: never in a scope (A6b: systemWork, no exit).
+  // on the system pool: never in a scope (systemWork).
   const rows = await telegramSystemWork(() =>
     db
       .select({
@@ -325,7 +325,7 @@ export function pairingRefusalStatus(r: PairingRefusal): number {
 /**
  * Block or unpair a chat on this agent's bot (Settings), by `actorLoginId`:
  * a Moderator of the bot's workspace, an Admin user with the users area, or
- * the chat's own user (workspaces W7d). Never pairs: only the user pairs
+ * the chat's own user. Never pairs: only the user pairs
  * their own chat, with its code. Throws TelegramTokenError on a refusal.
  */
 export async function setAgentTelegramChat(args: {
@@ -349,7 +349,7 @@ export async function setAgentTelegramChat(args: {
 
 /**
  * What the code would pair, without pairing (POST /api/telegram/pair with no
- * `confirm`, W7d fix round 1, M3): the chat, its bot and assistant, and the
+ * `confirm`): the chat, its bot and assistant, and the
  * token the confirm carries back. Or a refusal.
  */
 export async function previewMyTelegramChat(args: {
@@ -372,9 +372,9 @@ export async function previewMyTelegramChat(args: {
 
 /**
  * Pair the chat holding `code` to the signed-in login (POST
- * /api/telegram/pair with `confirm: true`, workspaces W7d): only for a bot
+ * /api/telegram/pair with `confirm: true`): only for a bot
  * whose assistant's workspace that login is a user of, and only with the
- * preview's token (required, W7d+e): the chat that preview showed, for this
+ * preview's token (required): the chat that preview showed, for this
  * code, within ten minutes. The answer, or a refusal.
  */
 export async function pairMyTelegramChat(args: {
@@ -399,8 +399,7 @@ export async function pairMyTelegramChat(args: {
 
 /** The signed-in login's own paired chats (GET /api/telegram/my-chats), by
  *  their definer (mantle_tg_my_chats, 0293: the Telegram tables are granted
- *  to no role; in a scope, the scope's own login only; A6b: on the system
- *  pool before, 'login-telegram'). */
+ *  to no role; in a scope, the scope's own login only). */
 export async function listMyTelegramChats(
   ownerId: string,
   loginId: string,
@@ -444,13 +443,11 @@ export async function unpairMyTelegramChat(
 
 /**
  * The chats of every bot the signed-in login moderates (GET
- * /api/telegram/moderated-chats, workspaces W7d): bots whose assistant's
+ * /api/telegram/moderated-chats): bots whose assistant's
  * workspace it is a Moderator of, or every bot for an Admin user with the
  * users area (the bot's Moderator rule, mantle_tg_login_moderates, 0313).
  * Empty for anyone else. By their definer (mantle_tg_moderated_chats,
- * 0293, asking that rule since 0313; in a scope, the scope's own login
- * only; A6b: on the system pool before,
- * 'login-telegram'). Each bot's chats as its own screen sorts them.
+ * 0293, asking that rule; in a scope, the scope's own login only). Each bot's chats as its own screen sorts them.
  */
 export async function listModeratedTelegramChats(
   ownerId: string,
@@ -514,7 +511,7 @@ export async function listModeratedTelegramChats(
 
 /**
  * Block or unpair chat `chatId` by `actorLoginId` (POST
- * /api/telegram/chats/:id/block|unpair, workspaces W7d): its own user, a
+ * /api/telegram/chats/:id/block|unpair): its own user, a
  * Moderator of its bot's workspace, or an Admin user with the users area.
  * Null when done, else the refusal (a chat the login may not touch reads
  * as not found).

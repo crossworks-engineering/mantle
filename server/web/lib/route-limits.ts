@@ -1,15 +1,11 @@
 /**
- * Rate limits on the ROUTE_POLICY row (A10 #8; docs/request-plumbing.md,
- * "Rate limits"). Before, 38 limits were taken by hand: each route (or a
- * helper its handler called first) built its own bucket key, named its own
- * max and window inline, and answered its own 429 (15 texts, a text body on
- * five routes, two header spellings, no Retry-After on two). A new route had
- * no limit unless someone remembered one.
+ * Rate limits on the ROUTE_POLICY row (docs/request-plumbing.md, "Rate
+ * limits"). A limit is never taken by hand in a handler: one built there
+ * names its own key, max and window and answers its own 429, and a new
+ * route has no limit unless someone remembers one.
  *
- * Now:
- *
- *  - RATE_LIMITS: every named limit, once: its bucket (the key prefix, as on
- *    main), whose key it counts (the caller's address, its login, or the
+ *  - RATE_LIMITS: every named limit, once: its bucket (the key prefix),
+ *    whose key it counts (the caller's address, its login, or the
  *    whole brain), its max and its window, and the narrowings a limit had
  *    (members only; a query it applies to).
  *  - RouteGates: what the gate checks of a request before its handler, by
@@ -54,11 +50,11 @@ export type RateLimitSpec = Readonly<{
   peek?: true;
   /** A machine's limit (an OAuth client, an MCP client): its 429 keeps
    *  `error: 'rate_limited'`, the code those clients read (the machine
-   *  shape of rateLimitedAnswer; A10 lows, #8 L1). */
+   *  shape of rateLimitedAnswer). */
   machine?: true;
   /** For an app's author: what the limit counts and how to stay under it.
    *  A 429 of this limit says it in `error` (with the wait), in place of
-   *  the one text, so the app shows it (owner decision 2026-10-24). */
+   *  the one text, so the app shows it. */
   explain?: string;
 }>;
 
@@ -147,8 +143,7 @@ export const RATE_LIMITS = {
   /** Connect and enrol are once-per-install steps: one bucket for both,
    *  the admin and the member routes alike. */
   pushEnrol: perLogin('push-enrol', 10),
-  // A run of an app, per login: an Admin user's counts too (owner decision
-  // 2026-10-24), so a wasteful app shows up when an Admin tests it.
+  // A run of an app, per login: an Admin user's counts too, so a wasteful app shows up when an Admin tests it.
   memberFrameTicket: appLimit(
     'member-frame-ticket',
     30,
@@ -268,16 +263,16 @@ export const RATE_LIMITED_TEXT = 'Too many requests. Try again later.';
 export type RateLimitedShape = 'person' | 'machine';
 
 /**
- * The one 429 (A10 #8): `{ error, code: 'rate_limited', retryAfter }`, with
+ * The one 429: `{ error, code: 'rate_limited', retryAfter }`, with
  * `Retry-After` (seconds, at least 1) and `Cache-Control: no-store`. The
  * seconds are in the body too: a browser on another origin cannot read the
  * header unless it is exposed. Every limit of this tier answers it, the
  * row's and the ones a handler still takes (route-plumbing.mjs
  * RATE_LIMIT_ALLOW), except the OAuth consent page, which answers a page.
  * A machine's 429 (`shape` 'machine': the OAuth server, the remote MCP, an
- * API key's budget) keeps the code it had in `error`, and the text moves to
- * `message`: `{ error: 'rate_limited', code, message, retryAfter }` (A10
- * lows, #8 L1: an OAuth client reads `error` as the RFC 6749 code).
+ * API key's budget) keeps the code in `error`, and the text goes in
+ * `message`: `{ error: 'rate_limited', code, message, retryAfter }` (an
+ * OAuth client reads `error` as the RFC 6749 code).
  */
 export function rateLimitedResponse(
   retryAfterSec: number,

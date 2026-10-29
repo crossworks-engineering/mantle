@@ -1,16 +1,15 @@
 /**
- * A chat turn with the assistant of a workspace other than Admin (workspaces
- * W7c), queued from POST /api/assistant/turn: the workspace turn engine
+ * A chat turn with the assistant of a workspace other than Admin, queued from POST /api/assistant/turn: the workspace turn engine
  * (runTeamTurn) on the member turn queue, never ahead of the owner's turns.
  * It answers 202 `{ turnId }`; the reply lands in the login's own thread
  * (GET /api/assistant/thread, or the conversation stream).
  *
- * The limits the member chat route had stay, for every login that is not an
- * Admin user: 6 messages a minute (taken here, not by the row: it counts
+ * The member limits hold for every login that is not an Admin user: 6
+ * messages a minute (taken here, not by the row: it counts
  * the turns queued, so a retry with the same key, answered from the turn
  * route's own cache, spends nothing; named in docs/request-plumbing.md,
  * "Rate limits"), and the daily turn cap and token budget
- * checked when the turn is QUEUED against the member turn ledger (audit F09),
+ * checked when the turn is QUEUED against the member turn ledger,
  * so turns waiting on the queue count. A retry with the same Idempotency-Key
  * is the same turn; the key with new text is a 409. The login is baked into
  * the workflow id, so a client can never address another login's turn.
@@ -167,7 +166,7 @@ export async function queueWorkspaceTurn(o: {
 /**
  * Count one model call a chat makes besides a turn (a chat summary on New
  * chat, Continue or a summary retry; a voice transcription) for a login that
- * is not an Admin user (W7c fix round 1, L2): it takes a slot of the same
+ * is not an Admin user: it takes a slot of the same
  * daily cap and token budget as a turn, in the member turn ledger, so these
  * never become an unmetered way to bill the brain. An Admin user is not
  * limited. Null when admitted, else the 429 answer.

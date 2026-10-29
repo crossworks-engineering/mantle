@@ -8,14 +8,14 @@
  * A CONTACT share (migration 0214), past the contact's code gate, may call
  * ONE kind of tool: an outside tool (mcp or http) an admin switched
  * "External access" on for, that the app declares (contactAppToolVerdict,
- * packages/tools/src/external-access.ts; decided 2026-10-02). Never a
+ * packages/tools/src/external-access.ts). Never a
  * built-in. The contact may send any input, by hand too, not only what the
  * app's screens send: the admin confirmed the tool only reads. The call runs
  * on the public role, on a contact surface that names the contact and the
  * share, and is logged with the contact in the app's Activity and the
  * share's trail, refused calls included, and its errors in the app's
  * error log. A config of the one app tool broker (lib/app-tool-broker.ts
- * runAppToolBroker, A10 #9): this route answers the link's own refusals
+ * runAppToolBroker): this route answers the link's own refusals
  * (the code gate, a share that is not an app's, an open link), the broker
  * the rest.
  *

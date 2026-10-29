@@ -26,17 +26,16 @@ export type RequestContext = {
    *  an `mtlk_` bearer), so the route's login lookup does not check it a
    *  second time. Absent on every other request. */
   accessKey?: AccessKeyGrant;
-  /** The request's ROUTE_POLICY row (arch A4 step 1), set once by the gate
+  /** The request's ROUTE_POLICY row, set once by the gate
    *  middleware for a request a route of the manifest answers. It lives on
    *  the request, not on the bound caller, so a call nested inside the
    *  request (an MCP tool, an assistant turn: enterCall with a caller of its
    *  own) still reads it (currentRoute()). Absent on a request no route
    *  answers (a 404, the /s and /print pages). */
   route?: RouteRow;
-  /** An error the owner answer threw at the gate (arch A4 step 3b): the
-   *  route loader throws it in the handler's place, where the guard threw
-   *  it before, so the app's onError answers it and the gate's CORS headers
-   *  stay on the response. Set by the gate only; taken once. */
+  /** An error the owner answer threw at the gate: the route loader throws
+   *  it in the handler's place, so the app's onError answers it and the
+   *  gate's CORS headers stay on the response. Set by the gate only; taken once. */
   callerError?: { error: unknown };
 };
 

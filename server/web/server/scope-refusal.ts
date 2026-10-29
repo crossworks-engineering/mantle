@@ -1,5 +1,5 @@
 /**
- * The HTTP answer to a refusal (arch plan v2, section 10; A3c): what THE
+ * The HTTP answer to a refusal: what THE
  * one mapper (mapAccessError, @mantle/std access-error.ts) says, as a
  * Response. The one place the HTTP layer turns a refusal into an answer
  * (server/app.ts onError):

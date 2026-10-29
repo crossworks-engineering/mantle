@@ -47,8 +47,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       { status: 400 },
     );
   }
-  // A schedule that is not valid (InputError) answers 400 by the one table
-  // (A10 part 2); a fault the opaque 500.
+  // A schedule that is not valid (InputError) answers 400 by the one
+  // table; a fault the opaque 500.
   const heartbeat = await updateHeartbeat(user.id, id, toUpdateInput(parsed.data), user.actor.id);
   if (!heartbeat) return NextResponse.json({ error: 'Heartbeat not found.' }, { status: 404 });
   return NextResponse.json({ heartbeat });

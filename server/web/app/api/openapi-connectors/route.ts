@@ -64,8 +64,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   // A connector whose auth carries a vault key sends it to its base URL (or
-  // the spec's server): pairing the two is the keys area's (W7a fix round 4,
-  // @mantle/tools secret-ref-gate.ts). The connector records who paired them.
+  // the spec's server): pairing the two is the keys area's (@mantle/tools
+  // secret-ref-gate.ts). The connector records who paired them.
   const configuredBy = toolMakerFor(user);
   const pairing = integrationPairing({
     ...parsed.data,
@@ -75,8 +75,8 @@ export async function POST(req: Request) {
     const refused = await vaultPairLoginRefusal(configuredBy);
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
-  // A binding the connector refuses (InputError) answers 400 by the one table
-  // (A10 part 2); a failed first sync is the result's syncError; a fault the
+  // A binding the connector refuses (InputError) answers 400 by the one
+  // table; a failed first sync is the result's syncError; a fault the
   // opaque 500.
   const result = await createOpenapiConnector(user.id, { ...parsed.data, configuredBy });
   return NextResponse.json(result, { status: 201 });

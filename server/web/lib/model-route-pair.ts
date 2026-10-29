@@ -1,5 +1,5 @@
 /**
- * A model route's vault key and host (workspaces W7a fix rounds 4 and 5): an
+ * A model route's vault key and host: an
  * agent's, an AI worker's or the embedder's route sends a vault key to its
  * base URL. The key is the one its key id names, or, with no key id, the
  * provider's own vault key (the resolvers fall back to it: @mantle/runtime
@@ -35,7 +35,7 @@ export const EMBEDDING_ROUTES: readonly RouteFields[] = [
 
 /** The rows a model route's row names, by their foreign keys (the names
  *  the migrations gave them), each with what the caller hears when it is
- *  not there (inputOnMissingRef, @mantle/db; A10 lows, part 2 #3). */
+ *  not there (inputOnMissingRef, @mantle/db). */
 export const ROUTE_KEY_REFS = {
   agents: {
     agents_api_key_id_fkey: 'apiKeyId names no key in the vault.',

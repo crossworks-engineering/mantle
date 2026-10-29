@@ -163,8 +163,7 @@ export async function getRecallMapDetail(
 // ── v2: the write side ───────────────────────────────────────────────────────
 
 /**
- * Who writes a map through the HTTP routes (workspaces arch A1 fix round,
- * H1). The owner's acts on a map (publish it, confirm or drop a prompt,
+ * Who writes a map through the HTTP routes. The owner's acts on a map (publish it, confirm or drop a prompt,
  * restore a revision, change a slug, reorder or delete it) stay with the
  * Admin users, as on MCP, where those tools are owner-only and never reach a
  * login outside Admin (admin-gate.ts). Any other login writes as an editor

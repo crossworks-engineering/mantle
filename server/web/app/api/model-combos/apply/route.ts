@@ -59,8 +59,8 @@ export async function POST(req: Request) {
     try {
       // A new key or provider (whose vault key a route without a key id
       // falls back to) on a route with a base URL of someone's choosing is
-      // the keys area's, and the row records who paired them (W7a fix
-      // rounds 4 and 5, lib/model-route-pair.ts).
+      // the keys area's, and the row records who paired them
+      // (lib/model-route-pair.ts).
       const stored =
         t.targetKind === 'agent'
           ? await getAgent(user.id, rowId)
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
       applied.push(t.id);
     } catch (err) {
       // A domain refusal says its text; a fault is logged and the item says
-      // so (fix round 1, L5), never the error's own text.
+      // so, never the error's own text.
       failed.push({
         id: t.id,
         error: itemErrorText(

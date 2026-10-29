@@ -20,7 +20,7 @@ export const policy = routePolicy({
  * client doesn't need the server-only formatter). 404 if not owned. A
  * fire's reply text, state before and after and trace are the login's it
  * answered only (null to others, the anchor included); the heartbeat's
- * state is its maker's only (W7 integration fix 2).
+ * state is its maker's only.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();

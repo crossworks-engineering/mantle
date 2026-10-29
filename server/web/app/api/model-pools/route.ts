@@ -87,7 +87,7 @@ export async function POST(req: Request) {
   const nextPos = inPool.reduce((m, r) => Math.max(m, r.position + 1), 0);
   // A slug or name taken answers 409 with this route's own text
   // (conflictOnUnique, a ConflictError); anything else answers by the one
-  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  // table: a domain error its status, a fault the opaque 500.
   return conflictOnUnique(`'${b.name}' is already in the ${b.pool} pool.`, async () => {
     // A model offered in a pool (a combo may pick it: where a turn's spend
     // goes) is not the narrow login's: the full-route spot

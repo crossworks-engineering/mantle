@@ -25,8 +25,8 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
- *  handler (lib/route-params.ts). Since the pre-check removal part 2 the
- *  item gate no longer answers a bad id here (docs/actors.md). */
+ *  handler (lib/route-params.ts); the item gate does not answer a bad id
+ *  here. */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
@@ -47,7 +47,7 @@ export const policy = routePolicy({
   },
 });
 
-/** A write's first read (pre-check removal part 2): the file in the
+/** A write's first read: the file in the
  *  caller's scope, the 404 of none for one it does not read (as for an id
  *  no row has), before the body is read or anything is written. */
 async function fileOr404(ownerId: string, fileId: string) {
@@ -76,10 +76,10 @@ const PatchBody = z.union([
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   // The asset reader (readerAssetCaller: the gate's answer of
-  // getReaderForAsset, A4 hand batch B), not the owner: the `?raw=1` bytes are
+  // getReaderForAsset), not the owner: the `?raw=1` bytes are
   // loaded as an <img>/<iframe>/download src that can't carry a bearer, so a
   // detached client authenticates via the `?at=` asset token. Session
-  // (cookie/bearer) still wins. Every login since W7e: a member reads the
+  // (cookie/bearer) still wins. Every login: a member reads the
   // detail AND the bytes of a file in its own scope (its row's `open: 'owner'`); a
   // file it does not read is a 404.
   // A member's bytes are rate limited per login (the file and its
@@ -130,7 +130,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         // Keyed by content hash server-side; the URL is stable per file id, so
         // cache privately and revalidate via etag on every use: the etag
         // check above runs after the scoped lookup, so a login that lost the
-        // file stops getting it at once (W7e fix round 1, L2).
+        // file stops getting it at once.
         etag,
         'cache-control': THUMB_CACHE,
       },
@@ -144,7 +144,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       headers: {
         ...safeDownloadHeaders(res.row.mimeType, res.row.filename),
         'content-length': String(res.bytes.byteLength),
-        // Never kept by a shared cache or the browser (W7e fix round 1, L2).
+        // Never kept by a shared cache or the browser.
         'cache-control': RAW_CACHE,
       },
     });
@@ -327,8 +327,8 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
       }
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
-    // `kept`: derived items the caller may not delete, left in place (F4
-    // fix round 3, H1): a count, never a name.
+    // `kept`: derived items the caller may not delete, left in place: a
+    // count, never a name.
     const body: FileCascadeDeleteResponse = {
       ok: true,
       reaped: res.reaped,

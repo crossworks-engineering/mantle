@@ -1,18 +1,16 @@
 /**
  * A retired route's 410 stub: it answers `{ error, code: 'gone' }`, so an
  * old UI or an old phone app can tell the person to update instead of
- * showing a vague error. The stubs of the routes removed in workspaces W5c
- * to W8d (review, team drafts, Team admin, the client portal, the personal
- * spaces, the member routes, the levels) were deleted in arch A7, once no
- * box logged a hit for a release (scripts/arch-scoreboard-box.sh); none is
- * left. This module stays for a route retired later.
+ * showing a vague error. A stub is deleted once no box logs a hit for a
+ * release (scripts/arch-scoreboard-box.sh); none is left now. This module
+ * stays for a route retired later.
  *
  * A stub still answers the guard its route had: without a session the gate
- * and the guard answer 401 as before, a login of another kind is refused as
- * before, and the role sweeps keep proving who reaches what. Only a caller
+ * and the guard answer 401, a login of another kind is refused, and the
+ * role sweeps keep proving who reaches what. Only a caller
  * the old route served gets the 410.
  *
- * Since A4 hand batch A the gate answers that guard, not the stub: the
+ * The gate answers that guard, not the stub: the
  * route manifest generator reads `export const GET = gone('owner')` as a
  * handler that reads the caller of the stub's kind (GONE_KINDS,
  * lib/gone-kinds.ts, the one table), so the stub's row is a gone row (`gone`,
@@ -20,7 +18,7 @@
  * runs the kind's guard once, before the handler, as on every row a handler
  * reads (the one answer step: no second path at the gate). The stub then
  * reads the answer (fail closed: no answer of its kind, no 410) and answers
- * the 410. One line per stub, as before; no stub calls a guard.
+ * the 410. One line per stub; no stub calls a guard.
  */
 import { NextResponse } from '@/server/http-compat';
 import { getRequestContext } from '@/server/request-context';

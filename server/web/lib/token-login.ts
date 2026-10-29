@@ -100,11 +100,11 @@ export async function handleTokenLogin(
       : [];
   // After the password check, so this cannot tell anyone whether an email
   // exists. No token is minted. A member on the old companion's route: the
-  // app is older than the workspaces contract (W7e, plan 7.3), 426 "Update
-  // the app". A login that is gone by now is refused like a wrong
-  // password (only admins and members sign in with one since W8a). An
-  // Admin login is a user of Admin now (adminLogin, read with the row); a
-  // login that is not is a member (membership decides, S8b).
+  // app is older than the workspaces contract, 426 "Update the app". A
+  // login that is gone by now is refused like a wrong password (only admins
+  // and members sign in with one). An Admin login is a user of Admin
+  // (adminLogin, read with the row); a login that is not is a member
+  // (membership decides).
   if (opts.adminsOnly && !(login && adminLogin({ adminMember: login.adminMember === true }))) {
     if (login) return updateTheAppResponse();
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });

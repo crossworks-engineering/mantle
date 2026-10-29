@@ -13,7 +13,7 @@
  * self-authenticate) — it's the human-in-the-loop step. The consent form carries
  * a session-bound HMAC token so a forged cross-site POST can't auto-approve.
  *
- * An admin or member re-types their password to Allow (M2 audit N4): a
+ * An admin or member re-types their password to Allow: a
  * stolen session cookie alone must not approve a connector, whose refresh
  * tokens outlive the session. 10 tries a minute per login, counted before
  * the check. A password change, "sign out everywhere" and an admin's End sessions end
@@ -114,8 +114,8 @@ type Consenter = {
 /** Who is signed in: a login that may connect, a member that may not
  *  (refused with a page, not sent to /login: it is signed in, and a bounce
  *  would loop), or nobody. `login`: the login the pipeline answers at the
- *  handler's read (publicLoginItself, A4 hand batch B: a public row, read
- *  after the switch and the client's validation, where the guard was). */
+ *  handler's read (publicLoginItself: a public row, read after the switch
+ *  and the client's validation). */
 async function signedIn(login: Login | null): Promise<Consenter | 'member' | null> {
   if (!login) return null;
   // An Admin user (adminFacts: a public row enters no scope, so the row's
@@ -271,8 +271,8 @@ export async function POST(req: Request) {
     ownerId: user.ownerId,
     actorId: user.loginId,
     sessionEpoch: user.sessionEpoch,
-    // The epoch the session check verified (last check F5): the code is
-    // minted only if it is still the login's (verification audit N2).
+    // The epoch the session check verified: the code is minted only if it
+    // is still the login's.
     consentEpoch: user.consentEpoch,
     codeChallenge: p.codeChallenge,
     codeChallengeMethod: p.codeChallengeMethod,

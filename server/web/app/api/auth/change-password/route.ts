@@ -35,9 +35,8 @@ const ChangePasswordBody = z
 
 export async function POST(req: Request) {
   // Every login changes its own password. A public row: the login the
-  // pipeline answers at this read, after the gate's cross-site refusal (A4
-  // hand batch B; this file's `limits`), as the guard was called
-  // here. The read takes the row's per-login limit (authChangePassword, 5
+  // pipeline answers at this read, after the gate's cross-site refusal
+  // (this file's `limits`). The read takes the row's per-login limit (authChangePassword, 5
   // an hour: a hijacked cookie must not pin bcrypt) and throws the one 429
   // over it.
   const login = await publicLoginItself();

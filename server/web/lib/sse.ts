@@ -1,6 +1,6 @@
 /**
- * One Server-Sent Events response (audit M1): the stream shell the owner and
- * member realtime routes shared by copy. Opens with a comment so EventSource
+ * One Server-Sent Events response: the stream shell of the owner and member
+ * realtime routes. Opens with a comment so EventSource
  * fires `open`, sends a keep-alive comment every `heartbeatMs` so proxies do
  * not reap an idle connection, and cleans up exactly once, however it ends
  * (the client leaves, `onPing` says stop, or `maxLifetimeMs` runs out).

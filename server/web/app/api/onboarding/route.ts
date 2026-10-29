@@ -62,11 +62,11 @@ export async function POST(req: Request) {
 
   // Writing a vault key, or pointing the model routes at an Azure endpoint
   // with the vault's 'custom' key, is the keys area's, not the settings
-  // area's (W7a fix round 4, @mantle/tools secret-ref-gate.ts). The anchor
+  // area's (@mantle/tools secret-ref-gate.ts). The anchor
   // login always may.
   // Provisioning writes the saved Azure endpoint and the 'custom' key onto
-  // the model routes: that pairing is the provisioner's too (W7 integration
-  // fix), whoever saved the Models step.
+  // the model routes: that pairing is the provisioner's too, whoever saved
+  // the Models step.
   const touchesVault =
     body.action === 'saveKey' ||
     (body.action === 'embedding' && String(body.plaintext ?? '').trim() !== '') ||
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
   // The purpose (and its archetype) and the persona assistant's prompt and
   // name are the brain's own prompt text: they ride every agent's prompt, so
   // every heartbeat's turn. Only the brain owner (the anchor login) sets
-  // them, as under /api/profile (W7 integration fix 4).
+  // them, as under /api/profile.
   if ((body.action === 'purpose' || body.action === 'persona') && toolMakerFor(user)) {
     return NextResponse.json(
       { ok: false, message: PROMPT_TEXT_ANCHOR_ONLY, error: PROMPT_TEXT_ANCHOR_ONLY },

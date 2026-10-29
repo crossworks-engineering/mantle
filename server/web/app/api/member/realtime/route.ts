@@ -25,7 +25,7 @@ export async function GET(req: Request): Promise<Response> {
 
   const maxLifetimeMs = memberStreamLifetimeMs(await sessionCookieExpiryMs());
   const release = takeMemberStream(member.loginId);
-  // A cap on open streams, not a rate: the one 429 all the same (A10 #8).
+  // A cap on open streams, not a rate: the one 429 all the same.
   if (!release) return rateLimitedResponse(30);
   return sseResponse(req, {
     subscribe: async () => () => {},

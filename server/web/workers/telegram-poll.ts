@@ -40,13 +40,13 @@ import { backoffMs, sleep } from '@mantle/std';
 // — and a page write kicks off `embedPendingRecallPrompts` fire-and-forget.
 // Without an embedder the bridge throws, recall.ts swallows it, and the prompt
 // row keeps a null embedding: the page is there, recall_match finds nothing.
-// recall-embed-registration.test.ts pins this call. (2026-09-03 audit.)
+// recall-embed-registration.test.ts pins this call.
 registerRecallEmbedder(embedBatch);
 
-// Arch A2b2b: an Approve tap runs the parked call in the scope it was asked
-// in (pending-origin.ts withOriginScope), so its writes go to the write role
-// as an approval in web does, and the database's write and edit checks hold
-// them to that scope (docs/actors.md, "The login write gateway"). A small
+// An Approve tap runs the parked call in the scope it was asked in
+// (pending-origin.ts withOriginScope), so its writes go to the write role as
+// an approval in web does, and the database's write and edit checks hold
+// them to that scope (docs/actors.md, "The three routes to Postgres"). A small
 // pool: one tap at a time, and the role's 20 connections are the whole
 // box's (connection-ceiling.test.ts).
 openLoginWritePool({ max: 2 });

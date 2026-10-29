@@ -4,7 +4,7 @@
  * these automatically; this endpoint lets the operator add/edit/retire/restore
  * from /settings/agents. All ops go through the soft-retire helpers in
  * lib/agents, so nothing is ever hard-deleted. The anchor login's only: the
- * notes are learned from its own thread (W7 integration fix).
+ * notes are learned from its own thread.
  */
 
 import { NextResponse } from '@/server/http-compat';

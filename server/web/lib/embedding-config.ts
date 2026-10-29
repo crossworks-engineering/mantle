@@ -37,8 +37,8 @@ export type EmbeddingConfigInput = {
   extractionTimeBudgetMinutes: number | null;
   localEmbedBatchSize: number | null;
   localEmbedRequestTimeoutMs: number | null;
-  /** The login that paired a route's vault key with its base URL (W7a fix
-   *  round 5); null for the brain owner. Absent: the stored one stays. */
+  /** The login that paired a route's vault key with its base URL;
+   *  null for the brain owner. Absent: the stored one stays. */
   configuredBy?: string | null;
 };
 
@@ -91,7 +91,7 @@ export async function notifyProviderRecover(ownerId: string): Promise<void> {
 }
 
 /**
- * The Admin "Try again" (A10 lows): every shown or paused provider alert
+ * The Admin "Try again": every shown or paused provider alert
  * probes on the agent's next tick (a blip is left to its retries), and the
  * agent is told at once (notifyProviderRecover), whether or not an alert
  * is open: with none open, the agent still
@@ -100,8 +100,7 @@ export async function notifyProviderRecover(ownerId: string): Promise<void> {
  * call; the agent makes one tiny probe call per open alert (one in all when
  * none is open and dead letters wait) and recovers at most once per 2 min
  * (provider-circuit.ts), however often this is called. Returns how many open
- * alerts will probe; throws as the button always did when the alerts cannot
- * be read.
+ * alerts will probe; throws when the alerts cannot be read.
  */
 export async function retryProvidersNow(ownerId: string): Promise<number> {
   const probing = await requestProviderProbeNow(ownerId);
@@ -112,11 +111,11 @@ export async function retryProvidersNow(ownerId: string): Promise<number> {
 /**
  * The nudge after a key's credential changed (POST /api/keys, PATCH
  * /api/keys/:id for the Anthropic workspace id, the rotate): narrower than
- * the button, because a key save is no ask to recover (A10 lows fix round
- * 1, M2; cost safety). Only for a model provider's key (`service` is a
+ * the button, because a key save is no ask to recover (cost
+ * safety). Only for a model provider's key (`service` is a
  * provider id; a Telegram token, a connector's secret or a Firecrawl key
  * never raises it), and the NOTIFY only when a shown or paused alert is
- * open (fix round 2, L-C: a blip is not counted): with none, nothing is
+ * open (a blip is not counted): with none, nothing is
  * sent, so the agent never re-drives a dead-letter backlog (real model
  * calls) on a key save. Best-effort: logged and never thrown,
  * because the key's own write already succeeded and its answer must not

@@ -202,9 +202,9 @@ async function main() {
     for (const row of rows) {
       i++;
       // The image nodes to replace, read first so their heads can be the
-      // transaction's first lock (workspaces plan V4); read again under the
-      // heads, and the whole step retried when an image arrived in between
-      // (W1 audit, LOW 4), so a new image is never deleted without its head.
+      // transaction's first lock; read again under the heads, and the whole
+      // step retried when an image arrived in between, so a new image is
+      // never deleted without its head.
       const imagesOf = async (q: { execute: typeof db.execute }) =>
         (
           (await q.execute(

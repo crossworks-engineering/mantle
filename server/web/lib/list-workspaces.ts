@@ -41,7 +41,7 @@ import { UUID_RE } from '@mantle/std';
 const NONE: ListChips = { workspaces: [], hasLink: false, mayEdit: false, mayManage: false };
 
 /**
- * The caps columns of `n` (W6b fix round 1, ItemCaps): in a workspace scope
+ * The caps columns of `n` (ItemCaps): in a workspace scope
  * the database's own rule (mantle_may_edit, mantle_may_manage); on the
  * system pool (the brain's owner) everything. Never edit for a read-only copy.
  */

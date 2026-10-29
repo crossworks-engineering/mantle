@@ -11,13 +11,12 @@
  *     peer's own write switch. The login must still be usable.
  *  3. An inbound API key (`mtlk_`): `callerFromAccessKey` below.
  *
- * The static login tokens (`mtlmcpk_`, retired in W7b and revoked by 0268)
- * went in workspaces W8a with their table (0272): such a bearer is no
- * credential at all.
+ * A static login token (`mtlmcpk_`, revoked by 0268, its table dropped by
+ * 0272) is no credential at all.
  *
- * Since workspaces W7b every login gets the one MCP surface in its own
- * scope (@mantle/mcp-core login-surface.ts), and since W8a a login carries
- * nothing: no client role, no role kept on a key or a peer. A key's or a
+ * Every login gets the one MCP surface in its own scope (@mantle/mcp-core
+ * login-surface.ts), and a login carries nothing: no client role, no role
+ * kept on a key or a peer. A key's or a
  * peer's write switch and the risky-tool rule only narrow.
  *
  * Every rule is read from the rows on every request, never from the token.
@@ -72,7 +71,7 @@ async function loadLogin(loginId: string): Promise<LoginRow | null> {
 }
 
 /** A member's caller from its login row (memberLogin), or null. Its writes
- *  are whatever its scope may write (W7b: no per-login switch). */
+ *  are whatever its scope may write (there is no per-login switch). */
 function memberMcpCaller(
   row: LoginRow,
   anchorId: string,
@@ -125,7 +124,7 @@ export async function resolveMcpCaller(req: Request): Promise<McpCaller | null> 
  * An inbound API key (`mtlk_`, migration 0232): it acts as its login (that
  * login's workspaces, workspaces plan 7.5) and only narrows it: the one MCP
  * surface in the login's scope, held to the key's write switch, its risky
- * tools and its areas (W7b: a member key as an admin key). An `api_only`
+ * tools and its areas (a member key as an admin key). An `api_only`
  * key (0268) is refused here and works on /api/v1 only.
  * A refused key is a 401 like any bad bearer; the failed try counts
  * against the caller's address, as on /api/v1.
@@ -149,8 +148,8 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
     return null;
   }
   const key = check.grant;
-  // A key made for /api/v1 by a login that never had MCP (0268, W7b fix
-  // round 2): it keeps working there and never reaches MCP. Refused like a
+  // A key made for /api/v1 by a login that never had MCP (0268): it keeps
+  // working there and never reaches MCP. Refused like a
   // bad bearer, but not counted as a failed try (the key is real).
   if (key.apiOnly) {
     auditKeyRefusal({
@@ -166,9 +165,9 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
   if (!anchorId) return null;
   const keyWrite = key.access === 'read_write';
   let caller: McpCaller | null;
-  // The key acts as its login as the login is now (W8a: no role is kept on
-  // the key; verifyAccessKey read the row). An Admin login is a user of
-  // Admin now (adminLogin, read with the row); any other login takes the member path, which serves a member only.
+  // The key acts as its login as the login is now (no role is kept on the
+  // key; verifyAccessKey read the row). An Admin login is a user of Admin
+  // (adminLogin, read with the row); any other login takes the member path, which serves a member only.
   if (adminLogin(key.login)) {
     caller = {
       role: 'admin',
@@ -197,10 +196,10 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
 const keyCallers = new WeakMap<McpCaller, { email: string; createdBy: string | null }>();
 
 /**
- * One `api.write` row per write tool call an API key makes on /api/mcp (M2
- * audit F6), as /api/v1 writes leave one: the tool, the key and its maker.
- * Read-only tools leave none, and so does a call the key may not make
- * (`allows`: the tools this caller was given; M2 audit N6), which the MCP
+ * One `api.write` row per write tool call an API key makes on /api/mcp, as
+ * /api/v1 writes leave one: the tool, the key and its maker. Read-only
+ * tools leave none, and so does a call the key may not make (`allows`: the
+ * tools this caller was given), which the MCP
  * server refuses as an unknown tool. Reads a clone of the whole JSON-RPC
  * body (a single message or a batch; the route's body limit bounds it), so
  * padding cannot hide the tool name. A body that is not JSON is the
@@ -214,13 +213,13 @@ export async function auditMcpKeyCall(
   const who = keyCallers.get(caller);
   if (!caller.keyId || !who || req.method !== 'POST') return;
   const meta = { ...requestMetaFrom(req), method: 'MCP', path: '/api/mcp' };
-  // A capped read (final audit F4): a chunked body carries no length, so the
+  // A capped read: a chunked body carries no length, so the
   // route's ceiling bounds what is buffered here. Over it, the call is
   // refused anyway (413 from the route), so there is nothing to audit.
   let body: unknown;
   try {
     // The route's own rule: a body may be an owner document (a file upload,
-    // the one surface, W7b).
+    // the one surface).
     body = JSON.parse(await readBodyCapped(req.clone(), OWNER_DOCUMENT_CEILING_BYTES));
   } catch (err) {
     if (err instanceof BodyTooLargeError) throw err;
@@ -231,7 +230,7 @@ export async function auditMcpKeyCall(
     if (!m || typeof m !== 'object') continue;
     const msg = m as { method?: unknown; params?: { name?: unknown } };
     const tool = typeof msg.params?.name === 'string' ? msg.params.name : null;
-    // A read (its policy's effect, A5 step 2) leaves no write audit; a name
+    // A read (its policy's effect) leaves no write audit; a name
     // with no policy (a connector's tool) is audited as a write.
     if (msg.method !== 'tools/call' || !tool || mcpToolPolicyOf(tool)?.effect === 'read') continue;
     if (!allows(tool)) continue;
@@ -255,11 +254,10 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
   // A role this code does not know is no login (fail closed).
   if (!isLoginRole(row.role)) return null;
   // A linked brain acts as the login it is bound to, as that login is now
-  // (workspaces plan 7.6; W8a: no role is kept on the peer): it reads that
-  // login's workspaces, and only narrows it, with its own write switch and
-  // the risky-tool rule (the tools named on it, for a peer bound to an
-  // admin login; the admin gate still decides each call). No per-login
-  // switch since W7b.
+  // (no role is kept on the peer): it reads that login's workspaces, and
+  // only narrows it, with its own write switch and the risky-tool rule (the
+  // tools named on it, for a peer bound to an admin login; the admin gate
+  // still decides each call). There is no per-login switch.
   return {
     role: row.role,
     anchorId: peer.ownerId,

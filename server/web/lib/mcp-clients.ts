@@ -121,7 +121,7 @@ export async function listLoginClients(
  * login's OAuth lock, as every other revoke (a refresh or a code exchange
  * running alongside is refused there or revoked here), and every query on
  * the lock's own transaction: nothing under the lock takes a second
- * connection (API keys audit N1). Returns whether a live grant was there.
+ * connection. Returns whether a live grant was there.
  */
 export async function disconnectLoginClient(
   ownerId: string,

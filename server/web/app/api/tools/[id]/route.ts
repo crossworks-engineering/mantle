@@ -53,7 +53,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  // New templates are the writer's (W7a fix round 3): one that sends a vault
+  // New templates are the writer's: one that sends a vault
   // key needs the keys area, and the tool's refs then resolve while the
   // writer holds it.
   const handler = parsed.data.handler;
@@ -62,7 +62,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
   // A refused edit (InputError, packages/tools crud.ts) answers 400 by the one
-  // table (A10 part 2); a fault the opaque 500.
+  // table; a fault the opaque 500.
   const row = await updateTool(user.id, idParsed.data.id, {
     ...parsed.data,
     ...(handler ? { createdBy: toolMakerFor(user) } : {}),
@@ -75,7 +75,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  // A refused delete (InputError) answers 400 by the one table (A10 part 2).
+  // A refused delete (InputError) answers 400 by the one table.
   const ok = await deleteTool(user.id, idParsed.data.id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });

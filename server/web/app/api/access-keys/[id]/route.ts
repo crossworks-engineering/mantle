@@ -39,7 +39,7 @@ async function handleDELETE(login: Login, ctx: Ctx) {
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   // By its definer (mantle_access_key_revoke, 0293): the login's own live
   // key, any live key for an Admin user; the workspace and write roles hold
-  // no right on the keys (A6b: on the system pool before, 'rule-in-query').
+  // no right on the keys.
   // A write: its own transaction, on the write role in the login's scope
   // (an Admin user's as a member's).
   const [row] = await db.transaction(
@@ -50,10 +50,10 @@ async function handleDELETE(login: Login, ctx: Ctx) {
       )) as unknown as { id: string; keyPrefix: string; name: string; loginId: string }[],
   );
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  // A later guard read in this request finds the login row afresh (A4 step
-  // 3a audit L1), not the key: findKeyLogin reads the gate's grant and never
-  // checks the key again, so a request that came in on the key it revokes
-  // keeps the key's login for the rest of the request, as on main.
+  // A later guard read in this request finds the login row afresh, not the
+  // key: findKeyLogin reads the gate's grant and never checks the key again,
+  // so a request that came in on the key it revokes keeps the key's login
+  // for the rest of the request.
   forgetRequestLogins();
   auditFireAndForget({
     actorId: login.loginId,
@@ -72,7 +72,7 @@ async function handleDELETE(login: Login, ctx: Ctx) {
   return NextResponse.json({ ok: true });
 }
 
-/** The login the pipeline answered (A4 hand batch A); the handler runs
+/** The login the pipeline answered; the handler runs
  *  where the request runs. */
 export async function DELETE(_req: Request, ctx: Ctx) {
   const login = anyLoginCaller();

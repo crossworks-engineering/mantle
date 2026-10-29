@@ -8,8 +8,8 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
- *  handler (lib/route-params.ts). Since the pre-check removal part 2 the
- *  item gate no longer answers a bad id here (docs/actors.md). */
+ *  handler (lib/route-params.ts); the item gate does not answer a bad id
+ *  here. */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
@@ -27,7 +27,7 @@ const Body = z.object({
   /** exportToSvg output captured by the committing editor. Validated
    *  server-side (acceptSceneSvg); dropped, never fatal, on any doubt.
    *  Bounded in BYTES to match acceptSceneSvg: zod's .max() counts UTF-16 code
-   *  units, so a multibyte payload up to 3x the cap used to pass here, get
+   *  units, so a multibyte payload up to 3x the cap would pass here, get
    *  dropped downstream, and silently clear a good stored snapshot. */
   svg: z
     .string()

@@ -103,11 +103,10 @@ const CreateBody = z.object({
   email: z.string().email().max(320),
   password: z.string().min(8).max(1024),
   displayName: z.string().trim().min(1).max(120).optional(),
-  /** Omit to keep today's behaviour exactly: the login shares the brain's
-   *  default agent, as every login did before 0143. Admins only. */
+  /** Omit and the login shares the brain's default agent. Admins only. */
   agent: AgentAssignmentBody.optional(),
   /** Default member: an admin login (a full co-owner) is only ever made
-   *  when asked for by name (W5a fix round 3). */
+   *  when asked for by name. */
   role: LoginRoleSchema.optional(),
   /** The team contact a member login belongs to. */
   contactId: z.string().uuid().optional(),
@@ -152,7 +151,7 @@ export async function POST(req: Request) {
       .limit(1);
     if (!contact) return NextResponse.json({ error: 'Contact not found.' }, { status: 400 });
     // A former client's contact (archived by 0272, its login deleted or
-    // not): a new login on it would bring the client back (W8a fix round 2).
+    // not): a new login on it would bring the client back.
     if (await isFormerClientContact(parsed.data.contactId)) {
       return NextResponse.json(
         { error: FORMER_CLIENT_CONTACT_MESSAGE, reason: 'contact-was-client' },
@@ -163,7 +162,7 @@ export async function POST(req: Request) {
 
   const email = parsed.data.email.trim().toLowerCase();
   // A former client (archived by 0272) never comes back as a login by
-  // itself, even after its row was deleted (W8a fix round 1).
+  // itself, even after its row was deleted.
   if (await isFormerClientEmail(email)) {
     return NextResponse.json(
       { error: FORMER_CLIENT_EMAIL_MESSAGE, reason: 'email-was-client' },

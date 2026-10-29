@@ -42,8 +42,8 @@ export const policy = routePolicy({
  * **Flagged:** 404s while `MANTLE_TURN_STREAMING` is off (cancellation only
  * matters when the non-blocking streaming path is on). The gate answers it,
  * before the caller (the switch declared below, `routeSwitches`,
- * lib/auth/route-switches.ts; A4 hand batch A): every credential gets the
- * 404 while it is off, as when this handler checked it first.
+ * lib/auth/route-switches.ts): every credential gets the 404 while it is
+ * off.
  */
 export const routeSwitches = { POST: 'turn-streaming' } as const satisfies RouteSwitches;
 

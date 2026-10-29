@@ -39,9 +39,9 @@ export async function POST(req: Request) {
   const user = ownerCaller();
   const body = await readBody(req, Body);
   // A refused share (ContactShareRefusedError) answers 400 with its reason
-  // by the one table (A10 part 2). An Admin act: the definer
-  // mantle_share_with_contacts checks the Admin user inside (migration
-  // 0308); the item's home is not checked, as before.
+  // by the one table. An Admin act: the definer mantle_share_with_contacts
+  // checks the Admin user inside (migration 0308); the item's home is not
+  // checked.
   const shares = await adminCreateContactShares(
     user.actor.id,
     body.nodeId,

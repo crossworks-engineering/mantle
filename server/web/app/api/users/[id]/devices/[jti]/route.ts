@@ -58,7 +58,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; 
   await onLoginHoldSpot(targetId, () =>
     db.update(mobileTokens).set({ revokedAt: new Date() }).where(eq(mobileTokens.id, jti)),
   );
-  // The request may have come in on this token (A4 step 3a audit L1).
+  // The request may have come in on this token.
   forgetRequestLogins();
   await forgetRelayDevices([
     ...(await deleteTokenSubscriptions(jti)),

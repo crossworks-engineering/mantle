@@ -181,7 +181,7 @@ export async function updateMcpConnector(
   /** The signed-in login when it is not the brain owner (null: the anchor).
    *  Setting or changing the key, or the URL it (or an OAuth connector's
    *  token) goes to, needs its keys area and records it as the connector's
-   *  configuring login (W7a fix round 4, @mantle/tools secret-ref-gate.ts). */
+   *  configuring login (@mantle/tools secret-ref-gate.ts). */
   login: string | null = null,
 ): Promise<{ connector: McpConnectorSummary } | { error: string; status: number }> {
   const [row] = await db

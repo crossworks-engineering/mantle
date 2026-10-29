@@ -53,7 +53,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const parsed = ConnectBody.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'Paste a bot token.' }, { status: 400 });
   // A problem the owner fixes (TelegramTokenError) answers 400 by the one
-  // table (A10 part 2); anything else is the opaque 500, logged.
+  // table; anything else is the opaque 500, logged.
   const binding = await connectAgentTelegram(user.id, agent.id, parsed.data.token);
   return NextResponse.json({ binding });
 }

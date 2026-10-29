@@ -15,7 +15,7 @@ export const policy = routePolicy({
  * with outcome counts. Polled client-side; owner-scoped by the owner answer
  * the pipeline gives (ownerCaller; a JSON API, so an unauthenticated or
  * expired client gets a 401 rather than a redirect).
- * Only the traces the signed-in login may read (W7 integration fix 4, L2).
+ * Only the traces the signed-in login may read.
  */
 
 export async function GET() {

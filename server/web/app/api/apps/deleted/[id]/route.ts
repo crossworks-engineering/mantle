@@ -3,10 +3,11 @@
  * history rows, and so its snapshot files (the store sweep's, a grace
  * period later). Who may: a Moderator of its last home, or the brain's
  * owner for an app with no home stored; an app a login other than the
- * brain's owner deleted, the brain's owner only (403, CEO decision 1).
+ * brain's owner deleted, the brain's owner only (403; docs/actors.md,
+ * "Who may do what").
  * Not in the trash, or in it where the login may not manage it: the one
  * 404. The check and the rows are the trash's definer's
- * (mantle_app_trash_act, plan v3.2 S6 c2), asked as the login.
+ * (mantle_app_trash_act), asked as the login.
  */
 import { NextResponse } from '@/server/http-compat';
 import { UUID_RE } from '@mantle/std';

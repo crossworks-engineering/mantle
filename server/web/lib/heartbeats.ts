@@ -63,7 +63,7 @@ export type HeartbeatSummary = HeartbeatDTO;
 /**
  * Whether `reader` (the signed-in login, null for the brain owner) is the
  * heartbeat's maker (heartbeats.created_by, null the brain owner): only the
- * maker reads its state (W7 integration fix 2, H1), the running memory the
+ * maker reads its state, the running memory the
  * maker's own turns wrote. The anchor reads only its own.
  */
 function readsState(h: Pick<Heartbeat, 'createdBy' | 'ownerId'>, reader: string | null): boolean {
@@ -158,7 +158,7 @@ export type CreateHeartbeatInput = {
 };
 
 /**
- * Who a heartbeat's maker is, for heartbeats.created_by (W7a fix round 3):
+ * Who a heartbeat's maker is, for heartbeats.created_by:
  * the signed-in login when it is not the brain owner (the anchor login,
  * whose id is the owner id), else null (the brain owner's). The tick fires
  * a heartbeat with a maker in that login's scope.
@@ -170,8 +170,7 @@ export function heartbeatMaker(ownerId: string, loginId: string | null | undefin
 /** A Fire now refusal the route answers (403). */
 export class FireRefused extends Error {}
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// the route answered by hand.
+// The one error answer (@mantle/std domain-errors.ts) for the route.
 defineDomainError(FireRefused, {
   reason: 'only the maker of a heartbeat fires it now; the message says who may',
   status: 403,
@@ -182,8 +181,7 @@ export const FIRE_MAKER_ONLY =
   'Only the login that set up this heartbeat fires it now. Ask that login, or edit the heartbeat to make it yours.';
 
 /**
- * How the Fire now route fires heartbeat `hb` for the signed-in login (W7a
- * fix round 3; W7 integration fix 4): only the heartbeat's maker
+ * How the Fire now route fires heartbeat `hb` for the signed-in login: only the heartbeat's maker
  * (heartbeats.created_by, null the brain owner, the anchor login) fires it;
  * any other login is refused (FireRefused, a 403). The fire answers the
  * maker, as the tick does. A maker other than the brain owner fires in its
@@ -305,7 +303,7 @@ export async function updateHeartbeat(
   }
   if (loginId !== undefined && MAKER_FIELDS.some((k) => patch[k] !== undefined)) {
     // A move to another login clears the state the old maker's fires kept,
-    // in this same statement (W7 integration fix 3, F1); a state this patch
+    // in this same statement; a state this patch
     // sends is the new maker's own and is set below.
     Object.assign(next, makerChangeSet(heartbeatMaker(ownerId, loginId)));
   }
@@ -393,8 +391,7 @@ function toFireSummary(f: HeartbeatFire): HeartbeatFireSummary {
  *  often and the audit log only matters for recent activity.
  *
  *  `reader` is the login asking (null: the anchor). A fire is the turn of
- *  the login it answered (heartbeat_fires.answered_by, W7 integration fix
- *  2, H1: the firer for Fire now and heartbeat_fire, the maker for the
+ *  the login it answered (heartbeat_fires.answered_by: the firer for Fire now and heartbeat_fire, the maker for the
  *  tick; null the anchor), read with that login's chats and digests: its
  *  reply, its state before and after and its trace go only to that login.
  *  Anyone else, the anchor included, gets the fire with those empty. */

@@ -16,7 +16,7 @@ import type { PageRoute } from '../route-loader';
  * (lib/render-sandbox.ts, packages/documents), so a page image or any other
  * subresource with an outside src must not load: the engine's allow list or
  * the sidecar's interception refuses it,
- * and this policy refuses it again in the page itself (audit F01). data: and
+ * and this policy refuses it again in the page itself. data: and
  * blob: stay open for images and fonts (the draw snapshot is a data: image).
  */
 export const PRINT_CSP = [
@@ -188,7 +188,7 @@ async function printPage(c: Context): Promise<Response> {
  * for a render cookie naming the node in the URL (requireOwnerForRender).
  *
  * The route loader registers them with their ROUTE_POLICY rows (class
- * 'render', registerPages; arch A4 step 2), and the gate runs each through
+ * 'render', registerPages), and the gate runs each through
  * enterCall, as system(http:render) (the row's startsAs) until
  * requireOwnerForRender names its login. This list is the one place the
  * render patterns are named: a row is class 'render' because app.ts

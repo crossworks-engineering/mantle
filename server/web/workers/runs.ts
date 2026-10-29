@@ -60,13 +60,13 @@ registerHeartbeatTools();
 // box. Registered unconditionally — the flag gates the queues, not the writes.
 // A static import is safe here where server/web/server/main.ts needs an awaited
 // one: the worker scripts pass --env-file, so env is set before any module runs.
-// recall-embed-registration.test.ts pins this call. (2026-09-03 audit.)
+// recall-embed-registration.test.ts pins this call.
 registerRecallEmbedder(embedBatch);
 
-// Arch A2b2b: a run item's tool call runs in its run's scope (withRunScope),
-// so its writes go to the write role as an api turn's do, and the database's
-// write and edit checks hold them to that scope (docs/actors.md, "The login
-// write gateway"). A small pool: tool items are short writes, and the
+// A run item's tool call runs in its run's scope (withRunScope), so its
+// writes go to the write role as an api turn's do, and the database's write
+// and edit checks hold them to that scope (docs/actors.md, "The three routes
+// to Postgres"). A small pool: tool items are short writes, and the
 // role's 20 connections are the whole box's (connection-ceiling.test.ts).
 openLoginWritePool({ max: 2 });
 

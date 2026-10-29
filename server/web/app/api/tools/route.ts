@@ -87,14 +87,14 @@ export async function POST(req: Request) {
       inherited = describeInheritance(resolved.inherited);
     }
   }
-  // A template that sends a vault key needs the keys area (W7a fix round 3).
+  // A template that sends a vault key needs the keys area.
   if (handlerCarriesSecretRefs(toolInput.handler)) {
     const refused = await keysAreaRefusal(user);
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
   // A slug or name taken answers 409 with this route's own text
   // (conflictOnUnique, a ConflictError); anything else answers by the one
-  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  // table: a domain error its status, a fault the opaque 500.
   return conflictOnUnique(`A tool with slug "${parsed.data.slug}" already exists.`, async () => {
     const row = await createTool(user.id, {
       ...toolInput,

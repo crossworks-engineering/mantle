@@ -13,8 +13,8 @@
  * so a fresh claude.ai connector discovers the AS and runs sign-in + consent. A
  * valid bearer resolves to a LOGIN (lib/mcp-auth.ts, MCP as a login): every
  * login gets the one owner surface, each tool listed and called through the
- * one gate in that login's workspaces (W7a, W7b, arch A5 step 4;
- * @mantle/mcp-core gated-tools.ts and login-surface.ts); a key or a peer
+ * one gate in that login's workspaces (@mantle/mcp-core gated-tools.ts
+ * and login-surface.ts); a key or a peer
  * token acts as the login it is bound to and only narrows it. A
  * second rate limit holds each login to its own
  * budget.
@@ -77,8 +77,8 @@ function notFound(): Response {
 }
 
 async function handler(req: Request): Promise<Response> {
-  // The gate took the row's per-address limit (keyed on the /64 for IPv6,
-  // M2 audit N1: rotating addresses inside one /64 buys no fresh budget).
+  // The gate took the row's per-address limit (keyed on the /64 for IPv6:
+  // rotating addresses inside one /64 buys no fresh budget).
   if (!(await isRemoteMcpEnabled())) return notFound();
 
   // An endless SSE stream per request, uncapped (lib/mcp-http.ts): refused.

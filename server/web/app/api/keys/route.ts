@@ -66,7 +66,7 @@ export async function POST(req: Request) {
   }
   // A slug or name taken answers 409 with this route's own text
   // (conflictOnUnique, a ConflictError); anything else answers by the one
-  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  // table: a domain error its status, a fault the opaque 500.
   return conflictOnUnique(
     `A key already exists for ${parsed.data.service}/${parsed.data.label}. Rotate it instead.`,
     async () => {
@@ -83,8 +83,7 @@ export async function POST(req: Request) {
       // matrix T7): a connector's marks were for the old key.
       await afterVaultKeyReplaced(user.id, row.service, row.label);
       // A new or replaced model provider key: an open provider alert (a
-      // refused key, no key) probes now (A10 lows; no alert open, nothing
-      // is sent).
+      // refused key, no key) probes now (no alert open, nothing is sent).
       await retryProvidersAfterKeyChange(user.id, row.service);
       return NextResponse.json({
         id: row.id,

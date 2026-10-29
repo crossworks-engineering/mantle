@@ -107,8 +107,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   // A vault key (the key id, or the provider's key a route without one falls
   // back to) with a base URL of the writer's choosing is the keys area's,
-  // and the row records who paired them (W7a fix rounds 4 and 5,
-  // lib/model-route-pair.ts).
+  // and the row records who paired them (lib/model-route-pair.ts).
   let configuredBy: { configuredBy?: string | null } = {};
   if (modelRoutesTouched(parsed.data, AGENT_ROUTES)) {
     const [stored] = await db
@@ -129,15 +128,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       configuredBy = { configuredBy: toolMakerFor(user) };
     }
   }
-  // A key id the vault has no key for is the caller's 400 (A10 lows).
+  // A key id the vault has no key for is the caller's 400.
   const row = await inputOnMissingRef(ROUTE_KEY_REFS.agents, () =>
     updateAgent(user.id, idParsed.data.id, { ...parsed.data, ...configuredBy }),
   );
   if (!row) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
   // The agent's prompt (system prompt and its skills) and its granted
   // groups (their tools and usage skills) are what its heartbeats run: a
-  // login other than the anchor editing them makes them its own (W7a fix
-  // rounds 4 and 5, @mantle/tools heartbeat-maker.ts). The same prompt also
+  // login other than the anchor editing them makes them its own
+  // (@mantle/tools heartbeat-maker.ts). The same prompt also
   // answers the anchor's own chat with this agent.
   if (
     parsed.data.systemPrompt !== undefined ||

@@ -1,6 +1,6 @@
 /**
- * The kinds of a retired route's 410 stub (lib/gone.ts `gone(kind)`, A4
- * hand batch A): who the removed route served, each to the caller kind the
+ * The kinds of a retired route's 410 stub (lib/gone.ts `gone(kind)`): who
+ * the removed route served, each to the caller kind the
  * gate answers for it (route-policy.ts RouteCaller) and the reader the stub
  * reads that answer with (eslint-rules/session-guards.mjs READER_ANSWERS).
  * 'any' is the any-login guard's.

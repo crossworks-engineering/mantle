@@ -39,7 +39,7 @@ export const policy = routePolicy({
  */
 
 /** Served under MANTLE_TURN_STREAMING: the gate answers 404 first while it
- *  is off (lib/auth/route-switches.ts; A4 hand batch A). */
+ *  is off (lib/auth/route-switches.ts). */
 export const routeSwitches = { GET: 'turn-streaming' } as const satisfies RouteSwitches;
 
 export async function GET(
@@ -50,8 +50,7 @@ export async function GET(
   // expired bearer gets a clean 401 (not an HTML redirect) rather than an
   // empty event stream. The flag is the row's switch: while
   // MANTLE_TURN_STREAMING is off the gate answers 404 first, before the
-  // caller, and the endpoint simply doesn't exist (`routeSwitches` above;
-  // A4 hand batch A).
+  // caller, and the endpoint simply doesn't exist (`routeSwitches` above).
   const owner = ownerCaller();
 
   // Per-brain gate: if this owner turned live thinking off in Settings → Profile,

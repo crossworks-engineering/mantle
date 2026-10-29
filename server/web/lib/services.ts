@@ -141,7 +141,7 @@ export function usesBundledEmbedder(
 }
 
 /** The bundled embedder answers its OpenAI-compatible model list (THE local
- *  model probe, @mantle/voice providerHealth, A10 #10). */
+ *  model probe, @mantle/voice providerHealth). */
 async function bundledEmbedderUp(timeoutMs: number = NET_TIMEOUTS.localProbe): Promise<boolean> {
   return (await providerHealth(bundledEmbedUrl(), { timeoutMs })).up;
 }

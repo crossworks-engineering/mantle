@@ -45,7 +45,7 @@ export async function gateAccessKey(
   row: RouteRow | null,
 ): Promise<{ grant: AccessKeyGrant } | { response: Response }> {
   const ip = clientIp(req);
-  // The budgets key on the /64 for IPv6 (M2 audit N1); the last-use stamp
+  // The budgets key on the /64 for IPv6; the last-use stamp
   // keeps the real address.
   const ipKey = clientIpKey(req);
   const meta = () => ({ method: req.method, path, ...requestMetaFrom(req) });
@@ -118,9 +118,8 @@ function outOfScope(reason: string): Response {
 }
 
 /** A key over its budget (lib/access-keys.ts: per key, per login, the
- *  search's own): the one 429 (A10 #8), in its machine shape: an API key's
- *  script reads `error` as the code `rate_limited`, as before (A10 lows,
- *  #8 L1). */
+ *  search's own): the one 429, in its machine shape: an API key's script
+ *  reads `error` as the code `rate_limited`. */
 function tooMany(retryAfterSec: number): Response {
   return rateLimitedResponse(retryAfterSec, 'machine');
 }

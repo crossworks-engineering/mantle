@@ -1,5 +1,5 @@
 /**
- * The `files-staged-reap` maintenance sweep (W8b fix round 1): the staging
+ * The `files-staged-reap` maintenance sweep: the staging
  * files a crash left beside a file create. A create stages its bytes under a
  * dot-prefixed `.<uuid>.staged.tmp` in the file's folder and places or drops
  * them within the request (packages/files/src/disk.ts); a process that dies

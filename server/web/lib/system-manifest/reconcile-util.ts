@@ -80,19 +80,18 @@ export function missingPersonaGroups(
 /** The team responder's slug (manifest.ts): the Team workspace's assistant
  *  on a brain switched before 0286 (the 0251 attach rule). A newer brain has
  *  no Team: no workspace holds it until an Admin user attaches it. One
- *  source, the runtime's (A5 step 6d: it was defined twice). */
+ *  source, the runtime's. */
 export { TEAM_RESPONDER_SLUG };
 
 /**
- * Of the groups reconcile would add, keep only those the agent may use
- * (workspaces W8c; it was the agent's level until then): an adminOnly group
+ * Of the groups reconcile would add, keep only those the agent may use: an
+ * adminOnly group
  * (0254) is never added to the assistant of a workspace other than Admin,
  * nor to the team responder on no workspace (whose role is custom), nor to
  * a responder or assistant on no workspace: its turns never hold the Admin
- * workspace. Without this, every image update re-added `team-read-admin` to
- * the team responder (seen on two boxes of the fleet, v0.232.265). Every
- * other agent gets them all. The rule of a brain not on workspaces (such a
- * responder was the owner's persona there) went in arch A7.
+ * workspace. Without this, every image update would re-add `team-read-admin`
+ * to the team responder. Every other agent gets them all. A brain not on
+ * workspaces does not start, so it needs no rule here.
  */
 export function groupsForAgent(
   groups: readonly string[],

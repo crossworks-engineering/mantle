@@ -298,10 +298,10 @@ async function renderShare(c: Context): Promise<Response> {
 
 /**
  * The /s page, registered by the route loader with its ROUTE_POLICY rows
- * (class 'link', registerPages; arch A4 step 2). The gate runs it through
+ * (class 'link', registerPages). The gate runs it through
  * enterCall as system(http:share-page) (the row's startsAs); the share gate
  * (gateShareCookie) names the link or the contact once it admits one.
- * Registered after the manifest's routes, as before.
+ * Registered after the manifest's routes.
  */
 export const SHARE_PAGES: readonly PageRoute[] = [
   { pattern: '/s/:token', methods: ['GET'], handle: renderShare },

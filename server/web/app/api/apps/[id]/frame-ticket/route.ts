@@ -6,8 +6,8 @@
  * 404 when the app has never built green, so the sandbox can show its
  * "hasn't been built yet" state without navigating anywhere.
  *
- * Every login since W7e: an Admin user gets the owner ticket (draft build
- * allowed, as before); a member a member ticket for an app its workspaces
+ * Every login: an Admin user gets the owner ticket (draft build
+ * allowed); a member a member ticket for an app its workspaces
  * hold, published build only (lib/app-runner.ts). An app the member does not
  * read is a 404. A client login is refused (403 client-login): clients do
  * not run brain apps, and it must never reach the owner ticket below.
@@ -21,8 +21,7 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The ids are uuids: any other names nothing, the params gateway's one
- *  404 before the handler (lib/route-params.ts; the item gate answered it
- *  until the pre-check removal part 2). */
+ *  404 before the handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({

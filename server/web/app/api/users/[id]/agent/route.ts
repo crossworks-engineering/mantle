@@ -117,7 +117,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   // /settings/agents.
   const existing = await getAssignedAgentSummary(user.id, targetId);
   // A rejected source (CloneAgentError, an InputError) is the caller's
-  // mistake: 400 and its message, by the one table (A10 part 2); anything
+  // mistake: 400 and its message, by the one table; anything
   // else is ours, the opaque 500 (logged). The clone is one transaction, so
   // either way the login keeps whatever assistant it already had.
   const agent = await cloneAgentForUser(user.id, {

@@ -16,12 +16,10 @@ export const policy = routePolicy({
 // Server-render the agent's avatar SVG so non-web clients (the mobile
 // companion) show the same one the web app does.
 //
-// This calls the SHARED generator — the very same module the browser renders
-// with. That is what the DiceBear move bought: its styles are plain data and
-// its renderer is a plain function, so there is no React and no `useId()` to
-// crash under a route handler, and the 300-line hand-port of boring-avatars
-// that used to live in lib/avatar-svg.ts is gone. One implementation, so the
-// companion and the browser cannot drift.
+// This calls the SHARED generator, the very same module the browser renders
+// with: its styles are plain data and its renderer is a plain function, so
+// there is no React and no `useId()` to crash under a route handler. One
+// implementation, so the companion and the browser cannot drift.
 //
 // The style and tint are the BRAIN's (Settings → Appearance), not the agent's —
 // the stored per-agent style is legacy and deliberately ignored, so every

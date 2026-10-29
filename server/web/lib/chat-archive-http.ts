@@ -21,8 +21,7 @@ export async function archiveResponse(o: {
   // The login's own thread, named here: the archive and its summary note
   // are written on the system pool (the workspace role writes neither). A
   // reply still running (ChatArchiveBusyError, 409) and a thread not found
-  // (ChatThreadNotFoundError, 404) answer by their rows in the one table
-  // (A10 part 2 fix round 1, L7).
+  // (ChatThreadNotFoundError, 404) answer by their rows in the one table.
   const r = await inRuleInQuery(() => archiveAgentChat(o));
   const body: ChatArchiveResponse = {
     archived: r.archived ? await chatThreadRow(o.ownerId, r.archived) : null,

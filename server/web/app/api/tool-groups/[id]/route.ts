@@ -128,8 +128,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // The group's vault key (a secret ref, its auth template's refs, OAuth2
   // credentials) goes to its base URL and token URL, for every tool authored
   // into it: setting or changing either side while the other is present is
-  // the keys area's, and the group records who did (W7a fix rounds 3 and 4,
-  // @mantle/tools secret-ref-gate.ts).
+  // the keys area's, and the group records who did (@mantle/tools
+  // secret-ref-gate.ts).
   let configuredBy: string | null | undefined;
   if (integration !== undefined) {
     const before = integrationPairing(current.integration);
@@ -149,9 +149,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   });
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   // A new usage skill on the group is what its grantees' heartbeats now run:
-  // they become the writer's (W7a fix round 5, @mantle/tools heartbeat-maker.ts).
-  // So does a changed tool list: the tools those turns may call (W7
-  // integration fix 2, M2).
+  // they become the writer's (@mantle/tools heartbeat-maker.ts). So does a
+  // changed tool list: the tools those turns may call.
   const toolsBefore = new Set(current.toolSlugs ?? []);
   const toolsChanged =
     rest.toolSlugs !== undefined &&

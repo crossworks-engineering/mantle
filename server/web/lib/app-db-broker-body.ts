@@ -31,7 +31,7 @@ export function appDbBodyError(err: z.ZodError): string {
 }
 
 /**
- * The answer to a failed broker statement (client tier audit L4, I1). An
+ * The answer to a failed broker statement. An
  * error the app's own SQL earned (AppSqlError: its SQL, a refusal, a cap,
  * the time limit) keeps its message, for the app author; a busy pool or
  * caller is a 429 to retry. Anything else is the server's own trouble (a
@@ -39,15 +39,15 @@ export function appDbBodyError(err: z.ZodError): string {
  * on the server or the brain's id, so the caller gets a generic message and
  * the log gets the rest.
  */
-/** Where a broker's error is logged for the app's owner (apps first-class
- *  plan G4): the app, who ran it, and the statement. */
+/** Where a broker's error is logged for the app's owner : the app,
+ *  who ran it, and the statement. */
 export type AppDbErrorLog = Omit<AppErrorEntry, 'source' | 'message' | 'status'>;
 
 export function appDbErrorResponse(err: unknown, where: string, log?: AppDbErrorLog): NextResponse {
   if (err instanceof AppSqlBusyError) {
     // A wait, not a fault, so it is not logged. Nothing retries it for the
     // app (the kit hands reason 'busy' to the app's code): the broker has
-    // already waited (the store check retries for 10 s, A3b fix round 2).
+    // already waited (the store check retries for 10 s).
     return NextResponse.json(
       { ok: false, error: err.message, reason: 'busy' },
       { status: 429, headers: { 'retry-after': '1' } },
@@ -59,7 +59,7 @@ export function appDbErrorResponse(err: unknown, where: string, log?: AppDbError
   };
   if (err instanceof AppSqlError) return answer(err.message, 400);
   if (err instanceof AppDbMissingError) {
-    // Lost on the server (apps audit D1): logged in full where it was found;
+    // Lost on the server: logged in full where it was found;
     // the caller hears what happened, not where the file lived.
     return answer(
       "This app's data is missing on the server. The owner has to restore it from a backup.",

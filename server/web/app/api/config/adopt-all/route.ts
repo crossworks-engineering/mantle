@@ -23,7 +23,7 @@ const KIND_ORDER: AdoptKind[] = ['tool-group', 'skill', 'agent', 'persona', 'wor
  */
 export async function POST() {
   const user = ownerCaller();
-  // A missing key (InputError) answers 400 by the one table (A10 part 2); a
+  // A missing key (InputError) answers 400 by the one table; a
   // fault the opaque 500.
   const report = await computeConfigDiff(user.id);
   const items = report.entities

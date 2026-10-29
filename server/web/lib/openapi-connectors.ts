@@ -101,7 +101,7 @@ export type UpdateOpenapiConnectorInput = {
  *  `login`: the signed-in login when it is not the brain owner (null: the
  *  anchor). Setting or changing the vault key or the host it goes to while
  *  the other is present needs its keys area, and records it as the
- *  connector's configuring login (W7a fix round 4, secret-ref-gate.ts). */
+ *  connector's configuring login (secret-ref-gate.ts). */
 export async function updateOpenapiConnector(
   ownerId: string,
   groupSlug: string,

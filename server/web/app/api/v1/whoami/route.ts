@@ -35,9 +35,8 @@ async function handleGET(login: Login) {
   } satisfies ApiV1Whoami);
 }
 
-/** The login the pipeline answered (A4 hand batch A). Nothing here reads
- *  the database: it runs where the request runs (A6b: it left the scope
- *  whole before, 'rule-in-query', for no read). */
+/** The login the pipeline answered. Nothing here reads the database: it
+ *  runs where the request runs. */
 export async function GET() {
   const login = anyLoginCaller();
   return handleGET(login);

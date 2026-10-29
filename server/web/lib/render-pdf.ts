@@ -64,8 +64,7 @@ export class PdfRendererUnavailableError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// the export route answered by hand.
+// The one error answer (@mantle/std domain-errors.ts).
 defineDomainError(PdfRendererUnavailableError, {
   reason:
     'the PDF sidecar is not set up or not reachable; the message says what the operator starts',

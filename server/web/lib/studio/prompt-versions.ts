@@ -46,7 +46,7 @@ export async function readLiveProse(
   field: string,
 ): Promise<string | null> {
   assertField(entityType, field);
-  // An id that is not a uuid names no entity (A10 lows, part 2 #1): the
+  // An id that is not a uuid names no entity: the
   // caller's 400 (saveProse), not the uuid cast's opaque 500.
   if (!isUuid(entityId)) return null;
   if (entityType === 'agent' && field === 'system_prompt') {
@@ -84,8 +84,8 @@ export async function readLiveProse(
 
 /** Write the new body to the live entity, owner-scoped. `login`: the
  *  signed-in login when it is not the brain owner; an agent's or a skill's
- *  heartbeats then run its words, so they become its (W7a fix round 4,
- *  @mantle/tools heartbeat-maker.ts). */
+ *  heartbeats then run its words, so they become its (@mantle/tools
+ *  heartbeat-maker.ts). */
 async function writeLiveProse(
   ownerId: string,
   entityType: string,
@@ -159,7 +159,7 @@ export async function listProseVersions(
   field: string,
 ): Promise<PromptVersion[]> {
   assertField(entityType, field);
-  // An id that is not a uuid has no history (A10 lows, part 2 #1).
+  // An id that is not a uuid has no history.
   if (!isUuid(entityId)) return [];
   return db
     .select()

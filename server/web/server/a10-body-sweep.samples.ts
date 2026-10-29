@@ -1,5 +1,5 @@
 /**
- * The body sweep's valid bodies (A10 part 2, fold 1; a10-body-sweep.test.ts):
+ * The body sweep's valid bodies (a10-body-sweep.test.ts):
  * a body a route's own zod schema accepts, made from that schema. Test
  * support only: nothing in the server imports it.
  *

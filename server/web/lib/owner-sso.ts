@@ -51,8 +51,7 @@ export const OWNER_SSO_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 /**
  * `upgradeLogin`: the route's read of the login the pipeline answers
- * (cookieUpgradeCaller(), A4 hand batch B: what getCookieUpgradeLoginOr401
- * answers, null where it refused), run here, after the throttle (the
+ * (cookieUpgradeCaller(): the login, null where it refused), run here, after the throttle (the
  * gate's, before the handler: lib/route-limits.ts ownerSso) and the origin
  * check, where the guard was called: a throttled or foreign caller pays no
  * lookup, stamps no device and writes no audit row.

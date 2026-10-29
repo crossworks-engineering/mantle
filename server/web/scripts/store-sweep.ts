@@ -1,10 +1,9 @@
 /**
- * Remove the old store revisions no row points at (workspaces arch A3b,
- * plan 20.3): the CLI face of the `store-sweep` maintenance sweep. Old
+ * Remove the old store revisions no row points at: the CLI face of the `store-sweep` maintenance sweep. Old
  * revisions a flip left and stages whose flip never landed, of items whose
  * row names another file; only once unreferenced on two runs a grace period
- * (an hour) apart and older than it. Files of items with no row, and drafts
- * from before A3b, are reported, never removed. The rule lives in
+ * (an hour) apart and older than it. Files of items with no row, and table
+ * drafts of the old `<node>.draft.sqlite` form, are reported, never removed. The rule lives in
  * @mantle/content/store-sweep (sweepStores), shared by the cron worker and
  * this script. File removal and one read of the rows: no model, no
  * extraction.
@@ -20,11 +19,11 @@
  * Each run removes at most the larger of 500 files and half a store, the
  * oldest marked first; the rest wait for the next run ("deferred"). The dry
  * run lists what it keeps: files with no row, files of an item whose row's
- * file is missing, and table drafts from before A3b (`<node>.draft.sqlite`,
- * kept for ever: check no row names one, then remove it by hand).
+ * file is missing, and old-form table drafts (`<node>.draft.sqlite`, kept
+ * for ever: check no row names one, then remove it by hand).
  *
- * Leftovers (A3b part 2 fix round 1): what a run only reports (an item's
- * file with no row and no tombstone; a table draft from before A3b) is
+ * Leftovers: what a run only reports (an item's file with no row and no
+ * tombstone; an old-form table draft) is
  * never removed by the sweep. After reviewing it, an operator removes it:
  *   pnpm store:sweep --report-orphans [list-file]   # write the list (stdout without a file)
  *   pnpm store:sweep --remove-orphans list-file     # DRY RUN of that list

@@ -1,9 +1,9 @@
 /**
- * Re-fold and re-chunk (workspaces plan 5.3, phase W2; hand-run only).
+ * Re-fold and re-chunk (hand-run only).
  *
- * Since always fold, a page's doc_text, a drawing's scene_text and every
- * chunk hold the item's own words and a plain marker per embed. Rows written
- * before that may still hold an embed's words. This task rewrites them once,
+ * A page's doc_text, a drawing's scene_text and every chunk hold the item's
+ * own words and a plain marker per embed. Older rows may still hold an
+ * embed's words. This task rewrites them once,
  * for every page, note and drawing of the brain that embeds anything (or that
  * the 0247 mark flagged):
  *
@@ -17,7 +17,7 @@
  * Nothing else: no summary, no facts, no model call, no extractor notify, no
  * queue job. updated_at is kept (mantle.keep_updated_at), so the extractor's
  * safety nets never read a re-folded row as edited. Each row is written in
- * its own transaction with its head locked first (plan U1). The row is read
+ * its own transaction with its head locked first. The row is read
  * again under that lock: one that changed since it was read (an edit, a new
  * chunk set) is left for the next run. Resumable: a row whose text and
  * chunks already match is skipped. Dry run by default.
@@ -42,7 +42,7 @@ import { pageDocText, pageHolders } from '@mantle/content/pages';
 import { EMBEDDING_KINDS } from '@mantle/client-types/kind-lists';
 import type { EmbeddingKind } from '@mantle/client-types/kinds';
 
-/** The kinds that embed items: the kind registry's `embeds` field (A10 #12). */
+/** The kinds that embed items: the kind registry's `embeds` field. */
 type Kind = EmbeddingKind;
 const KINDS: readonly Kind[] = EMBEDDING_KINDS;
 
@@ -296,7 +296,7 @@ export async function refoldEmbeds(
     const wrote = await withDeadlockRetry(() =>
       withHeads([n.id], 'update', async (tx) => {
         // Read again under the head: an edit or a new chunk set since the
-        // read above leaves the row for the next run (W2 audit).
+        // read above leaves the row for the next run.
         const now = await rowState(ownerId, n.id, tx);
         if (!now || now.key !== seen.key) return false;
         await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);

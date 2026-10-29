@@ -22,8 +22,8 @@ export async function GET(req: Request) {
   const entityType = searchParams.get('entityType') ?? '';
   const entityId = searchParams.get('entityId') ?? '';
   const field = searchParams.get('field') ?? '';
-  // A field that is not versionable (InputError) answers 400 by the one table
-  // (A10 part 2); a fault the opaque 500.
+  // A field that is not versionable (InputError) answers 400 by the one
+  // table; a fault the opaque 500.
   const versions = await listProseVersions(user.id, entityType, entityId, field);
   return NextResponse.json({ versions });
 }
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'entityType, entityId, field required' }, { status: 400 });
   }
   // A field, an entity or a version not there (InputError) answers 400 by the
-  // one table (A10 part 2); a fault the opaque 500.
+  // one table; a fault the opaque 500.
   const versions =
     typeof payload.revertTo === 'number'
       ? await revertProse({

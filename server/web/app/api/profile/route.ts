@@ -143,7 +143,7 @@ export async function PUT(req: Request) {
   const archetype = (purposeArchetype ?? '').trim();
   // The brain's own keys this save sets (BRAIN_PREFERENCE_KEYS: one value for
   // the whole brain). The form sends them on every save, so an unchanged
-  // value is no change. Two kinds (W7 integration fix 3, F1):
+  // value is no change. Two kinds:
   //  - prompt text: the house style, the purpose and its archetype ride every
   //    agent's prompt, so every heartbeat's turn. Only the brain owner (the
   //    anchor login) changes them: a change by another login would set what
@@ -188,7 +188,7 @@ export async function PUT(req: Request) {
     }
   }
   // A value the preferences refuse (InputError: a timezone, a locale) answers
-  // 400 by the one table (A10 part 2); a fault the opaque 500.
+  // 400 by the one table; a fault the opaque 500.
   // The ACTOR's id: personal keys land on this login's own row, brain keys
   // (siteName, houseStyle, purpose…) are routed to the anchor by the split
   // in savePreferencesFor — this is what makes avatars per-login.

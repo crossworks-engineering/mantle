@@ -160,7 +160,7 @@ export async function mintAuthCode(input: {
   sessionEpoch?: number | null;
   /** The login's session epoch when its session was checked for this
    *  consent (any role). The code is minted only if it still is: a session
-   *  ended meanwhile (verification audit N2) mints nothing. */
+   *  ended meanwhile mints nothing. */
   consentEpoch: number;
   codeChallenge: string;
   codeChallengeMethod: string;
@@ -239,13 +239,12 @@ type GrantResult =
  *  - An ADMIN grant (no epoch on it): the login is still an admin.
  *  - A MEMBER's grant (0227, MCP as a login): the login is still a member
  *    and its session epoch is the one the grant was made under (sign out everywhere, a password change, a disable or a role
- *    change ends it). The per-login MCP switch went in workspaces W7b.
+ *    change ends it). There is no per-login MCP switch.
  */
 export async function actorMayConnect(
   actorId: string,
   sessionEpoch: number | null,
-  /** Under the OAuth lock: the transaction, never a second connection
-   *  (verification audit N1). */
+  /** Under the OAuth lock: the transaction, never a second connection. */
   exec: Exec = db,
 ): Promise<boolean> {
   return (await connectingLogin(actorId, sessionEpoch, exec)) !== null;
@@ -271,7 +270,7 @@ async function connectingLogin(
   if (!row || row.disabledAt || !row.email) return null;
   // An Admin grant (no epoch) needs an Admin login (adminLogin: a user of
   // Admin now, read with the row); a member grant a login that is not one
-  // (membership decides, S8b; the login is enabled, checked above).
+  // (membership decides; the login is enabled, checked above).
   const admin = adminLogin({ adminMember: row.adminMember === true });
   const may = sessionEpoch === null ? admin : !admin && row.sessionEpoch === sessionEpoch;
   return may ? { id: actorId, email: row.email } : null;
@@ -317,7 +316,7 @@ export async function exchangeAuthCode(input: {
   codeVerifier: string;
 }): Promise<GrantResult> {
   const codeHash = sha256Hex(input.code);
-  // The code's login first, to take its lock (final audit F3): the claim and
+  // The code's login first, to take its lock: the claim and
   // the new grant then happen inside it, so a session end (which takes the
   // same lock, deletes the codes and revokes the grants) either runs first
   // and leaves no code to claim, or runs after and revokes the new grant.
@@ -417,7 +416,7 @@ export async function refreshAccessToken(input: {
     )
     .limit(1);
   if (!peek) return fail('unknown or rotated-out refresh token');
-  // Under the login's lock (final audit F3): a revoke that ran first is seen
+  // Under the login's lock: a revoke that ran first is seen
   // here (the row is revoked), and one that waits for us revokes the new row.
   const result = await db.transaction(async (tx) => {
     await lockOauthActor(tx, peek.actorId);
@@ -510,7 +509,7 @@ export async function ownerFromBearer(req: Request): Promise<string | null> {
         eq(oauthAccessTokens.tokenHash, sha256Hex(token)),
         isNull(oauthAccessTokens.revokedAt),
         gt(oauthAccessTokens.expiresAt, new Date()),
-        // An Admin login: a user of Admin now, enabled (membership, S8b).
+        // An Admin login: a user of Admin, enabled (membership decides).
         loginIsAdmin(authUsers.id),
         isNull(authUsers.disabledAt),
       ),
@@ -573,7 +572,7 @@ export async function grantFromAccessToken(token: string): Promise<{
 }
 
 /**
- * The scope word that keeps an OAuth grant read-only (W7b fix round 1, M3):
+ * The scope word that keeps an OAuth grant read-only:
  * migration 0268 adds it to the grants of a login whose MCP Write switch
  * was off when the switch was archived, and a refresh copies the scope, so
  * the grant stays narrowed. A client may ask for it too; nothing removes it.

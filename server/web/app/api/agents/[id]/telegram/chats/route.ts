@@ -52,7 +52,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
 
-  // TelegramTokenError answers by the one table (A10 part 2): 404 for a
+  // TelegramTokenError answers by the one table: 404 for a
   // chat not found, else 400; anything else is the opaque 500, logged.
   await setAgentTelegramChat({
     ownerId: user.id,

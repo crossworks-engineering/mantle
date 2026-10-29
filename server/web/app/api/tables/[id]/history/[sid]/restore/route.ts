@@ -36,7 +36,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; si
   const body = await readBody(req, Body);
   // A draft in the way (TableRestoreDraftError, reason 'draft'), a refused
   // entry (TableSnapshotRefusedError) and an app table (AppBoundTableError)
-  // answer 409 by the one table (A10 part 2).
+  // answer 409 by the one table.
   const res = await restoreTableSnapshot(user.id, id, sid, {
     discardDraft: body.discardDraft === true,
   });

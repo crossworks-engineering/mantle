@@ -1,11 +1,10 @@
 /**
- * The one body reader of a route (A10 part 2, fold 1; docs/request-plumbing.md).
+ * The one body reader of a route (docs/request-plumbing.md).
  *
  * A route reads its JSON body with `readBody(req, Schema)` (the parsed data,
  * or the one 400) or, where it checks the value itself, `readJson(req)`.
- * Before, each of 178 route files called `req.json()` with its own fallback
- * (`.catch(() => ({}))`, `null`, a try block): a body that was not JSON
- * became `{}` and failed later with some other message, or was accepted.
+ * Never `req.json()` with a fallback of its own: a body that is not JSON
+ * would become `{}` and fail later with some other message, or be accepted.
  *
  *  - The bytes come through the route's ceiling: the route loader hands
  *    every handler a capped request (capRequestBody, lib/body-limit.ts), so
@@ -54,8 +53,8 @@ export type ReadBodyOptions = {
   refuseEmpty?: boolean;
   /** What a body that is not JSON reads as, instead of BadBodyError: for a
    *  route whose body is optional and that must answer whatever the client
-   *  sent (sign-out clears the cookie, Stop cancels the turn; fix round 1,
-   *  L4), and for readJsonNoNul's null. A body over the ceiling still
+   *  sent (sign-out clears the cookie, Stop cancels the turn), and for
+   *  readJsonNoNul's null. A body over the ceiling still
    *  throws BodyTooLargeError. */
   invalid?: unknown;
   /** Read at most this many bytes (BodyTooLargeError past it): the JSON

@@ -1,6 +1,5 @@
 /**
- * Bring a brain onto workspaces when it has none yet (workspaces W5b1 fix
- * rounds 1 and 2, audit M1, M-new, L-a, L-b). Migration 0252 migrates the
+ * Bring a brain onto workspaces when it has none yet. Migration 0252 migrates the
  * brain that exists when the migrations run; a fresh install has no owner
  * then, so it is migrated here: once its first owner exists, and as a boot
  * step for a brain that missed it.
@@ -22,8 +21,8 @@
  * the migration ran) is counted by `pnpm workspaces:check`. No LLM work, no
  * extractor notify.
  *
- * Since arch A7 the code has no rule for a brain off workspaces (no
- * rollback switch, no level path): the web boot refuses one
+ * The code has no rule for a brain off workspaces (no rollback switch, no
+ * level path): the web boot refuses one
  * (unmigratedBrainReason, server/main.ts). A box that reports "clients
  * present" is switched by hand, as the operator notes say
  * (docs/workspaces.md: mantle_ws_migrate_locked with
@@ -47,7 +46,7 @@ import {
 export type WsMigrateRow = FirstOwnerSwitchRow;
 
 /** Migrate this brain if it has no workspaces and nothing stops it. The
- *  switch runs DDL, which the runtime role may not (arch A9): on the
+ *  switch runs DDL, which the runtime role may not: on the
  *  migrator's connection (executeAsMigrator). */
 export async function migrateWorkspaces(): Promise<WsMigrateRow[]> {
   const rows = await executeAsMigrator<WsMigrateRow>(
@@ -127,7 +126,7 @@ export async function migrateWorkspacesQuietly(when: string, loginId?: string): 
 }
 
 /**
- * Why this brain may not serve (arch A7), or null when it may: on
+ * Why this brain may not serve, or null when it may: on
  * workspaces, or a fresh install with no owner yet (it serves the signup,
  * and its first owner switches it, lib/auth/first-owner.ts). Otherwise the
  * reason mantle_ws_skip_reason gives ("clients present: ...", or "no

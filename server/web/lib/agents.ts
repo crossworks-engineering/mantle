@@ -54,9 +54,8 @@ const DEF_SYNCED_SLUGS = new Set(
 );
 
 /**
- * Persona notes are what an agent learned in the anchor's own thread (W7c
- * fix round 2, M-a): they are the anchor's, so only the anchor login reads
- * them (W7 integration fix). Any other login gets the agent with none; the
+ * Persona notes are what an agent learned in the anchor's own thread:
+ * they are the anchor's, so only the anchor login reads them. Any other login gets the agent with none; the
  * stored notes are kept as they are.
  */
 export const PERSONA_NOTES_ANCHOR_ONLY =
@@ -231,8 +230,8 @@ export type CreateAgentInput = {
   viaTailnet?: boolean;
   backupBaseUrl?: string | null;
   backupViaTailnet?: boolean;
-  /** The login that paired a route's vault key with its base URL (W7a fix
-   *  round 5, lib/model-route-pair.ts); null for the brain owner. Absent on
+  /** The login that paired a route's vault key with its base URL
+   *  (lib/model-route-pair.ts); null for the brain owner. Absent on
    *  an update: the stored configurer stays. */
   configuredBy?: string | null;
   /** Pinned TTS worker (migration 0066). null = use the default TTS worker. */
@@ -543,7 +542,7 @@ async function cloneAgentTx(
           assignedUserEmail: input.actorEmail,
         }),
         // The clone carries the source's routes, so it answers to the same
-        // configuring login (W7a fix round 5).
+        // configuring login.
         configuredBy: source.configuredBy ?? null,
       },
       tx,

@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     );
   } finally {
     // A bad package (AppPackageError) answers 400, reason 'bad-package', by
-    // the one table (A10 part 2); a body over the cap 413 (app.onError).
+    // the one table; a body over the cap 413 (app.onError).
     if (spooled) await rm(spooled, { force: true });
     release();
   }

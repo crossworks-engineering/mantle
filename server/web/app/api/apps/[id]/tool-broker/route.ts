@@ -1,7 +1,7 @@
 /**
  * /api/apps/[id]/tool-broker: the host relays a running app's
  * host.tools.call() here. A config of the one app tool broker
- * (lib/app-tool-broker.ts runAppToolBroker, A10 #9), which parses the call,
+ * (lib/app-tool-broker.ts runAppToolBroker), which parses the call,
  * judges it, asks the owner to confirm a tool that needs it, dispatches it
  * through the one gate and logs it.
  *
@@ -13,7 +13,7 @@
  * authenticated session and the route: an app can only ever broker as
  * itself.
  *
- * Every login since W7e: a member's run goes through lib/app-runner.ts
+ * Every login: a member's run goes through lib/app-runner.ts
  * memberToolBroker (the team rules, the same broker). A client login is
  * refused (403 client-login) by the gate.
  */
@@ -26,8 +26,7 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The ids are uuids: any other names nothing, the params gateway's one
- *  404 before the handler (lib/route-params.ts; the item gate answered it
- *  until the pre-check removal part 2). */
+ *  404 before the handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({

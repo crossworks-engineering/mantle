@@ -9,8 +9,8 @@ import { loginHasArea } from '@mantle/db';
 import { SECRET_REFS_NEED_KEYS, vaultPairLoginRefusal } from '@mantle/tools';
 
 /**
- * The maker a Tools route records on a tool it writes (tools.created_by, W7a
- * fix round 3): the signed-in login when it is not the brain owner (the
+ * The maker a Tools route records on a tool it writes (tools.created_by):
+ * the signed-in login when it is not the brain owner (the
  * anchor login, whose id is the owner id), else null.
  */
 export function toolMakerFor(user: { id: string; actor: { id: string } }): string | null {
@@ -20,7 +20,7 @@ export function toolMakerFor(user: { id: string; actor: { id: string } }): strin
 /**
  * Why the signed-in login may not write a template that sends a vault key
  * (a {{secret:...}} or {{oauth:...}} ref, or an OAuth2 group's token URL or
- * base URL), or null: that is the keys area's (W7a fix round 3, @mantle/tools
+ * base URL), or null: that is the keys area's (@mantle/tools
  * secret-ref-gate.ts). The brain owner always may.
  */
 export async function keysAreaRefusal(user: {
@@ -35,8 +35,8 @@ export async function keysAreaRefusal(user: {
 /**
  * Why the signed-in login may not pair a vault key with a host (a key id
  * with a model route's base URL, a {{secret:...}} ref with a URL), or null:
- * that is the keys area's, and the anchor login always may (W7a fix round
- * 4, @mantle/tools secret-ref-gate.ts).
+ * that is the keys area's, and the anchor login always may (@mantle/tools
+ * secret-ref-gate.ts).
  */
 export async function vaultPairRefusalFor(user: {
   id: string;

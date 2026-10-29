@@ -28,12 +28,11 @@ type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
  * in a detached client (Electron / DB-less).
  *
  * An admin, a member and a client get ONE shape (`Shell`); `role` says
- * which, and `loginId` is the login at the keyboard. Before W5c a member
- * read /api/member/shell and a client /api/client/shell (both 410 now), and
- * the 200 here meant "admin". What only an admin has answers its empty
+ * which, and `loginId` is the login at the keyboard (/api/member/shell and
+ * /api/client/shell answer 410). What only an admin has answers its empty
  * value for the others: onboarded true, pendingApprovals 0, areas [].
  *
- * The chrome reads never fail the route (client logins audit A13): each is
+ * The chrome reads never fail the route: each is
  * caught and logged, and its part answers empty (the brand as unset, a
  * pending count of 0, no asset token). Onboarding answers true when it
  * cannot be read: a failed read must not send a working admin into the
@@ -85,8 +84,8 @@ async function handleGET(login: Login) {
   // download srcs (which can't carry a bearer) can load bytes. `act` = this
   // login: each byte route re-checks the login's role. Every non-Admin
   // login's lasts 10 minutes: a member's, since
-  // its token opens the brain's byte routes in its scope (W7e fix round 1,
-  // L3). An Admin user's keeps the two hours.
+  // its token opens the brain's byte routes in its scope. An Admin user's
+  // keeps the two hours.
   const assetToken = await shellPart(
     'shell',
     'asset token',
@@ -156,9 +155,8 @@ async function handleGET(login: Login) {
   return NextResponse.json(body);
 }
 
-/** The login the pipeline answered (any login; A4 hand batch A). The
- *  handler runs where the request runs, the login's scope for a read (A6b:
- *  the whole body left it by 'rule-in-query' before): the brand and the
+/** The login the pipeline answered (any login). The handler runs where
+ *  the request runs, the login's scope for a read: the brand and the
  *  login's own preferences by the own-login rule, the pending count and the
  *  private workspace by their definers (0293), the asset token from the
  *  epoch the guard checked. */

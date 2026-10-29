@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     (c) => c === url.searchParams.get('cat'),
   );
   const processedOnly = url.searchParams.get('done') === '1';
-  // Only the traces the signed-in login may read (W7 integration fix 3, L2).
+  // Only the traces the signed-in login may read.
   const items = await listActivity(user.id, toolMakerFor(user), {
     category,
     processedOnly,

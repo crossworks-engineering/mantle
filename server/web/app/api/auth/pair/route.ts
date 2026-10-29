@@ -19,7 +19,7 @@ export const policy = routePolicy({
  * POST /api/auth/pair — mint a one-time pairing code for "Sign in on your
  * phone". A signed-in session required (this is a login surface, so
  * `/api/auth` being a public prefix does not excuse it: the gate is here):
- * an admin, or since workspaces W7e a member (only the person pairs their
+ * an admin or a member (only the person pairs their
  * own phone; the claim then needs the phone build that serves every login,
  * else 426). A client signs in on its phone with its emailed code. The code is
  * bound to the login that asked, expires in {@link PAIR_CODE_TTL_SEC}, and
@@ -33,7 +33,7 @@ export const policy = routePolicy({
 export async function POST() {
   // With the generic api.write row an Admin user's write writes (and any
   // login's with a key: the gate refuses a key here). A public row: the
-  // login the pipeline answers at this read (A4 hand batch B).
+  // login the pipeline answers at this read.
   // The read takes the row's per-login limit (lib/route-limits.ts:
   // authPairIssue) and throws the one 429 over it.
   const login = await publicLoginItself({ audit: true });

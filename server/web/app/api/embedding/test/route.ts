@@ -32,8 +32,8 @@ export async function POST(req: Request) {
   if (!parsed.data.model.trim()) return NextResponse.json({ ok: false, error: 'No model set' });
   // The probe sends a vault key (the key id, or the provider's key it falls
   // back to) to the base URL: a pair not already saved on a route is the
-  // keys area's; a saved one answers to the login that paired it (W7a fix
-  // rounds 4 and 5, lib/model-route-pair.ts).
+  // keys area's; a saved one answers to the login that paired it
+  // (lib/model-route-pair.ts).
   const probe = modelRoutePairing(parsed.data.apiKeyId, parsed.data.baseUrl, parsed.data.provider);
   let configuredBy: string | null = null;
   if (probe.key) {

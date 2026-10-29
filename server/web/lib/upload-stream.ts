@@ -46,7 +46,7 @@ export async function readMultipartUpload(
 ): Promise<ParsedUpload> {
   if (declaredTooLarge(req.headers, opts.maxBytes)) throw new UploadTooLargeError(opts.maxBytes);
   // A body the parser cannot read is the caller's (InputError, 400 with the
-  // parser's text: A10 part 2); a spool that failed is a fault.
+  // parser's text); a spool that failed is a fault.
   if (!req.body) throw new InputError('empty body');
   const contentType = req.headers.get('content-type') ?? '';
 

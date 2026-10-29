@@ -21,12 +21,12 @@
  *      MAX_LIVE_KEYS_PER_LOGIN live keys per login, and 30 keys made per
  *      login an hour.
  *
- *      What a login may make is decided by its workspaces, never its role
- *      (W8a): "never", or more than 90 days (up to 3650), and risky tools,
+ *      What a login may make is decided by its workspaces, never its role:
+ *      "never", or more than 90 days (up to 3650), and risky tools,
  *      only for a login that holds the Admin workspace with its keys area;
  *      everyone else's key ends within 90 days and names no risky tool (the
  *      admin gate still decides each risky call). A stolen session must not
- *      be able to mint a key unseen (M2 audit F4): every login re-types its
+ *      be able to mint a key unseen: every login re-types its
  *      password (10 wrong tries a minute per login), and is told a key was
  *      made. A password change, "sign out everywhere" and an admin's End
  *      sessions revoke every key the login holds (endLoginSessions
@@ -69,7 +69,7 @@ export const policy = routePolicy({
 });
 
 const NO_STORE = { 'Cache-Control': CACHE_CONTROL.none };
-/** Keys a login may make an hour (final audit F6): a make-and-revoke loop
+/** Keys a login may make an hour: a make-and-revoke loop
  *  must not spam the login's notices and pushes. */
 const CREATE_RATE = { max: 30, windowMs: 60 * 60_000 };
 /** Wrong passwords a minute per login when making a key. */
@@ -140,7 +140,7 @@ async function handlePOST(login: Login, req: Request) {
     }
   }
   // Every try is counted BEFORE the password is checked, so parallel
-  // guesses cannot all pass a peek (M2 audit N2); a right password gives
+  // guesses cannot all pass a peek; a right password gives
   // its token back, so making several keys is not guessing. A failure
   // budget taken around the password check, not a route gate: named in
   // eslint-rules/route-plumbing.mjs RATE_LIMIT_ALLOW, answered with the one
@@ -227,7 +227,7 @@ async function handlePOST(login: Login, req: Request) {
   );
 }
 
-// The login the pipeline answered (any login; A4 hand batch A). The list
+// The login the pipeline answered (any login). The list
 // runs where the request runs, by its definer (listAccessKeys). Making a key
 // still leaves the scope by name: its password check reads the login's hash
 // and the new key's row is written on the system pool.

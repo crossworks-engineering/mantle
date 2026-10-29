@@ -28,15 +28,15 @@ import { getRequestContext } from './request-context';
  *   export async function GET(req: Request, ctx: { params: Promise<...> })
  *
  * Handlers receive the raw Fetch Request and a params Promise (Next 15/16
- * shape) and return a plain Response, which Hono forwards untouched — SSE
+ * shape) and return a plain Response, which Hono forwards untouched: SSE
  * streams, 206/416 Range responses, redirects and multipart parsing all
- * behave exactly as before.
+ * pass through as the handler built them.
  *
- * Modules are imported lazily on first hit and memoized — boot stays fast and
+ * Modules are imported lazily on first hit and memoized: boot stays fast and
  * a route's import cost is paid once.
  *
- * Each route carries its ROUTE_POLICY rows (lib/auth/route-policy.ts, arch
- * A4 step 1), built once here; the gate middleware finds them with
+ * Each route carries its ROUTE_POLICY rows (lib/auth/route-policy.ts), built
+ * once here; the gate middleware finds them with
  * servedRoute() and runs the handler through enterCall, which opens the
  * request slot. The loader only runs the handler: it is not a second gate.
  *
@@ -45,8 +45,8 @@ import { getRequestContext } from './request-context';
  * schema refuses, before the handler runs.
  *
  * The pages of server/pages (the /s page, the render surfaces) register
- * here too (registerPages, A4 step 2), each with its row: the plan's
- * "/s links and their brokers, moved into the loader".
+ * here too (registerPages), each with its row, so the /s links and their
+ * brokers run through the same gate.
  */
 
 type RouteHandler = (
@@ -63,14 +63,14 @@ export type RouteEntry = {
   catchAllOptional: boolean;
   /** Each method whose handler reads the caller the pipeline answers, to
    *  the caller kind its reader reads (ownerCaller(), memberCaller(),
-   *  anyLoginCaller(), chatCaller(); arch A4 step 3b): their rows'
+   *  anyLoginCaller(), chatCaller()): their rows'
    *  `caller`. */
   reads?: Readonly<Record<string, RouteCaller>>;
   /** Each method exported as a retired route's 410 stub (`gone(kind)`,
-   *  lib/gone.ts; A4 hand batch A): their rows are gone rows. */
+   *  lib/gone.ts): their rows are gone rows. */
   gone?: readonly string[];
   /** Each method to the switch its route file declares (`routeSwitches`,
-   *  lib/auth/route-switches.ts; A4 hand batch A): their rows' switch. */
+   *  lib/auth/route-switches.ts): their rows' switch. */
   switches?: Readonly<Record<string, RouteSwitch>>;
   /** The policy the route file declares (`policy`,
    *  lib/auth/route-declaration.ts), as the generator read it
@@ -236,13 +236,12 @@ export function registerRoutes(
 
     for (const method of entry.methods) {
       const handle = async (c: Context) => {
-        // The owner answer threw at the gate (arch A4 step 3b): taken off
-        // the request first, and thrown below in the handler's place,
-        // where the handler's guard threw it before, for onError (which
-        // keeps the gate's CORS headers). Where no handler runs (the bare
-        // prefix's 404, a stale manifest's 405) no guard ran before
-        // either: that answer stands, with its CORS headers, and the
-        // error goes with the guard that never ran.
+        // The owner answer threw at the gate: taken off the request first,
+        // and thrown below in the handler's place, for onError (which keeps
+        // the gate's CORS headers). Where no handler runs (the bare
+        // prefix's 404, a stale manifest's 405) that answer stands, with
+        // its CORS headers, and the error is dropped: no handler would
+        // have read the caller.
         const ctx = getRequestContext();
         const pending = ctx?.callerError;
         if (pending) delete ctx.callerError;
@@ -265,30 +264,30 @@ export function registerRoutes(
           return Response.json({ error: 'method not allowed' }, { status: 405 });
         }
         if (pending) throw pending.error;
-        // The route's params schema (A10 lows, lib/route-params.ts): a
+        // The route's params schema (lib/route-params.ts): a
         // segment that is not what the route file declares (an id that is
         // not a uuid) is the one 404, before the handler, its body or the
         // database see it.
         const refused = routeParamsRefusal(mod[ROUTE_PARAMS_EXPORT], entry.pattern, params);
         if (refused) return refused;
-        // The one body reader (A10 part 2, fold 1): the handler's request
-        // reads its body through the route's ceiling, whichever reader it
-        // calls, so a chunked body that declares no length is refused at the
-        // ceiling (413) instead of read in full. An upload route (no
-        // ceiling) streams under its own cap, as before.
+        // The one body reader: the handler's request reads its body through
+        // the route's ceiling, whichever reader it calls, so a chunked body
+        // that declares no length is refused at the ceiling (413) instead
+        // of read in full. An upload route (no ceiling) streams under its
+        // own cap.
         // The ceiling is the one of the path Hono matched: the decoded one
         // (c.req.path), so `/api/%61uth/...` gets the ceiling of the route
-        // that answers it, not of its spelling (fix round 1, L8).
+        // that answers it, not of its spelling.
         const ceiling = bodyCeilingFor(c.req.path);
         const req = ceiling === null ? c.req.raw : capRequestBody(c.req.raw, ceiling);
-        // The gate opened the request slot (workspaces W6a) through enterCall;
+        // The gate opened the request slot through enterCall;
         // the session guard fills it with the login's scope.
         let res: Response;
         try {
           res = await handler(req, { params: Promise.resolve(params) });
         } catch (err) {
           // A handler that wrapped the ceiling's error in its own and threw
-          // still answers 413, not the opaque 500 (fix round 1, L9).
+          // still answers 413, not the opaque 500.
           if (ceiling !== null && bodyWentOver(req)) return bodyTooLargeResponse(ceiling);
           throw err;
         }
@@ -348,9 +347,8 @@ export type PageRoute = Readonly<{
  * surfaces), each with its ROUTE_POLICY rows, of the class the list is
  * (`cls`: SHARE_PAGES 'link', PRINT_PAGES 'render'; a page whose pattern is
  * not of its class throws). The gate finds the row (servedRoute) and runs the page
- * through enterCall in the page's own actor slot (the row's startsAs), as
- * the pages did for themselves before A4 step 2. No 405 answer: another
- * method falls through to the 404, as before.
+ * through enterCall in the page's own actor slot (the row's startsAs). No
+ * 405 answer: another method falls through to the 404.
  */
 export function registerPages(
   app: Hono,

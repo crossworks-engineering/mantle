@@ -35,9 +35,8 @@ export const policy = routePolicy({
 
 /** DELETE /api/shares/[id] → `{ ok }`: revoke the link or the contact share
  *  (owner-scoped; `ok` false when it was already gone). Who may: an Admin
- *  user with the 'users' area, who may revoke any link of the brain (W5b2
- *  part B: closing a link only narrows; mantle_share_close_admin, plan
- *  v3.2 S6 c2); else a user who may edit the item (an app: a Moderator of
+ *  user with the 'users' area, who may revoke any link of the brain
+ *  (closing a link only narrows; mantle_share_close_admin); else a user who may edit the item (an app: a Moderator of
  *  its home), the Grant Access panel's `mayLink`, asked in the login's
  *  scope; else 404 `not found` or 403 `forbidden`, the item gate's answers.
  *  A link never changes a level or a grant, so removing one changes none
@@ -95,7 +94,7 @@ async function asksCanWrite(req: Request): Promise<boolean | null> {
  *  PATCH /api/shares/[id] { canWrite } → "Can write" on a contact share of
  *  an app (contact shares, 0214); 400 `write-not-app` on another kind.
  *  An Admin user's, its home not checked, as making one is
- *  (mantle_share_contact_write_set, plan v3.2 S6 c2). Audited
+ *  (mantle_share_contact_write_set). Audited
  *  (`contact.share_can_write`).
  *
  *  PATCH /api/shares/[id] { mode } → set the link's admission (owner-scoped).

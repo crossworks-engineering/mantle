@@ -42,8 +42,7 @@ const gates = {
   minIdleMinutes: z.number().int().min(0).nullable().optional(),
   quietHours: QuietHours.optional(),
   // An ISO date-time (an offset or Z; converted to Date below). Any other
-  // string was an Invalid Date the database refused as an opaque 500 (A10
-  // lows, part 2 #2).
+  // string would be an Invalid Date the database refuses as an opaque 500.
   earliestAt: z.string().datetime({ offset: true }).nullable().optional(),
   cooldownMinutes: z.number().int().min(0).nullable().optional(),
   maxFires: z.number().int().min(1).nullable().optional(),

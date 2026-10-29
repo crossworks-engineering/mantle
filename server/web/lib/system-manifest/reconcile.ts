@@ -215,9 +215,8 @@ export async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promi
   const adminOnly = await adminOnlyGroups(ownerId);
   // The persona and the operator's own personas, never a manifest agent with
   // its own entry: the Admin workspace's assistants only, never a responder
-  // on no workspace nor another workspace's assistant (W8 integration). The
-  // rule of a brain not yet switched (the frozen level column) went in arch
-  // A7: such a brain does not start.
+  // on no workspace nor another workspace's assistant. A brain not on
+  // workspaces does not start, so it needs no rule here.
   const responders = (await agentRows(ownerId, ['responder', 'assistant'])).filter(
     (a) => !MANIFEST_NON_PERSONA_SLUGS.has(a.slug) && a.workspace === 'admin',
   );

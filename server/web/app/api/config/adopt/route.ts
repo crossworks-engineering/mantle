@@ -23,8 +23,8 @@ const Body = z.object({
 export async function POST(req: Request) {
   const user = ownerCaller();
   const body = await readBody(req, Body);
-  // An unknown slug or a missing key (InputError) answers 400 by the one table
-  // (A10 part 2); a fault the opaque 500.
+  // An unknown slug or a missing key (InputError) answers 400 by the one
+  // table; a fault the opaque 500.
   await adoptManifestItem(user.id, body.kind as AdoptKind, body.slug);
   return NextResponse.json({ ok: true });
 }

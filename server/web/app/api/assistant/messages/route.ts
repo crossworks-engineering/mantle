@@ -14,8 +14,8 @@ export const policy = routePolicy({
 /**
  * Older page of assistant messages for scroll-up lazy loading. Returns up
  * to `limit` (default 100) messages before the `before` ISO cursor, scoped
- * to the login's OWN thread with the selected agent (any login since W7c;
- * each user reads only their own threads). The gate answers the chat
+ * to the login's OWN thread with the selected agent (any login; each user
+ * reads only their own threads). The gate answers the chat
  * login (chatCaller()) and 401s an unauthenticated/expired client
  * rather than redirecting to /login.
  *

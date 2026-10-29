@@ -14,14 +14,14 @@
  *
  * Every rule is read from the rows on every request: the key row (revoked,
  * expired) and the login row (disabled). A key keeps no role of its own
- * (workspaces W8a, migration 0272): a login carries no permission, and the
+ * (migration 0272): a login carries no permission, and the
  * key reads what the login's workspaces read now. A disable or a role
  * change ends every key of the login (endLoginSessions). A key outlives a
- * plain sign-out (audit item 9); a password change, "sign out everywhere",
+ * plain sign-out; a password change, "sign out everywhere",
  * an admin's End sessions and a reused device token revoke every key of
  * the login (endLoginSessions `endKeys`).
  *
- * What a login may make (W8a): a key that never expires, or lasts more
+ * What a login may make: a key that never expires, or lasts more
  * than 90 days (up to 3650), and a key that names risky tools, only for a
  * login that holds the Admin workspace with its keys area; everyone else's
  * key ends within 90 days and names no risky tool. The admin gate still
@@ -49,7 +49,7 @@ export type AccessKeyArea = KeyArea;
 export const ACCESS_KEY_ACCESS = ['read', 'read_write'] as const;
 export type AccessKeyAccess = (typeof ACCESS_KEY_ACCESS)[number];
 
-/** The role of the login a key acts as (LOGIN_ROLES, A10 #13). */
+/** The role of the login a key acts as (LOGIN_ROLES). */
 export type AccessKeyRole = LoginRole;
 
 /** The expiry a new key gets when the caller names none. */
@@ -57,8 +57,7 @@ export const DEFAULT_ACCESS_KEY_EXPIRY_DAYS = 90;
 /** The longest expiry a caller may name (in days). "Never" is null. */
 export const MAX_ACCESS_KEY_EXPIRY_DAYS = 3650;
 /** The longest a key may live, in days, for a login that does not hold the
- *  Admin workspace with its keys area (M2 audit F4; W8a: by the area, not
- *  the role). */
+ *  Admin workspace with its keys area (by the area, not the role). */
 export const SHORT_KEY_MAX_DAYS = 90;
 /** The longest expiry the caller may pick, in days; null = any, "never"
  *  included. `keysArea`: the login holds the Admin workspace with its keys
@@ -72,7 +71,7 @@ export const MAX_LIVE_KEYS_PER_LOGIN = 50;
 /** Requests a minute per key: the public HTTP API, and /api/mcp.
  *
  *  The per-address budgets below key on `clientIp`: the address the
- *  reverse proxy appends to X-Forwarded-For (audit item 10). A brain served
+ *  reverse proxy appends to X-Forwarded-For. A brain served
  *  WITHOUT its proxy (Caddy in the release) takes that address from the
  *  caller, who can then claim a fresh one per request. Run behind the
  *  proxy; the docs say so (docs/guide/07-api). */
@@ -80,26 +79,26 @@ export const ACCESS_KEY_RATE = {
   v1: { max: 120, windowMs: 60_000 },
   mcp: { max: 300, windowMs: 60_000 },
 } as const;
-/** Requests a minute per LOGIN across all its keys (M2 audit F7): 50 keys
+/** Requests a minute per LOGIN across all its keys: 50 keys
  *  must not buy 50 times the budget. */
 const LOGIN_KEY_RATE = {
   v1: { max: 600, windowMs: 60_000 },
   mcp: { max: 1200, windowMs: 60_000 },
 } as const;
 /** GET /api/v1/search embeds the query on every call: its own smaller
- *  budget per key (M2 audit, suspected item 2). */
+ *  budget per key. */
 const SEARCH_KEY_RATE = { max: 30, windowMs: 60_000 };
-/** Failed key presentations a minute from one address, any prefix (M2
- *  audit F3), checked before the database is asked: random prefixes cost
+/** Failed key presentations a minute from one address, any prefix,
+ *  checked before the database is asked: random prefixes cost
  *  a lookup each. High enough that a shared address (NAT) with one broken
  *  script does not lock its neighbours out, low enough to cap the cost. */
 const FAILED_KEY_ADDRESS_RATE = { max: 100, windowMs: 60_000 };
 /** Failed presentations a minute of one key prefix from one address. Keyed
- *  on the pair, not the address alone (audit item 2): bad keys from a shared
+ *  on the pair, not the address alone: bad keys from a shared
  *  address (NAT, a proxy) must not lock every valid key out from it. Only a
  *  caller who tries wrong secrets for THIS prefix from THIS address meets
  *  it. The peek before the check and the count after it can race by the
- *  number of requests in flight (audit item 7): accepted, the secret is 256
+ *  number of requests in flight: accepted, the secret is 256
  *  random bits. */
 const FAILED_KEY_RATE = { max: 20, windowMs: 60_000 };
 
@@ -125,7 +124,7 @@ export type AccessKeyGrant = {
   createdBy: string | null;
   /** The login row the key was checked against on this request. */
   login: LoginRow;
-  /** The key works on /api/v1 only (0268, W7b fix round 2): /api/mcp
+  /** The key works on /api/v1 only (0268): /api/mcp
    *  refuses it. Absent = both. */
   apiOnly?: true;
 };
@@ -185,7 +184,7 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
     return { ok: false, reason: 'expired', keyId: row.id };
   }
   const login = await loadLoginRow(row.loginId);
-  // The login as it is now: no role is kept on the key (W8a).
+  // The login as it is now: no role is kept on the key.
   if (!login || !loginUsable(login) || !isLoginRole(login.role)) {
     return { ok: false, reason: 'login', keyId: row.id };
   }
@@ -234,9 +233,9 @@ function failKey(ipKey: string, token: string): string {
 }
 
 /** Whether the address may present this key again: its failures across
- *  every prefix (F3), then for this prefix (item 2). Peeked only: a failure
+ *  every prefix, then for this prefix. Peeked only: a failure
  *  is counted by countFailedKey. `ipKey` is `clientIpKey(req)`: an IPv6
- *  /64 is one address (M2 audit N1), so rotating addresses inside it buys
+ *  /64 is one address, so rotating addresses inside it buys
  *  nothing. The buckets live in the flood pool (lib/rate-limit.ts). */
 export function failedKeyBudget(ipKey: string, token: string): RateLimitResult {
   const address = rateLimitFloodPeek(`akey-fail-addr:${ipKey}`, FAILED_KEY_ADDRESS_RATE);
@@ -322,8 +321,7 @@ export type MintAccessKeyInput = {
 /** Mint a key. The plaintext is returned ONCE; only its hash is kept. Null
  *  when the login already holds `maxLive` live keys: the count and the
  *  insert run in one transaction under a per-login lock, so two creates at
- *  once cannot both pass the cap (M2 audit F7). (The per-login MCP switch
- *  that could refuse a mint went in workspaces W7b.) */
+ *  once cannot both pass the cap. */
 /**
  * Serialize what mints or ends one login's keys: a mint (its live-key cap),
  * and a bulk revoke (endLoginSessions with endKeys, the MCP switch turned

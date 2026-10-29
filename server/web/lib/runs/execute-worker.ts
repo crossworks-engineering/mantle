@@ -37,7 +37,7 @@ export async function executeWorkerInvoke(itemId: string): Promise<ExecuteItemOu
 
   // The run's planning agent must answer in Admin (or in no workspace), as
   // for a tool_call item (execute-item.ts): another workspace's agent would
-  // hand its work to a worker that reads past its scope (audit A3, B3).
+  // hand its work to a worker that reads past its scope.
   const [run] = await db
     .select({ ownerId: runsTable.ownerId, agentId: runsTable.agentId, loginId: runsTable.loginId })
     .from(runsTable)
@@ -54,7 +54,7 @@ export async function executeWorkerInvoke(itemId: string): Promise<ExecuteItemOu
   }
   const planner = run?.agentId ? await loadAgentGrant(run.ownerId, { id: run.agentId }) : null;
   if (run?.agentId && !planner) {
-    // The planning agent is gone: nothing runs on its behalf (audit C2), as
+    // The planning agent is gone: nothing runs on its behalf, as
     // for a tool_call item.
     const { actions } = await completeItem(db, {
       itemId: item.id,

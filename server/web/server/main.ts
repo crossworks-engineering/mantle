@@ -60,15 +60,14 @@ const { registerCanvasRenderer } = await import('@mantle/tools');
 const { renderCanvas } = await import('@mantle/tools/canvas-render');
 registerCanvasRenderer(renderCanvas);
 
-// The one gate (arch A3c fix round 2, M-A): every narrower registered, or
-// the process stops here at boot, not at its first request (every routed
-// request runs through the gate since A4 step 1). AWAITED like
-// the imports above (env first). gate-boot.test.ts pins this call in every
+// The one gate: every narrower registered, or the process stops here at
+// boot, not at its first request (every routed request runs through the
+// gate). AWAITED like the imports above (env first). gate-boot.test.ts pins this call in every
 // process entry.
 const { ensureGateReady } = await import('@mantle/tools/gate-narrowers');
 ensureGateReady();
 
-// One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts): an
+// One audit row for every tool write (@mantle/db call-audit.ts): an
 // assistant turn's, an app broker's, the dev console's, a login's own MCP
 // writes, with the request's ip and user agent. Off in detached dev (no local
 // database), as the route audit is.
@@ -96,7 +95,7 @@ if (isBootSmoke()) {
   await bootSmokeExit('web', [
     () => createApp(),
     async () => {
-      // Each module's policy export is the one its manifest entry read (S9).
+      // Each module's policy export is the one its manifest entry read.
       const { routeManifest } = await import('./route-manifest.gen');
       const { checkLoadedPolicy } = await import('./route-loader');
       for (const route of routeManifest) {
@@ -110,26 +109,25 @@ if (isBootSmoke()) {
   ]);
 }
 
-// Arch A2a: each boot task runs as system(boot:<task>).
+// Each boot task runs as system(boot:<task>).
 const { runAsSystem, openLoginWritePool, systemWork } = await import('@mantle/db');
-// Arch A2b2b: this process sends scoped login writes to the write role
-// (docs/actors.md; the connection ceiling counts its pool for each process
-// that opens it).
+// This process sends scoped login writes to the write role (docs/actors.md,
+// "The three routes to Postgres"; the connection ceiling counts its pool
+// for each process that opens it).
 openLoginWritePool();
 
-// A brain with no workspaces yet (a fresh install whose owner signed up
-// before this release, W5b1 audit M1): migrate it once. Skips a migrated
-// brain and one with clients (21.9) without a lock; no LLM work. Awaited
-// before the listener (arch A7): this release has no rule for a brain off
-// workspaces, so the boot refuses one (a box that reports "clients
-// present", or a switch that failed) and exits; a fresh install with no
-// owner yet serves its signup. A database the boot cannot read is not a
-// refusal: logged, as before. Detached dev has no database of its own: the
-// step runs as before, never awaited.
-// Then the authors' copies of their accepted items (W6b, plan S3): only the
-// missing ones, no LLM work, no extractor notify.
-// The boot's assistant attach is workspace system work (0307
-// a2: the SQL allowlist's system:boot:migrate-workspaces): systemWork.
+// A brain with no workspaces yet (an owner who signed up with no
+// workspaces made): migrate it once. Skips a migrated brain and one with
+// clients without a lock; no LLM work. Awaited before the listener: there
+// is no rule for a brain off workspaces, so the boot refuses one (a box
+// that reports "clients present", or a switch that failed) and exits; a
+// fresh install with no owner yet serves its signup. A database the boot
+// cannot read is not a refusal: logged. Detached dev has no database of
+// its own: the step runs, never awaited.
+// Then the authors' copies of their accepted items: only the missing ones,
+// no LLM work, no extractor notify.
+// The boot's assistant attach is workspace system work (the SQL
+// allowlist's system:boot:migrate-workspaces): systemWork.
 const workspacesStep = () =>
   systemWork(
     () =>
@@ -167,9 +165,9 @@ if (isDetachedDev()) {
   void snapshotCopies();
 }
 
-// Boot hook (was instrumentation.ts): bring an existing brain in line with the
-// system manifest on every image update, once the brain is known to be on
-// workspaces (arch A7: the reconcile has no rule for one that is not).
+// Boot hook: bring an existing brain in line with the system manifest on
+// every image update, once the brain is known to be on workspaces (the
+// reconcile has no rule for one that is not).
 // Fire-and-forget: never delays or blocks request serving; the reconcile
 // self-guards (production-only, provisioned-only, once per version,
 // best-effort).
@@ -180,7 +178,7 @@ void runAsSystem('boot:manifest-reconcile', () =>
     .catch((err) => bootLog.error('manifest reconcile failed:', err)),
 );
 
-// App table exports a restart left unsynced (apps plan D8): their debounce
+// App table exports a restart left unsynced: their debounce
 // timers died with the old process. The usual hash-gated sync, once.
 void runAsSystem('boot:app-table-exports', () =>
   import('@mantle/content/app-table-exports')
@@ -199,21 +197,20 @@ const hostname = env('HOST') || '0.0.0.0';
 // default @hono/node-server swaps `global.Response` for its own class when
 // serve() runs, AFTER our modules loaded: NextResponse (server/http-compat)
 // still extends the original, so every route's `if (user instanceof Response)
-// return user` was false for the 401/403 that getOwnerOr401 returns, and the
-// handler ran on with the refusal object as its "user". That let a member
-// login (and a revoked bearer) into admin handlers; only the ones that query
-// by `user.id` crashed. Found live on dev, 2026-09-26. Pinned by
+// return user` would be false for the 401/403 that getOwnerOr401 returns, and
+// the handler would run on with the refusal object as its "user": a member
+// login (or a revoked bearer) inside admin handlers. Pinned by
 // server-globals.test.ts.
 const server = serve({ fetch: app.fetch, port, hostname, overrideGlobalObjects: false }, (info) => {
   serverLog.info(`mantle server/web (hono) listening on http://${hostname}:${info.port}`);
 });
 
-// Compose sends SIGTERM on stop/update — close the listener, let in-flight
+// Compose sends SIGTERM on stop/update: close the listener, let in-flight
 // requests finish, and bail hard if something (an SSE stream) pins the process.
 // NOTE: signals only reach us via `pnpm exec tsx …` (the image CMD + worker
 // form); the `pnpm run` script form interposes an sh layer that swallows them.
-// The one shutdown helper (@mantle/std/shutdown, A10 #15): the listener
-// closes, and the deadline exits 0 after 5 s as before.
+// The one shutdown helper (@mantle/std/shutdown): the listener closes, and
+// the deadline exits 0 after 5 s.
 onShutdown({
   name: 'server',
   deadlineMs: 5000,
@@ -222,7 +219,7 @@ onShutdown({
 });
 
 // Next's server logged process-level failures and stayed up; bare node's
-// default is to CRASH on an unhandled rejection — and this app deliberately
+// default is to CRASH on an unhandled rejection, and this app deliberately
 // fire-and-forgets promises (view counters, audit rows, boot reconcile), so a
 // detached rejection must never take the web tier down. Mirrors server/api's
 // runtime guard. Uncaught exceptions log-and-continue too: with request errors

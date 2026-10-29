@@ -15,8 +15,7 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The ids are uuids: any other names nothing, the params gateway's one
- *  404 before the handler (lib/route-params.ts; the item gate answered it
- *  until the pre-check removal part 2). */
+ *  404 before the handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
@@ -37,7 +36,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const body = await readBody(req, Body);
   // A lost database file (AppDbMissingError): 409, reason 'db-missing', by
-  // the one table (A10 part 2).
+  // the one table.
   const app = await duplicateApp(user.id, id, { ...body, actor: 'owner' });
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
   return NextResponse.json({ app }, { status: 201 });

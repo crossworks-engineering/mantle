@@ -66,14 +66,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const tabId = url.searchParams.get('tab') ?? undefined;
 
   const publishedAbs = resolveStoragePath(row.storagePath);
-  // The draft the row points at (store brokers, A3b): THE resolver.
+  // The draft the row points at (store brokers): THE resolver.
   const draftAbs = draftAbsOf(row.draftPath);
   // A caller who may not edit the table reads the published file, whatever
   // it asks for (a member with Read, an Admin user with Read only).
   const file =
     wantDraft && row.draftOk === true && draftAbs && existsSync(draftAbs) ? draftAbs : publishedAbs;
-  // A tab that is not there (InputError) answers 400 by the one table (A10
-  // part 2); a read that failed is a fault, the opaque 500.
+  // A tab that is not there (InputError) answers 400 by the one table; a
+  // read that failed is a fault, the opaque 500.
   // Distinct values of one column — the option list a reference column's
   // editor offers (?distinct=<columnId>, optional ?prefix= typeahead).
   const distinct = url.searchParams.get('distinct');

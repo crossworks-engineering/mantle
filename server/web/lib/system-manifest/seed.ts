@@ -154,7 +154,7 @@ export async function seedManifestWorkers(
  *  null (nothing is paired, the anchor's). The backup's base URL is cleared
  *  too: configured_by covers both routes, and a null stamp must not vouch
  *  for a backup host some other login paired. With its host gone the backup
- *  is switched off (W7 integration fix 2): a backup left on would send its
+ *  is switched off: a backup left on would send its
  *  key to the provider's own host, a route nobody chose. */
 const MANIFEST_ROUTE_HOST = {
   baseUrl: null,
@@ -345,8 +345,7 @@ async function upsertAgent(
         description: def.description,
         role: def.role,
         // The manifest route is the provider's own host: a reset must not
-        // leave the manifest key paired with a stored base URL (W7 integration
-        // fix). With no base URL on either route nothing is paired, so the
+        // leave the manifest key paired with a stored base URL. With no base URL on either route nothing is paired, so the
         // configurer is the anchor's (null).
         ...MANIFEST_ROUTE_HOST,
         provider: 'openrouter',

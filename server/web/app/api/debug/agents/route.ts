@@ -9,7 +9,7 @@ export const policy = routePolicy({
 });
 
 /** GET /api/debug/agents: configured agents + the reflector's persona notes
- *  (the anchor login's only: other logins get none, W7 integration fix). */
+ *  (the anchor login's only: other logins get none). */
 export async function GET() {
   const user = ownerCaller();
   const [agents, personaNotes] = await Promise.all([

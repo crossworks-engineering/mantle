@@ -1,11 +1,10 @@
 /**
- * The author's read-only snapshot copies of accepted items (workspaces W6b,
- * plan S3 and 21.8 row 17). An accepted item is a brain item already: its
- * author read only the ACCEPTED version, redacted at its level
- * (member-accepted.ts). The spaces fold (0267) left those reads on the
- * accepted space_items rows; this makes the copy that replaces them, for
- * exactly the homes with space_item_homes.snapshot (an accepted item homed
- * in a private or Former user workspace, W5c contract), then archives the
+ * The author's read-only snapshot copies of accepted items. An accepted item
+ * is a brain item already: its author reads only the ACCEPTED version,
+ * redacted at its level (member-accepted.ts). Migration 0267 left those
+ * reads on the accepted space_items rows; this makes the copy that replaces
+ * them, for exactly the homes with space_item_homes.snapshot (an accepted
+ * item homed in a private or Former user workspace), then archives the
  * accepted rows away.
  *
  * Each copy: a new item of the same kind in that home (its only grant, Write
@@ -21,7 +20,7 @@
  * workspaces migration and by hand (pnpm maintain snapshot-copies). Never on
  * a cron or a trigger.
  *
- * One run at a time (W6b fix round 1, M4): the whole run holds a
+ * One run at a time: the whole run holds a
  * transaction-level advisory lock on its own connection, so the boot step
  * and the maintenance task never make the same copy twice (the second waits,
  * then finds every copy made). Each copy is stamped in its own insert
@@ -67,8 +66,7 @@ type HomeRow = {
 export async function makeSnapshotCopies(
   opts: { dryRun?: boolean } = {},
 ): Promise<SnapshotCopyReport> {
-  // The boot step and its script: never in a scope (A6b: systemWork, no
-  // exit).
+  // The boot step and its script: never in a scope (systemWork, no exit).
   return systemWork(
     () =>
       db.transaction(async (lock) => {
@@ -194,7 +192,7 @@ async function makeCopy(
   const { item, snap } = found;
   const title = item.title;
   return withCreateHome({ createWs: home, privateWs: null, quiet: true, stamp }, async () => {
-    // The one switch over an accepted item's kind (A10 #12).
+    // The one switch over an accepted item's kind.
     const made = forAcceptedKind<Found['item'], Promise<string | null>>(item, {
       page: async (page) =>
         (

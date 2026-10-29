@@ -24,13 +24,13 @@ type Store = { buckets: Map<string, Bucket>; lastSweepMs: number; keep?: true };
 const main: Store = { buckets: new Map(), lastSweepMs: 0 };
 /**
  * The buckets a stranger can mint at will: one per presented API key prefix
- * (the failed-key budgets). They live apart from `main` (M2 audit N1): a
+ * (the failed-key budgets). They live apart from `main`: a
  * flood of them fills and evicts only its own pool, never a live sign-in,
  * password or per-key budget.
  */
 const flood: Store = { buckets: new Map(), lastSweepMs: 0 };
 /**
- * Per-LOGIN budgets that must hold under any flood (final audit F2): the
+ * Per-LOGIN budgets that must hold under any flood: the
  * password re-entry budgets (making a key, OAuth consent). Their keys are
  * login ids, so the pool is bounded by the number of logins and needs no
  * eviction; a live bucket here is never dropped early.
@@ -52,9 +52,9 @@ const SCALE = envNum('MANTLE_RATE_LIMIT_SCALE');
 const MAX_BUCKETS = 10_000;
 /** The hard cap: past it the OLDEST buckets of that pool go, live or not. */
 const HARD_MAX_BUCKETS = 2 * MAX_BUCKETS;
-/** At most one full sweep a second (M2 audit F3): when the map is full of
- *  live buckets, a sweep on every new key scanned the whole map each time,
- *  so a flood of unique keys cost a full scan per request. */
+/** At most one full sweep a second: when the map is full of live buckets,
+ *  a sweep on every new key would scan the whole map each time, so a flood
+ *  of unique keys would cost a full scan per request. */
 const SWEEP_EVERY_MS = 1_000;
 
 /**
@@ -149,7 +149,7 @@ export function rateLimitPeek(
 /**
  * Give back one token taken from `key` in its current window. For a bucket
  * that must count an attempt BEFORE slow work (so parallel attempts cannot
- * all pass a peek: M2 audit N2) but should charge only the failures: take,
+ * all pass a peek) but should charge only the failures: take,
  * do the work, refund on success.
  */
 export function rateLimitRefund(key: string): void {
@@ -259,7 +259,7 @@ function ipv6Groups(ip: string): string[] | null {
 /**
  * The rate-limit key for an address. An IPv6 address counts by its /64: one
  * host is handed a whole /64, so keying by the full address would give a
- * caller 2^64 fresh buckets (client logins audit B2, B11). An IPv4 address,
+ * caller 2^64 fresh buckets. An IPv4 address,
  * and an IPv4-mapped IPv6 one, counts as itself. Anything else (`unknown`)
  * is returned unchanged.
  */

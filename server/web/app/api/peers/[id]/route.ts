@@ -29,7 +29,7 @@ const PatchBody = z
   .object({
     enabled: z.boolean().optional(),
     // Trimmed before the length check: a blank token is refused here, before
-    // the access write commits (fix round 6), not inside setOutboundToken.
+    // the access write commits, not inside setOutboundToken.
     outboundToken: z.string().trim().min(1).max(8192).optional(),
   })
   .extend(PeerAccessBody.shape);
@@ -41,17 +41,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { actsAs, writeEnabled, allowedRiskyTools } = input;
   const change = { actsAs, writeEnabled, allowedRiskyTools };
   // Checked before anything changes: a brain that acts as the owner is the
-  // owner's to bind, arm and keep armed (W6b fix round 3, M-1).
+  // owner's to bind, arm and keep armed.
   if (!user.actor.isOwner && peerChangeNeedsOwner(change, await peerBoundToOwner(user.id, id))) {
     return NextResponse.json({ error: PEER_OWNER_ONLY }, { status: 403 });
   }
   // The check above read the peer before the write: the owner may bind it
   // in between. A change the owner alone makes on a peer bound to it lands
-  // only while it is still not bound, in the write itself (fix round 4, L-4).
+  // only while it is still not bound, in the write itself.
   const guard = !user.actor.isOwner && peerChangeNeedsOwner(change, true);
   let touched = false;
   let inboundToken: string | null = null;
-  // The guarded write goes first (fix round 5, L-1): a refusal, or a bad
+  // The guarded write goes first: a refusal, or a bad
   // login to bind, then answers before anything else in the body is written.
   if (actsAs !== undefined || writeEnabled !== undefined || allowedRiskyTools !== undefined) {
     const bound = actsAs === undefined ? undefined : await resolvePeerActsAs(user.id, actsAs);
@@ -64,7 +64,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       ...(allowedRiskyTools !== undefined ? { allowedRiskyTools } : {}),
       // The owner binding a peer to itself becomes its maker; one moving
       // into that binding, or one someone else made, is re-keyed in the same
-      // write (fix round 4, L-1; fix round 5, M-1).
+      // write.
       ...(actsAs === 'owner' && user.actor.isOwner ? { adoptBy: user.actor.id } : {}),
       ...(guard ? { unlessBoundTo: user.id } : {}),
     });

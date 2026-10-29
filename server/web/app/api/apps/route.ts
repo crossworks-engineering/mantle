@@ -66,7 +66,7 @@ export async function POST(req: Request) {
   const login = ownerLoginCaller();
   const user = { id: login.brainId, actor: login.actor };
   const body = await readBody(req, CreateBody);
-  // A member's or a client's app (W6b fix round 1, M2): at team rules (the
+  // A member's or a client's app: at team rules (the
   // author ceiling) and its author named, as the member app tools make it.
   const admin = (await adminFacts(login)).admin;
   const app = await createApp(user.id, {

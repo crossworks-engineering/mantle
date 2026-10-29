@@ -62,8 +62,7 @@ export type TeamCheckCounts = {
    *  user), the former Team included. */
   sharedMemberModerators: number;
   /** Member-built apps (author_level 'team') with no live holder workspace
-   *  beyond Admin: they read nothing after the roll (audit M3,
-   *  appRunHolders); re-share each to a workspace to fix it. */
+   *  beyond Admin: they read nothing after the roll (appRunHolders); re-share each to a workspace to fix it. */
   memberAppsWithoutHolder: number;
 };
 

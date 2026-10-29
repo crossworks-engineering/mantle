@@ -1,19 +1,16 @@
 /**
  * Run one builtin tool for a /api/v1 route (lib/api-v1.ts) through dispatch
- * and the one gate (workspaces arch A5 step 4), as the owner on the `api`
- * path: the tool's declared policy and its preconditions, then the handler.
- * The HTTP gate has already answered the caller and the key's scope (A4),
- * so the call names the process caller of a route (apiV1Caller): no key or
+ * and the one gate, as the owner on the `api` path: the tool's declared
+ * policy and its preconditions, then the handler. The HTTP gate has
+ * already answered the caller and the key's scope, so the call names the process caller of a route (apiV1Caller): no key or
  * peer narrowing past what the request's own gate judged. A refusal (the
  * tool's, or a gate step's) is the tool's own teaching message, answered
  * as 400; but an item the edit check refuses (the library's
  * assertItemRight, or the database) goes on to app.onError as the edit
- * check's refusal, its 403 item-workspace or 404 (A5 step 4 fix round 2).
- * No HTTP item gate answers such a write first (plan v3.2 S11b took
- * itemWriteGate out): the route, or the tool, asks the item's right
- * itself. An error the handler or a check throws is thrown on, to
- * app.onError, which answers it as before the route ran through dispatch
- * (A5 step 4 fix round 1, M1): an edit check refusal its 403 or 404, a
+ * check's refusal, its 403 item-workspace or 404. No HTTP item gate
+ * answers such a write first: the route, or the tool, asks the item's
+ * right itself. An error the handler or a check throws is thrown on, to
+ * app.onError: an edit check refusal its 403 or 404, a
  * database or any other error the opaque 500, never its text
  * (api-v1-builtin.test.ts).
  */

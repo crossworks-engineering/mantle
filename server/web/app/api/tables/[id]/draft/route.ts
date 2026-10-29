@@ -38,9 +38,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   }
-  // Truncation guard (plan §4): a whole-doc autosave past the materialize
+  // Truncation guard: a whole-doc autosave past the materialize
   // window is refused loudly (TableTooLargeError, 400), as is a whole-grid save
-  // over a workbook (InputError), by the one table (A10 part 2): the op route
+  // over a workbook (InputError), by the one table: the op route
   // is the write path at that size.
   const result = await saveTableDraft(user.id, id, parsed.data.data as TableDoc, {
     ...(parsed.data.if_rev !== undefined ? { ifRev: parsed.data.if_rev } : {}),

@@ -53,7 +53,7 @@ export async function GET(req: Request) {
   const sort: DrawSort = SORTS.includes(sortParam as DrawSort) ? (sortParam as DrawSort) : 'edited';
 
   // `?state=brain|private|all` adds the caller's own private drawings
-  // (lib/admin-private-rows; default brain, the list as before).
+  // (lib/admin-private-rows; default brain).
   const [listed, tags] = await Promise.all([
     pageWithPrivate({
       user,

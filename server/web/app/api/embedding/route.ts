@@ -98,8 +98,7 @@ export async function POST(req: Request) {
   };
   // A vault key (the key id, or the provider's key a route without one falls
   // back to) with a base URL of the writer's choosing is the keys area's,
-  // and the config records who paired them (W7a fix rounds 4 and 5,
-  // lib/model-route-pair.ts).
+  // and the config records who paired them (lib/model-route-pair.ts).
   const stored = await getEmbeddingConfig(user.id);
   const keysRefused = await modelRoutesRefusal(user, stored, routes, EMBEDDING_ROUTES);
   if (keysRefused) return NextResponse.json({ ok: false, error: keysRefused }, { status: 403 });

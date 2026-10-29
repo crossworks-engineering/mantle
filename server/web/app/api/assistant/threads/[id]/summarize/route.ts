@@ -37,7 +37,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'archived chat not found' }, { status: 404 });
   }
   // A summary is a model call: metered for a login that is not an Admin
-  // user (W7c fix round 1, L2). One that exists already costs nothing.
+  // user. One that exists already costs nothing.
   if (!thread.summaryNodeId) {
     const limited = await claimMemberChatWork(login, 'summary');
     if (limited) return limited;

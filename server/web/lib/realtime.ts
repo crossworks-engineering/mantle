@@ -41,7 +41,7 @@ export type ConversationChange = {
   /** Row status (migration 0156): a streamed turn notifies once 'pending' and
    *  once 'complete' | 'failed'. Absent from the pre-0156 payload. */
   status?: 'pending' | 'complete' | 'failed';
-  /** The login whose thread changed (0269, W7c): a stream tells each login
+  /** The login whose thread changed (0269): a stream tells each login
    *  about its own thread only. Absent from the pre-0269 payload. */
   loginId?: string | null;
 };
@@ -142,7 +142,7 @@ async function ensureListening(): Promise<void> {
     // appears) and `node_indexed` (the extractor finished — summary + embedding
     // landed). Both fan out the same typed change; the second is what makes a
     // freshly-summarised file repaint without a manual refresh.
-    // Arch A2a: the lookup is the bridge's own work, never the login of the
+    // The lookup is the bridge's own work, never the login of the
     // request that happened to start the bridge.
     const subIngested = await sql.listen('node_ingested', (nodeId) => {
       void runAsSystem('listen:realtime', () => fanout(nodeId));
@@ -158,10 +158,10 @@ async function ensureListening(): Promise<void> {
       broadcast({ ownerId, type: 'pending_tool_call', id: '' });
     });
     // "Needs you" (migration 0186 triggers): a provider outage started or
-    // cleared (0230; review and team requests went in W5c, their triggers
-    // still fire). Owner-id payload, like pending_changed. It reaches admin
+    // cleared (0230; the old review and team request triggers may still
+    // fire). Owner-id payload, like pending_changed. It reaches admin
     // sessions only: /api/realtime is the owner stream (members are refused
-    // there), and the member stream carries no events since W8d. The client
+    // there), and the member stream carries no events. The client
     // refetches /api/embedding (its provider alerts).
     const subNeedsYou = await sql.listen(NEEDS_YOU_CHANGED_CHANNEL, (ownerId) => {
       if (ownerId) broadcast({ ownerId, type: NEEDS_YOU_REALTIME_TYPE, id: '' });
@@ -196,7 +196,7 @@ async function ensureListening(): Promise<void> {
         /* malformed payload: drop it rather than crash the listener */
       }
     });
-    // No comment events: the brain has no comments any more (2026-10-09).
+    // No comment events: the brain has no comments.
     // The node_comments trigger may still NOTIFY on its channel; nobody
     // listens, so an older UI's comment views are never told to refetch.
     // Conversation turns (any channel) — payload is JSON {ownerId, agentId,

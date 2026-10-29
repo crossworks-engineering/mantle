@@ -40,7 +40,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'archived chat not found' }, { status: 404 });
   }
   // Continuing archives the current chat (a summary) and may summarise this
-  // one: metered for a login that is not an Admin user (W7c fix round 1, L2).
+  // one: metered for a login that is not an Admin user.
   const limited = await claimMemberChatWork(login, 'summary');
   if (limited) return limited;
   if (!thread.summaryNodeId) {

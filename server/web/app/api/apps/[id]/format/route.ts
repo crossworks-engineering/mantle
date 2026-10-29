@@ -15,8 +15,7 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The ids are uuids: any other names nothing, the params gateway's one
- *  404 before the handler (lib/route-params.ts; the item gate answered it
- *  until the pre-check removal part 2). */
+ *  404 before the handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
@@ -54,9 +53,8 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   ownerCaller();
   const { id } = await ctx.params;
-  // The caller's edit of the app (the pre-check removal part 2: the HTTP
-  // gate asked it): this route formats the text it is sent and touches no
-  // item, but answers only a login that may edit the app, as before.
+  // The caller's edit of the app: this route formats the text it is sent
+  // and touches no item, but answers only a login that may edit the app.
   await assertItemRight(id, 'edit');
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });

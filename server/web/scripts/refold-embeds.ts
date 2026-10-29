@@ -1,7 +1,6 @@
 /**
  * Re-fold and re-chunk the pages, notes and drawings that embed other items
- * (workspaces plan 5.3, phase W2; lib/maintenance/refold-embeds.ts has the
- * rule). Hand-run only: never wire it to a cron or a trigger.
+ * (lib/maintenance/refold-embeds.ts has the rule). Hand-run only: never wire it to a cron or a trigger.
  *
  *   pnpm maintain refold-embeds                    dry run: counts only
  *   pnpm maintain refold-embeds --go               rewrite text, chunks, vectors

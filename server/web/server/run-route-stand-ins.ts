@@ -1,6 +1,6 @@
 /**
  * Stand-ins for a route test that runs with no database through runRoute
- * (run-route.ts; A4 step 3a). The login rows the pipeline reads come from
+ * (run-route.ts). The login rows the pipeline reads come from
  * here, so the gate finds a stood-in login exactly as it finds a real one
  * (the same loadLoginRow, seeding the login's workspaces for the request
  * scope). A test file wires them in with a vi.mock factory:

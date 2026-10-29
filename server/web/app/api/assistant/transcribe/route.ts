@@ -14,9 +14,8 @@
  * Failed) with a hint so the client surfaces the right call to
  * action.
  *
- * Any login (W7c): a member transcribes for its own chat, at most 6 clips a
- * minute (the turn route's rate), each clip a slot of its daily cap (W7c fix
- * round 1, L2).
+ * Any login: a member transcribes for its own chat, at most 6 clips a
+ * minute (the turn route's rate), each clip a slot of its daily cap.
  */
 
 import { NextResponse } from '@/server/http-compat';
@@ -66,7 +65,7 @@ export async function POST(req: Request) {
   // The brain's STT worker: every scope reads ai_workers (no row rule:
   // configuration, as the turn loop reads it). Its key is read by
   // @mantle/api-keys on the system pool itself, the one module that holds
-  // the sealed keys (A6b: both left the scope by 'rule-in-query' before).
+  // the sealed keys.
   const worker = await getDefaultWorker(login.ownerId, 'stt');
   if (!worker?.apiKeyId) {
     return NextResponse.json(
@@ -95,7 +94,7 @@ export async function POST(req: Request) {
     );
   }
   // Each clip is a model call: a slot of the daily cap for a login that is
-  // not an Admin user (W7c fix round 1, L2).
+  // not an Admin user.
   const limited = await claimMemberChatWork(login, 'transcribe');
   if (limited) return limited;
 
@@ -127,7 +126,7 @@ export async function POST(req: Request) {
     // short", quota exceeded, etc.) without having to special-case
     // its own enumeration of failure modes. That is for an Admin user,
     // who set the provider up; a member or a client hears a fixed
-    // sentence and the detail stays in the log (fix round 1, L6).
+    // sentence and the detail stays in the log.
     return NextResponse.json(
       { error: (await chatAdmin(login)) ? msg : VOICE_FAILED_MESSAGE },
       { status: 422 },

@@ -290,10 +290,10 @@ async function main() {
   // Disable the summarize trigger for the insert burst (catalog-level, all
   // sessions) so the backfill doesn't kick off summarization mid-run; re-enable
   // in finally. If this process is hard-killed between disable and enable, the
-  // trigger stays disabled — re-enable manually with:
+  // trigger stays disabled; re-enable manually with:
   //   ALTER TABLE assistant_messages ENABLE TRIGGER assistant_messages_summarize_due_trg;
   // DDL, so on the migrator's connection (executeAsMigrator): the runtime
-  // role (MANTLE_DB_RUNTIME_ROLE, arch A9) owns no table and cannot.
+  // role (MANTLE_DB_RUNTIME_ROLE) owns no table and cannot.
   let disabled = false;
   try {
     if (toInsert.length > 0) {

@@ -15,8 +15,8 @@ import { countRateFailure } from '@/lib/route-limits';
  *
  * Brain-wide, only FAILED codes count (a preview's 404, an accept's 401), so
  * honest invitees never spend the budget and a handful of addresses cannot
- * lock them out (final audit F31: at 60 requests a minute across the brain,
- * six addresses did). The brain-wide cap is a guard against a distributed
+ * lock them out (were every request counted, six addresses at their full
+ * rate would). The brain-wide cap is a guard against a distributed
  * flood, not against guessing: an invite code carries about 92 bits, so no
  * rate of guesses finds one. It trips only when at least 12 addresses (the
  * accept) or 20 (the preview) keep failing at their full per-IP rate within

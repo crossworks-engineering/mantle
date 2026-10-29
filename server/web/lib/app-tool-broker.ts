@@ -1,11 +1,11 @@
 /**
- * The one app tool broker (A10 #9; docs/request-plumbing.md, "App tool
- * broker"): a running app's host.tools.call(), for every way an app runs.
- * Three routes take a call, and each is a config of runAppToolBroker:
+ * The one app tool broker (docs/request-plumbing.md, "App tool broker"):
+ * a running app's host.tools.call(), for every way an app runs. Three
+ * routes take a call, and each is a config of runAppToolBroker:
  *
  *  - owner:   POST /api/apps/:id/tool-broker, an Admin user;
  *  - member:  the same route, a member login (lib/app-runner.ts
- *             memberToolBroker, workspaces W7e);
+ *             memberToolBroker);
  *  - contact: POST /s/:token/tool-broker, a contact share past its code
  *             gate (an open link gets no tools: the route refuses it first).
  *
@@ -23,7 +23,7 @@
  *     (appToolRefusal);
  *  4. the owner's confirmation, at admin rules only: a tool that needs the
  *     owner's Yes answers 409 `reason: 'confirm'` with a ticket for that
- *     exact call, and runs once the host sends it back (apps audit S1). The
+ *     exact call, and runs once the host sends it back. The
  *     member's and the contact's verdicts refuse such a tool outright;
  *  5. the dispatch, through the one gate as the app's broker
  *     (appBrokerCaller), in the run's scope: the owner's web as system work
@@ -162,15 +162,15 @@ function runOf(
       verdict: () => contactAppToolVerdict(config.ownerId, declared, slug),
       confirm: false,
       surface: { kind: 'contact', contactId: share.contactId, shareId: share.id },
-      // A link reads no workspace, only what it serves (plan 8.1, R6),
-      // never a snapshot copy (W6b fix round 3, L-1).
+      // A link reads no workspace, only what it serves, never a
+      // snapshot copy.
       actsFor: async () => ({ link: { served: [...(await served())] } }),
     };
   }
   // The owner's run: the rules the app's holders and its author allow (a
   // member-built app, or one a workspace other than Admin holds, runs the
-  // team rules for an admin too, plan R2). A member's run: the team rules,
-  // whatever the app's author (R2).
+  // team rules for an admin too). A member's run: the team rules, whatever
+  // the app's author.
   const level =
     config.via === 'owner'
       ? appToolLevel('admin', app.toolRules, app.authorLevel)
@@ -282,7 +282,7 @@ export async function runAppToolBroker(
     logCall({ ...tagged, refused: verdict.reason }, false);
     logError(verdict.reason, verdict.status);
     // A missing tool 404; every other refusal the gate's 403, in the
-    // verdict's words (A5 step 3b).
+    // verdict's words.
     const refused = await appToolRefusal(run.rules, slug, verdict);
     return NextResponse.json({ ok: false, error: refused.error }, { status: refused.status });
   }
@@ -342,10 +342,10 @@ export async function runAppToolBroker(
     return NextResponse.json({ ok: false, error: tableRefusal }, { status: 403 });
   }
   // An outside call names its kind, so the log shows which calls reached
-  // outside the brain; a write keeps its input too (M2 audit, low 4); a
+  // outside the brain; a write keeps its input too; a
   // Table write names its Table and its row count.
   logCall({ ...tagged, ...outsideCallLogDetail(verdict, input, tableArg) }, true);
-  // Through the one gate as the app's broker (A5 step 3b).
+  // Through the one gate as the app's broker.
   const dispatch = () =>
     dispatchTool(verdict.tool, input, {
       ownerId: config.ownerId,

@@ -8,9 +8,9 @@
  * unauthenticated/headless push on a single-user box use `pnpm apps:push`, which
  * talks to the content layer directly (owner resolved at boot).
  *
- * Everything is checked BEFORE anything is written (apps audit G6): the tool
- * slugs, and the schema on a trial copy of the database. A bad slug or schema
- * used to leave a half-made app behind. The name and dress fields follow the
+ * Everything is checked BEFORE anything is written: the tool slugs, and the
+ * schema on a trial copy of the database, so a bad slug or schema never
+ * leaves a half-made app behind. The name and dress fields follow the
  * create route's rules (lib/app-meta.ts). An update first takes a snapshot of
  * the app (`pre_import`: the code, and the data when the import brings a
  * schema), so an import over a working app can be undone.
@@ -106,10 +106,10 @@ export async function POST(req: Request) {
     }
   }
 
-  // A new app's code is written next, which asks manage of the app (D4):
-  // asked of its create home before it is made, so a login that may
-  // create there but not manage is refused with nothing made (F4 fix round
-  // 4, L-b; before: the app made, then its draft refused).
+  // A new app's code is written next, which asks manage of the app
+  // (docs/actors.md, "Who may do what"): asked of its create home before it
+  // is made, so a login that may create there but not manage is refused
+  // with nothing made, never left with an app whose draft it may not write.
   if (!b.appId) await assertNewAppCodeRight(user.id);
 
   // ── create, or keep what an update replaces ──
@@ -135,14 +135,12 @@ export async function POST(req: Request) {
     });
   } else {
     // The data rides along only when the import changes the schema (the one
-    // part of an import that reaches the data); every push copying the
-    // database filled the disk (apps audit 2026-10-02, item 11). A lost live
-    // file keeps the code (item 4).
+    // part of an import that reaches the data); copying the database on
+    // every push fills the disk. A lost live file keeps the code.
     // An update writes the app's code (its draft, manifest, schema): manage
-    // of the app (D4), asked by the one door before this first write (F4
-    // fix rounds 2 and 3: the route names no :id, so no gate asks it; the
-    // database refused the code after the snapshot had committed, a
-    // partial import).
+    // of the app, asked by the one door before this first write: the route
+    // names no :id, so no gate asks it, and a refusal by the database after
+    // the snapshot committed would leave a partial import.
     await snapshotBeforeCodeChange(user.id, appId, {
       trigger: 'pre_import',
       actor: 'owner',

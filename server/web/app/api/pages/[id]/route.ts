@@ -10,8 +10,8 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
- *  handler (lib/route-params.ts). Since the pre-check removal part 2 the
- *  item gate no longer answers a bad id here (docs/actors.md). */
+ *  handler (lib/route-params.ts). The item gate does not answer a bad id
+ *  here. */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
@@ -38,10 +38,8 @@ const PatchBody = z.object({
   tags: z.array(z.string().max(40)).max(20).optional(),
   visibility: z.enum(['private', 'public']).optional(),
   width: z.enum(['narrow', 'wide']).optional(),
-  // Accepted and ignored since A10 #7. It once skipped the re-index of a doc
-  // written here, pointing at a POST .../reindex that never existed, so the
-  // page's index stayed on the old doc. No client sends it (the editor
-  // saves drafts and commits); a doc written here is indexed like a commit.
+  // Accepted and ignored. No client sends it (the editor saves drafts and
+  // commits); a doc written here is indexed like a commit.
   reindex: z.boolean().optional(),
 });
 
@@ -59,10 +57,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 /**
- * The owner is read at the read (ownerCallerAtRead, A4 hand batch B):
- * PATCH /api/v1/pages/:id runs this handler after it holds an API key to
- * its rules (route file of /api/v1/pages/:id), so the owner's answer, its
- * item check and its audit row, comes after those, as the guard did.
+ * The owner is read at the read (ownerCallerAtRead): PATCH
+ * /api/v1/pages/:id runs this handler after it holds an API key to its
+ * rules (route file of /api/v1/pages/:id), so the owner's answer, its item
+ * check and its audit row, comes after those.
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await ownerCallerAtRead();

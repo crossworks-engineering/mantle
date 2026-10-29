@@ -1,10 +1,9 @@
 /**
- * The public routes that read a session themselves, for the role sweeps
- * (client logins audit A4). The sweeps drive every manifest route with a
- * signed cookie, but a route under PUBLIC_PATHS has no gate in front of it,
- * so the sweeps skipped them all, and with them every route that reads the
- * caller's session on its own (/api/auth, /api/oauth). The client refusals
- * in change-password and the MCP consent page were tested nowhere.
+ * The public routes that read a session themselves, for the role sweeps.
+ * The sweeps drive every manifest route with a signed cookie, but a route
+ * under PUBLIC_PATHS has no gate in front of it, so the sweeps would skip
+ * them all, and with them every route that reads the caller's session on
+ * its own (/api/auth, /api/oauth).
  *
  * Each such route is listed here with an explicit answer per role, and the
  * sweeps drive each one (role-sweep: an unknown role, and a row still marked
@@ -199,8 +198,8 @@ export const RENDER_PAGES: PublicSessionRoute[] = [
 
 /** A call in a route's source that reads the caller's session or login. A
  *  public route whose source matches must be in PUBLIC_SESSION_ROUTES. The
- *  readers of the login a public row reads (A4 hand batch B:
- *  publicLoginItself, cookieUpgradeCaller) are among them. */
+ *  readers of the login a public row reads (publicLoginItself,
+ *  cookieUpgradeCaller) are among them. */
 export const SESSION_READER_RE =
   /\b(getLoginOr401|getOwnerOr401\w*|getSessionUser\w*|getMemberOr401|resolveLogin|requireOwner\w*|handleOwnerSso|getOwnerForAsset|renderCaller|verifyMobileToken|mobileTokenJti|handleTokenLogin|publicLoginItself|cookieUpgradeCaller)\b/;
 

@@ -115,8 +115,8 @@ export async function POST(req: Request) {
     body,
   };
   // A request that resolves a vault ref sends that key to a URL the caller
-  // picks: that is the keys area's, not the settings area's (W7a fix round
-  // 4, @mantle/tools secret-ref-gate.ts). The anchor always may.
+  // picks: that is the keys area's, not the settings area's (@mantle/tools
+  // secret-ref-gate.ts). The anchor always may.
   const refs = collectSecretRefs(handler);
   if (refs.length > 0) {
     const refused = await vaultPairRefusalFor(user);

@@ -143,7 +143,7 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     const r = await reapDeviceTokens();
     return r.deleted === 0 ? 'nothing to reap' : `deleted ${r.deleted} device token row(s)`;
   },
-  // Client tier audit I4: app access log rows older than 90 days.
+  // App access log rows older than 90 days.
   // Contact shares (0214): the contact share trail, same 90 days.
   'app-access-log-reap': async () => {
     const r = await reapAppAccessLog();
@@ -161,20 +161,20 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
       ? 'nothing to purge'
       : `purged ${r.apps} deleted app(s), the history of ${t.tables} deleted table(s), ${left} leftover work file(s)`;
   },
-  // Arch A3b: the old store revisions no row points at. A store a hard
-  // stop stopped fails the run, so the history shows it (fix round 1); a
-  // store a restore holds is a done run that says so (fix round 3).
+  // The old store revisions no row points at. A store a hard stop stopped
+  // fails the run, so the history shows it; a store a restore holds is a
+  // done run that says so.
   'store-sweep': async () => {
     const reports = await sweepStores();
     const line = summariseStoreSweep(reports);
     if (reports.some((r) => r.aborted)) throw new Error(line);
     return line;
   },
-  // W8b fix round 1: the staging files a crash left beside a file create.
+  // The staging files a crash left beside a file create.
   'files-staged-reap': async () => summariseFilesStagedReap(await runFilesStagedReap()),
-  // Arch A2a: actor check miss rows older than 14 days.
+  // Actor check miss rows older than 14 days.
   'actor-misses-reap': async () => summariseActorMissesReap(await reapActorMisses()),
-  // Journal v3 J8: MCP call log rows older than 90 days.
+  // MCP call log rows older than 90 days.
   'mcp-calls-reap': async () => summariseMcpCallsReap(await reapMcpCalls()),
 };
 

@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   const agent = await resolveChatAgentToWrite(login, slug);
   if (!agent) return NextResponse.json({ error: 'no chat agent' }, { status: 404 });
   // Archiving summarises the chat (one model call): metered for a login
-  // that is not an Admin user (W7c fix round 1, L2).
+  // that is not an Admin user.
   const limited = await claimMemberChatWork(login, 'summary');
   if (limited) return limited;
   return archiveResponse({

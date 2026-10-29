@@ -143,7 +143,7 @@ async function queryActivity(
 export async function listActivity(
   userId: string,
   /** The signed-in login, null for the brain owner: only the traces it may
-   *  read are listed (traceListedFor, W7 integration fix 3, L2). */
+   *  read are listed (traceListedFor). */
   reader: string | null,
   opts: {
     sinceHours?: number;
@@ -272,7 +272,7 @@ async function reapOnce(userId: string, cutoff: Date): Promise<number> {
  *  the brain), and recent failures. Reconciles orphaned runs first so the
  *  "active" list reflects reality. `reader`: the signed-in login, null for
  *  the brain owner: only the traces it may read are listed (traceListedFor,
- *  as listActivity; W7 integration fix 4, L2). */
+ *  as listActivity). */
 export async function getLiveActivity(
   userId: string,
   reader: string | null,

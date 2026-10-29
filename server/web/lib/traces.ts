@@ -33,7 +33,7 @@ export type {
 export { formatMicroUsd, formatDuration } from '@mantle/client-types/traces-format';
 
 /**
- * The traces a list shows `reader` (W7 integration fix 3, L2), traceReadable's
+ * The traces a list shows `reader`, traceReadable's
  * rule as a WHERE on the login a trace is stamped with: another login sees
  * the turns that answered it; the brain owner (`reader` null or the owner id)
  * its own and the system's (no login), never another login's.
@@ -172,7 +172,7 @@ async function traceTurnLogin(ownerId: string, traceId: string): Promise<string 
 
 /**
  * Whether `reader` (the signed-in login; null or the owner id for the brain
- * owner) may read trace `traceId` (W7 integration fix 2, H2): each user
+ * owner) may read trace `traceId`: each user
  * reads only their own turns. Another login reads only the traces of turns
  * it was answered in; the brain owner reads its own and the system's
  * (no login), never another login's.

@@ -1,6 +1,5 @@
 /**
- * Remove the staging files a crash left beside a file create (W8b fix round
- * 1): the CLI face of the `files-staged-reap` maintenance sweep. Only names
+ * Remove the staging files a crash left beside a file create: the CLI face of the `files-staged-reap` maintenance sweep. Only names
  * of the form `.<uuid>.staged.tmp`, an hour old or more, under the files
  * root; never a symlink, a dot folder, or the app, table, spaces or sandbox
  * stores. The rule lives in @mantle/files (sweepStagedLeftovers), shared by

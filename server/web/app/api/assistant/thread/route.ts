@@ -44,7 +44,7 @@ export async function GET(req: Request) {
     listChatAgents(login),
     resolveChatAgent(login, slug),
     // The login's own assigned assistant: agents of its workspaces (or none),
-    // read in its scope (A6b: on the system pool before, 'rule-in-query').
+    // read in its scope.
     admin ? getAssignedAgentSummary(login.ownerId, login.loginId) : null,
   ]);
   const open = agent ? await openChatThread(login.ownerId, agent.id, login.loginId) : null;
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
       : [],
     // The header shows the active agent's level badge (an Admin user's view).
     // Counted over every login's turns by its definer, in the scope
-    // (mantle_agent_experience, 0293; A6b: on the system pool before).
+    // (mantle_agent_experience, 0293).
     agent && admin ? getAgentExperience(login.ownerId, agent.id) : null,
     open ? chatThreadRow(login.ownerId, open) : null,
   ]);
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
 
 /** An Admin user's bundle keeps the full agent row it always had. */
 /** Persona notes are learned from the anchor's own thread: the anchor
- *  login's only, any other login gets none (W7 integration fix). */
+ *  login's only, any other login gets none. */
 function notesForLogin<T extends { personaNotes?: unknown }>(login: ChatCaller, a: T): T {
   return login.loginId === login.ownerId ? a : { ...a, personaNotes: [] };
 }

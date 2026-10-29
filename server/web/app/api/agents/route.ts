@@ -110,23 +110,23 @@ export async function POST(req: Request) {
     const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
-  // A key with a base URL of the writer's choosing is the keys area's (W7a
-  // fix round 4, lib/model-route-pair.ts).
+  // A key with a base URL of the writer's choosing is the keys area's
+  // (lib/model-route-pair.ts).
   const keysRefused = await modelRoutesRefusal(user, null, parsed.data, AGENT_ROUTES);
   if (keysRefused) return NextResponse.json({ error: keysRefused }, { status: 403 });
   // A slug or name taken answers 409 with this route's own text
   // (conflictOnUnique, a ConflictError); anything else answers by the one
-  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  // table: a domain error its status, a fault the opaque 500.
   return conflictOnUnique(`An agent with slug "${parsed.data.slug}" already exists.`, async () => {
-    // A key id the vault has no key for is the caller's 400 (A10 lows).
+    // A key id the vault has no key for is the caller's 400.
     const row = await inputOnMissingRef(ROUTE_KEY_REFS.agents, () =>
       createAgent(user.id, {
         ...parsed.data,
         ...modelRoutesStamp(user, null, parsed.data, AGENT_ROUTES),
       }),
     );
-    // A heartbeat already bound to this slug now runs this prompt (W7a fix
-    // round 4, @mantle/tools heartbeat-maker.ts).
+    // A heartbeat already bound to this slug runs this prompt from now on
+    // (@mantle/tools heartbeat-maker.ts).
     await restampHeartbeatMakers(user.id, toolMakerFor(user), { agentSlug: row.slug });
     return NextResponse.json({ agent: agentForReader(user, row) });
   });

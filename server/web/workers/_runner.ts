@@ -49,7 +49,7 @@ function databaseUrl(): string {
 }
 
 /**
- * Arch A2a (plan 4.3): the worker runs as system(worker:<name>), bound once
+ * The worker runs as system(worker:<name>), bound once
  * here; what setup starts (its queue handlers, timers, watchers) carries it.
  * A job done for a login binds that login itself. Exported for its test.
  */
@@ -75,7 +75,7 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
    */
   const keepAlive = setInterval(() => {}, 1 << 30);
 
-  // The one shutdown helper (@mantle/std/shutdown, A10 #15): a second
+  // The one shutdown helper (@mantle/std/shutdown): a second
   // signal must not race the first, and a teardown past the deadline exits 1.
   onShutdown({
     name,
@@ -92,7 +92,7 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
     log(name).error('unhandledRejection (kept alive):', reason);
   });
 
-  // The one gate (arch A3c fix round 2, M-A): every narrower registered
+  // The one gate: every narrower registered
   // before the worker starts, or it fails to start (ensureGateReady throws;
   // gate-boot.test.ts).
   startWorkerAs(name, async () => {
@@ -100,7 +100,7 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
     // Boot smoke (scripts/boot-smoke.mjs): the worker's imports linked and the
     // gate is ready; exit 0 before the heartbeat, a pool or a queue starts.
     if (isBootSmoke()) await bootSmokeExit(`worker:${name}`);
-    // One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts).
+    // One audit row for every tool write (@mantle/db call-audit.ts).
     startCallAudit();
     await start();
   })

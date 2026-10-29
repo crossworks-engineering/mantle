@@ -75,8 +75,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { params, ...rest } = body;
   // A vault key (the key id, or the provider's key a route without one falls
   // back to) with a base URL of the writer's choosing is the keys area's,
-  // and the row records who paired them (W7a fix rounds 4 and 5,
-  // lib/model-route-pair.ts).
+  // and the row records who paired them (lib/model-route-pair.ts).
   let configuredBy: Pick<Partial<AiWorker>, 'configuredBy'> = {};
   if (modelRoutesTouched(rest, AGENT_ROUTES)) {
     const stored = await getAiWorker(user.id, idParsed.data.id);
@@ -102,7 +101,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       if (issue) return NextResponse.json({ error: issue }, { status: 400 });
     }
   }
-  // A key id the vault has no key for is the caller's 400 (A10 lows).
+  // A key id the vault has no key for is the caller's 400.
   const worker = await inputOnMissingRef(ROUTE_KEY_REFS.aiWorkers, () =>
     updateAiWorker(user.id, idParsed.data.id, {
       ...rest,

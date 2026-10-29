@@ -21,7 +21,7 @@ export const policy = routePolicy({
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   // The asset owner (ownerAssetCaller: the gate's answer of
-  // getOwnerForAsset, A4 hand batch B): this download URL is an <a href>/<img>
+  // getOwnerForAsset): this download URL is an <a href>/<img>
   // src that can't carry a bearer, so a detached client authenticates via the
   // `?at=` token.
   const user = ownerAssetCaller();

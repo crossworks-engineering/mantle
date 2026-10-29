@@ -1,7 +1,5 @@
 /**
- * Cache-Control, from one place (A10 #15). Routes set the header by hand in
- * about fifty files, in a dozen spellings, and most /api answers set none
- * at all. Now:
+ * Cache-Control, from one place:
  *
  *  - every /api answer that names no Cache-Control answers `no-store`: the
  *    gate's default (apiCacheDefault, server/middleware/gate.ts), so a

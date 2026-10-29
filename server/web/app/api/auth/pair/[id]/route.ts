@@ -14,11 +14,10 @@ const Params = z.object({ id: z.string().uuid() });
 /**
  * GET /api/auth/pair/[id] — what became of a code this login issued, for the
  * web page's poll: `{ status: 'pending' | 'claimed' | 'expired', deviceLabel }`.
- * A signed-in admin or member (W7e); another login's code reads as expired.
+ * A signed-in admin or member; another login's code reads as expired.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  // A public row: the login the pipeline answers at this read (A4 hand
-  // batch B).
+  // A public row: the login the pipeline answers at this read.
   const login = await publicLoginItself();
   if (!login) return unauthorizedRefusal();
   const parsed = Params.safeParse(await ctx.params);

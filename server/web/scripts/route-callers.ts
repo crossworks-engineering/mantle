@@ -1,13 +1,13 @@
 /**
- * Which handlers of a route file read the caller the HTTP pipeline answers
- * (arch A4 step 3b), and which kind: the gate's step that runs a guard's
+ * Which handlers of a route file read the caller the HTTP pipeline answers,
+ * and which kind: the gate's step that runs a guard's
  * answer once, from the request's ROUTE_POLICY row, before the handler,
  * and refuses with it (lib/auth/session.ts answerRouteCaller). A handler
  * reads it with a reader instead of calling a session guard: ownerCaller()
  * (and its two projections) for the owner guard, memberCaller() for the
  * member guard, anyLoginCaller() for the any-login guard, chatCaller()
- * for the chat guard (A4 step 3b part 5; the one list,
- * eslint-rules/session-guards.mjs READER_ANSWERS).
+ * for the chat guard (the one list, eslint-rules/session-guards.mjs
+ * READER_ANSWERS).
  *
  * The route manifest generator (gen-route-manifest.ts) asks this of every
  * route file, and the manifest carries the answer (`reads`, each method to
@@ -32,7 +32,7 @@
  *  - a handler that runs code before it reads (the gate answers before the
  *    handler, so whatever the handler answered before its guard would come
  *    after the gate's refusal), a parameter's default value included, but
- *    for a kind answered at the read (KINDS_AT_READ, A4 hand batch B), and
+ *    for a kind answered at the read (KINDS_AT_READ), and
  *    a handler that wraps a reading handler (another route file's, or one
  *    of its own file: POST's `return GET(req)`, which reads as GET does)
  *    with code before the call (the /api/v1 files: a key's 404 before the
@@ -51,8 +51,8 @@
  * under app/api imports ownerCaller, by its own name (ESLint,
  * eslint-rules/owner-caller-imports.mjs).
  *
- * Batch by batch (docs/actors.md, A4 step 3b) the guard calls go; when they
- * are gone every row is answered and this goes with them.
+ * Once no route file calls a session guard itself, every row is answered
+ * and this module can go.
  */
 import { posix } from 'node:path';
 import ts from 'typescript';
@@ -91,7 +91,7 @@ export type HandlerCallers = Readonly<Record<string, RouteCaller>>;
 export const READER_MODULES: readonly string[] = ['@/lib/auth', '@/lib/auth/session'];
 
 /**
- * A retired route's 410 stub (A4 hand batch A): `export const GET =
+ * A retired route's 410 stub: `export const GET =
  * gone('owner', ...)`, `gone` imported from GONE_MODULE. Its handler reads
  * the caller of the stub's kind (lib/gone.ts reads it, then answers 410),
  * so the method reads that kind and its row is a gone row: the gate
@@ -130,9 +130,9 @@ export const GONE_CALLERS: Readonly<Record<GoneGuard, RouteCaller>> = Object.fre
 export const HAND_CASE_MARK = 'route-callers: hand case';
 
 /**
- * The caller kinds answered at the read (READER_ANSWERS `atRead`; A4 hand
- * batch B, route-policy.ts ANSWERED_AT_READ): the gate binds the answer and
- * the handler's first read runs it, where the handler called its guard, so
+ * The caller kinds answered at the read (READER_ANSWERS `atRead`;
+ * route-policy.ts ANSWERED_AT_READ): the gate binds the answer and the
+ * handler's first read runs it, so
  * code before that read keeps its place (a public row's own checks, an
  * /api/v1 key rule) and needs no hand-case mark.
  */
@@ -716,7 +716,7 @@ export function goneStubs(
 export type HandlerSwitches = Readonly<Record<string, RouteSwitch>>;
 
 /**
- * The switches a route file declares (route-switches.ts, A4 hand batch A):
+ * The switches a route file declares (route-switches.ts):
  * `export const routeSwitches = { POST: 'not-production' }` (with `as
  * const` or `satisfies RouteSwitches`), each method the file exports to a
  * switch, read into the manifest so the declaration moves with the handler.

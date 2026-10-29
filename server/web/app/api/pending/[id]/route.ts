@@ -63,14 +63,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 },
     );
   }
-  // A fault is the opaque 500 (A10 part 2), logged; never its text.
+  // A fault is the opaque 500, logged; never its text.
   const { answer, answers } = parsed.data;
   const row =
     parsed.data.decision === 'approve'
       ? await approvePendingCall(user.id, idParsed.data.id, {
           ...(answer ? { answer } : {}),
           ...(answers?.length ? { answers } : {}),
-          // Who approves: the signed-in login (W6b fix round 3, L-2).
+          // Who approves: the signed-in login.
           approverLoginId: user.actor.id,
         })
       : await rejectPendingCall(user.id, idParsed.data.id, user.actor.id);

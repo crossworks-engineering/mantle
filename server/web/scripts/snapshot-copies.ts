@@ -1,6 +1,6 @@
 /**
- * The author's read-only snapshot copies of accepted items (workspaces W6b,
- * plan S3; lib/snapshot-copies.ts has the rule). Also run at boot after the
+ * The author's read-only snapshot copies of accepted items
+ * (lib/snapshot-copies.ts has the rule). Also run at boot after the
  * workspaces migration. Hand-run only: never wire it to a cron or a trigger.
  *
  *   pnpm maintain snapshot-copies          dry run: counts only

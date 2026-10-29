@@ -17,7 +17,7 @@
  * months after v2 ships.
  *
  * Cookies and device tokens work here too. A v1 route answers a login as
- * its base route does (plan v2 D3; the A8 finding F1, owner decision a): a
+ * its base route does: a
  * login outside Admin, or a key that acts as one, reads and writes through
  * a v1 route exactly where the base route (the route the v1 file
  * re-exports, or the `base` a v1 file with a handler of its own declares)
@@ -34,7 +34,7 @@ import { getRequestContext } from '../server/request-context';
 /**
  * Whether this request may confirm a change of who can see an item (the
  * tree's "Confirm first", a 409 `visibility` answered with `confirm: true`).
- * An API key may not (M2 audit F1): the confirm is for a person who saw the
+ * An API key may not: the confirm is for a person who saw the
  * list, and MCP drops it for a key too (register/context.ts). A key's write
  * that would widen who sees an item stays a 409.
  */

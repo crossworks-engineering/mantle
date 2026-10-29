@@ -12,7 +12,7 @@
  * Owner-gated with a JSON 401 (not a redirect) so the mobile bearer client gets a
  * clean error, matching /api/push/*. The value is the brain's row (owner.id),
  * so a PUT is the brain owner's or an Admin user's with the settings area
- * (brandSettingsRefusal; owner decision 2026-10-17, plan v3 S3 fix round 3):
+ * (brandSettingsRefusal):
  * an Admin user without it gets the 403, not the database's refusal.
  */
 

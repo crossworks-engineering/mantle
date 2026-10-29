@@ -5,7 +5,7 @@
  * agent is doing ("Searching the web…", "Delegating to a specialist…") next to
  * the typing dots. Reads the live trace (currentTurnStageLabel); it does NOT
  * touch the turn request/response path. Returns `{ label: null }` when idle.
- * Only the signed-in login's own turn counts (W7 integration fix 3, F3).
+ * Only the signed-in login's own turn counts.
  */
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';

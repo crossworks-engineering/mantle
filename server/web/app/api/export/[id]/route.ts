@@ -37,7 +37,7 @@ const Format = z.enum(['md', 'docx', 'pdf', 'csv', 'xlsx', 'svg']);
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   // The asset owner (ownerAssetCaller: the gate's answer of
-  // getOwnerForAsset, A4 hand batch B): these downloads are plain <a href>
+  // getOwnerForAsset): these downloads are plain <a href>
   // anchors that can't carry a bearer, so a detached client authenticates via
   // the `?at=` asset token (see ExportMenu → assetUrl). Session still wins.
   const user = ownerAssetCaller();
@@ -66,7 +66,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const drawSvg = await getDrawSvgOrRender(user.id, id, { actorId });
     if (drawSvg !== null) {
       // No engine (PdfRendererUnavailableError, DocumentsUnavailableError):
-      // 503 by the one table (A10 part 2), logged where it is thrown.
+      // 503 by the one table, logged where it is thrown.
       const bytes = await renderNodeToPdf('draw', id, { ownerId: user.id, actorId }, print.options);
       const title = (await getDraw(user.id, id))?.title ?? 'drawing';
       return download(
@@ -103,8 +103,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // caller's raw Cookie header, which is EMPTY for bearer-authed callers).
     // It names the ACTING admin, not the anchor, and this page; it opens the
     // print route and the image routes it loads and is never a session, and
-    // the sidecar sends it to the print origin only (lib/render-sandbox.ts,
-    // audit F01; the engine's cookie domain is the print origin's).
+    // the sidecar sends it to the print origin only (lib/render-sandbox.ts;
+    // the engine's cookie domain is the print origin's).
     const bytes = await renderNodeToPdf('page', id, { ownerId: user.id, actorId }, print.options);
     return download(
       bytes,

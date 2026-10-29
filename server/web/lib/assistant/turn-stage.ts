@@ -49,7 +49,7 @@ export function stageLabelForStep(name: string, input?: Record<string, unknown>)
  *  tiny single-row reads on indexed columns; safe to poll. Soft-fails to null
  *  so a tracing hiccup never breaks the chat UI. `reader`: the signed-in
  *  login, null (or the owner id) for the brain owner. Only a turn that
- *  answers `reader` counts (W7 integration fix 3, F3): each user sees their
+ *  answers `reader` counts: each user sees their
  *  own turn's stage, never another login's; the brain owner's are the turns
  *  stamped with no login or with its own. */
 export async function currentTurnStageLabel(

@@ -9,7 +9,7 @@
  * Gated to non-production: in prod this would let any authenticated request
  * queue an arbitrary tool approval, so it 404s there, to every credential:
  * the gate answers it first, before the caller (the switch declared below,
- * `routeSwitches`, lib/auth/route-switches.ts; A4 hand batch A). The
+ * `routeSwitches`, lib/auth/route-switches.ts). The
  * genuine prod check is a real chat turn / heartbeat fire against the live
  * bot.
  */

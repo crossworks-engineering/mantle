@@ -231,7 +231,7 @@ async function checkEmbedder(userId: string): Promise<SanityCheck> {
     env('MANTLE_LOCAL_EMBEDDING_URL') ||
     DEFAULT_LOCAL_EMBED_URL
   ).replace(/\/+$/, '');
-  // THE local model probe (@mantle/voice providerHealth, A10 #10).
+  // THE local model probe (@mantle/voice providerHealth).
   const probe = await providerHealth(baseUrl, { timeoutMs: NET_TIMEOUTS.localProbe, model });
   if (!probe.up && probe.reason === 'http') {
     return {

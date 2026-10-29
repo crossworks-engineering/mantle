@@ -216,7 +216,7 @@ async function queueHealthUnguarded(name: string): Promise<RunnerQueueHealth> {
  * The run engine refused an action on a run: the run is not there, or not in
  * a state for it (DBOS's own error, `dbosErrorCode` set, with a message about
  * the workflow, never SQL). The Runners screen shows that message; the route
- * said it as a 500, and still does (A10 part 2 fix round 1, M2). A fault of
+ * says it as a 500. A fault of
  * the engine's database is no DBOSError and answers the opaque 500.
  */
 export class RunActionError extends Error {

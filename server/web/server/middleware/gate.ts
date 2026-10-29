@@ -62,20 +62,18 @@ import { ensureGateReady } from '@mantle/tools/gate-narrowers';
  *    fonts, app-runtime, icons — with no user data; the share surface needs
  *    them cookie-less anyway).
  *
- * The one gate's HTTP entry (arch plan v2, sections 2 and 7; A4 step 1): a
- * request a route of the manifest answers runs through enterCall
+ * The one gate's HTTP entry: a request a route of the manifest answers runs through enterCall
  * (@mantle/db gate.ts) with its ROUTE_POLICY row, found here once
  * (servedRoute) and set on the request context (currentRoute(), read by
  * every session guard and the API key checks, and by a call nested inside
  * the request). The credential checks below are step 1, resolving the
- * caller, and since A4 step 3a step 1 also finds its login, once
- * (resolveHttpLogin, lib/auth/session.ts): enterCall binds the caller with
- * it (currentCaller(): the login, its role and actor, the request's
- * logins every session guard now reads), looks the row's policy up,
- * narrows, and opens the request slot the guard fills. Since A4 step 2 the /s page
- * and the render pages are routes too (registerPages), each run in its own
- * actor slot. A request no route answers (a 404, a 405, the stubs) runs as
- * before.
+ * caller, and step 1 also finds its login, once (resolveHttpLogin,
+ * lib/auth/session.ts): enterCall binds the caller with it (currentCaller():
+ * the login, its role and actor, the request's logins every session guard
+ * reads), looks the row's policy up, narrows, and opens the request slot
+ * the guard fills. The /s page and the render pages are routes too
+ * (registerPages), each run in its own actor slot. A request no route
+ * answers (a 404, a 405, the stubs) runs outside enterCall.
  *
  * The credential questions of a routed request are its row's
  * (gateRouteView): whether it is public, whether it gets CORS, whether the
@@ -147,28 +145,27 @@ function bearerToken(req: Request): string | null {
 }
 
 /**
- * The caller of a routed request (the gate's step 1; A4 step 3a resolves
- * its login here). `login` is what the gate found (resolveHttpLogin,
+ * The caller of a routed request (the gate's step 1, which resolves its
+ * login here). `login` is what the gate found (resolveHttpLogin,
  * session.ts: the same functions every session guard reads): the login,
  * its role and actor, what it holds of the row's Admin area (step 5), and
  * the request's logins bound in the facts, which each guard reads
  * (currentCaller()). The request slot still starts as the row says
  * (system(http:no-login) for a manifest route; a public write row's
  * named actor, the same) and the guard names the login on it when it
- * reads it, as before: a route that reads no guard runs as it did. Step 6
+ * reads it: a route that reads no guard runs as its row starts. Step 6
  * names no create home (createHome null): the guard does, on its rules.
- * On a row whose handler reads the caller the pipeline answers (row.caller,
- * A4 step 3b) the gate runs the answer of the guard of the row's caller
+ * On a row whose handler reads the caller the pipeline answers (row.caller)
+ * the gate runs the answer of the guard of the row's caller
  * kind itself, before the handler (answerRouteCaller), with what it does on
  * the side; and on every area row whose caller is the owner guard or its
  * asset form (route-policy.ts ADMIN_STEP_CALLERS: 'owner', 'ownerAsset';
  * the boot refuses an area row that reads another kind and is not public)
- * the gate's step 5 is the area check (A4 step 3b part 4, S9 part 2): the
+ * the gate's step 5 is the area check: the
  * caller carries the Admin view the login lookup resolved, of the login the
  * row's guard answers as (on an asset row, the login a GET's `?at=` token
  * or the render cookie names), and the login's effects are applied in the
- * request slot first (enterRouteLogin), as the guard applied them before
- * its check.
+ * request slot first (enterRouteLogin), before the check.
  */
 function httpCaller(
   row: RouteRow,
@@ -180,8 +177,7 @@ function httpCaller(
   const startsAs = systemActor(row.actor ?? row.startsAs);
   // The Admin step the gate enforces: the view of the row's area of the
   // login the row's guard answers as (resolveHttpLogin), on every area row
-  // (S9 part 2: its caller is one of ADMIN_STEP_CALLERS, the boot refuses
-  // another). Unscoped (null) only where no view is read: a member, a
+  // (its caller is one of ADMIN_STEP_CALLERS, the boot refuses another). Unscoped (null) only where no view is read: a member, a
   // credential with no login, a row with no area, whose answer is the
   // pipeline's (403 member-login, the 401); a failed area read never gets
   // here (the gate answers it in the handler's place).
@@ -203,11 +199,10 @@ function httpCaller(
     admin,
     createHome: null,
     facts: login.facts,
-    // The request slot (workspaces W6a), opened for the handler with the
-    // memo the login lookup seeded. A page of server/pages (the /s page, a
-    // render page; A4 step 2) has no session guard to fill one: it runs in
-    // an actor slot of its own, starting as its row says, as it did before
-    // it had a row.
+    // The request slot, opened for the handler with the memo the login
+    // lookup seeded. A page of server/pages (the /s page, a render page)
+    // has no session guard to fill one: it runs in an actor slot of its
+    // own, starting as its row says.
     enterScope: row.page
       ? (_writes, fn) => runInActorSlot(startsAs, fn)
       : (_writes, fn) => slot(fn),
@@ -221,8 +216,8 @@ const NO_LOGIN_SCOPES: ReadonlySet<RateLimitScope> = new Set(['ip', 'brain']);
 
 /**
  * What a row checks of its request before the handler (route-limits.ts
- * its declaration's `limits`; A10 #8), in the gate's request slot, once the caller is
- * answered: the cross-site refusal of a public auth post first (no page on
+ * its declaration's `limits`), in the gate's request slot, once the caller
+ * is answered: the cross-site refusal of a public auth post first (no page on
  * another site spends a visitor's budget), then the row's rate limits, with
  * the one 429. A login's limit counts the login the pipeline answered
  * (answeredLimitLogin); on a row answered at the read the read takes it
@@ -249,7 +244,7 @@ function beforeHandler(row: RouteRow, req: Request): Response | null {
  * The request's ROUTE_POLICY row: its route's row for the method, or null
  * (no route answers, or the route answers the method only with its 405).
  *
- * The one rule (arch A4; docs/actors.md): this ROUTED row is the request's
+ * The one rule (docs/actors.md, "HTTP"): this ROUTED row is the request's
  * only row. enterCall runs with it, the request context carries it
  * (currentRoute()), and the key scope (requestKeyRoute) reads it. A check
  * on the raw path as sent (the credential view below, requestKeyRoute)
@@ -260,7 +255,7 @@ export function requestRow(route: ServedRoute | null, method: string): RouteRow 
   return route?.rows.get(method.toUpperCase()) ?? null;
 }
 
-/** What the gate reads of a request's route (arch A4 step 2). */
+/** What the gate reads of a request's route. */
 export type GateRouteView = Readonly<{
   /** The request's row answered the questions below: there is one, and
    *  the path as sent spells its pattern. False: the path checks did (no
@@ -315,7 +310,7 @@ export function gateRouteView(
 }
 
 /**
- * The gate's Cache-Control default (A10 #15, lib/cache-control.ts): an /api
+ * The gate's Cache-Control default (lib/cache-control.ts): an /api
  * answer that names no Cache-Control answers `no-store`, whatever made it (a
  * handler, a refusal of the gate, the app's error or not-found answer: this
  * runs outside them all, so it sees the answer that goes out). A route that
@@ -345,7 +340,7 @@ export function gate(): MiddlewareHandler {
   // without main (a test).
   ensureGateReady();
   registerRouteSource();
-  // Arch A2a: the gate's own lookups (an API key, a token) run as
+  // The gate's own lookups (an API key, a token) run as
   // system(http:gate); enterCall opens each routed handler's own slot.
   const inner = gateHandler();
   return (c, next) => runInActorSlot(systemActor('http:gate'), () => inner(c, next));
@@ -358,8 +353,8 @@ function gateHandler(): MiddlewareHandler {
     const path = url.pathname;
 
     const isApi = path === '/api' || path.startsWith('/api/');
-    // The request's route and its row, found once (A4 step 1), and what
-    // the gate reads of them (A4 step 2). `row` is the request's only row
+    // The request's route and its row, found once, and what the gate
+    // reads of them. `row` is the request's only row
     // (requestRow): the view and the key check only filter it.
     const route = servedRoute(c);
     const row = requestRow(route, req.method);
@@ -391,22 +386,21 @@ function gateHandler(): MiddlewareHandler {
           await next();
           return null;
         }
-        // A row served under a switch that is off (A4 hand batch A): the
-        // route's own off answer, where its handler gave it, first, before
-        // any guard (the switch its route file declares, RouteRow.switch).
+        // A row served under a switch that is off: the route's own off
+        // answer first, before any guard (the switch its route file
+        // declares, RouteRow.switch).
         const off = routeSwitchedOff(row);
         if (off) return Response.json(off.body, { status: off.status });
-        // Step 1: the login, found once for the request (A4 step 3a),
-        // its read seeding the memo the request slot is opened with.
+        // Step 1: the login, found once for the request, its read seeding the memo the request slot is opened with.
         const memo = new Map<string, Promise<WorkspaceScope>>();
         let login: Awaited<ReturnType<typeof resolveHttpLogin>>;
         try {
           login = await withRequestScopeMemo(memo, () => resolveHttpLogin(row));
         } catch (error) {
           if (!(error instanceof RouteLoginError)) throw error;
-          // The Admin view of the row's area could not be read (S9 part 2):
-          // thrown in the handler's place, where the guard's own area read
-          // threw it before, so onError answers it with the CORS headers.
+          // The Admin view of the row's area could not be read: thrown in
+          // the handler's place, so onError answers it with the CORS
+          // headers.
           // Fail closed: no handler runs, nothing asks the area again.
           ctx.callerError = { error: error.error };
           await next();
@@ -418,7 +412,7 @@ function gateHandler(): MiddlewareHandler {
           routeRef(row),
           async () => {
             // A row whose handler reads the caller the pipeline answers
-            // (row.caller, A4 step 3b): the answer of the guard of the
+            // (row.caller): the answer of the guard of the
             // row's caller kind (owner, member, any-login, chat), given
             // here once in the request slot, its effects with it; a
             // refusal is the gate's answer and the handler does not run.
@@ -427,15 +421,14 @@ function gateHandler(): MiddlewareHandler {
               refused = await answerRouteCaller(row);
             } catch (error) {
               // An error the answer throws (the database down, busy) is
-              // thrown where the guard threw it before the codemod: in
-              // the handler's place (route-loader.ts takes it from the
-              // request), so the app's onError answers it and the
-              // response keeps its CORS headers, as it did. The handler
-              // does not run.
+              // thrown in the handler's place (route-loader.ts takes it
+              // from the request), so the app's onError answers it and
+              // the response keeps its CORS headers. The handler does not
+              // run.
               ctx.callerError = { error };
             }
             if (refused) return refused;
-            // What the row checks before its handler (A10 #8), once the
+            // What the row checks before its handler, once the
             // caller is answered: the cross-site refusal, then its limits.
             // Not where the answer threw: the handler does not run.
             if (!ctx.callerError) {
@@ -456,9 +449,7 @@ function gateHandler(): MiddlewareHandler {
           if (!(error instanceof RouteLoginError)) throw error;
           // The login's effects failed before the Admin step
           // (enterRouteLogin): the error is thrown in the handler's place,
-          // where the owner guard threw it before the gate checked the
-          // area, so onError answers it with the CORS headers. No handler
-          // runs.
+          // so onError answers it with the CORS headers. No handler runs.
           ctx.callerError = { error: error.error };
           await next();
           if (ctx.callerError) throw ctx.callerError.error;
@@ -478,16 +469,15 @@ function gateHandler(): MiddlewareHandler {
       return withCors(new Response(null, { status: 204 }));
     }
 
-    // The body ceiling (client logins C5 audit, I4): a declared body over
+    // The body ceiling: a declared body over
     // the route's ceiling is refused before any handler buffers it, public
     // routes included. Streamed uploads spool under their own caps (null
     // here); a chunked body is capped while it is read (the route loader,
     // capRequestBody).
-    // The public share routes too (apps audit S2): their db-broker read any
+    // The public share routes too: their db-broker would otherwise read any
     // body an anonymous caller sent.
     // The decoded path Hono matched (c.req.path), as the loader reads it:
-    // `/api/%61uth/...` is held to the ceiling of the route that answers it
-    // (fix round 1, L8).
+    // `/api/%61uth/...` is held to the ceiling of the route that answers it.
     const matchedPath = c.req.path;
     if (
       (matchedPath === '/api' ||

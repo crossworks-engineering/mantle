@@ -96,8 +96,8 @@ export type CreateAiWorkerInput = {
   viaTailnet?: boolean;
   backupBaseUrl?: string | null;
   backupViaTailnet?: boolean;
-  /** The login that paired a route's vault key with its base URL (W7a fix
-   *  round 5, lib/model-route-pair.ts); null for the brain owner. */
+  /** The login that paired a route's vault key with its base URL
+   *  (lib/model-route-pair.ts); null for the brain owner. */
   configuredBy?: string | null;
 };
 

@@ -49,7 +49,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const body = await readBody(req, CreateBody);
   // A refused snapshot (TableSnapshotRefusedError) answers 409 by the one
-  // table (A10 part 2).
+  // table.
   const snapshot = await createTableSnapshot(user.id, id, {
     note: body.note ?? null,
     actor: 'owner',

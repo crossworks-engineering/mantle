@@ -98,8 +98,7 @@ export type CreateSkillInput = {
 /**
  * `login` on createSkill and updateSkill: the signed-in login when it is not
  * the brain owner (null: the anchor). The heartbeats that run the skill then
- * run its words, so they become its (W7a fix round 4, @mantle/tools
- * heartbeat-maker.ts).
+ * run its words, so they become its (@mantle/tools heartbeat-maker.ts).
  */
 export async function createSkill(
   ownerId: string,

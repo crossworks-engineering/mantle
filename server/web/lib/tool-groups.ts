@@ -113,7 +113,7 @@ export async function createToolGroup(
 
 export type UpdateToolGroupInput = Partial<Omit<CreateToolGroupInput, 'slug'>> & {
   /** The login that paired the integration's vault key with its host, when
-   *  not the brain owner (tool_groups.configured_by, W7a fix round 4). */
+   *  not the brain owner (tool_groups.configured_by). */
   configuredBy?: string | null;
 };
 

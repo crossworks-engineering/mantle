@@ -1,9 +1,8 @@
 /**
- * The Grant Access panel's API (workspaces plan page 4887b8e7, phase W5b2;
- * sections 1.3, 2.3, 7.1, 8.1, R1, S5, S6, S7, 18.8, 19.5, 21.8).
+ * The Grant Access panel's API.
  *
  * An item is shared by a grant to a workspace, each with its own Write
- * switch. Every item has ONE home workspace (R1); its Moderators manage the
+ * switch. Every item has ONE home workspace; its Moderators manage the
  * item. Who may do what:
  *  - add a grant to T, restore one taken away, turn a folder-derived row
  *    into a hand grant ("Change here"), switch Write on: a Moderator of the
@@ -11,21 +10,20 @@
  *  - remove a grant from T, switch Write off: a Moderator of the home OR of
  *    T (it only narrows);
  *  - the home row is never removed (move the item instead);
- *  - move the home from H to T: a Moderator of H and of T (decision 4);
- *  - place items in a folder: may edit the folder and manage the item (S6);
+ *  - move the home from H to T: a Moderator of H and of T;
+ *  - place items in a folder: may edit the folder and manage the item;
  *    an app that gains a holder that way also needs Moderator of each new
- *    holder and the confirm (18.8, S7).
+ *    holder and the confirm.
  * A folder passes its grants to everything inside it (rows "via folder");
  * taking a folder-derived row away writes an exclusion ("Removed here")
- * that Restore clears (19.5). A folder change needs the confirm and is
- * refused above FOLDER_GRANT_LIMIT.max items (S5).
+ * that Restore clears. A folder change needs the confirm and is
+ * refused above FOLDER_GRANT_LIMIT.max items.
  *
- * Grants are the only truth since W5b2 part B (0261 turned the level bridge
- * off): every row, the ones the bridge once wrote included, is changed here.
+ * Grants are the only truth: every row is changed here.
  *
  * Every write takes the heads of what it changes FIRST (a folder: its whole
- * subtree), in one transaction retried whole on a busy head or a deadlock
- * (U1, V1). Every change writes a workspace_events row. An item or a
+ * subtree), in one transaction retried whole on a busy head or a deadlock.
+ * Every change writes a workspace_events row. An item or a
  * workspace the caller may not see is 404, never 403.
  */
 import { z } from 'zod';
@@ -90,8 +88,7 @@ export class GrantError extends Error {
   }
 }
 
-// What the grant routes answered by hand (grantsRoute, A10 part 2 fix round
-// 1, L7): its status and `{ error, code }`.
+// A GrantError answers its status and `{ error, code }` (grantsRoute).
 defineDomainError(GrantError, {
   reason: 'a grant change the caller can fix or may not make; the code says which',
   status: (e) => e.status,
@@ -101,23 +98,23 @@ defineDomainError(GrantError, {
 const ITEM_NOT_FOUND = () => new GrantError(404, 'not_found', 'Item not found.');
 const WS_NOT_FOUND = () => new GrantError(404, 'not_found', 'Workspace not found.');
 
-/** A folder change is refused above `max` items (S5: the measured
- *  50,000-item folder change stays well under a minute). An object so a
+/** A folder change is refused above `max` items (a 50,000-item
+ *  folder change stays well under a minute). An object so a
  *  test can lower it. */
 export const FOLDER_GRANT_LIMIT = { max: 50_000 };
 
 /** Run a grants route for the login the handler read (anyLoginCaller()):
  *  answer the result as JSON. A GrantError or a WsError answers
- *  `{ error, code }` by its row in the one table (A10 part 2 fix round 1,
- *  L7); anything else is the opaque 500.
+ *  `{ error, code }` by its row in the one table; anything else is the
+ *  opaque 500.
  *
- *  It runs where the gate put the request (arch A6): a login's read, and a
+ *  It runs where the gate put the request: a login's read, and a
  *  member's write, in the login's own scope (the workspace role and its row
  *  rules; a write's transaction on the write role, or the system pool with
  *  the scope on it); an Admin user's write on the system pool with the
  *  login's scope on its transactions (session.ts anyLoginScope), so the
  *  database's own grant checks run for every caller (mantle_grant_change,
- *  0279; A8 matrix F7 a). What the scope cannot read goes through the
+ *  0279). What the scope cannot read goes through the
  *  definers of 0291, each held to the scope: an item's grant rows
  *  (mantle_item_grants), a change's counts (mantle_grant_counts), what an
  *  item embeds (mantle_item_embeds), the workspaces an Admin user names
@@ -220,7 +217,7 @@ const myIds = (ctx: Ctx) => [...ctx.mine.keys()];
 const modIds = (ctx: Ctx) => [...ctx.mine.values()].filter((w) => w.moderator).map((w) => w.id);
 /** The caller's workspaces, and its Moderator ones, as uuid[] parameters:
  *  what the array forms of the rules take (mantle_may_edit_in,
- *  mantle_may_manage_in; arch A6). */
+ *  mantle_may_manage_in). */
 const mineSql = (ctx: Ctx) => wsArraySql(myIds(ctx));
 const modsSql = (ctx: Ctx) => wsArraySql(modIds(ctx));
 const isMod = (ctx: Ctx, ws: string | null) => !!ws && ctx.mine.get(ws)?.moderator === true;
@@ -258,7 +255,7 @@ type Item = {
    *  removes: never a decision). */
   holders: string[];
   /** The rules, asked of the database with the caller's workspaces (the
-   *  array forms; arch A6): a Moderator of the home, or a grant with Write
+   *  array forms): a Moderator of the home, or a grant with Write
    *  on in one of them. */
   mayEdit: boolean;
   /** A Moderator of the home. */
@@ -505,7 +502,7 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
   }
 
   const homeRow = list.find((r) => r.is_home);
-  // A home the caller may not name is not identified either (audit L4).
+  // A home the caller may not name is not identified either.
   const homeShown = !!homeRow && (ctx.mine.has(homeRow.ws) || ctx.seesAll);
   const home = {
     wsId: homeShown ? homeRow.ws : null,
@@ -565,7 +562,7 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
     embedsNotGranted,
   };
   if (item.type === 'branch' && mayEdit(ctx, item)) {
-    // What a new item placed here takes (S6, 21.8 row 1): every row of the
+    // What a new item placed here takes: every row of the
     // folder not removed here, named even where the caller is not a user,
     // so the create dialog can say every workspace it will reach. The same
     // rule as the insert trigger of 0261 (a live workspace that may hold the
@@ -683,7 +680,7 @@ type Change = {
   /** A folder needs the confirm (every folder change is held to the size
    *  limit, the confirm or not: a change on a folder reaches its subtree). */
   folderConfirm: boolean;
-  /** An app also needs it (a new holder: S7). */
+  /** An app also needs it (a new holder). */
   appConfirm?: boolean;
   confirm: boolean;
 };
@@ -697,7 +694,7 @@ type Check<T> = (q: Exec, ctx: Ctx, item: Item, grants: Grants) => Promise<T>;
 /**
  * Run one change of `nodeId`'s grants. The rules (`check`) run first on a
  * plain read, so a caller who may not make the change learns nothing more
- * (no counts, no confirm: audit M1). Then the size limit and the confirm.
+ * (no counts, no confirm). Then the size limit and the confirm.
  * Then, in ONE transaction whose first lock is the heads (the item, or a
  * folder's whole subtree), the rules again on a fresh read and `apply`.
  * Retried whole on a busy head or a deadlock.
@@ -754,7 +751,7 @@ async function change<T>(
   return after(caller, item0.id);
 }
 
-/** The one exit of the grants library (arch A6): the page refold after a
+/** The one exit of the grants library: the page refold after a
  *  change runs on the system pool by its reason ('page-refold'). It folds
  *  the derived text of every page the change reaches, pages the caller may
  *  not read or edit included (a page names an item only when every holder
@@ -950,7 +947,7 @@ export async function removeGrant(
       const exclude = row.via !== null || folderGrants(grants, row.ws);
       // Logged first, while the row is there: an event in a workspace
       // outside the caller's scope needs that workspace's grant row on the
-      // item (mantle_workspace_event, A2b2b fix round 2, L3).
+      // item (mantle_workspace_event).
       await event(tx, row.ws, ctx.caller.loginId, 'grant.remove', {
         node: item.id,
         excluded: exclude,
@@ -1015,7 +1012,7 @@ export async function handGrant(
     caller,
     nodeId,
     // A folder's row changing from derived to hand reaches its subtree: the
-    // size limit holds (audit L1), no confirm (nobody gains or loses).
+    // size limit holds, no confirm (nobody gains or loses).
     { folderConfirm: false, confirm: true },
     async (_q, ctx, item, grants) => {
       const row = rowFor(ctx, item, grants, wsId);
@@ -1081,7 +1078,7 @@ export async function grantEmbeds(
           skipped.length = 0;
           const ctx = await loadCtx(caller, tx);
           const host = await loadItem(ctx, host0.id, tx);
-          // The targets again under the heads (audit L3): the host may have
+          // The targets again under the heads: the host may have
           // left a workspace, or the caller a workspace, since the first read.
           const targetsNow = await checkTargets(ctx, host, tx);
           const now = await embedRows(ctx, host, tx);
@@ -1134,7 +1131,7 @@ export async function grantEmbeds(
   return { ...panel, skipped };
 }
 
-// ── Preview (S5, S7) ─────────────────────────────────────────────────────────
+// ── Preview ──────────────────────────────────────────────────────────────────
 
 /** GET /api/grants/:nodeId/preview?add=<ws>&remove=<ws>. */
 export async function previewGrant(
@@ -1150,7 +1147,7 @@ export async function previewGrant(
   if (!addWs && !removeWs) {
     throw new GrantError(400, 'invalid', 'Name a workspace to add or to remove.');
   }
-  // The change's own rules (audit M2): add = home Moderator AND Moderator
+  // The change's own rules: add = home Moderator AND Moderator
   // of the target; remove = either.
   const manage = mayManage(ctx, item);
   if (
@@ -1190,7 +1187,7 @@ export async function previewGrant(
   return out;
 }
 
-// ── Move (decision 4, S6, 18.8, 21.8 rows 1 and 9) ──────────────────────────
+// ── Move ─────────────────────────────────────────────────────────────────────
 
 /** The body of a move and of its preview. */
 export const MoveBody = z.object({
@@ -1252,7 +1249,7 @@ const nameOf = async (named: Map<string, string | null>): Promise<GrantWorkspace
   return found.map((w) => ({ wsId: w.id, name: w.name }));
 };
 
-/** The move to a workspace, checked by its own rules first (audit M3):
+/** The move to a workspace, checked by its own rules first:
  *  Moderator of the target and of every item's home. Then what each item
  *  would gain and lose: only the target and the old homes, all workspaces
  *  the caller moderates. */
@@ -1294,7 +1291,7 @@ async function folderWorkspaces(q: Exec, folder: Item | null): Promise<string[]>
 }
 
 /** What one item gains and loses by being placed in a folder that passes
- *  `folderWs` (S6): it takes those rows (not where it is "Removed here", and
+ *  `folderWs`: it takes those rows (not where it is "Removed here", and
  *  only kinds that may take them), and drops its folder-derived rows the new
  *  folder does not give, unless a grant set on it keeps that workspace. */
 async function placeInFolder(
@@ -1320,7 +1317,7 @@ async function placeInFolder(
   return { adds, loses };
 }
 
-/** The folder a move targets: one the caller may add items to (S6), of the
+/** The folder a move targets: one the caller may add items to, of the
  *  items' tree kind; null = the kind's root. */
 async function targetFolder(
   ctx: Ctx,
@@ -1345,8 +1342,8 @@ async function targetFolder(
 const APP_HOLDER = () =>
   new GrantError(403, 'forbidden', 'Placing this app there adds a workspace you do not moderate.');
 
-/** The move into a folder, checked: S6 (edit the folder, manage the item),
- *  apps need Moderator of every new holder (18.8). `strict` (the preview)
+/** The move into a folder, checked: edit the folder and manage the item;
+ *  apps need Moderator of every new holder. `strict` (the preview)
  *  refuses the whole move on any item that may not go; the move itself
  *  reports such items one by one. */
 async function planFolderMove(ctx: Ctx, body: MoveInput, q: Exec, strict: boolean) {
@@ -1489,10 +1486,10 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
   );
 }
 
-/** Items into a folder (or the kind's root): checked by S6, then moved by
+/** Items into a folder (or the kind's root): checked as planFolderMove does, then moved by
  *  the tree's own move (heads, paths, files on disk), whose triggers derive
  *  the folder's grants. Each item's move checks the plan again under its
- *  heads (the item and both folders, audit L3): the folder's workspaces,
+ *  heads (the item and both folders): the folder's workspaces,
  *  the app holder rule and the confirm, as they are now. */
 async function moveToFolder(ctx: Ctx, body: MoveInput): Promise<GrantMoveResponse> {
   const plan = await planFolderMove(ctx, body, db, false);

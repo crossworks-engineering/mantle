@@ -43,7 +43,7 @@ function msBranchPath(upn: string): string {
 }
 
 /** The redirect's `error` when the token exchange or the account write
- *  failed (A10 part 2): the details are in the server log. */
+ *  failed: the details are in the server log. */
 const MICROSOFT_CONNECT_FAILED =
   'Connecting your Microsoft account failed. The details are in the server log.';
 
@@ -96,8 +96,8 @@ export async function GET(req: NextRequest) {
     return settingsRedirect(req, { connected: me.upn });
   } catch (err) {
     // The exchange or the account write failed: the redirect says so in
-    // words a person reads, never the error's own text (A10 part 2, fold 2:
-    // it went into the URL); the text goes to the server log.
+    // words a person reads, never the error's own text (it would land in
+    // the URL); the text goes to the server log.
     console.error('[microsoft/oauth/callback] connect failed:', err);
     return settingsRedirect(req, { error: MICROSOFT_CONNECT_FAILED });
   }

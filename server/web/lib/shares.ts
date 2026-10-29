@@ -161,7 +161,7 @@ export function servedIds(share: Pick<Share, 'nodeId' | 'settings'>): Set<string
   return new Set([share.nodeId.toLowerCase(), ...shareServedIds(share.settings)]);
 }
 
-/** The ids among `ids` that are the owner's read-only snapshot copies (W6b),
+/** The ids among `ids` that are the owner's read-only snapshot copies,
  *  lower-case. */
 async function snapshotCopyIds(ownerId: string, ids: Iterable<string>): Promise<Set<string>> {
   const list = [...ids].filter((id) => isUuid(id));
@@ -180,8 +180,7 @@ async function snapshotCopyIds(ownerId: string, ids: Iterable<string>): Promise<
 }
 
 /** {@link servedIds} as served now: a read-only snapshot copy is never
- *  served, whatever a list made before the rule holds (W6b fix round 3,
- *  L-1). */
+ *  served, whatever an older list holds. */
 export async function liveServedIds(share: Share): Promise<Set<string>> {
   const served = servedIds(share);
   const self = share.nodeId.toLowerCase();
@@ -205,7 +204,7 @@ export async function isServed(share: Share, nodeId: string): Promise<boolean> {
   const id = nodeId.toLowerCase();
   if (id === share.nodeId.toLowerCase()) return true;
   // A read-only snapshot copy stays in its private workspace: no link and
-  // no contact share serves it (W6b fix round 3, L-1).
+  // no contact share serves it.
   const notCopy = async () => !(await snapshotCopyIds(share.ownerId, [id])).has(id);
   if (share.contactId) return notCopy();
   if (!servedIds(share).has(id)) return false;

@@ -1,17 +1,15 @@
 /**
- * The request body ceiling (client logins C5 audit, I4). A JSON body used to
- * be buffered and parsed whatever its size (Caddy lets 1 GB through), so a
- * few parallel half-gigabyte bodies from any signed-in login could take the
- * web process past its memory limit. Two guards, one number per route:
+ * The request body ceiling. Caddy lets 1 GB through, so a body buffered
+ * and parsed whatever its size would let a few parallel half-gigabyte
+ * bodies from any signed-in login take the web process past its memory
+ * limit. Two guards, one number per route:
  *
  *  - the gate refuses a declared Content-Length over the route's ceiling
  *    before any handler runs (server/middleware/gate.ts);
  *  - the route loader hands every handler a request whose body reads
- *    through the ceiling (capRequestBody, A10 part 2): json(), text(),
- *    formData(), arrayBuffer() and the body stream itself stop at the
- *    ceiling, for a chunked body that declares nothing. Before, only the
- *    routes that called `readBodyCapped` stopped; the others read any
- *    chunked body in full.
+ *    through the ceiling (capRequestBody): json(), text(), formData(),
+ *    arrayBuffer() and the body stream itself stop at the ceiling, for a
+ *    chunked body that declares nothing.
  *
  * Both answer 413 `{ reason: 'body-too-large', error }` (the thrown
  * `BodyTooLargeError` is mapped by app.onError; a handler that swallowed it
@@ -19,7 +17,7 @@
  * their routes spool to disk under their own caps (upload-stream.ts) and
  * have no ceiling here. The multipart routes that call formData(), which
  * buffers the whole body, have one: their file cap plus room for the
- * framing (MULTIPART_CEILINGS, fix round 1, M3).
+ * framing (MULTIPART_CEILINGS).
  */
 import { CACHE_CONTROL } from './cache-control';
 
@@ -67,8 +65,7 @@ export const VOICE_CLIP_BYTES = 25 * MB;
 
 /** A profile photo or brand logo: twice LOGO_MAX_BYTES (512 KB), so a file
  *  under the routes' own cap always fits with its framing; pinned by the
- *  test. A body over it is the gate's 413 (the photo route's own declared
- *  check at the same size never answered, A10 lows part 2 #4). */
+ *  test. A body over it is the gate's 413. */
 export const PROFILE_IMAGE_BODY_BYTES = 1 * MB;
 
 /** The multipart routes that read their body with formData(), which buffers
@@ -122,7 +119,7 @@ export class BodyTooLargeError extends Error {
 const wentOver = new WeakSet<Request>();
 
 /**
- * `req` with its body read through `maxBytes` (A10 part 2, fold 1): every
+ * `req` with its body read through `maxBytes`: every
  * reader of the body (json(), text(), formData(), arrayBuffer(), the
  * stream) gets the bytes up to the ceiling and then BodyTooLargeError, and
  * the source is cancelled there. Nothing is read until a reader asks. A
@@ -156,8 +153,8 @@ export function capRequestBody(req: Request, maxBytes: number): Request {
   );
   // Built from the request's parts, never `new Request(req, init)`: under
   // @hono/node-server the handler's request is a lightweight stand-in that
-  // undici's brand check refuses as a Request input (it threw on every
-  // POST behind serve(); A10 part 2 fix round 1, H1). Only a method that
+  // undici's brand check refuses as a Request input (it would throw on
+  // every POST behind serve()). Only a method that
   // carries a body gets one (a GET or HEAD has none here).
   const capped = new Request(req.url, {
     method: req.method,
@@ -176,7 +173,7 @@ export function bodyWentOver(req: Request): boolean {
 }
 
 /** A ceiling as a person reads it: MB from 1 MB up, KB below (a 64 KB
- *  ceiling said "at most 0 MB"; A10 lows, part 2 #6). */
+ *  ceiling never reads "at most 0 MB"). */
 export function ceilingText(maxBytes: number): string {
   return maxBytes >= MB ? `${Math.round(maxBytes / MB)} MB` : `${Math.round(maxBytes / 1024)} KB`;
 }

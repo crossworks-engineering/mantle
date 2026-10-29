@@ -20,7 +20,7 @@ async function main() {
   }
   // When the Postgres dump this archive goes with started (ms, db-dump.sh):
   // revisions the store sweep had marked unreferenced before it are left
-  // out. Without it, every revision on disk goes (A3b).
+  // out. Without it, every revision on disk goes.
   const started = Number(process.argv[3]);
   const r = await snapshotAllAppDatabases(
     destDir,

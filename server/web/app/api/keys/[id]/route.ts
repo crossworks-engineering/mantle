@@ -61,8 +61,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     body.data.anthropicWorkspaceId,
   );
   if (!row) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-  // The key's credential changed: an open provider alert probes now (A10
-  // lows), so a fixed workspace id clears it. Only an Anthropic key gets
+  // The key's credential changed: an open provider alert probes now, so a
+  // fixed workspace id clears it. Only an Anthropic key gets
   // here (setApiKeyAnthropicWorkspace refuses another service).
   await retryProvidersAfterKeyChange(user.id, 'anthropic');
   return NextResponse.json(row);

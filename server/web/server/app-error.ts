@@ -22,26 +22,23 @@ export function answerAppError(err: Error, c: Context): Response {
   if (err instanceof RedirectError) {
     return c.redirect(err.location, err.status);
   }
-  // The refusal of an answer taken at the read (A4 hand batch B,
-  // ownerCallerAtRead): the guard's own response, as the handler returned
-  // it before.
+  // The refusal of an answer taken at the read (ownerCallerAtRead): the
+  // guard's own response.
   if (err instanceof RouteRefusal) return err.response;
   const path = new URL(c.req.url).pathname;
-  // A refusal, never a crash, read by the one mapper (arch A3c): the
-  // database refused a write of an item the caller may not change (W6a
-  // fix round 1, A3a), a client scope met public-level work or the
-  // reverse (client logins, audit A5), or the gate refused the call.
+  // A refusal, never a crash, read by the one mapper: the database
+  // refused a write of an item the caller may not change, a client scope
+  // met public-level work or the reverse, or the gate refused the call.
   const refusal = scopeRefusalResponse(err, path);
   if (refusal) return refusal;
-  // A JSON body over its route's ceiling, found while reading (I4).
+  // A JSON body over its route's ceiling, found while reading.
   if (err instanceof BodyTooLargeError) return bodyTooLargeResponse(err.maxBytes);
-  // A domain error (A10 part 2, fold 2): the one table (@mantle/std
-  // domain-errors.ts) names its status and its public text, the same a
-  // tool says. A body the route cannot use (BadBodyError) is one.
+  // A domain error: the one table (@mantle/std domain-errors.ts) names
+  // its status and its public text, the same a tool says. A body the route cannot use (BadBodyError) is one.
   const domain = domainErrorAnswer(err);
   if (domain) return Response.json(domain.body, { status: domain.status });
   // Another write held the same rows (a deadlock broken, a lock timeout):
-  // "busy, try again" for a person, never the SQL (folder audit review F7).
+  // "busy, try again" for a person, never the SQL.
   // A pool's wait run out (a read as well, under drizzle's wrap too) says
   // the plain text, never the folders one (busyMessage).
   if (isBusy(err)) {

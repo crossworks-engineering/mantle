@@ -34,11 +34,10 @@ import type { LandedItem, ProbeFootprint } from '@mantle/client-types/types/inte
 export { evaluateLanded } from './evaluate-landed';
 
 /** The node types that represent content the user adds and that gets indexed:
- *  the kinds the extractor reads by default (the registry's `extract` field,
- *  A10 #12), so a kind it indexes is never missing here. Telegram messages are
+ *  the kinds the extractor reads by default (the registry's `extract` field),
+ *  so a kind it indexes is never missing here. Telegram messages are
  *  deliberately excluded (unembedded by design, they'd always read as
- *  "unindexed" noise). Until A10 #12 this was a hand list that missed three
- *  extracted kinds: email_thread, documentation and location. */
+ *  "unindexed" noise). */
 export const LANDED_TYPES: readonly string[] = EXTRACT_KINDS;
 
 /** A run is only meaningful once it has terminated. */

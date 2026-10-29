@@ -6,8 +6,8 @@
  * PUT takes `baseDraftUpdatedAt`, the draft stamp the editor last read (null
  * for "no draft"). When the draft changed since (the assistant wrote a file,
  * another window saved) it answers 409 `reason: 'conflict'` and writes
- * nothing, instead of overwriting that work (apps audit U1). It answers the
- * new stamp. Without the field the save goes through, as for an older editor.
+ * nothing, instead of overwriting that work. It answers the new stamp.
+ * Without the field the save goes through (an editor that does not send it).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -25,8 +25,7 @@ import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The ids are uuids: any other names nothing, the params gateway's one
- *  404 before the handler (lib/route-params.ts; the item gate answered it
- *  until the pre-check removal part 2). */
+ *  404 before the handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
@@ -53,10 +52,10 @@ const Body = z.object({
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  // The caller's edit of the app first (the pre-check removal part 2: the
-  // HTTP gate asked it): an app the scope does not read is the mapper's
-  // 404, as an id no row has; one it may not edit the 403 item-workspace (a
-  // read-only copy's words); before anything is read, built or staged.
+  // The caller's edit of the app first: an app the scope does not read is
+  // the mapper's 404, as an id no row has; one it may not edit the 403
+  // item-workspace (a read-only copy's words); before anything is read,
+  // built or staged.
   await assertItemRight(id, 'edit');
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
@@ -65,7 +64,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   }
   const { baseDraftUpdatedAt, ...source } = parsed.data;
   // AppSourceLimitError (400) and AppDraftConflictError (409, reason
-  // 'conflict') answer by the one table (A10 part 2).
+  // 'conflict') answer by the one table.
   const saved = await saveDraftSource(
     user.id,
     id,
@@ -79,10 +78,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  // The caller's edit of the app first (the pre-check removal part 2: the
-  // HTTP gate asked it): an app the scope does not read is the mapper's
-  // 404, as an id no row has; one it may not edit the 403 item-workspace (a
-  // read-only copy's words); before anything is read, built or staged.
+  // The caller's edit of the app first: an app the scope does not read is
+  // the mapper's 404, as an id no row has; one it may not edit the 403
+  // item-workspace (a read-only copy's words); before anything is read,
+  // built or staged.
   await assertItemRight(id, 'edit');
   const ok = await discardAppDraft(user.id, id);
   if (!ok) return NextResponse.json({ error: 'app not found' }, { status: 404 });
