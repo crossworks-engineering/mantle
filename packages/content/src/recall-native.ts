@@ -17,10 +17,7 @@
  * Concurrency: every write locks the map row (`mapOr404`) before it compares
  * the caller's `version`, so two writes sent from the same version cannot both
  * pass the check. Without the lock both read version N under read committed,
- * both pass, and the second silently overwrites the first (audit 2026-09-30,
- * H1: 12 races out of 12 lost an update).
- *
- * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
+ * both pass, and the second silently overwrites the first.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -115,8 +112,7 @@ const RECALL_NOT_FOUND_CODES: ReadonlySet<string> = new Set([
   'revision_not_found',
 ]);
 
-// What the recall routes answered by hand (recallWriteFailure, A10 part 2
-// fix round 1, L7): a missing address 404, an owner's act asked by an
+// The one error answer: a missing address 404, an owner's act asked by an
 // editor 403, a stale version 409, any other refused write 400, with
 // `{ error, code }`. The message is written to be actionable.
 defineDomainError(RecallWriteError, {
@@ -187,8 +183,8 @@ type InboundOption = { cardSlug: string; option: StoredOption };
 /**
  * Slug from a title, cut at a WORD boundary.
  *
- * `recallSlug` (from v1) slices at 60 characters mid-word, which is how the
- * registry ended up with `…-and-the-connector-fal`. This cuts on a word
+ * `recallSlug` slices at 60 characters mid-word (`…-and-the-connector-fal`).
+ * This cuts on a word
  * instead; existing slugs never change, since a slug is exactly what agents
  * and skills remember.
  */
@@ -339,7 +335,7 @@ async function resolveOptions(
       // map's slug NOW, so the option does not depend on the old one.
       // A map outside the caller's scope does not exist for it: the same
       // answer as no such map, so an option neither leads to it nor tells
-      // the caller it is there (A1 fix round, L1). In the query, so the
+      // the caller it is there. In the query, so the
       // limit picks among the maps the caller reads.
       const [target] = await tx
         .select({ slug: recallMaps.slug, published: recallMaps.published })
@@ -445,8 +441,7 @@ async function warningsFor(tx: Tx, ownerId: string, cards: CardRow[]): Promise<R
         ),
       );
     // A target map the caller's scope does not read counts as gone: the
-    // warning must not tell it which maps exist outside its scope (A1 fix
-    // round, L1).
+    // warning must not tell it which maps exist outside its scope.
     const readable = await scopeReadsNodes(
       tx,
       found.map((r) => r.nodeId!),
@@ -551,12 +546,12 @@ async function mapSlugsTaken(tx: Tx, ownerId: string, exceptMapId?: string): Pro
 
 /**
  * A free slug for a new map from `base`: picked among the slugs the
- * caller's scope reads (`taken`), then asked brain-wide (mantle_name_taken,
- * F4 fix round 2), a map the scope does not read included; a slug one holds
- * is added to `taken` and the pick runs again. The answer is yes or no per
- * slug, never the hidden map. Before, a hidden map's slug read as free: its
- * unique index answered a 500, or a hidden map's former slug was taken
- * again (two maps answering to one slug).
+ * caller's scope reads (`taken`), then asked brain-wide (mantle_name_taken),
+ * a map the scope does not read included; a slug one holds is added to
+ * `taken` and the pick runs again. The answer is yes or no per slug, never
+ * the hidden map. Without the brain-wide ask a hidden map's slug would read
+ * as free: its unique index would answer a 500, or a hidden map's former
+ * slug would be taken again (two maps answering to one slug).
  */
 async function freeMapSlug(
   tx: Tx,
@@ -605,7 +600,7 @@ export async function createRecallMap(
   await ensureRecallRoot(ownerId);
   const path = await resolveFolderPath(ownerId, input.folder);
 
-  // Heads first (workspaces plan U1): the folder the map item lands in,
+  // Heads first: the folder the map item lands in,
   // before the advisory lock and the inserts. A slug taken meanwhile past
   // the pick (only another brain's process could) is a 409, never the
   // unique index's 500.
@@ -619,8 +614,8 @@ export async function createRecallMap(
         // Slugs are unique across the brain, maps the caller cannot read
         // included. A caller whose scope lacks Admin always gets a random
         // suffix, so its slug never tells it that a map it cannot read holds
-        // the plain one or a numbered one (A1 fix round); an Admin scope and
-        // the system count up as before.
+        // the plain one or a numbered one; an Admin scope and the system
+        // count up.
         const taken = await mapSlugsTaken(tx, ownerId);
         const pick = (await scopeLacksAdmin(tx)) ? randomSlug : uniqueSlug;
         const slug = await freeMapSlug(tx, ownerId, recallNativeSlug(title), taken, pick);
@@ -790,7 +785,7 @@ export async function updateRecallMap(
       // Cross-map options elsewhere point at this map by slug; keep them live.
       // They sit in other maps, some the caller may not read or edit: the
       // brain's own references, rewritten by one definer that asks edit of
-      // this map (mantle_recall_retarget, arch A3a).
+      // this map (mantle_recall_retarget).
       await tx.execute(sql`select mantle_recall_retarget(${map.id}, ${map.slug}, ${next})`);
     }
     // Nothing changed: no version bump and no "no change" revision to clutter
@@ -810,7 +805,7 @@ export async function updateRecallMap(
     if (set.enterWhen) itemData.enterWhen = set.enterWhen;
     if (set.published !== undefined) itemData.published = set.published;
     const hasItemData = Object.keys(itemData).length > 0;
-    // Title, slug and data only, never the path: no heads (plan V2).
+    // Title, slug and data only, never the path: no heads.
     if ((set.title || set.slug || hasItemData) && map.nodeId) {
       await tx
         .update(nodes)
@@ -907,8 +902,8 @@ function promptStateOf(card: { kind: string; promptPending: boolean }): PromptSt
 /**
  * What a card's kind and pending flag become after a write.
  *
- * Absent `prompt` keeps the card's state: that is the fix for a typo edit
- * demoting a prompt (audit H2). An owner's explicit true or false decides. An
+ * Absent `prompt` keeps the card's state, so a typo edit never demotes a
+ * prompt. An owner's explicit true or false decides. An
  * agent's true is a request, its false withdraws its request, and neither can
  * turn a confirmed prompt back into knowledge: that is the owner's voice.
  */
@@ -992,8 +987,8 @@ async function writeCard(
           keptPrompt: false,
         }
       : nextPromptState(existing, input.prompt, actor);
-    // Jason's call (2026-09-30, audit N8): an AGENT that changes the text of a
-    // CONFIRMED prompt sends it back to the owner. The card goes pending, loses
+    // An AGENT that changes the text of a CONFIRMED prompt sends it back to
+    // the owner. The card goes pending, loses
     // its vector and stops matching until the owner confirms it again, because
     // a prompt is the owner's instruction to every agent and its words are
     // what the owner approved. An edit that leaves the text alone (options
@@ -1482,9 +1477,8 @@ export async function deleteRecallMap(
   mapId: string,
   actor: RecallActor,
 ): Promise<void> {
-  // Heads first (workspaces plan V4), before the map row lock. A native
-  // map's id is its node id; a malformed id locks nothing and misses below,
-  // as before.
+  // Heads first, before the map row lock. A native map's id is its node
+  // id; a malformed id locks nothing and misses below.
   const heads = UUID_RE.test(mapId) ? [mapId] : [];
   await withDeadlockRetry(() =>
     withNodeDeleteHeads(heads, async (tx) => {
@@ -1656,8 +1650,8 @@ export async function restoreRecallRevision(
 
   // A card edit or delete: write the old content back. A deleted card comes
   // back under its old slug when it is free, at its old rank, with the edges
-  // other cards had to it (revisions written before 2026-09-30 kept neither,
-  // so such a card comes back at the end without them).
+  // other cards had to it (an older revision may keep neither, so such a
+  // card comes back at the end without them).
   if (rev.cardSlug) {
     const before = (rev.before ?? {}) as {
       title?: string;

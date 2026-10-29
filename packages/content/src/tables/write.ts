@@ -91,7 +91,7 @@ export type CreateTableInput = {
   description?: string;
   /** Index at retrieval depth only (`data.brain_depth`: no entities,
    *  relations or facts). A Table exported from an app clients write
-   *  (app-table-exports.ts, client tier audit I2). */
+   *  (app-table-exports.ts). */
   brainDepth?: 'retrieval';
 };
 
@@ -112,15 +112,15 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
   }
   const id = randomUUID();
 
-  // Sqlite-first (signed off 2026-07-15): the workbook file is written inside
+  // Sqlite-first: the workbook file is written inside
   // the transaction, BEFORE the registry row that references it becomes
   // visible — a registry row pointing at a missing file can never be
   // committed. A failure inside it removes the file below. Inside a personal
   // space this transaction is only a savepoint: the space transaction can
   // still roll back after it, so the file is removed then too
   // (afterOuterRollback). JSONB `data`/`data_text` are dual-written through the
-  // transition (rollback = clear storage_path, plan §9).
-  // The store broker (A3b, plan 20.3): the workbook is staged under a new
+  // transition (rollback = clear storage_path).
+  // The store broker: the workbook is staged under a new
   // revision name no row points at, then the create's transaction inserts
   // the node (the check: exactly one row) and the registry row pointing at
   // it. A failure removes the stage; inside a personal space the space's
@@ -137,7 +137,7 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
       return { ...st, files: [st.abs] };
     },
     async (staged) => {
-      // Heads first (workspaces plan U1): the folder the table lands in.
+      // Heads first: the folder the table lands in.
       const created = await headsOrSpace<ReturnType<typeof detailOf>>(
         (f) => withNodeInsertHeads(ownerId, [{ type: 'table', path: TABLES_ROOT_LABEL }], f),
         (tx) =>
@@ -182,7 +182,7 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
       );
       // An outer transaction this create joined (a personal space, a
       // login's open write transaction) may still roll back: the stage goes
-      // with it, never a file no row will name (A3b fix round 2, N6).
+      // with it, never a file no row will name.
       afterOuterRollback(() => removeSqliteFile(staged.abs));
       return created;
     },
@@ -265,10 +265,10 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
   if (!row) return false;
   // An app table can't be deleted out from under its export link — remove the
   // export first (or delete the app; the link cascades either way). A
-  // read-only snapshot copy may be deleted (W6b fix round 2, M-1): only the
+  // read-only snapshot copy may be deleted: only the
   // app-bound check, never the copy check of assertTableWritable.
   await assertTableNotAppBound(id);
-  // `tables` row cascades. The store broker (A3b, plan 20.3): the delete of
+  // `tables` row cascades. The store broker: the delete of
   // exactly one node is the check.
   await headsOrSpace(
     (f) => withDeadlockRetry(() => withNodeDeleteHeads([id], f)),
@@ -282,10 +282,10 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
   // Workbook files go AFTER the registry delete commits (a failed delete
   // must never leave a registry row pointing at removed files); inside a
   // personal space afterCommit waits for the space transaction. The table's
-  // own files, as before A3b, not the sweep's (A3b fix round 1, H4: the
-  // sweep never removes a file whose item has no row): every revision of
-  // the table in the folders its row named, and a member author's copy of
-  // the accepted version (audit F07), whose row went with the node.
+  // own files, not the sweep's (the sweep never removes a file whose item
+  // has no row): every revision of the table in the folders its row named,
+  // and a member author's copy of the accepted version, whose row went with
+  // the node.
   // Best-effort; the sanity check reports orphaned files.
   const named = [row.storagePath, row.draftPath].filter((p): p is string => !!p);
   if (named.length > 0) {

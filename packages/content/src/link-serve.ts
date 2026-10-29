@@ -1,6 +1,6 @@
 /**
  * Who may open or close an item's open link, and what may go on its served
- * list (workspaces plan 8.1, decision 12, R7).
+ * list.
  *
  *  - Open or close a link: a user who may edit the item (a Moderator of its
  *    home workspace, or a user of a workspace whose grant has Write on); an
@@ -15,9 +15,9 @@
  *    on it, needs no more than the link.
  *
  * A brain with no workspaces yet (never migrated) has no grants to ask: the
- * owner gate of the caller decides alone, as before workspaces.
+ * owner gate of the caller decides alone.
  *
- * Every read here runs where its caller runs (arch A6): the system pool,
+ * Every read here runs where its caller runs: the system pool,
  * or a login's scope (the Grant Access panel, the share tool), where the
  * row rules hold. What a scope cannot read goes through a definer held to
  * it: whether the brain is on workspaces (mantle_ws_admin_id, 0279; the
@@ -56,8 +56,7 @@ export class LinkRefusedError extends Error {
   }
 }
 
-// What the share routes answered by hand (linkRefusal, A10 part 2 fix
-// round 1, L7): its status and `{ error, code }`.
+// The one error answer: its status and `{ error, code }`.
 defineDomainError(LinkRefusedError, {
   reason: 'the caller may not read the item (404) or may read but not link or serve it (403)',
   status: (e) => e.status,
@@ -91,7 +90,7 @@ export type LinkRights = {
 /**
  * The live workspaces of the brain `ownerId` that `loginId` is a user of
  * (`moderated`: those it moderates), as a uuid[] expression: what the array
- * forms of the rules take (arch A6: the database decides, one definition).
+ * forms of the rules take (the database decides, one definition).
  */
 function loginWsSql(ownerId: string, loginId: string, moderated: boolean) {
   return sql`(select coalesce(array_agg(u.workspace_id), '{}'::uuid[])
@@ -179,8 +178,8 @@ export async function assertMayLink(
   if (!canShareNode(r)) {
     throw new ShareInputError('not-shareable', `type '${r.type}' cannot carry a link here`);
   }
-  // A read-only snapshot copy stays in its private workspace (W6b fix
-  // round 2, L-1): no link, whoever asks (the database refuses it too).
+  // A read-only snapshot copy stays in its private workspace: no link,
+  // whoever asks (the database refuses it too).
   if (r.snapshotCopy) {
     throw new LinkRefusedError(403, 'forbidden', SNAPSHOT_COPY_NO_SHARE);
   }
@@ -239,7 +238,7 @@ async function serveCandidates(
     return new Set(rows.map((r) => r.id.toLowerCase()));
   }
   // The kinds whose link serves what they name or embed: the kind registry's
-  // `linkServes` field (A10 #12).
+  // `linkServes` field.
   if (!(LINK_SERVE_KINDS as readonly string[]).includes(item.type)) return new Set();
 
   const out = new Set<string>();
@@ -291,7 +290,7 @@ export async function listServeCandidates(
   );
   if (!ids.length) return [];
   const rights = await linkRights(ownerId, loginId, ids, q);
-  // A read-only snapshot copy is never offered (W6b fix round 3, L-1).
+  // A read-only snapshot copy is never offered.
   const ok = ids.filter((id) => rights.get(id)?.edit === true && !rights.get(id)?.snapshotCopy);
   if (!ok.length) return [];
   const rows = await q
@@ -332,7 +331,7 @@ export async function checkServeList(
   const asked = shareServedIds({ served: serve }).filter((id) => id !== self);
   const held = new Set(shareServedIds({ served: current }));
   const rights = await linkRights(ownerId, loginId, asked, q);
-  // A read-only snapshot copy is never served (W6b fix round 3, L-1): one
+  // A read-only snapshot copy is never served: one
   // the list holds already is dropped from it, one added is refused.
   const list = asked.filter((id) => !(held.has(id) && rights.get(id)?.snapshotCopy));
   const added = list.filter((id) => !held.has(id));

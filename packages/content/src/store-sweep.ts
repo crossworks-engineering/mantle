@@ -1,12 +1,11 @@
 /**
- * THE store sweep (workspaces arch A3b, plan 20.3: "leaves a sweep to remove
- * orphans"; docs/store-brokers.md): one pass over every store a broker
+ * THE store sweep (docs/store-brokers.md): one pass over every store a broker
  * writes under a new revision name, through the one helper
  * (`sweepOrphans`, @mantle/db store-broker.ts). It removes only an old
  * revision of an item whose row names another file (one a flip replaced,
  * a stage whose flip never landed); a file whose item has no row (a deleted
- * one's, an app's from before A3b) and a draft from before A3b are only
- * reported. Never a revision a row points at, never anything younger than
+ * one's, an app's file under its old fixed name) and a table draft under
+ * its old fixed name are only reported. Never a revision a row points at, never anything younger than
  * the grace period, only after a file has been seen unreferenced on two
  * runs a grace period apart, at most a budget per run (the rest carried),
  * nothing while a restore's hold is in place (held, not a failure), and
@@ -61,7 +60,7 @@ const SNAPSHOT_FILE =
   /^[^/]+\/[^/]+\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.sqlite$/;
 
 /**
- * The snapshot store's three folders (A3b part 2): an app's history
+ * The snapshot store's three folders: an app's history
  * (APP_DB_DIR/_snapshots), a table's (TABLE_DB_DIR/_snapshots), and the
  * accepted tables' workbook copies (TABLE_DB_DIR/accepted-snapshots). A
  * snapshot's item is its row (`<owner>/<item>/<snapshot id>.sqlite`), an
@@ -89,7 +88,7 @@ export function snapshotSweepSpecs(): SweepSpec[] {
       nodeOf,
       pruneEmptyDirs: label !== 'accepted',
       // Files from before 0284 whose rows are all gone are reported, never
-      // a nightly failure (fix round 1, L9).
+      // a nightly failure.
       stopWhenNoRows: false,
       rows: async () =>
         (await storeRows(label)).map((r) => ({
@@ -132,13 +131,13 @@ export async function sweepStores(opts: StoreSweepOptions = {}): Promise<SweepRe
           store,
           root: roots[store],
           nodeOf: (rel) => nodeOneDeep(rel, store),
-          // A table draft written before A3b keeps its old name: never
-          // removed, reported (A3b fix round 1, L2).
+          // A table draft under its old fixed name: never removed,
+          // reported.
           spare:
             store === 'tables' ? (rel) => isLegacyDraftName(path.posix.basename(rel)) : undefined,
           // A table's paths are relative, an app database's absolute: the
           // sweep compares them with the root as real paths and stops when
-          // one is outside it (A3b fix round 1, H3).
+          // one is outside it.
           rows: () => storeRows(store),
         },
         opts,
@@ -149,10 +148,10 @@ export async function sweepStores(opts: StoreSweepOptions = {}): Promise<SweepRe
   return out;
 }
 
-// ── The operator's leftovers (A3b part 2 fix round 1) ──────────────────
+// ── The operator's leftovers ────────────────────────────────────────────
 
 /** A file the sweep only reports and never removes: an item's file with no
- *  row (and no tombstone), or a table draft from before A3b. One per line,
+ *  row (and no tombstone), or a table draft under its old name. One per line,
  *  `<store part>\t<path under its root>`: what `store:sweep
  *  --report-orphans` writes and `--remove-orphans <file>` reads back. A
  *  file of an item whose row names a missing file is never listed: it may
@@ -171,7 +170,7 @@ function sweptRoots(): Map<string, string> {
 
 /** The leftovers every store reports now (a dry run, past a hold), but
  *  never of a store whose rows name no file at all: to a wrong or empty
- *  database every file is a leftover (fix round 2, N4). */
+ *  database every file is a leftover. */
 export async function reportedLeftovers(): Promise<Leftover[]> {
   const out: Leftover[] = [];
   for (const r of await sweepStores({ dryRun: true, allowMany: true })) {
@@ -219,7 +218,7 @@ export async function removeLeftovers(
 ): Promise<{ removed: Leftover[]; skipped: (Leftover & { why: string })[] }> {
   const now = opts.now ?? Date.now();
   // Never past a restore's hold: restored rows may name what looks left
-  // over (fix round 2, N4).
+  // over.
   if (opts.apply) {
     const held = (await sweepStores({ dryRun: true })).filter((r) => r.held).map((r) => r.label);
     if (held.length) throw new StoreHeldError(held);

@@ -4,8 +4,8 @@
  * never reach another app's data (there is no path input — only the
  * authenticated app node id, resolved to a registry row here).
  *
- * Uses the built-in `node:sqlite` (DatabaseSync) — no native dependency; Node 26
- * in both dev and prod since 2026-07-25 (engines >=26). Dynamic-imported so
+ * Uses the built-in `node:sqlite` (DatabaseSync) — no native dependency
+ * (engines >=26). Dynamic-imported so
  * merely importing content elsewhere doesn't trip the experimental-module
  * warning. Server-only.
  *
@@ -63,7 +63,7 @@ export { AppDbRestoringError, AppSqlBusyError, AppSqlError } from './app-sql-run
  * An app's database file is gone although the app had stored something in it
  * (a schema applied, or a write recorded). It is never recreated empty: an
  * empty file would hide the loss, and every later statement would fail with
- * "no such table" while nothing said why (apps audit 2026-10-02, D1). The
+ * "no such table" while nothing said why. The
  * file has to come back from a backup or a snapshot.
  */
 export class AppDbMissingError extends Error {
@@ -75,8 +75,7 @@ export class AppDbMissingError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// the routes answered by hand.
+// The one error answer (@mantle/std domain-errors.ts).
 defineDomainError(AppDbMissingError, {
   reason: 'the app had data and its database file is gone; the message says how to restore it',
   status: 409,
@@ -120,20 +119,19 @@ export type AppDbSchema = { schemaSql: string; schemaVersion: number };
 export type DbRows = Record<string, unknown>[];
 export type DbExecResult = { changes: number; lastInsertRowid: number };
 /** Who runs a broker statement: one statement at a time per key (a client
- *  login, a member login, a share link; client tier audit I1). `viewer` is
+ *  login, a member login, a share link). `viewer` is
  *  the authenticated person (app identity): it fills the reserved
  *  `:host_me_*` parameters. Without it, SQL that uses one is refused. */
 export type AppDbCaller = {
   callerKey?: string;
   viewer?: AppViewerSubject;
-  /** A write that may change rows only, never the schema (an MCP write,
-   *  team apps Phase 1): the SQL child's data-only authorizer. */
+  /** A write that may change rows only, never the schema (an MCP write):
+   *  the SQL child's data-only authorizer. */
   dataOnly?: boolean;
   /** Runs the provisioning a read does first (the registry row, the
    *  declared schema, the viewer salt) and nothing else: a read on a
    *  read-only actor names it a read-path write here (@mantle/tools
-   *  app_data_query, A5 step 4 fix round 1, LOW-4), never the caller's own
-   *  SQL. */
+   *  app_data_query), never the caller's own SQL. */
   provision?: <T>(fn: () => Promise<T>) => Promise<T>;
 };
 
@@ -199,8 +197,8 @@ async function openSqlite(file: string): Promise<SqliteDb> {
 
 /** Verbs an app must not use anywhere in a statement (file and engine
  *  escapes). Checked on the text with string literals and comments stripped
- *  (audit 2026-09-27: a leading SQL comment let VACUUM INTO pass a
- *  first-word check), and backed by the engine authorizer in
+ *  (a leading SQL comment must not hide VACUUM INTO from a first-word
+ *  check), and backed by the engine authorizer in
  *  app-sql-runner.ts, which is the real lock. */
 const BLOCKED = /\b(attach|detach|vacuum|pragma)\b/i;
 /**
@@ -328,7 +326,7 @@ async function isRestoring(storagePath: string): Promise<boolean> {
   }
 }
 
-// ── The store broker (workspaces arch A3b, docs/store-brokers.md) ─────────
+// ── The store broker (docs/store-brokers.md) ──────────────────────────────
 //
 // This module is the only writer of an app's SQLite file. Every write runs
 // the statement the database checks first, as the caller: the registry
@@ -336,14 +334,14 @@ async function isRestoring(storagePath: string): Promise<boolean> {
 // rules and the edit check's appdata rule on the write role), so a write the
 // database refuses changes nothing on disk. A restore replaces the whole
 // file: staged under a new revision name, then one short transaction checks
-// the row and points it there (plan 20.3); the old file is the sweep's.
-// The app's SQL (a statement, a seed, a schema script) runs in place: the
-// owner's exception to 20.3, a copy per statement would cost a whole file.
+// the row and points it there; the old file is the sweep's.
+// The app's SQL (a statement, a seed, a schema script) runs in place: a copy
+// per statement would cost a whole file.
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** The bumped row must still name the file the write read: a restore that
- *  flipped `storage_path` since then (A3b fix round 1, M1) means the write
+ *  flipped `storage_path` after the read means the write
  *  would land in the replaced file. AppDbRestoringError, a busy error: the
  *  broker answers 429 with reason 'busy' and the caller (the app, or the
  *  agent) tries again, reading the row again. */
@@ -371,15 +369,15 @@ async function bumpWriteSeq(tx: Tx, regId: string, storagePath: string): Promise
 /** How long one try of a single statement's check waits for the registry
  *  row lock (a seed or a schema script holds it for its run, up to
  *  APP_SCHEMA_TIMEOUT_MS). Short: a try holds a pooled connection while it
- *  waits (A3b fix round 3, F2). */
+ *  waits. */
 export const APP_DB_CHECK_LOCK_TIMEOUT_MS = 200;
 /** The pause between tries (plus 0 to 50 ms of jitter), OUTSIDE any
  *  transaction: no connection is held while the statement waits for a
  *  seed to end. */
 export const APP_DB_CHECK_RETRY_PAUSE_MS = 500;
 /** How long a single statement's check keeps trying before it answers
- *  busy (A3b fix round 2, N2: nothing on the client retries a busy answer,
- *  so the server waits out a seed of up to this long itself). */
+ *  busy (nothing on the client retries a busy answer, so the server waits
+ *  out a seed of up to this long itself). */
 export const APP_DB_CHECK_RETRY_MS = 10_000;
 
 /**
@@ -421,14 +419,14 @@ async function checkAppDbWrite(
         );
       }
       // A little jitter, so writes waiting on the same seed do not try in
-      // step (A3b fix round 4).
+      // step.
       await sleep(Math.min(APP_DB_CHECK_RETRY_PAUSE_MS + Math.floor(Math.random() * 51), left));
     }
   }
 }
 
 /** Every database revision of `appNodeId` in the folder `dirAbs` (absolute
- *  paths, no sidecars): what a backup keeps (A3b fix round 1, H1). */
+ *  paths, no sidecars): what a backup keeps. */
 export function appRevisionFiles(dirAbs: string, appNodeId: string): string[] {
   return revisionFiles(dirAbs, appNodeId, 'appdb');
 }
@@ -458,7 +456,7 @@ export async function ensureAppDatabase(
     // child-process runner like every other app statement: the engine
     // authorizer refuses ATTACH, VACUUM and PRAGMA whatever the text looks
     // like, and a time limit stops an endless statement without freezing
-    // this process (it used to run here, on the main thread, with no timeout).
+    // this process.
     assertSafeScript(schema.schemaSql);
     await applySchema(reg, schema);
   }
@@ -466,7 +464,7 @@ export async function ensureAppDatabase(
 }
 
 /**
- * Apply one schema version, once, across processes (apps audit D3). The web
+ * Apply one schema version, once, across processes. The web
  * and api processes can both reach a new version at the same moment; the row
  * lock makes the second wait and then see the version already applied. The
  * script stamps its version into the file in the same SQLite transaction
@@ -490,7 +488,7 @@ async function applySchema(reg: AppDbRegistry, schema: AppDbSchema): Promise<voi
       reg.schemaVersion = locked.schemaVersion;
       return;
     }
-    // The store broker (A3b): the checked statement, then the script in
+    // The store broker: the checked statement, then the script in
     // place (the app SQL exception), under the row lock a restore takes too.
     await bumpWriteSeq(tx, reg.id, reg.storagePath);
     await mkdir(path.dirname(reg.storagePath), { recursive: true });
@@ -513,7 +511,7 @@ async function applySchema(reg: AppDbRegistry, schema: AppDbSchema): Promise<voi
 
 /**
  * Try a new schema script against a COPY of the app's live database before it
- * is declared (apps audit D2). A declared schema runs in full against the live
+ * is declared. A declared schema runs in full against the live
  * file on the app's next statement, so a script that fails there (a plain
  * CREATE TABLE over a table that exists, a syntax error) stops every read and
  * write of the app until someone fixes it. Here it fails on the copy, and the
@@ -535,7 +533,7 @@ export async function checkAppSchemaScript(
 }
 
 /** The same check against a database file that is not an app's yet (an
- *  imported package's data, apps audit 2026-10-02, low): the schema the
+ *  imported package's data): the schema the
  *  package declares must run over the data it brings. */
 export async function checkAppSchemaScriptOnFile(file: string, schemaSql: string): Promise<void> {
   assertSafeScript(schemaSql);
@@ -648,7 +646,7 @@ export async function appDbExec(
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
   const bound = await bindViewerParams(sql, params, viewerThunk(ownerId, appNodeId, reg.id, opts));
-  // The store broker (A3b): the checked statement before the file, on the
+  // The store broker: the checked statement before the file, on the
   // file this write read.
   await checkAppDbWrite(reg.id, reg.storagePath);
   await mkdir(path.dirname(reg.storagePath), { recursive: true });
@@ -675,8 +673,8 @@ export async function appDbExec(
 }
 
 /**
- * Record that a CLIENT login wrote this app's database (client tier audit
- * I3): set once, on the first client write, and never cleared, so a Table
+ * Record that a CLIENT login wrote this app's database: set once, on the
+ * first client write, and never cleared, so a Table
  * exported from the app stays client-sourced after the app is raised above
  * client (packages/tools/src/client-sourced.ts). The client db-broker calls
  * it after a successful exec, so the registry row exists.
@@ -730,9 +728,9 @@ export function isSeedTableName(table: string): boolean {
  * The seed plan: every row checked against the LIVE `columns`, then one
  * INSERT per row (an empty `DELETE` first with `replace`). Pure, so the rules
  * are testable without a file; the statements run in one transaction in a
- * SQL child (apps audit P5: the seed used to run on the main thread, where a
- * writer holding the file's lock could stall the whole process for up to
- * busy_timeout). Values must be string/number/boolean/null (booleans stored
+ * SQL child (not the main thread, where a writer holding the file's lock
+ * could stall the whole process for up to busy_timeout). Values must be
+ * string/number/boolean/null (booleans stored
  * as 1/0).
  */
 export function planSeedStatements(
@@ -793,12 +791,12 @@ export async function appDbSeedRows(
 ): Promise<AppDbSeedResult> {
   if (!isSeedTableName(table)) throw seedTableError(table, null);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
-  // Under the registry row lock (apps audit 2026-10-02, item 2). A seed may
+  // Under the registry row lock. A seed may
   // run for APP_SCHEMA_TIMEOUT_MS, far past a restore's drain: without the
   // lock it could commit into the old file's WAL, and its close could remove
   // the restored file's sidecars. A restore takes the same lock for its swap,
   // so it waits for the seed; a seed that waited on a restore sees the marker
-  // and is refused as busy. The store broker (A3b): the checked statement
+  // and is refused as busy. The store broker: the checked statement
   // (the revision bump, which takes the lock) comes first, before the file
   // is even read.
   let columns: string[] = [];
@@ -913,7 +911,7 @@ export async function appDbSchema(ownerId: string, appNodeId: string): Promise<A
   if (!reg) return [];
   await assertNotLost(appNodeId, reg);
   if (!(await fileExists(reg.storagePath))) return [];
-  // In a SQL child, read-only (apps audit P5): not on the main thread.
+  // In a SQL child, read-only: not on the main thread.
   const rows = (await runAppSql(reg.storagePath, {
     sql: "SELECT name, sql FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL ORDER BY name",
     mode: 'all',
@@ -1046,7 +1044,7 @@ export function snapshotDestPath(
   appNodeId: string,
   storagePath?: string,
 ): string {
-  // The file's own name (a revision a restore flipped to, A3b), so the
+  // The file's own name (a revision a restore flipped to), so the
   // restore script puts it back where storage_path points.
   return path.join(
     destDir,
@@ -1057,7 +1055,7 @@ export function snapshotDestPath(
 
 /**
  * Consistent-snapshot EVERY registered per-app SQLite database (every revision
- * of its file on disk, A3b) into destDir via
+ * of its file on disk) into destDir via
  * `VACUUM INTO` — SQLite's online-backup primitive, so each snapshot is a
  * transactionally consistent, compacted copy even while an app writes
  * concurrently (no raw-file copy race, no sqlite3 CLI dependency). The per-app
@@ -1073,7 +1071,7 @@ export async function snapshotAllAppDatabases(
   destDir: string,
   opts: { dumpStartedAt?: number } = {},
 ): Promise<AppDbSnapshotReport> {
-  // Bounded (A3b fix round 2): with the dump's start, a revision the sweep
+  // Bounded: with the dump's start, a revision the sweep
   // had already marked unreferenced before it is left out (no restored row
   // can name it); without it, every revision goes.
   const leaveOut =
@@ -1097,8 +1095,8 @@ export async function snapshotAllAppDatabases(
     }));
   const report: AppDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
   // The apps' own snapshots (History tab) ride along: immutable files, so a
-  // hard link is as good as a copy and costs no disk (apps audit 2026-10-02,
-  // item 5). A restored box keeps every app's history.
+  // hard link is as good as a copy and costs no disk. A restored box keeps
+  // every app's history.
   const snapshots = path.join(appDbRoot(), '_snapshots');
   if (await fileExists(snapshots)) {
     try {
@@ -1125,7 +1123,7 @@ export async function snapshotAllAppDatabases(
         ? path.dirname(live)
         : r.ownerId;
     // EVERY revision of the app's database on disk, not only the one the
-    // row names now (A3b fix round 1, H1): the Postgres dump ran first, and
+    // row names now: the Postgres dump ran first, and
     // a restore since then flipped the row to a new file while the dump
     // names the old one (the sweep keeps it for a grace period).
     for (const file of appRevisionFiles(path.dirname(r.storagePath), r.appNodeId)) {
@@ -1134,8 +1132,8 @@ export async function snapshotAllAppDatabases(
       try {
         await mkdir(path.dirname(destFile), { recursive: true });
         await rm(destFile, { force: true }); // VACUUM INTO refuses an existing target
-        // In a SQL child (apps audit P5): a 256 MB VACUUM INTO on the main
-        // thread froze the process that runs the backup.
+        // In a SQL child: a 256 MB VACUUM INTO on the main thread would
+        // freeze the process that runs the backup.
         await copyAppDbFile(file, destFile);
         const { size } = await stat(destFile);
         report.snapshotted.push({ ownerId: r.ownerId, appNodeId: r.appNodeId, bytes: size });
@@ -1193,7 +1191,7 @@ export async function snapshotAppDatabase(
   }
   const { size } = await stat(destAbs);
   // The file the copy was taken of: a snapshot's flip checks the row still
-  // names it (a restore may have flipped it meanwhile; A3b part 2).
+  // names it (a restore may have flipped it meanwhile).
   return {
     bytes: size,
     schemaVersion: reg.schemaVersion,
@@ -1210,8 +1208,8 @@ export async function snapshotAppDatabase(
 export const APP_DB_RESTORE_DRAIN_MS = APP_SQL_TIMEOUT_MS + 750;
 
 /**
- * Put a snapshot's database back as the app's live file (apps snapshots,
- * Phase 2). The marker beside the live file stops new statements in every
+ * Put a snapshot's database back as the app's live file. The marker beside
+ * the live file stops new statements in every
  * process (the brokers and the SQL child both check it) and the drain waits
  * out the ones already running; the registry row lock waits out a schema
  * applier. Then the snapshot is copied next to the live file, the live
@@ -1233,7 +1231,7 @@ export async function restoreAppDatabaseFile(
   await writeFile(marker, String(Date.now()));
   try {
     await new Promise((r) => setTimeout(r, opts.drainMs ?? APP_DB_RESTORE_DRAIN_MS));
-    // The store broker (A3b, plan 20.3): the snapshot is staged as a new
+    // The store broker: the snapshot is staged as a new
     // revision of the file (no row points at it), then one short transaction
     // checks the row as the caller (the revision bump, which takes the row
     // lock the schema applier and a seed hold) and points it at the stage.
@@ -1282,7 +1280,7 @@ export async function restoreAppDatabaseFile(
         return { bytes: size };
       },
       // Only a flip known not to have landed removes the stage; after one
-      // that may have committed it stays (A3b fix rounds 1 and 2, H2, N3),
+      // that may have committed it stays,
       // so a restored app never points at a removed file.
       removeSqliteFile,
     );
@@ -1299,7 +1297,7 @@ export async function appDatabasePath(ownerId: string, appNodeId: string): Promi
 
 /**
  * Remove an app's on-disk SQLite file(s), given the path read before the app
- * was deleted (apps audit D6: the files go AFTER the node, so a delete that
+ * was deleted (the files go AFTER the node, so a delete that
  * fails leaves the app with its data, never an app with none). Idempotent
  * (`force` ignores a missing file).
  */

@@ -1,5 +1,5 @@
 /**
- * An agent runs inside its workspace (workspaces W4b, plan 5.1); an agent
+ * An agent runs inside its workspace; an agent
  * with none is a system-wide helper that runs in its caller's scope.
  *
  * The four functions that read the brain for an agent wrap THEMSELVES here
@@ -10,8 +10,8 @@
  *    its turn in a TURN scope of that one workspace on the workspace role:
  *    every query in its own short transaction, none held across an LLM call,
  *    and a lost scope refused (withTurnScope). It writes with the rights of
- *    the login it answers, in that workspace only (plan v2 4.2, the A8
- *    finding F2): each write is a short transaction of the login write
+ *    the login it answers, in that workspace only: each write is a short
+ *    transaction of the login write
  *    gateway with the turn's scope set on it, as the login's mutating
  *    request writes, and the database's checks decide (a Moderator of the
  *    home, or a grant with Write on). modWs is the workspace when the login
@@ -29,22 +29,22 @@
  *    anchor login's write path, and nothing more. Its rows keep their
  *    stamp (the workspace, and the login only when one asked);
  *  - an agent with no workspace (a specialist, a worker) runs INSIDE a turn
- *    scope in the caller's scope: a helper never widens it (plan 5.1).
+ *    scope in the caller's scope: a helper never widens it.
  *    Run straight from a chat (an Admin user talking to the replay agent),
  *    the helper runs in the asking login's turn scope of the
- *    Admin workspace, as the Admin assistant does (W7c fix round 2, H1):
+ *    Admin workspace, as the Admin assistant does:
  *    row security keeps each login's digests and archived chat summaries
  *    (nodes.login_id, 0269) to that login, in every memory tool. A login
  *    that is not a user of Admin is refused. With no login asked (system
  *    work: a heartbeat, a run, a worker) a specialist or a worker does
- *    system work; a responder or an assistant on no workspace is refused
- *    (W8 integration); a chat turn always names its login
+ *    system work; a responder or an assistant on no workspace is refused;
+ *    a chat turn always names its login
  *    (runAssistantTurn refuses a helper without one);
  *
  * Nested: the same workspace reuses the open scope; another workspace, or an
  * Admin assistant inside a non-Admin turn, is refused (fail closed). A turn
  * started on the system pool from inside a scope (a tool's work under
- * asSystem, W7a fix round 2) answers the login of the scope it left, never
+ * asSystem) answers the login of the scope it left, never
  * the anchor; one that names another login is refused. A
  * workspace that cannot be read (gone, archived) is refused, never read as
  * no workspace.
@@ -72,7 +72,7 @@ import {
 } from '@mantle/db/viewer';
 
 /**
- * This file's one system door (arch A6): the rows an assistant's workspace
+ * This file's one system door: the rows an assistant's workspace
  * scope is built from (its workspace, the login's user rows, the agent's brain,
  * the login's role) are read before any scope exists, on the system pool by
  * the named reason 'agent-workspace'. Every read below goes through it.
@@ -178,7 +178,7 @@ async function adminUserOf(
 }
 
 /**
- * Where the agent's turns run (W4b fix round 1, M2; W7a): 'admin' for the
+ * Where the agent's turns run: 'admin' for the
  * Admin assistant (a turn scope of Admin), 'workspace' for an assistant of any other
  * workspace (a turn scope of it), 'none' for an agent with no workspace (a
  * helper, in its caller's scope). A workspace that is gone or archived throws
@@ -193,7 +193,7 @@ export async function agentWorkspaceKind(
 
 /**
  * Whether the agent's turns run in a turn scope: an assistant of any
- * workspace, the Admin one included since W7a. False for an agent with no
+ * workspace, the Admin one included. False for an agent with no
  * workspace.
  */
 export async function agentTurnScoped(agent: ScopedAgent): Promise<boolean> {
@@ -212,8 +212,8 @@ export async function withAgentScope<T>(
     /** The login an owner surface names (the web chat's signed-in login,
      *  an MCP connection's): whom the Admin assistant answers when no
      *  member or client login is given. Another workspace's assistant
-     *  answers it only when it is a user of that workspace (A8 fix round
-     *  1); else it answers none. */
+     *  answers it only when it is a user of that workspace; else it
+     *  answers none. */
     ownerLoginId?: string | null;
   } = {},
 ): Promise<T> {
@@ -223,7 +223,7 @@ export async function withAgentScope<T>(
     // A helper: inside a turn it runs in the caller's scope, never wider.
     if (open) return fn();
     // Run straight from a chat (an Admin user talking to the replay agent),
-    // it answers that login (W7c fix rounds 1 and 2, H1): the helper runs in
+    // it answers that login: the helper runs in
     // the login's turn scope of Admin, so row security keeps every other
     // login's chats, digests and archived summaries out of its memory tools.
     // No login (system work): the system pool, no stamp, and a per-login
@@ -231,7 +231,7 @@ export async function withAgentScope<T>(
     //
     // Started on the system pool from inside a scope (a tool's work under
     // asSystem), it answers the login of the scope it left, as a workspace
-    // assistant does (W7a fix round 2, N1; W7 integration fix): never as
+    // assistant does: never as
     // system work, which would read every login's chats. A named login other
     // than that one is refused, and so is a left scope with no login.
     const left = scopeLeftForSystem();
@@ -254,7 +254,7 @@ export async function withAgentScope<T>(
       // specialist or a worker runs it on the system pool. A responder or an
       // assistant answers people: one on no workspace holds none, so with no
       // login it has nothing to run in and is refused, never run as system
-      // work (W8 integration).
+      // work.
       if (agent.role === 'responder' || agent.role === 'assistant') {
         throw new AgentWorkspaceError(
           'This assistant is in no workspace and this call names no login: it has nothing to answer in.',
@@ -286,12 +286,12 @@ export async function withAgentScope<T>(
     }
   }
   // Inside a user's own scope the nested turn answers THAT login unless a
-  // login is named (W7a fix round 1, M1): ask_responder over an Admin
-  // login's MCP names none, and the turn then acted for the anchor, with
-  // the anchor's areas and rows. Started on the system pool from inside a
-  // scope (a tool call's work under asSystem, W7a fix round 2, N1), the
-  // turn answers the login of the scope it left the same way: no open scope
-  // there, and it acted for the anchor. A named login other than the
+  // login is named: ask_responder over an Admin login's MCP names none, and
+  // the turn would otherwise act for the anchor, with the anchor's areas and
+  // rows. Started on the system pool from inside a scope (a tool call's work
+  // under asSystem), the turn answers the login of the scope it left the
+  // same way: there is no open scope there, and it would act for the
+  // anchor. A named login other than the
   // caller's is refused; a caller with no login (a public link, a turn that
   // answers nobody) starts no nested turn from the system pool.
   const left = open ? null : scopeLeftForSystem();
@@ -340,10 +340,9 @@ export async function withAgentScope<T>(
     );
   }
   // A web chat names its signed-in login as an owner surface (the tool
-  // loop's ownerLoginId; the A8 fix round 1, finding 8: the web turn's real
-  // path): a workspace assistant answers it, with its rights there, when it
-  // is a user of the workspace. Any other web login's turn answers none and
-  // only reads, as before.
+  // loop's ownerLoginId, the web turn's real path): a workspace assistant
+  // answers it, with its rights there, when it is a user of the workspace.
+  // Any other web login's turn answers none and only reads.
   if (!loginId && !caller && opts.ownerLoginId) {
     const seat = await membership(wsId, opts.ownerLoginId);
     if (seat) {
@@ -353,16 +352,16 @@ export async function withAgentScope<T>(
   }
   const modWs = user?.moderator ? [wsId] : [];
   // It writes for its user with that user's rights, in its own workspace
-  // only (plan v2 4.2, the A8 finding F2): the scope is this one workspace,
+  // only: the scope is this one workspace,
   // and the user's Moderator seat there, never a seat elsewhere. With no
   // user it only reads (turnScopeWrites). The seat is read again before
-  // each write call (@mantle/tools moderator-seat.ts, fix round 1, L5).
+  // each write call (@mantle/tools moderator-seat.ts).
   const scope = { kind: 'assistant' as const, loginId, ws: [wsId], modWs };
   return withTurnScope(scope, fn, { writes: turnScopeWrites(scope, false) });
 }
 
 /**
- * Whether the current turn is the anchor's own thread (W7 integration fix):
+ * Whether the current turn is the anchor's own thread:
  * the login it answers is the brain owner. What an agent learned there (the
  * Journal's learned lanes, persona notes) rides only such a turn; another
  * user's turn never gets it (each user reads only their own chats).
@@ -405,7 +404,7 @@ export function ownerSurfaceLogin(surface: unknown): string | null {
 }
 
 /** The login a tool surface names (a member's turn, and a
- *  Telegram chat's paired login since W7d, which any workspace's assistant
+ *  Telegram chat's paired login, which any workspace's assistant
  *  answers), if any. */
 export function surfaceLoginId(surface: unknown): string | null {
   const s = surface as { kind?: string; loginId?: unknown } | null | undefined;
@@ -420,16 +419,16 @@ export function surfaceLoginId(surface: unknown): string | null {
 }
 
 /**
- * Re-enter the scope a run was made in (plan 5.4, U5): a run carries the
+ * Re-enter the scope a run was made in: a run carries the
  * workspace and login of the turn that planned it (runs.workspace_id and
  * login_id, stamped at write; NULL = Admin). A worker calls this before its
  * first query for the run: the Admin workspace in a turn scope of Admin
- * (W7a; the run's login, else the owner), any other workspace in a turn
+ * (the run's login, else the owner), any other workspace in a turn
  * scope of it that writes with the run's login's rights there (its seat and
- * grants in that workspace; turnScopeWrites, the A8 finding F2) and only
+ * grants in that workspace; turnScopeWrites) and only
  * reads when the run names no login. A run with no workspace is the Admin
  * assistant's (NULL = Admin): the brain's Admin workspace; a brain with no
- * live Admin workspace refuses it (arch A7: no system-pool fallback). A run
+ * live Admin workspace refuses it (no system-pool fallback). A run
  * with no owner runs as system work.
  */
 export async function withRunScope<T>(

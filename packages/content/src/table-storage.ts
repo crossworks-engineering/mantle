@@ -37,10 +37,10 @@ import { copySqliteFile } from './snapshot-broker';
 import { flipTable, stageDoc, stagedTableWrite, tableRevisionPath } from './table-broker';
 
 /**
- * File-side plumbing for sqlite-native tables (Tables v2 P1) — the pieces
+ * File-side plumbing for sqlite-native tables — the pieces
  * tables.ts composes:
  *
- *   - the REGISTRY LOCK SPINE (plan §3.3): every draft-create, draft write
+ *   - the REGISTRY LOCK SPINE: every draft-create, draft write
  *     batch, commit, and (later) migration step takes a Postgres row lock on
  *     the `tables` registry row for the duration of the file operation. WAL
  *     covers intra-process concurrency; this lock is the cross-process writer
@@ -147,10 +147,10 @@ export function loadDocsFromFile(
       throw err;
     }
   }
-  // The draft the row points at (store brokers, A3b): none, no draft.
+  // The draft the row points at (the store broker): none, no draft.
   const draftAbs = draftAbsOf(draftPath);
   // A commit in the other process can consume the draft between the exists
-  // check and the open — that's "no draft now", not an error (audit finding 7).
+  // check and the open — that's "no draft now", not an error.
   // Below admin the draft is never read (member logins): a Library reader, a
   // teammate reading a shared table, or a team-level agent sees the published
   // workbook only. Only the owner and the item's own space read the draft,
@@ -160,7 +160,7 @@ export function loadDocsFromFile(
   // In a workspace scope (an Admin user's request) the draft is readable
   // only for an item the user may edit, which this function cannot see: the
   // caller asks the row (draftAllowed) and says so with publishedOnly: false.
-  // Without that answer it reads the published workbook (W6a fix round 1).
+  // Without that answer it reads the published workbook.
   const mayReadDraft =
     opts.publishedOnly === false || (!opts.publishedOnly && !currentWorkspaceScope());
   if (mayReadDraft && readsDrafts() && draftAbs && existsSync(draftAbs)) {
@@ -183,10 +183,10 @@ export function loadDocsFromFile(
 type EnsureFileNode = { id: string; ownerId: string; title: string };
 
 /**
- * Lazy migration (P4, plan section 9): make a legacy JSONB table
- * file-backed. A store broker write (A3b, plan 20.3): the published
- * workbook from `data`, and a pending `draftData` as the draft IN THE SAME
- * STEP (stranding drafts was the data-loss hole), staged under new revision
+ * Lazy migration: make a legacy JSONB table file-backed. A store broker
+ * write: the published workbook from `data`, and a pending `draftData` as
+ * the draft IN THE SAME STEP (a stranded draft is lost data), staged under
+ * new revision
  * names and row-count verified; then one short transaction checks the row
  * (still JSONB, at the revision read) and points it at them. No-op when
  * already file-backed. The table's revision moves by one.
@@ -243,7 +243,7 @@ export async function ensureFileBacked(node: EnsureFileNode): Promise<void> {
 }
 
 /** The absolute path of the draft a row points at (`tables.draft_path`),
- *  or null: THE way a reader finds a table's draft (A3b). */
+ *  or null: THE way a reader finds a table's draft. */
 export function draftAbsOf(draftPath: string | null | undefined): string | null {
   return draftPath ? resolveStoragePath(draftPath) : null;
 }
@@ -288,10 +288,10 @@ export async function tableSqlSurface(
   if (!row?.storagePath) return null;
   const abs = resolveStoragePath(row.storagePath);
   // draftOk: whether the caller may read the draft workbook (draftAllowed:
-  // mantle_may_edit in a workspace scope, false below admin, W6a).
+  // mantle_may_edit in a workspace scope, false below admin).
   return {
     abs,
-    // The draft the row points at (A3b), only where the caller may read it.
+    // The draft the row points at, only where the caller may read it.
     draftAbs: row.draftOk === true ? draftAbsOf(row.draftPath) : null,
     tabs: describeWorkbook(abs),
     draftOk: row.draftOk === true,
@@ -304,7 +304,7 @@ export async function tableSqlSurface(
 export const DATA_TEXT_ROW_WINDOW = 200;
 
 /**
- * dataText for a file-backed table (plan §6 L3, as amended): the L1 profile
+ * dataText for a file-backed table: the L1 profile
  * text + the first 200 rows as markdown with an honest truncation note.
  * Serves the tables-list ILIKE and the extractor's LLM input; the profile
  * part is also what write_chunks re-derives per tab. Reads everything from
@@ -344,7 +344,7 @@ export function buildTableDataText(
 }
 
 /**
- * Background migration sweep (P4, plan §9): convert up to `batch` legacy
+ * Background migration sweep: convert up to `batch` legacy
  * JSONB tables to file storage. Each conversion takes the registry lock —
  * the same one every draft/commit writer takes — so the sweep can never fork
  * against a concurrent edit. Returns how many converted (0 = all done).
@@ -359,7 +359,7 @@ export async function sweepLegacyTables(batch = 5): Promise<number> {
   let converted = 0;
   for (const n of legacy) {
     try {
-      // A store broker write (A3b): its flip moves the table's revision, so
+      // A store broker write: its flip moves the table's revision, so
       // an editor open on the table sees a new revision once.
       await ensureFileBacked({ id: n.id, ownerId: n.ownerId, title: n.title });
       converted++;
@@ -408,7 +408,7 @@ export async function snapshotAllTableDatabases(
   destDir: string,
   opts: SnapshotAllOptions = {},
 ): Promise<TableDbSnapshotReport> {
-  // Bounded (A3b fix round 2): with the dump's start, a revision the sweep
+  // Bounded: with the dump's start, a revision the sweep
   // had already marked unreferenced before it is left out (no restored row
   // can name it).
   const leaveOut =
@@ -436,7 +436,7 @@ export async function snapshotAllTableDatabases(
     }));
 
   // The workbook copies member authors read their accepted tables from
-  // (audit F07, member-snapshots.ts): kept under their own owner segment,
+  // (member-snapshots.ts): kept under their own owner segment,
   // so an untar into TABLE_DB_DIR puts them back where they were.
   const snaps = await db
     .select({ nodeId: acceptedSnapshots.nodeId, storagePath: acceptedSnapshots.tablePath })
@@ -448,9 +448,8 @@ export async function snapshotAllTableDatabases(
   ];
 
   const report: TableDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
-  // The tables' own history (apps plan Phase 4, table-snapshots.ts) rides
-  // along: immutable files, hard-linked (no disk, no copy; apps audit
-  // 2026-10-02, item 5).
+  // The tables' own history (table-snapshots.ts) rides along: immutable
+  // files, hard-linked (no disk, no copy).
   const history = path.join(tableDbRoot(), '_snapshots');
   if (existsSync(history)) {
     try {
@@ -466,18 +465,18 @@ export async function snapshotAllTableDatabases(
     try {
       abs = resolveStoragePath(storagePath);
       // EVERY revision of the table on disk, not only the ones the row
-      // names now (A3b fix round 1, H1): the Postgres dump ran first, and a
+      // names now: the Postgres dump ran first, and a
       // flip since then left the revision the dump names beside the new one
       // (the sweep keeps it for a grace period), so the archive holds the
       // file a restored row points at. Each under its own folder: a table
-      // folded in from a member's space (W6b) keeps its files there, and a
+      // folded in from a member's space keeps its files there, and a
       // draft can sit in another folder than the published file.
       const named = [storagePath, ...(r.draftPath ? [r.draftPath] : [])];
       const seen = new Set<string>();
       files = [];
       for (const rel of named) {
         const dirRel = path.posix.dirname(rel);
-        // An accepted copy too (A3b part 2: each a revision name, staged
+        // An accepted copy too (each a revision name, staged
         // before its row): every copy of the table there, the one the dump
         // names among them (the sweep removes the old ones a grace period
         // after their tombstone).
@@ -502,7 +501,7 @@ export async function snapshotAllTableDatabases(
         // The live layout (the folder the stored path names), so a restore
         // drops each file where the rows point.
         const dest = path.join(destDir, layoutDirOf(file.rel, r.ownerId), path.basename(file.abs));
-        // In a SQL child, off the event loop (apps audit 2026-10-02, item 14).
+        // In a SQL child, off the event loop.
         await copySqliteFile(file.abs, dest);
         report.snapshotted.push({
           ownerId: r.ownerId,

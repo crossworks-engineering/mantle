@@ -107,14 +107,14 @@ export async function forceFire(hb: Heartbeat, opts: FireOpts = {}): Promise<Fir
   return runWithInflightLock(hb.id, () => fireInner(hb, { ...opts, skipGates: true }));
 }
 
-/** How a fire is run. `inCaller` (W7a fix round 2, N1): heartbeat_fire in a
+/** How a fire is run. `inCaller`: heartbeat_fire in a
  *  workspace scope runs the fire's bookkeeping on the system pool and passes
  *  this to put the tool resolution and the turn back in its caller's scope,
  *  so the turn answers that caller's login, never the anchor.
  *
- *  `answeredBy` (W7 integration fix 2, H1): the login that fired (Fire now,
- *  heartbeat_fire), null for the brain owner (the anchor login). Both
- *  callers let only the heartbeat's maker fire it (W7 integration fix 4), so
+ *  `answeredBy`: the login that fired (Fire now, heartbeat_fire), null for
+ *  the brain owner (the anchor login). Both callers let only the
+ *  heartbeat's maker fire it, so
  *  a forced fire answers the maker, as the tick does; with no `inCaller` it runs
  *  in that login's own scope (fireInLoginScope). Left out (the tick), the fire
  *  answers the heartbeat's maker (heartbeats.created_by, null the anchor).
@@ -135,7 +135,7 @@ function answerer(hb: Heartbeat, login: string | null | undefined): string | nul
  *  The tick loop already filters in-flight rows out before calling
  *  this, but we wrap defensively in case a future caller skips the
  *  filter: exclusion still holds. A heartbeat another Admin login set up
- *  (heartbeats.created_by, W7a fix round 3) fires as that login
+ *  (heartbeats.created_by) fires as that login
  *  (fireInLoginScope), never as the brain owner. */
 export async function tickFire(hb: Heartbeat): Promise<FireResult> {
   return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: false }));
@@ -147,13 +147,12 @@ const MAKER_GONE =
 
 /**
  * The scope a fire with no caller runs heartbeat `hb` in, for the login it
- * answers: the tick's is the login that set it up (heartbeats.created_by,
- * W7a fix round 3; null is the anchor), a forced fire's is its firer
- * (FireOpts.answeredBy, W7 integration fix 2, H1), the maker too since
- * only the maker fires it (W7 integration fix 4).
+ * answers: the tick's is the login that set it up (heartbeats.created_by;
+ * null is the anchor), a forced fire's is its firer (FireOpts.answeredBy),
+ * the maker too since only the maker fires it.
  * The Admin assistant runs in that login's turn scope of Admin; a helper
  * with no workspace (the replay agent, a specialist) takes the branch a
- * chat with it takes (W7c fix round 2, H1; W7 integration fix): that
+ * chat with it takes: that
  * login's turn scope of Admin, so its memory tools read that login's chats
  * and digests, never another user's, the anchor's included. An assistant of
  * a workspace other than Admin answers no login (read only): nothing to
@@ -171,7 +170,7 @@ function fireInLoginScope(
 }
 
 /**
- * Arch A2a: who a fire runs as, decided as fireInLoginScope decides the scope. An
+ * Who a fire runs as, decided as fireInLoginScope decides the scope. An
  * assistant of a workspace other than Admin fires as itself; otherwise the
  * login the fire answers (its maker), as that login is now; none, the brain
  * owner as login(owner). A forced fire keeps its caller's actor. With the
@@ -228,15 +227,14 @@ async function fireActor(hb: Heartbeat, login: string | null | undefined): Promi
 async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): Promise<FireResult> {
   const now = new Date();
   let inCaller = opts.inCaller ?? (<T>(fn: () => Promise<T>) => fn());
-  // The login this fire answers (H1): its firer when forced by one, else
+  // The login this fire answers: its firer when forced by one, else
   // the heartbeat's maker. Only that login reads the fire's row in full.
   const answersMaker = opts.answeredBy === undefined;
   const answeredBy = answersMaker ? answerer(hb, hb.createdBy) : answerer(hb, opts.answeredBy);
   // The Telegram chat a heartbeat names is reached only when it is paired to
-  // the login this fire answers (workspaces W7d; the maker for the tick, the
-  // brain owner for null), as the turn's surface and its delivery. A fire
-  // whose login has no such chat runs on the web surface and delivers
-  // nothing (W7 integration fix 3, F1, now per login).
+  // the login this fire answers (the maker for the tick, the brain owner
+  // for null), as the turn's surface and its delivery. A fire whose login
+  // has no such chat runs on the web surface and delivers nothing.
   const pairedTelegram =
     hb.surface.kind === 'telegram'
       ? await pairedChatOf({
@@ -251,8 +249,8 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   // started. We need this at the end of the success path to detect
   // whether a tool (heartbeat_snooze) pushed next_fire_at further
   // out than the schedule would naturally compute. Without this,
-  // the post-loop UPDATE silently clobbered snooze. See P0-1 in
-  // the audit and docs/heartbeats.md §7.
+  // the post-loop UPDATE would silently clobber the snooze. See
+  // docs/heartbeats.md §7.
   const beforeNextFireAt = hb.nextFireAt ?? null;
 
   // 1. Gates -----------------------------------------------------
@@ -324,10 +322,10 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   if (!skill) return autoPause(hb, answeredBy, `skill '${hb.skillSlug}' not found or disabled`);
 
   // An assistant of a workspace other than Admin (the Team assistant) fires
-  // inside its workspace (W4b fix round 1, M2): its tools are resolved and
+  // inside its workspace: its tools are resolved and
   // its loop runs in a turn scope of that workspace, read only (a heartbeat
   // answers no login), on a team surface so tool errors are filtered and
-  // owner-only and adminOnly tools are refused. The Admin assistant (W7a)
+  // owner-only and adminOnly tools are refused. The Admin assistant
   // fires in a turn scope of Admin too, acting for the owner (the anchor
   // login), on the owner's surface. A workspace that is gone or archived
   // pauses the heartbeat.
@@ -343,7 +341,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   }
   // No caller: the login the fire answers runs it in its own scope
   // (fireInLoginScope). An assistant of a workspace other than Admin fires by its
-  // own rules whoever fired it (W7 integration fix 2, M5): in a turn scope
+  // own rules whoever fired it: in a turn scope
   // of its workspace that answers no login, never in the firer's scope
   // (which its scope cannot change into) nor in the scope a tool's system
   // pool work left behind.
@@ -358,7 +356,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
     return autoPause(hb, answeredBy, `agent '${agent.slug}' api key could not be decrypted`);
   }
   // The key goes to the agent's base URL only while the login that paired
-  // them holds the keys area (W7a fix round 5); a keyless provider runs keyless.
+  // them holds the keys area; a keyless provider runs keyless.
   const routeRefused = await chatRouteKeyRefusal(hb.ownerId, agent);
   if (routeRefused && agent.provider !== 'local') {
     return autoPause(hb, answeredBy, `agent '${agent.slug}': ${routeRefused}`);
@@ -413,8 +411,8 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   // path), so the operator can clear it from a phone. No effect when the
   // preference is off: the common case.
   // Tools that reach OUT of the brain (mail, the web, Telegram, a linked
-  // brain's writes): their builtin's policy says `outside.egress` (A5 step
-  // 6a deleted the HEARTBEAT_EGRESS_SLUGS view). When the operator enables
+  // brain's writes): their builtin's policy says `outside.egress`. When the
+  // operator enables
   // `heartbeatEgressGate`, these are force-confirmed for an unattended fire
   // so they park for approval instead of running inline. The heartbeat's
   // own surface reply is delivered separately (not a tool) and is
@@ -465,7 +463,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
         subjectKind: 'heartbeat',
         subjectId: hb.id,
         agentId: agent.id,
-        // The login the fire answers (W7 integration fix 4, L2): its trace
+        // The login the fire answers: its trace
         // is listed to that login only (traceListedFor), the anchor's
         // (null) to the anchor.
         loginId: answeredBy,
@@ -496,9 +494,9 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
                 ownerId: hb.ownerId,
                 agentId: agent.id,
                 agentSlug: agent.slug,
-                // The loop re-enters the agent's workspace (withAgentScope)
-                // (W8 final round 2): a responder passed as on no workspace
-                // was refused with no login.
+                // The loop re-enters the agent's workspace (withAgentScope):
+                // a responder passed as on no workspace would be refused
+                // with no login.
                 agentWorkspaceId: agent.workspaceId,
                 agentRole: agent.role,
                 agentDepth: 1,
@@ -534,14 +532,13 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
         // threw), we mark the outer disposition fired_undelivered
         // so the operator can see "we spent the LLM cost but the
         // user got nothing" at a glance instead of having to drill
-        // into the trace's step skipped reason. P1-1 from the
-        // audit.
+        // into the trace's step skipped reason.
         let surfaceRef: Record<string, unknown> | null = null;
         let delivered = true;
         if (replyText.trim() && hb.surface.kind === 'telegram' && !telegramChat) {
-          // The named chat is not paired to the login this fire answers
-          // (W7d; W7 integration fix 3, F1): it reaches no one else's chat,
-          // and the reply stays in the fire row, that login's to read.
+          // The named chat is not paired to the login this fire answers:
+          // it reaches no one else's chat, and the reply stays in the fire
+          // row, that login's to read.
           await step(
             {
               name: 'deliver_surface',
@@ -642,13 +639,13 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
       finalStatus = 'completed';
     }
 
-    // The fire's books in SQL (round 13b, the app re-audit's L3): the count
+    // The fire's books in SQL: the count
     // goes up from the row's own value and the last fire never moves back,
     // so two fires racing on one row keep both and never meet 0321's
     // one-way rules (fire_count only up, last_fired_at only forward) with a
     // value read before the other's write.
-    // Its status and completion reason in SQL too (the app re-audit's
-    // LOW-3): from the row's own status at the write, never a value read
+    // Its status and completion reason in SQL too: from the row's own
+    // status at the write, never a value read
     // before it, so a pause or a completion another writer made during the
     // fire stands (a fire never sets a row back to active). Only an active
     // row that reaches its max fires completes here; a row no longer active
@@ -728,8 +725,8 @@ function laterFire(at: Date) {
 }
 
 /**
- * The text a fire row or a pause reason keeps for an error (fix round 1
- * M1): a person reads it on the heartbeat's page, so never a database's, a
+ * The text a fire row or a pause reason keeps for an error: a person reads
+ * it on the heartbeat's page, so never a database's, a
  * provider's or the runtime's own words (publicProviderErrorMessage); the
  * detail goes to the server log.
  */
@@ -748,7 +745,7 @@ async function autoPause(
   // status=paused: operator must intervene. 'error' (catch block)
   // is for transient mid-fire failures that the next tick will
   // retry. Splitting the disposition lets /heartbeats/[id] colour
-  // them differently so triage is at-a-glance. P1-2 from audit.
+  // them differently so triage is at-a-glance.
   await db
     .update(heartbeats)
     .set({

@@ -4,7 +4,7 @@
  * This is the expensive half and the only one that indexes: an autosave
  * touches the DRAFT alone, so a long editing session produces one index per
  * commit rather than one per pause. Every path here serializes on the registry
- * row through the tables broker (table-broker.ts, A3b, plan 20.3: the new
+ * row through the tables broker (table-broker.ts: the new
  * workbook staged under a new revision name, then one short transaction
  * checks the row at the revision it was built from and points it there;
  * an op batch on an existing draft is the one in-place exception) and
@@ -100,7 +100,7 @@ function draftMirror(draftAbs: string): TableDoc | null {
   return clipped.clipped || multiTab ? null : ensureTableDoc(clipped.doc);
 }
 
-/** A team app's write (task 2178377a, its cost audit): the most rows
+/** A team app's write: the most rows
  *  its Table's draft may hold after the batch. The box's table ceiling
  *  (TABLE_IMPORT_MAX_ROWS) when lower: an app loop at 60 calls a minute
  *  never grows a draft past what a person would load. */
@@ -143,10 +143,10 @@ function assertAppDraftCeiling(file: string, ops: readonly TableOp[]): void {
 }
 
 /**
- * Apply an op batch to a table's DRAFT (P3): the whole batch lands atomically
+ * Apply an op batch to a table's DRAFT: the whole batch lands atomically
  * on the draft workbook; `draft_rev` is the etag: a caller presenting a stale
  * `ifRev` gets a conflict (refetch, re-apply), never a silent interleave.
- * The store broker (A3b): a table with no draft yet gets one staged (a copy
+ * The store broker: a table with no draft yet gets one staged (a copy
  * of the published workbook, the batch applied to it), then flipped; an
  * existing draft takes the batch in place, in one short transaction whose
  * first statement is the check (the in-place exception, table-broker.ts).
@@ -214,7 +214,7 @@ export async function applyTableOps(
         continue;
       }
       // A draft on disk takes the batch in place; a row naming a draft file
-      // that is gone (A3b fix round 1, L1) gets a new draft below.
+      // that is gone gets a new draft below.
       const draftAbs = draftAbsOf(row.draftPath);
       if (appWrite) {
         const onDisk = draftAbs && existsSync(draftAbs);
@@ -286,7 +286,7 @@ export type SaveTableDraftResult =
  *  whole-workbook replacement (import): the payload is a complete new table
  *  parsed from a file, so the clipped-grid truncation guard doesn't apply and
  *  the payload cap is the import ceiling, not the grid window.
- *  The store broker (A3b): the new draft is staged under a new revision name,
+ *  The store broker: the new draft is staged under a new revision name,
  *  then one short transaction checks the row at the revision the guards read
  *  and points the draft at it. */
 export async function saveTableDraft(
@@ -359,8 +359,8 @@ async function saveDraftFile(
 ): Promise<{ rev: number }> {
   if (!replace) {
     // Whole-doc writes are only legal while the table itself fits the window:
-    // a windowed doc saved whole would truncate the table (audit finding 5:
-    // an exactly-10k clipped doc slipped the row-count guard). Guard against
+    // a windowed doc saved whole would truncate the table (an exactly-10k
+    // clipped doc must not slip the row-count guard). Guard against
     // the LARGEST doc this write would clobber: the draft can have grown past
     // the published stats via op batches.
     const effRows = Math.max(
@@ -385,7 +385,7 @@ async function saveDraftFile(
       flipTable(id, row.draftRev, {
         draftPath: rel,
         // JSONB draft mirror carries single-tab docs only (the legacy
-        // rollback lever can't represent tabs: v2.1 plan decision 2).
+        // rollback lever can't represent tabs).
         draftData: workbook ? null : doc,
         draftUpdatedAt: new Date(),
       }),
@@ -393,7 +393,7 @@ async function saveDraftFile(
 }
 
 /** Throw away the working draft. Published grid + index untouched. The store
- *  broker (A3b): the row no longer points at a draft (the check, as the
+ *  broker: the row no longer points at a draft (the check, as the
  *  caller); the draft file is then the sweep's. */
 export async function discardTableDraft(
   ownerId: string,
@@ -435,14 +435,13 @@ type StagedCommit = {
   dataText: string;
 };
 
-/** What a commit changed, for its re-index: the shape-hash gate (plan
- *  section 6). Cell-only edits on a table that has a summary are `cells`
- *  (the vector again, the summary and entities kept: the extractor reuses
- *  the summary and skips its model pass); a schema change, a first commit,
- *  or a table with no summary is `schema` (the whole pass), as main did. An
- *  empty summary is no summary (hasSummary, the extractor's own test): on
- *  main its commit ran the model too, and as `cells` it left the table
- *  with no vector (A10 #7 fix round 2, M3). */
+/** What a commit changed, for its re-index: the shape-hash gate. Cell-only
+ *  edits on a table that has a summary are `cells` (the vector again, the
+ *  summary and entities kept: the extractor reuses the summary and skips
+ *  its model pass); a schema change, a first commit, or a table with no
+ *  summary is `schema` (the whole pass). An empty summary is no summary
+ *  (hasSummary, the extractor's own test): as `cells` it would leave the
+ *  table with no vector. */
 export function committedChange(
   oldShapeHash: string | null,
   newShapeHash: string,
@@ -454,8 +453,8 @@ export function committedChange(
 }
 
 /** A team app's commit (inAppRunWrite) waits this long after the
- *  Table's last model pass before it may start another (delta audit
- *  MED-1): at most one app-started pass per Table per window. */
+ *  Table's last model pass before it may start another: at most one
+ *  app-started pass per Table per window. */
 export const APP_COMMIT_PASS_GAP_MS = 10 * 60 * 1000;
 
 /** What a team app's refused commit is told. */
@@ -476,7 +475,7 @@ function lastPassAt(data: unknown): number | null {
 }
 
 /**
- * Whether a team app's commit must wait (delta audit MED-1), and why: a
+ * Whether a team app's commit must wait, and why: a
  * commit that runs the whole pass (`schema`) aborts a pass in flight (the
  * extractor's index write is guarded on the row's xmin) and starts another,
  * so an app committing on each submit could keep a model busy without end.
@@ -503,7 +502,7 @@ export function appCommitWait(
  * extractor. The ONLY path that indexes a table's cells: autosaves never do, so a
  * long editing session produces exactly one re-index per commit (cost-safe,
  * matching Pages). Returns the published detail, or null if the table
- * doesn't exist. The store broker (A3b): the new published workbook (and the
+ * doesn't exist. The store broker: the new published workbook (and the
  * history copy of the one it replaces) is staged, then one short transaction
  * checks the row at the revision it was built from, points it at the new
  * workbook, drops the draft pointer, and writes the node and history rows.
@@ -541,9 +540,8 @@ export async function commitTable(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!node) return null;
-  // Edit first (the cheap rights read first, pre-check removal fix round
-  // A): before the staging, and the same refusal whether a draft is there
-  // or not. An app's sync is the brain's own (the app's data door asked).
+  // Edit first (the cheap rights read first): before the staging, and the
+  // same refusal whether a draft is there or not. An app's sync is the brain's own (the app's data door asked).
   if (!opts.appSync) await assertItemRight(id, 'edit');
   await assertTableWritable(id, opts.appSync);
   // A team app's commit (inAppRunWrite): only a Table homed in the app's
@@ -608,7 +606,7 @@ export async function commitTable(
       try {
         // Everything is read from the staged files before the flip; nothing
         // runs inside the flip but its transaction, and nothing after its
-        // commit but this function's own reads (A3b fix round 1, H2).
+        // commit but this function's own reads.
         const staged = await stageThenFlipTable(
           (): StagedCommit => {
             const files: string[] = [];
@@ -617,8 +615,8 @@ export async function commitTable(
               let shapeHash: string;
               let stats: ReturnType<typeof fileStats>;
               if (fromDraft) {
-                // Promote via VACUUM INTO, not a bare rename (audit findings
-                // 1+2): the copy reads THROUGH the draft's WAL, so frames a
+                // Promote via VACUUM INTO, not a bare rename: the copy reads
+                // THROUGH the draft's WAL, so frames a
                 // concurrent reader kept un-checkpointed are captured.
                 abs = stagePromote(fromDraft, rel);
                 files.push(abs);
@@ -637,7 +635,7 @@ export async function commitTable(
                 stats = st.res.stats;
               }
               // The published workbook this commit replaces is kept on the
-              // table's history (apps plan Phase 4), except for an app-bound
+              // table's history, except for an app-bound
               // table's sync (the app is the master).
               const history =
                 !opts.appSync && oldPublishedAbs
@@ -651,7 +649,7 @@ export async function commitTable(
               if (history) files.push(history.abs);
               const clipped = readDocClipped(abs, MATERIALIZE_MAX);
               // JSONB mirror: single-tab, in-window docs only (the rollback
-              // lever can't represent tabs: v2.1 plan decision 2).
+              // lever can't represent tabs).
               const mirror = fromDraft
                 ? clipped.clipped || stats.tabs.length > 1
                   ? {}

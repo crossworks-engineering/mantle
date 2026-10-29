@@ -1,6 +1,6 @@
 /**
- * App packages and copies (apps first-class plan, Phase 3;
- * docs/app-authoring-guide.md, "Export, import and duplicate").
+ * App packages and copies (docs/app-authoring-guide.md, "Export, import
+ * and duplicate").
  *
  * A `.mantleapp` file is a zip with two entries:
  *
@@ -103,8 +103,7 @@ export class AppPackageError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// the routes answered by hand.
+// The one error answer (@mantle/std domain-errors.ts).
 defineDomainError(AppPackageError, {
   reason: 'the file sent is not a usable app package; the message says why',
   status: 400,
@@ -117,7 +116,7 @@ export function appPackageMaxBytes(): number {
 }
 
 /** Imports at a time per process: each holds its package in memory while
- *  it is read (apps audit 2026-10-02, item 13). */
+ *  it is read. */
 export const APP_IMPORT_MAX_PARALLEL = 2;
 let importsRunning = 0;
 
@@ -204,9 +203,8 @@ export function appPackageFileName(title: string): string {
  * (export without the data then).
  */
 /**
- * The item check of a copy of an app (a duplicate, an export; W7 integration
- * fix 2, M3, moved here from the tools' pre-check in the pre-check removal
- * Part 3), asked before anything is read or written, on every way in: the
+ * The item check of a copy of an app (a duplicate, an export), asked
+ * before anything is read or written, on every way in: the
  * code needs a read of the app; its data (withData, on by default) the
  * whole SQLite database every holder shares, so an edit of the app, unless
  * the app's MCP access switch opens its data to every reader's own
@@ -263,8 +261,7 @@ export async function writeAppPackage(
     const zip = new JSZip();
     zip.file(MANIFEST_ENTRY, JSON.stringify(pkg, null, 2));
     // Stored, not deflated: jszip compresses in JavaScript on this thread, and
-    // deflating a 256 MB database held the process for seconds (apps audit
-    // 2026-10-02, low).
+    // deflating a 256 MB database would hold the process for seconds.
     if (data && dataTmp) {
       zip.file(DATA_ENTRY, createReadStream(dataTmp), { compression: 'STORE' });
     }
@@ -533,8 +530,8 @@ export async function installAppPackage(
     title?: string;
     toolSlugs: string[];
     data: { path: string; schemaVersion: number } | null;
-    /** The login that imports it, when it is not an Admin user (W7b fix
-     *  round 1): named its author. */
+    /** The login that imports it, when it is not an Admin user: named its
+     *  author. */
     authorLoginId?: string;
   },
 ): Promise<AppDetail> {
@@ -546,7 +543,7 @@ export async function installAppPackage(
     tags: pkg.app.tags,
     source: pkg.code.source,
     // Code from a package was not written here: it runs its tools at team
-    // rules until an admin trusts them (team apps Phase 3, M3 audit).
+    // rules until an admin trusts them.
     authorLevel: 'team',
     ...(opts.authorLoginId ? { authorLoginId: opts.authorLoginId } : {}),
   });
@@ -583,8 +580,8 @@ export async function duplicateApp(
     title?: string;
     withData?: boolean;
     actor?: AppHistoryActor;
-    /** A user outside the Admin workspace makes the copy (W7b fix round
-     *  1): it starts at team rules with this author, never above. */
+    /** A user outside the Admin workspace makes the copy: it starts at team
+     *  rules with this author, never above. */
     authorLoginId?: string;
   } = {},
 ): Promise<{ id: string; title: string; hasData: boolean } | null> {
@@ -602,7 +599,7 @@ export async function duplicateApp(
       ...(app.manifest.description ? { description: app.manifest.description } : {}),
       tags: app.tags,
       source: app.source,
-      // A copy never runs above its source (team apps Phase 3, M3 audit),
+      // A copy never runs above its source,
       // nor above its maker's ceiling.
       authorLevel: app.authorLevel === 'team' || opts.authorLoginId ? 'team' : 'admin',
       ...(opts.authorLoginId ? { authorLoginId: opts.authorLoginId } : {}),

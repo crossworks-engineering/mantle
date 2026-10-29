@@ -1,5 +1,5 @@
 /**
- * The accepted snapshot (audit F07, option A; Jason 2026-09-28): at every
+ * The accepted snapshot: at every
  * Accept of a member-authored item (a reviewed Accept, an Accept after Take
  * over, a left-behind Accept) the accepted SAVED version is recorded for its
  * author in `accepted_snapshots` (migration 0183). The author's reads of
@@ -10,7 +10,7 @@
  *  - drawing: the committed scene, its saved SVG and its image refs;
  *  - table: a copy of the published workbook (VACUUM INTO) under
  *    TABLE_DB_DIR/accepted-snapshots/<id>.r-<token>.sqlite (the snapshot
- *    broker, A3b part 2: staged under a new name before the row names it;
+ *    broker: staged under a new name before the row names it;
  *    the copy a new one replaces, and a deleted item's, are the store
  *    sweep's), which the table backup takes with the rest
  *    (table-storage.ts); a table with no workbook keeps its document;
@@ -54,8 +54,8 @@ export type AcceptedSnapshot = typeof acceptedSnapshots.$inferSelect;
 /** The owner segment the workbook copies live under, inside TABLE_DB_DIR. */
 export const SNAPSHOT_TABLE_OWNER = SNAPSHOT_OWNER;
 
-/** Where one accepted table's workbook copy lived before A3b part 2 (one
- *  name per table, overwritten in place); a copy now has a revision name
+/** The old fixed path of one accepted table's workbook copy (one name per
+ *  table, overwritten in place); a copy now has a revision name
  *  (`acceptedRevisionPath`) and is found through its row. */
 export function snapshotTableAbs(nodeId: string): string {
   return resolveStoragePath(relativeStoragePath(SNAPSHOT_TABLE_OWNER, nodeId));
@@ -106,13 +106,13 @@ function brainFileAbs(node: { path: unknown; title: string; data: unknown }): st
  * Record the snapshot of every item in `ids` that is accepted and member
  * authored (its `space_items` row says `accepted`), read on `tx` after the
  * move: the version the brain just got. A table's workbook copy was staged
- * before the transaction (`staged`: the snapshot broker, A3b part 2); a
+ * before the transaction (`staged`: the snapshot broker); a
  * table whose row names another workbook than the one copied, or none
  * staged, is not recorded (SnapshotNotRecorded: the caller takes the copy
  * again). The copy a row named before is the store sweep's (its trigger
  * records it). A file keeps the name in
  * `fileNames` when Accept passes one: its name as filed, before the brain
- * folder made it unique (audit L7), else its name now. Replaces an earlier
+ * folder made it unique, else its name now. Replaces an earlier
  * snapshot of the same item, keeping its accept time.
  */
 export async function writeAcceptedSnapshots(
@@ -175,7 +175,7 @@ export async function writeAcceptedSnapshots(
       acceptedAt: r.acceptedAt ?? new Date(),
       pending: false,
     };
-    // The one switch over an accepted item's kind (A10 #12); any other
+    // The one switch over an accepted item's kind; any other
     // kind records nothing.
     const recording = forAcceptedKind<typeof node, Promise<void>>(node, {
       page: async () => {
@@ -238,9 +238,8 @@ export async function snapshotOf(brainId: string, id: string): Promise<AcceptedS
     (await db.select().from(acceptedSnapshots).where(eq(acceptedSnapshots.nodeId, id)).limit(1))[0];
   const snap = await read();
   if (snap && !snap.pending) return snap;
-  // The snapshot broker (A3b part 2, plan 20.3): a table's workbook copy is
-  // staged first, under a new name, outside any transaction (it used to be
-  // copied over the one name inside it); then one short transaction writes
+  // The snapshot broker: a table's workbook copy is staged first, under a
+  // new name, outside any transaction; then one short transaction writes
   // the row naming it. A table committed meanwhile is copied again (twice
   // at most).
   for (let attempt = 1; ; attempt++) {

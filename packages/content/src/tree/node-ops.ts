@@ -70,7 +70,7 @@ const ROOT_TITLE: Record<TreeKind, string> = {
 export async function ensureKindRoot(ownerId: string, kind: TreeKind): Promise<boolean> {
   const root = TREE_KIND_SPECS[kind].root;
   if (await branchAt(ownerId, root)) return true;
-  // Heads first (plan U1): a root sits in no folder, so there are none to
+  // Heads first: a root sits in no folder, so there are none to
   // wait on, but the insert runs in the heads transaction all the same.
   const made = await unlessWriteRefused(() =>
     asKindRootRepair(() =>
@@ -204,7 +204,7 @@ async function rewriteSubtree(
   newPath: string,
 ): Promise<void> {
   // One definer moves every row below the folder, those the caller's scope
-  // does not read too (arch A3a fix round 1): on the write role a plain
+  // does not read too: on the write role a plain
   // UPDATE would leave them behind, orphaned under the old path.
   await tx.execute(
     sql`select mantle_subtree_rewrite(${ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
@@ -231,7 +231,7 @@ export async function createNodeFolder(
   if (await branchAt(ownerId, path)) {
     throw new NodeOpRefusal('conflict', `a folder named '${title}' already exists here`);
   }
-  // Heads first (plan U1): the parent folder, shared.
+  // Heads first: the parent folder, shared.
   const [row] = await withNodeInsertHeads(ownerId, [{ type: 'branch', path }], (tx) =>
     tx
       .insert(nodes)
@@ -268,15 +268,14 @@ export async function renameNodeFolder(
       .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
     return;
   }
-  // A rename rewrites the subtree: its right first (the cheap rights read,
-  // pre-check removal fix round A), before its locks. Write on the folder
-  // renames it (S11a-6a, migration 0305: the owner's rule); a system
-  // folder's name is the brain's, manage as before.
+  // A rename rewrites the subtree: its right first (the cheap rights read),
+  // before its locks. Write on the folder renames it (migration 0305); a
+  // system folder's name is the brain's, so it asks manage.
   await assertItemRight(folder.id, folder.data.system === true ? 'manage' : 'edit');
   if (await branchAt(ownerId, newPath)) {
     throw new NodeOpRefusal('conflict', `a folder named '${title}' already exists here`);
   }
-  // Heads first (plan V3): the folder and everything below it, and its parent.
+  // Heads first: the folder and everything below it, and its parent.
   const node = { id: folder.id, type: 'branch', path: folder.path };
   await withDeadlockRetry(() =>
     withNodeMoveHeads(ownerId, node, newPath, async (tx) => {
@@ -297,8 +296,7 @@ export async function moveNodeFolder(
   destParentPath: string,
 ): Promise<void> {
   const folder = await branchById(ownerId, folderId);
-  // Manage first (the cheap rights read, pre-check removal fix round A),
-  // before the locks.
+  // Manage first (the cheap rights read), before the locks.
   await assertItemRight(folder.id, 'manage');
   if (destParentPath === folder.path || destParentPath.startsWith(`${folder.path}.`)) {
     throw new NodeOpRefusal('invalid', 'a folder cannot move inside itself');
@@ -321,7 +319,7 @@ export async function moveNodeFolder(
       `the destination already has a folder named '${folder.title}'`,
     );
   }
-  // Heads first (plan V3): the folder and everything below it, the folder it
+  // Heads first: the folder and everything below it, the folder it
   // leaves and the one it lands in.
   const node = { id: folder.id, type: 'branch', path: folder.path };
   await withDeadlockRetry(() =>
@@ -346,7 +344,7 @@ export async function moveNodeItem(
   destPath: string,
   guard?: MoveGuard,
 ): Promise<void> {
-  // Heads first (plan V3): the item, the folder it leaves and the one it
+  // Heads first: the item, the folder it leaves and the one it
   // lands in, so its current path is read before the transaction.
   const type = TREE_KIND_SPECS[kind].nodeType;
   const [item] = (await db.execute(sql`
@@ -404,7 +402,7 @@ export async function deleteNodeFolderMerging(ownerId: string, folderId: string)
   const landingOf = (path: SQL) => sql`(case when ${path} = ${p}::ltree then ${q}::ltree
                             else ${q}::ltree || subpath(${path}, nlevel(${p}::ltree)) end)`;
   const landing = landingOf(sql`n.path`);
-  // Heads first (plan V3, V4): the folder and everything below it, its
+  // Heads first: the folder and everything below it, its
   // parent (where the rest lands) and the folders outside it that subfolders
   // merge into (what they held lands there). Read again on a retry.
   await withDeadlockRetry(async () => {
@@ -427,7 +425,7 @@ export async function deleteNodeFolderMerging(ownerId: string, folderId: string)
       }
       // Rows below it the caller's scope does not read would be left behind
       // (the write role's row rules): refused (409), never orphaned. The one
-      // rule, in the database (arch A3a fix round 2); nothing for the brain.
+      // rule, in the database; nothing for the brain.
       await tx.execute(sql`select mantle_subtree_refuse_hidden(${ownerId}, ${p}::ltree)`);
       // 0. What lands in another folder than its own drops its place there
       //    (an item's `tree_rank`, a folder's `rank`), as a move does: what

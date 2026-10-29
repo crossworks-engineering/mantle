@@ -87,8 +87,7 @@ export class AppSourceLimitError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// the draft route answered by hand.
+// The one error answer (@mantle/std domain-errors.ts).
 defineDomainError(AppSourceLimitError, {
   reason:
     'the source tree passes a ceiling the caller can see (files, size, path); the message says which',
@@ -296,9 +295,9 @@ export async function listApps(
   // The active share (unique per node) + the hub designation give each row its
   // exposure badge: Hub ⊃ Team ⊃ Public ⊃ owner-only.
   //
-  // Only the columns a row shows (apps audit P2): the whole node row carried
-  // the embedding, and the draft column the whole draft source tree (up to
-  // 50 × 256 KB per app, up to 500 apps), to answer "is there a draft".
+  // Only the columns a row shows: the whole node row carries the embedding,
+  // and the draft column the whole draft source tree (up to 50 × 256 KB per
+  // app, up to 500 apps), only to answer "is there a draft".
   const [rows, hubAppIds] = await Promise.all([
     db
       .select({
@@ -421,7 +420,7 @@ export async function getApp(ownerId: string, id: string): Promise<AppDetail | n
   return loadDetail(ownerId, id);
 }
 
-/** The rules an app's holders allow its tools (plan R2): 'admin' when the
+/** The rules an app's holders allow its tools: 'admin' when the
  *  Admin workspace alone holds it (or nothing does), 'team' when any other
  *  workspace holds it. The tool brokers decide by it (app-tool-level.ts). */
 export type AppToolRules = 'admin' | 'team';
@@ -446,17 +445,17 @@ export type AppRuntime = {
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
   dataReadOnly: boolean;
-  /** The author ceiling (team apps Phase 3, 0235): the app's tools run at
+  /** The author ceiling (0235): the app's tools run at
    *  most at this level, whoever runs it. */
   authorLevel: AppAuthorLevel;
 };
 
 /**
- * The slim read for the brokers and frames (apps audit P1). Every
- * `host.db.query` and tool call used to load the whole app through getApp:
- * the published AND draft source (up to 50 × 256 KB each), the open share and
- * the owner's preferences, to read the manifest. One row, the columns that
- * running the app needs, nothing else.
+ * The slim read for the brokers and frames: one row, the columns that
+ * running the app needs, nothing else. getApp would load the whole app for
+ * every `host.db.query` and tool call: the published AND draft source (up to
+ * 50 × 256 KB each), the open share and the owner's preferences, only to
+ * read the manifest.
  */
 export async function getAppRuntime(ownerId: string, id: string): Promise<AppRuntime | null> {
   const [row] = await db
@@ -500,23 +499,23 @@ export type CreateAppInput = {
   description?: string;
   tags?: string[];
   source?: AppSource;
-  /** A member's app in their personal space (team apps Phase 3): no Apps
+  /** A member's app in their personal space: no Apps
    *  root branch is made there (a space holds workspace kinds only, and its
    *  tree shows none). */
   inSpace?: boolean;
-  /** The author ceiling to start at (team apps Phase 3): 'team' for code an
+  /** The author ceiling to start at: 'team' for code an
    *  admin did not write here (an import, a copy of a member's app, an
    *  undelete of a member-era app). Default 'admin'. */
   authorLevel?: AppAuthorLevel;
   /** The member or client login that made it (apps.author_login_id): a
-   *  non-Admin login's create (W6b fix round 1, M2). */
+   *  non-Admin login's create. */
   authorLoginId?: string;
 };
 
 /**
  * Asked before a NEW app is made whose code the same call then writes (an
- * import's draft, a package's build: F4 fix round 4, L-b): that write asks
- * manage of the app (D4, lockAppRow), so the caller must manage the create
+ * import's draft, a package's build): that write asks
+ * manage of the app (lockAppRow), so the caller must manage the create
  * home the app lands in. Throws the edit check's 403 (item-workspace)
  * before anything is made, rather than leaving a half-made app. Widens
  * nothing: a login that may create there but not manage still makes no
@@ -544,7 +543,7 @@ export async function createApp(
   const manifest: AppManifest = input.description ? { description: input.description } : {};
   const id = input.id ?? randomUUID();
 
-  // Heads first (workspaces plan U1): the folder the app lands in.
+  // Heads first: the folder the app lands in.
   return withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'app', path: APPS_ROOT_LABEL }], async (tx) => {
       const [node] = await tx
@@ -589,7 +588,7 @@ export async function createApp(
 }
 
 /**
- * Set an app's author ceiling (team apps Phase 3): 'admin' = an admin read
+ * Set an app's author ceiling: 'admin' = an admin read
  * its declared tools and trusts them ("trust its tools"); 'team' = its
  * tools run at team rules for every runner. Only the owner's app update
  * route writes it, from an admin's own click: no tool and no agent lifts a
@@ -650,13 +649,12 @@ export async function updateAppMeta(
   id: string,
   input: UpdateAppInput,
 ): Promise<AppDetail | null> {
-  // The item check first (pre-check removal Part 3): an edit of the app's node, manage
-  // when the description changes too (it lives on the manifest, the app's
-  // code, D4: its door lockAppRow asks manage), before anything below is
-  // written (F4 fix round 3, M3: no name changed with a description refused).
-  // It changes the app: a read-only copy is refused in the copy's words in
-  // the same read (changes), the one check of the path since the R0
-  // integration (the route asked edit too before).
+  // The item check first: an edit of the app's node, manage when the
+  // description changes too (it lives on the manifest, the app's code, whose
+  // door lockAppRow asks manage), before anything below is written (no name
+  // changed with a description refused). It changes the app: a read-only
+  // copy is refused in the copy's words in the same read (changes), the one
+  // check of the path.
   await assertItemRight(id, input.description !== undefined ? 'manage' : 'edit', {
     changes: true,
   });
@@ -689,10 +687,8 @@ export async function updateAppMeta(
     })
     .where(eq(nodes.id, id));
   if (input.dataReadOnly !== undefined || input.mcpAccess !== undefined) {
-    // The flags alone: the informational switch writes no grant (contract
-    // change 36; the member write rule ANDs it in). Under the app's head
-    // all the same, as before (the level bridge's apps trigger that needed
-    // it went at W5b2, 0261; a brain off workspaces, at arch A7).
+    // The flags alone: the informational switch writes no grant (the member
+    // write rule ANDs it in). Under the app's head all the same.
     const write = (q: Pick<typeof db, 'update'>) =>
       q
         .update(apps)
@@ -728,7 +724,7 @@ export async function updateAppMeta(
 // did nothing": the source is correct, the served bundle is not, and no cache
 // clear or rebuild-less republish can converge them.
 
-// CONCURRENCY (apps audit D4, D5, U1): the editor's autosave, the agent's
+// CONCURRENCY: the editor's autosave, the agent's
 // file writes, the manifest setters and publish all read-modify-write one
 // `apps` row, from two processes. Each takes the row lock first (lockAppRow),
 // so two writes in flight cannot each keep only their own change, and a
@@ -740,8 +736,8 @@ type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * The app's sidecar row, locked FOR UPDATE until the transaction ends;
  * null when the app is missing or not this owner's.
  *
- * The one door of a write to an app's code (F4 fix round 3, M3): every
- * writer of the code columns (D4: APP_CODE_COLUMNS, the draft, the manifest,
+ * The one door of a write to an app's code: every
+ * writer of the code columns (APP_CODE_COLUMNS: the draft, the manifest,
  * a build, a publish) locks the row here, and the caller's manage of the
  * app is asked first, in its scope (assertItemRight: the edit check's
  * refusal, the 404 or the 403 item-workspace), so an editor who does not
@@ -778,7 +774,7 @@ async function lockAppRow(tx: DbTx, ownerId: string, id: string, opts: { newApp?
   };
 }
 
-/** The draft changed since the editor last read it (apps audit U1): an
+/** The draft changed since the editor last read it: an
  *  agent or another tab wrote it. Saving would silently drop that work. */
 export class AppDraftConflictError extends Error {
   constructor() {
@@ -897,11 +893,11 @@ export async function setManifest(
  * version. Returns that version, or null when the app is not this owner's.
  *
  * The next version is one past BOTH the manifest's and the database's own
- * (apps audit 2026-10-02, item 8). They drift apart: a data restore puts
- * the snapshot's version on the database, an undelete of a never-published
- * app keeps the old one. A schema at manifest + 1 that is not above the
- * database's was skipped without a word, since a version applies only when
- * it is newer than the database's. Under the app row lock, so two declares
+ * They drift apart: a data restore puts the snapshot's version on the
+ * database, an undelete of a never-published app keeps the old one. A
+ * schema at manifest + 1 that is not above the database's would be skipped
+ * without a word, since a version applies only when it is newer than the
+ * database's. Under the app row lock, so two declares
  * at once take two versions.
  */
 export async function declareAppSchema(
@@ -932,8 +928,8 @@ export async function declareAppSchema(
  *  `builtFrom`: the source the build compiled. Under the app row lock, a
  *  build of source that is no longer the working source is NOT recorded
  *  ('stale'): an autosave during the build cleared the build, and recording
- *  the old one after it paired new source with an old bundle, which the next
- *  publish would ship (apps audit 2026-10-02, item 10). */
+ *  the old one after it would pair new source with an old bundle, which the
+ *  next publish would ship. */
 export async function setDraftBuild(
   ownerId: string,
   id: string,
@@ -942,13 +938,13 @@ export async function setDraftBuild(
     builtFrom?: AppSource;
     /** Store the bundle (the app build broker, packages/tools
      *  app-build-stage.ts): the stage, run BEFORE the row's one short
-     *  transaction (arch A3b, plan 20.3). The bundle is content-addressed
+     *  transaction. The bundle is content-addressed
      *  and named by the ref: until the row points at it no reader asks for
      *  it, and a refused or stale build leaves an object nothing points at. */
     store?: () => Promise<void>;
   } = {},
 ): Promise<boolean | 'stale'> {
-  // The code's door asked before the stage too (F4 fix round 3, M3): a
+  // The code's door asked before the stage too: a
   // refused build stores no bundle (lockAppRow asks it again under the lock).
   await assertItemRight(id, 'manage');
   if (opts.store) await opts.store();
@@ -958,7 +954,7 @@ export async function setDraftBuild(
     if (opts.builtFrom && codeHash(app.draft ?? app.source) !== codeHash(opts.builtFrom)) {
       return 'stale' as const;
     }
-    // The flip (a store broker, A3b): the app's code row, as the caller,
+    // The flip (a store broker): the app's code row, as the caller,
     // exactly one row, pointed at the staged bundle.
     oneRow(
       'appbuild',
@@ -978,7 +974,7 @@ export async function setDraftBuild(
 
 export async function discardDraft(ownerId: string, id: string): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
-  // The code's door (lockAppRow: manage of the app, F4 fix round 3, M3).
+  // The code's door (lockAppRow: manage of the app).
   const done = await db.transaction(async (tx) => {
     if (!(await lockAppRow(tx, ownerId, id))) return false;
     await tx
@@ -1022,11 +1018,10 @@ defineDomainError(NoGreenBuildError, {
  * code has not changed but whose BUNDLE is stale had no path to a fresh one
  * short of rewriting its own source back over itself.
  *
- * Which stopped being hypothetical the day per-app Tailwind CSS shipped
- * (v0.230.57). Every app built before it carries a bundle with no CSS sidecar,
- * the frame serves `appCss` from that sidecar, and so every app on every box
- * rolled past that release renders with NO STYLESHEET until it is rebuilt. The
- * repair is a rebuild, and the rebuild could not be published. Any future change
+ * An example: a bundle built before builds emitted a CSS sidecar has none,
+ * the frame serves `appCss` from that sidecar, and so the app renders with
+ * NO STYLESHEET until it is rebuilt. The repair is a rebuild, which must be
+ * publishable. Any change
  * to what a build EMITS — a source map, a second sidecar — strands every
  * existing app the same way, so the gate belongs on the build, not the source.
  *
@@ -1040,9 +1035,9 @@ defineDomainError(NoGreenBuildError, {
 export type PublishAppOpts = {
   note?: string | null;
   actor?: AppHistoryActor;
-  /** The member a 'member' row names (team apps Phase 3). */
+  /** The member a 'member' row names. */
   actorLoginId?: string | null;
-  /** The summary this publish gives the app (Journal v3 J9): the author's
+  /** The summary this publish gives the app: the author's
    *  (@mantle/tools publish-summary.ts). Written in the publish's
    *  transaction, so the index the publish announces reads it. An author's
    *  summary is written even when there is nothing to publish (the item is
@@ -1051,7 +1046,7 @@ export type PublishAppOpts = {
 };
 
 /** Who a history row names: HISTORY_ACTORS (@mantle/client-types/role-names).
- *  'member' is a member author's own act (team apps Phase 3); the row then
+ *  'member' is a member author's own act; the row then
  *  names the login too. */
 export type AppHistoryActor = HistoryActor;
 
@@ -1060,7 +1055,7 @@ export async function publishApp(
   id: string,
   opts: PublishAppOpts = {},
 ): Promise<AppDetail | null> {
-  // Under the row lock (apps audit D4): an autosave that lands while this
+  // Under the row lock: an autosave that lands while this
   // runs waits for it and becomes the next draft, and one that landed before
   // is what is read here (and it cleared the build, so the publish refuses
   // rather than shipping the old build as the new source).
@@ -1078,7 +1073,7 @@ export async function publishApp(
     if (!app.draftBuild?.ok) throw new NoGreenBuildError();
     await promote(tx, id, app.draft, app.draftBuild);
     if (opts.summary) await writePublishedSummary(tx, id, opts.summary);
-    // The version this publish makes (apps snapshots, Phase 2): the code
+    // The version this publish makes: the code
     // that just went live, appended in the same transaction.
     const code = {
       source: app.draft ?? app.source,
@@ -1187,12 +1182,12 @@ type RestorableCode = {
 };
 
 /**
- * Code-only restore (apps snapshots, Phase 2): the snapshot's code goes into
+ * Code-only restore: the snapshot's code goes into
  * the DRAFT, never straight to live. The editor then previews and commits it
  * as usual, and that publish becomes a new version "restored from v{seq}".
  * The manifest does not change: the app has ONE allowlist, the live app's,
- * so restoring the old tools with the draft granted them to the live app at
- * once (apps audit 2026-10-02, item 9). The caller names them instead; the
+ * so restoring the old tools with the draft would grant them to the live app
+ * at once. The caller names them instead; the
  * owner grants them with app_tools_set. The declared SQLite schema stays too
  * (it belongs to the live data).
  */
@@ -1222,7 +1217,7 @@ export async function restoreAppDraft(
 }
 
 /**
- * Full rollback (apps snapshots, Phase 2): the snapshot's code goes LIVE with
+ * Full rollback: the snapshot's code goes LIVE with
  * the build it ran on, together with its declared schema, because that code
  * and the data restored beside it were known to work together. A draft the
  * snapshot held comes back as the draft (no build: build it to preview).
@@ -1345,18 +1340,18 @@ export async function deleteApp(
   id: string,
   opts: {
     actor?: AppHistoryActor;
-    /** Who deletes it (CEO decision 1, W6b fix round 1): a login other than
-     *  the brain's owner, or a caller that names no login (loginId null,
-     *  fix round 2), leaves it in the trash until the owner purges it
+    /** Who deletes it: a login other than the brain's owner, or a caller
+     *  that names no login (loginId null), leaves it in the trash until the
+     *  owner purges it
      *  (pre_delete meta.keepForOwner). Absent: the owner's own delete (the
      *  owner's routes and the system). */
     deletedBy?: { loginId: string | null; owner: boolean };
   } = {},
 ): Promise<boolean> {
-  // A delete manages the app, asked first (pre-check removal parts 2 and
-  // 3, once per path since the R0 integration): the pre_delete snapshot
-  // copies its database on disk and commits its row and keepForOwner mark
-  // before the node's checked DELETE (0266 asks only at the delete itself),
+  // A delete manages the app, asked first (once per path): the pre_delete
+  // snapshot copies its database on disk and commits its row and
+  // keepForOwner mark before the node's checked DELETE (0266 asks only at
+  // the delete itself),
   // so a caller that may not delete the app leaves no history entry behind.
   await assertItemRight(id, 'manage');
   if (!(await ownsApp(ownerId, id))) return false;
@@ -1383,7 +1378,7 @@ export async function deleteApp(
       })
       .where(eq(nodeSnapshots.id, snap.id));
   }
-  // The node goes first, then the live database file (apps audit D6). Its
+  // The node goes first, then the live database file. Its
   // path is read now: the `app_databases` row cascades away with the node.
   // The snapshot files stay, with the history rows, for the trash.
   const dbPath = await broker.appDatabasePath(ownerId, id);

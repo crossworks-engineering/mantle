@@ -46,9 +46,8 @@ export class AppBoundTableError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): 409, as
-// the restore route answered it (the table is read-only here, the app is
-// its master).
+// The one error answer (@mantle/std domain-errors.ts): 409 (the table is
+// read-only here, the app is its master).
 defineDomainError(AppBoundTableError, {
   reason: 'the table mirrors an app and is read-only here; the message says where to edit',
   status: 409,
@@ -70,7 +69,7 @@ export async function appExportLinkOf(tableNodeId: string) {
  *  (updateTable) don't call this (a copy's are refused by the database). */
 export async function assertTableWritable(tableNodeId: string, appSync?: boolean): Promise<void> {
   if (appSync) return;
-  // A read-only snapshot copy (W6b fix round 1): its grid never changes,
+  // A read-only snapshot copy: its grid never changes,
   // whoever asks (the draft ops write its SQLite file, which no database
   // trigger sees).
   const [own] = await db
@@ -84,8 +83,8 @@ export async function assertTableWritable(tableNodeId: string, appSync?: boolean
 
 /** Refuse a change to an app-bound table (its export link): a grid write
  *  through assertTableWritable, and a delete, which a snapshot copy's
- *  author or the owner may still make (W6b fix round 2, M-1: a copy is
- *  read only, never undeletable). */
+ *  author or the owner may still make (a copy is read only, never
+ *  undeletable). */
 export async function assertTableNotAppBound(tableNodeId: string): Promise<void> {
   // A personal table is never app-bound (exports are brain tables), and the
   // personal-space role holds no grant on the export registry: asking would
@@ -93,9 +92,9 @@ export async function assertTableNotAppBound(tableNodeId: string): Promise<void>
   if (currentSpaceScope()) return;
   // The export registry is the system's (no workspace role reads it): asked
   // by its definer, which app a Table exports (0293,
-  // mantle_table_app_link; A6b: on the system pool before, 'export-link'),
-  // so a member's own table write or delete is checked rather than failing
-  // on the grant (W6b fix round 2). The app's name below is read in the
+  // mantle_table_app_link), so a member's own table write or delete is
+  // checked rather than failing on the grant. The app's name below is read
+  // in the
   // caller's scope.
   const [link] = (await db.execute(
     sql`select "public"."mantle_table_app_link"(${tableNodeId}::uuid)::text as "appNodeId"`,
@@ -193,7 +192,7 @@ export function tabsFromStats(stats: unknown): TableTabInfo[] | undefined {
 
 export type DocsRow = {
   storagePath: string | null;
-  /** The draft the row points at (A3b); absent or null: no draft file. */
+  /** The draft the row points at; absent or null: no draft file. */
   draftPath?: string | null;
   data: unknown;
   draft: unknown;

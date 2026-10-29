@@ -146,21 +146,14 @@ export function resolveMaxTokens(
 // (string→number, scalar→array-wrap, …) are applied in 'warn' and 'enforce';
 // schema violations block dispatch with a teaching error only in 'enforce'.
 //
-// 'warn' was the default from v0.119.0 so the rollout began as pure telemetry:
-// trace_steps.meta.arg_validation recorded exactly what WOULD be rejected,
-// and enforcement waited until the violation rate was known. It now is,
-// measured 2026-09-02 against the live boxes rather than estimated:
+// 'warn' is pure telemetry: trace_steps.meta.arg_validation records exactly
+// what WOULD be rejected, and an unknown key is dropped silently. Measured
+// on live traces, violations are near zero (tens of thousands of steps, one
+// invented parameter, no repairs), so the tool schemas and the models agree,
+// and 'enforce' turns that rare case into a teaching error the model can act
+// on.
 //
-//   jason-prod  19,709 trace steps over 2026-06-06..2026-09-02  →  1 event
-//   dev          ~19k steps over its retained window            →  0 events
-//
-// That single event was an unknown key (`pricing` on model_pool_set) — a
-// model inventing a parameter, which in 'warn' was dropped silently and in
-// 'enforce' comes back as a teaching error the model can act on. There were
-// no repairs and no schema violations at all in three months, which says the
-// tool schemas and the models already agree.
-//
-// So the default is 'enforce'. A box that wants the old behaviour sets
+// So the default is 'enforce'. A box that wants telemetry only sets
 // MANTLE_TOOL_VALIDATION=warn (or 'off'); no redeploy needed, and /debug's
 // tool-validation route reports the mode a process is actually running in.
 export type ToolValidationMode = 'off' | 'warn' | 'enforce';
@@ -418,10 +411,10 @@ export type ToolLoopArgs = ProviderCredential & {
    *  the loop in a turn scope of that workspace (withAgentScope). Unset or
    *  null: a helper, in its caller's scope. */
   agentWorkspaceId?: string | null;
-  /** agents.role (W8 final): withAgentScope refuses a responder or an
+  /** agents.role: withAgentScope refuses a responder or an
    *  assistant on no workspace that answers no login on a brain on
    *  workspaces. Every caller holding the agent row passes it, so a
-   *  delegated child is checked too. Required (W8 final round 2): a caller
+   *  delegated child is checked too. Required: a caller
    *  that leaves it out cannot fail open; null only for no agent row. */
   agentRole: string | null;
   /** The agent row's slug. Passed to handlers (specifically
@@ -449,8 +442,8 @@ export type ToolLoopArgs = ProviderCredential & {
    *  from the owner's profile prefs (`resolveThinkingBudget` — already gated by
    *  the live-thinking switch AND a positive budget). > 0 requests thinking on
    *  this loop's chat rounds; 0 / unset leaves it off. Clamped per-round against
-   *  this agent's `max_tokens` (see `clampThinkingBudget`). Replaced the old
-   *  per-box `MANTLE_THINKING_BUDGET` env gate. Delegated specialists inherit
+   *  this agent's `max_tokens` (see `clampThinkingBudget`). Delegated
+   *  specialists inherit
    *  this via the invoke_agent tool-context bridge and re-clamp against their
    *  own max_tokens — see invoke-agent.ts. */
   thinkingBudget?: number;
@@ -491,11 +484,10 @@ export type ToolLoopArgs = ProviderCredential & {
    *  (@mantle/tools) — this mirrors it so the two can't drift. */
   surface?: NonNullable<import('@mantle/tools').ToolHandlerContext['surface']>;
   /** Record the number of tools this loop lists (what the model is sent,
-   *  loopToolRows) as the current trace's `tool_count` (A5 step 5 fix round
-   *  2): set by a turn whose trace carries that field. */
+   *  loopToolRows) as the current trace's `tool_count`: set by a turn whose
+   *  trace carries that field. */
   recordToolCount?: boolean;
-  /** Whether this turn has read text a client wrote (client logins C4, plan
-   *  N18). Shared by reference: the responder loop marks it from the
+  /** Whether this turn has read text a client wrote. Shared by reference: the responder loop marks it from the
    *  retrieval context, every tool call's input and output marks it, and a
    *  delegated child shares its parent's. Once marked, a lowering to client
    *  or public, or a write into an item clients or the public read, goes to
@@ -507,7 +499,7 @@ export type ToolLoopArgs = ProviderCredential & {
 
 /**
  * Resolve a set of slugs to enabled tool rows. Convenience for callers
- * that have slugs (from the agent's granted tool groups; P6) but not the
+ * that have slugs (from the agent's granted tool groups) but not the
  * full rows yet.
  */
 export async function resolveAgentTools(ownerId: string, slugs: string[]): Promise<Tool[]> {
@@ -517,15 +509,13 @@ export async function resolveAgentTools(ownerId: string, slugs: string[]): Promi
 
 /**
  * The loop's tool rows: of the agent's allowlist, only the tools the one gate
- * lets this loop call in the scope it runs in (A5 step 5, owner pick B,
- * turnListedTools), plus `read_result`, which is always offered when the
+ * lets this loop call in the scope it runs in (turnListedTools), plus `read_result`, which is always offered when the
  * agent has any tools (see runToolLoopInScope). The one place a loop's
  * listing is decided: an assistant turn, a delegated child, a heartbeat fire
  * and a run's worker turn all run through runToolLoopInScope, in the agent's
  * scope, and so list exactly what dispatch (turnCaller) would call. The
  * filter keeps the allowlist's order, so the sent array (and the cached
- * prefix) changes once per agent and scope, then holds. Since A5 step 6a an
- * owner-only tool off the owner's surface and a connector the scope may not
+ * prefix) changes once per agent and scope, then holds. An owner-only tool off the owner's surface and a connector the scope may not
  * call are not listed either (the gate's narrowers). Shared with
  * `describeResponderTurnInput`, so the tool list it reports is the list the
  * model is sent. Call it in the agent's scope.
@@ -533,18 +523,17 @@ export async function resolveAgentTools(ownerId: string, slugs: string[]): Promi
 export async function loopToolRows(
   ownerId: string,
   tools: readonly Tool[],
-  /** The loop's surface: an owner-only tool is not listed off the owner's
-   *  (A5 step 6a, carried L1), by the gate's one rule (isOwnerSurface, fix
-   *  round 1, LOW-3). Every caller names the surface of the turn it runs or
-   *  describes (LOW-4), so the list it reports is the list the model is
-   *  sent. */
+  /** The loop's surface: an owner-only tool is not listed off the owner's,
+   *  by the gate's one rule (isOwnerSurface). Every caller names the
+   *  surface of the turn it runs or describes, so the list it reports is
+   *  the list the model is sent. */
   opts: {
     surface: ToolLoopArgs['surface'];
-    /** The turn's taint (plan N18): a client-sourced turn's writes all wait
-     *  for approval, so a connector write it may not make itself is offered
-     *  too (owner decision 1a, A5 step 6d). The loop passes its own; what
-     *  describes a turn passes the one the turn would start with
-     *  (responderTurnTaint), so listing equals calling (fix round 1). */
+    /** The turn's taint: a client-sourced turn's writes all wait for
+     *  approval, so a connector write it may not make itself is offered too.
+     *  The loop passes its own; what describes a turn passes the one the
+     *  turn would start with (responderTurnTaint), so listing equals
+     *  calling. */
     taint?: Pick<TurnTaint, 'clientSourced'>;
   },
 ): Promise<Tool[]> {
@@ -636,7 +625,7 @@ export function withCatalogBlock(initial: readonly ChatMessage[], block: string)
  * its caller's scope for a helper.
  */
 export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
-  // The agent's id and brain too (W7 integration fix): a helper answering a
+  // The agent's id and brain too: a helper answering a
   // login looks up that login's Admin user row in THIS brain.
   return withAgentScope(
     {
@@ -720,8 +709,8 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // True once the user hit Stop (the turn's AbortController fired). The signal
   // is already threaded into every LLM call (dispatchChat) so generation
   // halts; these loop-level checks are what stop the REST of the turn — tool
-  // execution and further rounds — which otherwise ran to completion after a
-  // Stop (the "stop doesn't stop it" bug). Delegated sub-agents run this same
+  // execution and further rounds — which would otherwise run to completion
+  // after a Stop. Delegated sub-agents run this same
   // loop with the same turnId, so they inherit every check.
   const turnAborted = () => currentTurnAbortSignal()?.aborted === true;
 
@@ -1022,9 +1011,9 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
           taint,
         });
       // No turn hands the model a database error's or the runtime's own
-      // text (W3 re-audit 6; the A8 finding F2: every surface, the owner's
-      // too): the reply says the call failed, the log keeps the detail.
-      // The one masking (@mantle/tools tool-error-mask.ts, A5 step 3a).
+      // text (every surface, the owner's too): the reply says the call
+      // failed, the log keeps the detail. The one masking (@mantle/tools
+      // tool-error-mask.ts).
       let outcome = await maskToolDatabaseErrors(`tool ${slug}`, execute);
       // Deferred loading: a model may call a catalog tool by name without
       // loading it first, and then guess its arguments. When such a call fails
@@ -1100,7 +1089,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         status: queuedForApproval ? 'skipped' : outcome.ok ? 'success' : 'error',
         error: queuedForApproval ? 'queued_for_approval' : outcome.ok ? undefined : outcome.error,
         ...(writeTarget ? { target: writeTarget } : {}),
-        // Third-party text the model read (fix round 1, LOW-6): a run
+        // Third-party text the model read: a run
         // worker's reply after it is stored marked (runs-worker-turn.ts).
         ...(!queuedForApproval &&
         outcomeIsThirdParty(
@@ -1149,9 +1138,9 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
     if (turnAborted()) return stoppedResult(result.text, iter, { pushAssistantMessage: false });
     const boundary = guards.endBatch(calls.length);
     if (boundary === 'batch_fully_skipped') {
-      // (a client box 2026-07-28: a capped child re-issued 47 blocked row-adds across
-      // two more rounds before giving up.) Force the final answer now instead
-      // of paying LLM rounds for more of the same.
+      // A capped child can re-issue dozens of blocked calls across more
+      // rounds before giving up. Force the final answer now instead of
+      // paying LLM rounds for more of the same.
       batchFullySkipped = true;
       messages.push({
         role: 'user',

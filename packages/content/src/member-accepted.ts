@@ -1,18 +1,15 @@
 /**
- * What a member wrote and an admin accepted into the brain (member logins
- * Phase 4, plan 6.2 and 6.3), as its AUTHOR reads it: the version ACCEPTED,
- * from the snapshot taken at Accept (member-snapshots.ts, audit F07), never
- * the brain's current version. Since workspaces W6b the only reader is the
- * author's read-only snapshot copy (server/web/lib/snapshot-copies.ts,
- * plan S3): the author's own list and item routes, the accepted-file and
- * drawing readers and the authorship badge went in W7e and W8d, and the
- * client author with the client role (W8a).
+ * What a member wrote and an admin accepted into the brain, as its AUTHOR
+ * reads it: the version ACCEPTED, from the snapshot taken at Accept
+ * (member-snapshots.ts), never the brain's current version. The only reader
+ * is the author's read-only snapshot copy
+ * (server/web/lib/snapshot-copies.ts).
  *
  * A page's doc, a note's text and a table's cells are the version accepted,
- * and an admin may have written them: an item an admin TOOK OVER (audit F07)
+ * and an admin may have written them: an item an admin TOOK OVER
  * is accepted with the admin's edits, and an admin may mention, link or
  * embed any brain item while it is theirs. So what its author reads is
- * REDACTED for the author (client logins C5 audit, L1), with the shared
+ * REDACTED for the author, with the shared
  * reader's redactors (client-redact.ts): a reference to anything the author
  * may not read is "Private item" (a mention, a link, a cell), and an embed
  * of it is left out. The author may read the brain's items its workspaces
@@ -63,7 +60,7 @@ export type AcceptedRow = {
   type: MemberItemKind;
   title: string;
   icon: string | null;
-  /** Always null since W5b2; kept for the row's shape. */
+  /** Always null; kept for the row's shape. */
   inherited?: 'team' | 'client' | null;
   acceptedAt: string | null;
   updatedAt: string;
@@ -105,7 +102,7 @@ function authoredWhere(anchorId: string, loginId: string) {
 
 /**
  * The ids among `ids` an accepted item's AUTHOR may read in its body, each
- * with the title its chip shows (audit L1): the brain's items the author's
+ * with the title its chip shows: the brain's items the author's
  * workspaces hold (read in the author's scope, so row security decides),
  * the author's own personal items,
  * and the items they wrote that an admin accepted (by their accepted title,
@@ -203,7 +200,7 @@ const NOBODY = '00000000-0000-4000-8000-000000000000';
 
 /**
  * An accepted item as its author reads it, for the author's read-only
- * snapshot copy (workspaces W6b, plan S3): the accepted snapshot, redacted
+ * snapshot copy: the accepted snapshot, redacted
  * for the author, without the author
  * rule (the caller holds space_item_homes' record instead). `authorLoginId`
  * null (a login that is gone): redacted for nobody. Also the snapshot, for
@@ -247,14 +244,14 @@ async function acceptedItemOf(
   opts: { tabId?: string } = {},
 ): Promise<AcceptedItem | null> {
   const { row: base, snap } = found;
-  // The one switch over an accepted item's kind (A10 #12).
+  // The one switch over an accepted item's kind.
   return (
     forAcceptedKind<AcceptedRow, Promise<AcceptedItem | null>>(base, {
       page: async () => ({
         ...base,
         type: 'page',
         doc: await redactedDoc(anchorId, loginId, snap.doc),
-        // Where it sits now (folder phase 7), for a Folder index block.
+        // Where it sits now, for a Folder index block.
         folderId: await pageFolderIdOf(anchorId, base.id),
       }),
       note: async () => ({
@@ -269,7 +266,7 @@ async function acceptedItemOf(
           .where(and(eq(nodes.id, id), eq(nodes.ownerId, anchorId)))
           .limit(1);
         if (!node) return null;
-        // Nothing of the LIVE node an admin could have changed since (C6):
+        // Nothing of the LIVE node an admin could have changed since:
         // the title, icon and time are the snapshot's; the extractor's
         // summary (written from the brain's version), the description, the
         // tags, the app link and the visibility are left out (the snapshot

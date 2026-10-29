@@ -70,7 +70,7 @@ export type ReapResult = {
    *  grandchild-bearing image, or a per-node error. Skips stay visible in the
    *  dangling_source_file audit check rather than failing the whole reap. */
   skipped: number;
-  /** Derived items the caller may not delete (F4 fix round 3, H1): ones its
+  /** Derived items the caller may not delete: ones its
    *  scope does not read, or reads but does not manage. Kept, never reaped,
    *  and only counted (no name, no id): they stay where they are, their
    *  source gone (the dangling_source_file audit lists them). */
@@ -85,7 +85,7 @@ export type ReapResult = {
  * regardless: a derived file node that somehow HAS its own derived nodes
  * refuses deletion and counts as a skip.
  *
- * The caller's check, in two named steps (F4 fix round 3, H1): the derived
+ * The caller's check, in two named steps: the derived
  * ids are found brain-wide after the file's manage check, then each one is
  * asked of the caller's scope (manage, as its own delete asks it) and only
  * the ones that pass are reaped; the rest are kept and counted. A member's
@@ -215,14 +215,13 @@ export type CascadeDeleteResult =
       reason: 'not_found' | 'attachment' | 'in_drawing';
       reaped: DerivedCounts;
       skipped: number;
-      /** Derived items the caller may not delete, kept (a count only; F4 fix
-       *  round 3, H1). */
+      /** Derived items the caller may not delete, kept (a count only). */
       kept: number;
       /** Populated on in_drawing so the caller can name the drawings (the
        *  ones it reads). */
       drawings?: { id: string; title: string }[];
       /** On in_drawing: how many more place it that the caller does not
-       *  read, when any (F4 fix round 2). */
+       *  read, when any. */
       hiddenDrawings?: number;
     };
 
@@ -240,16 +239,15 @@ export async function deleteFileWithDerived(
   fileId: string,
 ): Promise<CascadeDeleteResult> {
   const none = { reaped: emptyDerivedCounts(), skipped: 0, kept: 0 };
-  // The item check first (F4 fix round 2): the reap below is the brain's
+  // The item check first: the reap below is the brain's
   // and irreversible, so it runs only for a caller that may delete the file
   // (its manage, in the caller's scope; system work is not checked).
   // Refused as the delete itself refuses it: not found.
   if ((await itemWriteVerdicts([fileId], 'manage')).get(fileId) !== 'ok') {
     return { ok: false, reason: 'not_found', ...none };
   }
-  // Every refusal no confirm resolves, BEFORE reaping (F4 fix round 3, L1:
-  // the attachment's too, which deleteFileById only met after the reap).
-  // deleteFileById refuses them, and the reap below is irreversible:
+  // Every refusal no confirm resolves, BEFORE reaping (the attachment's
+  // too). deleteFileById refuses them, and the reap below is irreversible:
   // running it first would destroy the derived nodes and then decline to
   // delete the file they came from. Every drawing, brain-wide: one the
   // caller does not read breaks too.

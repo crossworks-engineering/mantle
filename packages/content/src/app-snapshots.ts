@@ -1,6 +1,6 @@
 /**
- * App history: versions and snapshots (apps first-class plan, Phase 2;
- * docs/app-authoring-guide.md, "History: versions and snapshots").
+ * App history: versions and snapshots (docs/app-authoring-guide.md,
+ * "History: versions and snapshots").
  *
  * One numbered line per app in `node_snapshots`. Publish appends a VERSION
  * (code only; apps.ts). This module takes SNAPSHOTS (the code and a copy of
@@ -67,7 +67,7 @@ export const APP_SNAPSHOT_DEFAULT_MAX_MB = envNumDefault('APP_SNAPSHOT_MAX_MB');
 export const APP_SNAPSHOT_AUTO_DEFAULT_MAX_MB = envNumDefault('APP_SNAPSHOT_AUTO_MAX_MB');
 
 /** The `pre_mcp_write` snapshots kept per app: a day of hourly ones. They
- *  are pruned on their own line (M1 audit, medium 2), so writes over MCP can
+ *  are pruned on their own line, so writes over MCP can
  *  never push out a nightly, pre-schema, pre-restore or pre-import one. */
 export const APP_SNAPSHOT_MCP_KEEP = 24;
 /** The default budget for one app's `pre_mcp_write` copies, in MB
@@ -88,8 +88,7 @@ export class AppSnapshotBudgetError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// the routes answered by hand.
+// The one error answer (@mantle/std domain-errors.ts).
 defineDomainError(AppSnapshotBudgetError, {
   reason: 'the snapshots would pass their budget; the message says what to delete',
   status: 409,
@@ -240,7 +239,7 @@ async function currentCode(
       tags: row.tags ?? [],
       ...(row.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
       // Where it lives: a deleted app's purge and restore are checked
-      // against it (W6a fix round 1, M1).
+      // against it.
       ...snapshotHomeMeta(row.home),
     },
     source: row.source,
@@ -264,11 +263,10 @@ async function usedSnapshotBytes(
   q: Q = db,
   memberLoginId?: string | null,
 ): Promise<number> {
-  // Brain-wide (mantle_snapshot_bytes, F4 fix round 2): the scope reads only
-  // the history of the apps it reads, so its sum was short and the budget
-  // let more through. A member's budget is that member's own (audit B6): a
-  // personal space has one member today, and the refusal says "your
-  // snapshots".
+  // Brain-wide (mantle_snapshot_bytes): the scope reads only the history of
+  // the apps it reads, so its own sum would be short and the budget would
+  // let more through. A member's budget is that member's own: a personal
+  // space has one member, and the refusal says "your snapshots".
   return snapshotBytesUsed(ownerId, {
     manualOnly: true,
     member,
@@ -310,7 +308,7 @@ async function assertSnapshotBudget(ownerId: string, opts: SnapshotOpts, q: Q): 
   }
 }
 
-/** Stage a snapshot's database copy (the snapshot broker, A3b part 2): a
+/** Stage a snapshot's database copy (the snapshot broker): a
  *  new file under the snapshot's own id, outside any transaction. */
 async function stageAppSnapshot(
   ownerId: string,
@@ -338,7 +336,7 @@ async function stageAppSnapshot(
  *  (taken again) when the app's database moved on since the copy: a restore
  *  put another file in place, a schema change ran, or (unless
  *  `allowWrites`, the last try) a write landed, so the code read now could
- *  be newer than the data copied (fix round 1, L6). */
+ *  be newer than the data copied. */
 async function recordAppSnapshot(
   tx: DbTx,
   ownerId: string,
@@ -427,9 +425,10 @@ async function snapshotSince(
 /** Drop this app's automatic snapshots past the newest APP_SNAPSHOT_AUTO_KEEP,
  *  and past APP_SNAPSHOT_AUTO_MAX_MB of copies (the newest stays whatever
  *  its size; the owner's own and the versions are never pruned). Rows only:
- *  each row's trigger records its file for the store sweep (A3b part 2). The `pre_mcp_write` ones are their own line
- *  (APP_SNAPSHOT_MCP_KEEP, APP_SNAPSHOT_MCP_MAX_MB): an MCP write prunes
- *  only them, and never counts against the others (M1 audit, medium 2).
+ *  each row's trigger records its file for the store sweep. The
+ *  `pre_mcp_write` ones are their own line (APP_SNAPSHOT_MCP_KEEP,
+ *  APP_SNAPSHOT_MCP_MAX_MB): an MCP write prunes only them, and never counts
+ *  against the others.
  *  One statement under the app's history lock, on the lock's transaction:
  *  nothing taken meanwhile is removed, and no restore is reading a file it
  *  removes. */
@@ -456,7 +455,7 @@ export async function createAppSnapshot(
   opts: {
     trigger?: AppSnapshotTrigger;
     actor?: AppHistoryActor;
-    /** The member a 'member' row names (team apps Phase 3). */
+    /** The member a 'member' row names. */
     actorLoginId?: string | null;
     note?: string | null;
     /** Skip (null) when the app has no database yet: an automatic snapshot
@@ -490,16 +489,16 @@ export async function createAppSnapshot(
   // since, past the budget.
   if (!(await currentCode(ownerId, appId))) return null;
   // A snapshot asked for (app_snapshot_create): edit of the app first (the
-  // cheap rights read, pre-check removal fix round A), before a copy of up
+  // cheap rights read), before a copy of up
   // to 256 MB. An automatic one rides a write its caller already asked.
   if (trigger === 'manual') await assertItemRight(appId, 'edit');
   if (opts.onlyIfNoneSince && (await snapshotSince(db, appId, trigger, opts.onlyIfNoneSince))) {
     return null;
   }
   await assertSnapshotBudget(ownerId, o, db);
-  // The snapshot broker (A3b part 2, plan 20.3): the database copy is
-  // staged first, outside any transaction (it used to be taken inside the
-  // history lock's transaction, held across the whole copy); then one short
+  // The snapshot broker: the database copy is staged first, outside any
+  // transaction (never inside the history lock's transaction, which would
+  // be held across the whole copy); then one short
   // transaction under the lock writes the row naming it. A copy of a file a
   // restore replaced meanwhile is taken again (twice at most).
   let snap: AppSnapshot | null;
@@ -631,15 +630,13 @@ export async function setAppSnapshotNote(
 /** Delete a snapshot and its database copy. A version (what a publish made
  *  live) stays: it is the app's history. False when it is not there. The
  *  row goes now; its trigger records the copy, which the store sweep
- *  removes a grace period later (A3b part 2).
+ *  removes a grace period later.
  *
  *  The caller's edit of the app first, before the entry is read or
- *  refused (the hotfix of S11a-2): the one item-rights gateway, as the tool's
- *  pre-check asked it before R0 (`items: [edit('id')]`) and the HTTP route
- *  did. The database's own check of the row (the edit check's trigger on
- *  node_snapshots) refuses only while the edit check is on: below on, any
- *  login that read the app deleted its snapshots. System work is not
- *  checked. */
+ *  refused: the one item-rights gateway. The database's own check of the
+ *  row (the edit check's trigger on node_snapshots) refuses only while the
+ *  edit check is on: below on, any login that read the app could delete
+ *  its snapshots. System work is not checked. */
 export async function deleteAppSnapshot(
   ownerId: string,
   appId: string,
@@ -741,8 +738,8 @@ export async function deleteMemberAppSnapshot(
     await tx.delete(nodeSnapshots).where(eq(nodeSnapshots.id, snapshotId));
     return row;
   });
-  // The copy is the store sweep's: the row's trigger recorded it (A3b part
-  // 2), so a delete that rolls back (inside a caller's transaction) keeps it.
+  // The copy is the store sweep's: the row's trigger recorded it, so a
+  // delete that rolls back (inside a caller's transaction) keeps it.
   if (!gone) return null;
   return { id: gone.id, seq: gone.seq, freedBytes: Number(gone.dbBytes ?? 0) };
 }
@@ -768,13 +765,13 @@ function sameTools(a: string[] | undefined, b: string[] | undefined): boolean {
 }
 
 /**
- * The one door before an app's code is replaced (F4 fix round 3, M3): a
+ * The one door before an app's code is replaced: a
  * restore of its code (mode code or full) and an import over it. The code
- * is the app's home Moderators' (D4: APP_CODE_COLUMNS need manage), so the
+ * is the app's home Moderators' (APP_CODE_COLUMNS need manage), so the
  * caller's manage of the app is asked here, in its scope, BEFORE the undo
  * snapshot (`pre_restore`, `pre_import`) is taken: a caller that may only
  * edit the app writes nothing, on the route and on a tool or MCP alike (a
- * refusal after the snapshot had committed was a partial restore). Throws
+ * refusal after the snapshot had committed would be a partial restore). Throws
  * the edit check's refusal (the 404 or the 403 item-workspace).
  */
 export async function snapshotBeforeCodeChange(
@@ -801,7 +798,7 @@ export async function restoreAppSnapshot(
     mode: AppRestoreMode;
     discardDraft?: boolean;
     actor?: AppHistoryActor;
-    /** The member a 'member' row names (team apps Phase 3). */
+    /** The member a 'member' row names. */
     actorLoginId?: string | null;
     /** Tests only: the drain before the file swap. */
     drainMs?: number;
@@ -811,14 +808,12 @@ export async function restoreAppSnapshot(
   const actor = opts.actor ?? 'owner';
   const wantsData = mode === 'data' || mode === 'full';
   const wantsCode = mode === 'code' || mode === 'full';
-  // The code is the app's Moderators' (D4), the data alone the data's
+  // The code is the app's Moderators', the data alone the data's
   // (edit): asked first, before the entry is read or refused and before the
   // undo snapshot (snapshotBeforeCodeChange asks the code's again there),
-  // so a caller without it learns nothing of the history and writes nothing
-  // (pre-check removal Part 3). A restore changes the app: a read-only copy
-  // is refused in the copy's words in the same read (changes), as the
-  // route's own edit check refused it until the R0 integration made this
-  // the one check of the path.
+  // so a caller without it learns nothing of the history and writes nothing.
+  // A restore changes the app: a read-only copy is refused in the copy's
+  // words in the same read (changes), the one check of the path.
   await assertItemRight(appId, wantsCode ? 'manage' : 'edit', { changes: true });
   const snap = await getAppSnapshot(ownerId, appId, snapshotId);
   if (!snap) return null;
@@ -843,8 +838,7 @@ export async function restoreAppSnapshot(
   // the way back is still a row on the history, never a lost file.
   // createAppSnapshot takes the history lock, removes its copy if its row
   // does not commit, and prunes the automatic snapshots. A lost live file is
-  // what a data restore is for: the undo keeps the code then (apps audit
-  // 2026-10-02, item 4).
+  // what a data restore is for: the undo keeps the code then.
   const undo = await (wantsCode ? snapshotBeforeCodeChange : createAppSnapshot)(ownerId, appId, {
     trigger: 'pre_restore',
     actor,
@@ -880,7 +874,7 @@ export async function restoreAppSnapshot(
     }
     let code: AppRestoreResult['code'] = null;
     let declaredTools: string[] | null = null;
-    // The author ceiling FIRST (team apps Phase 3; M3 re-audit, low 2):
+    // The author ceiling FIRST:
     // code a member wrote, or code taken while the app ran at team rules,
     // brings the ceiling back before it can go live, so not one call runs it
     // at admin rules, and a restore that fails after this leaves it at team

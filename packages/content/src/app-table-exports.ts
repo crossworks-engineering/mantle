@@ -15,19 +15,19 @@
  * per app (`scheduleAppTableExportSync`, called by the db-broker routes and the
  * seed tool after a successful write).
  *
- * Apps clients wrote (client tier audit 2026-09-30, I2): a Table exported
+ * Apps clients wrote: a Table exported
  * from an app a client login has written (`client_written_at`) is indexed at
  * RETRIEVAL depth only (`nodes.data.brain_depth`: summary, embedding and
  * chunks, never entities, relations or facts), so client text never becomes
- * graph facts the owner's assistant trusts. Clients run no apps since
- * workspaces W5c (the client portal went), so no new client write lands;
- * the rows they wrote before keep the mark.
+ * graph facts the owner's assistant trusts. Clients run no apps (there is
+ * no client portal), so no new client write lands; rows clients wrote
+ * keep the mark.
  *
- * Durable (apps first-class plan D8): the debounce timer lives in one
+ * Durable: the debounce timer lives in one
  * process's memory, so every write also stamps the app's exports
  * (`dirty_since` the burst's first, `last_write_at` this one), and the sync
  * that reads the rows clears the mark unless a write came after its read. A
- * restart in between no longer loses the sync: the web process resumes the
+ * restart in between does not lose the sync: the web process resumes the
  * dirty ones at boot (`resumeDirtyAppTableExports`), and the
  * `app-export-catch-up` maintenance task syncs any still dirty
  * (`syncDirtyAppTableExports`). Same hash-gated sync, so no extra commits.
@@ -152,8 +152,8 @@ async function stampAppLinkMark(tableNodeId: string, mark: TableAppLink | null):
 }
 
 /** Whether a client login has written this app's database
- *  (`client_written_at`, audit I3). Clients run no apps since workspaces W5c;
- *  an app a client wrote before keeps its rows, and so the mark. */
+ *  (`client_written_at`). Clients run no apps now; an app a client wrote
+ *  keeps its rows, and so the mark. */
 async function clientAppState(
   ownerId: string,
   appNodeId: string,
@@ -168,10 +168,10 @@ async function clientAppState(
 }
 
 /** Mark a Table that holds rows clients wrote as client-sourced for good
- *  (`client_sourced_nodes`, audit I3): the mark then outlives the export
+ *  (`client_sourced_nodes`): the mark then outlives the export
  *  link and the app, as the rows do. By its definer
  *  (mantle_mark_export_client_sourced, 0293: only when a client wrote the
- *  app `appNodeId`; A6b: on the system pool before, 'client-sourced-mark');
+ *  app `appNodeId`);
  *  best-effort, like the other marks (the link check in client-sourced.ts
  *  still holds while the link exists). */
 async function markExportClientSourced(
@@ -189,7 +189,7 @@ async function markExportClientSourced(
   }
 }
 
-/** Keep the Table's index depth in step with its app (audit I2): retrieval
+/** Keep the Table's index depth in step with its app: retrieval
  *  only while clients write the app, the full pipeline otherwise. Set before
  *  the commit that notifies the extractor. */
 async function stampExportDepth(tableNodeId: string, retrieval: boolean): Promise<void> {
@@ -267,8 +267,7 @@ async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged'
     if (!saved) throw new Error('linked table no longer exists');
     await commitTable(link.ownerId, link.tableNodeId, undefined, { appSync: true });
     // The sync's record and the dirty clear in ONE statement: a reader never
-    // sees a synced link still marked dirty by this sync's own write (the
-    // F9 test read that gap under load, pre-check removal fix round A).
+    // sees a synced link still marked dirty by this sync's own write.
     await db
       .update(appTableExports)
       .set({
@@ -290,8 +289,8 @@ async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged'
 }
 
 /** The sync read the rows as of `readAt`: clear the dirty mark unless a
- *  write came after that (apps audit 2026-10-02, item 7: `dirtySince` keeps
- *  a burst's FIRST write, so a write during the sync was cleared with it). */
+ *  write came after that (`dirtySince` keeps a burst's FIRST write, so
+ *  comparing it would clear a write made during the sync). */
 async function clearDirty(linkId: string, readAt: Date): Promise<void> {
   await db
     .update(appTableExports)
@@ -313,7 +312,7 @@ function dirtyAfterRead(readAt: Date) {
 }
 
 /** Who the export bookkeeping runs as: the dirty stamp and the debounced
- *  sync are the brain's own work, never the writer's (A8 matrix F9). A
+ *  sync are the brain's own work, never the writer's. A
  *  contact share's request runs as contact:rw, which writes its app's data
  *  only (migration 0294); a timer would otherwise carry the request's actor
  *  to the sync's Table writes 15 s later. */
@@ -408,13 +407,13 @@ export async function syncAppTableExports(
   return out;
 }
 
-/** The refusal of an export change by a scope that does not manage the app
- *  (plan v3 S3 fix round 3). */
+/** The refusal of an export change by a scope that does not manage the
+ *  app. */
 export const APP_EXPORT_MANAGE_ERROR =
   "You cannot change this app's exported tables: that is for a Moderator of the app's workspace (an app with no workspace: the Admin workspace).";
 
 /**
- * The export link's own write rule, asked first (plan v3 S3 fix round 3):
+ * The export link's own write rule, asked first:
  * the scope manages the app (a Moderator of its home; an app with no home,
  * an Admin scope), the test app_table_exports' rules make (0302). Asked
  * before anything is created, so an editor who may edit the app but not
@@ -437,9 +436,8 @@ export async function createAppTableExport(
   opts: { title?: string } = {},
 ): Promise<{ export: AppTableExportInfo; tableId: string; rows: number; created: boolean }> {
   assertTableIdent(sqliteTable);
-  // The app's edit first (pre-check removal Part 3), then its manage (plan
-  // v3 S3 fix round 3, the export row's own rule, 0302): both before
-  // anything is created.
+  // The app's edit first, then its manage (the export row's own rule,
+  // 0302): both before anything is created.
   await assertItemRight(appNodeId, 'edit');
   const app = await getApp(ownerId, appNodeId);
   if (!app) throw new Error('app not found');
@@ -505,14 +503,14 @@ export async function createAppTableExport(
  *  data is the last materialized state); returns false when no link exists.
  *  A scope that does not manage the app is refused first (the refusal, not
  *  "no link": its read rule hides the link from that scope).
- *  When clients wrote the app, the Table keeps the client-sourced mark
- *  (audit I3): the rows they wrote are still in it. */
+ *  When clients wrote the app, the Table keeps the client-sourced mark:
+ *  the rows they wrote are still in it. */
 export async function removeAppTableExport(
   ownerId: string,
   appNodeId: string,
   sqliteTable: string,
 ): Promise<boolean> {
-  // As createAppTableExport: the app's edit (R0), then its manage (S3).
+  // As createAppTableExport: the app's edit, then its manage.
   await assertItemRight(appNodeId, 'edit');
   await assertManagesApp(appNodeId);
   const [link] = await db
@@ -556,15 +554,14 @@ export function exportSyncDelay(firstAt: number, now: number): number {
 }
 
 /**
- * An export's bookkeeping, for every caller of the scheduler (F4 fix round
- * 2): the dirty mark and the debounced sync are the brain's, run as the
- * named system step, outside the scope of the request or turn that wrote
- * the app's data (its item check), with the actor system(app-export). A
- * timer keeps the async context it was set in, and runAsSystem swaps only
- * the actor, so the sync ran in the writer's scope: app_table_exports is
- * read by no scope, the error was swallowed and the linked Table stayed
- * stale until a restart. The member's path wrapped its write in
- * asSystem('app-data'); an Admin user's (in its scope since F4) did not.
+ * An export's bookkeeping, for every caller of the scheduler: the dirty
+ * mark and the debounced sync are the brain's, run as the named system
+ * step, outside the scope of the request or turn that wrote the app's data
+ * (its item check), with the actor system(app-export). A timer keeps the
+ * async context it was set in, and runAsSystem swaps only the actor, so
+ * without the step the sync would run in the writer's scope: no scope reads
+ * app_table_exports, the error would be swallowed and the linked Table
+ * would stay stale until a restart.
  */
 function exportSyncStep<T>(fn: () => PromiseLike<T>): Promise<T> {
   return systemStep(

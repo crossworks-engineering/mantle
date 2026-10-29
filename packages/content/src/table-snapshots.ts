@@ -1,5 +1,5 @@
 /**
- * Table history (apps first-class plan, Phase 4; docs/tables.md, "History").
+ * Table history (docs/tables.md, "History").
  * Tables join the numbered line apps have (`node_snapshots`, node_kind
  * 'table'):
  *
@@ -75,8 +75,7 @@ export class TableSnapshotRefusedError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// the routes answered by hand.
+// The one error answer (@mantle/std domain-errors.ts).
 defineDomainError(TableSnapshotRefusedError, {
   reason: 'the snapshot cannot do what was asked; the message says why',
   status: 409,
@@ -113,16 +112,15 @@ function snapshotAbsPath(rel: string): string {
 
 /**
  * Whether a commit keeps the version it replaces (asked before the commit
- * stages its copy): the system's commits and an Admin scope's, as before
- * F4. The history is the Admin users' (its routes are owner routes), and
- * its row rides the commit's own transaction: on the write role
- * node_snapshots takes it with edit of the table (A3a), the edit the commit
- * itself needed. Not kept: a personal space's commit (frozen, no grant on
- * node_snapshots: a refused insert would fail the commit it rides), and a
- * member's (none since W6b; its row would name the owner as its actor).
- * F4 fix round 2: this was isSystemScope(), false for an Admin user's
- * commit once F4 moved it into its scope, so none kept a history row and a
- * restore's note was lost, silently.
+ * stages its copy): the system's commits and an Admin scope's. The history
+ * is the Admin users' (its routes are owner routes), and its row rides the
+ * commit's own transaction: on the write role node_snapshots takes it with
+ * edit of the table, the edit the commit itself needed. Not kept: a
+ * personal space's commit (frozen, no grant on node_snapshots: a refused
+ * insert would fail the commit it rides), and a member's (its row would
+ * name the owner as its actor). Not isSystemScope(): that is false for an
+ * Admin user's commit, which runs in its own scope, so no history row would
+ * be kept and a restore's note would be lost, silently.
  */
 export async function historyKept(): Promise<boolean> {
   if (currentSpaceScope() !== null) return false;
@@ -136,7 +134,7 @@ export type StagedCommitSnapshot = { id: string; rel: string; abs: string };
 
 /**
  * Stage the history copy of the published workbook a commit is about to
- * replace (plan 20.3: before the commit's one short transaction): a hard
+ * replace (before the commit's one short transaction): a hard
  * link, else a copy, under the history folder. Null when nothing is kept:
  * no published file yet, or a commit the history does not record
  * (historyKept). The
@@ -190,13 +188,13 @@ export async function recordCommitSnapshot(
  *  TABLE_SNAPSHOT_COMMIT_KEEP, and past TABLE_HISTORY_MAX_MB of files (the
  *  newest stays whatever its size; each kept version is a whole workbook).
  *  One statement: an entry a commit adds meanwhile is never removed. Rows
- *  only: each row's trigger records its file for the store sweep (A3b part
- *  2, store_tombstones). */
+ *  only: each row's trigger records its file for the store sweep
+ *  (store_tombstones). */
 export async function pruneTableCommitSnapshots(tableId: string): Promise<void> {
   // The table's whole history line, brain-wide bookkeeping after the commit
   // (the commit was the item check; the step asks the table's edit again):
   // the named system step, never the caller's scope (whose view role has no
-  // delete, and which may not read every row of a line: F4 fix round 2).
+  // delete, and which may not read every row of a line).
   await systemStep('table-history', { items: [tableId], need: 'edit' }, () =>
     pruneHistoryRows(
       tableId,
@@ -259,8 +257,7 @@ async function ownedTable(
 }
 
 /** The owner's table's title, or null when it is not this owner's: the
- *  history routes' existence check, without loading the table itself (apps
- *  audit 2026-10-02, low). */
+ *  history routes' existence check, without loading the table itself. */
 export async function tableTitle(ownerId: string, tableId: string): Promise<string | null> {
   return (await ownedTable(ownerId, tableId))?.title ?? null;
 }
@@ -335,8 +332,7 @@ export async function createTableSnapshot(
 ): Promise<TableSnapshot | null> {
   const table = await ownedTable(ownerId, tableId);
   if (!table) return null;
-  // Edit first (the cheap rights read, pre-check removal fix round A):
-  // before the copy.
+  // Edit first (the cheap rights read): before the copy.
   await assertItemRight(tableId, 'edit');
   if (!table.storagePath) {
     throw new TableSnapshotRefusedError(
@@ -344,16 +340,16 @@ export async function createTableSnapshot(
     );
   }
   // The brain's budget, every copy counted (mantle_snapshot_bytes, 0300):
-  // the scope reads only the history of the items it reads (F4 fix round 2).
+  // the scope reads only the history of the items it reads.
   const usedBytes = await snapshotBytesUsed(ownerId, { manualOnly: false });
   if (usedBytes >= maxSnapshotBytes()) {
     throw new TableSnapshotRefusedError(
       `snapshots already hold ${Math.round(usedBytes / 1048576)} MB of the ${Math.round(maxSnapshotBytes() / 1048576)} MB allowed (APP_SNAPSHOT_MAX_MB): delete old ones first (table_snapshot_delete)`,
     );
   }
-  // The snapshot broker (A3b part 2, plan 20.3): the copy is staged first,
-  // outside any transaction (it used to be taken inside the registry
-  // lock's transaction, held across the whole copy); then one short
+  // The snapshot broker: the copy is staged first, outside any transaction
+  // (never inside the registry lock's transaction, which would be held
+  // across the whole copy); then one short
   // transaction locks the registry row, checks it still names the file
   // copied (a commit may have replaced it meanwhile: taken again, twice at
   // most) and writes the history row naming the copy.
@@ -372,7 +368,7 @@ export async function createTableSnapshot(
           const id = randomUUID();
           const rel = snapshotRelPath(ownerId, tableId, id);
           const abs = snapshotAbsPath(rel);
-          // In a SQL child, off the event loop (apps audit 2026-10-02, item 14).
+          // In a SQL child, off the event loop.
           const bytes = await copySqliteFile(publishedAbs, abs);
           return { id, rel, abs, bytes };
         },
@@ -432,8 +428,8 @@ export async function restoreTableSnapshot(
 ): Promise<{ restored: TableSnapshot } | null> {
   const table = await ownedTable(ownerId, tableId);
   if (!table) return null;
-  // Edit first (the cheap rights read, pre-check removal fix round A):
-  // before the copy, and the same refusal whether a draft is there or not.
+  // Edit first (the cheap rights read): before the copy, and the same
+  // refusal whether a draft is there or not.
   await assertItemRight(tableId, 'edit');
   const entry = await getEntry(ownerId, tableId, snapshotId);
   if (!entry) return null;
@@ -442,7 +438,7 @@ export async function restoreTableSnapshot(
     throw new TableSnapshotRefusedError(`v${entry.seq}'s workbook file is missing on the server`);
   }
   const source = entry.abs;
-  // The store broker (A3b, plan 20.3): the copy is staged as a new draft
+  // The store broker: the copy is staged as a new draft
   // revision, then one short transaction checks the row (at the revision
   // read) and points the draft at it.
   const done = await stagedTableWrite(
@@ -460,7 +456,7 @@ export async function restoreTableSnapshot(
       const hasDraft = row.draftPath !== null || (reg?.draftData ?? null) !== null;
       if (hasDraft && !opts.discardDraft) throw new TableRestoreDraftError();
       // Beside the row's published file (a table folded in from a member's
-      // space keeps its files in that folder; A3b fix round 1, M4).
+      // space keeps its files in that folder).
       const rel = revisionBesideRow(row, ownerId, tableId, true);
       return { files: [stageCopy(source, rel)], rel };
     },
@@ -485,7 +481,7 @@ export async function restoreTableSnapshot(
 
 /** Delete an entry and its file. False when it is not there. The row goes
  *  now; its trigger records the file, which the store sweep removes a grace
- *  period later (A3b part 2). */
+ *  period later. */
 export async function deleteTableSnapshot(
   ownerId: string,
   tableId: string,
@@ -533,7 +529,7 @@ export async function purgeOrphanTableHistory(
   }[];
   if (opts.dryRun) return { tables: rows.length };
   // Rows only: each row's trigger records its file, which the store sweep
-  // removes a grace period later (A3b part 2, store_tombstones); a file
+  // removes a grace period later (store_tombstones); a file
   // there that no row ever named stays, reported.
   for (const r of rows) {
     await db

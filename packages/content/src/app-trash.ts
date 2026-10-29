@@ -1,9 +1,9 @@
 /**
- * Recently deleted apps (apps first-class plan, Phase 3).
+ * Recently deleted apps.
  *
  * Deleting an app takes a `pre_delete` snapshot first (apps.ts deleteApp):
- * the code, the name and look, and a copy of the database. Since migration
- * 0220 the app's history rows outlive the app, so for APP_TRASH_DAYS the app
+ * the code, the name and look, and a copy of the database. The app's
+ * history rows outlive the app (0220), so for APP_TRASH_DAYS the app
  * can come back, with the same id (links and history line up again). After
  * that the nightly `app-trash-purge` sweep removes the rows and the files.
  *
@@ -51,8 +51,7 @@ export class AppTrashRefusedError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
-// the routes answered by hand.
+// The one error answer (@mantle/std domain-errors.ts).
 defineDomainError(AppTrashRefusedError, {
   reason:
     'the app is not deleted, or its last snapshot cannot bring it back; the message says which',
@@ -74,8 +73,8 @@ type DeletedRow = {
 };
 
 /** Each deleted app's newest pre_delete row (the app itself is gone). The
- *  list reads the name and look only, not every deleted app's whole code
- *  (apps audit 2026-10-02, low); a restore reads its one app's code. */
+ *  list reads the name and look only, not every deleted app's whole code;
+ *  a restore reads its one app's code. */
 async function deletedRows(ownerId: string, appId?: string): Promise<DeletedRow[]> {
   const code = appId ? sql`s.code` : sql`jsonb_build_object('meta', s.code->'meta') as code`;
   const rows = (await db.execute(sql`
@@ -126,13 +125,12 @@ function deletedAppsOf(
 }
 
 /**
- * The deleted apps the caller may manage, with each one's home (W7b fix
- * round 1), by their definer (mantle_deleted_apps, 0293): a deleted app's
+ * The deleted apps the caller may manage, with each one's home, by their
+ * definer (mantle_deleted_apps, 0293): a deleted app's
  * rows are gone, so a scope's row rule hides its snapshots (0265). In a
  * workspace scope only those homed in a workspace the scope moderates (the
  * anchor login: every workspace it moderates), or with no home for the
- * anchor login; with no scope, every one. A6b: the tools read the whole
- * trash on the system pool before ('app-trash') and filtered it here.
+ * anchor login; with no scope, every one.
  */
 export async function manageableDeletedApps(ownerId: string): Promise<{
   homes: Map<string, string | null>;
@@ -151,8 +149,8 @@ export async function manageableDeletedApps(ownerId: string): Promise<{
   };
 }
 
-/** Whether a member ever wrote this app's code (a history row by a member,
- *  team apps Phase 3). */
+/** Whether a member ever wrote this app's code (a history row by a
+ *  member). */
 async function memberEra(appId: string): Promise<boolean> {
   const [row] = await db
     .select({ id: nodeSnapshots.id })
@@ -230,10 +228,9 @@ async function assertSnapshotStill(
 
 /** restoreDeletedApp from a snapshot already read: POST
  *  /api/apps/deleted/:id/restore, in the login's scope, after
- *  mantle_app_trash_act said yes (plan v3.2 S6 c2). The app's rows and
- *  files come back here, as before. Null, nothing made, when the snapshot
- *  went before the app's insert (the check and the restore are two
- *  transactions); the route answers the 404 it answered before. */
+ *  mantle_app_trash_act said yes. The app's rows and files come back here.
+ *  Null, nothing made, when the snapshot went before the app's insert (the
+ *  check and the restore are two transactions); the route answers 404. */
 export async function restoreDeletedAppFrom(
   ownerId: string,
   appId: string,
@@ -244,8 +241,8 @@ export async function restoreDeletedAppFrom(
   if (!code) throw new AppTrashRefusedError(`the last snapshot of app ${appId} holds no code`);
   const meta = code.meta;
   // The node is made first, with the same id; if a later step fails, it goes
-  // again and the app is back in the trash as it was (apps audit
-  // 2026-10-02, low: an undelete was not all or nothing).
+  // again and the app is back in the trash as it was: an undelete is all
+  // or nothing.
   let app: Awaited<ReturnType<typeof createApp>>;
   try {
     app = await createApp(
@@ -258,7 +255,7 @@ export async function restoreDeletedAppFrom(
         tags: meta?.tags ?? [],
         ...(code.manifest.description ? { description: code.manifest.description } : {}),
         source: code.source,
-        // The author ceiling comes back too (team apps Phase 3, M3 audit): a
+        // The author ceiling comes back too: a
         // member-era app, or one that ran at team rules, stays at team rules.
         ...(row.memberEra || meta?.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
       },
@@ -301,7 +298,7 @@ export async function restoreDeletedAppFrom(
 
 /** Remove a deleted app's history rows. Their snapshot files are the store
  *  sweep's: each row's trigger records its file (store_tombstones, 0284),
- *  removed a grace period later while no row names it (A3b part 2). A
+ *  removed a grace period later while no row names it. A
  *  member app moved to the brain keeps its member-era files where they
  *  were; they go the same way, by each row's own path. */
 async function purgeOne(ownerId: string, appId: string): Promise<void> {
@@ -313,9 +310,9 @@ async function purgeOne(ownerId: string, appId: string): Promise<void> {
 /**
  * The nightly sweep (`app-trash-purge`): every owner's deleted apps past
  * APP_TRASH_DAYS, and any history whose app is gone without a pre_delete
- * row (an app deleted before Phase 3), once its newest row is that old.
- * Never an app whose newest pre_delete row says a login other than the
- * brain's owner deleted it (keepForOwner, CEO decision 1, W6b fix round 1):
+ * row (an app deleted before deletes kept one), once its newest row is that
+ * old. Never an app whose newest pre_delete row says a login other than the
+ * brain's owner deleted it (keepForOwner):
  * the owner purges that one by hand. Plain SQL and file removal, no model.
  */
 export async function purgeExpiredDeletedApps(

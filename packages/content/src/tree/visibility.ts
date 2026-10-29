@@ -1,6 +1,5 @@
 /**
- * What a tree write would change about which workspaces read items (folder
- * plan phase 4, "Confirm before visibility changes"; workspaces W5b2, S6).
+ * What a tree write would change about which workspaces read items.
  * Every write that places items under another folder (a folder or items
  * moved, a folder deleted with its contents lifted, a file or page made or
  * copied into a folder) is computed here first, DRY: nothing is written, so
@@ -43,9 +42,9 @@ type Via = Pick<typeof db, 'execute'>;
 export type VisibilityDiff = {
   changes: TreeWorkspaceChange[];
   total: number;
-  /** @deprecated Never set since W5b2 (embeds do not follow). */
+  /** @deprecated Never set (embeds do not follow). */
   alsoEmbeds?: TreeVisibilityChange[];
-  /** @deprecated Never set since W5b2. */
+  /** @deprecated Never set. */
   embedsTotal?: number;
 };
 
@@ -65,9 +64,8 @@ export class TreeVisibilityError extends Error {
   }
 }
 
-// The one error answer (A10 part 2, @mantle/std domain-errors.ts): the
-// list, so the caller can ask and repeat with confirm (what
-// treeErrorResponse answered by hand).
+// The one error answer (@mantle/std domain-errors.ts): the list, so the
+// caller can ask and repeat with confirm.
 defineDomainError(TreeVisibilityError, {
   reason: 'the write changes who can see items: the caller confirms first',
   status: 409,
@@ -76,7 +74,7 @@ defineDomainError(TreeVisibilityError, {
 
 export const NO_CHANGE: VisibilityDiff = { changes: [], total: 0 };
 
-/** @deprecated Embeds no longer open with what embeds them (0261): there is
+/** @deprecated Embeds do not open with what embeds them (0261): there is
  *  nothing to add. Goes with the writers' last caller. */
 export async function withEmbedChanges(
   _ownerId: string,
@@ -106,8 +104,7 @@ function idArray(ids: readonly string[]): SQL {
 /** Whether `path` is an ltree, by the database's own parser
  *  (pg_input_is_valid: exact, whatever a label may hold). A path that is
  *  none names no folder: its diff is NO_CHANGE and the write itself
- *  refuses it, where the cast below was an opaque 500 (A10 lows, part 2
- *  #3). */
+ *  refuses it, where the cast below would be an opaque 500. */
 async function isPath(via: Via, path: string): Promise<boolean> {
   const [row] = (await via.execute(
     sql`select pg_input_is_valid(${path}, 'ltree') as ok`,
@@ -153,7 +150,7 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
  *  caller cannot open. A new item (id '') is the caller's own.
  *
  *  It reads in the write's own transaction (`via`), its changes so far
- *  included (A2b2b fix round 1, M3). What a scoped read (the write role,
+ *  included. What a scoped read (the write role,
  *  the workspace role) cannot see goes through the definers of 0279, held
  *  to the scope: a destination folder's grant rows (folderGrants) and the
  *  workspaces the scope is not in (mantle_ws_names, mantle_ws_live,
@@ -161,9 +158,9 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
  *  folders on the way are read as the caller reads them: those diffs run
  *  before their write, through `db`, never inside a write transaction. */
 async function listed(via: Via, rows: SQL): Promise<VisibilityDiff> {
-  // A workspace is named when the scope may see it named for this change
-  // (fix round 2, L4): what is gained through the folder (r.via), what is
-  // lost from the item itself (r.id; none for a new item).
+  // A workspace is named when the scope may see it named for this change:
+  // what is gained through the folder (r.via), what is lost from the item
+  // itself (r.id; none for a new item).
   const names = (col: SQL, through: SQL) => sql`mantle_ws_names(${col}, ${through})`;
   const found = (await via.execute(sql`
     select r.id::text as id, r.title,
@@ -197,7 +194,7 @@ function merged(diffs: VisibilityDiff[]): VisibilityDiff {
 }
 
 /** Rows (id, title, gain, lose) for items `where` (alias `n`) placed in the
- *  folder at `destPath` (S6, as grants.ts placeInFolder plans it). */
+ *  folder at `destPath` (as grants.ts placeInFolder plans it). */
 function placedRows(ownerId: string, where: SQL, destPath: string): SQL {
   const folder = sql`mantle_parent_folder(${ownerId}::uuid, n.type, ${destPath}::ltree)`;
   return sql`
@@ -364,7 +361,7 @@ export async function copyDiff(
 /**
  * A NEW item of `kind` (created or uploaded) in the folder at `destPath`,
  * against the same item at the kind's root (its home Admin, nothing else):
- * "This will also be visible to: ..." (S6). No change at the root, nor in a
+ * "This will also be visible to: ...". No change at the root, nor in a
  * folder only Admin reads.
  */
 export async function newItemDiff(
@@ -431,8 +428,8 @@ async function newItemHomeSql(
 }
 
 /**
- * Asked before a create whose next write needs manage of the new item (F4
- * fix round 4, L-b: a new app's code is its Moderators', D4): throws the
+ * Asked before a create whose next write needs manage of the new item (a
+ * new app's code is its Moderators'): throws the
  * edit check's 403 (item-workspace) unless the caller's scope manages the
  * create home a NEW item of `nodeType` in the folder at `destPath` lands in,
  * so a refusal makes nothing, not half an item. It widens nothing: the
@@ -454,8 +451,8 @@ export async function assertManagesNewItemHome(
 
 /**
  * Where a NEW item of `nodeType` in the folder at `destPath` will be homed,
- * and which of the folder's workspaces will read it without edit (A0 fix
- * round 3, L-c): the create home names the place (the current workspace a
+ * and which of the folder's workspaces will read it without edit: the
+ * create home names the place (the current workspace a
  * caller moderates, else the folder's home when it may edit the folder,
  * else its private workspace; an Admin user: the folder's home, else
  * Admin), and the folder passes its rows with their Write (its home row

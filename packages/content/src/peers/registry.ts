@@ -118,7 +118,7 @@ export type CreatePeerInput = {
    */
   outboundToken?: string;
   description?: string;
-  /** The login registering it (W6b fix round 3, M-1): only a peer the
+  /** The login registering it: only a peer the
    *  owner made deletes apps as the owner. */
   createdBy?: string;
 };
@@ -215,7 +215,7 @@ export async function getOutboundToken(ownerId: string, id: string): Promise<str
 }
 
 /** Rotate the inbound token; returns the new plaintext (shown once).
- *  `unlessBoundTo` (a caller that is not the owner, W6b fix round 4, L-4):
+ *  `unlessBoundTo` (a caller that is not the owner):
  *  only while the peer is not bound to that login, in the same statement;
  *  null and nothing written otherwise. */
 export async function rotateInboundToken(
@@ -298,7 +298,7 @@ export async function setPeerEnabled(
 export type PeerAccessResult = { peer: PeerRow; inboundToken: string | null };
 
 /**
- * What a peer's token may do on /api/mcp (0227, plan page e5b854dd): act as
+ * What a peer's token may do on /api/mcp (0227): act as
  * one login (the caller checked it exists and passes its current role), or
  * nobody (`null`: a share-only peer); the write switch; the risky owner tools
  * allowed by name. Only the fields given change, with one rule: binding or
@@ -315,22 +315,22 @@ export async function setPeerAccess(
     actsAs?: { loginId: string } | null;
     writeEnabled?: boolean;
     allowedRiskyTools?: string[];
-    /** The owner binding the peer to itself: recorded as its maker (W6b fix
-     *  round 3, M-1). The peer gets a new inbound token in the same
+    /** The owner binding the peer to itself: recorded as its maker. The
+     *  peer gets a new inbound token in the same
      *  statement, returned once, whenever it moves into the owner's binding
      *  (it was bound to anyone else, or to nobody), and whenever another
      *  login made it or no maker is recorded (before 0267): whoever made or
      *  last rotated it saw the old token, which would otherwise stay an
-     *  owner credential in their hands (fix round 4, L-1; fix round 5, M-1).
+     *  owner credential in their hands.
      *  A peer already bound to the owner and made by it keeps its token. */
     adoptBy?: string;
-    /** A caller that is not the owner (fix round 4, L-4): the change lands
+    /** A caller that is not the owner: the change lands
      *  only while the peer is not bound to this login (the anchor), checked
      *  in the same statement, so a change the owner alone may make (the
      *  Write switch, risky tools) never lands on a peer the owner bound in
      *  the meantime. Nothing is written otherwise (null). It is not a lock
      *  on the binding itself: an Admin user may still set actsAs to a member
-     *  without it, by design (fix round 5). */
+     *  without it, by design. */
     unlessBoundTo?: string;
   },
 ): Promise<PeerAccessResult | null> {
@@ -367,7 +367,7 @@ export async function setPeerAccess(
     minted = { token, hash: hashToken(token) };
     // SET reads the row as it was: re-key when it moves into the owner's
     // binding (another Admin user may have rotated it while it was bound
-    // elsewhere and seen the token, fix round 5, M-1), or when someone else
+    // elsewhere and seen the token), or when someone else
     // made it.
     set.inboundTokenHash =
       sql`(case when ${mantlePeers.actsAsLoginId} is distinct from ${access.adoptBy}::uuid
@@ -447,7 +447,7 @@ export async function verifyInboundToken(token: string): Promise<MantlePeer | nu
 /** Mark that we just successfully called this peer. A note for the peers
  *  screen, as verifyInboundToken's last-seen stamp: on a database that
  *  refuses the write (a read tool's read-only actor, a reader role) it is
- *  skipped, never a failed peer call (A5 step 3a low round). */
+ *  skipped, never a failed peer call. */
 export async function markPeerContacted(ownerId: string, id: string): Promise<void> {
   await bestEffortWrite("a peer's last-contact stamp", () =>
     db

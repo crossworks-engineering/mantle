@@ -63,8 +63,8 @@ export type DescribeResponderTurnInputOptions = {
   excludeToolSlugs?: string[];
   /** The tool list a read-only probe would get. */
   readOnly?: boolean;
-  /** The login the input is built for (the MCP connection's, W7c fix
-   *  round 1, M1): its own thread's digests and its scope. */
+  /** The login the input is built for (the MCP connection's): its own
+   *  thread's digests and its scope. */
   loginId?: string | null;
 };
 
@@ -201,11 +201,10 @@ export async function describeResponderTurnInput(
         agent,
         async () => {
           // The surface the simulated turn runs on (run-sim-turn.ts), so the
-          // list reported is the list that turn sends (fix round 1, LOW-4),
-          // and its taint as that turn derives it (no conversation mark, the
-          // client text its context names: responderTurnTaint), so a
-          // client-sourced turn is reported with what it is offered (A5
-          // step 6d fix round 1).
+          // list reported is the list that turn sends, and its taint as that
+          // turn derives it (no conversation mark, the client text its
+          // context names: responderTurnTaint), so a client-sourced turn is
+          // reported with what it is offered.
           const surface: ToolLoopArgs['surface'] = opts.loginId
             ? { kind: 'web', loginId: opts.loginId }
             : { kind: 'web' };

@@ -10,7 +10,7 @@
  * the active route and the runtime needs no precedence logic).
  *
  * Failover policy: try the primary; on a route-DOWN / 429 / 5xx error fail
- * over to the backup. Since 2026-10-04 an ACCOUNT error fails over too (no
+ * over to the backup. An ACCOUNT error fails over too (no
  * credits, a refused key, no key, a model the provider does not offer:
  * @mantle/embeddings provider-error.ts): the backup is another provider or
  * key, so it gets round exactly that. Bad-input / context-length 4xx rethrow,
@@ -43,8 +43,8 @@ export interface ChatRoute {
   /** Dispatch this route's HTTP through the Tailscale proxy so a `baseUrl` at a
    *  MagicDNS name reaches a NAT'd box. Inert unless the tailnet proxy is up. */
   viaTailnet: boolean;
-  /** The login that paired this route's key with its base URL (W7a fix
-   *  round 5, the row's configured_by). Null: the brain owner's. Required,
+  /** The login that paired this route's key with its base URL (the row's
+   *  configured_by). Null: the brain owner's. Required,
    *  so a route built by hand cannot leave it out. */
   configuredBy: string | null;
 }
@@ -68,7 +68,7 @@ export interface ChatRouteRow {
   backupEnabled: boolean;
   backupBaseUrl: string | null;
   backupViaTailnet: boolean;
-  /** configured_by (W7a fix round 5): it covers both routes. Null: the
+  /** configured_by: it covers both routes. Null: the
    *  brain owner. */
   configuredBy: string | null;
 }
@@ -166,7 +166,7 @@ export type ChatKeyResult =
       /** Stable disposition for skipped-trace rows + logs. Mirrors what the
        *  worker pre-flights have always recorded.
        *  `api_key_maker_no_keys`: the route has a base URL and the login that
-       *  paired it no longer holds the keys area (W7a fix round 5). */
+       *  paired it no longer holds the keys area. */
       disposition: 'no_api_key_id' | 'api_key_not_decryptable' | 'api_key_maker_no_keys';
       /** Short human detail for the log line. */
       detail: string;
@@ -187,15 +187,15 @@ export type ChatKeyResult =
  *
  * A route with a base URL sends its key (pinned, or the provider's) to a host
  * a login chose: it resolves a vault key only while the login that paired
- * them (`configuredBy`, null for the brain owner) holds the keys area (W7a
- * fix round 5, @mantle/tools secret-ref-gate.ts). Refused, a keyless
+ * them (`configuredBy`, null for the brain owner) holds the keys area
+ * (@mantle/tools secret-ref-gate.ts). Refused, a keyless
  * provider still runs keyless; any other has no key.
  */
 export async function resolveChatKey(
   ownerId: string,
   route: Pick<ChatRoute, 'provider' | 'apiKeyId'> &
     Partial<Pick<ChatRoute, 'baseUrl'>> & {
-      /** Required (W7 integration fix): a caller that forgets it would read
+      /** Required: a caller that forgets it would read
        *  as the brain owner's pairing. Null: the brain owner. */
       configuredBy: string | null;
     },
@@ -228,8 +228,8 @@ export async function resolveChatKey(
 }
 
 /**
- * Why a route's vault key may not go to its base URL now, or null (W7a fix
- * round 5): the route has a base URL and the login that paired them
+ * Why a route's vault key may not go to its base URL now, or null: the
+ * route has a base URL and the login that paired them
  * (`configuredBy`) is not the brain owner and no longer holds the keys area.
  * For the paths that resolve an agent's key themselves and send it to the
  * agent's base URL (the responder loop, a heartbeat fire).

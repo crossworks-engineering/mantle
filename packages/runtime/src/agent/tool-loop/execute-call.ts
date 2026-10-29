@@ -1,9 +1,7 @@
 /**
  * Tool loop: running ONE admitted tool call — the traced step that parses,
  * validates, confirm-gates and dispatches it — and turning its outcome into
- * the tool message the model reads (fenced, spilled when oversized). Lifted
- * out of runToolLoop on 2026-09-02 (audit, complexity C1) with the step
- * names, meta and payload shapes unchanged.
+ * the tool message the model reads (fenced, spilled when oversized).
  */
 import { currentTrace, step } from '@mantle/tracing';
 import {
@@ -42,7 +40,7 @@ export async function executeToolCall(p: {
   lastUserMessage: string | undefined;
   /** Pending-call ids the loop is collecting; a confirm-gated call appends. */
   pendingIds: string[];
-  /** The turn's client-sourced taint (plan N18): once set, a call that
+  /** The turn's client-sourced taint: once set, a call that
    *  lowers anything to client or public, or writes into an item clients or
    *  the public read (client-sourced-rules.ts), waits for approval like a
    *  requires_confirm tool. */
@@ -62,7 +60,7 @@ export async function executeToolCall(p: {
       name: `tool: ${slug}`,
       kind: 'compute',
       input: { slug, args: redactedInput },
-      // A member's private content is never journaled (audit S3).
+      // A member's private content is never journaled.
       ...(PRIVATE_OUTPUT_TOOL_SLUGS.has(slug) ? { durable: false as const } : {}),
     },
     async (handle) => {
@@ -114,8 +112,8 @@ export async function executeToolCall(p: {
       // the operator approves/rejects via /pending. The synthetic
       // tool_result tells the model the action is queued so it can
       // wrap up its turn coherently.
-      // The injection guard (client logins C4, plan N18; by target since the
-      // C5 audit fixes): a turn that has read text a client wrote cannot, on
+      // The injection guard (by target): a turn that has read text a client
+      // wrote cannot, on
       // its own say, lower anything to client or public or write into an
       // item clients or the public read. The call waits at /pending for the
       // owner, exactly as a requires_confirm tool does. Reads run.
@@ -129,14 +127,13 @@ export async function executeToolCall(p: {
             })
           : { gate: false };
       if (tool.requiresConfirm || verdict.gate) {
-        // The gate first (A5 step 5 fix rounds 1 and 2, M2 and the item
-        // pre-check): an approved call runs later in the approver's scope,
+        // The gate first: an approved call runs later in the approver's scope,
         // so a call this loop's own scope may not make, on the items its
         // arguments name too, is refused now, in the gate's words, and
         // never queued (a workspace heartbeat's telegram_send, a member
         // turn's shell row, a page_delete of an Admin-only page). The same
         // caller dispatch would use (turnCaller).
-        // Owner decision 1a (A5 step 6d): a connector write this scope may
+        // A connector write this scope may
         // not make itself (no Write tick, or not a Moderator) queues all the
         // same, its row saying an Admin user must approve it, whose rights
         // run it (the approval rule: pending-approval.ts)
@@ -156,9 +153,9 @@ export async function executeToolCall(p: {
           return { ok: false as const, error: refused };
         }
         const traceId = currentTrace()?.id ?? null;
-        // The turn read text a client wrote (plan N18): the row, its card
-        // and /pending say so, whatever made the call wait (A5 step 6d fix
-        // round 1), so an approver can spot a request a client's text led to.
+        // The turn read text a client wrote: the row, its card and /pending
+        // say so, whatever made the call wait, so an approver can spot a
+        // request a client's text led to.
         const clientSourced =
           p.taint?.clientSourced === true
             ? { via: (p.taint.via ?? 'text a client wrote').slice(0, 200) }
@@ -181,7 +178,7 @@ export async function executeToolCall(p: {
           traceId,
           ...(queue.elevated ? { elevated: queue.elevated } : {}),
           ...(clientSourced ? { clientSourced } : {}),
-          // The scope this turn asked in (A5 step 6c, 0288): its approval
+          // The scope this turn asked in (0288): its approval
           // judges the call again, and runs it, there (pending-origin.ts).
           origin: await pendingOriginNow(args.surface),
         });
@@ -232,7 +229,7 @@ export async function executeToolCall(p: {
       }
       const result = await dispatchTool(tool, input, {
         ownerId: args.ownerId,
-        // The turn calls through the one gate (A5 step 3a): it runs in the
+        // The turn calls through the one gate: it runs in the
         // turn's scope already (withAgentScope), so the caller sets none.
         caller: turnCaller(),
         step: {
@@ -255,7 +252,7 @@ export async function executeToolCall(p: {
                   ? { thinkingBudget: args.inheritThinkingBudget ?? args.thinkingBudget }
                   : {}),
                 ...(p.lastUserMessage ? { lastUserMessage: p.lastUserMessage } : {}),
-                // Shared with a delegated child (plan N18).
+                // Shared with a delegated child.
                 ...(p.taint ? { taint: p.taint } : {}),
               },
             }
@@ -307,7 +304,7 @@ export async function toolResultPayload(p: {
     // — sanitize centrally so no handler has to remember to. A tool whose
     // policy marks its text untrusted (a canvas's, a page's) has its error
     // fenced too, after the sanitizer, which would strip the markers: its
-    // error may quote what someone else wrote (the Present re-audit R3).
+    // error may quote what someone else wrote.
     const error = sanitizeToolError(outcome.error);
     return JSON.stringify({
       error: policyUntrusted(builtinPolicy(slug)) ? fenceRetrieved(error) : error,
@@ -332,7 +329,7 @@ export async function toolResultPayload(p: {
   }
   if (Buffer.byteLength(serialized, 'utf8') <= handling.inlineMaxBytes) return serialized;
   // A member's private content is never spilled: the store outlives the turn
-  // and a handle in the trace would open it for an admin (audit S3). The
+  // and a handle in the trace would open it for an admin. The
   // my-space tools clip their own text, so it stays inline.
   if (PRIVATE_OUTPUT_TOOL_SLUGS.has(slug)) return serialized;
   return step(

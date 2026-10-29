@@ -17,10 +17,9 @@
  * silently ignored; the loader returns a typed subset.
  */
 
-// The PURE projections moved to @mantle/content-core/profile-projections
-// (audit 2026-09-02, tier 3) so the settings UI can use them without dragging
-// @mantle/db into the browser bundle. Re-exported wholesale: every name this
-// module used to export still comes from this module.
+// The PURE projections live in @mantle/content-core/profile-projections so
+// the settings UI can use them without dragging @mantle/db into the browser
+// bundle. Re-exported wholesale, so every name is importable from here too.
 export * from '@mantle/content-core/profile-projections';
 
 import {
@@ -74,7 +73,7 @@ import {
 } from '@mantle/db';
 
 /** A write of a profile row: on the full route when it runs on a narrow
- *  system exit (plan v3.2 S7a, viewer.ts FULL_ROUTE_SPOTS 'profile-row'). */
+ *  system exit (viewer.ts FULL_ROUTE_SPOTS 'profile-row'). */
 export function profileWrite<T>(fn: () => Promise<T>): Promise<T> {
   return onFullSystemRoute('profile-row', fn);
 }
@@ -86,9 +85,8 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
   // A profile row is its own login's, the brain's (the anchor's: time
   // zone, site name, house style) or, in a scope that holds Admin, any
   // login's: the workspace role's own-login rule (0266) shows exactly those,
-  // so every read is in the caller's scope (A6b: the Admin assistant
-  // answering another Admin user reads the anchor's row there, where it
-  // left for the system pool before, 'owner-preferences').
+  // so every read is in the caller's scope (the Admin assistant answering
+  // another Admin user reads the anchor's row there).
   const [row] = await db
     .select({ preferences: profiles.preferences })
     .from(profiles)
@@ -98,8 +96,8 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     // First time we've touched this user — insert with defaults so
     // future updates have a row to UPDATE. Best-effort; if another
     // request races us we'll just see the conflict and move on.
-    // Safe inside a caller's transaction (a member's app change runs in one,
-    // team apps M3 re-audit): a caught error there would otherwise abort the
+    // Safe inside a caller's transaction (a member's app change runs in
+    // one): a caught error there would otherwise abort the
     // whole transaction. A personal space's id is no login (a foreign key
     // error), and a conflict does nothing.
     // In its own savepoint (a transaction of its own outside one): a failed
@@ -217,9 +215,9 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
 }
 
 /**
- * Whether the current scope may write profile row `userId` (plan v3 S3 fix
- * round 3): profiles' write rule (0302, 'own-login'), the one SQL function
- * its policies call (mantle_profile_writable, fix round 4): the scope's own
+ * Whether the current scope may write profile row `userId`: profiles'
+ * write rule (0302, 'own-login'), the one SQL function its policies call
+ * (mantle_profile_writable): the scope's own
  * login's row, or the brain's row when the scope holds the Settings area.
  * System work (no workspace scope) may. The turn's own bookkeeping (the
  * reminder channel, the automatic time zone) asks it first and skips the
@@ -229,7 +227,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
  * A read transaction: inside an open transaction it is a savepoint of it,
  * so a failure here cannot abort the caller's transaction. A refusal
  * (42501: the function not granted, a database before 0302) reads as no;
- * any other error is thrown (fix round 4, L3).
+ * any other error is thrown.
  */
 export async function profileRowWritable(userId: string): Promise<boolean> {
   if (!currentWorkspaceScope()) return true;

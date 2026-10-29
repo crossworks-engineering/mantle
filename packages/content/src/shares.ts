@@ -1,7 +1,7 @@
 /**
  * Share-link CRUD. A share is a revocable token granting read-only public
  * access to one node, plus the items its served list holds
- * (`settings.served`, workspaces plan 8.1, migration 0262): a link is an
+ * (`settings.served`, migration 0262): a link is an
  * open door for people with no login, never a grant, and it never changes a
  * level or a grant. Who may open or close one, and what may go on its list,
  * is link-serve.ts. The public surface resolves strictly by an *active*
@@ -67,12 +67,12 @@ export function canShareNode(node: { type: string; path: string | null }): boole
 }
 
 // ─── Links and levels ────────────────────────────────────────────────────────
-// Since workspaces W5b2 a link neither follows nor sets a level: the levels
-// are frozen (migration 0261) and grants decide who reads an item. An open
-// link serves its item and its served list (0262). Team links stay retired
-// (member logins Phase 6 stage 6: nothing makes one, TeamLinkRetiredError).
-// The old client links were retired by 0192 and 0262 and are marked
-// `settings.retired = 'client'`; /s still tells their visitors to sign in.
+// A link neither follows nor sets a level: the levels are frozen (migration
+// 0261) and grants decide who reads an item. An open link serves its item
+// and its served list (0262). Team links are retired (nothing makes one,
+// TeamLinkRetiredError). Old client links are marked
+// `settings.retired = 'client'` (0192, 0262); /s still tells their visitors
+// to sign in.
 
 /** The link the old level path (`setItemLevel`) asks for: an open one at
  *  public, none above. */
@@ -80,8 +80,8 @@ export function shareModeForLevel(level: AccessLevel): ShareMode | null {
   return level === 'public' ? 'public' : null;
 }
 
-/** Thrown when a caller asks for a team-mode link. Team links are retired
- *  (member logins Phase 6 stage 6): members use their own logins. */
+/** Thrown when a caller asks for a team-mode link. Team links are retired:
+ *  members use their own logins. */
 export class TeamLinkRetiredError extends Error {
   readonly reason = 'team-links-retired';
   constructor() {
@@ -93,8 +93,7 @@ export class TeamLinkRetiredError extends Error {
   }
 }
 
-// What the share routes answered by hand (linkRefusal, A10 part 2 fix
-// round 1, L7): 400 and its old `{ error, reason }`.
+// The one error answer: 400 and `{ error, reason }`.
 defineDomainError(TeamLinkRetiredError, {
   reason: 'the caller asked for a team-mode link; team links are retired',
   status: 400,
@@ -119,9 +118,9 @@ export class ShareInputError extends Error {
   }
 }
 
-// What the share routes answered by hand (linkRefusal, A10 part 2 fix
-// round 1, L7): a missing item 404 `not_found` with the fixed text, any
-// other 400 `not_shareable` with the message (it names nothing hidden).
+// The one error answer: a missing item 404 `not_found` with the fixed
+// text, any other 400 `not_shareable` with the message (it names nothing
+// hidden).
 defineDomainError(ShareInputError, {
   reason:
     'the item cannot carry a link (missing, a kind that is not shareable); the message says which',
@@ -183,9 +182,8 @@ export type ShareSummary = {
   nodeId: string;
   nodeType: string;
   mode: ShareMode;
-  /** DEPRECATED (folder phase 7): a page link used to be able to share the
-   *  page's sub-pages with it; pages do not nest any more, so this is always
-   *  false. Kept on the wire for clients from before the pages tree. Share a
+  /** DEPRECATED: pages do not nest, so a page link never shares sub-pages
+   *  and this is always false. Kept on the wire for older clients. Share a
    *  set of pages by sharing their folder (docs/folder-tree.md). */
   cascade: boolean;
   createdAt: string;
@@ -196,7 +194,7 @@ export type ShareSummary = {
   contactId: string | null;
   /** A contact share of an app whose contact may write the app's data. */
   canWrite: boolean;
-  /** What an open link serves besides its item (plan 8.1): node ids, lower
+  /** What an open link serves besides its item: node ids, lower
    *  case. Empty on a contact share (it serves what its item names). */
   served: string[];
 };
@@ -352,8 +350,8 @@ export async function createShare(
   if (!isShareable(node.type)) {
     throw new ShareInputError('not-shareable', `type '${node.type}' is not shareable`);
   }
-  // A read-only snapshot copy carries no link (W6b fix round 2, L-1; the
-  // database refuses it too).
+  // A read-only snapshot copy carries no link (the database refuses it
+  // too).
   if (isSnapshotCopy(node)) throw new ShareInputError('not-shareable', SNAPSHOT_COPY_NO_SHARE);
   if (node.type === 'branch' && !isShareableFolderPath(node.path)) {
     throw new ShareInputError('not-shareable', 'only folders under files can be shared');
@@ -459,9 +457,9 @@ export async function resolveActiveShareRowByToken(token: string): Promise<Share
   return row ?? null;
 }
 
-/** Whether a token that no longer resolves was an old client link (client
- *  logins C3): marked `retired: 'client'` (by 0192, a revoke of a client
- *  item's link before W5b2, or 0262). The /s page tells its visitor to sign
+/** Whether a token that no longer resolves was an old client link: marked
+ *  `retired: 'client'` (by 0192, 0262, or a revoke of a client item's link).
+ *  The /s page tells its visitor to sign
  *  in as a client instead of the plain not-found; any other dead token keeps
  *  the uniform 404. */
 export async function isRetiredClientLinkToken(token: string): Promise<boolean> {
@@ -499,7 +497,7 @@ export async function isRetiredTeamLinkToken(token: string): Promise<boolean> {
  *  counted, instead of an unhandled rejection per view. */
 export async function recordShareView(shareId: string): Promise<void> {
   // The brain's count, not the link's write: a public link writes nothing
-  // (arch A3a, the read-only refusal), so it runs as a named read-path write.
+  // (the read-only refusal), so it runs as a named read-path write.
   await bestEffortWrite('a share view counter', () =>
     runReadPathWrite('backfill:link-views', () =>
       db
@@ -616,10 +614,9 @@ export async function applyShareMode(
   return !!row;
 }
 
-/** Revoke a share on the owner DELETE path. The name is from when a page
- *  link could cascade to its sub-pages (folder phase 7 retired that: pages
- *  do not nest); it is {@link revokeShare} now, kept as the drop-in the
- *  unshare paths call. */
+/** Revoke a share on the owner DELETE path: {@link revokeShare} (pages do
+ *  not nest, so there is no tree), kept as the drop-in the unshare paths
+ *  call. */
 export async function revokeShareTree(
   ownerId: string,
   shareId: string,

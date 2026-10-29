@@ -75,11 +75,12 @@ import {
 /**
  * The heartbeats table is the owner's configuration: the workspace role
  * reads none of it. A heartbeat of a non-Admin workspace (its fire runs in a
- * turn scope, W4b fix round 1) reaches only the row of the heartbeat that is
- * firing (resolveTargetHeartbeat refuses any other), on the system pool with
- * a named reason. In a scope that holds Admin (the Admin assistant, W7a) the
- * owner's heartbeats as before, on the system pool after the assistants
- * area check (resolveTargetHeartbeat). Outside a workspace scope: as before.
+ * turn scope) reaches only the row of the heartbeat that is firing
+ * (resolveTargetHeartbeat refuses any other), on the system pool with a
+ * named reason. In a scope that holds Admin (the Admin assistant): every
+ * owner's heartbeat, on the system pool after the assistants area check
+ * (resolveTargetHeartbeat). Outside a workspace scope: the caller's own
+ * read.
  */
 async function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {
   if (!currentWorkspaceScope()) return fn();
@@ -89,7 +90,7 @@ async function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * The login a heartbeat tool call answers, as heartbeats.created_by and
- * heartbeat_fires.answered_by store it (W7 integration fix 2, H1): the login
+ * heartbeat_fires.answered_by store it: the login
  * of the caller's scope (or of the scope its area work left for the system
  * pool), else the login its owner surface names; null for the brain owner
  * (the anchor login) and for a call that names none (the anchor's stdio
@@ -275,11 +276,10 @@ const heartbeat_update_state: BuiltinToolDef = {
     }
     // The state is part of the fire's prompt: another heartbeat's state set
     // by a login other than the brain owner makes that heartbeat this
-    // login's (W7a fix round 3, heartbeats.created_by), so the tick fires it
-    // as this login, never as the anchor. The state is its maker's only (W7
-    // integration fix 3, F1/F2): a heartbeat that moves to this login starts
-    // again from {} plus this patch, never from the old maker's keys. The
-    // login is the caller's (callerLogin, W7 integration fix 4).
+    // login's (heartbeats.created_by), so the tick fires it as this login,
+    // never as the anchor. The state is its maker's only: a heartbeat that
+    // moves to this login starts again from {} plus this patch, never from
+    // the old maker's keys. The login is the caller's (callerLogin).
     const login = target.via === 'slug' ? callerLogin(ctx) : null;
     const moves = !!login && !sameLogin(ctx.ownerId, login, target.hb.createdBy);
     const maker = login ? { createdBy: login } : {};
@@ -352,7 +352,7 @@ const heartbeat_list: BuiltinToolDef = {
       lastFiredAt: heartbeats.lastFiredAt,
       fireCount: heartbeats.fireCount,
     };
-    // A heartbeat's state is its maker's only (W7 integration fix 2, H1):
+    // A heartbeat's state is its maker's only:
     // the caller reads the state of the heartbeats it set up, never another
     // login's (the anchor's included).
     const columns = includeState
@@ -439,7 +439,7 @@ const heartbeat_fire: BuiltinToolDef = {
       };
     }
 
-    // In a workspace scope (W7a fix round 2, N1) the tool runs in its
+    // In a workspace scope the tool runs in its
     // caller's scope (its policy is not `systemWhole`): the heartbeat row
     // is read on the system pool after the assistants area check, and so is
     // the fire's own bookkeeping (its agent, skill, key, trace and fire log),
@@ -454,7 +454,7 @@ const heartbeat_fire: BuiltinToolDef = {
     if (hb.status !== 'active') {
       return { ok: false, error: `heartbeat '${slug}' is '${hb.status}', not 'active'` };
     }
-    // Only the heartbeat's maker fires it (W7 integration fix 4): its
+    // Only the heartbeat's maker fires it: its
     // created_by, null the brain owner (the anchor login). Anyone else is
     // refused; the fire answers the maker, as the tick does, and its reply,
     // state and trace are the maker's to read.
@@ -498,7 +498,7 @@ export const HEARTBEAT_TOOLS: readonly BuiltinToolDef[] = [
  * `hasActiveHeartbeatsOnSurface` returns true, and never grant them as
  * stored tools (see server/web/lib/assistant.ts + server/api/src/main.ts).
  *
- * Read off the definitions (A5 step 6d): the tools that change the firing
+ * Read off the definitions: the tools that change the firing
  * heartbeat (`heartbeat.reaches: 'firing'`), in their `responderOrder`.
  * Not `heartbeat_list` or `heartbeat_fire`: operator/skill tools, useful
  * any time (`reaches: 'every'`).
@@ -510,8 +510,7 @@ export const HEARTBEAT_RESPONDER_TOOLS: readonly string[] = HEARTBEAT_TOOLS.flat
   .map((d) => d.slug);
 
 /** The heartbeat control tools a heartbeat turn is granted, in
- *  HEARTBEAT_TOOLS' order (A5 step 6d: read off the definitions, where
- *  fire.ts named them): in a workspace scope that is not the Admin
+ *  HEARTBEAT_TOOLS' order (read off the definitions): in a workspace scope that is not the Admin
  *  assistant's, only those that change the firing heartbeat; list and fire
  *  reach every heartbeat and are adminOnly (dispatch refuses them there
  *  anyway). */
