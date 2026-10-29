@@ -240,6 +240,7 @@ GET /api/profile class=self scope=self caller=owner gone=false
 GET /api/profile/home-desk class=self scope=- caller=login gone=false
 GET /api/profile/photo class=self scope=self caller=ownerAsset gone=false
 GET /api/profile/reminder-channel class=self scope=self caller=owner gone=false
+GET /api/profile/sounds class=self scope=- caller=login gone=false
 GET /api/push/preferences class=self scope=self caller=owner gone=false
 GET /api/push/subscriptions class=self scope=self caller=owner gone=false
 GET /api/realtime class=self scope=self caller=owner gone=false
@@ -510,6 +511,7 @@ HEAD /api/profile class=self scope=self caller=owner gone=false
 HEAD /api/profile/home-desk class=self scope=- caller=login gone=false
 HEAD /api/profile/photo class=self scope=self caller=ownerAsset gone=false
 HEAD /api/profile/reminder-channel class=self scope=self caller=owner gone=false
+HEAD /api/profile/sounds class=self scope=- caller=login gone=false
 HEAD /api/push/preferences class=self scope=self caller=owner gone=false
 HEAD /api/push/subscriptions class=self scope=self caller=owner gone=false
 HEAD /api/realtime class=self scope=self caller=owner gone=false
@@ -897,6 +899,7 @@ PUT /api/profile/neat-background class=self scope=self caller=owner gone=false
 PUT /api/profile/photo class=self scope=self caller=owner gone=false
 PUT /api/profile/reminder-channel class=self scope=self caller=owner gone=false
 PUT /api/profile/share-neat class=self scope=self caller=owner gone=false
+PUT /api/profile/sounds class=self scope=- caller=login gone=false
 PUT /api/push/preferences class=self scope=self caller=owner gone=false
 PUT /api/recall/maps/:id/cards/:card class=content scope=content caller=owner gone=false
 PUT /api/tables/:id/draft class=content scope=content caller=owner gone=false

@@ -155,8 +155,9 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
   it('the 17 rows 2a changed, and the ones added since: HEAD has the status and the headers of GET, and no body', async () => {
     // 19, the six messenger GET rows of Messenger V1 Phase 1, the
     // messenger photo of the messenger avatars, the four people rows, and
-    // the two call reads (GET /api/messenger/capabilities and /c/:id/calls).
-    expect(rows).toHaveLength(32);
+    // the two call reads (GET /api/messenger/capabilities and /c/:id/calls),
+    // and the login's UI sounds (GET /api/profile/sounds).
+    expect(rows).toHaveLength(33);
     const logins: Array<[string, string | null]> = [
       ['owner', owner],
       ['admin', admin],

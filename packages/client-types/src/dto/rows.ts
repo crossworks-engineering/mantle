@@ -312,6 +312,14 @@ export type TableSnapshot = {
   bytes: number | null;
 };
 
+/** The client's UI sounds, per login (ProfilePreferences.sounds). */
+export type SoundPreference = {
+  /** Every sound, the call ring included. */
+  enabled: boolean;
+  /** 0..1, on top of each sound's own level. */
+  volume: number;
+};
+
 export type ProfilePreferences = {
   /** IANA timezone, e.g. 'Africa/Johannesburg'. UTC when not set. */
   timezone: string;
@@ -607,6 +615,11 @@ export type ProfilePreferences = {
   /** Per-login: sidebar favourite hrefs, in order. Moved server-side from the
    *  web client's localStorage so they follow the person across devices. */
   navFavorites?: string[];
+  /** Per-login: the client's UI sounds (on/off and a volume), so the choice
+   *  follows the person across browsers and devices. Unset until the login
+   *  first changes it (the client's default applies). Written by
+   *  PUT /api/profile/sounds; read via projectSounds, never raw. */
+  sounds?: SoundPreference;
   /** Per-login: open count + last-opened instant per app id, feeding the
    *  "Most used" and "Recent" filters. Written by recordAppOpen. */
   appOpens?: Record<string, AppOpenStat>;

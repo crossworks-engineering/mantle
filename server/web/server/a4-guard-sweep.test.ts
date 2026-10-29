@@ -1204,6 +1204,8 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
       '# (the any-login HEAD rows above, actor= and out= masked).',
       '# 2026-10-28 (calls P1): GET /api/messenger/capabilities and /c/:id/calls had no',
       '# route on main; their HEAD cells are held to /api/messenger/unread and /c/:id.',
+      '# 2026-10-29 (UI sounds): GET /api/profile/sounds had no route on main; its HEAD',
+      '# cells are held to /api/profile/home-desk (the same any-login self row).',
     ]);
   });
 
