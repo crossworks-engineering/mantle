@@ -27,7 +27,6 @@ import {
   mcpPairing,
   parseMcpBinding,
   vaultPairingChanged,
-  vaultPairLoginRefusal,
   setMcpOAuthClient,
   voidConnectorMarksForKey,
   type KnownMcpServer,
@@ -36,6 +35,8 @@ import {
 import { errorMessage } from '@mantle/std';
 import { requestOrigin } from '@/lib/auth-constants';
 import { listToolGroupBackrefs } from '@/lib/tool-groups';
+import type { SessionUser } from '@/lib/auth/session';
+import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import type { ToolGroupDTO } from '@mantle/client-types';
 
 /** Where every connector's OAuth flow lands. One helper, so the URI the
@@ -178,11 +179,11 @@ export async function updateMcpConnector(
   ownerId: string,
   groupSlug: string,
   patch: UpdateMcpConnectorInput,
-  /** The signed-in login when it is not the brain owner (null: the anchor).
-   *  Setting or changing the key, or the URL it (or an OAuth connector's
-   *  token) goes to, needs its keys area and records it as the connector's
-   *  configuring login (@mantle/tools secret-ref-gate.ts). */
-  login: string | null = null,
+  /** The signed-in caller. Setting or changing the key, or the URL it (or
+   *  an OAuth connector's token) goes to, needs its keys area as its scope
+   *  answers it, and records its login (none for the anchor) as the
+   *  connector's configuring login (@mantle/tools secret-ref-gate.ts). */
+  user: SessionUser,
 ): Promise<{ connector: McpConnectorSummary } | { error: string; status: number }> {
   const [row] = await db
     .select()
@@ -218,7 +219,7 @@ export async function updateMcpConnector(
   const before = mcpPairing(mcp, true);
   const after = mcpPairing(nextMcp, true);
   if (vaultPairingChanged(before, after)) {
-    const refused = await vaultPairLoginRefusal(login);
+    const refused = await vaultPairRefusalFor(user);
     if (refused) return { error: refused, status: 403 };
   }
   const repaired = before.key !== after.key || before.dest !== after.dest;
@@ -241,7 +242,7 @@ export async function updateMcpConnector(
         ...(patch.name !== undefined ? { name: patch.name } : {}),
         ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
         ...(bindingTouched ? { integration: { ...row.integration!, mcp: nextMcp } } : {}),
-        ...(repaired ? { configuredBy: login } : {}),
+        ...(repaired ? { configuredBy: toolMakerFor(user) } : {}),
         updatedAt: new Date(),
       })
       .where(eq(toolGroups.id, row.id))

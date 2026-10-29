@@ -89,8 +89,9 @@ export async function secretRefsRunRefusal(
  *
  *  - Setting or changing either side while the other is present needs the
  *    keys area, or the anchor login (vaultPairingChanged, then
- *    vaultPairLoginRefusal for a route's signed-in login, or
- *    vaultPairCallerRefusal for a tool call in a scope).
+ *    vaultPairRefusalFor in server/web/lib/tools.ts for a route's
+ *    signed-in caller, as its scope answers it, or vaultPairCallerRefusal
+ *    for a tool call in a scope).
  *  - Where the pair is stored, it records the login that set it when that
  *    is not the anchor (tools.created_by, tool_groups.configured_by), and at
  *    run time the key resolves only while that login holds the keys area
@@ -191,8 +192,10 @@ export function vaultPairingChanged(before: VaultPairing | null, after: VaultPai
   return !before || before.key !== after.key || before.dest !== after.dest;
 }
 
-/** Why login `login` may not make a pairing change, or null. Null `login`:
- *  the anchor login or system work, which always may. */
+/** Why login `login`, by id, may not make a pairing change, or null: for a
+ *  pairing recorded for another login, never the signed-in caller (its own
+ *  scope answers that: vaultPairRefusalFor). Null `login`: the anchor login
+ *  or system work, which always may. */
 export async function vaultPairLoginRefusal(login: string | null): Promise<string | null> {
   if (!login) return null;
   return (await loginHasArea(login, 'keys')) ? null : VAULT_PAIR_NEEDS_KEYS;

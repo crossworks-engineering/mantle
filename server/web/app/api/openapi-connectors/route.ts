@@ -1,9 +1,9 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { createOpenapiConnector, integrationPairing, vaultPairLoginRefusal } from '@mantle/tools';
+import { createOpenapiConnector, integrationPairing } from '@mantle/tools';
 import { listOpenapiConnectors } from '@/lib/openapi-connectors';
-import { toolMakerFor } from '@/lib/tools';
+import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
     openapi: { specUrl: parsed.data.specUrl },
   });
   if (pairing.key) {
-    const refused = await vaultPairLoginRefusal(configuredBy);
+    const refused = await vaultPairRefusalFor(user);
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
   // A binding the connector refuses (InputError) answers 400 by the one

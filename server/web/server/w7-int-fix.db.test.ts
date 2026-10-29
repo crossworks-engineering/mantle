@@ -48,6 +48,14 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   // The reader a converted handler calls (A4 step 3b): the same stand-in.
   ownerCaller: vi.fn(() => h.session),
 }));
+// The stand-in's Login (test-support/stand-in-login.ts): a handler that
+// asks the caller's own keys area (vaultPairRefusalFor) reads its row.
+vi.mock('@/lib/auth/session', async (importOriginal) =>
+  (await import('@/lib/test-support/stand-in-login')).standInSession(
+    await importOriginal<typeof import('@/lib/auth/session')>(),
+    () => h.session,
+  ),
+);
 vi.mock('@mantle/api-keys', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getApiKeyById: vi.fn(async () => 'sk-fake'),

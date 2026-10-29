@@ -4,7 +4,6 @@ import { ownerCaller } from '@/lib/auth';
 import { deleteOpenapiConnector } from '@mantle/tools';
 import { getOpenapiConnector, updateOpenapiConnector } from '@/lib/openapi-connectors';
 import { firstIssue } from '@/lib/zod-issue';
-import { toolMakerFor } from '@/lib/tools';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -64,7 +63,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  const result = await updateOpenapiConnector(user.id, slug, parsed.data, toolMakerFor(user));
+  const result = await updateOpenapiConnector(user.id, slug, parsed.data, user);
   if ('error' in result) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }

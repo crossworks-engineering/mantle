@@ -6,11 +6,10 @@ import {
   parseIntegrationMeta,
   restampHeartbeatMakers,
   vaultPairingChanged,
-  vaultPairLoginRefusal,
 } from '@mantle/tools';
 import { deleteToolGroup, getToolGroup, updateToolGroup } from '@/lib/tool-groups';
 import { firstIssue } from '@/lib/zod-issue';
-import { toolMakerFor } from '@/lib/tools';
+import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -135,7 +134,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const before = integrationPairing(current.integration);
     const after = integrationPairing(integrationPatch);
     if (vaultPairingChanged(before, after)) {
-      const refused = await vaultPairLoginRefusal(toolMakerFor(user));
+      const refused = await vaultPairRefusalFor(user);
       if (refused) return NextResponse.json({ error: refused }, { status: 403 });
     }
     if (before.key !== after.key || before.dest !== after.dest) {

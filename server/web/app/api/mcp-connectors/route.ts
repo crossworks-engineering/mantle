@@ -1,13 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import {
-  createMcpConnector,
-  dbMcpOAuthStore,
-  mcpPairing,
-  startMcpOAuth,
-  vaultPairLoginRefusal,
-} from '@mantle/tools';
+import { createMcpConnector, dbMcpOAuthStore, mcpPairing, startMcpOAuth } from '@mantle/tools';
 import {
   connectorOAuthCallbackUrl,
   listMcpConnectors,
@@ -16,7 +10,7 @@ import {
 } from '@/lib/mcp-connectors';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
-import { toolMakerFor } from '@/lib/tools';
+import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -78,7 +72,7 @@ export async function POST(req: Request) {
   // connector's token is minted for its URL by the authorization itself.
   const configuredBy = toolMakerFor(user);
   if (mcpPairing({ url: rest.url, secretRef: rest.secretRef }).key) {
-    const refused = await vaultPairLoginRefusal(configuredBy);
+    const refused = await vaultPairRefusalFor(user);
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
   // A binding the connector refuses (InputError) answers 400, a connector

@@ -21,12 +21,13 @@ import {
   integrationPairing,
   openapiGroupSlug,
   vaultPairingChanged,
-  vaultPairLoginRefusal,
   parseIntegrationMeta,
   parseOpenapiBinding,
   type KnownOpenapiApi,
 } from '@mantle/tools';
 import { listToolGroupBackrefs } from '@/lib/tool-groups';
+import type { SessionUser } from '@/lib/auth/session';
+import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import type { ToolGroupDTO } from '@mantle/client-types';
 
 export type OpenapiConnectorSummary = ToolGroupDTO & { grantedTo: string[] };
@@ -98,15 +99,15 @@ export type UpdateOpenapiConnectorInput = {
  *  the next sync (nothing is cached per connector on this kind). Returns a
  *  teaching error string instead of throwing on invalid input.
  *
- *  `login`: the signed-in login when it is not the brain owner (null: the
- *  anchor). Setting or changing the vault key or the host it goes to while
- *  the other is present needs its keys area, and records it as the
+ *  `user`: the signed-in caller. Setting or changing the vault key or the
+ *  host it goes to while the other is present needs its keys area as its
+ *  scope answers it, and records its login (none for the anchor) as the
  *  connector's configuring login (secret-ref-gate.ts). */
 export async function updateOpenapiConnector(
   ownerId: string,
   groupSlug: string,
   patch: UpdateOpenapiConnectorInput,
-  login: string | null = null,
+  user: SessionUser,
 ): Promise<
   { connector: OpenapiConnectorSummary; warnings: string[] } | { error: string; status: number }
 > {
@@ -167,7 +168,7 @@ export async function updateOpenapiConnector(
   const before = integrationPairing(row.integration);
   const after = integrationPairing(nextIntegration);
   if (vaultPairingChanged(before, after)) {
-    const refused = await vaultPairLoginRefusal(login);
+    const refused = await vaultPairRefusalFor(user);
     if (refused) return { error: refused, status: 403 };
   }
   const repaired = before.key !== after.key || before.dest !== after.dest;
@@ -182,7 +183,7 @@ export async function updateOpenapiConnector(
         ...(patch.name !== undefined ? { name: patch.name } : {}),
         ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
         ...(bindingTouched ? { integration: nextIntegration } : {}),
-        ...(repaired ? { configuredBy: login } : {}),
+        ...(repaired ? { configuredBy: toolMakerFor(user) } : {}),
         updatedAt: new Date(),
       })
       .where(eq(toolGroups.id, row.id))
