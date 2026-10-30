@@ -37,8 +37,8 @@ summary, so it turns up in search.
 
 The assistant reads with `table_schema` (every tab's columns, types and row
 counts) and `table_sql` (a read-only SELECT, which can join tabs in one
-table). It adds and changes rows with `table_row_add` and `table_row_update`, or
-many at once with `table_rows_add` and `table_rows_upsert`,
-and imports with `table_from_file`. Building grids is the Ledger specialist's
-job. Deleting a table needs the Table admin group, which no agent has by
-default.
+table). It adds and changes rows with `table_row_add` and `table_row_update`,
+and imports with `table_from_file`. Changing many rows in one call
+(`table_rows_add`, `table_rows_upsert`) is for the Ledger specialist and MCP
+clients. Building grids is the Ledger specialist's job. Deleting a table
+needs the Table admin group, which no agent has by default.
