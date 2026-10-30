@@ -146,8 +146,15 @@ export type VaultSetResult = {
 };
 
 /** A change waiting for approval, as its pending call shows it. */
-export type VaultHeld = {
-  holdId: string;
+export type VaultHeld = VaultHeldShown & { holdId: string };
+
+/** What the pending call of a held change shows its approver, sealed into
+ *  the hold: its approval makes the change only when the call still shows
+ *  exactly this (applyHeldVaultWrites), so a card can never say one thing
+ *  while another lands. */
+export type VaultHeldShown = {
+  op: 'replace' | 'delete';
+  name: string;
   kind: VaultKind;
   target: string[];
   masked: string;
@@ -514,6 +521,9 @@ type SetPlan =
       kind: VaultKind;
       changed: string[];
       secretReplaced: boolean;
+      /** An approved held change: the hold it opened, which must still be
+       *  on the row when it writes (applyHeldVaultWrites). */
+      heldGuard?: Buffer;
     };
 
 /** Check a set against the row it names (null: none, an add), with no
@@ -754,7 +764,13 @@ async function writePlan(plan: SetPlan): Promise<ApiKey> {
   const atSpot = plan.op === 'add' || narrowNeedsSpot(apiKeys, 'update', set);
   const sameRow =
     plan.op === 'replace'
-      ? and(eq(apiKeys.id, id), eq(apiKeys.kind, plan.row.kind))
+      ? and(
+          eq(apiKeys.id, id),
+          eq(apiKeys.kind, plan.row.kind),
+          // An approved held change lands only on the key as its hold
+          // left it: a write at the same moment cleared or replaced it.
+          plan.heldGuard ? eq(apiKeys.heldEnc, plan.heldGuard) : undefined,
+        )
       : eq(apiKeys.id, id);
   const [row] = await conflictOnUnique(
     'A key of that name was saved at the same moment: list the keys and try again.',
@@ -780,7 +796,11 @@ async function writePlan(plan: SetPlan): Promise<ApiKey> {
   // A replace lands only on the row as it was checked: its kind changed
   // since (a write at the same moment), the seal would not match it.
   if (!row && plan.op === 'replace') {
-    throw new ConflictError('The key changed at the same moment: read it again and retry.');
+    throw new ConflictError(
+      plan.heldGuard
+        ? VAULT_HOLD_GONE
+        : 'The key changed at the same moment: read it again and retry.',
+    );
   }
   if (!row) throw new Error('failed to insert api_key');
   return row;
@@ -871,8 +891,15 @@ export async function deleteVaultKey(
   const row = await findRow(ownerId, ref);
   if (!row) return null;
   if (mustHold(who)) {
-    const holdId = await holdOn(ownerId, row, { op: 'delete' });
     const key = summary(row);
+    const shown: VaultHeldShown = {
+      op: 'delete',
+      name: key.name,
+      kind: row.kind,
+      target: row.target,
+      masked: row.masked,
+    };
+    const holdId = await holdOn(ownerId, row, { op: 'delete' }, shown);
     await audit(who, 'vault.key.hold', {
       keyId: key.id,
       name: key.name,
@@ -880,7 +907,7 @@ export async function deleteVaultKey(
       op: 'delete',
       holdId,
     });
-    return { key, held: { holdId, kind: row.kind, target: row.target, masked: row.masked } };
+    return { key, held: { ...shown, holdId } };
   }
   const key = await deleteRow(who, ownerId, row);
   return key ? { key } : null;
@@ -890,10 +917,18 @@ async function deleteRow(
   who: VaultActor,
   ownerId: string,
   row: ApiKey,
+  /** An approved held delete: the hold, still on the row (see sameRow). */
+  heldGuard?: Buffer,
 ): Promise<VaultKeySummary | null> {
   const [gone] = await db
     .delete(apiKeys)
-    .where(and(eq(apiKeys.id, row.id), eq(apiKeys.userId, ownerId)))
+    .where(
+      and(
+        eq(apiKeys.id, row.id),
+        eq(apiKeys.userId, ownerId),
+        heldGuard ? eq(apiKeys.heldEnc, heldGuard) : undefined,
+      ),
+    )
     .returning();
   if (!gone) return null;
   const key = summary(gone);
@@ -907,7 +942,12 @@ async function deleteRow(
  *  or a delete. `at`: the key's updated_at when asked, so a hold opens only
  *  on the key as it was. */
 type HeldChange = { op: 'set'; input: Omit<VaultSetInput, 'ref'> } | { op: 'delete' };
-type SealedHold = HeldChange & { at: string };
+type SealedHold = HeldChange & { at: string; shown: VaultHeldShown };
+
+/** `shown` as one string, its fields in a fixed order, for the compare. */
+function shownKey(shown: Partial<Record<keyof VaultHeldShown, unknown>>): string {
+  return JSON.stringify([shown.op, shown.name, shown.kind, shown.target, shown.masked]);
+}
 
 /** A set's input as a hold keeps it: everything but which key (the hold
  *  is on the key's own row). */
@@ -927,9 +967,10 @@ async function holdOn(
   ownerId: string,
   row: ApiKey,
   change: HeldChange,
+  shown: VaultHeldShown,
   holdId: string = randomUUID(),
 ): Promise<string> {
-  const sealed: SealedHold = { ...change, at: row.updatedAt.toISOString() };
+  const sealed: SealedHold = { ...change, at: row.updatedAt.toISOString(), shown };
   const { ciphertext } = seal(JSON.stringify(sealed), heldAad(row.id, holdId));
   if (!(await writeHeld(ownerId, row.id, { hold: ciphertext, kind: row.kind }))) {
     throw new ConflictError('The key changed at the same moment: read it again and retry.');
@@ -978,8 +1019,15 @@ async function holdPlan(
   change: HeldChange,
   holdId?: string,
 ): Promise<VaultSetResult> {
-  const id = await holdOn(plan.row.userId, plan.row, change, holdId);
   const key = summary(plan.row);
+  const shown: VaultHeldShown = {
+    op: 'replace',
+    name: key.name,
+    kind: plan.kind,
+    target: plan.set.target ?? plan.row.target,
+    masked: plan.set.masked ?? plan.row.masked,
+  };
+  const id = await holdOn(plan.row.userId, plan.row, change, shown, holdId);
   await audit(who, 'vault.key.hold', {
     keyId: key.id,
     name: key.name,
@@ -992,18 +1040,13 @@ async function holdPlan(
     key,
     op: 'held',
     secretWritten: false,
-    held: {
-      holdId: id,
-      kind: plan.kind,
-      target: plan.set.target ?? plan.row.target,
-      masked: plan.set.masked ?? plan.row.masked,
-    },
+    held: { ...shown, holdId: id },
   };
 }
 
 /** The change `holdId` holds on `row`, or null: none, another hold, the
  *  key changed since it was asked, or a seal this master key cannot open. */
-function openHold(row: ApiKey, holdId: string): HeldChange | null {
+function openHold(row: ApiKey, holdId: string): SealedHold | null {
   if (!row.heldEnc) return null;
   let held: SealedHold;
   try {
@@ -1020,6 +1063,11 @@ function openHold(row: ApiKey, holdId: string): HeldChange | null {
  *  names no key and echoes nothing. */
 export const VAULT_HOLD_GONE =
   'This change no longer applies: the key was changed, deleted or asked for again since, so it was not made. Reject it and ask again.';
+
+/** The refusal of an approval whose call does not show the change its
+ *  hold seals. Fixed: it echoes nothing. */
+export const VAULT_HOLD_MISMATCH =
+  'This approval does not show the change it would make, so it was not made: reject it.';
 
 export type VaultApplyResult = {
   /** Each key's outcome, in the order asked. */
@@ -1038,30 +1086,35 @@ export async function applyHeldVaultWrites(
   who: VaultActor,
   ownerId: string,
   holdId: string,
-  keyIds: readonly string[],
+  /** Each key and what the approved call showed of its change: the hold
+   *  must have sealed exactly that (VaultHeldShown). */
+  asked: readonly { id: string; shown: Partial<Record<keyof VaultHeldShown, unknown>> }[],
 ): Promise<VaultApplyResult> {
   if (!who.approval) throw new Error('applyHeldVaultWrites runs an approved pending call only');
-  if (!UUID_RE.test(holdId) || keyIds.length === 0 || !keyIds.every((k) => UUID_RE.test(k))) {
+  if (!UUID_RE.test(holdId) || asked.length === 0 || !asked.every((k) => UUID_RE.test(k.id))) {
     throw new InputError('This pending call names no change to make.');
   }
+  if (new Set(asked.map((k) => k.id)).size !== asked.length) {
+    throw new ConflictError(VAULT_HOLD_MISMATCH);
+  }
   await gate();
-  const steps: ({ op: 'delete'; row: ApiKey } | { op: 'set'; plan: SetPlan })[] = [];
-  for (const id of new Set(keyIds)) {
+  const steps: ({ op: 'delete'; row: ApiKey; guard: Buffer } | { op: 'set'; plan: SetPlan })[] = [];
+  for (const { id, shown } of asked) {
     const row = await findRow(ownerId, { id });
     const held = row ? openHold(row, holdId) : null;
-    if (!row || !held) throw new ConflictError(VAULT_HOLD_GONE);
-    if (held.op === 'delete') steps.push({ op: 'delete', row });
+    if (!row || !held || !row.heldEnc) throw new ConflictError(VAULT_HOLD_GONE);
+    if (shownKey(held.shown) !== shownKey(shown)) throw new ConflictError(VAULT_HOLD_MISMATCH);
+    if (held.op === 'delete') steps.push({ op: 'delete', row, guard: row.heldEnc });
     else {
-      steps.push({
-        op: 'set',
-        plan: planSet(ownerId, { ...held.input, ref: { id } }, row, who.via),
-      });
+      const plan = planSet(ownerId, { ...held.input, ref: { id } }, row, who.via);
+      if (plan.op === 'replace') plan.heldGuard = row.heldEnc;
+      steps.push({ op: 'set', plan });
     }
   }
   const keys: VaultApplyResult['keys'] = [];
   for (const step of steps) {
     if (step.op === 'delete') {
-      const key = await deleteRow(who, ownerId, step.row);
+      const key = await deleteRow(who, ownerId, step.row, step.guard);
       if (!key) throw new ConflictError(VAULT_HOLD_GONE);
       keys.push({ key, op: 'delete', secretWritten: false });
     } else {

@@ -21,6 +21,7 @@ import {
 } from '../integration';
 import { type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
+import { isHeldTool } from '../held-tools';
 
 export function rec(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -59,6 +60,15 @@ const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const RESERVED_PENDING_SLUGS: ReadonlySet<string> = new Set(['ask_human', 'run_budget']);
 
 export function reservedSlugError(slug: string): ToolHandlerResult | null {
+  // A held vault tool's name (held-tools.ts): its approval runs the vault's
+  // own tool by that name, so a tool squatting it could put a card in
+  // Pending that the vault's tool would then act on.
+  if (isHeldTool(slug)) {
+    return {
+      ok: false,
+      error: `slug '${slug}' is a built-in vault tool's name (its approvals run the vault's own tool): pick another slug`,
+    };
+  }
   if (!RESERVED_PENDING_SLUGS.has(slug)) return null;
   return {
     ok: false,

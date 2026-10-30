@@ -84,7 +84,14 @@ const approvedCtx = {
   caller: { entry: 'pending', via: 'process', approval: { approver: 'owner-1' } },
 } as never;
 
-const held = { holdId: HOLD, kind: 'login', target: ['pi-lab-3.lan'], masked: '••••' };
+const held = {
+  holdId: HOLD,
+  op: 'replace',
+  name: 'pi-lab-3',
+  kind: 'login',
+  target: ['pi-lab-3.lan'],
+  masked: '••••',
+};
 
 describe('the vault write tools', () => {
   it('are MCP only, write tools of the keys area, and redact every value input', () => {
@@ -195,15 +202,27 @@ describe('api_key_set', () => {
   it('an approved run makes the held change, naming its approver, and writes nothing else', async () => {
     h.apply.mockResolvedValueOnce({ keys: [{ key, op: 'replace', secretWritten: true }] });
     const r = await api_key_set.handler(
-      { op: 'replace', name: 'pi-lab-3', key_id: KEY_ID, hold_id: HOLD },
+      { ...held, holdId: undefined, key_id: KEY_ID, hold_id: HOLD },
       approvedCtx,
     );
     expect(h.set).not.toHaveBeenCalled();
+    // Each key with what the call shows of its change, for the gateway to check.
     expect(h.apply).toHaveBeenCalledWith(
       { loginId: 'login-1', via: 'mcp', approval: { approver: 'owner-1' } },
       'owner-1',
       HOLD,
-      [KEY_ID],
+      [
+        {
+          id: KEY_ID,
+          shown: {
+            op: 'replace',
+            name: 'pi-lab-3',
+            kind: 'login',
+            target: ['pi-lab-3.lan'],
+            masked: '••••',
+          },
+        },
+      ],
     );
     expect(h.after).toHaveBeenCalledWith('owner-1', 'pi-lab-3', 'default');
     expect(r).toMatchObject({ ok: true, output: { keys: [{ name: 'pi-lab-3', op: 'replace' }] } });
@@ -281,7 +300,10 @@ describe('api_key_import', () => {
       approvedCtx,
     );
     expect(h.imp).not.toHaveBeenCalled();
-    expect(h.apply.mock.calls[0]!.slice(2)).toEqual([HOLD, [KEY_ID]]);
+    expect(h.apply.mock.calls[0]!.slice(2)).toEqual([
+      HOLD,
+      [{ id: KEY_ID, shown: expect.objectContaining({ name: 'pi-lab-3' }) }],
+    ]);
     expect(r.ok).toBe(true);
   });
 
@@ -330,7 +352,7 @@ describe('api_key_delete', () => {
   });
 
   it('parks a held delete for approval and deletes nothing yet', async () => {
-    h.del.mockResolvedValueOnce({ key, held });
+    h.del.mockResolvedValueOnce({ key, held: { ...held, op: 'delete' } });
     const r = await api_key_delete.handler({ name: 'pi-lab-3' }, ctx);
     expect((h.park.mock.calls[0] as unknown as [Record<string, unknown>])[0]).toMatchObject({
       toolSlug: 'api_key_delete',

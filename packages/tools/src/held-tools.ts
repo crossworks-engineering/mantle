@@ -41,24 +41,39 @@ export function heldToolRow(slug: string): Tool | null {
   return { slug, handler: { kind: 'builtin', ref: slug } } as unknown as Tool;
 }
 
-/** The hold a held call's arguments name, and its keys: `hold_id` with
- *  `key_id` (a replace, a delete) or `keys[].key_id` (an import). Null:
- *  none named. */
+/** A held change as its pending call shows it (the args' own fields): the
+ *  gateway makes it only when this is what its hold sealed. */
+export type HeldShown = {
+  op: unknown;
+  name: unknown;
+  kind: unknown;
+  target: unknown;
+  masked: unknown;
+};
+
+/** What a held call's arguments name: `hold_id`, and each key with what
+ *  the call shows of its change, from `key_id` and the fields beside it (a
+ *  replace, a delete) or `keys[]` (an import). Null: none named. */
 export function heldCallKeys(
   args: Record<string, unknown> | null | undefined,
-): { holdId: string; keyIds: string[] } | null {
+): { holdId: string; keys: { id: string; shown: HeldShown }[] } | null {
   const holdId = args?.hold_id;
   if (typeof holdId !== 'string' || !UUID_RE.test(holdId)) return null;
-  const keyIds: string[] = [];
-  if (typeof args?.key_id === 'string') keyIds.push(args.key_id);
+  const entries: Record<string, unknown>[] = [];
+  if (args && typeof args.key_id === 'string') entries.push(args);
   if (Array.isArray(args?.keys)) {
     for (const k of args.keys as unknown[]) {
-      const id = k && typeof k === 'object' ? (k as Record<string, unknown>).key_id : undefined;
-      if (typeof id === 'string') keyIds.push(id);
+      if (k && typeof k === 'object') entries.push(k as Record<string, unknown>);
     }
   }
-  if (keyIds.length === 0 || !keyIds.every((id) => UUID_RE.test(id))) return null;
-  return { holdId, keyIds };
+  const keys = entries.map((e) => ({
+    id: e.key_id,
+    shown: { op: e.op, name: e.name, kind: e.kind, target: e.target, masked: e.masked },
+  }));
+  if (keys.length === 0 || !keys.every((k) => typeof k.id === 'string' && UUID_RE.test(k.id))) {
+    return null;
+  }
+  return { holdId, keys: keys as { id: string; shown: HeldShown }[] };
 }
 
 /** Drop the holds of a rejected held call (their sealed values go now). */
@@ -67,5 +82,11 @@ export async function releaseHeldCall(
   args: Record<string, unknown> | null | undefined,
 ): Promise<void> {
   const held = heldCallKeys(args);
-  if (held) await releaseVaultHolds(ownerId, held.holdId, held.keyIds);
+  if (held) {
+    await releaseVaultHolds(
+      ownerId,
+      held.holdId,
+      held.keys.map((k) => k.id),
+    );
+  }
 }

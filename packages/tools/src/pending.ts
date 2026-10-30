@@ -461,6 +461,11 @@ export async function approvePendingCall(
   let origin: OriginApproval | null = null;
   let judgedTool: Tool | null = null;
   const waiting = await pendingCallToDecide(ownerId, id);
+  // A held vault change over MCP: refused before anything is judged or
+  // claimed (the check after the claim below stays as the backstop).
+  if (opts?.viaMcp && waiting && isHeldTool(waiting.toolSlug)) {
+    throw new ApprovalRefusedError(HELD_ON_MCP_ERROR);
+  }
   if (
     waiting?.origin &&
     !runnerRow(waiting.toolSlug) &&
@@ -676,9 +681,14 @@ function approvalContext(
 
 /** The tool an approval runs: a held vault tool by its builtin (MCP only,
  *  it has no row; held-tools.ts), else the enabled row named `slug`, or
- *  null. */
+ *  null. A row that squats a held tool's name (made before the name was
+ *  reserved) runs nothing: a call it parked could hand the vault's tool a
+ *  hold under a card that shows something else. */
 async function approvalTool(ownerId: string, slug: string): Promise<Tool | null> {
-  return heldToolRow(slug) ?? (await enabledTool(ownerId, slug));
+  const row = await enabledTool(ownerId, slug);
+  const held = heldToolRow(slug);
+  if (held) return row ? null : held;
+  return row;
 }
 
 /** The enabled tool row named `slug`, or null. */

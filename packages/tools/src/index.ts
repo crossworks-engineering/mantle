@@ -160,6 +160,7 @@ export { ACCESS_TOOLS } from './builtins-access';
 export { SHEET_TOOLS, SHEET_TOOL_SLUGS } from './builtins-sheets';
 export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
+export { reservedSlugError } from './toolsmith/common';
 export { afterVaultKeyReplaced } from './vault-follow-up';
 export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';
 export { FORMULA_TOOLS, FORMULA_TOOL_SLUGS, FORMULA_AUTO_GRANT_SLUGS } from './builtins-formulas';

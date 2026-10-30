@@ -7,6 +7,7 @@ import {
   getGroupIntegration,
   handlerCarriesSecretRefs,
   inheritedToolMaker,
+  reservedSlugError,
 } from '@mantle/tools';
 import { conflictOnUnique, db, onFullSystemRoute, toolGroups, and, eq } from '@mantle/db';
 import { createTool, keysAreaRefusal, listToolsForOwner, toolMakerFor } from '@/lib/tools';
@@ -61,6 +62,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { groupSlug, ...toolInput } = parsed.data;
+  // The slugs the approval paths branch on (a runner row, a held vault
+  // tool), as api_tool_create refuses them.
+  const reserved = reservedSlugError(toolInput.slug);
+  if (reserved && !reserved.ok) {
+    return NextResponse.json({ error: reserved.error }, { status: 400 });
+  }
   let inherited: string | null = null;
   let groupMaker: { configuredBy: string | null } | null = null;
   if (groupSlug) {

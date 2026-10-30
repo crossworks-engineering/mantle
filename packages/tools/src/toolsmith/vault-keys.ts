@@ -78,10 +78,19 @@ function vaultActor(ctx: ToolHandlerContext): VaultActor {
   };
 }
 
-/** A held change as its pending call shows it: the key's name and the
- *  kind, target and masked preview the change leaves, never a value. */
-function heldPreview(name: string, held: VaultHeld, keyId: string) {
-  return { name, kind: held.kind, target: held.target, masked: held.masked, key_id: keyId };
+/** A held change as its pending call shows it: replace or delete, the
+ *  key's name and the kind, target and masked preview the change leaves,
+ *  never a value. Exactly what the gateway sealed into the hold, which
+ *  its approval checks again (VaultHeldShown). */
+function heldPreview(held: VaultHeld, keyId: string) {
+  return {
+    op: held.op,
+    name: held.name,
+    kind: held.kind,
+    target: held.target,
+    masked: held.masked,
+    key_id: keyId,
+  };
 }
 
 const QUEUED =
@@ -109,7 +118,13 @@ async function parkHeld(
   });
   const held = heldCallKeys(args);
   if (!pendingId) {
-    if (held) await releaseVaultHolds(ctx.ownerId, held.holdId, held.keyIds);
+    if (held) {
+      await releaseVaultHolds(
+        ctx.ownerId,
+        held.holdId,
+        held.keys.map((k) => k.id),
+      );
+    }
     return {
       ok: false,
       error: 'The change could not be queued for approval, so nothing changed: try again.',
@@ -137,7 +152,9 @@ async function applyHeld(
       error: 'This approved call names no held change, so nothing changed: reject such calls.',
     };
   }
-  const result = await applyHeldVaultWrites(vaultActor(ctx), ctx.ownerId, held.holdId, held.keyIds);
+  // Each key with what this call shows of its change: the gateway makes
+  // it only when that is what its hold sealed.
+  const result = await applyHeldVaultWrites(vaultActor(ctx), ctx.ownerId, held.holdId, held.keys);
   for (const k of result.keys) {
     if (k.secretWritten) await afterVaultKeyReplaced(ctx.ownerId, k.key.service, k.key.label);
   }
@@ -301,8 +318,7 @@ export const api_key_set: BuiltinToolDef = {
       if (!result) return { ok: false, error: NOT_FOUND };
       if (result.op === 'held' && result.held) {
         return parkHeld(ctx, 'api_key_set', {
-          op: 'replace',
-          ...heldPreview(result.key.name, result.held, result.key.id),
+          ...heldPreview(result.held, result.key.id),
           hold_id: result.held.holdId,
         });
       }
@@ -401,8 +417,7 @@ export const api_key_delete: BuiltinToolDef = {
       if (!gone) return { ok: false, error: NOT_FOUND };
       if (gone.held) {
         return parkHeld(ctx, 'api_key_delete', {
-          op: 'delete',
-          ...heldPreview(gone.key.name, gone.held, gone.key.id),
+          ...heldPreview(gone.held, gone.key.id),
           hold_id: gone.held.holdId,
         });
       }
@@ -465,7 +480,7 @@ export const api_key_import: BuiltinToolDef = {
       const keys = result.keys.filter((k) => k.op !== 'held');
       // The rows that replace a key: one pending call for all of them.
       const held = result.keys.flatMap((k) =>
-        k.op === 'held' && k.held ? [heldPreview(k.key.name, k.held, k.key.id)] : [],
+        k.op === 'held' && k.held ? [heldPreview(k.held, k.key.id)] : [],
       );
       const queued =
         held.length > 0 && result.holdId

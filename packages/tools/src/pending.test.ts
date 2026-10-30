@@ -519,13 +519,14 @@ describe('a held vault change (api_key_set over MCP)', () => {
     });
   });
 
-  it('over MCP: refused, put back pending, nothing ran', async () => {
+  it('over MCP: refused before it is judged or claimed, nothing ran', async () => {
     fake.queue('pending_tool_calls', [heldRow()]);
     await expect(
       approvePendingCall(OWNER, ROW_ID, { approverLoginId: OWNER, viaMcp: true }),
     ).rejects.toThrow('approved by a person, not over MCP');
     expect(h.dispatchTool).not.toHaveBeenCalled();
-    expect(pendingWrites().at(-1)!.values).toMatchObject({ status: 'pending', decidedAt: null });
+    expect(h.origin).not.toHaveBeenCalled();
+    expect(pendingWrites()).toEqual([]);
   });
 
   it('a rejection drops its hold', async () => {

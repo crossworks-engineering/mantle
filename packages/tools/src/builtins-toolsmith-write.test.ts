@@ -207,6 +207,9 @@ describe('api_tool_create', () => {
     ['a slug with spaces', 'geo code', /slug must be lowercase/],
     ['the reserved ask_human slug', 'ask_human', /reserved for runner-queue approval/],
     ['the reserved run_budget slug', 'run_budget', /reserved for runner-queue approval/],
+    ['a held vault tool name (api_key_set)', 'api_key_set', /built-in vault tool's name/],
+    ['a held vault tool name (api_key_delete)', 'api_key_delete', /built-in vault tool's name/],
+    ['a held vault tool name (api_key_import)', 'api_key_import', /built-in vault tool's name/],
   ])('refuses %s without writing', async (_label, slug, re) => {
     expect(errorOf(await create.handler({ ...VALID, slug }, ctx))).toMatch(re);
     expect(createTool).not.toHaveBeenCalled();

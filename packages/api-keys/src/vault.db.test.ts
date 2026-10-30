@@ -376,8 +376,16 @@ describe.skipIf(!URL)('the vault write gateway', () => {
   it('over MCP, a replace and a delete wait for approval; only an approved call makes them', async () => {
     const mcp = { loginId: owner, via: 'mcp' } as const;
     const approved = { ...mcp, approval: { approver: owner } } as const;
-    const apply = (a: typeof mcp | typeof approved, hold: string, ids: string[]) =>
-      sys(() => keys.applyHeldVaultWrites(a, owner, hold, ids));
+    const apply = (
+      a: typeof mcp | typeof approved,
+      hold: string,
+      asked: { id: string; shown: Record<string, unknown> }[],
+    ) => sys(() => keys.applyHeldVaultWrites(a, owner, hold, asked));
+    // A held change as its approved call shows it (the gateway checks it).
+    const ask = (r: { key: { id: string }; held?: Record<string, unknown> }) => ({
+      id: r.key.id,
+      shown: r.held ?? {},
+    });
     const heldOf = async (id: string) =>
       (
         (await exec(sqlTag`select held_enc from api_keys where id = ${id}`)) as unknown as {
@@ -406,24 +414,35 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     const hold = held!.held!.holdId;
 
     // Another hold id opens nothing; a caller that is no approved call is refused.
-    await expect(apply(approved, randomUUID(), [held!.key.id])).rejects.toThrow(
-      keys.VAULT_HOLD_GONE,
-    );
-    await expect(apply(mcp, hold, [held!.key.id])).rejects.toThrow(/approved pending call/);
+    await expect(apply(approved, randomUUID(), [ask(held!)])).rejects.toThrow(keys.VAULT_HOLD_GONE);
+    await expect(apply(mcp, hold, [ask(held!)])).rejects.toThrow(/approved pending call/);
+    // A call that shows another change than its hold seals makes nothing:
+    // the card can never say one thing while another lands.
+    expect(held!.held).toMatchObject({ op: 'replace', name: 'held-key', kind: 'token' });
+    for (const lie of [
+      { masked: '••••' },
+      { name: 'weather' },
+      { op: 'delete' },
+      { target: ['elsewhere.example.com'] },
+    ]) {
+      await expect(
+        apply(approved, hold, [{ id: held!.key.id, shown: { ...held!.held, ...lie } }]),
+      ).rejects.toThrow(keys.VAULT_HOLD_MISMATCH);
+    }
     expect(await keys.getApiKey(owner, 'held-key')).toEqual({ apiKey: first });
 
     // The approval makes it, once, and clears the hold.
-    const done = await apply(approved, hold, [held!.key.id]);
+    const done = await apply(approved, hold, [ask(held!)]);
     expect(done.keys).toMatchObject([{ op: 'replace', secretWritten: true }]);
     noValue(done);
     expect(await keys.getApiKey(owner, 'held-key')).toEqual({ apiKey: second });
     expect(await heldOf(held!.key.id)).toBeNull();
-    await expect(apply(approved, hold, [held!.key.id])).rejects.toThrow(keys.VAULT_HOLD_GONE);
+    await expect(apply(approved, hold, [ask(held!)])).rejects.toThrow(keys.VAULT_HOLD_GONE);
 
     // A write to the key since the hold voids it.
     const stale = await set(mcp, owner, { ref: { name: 'held-key' }, value: v('held-3') });
     await set(who, owner, { ref: { name: 'held-key' }, tags: ['later'] });
-    await expect(apply(approved, stale!.held!.holdId, [stale!.key.id])).rejects.toThrow(
+    await expect(apply(approved, stale!.held!.holdId, [ask(stale!)])).rejects.toThrow(
       keys.VAULT_HOLD_GONE,
     );
     expect(await keys.getApiKey(owner, 'held-key')).toEqual({ apiKey: second });
@@ -434,14 +453,14 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     expect((await keys.listApiKeys(owner)).some((k) => k.name === 'held-key')).toBe(true);
     await sys(() => keys.releaseVaultHolds(owner, d1!.held!.holdId, [d1!.key.id]));
     expect(await heldOf(d1!.key.id)).toBeNull();
-    await expect(apply(approved, d1!.held!.holdId, [d1!.key.id])).rejects.toThrow(
+    await expect(apply(approved, d1!.held!.holdId, [ask(d1!)])).rejects.toThrow(
       keys.VAULT_HOLD_GONE,
     );
     // A release under another hold id leaves a hold alone.
     const d2 = await del(mcp, owner, { name: 'held-key' });
     await sys(() => keys.releaseVaultHolds(owner, randomUUID(), [d2!.key.id]));
     expect(await heldOf(d2!.key.id)).not.toBeNull();
-    const gone = await apply(approved, d2!.held!.holdId, [d2!.key.id]);
+    const gone = await apply(approved, d2!.held!.holdId, [ask(d2!)]);
     expect(gone.keys).toMatchObject([{ op: 'delete', key: { name: 'held-key' } }]);
     expect((await keys.listApiKeys(owner)).some((k) => k.name === 'held-key')).toBe(false);
 
@@ -457,7 +476,7 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     const heldRow = imported.keys.find((k) => k.op === 'held')!;
     expect(heldRow.key.name).toBe('held-new');
     expect(heldRow.held!.holdId).toBe(imported.holdId);
-    const applied = await apply(approved, imported.holdId!, [heldRow.key.id]);
+    const applied = await apply(approved, imported.holdId!, [ask(heldRow)]);
     expect(applied.keys).toMatchObject([{ op: 'replace', key: { name: 'held-new' } }]);
     expect(await keys.getApiKey(owner, 'held-new')).toEqual({ apiKey: values.at(-2) });
 
