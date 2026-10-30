@@ -15,6 +15,7 @@
  * and telegram_pair pairs a chat to the caller and nobody else.
  */
 
+import { TELEGRAM_POLICY_OFF_MESSAGE, telegramAllowed } from '@mantle/config';
 import { and, asc, eq } from 'drizzle-orm';
 import {
   systemWork,
@@ -62,6 +63,14 @@ function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
  * none is known: every tool here then refuses. Never read from model
  * arguments.
  */
+/** Every Telegram tool's answer while the box policy switches Telegram off
+ *  (docs/policy.md). The tools also leave every agent and MCP list then; this
+ *  covers a caller that names one anyway (an app's declared tool). */
+const TELEGRAM_OFF = {
+  ok: false as const,
+  error: `${TELEGRAM_POLICY_OFF_MESSAGE} No Telegram tool works on this box; use the in-app messenger instead.`,
+};
+
 export function telegramCallerLogin(ctx: ToolHandlerContext): string | null {
   const named = ownerSurfaceLoginId(ctx.surface);
   if (named) return named;
@@ -141,6 +150,7 @@ export const telegram_send: BuiltinToolDef = {
     required: ['chat_id', 'text'],
   },
   handler: async (input, ctx) => {
+    if (!telegramAllowed()) return TELEGRAM_OFF;
     const chatId = str(input.chat_id);
     const text = str(input.text);
     if (!chatId || !text) return { ok: false, error: 'chat_id + text required' };
@@ -182,6 +192,7 @@ export const telegram_pending: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx) => {
+    if (!telegramAllowed()) return TELEGRAM_OFF;
     const loginId = telegramCallerLogin(ctx);
     if (!loginId) return { ok: false, error: TELEGRAM_NO_LOGIN_ERROR };
     const chatId = strOpt(input.chat_id);
@@ -243,6 +254,7 @@ export const telegram_react: BuiltinToolDef = {
     required: ['chat_id', 'message_id', 'emoji'],
   },
   handler: async (input, ctx) => {
+    if (!telegramAllowed()) return TELEGRAM_OFF;
     const chatId = str(input.chat_id);
     const messageId = str(input.message_id);
     const emoji = str(input.emoji);
@@ -290,6 +302,7 @@ export const telegram_edit: BuiltinToolDef = {
     required: ['chat_id', 'message_id', 'text'],
   },
   handler: async (input, ctx) => {
+    if (!telegramAllowed()) return TELEGRAM_OFF;
     const chatId = str(input.chat_id);
     const messageId = str(input.message_id);
     const text = str(input.text);
@@ -330,6 +343,7 @@ export const telegram_mark_processed: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    if (!telegramAllowed()) return TELEGRAM_OFF;
     const loginId = telegramCallerLogin(ctx);
     if (!loginId) return { ok: false, error: TELEGRAM_NO_LOGIN_ERROR };
     const id = str(input.id);
@@ -405,6 +419,7 @@ export const telegram_pair: BuiltinToolDef = {
     required: ['code'],
   },
   handler: async (input, ctx) => {
+    if (!telegramAllowed()) return TELEGRAM_OFF;
     // Only the user pairs their own chat: the chat is paired to the login
     // this call acts for, whoever that is. Two steps: someone else's code
     // shows whose chat it is before it pairs anything.

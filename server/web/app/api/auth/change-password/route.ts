@@ -10,6 +10,7 @@ import {
 import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
+import { passwordProblem, passwordProblemBody } from '@/lib/auth/password-rule';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -53,6 +54,10 @@ export async function POST(req: Request) {
     const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
+  // The box password policy's rule (password-rule.ts): with none set, the
+  // schema's 8 characters above already answered.
+  const weak = passwordProblem(parsed.data.newPassword);
+  if (weak) return NextResponse.json(passwordProblemBody(weak), { status: 400 });
 
   const ok = await verifyPassword(actorId, parsed.data.oldPassword);
   if (!ok) {

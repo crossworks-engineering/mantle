@@ -696,12 +696,38 @@ export type TeamMemberActivity = {
 };
 
 /**
+ * GET /api/policy (docs/policy.md): the box policy the operator set in the
+ * box .env, read only (the Policy panel under Settings). The route answers
+ * 404 when no policy is set: the panel does not appear.
+ */
+export type BoxPolicyReport = {
+  /** MANTLE_POLICY_TELEGRAM=off. */
+  telegram: { off: boolean };
+  /** MANTLE_POLICY_MODEL_DENY patterns (lowercase) and
+   *  MANTLE_POLICY_PROVIDER_ALLOW ids (null: any provider). */
+  models: { deny: string[]; providerAllow: string[] | null };
+  /** MANTLE_POLICY_PASSWORD_MIN: `set` false is today's rule (8, no list). */
+  passwords: { set: boolean; min: number; commonList: boolean };
+  /** Every enabled assistant, worker or embedder route the model block
+   *  refuses: `ref` is `agent:<slug>`, `worker:<kind>` or `embedding`. */
+  blocked: {
+    ref: string;
+    route: 'primary' | 'backup';
+    provider: string;
+    model: string;
+    rule: 'provider_allow' | 'model_deny' | 'auto_router';
+  }[];
+};
+
+/**
  * One open provider outage, as an admin sees it. `reason` is fixed text
  * chosen by `code`, never provider text: it is safe on a banner and a phone.
  */
 export type ProviderAlert = {
-  subject: 'embedding' | 'extraction';
-  /** quota | auth | no_key | model (permanent); rate_limit | server |
+  /** `model_policy`: a call the box policy (MANTLE_POLICY_MODEL_DENY,
+   *  MANTLE_POLICY_PROVIDER_ALLOW) refused; `code` is `policy`. */
+  subject: 'embedding' | 'extraction' | 'model_policy';
+  /** quota | auth | no_key | model | policy (permanent); rate_limit | server |
    *  network | timeout (transient, shown after 10 min). */
   code: string;
   permanent: boolean;

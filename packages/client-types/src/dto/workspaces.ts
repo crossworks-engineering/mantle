@@ -249,7 +249,23 @@ export type AuthWhoami = {
   workspaces: ShellWorkspace[];
   areas: WorkspaceArea[];
   isOwner: boolean;
+  /** Present (true) only while the box password policy holds this login
+   *  (docs/policy.md): every route but the change-password step answers
+   *  403 `password_change_required` until POST /api/auth/change-password
+   *  takes a new password that meets `passwordRule`. Absent otherwise. */
+  mustChangePassword?: true;
+  /** The rule a new password must meet; present with mustChangePassword. */
+  passwordRule?: PasswordRule;
 };
+
+/** The password rule in force (docs/policy.md): at least `min` characters,
+ *  and, under a box policy, not a common password (`commonList`). */
+export type PasswordRule = { min: number; commonList: boolean };
+
+/** Every `code` a refused new password carries (HTTP 400 `{ error, code,
+ *  min }`), and the hold's 403 code. */
+export type PasswordErrorCode =
+  'password_too_short' | 'password_too_long' | 'password_common' | 'password_change_required';
 
 /** Every `code` a /api/workspaces refusal carries. */
 export type WorkspaceErrorCode =

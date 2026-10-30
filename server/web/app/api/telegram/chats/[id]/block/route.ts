@@ -8,6 +8,7 @@ import { NextResponse } from '@/server/http-compat';
 import { chatCaller } from '@/lib/auth';
 import { moderateTelegramChatResponse } from '@/lib/agent-telegram';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import type { RouteSwitches } from '@/lib/auth/route-switches';
 
 export const policy = routePolicy({
   POST: {
@@ -16,6 +17,10 @@ export const policy = routePolicy({
     item: { none: 'a Telegram chat, not an item: its pairing definer decides by the login' },
   },
 });
+/** Served under the box policy's Telegram switch (MANTLE_POLICY_TELEGRAM=off,
+ *  docs/policy.md): the gate answers 403 policy_telegram_off first while it is
+ *  off (lib/auth/route-switches.ts). */
+export const routeSwitches = { POST: 'telegram-policy' } as const satisfies RouteSwitches;
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = chatCaller();

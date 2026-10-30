@@ -476,3 +476,8 @@ export { CircuitBreaker } from './breaker';
 export { TtlCache, type TtlCacheOptions } from './ttl-cache';
 export { scrubSecrets } from './scrub-secrets';
 export { MCP_VAULT_SERVICE_PREFIX, isMcpManagedSecretService } from './vault-names';
+export {
+  MODEL_POLICY_ERROR_NAME,
+  ModelPolicyError,
+  type ModelPolicyRule,
+} from './model-policy-error';

@@ -47,6 +47,7 @@ import {
   type HttpLogin,
 } from '../../lib/auth/session';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
+import { passwordHoldAnswer } from '../../lib/auth/password-hold';
 
 /**
  * The session/CORS gate — a faithful port of the old Next Edge middleware.ts.
@@ -411,6 +412,12 @@ function gateHandler(): MiddlewareHandler {
           httpCaller(row, via, login, memo, accessKey),
           routeRef(row),
           async () => {
+            // The box password policy's hold (lib/auth/password-hold.ts):
+            // a login that must change its password reaches only the
+            // change-password step, whatever the row's guard would answer.
+            // With no password rule it reads nothing and goes on.
+            const held = await passwordHoldAnswer(row, login.logins);
+            if (held) return held;
             // A row whose handler reads the caller the pipeline answers
             // (row.caller): the answer of the guard of the
             // row's caller kind (owner, member, any-login, chat), given

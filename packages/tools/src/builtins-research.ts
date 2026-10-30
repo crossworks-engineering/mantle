@@ -17,7 +17,7 @@
  */
 
 import { OpenRouter } from '@openrouter/sdk';
-import { openrouterClientMeta } from '@mantle/voice';
+import { assertModelAllowed, openrouterClientMeta } from '@mantle/voice';
 import {
   getDefaultWorker,
   bumpWorkerUsage,
@@ -129,6 +129,14 @@ async function runWebSearch(
   const params = (worker?.params ?? {}) as SearchParams;
   // Per-call recency wins; otherwise the worker's configured default.
   const recency = strOpt(input.recency) ?? params.recency;
+
+  // The one inference call outside an adapter: the box policy's model check
+  // by hand (the recording wrappers ask it for every other call).
+  try {
+    assertModelAllowed('search', 'openrouter', model);
+  } catch (err) {
+    return { ok: false, error: publicProviderErrorMessage(err, kind, ctx.step) };
+  }
 
   const apiKey = await keyForWorker(ctx.ownerId, worker);
   if (!apiKey) {

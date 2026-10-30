@@ -932,6 +932,9 @@ importers:
 
   packages/telegram:
     dependencies:
+      '@mantle/config':
+        specifier: workspace:*
+        version: link:../config
       '@mantle/crypto':
         specifier: workspace:*
         version: link:../crypto
@@ -1113,6 +1116,9 @@ importers:
       '@mantle/config':
         specifier: workspace:*
         version: link:../config
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
       '@mantle/std':
         specifier: workspace:*
         version: link:../std

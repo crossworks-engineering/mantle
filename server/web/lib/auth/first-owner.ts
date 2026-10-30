@@ -39,12 +39,13 @@ export type FirstOwnerResult =
  * and the anchor is always an admin (CHECK). A typed insert-select names
  * every column of the table in its order, so this select gives each a
  * value in that order: the ones the owner leaves out take their column
- * defaults' values (created_at now(), session_epoch 0, the rest null).
+ * defaults' values (created_at now(), session_epoch 0, must_change_password
+ * false, the rest null).
  * first-owner-select.test.ts holds the two to the same count and order.
  */
 export function firstOwnerSelect(id: string, email: string, passwordHash: string): SQL {
   return sql`SELECT ${id}::uuid, ${email}, ${passwordHash}, now(), true, null, null, 'admin',
-                   null, null, 0
+                   null, null, 0, false
              WHERE NOT EXISTS (SELECT 1 FROM auth.users)`;
 }
 

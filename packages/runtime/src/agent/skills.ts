@@ -6,7 +6,7 @@
  */
 
 import { and, eq, inArray } from 'drizzle-orm';
-import { toolServiceAvailable } from '@mantle/config';
+import { toolPolicyAllows, toolServiceAvailable } from '@mantle/config';
 import { adminOrSystemScope, db, skills, toolGroups, type Skill } from '@mantle/db';
 
 export type SkillForRuntime = {
@@ -280,10 +280,14 @@ const MAX_EFFECTIVE_TOOL_SLUGS = 512;
  * Tools whose optional service is switched off on this box (the sandbox verbs
  * without the `sandboxes` profile) are left
  * out: the grant stays, the tool comes back the moment the service is on, and
- * meanwhile the model is never offered a tool that can only refuse.
+ * meanwhile the model is never offered a tool that can only refuse. The
+ * same for a tool the box policy switches off (the Telegram tools while
+ * MANTLE_POLICY_TELEGRAM=off, @mantle/config toolPolicyAllows).
  */
 export function effectiveToolSlugs(groupToolSlugs: string[]): string[] {
-  const all = Array.from(new Set<string>(groupToolSlugs)).filter(toolServiceAvailable);
+  const all = Array.from(new Set<string>(groupToolSlugs))
+    .filter(toolServiceAvailable)
+    .filter(toolPolicyAllows);
   if (all.length > MAX_EFFECTIVE_TOOL_SLUGS) {
     const dropped = all.slice(MAX_EFFECTIVE_TOOL_SLUGS);
     // Not silent — log exactly which slugs were cut so a misconfiguration is

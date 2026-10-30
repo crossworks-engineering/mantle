@@ -41,6 +41,12 @@ export const authUsers = authSchema.table('users', {
    *  each request: bumping it ends them all (password change, disable, role
    *  change, sign out everywhere). A token without the claim counts as 0. */
   sessionEpoch: integer('session_epoch').notNull().default(0),
+  /** The box password policy's forced change (0347, docs/policy.md): set at
+   *  a password sign-in while MANTLE_POLICY_PASSWORD_MIN is set and the
+   *  password fails the rule. Read only while that rule is in force: the
+   *  login then reaches nothing but the change-password step. Any new
+   *  password clears it. */
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
 });
 
 /** Every role a login can hold: LOGIN_ROLES in @mantle/client-types/role-names,

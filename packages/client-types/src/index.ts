@@ -235,6 +235,8 @@ export type { HistoryActor, LoginRole } from './role-names';
 // Types only; WORKSPACE_AREAS (runtime) is the `@mantle/client-types/dto/workspaces` subpath.
 export type {
   AuthWhoami,
+  PasswordErrorCode,
+  PasswordRule,
   ShellWorkspace,
   ShellWorkspaces,
   Workspace,

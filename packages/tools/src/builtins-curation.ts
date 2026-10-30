@@ -49,6 +49,7 @@ import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { refuseNonOwner } from './builtins-crawl';
 import { resolveOpenRouterKey } from './builtins-research';
 import { str } from './coerce';
+import { modelPolicyRefusal } from '@mantle/config';
 import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 import { openRouterCatalogRows } from '@mantle/tracing';
 import { CS } from './client-sourced-rule';
@@ -457,7 +458,11 @@ const model_catalog: BuiltinToolDef = {
       : null;
     const limit = typeof input.limit === 'number' ? input.limit : 25;
     const kind = str(input.kind).trim();
-    let models = [...res.models, ...voiceCatalogSupplement(), ...foundryCatalogSupplement()];
+    // The box policy's model block (docs/policy.md): a blocked model is
+    // never offered for a pool (with no model rule, every row stays).
+    let models = [...res.models, ...voiceCatalogSupplement(), ...foundryCatalogSupplement()].filter(
+      (m) => modelPolicyRefusal(m.provider, m.id) === null,
+    );
     if (ids && ids.size > 0) models = models.filter((m) => ids.has(m.id));
     else if (q) {
       models = models.filter(
@@ -545,6 +550,11 @@ const model_pool_list: BuiltinToolDef = {
  * take the request, catalog or not.
  */
 async function poolFitIssue(pool: string, routes: CuratedRoute[]): Promise<string | null> {
+  // The box policy's model block first, on every provider (docs/policy.md).
+  for (const r of routes) {
+    const blocked = modelPolicyRefusal(r.provider, r.model);
+    if (blocked) return `${blocked.message} Pick an allowed model from \`model_catalog\`.`;
+  }
   const orRoutes = routes.filter((r) => r.provider === 'openrouter');
   if (orRoutes.length === 0) return null;
   // Our own probe's refusal needs no catalog (a refused decision model).

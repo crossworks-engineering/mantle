@@ -1,5 +1,5 @@
 export * from './types';
-export { botFor, evictBot } from './client';
+export { botFor, evictBot, TelegramPolicyOffError } from './client';
 export { gate, countPendingForAccount } from './gate';
 export { pollOnce } from './sync';
 export { upsertTelegramChannel, disableTelegramChannel } from './channels';

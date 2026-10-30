@@ -27,6 +27,7 @@ import { ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES } from '@mantle/client-ty
 import { PURPOSE_ARCHETYPES } from '@mantle/content-core/onboarding-questions';
 import { DEFAULT_PERSONA_NAMES, PERSONA_PRESETS } from '@mantle/content-core/persona-bank';
 import { createFirstOwner } from '../lib/auth/first-owner';
+import { passwordProblem, passwordRule } from '../lib/auth/password-rule';
 import {
   finishOnboarding,
   onboardingState,
@@ -407,10 +408,18 @@ async function ensureOwner(o: Options, io: Io): Promise<{ id: string; email: str
   }
   let password: string;
   for (;;) {
-    password = await io.secret('Password (8+ characters, hidden):');
-    if (password.length < 8) {
-      if (o.yes) throw new Error('No owner yet: send password=... (8+ characters) on stdin.');
-      bad('At least 8 characters.');
+    const rule = passwordRule();
+    password = await io.secret(`Password (${rule.min}+ characters, hidden):`);
+    // The one password rule (password-rule.ts): with no box policy, 8
+    // characters, as before.
+    const weak = passwordProblem(password);
+    if (weak) {
+      if (o.yes) {
+        throw new Error(
+          `No owner yet: send password=... (${rule.min}+ characters${rule.commonList ? ', not a common one' : ''}) on stdin.`,
+        );
+      }
+      bad(rule.commonList ? weak.message : `At least ${rule.min} characters.`);
       continue;
     }
     if (o.yes) break;

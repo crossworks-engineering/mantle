@@ -18,6 +18,7 @@
  * carries the kind for at-a-glance debugging in logs.
  */
 
+import { modelPolicyIssue } from './model-policy-save';
 import { and, desc, eq } from 'drizzle-orm';
 import {
   db,
@@ -316,6 +317,8 @@ const CHAT_CATALOG_KINDS = new Set([
  * loaded catalog that positively lacks the id rejects. `~`-prefixed
  * auto-updating aliases are real catalog entries and pass.
  *
+ * The box policy's model block is checked first, for every provider.
+ *
  * Two checks: the id must EXIST, and it must do the kind's job — see the
  * modality note below, which is what keeps an image generator off a vision
  * worker.
@@ -325,6 +328,10 @@ export async function openRouterModelIssue(opts: {
   provider: string | null | undefined;
   model: string | null | undefined;
 }): Promise<string | null> {
+  // The box policy's model block first (docs/policy.md), on every provider:
+  // a blocked model is never saved by hand.
+  const blocked = modelPolicyIssue(opts.provider, opts.model);
+  if (blocked) return blocked;
   if (opts.provider !== 'openrouter' || !opts.model) return null;
   if (!CHAT_CATALOG_KINDS.has(opts.kind)) return null;
   const { refreshModelCatalog, catalogHasModel, catalogModalities, catalogSuggestions } =

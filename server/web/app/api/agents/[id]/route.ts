@@ -18,6 +18,8 @@ import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import { restampHeartbeatMakers } from '@mantle/tools';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { modelPolicyBody, modelRoutesPolicyIssue } from '@/lib/model-policy-save';
+import { modelPolicySet } from '@mantle/config';
 
 export const policy = routePolicy({
   PATCH: {
@@ -104,6 +106,37 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
+  }
+  // The box policy's model block (lib/model-policy-save.ts) on the routes
+  // as they will be after the patch: no blocked model is saved by hand.
+  const p = parsed.data;
+  if (
+    modelPolicySet() &&
+    (p.provider !== undefined ||
+      p.model !== undefined ||
+      p.backupProvider !== undefined ||
+      p.backupModel !== undefined)
+  ) {
+    const [now] = await db
+      .select({
+        provider: agents.provider,
+        model: agents.model,
+        backupProvider: agents.backupProvider,
+        backupModel: agents.backupModel,
+      })
+      .from(agents)
+      .where(and(eq(agents.id, idParsed.data.id), eq(agents.ownerId, user.id)))
+      .limit(1);
+    if (now) {
+      const blocked = modelRoutesPolicyIssue([
+        [p.provider ?? now.provider, p.model ?? now.model],
+        [
+          p.backupProvider !== undefined ? p.backupProvider : now.backupProvider,
+          p.backupModel !== undefined ? p.backupModel : now.backupModel,
+        ],
+      ]);
+      if (blocked) return NextResponse.json(modelPolicyBody(blocked), { status: 403 });
+    }
   }
   // A vault key (the key id, or the provider's key a route without one falls
   // back to) with a base URL of the writer's choosing is the keys area's,

@@ -33,7 +33,8 @@ import { telegramApprovalHandlers } from '../lib/telegram-approval';
 import { registerRecallEmbedder } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
 import { runWorker } from './_runner';
-import { env } from '@mantle/config';
+import { log } from '@mantle/tracing';
+import { TELEGRAM_POLICY_OFF_MESSAGE, env, telegramAllowed } from '@mantle/config';
 import { backoffMs, sleep } from '@mantle/std';
 
 // An Approve tap runs the parked tool IN THIS PROCESS — `page_create` included
@@ -77,6 +78,14 @@ const REGISTRY: Partial<Record<Channel['type'], ChannelPoller>> = {
 const loops = new Map<string, { stop: () => void }>();
 
 runWorker('channel-poll', async () => {
+  // The box policy switches Telegram off (MANTLE_POLICY_TELEGRAM=off,
+  // docs/policy.md): the worker idles with one line and polls nothing. Every
+  // channel, account and chat row stays; removing the setting brings the
+  // loops back on the next start.
+  if (!telegramAllowed()) {
+    log('channel-poll').info(`idle: ${TELEGRAM_POLICY_OFF_MESSAGE}`);
+    return;
+  }
   if (!env('MANTLE_MASTER_KEY')) throw new Error('MANTLE_MASTER_KEY must be set');
 
   await refreshChannels();

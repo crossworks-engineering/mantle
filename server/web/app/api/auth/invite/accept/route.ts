@@ -21,6 +21,7 @@ import { hashLoginPassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { inviteFailed } from '@/lib/member-invites';
 import { readJson } from '@/lib/read-body';
+import { passwordProblem, passwordProblemBody } from '@/lib/auth/password-rule';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -54,6 +55,10 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  // The box password policy's rule (password-rule.ts): with none set, the
+  // 8 characters above already answered.
+  const weak = passwordProblem(parsed.data.password);
+  if (weak) return NextResponse.json(passwordProblemBody(weak), { status: 400 });
 
   const passwordHash = await hashLoginPassword(parsed.data.password);
   const redeemed = await redeemMemberInvite({

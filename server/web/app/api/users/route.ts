@@ -22,6 +22,7 @@ import {
 } from '@mantle/content';
 import { projectPersonDescription } from '@mantle/client-types/person-description';
 import { hashLoginPassword, ownerCaller } from '@/lib/auth';
+import { passwordProblem, passwordProblemBody } from '@/lib/auth/password-rule';
 import { cloneAgentForUser } from '@/lib/agents';
 import { loginRole } from '@/lib/auth/admin-seat';
 import { insertLoginWithWorkspaces } from '@/lib/login-create';
@@ -128,6 +129,10 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  // The box password policy's rule (password-rule.ts): with none set, the
+  // schema's 8 characters above already answered.
+  const weak = passwordProblem(parsed.data.password);
+  if (weak) return NextResponse.json(passwordProblemBody(weak), { status: 400 });
 
   const role = parsed.data.role ?? 'member';
   if (role === 'member') {

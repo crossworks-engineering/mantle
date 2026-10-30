@@ -23,9 +23,12 @@
  * key. No node builtins: browser bundles import @mantle/std.
  */
 import { defineDomainError } from './domain-errors';
+import { MODEL_POLICY_ERROR_NAME } from './model-policy-error';
 
 export type ProviderErrorCode =
   | 'quota'
+  /** The box policy blocks the provider or model (ModelPolicyError). */
+  | 'policy'
   | 'auth'
   | 'no_key'
   | 'workspace'
@@ -47,6 +50,7 @@ export interface ProviderErrorClass {
 
 export const PROVIDER_ERROR_REASONS: Record<ProviderErrorCode, string> = {
   quota: 'The provider account has no credits or quota left.',
+  policy: "This box's policy blocks this provider or model. Choose an allowed one.",
   auth: 'The provider refused the API key.',
   no_key: 'No API key is set for this provider.',
   workspace:
@@ -499,6 +503,7 @@ export function providerErrorStatus(err: unknown): number | undefined {
 
 const PERMANENT: ReadonlySet<ProviderErrorCode> = new Set([
   'quota',
+  'policy',
   'auth',
   'no_key',
   'workspace',
@@ -553,6 +558,9 @@ export function classifyProviderError(err: unknown): ProviderErrorClass | null {
     if (inner) return inner;
   }
   const name = (err as { name?: unknown }).name;
+  // The box policy's refusal (model-policy-error.ts): no call was made, and
+  // no retry or other key changes it; another route may be allowed.
+  if (name === MODEL_POLICY_ERROR_NAME) return make('policy');
   const msg = String((err as { message?: unknown }).message ?? err);
   const body = String((err as { body?: unknown }).body ?? '');
   const text = `${msg}\n${body}`;

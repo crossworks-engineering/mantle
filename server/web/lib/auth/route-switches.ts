@@ -18,7 +18,7 @@
 
 /** Every switch a route can declare; route-policy.ts SWITCHES holds each
  *  one's check and its off answer. */
-export const ROUTE_SWITCH_NAMES = ['turn-streaming', 'not-production'] as const;
+export const ROUTE_SWITCH_NAMES = ['turn-streaming', 'not-production', 'telegram-policy'] as const;
 
 export type RouteSwitch = (typeof ROUTE_SWITCH_NAMES)[number];
 

@@ -79,8 +79,11 @@ describe('POST /api/auth/signup', () => {
       'contact_id',
       'disabled_at',
       'session_epoch',
+      'must_change_password',
     ]);
-    expect(sql).toMatch(/now\(\), true, null, null, 'admin',\s+null, null, 0\s+WHERE NOT EXISTS/);
+    expect(sql).toMatch(
+      /now\(\), true, null, null, 'admin',\s+null, null, 0, false\s+WHERE NOT EXISTS/,
+    );
     expect(params).toContain('first@example.invalid');
   });
 

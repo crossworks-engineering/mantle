@@ -6,7 +6,8 @@
  * with the chat's code while signed in, and only for a bot whose assistant
  * is an assistant of a workspace the user is in. A turn on the chat runs as
  * that login in that workspace. A chat whose login is gone, disabled, or no
- * longer a user of the workspace is refused on its next message. Any
+ * longer a user of the workspace, or held by the box password policy until
+ * it changes its password (docs/policy.md), is refused on its next message. Any
  * workspace's assistant may answer on Telegram.
  *
  * "The workspace of the chat" is the workspace of every assistant the chat
@@ -24,6 +25,7 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, liveWorkspaceSql, systemWork, telegramChats } from '@mantle/db';
+import { passwordPolicyMin } from '@mantle/config';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { botAgentIdSql } from './chat-assistant';
@@ -86,6 +88,7 @@ export async function chatLoginRefusal(args: {
                  from workspaces w
                  join workspace_users u on u.workspace_id = w.id and u.login_id = ${loginId}::uuid
                  join auth.users l on l.id = u.login_id and l.disabled_at is null
+                  and not (${passwordPolicyMin() !== null}::boolean and l.must_change_password)
                 where ${liveWorkspaceSql('w')}
                   and w.id = coalesce(ca.workspace_id, (select id from admin_ws))
              )

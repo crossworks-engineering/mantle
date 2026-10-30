@@ -1593,6 +1593,25 @@ row per write and never answers a value.
 - **Master key rotation:** `pnpm -C server/web rotate:master-key` re-seals
   `fields_enc` too, each with its own AAD.
 
+## Going up to 0347 (box policy, part 1)
+
+Migration 0347 adds `auth.users.must_change_password` (default false) and
+lets `provider_alerts` hold the subject `model_policy`. Additive. A box with
+no `MANTLE_POLICY_*` values never writes either (docs/policy.md).
+
+- **What it changes:** nothing on a box with no policy. With
+  `MANTLE_POLICY_PASSWORD_MIN` set, a sign-in with a password that fails
+  the rule holds that login to the change-password step; with a model rule
+  set, a blocked call opens the `model_policy` alert.
+- **Before a policy goes on a live box:** set it on a copy first, or read
+  the boot log (`box policy blocks ...` lines): every assistant or worker
+  on a blocked model fails until it is moved.
+- **Rolling back below it:** the older image runs with 0347 in place, but
+  it has no hold: a held login signs in as before. Run the revert
+  (`packages/db/rollback/0347_must_change_password.revert.sql`) before
+  pinning the older tag: it deletes the `model_policy` alerts, narrows the
+  subject check back and takes 0347 off the ledger. The column stays.
+
 ## Rollback
 
 ```bash
