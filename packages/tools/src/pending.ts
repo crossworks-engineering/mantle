@@ -52,7 +52,7 @@ import { withOriginScope } from './pending-origin';
 import { notifyPendingChanged } from './pending-notify';
 import { HELD_ON_MCP_ERROR, heldToolRow, isHeldTool, releaseHeldCall } from './held-tools';
 import type { ToolHandlerContext } from './types';
-import { startTrace, step } from '@mantle/tracing';
+import { log, startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 
 export type PendingSummary = {
@@ -402,7 +402,7 @@ export async function rejectPendingCall(
   // never applies without an approval, and the key's next write clears it.
   if (row && isHeldTool(row.toolSlug)) {
     await releaseHeldCall(ownerId, row.args as Record<string, unknown>).catch((err: unknown) => {
-      console.error('[pending] could not release a rejected hold:', errorMessage(err));
+      log('pending').error('could not release a rejected hold:', errorMessage(err));
     });
   }
   if (row && row.toolSlug === 'ask_human') {

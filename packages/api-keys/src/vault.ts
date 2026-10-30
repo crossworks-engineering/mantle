@@ -931,17 +931,43 @@ async function holdOn(
 ): Promise<string> {
   const sealed: SealedHold = { ...change, at: row.updatedAt.toISOString() };
   const { ciphertext } = seal(JSON.stringify(sealed), heldAad(row.id, holdId));
-  const [held] = await onFullSystemRoute('model-route', () =>
-    db
-      .update(apiKeys)
-      .set({ heldEnc: ciphertext })
-      .where(and(eq(apiKeys.id, row.id), eq(apiKeys.userId, ownerId), eq(apiKeys.kind, row.kind)))
-      .returning({ id: apiKeys.id }),
-  );
-  if (!held) {
+  if (!(await writeHeld(ownerId, row.id, { hold: ciphertext, kind: row.kind }))) {
     throw new ConflictError('The key changed at the same moment: read it again and retry.');
   }
   return holdId;
+}
+
+/**
+ * The one write of a key's held change, at the full-route spot model-route
+ * as every write of a vault key's sealed columns (0347: the narrow login
+ * holds no write of held_enc): `hold` seals one on the key as it was
+ * checked (its kind); `release` clears the hold that id opens, read and
+ * cleared in one go, so a newer hold is never dropped. Whether it wrote.
+ */
+async function writeHeld(
+  ownerId: string,
+  id: string,
+  change: { hold: Buffer; kind: VaultKind } | { release: string },
+): Promise<boolean> {
+  return onFullSystemRoute('model-route', async () => {
+    const mine = and(eq(apiKeys.id, id), eq(apiKeys.userId, ownerId));
+    if ('hold' in change) {
+      const [held] = await db
+        .update(apiKeys)
+        .set({ heldEnc: change.hold })
+        .where(and(mine, eq(apiKeys.kind, change.kind)))
+        .returning({ id: apiKeys.id });
+      return !!held;
+    }
+    const [row] = await db.select().from(apiKeys).where(mine).limit(1);
+    if (!row?.heldEnc || !openHold(row, change.release)) return false;
+    const [cleared] = await db
+      .update(apiKeys)
+      .set({ heldEnc: null })
+      .where(and(mine, eq(apiKeys.heldEnc, row.heldEnc)))
+      .returning({ id: apiKeys.id });
+    return !!cleared;
+  });
 }
 
 /** Hold a checked replace: its audit row, and the key as the change would
@@ -1059,19 +1085,7 @@ export async function releaseVaultHolds(
 ): Promise<void> {
   if (!UUID_RE.test(holdId)) return;
   for (const id of new Set(keyIds)) {
-    if (!UUID_RE.test(id)) continue;
-    await onFullSystemRoute('model-route', async () => {
-      const [row] = await db
-        .select()
-        .from(apiKeys)
-        .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, ownerId)))
-        .limit(1);
-      if (!row?.heldEnc || !openHold(row, holdId)) return;
-      await db
-        .update(apiKeys)
-        .set({ heldEnc: null })
-        .where(and(eq(apiKeys.id, id), eq(apiKeys.heldEnc, row.heldEnc)));
-    });
+    if (UUID_RE.test(id)) await writeHeld(ownerId, id, { release: holdId });
   }
 }
 

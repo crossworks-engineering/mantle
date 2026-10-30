@@ -332,7 +332,7 @@ describe('api_key_delete', () => {
   it('parks a held delete for approval and deletes nothing yet', async () => {
     h.del.mockResolvedValueOnce({ key, held });
     const r = await api_key_delete.handler({ name: 'pi-lab-3' }, ctx);
-    expect(h.park.mock.calls[0]![0]).toMatchObject({
+    expect((h.park.mock.calls[0] as unknown as [Record<string, unknown>])[0]).toMatchObject({
       toolSlug: 'api_key_delete',
       args: { op: 'delete', name: 'pi-lab-3', key_id: KEY_ID, hold_id: HOLD },
     });

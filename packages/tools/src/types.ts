@@ -382,6 +382,11 @@ export type BuiltinToolDef = {
    *  case: an agent that could approve its own queued call would defeat the
    *  very gate that queued it. */
   mcpOnly?: true;
+  /** With `mcpOnly`: a call that replaces or deletes a vault key parks
+   *  itself for a person's approval (held-tools.ts). Its approval runs it by
+   *  the builtin itself (it has no `tools` row), is never taken over MCP,
+   *  and a rejection drops the held change. */
+  approvalHeld?: true;
   /** Runs only for the brain owner. dispatchTool refuses it with
    *  OWNER_ONLY_ERROR unless `isOwnerSurface` holds, before preconditions and
    *  the handler: a team, client or missing surface never reaches it. The

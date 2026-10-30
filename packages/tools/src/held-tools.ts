@@ -1,6 +1,7 @@
 /**
  * The MCP tools whose call can wait for the owner's approval by their own
- * rule: the vault's replace and delete (toolsmith/vault-keys.ts). Over MCP
+ * rule (`approvalHeld` on the definition): the vault's replace and delete
+ * (toolsmith/vault-keys.ts). Over MCP
  * such a call seals its change on the key's row (@mantle/api-keys vault.ts,
  * a hold) and parks a pending call that names the hold, never the value;
  * the approval runs the tool again (pending.ts), which makes the held
@@ -19,16 +20,13 @@
 import { releaseVaultHolds } from '@mantle/api-keys';
 import type { Tool } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
+import { tableBuiltin } from './tool-policy';
 
-/** The tools whose pending calls hold a vault change. */
-export const HELD_TOOL_SLUGS: ReadonlySet<string> = new Set([
-  'api_key_set',
-  'api_key_delete',
-  'api_key_import',
-]);
-
+/** Whether the tool `slug` holds a vault change in its pending calls: an
+ *  MCP-only builtin that says so on its definition. */
 export function isHeldTool(slug: string): boolean {
-  return HELD_TOOL_SLUGS.has(slug);
+  const def = tableBuiltin(slug);
+  return def?.approvalHeld === true && def.mcpOnly === true;
 }
 
 /** The refusal of an approval of a held change over MCP. */

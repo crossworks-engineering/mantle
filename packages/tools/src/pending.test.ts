@@ -74,6 +74,18 @@ vi.mock('./dispatch-bridge', () => ({
   dispatchViaBridge: (...a: unknown[]) => h.dispatchTool(...a),
 }));
 vi.mock('./pending-notify', () => ({ notifyPendingChanged: vi.fn(async () => {}) }));
+// The held vault tools (held-tools.ts reads the policy table, which this
+// test does not load): api_key_set stands for them.
+const held = vi.hoisted(() => ({ released: [] as unknown[] }));
+vi.mock('./held-tools', () => ({
+  HELD_ON_MCP_ERROR: 'approved by a person, not over MCP',
+  isHeldTool: (slug: string) => slug === 'api_key_set',
+  heldToolRow: (slug: string) =>
+    slug === 'api_key_set' ? { slug, handler: { kind: 'builtin', ref: slug } } : null,
+  releaseHeldCall: async (ownerId: string, args: unknown) => {
+    held.released.push({ ownerId, args });
+  },
+}));
 // The approval rule (pending-approval.ts: its own tests): who decides is the
 // login the path names, else the owner; an elevated call is judged by the
 // stub `h.elevated` (it throws a refusal, or gives the run).
@@ -487,6 +499,40 @@ describe('a tool call approved (W6b fix round 3, L-2)', () => {
     fake.queue('tools', [{ slug: 'app_delete', ownerId: OWNER, enabled: true }]);
     await approvePendingCall(OWNER, ROW_ID);
     expect(surfaceOf()).toEqual({ kind: 'owner', via: 'pending' });
+  });
+});
+
+describe('a held vault change (api_key_set over MCP)', () => {
+  const heldRow = () => ({
+    ...askRow(),
+    toolSlug: 'api_key_set',
+    args: { op: 'replace', name: 'weather', key_id: 'k-1', hold_id: 'h-1' },
+  });
+
+  it('runs by its builtin on a person’s approval: it has no tools row', async () => {
+    fake.queue('pending_tool_calls', [heldRow()]);
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-a' });
+    expect(h.dispatchTool).toHaveBeenCalledTimes(1);
+    expect(h.dispatchTool.mock.calls[0]![0]).toMatchObject({
+      slug: 'api_key_set',
+      handler: { kind: 'builtin', ref: 'api_key_set' },
+    });
+  });
+
+  it('over MCP: refused, put back pending, nothing ran', async () => {
+    fake.queue('pending_tool_calls', [heldRow()]);
+    await expect(
+      approvePendingCall(OWNER, ROW_ID, { approverLoginId: OWNER, viaMcp: true }),
+    ).rejects.toThrow('approved by a person, not over MCP');
+    expect(h.dispatchTool).not.toHaveBeenCalled();
+    expect(pendingWrites().at(-1)!.values).toMatchObject({ status: 'pending', decidedAt: null });
+  });
+
+  it('a rejection drops its hold', async () => {
+    held.released.length = 0;
+    fake.queue('pending_tool_calls', [{ ...heldRow(), status: 'rejected' }]);
+    await rejectPendingCall(OWNER, ROW_ID);
+    expect(held.released).toEqual([{ ownerId: OWNER, args: heldRow().args }]);
   });
 });
 

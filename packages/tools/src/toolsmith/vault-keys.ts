@@ -201,6 +201,7 @@ const NAME_PARAM = {
 export const api_key_set: BuiltinToolDef = {
   slug: 'api_key_set',
   mcpOnly: true,
+  approvalHeld: true, // a replace waits for a person (held-tools.ts)
   policy: {
     matrix: { none: 'a vault key is not an item' },
     effect: 'write',
@@ -373,6 +374,7 @@ export const api_key_test: BuiltinToolDef = {
 export const api_key_delete: BuiltinToolDef = {
   slug: 'api_key_delete',
   mcpOnly: true,
+  approvalHeld: true, // a delete waits for a person (held-tools.ts)
   policy: {
     destructive: true, // the sealed value is gone; nothing keeps it
     matrix: { none: 'a vault key is not an item' },
@@ -411,6 +413,7 @@ export const api_key_delete: BuiltinToolDef = {
 export const api_key_import: BuiltinToolDef = {
   slug: 'api_key_import',
   mcpOnly: true,
+  approvalHeld: true, // its replace rows wait for a person (held-tools.ts)
   policy: {
     matrix: { none: 'a vault key is not an item' },
     effect: 'write',
