@@ -11,6 +11,7 @@ import {
   currentWorkspaceScope,
   isUnscoped,
   SCOPE_AREAS,
+  scopeLeftForSystem,
   SystemWorkRequiredError,
   type ScopeArea,
   type WorkspaceScope,
@@ -24,7 +25,7 @@ import {
   type Actor,
 } from '../actor';
 import { getAdminDb } from './pools';
-import { getDb } from './scope';
+import { getDb, withTurnScope } from './scope';
 import { db } from './handles';
 import { sqlState } from './heads';
 
@@ -152,6 +153,22 @@ export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
     default:
       return false;
   }
+}
+
+/**
+ * Whether the caller of the current code may do Admin `area`: asked in the
+ * open workspace scope, or, on the system pool (an Admin-area tool run whole,
+ * an areaSystem block, an area route), in the scope its asSystem left, so a
+ * connectors-area tool can ask whether its caller also holds the keys area.
+ * Outside any workspace scope with none left (system work, an area route
+ * past its gate): yes, the surface or the route gate decided. One answer for
+ * @mantle/tools' gates and the vault's write gateway (@mantle/api-keys).
+ */
+export async function callerHasArea(area: ScopeArea): Promise<boolean> {
+  if (currentWorkspaceScope()) return scopeHasArea(area);
+  const left = scopeLeftForSystem();
+  if (!left) return true;
+  return withTurnScope(left, () => scopeHasArea(area));
 }
 
 /** A login fact refused for a missing grant (42501) still answers no, but

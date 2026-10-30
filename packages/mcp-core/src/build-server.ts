@@ -49,6 +49,7 @@ import {
   WORKSPACE_TOOLS,
   LOGIN_APP_DATA_TOOLS,
   TOOLSMITH_TOOLS,
+  VAULT_KEY_TOOLS,
   NOTE_TOOLS,
   TREE_TOOLS,
   TREE_OPERATOR_TOOLS,
@@ -463,6 +464,14 @@ export function registerMantleTools(
   // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see toolsmithWriteEnabled):
   // each opts in by its definition's `toolsmithWrite`.
   registerBuiltinTools(TOOLSMITH_TOOLS);
+
+  // ─── The vault's writes ──────────────────────────────────────────────────────
+  // api_key_set / api_key_test / api_key_delete / api_key_import, beside
+  // api_key_refs: the owner's client adds, tests and removes a secret, never
+  // reads one back. `mcpOnly` (no agent is granted them); each call goes
+  // through the vault's one write gateway (@mantle/api-keys vault.ts: the
+  // keys area gate, the audit row).
+  registerBuiltinTools(VAULT_KEY_TOOLS);
 }
 
 /** What every connecting MCP client auto-loads alongside the tool list — the

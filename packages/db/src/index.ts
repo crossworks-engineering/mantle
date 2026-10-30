@@ -67,6 +67,7 @@ export { withScope, withTurnScope, ScopeLostError, readTransaction } from './gat
 export {
   scopeHoldsAdmin,
   scopeHasArea,
+  callerHasArea,
   loginHasArea,
   loginAreas,
   loginHoldsAdmin,

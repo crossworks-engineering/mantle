@@ -28,7 +28,6 @@ import {
   parseMcpBinding,
   vaultPairingChanged,
   setMcpOAuthClient,
-  voidConnectorMarksForKey,
   type KnownMcpServer,
   type McpOAuthClientInput,
 } from '@mantle/tools';
@@ -284,17 +283,7 @@ export async function updateMcpConnector(
   return { connector: toDTO(updated!, backrefs.get(groupSlug) ?? [], tokenServices) };
 }
 
-/**
- * After a vault key changed under the same service and label (a rotate, or
- * a save over an existing key): the connectors that sign in with it lose
- * their read-only marks (access matrix T7, the guide's "a new key voids
- * them") and drop their cached connection, which still holds the old key.
- */
-export async function afterVaultKeyReplaced(
-  ownerId: string,
-  service: string,
-  label: string,
-): Promise<void> {
-  const slugs = await voidConnectorMarksForKey(ownerId, service, label);
-  await Promise.all(slugs.map((slug) => closeMcpClient(ownerId, slug)));
-}
+/** After a vault key changed under the same service and label: the one
+ *  follow-up, shared with the api_key_* tools (@mantle/tools
+ *  vault-follow-up.ts). */
+export { afterVaultKeyReplaced } from '@mantle/tools';

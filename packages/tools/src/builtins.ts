@@ -51,6 +51,7 @@ import { PEER_TOOLS } from './builtins-peers';
 import { EVAL_TOOLS } from './builtins-eval';
 import { RUN_TOOLS } from './builtins-runs';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
+import { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
 import { DOCUMENT_TOOLS, registerDocumentToolServices } from './builtins-documents';
@@ -273,6 +274,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...PENDING_TOOLS,
   ...WORKER_GROUP_TOOLS,
   ...TELEGRAM_OPERATOR_TOOLS,
+  // The vault's write tools (api_key_set/test/delete/import): an owner's
+  // client puts a secret in; no agent is ever granted a vault write.
+  ...VAULT_KEY_TOOLS,
   ...FILE_OPERATOR_TOOLS,
   ...NOTE_OPERATOR_TOOLS,
   ...TREE_OPERATOR_TOOLS,

@@ -15,6 +15,7 @@
  * carries no ref.
  */
 
+import { isMcpManagedSecretService } from '@mantle/api-keys';
 import type {
   ToolGroupIntegration,
   ToolGroupMcpBinding,
@@ -275,19 +276,10 @@ export function parseIntegrationMeta(raw: unknown): ParsedIntegration | Integrat
 const AUTH_HEADER_RE = /^[A-Za-z0-9-]{1,64}$/;
 const MAX_AUTH_SCHEME_CHARS = 20;
 
-/**
- * The vault namespace MCP connectors seal their OAuth state under (service =
- * the connector's `mcp-<slug>` group slug). RESERVED: these rows hold live
- * bearer tokens and sometimes a registration client_secret nobody ever typed
- * in, so they must never be usable as `{{secret:…}}` template refs, listed by
- * `api_key_refs`, probed/shown as ordinary keys, or named as a binding's
- * `secret_ref`. Enforced in the dispatcher, `api_key_refs`, the keys API, and
- * `parseMcpBinding` below.
- */
-export const MCP_VAULT_SERVICE_PREFIX = 'mcp-';
-export function isMcpManagedSecretService(service: string): boolean {
-  return service.startsWith(MCP_VAULT_SERVICE_PREFIX);
-}
+/** The vault namespace MCP connectors seal their OAuth state under: owned
+ *  by the vault (@mantle/api-keys services.ts), which refuses it on every
+ *  write the owner's clients make. */
+export { MCP_VAULT_SERVICE_PREFIX, isMcpManagedSecretService } from '@mantle/api-keys';
 
 /**
  * Validate + normalise the `integration.mcp` connector binding. Accepts camel

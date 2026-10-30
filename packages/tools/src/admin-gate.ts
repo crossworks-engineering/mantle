@@ -32,7 +32,6 @@ import {
   scopeHasArea,
   scopeHoldsAdmin,
   scopeLeftForSystem,
-  withTurnScope,
   type ScopeArea,
   type WorkspaceScope,
 } from '@mantle/db';
@@ -170,17 +169,7 @@ export function callerScope(): WorkspaceScope | null {
   return currentWorkspaceScope() ?? scopeLeftForSystem();
 }
 
-/**
- * Whether the caller of the current code may do Admin `area`: asked in the
- * open workspace scope, or, on the system pool (an `systemWhole` tool run
- * whole, an areaSystem block), in the scope its
- * asSystem left, so a connectors-area tool can ask whether its caller also
- * holds the keys area. Outside any workspace scope (system work): yes, the
- * surface rules decide.
- */
-export async function callerHasArea(area: ScopeArea): Promise<boolean> {
-  if (currentWorkspaceScope()) return scopeHasArea(area);
-  const left = scopeLeftForSystem();
-  if (!left) return true;
-  return withTurnScope(left, () => scopeHasArea(area));
-}
+/** Whether the caller of the current code may do Admin `area`: the one
+ *  answer, @mantle/db's (scope-answers.ts), shared with the vault's write
+ *  gateway. */
+export { callerHasArea } from '@mantle/db';

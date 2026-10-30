@@ -77,6 +77,9 @@ importers:
 
   packages/api-keys:
     dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/crypto':
         specifier: workspace:*
         version: link:../crypto
@@ -86,6 +89,9 @@ importers:
       '@mantle/std':
         specifier: workspace:*
         version: link:../std
+      '@mantle/voice':
+        specifier: workspace:*
+        version: link:../voice
       '@mantle/voice-client':
         specifier: workspace:*
         version: link:../voice-client

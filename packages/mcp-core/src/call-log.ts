@@ -91,9 +91,11 @@ export function isSecretKey(key: string): boolean {
   );
 }
 
-/** A tool whose every argument value is never kept: secret_create, and a
- *  connector's mcp_<conn>_secret_set or mcp_<conn>_get_secret. */
-const SECRET_TOOL = /^secret_|^mcp_.*(?:_secret_|_secret$)/;
+/** A tool whose every argument value is never kept: secret_create, the
+ *  vault's api_key_set and api_key_import (a value sent in the wrong field
+ *  is still never kept), and a connector's mcp_<conn>_secret_set or
+ *  mcp_<conn>_get_secret. */
+const SECRET_TOOL = /^secret_|^api_key_(?:set|import)$|^mcp_.*(?:_secret_|_secret$)/;
 
 /** Secrets inside a string that @mantle/std maskKeyLiterals (the key
  *  prefixes, `Bearer`, `token=`, bare keys) does not know; each keeps its
