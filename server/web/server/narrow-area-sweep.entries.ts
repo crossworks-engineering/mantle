@@ -139,11 +139,14 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'PATCH /api/heartbeats/:id': { body: { name: 'sweep2' } },
   'DELETE /api/heartbeats/:id': {},
   'POST /api/heartbeats/:id/fire': {},
-  'POST /api/keys': {},
+  'POST /api/keys': {
+    body: { service: 'sweep-key', label: 'default', plaintext: 'sweep-not-a-key-value' },
+  },
   'POST /api/keys/test': { body: { keyId: S, service: 'anthropic' } },
   'PATCH /api/keys/:id': { body: { anthropicWorkspaceId: null } },
   'DELETE /api/keys/:id': {},
   'POST /api/keys/:id/rotate': {},
+  'POST /api/keys/import': { body: { csv: 'sweep-import,token,,,sweep-not-a-key-value,' } },
   'DELETE /api/mcp-clients/:id': {},
   'POST /api/mcp-connectors': { body: { slug: 'sweep', url: 'https://203.0.113.10/mcp' } },
   'GET /api/mcp-connectors/oauth/callback': {

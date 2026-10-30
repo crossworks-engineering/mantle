@@ -24,6 +24,17 @@ describe.skipIf(!URL)('an Anthropic key carries its workspace id', () => {
   let prevMasterKey: string | undefined;
 
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+  /** The Keys screen's workspace id change: the vault gateway's set by id,
+   *  as the area route calls it (bound system work past its gate). */
+  const setWorkspace = async (o: string, id: string, ws: string | null) => {
+    const r = await m.runAsSystem('test:anthropic-ws', () =>
+      keys.setVaultKey({ loginId: null, via: 'web' }, o, {
+        ref: { id },
+        anthropicWorkspaceId: ws,
+      }),
+    );
+    return r && { anthropicWorkspaceId: r.key.anthropicWorkspaceId };
+  };
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -66,11 +77,11 @@ describe.skipIf(!URL)('an Anthropic key carries its workspace id', () => {
     const row = await keys.setApiKey(owner, 'anthropic', 'ws', plaintext);
     expect(row.anthropicWorkspaceId).toBe('wrkspc_test_one');
 
-    const cleared = await keys.setApiKeyAnthropicWorkspace(owner, row.id, '  ');
+    const cleared = await setWorkspace(owner, row.id, '  ');
     expect(cleared?.anthropicWorkspaceId).toBeNull();
     expect(await keys.getApiKeyById(row.id)).toEqual({ apiKey: plaintext });
 
-    const set = await keys.setApiKeyAnthropicWorkspace(owner, row.id, 'wrkspc_test_two');
+    const set = await setWorkspace(owner, row.id, 'wrkspc_test_two');
     expect(set?.anthropicWorkspaceId).toBe('wrkspc_test_two');
     expect(await keys.getApiKeyById(row.id)).toEqual({
       apiKey: plaintext,
@@ -117,23 +128,21 @@ describe.skipIf(!URL)('an Anthropic key carries its workspace id', () => {
       }),
     ).rejects.toThrow('Only an Anthropic key can carry a workspace id.');
     const openai = await keys.setApiKey(owner, 'openai', 'plain', `test-oai-${tag}`);
-    await expect(keys.setApiKeyAnthropicWorkspace(owner, openai.id, 'wrkspc_x')).rejects.toThrow(
+    await expect(setWorkspace(owner, openai.id, 'wrkspc_x')).rejects.toThrow(
       'Only an Anthropic key can carry a workspace id.',
     );
     const ant = (await keys.listApiKeys(owner)).find((k) => k.service === 'anthropic')!;
     // Not ASCII letters, digits, _ or -: a space, a non-ASCII letter, a C1
     // control character, a dot. Each an InputError (a 400), never a 500.
     for (const bad of ['has space', 'wrkspc_é', 'wrkspc_\u0085x', 'wrkspc.x', 'x'.repeat(129)]) {
-      await expect(keys.setApiKeyAnthropicWorkspace(owner, ant.id, bad)).rejects.toBeInstanceOf(
-        InputError,
-      );
+      await expect(setWorkspace(owner, ant.id, bad)).rejects.toBeInstanceOf(InputError);
       await expect(
         keys.setApiKey(owner, 'anthropic', 'bad', `test-ant-${tag}-bad`, {
           anthropicWorkspaceId: bad,
         }),
       ).rejects.toBeInstanceOf(InputError);
     }
-    expect(await keys.setApiKeyAnthropicWorkspace(randomUUID(), ant.id, 'wrkspc_x')).toBeNull();
+    expect(await setWorkspace(randomUUID(), ant.id, 'wrkspc_x')).toBeNull();
     // The table refuses it too, whatever writes it: another service, and the
     // same shapes the app refuses.
     await expect(

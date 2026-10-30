@@ -706,7 +706,7 @@ export const api_key_refs: BuiltinToolDef = {
   },
   name: 'List vault key references',
   description:
-    'List the encrypted API-key vault entries as {{secret:service/label}} reference strings for use in tool templates. Returns masked previews only — plaintext never leaves the vault. If the service the user wants is missing, ask them to add the key under Settings → API keys.',
+    'List the encrypted vault entries: name, kind, target, tags, masked preview, and for a token the {{secret:service/label}} reference string for tool templates. Plaintext never leaves the vault. If the key the user wants is missing, ask them to add it under Settings → API keys.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
     const keys = await listApiKeys(ctx.ownerId);
@@ -718,10 +718,15 @@ export const api_key_refs: BuiltinToolDef = {
           // a template credential — the dispatcher refuses such refs too.
           .filter((k) => !isMcpManagedSecretService(k.service))
           .map((k) => ({
+            name: k.name,
+            kind: k.kind,
             service: k.service,
             label: k.label,
             masked: k.masked,
-            ref: `{{secret:${k.service}/${k.label}}}`,
+            target: k.target,
+            tags: k.tags,
+            // Only a token opens in a template (the vault's read paths).
+            ...(k.kind === 'token' ? { ref: `{{secret:${k.service}/${k.label}}}` } : {}),
           })),
       },
     };

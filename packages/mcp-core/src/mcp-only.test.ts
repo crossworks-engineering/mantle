@@ -40,6 +40,12 @@ describe('mcpOnly builtins', () => {
   it('is exactly the owner-operator set — a new entry is a deliberate act', () => {
     expect(MCP_ONLY).toEqual(
       [
+        // The vault's writes (vault v2 part 1): an owner's client puts a
+        // secret in; no agent is granted a vault write.
+        'api_key_delete',
+        'api_key_import',
+        'api_key_set',
+        'api_key_test',
         'app_authoring_guide',
         'file_delete',
         'file_upload',

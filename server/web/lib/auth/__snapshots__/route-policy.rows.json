@@ -762,6 +762,7 @@
 "POST /api/journal/:id/resolve": {"class":"content","scope":{"kind":"content"},"effect":"write","caller":"owner"},
 "POST /api/keys": {"class":"area","scope":{"kind":"area","area":"keys"},"area":"keys","effect":"write","caller":"owner"},
 "POST /api/keys/:id/rotate": {"class":"area","scope":{"kind":"area","area":"keys"},"area":"keys","effect":"write","caller":"owner"},
+"POST /api/keys/import": {"class":"area","scope":{"kind":"area","area":"keys"},"area":"keys","effect":"write","caller":"owner"},
 "POST /api/keys/test": {"class":"area","scope":{"kind":"area","area":"keys"},"area":"keys","effect":"write","caller":"owner"},
 "POST /api/livekit/webhook": {"class":"public","scope":null,"public":true,"effect":"write","rateLimit":["livekitWebhook"],"actor":"http:no-login"},
 "POST /api/mcp": {"class":"public","scope":null,"public":true,"effect":"write","rateLimit":["mcp"],"actor":"http:no-login"},

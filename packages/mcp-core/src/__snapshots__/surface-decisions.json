@@ -135,6 +135,46 @@
    "peerRisky": true
   }
  },
+ "api_key_delete": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "keys"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
+ "api_key_import": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "keys"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
  "api_key_refs": {
   "readOnly": true,
   "peerRisky": false,
@@ -153,6 +193,46 @@
    "creates": false,
    "keyArea": null,
    "peerRisky": false
+  }
+ },
+ "api_key_set": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "keys"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
+ "api_key_test": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "keys"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
   }
  },
  "api_skill_set": {

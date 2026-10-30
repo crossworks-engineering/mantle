@@ -249,7 +249,7 @@ m247 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m248 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m249 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 10375
+# cells whose guard entry moved to the pipeline: 10387
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -2647,6 +2647,13 @@ first POST /api/keys/:id/rotate member-cookie=m24
 first POST /api/keys/:id/rotate admin-bearer=m38
 first POST /api/keys/:id/rotate member-bearer=m26
 first POST /api/keys/:id/rotate revoked-bearer=m27
+first POST /api/keys/import owner-cookie=m35
+first POST /api/keys/import admin-cookie=m36
+first POST /api/keys/import limited-cookie=m152
+first POST /api/keys/import member-cookie=m24
+first POST /api/keys/import admin-bearer=m38
+first POST /api/keys/import member-bearer=m26
+first POST /api/keys/import revoked-bearer=m27
 first POST /api/keys/test owner-cookie=m35
 first POST /api/keys/test admin-cookie=m36
 first POST /api/keys/test limited-cookie=m152
@@ -8080,6 +8087,11 @@ more POST /api/keys/:id/rotate bumped-cookie=m27
 more POST /api/keys/:id/rotate gone-cookie=m27
 more POST /api/keys/:id/rotate rotated-bearer=m27
 more POST /api/keys/:id/rotate expired-bearer=m27
+more POST /api/keys/import disabled-cookie=m27
+more POST /api/keys/import bumped-cookie=m27
+more POST /api/keys/import gone-cookie=m27
+more POST /api/keys/import rotated-bearer=m27
+more POST /api/keys/import expired-bearer=m27
 more POST /api/keys/test disabled-cookie=m27
 more POST /api/keys/test bumped-cookie=m27
 more POST /api/keys/test gone-cookie=m27

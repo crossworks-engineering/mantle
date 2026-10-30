@@ -9,10 +9,12 @@ import {
   type AiWorker,
   type AiWorkerKind,
   type ApiKey,
+  type VaultKind,
 } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { InputError } from '@mantle/std';
-import { normalizeAnthropicWorkspaceId, type ProviderCredential } from '@mantle/voice-client';
+import { type ProviderCredential } from '@mantle/voice-client';
+import { checkedWorkspaceId, maskPlaintext } from './shape';
 
 export type { ProviderCredential };
 
@@ -28,24 +30,30 @@ export type { ProviderCredential };
 
 export type ApiKeySummary = {
   id: string;
+  /** What agents say: the service, or service/label (0346). */
+  name: string;
+  /** token, password, ssh_key or login (0346). */
+  kind: VaultKind;
   service: string;
   label: string;
-  /** First-4 + last-4 of the plaintext, e.g. `sk-1…abcd`. Never the full key. */
+  /** First-4 + last-4 of a long token, e.g. `sk-1…abcd`; dots for anything
+   *  else. Never the full key. */
   masked: string;
+  /** Where it may be used: hosts or web origins; empty = a provider key. */
+  target: string[];
+  tags: string[];
+  needsApproval: boolean;
+  viaTailnet: boolean;
   /** Anthropic only: the workspace id the key names on every call, or null.
    *  Not secret (an id, never the key). */
   anthropicWorkspaceId: string | null;
   lastUsed: Date | null;
+  useCount: number;
   createdAt: Date;
   updatedAt: Date;
 };
 
-/** Compute the display mask. Exported so create/rotate can stash it
- *  alongside the ciphertext at write time. */
-export function maskPlaintext(plaintext: string): string {
-  if (plaintext.length < 8) return '••••';
-  return `${plaintext.slice(0, 4)}…${plaintext.slice(-4)}`;
-}
+export { fieldsAad, maskPlaintext, valueAad } from './shape';
 
 /** List rows for a user. Reads the precomputed `masked` column instead
  *  of decrypting every row — keeps every plaintext out of process
@@ -55,19 +63,37 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
   const rows = await db
     .select({
       id: apiKeys.id,
+      name: apiKeys.name,
+      kind: apiKeys.kind,
       service: apiKeys.service,
       label: apiKeys.label,
       masked: apiKeys.masked,
+      target: apiKeys.target,
+      tags: apiKeys.tags,
+      needsApproval: apiKeys.needsApproval,
+      viaTailnet: apiKeys.viaTailnet,
       anthropicWorkspaceId: apiKeys.anthropicWorkspaceId,
       lastUsed: apiKeys.lastUsed,
+      useCount: apiKeys.useCount,
       createdAt: apiKeys.createdAt,
       updatedAt: apiKeys.updatedAt,
     })
     .from(apiKeys)
     .where(eq(apiKeys.userId, userId))
     .orderBy(desc(apiKeys.updatedAt));
-  return rows;
+  return rows.map((r) => ({
+    ...r,
+    name: r.name ?? (r.label === 'default' ? r.service : `${r.service}/${r.label}`),
+  }));
 }
+
+/**
+ * The rows a read path may open: tokens only (0346). A password, an SSH key
+ * or a login is never handed to a provider adapter, an HTTP template or a
+ * connector by these reads; only the use gateway (vault part 2) will open
+ * one, for its own target.
+ */
+const openable = () => eq(apiKeys.kind, 'token');
 
 /**
  * Open a key row into its credential: the plaintext, plus what the row
@@ -76,20 +102,15 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
  * sends exactly this row's fields (anthropicHeaders reads the credential it
  * is given; nothing is looked up by the key value). A field a provider needs
  * later (an OpenAI organization or project) is filled here the same way.
+ * Tokens only: every lookup below filters by openable(), and this refuses
+ * another kind whatever reached it.
  */
 function openKeyRow(row: ApiKey): ProviderCredential {
+  if (row.kind !== 'token') throw new Error('openKeyRow: only a token is opened here');
   const apiKey = open(row.keyEnc, row.id);
   return row.service === 'anthropic' && row.anthropicWorkspaceId
     ? { apiKey, anthropicWorkspaceId: row.anthropicWorkspaceId }
     : { apiKey };
-}
-
-/** The workspace id as stored: trimmed, null for none. Throws InputError
- *  (a 400 with this text) for one that could never be a header value. */
-function checkedWorkspaceId(raw: string | null | undefined): string | null {
-  const checked = normalizeAnthropicWorkspaceId(raw);
-  if (!checked.ok) throw new InputError(checked.error);
-  return checked.value;
 }
 
 // Key READS use systemDb: the process needs a model's credentials whatever the
@@ -101,7 +122,11 @@ function checkedWorkspaceId(raw: string | null | undefined): string | null {
  * check here: callers that hold a referenced id have already passed the
  * owner gate. */
 export async function getApiKeyById(id: string): Promise<ProviderCredential | null> {
-  const [row] = await systemDb.select().from(apiKeys).where(eq(apiKeys.id, id)).limit(1);
+  const [row] = await systemDb
+    .select()
+    .from(apiKeys)
+    .where(and(eq(apiKeys.id, id), openable()))
+    .limit(1);
   if (!row) return null;
   const credential = openKeyRow(row);
   void systemDb
@@ -122,7 +147,14 @@ export async function getApiKey(
   const [row] = await systemDb
     .select()
     .from(apiKeys)
-    .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), eq(apiKeys.label, label)))
+    .where(
+      and(
+        eq(apiKeys.userId, userId),
+        eq(apiKeys.service, service),
+        eq(apiKeys.label, label),
+        openable(),
+      ),
+    )
     .limit(1);
   if (!row) return null;
   const credential = openKeyRow(row);
@@ -159,7 +191,7 @@ export async function findProviderKeyId(userId: string, service: string): Promis
   const [row] = await systemDb
     .select({ id: apiKeys.id })
     .from(apiKeys)
-    .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service)))
+    .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), openable()))
     .orderBy(...PICK_ORDER())
     .limit(1);
   return row?.id ?? null;
@@ -175,7 +207,7 @@ export async function findProviderKeyIds(userId: string): Promise<Map<string, st
   const rows = await systemDb
     .select({ id: apiKeys.id, service: apiKeys.service })
     .from(apiKeys)
-    .where(eq(apiKeys.userId, userId))
+    .where(and(eq(apiKeys.userId, userId), openable()))
     .orderBy(...PICK_ORDER());
   const out = new Map<string, string>();
   for (const r of rows) if (!out.has(r.service)) out.set(r.service, r.id);
@@ -213,7 +245,7 @@ export async function ownedKeyService(userId: string, id: string): Promise<strin
   const [row] = await systemDb
     .select({ service: apiKeys.service })
     .from(apiKeys)
-    .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)))
+    .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId), openable()))
     .limit(1);
   return row?.service ?? null;
 }
@@ -223,8 +255,10 @@ export async function ownedKeyService(userId: string, id: string): Promise<strin
  *  and surface as a silent 500. NOTE the ciphertext is sealed with the row id
  *  as AAD, so a SQL ON CONFLICT UPDATE would poison the surviving row with a
  *  ciphertext sealed against a different id — when a row exists we RESEAL
- *  against its id instead (same as rotateApiKey). Insert allocates the id
- *  up-front so AAD is known before seal(). */
+ *  against its id instead. Insert allocates the id up-front so AAD is known
+ *  before seal(). For the internal writers (a connector's OAuth state, the
+ *  sandbox proxy token, onboarding): an owner's client sets a key through
+ *  the vault gateway (vault.ts setVaultKey: its gate and its audit row). */
 export async function setApiKey(
   userId: string,
   service: string,
@@ -244,10 +278,15 @@ export async function setApiKey(
     throw new InputError('Only an Anthropic key can carry a workspace id.');
   }
   const [existing] = await db
-    .select({ id: apiKeys.id })
+    .select({ id: apiKeys.id, kind: apiKeys.kind })
     .from(apiKeys)
     .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), eq(apiKeys.label, label)))
     .limit(1);
+  // A token write never lands on a password, an SSH key or a login: it
+  // would keep that kind with a token's value.
+  if (existing && existing.kind !== 'token') {
+    throw new InputError(`${service}/${label} holds a ${existing.kind}, not a token.`);
+  }
   if (existing) {
     const { ciphertext, keyVersion } = seal(plaintext, existing.id);
     const [updated] = await db
@@ -290,61 +329,9 @@ export async function setApiKey(
   return inserted;
 }
 
-/** Replace the ciphertext on an existing key. Verifies ownership first. */
-export async function rotateApiKey(
-  userId: string,
-  id: string,
-  plaintext: string,
-): Promise<ApiKey | null> {
-  const [row] = await db
-    .select({ id: apiKeys.id })
-    .from(apiKeys)
-    .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)))
-    .limit(1);
-  if (!row) return null;
-  const { ciphertext, keyVersion } = seal(plaintext, row.id);
-  const masked = maskPlaintext(plaintext);
-  const [updated] = await db
-    .update(apiKeys)
-    .set({ keyEnc: ciphertext, keyVersion, masked, updatedAt: new Date() })
-    .where(eq(apiKeys.id, row.id))
-    .returning();
-  return updated ?? null;
-}
-
-/**
- * Set or clear (null, blank) the Anthropic workspace id on the caller's key
- * `id`. Null: no such key of this owner. Throws InputError for a key of
- * another service, or an id that could never be a header value. The next
- * read of the key carries it (openKeyRow); the key itself is untouched.
- */
-export async function setApiKeyAnthropicWorkspace(
-  userId: string,
-  id: string,
-  workspaceId: string | null,
-): Promise<{ id: string; anthropicWorkspaceId: string | null; updatedAt: Date } | null> {
-  const value = checkedWorkspaceId(workspaceId);
-  const [row] = await db
-    .select({ id: apiKeys.id, service: apiKeys.service })
-    .from(apiKeys)
-    .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)))
-    .limit(1);
-  if (!row) return null;
-  if (row.service !== 'anthropic') {
-    throw new InputError('Only an Anthropic key can carry a workspace id.');
-  }
-  const [updated] = await db
-    .update(apiKeys)
-    .set({ anthropicWorkspaceId: value, updatedAt: new Date() })
-    .where(eq(apiKeys.id, row.id))
-    .returning({
-      id: apiKeys.id,
-      anthropicWorkspaceId: apiKeys.anthropicWorkspaceId,
-      updatedAt: apiKeys.updatedAt,
-    });
-  return updated ?? null;
-}
-
+/** Delete a key by id, for the internal writers (a connector's sealed
+ *  OAuth state). An owner's client deletes through the vault gateway
+ *  (vault.ts deleteVaultKey: its gate and its audit row). */
 export async function deleteApiKey(userId: string, id: string): Promise<boolean> {
   const rows = await db
     .delete(apiKeys)
@@ -394,3 +381,5 @@ export async function workerRoute(
 }
 
 export * from './services';
+export * from './vault';
+export { probeApiKey, type TestApiKeyResult } from './probe';

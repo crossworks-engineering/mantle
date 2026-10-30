@@ -56,7 +56,14 @@ describe('defaultWorkerOrError over resolveDefaultWorker', () => {
     const { defaultWorkerOrError } = await import('./builtins-workers');
     const { seal } = await import('@mantle/crypto');
     h.worker = worker();
-    h.rows = [{ id: 'k-1', service: 'openai', keyEnc: seal('sk-test-made-up', 'k-1').ciphertext }];
+    h.rows = [
+      {
+        id: 'k-1',
+        service: 'openai',
+        kind: 'token',
+        keyEnc: seal('sk-test-made-up', 'k-1').ciphertext,
+      },
+    ];
     const one = await resolveDefaultWorker('o', 'stt');
     const tool = await defaultWorkerOrError('o', 'stt');
     expect(one.ok && tool.ok).toBe(true);

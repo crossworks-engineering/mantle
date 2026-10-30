@@ -265,24 +265,6 @@ export function buildHttpRequest(
   return { url, method, headers, body: canHaveBody ? body : null };
 }
 
-/** Replace every resolved secret plaintext in `text` with its ref name —
- *  run over anything that can leave the dispatcher (errors, step meta,
- *  response bodies). Covers the common transport encodings of the secret:
- *  raw, URL-encoded, and base64 (how Basic-auth credentials travel, and a
- *  form upstreams often echo back). */
-export function scrubSecrets(text: string, secrets: Map<string, string>): string {
-  let out = text;
-  for (const [key, plaintext] of secrets) {
-    if (!plaintext) continue;
-    const variants = new Set<string>([plaintext, encodeURIComponent(plaintext)]);
-    try {
-      variants.add(Buffer.from(plaintext, 'utf8').toString('base64'));
-    } catch {
-      /* non-encodable — skip */
-    }
-    for (const v of variants) {
-      if (v && v.length > 0) out = out.split(v).join(`[secret:${key}]`);
-    }
-  }
-  return out;
-}
+/** The one scrub of resolved secrets (raw, URL-encoded, base64), owned by
+ *  the shared helpers (@mantle/std scrub-secrets.ts). */
+export { scrubSecrets } from '@mantle/std';

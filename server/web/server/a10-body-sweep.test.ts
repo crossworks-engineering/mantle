@@ -533,6 +533,19 @@ function changeKind(cell: string, main: string, now: string): string | null {
       ? `bad-json-400 (${variant})`
       : `bad-json-400 (${variant}, accepted as {} on main)`;
   }
+  // Credential vault v2 part 1: the keys routes go through the vault's
+  // write gateway. Their bodies take more fields (a name or service and
+  // label; PATCH: target, tags and the switches too), so a refused body
+  // says what to send; a test's key id is a uuid (the stand-in's is not);
+  // a delete reads the key first, and the stand-in has none: 404. The real
+  // answers: packages/api-keys/src/vault.db.test.ts and the keys route
+  // tests.
+  if (
+    /^(POST|PATCH|DELETE) \/api\/keys(\/:id|\/test)? /.test(cell) &&
+    /^(400|404) application\/json \{"error":"[^"]+"\}$/.test(now)
+  ) {
+    return 'vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)';
+  }
   return null;
 }
 

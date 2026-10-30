@@ -11910,7 +11910,7 @@
  },
  {
   "name": "api_key_refs",
-  "description": "List the encrypted API-key vault entries as {{secret:service/label}} reference strings for use in tool templates. Returns masked previews only — plaintext never leaves the vault. If the service the user wants is missing, ask them to add the key under Settings → API keys.",
+  "description": "List the encrypted vault entries: name, kind, target, tags, masked preview, and for a token the {{secret:service/label}} reference string for tool templates. Plaintext never leaves the vault. If the key the user wants is missing, ask them to add it under Settings → API keys.",
   "inputSchema": {
    "type": "object",
    "properties": {},
@@ -12371,6 +12371,188 @@
    "title": "agent_set_thinking_effort",
    "readOnlyHint": false,
    "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "api_key_set",
+  "description": "Add a secret to the vault, or replace the one with that name, and return its name, kind, target, tags and masked preview, **never the value**. A new key names its `kind`: token (an API key), password, ssh_key (a private key plus `user`), login (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target` and waits for the owner on each use unless `needs_approval` is false. Do not echo the value back to the user. List names with `api_key_refs`; many at once: `api_key_import`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 130,
+     "description": "What agents call the secret: a slug, optionally '/label' (printer-07, pi-lab-3, openrouter/agent). Today's keys are named service or service/label."
+    },
+    "kind": {
+     "type": "string",
+     "enum": [
+      "token",
+      "password",
+      "ssh_key",
+      "login"
+     ],
+     "description": "Required for a new key: token for an API key, else password, ssh_key or login."
+    },
+    "value": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 16384,
+     "description": "The secret itself: the token, the password, or the whole private key block."
+    },
+    "user": {
+     "anyOf": [
+      {
+       "type": "string",
+       "maxLength": 256
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "The user name a login or an SSH key logs in as, e.g. pi."
+    },
+    "passphrase": {
+     "anyOf": [
+      {
+       "type": "string",
+       "maxLength": 1024
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "An SSH key's passphrase, when it has one."
+    },
+    "sudo_password": {
+     "anyOf": [
+      {
+       "type": "string",
+       "maxLength": 1024
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "The sudo password for a login or an SSH key, fed to sudo by the brain. A new value clears it (and the passphrase) unless sent again."
+    },
+    "target": {
+     "maxItems": 32,
+     "type": "array",
+     "items": {
+      "type": "string",
+      "maxLength": 300
+     },
+     "description": "Hosts or web origins it may be used on, e.g. [\"printer-07.lan\", \"192.0.2.12:2222\"] or [\"https://api.example.com\"]. Replaces the list."
+    },
+    "tags": {
+     "maxItems": 20,
+     "type": "array",
+     "items": {
+      "type": "string",
+      "maxLength": 40
+     },
+     "description": "Groups an agent is granted by, e.g. [\"printers\"]. Replaces the list."
+    },
+    "needs_approval": {
+     "type": "boolean",
+     "description": "Each use waits for the owner to approve it."
+    },
+    "via_tailnet": {
+     "type": "boolean",
+     "description": "The target is reached through the tailnet (a device on a home or site LAN)."
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "api_key_set",
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "api_key_test",
+  "description": "Test a vault key and return ok and a one-line message, never the value. A token is probed against its provider at no cost (the same as Settings → Keys' Test); a password, SSH key or login is checked for its stored shape only, with no login to the target yet. Use after `api_key_set`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 130,
+     "description": "What agents call the secret: a slug, optionally '/label' (printer-07, pi-lab-3, openrouter/agent). Today's keys are named service or service/label."
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "api_key_test",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "api_key_delete",
+  "description": "Delete a vault key by name and return what was deleted (name, kind, target), never the value. Not reversible: agents, workers and tools that use it are left with no key, so check the name with `api_key_refs` and ask the user first. To change a value use `api_key_set` instead.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 130,
+     "description": "What agents call the secret: a slug, optionally '/label' (printer-07, pi-lab-3, openrouter/agent). Today's keys are named service or service/label."
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "api_key_delete",
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "api_key_import",
+  "description": "Add or replace many vault keys from CSV text and return the counts and each key's name, kind and target, never a value. Columns: name,kind,target,user,secret,tags (a header row is skipped; targets and tags split on ';'; quote an SSH key's lines). Every row is checked first: one bad row and **nothing is written**, and each bad row comes back by number with the reason. For one key use `api_key_set`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "csv": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 1048576,
+     "description": "The CSV text, e.g. \"name,kind,target,user,secret,tags\\npi-lab-3,login,pi-lab-3.lan,pi,…,pis\"."
+    }
+   },
+   "required": [
+    "csv"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "api_key_import",
+   "readOnlyHint": false,
+   "destructiveHint": true,
    "idempotentHint": true,
    "openWorldHint": false
   }

@@ -72,6 +72,11 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
     mcpOnly: true,
   },
   note_delete: { reason: 'owner-only operator surface', mcpOnly: true },
+  api_key_delete: {
+    reason:
+      "owner-only operator surface: the owner's own MCP client deletes a vault key, audited by the vault gateway",
+    mcpOnly: true,
+  },
   // Recoverable: undoes a share, a draft edit, or a pool entry.
   node_unshare: { reason: 'revokes a link; the gated half is node_share' },
   page_unshare: { reason: 'revokes a link; the gated half is page_share' },

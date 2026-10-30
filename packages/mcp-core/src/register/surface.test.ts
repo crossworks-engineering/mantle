@@ -337,6 +337,11 @@ const HTTP_SURFACE = [
   'agent_list',
   'agent_grant_tool_group',
   'agent_set_thinking_effort',
+  // The vault's writes (vault v2 part 1), after the Toolsmith set.
+  'api_key_set',
+  'api_key_test',
+  'api_key_delete',
+  'api_key_import',
 ];
 
 /** Register onto a capturing fake; the SDK server is not needed to list names. */

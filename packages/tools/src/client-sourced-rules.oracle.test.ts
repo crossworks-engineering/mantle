@@ -295,6 +295,12 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   // The image check: new since main's table; it spends the owner's vision
   // key, so a client-sourced turn waits for the owner.
   circuit_verify: always("spends the owner's vision key and writes check rows"),
+  // The vault's write tools (vault v2 part 1): new since main's table, MCP
+  // only; a client-sourced call always waits for the owner.
+  api_key_set: always('changes the secrets tools and agents sign in with'),
+  api_key_delete: always('changes the secrets tools and agents sign in with'),
+  api_key_import: always('changes the secrets tools and agents sign in with'),
+  api_key_test: always('sends a vault key to its provider'),
 
   // ── Runs, sandboxes, the terminal: targets the input does not name ────────
   run_plan: always(LATER),

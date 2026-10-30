@@ -32,7 +32,6 @@ import {
   scopeHasArea,
   scopeHoldsAdmin,
   scopeLeftForSystem,
-  withTurnScope,
   type ScopeArea,
   type WorkspaceScope,
 } from '@mantle/db';
@@ -116,6 +115,10 @@ export function isAdminGateRefusal(text: string): boolean {
  *    skills, the makers of the heartbeats that run a saved skill
  *    (heartbeat-maker.ts), API key names (recipe steps are checked against
  *    tool rows, never run).
+ *  - api_key_set, api_key_test, api_key_delete, api_key_import: the vault
+ *    (api_keys) and its audit rows, through the vault's write gateway, which
+ *    asks the keys area again (@mantle/api-keys vault.ts); the CSV is text,
+ *    never a file; a token's test sends it to its provider only.
  *  - peer_list, peer_tools, peer_call, peer_query, peer_node_get,
  *    peer_search_chunks: peer rows and the linked brain over its link (the
  *    ids they take name the PEER's items, never this brain's).
@@ -170,17 +173,7 @@ export function callerScope(): WorkspaceScope | null {
   return currentWorkspaceScope() ?? scopeLeftForSystem();
 }
 
-/**
- * Whether the caller of the current code may do Admin `area`: asked in the
- * open workspace scope, or, on the system pool (an `systemWhole` tool run
- * whole, an areaSystem block), in the scope its
- * asSystem left, so a connectors-area tool can ask whether its caller also
- * holds the keys area. Outside any workspace scope (system work): yes, the
- * surface rules decide.
- */
-export async function callerHasArea(area: ScopeArea): Promise<boolean> {
-  if (currentWorkspaceScope()) return scopeHasArea(area);
-  const left = scopeLeftForSystem();
-  if (!left) return true;
-  return withTurnScope(left, () => scopeHasArea(area));
-}
+/** Whether the caller of the current code may do Admin `area`: the one
+ *  answer, @mantle/db's (scope-answers.ts), shared with the vault's write
+ *  gateway. */
+export { callerHasArea } from '@mantle/db';

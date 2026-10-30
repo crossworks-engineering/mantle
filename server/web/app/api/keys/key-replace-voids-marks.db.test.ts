@@ -42,6 +42,10 @@ describe.skipIf(!URL)("replacing a connector's key", () => {
   let prevRuntimeRole: string | undefined;
 
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+  /** A route as the gate runs an area route: bound system work (the vault
+   *  gateway refuses a caller with nothing bound). */
+  const asRoute = (fn: () => Promise<Response>) =>
+    m.runAsSystem('test:key-marks', fn) as Promise<Response>;
   const mark = async () => {
     const res = await ta.setToolExternalAccess(owner, toolId, {
       allow: true,
@@ -121,8 +125,8 @@ describe.skipIf(!URL)("replacing a connector's key", () => {
   it('a key no connector uses voids nothing', async () => {
     await mark();
     const { POST } = await import('./route');
-    const res = await POST(
-      post('/api/keys', { service: 'other-key', label: 'default', plaintext: 'x' }),
+    const res = await asRoute(() =>
+      POST(post('/api/keys', { service: 'other-key', label: 'default', plaintext: 'x' })),
     );
     expect(res.status).toBe(200);
     expect(await state()).toBe('read');
@@ -131,9 +135,11 @@ describe.skipIf(!URL)("replacing a connector's key", () => {
   it('a rotate of the connector key voids the mark', async () => {
     await mark();
     const { POST } = await import('./[id]/rotate/route');
-    const res = await POST(post(`/api/keys/${keyId}/rotate`, { plaintext: 'other-account-key' }), {
-      params: Promise.resolve({ id: keyId }),
-    });
+    const res = await asRoute(() =>
+      POST(post(`/api/keys/${keyId}/rotate`, { plaintext: 'other-account-key' }), {
+        params: Promise.resolve({ id: keyId }),
+      }),
+    );
     expect(res.status).toBe(200);
     expect(await state()).toBe('stale');
   });
@@ -142,8 +148,14 @@ describe.skipIf(!URL)("replacing a connector's key", () => {
     await mark();
     expect(await state()).toBe('read');
     const { POST } = await import('./route');
-    const res = await POST(
-      post('/api/keys', { service: 'site-key', label: 'default', plaintext: 'third-account-key' }),
+    const res = await asRoute(() =>
+      POST(
+        post('/api/keys', {
+          service: 'site-key',
+          label: 'default',
+          plaintext: 'third-account-key',
+        }),
+      ),
     );
     expect(res.status).toBe(200);
     expect(await state()).toBe('stale');

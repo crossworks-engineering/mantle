@@ -12,6 +12,7 @@
 # item-check-first (F4 fix round 2: asked of the database, the stand-in has none): 1 cells
 # item-read-first (pre-check removal part 2: the write reads the item in the scope before its body): 44 cells
 # item-fault (fix round 1: a failed item says a fixed text for a fault): 6 cells
+# vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway): 13 cells
 # bad-json-400 (empty): 2 cells
 # desk-version (Desk saving v2: the 400 names the version the save is checked on): 4 cells
 # desk-write-strict (the Desk, fix round 2: a desk the read would change is a 400): 2 cells
@@ -774,18 +775,57 @@ POST /api/keys owner valid [opaque-500 (fold 2: a plain error, its text was the 
 POST /api/keys owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"service: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/keys owner empty [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 400 application/json {"error":"service: Invalid input: expected string, received undefined"}
+  now  400 application/json {"error":"Send name, or service and label."}
 POST /api/keys owner chunked [chunked-413]
   main 400 application/json {"error":"service: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/keys/:id owner valid [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 400 application/json {"error":"anthropicWorkspaceId required (null clears it)."}
+  now  400 application/json {"error":"Send anthropicWorkspaceId (null clears it), target, tags, needsApproval or viaTailnet."}
+PATCH /api/keys/:id owner empty [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 400 application/json {"error":"anthropicWorkspaceId required (null clears it)."}
+  now  400 application/json {"error":"Send anthropicWorkspaceId (null clears it), target, tags, needsApproval or viaTailnet."}
+PATCH /api/keys/:id owner nul [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 400 application/json {"error":"anthropicWorkspaceId required (null clears it)."}
+  now  400 application/json {"error":"Send anthropicWorkspaceId (null clears it), target, tags, needsApproval or viaTailnet."}
+PATCH /api/keys/:id owner array [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 400 application/json {"error":"anthropicWorkspaceId required (null clears it)."}
+  now  400 application/json {"error":"Send anthropicWorkspaceId (null clears it), target, tags, needsApproval or viaTailnet."}
+DELETE /api/keys/:id owner valid [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"Not found."}
+DELETE /api/keys/:id owner malformed [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"Not found."}
+DELETE /api/keys/:id owner empty [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"Not found."}
+DELETE /api/keys/:id owner nul [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"Not found."}
+DELETE /api/keys/:id owner array [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"Not found."}
+DELETE /api/keys/:id owner chunked [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"Not found."}
 POST /api/keys/:id/rotate owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Plaintext required."}
   now  400 application/json {"error":"invalid JSON"}
 POST /api/keys/:id/rotate owner chunked [chunked-413]
   main 400 application/json {"error":"Plaintext required."}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/keys/test owner valid [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 500 application/json {"error":"internal error"}
+  now  400 application/json {"error":"invalid input"}
 POST /api/keys/test owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"invalid input"}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/keys/test owner nul [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
+  main 500 application/json {"error":"internal error"}
+  now  400 application/json {"error":"invalid input"}
 POST /api/keys/test owner chunked [chunked-413]
   main 400 application/json {"error":"invalid input"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}

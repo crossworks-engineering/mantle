@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { rotateApiKey } from '@/lib/api-keys';
+import { setVaultKey, vaultActor } from '@/lib/api-keys';
 import { afterVaultKeyReplaced } from '@/lib/mcp-connectors';
 import { retryProvidersAfterKeyChange } from '@/lib/embedding-config';
 import { readJson } from '@/lib/read-body';
@@ -16,9 +16,11 @@ export const policy = routePolicy({
 });
 
 const RotateBody = z.object({
-  plaintext: z.string().min(1).max(8192),
+  plaintext: z.string().min(1).max(16384),
 });
 
+/** A new value for a stored secret, its kind, fields and target kept (the
+ *  vault's write gateway). */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
@@ -31,13 +33,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!body.success) {
     return NextResponse.json({ error: 'Plaintext required.' }, { status: 400 });
   }
-  const row = await rotateApiKey(user.id, idParse.data, body.data.plaintext);
-  if (!row) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  const result = await setVaultKey(vaultActor(user), user.id, {
+    ref: { id: idParse.data },
+    value: body.data.plaintext,
+  });
+  if (!result) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  const { key } = result;
   // Another key may be another account: a connector's marks were for the
   // old one (access matrix T7).
-  await afterVaultKeyReplaced(user.id, row.service, row.label);
+  await afterVaultKeyReplaced(user.id, key.service, key.label);
   // A new model provider key value: an open provider alert probes now (no
   // alert open, nothing is sent).
-  await retryProvidersAfterKeyChange(user.id, row.service);
-  return NextResponse.json({ id: row.id, updatedAt: row.updatedAt });
+  await retryProvidersAfterKeyChange(user.id, key.service);
+  return NextResponse.json({ id: key.id, updatedAt: key.updatedAt });
 }
