@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 import { sql, type SQL } from 'drizzle-orm';
 import { authUsers, db, isUniqueViolation } from '@mantle/db';
 import { migrateWorkspacesQuietly, unmigratedBrainReason } from '../workspaces-migrate';
+import { passwordPolicyMin } from '@mantle/config';
 import { hashLoginPassword } from './session';
 
 export type FirstOwnerResult =
@@ -40,12 +41,13 @@ export type FirstOwnerResult =
  * every column of the table in its order, so this select gives each a
  * value in that order: the ones the owner leaves out take their column
  * defaults' values (created_at now(), session_epoch 0, must_change_password
- * false, the rest null).
+ * false, the rest null), but password_checked_min: the password rule in force
+ * (null with none), which createFirstOwner checked the password against.
  * first-owner-select.test.ts holds the two to the same count and order.
  */
 export function firstOwnerSelect(id: string, email: string, passwordHash: string): SQL {
   return sql`SELECT ${id}::uuid, ${email}, ${passwordHash}, now(), true, null, null, 'admin',
-                   null, null, 0, false
+                   null, null, 0, false, ${passwordPolicyMin()}::integer
              WHERE NOT EXISTS (SELECT 1 FROM auth.users)`;
 }
 

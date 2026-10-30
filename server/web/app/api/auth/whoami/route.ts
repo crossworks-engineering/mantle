@@ -6,11 +6,16 @@ import { brainIdField } from '@/lib/brain-identity';
 import { loginWorkspaces } from '@/lib/login-workspaces';
 import { workspaceCaller } from '@/lib/workspaces';
 import { routePolicy } from '@/lib/auth/route-declaration';
-import { loginHeldForPasswordChange } from '@/lib/auth/password-hold';
+import { loginPasswordHold } from '@/lib/auth/password-hold';
 import { passwordRule } from '@/lib/auth/password-rule';
 
 export const policy = routePolicy({
-  GET: { class: 'self', public: true, caller: 'publicLogin' },
+  GET: {
+    passwordHold: 'change-step',
+    class: 'self',
+    public: true,
+    caller: 'publicLogin',
+  },
 });
 
 /**
@@ -59,7 +64,7 @@ export async function GET() {
     ...(await loginWorkspaces('whoami', workspaceCaller(login), (await adminFacts(login)).admin)),
     // Only while the box password policy holds the login: the client's
     // change-password step reads why and what a new password needs.
-    ...((await loginHeldForPasswordChange(login.loginId))
+    ...((await loginPasswordHold(login.loginId)) === 'change'
       ? { mustChangePassword: true as const, passwordRule: passwordRule() }
       : {}),
   };

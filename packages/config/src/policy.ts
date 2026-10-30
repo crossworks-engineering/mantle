@@ -44,6 +44,9 @@ export type BoxPolicy = Readonly<{
   providerAllow: readonly string[] | null;
   /** The minimum password length, with the common-password list on. */
   passwordMin: number | null;
+  /** The hosts a route's own base URL may name while a provider allow-list
+   *  is set (lowercase `host`, `host:port` or `*.domain`). */
+  endpointAllow: readonly string[] | null;
 }>;
 
 const EMPTY: BoxPolicy = Object.freeze({
@@ -51,6 +54,7 @@ const EMPTY: BoxPolicy = Object.freeze({
   modelDeny: null,
   providerAllow: null,
   passwordMin: null,
+  endpointAllow: null,
 });
 
 /** The raw values, as the box .env gives them. */
@@ -59,6 +63,7 @@ export type PolicyEnv = Readonly<{
   modelDeny?: string;
   providerAllow?: string;
   passwordMin?: string;
+  endpointAllow?: string;
 }>;
 
 function blank(v: string | undefined): boolean {
@@ -79,6 +84,9 @@ function list(v: string): string[] {
 /** A provider id or a model pattern: letters, digits and `-_.:/@*~`. */
 const PATTERN_RE = /^[a-z0-9][a-z0-9._:/@~*-]*$/;
 const PROVIDER_RE = /^[a-z0-9][a-z0-9_-]*$/;
+/** A host, `host:port` or `*.domain`. */
+const HOST_RE =
+  /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/;
 
 /**
  * Pure: the policy from raw values, and every problem with them. A value
@@ -133,6 +141,16 @@ export function parsePolicy(raw: PolicyEnv): { policy: BoxPolicy; problems: stri
       passwordMin = n;
     }
   }
+  let endpointAllow: string[] | null = null;
+  if (!blank(raw.endpointAllow)) {
+    endpointAllow = list(raw.endpointAllow!);
+    const bad = endpointAllow.filter((h) => !HOST_RE.test(h));
+    if (bad.length) {
+      problems.push(`MANTLE_POLICY_ENDPOINT_ALLOW has a host it cannot read: ${bad.join(', ')}`);
+    }
+    // Read only with a provider allow-list (endpointPolicyRefusal); alone
+    // it changes nothing, so it does not make a policy set.
+  }
   if (telegram === null && modelDeny === null && providerAllow === null && passwordMin === null) {
     return { policy: EMPTY, problems };
   }
@@ -142,6 +160,7 @@ export function parsePolicy(raw: PolicyEnv): { policy: BoxPolicy; problems: stri
       modelDeny: modelDeny ? Object.freeze(modelDeny) : null,
       providerAllow: providerAllow ? Object.freeze(providerAllow) : null,
       passwordMin,
+      endpointAllow: endpointAllow ? Object.freeze(endpointAllow) : null,
     }),
     problems,
   };
@@ -153,6 +172,7 @@ function readEnv(): PolicyEnv {
     modelDeny: env('MANTLE_POLICY_MODEL_DENY'),
     providerAllow: env('MANTLE_POLICY_PROVIDER_ALLOW'),
     passwordMin: env('MANTLE_POLICY_PASSWORD_MIN'),
+    endpointAllow: env('MANTLE_POLICY_ENDPOINT_ALLOW'),
   };
 }
 
@@ -211,6 +231,8 @@ export const TELEGRAM_POLICY_OFF_MESSAGE =
 export function isAutoRouterModel(model: string): boolean {
   const m = model.trim().toLowerCase();
   if (m === 'auto' || m.endsWith('/auto') || m.endsWith(':auto')) return true;
+  // A router by name (`switchpoint/router`, `.../auto-router`).
+  if (/(^|[/:-])router$/.test(m)) return true;
   // OpenRouter's own ids (openrouter/auto and its kind) and presets.
   return m.startsWith('openrouter/') || m.startsWith('@preset/') || m.includes('/@preset/');
 }
@@ -233,7 +255,8 @@ function bareName(model: string): string {
 /**
  * Whether one deny pattern matches a provider and model (both lowercase).
  * A pattern is a glob on the model id (`deepseek/deepseek-chat`,
- * `qwen/*`). A family pattern `<family>/*` also matches:
+ * `qwen/*`); a bare word is a family (`deepseek` = `deepseek/*`). A family
+ * pattern `<family>/*` also matches:
  *  - the provider of that name (`deepseek/*` blocks the direct `deepseek`
  *    provider whatever model it names);
  *  - a model id with the family as any path segment (a local server's
@@ -242,6 +265,8 @@ function bareName(model: string): string {
  *    (`qwen2.5:7b`, `deepseek-r1:8b` on a local server).
  */
 export function denyPatternMatches(pattern: string, provider: string, model: string): boolean {
+  // A bare word (`deepseek`) is the family `deepseek/*`.
+  if (!pattern.includes('/') && !pattern.includes('*')) pattern = `${pattern}/*`;
   if (globToRegExp(pattern).test(model)) return true;
   if (globToRegExp(pattern).test(`${provider}/${model}`)) return true;
   const fam = /^([a-z0-9][a-z0-9._-]*)\/\*$/.exec(pattern)?.[1];
@@ -250,6 +275,54 @@ export function denyPatternMatches(pattern: string, provider: string, model: str
   if (model.split('/').slice(0, -1).includes(fam)) return true;
   const bare = bareName(model);
   return bare.startsWith(fam) && !/[a-z]/.test(bare.charAt(fam.length));
+}
+
+/** The rule a model refusal names. */
+export type ModelPolicyRuleName =
+  'provider_allow' | 'endpoint_allow' | 'model_deny' | 'auto_router';
+
+/** The host (and port, when the URL names one) of a base URL, lowercase,
+ *  or null when it is no URL. */
+function urlHost(baseUrl: string): { host: string; hostPort: string } | null {
+  try {
+    const u = new URL(baseUrl.trim());
+    const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    return { host, hostPort: u.port ? `${host}:${u.port}` : host };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * While a provider allow-list is set, a route that names its own base URL
+ * may reach only a host on MANTLE_POLICY_ENDPOINT_ALLOW (`host`,
+ * `host:port`, `*.domain`); with no such list, no route may name one (the
+ * box-level endpoints, MANTLE_LOCAL_CHAT_URL and MANTLE_FOUNDRY_ENDPOINT,
+ * are the operator's and always allowed). Without this an allowed provider
+ * (`local`, `foundry`, `custom`) could be pointed at any API. OpenRouter's
+ * adapter never honours a base URL, so its routes are not asked.
+ */
+export function endpointPolicyRefusal(
+  provider: string,
+  baseUrl: string | null | undefined,
+): { rule: 'endpoint_allow'; message: string } | null {
+  const p = boxPolicy();
+  if (!p.providerAllow || !baseUrl?.trim() || provider === 'openrouter') return null;
+  const at = urlHost(baseUrl);
+  const allow = p.endpointAllow ?? [];
+  const ok =
+    at !== null &&
+    allow.some(
+      (h) =>
+        h === at.host ||
+        h === at.hostPort ||
+        (h.startsWith('*.') && at.host.endsWith(h.slice(1)) && at.host.length > h.length - 1),
+    );
+  if (ok) return null;
+  return {
+    rule: 'endpoint_allow',
+    message: `The route's base URL ${at ? at.hostPort : '(not a URL)'} is not on this box's allowed endpoints (MANTLE_POLICY_ENDPOINT_ALLOW).`,
+  };
 }
 
 /** A model rule is set (a deny list or a provider allow-list). */
@@ -263,7 +336,11 @@ export function modelPolicySet(): boolean {
 export function modelPolicyRefusal(
   provider: string,
   model: string | null | undefined,
-): { rule: 'provider_allow' | 'model_deny' | 'auto_router'; message: string } | null {
+  /** The route's own base URL, where it names one (a local, foundry,
+   *  custom, anthropic or google route): checked against
+   *  MANTLE_POLICY_ENDPOINT_ALLOW while a provider allow-list is set. */
+  baseUrl?: string | null,
+): { rule: ModelPolicyRuleName; message: string } | null {
   const p = boxPolicy();
   if (!p.providerAllow && !p.modelDeny) return null;
   const prov = (provider ?? '').trim().toLowerCase();
@@ -275,6 +352,8 @@ export function modelPolicyRefusal(
       message: `The provider ${prov || '(none)'} is not on this box's allowed list (MANTLE_POLICY_PROVIDER_ALLOW).`,
     };
   }
+  const endpoint = endpointPolicyRefusal(prov, baseUrl);
+  if (endpoint) return endpoint;
   if (p.modelDeny && mod) {
     if (isAutoRouterModel(mod)) {
       return {
@@ -306,10 +385,26 @@ export function passwordPolicyMin(): number | null {
   return boxPolicy().passwordMin;
 }
 
-/** Whether a login's must_change_password flag (0347) holds it now: only
- *  while the policy sets a password rule, so a box whose operator removed
- *  the rule lets every login through again, and a box that never had one
- *  never reads the flag. */
-export function passwordChangeHolds(flag: boolean | null | undefined): boolean {
-  return flag === true && passwordPolicyMin() !== null;
+/**
+ * What the password rule holds a login to now (0347; docs/policy.md):
+ *  - 'change': its must_change_password flag is set (a password that fails
+ *    the rule was taken): only the change-password step.
+ *  - 'recheck': its password was never checked under this rule
+ *    (password_checked_min null, or below the minimum in force: the rule
+ *    went on, or up, since): the login must sign in with its password once,
+ *    so the rule can check it.
+ *  - null: nothing.
+ * Only while the policy sets a password rule, so a box whose operator
+ * removed the rule lets every login through again, and a box that never
+ * had one never reads either column.
+ */
+export function passwordHoldState(
+  flag: boolean | null | undefined,
+  checkedMin: number | null | undefined,
+): 'change' | 'recheck' | null {
+  const min = passwordPolicyMin();
+  if (min === null) return null;
+  if (flag === true) return 'change';
+  if (checkedMin === null || checkedMin === undefined || checkedMin < min) return 'recheck';
+  return null;
 }

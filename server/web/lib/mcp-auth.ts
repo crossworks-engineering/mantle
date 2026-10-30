@@ -28,7 +28,7 @@ import { mcpToolPolicyOf, type McpCaller } from '@mantle/mcp-core';
 import { isLoginRole } from '@mantle/client-types/role-names';
 import { bearerFrom } from './auth/request';
 import { loadLoginRow } from './auth/login-row';
-import { loginHeldForPasswordChange } from './auth/password-hold';
+import { loginPasswordHold } from './auth/password-hold';
 import { loginIsAdmin } from './auth/admin-seat';
 import { adminLogin, memberLogin } from './auth/session';
 import {
@@ -94,11 +94,13 @@ function memberMcpCaller(
 }
 
 /** Resolve the caller from the request's bearer, or null (answer 401). A
- *  login the box password policy holds (password-hold.ts) is no caller
- *  until it changes its password, whichever credential it came by. */
+ *  login the box password policy holds (password-hold.ts: a password to
+ *  change, or one not yet checked under the rule) is no caller until the
+ *  person signs in or changes it in the app, whichever credential it came
+ *  by. */
 export async function resolveMcpCaller(req: Request): Promise<McpCaller | null> {
   const caller = await findMcpCaller(req);
-  if (caller && (await loginHeldForPasswordChange(caller.loginId))) return null;
+  if (caller && (await loginPasswordHold(caller.loginId)) !== null) return null;
   return caller;
 }
 

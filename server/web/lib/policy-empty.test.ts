@@ -71,7 +71,9 @@ describe('every MANTLE_POLICY_* empty: the box as before', () => {
     // The hold reads nothing on any route, even for a stale flag.
     const login = vi.fn(async () => ({ resolved: { mustChangePassword: true } }));
     const logins = { login, keepFailure: vi.fn() } as unknown as RequestLogins;
-    expect(await passwordHoldAnswer({ key: 'GET /api/shell' }, logins)).toBeNull();
+    expect(
+      await passwordHoldAnswer({ public: false, caller: 'owner', passwordHold: null }, logins),
+    ).toBeNull();
     expect(login).not.toHaveBeenCalled();
   });
 
@@ -93,6 +95,8 @@ describe('every MANTLE_POLICY_* empty: the box as before', () => {
       expect(modelPolicyRefusal(r.provider ?? 'openrouter', r.model)).toBeNull();
     }
     expect(modelPolicyRefusal('openrouter', 'openrouter/auto')).toBeNull();
+    // A route's own base URL anywhere: no endpoint rule.
+    expect(modelPolicyRefusal('local', 'llama3', 'http://any.example:1234/v1')).toBeNull();
   });
 
   it('the policy code calls no outside service (no Microsoft service, no URL)', () => {

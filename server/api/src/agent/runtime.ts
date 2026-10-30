@@ -50,6 +50,7 @@ import { claimMemberTurn, memberDailyLimits } from '@mantle/content';
 import {
   accountById,
   chatLoginRefusal,
+  TELEGRAM_PASSWORD_HOLD_REPLY,
   TELEGRAM_UNPAIRED_REPLY,
   unpairRefusedChat,
   botAgentIdSql,
@@ -350,6 +351,14 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     accountId: row.accountId,
     responderAgentId: row.responderAgentId,
   });
+  if (loginRefused === 'password_hold') {
+    // The box password rule holds the login (docs/policy.md): refused, but
+    // the chat stays paired; it works again once the person signs in or
+    // changes the password in the app.
+    logger.info(`telegram chat held by the password rule: ${messageId}`);
+    await sendApology(row, TELEGRAM_PASSWORD_HOLD_REPLY);
+    return;
+  }
   if (loginRefused || !loginId) {
     logger.error(
       `telegram chat refused (${loginRefused ?? 'no_login'}): ${messageId}. The chat's user pairs it again with a new code.`,

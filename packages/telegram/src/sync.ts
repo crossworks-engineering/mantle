@@ -14,7 +14,11 @@ import {
 } from '@mantle/db';
 import { botFor } from './client';
 import { gate } from './gate';
-import { chatLoginRefusal, TELEGRAM_UNPAIRED_REPLY } from './chat-login';
+import {
+  chatLoginRefusal,
+  TELEGRAM_PASSWORD_HOLD_REPLY,
+  TELEGRAM_UNPAIRED_REPLY,
+} from './chat-login';
 import { answerCallback, editApprovalCard, parseApprovalCallback } from './outbound';
 import type { InboundMessage, PollHandlers } from './types';
 import { errorMessage } from '@mantle/std';
@@ -174,7 +178,11 @@ async function handleCallback(
     responderAgentId: chat.responderAgentId,
   });
   if (refused) {
-    await answerCallback(account, cq.id, TELEGRAM_UNPAIRED_REPLY);
+    await answerCallback(
+      account,
+      cq.id,
+      refused === 'password_hold' ? TELEGRAM_PASSWORD_HOLD_REPLY : TELEGRAM_UNPAIRED_REPLY,
+    );
     return;
   }
 

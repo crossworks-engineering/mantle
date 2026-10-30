@@ -106,6 +106,7 @@ if (isBootSmoke()) {
     () => import('../lib/workspaces-migrate'),
     () => import('../lib/snapshot-copies'),
     () => import('@mantle/content/app-table-exports'),
+    () => import('../lib/policy-check'),
   ]);
 }
 

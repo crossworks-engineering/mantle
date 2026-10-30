@@ -33,7 +33,8 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { anyLoginCaller, sessionRole, verifyPassword } from '@/lib/auth';
+import { anyLoginCaller, sessionRole, verifyPasswordForUse } from '@/lib/auth';
+import { passwordChangeRequiredBody } from '@/lib/auth/password-hold';
 import { adminFacts, type Login } from '@/lib/auth/login';
 import {
   ACCESS_KEY_ACCESS,
@@ -147,13 +148,22 @@ async function handlePOST(login: Login, req: Request) {
   const bucket = `akey-pw:${login.loginId}`;
   const tries = rateLimitLogin(bucket, PASSWORD_RATE);
   if (!tries.ok) return rateLimitedResponse(tries.retryAfterSec);
-  if (!body.password || !(await verifyPassword(login.loginId, body.password))) {
+  // The box password rule checks the password typed here too
+  // (verifyPasswordForUse): one that fails it holds the login and makes no
+  // key (docs/policy.md).
+  const checked = body.password
+    ? await verifyPasswordForUse(login.loginId, body.password)
+    : 'wrong';
+  if (checked === 'wrong') {
     return NextResponse.json(
       { error: 'Type your password to make a key.', reason: 'password' },
       { status: 403 },
     );
   }
   rateLimitLoginRefund(bucket);
+  if (checked === 'held') {
+    return NextResponse.json(passwordChangeRequiredBody(), { status: 403 });
+  }
 
   // Counted only once the password passed: the keys made, not the tries.
   const made = rateLimitLogin(`akey-create:${login.loginId}`, CREATE_RATE);

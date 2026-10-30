@@ -19,6 +19,8 @@ import {
 } from '@/lib/model-route-pair';
 import { readBody } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { modelPolicyBody, modelRoutesPolicyIssue } from '@/lib/model-policy-save';
+import { modelPolicySet } from '@mantle/config';
 
 export const policy = routePolicy({
   GET: { class: 'area', area: 'settings' },
@@ -83,6 +85,33 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const refused = await modelRoutesRefusal(user, stored, rest, AGENT_ROUTES);
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
     configuredBy = modelRoutesStamp(user, stored, rest, AGENT_ROUTES);
+  }
+  // The box policy's model block (lib/model-policy-save.ts) on the routes as
+  // they will be after the patch, each with its own base URL.
+  if (
+    modelPolicySet() &&
+    (rest.provider !== undefined ||
+      rest.model !== undefined ||
+      rest.baseUrl !== undefined ||
+      rest.backupProvider !== undefined ||
+      rest.backupModel !== undefined ||
+      rest.backupBaseUrl !== undefined)
+  ) {
+    const now = await getAiWorker(user.id, idParsed.data.id);
+    if (!now) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    const blocked = modelRoutesPolicyIssue([
+      [
+        rest.provider ?? now.provider,
+        rest.model ?? now.model,
+        rest.baseUrl !== undefined ? rest.baseUrl : now.baseUrl,
+      ],
+      [
+        rest.backupProvider !== undefined ? rest.backupProvider : now.backupProvider,
+        rest.backupModel !== undefined ? rest.backupModel : now.backupModel,
+        rest.backupBaseUrl !== undefined ? rest.backupBaseUrl : now.backupBaseUrl,
+      ],
+    ]);
+    if (blocked) return NextResponse.json(modelPolicyBody(blocked), { status: 403 });
   }
   // Save-time catalog check against the EFFECTIVE post-patch config — a
   // patch may change only the model, only the provider, or both. Fail-open

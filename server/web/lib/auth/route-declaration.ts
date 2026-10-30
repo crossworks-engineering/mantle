@@ -164,6 +164,7 @@ export const DECLARED_KEYS = [
   'aliasOf',
   'base',
   'audit',
+  'passwordHold',
 ] as const;
 type DeclaredKey = (typeof DECLARED_KEYS)[number];
 
@@ -192,7 +193,15 @@ type Common = Readonly<{
    *  not written (session.ts auditMutation). A row that audits as a
    *  write only. */
   audit?: 'own';
+  /** A row a login the box password rule holds still reaches
+   *  (password-hold.ts, docs/policy.md): 'change-step' while it must change
+   *  its password (the change itself, whoami, keeping its session),
+   *  'sign-out' under every hold. A 'self' row only. */
+  passwordHold?: (typeof PASSWORD_HOLD_OPENINGS)[number];
 }>;
+
+/** What a row's `passwordHold` may say. */
+export const PASSWORD_HOLD_OPENINGS = ['change-step', 'sign-out'] as const;
 
 /** `class` is the row's class; an `area` row names the Admin area it
  *  manages. `public`: the gate lets it in with no credential (a 'public'
@@ -455,6 +464,12 @@ export function validateMethodPolicy(raw: unknown, pattern: string, method: stri
         bad('a rate limit that is not a list of names');
       }
       if (new Set(r as string[]).size !== (r as string[]).length) bad('a rate limit named twice');
+    }
+  }
+
+  if (own('passwordHold')) {
+    if (!has(PASSWORD_HOLD_OPENINGS, d.passwordHold) || d.class !== 'self') {
+      bad(`passwordHold ${String(d.passwordHold)}: 'change-step' or 'sign-out', on a self row`);
     }
   }
 

@@ -16,9 +16,6 @@
  */
 import { DEFAULT_PASSWORD_MIN, passwordPolicyMin } from '@mantle/config';
 
-/** Whether a login's must_change_password flag holds it now (the one
- *  reader, @mantle/config). */
-export { passwordChangeHolds } from '@mantle/config';
 import { defineDomainError } from '@mantle/std';
 import { COMMON_PASSWORD_BASES, COMMON_PASSWORDS } from './common-passwords';
 

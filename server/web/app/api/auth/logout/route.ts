@@ -7,6 +7,7 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
   POST: {
+    passwordHold: 'sign-out',
     class: 'self',
     public: true,
     caller: 'publicLogin',

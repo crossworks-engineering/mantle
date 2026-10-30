@@ -497,11 +497,13 @@ describe('the architecture ratchets (pinned counts)', () => {
     // its HEAD, and PUT (self, any login).
     // Credential vault v2 part 1 (+1, with a caller): POST /api/keys/import
     // (owner, the keys area).
-    expect(rows.filter((r) => r.caller).length).toBe(850);
+    // The box policy (+2, both with a caller, docs/policy.md): GET
+    // /api/policy with its HEAD (owner, the settings area).
+    expect(rows.filter((r) => r.caller).length).toBe(852);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
-    // + the keys import row.
-    expect(rows.length).toBe(911);
+    // + the keys import row + the 2 policy rows.
+    expect(rows.length).toBe(913);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

@@ -322,6 +322,9 @@ export type RouteRow = Readonly<{
    *  any-login answer writes no audit row on a stub (getLoginOr401 without
    *  `audit`). */
   gone: boolean;
+  /** What a login the box password rule holds still reaches here (its
+   *  declaration's `passwordHold`, password-hold.ts): null, nothing. */
+  passwordHold: 'change-step' | 'sign-out' | null;
   /** The switch the route is served under, as its route file declares it
    *  (`routeSwitches`, route-switches.ts): while it is off
    *  the gate answers the route's own off answer before the login's
@@ -517,6 +520,7 @@ type RowFacts = Readonly<{
   alias: string | null;
   gates: RouteGates;
   audit: 'own' | null;
+  passwordHold: 'change-step' | 'sign-out' | null;
   /** Whether the row is named for a caller kind (callerServes). */
   named: (kind: NamedCaller) => boolean;
   /** The named caller kind a declaration states (`caller`), read from
@@ -544,6 +548,7 @@ function pageFacts(m: string, pattern: string, path: string): RowFacts {
     alias: null,
     gates: {},
     audit: null,
+    passwordHold: null,
     named: () => false,
     declaredCaller: null,
   };
@@ -689,6 +694,7 @@ function declaredFacts(
     // Only where the row audits as a write (a HEAD the GET handler answers:
     // where that GET writes).
     audit: d.audit === 'own' && auditsAsWrite(m, effect) ? 'own' : null,
+    passwordHold: d.passwordHold ?? null,
     named: (kind) => d.caller === kind,
     declaredCaller: d.caller ?? null,
   };
@@ -888,6 +894,7 @@ export function buildRouteRow(
     page,
     caller,
     gone,
+    passwordHold: facts.passwordHold,
     switch: routeSwitch,
     crossSite: gates.crossSite,
     rateLimit: gates.rateLimit,

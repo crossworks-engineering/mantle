@@ -114,25 +114,34 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     modelPolicySet() &&
     (p.provider !== undefined ||
       p.model !== undefined ||
+      p.baseUrl !== undefined ||
       p.backupProvider !== undefined ||
-      p.backupModel !== undefined)
+      p.backupModel !== undefined ||
+      p.backupBaseUrl !== undefined)
   ) {
     const [now] = await db
       .select({
         provider: agents.provider,
         model: agents.model,
+        baseUrl: agents.baseUrl,
         backupProvider: agents.backupProvider,
         backupModel: agents.backupModel,
+        backupBaseUrl: agents.backupBaseUrl,
       })
       .from(agents)
       .where(and(eq(agents.id, idParsed.data.id), eq(agents.ownerId, user.id)))
       .limit(1);
     if (now) {
       const blocked = modelRoutesPolicyIssue([
-        [p.provider ?? now.provider, p.model ?? now.model],
+        [
+          p.provider ?? now.provider,
+          p.model ?? now.model,
+          p.baseUrl !== undefined ? p.baseUrl : now.baseUrl,
+        ],
         [
           p.backupProvider !== undefined ? p.backupProvider : now.backupProvider,
           p.backupModel !== undefined ? p.backupModel : now.backupModel,
+          p.backupBaseUrl !== undefined ? p.backupBaseUrl : now.backupBaseUrl,
         ],
       ]);
       if (blocked) return NextResponse.json(modelPolicyBody(blocked), { status: 403 });

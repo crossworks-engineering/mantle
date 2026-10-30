@@ -7,7 +7,8 @@ import {
   modelPolicyRefusal,
   modelPolicySet,
   parsePolicy,
-  passwordChangeHolds,
+  endpointPolicyRefusal,
+  passwordHoldState,
   passwordPolicyMin,
   policyProblems,
   policySet,
@@ -21,6 +22,7 @@ const KEYS = [
   'MANTLE_POLICY_MODEL_DENY',
   'MANTLE_POLICY_PROVIDER_ALLOW',
   'MANTLE_POLICY_PASSWORD_MIN',
+  'MANTLE_POLICY_ENDPOINT_ALLOW',
 ] as const;
 const saved: Record<string, string | undefined> = {};
 
@@ -71,8 +73,11 @@ describe('no policy: every rule off', () => {
       }
       // Every Telegram tool stays on every list.
       expect(toolPolicyAllows('telegram_send')).toBe(true);
-      // A stale flag never holds a login.
-      expect(passwordChangeHolds(true)).toBe(false);
+      // A stale flag never holds a login, nor a password never checked.
+      expect(passwordHoldState(true, null)).toBeNull();
+      expect(passwordHoldState(false, null)).toBeNull();
+      // No endpoint rule either.
+      expect(endpointPolicyRefusal('local', 'http://anywhere.example:1234')).toBeNull();
     });
   }
   it('`on` for Telegram is no rule', () => {
@@ -96,6 +101,7 @@ describe('parsePolicy', () => {
       modelDeny: ['deepseek/*', 'qwen/*'],
       providerAllow: ['foundry', 'local'],
       passwordMin: 12,
+      endpointAllow: null,
     });
   });
 
@@ -150,9 +156,23 @@ describe('the model block', () => {
     expect(modelPolicyRefusal('local', 'qwenish-7b')).toBeNull();
   });
 
+  it('a bare word is a family', () => {
+    setPolicy({ MANTLE_POLICY_MODEL_DENY: 'deepseek' });
+    expect(modelPolicyRefusal('deepseek', 'deepseek-chat')?.rule).toBe('model_deny');
+    expect(modelPolicyRefusal('openrouter', 'deepseek/deepseek-chat')?.rule).toBe('model_deny');
+    expect(modelPolicyRefusal('local', 'deepseek-r1:8b')?.rule).toBe('model_deny');
+  });
+
   it('blocks auto routers while a deny list is set', () => {
     setPolicy({ MANTLE_POLICY_MODEL_DENY: 'minimax/*' });
-    for (const m of ['openrouter/auto', 'openrouter/auto-beta', 'x/auto', '@preset/fast', 'auto']) {
+    for (const m of [
+      'openrouter/auto',
+      'openrouter/auto-beta',
+      'x/auto',
+      '@preset/fast',
+      'auto',
+      'switchpoint/router',
+    ]) {
       expect(modelPolicyRefusal('openrouter', m)?.rule, m).toBe('auto_router');
     }
     expect(isAutoRouterModel('anthropic/claude-sonnet-5')).toBe(false);
@@ -178,11 +198,60 @@ describe('the model block', () => {
 });
 
 describe('passwords', () => {
-  it('the rule holds a flagged login only while a rule is set', () => {
+  it('holds a flagged login, and one not checked under the rule', () => {
     setPolicy({ MANTLE_POLICY_PASSWORD_MIN: '12' });
     expect(passwordPolicyMin()).toBe(12);
-    expect(passwordChangeHolds(true)).toBe(true);
-    expect(passwordChangeHolds(false)).toBe(false);
-    expect(passwordChangeHolds(undefined)).toBe(false);
+    expect(passwordHoldState(true, 12)).toBe('change');
+    expect(passwordHoldState(false, 12)).toBeNull();
+    expect(passwordHoldState(false, 14)).toBeNull();
+    // Never checked, or checked under a lower minimum: sign in once.
+    expect(passwordHoldState(false, null)).toBe('recheck');
+    expect(passwordHoldState(false, 8)).toBe('recheck');
+    expect(passwordHoldState(undefined, undefined)).toBe('recheck');
+  });
+});
+
+describe('the endpoint allow-list', () => {
+  it('reads only with a provider allow-list', () => {
+    setPolicy({ MANTLE_POLICY_ENDPOINT_ALLOW: 'llm.example.internal' });
+    expect(policySet()).toBe(false);
+    expect(endpointPolicyRefusal('local', 'http://evil.example/v1')).toBeNull();
+  });
+
+  it('a route base URL must name an allowed host', () => {
+    setPolicy({
+      MANTLE_POLICY_PROVIDER_ALLOW: 'local,foundry,openrouter',
+      MANTLE_POLICY_ENDPOINT_ALLOW: 'llm.example.internal:1234,*.openai.azure.com',
+    });
+    expect(endpointPolicyRefusal('local', 'http://llm.example.internal:1234/v1')).toBeNull();
+    expect(endpointPolicyRefusal('local', 'http://llm.example.internal:9999/v1')?.rule).toBe(
+      'endpoint_allow',
+    );
+    expect(endpointPolicyRefusal('foundry', 'https://corp.openai.azure.com')).toBeNull();
+    expect(endpointPolicyRefusal('foundry', 'https://openai.azure.com.evil.example')?.rule).toBe(
+      'endpoint_allow',
+    );
+    expect(endpointPolicyRefusal('local', 'not a url')?.rule).toBe('endpoint_allow');
+    // No base URL: the box-level endpoint, the operator's.
+    expect(endpointPolicyRefusal('local', null)).toBeNull();
+    expect(endpointPolicyRefusal('local', '  ')).toBeNull();
+    // OpenRouter never honours a base URL.
+    expect(endpointPolicyRefusal('openrouter', 'http://elsewhere.example')).toBeNull();
+    // The one model check carries it.
+    expect(modelPolicyRefusal('local', 'llama3', 'http://api.vendor.example/v1')?.rule).toBe(
+      'endpoint_allow',
+    );
+  });
+
+  it('with no endpoint list, no route may name a base URL', () => {
+    setPolicy({ MANTLE_POLICY_PROVIDER_ALLOW: 'local' });
+    expect(endpointPolicyRefusal('local', 'http://127.0.0.1:11434/v1')?.rule).toBe(
+      'endpoint_allow',
+    );
+  });
+
+  it('a host it cannot read is a boot problem', () => {
+    expect(parsePolicy({ endpointAllow: 'http://x.example' }).problems).toHaveLength(1);
+    expect(parsePolicy({ endpointAllow: 'x.example:443,*.y.example' }).problems).toEqual([]);
   });
 });

@@ -9,6 +9,7 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
   POST: {
+    passwordHold: 'change-step',
     class: 'self',
     public: true,
     caller: 'cookieUpgrade',

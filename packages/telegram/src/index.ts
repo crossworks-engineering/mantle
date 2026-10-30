@@ -9,6 +9,7 @@ export {
   loginModeratesBot,
   pairedChatOf,
   unpairRefusedChat,
+  TELEGRAM_PASSWORD_HOLD_REPLY,
   TELEGRAM_UNPAIRED_REPLY,
   TELEGRAM_NOT_A_USER_CODE,
   type ChatLoginRefusal,

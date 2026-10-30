@@ -17,18 +17,22 @@ import { modelPolicyRefusal } from '@mantle/config';
 export function modelPolicyIssue(
   provider: string | null | undefined,
   model: string | null | undefined,
+  /** The route's own base URL, where the save names one. */
+  baseUrl?: string | null,
 ): string | null {
   if (!provider || !model) return null;
-  return modelPolicyRefusal(provider, model)?.message ?? null;
+  return modelPolicyRefusal(provider, model, baseUrl)?.message ?? null;
 }
 
 /** The first refusal over a save's routes (the primary, the backup), or
  *  null. */
 export function modelRoutesPolicyIssue(
-  routes: ReadonlyArray<readonly [string | null | undefined, string | null | undefined]>,
+  routes: ReadonlyArray<
+    readonly [string | null | undefined, string | null | undefined, (string | null | undefined)?]
+  >,
 ): string | null {
-  for (const [provider, model] of routes) {
-    const issue = modelPolicyIssue(provider, model);
+  for (const [provider, model, baseUrl] of routes) {
+    const issue = modelPolicyIssue(provider, model, baseUrl);
     if (issue) return issue;
   }
   return null;
