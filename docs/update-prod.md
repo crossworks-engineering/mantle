@@ -1633,7 +1633,7 @@ values it already holds (docs/policy.md).
 - **Rolling back below it:** the older image runs with 0347 in place, but
   it has no hold: a held login signs in as before. Run the revert
   (`packages/db/rollback/0347_must_change_password.revert.sql`) before
-  pinning the older tag, with the web container stopped: it clears every
+  pinning the older tag, with the app containers stopped (web, api, workers): it clears every
   login's checked rule (so the next roll forward has each login sign in
   once again: the older image does not record a password's rule), deletes
   the `model_policy` alerts, narrows the subject check back and takes 0347

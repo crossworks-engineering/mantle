@@ -15,12 +15,13 @@
 -- runs it again (ADD COLUMN IF NOT EXISTS keeps the columns; the CHECK is
 -- dropped and made again).
 --
--- Copy it out, stop the web container (no model_policy alert may be written
--- between the delete and the narrowed CHECK), run it as the superuser in one
--- transaction, then pin the older image straight away (docs/update-prod.md
--- "Rollback"):
+-- Copy it out, stop the app containers (web, api and the workers: no
+-- model_policy alert may be written between the delete and the narrowed
+-- CHECK; if one is, the transaction fails safe and can be run again), run it
+-- as the superuser in one transaction, then pin the older image straight
+-- away (docs/update-prod.md "Rollback"):
 --   docker exec mantle_web cat /app/packages/db/rollback/0347_must_change_password.revert.sql > 0347.revert.sql
---   docker stop mantle_web
+--   docker stop mantle_web mantle_api   # and every mantle_worker_* container
 --   docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 < 0347.revert.sql
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
