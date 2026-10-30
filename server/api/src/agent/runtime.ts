@@ -104,7 +104,7 @@ import { isNewChatCommand, newChatReply, sendApology, startTyping } from './tele
 import type { AttachmentContext, FileAttachment, InboundRow } from './telegram/types';
 import { runTelegramTurn } from './telegram/turn';
 import { loginActorNow } from '../workflows/login-actor';
-import { env, envNum } from '@mantle/config';
+import { env, envNum, telegramAllowed } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 
 // The owner id is resolved ONCE in startAgentRuntime (waitForOwner: either
@@ -215,6 +215,13 @@ export async function telegramTurnActor(messageId: string): Promise<Actor> {
  * a workflow (e.g. a direct call), step()/runDurableStep are pure passthrough.
  */
 export async function handleTelegramMessage(messageId: string): Promise<void> {
+  // The box policy switches Telegram off (docs/policy.md): a message stored
+  // before the switch (or a workflow recovered at boot) runs no turn; its
+  // reply could not be sent. The row stays.
+  if (!telegramAllowed()) {
+    logger.info(`telegram turn skipped, Telegram is off by policy: ${messageId}`);
+    return;
+  }
   const [selected] = await db
     .select({
       id: telegramMessages.id,

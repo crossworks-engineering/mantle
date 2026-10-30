@@ -29,7 +29,6 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
   POST: {
-    passwordHold: 'change-step',
     class: 'self',
     public: true,
     item: { none: "the login's own things, not an item" },

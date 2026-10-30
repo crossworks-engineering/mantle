@@ -32,6 +32,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 
 import {
+  updatePassword,
   authenticatePassword,
   hashLoginPassword,
   notePasswordSet,
@@ -100,6 +101,20 @@ describe("no policy: today's rule, exactly", () => {
     await notePasswordSet('l1');
     expect(await verifyPasswordForUse('l1', 'password')).toBe('ok');
     expect(h.updates).toEqual([]);
+  });
+});
+
+describe('a new password records the rule it was set under', () => {
+  it('none with no rule, so a rule that comes back checks it', async () => {
+    await updatePassword('l1', 'password');
+    expect(h.updates).toHaveLength(1);
+    expect(h.updates[0]).toMatchObject({ mustChangePassword: false, passwordCheckedMin: null });
+  });
+
+  it('the minimum under a rule', async () => {
+    policyMin('12');
+    await updatePassword('l1', 'blue kettle under the stairs');
+    expect(h.updates[0]).toMatchObject({ mustChangePassword: false, passwordCheckedMin: 12 });
   });
 });
 

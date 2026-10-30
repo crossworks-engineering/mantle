@@ -115,6 +115,14 @@ describe('parsePolicy', () => {
     expect(parsePolicy({ providerAllow: 'open router' }).problems).toHaveLength(1);
   });
 
+  it('a value set to nothing, or read only with another, is a problem', () => {
+    expect(parsePolicy({ modelDeny: ' , ' }).problems).toHaveLength(1);
+    expect(parsePolicy({ endpointAllow: 'x.example' }).problems).toHaveLength(1);
+    expect(parsePolicy({ endpointAllow: 'x.example', providerAllow: 'local' }).problems).toEqual(
+      [],
+    );
+  });
+
   it('assertEnvShape names a malformed policy value', () => {
     setPolicy({ MANTLE_POLICY_PASSWORD_MIN: '4' });
     expect(() => assertEnvShape()).toThrow(/MANTLE_POLICY_PASSWORD_MIN/);
@@ -251,7 +259,11 @@ describe('the endpoint allow-list', () => {
   });
 
   it('a host it cannot read is a boot problem', () => {
-    expect(parsePolicy({ endpointAllow: 'http://x.example' }).problems).toHaveLength(1);
-    expect(parsePolicy({ endpointAllow: 'x.example:443,*.y.example' }).problems).toEqual([]);
+    expect(
+      parsePolicy({ endpointAllow: 'http://x.example', providerAllow: 'local' }).problems,
+    ).toHaveLength(1);
+    expect(
+      parsePolicy({ endpointAllow: 'x.example:443,*.y.example', providerAllow: 'local' }).problems,
+    ).toEqual([]);
   });
 });

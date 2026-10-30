@@ -140,9 +140,7 @@ describe('the rows that declare passwordHold', () => {
         'HEAD /api/auth/whoami change-step',
         'POST /api/auth/change-password change-step',
         'POST /api/auth/logout sign-out',
-        'POST /api/auth/mobile-logout sign-out',
         'POST /api/auth/sso change-step',
-        'POST /api/auth/token/refresh change-step',
       ].sort(),
     );
   });

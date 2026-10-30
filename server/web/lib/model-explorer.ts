@@ -508,9 +508,13 @@ export async function fetchProviderModels(
   provider: ProviderId,
   opts: { force?: boolean; keyId?: string | null } = {},
 ): Promise<ProviderModelsResult> {
+  // The box policy's model block (docs/policy.md): a provider it blocks is
+  // not asked for its list at all, and a pick list never offers a blocked
+  // model. With no model rule, the list as fetched.
+  if (modelPolicySet() && modelPolicyRefusal(provider, '') !== null) {
+    return { provider, models: [], fetchedAt: Date.now() };
+  }
   const result = await fetchProviderModelsCached(ownerId, provider, opts);
-  // The box policy's model block (docs/policy.md): a pick list never offers
-  // a blocked model. With no model rule, the list as fetched.
   if (!modelPolicySet()) return result;
   return {
     ...result,

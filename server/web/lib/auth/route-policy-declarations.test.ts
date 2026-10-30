@@ -485,6 +485,11 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
       ['audit', { class: 'content', item: none }, { class: 'content', audit: 'own' }],
       ['caller', { class: 'self' }, { class: 'self', caller: 'session' }],
       ['base', { class: 'content', item: none }, { class: 'content', base: aliasOf }],
+      [
+        'passwordHold',
+        { class: 'self', passwordHold: 'change-step' },
+        { class: 'self', passwordHold: 'sign-out' },
+      ],
     ];
     const run = (onBase: Record<string, unknown>, onAlias: Record<string, unknown>) => {
       const baseDecl = { item: none, ...onBase };

@@ -112,7 +112,12 @@ export function parsePolicy(raw: PolicyEnv): { policy: BoxPolicy; problems: stri
     if (bad.length) {
       problems.push(`MANTLE_POLICY_MODEL_DENY has a pattern it cannot read: ${bad.join(', ')}`);
     }
-    if (!modelDeny.length) modelDeny = null;
+    if (!modelDeny.length) {
+      // Set but naming nothing: a box meant to have a model block must not
+      // boot without one.
+      problems.push('MANTLE_POLICY_MODEL_DENY is set but names no pattern');
+      modelDeny = null;
+    }
   }
   let providerAllow: string[] | null = null;
   if (!blank(raw.providerAllow)) {
@@ -148,8 +153,11 @@ export function parsePolicy(raw: PolicyEnv): { policy: BoxPolicy; problems: stri
     if (bad.length) {
       problems.push(`MANTLE_POLICY_ENDPOINT_ALLOW has a host it cannot read: ${bad.join(', ')}`);
     }
-    // Read only with a provider allow-list (endpointPolicyRefusal); alone
-    // it changes nothing, so it does not make a policy set.
+    // Read only with a provider allow-list (endpointPolicyRefusal): alone
+    // it would change nothing, which an operator never means.
+    if (blank(raw.providerAllow)) {
+      problems.push('MANTLE_POLICY_ENDPOINT_ALLOW is read only with MANTLE_POLICY_PROVIDER_ALLOW');
+    }
   }
   if (telegram === null && modelDeny === null && providerAllow === null && passwordMin === null) {
     return { policy: EMPTY, problems };
@@ -231,8 +239,9 @@ export const TELEGRAM_POLICY_OFF_MESSAGE =
 export function isAutoRouterModel(model: string): boolean {
   const m = model.trim().toLowerCase();
   if (m === 'auto' || m.endsWith('/auto') || m.endsWith(':auto')) return true;
-  // A router by name (`switchpoint/router`, `.../auto-router`).
-  if (/(^|[/:-])router$/.test(m)) return true;
+  // A router by name: `switchpoint/router`, `.../auto-router`, and a
+  // provider's own pick (Mammouth's `mammouth-recommended`).
+  if (/(^|[/:-])(router|recommended)$/.test(m)) return true;
   // OpenRouter's own ids (openrouter/auto and its kind) and presets.
   return m.startsWith('openrouter/') || m.startsWith('@preset/') || m.includes('/@preset/');
 }
@@ -321,7 +330,10 @@ export function endpointPolicyRefusal(
   if (ok) return null;
   return {
     rule: 'endpoint_allow',
-    message: `The route's base URL ${at ? at.hostPort : '(not a URL)'} is not on this box's allowed endpoints (MANTLE_POLICY_ENDPOINT_ALLOW).`,
+    // No host in the words: the refusal reaches whoever made the call; the
+    // boot log and the Policy panel name the route.
+    message:
+      "This route's own server is not on this box's allowed endpoints (MANTLE_POLICY_ENDPOINT_ALLOW). Choose an allowed model route.",
   };
 }
 
@@ -365,7 +377,7 @@ export function modelPolicyRefusal(
     if (hit) {
       return {
         rule: 'model_deny',
-        message: `The model ${mod} is blocked by this box's policy (MANTLE_POLICY_MODEL_DENY: ${hit}).`,
+        message: `The model ${mod} is blocked by this box's policy (MANTLE_POLICY_MODEL_DENY). Choose an allowed model.`,
       };
     }
   }

@@ -217,3 +217,26 @@ describe('a model rule', () => {
     expect(classifyProviderError(err)).toMatchObject({ code: 'policy', permanent: true });
   });
 });
+
+describe('router ids in the shipped catalogs', () => {
+  it('every chat model that picks its model per call is an auto router', async () => {
+    const { isAutoRouterModel } = await import('@mantle/config');
+    const mods = await Promise.all([
+      import('@mantle/voice-client/catalogs/mammouth'),
+      import('@mantle/voice-client/catalogs/openrouter'),
+      import('@mantle/voice-client/catalogs/copilot'),
+      import('@mantle/voice-client/catalogs/huggingface'),
+    ]);
+    const ids = mods.flatMap((m) =>
+      Object.values(m)
+        .filter(Array.isArray)
+        .flat()
+        .map((x) => (x as { id?: unknown }).id)
+        .filter((id): id is string => typeof id === 'string'),
+    );
+    // A catalog entry whose words say it picks the model is a router.
+    const routers = ids.filter((id) => /(^|[/:-])(auto|router|recommended)(-|$)/i.test(id));
+    expect(routers).toContain('mammouth-recommended');
+    for (const id of routers) expect(isAutoRouterModel(id), id).toBe(true);
+  });
+});

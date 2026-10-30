@@ -2410,14 +2410,16 @@ export function setSessionCookie(
  *  login-credential on a narrow exit; docs/runtime-role.md). */
 export async function updatePassword(userId: string, newPassword: string): Promise<void> {
   const hash = await hashLoginPassword(newPassword);
-  // Under a box password rule the new password met it (hashLoginPassword
-  // refused one that does not): the forced change is done and the login
-  // is checked under the rule. With no rule only the hash is written, as
-  // before.
-  const min = passwordPolicyMin();
+  // The new password met the rule in force (hashLoginPassword refused one
+  // that does not): the forced change is done, and the login is checked
+  // under that rule, or under none with no rule. Written with every new
+  // password, rule or not: a password set while no rule is in force must
+  // be checked when a rule comes back (docs/policy.md). On a box that
+  // never had a rule both columns already hold these values.
   await writeLoginCredential(userId, {
     passwordHash: hash,
-    ...(min === null ? {} : { mustChangePassword: false, passwordCheckedMin: min }),
+    mustChangePassword: false,
+    passwordCheckedMin: passwordPolicyMin(),
   });
 }
 

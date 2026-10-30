@@ -11,7 +11,9 @@
 -- through the one rule, which the new one meets).
 --
 -- password_checked_min: the rule's minimum the login's password was last
--- checked against (at a sign-in, a password prompt or a new password).
+-- checked against (at a sign-in, a password prompt or a new password; a
+-- new password set while no rule is in force writes null, so it is checked
+-- when a rule comes back).
 -- Null: never under a rule. While a rule is set, a login whose password
 -- was not checked under it (null, or a lower minimum: the rule went on or
 -- up since) must sign in with its password once before anything else, so
