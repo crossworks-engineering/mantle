@@ -15,6 +15,9 @@
  * value, or an old host name the box still serves, works as it did.
  */
 import { publicBaseUrl } from '@mantle/content';
+import { log } from '@mantle/tracing';
+
+const oauthLog = log('mcp-oauth');
 
 /** The MCP endpoint's path on the box (the resource the tokens are for). */
 export const MCP_RESOURCE_PATH = '/api/mcp';
@@ -80,8 +83,8 @@ export function noteResource(
   for (const v of values) {
     if (typeof v !== 'string') continue;
     if (resourceNamesThisBox(v, requestOrigin)) continue;
-    console.warn(
-      `[mcp-oauth] resource mismatch at ${step}: "${printable(v)}" does not name ` +
+    oauthLog.warn(
+      `resource mismatch at ${step}: "${printable(v)}" does not name ` +
         `${publicBaseUrl()}${MCP_RESOURCE_PATH}; not refused`,
     );
   }
