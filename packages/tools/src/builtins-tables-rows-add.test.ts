@@ -20,6 +20,10 @@ vi.mock('@mantle/content/table-storage', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   tableSqlSurface: vi.fn(),
 }));
+vi.mock('@mantle/tabledb', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  readRowById: vi.fn(),
+}));
 vi.mock('@mantle/files', () => ({ fileById: vi.fn(), readFileById: vi.fn() }));
 vi.mock('@mantle/files/sheet-to-grid', () => ({
   parseSheetToGrid: vi.fn(),
@@ -28,6 +32,7 @@ vi.mock('@mantle/files/sheet-to-grid', () => ({
 
 import { getTable, applyTableOps } from '@mantle/content';
 import { tableSqlSurface } from '@mantle/content/table-storage';
+import { readRowById } from '@mantle/tabledb';
 import { TABLE_TOOLS, TABLE_TOOL_SLUGS } from './builtins-tables';
 import type { ToolHandlerContext } from './types';
 
@@ -342,7 +347,7 @@ describe('table_rows_upsert by row id', () => {
       ctx,
     );
     expect(dup.ok).toBe(false);
-    expect((dup as { error: string }).error).toContain('one row per key');
+    expect((dup as { error: string }).error).toContain('more than once');
 
     const empty = await rowsUpsert.handler(
       { table_id: TABLE_ID, key: KEY, rows: [{ '@row_id': 'r_a' }] },
@@ -350,6 +355,66 @@ describe('table_rows_upsert by row id', () => {
     );
     expect(empty.ok).toBe(false);
     expect((empty as { error: string }).error).toContain('no cells to change');
+    expect(vi.mocked(applyTableOps)).not.toHaveBeenCalled();
+  });
+
+  it('rejects a row whose cells are all unknown columns, naming them', async () => {
+    const res = await rowsUpsert.handler(
+      { table_id: TABLE_ID, key: KEY, rows: [{ '@row_id': 'r_a', Stauts: 'Done' }] },
+      ctx,
+    );
+    expect(res.ok).toBe(false);
+    expect((res as { error: string }).error).toContain('Stauts');
+    expect(vi.mocked(applyTableOps)).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-string row id', async () => {
+    const res = await rowsUpsert.handler(
+      { table_id: TABLE_ID, key: KEY, rows: [{ '@row_id': 42, 'Mol %': 1 }] },
+      ctx,
+    );
+    expect(res.ok).toBe(false);
+    expect((res as { error: string }).error).toContain('not a string');
+    expect(vi.mocked(applyTableOps)).not.toHaveBeenCalled();
+  });
+
+  it('a key that names no column points at @row_id', async () => {
+    const res = await rowsUpsert.handler(
+      { table_id: TABLE_ID, key: ['row_id'], rows: [{ row_id: 'r_a', 'Mol %': 1 }] },
+      ctx,
+    );
+    expect(res.ok).toBe(false);
+    expect((res as { error: string }).error).toContain('key: ["@row_id"]');
+  });
+
+  it('finds rows beyond the doc window in the workbook file, by point lookup', async () => {
+    // The doc holds no rows (clipped window); the sqlite file holds r_far.
+    vi.mocked(getTable).mockResolvedValue(detail() as never);
+    vi.mocked(tableSqlSurface).mockResolvedValue({
+      abs: '/tmp/t.sqlite',
+      draftAbs: null,
+      draftOk: true,
+    } as never);
+    vi.mocked(readRowById).mockImplementation((_f, rid) =>
+      rid === 'r_far' ? ({ id: 'r_far', cells: { c_mol: 5 } } as never) : null,
+    );
+    vi.mocked(applyTableOps).mockResolvedValue({ ok: true, draftRev: 5, createdIds: [] });
+    const ok = await rowsUpsert.handler(
+      { table_id: TABLE_ID, key: KEY, rows: [{ '@row_id': 'r_far', 'Mol %': 6 }] },
+      ctx,
+    );
+    expect(ok.ok).toBe(true);
+    expect(vi.mocked(readRowById)).toHaveBeenCalledWith('/tmp/t.sqlite', 'r_far', {});
+    expect(vi.mocked(applyTableOps).mock.calls[0]![2]).toEqual([
+      { op: 'row_update', rowId: 'r_far', cells: { c_mol: 6 } },
+    ]);
+
+    vi.mocked(applyTableOps).mockClear();
+    const miss = await rowsUpsert.handler(
+      { table_id: TABLE_ID, key: KEY, rows: [{ '@row_id': 'r_nope', 'Mol %': 6 }] },
+      ctx,
+    );
+    expect(miss.ok).toBe(false);
     expect(vi.mocked(applyTableOps)).not.toHaveBeenCalled();
   });
 

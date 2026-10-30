@@ -400,7 +400,7 @@ const app_file_write: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Write a file in a mini app',
   description:
-    "Create or replace one source file (by path) in the app's DRAFT — the published app is untouched until app_publish. After writing, call app_build to compile + see errors. To write several files, send the whole tree in one `app_source_set` call. " +
+    "Create or replace one source file (by path) in the app's DRAFT — the published app is untouched until app_publish. After writing, call app_build to compile + see errors. To write most of an app's files at once, send the whole tree in one `app_source_set` call (files left out are removed). " +
     WHO_HINT +
     SOURCE_HINT,
   inputSchema: {

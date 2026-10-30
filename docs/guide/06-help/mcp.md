@@ -19,11 +19,12 @@ Outside the Admin workspace, this screen shows your own view: the connector URL,
 
 > **Using ChatGPT well**
 >
-> ChatGPT asks you to allow each write call once, so many small writes mean many clicks.
+> ChatGPT asks you to allow every write call, so many small writes mean many clicks.
 >
 > - Ask for one batch call. Say "change these rows in one `table_rows_upsert` call", "add them with one `table_rows_add` call" or "make these page edits in one `page_blocks_apply` call".
-> - Upload files in the Mantle web app, then refer to them by name. ChatGPT cannot pass its own attachments to Mantle.
+> - Upload files in the Mantle web app, then refer to them by name. ChatGPT cannot hand its chat attachments to Mantle.
 > - Build apps in the Mantle chat, or in a client that has "Always allow". An app takes many write calls.
+> - Deleting rows has no batch call, so each deleted row asks once.
 
 ## Assistant
 
