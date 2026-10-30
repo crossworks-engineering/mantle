@@ -17,7 +17,7 @@
  * history and the corpus map are never touched.
  */
 import type { DecisionAnswer, DecisionQuestion } from '@mantle/voice';
-import { decide, type DecideOutcome } from './decide';
+import { decidePlanned, unitSize } from './request-planner';
 
 export type ContextBlock = 'fact' | 'hit' | 'chunk';
 
@@ -43,11 +43,13 @@ export type ContextScoring = {
  *  not-needed at 0-1.0 on 240-char snippets; 1.0 keeps the loss near 10%. */
 export const CONTEXT_THRESHOLD_DEFAULT = 1.0;
 
-/** One request holds at most this many items (a turn has ~26). */
+/** At most this many items are scored (a turn has ~26), in one request as
+ *  measured; the request planner splits them for a model with lower
+ *  limits. */
 export const MAX_CONTEXT_ITEMS = 40;
 
 /** Per-item text cap. Facts are short; a passage is ~2.7k, and its head
- *  carries the topic. Keeps a 40-item request under the 32k window. */
+ *  carries the topic. */
 export const MAX_CONTEXT_ITEM_CHARS = 1_200;
 
 /** Fewest scored items a block keeps, whatever the scores say. */
@@ -60,48 +62,80 @@ const LEVELS = (k: string): string[] => [
   `\`items.${k}\` is needed to answer \`question\` well.`,
 ];
 
-/** Score `items` against `question`. Null = decider off or the call failed;
- *  the caller keeps every item. */
+function itemText(it: ContextItem): string {
+  return it.text.length > MAX_CONTEXT_ITEM_CHARS
+    ? it.text.slice(0, MAX_CONTEXT_ITEM_CHARS)
+    : it.text;
+}
+
+function itemQuestion(k: string): DecisionQuestion {
+  return {
+    type: 'score',
+    instructions: `How much does \`items.${k}\` help to answer \`question\`? Judge only \`items.${k}\`.`,
+    criteria: LEVELS(k),
+  };
+}
+
+/** Score `items` against `question`. Null = decider off or every request
+ *  failed; the caller keeps every item. A failed or refused request leaves
+ *  its items unscored, and the caller keeps those. */
 export async function scoreContextItems(
   ownerId: string,
   question: string,
   items: readonly ContextItem[],
 ): Promise<ContextScoring | null> {
-  const batch = items.slice(0, MAX_CONTEXT_ITEMS);
-  if (batch.length === 0 || !question.trim()) return null;
+  const list = items.slice(0, MAX_CONTEXT_ITEMS);
+  if (list.length === 0 || !question.trim()) return null;
 
-  const state: Record<string, unknown> = { question, items: {} as Record<string, string> };
-  const questions: Record<string, DecisionQuestion> = {};
-  const keyById = new Map<string, string>();
-  batch.forEach((it, i) => {
-    const k = `${it.block[0]}${i + 1}`;
-    keyById.set(it.id, k);
-    (state.items as Record<string, string>)[k] =
-      it.text.length > MAX_CONTEXT_ITEM_CHARS ? it.text.slice(0, MAX_CONTEXT_ITEM_CHARS) : it.text;
-    questions[k] = {
-      type: 'score',
-      instructions: `How much does \`items.${k}\` help to answer \`question\`? Judge only \`items.${k}\`.`,
-      criteria: LEVELS(k),
-    };
-  });
-
-  let threshold = CONTEXT_THRESHOLD_DEFAULT;
-  const outcome: DecideOutcome | null = await decide({
+  const keysOf = new Map<ContextItem[], Map<string, string>>();
+  const plan = await decidePlanned({
     ownerId,
     use: 'context_pruning',
-    state,
-    questions,
-    summarize: (answers) => ({ items: batch.length, would_drop: countBelow(answers, threshold) }),
+    units: list,
+    groupSize: MAX_CONTEXT_ITEMS,
+    baseChars: JSON.stringify(question).length,
+    sizeOf: (it) => unitSize(itemText(it), { x000: itemQuestion('x000') }),
+    scaleTimeout: true,
+    build: (group) => {
+      const texts: Record<string, string> = {};
+      const questions: Record<string, DecisionQuestion> = {};
+      const keyById = new Map<string, string>();
+      group.forEach((it, i) => {
+        const k = `${it.block[0]}${i + 1}`;
+        keyById.set(it.id, k);
+        texts[k] = itemText(it);
+        questions[k] = itemQuestion(k);
+      });
+      keysOf.set(group, keyById);
+      return {
+        state: { question, items: texts },
+        questions,
+        summarize: (answers, use) => ({
+          items: group.length,
+          would_drop: countBelow(answers, use.threshold ?? CONTEXT_THRESHOLD_DEFAULT),
+        }),
+      };
+    },
   });
-  if (!outcome) return null;
-  threshold = outcome.use.threshold ?? CONTEXT_THRESHOLD_DEFAULT;
+  const answered = plan.results.filter((r) => r.outcome);
+  const first = answered[0]?.outcome;
+  if (!first) return null;
 
   const scores = new Map<string, ContextScore>();
-  for (const it of batch) {
-    const a = outcome.answers[keyById.get(it.id)!];
-    if (a && a.type === 'score') scores.set(it.id, { score: a.score, confidence: a.confidence });
+  for (const { group, outcome } of answered) {
+    const keyById = keysOf.get(group)!;
+    for (const it of group) {
+      const a = outcome!.answers[keyById.get(it.id)!];
+      if (a && a.type === 'score') scores.set(it.id, { score: a.score, confidence: a.confidence });
+    }
   }
-  return { scores, mode: outcome.mode, threshold, cached: outcome.cached, ms: outcome.ms };
+  return {
+    scores,
+    mode: first.mode,
+    threshold: first.use.threshold ?? CONTEXT_THRESHOLD_DEFAULT,
+    cached: answered.every((r) => r.outcome!.cached),
+    ms: plan.calls > 1 ? plan.ms : first.ms,
+  };
 }
 
 function countBelow(answers: Record<string, DecisionAnswer>, threshold: number): number {
@@ -114,9 +148,10 @@ function countBelow(answers: Record<string, DecisionAnswer>, threshold: number):
  * Pure: apply a scoring to one block. Exempt items keep their place at the
  * front (preferences are prepended by retrieval); scored items at or above
  * the threshold follow, best first (ties in retrieval order); unscored items
- * (past the request cap) keep their order at the end; the rest are dropped —
- * except that the block never falls below `floor` scored items: when the
- * threshold would cut deeper, the best of the cut survive.
+ * (past the cap, or in a request that failed) keep their order at the end;
+ * the rest are dropped, except that the block never falls below `floor`
+ * scored items: when the threshold would cut deeper, the best of the cut
+ * survive.
  */
 export function pruneContextItems<T>(
   items: readonly T[],

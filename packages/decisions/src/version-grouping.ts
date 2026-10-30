@@ -28,7 +28,7 @@
  *   - Two sections of the same node are never compared.
  */
 import type { DecisionAnswer, DecisionQuestion } from '@mantle/voice';
-import { decide, type DecideOutcome } from './decide';
+import { decidePlanned, unitSize } from './request-planner';
 
 /** Drop a pair's lower-ranked passage at or above this "same passage"
  *  probability, unless the use's `threshold` says otherwise. */
@@ -37,8 +37,9 @@ export const VERSION_THRESHOLD_DEFAULT = 0.9;
 /** Only pairs at or above this cosine similarity are asked about. */
 export const VERSION_SIMILARITY_FLOOR = 0.75;
 
-/** One request holds at most this many pair questions (the spike ran up to
- *  60 in ~12.8k tokens at ~400 ms). */
+/** At most this many pairs are asked about, in one request as measured (the
+ *  spike ran up to 60 in ~12.8k tokens at ~400 ms); the request planner
+ *  splits them for a model with lower limits. */
 export const MAX_VERSION_PAIRS = 60;
 
 /** Per-passage text cap sent to the model (same as passage scoring). */
@@ -139,61 +140,98 @@ export type VersionGrouping = {
   ms: number;
 };
 
+function versionEntry(p: VersionPassage): Record<string, unknown> {
+  return {
+    document_title: p.title,
+    ...(p.heading ? { section: p.heading } : {}),
+    text:
+      p.text.length > MAX_VERSION_PASSAGE_CHARS
+        ? p.text.slice(0, MAX_VERSION_PASSAGE_CHARS)
+        : p.text,
+  };
+}
+
 /** Ask the decider which candidate pairs are versions of one passage. Null
- *  when the decider is off, there is nothing to ask, or the call failed: the
- *  caller keeps its list. */
+ *  when the decider is off, there is nothing to ask, or every request
+ *  failed: the caller keeps its list. Each request carries the passages its
+ *  own pairs name; a pair in a failed or refused request gets no answer. */
 export async function groupVersions(
   ownerId: string,
   passages: readonly VersionPassage[],
   pairs: readonly PassagePairSimilarity[],
 ): Promise<VersionGrouping | null> {
   if (pairs.length === 0) return null;
-  const used = new Set(pairs.flatMap((p) => [p.a, p.b]));
-  const keyById = new Map<string, string>();
-  const state: { passages: Record<string, unknown> } = { passages: {} };
-  let n = 0;
-  for (const p of passages) {
-    if (!used.has(p.id)) continue;
-    const k = `p${++n}`;
-    keyById.set(p.id, k);
-    state.passages[k] = {
-      document_title: p.title,
-      ...(p.heading ? { section: p.heading } : {}),
-      text:
-        p.text.length > MAX_VERSION_PASSAGE_CHARS
-          ? p.text.slice(0, MAX_VERSION_PASSAGE_CHARS)
-          : p.text,
-    };
-  }
-  const questions: Record<string, DecisionQuestion> = {};
-  pairs.forEach((p, i) => {
-    questions[`q${i + 1}`] = versionQuestion(
-      `passages.${keyById.get(p.a)}`,
-      `passages.${keyById.get(p.b)}`,
-    );
-  });
+  const byId = new Map(passages.map((p) => [p.id, p]));
+  const entry = (id: string) => {
+    const p = byId.get(id);
+    return p ? versionEntry(p) : null;
+  };
 
-  let threshold = VERSION_THRESHOLD_DEFAULT;
-  const outcome: DecideOutcome | null = await decide({
+  const plan = await decidePlanned({
     ownerId,
     use: 'version_grouping',
-    state,
-    questions,
-    summarize: (answers) => ({
-      pairs: pairs.length,
-      would_group: countAtOrAbove(answers, threshold),
-      threshold,
-    }),
+    units: pairs.map((pair, i) => ({ pair, i })),
+    groupSize: MAX_VERSION_PAIRS,
+    baseChars: 0,
+    // Both passages count, even when another pair of the request names one
+    // of them too: the estimate stays high, never low.
+    sizeOf: ({ pair }) =>
+      unitSize([entry(pair.a), entry(pair.b)], {
+        q000: versionQuestion('passages.p000', 'passages.p000'),
+      }),
+    scaleTimeout: true,
+    build: (group) => {
+      const used = new Set(group.flatMap(({ pair }) => [pair.a, pair.b]));
+      const keyById = new Map<string, string>();
+      const state: { passages: Record<string, unknown> } = { passages: {} };
+      let n = 0;
+      for (const p of passages) {
+        if (!used.has(p.id)) continue;
+        const k = `p${++n}`;
+        keyById.set(p.id, k);
+        state.passages[k] = versionEntry(p);
+      }
+      const questions: Record<string, DecisionQuestion> = {};
+      group.forEach(({ pair }, k) => {
+        questions[`q${k + 1}`] = versionQuestion(
+          `passages.${keyById.get(pair.a)}`,
+          `passages.${keyById.get(pair.b)}`,
+        );
+      });
+      return {
+        state,
+        questions,
+        summarize: (answers, use) => {
+          const threshold = use.threshold ?? VERSION_THRESHOLD_DEFAULT;
+          return {
+            pairs: group.length,
+            would_group: countAtOrAbove(answers, threshold),
+            threshold,
+          };
+        },
+      };
+    },
   });
-  if (!outcome) return null;
-  threshold = outcome.use.threshold ?? VERSION_THRESHOLD_DEFAULT;
+  const answered = plan.results.filter((r) => r.outcome);
+  const first = answered[0]?.outcome;
+  if (!first) return null;
 
-  const out: VersionPairAnswer[] = [];
-  pairs.forEach((p, i) => {
-    const a = outcome.answers[`q${i + 1}`];
-    if (a && a.type === 'noul') out.push({ a: p.a, b: p.b, probability: a.probability });
-  });
-  return { pairs: out, mode: outcome.mode, threshold, cached: outcome.cached, ms: outcome.ms };
+  const found = new Map<number, VersionPairAnswer>();
+  for (const { group, outcome } of answered) {
+    group.forEach(({ pair, i }, k) => {
+      const a = outcome!.answers[`q${k + 1}`];
+      if (a && a.type === 'noul')
+        found.set(i, { a: pair.a, b: pair.b, probability: a.probability });
+    });
+  }
+  const out = [...found.entries()].sort((x, y) => x[0] - y[0]).map(([, v]) => v);
+  return {
+    pairs: out,
+    mode: first.mode,
+    threshold: first.use.threshold ?? VERSION_THRESHOLD_DEFAULT,
+    cached: answered.every((r) => r.outcome!.cached),
+    ms: plan.calls > 1 ? plan.ms : first.ms,
+  };
 }
 
 function countAtOrAbove(answers: Record<string, DecisionAnswer>, threshold: number): number {

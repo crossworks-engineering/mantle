@@ -349,6 +349,9 @@ importers:
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../api-keys
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/db':
         specifier: workspace:*
         version: link:../db

@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('./decide', () => ({
+  deciderRequestLimits: vi.fn(async () => null),
   DecideBatch: class {
     skipped = 0;
     note() {}
