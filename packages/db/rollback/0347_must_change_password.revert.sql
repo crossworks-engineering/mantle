@@ -7,7 +7,7 @@
 -- takes their defaults (false, null). A login the newer image held for a password change is NOT held
 -- by the older image (it has no such gate): pin the older image only if
 -- that is acceptable, or have those logins change their password first.
--- So this revert keeps both columns and their values. The provider alerts of
+-- So this revert keeps both columns, but clears their values (below). The provider alerts of
 -- subject model_policy are deleted and the subject CHECK narrowed back to
 -- 0230's (the older image's alert list knows only embedding and
 -- extraction). Then it takes 0347 off the ledger, so the next roll forward
@@ -22,6 +22,11 @@
 --   docker stop mantle_web
 --   docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 < 0347.revert.sql
 SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+-- The older image writes only the hash with a new password, so a password
+-- set while it runs would read as checked when 0347 comes back. Forget
+-- every check: the roll forward has each login sign in once under the rule.
+UPDATE "auth"."users" SET "password_checked_min" = NULL, "must_change_password" = false;
 --> statement-breakpoint
 DELETE FROM "public"."provider_alerts" WHERE "subject" = 'model_policy';
 --> statement-breakpoint

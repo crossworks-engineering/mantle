@@ -61,7 +61,7 @@ Rules for a company box. Set them in `.env` and restart. Nobody can change them 
 | `MANTLE_POLICY_MODEL_DENY` | Models no agent or worker may use, for example `deepseek/*,qwen/*`. While set, auto routers are blocked too. |
 | `MANTLE_POLICY_PROVIDER_ALLOW` | The only providers any agent or worker may use, for example `foundry,local`. |
 | `MANTLE_POLICY_ENDPOINT_ALLOW` | With a provider list: the servers a model route may name, for example `llm.example.internal:1234`. Empty: routes use the box's own endpoints only. |
-| `MANTLE_POLICY_PASSWORD_MIN` | The shortest password allowed (8 to 128), and common passwords are refused. Everyone signs in once after you turn it on; a person with a weaker password must change it then. |
+| `MANTLE_POLICY_PASSWORD_MIN` | The shortest password allowed (8 to 64), and common passwords are refused. Everyone signs in once after you turn it on; a person with a weaker password must change it then. |
 
 ## Next
 

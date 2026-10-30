@@ -1619,7 +1619,8 @@ screen is unchanged.
 Migration 0347 adds `auth.users.must_change_password` (default false) and
 `password_checked_min` (null), and lets `provider_alerts` hold the subject
 `model_policy`. Additive. A box with
-no `MANTLE_POLICY_*` values never writes either (docs/policy.md).
+no `MANTLE_POLICY_*` values never reads either; a new password writes the
+values it already holds (docs/policy.md).
 
 - **What it changes:** nothing on a box with no policy. With
   `MANTLE_POLICY_PASSWORD_MIN` set, every login signs in once under the
@@ -1632,9 +1633,11 @@ no `MANTLE_POLICY_*` values never writes either (docs/policy.md).
 - **Rolling back below it:** the older image runs with 0347 in place, but
   it has no hold: a held login signs in as before. Run the revert
   (`packages/db/rollback/0347_must_change_password.revert.sql`) before
-  pinning the older tag, with the web container stopped: it deletes the
-  `model_policy` alerts, narrows the subject check back and takes 0347 off
-  the ledger. The columns stay.
+  pinning the older tag, with the web container stopped: it clears every
+  login's checked rule (so the next roll forward has each login sign in
+  once again: the older image does not record a password's rule), deletes
+  the `model_policy` alerts, narrows the subject check back and takes 0347
+  off the ledger. The columns stay.
 
 ## Rollback
 

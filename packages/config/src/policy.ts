@@ -31,8 +31,10 @@ import { env } from './index';
 
 /** Today's password rule: 8 characters, no list. The floor of any policy. */
 export const DEFAULT_PASSWORD_MIN = 8;
-/** The longest minimum a policy may ask for (a password is capped at 1024). */
-export const MAX_PASSWORD_MIN = 128;
+/** The longest minimum a policy may ask for: bcrypt reads only a
+ *  password's first 72 bytes, so a longer minimum would promise more than
+ *  the hash keeps. */
+export const MAX_PASSWORD_MIN = 64;
 
 /** The parsed policy. `null` on a field = no rule. */
 export type BoxPolicy = Readonly<{
@@ -113,11 +115,12 @@ export function parsePolicy(raw: PolicyEnv): { policy: BoxPolicy; problems: stri
       problems.push(`MANTLE_POLICY_MODEL_DENY has a pattern it cannot read: ${bad.join(', ')}`);
     }
     if (!modelDeny.length) {
-      // Set but naming nothing: a box meant to have a model block must not
-      // boot without one.
       problems.push('MANTLE_POLICY_MODEL_DENY is set but names no pattern');
-      modelDeny = null;
     }
+    // A value set but unreadable (`deepseek/*;qwen/*`, `,`) blocks every
+    // model: a process that boots without assertEnvShape (a worker) never
+    // runs with a looser block than the operator meant.
+    if (bad.length || !modelDeny.length) modelDeny = ['*'];
   }
   let providerAllow: string[] | null = null;
   if (!blank(raw.providerAllow)) {
@@ -127,6 +130,9 @@ export function parsePolicy(raw: PolicyEnv): { policy: BoxPolicy; problems: stri
       problems.push(
         `MANTLE_POLICY_PROVIDER_ALLOW has a provider id it cannot read: ${bad.join(', ')}`,
       );
+    }
+    if (!providerAllow.length) {
+      problems.push('MANTLE_POLICY_PROVIDER_ALLOW is set but names no provider');
     }
     // An allow-list that parsed to nothing still allows nothing.
   }

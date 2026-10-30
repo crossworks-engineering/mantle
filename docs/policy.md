@@ -22,7 +22,8 @@ MANTLE_POLICY_PASSWORD_MIN=12
 A value that is set but cannot be read (a typo such as `of`, a minimum of 6)
 stops the web and API processes at start-up with the name of the setting
 (`assertEnvShape`). A worker that starts anyway reads the strictest meaning
-(Telegram off, the floor of the password rule), never a looser one.
+(Telegram off, a deny list that blocks every model, the strictest password
+rule the value allows), never a looser one.
 
 The one reader is `packages/config/src/policy.ts`. Each rule then has one
 gate, and every path goes through it.
@@ -124,7 +125,8 @@ uses it until it is moved.
 
 ## Passwords
 
-`MANTLE_POLICY_PASSWORD_MIN=<n>` (8 to 128) sets the password rule: at least
+`MANTLE_POLICY_PASSWORD_MIN=<n>` (8 to 64; bcrypt keeps a password's first
+72 bytes) sets the password rule: at least
 `n` characters, and not a common password from a list bundled in the image
 (`server/web/lib/auth/common-passwords.ts`; no outside call, no symbol
 rules). With no value the rule is today's: 8 characters, no list.
@@ -175,8 +177,14 @@ Every other route answers `403 { error: 'password_change_required', code:
 gate). MCP refuses the login's connectors, keys and linked brains, and a
 Telegram chat paired to it is refused with a short reply but stays paired,
 until the change. A new password clears the flag. With no rule set neither
-column is ever written or read, so a box whose operator removes the rule
-lets every login through again.
+column is read (a new password and the first owner write the values a box
+without a rule already holds: false and null), so a box whose operator
+removes the rule lets every login through again.
+
+A password change ends the login's other sessions and revokes its API keys,
+MCP connectors and linked brains, as every password change does; a forced
+change too. A person held on turning the rule on makes new keys after the
+change.
 
 Not held: a `?at=` file link (two hours at most), a print's render cookie
 and an app frame ticket (minutes) minted before the hold, a public share

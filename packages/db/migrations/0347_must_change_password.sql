@@ -19,8 +19,9 @@
 -- up since) must sign in with its password once before anything else, so
 -- the rule can check it.
 --
--- A box with no password rule never sets either and never reads them:
--- every row keeps false and null, and sign-in is exactly as before.
+-- A box with no password rule never reads either. It writes them only
+-- with a new password and the first owner, the values they already hold
+-- there (false and null): sign-in is exactly as before.
 --
 -- Grants come from the access matrix, never from here: the narrow login
 -- gets no UPDATE on either column (both are written on the full route, at
