@@ -13,7 +13,7 @@ panel and no boot check. `packages/config/src/policy.test.ts` and
 
 ```sh
 MANTLE_POLICY_TELEGRAM=off
-MANTLE_POLICY_MODEL_DENY=deepseek/*,qwen/*,moonshotai/*,z-ai/*,minimax/*
+MANTLE_POLICY_MODEL_DENY=deepseek/*,qwen/*,qwq/*,moonshotai/*,kimi/*,z-ai/*,glm/*,minimax/*
 MANTLE_POLICY_PROVIDER_ALLOW=foundry,local
 MANTLE_POLICY_ENDPOINT_ALLOW=llm.example.internal:1234,corp-ai.openai.azure.com
 MANTLE_POLICY_PASSWORD_MIN=12
