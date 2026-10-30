@@ -856,7 +856,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'tables-rows',
     name: 'Tables row writes',
     description:
-      'Row inserts + updates, one row or a batch ("log this expense", "mark these five done") — the light write slice of the grid. Schema/column/tab work, imports, reorders, and transforms that need logic stay with the Ledger specialist; row deletes stay deliberate-only (table-admin).',
+      'Row inserts + updates, one row or a batch ("log this expense", "mark these five done"): the light write slice of the grid. Schema/column/tab work, imports, reorders, and transforms that need logic stay with the Ledger specialist; row deletes stay deliberate-only (table-admin).',
     toolSlugs: ['table_row_add', 'table_row_update', 'table_rows_add', 'table_rows_upsert'],
   },
   {
