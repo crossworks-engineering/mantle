@@ -1,6 +1,6 @@
 # Motion in a canvas
 
-Version: motion 14.6.0, as this brain's canvas runtime pins it.
+Version: motion 14.7.1, as this brain's canvas runtime pins it.
 Source: the Motion docs for JavaScript (motion.dev, its llms.txt index and
 the `animate` page) and its changelog. Written for Mantle, not copied.
 

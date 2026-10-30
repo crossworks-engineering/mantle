@@ -26,7 +26,7 @@ minimumReleaseAgeExclude:
 # pdf-parse declares its own (5.4.296); this pulls it onto ours.
 overrides:
   pdfjs-dist: 6.4.299
-  '@napi-rs/canvas': 1.0.10
+  '@napi-rs/canvas': 1.0.13
 
   # Single `pg`. drizzle-orm peers on pg, so two pg versions make pnpm build two
   # peer-resolved drizzle instances whose SQL<> types are nominally incompatible —
@@ -46,6 +46,8 @@ overrides:
   # 2026-10 refresh additions:
   'concurrently>shell-quote': ^1.11.0 # pins 1.9.0 exactly (GHSA-pqg4, critical); dev-only, 1.11/1.12 are parser fixes and additions
   '@tailwindcss/typography>postcss-selector-parser': ^7.1.6 # pins 6.0.10 (GHSA-rj75); 7.0's one break is safe insert-during-walk, generated CSS checked byte-identical
+  # 2026-10-30:
+  '@modelcontextprotocol/node>@hono/node-server': ^2.1.3 # declares ^1.19.9 || ^2.1.3 and pnpm takes the 1.x side; no 1.x carries the fix (Dependabot, fixed in 2.1.3)
 
   # Patch-level floors for transitively-resolved vulnerable versions the
   # parents' own ranges already allow (pnpm update can't reach transitives;
@@ -55,11 +57,11 @@ overrides:
   'brace-expansion@<1.1.21': '^1.1.21'
   'brace-expansion@>=2.0.0 <2.1.7': '^2.1.7'
   'brace-expansion@>=4.0.0 <5.0.12': '^5.0.12'
-  'dompurify@<3.4.16': '^3.4.16'
+  'dompurify@<3.4.17': '^3.4.17'
   'fast-uri@>=3.0.0 <3.1.8': '^3.1.8'
   'hono@<4.12.34': '^4.12.34'
   '@hono/node-server@<1.19.15': '^1.19.15'
-  'ip-address@<10.7.1': '^10.7.1'
+  'ip-address@<10.7.4': '^10.7.4'
   'mermaid@>=11.0.0 <11.16.1': '^11.16.1'
   'nanoid@<3.3.18': '^3.3.18'
   'nanoid@>=5.0.0 <5.1.16': '^5.1.16'

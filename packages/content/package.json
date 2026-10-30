@@ -56,19 +56,19 @@
     "@mantle/tabledb": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@resvg/resvg-wasm": "2.6.2",
-    "docx": "^9.14.0",
+    "docx": "^9.15.0",
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.2",
     "livekit-server-sdk": "2.19.2",
-    "marked": "^18.1.1",
+    "marked": "^18.1.2",
     "mathjs": "15.2.0",
     "saxes": "6.0.0",
     "tz-lookup": "^6.1.25",
     "wawoff2": "^2.0.1"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "typescript": "^5.9.3"
   }
 }

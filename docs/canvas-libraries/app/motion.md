@@ -1,6 +1,6 @@
 # Motion in a mini app
 
-Version: motion 14.6.0, as this brain's app runtime serves it.
+Version: motion 14.7.1, as this brain's app runtime serves it.
 Source: the Motion docs for React (motion.dev, its llms.txt index and the
 `motion` component, `AnimatePresence` and `MotionConfig` pages) and its
 changelog. Written for Mantle, not copied.
