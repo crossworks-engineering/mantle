@@ -110,9 +110,21 @@ describe('parsePolicy', () => {
     expect(problems).toHaveLength(2);
     expect(policy.telegram).toBe('off');
     expect(policy.passwordMin).toBe(8);
-    expect(parsePolicy({ passwordMin: 'twelve' }).policy.passwordMin).toBe(128);
+    expect(parsePolicy({ passwordMin: 'twelve' }).policy.passwordMin).toBe(64);
+    expect(parsePolicy({ passwordMin: '72' }).problems).toHaveLength(1);
     expect(parsePolicy({ passwordMin: '500' }).problems).toHaveLength(1);
     expect(parsePolicy({ providerAllow: 'open router' }).problems).toHaveLength(1);
+  });
+
+  it('a deny list it cannot read blocks every model (a worker boots on it)', () => {
+    for (const modelDeny of ['deepseek/*;qwen/*', ',', ' , ']) {
+      const { policy, problems } = parsePolicy({ modelDeny });
+      expect(problems.length, modelDeny).toBeGreaterThan(0);
+      expect(policy.modelDeny, modelDeny).toEqual(['*']);
+    }
+    setPolicy({ MANTLE_POLICY_MODEL_DENY: 'deepseek/*;qwen/*' });
+    expect(modelPolicyRefusal('openrouter', 'anthropic/claude-sonnet-5')?.rule).toBe('model_deny');
+    expect(parsePolicy({ providerAllow: ',' }).problems).toHaveLength(1);
   });
 
   it('a value set to nothing, or read only with another, is a problem', () => {

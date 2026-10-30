@@ -20,7 +20,9 @@ export function modelPolicyIssue(
   /** The route's own base URL, where the save names one. */
   baseUrl?: string | null,
 ): string | null {
-  if (!provider || !model) return null;
+  // An agent that inherits its model (`inherit`) has no route of its own:
+  // the route it inherits is checked where it is saved.
+  if (!provider || !model || model === 'inherit') return null;
   return modelPolicyRefusal(provider, model, baseUrl)?.message ?? null;
 }
 
