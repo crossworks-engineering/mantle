@@ -8,6 +8,11 @@
 import { describe, expect, it } from 'vitest';
 import { MODEL_POOLS, poolModelIssue, kindFromModalities } from './model-pools';
 import { CURATED_MODEL_POOLS } from './model-pools-data';
+import {
+  DECISION_MODEL_PROFILES,
+  decisionModelProfile,
+  decisionModelRefusal,
+} from './decision-models';
 
 const READER = { input: ['text', 'image'], output: ['text'] };
 const GENERATOR = { input: ['image', 'text'], output: ['image', 'text'] };
@@ -153,5 +158,78 @@ describe('poolModelIssue: the decider pool', () => {
   it('stays fail-open with no catalog evidence', () => {
     expect(poolModelIssue('decider', null)).toBeNull();
     expect(poolModelIssue('decider', { input: [], output: [] })).toBeNull();
+  });
+
+  it('refuses the 4 models that cannot take the request, catalog or not', () => {
+    const decisions = { input: ['text'], output: ['decisions'] };
+    for (const id of [
+      'scaledown/classify-1',
+      'respan/span-01',
+      'respan/span-01-lite',
+      'respan/span-01-lite:free',
+      'Cloudflare/Clairic',
+    ]) {
+      expect(poolModelIssue('decider', decisions, id), id).toMatch(/cannot take/);
+      expect(poolModelIssue('decider', null, id), id).toMatch(/cannot take/);
+    }
+  });
+
+  it('accepts the tested models, the slow ones and an untested id', () => {
+    const decisions = { input: ['text'], output: ['decisions'] };
+    for (const id of [
+      '~typesafe/jev-latest',
+      'perplexity/pplx-decider-v1.2',
+      'openai/gpt-6-luna-decisions',
+      'liquid/d1',
+      'some-vendor/new-decider',
+    ]) {
+      expect(poolModelIssue('decider', decisions, id), id).toBeNull();
+    }
+  });
+
+  it('the refusal is the decider pool only', () => {
+    expect(poolModelIssue('summarizer', null, 'respan/span-01')).toBeNull();
+  });
+});
+
+describe('decision model profiles', () => {
+  it('holds the 28 probed models once each, plus the shipped alias', () => {
+    const ids = DECISION_MODEL_PROFILES.map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.filter((id) => !id.startsWith('~'))).toHaveLength(28);
+    expect(ids).toContain('~typesafe/jev-latest');
+    for (const id of ids) expect(id, id).toBe(id.toLowerCase());
+  });
+
+  it('counts each group as the probe found it', () => {
+    const count = (s: string) =>
+      DECISION_MODEL_PROFILES.filter((p) => p.status === s && !p.id.startsWith('~')).length;
+    expect(count('works')).toBe(6);
+    expect(count('no_training_only')).toBe(2);
+    expect(count('slow')).toBe(9);
+    expect(count('fails_full_size')).toBe(7);
+    expect(count('refused')).toBe(4);
+  });
+
+  it('a model that needs no_training says so, and the rest take zdr', () => {
+    for (const p of DECISION_MODEL_PROFILES) {
+      expect(p.privacy, p.id).toBe(p.status === 'no_training_only' ? 'no_training' : 'zdr');
+    }
+  });
+
+  it('looks up by id, case and variant suffix aside, and says nothing of an untested id', () => {
+    expect(decisionModelProfile('OpenAI/GPT-6-Luna-Decisions')?.thresholdStart).toBe(1.0);
+    expect(decisionModelProfile('respan/span-01-lite:free')?.status).toBe('refused');
+    expect(decisionModelProfile('some-vendor/new-decider')).toBeNull();
+    expect(decisionModelProfile(null)).toBeNull();
+    expect(decisionModelRefusal('typesafe/jev-1.14')).toBeNull();
+  });
+
+  it('every shipped decider template model is profiled as working', () => {
+    const shipped = CURATED_MODEL_POOLS.filter((e) => e.pool === 'decider').flatMap((e) =>
+      e.routes.map((r) => r.model),
+    );
+    expect(shipped).toEqual(['~typesafe/jev-latest', 'perplexity/pplx-decider-v1.2']);
+    for (const id of shipped) expect(decisionModelProfile(id)?.status, id).toBe('works');
   });
 });

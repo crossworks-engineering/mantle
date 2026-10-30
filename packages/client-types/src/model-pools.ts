@@ -10,6 +10,8 @@
  * not switchable (docs/embeddings.md), so curating it would be a trap.
  */
 
+import { decisionModelRefusal } from './decision-models';
+
 export type ModelPoolDef = {
   id: string;
   label: string;
@@ -209,9 +211,18 @@ export function kindFromModalities(output: readonly string[]): CatalogKind {
 export function poolModelIssue(
   poolId: string,
   modalities: ModelModalities | null | undefined,
+  /** The model id, when the caller has it: the decider pool also refuses a
+   *  decision model our own probe found cannot take the request. That is our
+   *  evidence, not the catalog's, so it applies with no catalog too. */
+  modelId?: string | null,
 ): string | null {
   const pool = POOL_BY_ID.get(poolId);
-  if (!pool || !modalities) return null;
+  if (!pool) return null;
+  if (pool.modality.output === 'decisions') {
+    const refusal = decisionModelRefusal(modelId);
+    if (refusal) return refusal;
+  }
+  if (!modalities) return null;
   const want = pool.modality;
   const outputs = modalities.output ?? [];
   const inputs = modalities.input ?? [];

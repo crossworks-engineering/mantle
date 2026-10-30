@@ -47,6 +47,7 @@ import {
   type DecisionDispatcher,
   type DecisionQuestion,
 } from '@mantle/voice';
+import { deciderPrivacy } from './privacy';
 import { CircuitBreaker } from './breaker';
 import { DecisionCache } from './cache';
 
@@ -296,7 +297,7 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
           model: worker.model,
           state: input.state,
           questions: input.questions,
-          zeroDataRetention: params.zdr !== false,
+          privacy: deciderPrivacy(params),
           timeoutMs: timeoutOf(params, input.timeoutFactor),
         });
         const ms = Date.now() - t0;

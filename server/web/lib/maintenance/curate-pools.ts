@@ -473,10 +473,11 @@ export function planCuration(input: PlanInput): CurationPlan {
         !searchTierFits(pool.id, row.id)
       )
         continue;
-      const issue = poolModelIssue(pool.id, {
-        input: row.inputModalities,
-        output: row.outputModalities,
-      });
+      const issue = poolModelIssue(
+        pool.id,
+        { input: row.inputModalities, output: row.outputModalities },
+        row.id,
+      );
       if (issue) continue;
       const perM = blended(row.inputPerM, row.outputPerM);
       // A workhorse pool refuses a flagship outright. Ranking alone will not

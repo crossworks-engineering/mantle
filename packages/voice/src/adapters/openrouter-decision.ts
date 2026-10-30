@@ -10,13 +10,22 @@
  * throw into "no decision" so a call site continues on its own path — an alpha
  * endpoint going away must never break a search or a turn.
  *
- * Privacy: `zeroDataRetention` sends `provider: { zdr: true, data_collection:
- * 'deny' }`, both of which OpenRouter honours on this endpoint (verified
- * 2026-09-21). Raw fetch, same auth + attribution headers as the other
+ * Privacy: every call carries a `provider` block (`decisionProviderPrefs`,
+ * the one mapping): `zdr` sends `{ zdr: true, data_collection: 'deny' }`,
+ * `no_training` sends `{ data_collection: 'deny' }`. OpenRouter honours both
+ * on this endpoint (verified 2026-09-21 and 2026-10-30). A model with no
+ * zero-retention route answers 404 under `zdr`; the adapter says so and never
+ * retries with less. Raw fetch, same auth + attribution headers as the other
  * OpenRouter adapters so OR's dashboard sees one fingerprint.
  */
 
-import type { DecisionAnswer, DecisionDispatcher, DecisionOptions, DecisionResult } from './types';
+import type {
+  DecisionAnswer,
+  DecisionDispatcher,
+  DecisionOptions,
+  DecisionPrivacy,
+  DecisionResult,
+} from './types';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
 import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
@@ -87,17 +96,42 @@ export function normaliseAnswer(a: WireAnswer | undefined): DecisionAnswer | nul
   }
 }
 
+/** The privacy level as OpenRouter's provider preferences. Anything but an
+ *  exact `no_training` is `zdr`: an unknown value never loosens the call. */
+export function decisionProviderPrefs(privacy: DecisionPrivacy | undefined): {
+  zdr?: true;
+  data_collection: 'deny';
+} {
+  return privacy === 'no_training'
+    ? { data_collection: 'deny' }
+    : { zdr: true, data_collection: 'deny' };
+}
+
 /** Build the request body. Exported for the wire-shape test. */
 export function buildDecisionBody(opts: DecisionOptions): Record<string, unknown> {
-  const body: Record<string, unknown> = {
+  return {
     model: opts.model,
     state: opts.state,
     questions: opts.questions,
+    provider: decisionProviderPrefs(opts.privacy),
   };
-  if (opts.zeroDataRetention !== false) {
-    body.provider = { zdr: true, data_collection: 'deny' };
-  }
-  return body;
+}
+
+/** The error text for a failed call. A 404 under `zdr` is most often a model
+ *  with no zero-retention route, so it names the admin's choice; the call is
+ *  never repeated with less privacy. */
+export function decisionErrorMessage(
+  status: number,
+  providerMessage: string,
+  opts: Pick<DecisionOptions, 'model' | 'privacy'>,
+): string {
+  const base = `openrouter-decision ${status}: ${providerMessage}`;
+  if (status !== 404 || decisionProviderPrefs(opts.privacy).zdr !== true) return base;
+  return (
+    `${base}. If '${opts.model}' has no zero-data-retention route, the decider stays off for it: ` +
+    `an admin may set the decider's privacy to 'no_training' (no data collection, retention allowed). ` +
+    `Mantle never loosens privacy by itself.`
+  );
 }
 
 export const openrouterDecisionAdapter: DecisionDispatcher = {
@@ -129,7 +163,7 @@ export const openrouterDecisionAdapter: DecisionDispatcher = {
         provider: 'openrouter',
         status: res.status,
         body: text,
-        message: `openrouter-decision ${res.status}: ${msg}`,
+        message: decisionErrorMessage(res.status, msg, opts),
       });
     }
     if (!json || !json.answers || typeof json.answers !== 'object') {

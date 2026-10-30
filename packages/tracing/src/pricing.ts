@@ -85,7 +85,18 @@ const PRICING: Record<string, PricePerToken> = {
   // accurate path, this is the fallback floor. `~typesafe/jev-latest` is the
   // auto-updating alias of the same model.
   'typesafe/jev-1.13': { input: 0.000000042, output: 0 },
+  'typesafe/jev-1.14': { input: 0.000000042, output: 0 },
   '~typesafe/jev-latest': { input: 0.000000042, output: 0 },
+  // The other decision models that answer a full-size request (groups A and
+  // B of the 2026-10-30 probe; OpenRouter list prices that day). A route
+  // with no `usage.cost` (Foundry) prices from these. Span-02 bills the state
+  // once per question, so its token count is already the large one.
+  'perplexity/pplx-decider-v1.2': { input: 0.00000002, output: 0 },
+  'microsoft/microsoft-decision-1': { input: 0.000000042, output: 0 },
+  'nace-ai/drex-v1.5': { input: 0.00000004, output: 0 },
+  'cloudflare/clef-omni': { input: 0.00000015, output: 0 },
+  'openai/gpt-6-luna-decisions': { input: 0.0000001, output: 0 },
+  'respan/span-02': { input: 0.00000001, output: 0 },
 };
 
 /**

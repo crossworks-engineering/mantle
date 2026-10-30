@@ -41,6 +41,26 @@ describe('classifyOne', () => {
     expect(v.status === 'unchecked' && v.reason).toMatch(/meta-router/);
   });
 
+  it('flags a refused decision model on a decider worker, catalog or not', () => {
+    const worker = subject({
+      source: 'worker',
+      pool: 'decider',
+      label: 'Decider',
+      model: 'respan/span-01',
+    });
+    for (const m of [{ input: ['text'], output: ['decisions'] }, null]) {
+      const v = classifyOne(worker, m);
+      expect(v.status).toBe('misfit');
+      expect(v.status === 'misfit' && v.reason).toMatch(/cannot take/);
+    }
+    expect(
+      classifyOne(
+        { ...worker, model: '~typesafe/jev-latest' },
+        { input: ['text'], output: ['decisions'] },
+      ).status,
+    ).toBe('fits');
+  });
+
   it('flags a generator on a live worker too', () => {
     const v = classifyOne(subject({ source: 'worker', label: 'Image reader' }), GENERATOR);
     expect(v.status).toBe('misfit');

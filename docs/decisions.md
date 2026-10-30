@@ -51,25 +51,33 @@ going away breaks nothing.
    literally. **Never let a Jev answer alone authorise a side effect:** text
    inside the state can steer it.
 7. **The state leaves the box** (OpenRouter → TypeSafe). Every call carries
-   `provider: { zdr: true, data_collection: 'deny' }` (`params.zdr`, default
-   on; OpenRouter honours both on this endpoint). Keep the worker off on a
-   brain whose owner has not opted in.
+   a privacy block. `params.privacy` is `zdr` (the default: `provider: { zdr:
+true, data_collection: 'deny' }`) or `no_training` (`data_collection:
+'deny'` only, for a model with no zero-retention route, such as GPT-6
+   Luna Decisions). The old `params.zdr` is still read: `true` is `zdr`,
+   `false` is `no_training` (it used to send no block at all). If the two
+   keys disagree, the stricter wins; an unknown value is `zdr`. One read,
+   `deciderPrivacy()` in `packages/decisions/src/privacy.ts`; one mapping to
+   the wire, `decisionProviderPrefs()` in the adapter. A 404 under `zdr`
+   gets an error that names the admin's choice; Mantle never retries with
+   less privacy. Keep the worker off on a brain whose owner has not opted in.
 
 ## 2. Where it lives
 
-| Piece                                                                                                                                         | File                                                                                      |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Worker kind `decider`, `DeciderParams`, `DecisionUse`                                                                                         | `packages/db/src/schema/ai-workers.ts` (migration 0158)                                   |
-| Capability `decision`, `CAPABILITY_FOR_KIND.decider`                                                                                          | `packages/voice-client/src/providers.ts`                                                  |
-| `DecisionDispatcher`, question/answer types                                                                                                   | `packages/voice-client/src/adapters/types.ts`                                             |
-| Registry (`registerDecisionAdapter` / `getDecisionAdapter`, `WIRED_PROVIDERS.decision`)                                                       | `packages/voice-client/src/adapters/registry.ts`                                          |
-| The one adapter                                                                                                                               | `packages/voice/src/adapters/openrouter-decision.ts` (+ wire-shape test)                  |
-| **`decide()`**, `resolveUse`, per-owner resolution cache, in-process answer cache                                                             | `packages/decisions/src/decide.ts`, `cache.ts`                                            |
-| Use: passage scoring                                                                                                                          | `packages/decisions/src/passage-scoring.ts`                                               |
-| Manifest entry (optional, `enabled: true`, built uses `live`)                                                                                 | `server/web/lib/system-manifest/manifest.ts`                                              |
-| Test button RPC + route                                                                                                                       | `server/web/lib/ai-worker-rpc.ts` `testDecision`, `app/api/ai-workers/[id]/test/decision` |
-| Model pool `decider` (output modality `decisions`; a chat model is rejected here and Jev is rejected in every text pool) + one template entry | `packages/client-types/src/model-pools.ts`, `model-pools-data.json`                       |
-| Pricing fallback rows                                                                                                                         | `packages/tracing/src/pricing.ts`                                                         |
+| Piece                                                                                                                                                                               | File                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Worker kind `decider`, `DeciderParams`, `DecisionUse`                                                                                                                               | `packages/db/src/schema/ai-workers.ts` (migration 0158)                                   |
+| Capability `decision`, `CAPABILITY_FOR_KIND.decider`                                                                                                                                | `packages/voice-client/src/providers.ts`                                                  |
+| `DecisionDispatcher`, question/answer types                                                                                                                                         | `packages/voice-client/src/adapters/types.ts`                                             |
+| Registry (`registerDecisionAdapter` / `getDecisionAdapter`, `WIRED_PROVIDERS.decision`)                                                                                             | `packages/voice-client/src/adapters/registry.ts`                                          |
+| The one adapter                                                                                                                                                                     | `packages/voice/src/adapters/openrouter-decision.ts` (+ wire-shape test)                  |
+| **`decide()`**, `resolveUse`, per-owner resolution cache, in-process answer cache                                                                                                   | `packages/decisions/src/decide.ts`, `cache.ts`                                            |
+| Use: passage scoring                                                                                                                                                                | `packages/decisions/src/passage-scoring.ts`                                               |
+| Manifest entry (optional, `enabled: true`, built uses `live`)                                                                                                                       | `server/web/lib/system-manifest/manifest.ts`                                              |
+| Test button RPC + route                                                                                                                                                             | `server/web/lib/ai-worker-rpc.ts` `testDecision`, `app/api/ai-workers/[id]/test/decision` |
+| Model pool `decider` (output modality `decisions`; a chat model is rejected here and Jev is rejected in every text pool) + two template entries (Jev, then Perplexity Decider v1.2) | `packages/client-types/src/model-pools.ts`, `model-pools-data.json`                       |
+| Decision model profiles (the 2026-10-30 probe of 28 models; the pool refuses the 4 that cannot take the request)                                                                    | `packages/client-types/src/decision-models.ts`                                            |
+| Pricing fallback rows                                                                                                                                                               | `packages/tracing/src/pricing.ts`                                                         |
 
 `@mantle/decisions` depends on db, api-keys, voice, tracing. Both `@mantle/tools`
 and `@mantle/runtime` depend on it (a tool cannot import runtime), which is why

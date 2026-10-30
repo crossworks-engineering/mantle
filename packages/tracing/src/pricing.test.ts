@@ -2,6 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { fallbackCostMicroUsd } from './pricing';
 
 describe('fallbackCostMicroUsd', () => {
+  it('prices every decision model that answers a full-size request', () => {
+    // Groups A and B of the 2026-10-30 probe. A route with no usage.cost
+    // (Foundry) prices from these rows, or its spend reads $0.
+    for (const id of [
+      '~typesafe/jev-latest',
+      'typesafe/jev-1.14',
+      'typesafe/jev-1.13',
+      'perplexity/pplx-decider-v1.2',
+      'microsoft/microsoft-decision-1',
+      'nace-ai/drex-v1.5',
+      'cloudflare/clef-omni',
+      'openai/gpt-6-luna-decisions',
+      'respan/span-02',
+    ]) {
+      expect(fallbackCostMicroUsd(id, { input: 1_000_000, output: 0 }), id).toBeGreaterThan(0);
+    }
+    // Luna: $0.10 per 1M input tokens.
+    expect(
+      fallbackCostMicroUsd('openai/gpt-6-luna-decisions', { input: 1_000_000, output: 0 }),
+    ).toBe(100_000);
+  });
+
   it('prices a known OpenRouter slug (result is micro-USD)', () => {
     // gpt-4o-mini: input $0.00000015/tok, output $0.0000006/tok.
     // 1M input tokens = $0.15 = 150_000 µ$; 1M output = $0.60 = 600_000 µ$.

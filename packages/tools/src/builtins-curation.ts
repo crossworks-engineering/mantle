@@ -545,12 +545,19 @@ const model_pool_list: BuiltinToolDef = {
 async function poolFitIssue(pool: string, routes: CuratedRoute[]): Promise<string | null> {
   const route = routes.find((r) => r.provider === 'openrouter');
   if (!route) return null;
+  // Our own probe's refusal needs no catalog (a refused decision model).
+  const refused = poolModelIssue(pool, null, route.model);
+  if (refused) return refused;
   const res = await loadCatalog();
   if (!res.ok) return null;
   const slug = route.model.trim().toLowerCase();
   const hit = res.models.find((m) => m.id.toLowerCase() === slug);
   if (!hit) return null;
-  return poolModelIssue(pool, { input: hit.inputModalities, output: hit.outputModalities });
+  return poolModelIssue(
+    pool,
+    { input: hit.inputModalities, output: hit.outputModalities },
+    route.model,
+  );
 }
 
 const model_pool_set: BuiltinToolDef = {

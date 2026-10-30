@@ -327,9 +327,15 @@ export type DecisionUseConfig = {
  *  USED, which is the experimental part. */
 export type DeciderParams = {
   uses?: Partial<Record<DecisionUse, DecisionUseConfig>>;
-  /** Ask OpenRouter for zero-data-retention routing + `data_collection:
-   *  'deny'` on every call. Default true: the state can hold the owner's
-   *  documents. */
+  /** What the provider may do with the state, which can hold the owner's
+   *  documents. `zdr` (default): zero-data-retention routing + no data
+   *  collection. `no_training`: no data collection only, for a model with no
+   *  zero-retention route. Read through `deciderPrivacy()` in
+   *  @mantle/decisions, never directly. */
+  privacy?: 'zdr' | 'no_training';
+  /** The old spelling, still read: `true` is `zdr`, `false` is `no_training`.
+   *  When both keys are set and disagree, the stricter one wins, so a writer
+   *  that sets `privacy` keeps this in step (or drops it). */
   zdr?: boolean;
   /** Hard ceiling per call; a slow decision is worse than none (the caller
    *  continues on its own path). Default 1500. */

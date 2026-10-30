@@ -937,6 +937,12 @@ export type DecisionAnswer =
     }
   | { type: 'noul'; probability: number };
 
+/** The decider's privacy level. `zdr`: zero-data-retention routing and no
+ *  data collection (the default). `no_training`: no data collection only, for
+ *  a model with no zero-retention route. An adapter never loosens it by
+ *  itself after a failure: an admin chooses `no_training`. */
+export type DecisionPrivacy = 'zdr' | 'no_training';
+
 export interface DecisionOptions {
   apiKey: string;
   model: string;
@@ -944,9 +950,9 @@ export interface DecisionOptions {
    *  name the questions can point at) or an array. Text only. */
   state: unknown;
   questions: Record<string, DecisionQuestion>;
-  /** Ask the provider for zero-data-retention routing and no data
-   *  collection. The state can hold the owner's documents. */
-  zeroDataRetention?: boolean;
+  /** What the provider may do with the state, which can hold the owner's
+   *  documents. Unset = `zdr`. */
+  privacy?: DecisionPrivacy;
   /** Hard ceiling; the adapter aborts and throws past it. */
   timeoutMs?: number;
 }

@@ -27,6 +27,8 @@ import {
 import { embed, resolveEmbeddingModel, runReembed, type ReembedResult } from '@mantle/embeddings';
 import { chatWithFailover, resolveChatRoutes } from '@mantle/runtime/agent';
 import { getAiWorker } from '@/lib/ai-workers';
+import type { DeciderParams } from '@mantle/db';
+import { deciderPrivacy } from '@mantle/decisions';
 import { errorMessage, publicErrorMessage } from '@mantle/std';
 
 export type DiscoverKind = 'tts' | 'stt' | 'chat' | 'vision' | 'image_gen' | 'embedding';
@@ -463,7 +465,7 @@ export async function testDecision(
   if (!adapter) throw new Error(`no decision adapter for provider '${worker.provider}'`);
   const apiKey = (await resolveProviderKey(userId, worker.provider, worker.apiKeyId))?.apiKey;
   if (!apiKey) throw new Error('no API key on this worker (or for its provider)');
-  const params = (worker.params ?? {}) as { zdr?: boolean; timeout_ms?: number };
+  const params = (worker.params ?? {}) as DeciderParams;
   const message =
     (text ?? '').trim() ||
     'My checkout page shows a blank screen after I click Pay. I have tried two browsers.';
@@ -497,7 +499,7 @@ export async function testDecision(
         instructions: 'Does `message` report broken or unexpected product behaviour?',
       },
     },
-    zeroDataRetention: params.zdr !== false,
+    privacy: deciderPrivacy(params),
     timeoutMs: Math.max(params.timeout_ms ?? 1500, 5000),
   });
   return {

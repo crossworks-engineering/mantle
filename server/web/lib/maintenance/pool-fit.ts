@@ -70,10 +70,13 @@ export function classifyOne(subject: FitSubject, modalities: ModelModalities | n
       reason: 'meta-router — modalities are a union over its routes',
     };
   }
+  // A refused decision model is our own probe's evidence, not the catalog's.
+  const refused = poolModelIssue(subject.pool, null, subject.model);
+  if (refused) return { status: 'misfit', subject, reason: refused };
   if (!modalities) {
     return { status: 'unchecked', subject, reason: 'not in the live OpenRouter catalog' };
   }
-  const reason = poolModelIssue(subject.pool, modalities);
+  const reason = poolModelIssue(subject.pool, modalities, subject.model);
   return reason ? { status: 'misfit', subject, reason } : { status: 'fits', subject };
 }
 

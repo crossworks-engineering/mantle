@@ -7,6 +7,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildDecisionBody,
+  decisionErrorMessage,
+  decisionProviderPrefs,
   normaliseAnswer,
   openrouterDecisionAdapter,
 } from './openrouter-decision';
@@ -64,15 +66,40 @@ describe('buildDecisionBody', () => {
     });
   });
 
-  it('omits the provider block only when zeroDataRetention is explicitly false', () => {
+  it('no_training sends data_collection deny without zdr', () => {
     const body = buildDecisionBody({
       apiKey: 'k',
       model: 'm',
       state: 's',
       questions: QUESTIONS,
-      zeroDataRetention: false,
+      privacy: 'no_training',
     });
-    expect(body.provider).toBeUndefined();
+    expect(body.provider).toEqual({ data_collection: 'deny' });
+  });
+
+  it('never sends a call with no privacy block, and an unknown value is zdr', () => {
+    expect(decisionProviderPrefs(undefined)).toEqual({ zdr: true, data_collection: 'deny' });
+    expect(decisionProviderPrefs('zdr')).toEqual({ zdr: true, data_collection: 'deny' });
+    expect(decisionProviderPrefs('none' as never)).toEqual({ zdr: true, data_collection: 'deny' });
+  });
+});
+
+describe('decisionErrorMessage', () => {
+  it('a 404 under zdr names the admin choice and keeps the provider words', () => {
+    const msg = decisionErrorMessage(404, 'No endpoints found', {
+      model: 'openai/x',
+      privacy: 'zdr',
+    });
+    expect(msg).toContain('openrouter-decision 404: No endpoints found');
+    expect(msg).toContain("'no_training'");
+    expect(msg).toContain('never loosens');
+  });
+
+  it('other failures, and a 404 under no_training, keep the plain text', () => {
+    expect(decisionErrorMessage(500, 'boom', { model: 'm' })).toBe('openrouter-decision 500: boom');
+    expect(decisionErrorMessage(404, 'gone', { model: 'm', privacy: 'no_training' })).toBe(
+      'openrouter-decision 404: gone',
+    );
   });
 });
 

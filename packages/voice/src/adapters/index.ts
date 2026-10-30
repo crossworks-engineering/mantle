@@ -198,6 +198,7 @@ export {
   type DecisionAnswer,
   type DecisionDispatcher,
   type DecisionOptions,
+  type DecisionPrivacy,
   type DecisionQuestion,
   type DecisionResult,
   type AdapterMeta,

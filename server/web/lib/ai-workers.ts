@@ -298,8 +298,9 @@ const CHAT_CATALOG_KINDS = new Set([
   'narrator',
   'suggester',
   // The decider's model is in the same catalog (OpenRouter lists Jev with
-  // output modality `decisions`); the existence check applies, and there is
-  // no curated pool for it so the modality check is a no-op.
+  // output modality `decisions`); the existence check applies, and the
+  // `decider` pool refuses a chat model and a decision model that cannot
+  // take the request (decision-models.ts).
   'decider',
 ]);
 
@@ -346,7 +347,7 @@ export async function openRouterModelIssue(opts: {
   // modalities are the UNION over everything they might route to, which says
   // nothing about the model that actually answers.
   if (!isRouterSlug(opts.model)) {
-    const issue = poolModelIssue(opts.kind, catalogModalities(opts.model));
+    const issue = poolModelIssue(opts.kind, catalogModalities(opts.model), opts.model);
     if (issue) return `Model '${opts.model}' does not fit a ${opts.kind} worker: ${issue}`;
   }
   return null;

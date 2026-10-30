@@ -2038,5 +2038,26 @@
     },
     "rating": 5,
     "note": "the shipped default for this pool; auto-updating alias — tracks this vendor’s current model"
+  },
+  {
+    "pool": "decider",
+    "position": 1,
+    "name": "Perplexity: Decider V1.2",
+    "vendor": "Perplexity",
+    "routes": [
+      {
+        "provider": "openrouter",
+        "model": "perplexity/pplx-decider-v1.2"
+      }
+    ],
+    "pricing": {
+      "inputPerM": 0.02,
+      "outputPerM": 0,
+      "currency": "USD",
+      "capturedAt": "2026-10-30T00:00:00.000Z",
+      "source": "openrouter"
+    },
+    "rating": 4,
+    "note": "second choice, not the default: tied Jev on quality at about half the cost in the 2026-10-30 test; slower (median 643 ms)"
   }
 ]

@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   sent: 0,
   states: [] as Array<{ message?: string }>,
   timeouts: [] as number[],
+  privacies: [] as unknown[],
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -38,8 +39,10 @@ vi.mock('@mantle/voice', () => ({
         questions: Record<string, unknown>;
         state: { message?: string };
         timeoutMs: number;
+        privacy?: unknown;
       }) => {
         h.states.push(req.state);
+        h.privacies.push(req.privacy);
         h.timeouts.push(req.timeoutMs);
         const outcome = h.plan[h.sent++] ?? 'ok';
         if (outcome === 'fail') throw new Error('timeout');
@@ -89,6 +92,7 @@ beforeEach(() => {
   h.sent = 0;
   h.states = [];
   h.timeouts = [];
+  h.privacies = [];
   clearDecisionCache();
   forgetResolvedDecider();
 });
@@ -108,6 +112,13 @@ describe('timeout', () => {
     await call('two', 2);
     await call('ten', 10);
     expect(h.timeouts).toEqual([1500, 3000, 5000]);
+  });
+});
+
+describe('privacy', () => {
+  it('a worker with no privacy setting sends zdr, as before', async () => {
+    await single('private');
+    expect(h.privacies).toEqual(['zdr']);
   });
 });
 

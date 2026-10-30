@@ -13,6 +13,7 @@ export {
   type DecisionMode,
   type ResolvedUse,
 } from './decide';
+export { deciderPrivacy } from './privacy';
 export {
   MAX_PASSAGES_PER_REQUEST,
   MAX_PASSAGE_CHARS,

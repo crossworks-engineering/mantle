@@ -71,7 +71,7 @@ export async function POST(req: Request) {
   if (orRoute) {
     const { refreshModelCatalog, catalogModalities } = await import('@mantle/tracing');
     await refreshModelCatalog();
-    const issue = poolModelIssue(b.pool, catalogModalities(orRoute.model));
+    const issue = poolModelIssue(b.pool, catalogModalities(orRoute.model), orRoute.model);
     if (issue) {
       return NextResponse.json(
         { error: `'${b.name}' does not fit this pool: ${issue}` },
