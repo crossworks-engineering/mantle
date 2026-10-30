@@ -93,6 +93,9 @@ export async function POST(req: Request) {
   const result = await setVaultKey(vaultActor(user), user.id, {
     ref: { name },
     ...(b.kind !== undefined ? { kind: b.kind } : {}),
+    // The older form (service, label, plaintext) adds a token; the newer
+    // one names its kind (a key that is there keeps its own).
+    ...(b.service !== undefined ? { addKind: 'token' as const } : {}),
     ...(value !== undefined ? { value } : {}),
     ...(b.user !== undefined ? { user: b.user } : {}),
     ...(b.passphrase !== undefined ? { passphrase: b.passphrase } : {}),

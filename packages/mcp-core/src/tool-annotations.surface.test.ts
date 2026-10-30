@@ -119,6 +119,8 @@ describe('MCP tool hints on the surface', () => {
     expect(names((r) => r.hints?.destructiveHint)).toEqual([
       'api_docs_set',
       'api_key_delete',
+      'api_key_import',
+      'api_key_set',
       'api_skill_set',
       'api_tool_delete',
       'api_tool_update',

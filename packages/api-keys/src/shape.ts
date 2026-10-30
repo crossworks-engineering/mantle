@@ -1,5 +1,6 @@
 import type { VaultKind } from '@mantle/db';
 import { InputError } from '@mantle/std';
+import { normalizeAnthropicWorkspaceId } from '@mantle/voice-client';
 
 /**
  * The AAD a row's `key_enc` is sealed with: the row id for a token (as
@@ -16,14 +17,15 @@ export function valueAad(id: string, kind: VaultKind): string {
 export function fieldsAad(id: string): string {
   return `${id}:fields`;
 }
-import { normalizeAnthropicWorkspaceId } from '@mantle/voice-client';
 
-/** Compute the display mask: first-4 + last-4 of a value long enough that
- *  eight characters leave most of it unseen, else dots only (a short value
- *  shown first-4 + last-4 would be nearly all of it). Exported so a write
- *  can stash it alongside the ciphertext. */
+/** Compute the display mask, shown to the owner and to agents: the first
+ *  4 and last 4 characters only of a value of 32 or more (a provider key,
+ *  where eight leave most of it unseen), the last 4 of one of 16 to 31,
+ *  dots only below that. Exported so a write can stash it alongside the
+ *  ciphertext. */
 export function maskPlaintext(plaintext: string): string {
   if (plaintext.length < 16) return '••••';
+  if (plaintext.length < 32) return `…${plaintext.slice(-4)}`;
   return `${plaintext.slice(0, 4)}…${plaintext.slice(-4)}`;
 }
 

@@ -68,12 +68,14 @@ describe('the vault write tools', () => {
       expect(t.policy.scope, t.slug).toEqual({ area: 'keys', systemWhole: true });
       expect(t.policy.effect, t.slug).toBe('write');
     }
-    expect(api_key_set.redactInputFields).toEqual(['value', 'passphrase', 'sudo_password']);
+    expect(api_key_set.redactInputFields).toEqual(['value', 'user', 'passphrase', 'sudo_password']);
     expect(api_key_import.redactInputFields).toEqual(['csv']);
     expect([...VAULT_KIND_ENUM]).toEqual([...VAULT_KINDS]);
   });
+});
 
-  it('api_key_set maps its input, voids marks after a written secret, and answers no value', async () => {
+describe('api_key_set', () => {
+  it('maps its input, voids marks after a written secret, and answers no value', async () => {
     h.set.mockResolvedValue({ key, op: 'add', secretWritten: true });
     const r = await api_key_set.handler(
       {
@@ -118,8 +120,25 @@ describe('the vault write tools', () => {
     const nf = await api_key_set.handler({ name: 'x' }, ctx);
     expect(nf.ok).toBe(false);
   });
+});
 
-  it('api_key_import lists the bad rows and never a cell', async () => {
+describe('api_key_import', () => {
+  it('writes through the gateway with a follow-up per written row', async () => {
+    h.imp.mockImplementationOnce(async (_w, _o, _csv, afterEach) => {
+      const written = { key, op: 'add', secretWritten: true };
+      await afterEach(written);
+      return { ok: true, added: 1, replaced: 0, keys: [written] };
+    });
+    const r = await api_key_import.handler(
+      { csv: `pi-lab-3,login,pi-lab-3.lan,pi,${SECRET},pis` },
+      ctx,
+    );
+    expect(r).toMatchObject({ ok: true, output: { added: 1, replaced: 0 } });
+    expect(h.after).toHaveBeenCalledWith('owner-1', 'pi-lab-3', 'default');
+    expect(JSON.stringify(r)).not.toContain(SECRET);
+  });
+
+  it('lists the bad rows and never a cell', async () => {
     h.imp.mockResolvedValueOnce({
       ok: false,
       failed: [
@@ -142,6 +161,25 @@ describe('api_key_delete', () => {
       name: 'pi-lab-3',
     });
     expect(r).toMatchObject({ ok: true, output: { deleted: { name: 'pi-lab-3', kind: 'login' } } });
+  });
+
+  it("names an API key's connection in the actor, for the audit row", async () => {
+    h.del.mockResolvedValueOnce(key);
+    const keyCtx = {
+      ownerId: 'owner-1',
+      surface: {
+        kind: 'owner',
+        via: 'mcp',
+        loginId: 'login-1',
+        mcp: { via: 'key', keyId: 'key-7', write: true },
+      },
+    } as never;
+    await api_key_delete.handler({ name: 'pi-lab-3' }, keyCtx);
+    expect(h.del.mock.calls[0]![0]).toEqual({
+      loginId: 'login-1',
+      via: 'mcp',
+      connection: { via: 'key', keyId: 'key-7' },
+    });
   });
 
   it('answers a missing key without echoing the name', async () => {

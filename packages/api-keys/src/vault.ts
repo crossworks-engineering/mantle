@@ -52,6 +52,9 @@ export type VaultActor = Readonly<{
   loginId: string | null;
   email?: string | null;
   via: 'web' | 'mcp';
+  /** An MCP connection's kind and ids (an OAuth client, an API key, a
+   *  linked brain), for the audit row. */
+  connection?: Readonly<{ via: string; keyId?: string; peerId?: string; oauthClientId?: string }>;
 }>;
 
 /** A secret as every vault reply shows it: never a value. */
@@ -86,6 +89,10 @@ export type VaultRef = Readonly<{ id: string } | { name: string }>;
 export type VaultSetInput = {
   ref: VaultRef;
   kind?: VaultKind;
+  /** The kind of an ADD that names none: the older Keys form (service,
+   *  label, plaintext) adds a token. Never changes an existing key's kind;
+   *  with neither, an add is refused. */
+  addKind?: VaultKind;
   /** The token, the password, or the SSH private key. */
   value?: string;
   /** login and ssh_key: the user name. */
@@ -468,7 +475,14 @@ function planSet(ownerId: string, input: VaultSetInput, row: ApiKey | null): Set
   if (!row) {
     if (!('name' in input.ref)) throw new InputError('No such key: list them with api_key_refs.');
     const { service, label, name } = parsedName(input.ref.name);
-    const kind = input.kind ?? 'token';
+    // A new key names its kind: a password sent with none would be stored
+    // as a token, the loosest kind (no approval, opened by every read).
+    if ((input.kind ?? input.addKind) === undefined) {
+      throw new InputError(
+        `kind is required to add a key: token for an API key, or ${VAULT_KINDS.filter((k) => k !== 'token').join(', ')}.`,
+      );
+    }
+    const kind = (input.kind ?? input.addKind)!;
     if (input.value === undefined) {
       throw new InputError(
         'value is required: there is no key of that name yet, so this adds one.',
@@ -654,7 +668,11 @@ async function audit(
       // A login with no email at hand is said as a login, never the owner.
       actorEmail: who.email ?? (who.loginId ? `login (${who.via})` : `owner (${who.via})`),
       action,
-      detail: { ...detail, via: who.via },
+      detail: {
+        ...detail,
+        via: who.via,
+        ...(who.connection ? { connection: who.connection } : {}),
+      },
     })
     .catch((err: unknown) => {
       log('vault').error(`failed to record ${action}:`, err);
@@ -831,7 +849,7 @@ function listCell(cell: string): string[] {
 
 /**
  * Import secrets from CSV: name, kind, target, user, secret, tags (targets
- * and tags split on ';' or spaces; an empty kind is a token). Every row is
+ * and tags split on ';' or spaces; every row names its kind). Every row is
  * checked first; one bad row and nothing is written, and each bad row is
  * named with the reason (never a cell's content). A row whose name exists
  * replaces it, as a set does. The writes are one after another: a write
@@ -873,20 +891,18 @@ export async function importVaultKeys(
       if (!parsed) throw new InputError(`the name column is not a vault name: ${NAME_RULE}.`);
       if (seen.has(parsed.name)) throw new InputError('the same name is on an earlier row.');
       seen.add(parsed.name);
-      // An empty kind is a token, but never with a user: a login or an
-      // SSH key read as a token would lose its approval and its seal.
-      if (!kind.trim() && user.trim()) {
-        throw new InputError('the kind column is empty but the user column is not: name the kind.');
-      }
-      const k = kind.trim().toLowerCase() || 'token';
+      // Every row names its kind: a password with none would be read as a
+      // token, the loosest kind.
+      const k = kind.trim().toLowerCase();
       if (!(VAULT_KINDS as readonly string[]).includes(k)) {
         throw new InputError(`the kind column must be one of ${VAULT_KINDS.join(', ')}.`);
       }
-      if (!secret) throw new InputError('the secret column is empty.');
+      if (!secret.trim()) throw new InputError('the secret column is empty.');
       const input: VaultSetInput = {
         ref: { name: parsed.name },
         kind: k as VaultKind,
-        value: k === 'ssh_key' ? secret : secret.trim(),
+        // As sent: a password may begin or end with a space.
+        value: secret,
         ...(user.trim() ? { user: user.trim() } : {}),
         ...(target.trim() ? { target: listCell(target) } : {}),
         ...(tags.trim() ? { tags: listCell(tags) } : {}),

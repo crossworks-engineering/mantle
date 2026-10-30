@@ -77,16 +77,25 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     else process.env.MANTLE_MASTER_KEY = prevMasterKey;
   }, 60_000);
 
-  it('refuses a caller with no scope and nothing bound (fails closed)', async () => {
+  it('refuses a caller outside every scope that is not system work (fails closed)', async () => {
+    // A login's code that reached the gateway with no workspace scope: no
+    // gate saw it, so the gateway's own refuses (a test runs as system work
+    // by default, so the login is bound here by hand).
     await expect(
-      keys.setVaultKey(who, owner, { ref: { name: 'unbound' }, value: v('unbound') }),
-    ).rejects.toThrow(/system/i);
+      m.runAsActor(m.loginActor(owner, 'rw'), () =>
+        keys.setVaultKey(who, owner, {
+          ref: { name: 'unbound' },
+          kind: 'token',
+          value: v('unbound'),
+        }),
+      ),
+    ).rejects.toThrow(/only system work/);
     expect((await keys.listApiKeys(owner)).some((k) => k.name === 'unbound')).toBe(false);
   });
 
   it('adds a token by name; it reads as before, and the reply has no value', async () => {
     const value = v('token');
-    const r = await set(who, owner, { ref: { name: 'weather' }, value });
+    const r = await set(who, owner, { ref: { name: 'weather' }, kind: 'token', value });
     expect(r).toMatchObject({ op: 'add', secretWritten: true });
     expect(r!.key).toMatchObject({
       name: 'weather',
@@ -186,7 +195,18 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     expect(off!.key.needsApproval).toBe(false);
   });
 
-  it('refuses a password with no target, and a reserved or bad name', async () => {
+  it('refuses a password with no target, an add with no kind, and a reserved or bad name', async () => {
+    // A new key names its kind (never a token by default); the older Keys
+    // form names a token for an add only.
+    await expect(set(who, owner, { ref: { name: 'no-kind' }, value: v('nk') })).rejects.toThrow(
+      /kind is required/,
+    );
+    const older = await set(who, owner, {
+      ref: { name: 'older-form' },
+      addKind: 'token',
+      value: v('older'),
+    });
+    expect(older!.key.kind).toBe('token');
     await expect(
       set(who, owner, { ref: { name: 'db-main' }, kind: 'password', value: v('p') }),
     ).rejects.toThrow(/needs target/);
@@ -248,7 +268,7 @@ describe.skipIf(!URL)('the vault write gateway', () => {
       [
         `nas-1,login,nas-1.lan;nas-1.local,admin,${secret},storage nas`,
         `"nas-key",ssh_key,nas-1.lan,admin,"${KEY_BLOCK}",`,
-        `weather,,,,${v('csv-6')},`,
+        `weather,token,,,${v('csv-6')},`,
       ].join('\r\n'),
       async (w) => {
         followed.push(w.key.name);

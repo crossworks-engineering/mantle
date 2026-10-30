@@ -9,15 +9,17 @@
 -- `<id>:<kind>`, the older image opens with the row id only), but it would
 -- list one as a key and could pick one as a provider's key and fail. So
 -- this DELETES every row whose kind is not 'token' (the owner adds them
--- again after the roll forward; their values are not kept anywhere else). The columns, the checks and the index stay: 0346 is
--- re-runnable, so the next roll forward applies it again over them. Then it
--- takes 0346 off the ledger.
+-- again after the roll forward; their values are not kept anywhere else).
+-- The columns, the checks and the index stay: 0346 is re-runnable, so the
+-- next roll forward applies it again over them. Then it takes 0346 off the
+-- ledger.
 --
--- Run it while the newer image is still up, as the superuser, in one
--- transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0346_vault_kinds.revert.sql \
---     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
--- then pin the older image straight away (docs/update-prod.md "Rollback").
+-- Copy it out, stop new writes (no secret may be added between the revert
+-- and the pin), run it as the superuser in one transaction, then pin the
+-- older image straight away (docs/update-prod.md "Rollback"):
+--   docker exec mantle_web cat /app/packages/db/rollback/0346_vault_kinds.revert.sql > 0346.revert.sql
+--   docker stop mantle_web
+--   docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 < 0346.revert.sql
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 DELETE FROM "public"."api_keys" WHERE "kind" <> 'token';

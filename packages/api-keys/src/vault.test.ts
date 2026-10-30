@@ -140,7 +140,8 @@ describe('the defaults', () => {
 
   it('a short value is masked whole', () => {
     expect(maskPlaintext('short-secret-15')).toBe('••••');
-    expect(maskPlaintext('test-long-made-up-value')).toBe('test…alue');
+    expect(maskPlaintext('test-long-made-up-value')).toBe('…alue');
+    expect(maskPlaintext('test-a-long-made-up-provider-key-value')).toBe('test…alue');
   });
 });
 

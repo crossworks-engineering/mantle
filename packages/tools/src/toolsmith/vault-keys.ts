@@ -38,7 +38,18 @@ export const VAULT_KIND_ENUM: readonly VaultKind[] = ['token', 'password', 'ssh_
 function vaultActor(ctx: ToolHandlerContext): VaultActor {
   const s = ctx.surface;
   const loginId = s && 'loginId' in s && typeof s.loginId === 'string' ? s.loginId : null;
-  return { loginId, via: 'mcp' };
+  // How the connection came in (an OAuth client, an API key, a linked
+  // brain), for the audit row: ids only, never a secret.
+  const mcp = s && 'mcp' in s ? s.mcp : undefined;
+  const connection = mcp
+    ? {
+        via: mcp.via,
+        ...(mcp.keyId ? { keyId: mcp.keyId } : {}),
+        ...(mcp.peerId ? { peerId: mcp.peerId } : {}),
+        ...(mcp.oauthClientId ? { oauthClientId: mcp.oauthClientId } : {}),
+      }
+    : undefined;
+  return { loginId, via: 'mcp', ...(connection ? { connection } : {}) };
 }
 
 /** A secret as a tool answers it: never a value. */
@@ -101,12 +112,13 @@ export const api_key_set: BuiltinToolDef = {
     scope: { area: 'keys', systemWhole: true },
     peerRisky: true,
     idempotent: true, // a set
+    destructive: true, // a replace drops the value it replaces; nothing keeps it
     recipe: { step: 'forbidden' },
     clientSourced: CS.always(VAULT_WRITE),
   },
   name: 'Add or replace a vault key',
   description:
-    'Add a secret to the vault, or replace the one with that name, and return its name, kind, target, tags and masked preview, **never the value**. Kinds: token (an API key), password, ssh_key (a private key plus `user`), login (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target` and waits for the owner on each use unless `needs_approval` is false. Do not echo the value back to the user. List names with `api_key_refs`; many at once: `api_key_import`.',
+    'Add a secret to the vault, or replace the one with that name, and return its name, kind, target, tags and masked preview, **never the value**. A new key names its `kind`: token (an API key), password, ssh_key (a private key plus `user`), login (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target` and waits for the owner on each use unless `needs_approval` is false. Do not echo the value back to the user. List names with `api_key_refs`; many at once: `api_key_import`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -161,7 +173,7 @@ export const api_key_set: BuiltinToolDef = {
     },
     required: ['name'],
   },
-  redactInputFields: ['value', 'passphrase', 'sudo_password'],
+  redactInputFields: ['value', 'user', 'passphrase', 'sudo_password'],
   handler: (input, ctx) =>
     answer(async () => {
       const name = str(input.name);
@@ -231,13 +243,21 @@ export const api_key_test: BuiltinToolDef = {
       const name = str(input.name);
       const result = await testVaultKey(vaultActor(ctx), ctx.ownerId, { name });
       if (!result) return { ok: false, error: NOT_FOUND };
+      // A token's provider may echo part of the key it refused: the
+      // model hears a fixed line, the Keys screen the provider's own.
+      const message =
+        result.kind !== 'token'
+          ? result.message
+          : result.ok
+            ? 'The provider accepted the key.'
+            : "The provider refused the key, or it could not be tested here: open it on the Keys screen for the provider's message.";
       return {
         ok: true,
         output: {
           name: result.name,
           kind: result.kind,
           ok: result.ok,
-          message: result.message,
+          message,
           ...(result.modelsFound !== undefined ? { models_found: result.modelsFound } : {}),
         },
       };
@@ -284,6 +304,7 @@ export const api_key_import: BuiltinToolDef = {
     scope: { area: 'keys', systemWhole: true },
     peerRisky: true,
     idempotent: true, // each row a set
+    destructive: true, // a row over an existing name drops its value
     recipe: { step: 'forbidden' },
     clientSourced: CS.always(VAULT_WRITE),
   },
