@@ -25,9 +25,13 @@ export async function POST(req: Request) {
   ownerCaller();
   const body = await readBody(req, Body);
   const { apiKeyId, kind, providerId } = body;
+  // The box policy's model block (docs/policy.md): a provider it blocks is
+  // not asked for its list at all, and a pick list never offers a blocked
+  // model. With no model rule, the list as found.
+  if (modelPolicySet() && modelPolicyRefusal(providerId, '') !== null) {
+    return NextResponse.json({ available: [], filtered: true, error: null });
+  }
   const found = await discoverModels(apiKeyId, kind, providerId);
-  // The box policy's model block (docs/policy.md): a pick list never offers
-  // a blocked model. With no model rule, the list as found.
   if (!modelPolicySet()) return NextResponse.json(found);
   return NextResponse.json({
     ...found,

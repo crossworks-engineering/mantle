@@ -229,6 +229,7 @@ describe('validateMethodPolicy: the one validator', () => {
         'limits',
         'makesItems',
         'open',
+        'passwordHold',
         'public',
         'scope',
       ].sort(),

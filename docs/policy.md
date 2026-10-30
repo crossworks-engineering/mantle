@@ -15,7 +15,7 @@ panel and no boot check. `packages/config/src/policy.test.ts` and
 MANTLE_POLICY_TELEGRAM=off
 MANTLE_POLICY_MODEL_DENY=deepseek/*,qwen/*,moonshotai/*,z-ai/*,minimax/*
 MANTLE_POLICY_PROVIDER_ALLOW=foundry,local
-MANTLE_POLICY_ENDPOINT_ALLOW=llm.example.internal:1234,*.openai.azure.com
+MANTLE_POLICY_ENDPOINT_ALLOW=llm.example.internal:1234,corp-ai.openai.azure.com
 MANTLE_POLICY_PASSWORD_MIN=12
 ```
 
@@ -60,7 +60,9 @@ Two settings, used together (one is fine too):
   lists.
 - `MANTLE_POLICY_ENDPOINT_ALLOW` (read only with a provider allow-list):
   the hosts a route's own base URL may name (`host`, `host:port` or
-  `*.domain`). Without it an allowed provider could be pointed at any API
+  `*.domain`). Name exact hosts for a shared cloud: anyone can make a
+  resource under `*.openai.azure.com`, so that wildcard would admit any
+  tenant's deployment. Without it an allowed provider could be pointed at any API
   (a `local` or `custom` route at a vendor's servers). With a provider
   allow-list and no endpoint list, no route may name a base URL: only the
   box-level endpoints (`MANTLE_LOCAL_CHAT_URL`, `MANTLE_FOUNDRY_ENDPOINT`,
@@ -72,8 +74,9 @@ Two settings, used together (one is fine too):
   `deepseek` provider), a model id with the family as a path segment, and a
   local model name that starts with the family (`qwen2.5:7b`). While a deny
   list is set, a model that picks its model per call is blocked too:
-  `openrouter/auto`, any `openrouter/` id, an id ending in `/auto` or
-  `router`, and an OpenRouter preset (`@preset/...`). Family names do not
+  `openrouter/auto`, any `openrouter/` id, an id ending in `/auto`,
+  `router` or `recommended` (Mammouth's own pick), and an OpenRouter preset
+  (`@preset/...`). Family names do not
   catch a model sold under another name (`glm` for `z-ai`, `kimi` for
   `moonshotai`): list those too, or rely on the provider allow-list. A
   speech or vision call that names no model uses its adapter's default,
@@ -97,7 +100,8 @@ connectors, `web_fetch`) are not model calls: a corporate box that must
 reach no other model API also needs egress control at its network edge.
 
 A refused call throws `ModelPolicyError` before any byte leaves the box. The
-person, the agent or the tool reads the rule in the message. The brain opens a
+person, the agent or the tool reads which setting refused it (never a host
+or the matching pattern: those are in the boot log and the Policy panel). The brain opens a
 provider alert with subject `model_policy` and code `policy`. On a chat route
 with a backup the policy allows, the turn fails over to it. An embedding or
 extraction failure also shows on its own alert, with the policy reason, and
@@ -105,7 +109,8 @@ the extract queue pauses as for any lasting provider failure.
 
 **Pick lists and saves.** The model lists (`GET /api/models`,
 `/api/models/explore`, `/api/ai-workers/models`, `GET /api/model-pools`, the
-`model_catalog` tool) leave blocked models out. A save of a blocked model is
+`model_catalog` tool) leave blocked models out, and do not ask a provider
+off the allow-list for its list at all. A save of a blocked model is
 refused with `403 { error, code: 'model_policy' }` (assistants, workers, model
 combos, model pools, the embedder; `server/web/lib/model-policy-save.ts`).
 Seeded defaults are not checked at save: the boot check names them.
@@ -136,15 +141,17 @@ with `code` one of `password_too_short`, `password_too_long`,
 password was last checked against (`auth.users.password_checked_min`,
 migration 0347): at a password sign-in (the web sign-in and the device token
 routes), at a password prompt (making an API key, MCP consent) and with a
-new password. While a rule is set, a login whose password was never checked
+new password. A new password set while no rule is in force records none,
+so it is checked when a rule comes back. While a rule is set, a login whose password was never checked
 under it (the rule went on, or up, since) answers as signed out on every
 route but sign-out:
 
 `401 { error: 'unauthorized', code: 'password_recheck_required', message }`
 
 Its sessions, API keys, MCP connectors and linked brains wait until the
-person signs in with the password once (the sign-in routes act as no login,
-so they stay open). So turning the rule on makes every login sign in once,
+person signs in with the password once (the sign-in routes and the token
+refresh act as no login, so they stay open; a refreshed token is still
+held). So turning the rule on makes every login sign in once,
 and that sign-in checks the password. A login used only through API keys
 or a linked brain must also sign in once. The Policy panel and the boot log
 count the logins still to check.
@@ -153,7 +160,8 @@ count the logins still to check.
 login's `must_change_password` flag is set (migration 0347), and a password
 prompt grants nothing (no key, no consent). The login then reaches only the
 routes whose declaration says `passwordHold: 'change-step'` or `'sign-out'`
-(`server/web/lib/auth/route-declaration.ts`):
+(`server/web/lib/auth/route-declaration.ts`; only a row that acts as the
+login declares one), and the public rows that act as no login:
 
 - `POST /api/auth/change-password`
 - `GET /api/auth/whoami` (answers `mustChangePassword: true` and
@@ -170,8 +178,10 @@ until the change. A new password clears the flag. With no rule set neither
 column is ever written or read, so a box whose operator removes the rule
 lets every login through again.
 
-Not held: a `?at=` file link or a print minted before the hold (they live
-two hours at most) and a public share link.
+Not held: a `?at=` file link (two hours at most), a print's render cookie
+and an app frame ticket (minutes) minted before the hold, a public share
+link, and work the login scheduled earlier (heartbeats, runs) or messages
+sent to it (push, reminders).
 
 ## The Policy panel
 
