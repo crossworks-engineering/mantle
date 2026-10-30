@@ -5361,7 +5361,7 @@
       },
       "additionalProperties": {}
      },
-     "description": "Rows to merge. Each item: cells keyed by column NAME or id, e.g. { \"Qty\": 3, \"Status\": \"Open\" }. Values are coerced to the column type. With key [\"@row_id\"] each item also carries its row id, e.g. { \"@row_id\": \"r_8f2c\", \"Status\": \"Done\" }."
+     "description": "Rows to merge. Each item: cells keyed by column NAME or id, e.g. { \"Qty\": 3, \"Status\": \"Open\" }. Values are coerced to the column type. With key [\"@row_id\"] each item also carries its row id, e.g. { \"@row_id\": \"0b7e9c52-3f1a-4d8e-9a61-2c4f8e1d7b30\", \"Status\": \"Done\" }."
     },
     "tab": {
      "type": "string",
@@ -5385,7 +5385,7 @@
  },
  {
   "name": "table_row_update",
-  "description": "Patch ONE row's cells by id (merge: unspecified cells stay). Writes to DRAFT. For more than one row use `table_rows_upsert` with `key: [\"@row_id\"]`: one call for the whole batch, instead of a call (and in some MCP clients a user approval) per row.",
+  "description": "Patch ONE row's cells by id (merge: unspecified cells stay). Writes to DRAFT. For more than one row, when you have `table_rows_upsert`, use it with `key: [\"@row_id\"]`: one call for the whole batch, instead of a call (and in some MCP clients a user approval) per row.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -5460,7 +5460,7 @@
  },
  {
   "name": "table_cell_set",
-  "description": "Set a single cell — row by id, column by id or name. Writes to DRAFT. To change cells on more than one row use one `table_rows_upsert` call with `key: [\"@row_id\"]`.",
+  "description": "Set a single cell — row by id, column by id or name. Writes to DRAFT. To change cells on more than one row, when you have `table_rows_upsert`, use one call of it with `key: [\"@row_id\"]`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7267,7 +7267,7 @@
  },
  {
   "name": "app_file_write",
-  "description": "Create or replace one source file (by path) in the app's DRAFT — the published app is untouched until app_publish. After writing, call app_build to compile + see errors. To write several files, send the whole tree in one `app_source_set` call. Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. Mini-app source is TSX. Allowed imports: `react`; the kit `@/components/ui/*` (button, card, input, label, badge, separator) + `cn` from `@/lib/utils`; `lucide-react` icons; `{ host }` from `@host`; and relative files. Theme tokens only (bg-background, text-foreground, bg-card, bg-primary+text-primary-foreground, chart-1..5) — never hardcode colours. The entry file must `export default function App()`.",
+  "description": "Create or replace one source file (by path) in the app's DRAFT — the published app is untouched until app_publish. After writing, call app_build to compile + see errors. To write most of an app's files at once, send the whole tree in one `app_source_set` call (files left out are removed). Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. Mini-app source is TSX. Allowed imports: `react`; the kit `@/components/ui/*` (button, card, input, label, badge, separator) + `cn` from `@/lib/utils`; `lucide-react` icons; `{ host }` from `@host`; and relative files. Theme tokens only (bg-background, text-foreground, bg-card, bg-primary+text-primary-foreground, chart-1..5) — never hardcode colours. The entry file must `export default function App()`.",
   "inputSchema": {
    "type": "object",
    "properties": {

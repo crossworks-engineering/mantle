@@ -3,7 +3,7 @@
  */
 
 import { coerceCell, applyTableOps, type CellValue, type Column } from '@mantle/content';
-import { queryRowsWindow, type TableOp } from '@mantle/tabledb';
+import { queryRowsWindow, readRowById, type TableOp } from '@mantle/tabledb';
 import type { BuiltinToolDef } from '../types';
 import { str } from '../coerce';
 import { notFound } from '../errors';
@@ -241,7 +241,7 @@ export const table_rows_upsert: BuiltinToolDef = {
         description:
           `Rows to merge. Each item: ${CELLS_HINT} ` +
           `With key ["${ROW_ID_KEY}"] each item also carries its row id, e.g. ` +
-          `{ "${ROW_ID_KEY}": "r_8f2c", "Status": "Done" }.`,
+          `{ "${ROW_ID_KEY}": "0b7e9c52-3f1a-4d8e-9a61-2c4f8e1d7b30", "Status": "Done" }.`,
         items: { type: 'object', additionalProperties: true },
         minItems: 1,
         maxItems: ROWS_ADD_MAX,
@@ -282,7 +282,9 @@ export const table_rows_upsert: BuiltinToolDef = {
       if (!col) {
         return {
           ok: false,
-          error: `key column '${ref}' not found — columns: ${doc.columns.map((c) => c.name).join(', ')}`,
+          error:
+            `key column '${ref}' not found — columns: ${doc.columns.map((c) => c.name).join(', ')}. ` +
+            `To match on the row id instead, pass key: ["${ROW_ID_KEY}"].`,
         };
       }
       keyCols.push(col);
@@ -315,6 +317,7 @@ export const table_rows_upsert: BuiltinToolDef = {
     const resolved: { cells: Record<string, CellValue>; key: string }[] = [];
     const missingKey: number[] = [];
     const noCells: number[] = [];
+    const badIds: number[] = [];
     const dupKeys = new Set<string>();
     const seenKeys = new Set<string>();
     for (const [i, r] of rowsIn.entries()) {
@@ -323,11 +326,12 @@ export const table_rows_upsert: BuiltinToolDef = {
       if (byRowId) {
         const { [ROW_ID_KEY]: rid, ...rest } = cellsIn;
         cellsIn = rest;
+        if (rid !== undefined && rid !== null && typeof rid !== 'string') badIds.push(i);
         idKey = str(rid).trim() || null;
-        if (Object.keys(rest).length === 0) noCells.push(i);
       }
       const { cells, unknown } = resolveCells(doc, cellsIn);
       for (const u of unknown) unknownAll.add(u);
+      if (byRowId && Object.keys(cells).length === 0) noCells.push(i);
       const key = byRowId ? idKey : keyOf(cells);
       if (key === null) {
         missingKey.push(i);
@@ -336,6 +340,15 @@ export const table_rows_upsert: BuiltinToolDef = {
       if (seenKeys.has(key)) dupKeys.add(key);
       seenKeys.add(key);
       resolved.push({ cells, key });
+    }
+    if (badIds.length) {
+      return {
+        ok: false,
+        error:
+          `rows [${badIds.slice(0, 10).join(', ')}]${badIds.length > 10 ? '…' : ''} carry a ` +
+          `"${ROW_ID_KEY}" that is not a string; pass the row id exactly as table_rows_list / ` +
+          `table_query return it. Nothing was written.`,
+      };
     }
     if (missingKey.length) {
       return {
@@ -354,8 +367,17 @@ export const table_rows_upsert: BuiltinToolDef = {
         ok: false,
         error:
           `rows [${noCells.slice(0, 10).join(', ')}]${noCells.length > 10 ? '…' : ''} carry ` +
-          `only "${ROW_ID_KEY}" and no cells to change; add the cells to set, or drop those rows. ` +
-          `Nothing was written.`,
+          `no cells to change${
+            unknownAll.size ? ` (unknown columns: ${[...unknownAll].slice(0, 5).join(', ')})` : ''
+          }; name real columns (table_schema lists them), or drop those rows. Nothing was written.`,
+      };
+    }
+    if (dupKeys.size && byRowId) {
+      return {
+        ok: false,
+        error:
+          `row id(s) ${[...dupKeys].slice(0, 3).join(', ')} appear more than once; merge each ` +
+          `id's cells into one item. Nothing was written.`,
       };
     }
     if (dupKeys.size) {
@@ -384,7 +406,16 @@ export const table_rows_upsert: BuiltinToolDef = {
       else existing.set(key, { rowId: id, cells, n: 1 });
     };
     const file = await windowFile(ctx.ownerId, tableId);
-    if (file) {
+    if (byRowId) {
+      // At most a batch of ids: point lookups, the way rowExists checks the
+      // single-row tool's id, instead of paging the whole tab.
+      for (const { key } of resolved) {
+        const row =
+          doc.rows.find((r) => r.id === key) ??
+          (file ? readRowById(file, key, tabId ? { tabId } : {}) : null);
+        if (row) indexRow(row.id, row.cells);
+      }
+    } else if (file) {
       const PAGE = 1000;
       for (let offset = 0; ; offset += PAGE) {
         const page = queryRowsWindow(file, { offset, limit: PAGE, ...(tabId ? { tabId } : {}) });
@@ -488,8 +519,9 @@ export const table_row_update: BuiltinToolDef = {
   name: 'Update a row',
   description:
     "Patch ONE row's cells by id (merge: unspecified cells stay). Writes to DRAFT. " +
-    `For more than one row use \`table_rows_upsert\` with \`key: ["${ROW_ID_KEY}"]\`: one call ` +
-    'for the whole batch, instead of a call (and in some MCP clients a user approval) per row.',
+    `For more than one row, when you have \`table_rows_upsert\`, use it with ` +
+    `\`key: ["${ROW_ID_KEY}"]\`: one call for the whole batch, instead of a call (and in some ` +
+    'MCP clients a user approval) per row.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -621,7 +653,8 @@ export const table_cell_set: BuiltinToolDef = {
   name: 'Set one cell',
   description:
     'Set a single cell — row by id, column by id or name. Writes to DRAFT. ' +
-    `To change cells on more than one row use one \`table_rows_upsert\` call with \`key: ["${ROW_ID_KEY}"]\`.`,
+    `To change cells on more than one row, when you have \`table_rows_upsert\`, use one call ` +
+    `of it with \`key: ["${ROW_ID_KEY}"]\`.`,
   inputSchema: {
     type: 'object',
     properties: {
