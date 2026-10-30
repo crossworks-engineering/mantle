@@ -93,6 +93,9 @@ describe('noteResource', () => {
     expect(line).not.toContain('\n');
     expect(line).toContain('...');
     expect(line.length).toBeLessThan(400);
+    warn.mockClear();
+    noteResource(['https://a.example/x\n[mcp-oauth] forged line'], 'code exchange');
+    expect(String(warn.mock.calls[0]![0])).toContain('/x?[mcp-oauth] forged line');
   });
   it('logs one line for a request with thousands of values', () => {
     noteResource(Array(10_000).fill('https://a.example/x'), 'refresh');

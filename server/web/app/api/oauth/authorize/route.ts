@@ -420,7 +420,7 @@ function consentPage(
   <div class="name"><span class="label">The name it gave itself (anyone can choose any name)</span>&ldquo;${safeName}&rdquo;</div>
   ${
     p.foreignResource
-      ? `<div class="warn" role="alert"><span class="label">This sign-in names another server</span><b class="host">${h(resourceHost(p.foreignResource))}</b><br />The app may hand the access it gets here to that server. Allow only if you meant to connect this brain.</div>`
+      ? `<div class="warn" role="alert"><span class="label">This sign-in names another server</span><b class="host">${h(resourceHost(p.foreignResource))}</b><br />The app may hand the access it gets here to that server. Allow only if you trust ${h(resourceHost(p.foreignResource))} with this brain.</div>`
       : ''
   }
   <div class="who">Signed in as <b>${h(email)}</b></div>

@@ -196,6 +196,15 @@ describe('GET /api/oauth/authorize', () => {
       expect(html, String(quiet)).not.toContain('names another server');
       expect(html).not.toContain('name="resource"');
     }
+    // An old host name the request came in on is this box too.
+    const q = new URLSearchParams(QUERY);
+    q.set('resource', 'https://old-name.example/api/mcp');
+    const old = await GET(
+      new Request(`https://old-name.example/api/oauth/authorize?${q}`, {
+        headers: { host: 'old-name.example', 'x-forwarded-proto': 'https' },
+      }),
+    );
+    expect(await old.text()).not.toContain('names another server');
     const html = await page('https://other.example/mcp');
     expect(html).toContain(
       'This sign-in names another server</span><b class="host">other.example</b>',

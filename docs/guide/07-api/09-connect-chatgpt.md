@@ -21,7 +21,7 @@ The ChatGPT workspace admin does this:
 
 1. In ChatGPT, open **Plugins**, press **+**, then **Add custom MCP server**.
 2. Enter a name, such as the brain's name.
-3. Under **Connection**, paste the connector URL. It looks like `https://example.com/api/mcp`.
+3. Under **Connection**, paste the connector URL exactly as **Settings > MCP** shows it. It looks like `https://example.com/api/mcp`. An older address of the brain may fail ChatGPT's check.
 4. Under authentication, choose **OAuth**. ChatGPT finds the sign-in pages itself and registers itself. There is no client ID or secret to type.
 5. Read the risk warning and tick the box.
 6. Press **Create as a plugin**. ChatGPT opens the MantleOS sign-in. Sign in, type your password and press **Allow**.
@@ -64,7 +64,7 @@ ChatGPT registers once for the whole ChatGPT app, so every person in that ChatGP
 
 ## A warning on the sign-in page
 
-ChatGPT tells MantleOS which server the sign-in is for. When that is not this brain, the sign-in page shows **This sign-in names another server** with that server's name. Press **Deny** unless you meant to connect this brain: the app could hand the access to that other server. MantleOS does not refuse the sign-in, so older clients keep working.
+ChatGPT tells MantleOS which server the sign-in is for. When that is not this brain, the sign-in page shows **This sign-in names another server** with that server's name. The app could hand the access to that other server. Press **Allow** only if you trust that server with this brain. MantleOS does not refuse the sign-in, so older clients keep working.
 
 ## If it fails
 

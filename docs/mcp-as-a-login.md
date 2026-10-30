@@ -370,6 +370,14 @@ adds the app again.
   change for connected clients, made only with a plan for them.
 - `offline_access` in `scopes_supported`: refresh tokens are issued on
   every grant whatever the scope, so it is not advertised.
+- Enforcing the `resource` value. A token made for a value that names
+  another server is still honoured at this box's `/api/mcp`: the consent
+  warning is the only guard against that server replaying it here (the
+  confused deputy RFC 8707 is for). Refusing it would refuse clients that
+  work today, so it waits for an opt-in setting: store the value on the
+  code and the grant, then answer `invalid_target` at the token step. The
+  mismatch log line is no alarm either: the origin it compares against is
+  read from request headers a client can set.
 - http and recipe tools on MCP: their egress is not classified.
 - Pending peers verify, as for the federation routes.
 - The admin's connected-clients list in Settings, MCP shows every login's
