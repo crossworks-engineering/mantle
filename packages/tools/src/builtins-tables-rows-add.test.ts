@@ -60,6 +60,7 @@ const detail = () => ({
 beforeEach(() => {
   vi.mocked(getTable).mockReset();
   vi.mocked(applyTableOps).mockReset();
+  vi.mocked(readRowById).mockReset();
   vi.mocked(getTable).mockResolvedValue(detail() as never);
   // No sqlite surface → windowFile yields null → the upsert reads doc.rows
   // (the legacy path), which is what the fixtures populate.
