@@ -65,6 +65,27 @@ describe('compose passes the box flags to the app services', () => {
 });
 
 /**
+ * The tailscale sidecar is always up, and tailscaled starts its log upload at
+ * boot, logged in or not. The opt-out is on by default so a box that never
+ * activated a tailnet sends Tailscale nothing (docs/tailscale.md, Client logs).
+ * It has to be the env form while the entrypoint is tailscaled itself:
+ * TS_TAILSCALED_EXTRA_ARGS is read by containerboot, which this service skips.
+ */
+describe('the tailscale sidecar sends no client logs', () => {
+  const services = compose.slice(compose.indexOf('\nservices:\n'));
+  const svc = services.split(/\n(?= {2}[a-z_]+:\n)/).find((b) => b.startsWith('  tailscale:\n'));
+
+  it('defaults the opt-out on, with a box-level way back', () => {
+    expect(svc).toMatch(/^\s+TS_NO_LOGS_NO_SUPPORT: \$\{TS_NO_LOGS_NO_SUPPORT:-true\}$/m);
+  });
+
+  it('runs tailscaled directly, so that env is what tailscaled reads', () => {
+    expect(svc).toMatch(/^\s+entrypoint:\n\s+- tailscaled$/m);
+    expect(svc).not.toContain('TS_TAILSCALED_EXTRA_ARGS');
+  });
+});
+
+/**
  * Optional services (@mantle/config services): a dashboard switch starts or
  * stops ONE container, so the app containers' env does not change with it.
  * Each one learns the live state from the updater's services.json, which it

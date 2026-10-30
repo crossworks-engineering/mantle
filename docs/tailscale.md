@@ -46,6 +46,8 @@ cloud box reach the model running in my house."
 1. **HTTP forward-proxy, not SOCKS5** (§8 left this open): `TS_OUTBOUND_HTTP_PROXY_LISTEN`; the Node `undici` fetch path uses the HTTP proxy. SOCKS5 is still available via `TS_SOCKS5_SERVER` if ever needed.
 2. **UI-activated auth key (2026-06-01), superseded the env-only stance.** The old doc said a UI field "would look like it works but wouldn't," because the sidecar reads `TS_AUTHKEY` at container-start and the app can't inject env into a running container. The unlock: don't restart the container, keep it running *unauthenticated*, mount its LocalAPI socket **read-write** into web, and have the app POST `/localapi/v0/start` with the key. The key is sealed in the vault like an API key. Safe here purely because Mantle is single-user (app-drives-network-daemon has no multi-tenant blast radius). See **§UI-activation**.
 
+3. **No client logs to Tailscale (`TS_NO_LOGS_NO_SUPPORT=true`, the compose default).** See **§Client logs**.
+
 **Bring it up (UI):** deploy the stack (the sidecar is now in the default `up` set, running unauthenticated), then `/settings/network` → paste an auth key → **Activate**. No `.env` edit. The env path (`TS_AUTHKEY` in `.env`) still works for headless bring-up.
 
 ---
@@ -80,6 +82,47 @@ fallback is the `file:` authkey trick (app writes the decrypted key to a shared
 file as `TS_AUTHKEY=file:/…`), that needs a container restart, so it trades
 live toggling; only the transport in `lib/tailscale.ts` changes, UI/store/schema
 stay put.
+
+---
+
+## Client logs
+
+`tailscaled` starts its log upload to `log.tailscale.com` at process start, with
+no check for a login (`logpolicy.Options.New` builds the uploader in
+`cmd/tailscaled`, and `logtail.NewLogger` starts the loop). This sidecar is
+always up, so a box that never activated a tailnet would still send Tailscale
+its client logs.
+
+Measured on v1.102.5, never logged in (2026-10-30, a throwaway container with
+this entrypoint, state `NeedsLogin`):
+
+- **Opt-out off:** about 11 KB of startup lines in the first 2 seconds, then
+  nothing for the rest of a 7-minute idle run, to `log.tailscale.com:443`. The
+  lines carry the node's log ID, OS and kernel version, the container's short
+  hostname and its private bridge address. No Mantle content. So every start of
+  the container sends a new batch; a long-lived idle node sends little after it.
+- **Opt-out on:** no DNS lookup and no new connection to anything for 150
+  seconds, from the first packet.
+
+Compose sets `TS_NO_LOGS_NO_SUPPORT=true` on the service, the environment form
+of `--no-logs-no-support`. The uploader then gets a transport that sends nothing.
+`TS_TAILSCALED_EXTRA_ARGS` would do nothing here: only `containerboot` reads it,
+and this service runs `tailscaled` directly.
+
+**On upgrade:** the updater refreshes a pristine `docker-compose.yml`, and the
+next `up -d` recreates this one container. Its state lives in
+`${MANTLE_DATA_DIR}/tailscale`, so an activated box needs no new auth key. A box
+with local edits to the compose file keeps sending logs until it adopts the
+release compose.
+
+The cost, on every box, activated or not:
+
+- Tailscale's support can no longer debug this node from its logs.
+- **A tailnet with network flow logs on refuses this node.** It stops with
+  `tailnet requires logging to be enabled` and `WantRunning` goes false. On that
+  box only, set `TS_NO_LOGS_NO_SUPPORT=false` in `.env` and recreate the service
+  (`docker compose up -d tailscale`). A value that is not a boolean stops
+  tailscaled at start.
 
 ---
 
