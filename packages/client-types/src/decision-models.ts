@@ -168,7 +168,7 @@ export type DecisionRequestLimits = {
   /** A reported input-token count exactly at this is a suspected silent cut:
    *  the answer is not used. */
   cutAt: number | null;
-  /** `profile`: a tested model, sized from its profile and the catalog.
+  /** `profile`: a tested model, sized from its measured profile.
    *  `careful`: untested, or failed at full size, so the careful limits. */
   source: 'profile' | 'careful';
 };
@@ -181,10 +181,15 @@ export const CAREFUL_DECISION_LIMITS = { maxQuestions: 16, maxInputTokens: 16_38
 /**
  * The request limits of a decision model (pure). `catalogContext` is the live
  * catalog's context size for the model, or null when the catalog has not
- * loaded or does not list it. A tested model (it took a full-size request)
- * is sized from its profile and the catalog; with neither, no limit is known
- * and each use keeps the size it was measured at. Any other model gets the
- * careful limits, lowered to the catalog's context size when that is smaller.
+ * loaded or does not list it.
+ *
+ * A tested model (it took a full-size request, as Jev takes every use's
+ * request in production) is sized from its measured profile only: with no
+ * measured limit, each use keeps the request it was measured with. The
+ * catalog does not size it, because the request estimate counts high and a
+ * catalog value would then split or refuse requests the model answers.
+ * Any other model gets the careful limits, lowered to the catalog's context
+ * size when that is smaller.
  */
 export function decisionRequestLimits(
   model: string | null | undefined,
@@ -210,7 +215,7 @@ export function decisionRequestLimits(
       source: 'careful',
     };
   }
-  const tokens = low(p.maxInputTokens, p.suspectedCutAt, ctx);
+  const tokens = low(p.maxInputTokens, p.suspectedCutAt);
   return {
     maxQuestions: p.maxQuestions ?? null,
     maxInputTokens: tokens,

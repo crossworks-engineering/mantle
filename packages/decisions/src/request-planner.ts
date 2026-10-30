@@ -22,8 +22,9 @@ import {
   deciderRequestLimits,
   type DecideInput,
   type DecideOutcome,
+  type ResolvedUse,
 } from './decide';
-import { planGroups, type UnitSize } from './request-limits';
+import { planGroups, type DecisionRequestLimits, type UnitSize } from './request-limits';
 
 /** One request of a plan, as the use builds it. */
 export type PlannedRequest = Pick<DecideInput, 'state' | 'questions' | 'summarize'>;
@@ -62,13 +63,15 @@ export async function decidePlanned<T>(opts: {
   scaleTimeout?: boolean;
 }): Promise<PlannedResult<T>> {
   const t0 = Date.now();
-  const sized = await deciderRequestLimits(opts.ownerId);
+  const sized = await deciderRequestLimits(opts.ownerId, opts.use);
   const { groups, refused } = planGroups(opts.units, opts.sizeOf, {
     groupSize: opts.groupSize,
     baseChars: opts.baseChars,
     limits: sized?.limits ?? null,
   });
-  if (refused.length > 0 && sized) await traceRefused(opts.use, sized, refused.length);
+  if (refused.length > 0 && sized?.use?.enabled) {
+    await traceRefused(opts.use, sized, refused.length);
+  }
 
   const batch = groups.length > 1 || opts.alwaysBatch ? new DecideBatch() : undefined;
   const factor = opts.scaleTimeout && groups.length > 1 ? groups.length : undefined;
@@ -81,6 +84,7 @@ export async function decidePlanned<T>(opts: {
         ...req,
         ...(batch ? { batch } : {}),
         ...(factor ? { timeoutFactor: factor } : {}),
+        ...(sized ? { limits: { model: sized.model, limits: sized.limits } } : {}),
       });
       return { group, outcome };
     }),
@@ -97,22 +101,23 @@ export async function decidePlanned<T>(opts: {
   };
 }
 
-/** One step per plan that refused units, so a model too small for a use
- *  shows in /traces instead of failing silently. */
+/** One step per plan that refused units (the use switched on), so a model
+ *  too small for a use shows in /traces instead of failing silently. */
 async function traceRefused(
   use: DecisionUse,
-  sized: { model: string; limits: { maxQuestions: number | null; maxInputTokens: number | null } },
+  sized: { model: string; limits: DecisionRequestLimits; use: ResolvedUse },
   refused: number,
 ): Promise<void> {
   await step(
     {
       name: `decide_${use}`,
       kind: 'llm_call',
-      input: { use, model: sized.model, refused },
+      input: { use, mode: sized.use.mode, model: sized.model, refused },
     },
     async (h) => {
       h.setMeta({
         use,
+        mode: sized.use.mode,
         model: sized.model,
         over_limit: `${refused} item(s) too large for one request`,
         max_questions: sized.limits.maxQuestions,
