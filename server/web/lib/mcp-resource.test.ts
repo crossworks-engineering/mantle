@@ -4,7 +4,12 @@
  * lib/mcp-resource.ts only logs.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { canonicalResource, noteResource, resourceNamesThisBox } from './mcp-resource';
+import {
+  canonicalResource,
+  foreignResource,
+  noteResource,
+  resourceNamesThisBox,
+} from './mcp-resource';
 
 let warn: MockInstance<typeof console.warn>;
 beforeEach(() => {
@@ -55,20 +60,43 @@ describe('resourceNamesThisBox', () => {
   });
 });
 
+describe('foreignResource', () => {
+  it('is null for no value, or values that all name the box', () => {
+    expect(foreignResource([])).toBeNull();
+    expect(foreignResource(['https://brain.example/api/mcp', 'https://brain.example'])).toBeNull();
+  });
+  it('answers the first value that names another server', () => {
+    expect(foreignResource(['https://brain.example/api/mcp', 'https://a.example/mcp'])).toBe(
+      'https://a.example/mcp',
+    );
+  });
+  it('checks the first four text values only, and skips a file', () => {
+    const many = [...Array(4).fill('https://brain.example/api/mcp'), 'https://a.example/mcp'];
+    expect(foreignResource(many)).toBeNull();
+    expect(foreignResource([new Blob(['x']), 'https://a.example/mcp'])).toBe(
+      'https://a.example/mcp',
+    );
+  });
+});
+
 describe('noteResource', () => {
   it('logs nothing for no value or a value that names the box', () => {
-    noteResource([], 'authorize');
-    noteResource(['https://brain.example/api/mcp'], 'authorize');
+    noteResource([], 'refresh');
+    noteResource(['https://brain.example/api/mcp'], 'code exchange');
     expect(warn).not.toHaveBeenCalled();
   });
-  it('logs each other value once, clipped and printable', () => {
-    noteResource(['https://a.example/x', `https://b.example/${'y'.repeat(400)}\n`], 'refresh');
-    expect(warn).toHaveBeenCalledTimes(2);
-    const second = String(warn.mock.calls[1]![0]);
-    expect(second).toContain('at refresh');
-    expect(second).not.toContain('\n');
-    expect(second).toContain('...');
-    expect(second.length).toBeLessThan(400);
+  it('logs one line per request, clipped and printable', () => {
+    noteResource([`https://b.example/${'y'.repeat(400)}\n`, 'https://a.example/x'], 'refresh');
+    expect(warn).toHaveBeenCalledTimes(1);
+    const line = String(warn.mock.calls[0]![0]);
+    expect(line).toContain('at refresh');
+    expect(line).not.toContain('\n');
+    expect(line).toContain('...');
+    expect(line.length).toBeLessThan(400);
+  });
+  it('logs one line for a request with thousands of values', () => {
+    noteResource(Array(10_000).fill('https://a.example/x'), 'refresh');
+    expect(warn).toHaveBeenCalledTimes(1);
   });
   it('skips a value that is not text (a file in a form)', () => {
     noteResource([new Blob(['x'])], 'code exchange');

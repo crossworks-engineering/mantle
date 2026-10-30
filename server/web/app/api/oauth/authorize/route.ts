@@ -33,7 +33,7 @@ import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
 import { mcpTargetLogin } from '@/lib/mcp-auth';
-import { noteResource } from '@/lib/mcp-resource';
+import { foreignResource, printableResource } from '@/lib/mcp-resource';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { env } from '@mantle/config';
 import type { LoginRole } from '@mantle/client-types/role-names';
@@ -57,9 +57,13 @@ type AuthorizeParams = {
   codeChallengeMethod: string;
   scope: string;
   responseType: string;
+  /** An RFC 8707 `resource` value that names another server (or ''):
+   *  the page says so, and the consent's audit row names its host. Never
+   *  a refusal (lib/mcp-resource.ts). */
+  foreignResource: string;
 };
 
-function readParams(sp: URLSearchParams): AuthorizeParams {
+function readParams(sp: URLSearchParams, origin: string): AuthorizeParams {
   return {
     clientId: sp.get('client_id') ?? '',
     redirectUri: sp.get('redirect_uri') ?? '',
@@ -68,6 +72,7 @@ function readParams(sp: URLSearchParams): AuthorizeParams {
     codeChallengeMethod: sp.get('code_challenge_method') ?? '',
     scope: sp.get('scope') || DEFAULT_SCOPE,
     responseType: sp.get('response_type') ?? '',
+    foreignResource: foreignResource(sp.getAll('resource'), origin) ?? '',
   };
 }
 
@@ -180,12 +185,9 @@ export async function GET(req: Request) {
   if (!(await isRemoteMcpEnabled()))
     return htmlError('Remote MCP is not enabled on this Mantle.', 404);
   const url = new URL(req.url);
-  const p = readParams(url.searchParams);
+  const p = readParams(url.searchParams, requestOrigin(req));
   const validated = await validate(p);
   if (validated instanceof Response) return validated;
-  // RFC 8707: logged when it names another server, never refused
-  // (lib/mcp-resource.ts). The consent form does not carry it on.
-  noteResource(url.searchParams.getAll('resource'), 'authorize', requestOrigin(req));
 
   const user = await signedIn(await publicLoginItself());
   if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
@@ -218,6 +220,9 @@ export async function POST(req: Request) {
     codeChallengeMethod: get('code_challenge_method'),
     scope: get('scope') || DEFAULT_SCOPE,
     responseType: 'code',
+    // The page we rendered carries the foreign value on, so a page shown
+    // again (a wrong password) keeps the warning. Checked again here.
+    foreignResource: foreignResource([get('resource')], requestOrigin(req)) ?? '',
   };
   const decision = get('decision');
 
@@ -314,6 +319,7 @@ function auditConsent(
       clientId: p.clientId,
       redirectHost: redirectHost(p.redirectUri),
       role: user.role,
+      ...(p.foreignResource ? { resourceHost: resourceHost(p.foreignResource) } : {}),
       ...extra,
     },
     ...requestMetaFrom(req),
@@ -350,6 +356,8 @@ function consentShell(inner: string): string {
   .pw { box-sizing:border-box; width:100%; margin:0 0 14px; padding:10px 12px; border-radius:10px;
     border:1px solid #33333b; background:#0f0f13; color:#e7e7ea; font-size:14px; }
   .err { margin:-6px 0 14px; color:#f08a8a; font-size:13px; }
+  .warn { margin:0 0 18px; padding:12px 14px; border:1px solid #7a4a1e; border-radius:10px;
+    background:#1f160d; color:#f0c48a; font-size:13px; word-break:break-word; }
 </style></head><body><div class="card">${inner}</div></body></html>`;
 }
 
@@ -369,6 +377,16 @@ function redirectHost(uri: string): string {
     return new URL(uri).host || uri;
   } catch {
     return uri;
+  }
+}
+
+/** The host a foreign `resource` names, printable, or the value itself
+ *  when it is not a URI. */
+function resourceHost(value: string): string {
+  try {
+    return printableResource(new URL(value).host || value);
+  } catch {
+    return printableResource(value);
   }
 }
 
@@ -400,6 +418,11 @@ function consentPage(
   <p class="muted">An app is asking for access to your Mantle brain.</p>
   <div class="who"><span class="label">It sends you back to</span><b class="host">${returnHost}</b></div>
   <div class="name"><span class="label">The name it gave itself (anyone can choose any name)</span>&ldquo;${safeName}&rdquo;</div>
+  ${
+    p.foreignResource
+      ? `<div class="warn" role="alert"><span class="label">This sign-in names another server</span><b class="host">${h(resourceHost(p.foreignResource))}</b><br />The app may hand the access it gets here to that server. Allow only if you meant to connect this brain.</div>`
+      : ''
+  }
   <div class="who">Signed in as <b>${h(email)}</b></div>
   <p class="muted" style="margin-bottom:6px;">This will allow it to:</p>
   <ul class="scopes">
@@ -412,6 +435,7 @@ function consentPage(
     <input type="hidden" name="code_challenge" value="${h(p.codeChallenge)}" />
     <input type="hidden" name="code_challenge_method" value="${h(p.codeChallengeMethod)}" />
     <input type="hidden" name="scope" value="${h(p.scope)}" />
+    ${p.foreignResource ? `<input type="hidden" name="resource" value="${h(p.foreignResource)}" />` : ''}
     <input type="hidden" name="consent_token" value="${h(token)}" />
     <input type="text" name="username" value="${h(email)}" autocomplete="username" hidden />
     <label class="muted" for="consent-password" style="display:block;margin-bottom:6px;">Type your Mantle password to allow</label>

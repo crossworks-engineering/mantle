@@ -97,9 +97,10 @@ export async function POST(req: Request) {
   };
 
   const grantType = get('grant_type');
-  // RFC 8707 (ChatGPT sends it on both grants): logged when it names
-  // another server, never refused (lib/mcp-resource.ts). The token is
-  // this box's opaque handle, good only at its /api/mcp.
+  // RFC 8707 (ChatGPT sends it on both grants): a grant made for a value
+  // that names another server is logged, never refused
+  // (lib/mcp-resource.ts). Only once it was made: a request with no valid
+  // code or refresh token logs nothing.
   const resources = form.getAll('resource');
 
   if (grantType === 'authorization_code') {
@@ -113,12 +114,12 @@ export async function POST(req: Request) {
         'code, redirect_uri, client_id, code_verifier are required',
       );
     }
-    noteResource(resources, 'code exchange', requestOrigin(req));
     const res = await whenNotBusy(() =>
       exchangeAuthCode({ code, redirectUri, clientId, codeVerifier }),
     );
     if (res instanceof Response) return res;
     if (!res.ok) return oauthError(res.error);
+    noteResource(resources, 'code exchange', requestOrigin(req));
     auditGrant(req, 'oauth.code_exchanged', res);
     return tokenOk(res.tokens);
   }
@@ -129,10 +130,10 @@ export async function POST(req: Request) {
     if (!refreshToken || !clientId) {
       return oauthError('invalid_request', 'refresh_token and client_id are required');
     }
-    noteResource(resources, 'refresh', requestOrigin(req));
     const res = await whenNotBusy(() => refreshAccessToken({ refreshToken, clientId }));
     if (res instanceof Response) return res;
     if (!res.ok) return oauthError(res.error);
+    noteResource(resources, 'refresh', requestOrigin(req));
     auditGrant(req, 'oauth.token_refreshed', res);
     return tokenOk(res.tokens);
   }

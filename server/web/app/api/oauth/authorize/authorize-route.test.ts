@@ -93,6 +93,7 @@ const get = async () => {
 
 beforeEach(() => {
   process.env.SESSION_SECRET = 'authorize-route-test-secret-at-least-32-chars';
+  process.env.MANTLE_PUBLIC_URL = 'https://brain.example';
   h.login = null;
   h.minted = 0;
   h.mcpOn = false;
@@ -182,6 +183,28 @@ describe('GET /api/oauth/authorize', () => {
     }
   });
 
+  it('warns when the resource names another server, and only then', async () => {
+    h.login = admin;
+    const { GET } = await import('./route');
+    const page = async (resource: string | null) => {
+      const q = new URLSearchParams(QUERY);
+      if (resource !== null) q.set('resource', resource);
+      return (await GET(new Request(`http://brain.example/api/oauth/authorize?${q}`))).text();
+    };
+    for (const quiet of [null, 'https://brain.example/api/mcp', 'https://brain.example']) {
+      const html = await page(quiet);
+      expect(html, String(quiet)).not.toContain('names another server');
+      expect(html).not.toContain('name="resource"');
+    }
+    const html = await page('https://other.example/mcp');
+    expect(html).toContain(
+      'This sign-in names another server</span><b class="host">other.example</b>',
+    );
+    expect(html).toContain('name="resource" value="https://other.example/mcp"');
+    // The host the code goes back to still heads the page.
+    expect(html).toContain('<h1>Connect c.example to Mantle</h1>');
+  });
+
   it('clips a long self-chosen name', async () => {
     h.login = admin;
     h.clientName = 'x'.repeat(500);
@@ -253,6 +276,36 @@ describe('POST /api/oauth/authorize', () => {
         }),
       }),
     ]);
+  });
+
+  it('keeps the warning on a page shown again, and names the host on the trail', async () => {
+    h.login = admin;
+    const { GET, POST } = await import('./route');
+    const q = new URLSearchParams(QUERY);
+    q.set('resource', 'https://other.example/mcp');
+    const page = await (
+      await GET(new Request(`http://brain.example/api/oauth/authorize?${q}`))
+    ).text();
+    const token = /name="consent_token" value="([^"]+)"/.exec(page)![1]!;
+    const post = (password: string) => {
+      const form = new FormData();
+      for (const [k, v] of QUERY) form.set(k, v);
+      form.set('resource', 'https://other.example/mcp');
+      form.set('decision', 'allow');
+      form.set('consent_token', token);
+      form.set('password', password);
+      return POST(
+        new Request('http://brain.example/api/oauth/authorize', { method: 'POST', body: form }),
+      );
+    };
+    const again = await post('a wrong password');
+    expect(again.status).toBe(403);
+    expect(await again.text()).toContain('names another server');
+    const right = await post(PASSWORD);
+    expect(right.status).toBe(302);
+    expect(h.audits.find((a) => a.action === 'oauth.consent')).toMatchObject({
+      detail: expect.objectContaining({ resourceHost: 'other.example' }),
+    });
   });
 
   it('writes no consent row when no code was minted', async () => {

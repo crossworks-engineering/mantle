@@ -331,14 +331,20 @@ sends the RFC 8707 `resource` value (the protected resource metadata's
 and on both token grants, as the MCP spec asks every client to.
 
 An access token here is an opaque handle to a row in this box's database,
-honoured only at this box's `/api/mcp`, so it is bound to that one
-resource whatever the client sent: there is no `aud` claim to copy the
-value into. `server/web/lib/mcp-resource.ts` checks each value against
-the public URL and the origin the request came in on (an old host name the
-box still serves), the MCP endpoint or the bare origin, and logs one line
-(`[mcp-oauth] resource mismatch at ...`) for a value that names another
-server. It never refuses: a Claude connector that sends no value, and an
-old host name, work as before (plan section 2.1). The whole flow, for a
+honoured only at this box's `/api/mcp`: there is no `aud` claim to copy
+the value into. That binds a token to this box only while the client asked
+for this box. A client that asked for another server may hand the token to
+it, and that server could replay it here (the reason RFC 8707 exists).
+`server/web/lib/mcp-resource.ts` checks the value (the first four of a
+request) against the public URL and the origin the request came in on (an
+old host name the box still serves), the MCP endpoint or the bare origin.
+A value that names another server is shown on the consent page as a
+warning with its host, the consent's audit row carries `resourceHost`,
+and a grant made for it logs one line (`[mcp-oauth] resource mismatch at
+...`, only after the grant was made, so a junk request logs nothing). It
+never refuses: a Claude connector that sends no value, and an old host
+name, work as before (plan section 2.1). Refusing a foreign value
+(`invalid_target`) would be an opt-in for later. The whole flow, for a
 ChatGPT-shaped client, a Claude-shaped one and an old host, is
 `server/web/lib/mcp-connector-flow.db.test.ts`.
 
@@ -346,8 +352,9 @@ ChatGPT registers ONCE per workspace app and every person in that ChatGPT
 workspace signs in on that one client id. A member's own Disconnect
 (`disconnectLoginClient`) revokes only their grants; the admin's
 Disconnect in Settings, MCP (`disconnectClient`) deletes the client row,
-which ends every person's grants and leaves ChatGPT with `invalid_client`
-until a ChatGPT admin adds the app again.
+which ends every person's grants: a refresh then gets `invalid_grant` and
+a new sign-in gets the "unknown client_id" page, until a ChatGPT admin
+adds the app again.
 
 ## Not done, and why
 

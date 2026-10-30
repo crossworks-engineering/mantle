@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-const h = vi.hoisted(() => ({ exchanged: 0, refreshed: 0 }));
+const h = vi.hoisted(() => ({ exchanged: 0, refreshed: 0, refuse: false }));
 
 vi.mock('@/lib/audit', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -27,6 +27,7 @@ const TOKENS = {
 vi.mock('@/lib/mcp-oauth', () => ({
   isRemoteMcpEnabled: async () => true,
   exchangeAuthCode: async () => {
+    if (h.refuse) return { ok: false, error: 'invalid_grant' };
     h.exchanged += 1;
     return {
       ok: true,
@@ -36,6 +37,7 @@ vi.mock('@/lib/mcp-oauth', () => ({
     };
   },
   refreshAccessToken: async () => {
+    if (h.refuse) return { ok: false, error: 'invalid_grant' };
     h.refreshed += 1;
     return {
       ok: true,
@@ -71,6 +73,7 @@ beforeEach(() => {
   process.env.MANTLE_PUBLIC_URL = 'https://brain.example';
   h.exchanged = 0;
   h.refreshed = 0;
+  h.refuse = false;
   warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => warn.mockRestore());
@@ -118,6 +121,22 @@ describe('POST /api/oauth/token and the resource value', () => {
     expect(lines[0]).toContain('at code exchange');
     expect(lines[1]).toContain('at refresh');
     expect(lines[0]).toContain('https://brain.example/api/mcp');
+  });
+
+  it('logs nothing for a request that makes no grant, however many values it sends', async () => {
+    h.refuse = true;
+    const form = new URLSearchParams(REFRESH);
+    for (let i = 0; i < 5_000; i += 1) form.append('resource', 'https://a.example/x');
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('https://brain.example/api/oauth/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(resourceWarnings()).toEqual([]);
   });
 
   it('takes the host the request came in on as this box', async () => {

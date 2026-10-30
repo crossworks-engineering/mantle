@@ -56,9 +56,15 @@ An admin login lists 200 to 315 tools, depending on its Admin areas. A member li
 
 ## Disconnect
 
-- **One person**: they open **Settings > MCP** in MantleOS and press **Disconnect** next to ChatGPT. Only their own sign-in ends.
-- **The whole ChatGPT app**: an admin presses **Disconnect** next to the ChatGPT client in **Settings > MCP**. This ends the sign-in of every person in that ChatGPT workspace, and removes ChatGPT's registration. ChatGPT then shows an error for the app, and a ChatGPT admin must add the connector again.
-- A password change, **Sign out everywhere** or an admin's **End sessions** also ends that login's sign-in.
+ChatGPT registers once for the whole ChatGPT app, so every person in that ChatGPT workspace signs in on one client in MantleOS.
+
+- **A member** opens **Settings > MCP** in MantleOS and presses **Disconnect** next to ChatGPT. Only their own sign-in ends. They can sign in again from ChatGPT.
+- **An admin** who presses **Disconnect** next to the ChatGPT client in **Settings > MCP** removes the whole client: the sign-in of every person in that ChatGPT workspace ends, and ChatGPT can no longer sign in with it. A ChatGPT admin must then add the connector again. To end only one person's access, end that login's sessions instead.
+- A password change, **Sign out everywhere** or an admin's **End sessions** ends that login's sign-in only.
+
+## A warning on the sign-in page
+
+ChatGPT tells MantleOS which server the sign-in is for. When that is not this brain, the sign-in page shows **This sign-in names another server** with that server's name. Press **Deny** unless you meant to connect this brain: the app could hand the access to that other server. MantleOS does not refuse the sign-in, so older clients keep working.
 
 ## If it fails
 
