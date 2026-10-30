@@ -44,7 +44,11 @@ const json = (url: string, method: string, body: unknown) =>
     body: JSON.stringify(body),
   });
 
-type SetArgs = [unknown, string, { ref: { id?: string; name?: string } } & Record<string, unknown>];
+type SetArgs = [
+  unknown,
+  string,
+  { ref: { id?: string; name?: string; service?: string } } & Record<string, unknown>,
+];
 
 function keyOf(service: string, input: Record<string, unknown>) {
   return {
@@ -71,7 +75,7 @@ beforeEach(() => {
   h.set.mockReset();
   h.retry.mockClear();
   h.set.mockImplementation(async (...[, , input]: SetArgs) => {
-    const service = input.ref.name ? input.ref.name.split('/')[0]! : 'anthropic';
+    const service = input.ref.name?.split('/')[0] ?? input.ref.service ?? 'anthropic';
     return { op: 'add', secretWritten: input.value !== undefined, key: keyOf(service, input) };
   });
 });

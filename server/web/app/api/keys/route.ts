@@ -87,11 +87,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
   const b = parsed.data;
-  // service/label is a name too (svc/default is svc: parseVaultName).
-  const name = b.name ?? `${b.service}/${b.label}`;
+  // The older form names its key by service and label, as it always did
+  // (a label it took, spaces and all, still reaches its key).
   const value = b.value ?? b.plaintext;
   const result = await setVaultKey(vaultActor(user), user.id, {
-    ref: { name },
+    ref: b.name !== undefined ? { name: b.name } : { service: b.service!, label: b.label },
     ...(b.kind !== undefined ? { kind: b.kind } : {}),
     // The older form (service, label, plaintext) adds a token; the newer
     // one names its kind (a key that is there keeps its own).

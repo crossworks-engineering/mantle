@@ -38,7 +38,13 @@ import {
   VAULT_KINDS,
 } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
-import { AccessError, InputError, isMcpManagedSecretService, UUID_RE } from '@mantle/std';
+import {
+  AccessError,
+  ConflictError,
+  InputError,
+  isMcpManagedSecretService,
+  UUID_RE,
+} from '@mantle/std';
 import type { TestApiKeyResult } from '@mantle/client-types';
 import { checkedWorkspaceId, fieldsAad, maskPlaintext, valueAad } from './shape';
 import { probeApiKey } from './probe';
@@ -78,8 +84,12 @@ export type VaultKeySummary = {
   updatedAt: Date;
 };
 
-/** Which secret: its row id (the Keys screen) or its name (agents, CSV). */
-export type VaultRef = Readonly<{ id: string } | { name: string }>;
+/** Which secret: its row id (the Keys screen), its name (agents, CSV), or
+ *  the older Keys form's service and label (a label as that form took it:
+ *  up to 64 characters, so a key saved under one is reached as before). */
+export type VaultRef = Readonly<
+  { id: string } | { name: string } | { service: string; label: string }
+>;
 
 /**
  * A set. On an add, `value` is required and every unset field takes its
@@ -267,6 +277,12 @@ const SSH_KEY_RE =
 /** The shape a kind's value and fields must have; the reason never echoes
  *  a value. */
 export function checkVaultShape(kind: VaultKind, value: string, fields: VaultFields): void {
+  checkValueShape(kind, value);
+  checkFieldsShape(kind, fields);
+}
+
+/** The shape of a kind's value alone. */
+function checkValueShape(kind: VaultKind, value: string): void {
   if (kind === 'ssh_key') {
     if (value.length > MAX_SSH_KEY || !SSH_KEY_RE.test(value.trim())) {
       throw new InputError(
@@ -281,6 +297,11 @@ export function checkVaultShape(kind: VaultKind, value: string, fields: VaultFie
       throw new InputError('value must be one line with no control characters.');
     }
   }
+}
+
+/** The shape of a kind's fields alone (a field changed with the stored
+ *  value: the value's own shape was checked when it was set). */
+function checkFieldsShape(kind: VaultKind, fields: VaultFields): void {
   for (const k of Object.keys(FIELD_KINDS) as (keyof VaultFields)[]) {
     const v = fields[k];
     if (v === undefined) continue;
@@ -343,7 +364,7 @@ async function findRow(ownerId: string, ref: VaultRef): Promise<ApiKey | null> {
     if (row && isMcpManagedSecretService(row.service)) return null;
     return row ?? null;
   }
-  const parsed = parsedName(ref.name);
+  const parsed = refParts(ref);
   const [row] = await db
     .select()
     .from(apiKeys)
@@ -356,6 +377,32 @@ async function findRow(ownerId: string, ref: VaultRef): Promise<ApiKey | null> {
     )
     .limit(1);
   return row ?? null;
+}
+
+/** The service, label and name a name or an older-form ref names; refuses
+ *  the reserved connector namespace and anything that is no name. */
+function refParts(ref: VaultRef): { service: string; label: string; name: string } {
+  if ('name' in ref) return parsedName(ref.name);
+  if (!('service' in ref)) throw new InputError('No such key: list them with api_key_refs.');
+  const label = ref.label;
+  if (
+    !SERVICE_RE.test(ref.service) ||
+    label.length < 1 ||
+    label.length > 64 ||
+    CONTROL_RE.test(label)
+  ) {
+    throw new InputError('service must be a slug and label 1 to 64 characters on one line.');
+  }
+  if (isMcpManagedSecretService(ref.service)) {
+    throw new InputError(
+      "services starting 'mcp-' hold MCP connector sign-ins and are managed under Settings → Connectors; pick another name.",
+    );
+  }
+  return {
+    service: ref.service,
+    label,
+    name: label === 'default' ? ref.service : `${ref.service}/${label}`,
+  };
 }
 
 function parsedName(raw: string): { service: string; label: string; name: string } {
@@ -440,9 +487,11 @@ function refuseSecretInPlainFields(input: VaultSetInput, row: ApiKey | null): vo
   );
   if (secrets.length === 0) return;
   const plain = [
-    'name' in input.ref ? input.ref.name : (row?.name ?? ''),
+    'id' in input.ref ? (row?.name ?? '') : refParts(input.ref).name,
     ...(input.target ?? row?.target ?? []),
     ...(input.tags ?? row?.tags ?? []),
+    // Stored in clear too.
+    input.anthropicWorkspaceId ?? '',
   ].map((p) => p.toLowerCase());
   for (const secret of secrets) {
     const s = secret.trim().toLowerCase();
@@ -454,7 +503,29 @@ function refuseSecretInPlainFields(input: VaultSetInput, row: ApiKey | null): vo
   }
 }
 
-function planSet(ownerId: string, input: VaultSetInput, row: ApiKey | null): SetPlan {
+/**
+ * Whether a replace widens where a secret may be used: a target or a tag
+ * it did not have, approval switched off, the tailnet switch moved. Part 2
+ * trusts these fields to keep a secret on its host and before the owner,
+ * so over MCP (a client a page or a document may steer) such a change
+ * carries the secret again: only one who knows it can send it somewhere
+ * new. The Keys screen, behind the owner's own sign-in, may make it alone.
+ * A narrowing change (a target removed, approval on) is never held.
+ */
+function widens(input: VaultSetInput, row: ApiKey, target?: string[], tags?: string[]): boolean {
+  if (target && target.some((t) => !row.target.includes(t))) return true;
+  if (tags && tags.some((t) => !row.tags.includes(t))) return true;
+  if (input.needsApproval === false && row.needsApproval) return true;
+  if (input.viaTailnet !== undefined && input.viaTailnet !== row.viaTailnet) return true;
+  return false;
+}
+
+function planSet(
+  ownerId: string,
+  input: VaultSetInput,
+  row: ApiKey | null,
+  via: VaultActor['via'],
+): SetPlan {
   refuseSecretInPlainFields(input, row);
   if (input.kind !== undefined && !(VAULT_KINDS as readonly string[]).includes(input.kind)) {
     throw new InputError(`kind must be one of ${VAULT_KINDS.join(', ')}.`);
@@ -473,8 +544,8 @@ function planSet(ownerId: string, input: VaultSetInput, row: ApiKey | null): Set
   const fieldsGiven = Object.values(fieldInput).some((v) => v !== undefined);
 
   if (!row) {
-    if (!('name' in input.ref)) throw new InputError('No such key: list them with api_key_refs.');
-    const { service, label, name } = parsedName(input.ref.name);
+    if ('id' in input.ref) throw new InputError('No such key: list them with api_key_refs.');
+    const { service, label, name } = refParts(input.ref);
     // A new key names its kind: a password sent with none would be stored
     // as a token, the loosest kind (no approval, opened by every read).
     if ((input.kind ?? input.addKind) === undefined) {
@@ -530,6 +601,11 @@ function planSet(ownerId: string, input: VaultSetInput, row: ApiKey | null): Set
     };
   }
 
+  if (via === 'mcp' && input.value === undefined && widens(input, row, target, tags)) {
+    throw new InputError(
+      'A new target or tag, approval off, or a tailnet change widens where this key may be used: send the secret again in value (or make the change on the Keys screen).',
+    );
+  }
   const kind = input.kind ?? row.kind;
   const kindChanged = kind !== row.kind;
   if (kindChanged && input.value === undefined) {
@@ -560,7 +636,7 @@ function planSet(ownerId: string, input: VaultSetInput, row: ApiKey | null): Set
     secretReplaced = true;
   } else if (fieldsGiven) {
     // A field changed with the stored value: the shape of the fields alone.
-    checkVaultShape(kind, kind === 'ssh_key' ? sshShapeStandIn : 'x', fields);
+    checkFieldsShape(kind, fields);
   }
   if (fieldsGiven || kindChanged) {
     Object.assign(set, sealFields(row.id, fields));
@@ -611,11 +687,6 @@ function planSet(ownerId: string, input: VaultSetInput, row: ApiKey | null): Set
   return { op: 'replace', row, set, kind, changed, secretReplaced };
 }
 
-/** Stands in for a stored SSH key when only its fields change: the key's
- *  own shape was checked when it was set. */
-const sshShapeStandIn =
-  '-----BEGIN OPENSSH PRIVATE KEY-----\nstored\n-----END OPENSSH PRIVATE KEY-----';
-
 async function writePlan(plan: SetPlan): Promise<ApiKey> {
   if (plan.op === 'replace' && plan.changed.length === 0) return plan.row;
   const id = plan.op === 'add' ? plan.id : plan.row.id;
@@ -627,6 +698,10 @@ async function writePlan(plan: SetPlan): Promise<ApiKey> {
   // tailnet or fields change (0346). A new value or workspace id alone is
   // (key_enc, key_version, masked, anthropic_workspace_id), by name.
   const atSpot = plan.op === 'add' || narrowNeedsSpot(apiKeys, 'update', set);
+  const sameRow =
+    plan.op === 'replace'
+      ? and(eq(apiKeys.id, id), eq(apiKeys.kind, plan.row.kind))
+      : eq(apiKeys.id, id);
   const [row] = await conflictOnUnique(
     'A key of that name was saved at the same moment: list the keys and try again.',
     () =>
@@ -634,7 +709,7 @@ async function writePlan(plan: SetPlan): Promise<ApiKey> {
         ? onFullSystemRoute('model-route', () =>
             plan.op === 'add'
               ? db.insert(apiKeys).values(plan.values).returning()
-              : db.update(apiKeys).set(set).where(eq(apiKeys.id, id)).returning(),
+              : db.update(apiKeys).set(set).where(sameRow).returning(),
           )
         : db
             .update(apiKeys)
@@ -645,10 +720,15 @@ async function writePlan(plan: SetPlan): Promise<ApiKey> {
               anthropicWorkspaceId: set.anthropicWorkspaceId,
               updatedAt: set.updatedAt,
             })
-            .where(eq(apiKeys.id, id))
+            .where(sameRow)
             .returning(),
   );
-  if (!row) throw new Error(`failed to ${plan.op === 'add' ? 'insert' : 'update'} api_key`);
+  // A replace lands only on the row as it was checked: its kind changed
+  // since (a write at the same moment), the seal would not match it.
+  if (!row && plan.op === 'replace') {
+    throw new ConflictError('The key changed at the same moment: read it again and retry.');
+  }
+  if (!row) throw new Error('failed to insert api_key');
   return row;
 }
 
@@ -689,7 +769,7 @@ export async function setVaultKey(
 ): Promise<VaultSetResult | null> {
   // Pure checks first, so a refusal costs no database work (planSet runs
   // them again with the row).
-  if ('name' in input.ref) parsedName(input.ref.name);
+  if (!('id' in input.ref)) refParts(input.ref);
   if (input.kind !== undefined && !(VAULT_KINDS as readonly string[]).includes(input.kind)) {
     throw new InputError(`kind must be one of ${VAULT_KINDS.join(', ')}.`);
   }
@@ -700,7 +780,7 @@ export async function setVaultKey(
   await gate();
   const row = await findRow(ownerId, input.ref);
   if (!row && 'id' in input.ref) return null;
-  const plan = planSet(ownerId, input, row);
+  const plan = planSet(ownerId, input, row, who.via);
   return commitPlan(who, plan);
 }
 
@@ -727,7 +807,7 @@ export async function deleteVaultKey(
   ownerId: string,
   ref: VaultRef,
 ): Promise<VaultKeySummary | null> {
-  if ('name' in ref) parsedName(ref.name);
+  if (!('id' in ref)) refParts(ref);
   await gate();
   const row = await findRow(ownerId, ref);
   if (!row) return null;
@@ -753,7 +833,7 @@ export async function testVaultKey(
   ownerId: string,
   ref: VaultRef,
 ): Promise<VaultTestResult | null> {
-  if ('name' in ref) parsedName(ref.name);
+  if (!('id' in ref)) refParts(ref);
   await gate();
   const row = await findRow(ownerId, ref);
   if (!row) return null;
@@ -908,7 +988,7 @@ export async function importVaultKeys(
         ...(tags.trim() ? { tags: listCell(tags) } : {}),
       };
       parsedName(parsed.name);
-      plans.push(planSet(ownerId, input, await findRow(ownerId, input.ref)));
+      plans.push(planSet(ownerId, input, await findRow(ownerId, input.ref), who.via));
     } catch (err) {
       if (!(err instanceof InputError)) throw err;
       failed.push({ row: rowNo, reason: err.message });

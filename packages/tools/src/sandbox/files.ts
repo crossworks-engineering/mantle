@@ -358,7 +358,9 @@ export const sandbox_publish: BuiltinToolDef = {
       await setApiKey(ctx.ownerId, 'sandboxd', 'proxy', token);
     } else {
       const keys = await listApiKeys(ctx.ownerId);
-      if (!keys.some((k) => k.service === 'sandboxd' && k.label === 'proxy')) {
+      if (
+        !keys.some((k) => k.service === 'sandboxd' && k.label === 'proxy' && k.kind === 'token')
+      ) {
         keyNote =
           'the sandbox proxy key (sandboxd/proxy) is not in the API-key vault yet and this login may not add it: ask a user with the keys area to publish this sandbox once, or tools in this group will not authenticate';
       }

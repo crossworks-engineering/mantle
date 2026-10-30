@@ -126,7 +126,8 @@ export const api_key_set: BuiltinToolDef = {
       kind: {
         type: 'string',
         enum: [...VAULT_KIND_ENUM],
-        description: 'Kind of secret; a new key without one is a token.',
+        description:
+          'Required for a new key: token for an API key, else password, ssh_key or login.',
       },
       value: {
         type: 'string',

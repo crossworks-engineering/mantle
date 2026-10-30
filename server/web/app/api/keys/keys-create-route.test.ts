@@ -25,7 +25,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 vi.mock('@/lib/api-keys', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   listApiKeys: vi.fn(async () => []),
-  setVaultKey: vi.fn(async (_who: unknown, _owner: string, input: { ref: { name: string } }) => {
+  setVaultKey: vi.fn(async (_who: unknown, _owner: string, input: { ref: { name?: string } }) => {
     h.calls.push(input);
     if (h.setError) throw h.setError;
     return {
@@ -33,7 +33,7 @@ vi.mock('@/lib/api-keys', async (importOriginal) => ({
       secretWritten: true,
       key: {
         id: 'k1',
-        name: input.ref.name,
+        name: input.ref.name ?? 'openrouter',
         kind: 'token',
         service: 'openrouter',
         label: 'default',
@@ -92,7 +92,11 @@ describe('POST /api/keys', () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).not.toContain(SECRET);
-    expect(h.calls[0]).toMatchObject({ ref: { name: 'openrouter/default' }, value: SECRET });
+    expect(h.calls[0]).toMatchObject({
+      ref: { service: 'openrouter', label: 'default' },
+      addKind: 'token',
+      value: SECRET,
+    });
   });
 
   it('takes the newer body: name, kind, value, target, tags', async () => {

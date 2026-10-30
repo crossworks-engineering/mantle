@@ -218,6 +218,54 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     );
   });
 
+  it('over MCP, widening where a key may be used needs the secret again', async () => {
+    const mcp = { loginId: owner, via: 'mcp' } as const;
+    await set(who, owner, {
+      ref: { name: 'cam-1' },
+      kind: 'password',
+      value: v('cam'),
+      target: ['cam-1.lan'],
+      tags: ['cams'],
+    });
+    for (const widen of [
+      { target: ['cam-1.lan', 'elsewhere.example.com'] },
+      { tags: ['cams', 'web'] },
+      { needsApproval: false },
+      { viaTailnet: true },
+    ]) {
+      await expect(set(mcp, owner, { ref: { name: 'cam-1' }, ...widen })).rejects.toThrow(
+        /send the secret again/,
+      );
+    }
+    // Narrowing is free; widening with the secret, or on the Keys screen, goes.
+    const narrowed = await set(mcp, owner, { ref: { name: 'cam-1' }, tags: [] });
+    expect(narrowed!.key.tags).toEqual([]);
+    const withSecret = await set(mcp, owner, {
+      ref: { name: 'cam-1' },
+      value: v('cam-2'),
+      target: ['cam-1.lan', 'cam-1.local'],
+    });
+    expect(withSecret!.key.target).toEqual(['cam-1.lan', 'cam-1.local']);
+    const onScreen = await set(who, owner, { ref: { name: 'cam-1' }, needsApproval: false });
+    expect(onScreen!.key.needsApproval).toBe(false);
+  });
+
+  it("the older Keys form's label, spaces and all, reaches its key as before", async () => {
+    const first = await set(who, owner, {
+      ref: { service: 'oldform', label: 'work account' },
+      addKind: 'token',
+      value: v('old-1'),
+    });
+    expect(first!.key).toMatchObject({ name: 'oldform/work account', kind: 'token' });
+    const again = await set(who, owner, {
+      ref: { service: 'oldform', label: 'work account' },
+      addKind: 'token',
+      value: v('old-2'),
+    });
+    expect(again).toMatchObject({ op: 'replace', secretWritten: true });
+    expect(again!.key.id).toBe(first!.key.id);
+  });
+
   it('tests an SSH key by its shape and a token by its provider', async () => {
     await set(who, owner, {
       ref: { name: 'printer-07' },
