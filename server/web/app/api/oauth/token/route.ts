@@ -18,6 +18,8 @@ import {
   type TokenResponse,
 } from '@/lib/mcp-oauth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
+import { requestOrigin } from '@/lib/auth-constants';
+import { noteResource } from '@/lib/mcp-resource';
 import { CACHE_CONTROL } from '@/lib/cache-control';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -95,6 +97,10 @@ export async function POST(req: Request) {
   };
 
   const grantType = get('grant_type');
+  // RFC 8707 (ChatGPT sends it on both grants): logged when it names
+  // another server, never refused (lib/mcp-resource.ts). The token is
+  // this box's opaque handle, good only at its /api/mcp.
+  const resources = form.getAll('resource');
 
   if (grantType === 'authorization_code') {
     const code = get('code');
@@ -107,6 +113,7 @@ export async function POST(req: Request) {
         'code, redirect_uri, client_id, code_verifier are required',
       );
     }
+    noteResource(resources, 'code exchange', requestOrigin(req));
     const res = await whenNotBusy(() =>
       exchangeAuthCode({ code, redirectUri, clientId, codeVerifier }),
     );
@@ -122,6 +129,7 @@ export async function POST(req: Request) {
     if (!refreshToken || !clientId) {
       return oauthError('invalid_request', 'refresh_token and client_id are required');
     }
+    noteResource(resources, 'refresh', requestOrigin(req));
     const res = await whenNotBusy(() => refreshAccessToken({ refreshToken, clientId }));
     if (res instanceof Response) return res;
     if (!res.ok) return oauthError(res.error);

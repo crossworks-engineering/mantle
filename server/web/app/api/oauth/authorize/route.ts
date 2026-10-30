@@ -33,6 +33,7 @@ import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
 import { mcpTargetLogin } from '@/lib/mcp-auth';
+import { noteResource } from '@/lib/mcp-resource';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { env } from '@mantle/config';
 import type { LoginRole } from '@mantle/client-types/role-names';
@@ -182,6 +183,9 @@ export async function GET(req: Request) {
   const p = readParams(url.searchParams);
   const validated = await validate(p);
   if (validated instanceof Response) return validated;
+  // RFC 8707: logged when it names another server, never refused
+  // (lib/mcp-resource.ts). The consent form does not carry it on.
+  noteResource(url.searchParams.getAll('resource'), 'authorize', requestOrigin(req));
 
   const user = await signedIn(await publicLoginItself());
   if (user === 'member') return htmlError(MEMBER_REFUSED, 403);

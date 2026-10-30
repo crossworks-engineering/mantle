@@ -31,6 +31,7 @@ import { loadProfilePreferences, publicBaseUrl } from '@mantle/content';
 import { feature } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
 import { loginIsAdmin } from '@/lib/auth/admin-seat';
+import { MCP_RESOURCE_PATH } from '@/lib/mcp-resource';
 
 export const ACCESS_TTL_SEC = 60 * 60; // 1 hour
 export const REFRESH_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
@@ -69,7 +70,7 @@ export function issuerUrl(): string {
   return publicBaseUrl();
 }
 export function mcpResourceUrl(): string {
-  return `${publicBaseUrl()}/api/mcp`;
+  return `${publicBaseUrl()}${MCP_RESOURCE_PATH}`;
 }
 export function protectedResourceMetadataUrl(): string {
   return `${publicBaseUrl()}/.well-known/oauth-protected-resource`;

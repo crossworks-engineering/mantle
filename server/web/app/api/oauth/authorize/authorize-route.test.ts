@@ -166,6 +166,22 @@ describe('GET /api/oauth/authorize', () => {
     expect(html).not.toMatch(/<b[^>]*>[^<]*claude\.ai/);
   });
 
+  it('shows the consent page whatever resource value is sent (RFC 8707, never refused)', async () => {
+    h.login = admin;
+    const { GET } = await import('./route');
+    for (const resource of [
+      'https://brain.example/api/mcp',
+      'https://old-name.example/api/mcp',
+      'not a url',
+    ]) {
+      const q = new URLSearchParams(QUERY);
+      q.set('resource', resource);
+      const res = await GET(new Request(`http://brain.example/api/oauth/authorize?${q}`));
+      expect(res.status, resource).toBe(200);
+      expect(await res.text()).toContain('Connect c.example to Mantle');
+    }
+  });
+
   it('clips a long self-chosen name', async () => {
     h.login = admin;
     h.clientName = 'x'.repeat(500);
