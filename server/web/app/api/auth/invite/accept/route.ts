@@ -17,7 +17,7 @@ import { z } from 'zod';
 import { db, authUsers, eq, sql } from '@mantle/db';
 import { redeemMemberInvite } from '@mantle/content';
 import type { MemberInviteAccepted } from '@mantle/client-types';
-import { hashLoginPassword, setSessionCookie } from '@/lib/auth';
+import { hashLoginPassword, notePasswordSet, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { inviteFailed } from '@/lib/member-invites';
 import { readJson } from '@/lib/read-body';
@@ -82,6 +82,9 @@ export async function POST(req: Request) {
     .update(authUsers)
     .set({ lastLoginAt: sql`now()` })
     .where(eq(authUsers.id, redeemed.loginId));
+  // The new password met the box's password rule (above): the login is
+  // checked under it (docs/policy.md). With no rule: nothing written.
+  await notePasswordSet(redeemed.loginId);
   auditFireAndForget({
     actorId: redeemed.loginId,
     actorEmail: redeemed.email,

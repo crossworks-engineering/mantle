@@ -33,7 +33,6 @@ import { telegramApprovalHandlers } from '../lib/telegram-approval';
 import { registerRecallEmbedder } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
 import { runWorker } from './_runner';
-import { log } from '@mantle/tracing';
 import { TELEGRAM_POLICY_OFF_MESSAGE, env, telegramAllowed } from '@mantle/config';
 import { backoffMs, sleep } from '@mantle/std';
 
@@ -83,6 +82,7 @@ runWorker('channel-poll', async () => {
   // channel, account and chat row stays; removing the setting brings the
   // loops back on the next start.
   if (!telegramAllowed()) {
+    const { log } = await import('@mantle/tracing');
     log('channel-poll').info(`idle: ${TELEGRAM_POLICY_OFF_MESSAGE}`);
     return;
   }

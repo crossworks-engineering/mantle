@@ -27,7 +27,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
-import { publicLoginItself, verifyPassword } from '@/lib/auth';
+import { publicLoginItself, verifyPasswordForUse } from '@/lib/auth';
 import { adminFacts, type Login } from '@/lib/auth/login';
 import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
@@ -248,7 +248,11 @@ export async function POST(req: Request) {
   // Every login re-types its password to Allow (see the header).
   const bucket = `oauth-consent-pw:${user.loginId}`;
   const tries = rateLimitLogin(bucket, CONSENT_PASSWORD_RATE);
-  const again = (message: string, status: number, reason: 'password' | 'rate-limited') => {
+  const again = (
+    message: string,
+    status: number,
+    reason: 'password' | 'password-change' | 'rate-limited',
+  ) => {
     auditConsent(req, 'oauth.consent_failed', user, p, { reason });
     return htmlPage(
       consentPage(
@@ -266,7 +270,11 @@ export async function POST(req: Request) {
     return again('Too many tries. Wait a minute, then try again.', 429, 'rate-limited');
   }
   const password = get('password');
-  if (!password || !(await verifyPassword(user.loginId, password))) {
+  // The box password rule checks the password typed here too
+  // (verifyPasswordForUse): one that fails it holds the login and grants
+  // nothing (docs/policy.md).
+  const checked = password ? await verifyPasswordForUse(user.loginId, password) : 'wrong';
+  if (checked === 'wrong') {
     return again(
       'That password is not right. Type your Mantle password to allow.',
       403,
@@ -274,6 +282,13 @@ export async function POST(req: Request) {
     );
   }
   rateLimitLoginRefund(bucket);
+  if (checked === 'held') {
+    return again(
+      "Your password does not meet this box's password rule. Change it in Mantle first, then connect again.",
+      403,
+      'password-change',
+    );
+  }
 
   const code = await mintAuthCode({
     clientId: p.clientId,

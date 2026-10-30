@@ -47,6 +47,7 @@ import {
   loadBearerToken,
   loadLoginRow,
   touchBearerToken,
+  passwordRuleColumns,
   type LoginRow,
 } from './login-row';
 import {
@@ -216,10 +217,11 @@ type Resolved = Readonly<{
   contactId: string | null;
   /** adminLogin(row): a user of the live Admin workspace now. */
   admin: boolean;
-  /** auth.users.must_change_password (0347), as read with the row: the
-   *  password hold (password-hold.ts) reads it, only while the box policy
-   *  sets a password rule. */
+  /** auth.users.must_change_password and password_checked_min (0347), as
+   *  read with the row: the password hold (password-hold.ts) reads them,
+   *  only while the box policy sets a password rule. */
   mustChangePassword: boolean;
+  passwordCheckedMin: number | null;
 }>;
 
 /** The member routes' record of a login that is not an Admin user. */
@@ -623,6 +625,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
     contactId: row.contactId,
     admin,
     mustChangePassword: row.mustChangePassword === true,
+    passwordCheckedMin: row.passwordCheckedMin ?? null,
   };
 }
 
@@ -702,6 +705,7 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
       contactId: null,
       admin: true,
       mustChangePassword: false,
+      passwordCheckedMin: null,
     };
     return { ...NO_LOGIN, resolved };
   }
@@ -2286,7 +2290,7 @@ export async function authenticatePassword(
       role: authUsers.role,
       disabledAt: authUsers.disabledAt,
       sessionEpoch: authUsers.sessionEpoch,
-      mustChangePassword: authUsers.mustChangePassword,
+      ...passwordRuleColumns(),
     })
     .from(authUsers)
     .where(sql`lower(${authUsers.email}) = lower(${email})`)
@@ -2303,28 +2307,45 @@ export async function authenticatePassword(
   const role: string = row.role;
   const passwordRole = isLoginRole(role);
   if (!(ok && passwordRole && loginUsable(row))) return null;
-  await notePasswordAtSignIn(row.id, password, row.mustChangePassword);
+  await notePasswordChecked(row.id, password, {
+    mustChangePassword: row.mustChangePassword ?? null,
+    passwordCheckedMin: row.passwordCheckedMin ?? null,
+  });
   return { id: row.id, sessionEpoch: row.sessionEpoch };
 }
 
 /**
- * The box password policy at a good sign-in (docs/policy.md): while it sets
- * a password rule, the login's must_change_password follows whether the
- * password just taken fails it (set: the request gate holds the login to
- * the change-password step, password-hold.ts; cleared: a rule lowered since
- * lets it through). With no rule: nothing is read or written, as before.
- * A credential column: the full-route spot login-credential, as
- * updatePassword writes it.
+ * The box password policy whenever a login's password is checked (a sign-in,
+ * a password prompt; docs/policy.md): while it sets a password rule, the
+ * login's must_change_password follows whether the password just taken
+ * fails it (set: the request gate holds the login to the change-password
+ * step, password-hold.ts; cleared: a rule lowered since lets it through),
+ * and password_checked_min records the rule it was checked under. With no
+ * rule: nothing is read or written, as before. Returns whether the login
+ * must now change its password.
  */
-async function notePasswordAtSignIn(
+async function notePasswordChecked(
   loginId: string,
   password: string,
-  flagged: boolean,
-): Promise<void> {
-  if (passwordPolicyMin() === null) return;
+  now: { mustChangePassword: boolean | null; passwordCheckedMin: number | null },
+): Promise<boolean> {
+  const min = passwordPolicyMin();
+  if (min === null) return false;
   const needs = signInNeedsPasswordChange(password);
-  if (needs === flagged) return;
-  await writeLoginCredential(loginId, { mustChangePassword: needs });
+  if (needs !== now.mustChangePassword || now.passwordCheckedMin !== min) {
+    await writeLoginCredential(loginId, { mustChangePassword: needs, passwordCheckedMin: min });
+  }
+  return needs;
+}
+
+/** A new login's password was set under the rule in force (signup, an
+ *  invite accept, an Admin's new login: each took a password that meets
+ *  it): record the rule, so the login is not asked to sign in again for
+ *  it. With no rule: nothing written. */
+export async function notePasswordSet(loginId: string): Promise<void> {
+  const min = passwordPolicyMin();
+  if (min === null) return;
+  await writeLoginCredential(loginId, { mustChangePassword: false, passwordCheckedMin: min });
 }
 
 /** A login's credential columns (the password hash, the policy's forced
@@ -2332,7 +2353,7 @@ async function notePasswordAtSignIn(
  *  on a narrow exit (docs/runtime-role.md). */
 function writeLoginCredential(
   loginId: string,
-  set: { passwordHash?: string; mustChangePassword: boolean },
+  set: { passwordHash?: string; mustChangePassword?: boolean; passwordCheckedMin?: number | null },
 ): Promise<unknown> {
   return onFullSystemRoute('login-credential', () =>
     db.update(authUsers).set(set).where(eq(authUsers.id, loginId)),
@@ -2389,9 +2410,40 @@ export function setSessionCookie(
  *  login-credential on a narrow exit; docs/runtime-role.md). */
 export async function updatePassword(userId: string, newPassword: string): Promise<void> {
   const hash = await hashLoginPassword(newPassword);
-  // A new password meets the rule (hashLoginPassword refused one that does
-  // not), so the policy's forced change is done.
-  await writeLoginCredential(userId, { passwordHash: hash, mustChangePassword: false });
+  // Under a box password rule the new password met it (hashLoginPassword
+  // refused one that does not): the forced change is done and the login
+  // is checked under the rule. With no rule only the hash is written, as
+  // before.
+  const min = passwordPolicyMin();
+  await writeLoginCredential(userId, {
+    passwordHash: hash,
+    ...(min === null ? {} : { mustChangePassword: false, passwordCheckedMin: min }),
+  });
+}
+
+/**
+ * A password prompt that grants something (a new API key, MCP consent):
+ * verifyPassword, and the box password rule's check of the password just
+ * typed (notePasswordChecked). 'held': the password is right but fails the
+ * rule, so the login is now held to the change-password step and the
+ * caller grants nothing (it answers the hold's 403). Not for the change
+ * itself, whose old password may be the weak one.
+ */
+export async function verifyPasswordForUse(
+  userId: string,
+  password: string,
+): Promise<'ok' | 'wrong' | 'held'> {
+  const [row] = await db
+    .select({ hash: authUsers.passwordHash, ...passwordRuleColumns() })
+    .from(authUsers)
+    .where(eq(authUsers.id, userId))
+    .limit(1);
+  if (!row?.hash || !(await bcrypt.compare(password, row.hash))) return 'wrong';
+  const held = await notePasswordChecked(userId, password, {
+    mustChangePassword: row.mustChangePassword ?? null,
+    passwordCheckedMin: row.passwordCheckedMin ?? null,
+  });
+  return held ? 'held' : 'ok';
 }
 
 export async function verifyPassword(userId: string, password: string): Promise<boolean> {

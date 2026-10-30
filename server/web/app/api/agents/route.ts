@@ -114,8 +114,8 @@ export async function POST(req: Request) {
   // The box policy's model block (lib/model-policy-save.ts): no blocked
   // model is saved by hand.
   const blocked = modelRoutesPolicyIssue([
-    [parsed.data.provider ?? 'openrouter', parsed.data.model],
-    [parsed.data.backupProvider, parsed.data.backupModel],
+    [parsed.data.provider ?? 'openrouter', parsed.data.model, parsed.data.baseUrl],
+    [parsed.data.backupProvider, parsed.data.backupModel, parsed.data.backupBaseUrl],
   ]);
   if (blocked) return NextResponse.json(modelPolicyBody(blocked), { status: 403 });
   // A key with a base URL of the writer's choosing is the keys area's

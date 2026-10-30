@@ -92,8 +92,8 @@ export async function POST(req: Request) {
   // The box policy's model block (lib/model-policy-save.ts): the embedder
   // is a model like any other.
   const blocked = modelRoutesPolicyIssue([
-    [primaryProvider, model],
-    [backupEnabled ? backupProvider : null, model],
+    [primaryProvider, model, orNull(body.primary_base_url)],
+    [backupEnabled ? backupProvider : null, model, orNull(body.backup_base_url)],
   ]);
   if (blocked)
     return NextResponse.json({ ok: false, ...modelPolicyBody(blocked) }, { status: 403 });

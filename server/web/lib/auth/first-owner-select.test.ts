@@ -34,6 +34,7 @@ describe('firstOwnerSelect', () => {
       ['disabled_at', 'null'],
       ['session_epoch', '0'],
       ['must_change_password', 'false'],
+      ['password_checked_min', '$4::integer'],
     ]);
     expect(sql).toMatch(/WHERE NOT EXISTS \(SELECT 1 FROM auth\.users\)\s*$/);
   });

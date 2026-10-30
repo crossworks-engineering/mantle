@@ -160,6 +160,35 @@ describe('a model rule', () => {
     expect(calls).toBe(1);
   });
 
+  it('refuses an allowed provider pointed at a host off the endpoint list', async () => {
+    policy({ MANTLE_POLICY_PROVIDER_ALLOW: 'local' });
+    process.env.MANTLE_POLICY_ENDPOINT_ALLOW = 'llm.example.internal';
+    resetBoxPolicyForTests();
+    try {
+      const a = adapters('local');
+      await expect(
+        a.chat.chat({
+          model: 'llama3',
+          messages: [],
+          baseUrl: 'https://api.vendor.example/v1',
+        } as never),
+      ).rejects.toBeInstanceOf(ModelPolicyError);
+      await expect(
+        a.embed.embed({ model: 'e', input: [], baseUrl: 'https://api.vendor.example/v1' } as never),
+      ).rejects.toBeInstanceOf(ModelPolicyError);
+      await a.chat.chat({
+        model: 'llama3',
+        messages: [],
+        baseUrl: 'http://llm.example.internal/v1',
+      } as never);
+      await a.chat.chat({ model: 'llama3', messages: [] } as never);
+      expect(calls).toBe(2);
+    } finally {
+      delete process.env.MANTLE_POLICY_ENDPOINT_ALLOW;
+      resetBoxPolicyForTests();
+    }
+  });
+
   it('a refusal opens the model_policy alert, at most once a minute', async () => {
     policy({ MANTLE_POLICY_MODEL_DENY: 'qwen/*' });
     const a = adapters('openrouter');

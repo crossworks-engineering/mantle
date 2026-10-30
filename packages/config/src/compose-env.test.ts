@@ -38,6 +38,7 @@ const BOX_FLAGS = [
   'MANTLE_POLICY_MODEL_DENY',
   'MANTLE_POLICY_PROVIDER_ALLOW',
   'MANTLE_POLICY_PASSWORD_MIN',
+  'MANTLE_POLICY_ENDPOINT_ALLOW',
 ];
 
 describe('compose passes the box flags to the app services', () => {

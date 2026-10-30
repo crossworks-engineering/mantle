@@ -47,6 +47,11 @@ export const authUsers = authSchema.table('users', {
    *  login then reaches nothing but the change-password step. Any new
    *  password clears it. */
   mustChangePassword: boolean('must_change_password').notNull().default(false),
+  /** The rule's minimum the password was last checked against (0347): at a
+   *  sign-in, a password prompt or a new password, under a box password
+   *  rule. Null: never. While a rule is set, a login checked under none (or
+   *  under a lower minimum) must sign in once before anything else. */
+  passwordCheckedMin: integer('password_checked_min'),
 });
 
 /** Every role a login can hold: LOGIN_ROLES in @mantle/client-types/role-names,

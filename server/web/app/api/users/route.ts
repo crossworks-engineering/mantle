@@ -21,7 +21,7 @@ import {
   isFormerClientEmail,
 } from '@mantle/content';
 import { projectPersonDescription } from '@mantle/client-types/person-description';
-import { hashLoginPassword, ownerCaller } from '@/lib/auth';
+import { hashLoginPassword, notePasswordSet, ownerCaller } from '@/lib/auth';
 import { passwordProblem, passwordProblemBody } from '@/lib/auth/password-rule';
 import { cloneAgentForUser } from '@/lib/agents';
 import { loginRole } from '@/lib/auth/admin-seat';
@@ -210,6 +210,9 @@ export async function POST(req: Request) {
       role,
       contactId: parsed.data.contactId ?? null,
     });
+    // The new password met the box's password rule (above): the login is
+    // checked under it (docs/policy.md). With no rule: nothing written.
+    await notePasswordSet(id);
   } catch (err) {
     // 23505 = unique_violation. Two rules on auth.users can fire: the contact
     // (one login per contact, 0181; not pre-checked above) and the email

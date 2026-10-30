@@ -31,7 +31,12 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
 });
 
-import { authenticatePassword, hashLoginPassword } from './session';
+import {
+  authenticatePassword,
+  hashLoginPassword,
+  notePasswordSet,
+  verifyPasswordForUse,
+} from './session';
 import {
   isCommonPassword,
   passwordProblem,
@@ -62,6 +67,7 @@ const row = (password: string, over: Record<string, unknown> = {}) => ({
   disabledAt: null,
   sessionEpoch: 2,
   mustChangePassword: false,
+  passwordCheckedMin: null,
   ...over,
 });
 
@@ -91,6 +97,8 @@ describe("no policy: today's rule, exactly", () => {
     // Not even a flag left set before: with no rule it is never read or written.
     h.rows = [row('password', { mustChangePassword: true })];
     await authenticatePassword('pat@example.invalid', 'password');
+    await notePasswordSet('l1');
+    expect(await verifyPasswordForUse('l1', 'password')).toBe('ok');
     expect(h.updates).toEqual([]);
   });
 });
@@ -119,16 +127,38 @@ describe('MANTLE_POLICY_PASSWORD_MIN=12', () => {
   it('a sign-in with a weak password sets the flag, a good one clears it', async () => {
     h.rows = [row('password1234')];
     expect(await authenticatePassword('pat@example.invalid', 'password1234')).not.toBeNull();
-    expect(h.updates).toEqual([{ mustChangePassword: true }]);
+    expect(h.updates).toEqual([{ mustChangePassword: true, passwordCheckedMin: 12 }]);
     h.updates = [];
-    h.rows = [row('blue kettle under the stairs', { mustChangePassword: true })];
+    h.rows = [
+      row('blue kettle under the stairs', { mustChangePassword: true, passwordCheckedMin: 12 }),
+    ];
     await authenticatePassword('pat@example.invalid', 'blue kettle under the stairs');
-    expect(h.updates).toEqual([{ mustChangePassword: false }]);
+    expect(h.updates).toEqual([{ mustChangePassword: false, passwordCheckedMin: 12 }]);
+    // Checked under a lower minimum: recorded under this one.
+    h.updates = [];
+    h.rows = [row('blue kettle under the stairs', { passwordCheckedMin: 8 })];
+    await authenticatePassword('pat@example.invalid', 'blue kettle under the stairs');
+    expect(h.updates).toEqual([{ mustChangePassword: false, passwordCheckedMin: 12 }]);
     // Already right: no write.
     h.updates = [];
-    h.rows = [row('blue kettle under the stairs')];
+    h.rows = [row('blue kettle under the stairs', { passwordCheckedMin: 12 })];
     await authenticatePassword('pat@example.invalid', 'blue kettle under the stairs');
     expect(h.updates).toEqual([]);
+  });
+
+  it('a password prompt checks the password too, and grants nothing on a weak one', async () => {
+    h.rows = [row('password1234')];
+    expect(await verifyPasswordForUse('l1', 'password1234')).toBe('held');
+    expect(h.updates).toEqual([{ mustChangePassword: true, passwordCheckedMin: 12 }]);
+    h.updates = [];
+    h.rows = [row('blue kettle under the stairs')];
+    expect(await verifyPasswordForUse('l1', 'blue kettle under the stairs')).toBe('ok');
+    expect(await verifyPasswordForUse('l1', 'not it at all')).toBe('wrong');
+  });
+
+  it('a new login is recorded as checked under the rule', async () => {
+    await notePasswordSet('l1');
+    expect(h.updates).toEqual([{ mustChangePassword: false, passwordCheckedMin: 12 }]);
   });
 
   it('a wrong password writes nothing', async () => {

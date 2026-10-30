@@ -19,7 +19,12 @@ vi.mock('./_runner', () => ({
     h.start = start;
   },
 }));
-vi.mock('@mantle/config', () => ({ env: () => 'set' }));
+// No box policy: Telegram is allowed (docs/policy.md).
+vi.mock('@mantle/config', () => ({
+  env: () => 'set',
+  telegramAllowed: () => true,
+  TELEGRAM_POLICY_OFF_MESSAGE: 'off',
+}));
 vi.mock('../lib/telegram-approval', () => ({ telegramApprovalHandlers: {} }));
 vi.mock('@mantle/content', () => ({ registerRecallEmbedder: () => {} }));
 vi.mock('@mantle/embeddings', () => ({ embedBatch: async () => [] }));

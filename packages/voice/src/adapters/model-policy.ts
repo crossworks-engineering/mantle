@@ -20,7 +20,8 @@ import { recordProviderFailure, resolveSingleOwnerId } from '@mantle/db';
 import { ModelPolicyError, PROVIDER_ERROR_REASONS, errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 
-const policyLog = log('model-policy');
+/** The log, taken when a refusal writes one (never at import). */
+const policyLog = () => log('model-policy');
 
 /** The capability a call is for (the alert names it in the log). */
 export type ModelCapability =
@@ -46,7 +47,7 @@ function noteRefusal(provider: string, model: string): void {
       model: model || null,
     });
   })().catch((err) => {
-    policyLog.warn(`could not record the alert: ${errorMessage(err)}`);
+    policyLog().warn(`could not record the alert: ${errorMessage(err)}`);
   });
 }
 
@@ -65,10 +66,12 @@ export function assertModelAllowed(
   capability: ModelCapability,
   provider: string,
   model: string | null | undefined,
+  /** The route's own base URL (a chat or embedding call), if it names one. */
+  baseUrl?: string | null,
 ): void {
-  const refusal = modelPolicyRefusal(provider, model);
+  const refusal = modelPolicyRefusal(provider, model, baseUrl);
   if (!refusal) return;
-  policyLog.warn(`refused ${capability} on ${provider}/${model || '(default)'}: ${refusal.rule}`);
+  policyLog().warn(`refused ${capability} on ${provider}/${model || '(default)'}: ${refusal.rule}`);
   noteRefusal(provider, model ?? '');
   throw new ModelPolicyError(refusal.message, {
     rule: refusal.rule,
@@ -79,6 +82,10 @@ export function assertModelAllowed(
 
 /** Whether the box policy allows `provider` and `model` (a pick list's
  *  filter, a save route's check): no throw, no alert. */
-export function modelAllowed(provider: string, model: string | null | undefined): boolean {
-  return modelPolicyRefusal(provider, model) === null;
+export function modelAllowed(
+  provider: string,
+  model: string | null | undefined,
+  baseUrl?: string | null,
+): boolean {
+  return modelPolicyRefusal(provider, model, baseUrl) === null;
 }

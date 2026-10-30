@@ -6,8 +6,9 @@
  * with the chat's code while signed in, and only for a bot whose assistant
  * is an assistant of a workspace the user is in. A turn on the chat runs as
  * that login in that workspace. A chat whose login is gone, disabled, or no
- * longer a user of the workspace, or held by the box password policy until
- * it changes its password (docs/policy.md), is refused on its next message. Any
+ * longer a user of the workspace is refused on its next message (a chat
+ * whose login the box password rule holds is refused too, but stays
+ * paired: docs/policy.md). Any
  * workspace's assistant may answer on Telegram.
  *
  * "The workspace of the chat" is the workspace of every assistant the chat
@@ -25,7 +26,7 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, liveWorkspaceSql, systemWork, telegramChats } from '@mantle/db';
-import { passwordPolicyMin } from '@mantle/config';
+import { passwordHoldState, passwordPolicyMin } from '@mantle/config';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { botAgentIdSql } from './chat-assistant';
@@ -43,12 +44,20 @@ function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /** Why a login may not use a chat, or null when it may. */
-export type ChatLoginRefusal = 'no_login' | 'not_a_user' | 'no_assistant';
+/** `password_hold`: the box password rule holds the chat's login (a
+ *  password to change, or one not yet checked under the rule;
+ *  docs/policy.md). The chat stays paired: it is refused until the person
+ *  signs in or changes the password in the app. */
+export type ChatLoginRefusal = 'no_login' | 'not_a_user' | 'no_assistant' | 'password_hold';
 
 /** The one reply a chat gets when its login may not use it. Plain and
  *  short: the person reading it may not be a user of this brain at all. */
 export const TELEGRAM_UNPAIRED_REPLY =
   'This chat is not paired to a user of this assistant now. Sign in to Mantle and pair it again with a new code.';
+
+/** The reply a chat gets while the box password rule holds its login. */
+export const TELEGRAM_PASSWORD_HOLD_REPLY =
+  'Your Mantle password needs attention first. Sign in to Mantle in the app, then message me again.';
 
 /** The `code` a pairing refusal carries, so a screen can tell it apart. */
 export const TELEGRAM_NOT_A_USER_CODE = 'not_a_workspace_user';
@@ -88,7 +97,6 @@ export async function chatLoginRefusal(args: {
                  from workspaces w
                  join workspace_users u on u.workspace_id = w.id and u.login_id = ${loginId}::uuid
                  join auth.users l on l.id = u.login_id and l.disabled_at is null
-                  and not (${passwordPolicyMin() !== null}::boolean and l.must_change_password)
                 where ${liveWorkspaceSql('w')}
                   and w.id = coalesce(ca.workspace_id, (select id from admin_ws))
              )
@@ -97,7 +105,22 @@ export async function chatLoginRefusal(args: {
   )) as unknown as { agents: number; user_of_all: boolean }[];
   const r = rows[0];
   if (!r || r.agents === 0) return 'no_assistant';
-  return r.user_of_all ? null : 'not_a_user';
+  if (!r.user_of_all) return 'not_a_user';
+  return (await loginPasswordHeld(loginId)) ? 'password_hold' : null;
+}
+
+/** Whether the box password rule holds `loginId` (@mantle/config
+ *  passwordHoldState). With no rule: false, and nothing is read. */
+async function loginPasswordHeld(loginId: string): Promise<boolean> {
+  if (passwordPolicyMin() === null) return false;
+  const rows = (await telegramSystemWork(() =>
+    db.execute(sql`
+      select must_change_password as flag, password_checked_min as checked
+        from auth.users where id = ${loginId}::uuid
+    `),
+  )) as unknown as { flag: boolean; checked: number | null }[];
+  const r = rows[0];
+  return !!r && passwordHoldState(r.flag, r.checked) !== null;
 }
 
 let moderatesFailedLogged = false;

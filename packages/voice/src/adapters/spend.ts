@@ -106,7 +106,7 @@ function once<T extends object>(adapter: T, wrap: (a: T) => T): T {
 export function recordingChat(adapter: ChatDispatcher): ChatDispatcher {
   return once(adapter, (a) => {
     const chat = async (opts: ChatOptions): Promise<ChatResult> => {
-      assertModelAllowed('chat', a.providerId, opts.model);
+      assertModelAllowed('chat', a.providerId, opts.model, opts.baseUrl);
       const r = await a.chat(opts);
       recordChat(a.providerId, opts, r);
       return r;
@@ -114,7 +114,7 @@ export function recordingChat(adapter: ChatDispatcher): ChatDispatcher {
     const inner = a.chatStream?.bind(a);
     const chatStream = inner
       ? async (opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> => {
-          assertModelAllowed('chat', a.providerId, opts.model);
+          assertModelAllowed('chat', a.providerId, opts.model, opts.baseUrl);
           const r = await inner(opts, onDelta);
           recordChat(a.providerId, opts, r);
           return r;
@@ -149,7 +149,7 @@ export function recordingEmbedding(adapter: EmbeddingDispatcher): EmbeddingDispa
   return once(adapter, (a) => ({
     ...a,
     embed: async (req) => {
-      assertModelAllowed('embedding', a.providerId, req.model);
+      assertModelAllowed('embedding', a.providerId, req.model, req.baseUrl);
       const r = await a.embed(req);
       record(() => ({
         capability: 'embedding',

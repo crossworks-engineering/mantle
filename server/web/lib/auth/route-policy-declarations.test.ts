@@ -55,6 +55,7 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   page: false,
   caller: null,
   gone: false,
+  passwordHold: null,
   switch: null,
   crossSite: null,
   rateLimit: [],

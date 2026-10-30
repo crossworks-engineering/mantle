@@ -715,8 +715,13 @@ export type BoxPolicyReport = {
     route: 'primary' | 'backup';
     provider: string;
     model: string;
-    rule: 'provider_allow' | 'model_deny' | 'auto_router';
+    rule: 'provider_allow' | 'endpoint_allow' | 'model_deny' | 'auto_router';
   }[];
+  /** MANTLE_POLICY_ENDPOINT_ALLOW hosts (null: none). */
+  endpointAllow: string[] | null;
+  /** Logins the password rule holds now: `change` (a weak password, held to
+   *  the change step) and `recheck` (not yet signed in under the rule). */
+  heldLogins: { change: number; recheck: number };
 };
 
 /**

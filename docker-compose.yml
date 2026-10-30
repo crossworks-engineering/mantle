@@ -312,6 +312,7 @@ x-app-env: &app-env
   MANTLE_POLICY_MODEL_DENY: ${MANTLE_POLICY_MODEL_DENY:-}
   MANTLE_POLICY_PROVIDER_ALLOW: ${MANTLE_POLICY_PROVIDER_ALLOW:-}
   MANTLE_POLICY_PASSWORD_MIN: ${MANTLE_POLICY_PASSWORD_MIN:-}
+  MANTLE_POLICY_ENDPOINT_ALLOW: ${MANTLE_POLICY_ENDPOINT_ALLOW:-}
   # Microsoft / Outlook (docs/microsoft-graph-ingest.md). The Azure app
   # registration's credentials — WITHOUT these the /settings/microsoft connect
   # flow cannot work on a deployed box at all, which is why the feature has

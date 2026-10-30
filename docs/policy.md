@@ -15,6 +15,7 @@ panel and no boot check. `packages/config/src/policy.test.ts` and
 MANTLE_POLICY_TELEGRAM=off
 MANTLE_POLICY_MODEL_DENY=deepseek/*,qwen/*,moonshotai/*,z-ai/*,minimax/*
 MANTLE_POLICY_PROVIDER_ALLOW=foundry,local
+MANTLE_POLICY_ENDPOINT_ALLOW=llm.example.internal:1234,*.openai.azure.com
 MANTLE_POLICY_PASSWORD_MIN=12
 ```
 
@@ -54,20 +55,34 @@ Two settings, used together (one is fine too):
   (the ids of `packages/voice-client/src/providers.ts`: `openrouter`,
   `local`, `foundry`, `anthropic`, and the rest). This catches aggregators
   and model names a deny list does not know yet. An allow-list that names
-  nothing allows nothing.
+  nothing allows nothing; an id it does not know (a typo) allows nothing
+  either. This is the primary control: a deny list only knows the names it
+  lists.
+- `MANTLE_POLICY_ENDPOINT_ALLOW` (read only with a provider allow-list):
+  the hosts a route's own base URL may name (`host`, `host:port` or
+  `*.domain`). Without it an allowed provider could be pointed at any API
+  (a `local` or `custom` route at a vendor's servers). With a provider
+  allow-list and no endpoint list, no route may name a base URL: only the
+  box-level endpoints (`MANTLE_LOCAL_CHAT_URL`, `MANTLE_FOUNDRY_ENDPOINT`,
+  the local embedder's) are used. OpenRouter never honours a base URL.
 - `MANTLE_POLICY_MODEL_DENY`: model patterns no route may call. A pattern is
-  a glob on the model id (`deepseek/deepseek-chat`, `qwen/*`). A family
+  a glob on the model id (`deepseek/deepseek-chat`, `qwen/*`); a bare word
+  is a family (`deepseek` is `deepseek/*`). A family
   pattern `<family>/*` also blocks the provider of that name (the direct
   `deepseek` provider), a model id with the family as a path segment, and a
   local model name that starts with the family (`qwen2.5:7b`). While a deny
   list is set, a model that picks its model per call is blocked too:
-  `openrouter/auto`, any `openrouter/` id, an id ending in `/auto`, and an
-  OpenRouter preset (`@preset/...`).
+  `openrouter/auto`, any `openrouter/` id, an id ending in `/auto` or
+  `router`, and an OpenRouter preset (`@preset/...`). Family names do not
+  catch a model sold under another name (`glm` for `z-ai`, `kimi` for
+  `moonshotai`): list those too, or rely on the provider allow-list. A
+  speech or vision call that names no model uses its adapter's default,
+  which only the provider rules check.
 
 A Foundry deployment name says nothing about the base model behind it. For
 Foundry, the list of deployments IT makes is the allow-list.
 
-**One check, every path.** `assertModelAllowed`
+**One check, every inference path.** `assertModelAllowed`
 (`packages/voice/src/adapters/model-policy.ts`) runs in the recording wrappers
 every adapter the registry hands out goes through
 (`packages/voice/src/adapters/spend.ts`), before each call: chat, the backup
@@ -75,7 +90,11 @@ route and failover, sub-agents and `invoke_agent`, the summarizer and the
 extractor, the decider, embeddings, vision, speech and images, on every
 provider (the direct `deepseek` adapter too). Web search builds its own
 client and asks the same check by hand
-(`packages/tools/src/builtins-research.ts`).
+(`packages/tools/src/builtins-research.ts`). The check covers the box's own
+model routes. Model lists, the OpenRouter catalog and data tools, and
+anything that makes its own HTTP calls (API tools, sandboxes, MCP
+connectors, `web_fetch`) are not model calls: a corporate box that must
+reach no other model API also needs egress control at its network edge.
 
 A refused call throws `ModelPolicyError` before any byte leaves the box. The
 person, the agent or the tool reads the rule in the message. The brain opens a
@@ -113,11 +132,28 @@ Admin's new login and password reset, a login's own change, and the
 with `code` one of `password_too_short`, `password_too_long`,
 `password_common`.
 
-**The forced change.** While a rule is set, a good password sign-in (the
-web sign-in and the device token routes) checks the password it just
-took. When it fails the rule, the login's `must_change_password` flag is set
-(migration 0347). The login then reaches nothing but these routes until it
-changes its password:
+**Checked once under the rule.** Each login records the minimum its
+password was last checked against (`auth.users.password_checked_min`,
+migration 0347): at a password sign-in (the web sign-in and the device token
+routes), at a password prompt (making an API key, MCP consent) and with a
+new password. While a rule is set, a login whose password was never checked
+under it (the rule went on, or up, since) answers as signed out on every
+route but sign-out:
+
+`401 { error: 'unauthorized', code: 'password_recheck_required', message }`
+
+Its sessions, API keys, MCP connectors and linked brains wait until the
+person signs in with the password once (the sign-in routes act as no login,
+so they stay open). So turning the rule on makes every login sign in once,
+and that sign-in checks the password. A login used only through API keys
+or a linked brain must also sign in once. The Policy panel and the boot log
+count the logins still to check.
+
+**The forced change.** When the password checked fails the rule, the
+login's `must_change_password` flag is set (migration 0347), and a password
+prompt grants nothing (no key, no consent). The login then reaches only the
+routes whose declaration says `passwordHold: 'change-step'` or `'sign-out'`
+(`server/web/lib/auth/route-declaration.ts`):
 
 - `POST /api/auth/change-password`
 - `GET /api/auth/whoami` (answers `mustChangePassword: true` and
@@ -129,21 +165,25 @@ Every other route answers `403 { error: 'password_change_required', code:
 'password_change_required', message, min, commonList }`
 (`server/web/lib/auth/password-hold.ts`, asked once per request by the
 gate). MCP refuses the login's connectors, keys and linked brains, and a
-Telegram chat paired to it is refused, until the change. A new password
-clears the flag. With no rule set the flag is never set and never read, so a
-box whose operator removes the rule lets every login through again.
+Telegram chat paired to it is refused with a short reply but stays paired,
+until the change. A new password clears the flag. With no rule set neither
+column is ever written or read, so a box whose operator removes the rule
+lets every login through again.
+
+Not held: a `?at=` file link or a print minted before the hold (they live
+two hours at most) and a public share link.
 
 ## The Policy panel
 
 `GET /api/policy` (Admin users with the settings area) answers the policy in
-force and every blocked route (`BoxPolicyReport` in
-`@mantle/client-types`). With no policy set it answers 404, so the panel
+force, every blocked route and how many logins the password rule holds
+(`BoxPolicyReport` in `@mantle/client-types`). With no policy set it answers 404, so the panel
 does not appear. It is read only: nothing in the app changes a rule.
 
 ## Rollback
 
-Migration 0347 adds `auth.users.must_change_password` and the provider alert
-subject `model_policy`. Its revert,
-`packages/db/rollback/0347_must_change_password.revert.sql`, removes the
-`model_policy` alerts and narrows the subject check; the column stays. An
+Migration 0347 adds `auth.users.must_change_password` and
+`password_checked_min` and the provider alert subject `model_policy`. Its
+revert, `packages/db/rollback/0347_must_change_password.revert.sql`, removes
+the `model_policy` alerts and narrows the subject check; the columns stay. An
 older image has no hold: a login that was held signs in as before.

@@ -15,9 +15,10 @@ import { defineDomainError } from './domain-errors';
  *  of this module in a bundle still matches). */
 export const MODEL_POLICY_ERROR_NAME = 'ModelPolicyError';
 
-/** Which rule refused: the provider allow-list, the deny list, or an auto
- *  router while a deny list is set. */
-export type ModelPolicyRule = 'provider_allow' | 'model_deny' | 'auto_router';
+/** Which rule refused: the provider allow-list, the endpoint allow-list
+ *  (a route's own base URL), the deny list, or an auto router while a deny
+ *  list is set. */
+export type ModelPolicyRule = 'provider_allow' | 'endpoint_allow' | 'model_deny' | 'auto_router';
 
 export class ModelPolicyError extends Error {
   readonly rule: ModelPolicyRule;

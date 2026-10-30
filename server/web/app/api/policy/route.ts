@@ -28,6 +28,7 @@ export async function GET() {
       deny: [...report.models.deny],
       providerAllow: report.models.providerAllow && [...report.models.providerAllow],
     },
+    endpointAllow: report.endpointAllow && [...report.endpointAllow],
   };
   return NextResponse.json(body);
 }

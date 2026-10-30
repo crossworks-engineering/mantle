@@ -14,6 +14,7 @@ import {
   seedLoginScope,
   type LoginRole,
 } from '@mantle/db';
+import { passwordPolicyMin } from '@mantle/config';
 import { loginIsAdmin } from './admin-seat';
 
 export type LoginRow = {
@@ -31,6 +32,8 @@ export type LoginRow = {
    *  the login to the change-password step while the rule is in force
    *  (password-hold.ts). */
   mustChangePassword: boolean;
+  /** auth.users.password_checked_min (0347): read with the flag. */
+  passwordCheckedMin: number | null;
   /** A user of the brain's live Admin workspace now, the login enabled
    *  (mantle_login_is_admin, 0304), read with the row: the
    *  second half of an Admin login (session.ts adminLogin). */
@@ -54,7 +57,9 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
       contactId: authUsers.contactId,
       disabledAt: authUsers.disabledAt,
       sessionEpoch: authUsers.sessionEpoch,
-      mustChangePassword: authUsers.mustChangePassword,
+      // The box password rule's columns (0347), read only while a rule is
+      // set: a box with none reads the row as before.
+      ...passwordRuleColumns(),
       // Membership of Admin with the same read: the bound id, as the
       // scope columns take it.
       adminMember: loginIsAdmin(id),
@@ -68,7 +73,31 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
   if (!row) return null;
   const { scopeWs, scopeModWs, adminMember, ...login } = row;
   seedLoginScope(login.id, scopeWs ?? [], scopeModWs ?? []);
-  return { ...login, adminMember: adminMember === true };
+  return {
+    ...login,
+    mustChangePassword: login.mustChangePassword === true,
+    passwordCheckedMin: login.passwordCheckedMin ?? null,
+    adminMember: adminMember === true,
+  };
+}
+
+/**
+ * The box password rule's columns of auth.users (0347:
+ * must_change_password, password_checked_min), to spread into a select of
+ * the login row: only while MANTLE_POLICY_PASSWORD_MIN sets a rule. With
+ * none, nothing: the select is the one from before the policy (and runs on
+ * a database a migration behind).
+ */
+export function passwordRuleColumns(): {
+  mustChangePassword?: typeof authUsers.mustChangePassword;
+  passwordCheckedMin?: typeof authUsers.passwordCheckedMin;
+} {
+  return passwordPolicyMin() === null
+    ? {}
+    : {
+        mustChangePassword: authUsers.mustChangePassword,
+        passwordCheckedMin: authUsers.passwordCheckedMin,
+      };
 }
 
 /** The anchor (is_owner) login's id: the brain every login belongs to. */

@@ -1,7 +1,7 @@
 -- The box policy, part 1 (plan "Corporate sign-in", Phase 1; docs/policy.md):
--- the password rule's forced change, auth.users.must_change_password, and
--- the model block's provider alert (provider_alerts subject model_policy,
--- below).
+-- the password rule's forced change, auth.users.must_change_password and
+-- password_checked_min, and the model block's provider alert
+-- (provider_alerts subject model_policy, below).
 --
 -- Set at a password sign-in only while the box policy sets a password rule
 -- (MANTLE_POLICY_PASSWORD_MIN) and the password just taken fails it. While
@@ -10,20 +10,32 @@
 -- password-hold.ts). Any new password clears it (every password write goes
 -- through the one rule, which the new one meets).
 --
--- A box with no password rule never sets it and never reads it: every row
--- keeps the default, false, and sign-in is exactly as before.
+-- password_checked_min: the rule's minimum the login's password was last
+-- checked against (at a sign-in, a password prompt or a new password).
+-- Null: never under a rule. While a rule is set, a login whose password
+-- was not checked under it (null, or a lower minimum: the rule went on or
+-- up since) must sign in with its password once before anything else, so
+-- the rule can check it.
+--
+-- A box with no password rule never sets either and never reads them:
+-- every row keeps false and null, and sign-in is exactly as before.
 --
 -- Grants come from the access matrix, never from here: the narrow login
--- gets no UPDATE on the column (the flag is written on the full route, at
+-- gets no UPDATE on either column (both are written on the full route, at
 -- sign-in and with a new password, as password_hash is).
 --
--- Additive: one column with a constant default (no table rewrite on
--- Postgres 11+) and one wider CHECK, no trigger, no LLM work. Re-runnable.
+-- Additive: two columns, one with a constant default (no table rewrite on
+-- Postgres 11+), and one wider CHECK, no trigger, no LLM work. Re-runnable.
 -- Revert: packages/db/rollback/0347_must_change_password.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
+-- Both tables in one statement first, in one order, so no other session
+-- holds one while waiting for the other.
+LOCK TABLE "auth"."users", "public"."provider_alerts" IN ACCESS EXCLUSIVE MODE;
+--> statement-breakpoint
 ALTER TABLE "auth"."users"
-  ADD COLUMN IF NOT EXISTS "must_change_password" boolean DEFAULT false NOT NULL;
+  ADD COLUMN IF NOT EXISTS "must_change_password" boolean DEFAULT false NOT NULL,
+  ADD COLUMN IF NOT EXISTS "password_checked_min" integer;
 --> statement-breakpoint
 -- The box policy's model block (MANTLE_POLICY_MODEL_DENY,
 -- MANTLE_POLICY_PROVIDER_ALLOW) opens a provider alert of its own when it
