@@ -12427,7 +12427,7 @@
       "ssh_key",
       "login"
      ],
-     "description": "Kind of secret; a new key without one is a token."
+     "description": "Required for a new key: token for an API key, else password, ssh_key or login."
     },
     "value": {
      "type": "string",
