@@ -529,6 +529,20 @@ describe('a held vault change (api_key_set over MCP)', () => {
     expect(pendingWrites()).toEqual([]);
   });
 
+  it('an alias row (another name, a held builtin) runs nothing', async () => {
+    fake.queue('pending_tool_calls', [{ ...heldRow(), toolSlug: 'my_alias' }]);
+    fake.queue('tools', [
+      {
+        slug: 'my_alias',
+        ownerId: OWNER,
+        enabled: true,
+        handler: { kind: 'builtin', ref: 'api_key_set' },
+      },
+    ]);
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: OWNER });
+    expect(h.dispatchTool).not.toHaveBeenCalled();
+  });
+
   it('a rejection drops its hold', async () => {
     held.released.length = 0;
     fake.queue('pending_tool_calls', [{ ...heldRow(), status: 'rejected' }]);

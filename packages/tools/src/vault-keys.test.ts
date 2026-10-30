@@ -91,6 +91,7 @@ const held = {
   kind: 'login',
   target: ['pi-lab-3.lan'],
   masked: '••••',
+  changed: ['value'],
 };
 
 describe('the vault write tools', () => {
@@ -175,12 +176,13 @@ describe('api_key_set', () => {
         kind: 'login',
         target: ['pi-lab-3.lan'],
         masked: '••••',
+        changed: ['value'],
         key_id: KEY_ID,
         hold_id: HOLD,
       },
     });
     expect(Object.keys(parked.args as object).sort()).toEqual(
-      ['hold_id', 'key_id', 'kind', 'masked', 'name', 'op', 'target'].sort(),
+      ['changed', 'hold_id', 'key_id', 'kind', 'masked', 'name', 'op', 'target'].sort(),
     );
     expect(h.notify).toHaveBeenCalledTimes(1);
     expect(h.after).not.toHaveBeenCalled();
@@ -220,6 +222,7 @@ describe('api_key_set', () => {
             kind: 'login',
             target: ['pi-lab-3.lan'],
             masked: '••••',
+            changed: ['value'],
           },
         },
       ],
@@ -275,9 +278,8 @@ describe('api_key_import', () => {
     expect(parked).toMatchObject({
       toolSlug: 'api_key_import',
       args: {
-        op: 'replace',
         hold_id: HOLD,
-        keys: [{ name: 'pi-lab-3', kind: 'login', key_id: KEY_ID, masked: '••••' }],
+        keys: [{ op: 'replace', name: 'pi-lab-3', kind: 'login', key_id: KEY_ID, masked: '••••' }],
       },
     });
     expect(r).toMatchObject({

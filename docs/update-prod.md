@@ -1598,10 +1598,11 @@ row per write and never answers a value.
 Migration 0347 adds one nullable column, `api_keys.held_enc`. Over MCP, a
 write that replaces or deletes an existing key no longer lands at once: the
 vault gateway seals the change on the key's row and the tool parks a
-pending call that names the key, its kind, target and masked preview, never
-the value. A person approves it on the Pending screen (or its Telegram
-card); `pending_approve` over MCP refuses it. Adding a new key stays
-instant, and the Keys screen is unchanged.
+Xthe value. A person approves it on the Pending screen (or its Telegram
+card); `pending_approve` over MCP refuses it. So does adding a token
+named for a service that already has one (it would become the key that
+service's provider calls use). Any other new key is instant, and the Keys
+screen is unchanged.
 
 - **What it changes for readers:** an MCP client that replaces or deletes a
   key gets `queued_for_approval` and a `pending_id`.

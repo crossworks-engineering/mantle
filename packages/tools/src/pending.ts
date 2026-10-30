@@ -688,6 +688,10 @@ async function approvalTool(ownerId: string, slug: string): Promise<Tool | null>
   const row = await enabledTool(ownerId, slug);
   const held = heldToolRow(slug);
   if (held) return row ? null : held;
+  // Nor does a row under another name that runs a held tool's builtin (an
+  // alias): its call would pass every check made by the held name.
+  const h = row?.handler as { kind?: string; ref?: string } | undefined;
+  if (h?.kind === 'builtin' && typeof h.ref === 'string' && isHeldTool(h.ref)) return null;
   return row;
 }
 

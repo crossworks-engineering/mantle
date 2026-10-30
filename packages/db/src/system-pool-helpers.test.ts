@@ -21,6 +21,9 @@ const CALLERS: Record<string, readonly string[]> = {
     'packages/runtime/src/agent/tool-loop/execute-call.ts',
     'packages/tools/src/pending-queue.ts',
     'packages/tools/src/toolsmith/groups.ts',
+    // The vault's held MCP changes (0347): a replace or delete parks for a
+    // person's approval, its args naming the hold, never the value.
+    'packages/tools/src/toolsmith/vault-keys.ts',
     'server/web/app/api/dev-tools/queue-approval/route.ts',
   ],
   decidePendingCall: ['packages/tools/src/pending.ts'],

@@ -141,9 +141,9 @@ describe('pending_approve', () => {
 
   it('passes a bare approval through as NO decision, under the caller', async () => {
     const res = await approve.handler({ id: ROW_ID }, ctx);
-    // `undefined`, not `{}`: the settle layer treats a payload as a form
-    // submission, and a plain yes must stay a plain yes.
-    expect(approvePendingCall).toHaveBeenCalledWith('o1', ROW_ID, undefined);
+    // No answer, no answers: a plain yes stays a plain yes. Only the MCP
+    // mark rides along (a held vault change is refused over MCP).
+    expect(approvePendingCall).toHaveBeenCalledWith('o1', ROW_ID, { viaMcp: true });
     expect(outputOf(res)).toMatchObject({ id: ROW_ID, status: 'approved' });
   });
 
@@ -157,6 +157,7 @@ describe('pending_approve', () => {
       await approve.handler({ id: ROW_ID }, peer);
       expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, {
         approverLoginId: 'login-9',
+        viaMcp: true,
       });
       await reject.handler({ id: ROW_ID }, peer);
       expect(rejectPendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, 'login-9');
@@ -167,16 +168,19 @@ describe('pending_approve', () => {
 
   it('forwards a free-text answer', async () => {
     await approve.handler({ id: ROW_ID, answer: 'after 22:00' }, ctx);
-    expect(approvePendingCall).toHaveBeenCalledWith('o1', ROW_ID, { answer: 'after 22:00' });
+    expect(approvePendingCall).toHaveBeenCalledWith('o1', ROW_ID, {
+      answer: 'after 22:00',
+      viaMcp: true,
+    });
   });
 
   it('forwards structured answers and drops an empty list', async () => {
     const answers = [{ question: 'env', selected: ['prod'] }];
     await approve.handler({ id: ROW_ID, answers }, ctx);
-    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, { answers });
+    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, { answers, viaMcp: true });
 
     await approve.handler({ id: ROW_ID, answers: [] }, ctx);
-    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, undefined);
+    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, { viaMcp: true });
   });
 
   it('names the approving login of its connection (W6b fix round 3, L-2)', async () => {
@@ -185,11 +189,15 @@ describe('pending_approve', () => {
       surface: { kind: 'owner', via: 'mcp', loginId: 'a2' },
     };
     await approve.handler({ id: ROW_ID }, mcp);
-    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, { approverLoginId: 'a2' });
+    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, {
+      approverLoginId: 'a2',
+      viaMcp: true,
+    });
     await approve.handler({ id: ROW_ID, answer: 'yes' }, mcp);
     expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, {
       answer: 'yes',
       approverLoginId: 'a2',
+      viaMcp: true,
     });
   });
 

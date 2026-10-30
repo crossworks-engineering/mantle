@@ -49,6 +49,7 @@ export type HeldShown = {
   kind: unknown;
   target: unknown;
   masked: unknown;
+  changed: unknown;
 };
 
 /** What a held call's arguments name: `hold_id`, and each key with what
@@ -68,7 +69,14 @@ export function heldCallKeys(
   }
   const keys = entries.map((e) => ({
     id: e.key_id,
-    shown: { op: e.op, name: e.name, kind: e.kind, target: e.target, masked: e.masked },
+    shown: {
+      op: e.op,
+      name: e.name,
+      kind: e.kind,
+      target: e.target,
+      masked: e.masked,
+      changed: e.changed,
+    },
   }));
   if (keys.length === 0 || !keys.every((k) => typeof k.id === 'string' && UUID_RE.test(k.id))) {
     return null;

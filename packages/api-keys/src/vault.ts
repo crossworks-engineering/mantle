@@ -22,15 +22,18 @@
  *    the owner (a hold): its change is sealed on the key's row (held_enc,
  *    0347), the caller parks a pending call that names the hold, never the
  *    value, and the change lands only when that call is approved
- *    (applyHeldVaultWrites), through this gate and these checks again.
- *    Adding a new key is instant. The Keys screen writes at once.
+ *    (applyHeldVaultWrites), through this gate and these checks again. So
+ *    does an add that would take over the key a service's provider calls
+ *    use (a token labelled 'default' for a service that has a token: the
+ *    unpinned pick, index.ts findProviderKeyId), held on that service's
+ *    current key. Any other add is instant. The Keys screen writes at once.
  *
  * Internal writers that seal connector or sandbox state (mcp-oauth.ts,
  * sandbox_publish) and onboarding keep setApiKey: they are not an owner's
  * client.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import {
   apiKeys,
   auditLog,
@@ -153,11 +156,17 @@ export type VaultHeld = VaultHeldShown & { holdId: string };
  *  exactly this (applyHeldVaultWrites), so a card can never say one thing
  *  while another lands. */
 export type VaultHeldShown = {
-  op: 'replace' | 'delete';
+  /** `add`: a key that would take over the key its service's provider
+   *  calls use (held on that key). */
+  op: 'add' | 'replace' | 'delete';
+  /** The key the change makes, replaces or deletes. */
   name: string;
   kind: VaultKind;
   target: string[];
   masked: string;
+  /** What the change writes, by column name (never a value): `value`,
+   *  `fields`, `target`, `tags`, `needs_approval`... Empty for a delete. */
+  changed: string[];
 };
 
 /** A delete: the key deleted, or held for approval (`held`). */
@@ -859,6 +868,10 @@ export async function setVaultKey(
   if (plan.op === 'replace' && plan.changed.length > 0 && mustHold(who)) {
     return holdPlan(who, plan, { op: 'set', input: heldInput(input) });
   }
+  if (plan.op === 'add' && mustHold(who)) {
+    const current = await takeOverOf(ownerId, plan);
+    if (current) return holdAdd(who, plan, input, current);
+  }
   return commitPlan(who, plan);
 }
 
@@ -898,6 +911,7 @@ export async function deleteVaultKey(
       kind: row.kind,
       target: row.target,
       masked: row.masked,
+      changed: [],
     };
     const holdId = await holdOn(ownerId, row, { op: 'delete' }, shown);
     await audit(who, 'vault.key.hold', {
@@ -941,12 +955,24 @@ async function deleteRow(
 /** What a hold seals: a replace's input (its value and fields among it),
  *  or a delete. `at`: the key's updated_at when asked, so a hold opens only
  *  on the key as it was. */
-type HeldChange = { op: 'set'; input: Omit<VaultSetInput, 'ref'> } | { op: 'delete' };
+type HeldChange =
+  | { op: 'set'; input: Omit<VaultSetInput, 'ref'> }
+  | { op: 'delete' }
+  /** A take-over add (the new key's whole input, its name among it), held
+   *  on the service's current key. */
+  | { op: 'add'; input: VaultSetInput };
 type SealedHold = HeldChange & { at: string; shown: VaultHeldShown };
 
 /** `shown` as one string, its fields in a fixed order, for the compare. */
 function shownKey(shown: Partial<Record<keyof VaultHeldShown, unknown>>): string {
-  return JSON.stringify([shown.op, shown.name, shown.kind, shown.target, shown.masked]);
+  return JSON.stringify([
+    shown.op,
+    shown.name,
+    shown.kind,
+    shown.target,
+    shown.masked,
+    shown.changed,
+  ]);
 }
 
 /** A set's input as a hold keeps it: everything but which key (the hold
@@ -1026,6 +1052,7 @@ async function holdPlan(
     kind: plan.kind,
     target: plan.set.target ?? plan.row.target,
     masked: plan.set.masked ?? plan.row.masked,
+    changed: plan.changed,
   };
   const id = await holdOn(plan.row.userId, plan.row, change, shown, holdId);
   await audit(who, 'vault.key.hold', {
@@ -1042,6 +1069,65 @@ async function holdPlan(
     secretWritten: false,
     held: { ...shown, holdId: id },
   };
+}
+
+/**
+ * The key an add would take over: a token labelled 'default' becomes the
+ * key every unpinned provider call of its service uses (index.ts
+ * findProviderKeyId picks 'default' first) whenever the service already
+ * has a token. Then the add is held on that service's current pick, as a
+ * replace of it would be. Null: no take-over (another label, another kind,
+ * or the service's first token).
+ */
+async function takeOverOf(
+  ownerId: string,
+  plan: Extract<SetPlan, { op: 'add' }>,
+): Promise<ApiKey | null> {
+  if (plan.kind !== 'token' || plan.values.label !== 'default') return null;
+  const [current] = await db
+    .select()
+    .from(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.userId, ownerId),
+        eq(apiKeys.service, plan.values.service),
+        eq(apiKeys.kind, 'token'),
+      ),
+    )
+    .orderBy(asc(apiKeys.createdAt), asc(apiKeys.id))
+    .limit(1);
+  return current ?? null;
+}
+
+/** Hold a checked take-over add on the key it would take over: its audit
+ *  row, and the new key as it would be (name, kind, target, masked
+ *  preview), never a value. */
+async function holdAdd(
+  who: VaultActor,
+  plan: Extract<SetPlan, { op: 'add' }>,
+  input: VaultSetInput,
+  current: ApiKey,
+  holdId?: string,
+): Promise<VaultSetResult> {
+  const shown: VaultHeldShown = {
+    op: 'add',
+    name: plan.name,
+    kind: plan.kind,
+    target: plan.values.target ?? [],
+    masked: plan.values.masked ?? '••••',
+    changed: plan.changed,
+  };
+  const id = await holdOn(current.userId, current, { op: 'add', input }, shown, holdId);
+  const key = summary(current);
+  await audit(who, 'vault.key.hold', {
+    keyId: key.id,
+    name: plan.name,
+    kind: plan.kind,
+    op: 'add',
+    takesOver: key.name,
+    holdId: id,
+  });
+  return { key, op: 'held', secretWritten: false, held: { ...shown, holdId: id } };
 }
 
 /** The change `holdId` holds on `row`, or null: none, another hold, the
@@ -1071,7 +1157,7 @@ export const VAULT_HOLD_MISMATCH =
 
 export type VaultApplyResult = {
   /** Each key's outcome, in the order asked. */
-  keys: { key: VaultKeySummary; op: 'replace' | 'delete'; secretWritten: boolean }[];
+  keys: { key: VaultKeySummary; op: 'add' | 'replace' | 'delete'; secretWritten: boolean }[];
 };
 
 /**
@@ -1098,14 +1184,23 @@ export async function applyHeldVaultWrites(
     throw new ConflictError(VAULT_HOLD_MISMATCH);
   }
   await gate();
-  const steps: ({ op: 'delete'; row: ApiKey; guard: Buffer } | { op: 'set'; plan: SetPlan })[] = [];
+  const steps: (
+    | { op: 'delete'; row: ApiKey; guard: Buffer }
+    | { op: 'set'; plan: SetPlan }
+    | { op: 'add'; plan: SetPlan; on: ApiKey }
+  )[] = [];
   for (const { id, shown } of asked) {
     const row = await findRow(ownerId, { id });
     const held = row ? openHold(row, holdId) : null;
     if (!row || !held || !row.heldEnc) throw new ConflictError(VAULT_HOLD_GONE);
     if (shownKey(held.shown) !== shownKey(shown)) throw new ConflictError(VAULT_HOLD_MISMATCH);
     if (held.op === 'delete') steps.push({ op: 'delete', row, guard: row.heldEnc });
-    else {
+    else if (held.op === 'add') {
+      // The name is still free (a key made under it since refuses), and
+      // the add is checked again as a fresh one.
+      if (await findRow(ownerId, held.input.ref)) throw new ConflictError(VAULT_HOLD_GONE);
+      steps.push({ op: 'add', plan: planSet(ownerId, held.input, null, who.via), on: row });
+    } else {
       const plan = planSet(ownerId, { ...held.input, ref: { id } }, row, who.via);
       if (plan.op === 'replace') plan.heldGuard = row.heldEnc;
       steps.push({ op: 'set', plan });
@@ -1117,6 +1212,14 @@ export async function applyHeldVaultWrites(
       const key = await deleteRow(who, ownerId, step.row, step.guard);
       if (!key) throw new ConflictError(VAULT_HOLD_GONE);
       keys.push({ key, op: 'delete', secretWritten: false });
+    } else if (step.op === 'add') {
+      // The hold leaves the key it was on first, only while it is still
+      // there (read and cleared in one go); then the new key is made.
+      if (!(await writeHeld(ownerId, step.on.id, { release: holdId }))) {
+        throw new ConflictError(VAULT_HOLD_GONE);
+      }
+      const done = await commitPlan(who, step.plan);
+      keys.push({ key: done.key, op: 'add', secretWritten: done.secretWritten });
     } else {
       const done = await commitPlan(who, step.plan);
       keys.push({ key: done.key, op: 'replace', secretWritten: done.secretWritten });
@@ -1323,17 +1426,42 @@ export async function importVaultKeys(
   // hold id (one approval for the call), before any add is written: a hold
   // that fails leaves nothing written.
   const hold = mustHold(who) ? randomUUID() : undefined;
-  const holds = (plan: SetPlan): plan is Extract<SetPlan, { op: 'replace' }> =>
-    hold !== undefined && plan.op === 'replace' && plan.changed.length > 0;
-  const keys: VaultSetResult[] = [];
-  for (const { plan, input } of plans) {
-    if (holds(plan)) {
-      keys.push(await holdPlan(who, plan, { op: 'set', input: heldInput(input) }, hold));
+  // What each held row holds on: a replace on its own key, a take-over add
+  // on the key it would take over. One key carries one hold, so a call
+  // that would put two on one key is refused before anything is written.
+  const heldOn = new Map<number, ApiKey>();
+  if (hold) {
+    const taken = new Set<string>();
+    for (const [i, { plan }] of plans.entries()) {
+      const on =
+        plan.op === 'replace'
+          ? plan.changed.length > 0
+            ? plan.row
+            : null
+          : await takeOverOf(ownerId, plan);
+      if (!on) continue;
+      if (taken.has(on.id)) {
+        throw new InputError(
+          'Two rows of this CSV change the same key (a replace and an add that would take it over): send them in two imports.',
+        );
+      }
+      taken.add(on.id);
+      heldOn.set(i, on);
     }
   }
+  const keys: VaultSetResult[] = [];
+  for (const [i, { plan, input }] of plans.entries()) {
+    const on = heldOn.get(i);
+    if (!on) continue;
+    keys.push(
+      plan.op === 'replace'
+        ? await holdPlan(who, plan, { op: 'set', input: heldInput(input) }, hold)
+        : await holdAdd(who, plan, input, on, hold),
+    );
+  }
   const held = keys.length;
-  for (const { plan } of plans) {
-    if (holds(plan)) continue;
+  for (const [i, { plan }] of plans.entries()) {
+    if (heldOn.has(i)) continue;
     const written = await commitPlan(who, plan);
     keys.push(written);
     await afterEach?.(written);

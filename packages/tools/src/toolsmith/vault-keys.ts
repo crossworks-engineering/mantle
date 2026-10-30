@@ -89,6 +89,7 @@ function heldPreview(held: VaultHeld, keyId: string) {
     kind: held.kind,
     target: held.target,
     masked: held.masked,
+    changed: held.changed,
     key_id: keyId,
   };
 }
@@ -232,7 +233,7 @@ export const api_key_set: BuiltinToolDef = {
   },
   name: 'Add or replace a vault key',
   description:
-    'Add a secret to the vault and return its name, kind, target, tags and masked preview, **never the value**. Replacing an existing key **waits for the owner** to approve it in the app (the reply says `queued_for_approval`); adding a new one is instant. A new key names its `kind`: token (an API key), password, ssh_key (a private key plus `user`), login (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target`. Do not echo the value back to the user. List names with `api_key_refs`; many at once: `api_key_import`.',
+    'Add a secret to the vault and return its name, kind, target, tags and masked preview, **never the value**. Replacing an existing key **waits for the owner** to approve it in the app (the reply says queued for approval), and so does a token named for a service that already has one (it would become the key that service uses); any other new key is instant. A new key names its `kind`: token (an API key), password, ssh_key (a private key plus `user`), login (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target`. Do not echo the value back to the user. List names with `api_key_refs`; many at once: `api_key_import`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -403,7 +404,7 @@ export const api_key_delete: BuiltinToolDef = {
   },
   name: 'Delete a vault key',
   description:
-    'Ask to delete a vault key by name: it **waits for the owner** to approve it in the app (the reply says `queued_for_approval`), then the key is gone, not reversible: agents, workers and tools that use it are left with no key. Check the name with `api_key_refs` first. Never returns the value. To change a value use `api_key_set` instead.',
+    'Ask to delete a vault key by name: it **waits for the owner** to approve it in the app (the reply says queued for approval), then the key is gone, not reversible: agents, workers and tools that use it are left with no key. Check the name with `api_key_refs` first. Never returns the value. To change a value use `api_key_set` instead.',
   inputSchema: {
     type: 'object',
     properties: { name: NAME_PARAM },
@@ -442,7 +443,7 @@ export const api_key_import: BuiltinToolDef = {
   },
   name: 'Import vault keys from CSV',
   description:
-    "Add or replace many vault keys from CSV text and return the counts and each key's name, kind and target, never a value. Columns: name,kind,target,user,secret,tags (a header row is skipped; targets and tags split on ';'; quote an SSH key's lines). Every row is checked first: one bad row and **nothing is written**, and each bad row comes back by number with the reason. New keys are added at once; rows that replace a key **wait for the owner** to approve them together in the app (`pending_id`). For one key use `api_key_set`.",
+    "Add or replace many vault keys from CSV text and return the counts and each key's name, kind and target, never a value. Columns: name,kind,target,user,secret,tags (a header row is skipped; targets and tags split on ';'; quote an SSH key's lines). Every row is checked first: one bad row and **nothing is written**, and each bad row comes back by number with the reason. New keys are added at once; rows that replace a key, or would take over a service's key, **wait for the owner** to approve them together in the app (the reply names the pending item). For one key use `api_key_set`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -484,11 +485,7 @@ export const api_key_import: BuiltinToolDef = {
       );
       const queued =
         held.length > 0 && result.holdId
-          ? await parkHeld(ctx, 'api_key_import', {
-              op: 'replace',
-              hold_id: result.holdId,
-              keys: held,
-            })
+          ? await parkHeld(ctx, 'api_key_import', { hold_id: result.holdId, keys: held })
           : null;
       ctx.step?.setOutput({ added: result.added, replaced: result.replaced, held: held.length });
       return {

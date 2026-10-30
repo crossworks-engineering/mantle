@@ -403,6 +403,37 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     });
     expect(added).toMatchObject({ op: 'add', secretWritten: true });
 
+    // A token named for a service that has one would become the key its
+    // provider calls use: held on that key until approved. Another label
+    // takes nothing over, so it is instant.
+    const work = await set(who, owner, {
+      ref: { name: 'svc-x/work' },
+      kind: 'token',
+      value: v('svc-work'),
+    });
+    const other = await set(mcp, owner, {
+      ref: { name: 'svc-x/other' },
+      kind: 'token',
+      value: v('svc-other'),
+    });
+    expect(other).toMatchObject({ op: 'add' });
+    const takeover = await set(mcp, owner, {
+      ref: { name: 'svc-x' },
+      kind: 'token',
+      value: v('svc-x'),
+    });
+    expect(takeover).toMatchObject({
+      op: 'held',
+      key: { name: 'svc-x/work' },
+      held: { op: 'add', name: 'svc-x', kind: 'token', changed: ['value'] },
+    });
+    noValue(takeover);
+    expect(await keys.findProviderKeyId(owner, 'svc-x')).toBe(work!.key.id);
+    const made = await apply(approved, takeover!.held!.holdId, [ask(takeover!)]);
+    expect(made.keys).toMatchObject([{ op: 'add', key: { name: 'svc-x' }, secretWritten: true }]);
+    expect(await heldOf(work!.key.id)).toBeNull();
+    expect(await keys.findProviderKeyId(owner, 'svc-x')).toBe(made.keys[0]!.key.id);
+
     // A replace holds: nothing written, the reply and the row's other
     // columns carry no value.
     const second = v('held-2');
