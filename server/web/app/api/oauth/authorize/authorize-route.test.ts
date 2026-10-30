@@ -39,7 +39,11 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   // The login the pipeline answers at the read (A4 hand batch B): no
   // login (the guard's refusal) is null.
   publicLoginItself: vi.fn(async () => (h.login instanceof Response ? null : h.login)),
-  verifyPassword: vi.fn(async (_id: string, password: string) => password === PASSWORD),
+  // The consent's password prompt (with the box password rule's check,
+  // which no policy here makes 'held').
+  verifyPasswordForUse: vi.fn(async (_id: string, password: string) =>
+    password === PASSWORD ? 'ok' : 'wrong',
+  ),
 }));
 
 // Whether the login is an Admin user is adminFacts' answer (plan v3.2

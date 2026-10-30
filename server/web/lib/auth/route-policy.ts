@@ -850,6 +850,19 @@ export function buildRouteRow(
       `ROUTE_POLICY: ${key} manages the ${scope.area} area but reads the ${caller ?? 'no'} caller: the gate's Admin step answers only ${[...ADMIN_STEP_CALLERS].join(', ')}`,
     );
   }
+  // A public row the password hold never reads (it acts as no login:
+  // password-hold.ts PUBLIC_ACTS_AS_LOGIN) declares no `passwordHold`: it
+  // would say what is not so. A test's stand-in rows aside.
+  if (
+    facts.passwordHold !== null &&
+    isPublic &&
+    opts.standIn !== true &&
+    !(caller === 'publicLogin' || caller === 'cookieUpgrade' || caller === 'ownerAtRead')
+  ) {
+    throw new Error(
+      `ROUTE_POLICY: ${key} declares passwordHold on a public row that acts as no login: the hold never reads it`,
+    );
+  }
   // A catch-all route also matches its bare prefix, where the loader may
   // answer 404 before the handler (route-loader.ts): the gate's answer
   // would come first there. Such a route keeps its guard.
