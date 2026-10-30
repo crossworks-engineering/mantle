@@ -9,7 +9,7 @@ import { AccessError, InputError } from '@mantle/std';
 
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  callerHasArea: vi.fn(async () => false),
+  callerHasAreaBound: vi.fn(async () => false),
 }));
 
 const {
@@ -166,5 +166,37 @@ describe('the gate', () => {
     await expect(
       setVaultKey(who, 'o', { ref: { name: 'mcp-site' }, value: 'x' }),
     ).rejects.toBeInstanceOf(InputError);
+  });
+
+  it('refuses a secret also sent in a plain field, before the gate, never echoing it', async () => {
+    const who = { loginId: null, via: 'mcp' } as const;
+    const secret = 'plain-oops-made-up';
+    for (const input of [
+      { ref: { name: secret }, value: secret },
+      { ref: { name: 'nas-1' }, value: secret, tags: [secret] },
+      { ref: { name: 'nas-1' }, value: secret, target: [`${secret}.lan`] },
+      {
+        ref: { name: 'nas-1' },
+        kind: 'login' as const,
+        value: 'x',
+        tags: [`${secret}-group`],
+        sudoPassword: secret,
+      },
+    ]) {
+      const err = await setVaultKey(who, 'o', input).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InputError);
+      expect((err as Error).message).not.toContain(secret);
+    }
+    // The user is sealed with the fields, not plain: a device's admin/admin
+    // login passes this check (here it then meets the gate).
+    await expect(
+      setVaultKey(who, 'o', {
+        ref: { name: 'printer-1' },
+        kind: 'login',
+        value: 'admin',
+        user: 'admin',
+        target: ['printer-1.lan'],
+      }),
+    ).rejects.toBeInstanceOf(AccessError);
   });
 });

@@ -306,7 +306,15 @@ export const api_key_import: BuiltinToolDef = {
   redactInputFields: ['csv'],
   handler: (input, ctx) =>
     answer(async () => {
-      const result = await importVaultKeys(vaultActor(ctx), ctx.ownerId, str(input.csv));
+      // Each written row's follow-up runs as it lands (a connector's marks).
+      const result = await importVaultKeys(
+        vaultActor(ctx),
+        ctx.ownerId,
+        str(input.csv),
+        async ({ key, secretWritten }) => {
+          if (secretWritten) await afterVaultKeyReplaced(ctx.ownerId, key.service, key.label);
+        },
+      );
       if (!result.ok) {
         return {
           ok: false,
@@ -314,9 +322,6 @@ export const api_key_import: BuiltinToolDef = {
             .map((f) => `row ${f.row}: ${f.reason}`)
             .join(' ')}`,
         };
-      }
-      for (const { key, secretWritten } of result.keys) {
-        if (secretWritten) await afterVaultKeyReplaced(ctx.ownerId, key.service, key.label);
       }
       ctx.step?.setOutput({ added: result.added, replaced: result.replaced });
       return {

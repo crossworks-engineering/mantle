@@ -53,7 +53,7 @@ export type ApiKeySummary = {
   updatedAt: Date;
 };
 
-export { maskPlaintext } from './shape';
+export { fieldsAad, maskPlaintext, valueAad } from './shape';
 
 /** List rows for a user. Reads the precomputed `masked` column instead
  *  of decrypting every row — keeps every plaintext out of process

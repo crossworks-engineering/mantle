@@ -1,14 +1,15 @@
--- Rollback of 0346_vault_kinds: what an operator MAY run before pinning the
--- image one release back (plan v3.2 rule 2, a one-image rollback). Not a
--- migration: nothing runs it on its own.
+-- Rollback of 0346_vault_kinds: what an operator runs before pinning the
+-- image one release back (plan v3.2 rule 2, a one-image rollback;
+-- docs/update-prod.md "Going up to 0346"). Not a migration: nothing runs it
+-- on its own.
 --
 -- The older image runs with 0346's columns in place: it names none of them,
--- and an insert takes their defaults (a token, no target, no fields). What
--- it must not see is a secret of another kind: it opens every row as a
--- token, so a password, an SSH key or a login could be templated into an
--- HTTP tool's request. So this DELETES every row whose kind is not 'token'
--- (the owner adds them again after the roll forward; their values are not
--- kept anywhere else). The columns, the checks and the index stay: 0346 is
+-- and an insert takes their defaults (a token, no target, no fields). A
+-- secret of another kind it cannot open (its value is sealed with
+-- `<id>:<kind>`, the older image opens with the row id only), but it would
+-- list one as a key and could pick one as a provider's key and fail. So
+-- this DELETES every row whose kind is not 'token' (the owner adds them
+-- again after the roll forward; their values are not kept anywhere else). The columns, the checks and the index stay: 0346 is
 -- re-runnable, so the next roll forward applies it again over them. Then it
 -- takes 0346 off the ledger.
 --

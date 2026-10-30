@@ -1,4 +1,4 @@
-/** Replace every resolved secret plaintext in `text` with its ref name —
+/** Replace every resolved secret plaintext in `text` with its ref name:
  *  run over anything that can leave the vault or the dispatcher (errors,
  *  step meta, response bodies, a key test's message). Covers the common
  *  transport encodings of the secret: raw, URL-encoded, and base64 (how
@@ -13,7 +13,7 @@ export function scrubSecrets(text: string, secrets: Map<string, string>): string
     try {
       variants.add(Buffer.from(plaintext, 'utf8').toString('base64'));
     } catch {
-      /* non-encodable — skip */
+      /* non-encodable: skip */
     }
     for (const v of variants) {
       if (v && v.length > 0) out = out.split(v).join(`[secret:${key}]`);

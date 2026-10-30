@@ -5,7 +5,7 @@
  *
  * The rules, each enforced here and nowhere else:
  *  - One gate, the Keys screen's: the caller may do the Admin `keys` area
- *    (callerHasArea). A route and a tool call this; neither checks for it.
+ *    (callerHasAreaBound). A route and a tool call this; neither checks for it.
  *  - Write-only. A reply carries the name, kind, target, tags and the masked
  *    preview, never a value. An error never echoes what the caller sent (a
  *    misplaced value could sit in any field): it names the field, or the
@@ -28,7 +28,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   apiKeys,
   auditLog,
-  callerHasArea,
+  callerHasAreaBound,
   conflictOnUnique,
   db,
   narrowNeedsSpot,
@@ -40,7 +40,7 @@ import {
 import { open, seal } from '@mantle/crypto';
 import { AccessError, InputError, isMcpManagedSecretService, UUID_RE } from '@mantle/std';
 import type { TestApiKeyResult } from '@mantle/client-types';
-import { checkedWorkspaceId, maskPlaintext } from './shape';
+import { checkedWorkspaceId, fieldsAad, maskPlaintext, valueAad } from './shape';
 import { probeApiKey } from './probe';
 import { log } from '@mantle/tracing';
 
@@ -298,7 +298,9 @@ export function checkVaultShape(kind: VaultKind, value: string, fields: VaultFie
 
 /** The one gate: the caller may do the Admin keys area, as Settings > Keys. */
 async function gate(): Promise<void> {
-  if (!(await callerHasArea('keys'))) throw new AccessError('area', undefined, { area: 'keys' });
+  if (!(await callerHasAreaBound('keys'))) {
+    throw new AccessError('area', undefined, { area: 'keys' });
+  }
 }
 
 function summary(row: ApiKey): VaultKeySummary {
@@ -364,13 +366,15 @@ function parsedName(raw: string): { service: string; label: string; name: string
  *  only. Never returned past this module. */
 function openFields(row: ApiKey): VaultFields {
   if (!row.fieldsEnc) return {};
-  const text = open(row.fieldsEnc, `${row.id}:fields`);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(open(row.fieldsEnc, fieldsAad(row.id)));
   } catch {
-    // A parse error quotes the text it read: never let it out.
-    throw new Error('vault: the stored fields could not be read');
+    // Neither the open's error nor a parse error (it quotes the text it
+    // read) goes out: the owner hears what to do instead.
+    throw new InputError(
+      'The stored fields of this key cannot be read (a different MANTLE_MASTER_KEY?): delete it and set it again with every field.',
+    );
   }
   return parsed && typeof parsed === 'object' ? (parsed as VaultFields) : {};
 }
@@ -380,7 +384,7 @@ function sealFields(id: string, fields: VaultFields): { fieldsEnc: Buffer | null
     Object.entries(fields).filter(([, v]) => typeof v === 'string' && v.length > 0),
   );
   if (Object.keys(kept).length === 0) return { fieldsEnc: null };
-  return { fieldsEnc: seal(JSON.stringify(kept), `${id}:fields`).ciphertext };
+  return { fieldsEnc: seal(JSON.stringify(kept), fieldsAad(id)).ciphertext };
 }
 
 function maskFor(kind: VaultKind, value: string): string {
@@ -416,7 +420,35 @@ type SetPlan =
 
 /** Check a set against the row it names (null: none, an add), with no
  *  write: the import checks every row before it writes one. */
+/**
+ * A secret sent in the right field and again in a plain one (the name, a
+ * target, a tag) would be stored and shown in clear there (the user is
+ * sealed with the fields, and a device login may well be admin/admin):
+ * refused, with a fixed text. Only secrets of 4 characters or more are
+ * looked for, so a short one never refuses a name by chance.
+ */
+function refuseSecretInPlainFields(input: VaultSetInput, row: ApiKey | null): void {
+  const secrets = [input.value, input.passphrase, input.sudoPassword].filter(
+    (v): v is string => typeof v === 'string' && v.trim().length >= 4,
+  );
+  if (secrets.length === 0) return;
+  const plain = [
+    'name' in input.ref ? input.ref.name : (row?.name ?? ''),
+    ...(input.target ?? row?.target ?? []),
+    ...(input.tags ?? row?.tags ?? []),
+  ].map((p) => p.toLowerCase());
+  for (const secret of secrets) {
+    const s = secret.trim().toLowerCase();
+    if (plain.some((p) => p.includes(s))) {
+      throw new InputError(
+        'The secret is also in the name, a target or a tag, which are stored in clear: put it only in value, passphrase or sudo_password.',
+      );
+    }
+  }
+}
+
 function planSet(ownerId: string, input: VaultSetInput, row: ApiKey | null): SetPlan {
+  refuseSecretInPlainFields(input, row);
   if (input.kind !== undefined && !(VAULT_KINDS as readonly string[]).includes(input.kind)) {
     throw new InputError(`kind must be one of ${VAULT_KINDS.join(', ')}.`);
   }
@@ -458,7 +490,7 @@ function planSet(ownerId: string, input: VaultSetInput, row: ApiKey | null): Set
       throw new InputError('Only an Anthropic key can carry a workspace id.');
     }
     const id = randomUUID();
-    const { ciphertext, keyVersion } = seal(input.value, id);
+    const { ciphertext, keyVersion } = seal(input.value, valueAad(id, kind));
     return {
       op: 'add',
       id,
@@ -506,7 +538,7 @@ function planSet(ownerId: string, input: VaultSetInput, row: ApiKey | null): Set
   }
   if (input.value !== undefined) {
     checkVaultShape(kind, input.value, fields);
-    const { ciphertext, keyVersion } = seal(input.value, row.id);
+    const { ciphertext, keyVersion } = seal(input.value, valueAad(row.id, kind));
     set.keyEnc = ciphertext;
     set.keyVersion = keyVersion;
     set.masked = maskFor(kind, input.value);
@@ -619,7 +651,8 @@ async function audit(
     .insert(auditLog)
     .values({
       actorId: who.loginId,
-      actorEmail: who.email ?? `owner (${who.via})`,
+      // A login with no email at hand is said as a login, never the owner.
+      actorEmail: who.email ?? (who.loginId ? `login (${who.via})` : `owner (${who.via})`),
       action,
       detail: { ...detail, via: who.via },
     })
@@ -645,6 +678,7 @@ export async function setVaultKey(
   if (input.target !== undefined) canonicalTargets(input.target);
   if (input.tags !== undefined) canonicalTags(input.tags);
   if (input.anthropicWorkspaceId !== undefined) checkedWorkspaceId(input.anthropicWorkspaceId);
+  refuseSecretInPlainFields(input, null);
   await gate();
   const row = await findRow(ownerId, input.ref);
   if (!row && 'id' in input.ref) return null;
@@ -713,7 +747,7 @@ export async function testVaultKey(
     let message: string;
     let ok = true;
     try {
-      checkVaultShape(row.kind, open(row.keyEnc, row.id), openFields(row));
+      checkVaultShape(row.kind, open(row.keyEnc, valueAad(row.id, row.kind)), openFields(row));
       message = `The stored ${KIND_LABEL[row.kind].toLowerCase()} has the right shape. Logging in to the target is not tested yet.`;
     } catch (err) {
       ok = false;
@@ -800,12 +834,18 @@ function listCell(cell: string): string[] {
  * and tags split on ';' or spaces; an empty kind is a token). Every row is
  * checked first; one bad row and nothing is written, and each bad row is
  * named with the reason (never a cell's content). A row whose name exists
- * replaces it, as a set does.
+ * replaces it, as a set does. The writes are one after another: a write
+ * that fails on its own (a name saved at the same moment) stops there,
+ * the rows before it stay written, and each of those had its afterEach.
  */
 export async function importVaultKeys(
   who: VaultActor,
   ownerId: string,
   csv: string,
+  /** Runs after each row is written, in order, so a caller's follow-up (a
+   *  connector's marks) is done for every written row even when a later
+   *  row fails at the write (a name saved at the same moment). */
+  afterEach?: (written: VaultSetResult) => Promise<void>,
 ): Promise<VaultImportResult> {
   const rows = parseCsv(csv);
   const header = rows[0]?.map((c) => c.trim().toLowerCase());
@@ -833,6 +873,11 @@ export async function importVaultKeys(
       if (!parsed) throw new InputError(`the name column is not a vault name: ${NAME_RULE}.`);
       if (seen.has(parsed.name)) throw new InputError('the same name is on an earlier row.');
       seen.add(parsed.name);
+      // An empty kind is a token, but never with a user: a login or an
+      // SSH key read as a token would lose its approval and its seal.
+      if (!kind.trim() && user.trim()) {
+        throw new InputError('the kind column is empty but the user column is not: name the kind.');
+      }
       const k = kind.trim().toLowerCase() || 'token';
       if (!(VAULT_KINDS as readonly string[]).includes(k)) {
         throw new InputError(`the kind column must be one of ${VAULT_KINDS.join(', ')}.`);
@@ -855,7 +900,11 @@ export async function importVaultKeys(
   }
   if (failed.length > 0) return { ok: false, failed };
   const keys: VaultSetResult[] = [];
-  for (const plan of plans) keys.push(await commitPlan(who, plan));
+  for (const plan of plans) {
+    const written = await commitPlan(who, plan);
+    keys.push(written);
+    await afterEach?.(written);
+  }
   return {
     ok: true,
     added: keys.filter((k) => k.op === 'add').length,

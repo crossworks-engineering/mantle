@@ -20,11 +20,11 @@ import { getApiKeyById } from './index';
 export type { TestApiKeyResult };
 
 export async function probeApiKey(keyId: string, service: string): Promise<TestApiKeyResult> {
-  // Connector-sealed OAuth state, not a provider key — nothing to probe.
+  // Connector-sealed OAuth state, not a provider key: nothing to probe.
   if (isMcpManagedSecretService(service)) {
     return {
       ok: false,
-      message: `'${service}' rows hold MCP connector OAuth state, not a provider key — there is nothing to test here; manage the connector under Settings → Connectors.`,
+      message: `'${service}' rows hold MCP connector OAuth state, not a provider key, so there is nothing to test here; manage the connector under Settings → Connectors.`,
       provider: service,
       adapter: '',
     };
@@ -50,7 +50,7 @@ export async function probeApiKey(keyId: string, service: string): Promise<TestA
   if (!adapter) {
     return {
       ok: false,
-      message: `No adapter wired for ${providerLabel} yet — can't test automatically. Save the key and the next time you create a worker for this provider the form will surface any auth issues.`,
+      message: `No adapter wired for ${providerLabel} yet, so it can't be tested automatically. Save the key and the next time you create a worker for this provider the form will surface any auth issues.`,
       provider: providerLabel,
       adapter: '',
     };
@@ -59,7 +59,7 @@ export async function probeApiKey(keyId: string, service: string): Promise<TestA
   if (!adapter.discoverModels) {
     return {
       ok: false,
-      message: `${adapter.adapterName} doesn't expose a discovery endpoint to probe — can't test without spending API credits.`,
+      message: `${adapter.adapterName} doesn't expose a discovery endpoint to probe, so it can't be tested without spending API credits.`,
       provider: providerLabel,
       adapter: adapter.adapterName,
     };
@@ -87,7 +87,7 @@ export async function probeApiKey(keyId: string, service: string): Promise<TestA
     return {
       ok: true,
       message:
-        'Key accepted, but none of the catalogued models are accessible — your tier may not include them. Check the provider console.',
+        'Key accepted, but none of the catalogued models are accessible: your tier may not include them. Check the provider console.',
       provider: providerLabel,
       adapter: adapter.adapterName,
       modelsFound: 0,

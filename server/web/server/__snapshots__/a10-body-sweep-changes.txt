@@ -3,7 +3,7 @@
 # Every other cell of a10-body-sweep.txt answers byte for byte as recorded.
 # bad-json-400 (malformed): 194 cells
 # chunked-413: 207 cells
-# opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
+# opaque-500 (fold 2: a plain error, its text was the reply): 27 cells
 # trash-first (Admin act definer, 0310: the trash check is asked of the database first): 6 cells
 # ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
@@ -12,7 +12,7 @@
 # item-check-first (F4 fix round 2: asked of the database, the stand-in has none): 1 cells
 # item-read-first (pre-check removal part 2: the write reads the item in the scope before its body): 44 cells
 # item-fault (fix round 1: a failed item says a fixed text for a fault): 6 cells
-# vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway): 13 cells
+# vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway): 14 cells
 # bad-json-400 (empty): 2 cells
 # desk-version (Desk saving v2: the 400 names the version the save is checked on): 4 cells
 # desk-write-strict (the Desk, fix round 2: a desk the read would change is a 400): 2 cells
@@ -769,9 +769,9 @@ POST /api/journal/:id/resolve owner malformed [bad-json-400 (malformed)]
 POST /api/journal/:id/resolve owner chunked [chunked-413]
   main 400 application/json {"error":"answer: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-POST /api/keys owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+POST /api/keys owner valid [vault-gateway (vault v2 part 1: the keys routes read through the vault write gateway)]
   main 500 application/json {"error":"MANTLE_MASTER_KEY is not set"}
-  now  500 application/json {"error":"internal error"}
+  now  400 application/json {"error":"The secret is also in the name, a target or a tag, which are stored in clear: put it only in value, passphrase or sudo_password."}
 POST /api/keys owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"service: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}

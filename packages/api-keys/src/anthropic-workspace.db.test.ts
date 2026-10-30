@@ -24,12 +24,15 @@ describe.skipIf(!URL)('an Anthropic key carries its workspace id', () => {
   let prevMasterKey: string | undefined;
 
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
-  /** The Keys screen's workspace id change: the vault gateway's set by id. */
+  /** The Keys screen's workspace id change: the vault gateway's set by id,
+   *  as the area route calls it (bound system work past its gate). */
   const setWorkspace = async (o: string, id: string, ws: string | null) => {
-    const r = await keys.setVaultKey({ loginId: null, via: 'web' }, o, {
-      ref: { id },
-      anthropicWorkspaceId: ws,
-    });
+    const r = await m.runAsSystem('test:anthropic-ws', () =>
+      keys.setVaultKey({ loginId: null, via: 'web' }, o, {
+        ref: { id },
+        anthropicWorkspaceId: ws,
+      }),
+    );
     return r && { anthropicWorkspaceId: r.key.anthropicWorkspaceId };
   };
 

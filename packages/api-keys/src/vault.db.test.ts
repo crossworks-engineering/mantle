@@ -46,6 +46,14 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     const text = JSON.stringify(x);
     for (const value of values) expect(text).not.toContain(value);
   };
+  /** The gateway as an area route calls it: past the gate, as bound system
+   *  work (the gate refuses a caller with nothing bound, tested below). */
+  const sys = <T>(fn: () => Promise<T>) => m.runAsSystem('test:vault', fn) as Promise<T>;
+  type Keys = typeof import('./index');
+  const set = (...a: Parameters<Keys['setVaultKey']>) => sys(() => keys.setVaultKey(...a));
+  const test = (...a: Parameters<Keys['testVaultKey']>) => sys(() => keys.testVaultKey(...a));
+  const del = (...a: Parameters<Keys['deleteVaultKey']>) => sys(() => keys.deleteVaultKey(...a));
+  const imp = (...a: Parameters<Keys['importVaultKeys']>) => sys(() => keys.importVaultKeys(...a));
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -69,9 +77,16 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     else process.env.MANTLE_MASTER_KEY = prevMasterKey;
   }, 60_000);
 
+  it('refuses a caller with no scope and nothing bound (fails closed)', async () => {
+    await expect(
+      keys.setVaultKey(who, owner, { ref: { name: 'unbound' }, value: v('unbound') }),
+    ).rejects.toThrow(/system/i);
+    expect((await keys.listApiKeys(owner)).some((k) => k.name === 'unbound')).toBe(false);
+  });
+
   it('adds a token by name; it reads as before, and the reply has no value', async () => {
     const value = v('token');
-    const r = await keys.setVaultKey(who, owner, { ref: { name: 'weather' }, value });
+    const r = await set(who, owner, { ref: { name: 'weather' }, value });
     expect(r).toMatchObject({ op: 'add', secretWritten: true });
     expect(r!.key).toMatchObject({
       name: 'weather',
@@ -87,10 +102,11 @@ describe.skipIf(!URL)('the vault write gateway', () => {
   });
 
   it('adds a login: approval on, masked whole, and no read path opens it', async () => {
-    const r = await keys.setVaultKey(who, owner, {
+    const loginValue = v('login');
+    const r = await set(who, owner, {
       ref: { name: 'pi-lab-3' },
       kind: 'login',
-      value: v('login'),
+      value: loginValue,
       user: 'pi',
       sudoPassword: v('sudo'),
       target: ['Pi-Lab-3.lan', 'pi-lab-3.lan'],
@@ -113,10 +129,18 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     await expect(keys.setApiKey(owner, 'pi-lab-3', 'default', v('over'))).rejects.toBeInstanceOf(
       InputError,
     );
+    // Its value is sealed with its kind: a token's open (the row id, any
+    // image's) fails; only <id>:login opens it.
+    const { open } = await import('@mantle/crypto');
+    const [raw] = (await exec(
+      sqlTag`select key_enc from api_keys where id = ${r!.key.id}`,
+    )) as unknown as { key_enc: Buffer }[];
+    expect(() => open(raw!.key_enc, r!.key.id)).toThrow();
+    expect(open(raw!.key_enc, keys.valueAad(r!.key.id, 'login'))).toBe(loginValue);
   });
 
   it('a replace keeps what it does not name, and approval never goes off by itself', async () => {
-    const rotated = await keys.setVaultKey(who, owner, {
+    const rotated = await set(who, owner, {
       ref: { name: 'pi-lab-3' },
       value: v('login-2'),
     });
@@ -127,22 +151,22 @@ describe.skipIf(!URL)('the vault write gateway', () => {
       needsApproval: true,
     });
     // The user is still there: the stored shape passes.
-    const t = await keys.testVaultKey(who, owner, { name: 'pi-lab-3' });
+    const t = await test(who, owner, { name: 'pi-lab-3' });
     expect(t).toMatchObject({ ok: true, kind: 'login', name: 'pi-lab-3' });
     noValue(t);
 
     // Metadata only: no secret written.
-    const tagged = await keys.setVaultKey(who, owner, { ref: { name: 'pi-lab-3' }, tags: [] });
+    const tagged = await set(who, owner, { ref: { name: 'pi-lab-3' }, tags: [] });
     expect(tagged).toMatchObject({ op: 'replace', secretWritten: false });
 
     // A kind change needs a value; to a token it keeps approval on.
     await expect(
-      keys.setVaultKey(who, owner, { ref: { name: 'pi-lab-3' }, kind: 'token' }),
+      set(who, owner, { ref: { name: 'pi-lab-3' }, kind: 'token' }),
     ).rejects.toBeInstanceOf(InputError);
     await expect(
-      keys.setVaultKey(who, owner, { ref: { name: 'pi-lab-3' }, kind: 'token', value: v('t') }),
+      set(who, owner, { ref: { name: 'pi-lab-3' }, kind: 'token', value: v('t') }),
     ).rejects.toThrow(/user belongs to/);
-    const token = await keys.setVaultKey(who, owner, {
+    const token = await set(who, owner, {
       ref: { name: 'pi-lab-3' },
       kind: 'token',
       value: v('t2'),
@@ -155,7 +179,7 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     )) as unknown as { fields_enc: Buffer | null }[];
     expect(row!.fields_enc).toBeNull();
     // Only the owner turns it off.
-    const off = await keys.setVaultKey(who, owner, {
+    const off = await set(who, owner, {
       ref: { name: 'pi-lab-3' },
       needsApproval: false,
     });
@@ -164,18 +188,18 @@ describe.skipIf(!URL)('the vault write gateway', () => {
 
   it('refuses a password with no target, and a reserved or bad name', async () => {
     await expect(
-      keys.setVaultKey(who, owner, { ref: { name: 'db-main' }, kind: 'password', value: v('p') }),
+      set(who, owner, { ref: { name: 'db-main' }, kind: 'password', value: v('p') }),
     ).rejects.toThrow(/needs target/);
     await expect(
-      keys.setVaultKey(who, owner, { ref: { name: 'mcp-site' }, value: v('m') }),
+      set(who, owner, { ref: { name: 'mcp-site' }, value: v('m') }),
     ).rejects.toBeInstanceOf(InputError);
-    await expect(
-      keys.setVaultKey(who, owner, { ref: { name: v('as a name') }, value: 'x' }),
-    ).rejects.toSatisfy((err: Error) => !values.some((x) => err.message.includes(x)));
+    await expect(set(who, owner, { ref: { name: v('as a name') }, value: 'x' })).rejects.toSatisfy(
+      (err: Error) => !values.some((x) => err.message.includes(x)),
+    );
   });
 
   it('tests an SSH key by its shape and a token by its provider', async () => {
-    await keys.setVaultKey(who, owner, {
+    await set(who, owner, {
       ref: { name: 'printer-07' },
       kind: 'ssh_key',
       value: KEY_BLOCK,
@@ -184,18 +208,18 @@ describe.skipIf(!URL)('the vault write gateway', () => {
       target: ['printer-07.lan'],
       viaTailnet: true,
     });
-    const ssh = await keys.testVaultKey(who, owner, { name: 'printer-07' });
+    const ssh = await test(who, owner, { name: 'printer-07' });
     expect(ssh).toMatchObject({ ok: true, kind: 'ssh_key' });
-    const token = await keys.testVaultKey(who, owner, { name: 'weather' });
+    const token = await test(who, owner, { name: 'weather' });
     expect(token).toMatchObject({ ok: false, kind: 'token' });
     expect(token!.message).toMatch(/No adapter/);
-    expect(await keys.testVaultKey(who, owner, { name: 'nothing-here' })).toBeNull();
+    expect(await test(who, owner, { name: 'nothing-here' })).toBeNull();
   });
 
   it('imports all or nothing, naming each bad row and never its content', async () => {
     const before = (await keys.listApiKeys(owner)).length;
     const secret = v('csv-1');
-    const bad = await keys.importVaultKeys(
+    const bad = await imp(
       who,
       owner,
       [
@@ -213,7 +237,12 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     noValue(bad);
     expect((await keys.listApiKeys(owner)).length).toBe(before);
 
-    const good = await keys.importVaultKeys(
+    // An empty kind with a user is refused (never read as a token).
+    const noKind = await imp(who, owner, `nas-9,,nas-9.lan,admin,${v('csv-7')},`);
+    expect(noKind).toMatchObject({ ok: false, failed: [{ row: 1 }] });
+
+    const followed: string[] = [];
+    const good = await imp(
       who,
       owner,
       [
@@ -221,8 +250,12 @@ describe.skipIf(!URL)('the vault write gateway', () => {
         `"nas-key",ssh_key,nas-1.lan,admin,"${KEY_BLOCK}",`,
         `weather,,,,${v('csv-6')},`,
       ].join('\r\n'),
+      async (w) => {
+        followed.push(w.key.name);
+      },
     );
     expect(good).toMatchObject({ ok: true, added: 2, replaced: 1 });
+    expect(followed).toEqual(['nas-1', 'nas-key', 'weather']);
     noValue(good);
     const nas = (await keys.listApiKeys(owner)).find((k) => k.name === 'nas-1');
     expect(nas).toMatchObject({
@@ -234,15 +267,15 @@ describe.skipIf(!URL)('the vault write gateway', () => {
   });
 
   it('deletes by name, and every write left an audit row with no value', async () => {
-    const gone = await keys.deleteVaultKey(who, owner, { name: 'printer-07' });
+    const gone = await del(who, owner, { name: 'printer-07' });
     expect(gone).toMatchObject({ name: 'printer-07', kind: 'ssh_key' });
-    expect(await keys.deleteVaultKey(who, owner, { name: 'printer-07' })).toBeNull();
+    expect(await del(who, owner, { name: 'printer-07' })).toBeNull();
     const rows = await audits();
     noValue(rows);
     const actions = new Set(rows.map((r) => r.action));
     expect(actions).toEqual(new Set(['vault.key.set', 'vault.key.test', 'vault.key.delete']));
-    const del = rows.find((r) => r.action === 'vault.key.delete');
-    expect(del!.detail).toMatchObject({ name: 'printer-07', kind: 'ssh_key', via: 'web' });
+    const deleted = rows.find((r) => r.action === 'vault.key.delete');
+    expect(deleted!.detail).toMatchObject({ name: 'printer-07', kind: 'ssh_key', via: 'web' });
     const add = rows.find((r) => r.action === 'vault.key.set' && r.detail.name === 'pi-lab-3');
     expect(add!.detail).toMatchObject({ op: 'add', changed: ['value', 'fields'] });
   });

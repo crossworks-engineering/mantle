@@ -7,7 +7,9 @@
 --   kind            token (every row today), password, ssh_key, login (a user
 --                   and a password). Only a token is opened by the read paths
 --                   in this release (@mantle/api-keys): a secret of another
---                   kind waits for the use gateway (part 2).
+--                   kind waits for the use gateway (part 2). Its key_enc is
+--                   sealed with `<id>:<kind>`, a token's with the row id
+--                   (as before), so no token read opens one.
 --   name            what agents say. Generated from service and label, so it
 --                   never drifts from them: the service alone when the label
 --                   is 'default', else service/label. A service is a slug (no

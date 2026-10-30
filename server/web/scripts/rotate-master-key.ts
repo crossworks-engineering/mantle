@@ -17,17 +17,21 @@
  *
  * Tables touched:
  *   - api_keys.key_enc
+ *   - api_keys.fields_enc             (nullable: a token has none; vault v2)
  *   - email_accounts.imap_config_enc  (nullable — accounts without IMAP creds are skipped)
  *   - channels.credentials_enc        (telegram bot token; see docs/comms-channels.md)
  *   - secrets.ciphertext
  *
  * AAD bindings (must match where the rows were originally sealed):
- *   - api_keys           → row id
+ *   - api_keys.key_enc   → row id for a token, `<id>:<kind>` for any other kind
+ *   - api_keys.fields_enc → `<id>:fields`
+ *     (both from @mantle/api-keys valueAad / fieldsAad, the vault's own)
  *   - email_accounts     → account id
  *   - channels           → channel id
  *   - secrets            → `secret:<node_id>`
  */
 import { db, apiKeys, channels, emailAccounts, secrets } from '@mantle/db';
+import { fieldsAad, valueAad } from '@mantle/api-keys';
 import { currentSealVersion, open, seal, sealedKeyVersion } from '@mantle/crypto';
 import { eq } from 'drizzle-orm';
 import { env } from '@mantle/config';
@@ -94,7 +98,7 @@ async function main() {
       'api_keys',
       () => db.select().from(apiKeys),
       (r) => r.keyEnc as Buffer,
-      (r) => r.id,
+      (r) => valueAad(r.id, r.kind),
       async (id, ct, kv) => {
         await db
           .update(apiKeys)
@@ -103,6 +107,34 @@ async function main() {
       },
     ),
   );
+
+  // api_keys.fields_enc (vault v2) is nullable: a token has no fields and
+  // is skipped, as an email account without IMAP creds is below.
+  {
+    const rows = await db.select().from(apiKeys);
+    let scanned = 0;
+    let resealed = 0;
+    let alreadyV2 = 0;
+    for (const row of rows) {
+      scanned++;
+      if (!row.fieldsEnc) continue;
+      const ct = row.fieldsEnc as Buffer;
+      if (sealedKeyVersion(ct) === 2) {
+        alreadyV2++;
+        continue;
+      }
+      const fresh = seal(open(ct, fieldsAad(row.id)), fieldsAad(row.id));
+      await db
+        .update(apiKeys)
+        .set({ fieldsEnc: fresh.ciphertext, updatedAt: new Date() })
+        .where(eq(apiKeys.id, row.id));
+      resealed++;
+    }
+    console.log(
+      `[rotate] api_keys fields: scanned ${scanned}, resealed ${resealed}, already v2 ${alreadyV2}`,
+    );
+    all.push({ scanned, resealed, alreadyV2 });
+  }
 
   // email_accounts.imap_config_enc is nullable — accounts that don't
   // have IMAP creds (e.g. lingering rows from a removed provider) get

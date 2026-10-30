@@ -37,17 +37,24 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const result = await importVaultKeys(vaultActor(user), user.id, parsed.data.csv);
+  // Each written row's follow-up runs as it lands (a connector's marks, an
+  // open provider alert), so a row written before a later one fails is
+  // never left on the old key's marks.
+  const result = await importVaultKeys(
+    vaultActor(user),
+    user.id,
+    parsed.data.csv,
+    async ({ key, secretWritten }) => {
+      if (!secretWritten) return;
+      await afterVaultKeyReplaced(user.id, key.service, key.label);
+      await retryProvidersAfterKeyChange(user.id, key.service);
+    },
+  );
   if (!result.ok) {
     return NextResponse.json(
       { error: 'Some rows were refused; nothing was written.', failed: result.failed },
       { status: 400 },
     );
-  }
-  for (const { key, secretWritten } of result.keys) {
-    if (!secretWritten) continue;
-    await afterVaultKeyReplaced(user.id, key.service, key.label);
-    await retryProvidersAfterKeyChange(user.id, key.service);
   }
   return NextResponse.json({
     added: result.added,

@@ -784,6 +784,7 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     'POST /api/embedding/rebuild': ['reembed'],
     'POST /api/heartbeats': ['heartbeat-maker'],
     'POST /api/keys': ['model-route'],
+    'POST /api/keys/import': ['model-route'],
     'POST /api/mcp-connectors': ['tool-group-grant'],
     'GET /api/mcp-connectors/oauth/callback': ['tool-config'],
     'PATCH /api/heartbeats/:id': ['heartbeat-maker'],

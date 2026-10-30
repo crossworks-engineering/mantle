@@ -1571,6 +1571,28 @@ script (this release's script only prints `gone`).
   branches. The revert (`packages/db/rollback/0340_s4b_fail_closed.revert.sql`)
   puts 0304's and 0313's bodies back and takes 0340 off the ledger.
 
+## Going up to 0346 (credential vault v2, part 1)
+
+Migration 0346 grows `api_keys` with the vault's kinds (token, password,
+ssh_key, login), a generated `name`, `target`, sealed `fields_enc`, tags and
+the approval and tailnet switches. Additive: every key on the box reads as a
+token, as before. The Keys routes and the new `api_key_*` MCP tools write
+through one gateway (`@mantle/api-keys` vault.ts), which keeps an audit_log
+row per write and never answers a value.
+
+- **What it changes for readers:** nothing until a secret of another kind
+  is added. Then no read path opens it: its value is sealed with
+  `<id>:<kind>`, not the row id a token uses.
+- **Rolling back below it:** run the revert
+  (`packages/db/rollback/0346_vault_kinds.revert.sql`) before pinning the
+  older tag. The older image could not open a password, an SSH key or a
+  login (the seal is bound to its kind), but it would list them as keys and
+  could pick one as a provider's key and fail; the revert deletes every row
+  that is not a token (the owner adds them again after the roll forward)
+  and takes 0346 off the ledger.
+- **Master key rotation:** `pnpm -C server/web rotate:master-key` re-seals
+  `fields_enc` too, each with its own AAD.
+
 ## Rollback
 
 ```bash
