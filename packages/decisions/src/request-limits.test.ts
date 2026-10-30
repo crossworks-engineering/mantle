@@ -6,19 +6,20 @@ import {
 import { CHARS_PER_TOKEN, PLAN_HEADROOM, planGroups, requestOverLimit } from './request-limits';
 
 describe('decisionRequestLimits', () => {
-  it('the default Jev has no known limit until the catalog says its context size', () => {
-    expect(decisionRequestLimits('~typesafe/jev-latest', null)).toEqual({
-      maxQuestions: null,
-      maxInputTokens: null,
-      cutAt: null,
-      source: 'profile',
-    });
-    expect(decisionRequestLimits('typesafe/jev-1.14', 262_144)).toEqual({
-      maxQuestions: null,
-      maxInputTokens: 262_144,
-      cutAt: 262_144,
-      source: 'profile',
-    });
+  it('a tested model is sized from its profile only, never from the catalog', () => {
+    const none = { maxQuestions: null, maxInputTokens: null, cutAt: null, source: 'profile' };
+    expect(decisionRequestLimits('~typesafe/jev-latest', null)).toEqual(none);
+    expect(decisionRequestLimits('~typesafe/jev-latest', 32_768)).toEqual(none);
+    expect(decisionRequestLimits('typesafe/jev-1.14', 262_144)).toEqual(none);
+  });
+
+  it('Jev keeps every use at its measured size whatever the catalog says', () => {
+    // 60 version pairs of full-length passages: about 330k characters.
+    const limits = decisionRequestLimits('~typesafe/jev-latest', 32_768);
+    const pairs = Array.from({ length: 60 }, () => unit(5_450));
+    const r = planGroups(pairs, (u) => u, { groupSize: 60, baseChars: 0, limits });
+    expect(r.groups.map((g) => g.length)).toEqual([60]);
+    expect(requestOverLimit(limits, { t: 'x'.repeat(330_000) }, {})).toBeNull();
   });
 
   it('an untested model, or one that failed at full size, gets the careful limits', () => {
@@ -45,8 +46,8 @@ describe('decisionRequestLimits', () => {
   });
 
   it('a bad catalog value is ignored', () => {
-    expect(decisionRequestLimits('typesafe/jev-1.14', 0).maxInputTokens).toBeNull();
-    expect(decisionRequestLimits('typesafe/jev-1.14', Number.NaN).maxInputTokens).toBeNull();
+    expect(decisionRequestLimits('someone/new-decider', 0).maxInputTokens).toBe(16_384);
+    expect(decisionRequestLimits('someone/new-decider', Number.NaN).maxInputTokens).toBe(16_384);
   });
 });
 

@@ -73,6 +73,8 @@ describe('scoreContextItems', () => {
     const r = await scoreContextItems('o', 'q', items(40));
     expect(h.calls.map((c) => Object.keys(c.questions).length)).toEqual([14, 14, 12]);
     expect(h.calls.every((c) => c.input.batch && c.input.timeoutFactor === 3)).toBe(true);
+    // One reading of the limits governs every request of the plan.
+    expect(h.calls.every((c) => c.input.limits?.limits === sixteen.limits)).toBe(true);
     expect(r?.scores.size).toBe(40);
   });
 });

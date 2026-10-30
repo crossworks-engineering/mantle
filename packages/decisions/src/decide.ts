@@ -130,6 +130,10 @@ export type DecideInput = {
   /** Multiplies the worker's `timeout_ms` (still capped at `maxTimeoutMs`),
    *  for a request that shares the provider with others of one fan-out. */
   timeoutFactor?: number;
+  /** The request planner's reading of the model's limits, so one reading
+   *  governs a whole plan. Used when it names the worker's model; otherwise
+   *  `decide()` reads them itself. */
+  limits?: { model: string; limits: DecisionRequestLimits };
 };
 
 /**
@@ -216,13 +220,20 @@ export function forgetResolvedDecider(ownerId?: string): void {
   else resolved.clear();
 }
 
-/** The request limits of the owner's decider model, or null when there is
- *  no usable decider (then `decide()` sends nothing anyway). */
+/** The request limits of the owner's decider model and the use's switch,
+ *  or null when there is no usable decider (then `decide()` sends nothing
+ *  anyway). */
 export async function deciderRequestLimits(
   ownerId: string,
-): Promise<{ model: string; limits: DecisionRequestLimits } | null> {
+  use: DecisionUse,
+): Promise<{ model: string; limits: DecisionRequestLimits; use: ResolvedUse } | null> {
   const r = await resolveDecider(ownerId);
-  return r ? { model: r.worker.model, limits: limitsForModel(r.worker.model) } : null;
+  if (!r) return null;
+  return {
+    model: r.worker.model,
+    limits: limitsForModel(r.worker.model),
+    use: resolveUse(r.params, use),
+  };
 }
 
 /** Cheap pre-check for callers that want to size a candidate pool before
@@ -289,7 +300,8 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
   }
   // Above the model's limits: never sent, so the endpoint is not at fault and
   // the breaker does not hear it. The step says why.
-  const limits = limitsForModel(worker.model);
+  const limits =
+    input.limits?.model === worker.model ? input.limits.limits : limitsForModel(worker.model);
   const over = requestOverLimit(limits, input.state, input.questions);
   if (over) {
     return step(

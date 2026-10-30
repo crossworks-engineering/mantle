@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   params: {} as Record<string, unknown>,
   model: 'jev',
   tokensIn: 0,
+  ctx: null as number | null,
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -33,7 +34,7 @@ vi.mock('@mantle/api-keys', () => ({
   resolveProviderKey: vi.fn(async () => 'key'),
 }));
 vi.mock('@mantle/tracing', () => ({
-  contextLimitFor: () => null,
+  contextLimitFor: () => h.ctx,
   log: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   step: vi.fn(async (_o: unknown, fn: (h: unknown) => unknown) =>
     fn({ setMeta: vi.fn(), setOutput: vi.fn(), setSkipped: vi.fn() }),
@@ -104,6 +105,7 @@ beforeEach(() => {
   h.params = {};
   h.model = 'jev';
   h.tokensIn = 0;
+  h.ctx = null;
   clearDecisionCache();
   forgetResolvedDecider();
 });
@@ -218,6 +220,57 @@ describe('request limits', () => {
   it('a tested model with no known limit keeps the request as the use built it', async () => {
     h.model = '~typesafe/jev-latest';
     expect(await many(60)).not.toBeNull();
+    expect(h.sent).toBe(1);
+  });
+
+  it('Jev sends a large request whatever context size the catalog says', async () => {
+    h.model = '~typesafe/jev-latest';
+    h.ctx = 32_768;
+    const r = await decide({
+      ownerId: 'o1',
+      use: 'passage_scoring',
+      state: { message: 'x'.repeat(120_000) },
+      questions: { q: { type: 'noul', instructions: 'x' } as never },
+    });
+    expect(r).not.toBeNull();
+    expect(h.sent).toBe(1);
+  });
+
+  it("the plan's reading of the limits governs its requests", async () => {
+    // The catalog loads between the plan and the call: the plan's reading wins.
+    const r = await decide({
+      ownerId: 'o1',
+      use: 'passage_scoring',
+      state: { message: 'm' },
+      questions: Object.fromEntries(
+        Array.from({ length: 20 }, (_, i) => [
+          `q${i}`,
+          { type: 'noul', instructions: 'x' } as never,
+        ]),
+      ),
+      limits: {
+        model: 'jev',
+        limits: { maxQuestions: 20, maxInputTokens: null, cutAt: null, source: 'careful' },
+      },
+    });
+    expect(r).not.toBeNull();
+    // A reading for another model is ignored: the careful 16 apply.
+    const other = await decide({
+      ownerId: 'o1',
+      use: 'passage_scoring',
+      state: { message: 'n' },
+      questions: Object.fromEntries(
+        Array.from({ length: 20 }, (_, i) => [
+          `q${i}`,
+          { type: 'noul', instructions: 'x' } as never,
+        ]),
+      ),
+      limits: {
+        model: 'other',
+        limits: { maxQuestions: 20, maxInputTokens: null, cutAt: null, source: 'careful' },
+      },
+    });
+    expect(other).toBeNull();
     expect(h.sent).toBe(1);
   });
 

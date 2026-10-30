@@ -140,13 +140,14 @@ questions and 16,384 tokens on some of them. So a request is sized from the
 chosen model, in one place:
 
 - **Limits** (`decisionRequestLimits`, packages/client-types/src/decision-models.ts):
-  a tested model (status `works`, `no_training_only` or `slow`) takes the
-  lowest of its profile's `maxQuestions` / `maxInputTokens` /
-  `suspectedCutAt` and the live catalog's context size. With none of these
-  known, there is no limit, and each use keeps the request it was measured
-  with. Any other model (untested, `fails_full_size`, `refused`) gets the
-  careful limits: 16 questions and 16,384 tokens, or the catalog's context
-  size when smaller.
+  a tested model (status `works`, `no_training_only` or `slow`) takes only
+  its measured profile limits (`maxQuestions`, `maxInputTokens`,
+  `suspectedCutAt`). With none measured, there is no limit, and each use
+  keeps the request it was measured with. The catalog does not size a tested
+  model: the estimate counts high, so a catalog value would split or refuse
+  requests the model answers. Any other model (untested, `fails_full_size`,
+  `refused`) gets the careful limits: 16 questions and 16,384 tokens, or the
+  catalog's context size when smaller.
 - **The planner** (`decidePlanned`, request-planner.ts) is the one place a
   use's list becomes requests. Passage scoring, context pruning, version
   grouping, history recall, Journal recall and rule reconcile go through it.
@@ -156,7 +157,9 @@ chosen model, in one place:
   items evenly over as many as they need, filled to 90% of the token limit
   at 3 characters a token (an estimate that counts high). The requests share
   one `DecideBatch`. An item too large for any request is not sent; it stays
-  unscored, and one `over_limit` step says how many.
+  unscored, and one `over_limit` step says how many. The plan reads the
+  limits once and hands that reading to each `decide()` call, so a catalog
+  that loads mid-plan cannot refuse a request the plan made.
 - **The check in `decide()`**: a request above the model's question or token
   limit is not sent. The step is marked skipped (`over_limit`) and the
   breaker does not hear it. This also covers the delegation hint and the
