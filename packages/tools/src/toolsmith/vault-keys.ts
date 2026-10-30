@@ -67,8 +67,8 @@ async function answer(fn: () => Promise<ToolHandlerResult>): Promise<ToolHandler
   }
 }
 
-const NOT_FOUND = (name: string) =>
-  `No vault key is named '${name}': list the names with api_key_refs.`;
+/** Never echoes the name: a value sent in the wrong field stays out. */
+const NOT_FOUND = 'No vault key has that name: list the names with api_key_refs.';
 
 function strList(v: unknown): string[] | undefined {
   if (v === undefined || v === null) return undefined;
@@ -186,7 +186,7 @@ export const api_key_set: BuiltinToolDef = {
         ...(typeof input.via_tailnet === 'boolean' ? { viaTailnet: input.via_tailnet } : {}),
       };
       const result = await setVaultKey(vaultActor(ctx), ctx.ownerId, set);
-      if (!result) return { ok: false, error: NOT_FOUND(name) };
+      if (!result) return { ok: false, error: NOT_FOUND };
       if (result.secretWritten) {
         await afterVaultKeyReplaced(ctx.ownerId, result.key.service, result.key.label);
       }
@@ -230,7 +230,7 @@ export const api_key_test: BuiltinToolDef = {
     answer(async () => {
       const name = str(input.name);
       const result = await testVaultKey(vaultActor(ctx), ctx.ownerId, { name });
-      if (!result) return { ok: false, error: NOT_FOUND(name) };
+      if (!result) return { ok: false, error: NOT_FOUND };
       return {
         ok: true,
         output: {
@@ -269,7 +269,7 @@ export const api_key_delete: BuiltinToolDef = {
     answer(async () => {
       const name = str(input.name);
       const gone = await deleteVaultKey(vaultActor(ctx), ctx.ownerId, { name });
-      if (!gone) return { ok: false, error: NOT_FOUND(name) };
+      if (!gone) return { ok: false, error: NOT_FOUND };
       return { ok: true, output: { deleted: reply(gone) } };
     }),
 };

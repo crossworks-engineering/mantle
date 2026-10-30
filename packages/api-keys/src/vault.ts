@@ -126,6 +126,7 @@ const TAG_RE = /^[a-z0-9][a-z0-9_.-]{0,39}$/;
 const HOST_LABEL_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 /** C0 controls and DEL: never in a token, a password or a user. */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 const MAX_TARGETS = 32;
 const MAX_TAGS = 20;
@@ -363,8 +364,15 @@ function parsedName(raw: string): { service: string; label: string; name: string
  *  only. Never returned past this module. */
 function openFields(row: ApiKey): VaultFields {
   if (!row.fieldsEnc) return {};
-  const parsed = JSON.parse(open(row.fieldsEnc, `${row.id}:fields`)) as VaultFields;
-  return parsed && typeof parsed === 'object' ? parsed : {};
+  const text = open(row.fieldsEnc, `${row.id}:fields`);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    // A parse error quotes the text it read: never let it out.
+    throw new Error('vault: the stored fields could not be read');
+  }
+  return parsed && typeof parsed === 'object' ? (parsed as VaultFields) : {};
 }
 
 function sealFields(id: string, fields: VaultFields): { fieldsEnc: Buffer | null } {
@@ -430,7 +438,9 @@ function planSet(ownerId: string, input: VaultSetInput, row: ApiKey | null): Set
     const { service, label, name } = parsedName(input.ref.name);
     const kind = input.kind ?? 'token';
     if (input.value === undefined) {
-      throw new InputError(`value is required to add ${name} (there is no key of that name).`);
+      throw new InputError(
+        'value is required: there is no key of that name yet, so this adds one.',
+      );
     }
     const fields: VaultFields = {};
     for (const k of Object.keys(fieldInput) as (keyof VaultFields)[]) {
@@ -566,7 +576,7 @@ async function writePlan(plan: SetPlan): Promise<ApiKey> {
     // NARROW_NEVER_INSERT): its seal binds its id only. The full-route spot
     // model-route (where a vault key goes).
     const [inserted] = await conflictOnUnique(
-      `A key named ${plan.name} was saved at the same moment: list the keys and try again.`,
+      'A key of that name was saved at the same moment: list the keys and try again.',
       () =>
         onFullSystemRoute('model-route', () => db.insert(apiKeys).values(plan.values).returning()),
     );
