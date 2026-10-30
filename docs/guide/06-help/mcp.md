@@ -25,6 +25,14 @@ Every login can use Claude on this brain with its own rights only: it reads what
 
 Outside the Admin workspace, this screen shows your own view: the connector URL, how to connect, what you read and change, the data sources you can use and the clients you connected. Disconnect one to cut its access at once. Only your own clients are listed.
 
+> **Using ChatGPT well**
+>
+> ChatGPT asks you to allow each write call once, so many small writes mean many clicks.
+>
+> - Ask for one batch call. Say "change these rows in one `table_rows_upsert` call", "add them with one `table_rows_add` call" or "make these page edits in one `page_blocks_apply` call".
+> - Upload files in the Mantle web app, then refer to them by name. ChatGPT cannot pass its own attachments to Mantle.
+> - Build apps in the Mantle chat, or in a client that has "Always allow". An app takes many write calls.
+
 ## Assistant
 
 This screen has no assistant tools. Set it up here, then talk to your brain from the outside client.

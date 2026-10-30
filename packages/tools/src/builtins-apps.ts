@@ -400,7 +400,7 @@ const app_file_write: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Write a file in a mini app',
   description:
-    "Create or replace one source file (by path) in the app's DRAFT — the published app is untouched until app_publish. After writing, call app_build to compile + see errors. " +
+    "Create or replace one source file (by path) in the app's DRAFT — the published app is untouched until app_publish. After writing, call app_build to compile + see errors. To write several files, send the whole tree in one `app_source_set` call. " +
     WHO_HINT +
     SOURCE_HINT,
   inputSchema: {
@@ -460,7 +460,8 @@ const app_file_delete: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Delete a file from a mini app',
   description:
-    'Remove one source file (by path) from the app DRAFT. Refuses to delete the entry file. Run app_build afterwards.',
+    'Remove one source file (by path) from the app DRAFT. Refuses to delete the entry file. Run app_build afterwards. ' +
+    'To change several files at once, send the whole tree without them in one `app_source_set` call.',
   inputSchema: {
     type: 'object',
     properties: {

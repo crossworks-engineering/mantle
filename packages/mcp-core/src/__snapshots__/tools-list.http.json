@@ -3917,7 +3917,7 @@
  },
  {
   "name": "page_block_update",
-  "description": "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for TARGETED edits on large pages. **For a restructure touching more than ~10 blocks (resequencing / renumbering / merging sections), switch to ONE whole-body `page_update_draft` call instead — block-by-block surgery at that scale exhausts the turn's tool-call budget and strands the draft half-edited.** ⚠️ **MARKDOWN MUST INCLUDE THE STRUCTURAL PREFIX of the kind you want to keep.** If you're updating an `h2` heading and you submit `markdown: '📖 Title'`, the result is a PARAGRAPH (the heading is gone) — markdown without a `##` prefix parses as a paragraph. To keep block kind on the same edit: heading → `## new text`, h3 → `### new text`, foldable heading (`meta.fold` in page_blocks_list) → `## new text {fold}` (or `{fold=closed}`; drop the marker and it stops folding), blockquote → `> new text`, info callout → `:::info\\nnew text\\n:::`, bullet list item → `- new text` (wrap in a single-item list), code block → ```\\nnew code\\n```. Pre-flight check before each call: imagine your markdown rendered standalone — does the FIRST block produced match the kind you're replacing? If you intend to CHANGE the kind (e.g. heading → callout), that's a valid use; just be deliberate. If you intend to KEEP the kind, the structural prefix is part of the content.",
+  "description": "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for TARGETED edits on large pages. For 3+ block edits batch them in one `page_blocks_apply` call. **For a restructure touching more than ~10 blocks (resequencing / renumbering / merging sections), switch to ONE whole-body `page_update_draft` call instead — block-by-block surgery at that scale exhausts the turn's tool-call budget and strands the draft half-edited.** ⚠️ **MARKDOWN MUST INCLUDE THE STRUCTURAL PREFIX of the kind you want to keep.** If you're updating an `h2` heading and you submit `markdown: '📖 Title'`, the result is a PARAGRAPH (the heading is gone) — markdown without a `##` prefix parses as a paragraph. To keep block kind on the same edit: heading → `## new text`, h3 → `### new text`, foldable heading (`meta.fold` in page_blocks_list) → `## new text {fold}` (or `{fold=closed}`; drop the marker and it stops folding), blockquote → `> new text`, info callout → `:::info\\nnew text\\n:::`, bullet list item → `- new text` (wrap in a single-item list), code block → ```\\nnew code\\n```. Pre-flight check before each call: imagine your markdown rendered standalone — does the FIRST block produced match the kind you're replacing? If you intend to CHANGE the kind (e.g. heading → callout), that's a valid use; just be deliberate. If you intend to KEEP the kind, the structural prefix is part of the content.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3951,7 +3951,7 @@
  },
  {
   "name": "page_block_insert_after",
-  "description": "Insert one or more new blocks (parsed from markdown) directly after the block with the given id. Useful for adding a callout after a quote, or a new section heading after the previous section ends. Writes to DRAFT only. New blocks get fresh ids on save.",
+  "description": "Insert one or more new blocks (parsed from markdown) directly after the block with the given id. Useful for adding a callout after a quote, or a new section heading after the previous section ends. Writes to DRAFT only. New blocks get fresh ids on save. For 3+ insertions batch them in one `page_blocks_apply` call.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -4056,7 +4056,7 @@
  },
  {
   "name": "page_block_delete",
-  "description": "Remove a single block (by id) from a page. Writes to DRAFT only. **Refuses** when removing the block would leave a container (callout / column / listItem / tableCell) empty — most ProseMirror schemas reject that. In that case, target the container itself instead.",
+  "description": "Remove a single block (by id) from a page. Writes to DRAFT only. **Refuses** when removing the block would leave a container (callout / column / listItem / tableCell) empty — most ProseMirror schemas reject that. In that case, target the container itself instead. To remove several blocks use one `page_blocks_apply` call.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -5334,7 +5334,7 @@
  },
  {
   "name": "table_rows_upsert",
-  "description": "Merge MANY rows into an EXISTING table in ONE call, matched on `key` column(s): rows whose key isn't in the table are ADDED, rows whose key matches are UPDATED (only the cells you pass — other cells keep their values; identical rows are left untouched and counted as unchanged). **This is the right tool for \"sync/refresh this table from an export\" and any add-or-update load** — do NOT hand-compute the diff and replay it with row tools. Key matching is exact (after type coercion; strings trimmed); a key that matches MULTIPLE existing rows is skipped and reported as ambiguous. Up to 200 rows per call. Pure appends: `table_rows_add`. New table: `table_from_text`.",
+  "description": "Merge MANY rows into an EXISTING table in ONE call, matched on `key` column(s): new keys are ADDED, matching keys are UPDATED (only the cells you pass; identical rows count as unchanged). **Use it to sync/refresh a table from an export, for any add-or-update load, and to change more than one row**: never loop `table_row_update`. No unique key column? Pass `key: [\"@row_id\"]` and each row's id (from `table_rows_list` / `table_query`) as `\"@row_id\"`: rows are then only updated, and an unknown id rejects the whole call. Matching is exact after type coercion (strings trimmed); a key matching MULTIPLE rows is skipped and reported. Pure appends: `table_rows_add`. New table: `table_from_text`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -5348,7 +5348,7 @@
      "items": {
       "type": "string"
      },
-     "description": "Column(s) — by NAME or id — that identify a row, e.g. [\"Service Name\", \"Fluid Name\"]. Every incoming row must carry a non-empty value for each key column."
+     "description": "Column(s) — by NAME or id — that identify a row, e.g. [\"Service Name\", \"Fluid Name\"]. Every incoming row must carry a non-empty value for each key column. [\"@row_id\"] (alone) matches on the row id instead."
     },
     "rows": {
      "minItems": 1,
@@ -5361,7 +5361,7 @@
       },
       "additionalProperties": {}
      },
-     "description": "Rows to merge. Each item: cells keyed by column NAME or id, e.g. { \"Qty\": 3, \"Status\": \"Open\" }. Values are coerced to the column type."
+     "description": "Rows to merge. Each item: cells keyed by column NAME or id, e.g. { \"Qty\": 3, \"Status\": \"Open\" }. Values are coerced to the column type. With key [\"@row_id\"] each item also carries its row id, e.g. { \"@row_id\": \"r_8f2c\", \"Status\": \"Done\" }."
     },
     "tab": {
      "type": "string",
@@ -5385,7 +5385,7 @@
  },
  {
   "name": "table_row_update",
-  "description": "Patch a row's cells by id (merge — unspecified cells stay). The surgical \"do row X\" tool. Writes to DRAFT.",
+  "description": "Patch ONE row's cells by id (merge: unspecified cells stay). Writes to DRAFT. For more than one row use `table_rows_upsert` with `key: [\"@row_id\"]`: one call for the whole batch, instead of a call (and in some MCP clients a user approval) per row.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -5460,7 +5460,7 @@
  },
  {
   "name": "table_cell_set",
-  "description": "Set a single cell — row by id, column by id or name. Writes to DRAFT.",
+  "description": "Set a single cell — row by id, column by id or name. Writes to DRAFT. To change cells on more than one row use one `table_rows_upsert` call with `key: [\"@row_id\"]`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7267,7 +7267,7 @@
  },
  {
   "name": "app_file_write",
-  "description": "Create or replace one source file (by path) in the app's DRAFT — the published app is untouched until app_publish. After writing, call app_build to compile + see errors. Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. Mini-app source is TSX. Allowed imports: `react`; the kit `@/components/ui/*` (button, card, input, label, badge, separator) + `cn` from `@/lib/utils`; `lucide-react` icons; `{ host }` from `@host`; and relative files. Theme tokens only (bg-background, text-foreground, bg-card, bg-primary+text-primary-foreground, chart-1..5) — never hardcode colours. The entry file must `export default function App()`.",
+  "description": "Create or replace one source file (by path) in the app's DRAFT — the published app is untouched until app_publish. After writing, call app_build to compile + see errors. To write several files, send the whole tree in one `app_source_set` call. Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. Mini-app source is TSX. Allowed imports: `react`; the kit `@/components/ui/*` (button, card, input, label, badge, separator) + `cn` from `@/lib/utils`; `lucide-react` icons; `{ host }` from `@host`; and relative files. Theme tokens only (bg-background, text-foreground, bg-card, bg-primary+text-primary-foreground, chart-1..5) — never hardcode colours. The entry file must `export default function App()`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7301,7 +7301,7 @@
  },
  {
   "name": "app_file_delete",
-  "description": "Remove one source file (by path) from the app DRAFT. Refuses to delete the entry file. Run app_build afterwards.",
+  "description": "Remove one source file (by path) from the app DRAFT. Refuses to delete the entry file. Run app_build afterwards. To change several files at once, send the whole tree without them in one `app_source_set` call.",
   "inputSchema": {
    "type": "object",
    "properties": {

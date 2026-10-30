@@ -189,6 +189,14 @@ export const table_rows_add: BuiltinToolDef = {
 // against the current grid by key, then insert the new and patch the changed,
 // without the agent hand-computing the diff via table_sql plus a row-by-row
 // write loop. Whole batch = one atomic applyTableOps.
+//
+// ROW_ID_KEY as the (only) key matches on the stable row id instead of a
+// column: the batch twin of table_row_update for a table with no unique key
+// column. An MCP client that asks the user to allow every write call (ChatGPT
+// does) otherwise loops table_row_update once per row. In that mode rows are
+// only updated, never added, and an id the tab does not hold rejects the call.
+export const ROW_ID_KEY = '@row_id';
+
 export const table_rows_upsert: BuiltinToolDef = {
   slug: 'table_rows_upsert',
   policy: {
@@ -206,14 +214,15 @@ export const table_rows_upsert: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Upsert many rows by key',
   description:
-    `Merge MANY rows into an EXISTING table in ONE call, matched on \`key\` column(s): rows ` +
-    `whose key isn't in the table are ADDED, rows whose key matches are UPDATED (only the ` +
-    `cells you pass — other cells keep their values; identical rows are left untouched and ` +
-    `counted as unchanged). **This is the right tool for "sync/refresh this table from an ` +
-    `export" and any add-or-update load** — do NOT hand-compute the diff and replay it with ` +
-    `row tools. Key matching is exact (after type coercion; strings trimmed); a key that ` +
-    `matches MULTIPLE existing rows is skipped and reported as ambiguous. Up to ` +
-    `${ROWS_ADD_MAX} rows per call. Pure appends: \`table_rows_add\`. New table: \`table_from_text\`.`,
+    `Merge MANY rows into an EXISTING table in ONE call, matched on \`key\` column(s): new ` +
+    `keys are ADDED, matching keys are UPDATED (only the cells you pass; identical rows count ` +
+    `as unchanged). **Use it to sync/refresh a table from an export, for any add-or-update ` +
+    `load, and to change more than one row**: never loop \`table_row_update\`. No unique key ` +
+    `column? Pass \`key: ["${ROW_ID_KEY}"]\` and each row's id (from \`table_rows_list\` / ` +
+    `\`table_query\`) as \`"${ROW_ID_KEY}"\`: rows are then only updated, and an unknown id ` +
+    `rejects the whole call. Matching is exact after type coercion (strings trimmed); a key ` +
+    `matching MULTIPLE rows is skipped and reported. Pure appends: \`table_rows_add\`. New ` +
+    `table: \`table_from_text\`.`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -224,11 +233,15 @@ export const table_rows_upsert: BuiltinToolDef = {
         minItems: 1,
         description:
           'Column(s) — by NAME or id — that identify a row, e.g. ["Service Name", "Fluid Name"]. ' +
-          'Every incoming row must carry a non-empty value for each key column.',
+          'Every incoming row must carry a non-empty value for each key column. ' +
+          `["${ROW_ID_KEY}"] (alone) matches on the row id instead.`,
       },
       rows: {
         type: 'array',
-        description: `Rows to merge. Each item: ${CELLS_HINT}`,
+        description:
+          `Rows to merge. Each item: ${CELLS_HINT} ` +
+          `With key ["${ROW_ID_KEY}"] each item also carries its row id, e.g. ` +
+          `{ "${ROW_ID_KEY}": "r_8f2c", "Status": "Done" }.`,
         items: { type: 'object', additionalProperties: true },
         minItems: 1,
         maxItems: ROWS_ADD_MAX,
@@ -244,6 +257,13 @@ export const table_rows_upsert: BuiltinToolDef = {
       .map((k) => str(k).trim())
       .filter(Boolean);
     if (!keyRefs.length) return { ok: false, error: 'key is required — the column(s) to match on' };
+    const byRowId = keyRefs.includes(ROW_ID_KEY);
+    if (byRowId && keyRefs.length > 1) {
+      return {
+        ok: false,
+        error: `key "${ROW_ID_KEY}" matches on the row id alone; pass key: ["${ROW_ID_KEY}"] with no other columns`,
+      };
+    }
     const rowsIn = Array.isArray(input.rows) ? input.rows : null;
     if (!rowsIn?.length)
       return { ok: false, error: 'rows must be a non-empty array of cell objects' };
@@ -257,7 +277,7 @@ export const table_rows_upsert: BuiltinToolDef = {
     if ('error' in loaded) return { ok: false, error: loaded.error };
     const { doc, tabId } = loaded;
     const keyCols: Column[] = [];
-    for (const ref of keyRefs) {
+    for (const ref of byRowId ? [] : keyRefs) {
       const col = resolveColumn(doc, ref);
       if (!col) {
         return {
@@ -294,13 +314,21 @@ export const table_rows_upsert: BuiltinToolDef = {
     const unknownAll = new Set<string>();
     const resolved: { cells: Record<string, CellValue>; key: string }[] = [];
     const missingKey: number[] = [];
+    const noCells: number[] = [];
     const dupKeys = new Set<string>();
     const seenKeys = new Set<string>();
     for (const [i, r] of rowsIn.entries()) {
-      const cellsIn = (r && typeof r === 'object' ? r : {}) as Record<string, unknown>;
+      let cellsIn = (r && typeof r === 'object' ? r : {}) as Record<string, unknown>;
+      let idKey: string | null = null;
+      if (byRowId) {
+        const { [ROW_ID_KEY]: rid, ...rest } = cellsIn;
+        cellsIn = rest;
+        idKey = str(rid).trim() || null;
+        if (Object.keys(rest).length === 0) noCells.push(i);
+      }
       const { cells, unknown } = resolveCells(doc, cellsIn);
       for (const u of unknown) unknownAll.add(u);
-      const key = keyOf(cells);
+      const key = byRowId ? idKey : keyOf(cells);
       if (key === null) {
         missingKey.push(i);
         continue;
@@ -314,8 +342,20 @@ export const table_rows_upsert: BuiltinToolDef = {
         ok: false,
         error:
           `rows [${missingKey.slice(0, 10).join(', ')}]${missingKey.length > 10 ? '…' : ''} are ` +
-          `missing a value for key column(s) ${keyCols.map((c) => `'${c.name}'`).join(' + ')} — ` +
-          `every row must identify itself. Nothing was written.`,
+          `missing a value for ${
+            byRowId
+              ? `"${ROW_ID_KEY}" (the row id from table_rows_list / table_query)`
+              : `key column(s) ${keyCols.map((c) => `'${c.name}'`).join(' + ')}`
+          } — every row must identify itself. Nothing was written.`,
+      };
+    }
+    if (noCells.length) {
+      return {
+        ok: false,
+        error:
+          `rows [${noCells.slice(0, 10).join(', ')}]${noCells.length > 10 ? '…' : ''} carry ` +
+          `only "${ROW_ID_KEY}" and no cells to change; add the cells to set, or drop those rows. ` +
+          `Nothing was written.`,
       };
     }
     if (dupKeys.size) {
@@ -337,7 +377,7 @@ export const table_rows_upsert: BuiltinToolDef = {
       { rowId: string; cells: Record<string, CellValue>; n: number }
     >();
     const indexRow = (id: string, cells: Record<string, CellValue>) => {
-      const key = keyOf(cells);
+      const key = byRowId ? id : keyOf(cells);
       if (key === null) return;
       const prior = existing.get(key);
       if (prior) prior.n += 1;
@@ -361,8 +401,13 @@ export const table_rows_upsert: BuiltinToolDef = {
     let updated = 0;
     let unchanged = 0;
     const ambiguous: string[] = [];
+    const unknownIds: string[] = [];
     for (const { cells, key } of resolved) {
       const hit = existing.get(key);
+      if (!hit && byRowId) {
+        unknownIds.push(key);
+        continue;
+      }
       if (!hit) {
         ops.push({ op: 'row_add', cells, afterRowId: null, ...(tabId ? { tabId } : {}) });
         added += 1;
@@ -381,6 +426,15 @@ export const table_rows_upsert: BuiltinToolDef = {
       }
       ops.push({ op: 'row_update', rowId: hit.rowId, cells, ...(tabId ? { tabId } : {}) });
       updated += 1;
+    }
+    if (unknownIds.length) {
+      return {
+        ok: false,
+        error:
+          `${unknownIds.length} row id(s) are not in this ${tabId ? 'tab' : 'table'} ` +
+          `(e.g. ${unknownIds.slice(0, 3).join(', ')}); re-read the ids with table_rows_list ` +
+          `or table_query (and pass the same \`tab\`). Nothing was written.`,
+      };
     }
 
     try {
@@ -433,7 +487,9 @@ export const table_row_update: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Update a row',
   description:
-    'Patch a row\'s cells by id (merge — unspecified cells stay). The surgical "do row X" tool. Writes to DRAFT.',
+    "Patch ONE row's cells by id (merge: unspecified cells stay). Writes to DRAFT. " +
+    `For more than one row use \`table_rows_upsert\` with \`key: ["${ROW_ID_KEY}"]\`: one call ` +
+    'for the whole batch, instead of a call (and in some MCP clients a user approval) per row.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -563,7 +619,9 @@ export const table_cell_set: BuiltinToolDef = {
   },
   preconditions: TABLE_ID_PRE,
   name: 'Set one cell',
-  description: 'Set a single cell — row by id, column by id or name. Writes to DRAFT.',
+  description:
+    'Set a single cell — row by id, column by id or name. Writes to DRAFT. ' +
+    `To change cells on more than one row use one \`table_rows_upsert\` call with \`key: ["${ROW_ID_KEY}"]\`.`,
   inputSchema: {
     type: 'object',
     properties: {
