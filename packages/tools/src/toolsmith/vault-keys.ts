@@ -148,7 +148,8 @@ export const api_key_set: BuiltinToolDef = {
       sudo_password: {
         type: ['string', 'null'],
         maxLength: 1024,
-        description: 'The sudo password for a login or an SSH key, fed to sudo by the brain.',
+        description:
+          'The sudo password for a login or an SSH key, fed to sudo by the brain. A new value clears it (and the passphrase) unless sent again.',
       },
       target: {
         type: 'array',

@@ -39,5 +39,5 @@ The assistant cannot see or change keys. It can list masked key references when 
 - Agents, workers and the embedding setup point at a key by id. HTTP tools use a `{{secret:service/label}}` reference filled in at call time.
 - Restore a backup without the same `MANTLE_MASTER_KEY` and every key is unreadable. Keep that key with your backups, stored apart.
 - Tools: `api_key_refs` (masked previews only); over MCP only, `api_key_set`, `api_key_test`, `api_key_delete` and `api_key_import`, which go through the one write gateway in `@mantle/api-keys` (`vault.ts`: the keys area check and the audit row).
-- Only a token is ever opened to call a provider or fill a `{{secret:...}}` reference. The other kinds are sealed with the row id and their kind, so nothing that opens a token can open them; their fields (user, passphrase, sudo password) are sealed apart.
+- Only a token is ever opened to call a provider or fill a `{{secret:...}}` reference. The other kinds are sealed with the row id and their kind, so nothing that opens a token can open them; their fields (user, passphrase, sudo password) are sealed apart. A new value clears the stored passphrase and sudo password unless they are sent again.
 - See [Models and API keys](../05-admin/05-models-and-keys.md).

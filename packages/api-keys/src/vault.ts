@@ -109,7 +109,8 @@ export type VaultSetInput = {
   user?: string | null;
   /** ssh_key only: the private key's passphrase. */
   passphrase?: string | null;
-  /** ssh_key and login: the sudo password an executor feeds on stdin. */
+  /** ssh_key and login: the sudo password an executor feeds on stdin. A
+   *  new value clears it and the passphrase unless they are sent again. */
   sudoPassword?: string | null;
   target?: readonly string[];
   tags?: readonly string[];
@@ -620,7 +621,14 @@ function planSet(
   }
   // The fields: merged over what the row holds (opened here only), checked
   // with the value they go with.
-  const cur = kindChanged || fieldsGiven || input.value !== undefined ? openFields(row) : {};
+  const opened = kindChanged || fieldsGiven || input.value !== undefined ? openFields(row) : {};
+  // A new value is a new credential: the old one's passphrase and sudo
+  // password do not carry over unless sent again, so a replace (or an
+  // import row) cannot point them at a new target unseen.
+  const cur: VaultFields = input.value !== undefined ? { user: opened.user } : opened;
+  const dropped =
+    input.value !== undefined &&
+    (opened.passphrase !== undefined || opened.sudoPassword !== undefined);
   const fields: VaultFields = {};
   for (const k of Object.keys(fieldInput) as (keyof VaultFields)[]) {
     const v = merged(cur[k], fieldInput[k]);
@@ -638,7 +646,7 @@ function planSet(
     // A field changed with the stored value: the shape of the fields alone.
     checkFieldsShape(kind, fields);
   }
-  if (fieldsGiven || kindChanged) {
+  if (fieldsGiven || kindChanged || dropped) {
     Object.assign(set, sealFields(row.id, fields));
     changed.push('fields');
     secretReplaced = true;

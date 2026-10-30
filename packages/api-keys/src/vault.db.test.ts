@@ -250,6 +250,42 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     expect(onScreen!.key.needsApproval).toBe(false);
   });
 
+  it('a new value clears the old sudo password, so a replace cannot move it unseen', async () => {
+    const mcp = { loginId: owner, via: 'mcp' } as const;
+    const { open } = await import('@mantle/crypto');
+    const fieldsOf = async (id: string) => {
+      const [row] = (await exec(
+        sqlTag`select fields_enc from api_keys where id = ${id}`,
+      )) as unknown as { fields_enc: Buffer | null }[];
+      return JSON.parse(open(row!.fields_enc!, keys.fieldsAad(id))) as Record<string, string>;
+    };
+    const sudo = v('box-sudo');
+    const made = await set(who, owner, {
+      ref: { name: 'box-9' },
+      kind: 'login',
+      value: v('box'),
+      user: 'pi',
+      sudoPassword: sudo,
+      target: ['box-9.lan'],
+    });
+    expect(await fieldsOf(made!.key.id)).toMatchObject({ user: 'pi', sudoPassword: sudo });
+    // A tag change keeps it; a new value pointed elsewhere does not.
+    await set(mcp, owner, { ref: { name: 'box-9' }, tags: [] });
+    expect(await fieldsOf(made!.key.id)).toMatchObject({ sudoPassword: sudo });
+    const moved = await set(mcp, owner, {
+      ref: { name: 'box-9' },
+      value: v('box-2'),
+      target: ['elsewhere.example.com'],
+    });
+    expect(moved!.key.target).toEqual(['elsewhere.example.com']);
+    const after = await fieldsOf(made!.key.id);
+    expect(after).toEqual({ user: 'pi' });
+    // Sent again with the value, it stays.
+    const sudo2 = v('box-sudo-2');
+    await set(who, owner, { ref: { name: 'box-9' }, value: v('box-3'), sudoPassword: sudo2 });
+    expect(await fieldsOf(made!.key.id)).toEqual({ user: 'pi', sudoPassword: sudo2 });
+  });
+
   it("the older Keys form's label, spaces and all, reaches its key as before", async () => {
     const first = await set(who, owner, {
       ref: { service: 'oldform', label: 'work account' },

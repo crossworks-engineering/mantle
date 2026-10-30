@@ -12437,7 +12437,7 @@
        "type": "null"
       }
      ],
-     "description": "The sudo password for a login or an SSH key, fed to sudo by the brain."
+     "description": "The sudo password for a login or an SSH key, fed to sudo by the brain. A new value clears it (and the passphrase) unless sent again."
     },
     "target": {
      "maxItems": 32,
