@@ -2430,6 +2430,13 @@
       "when": 1790287320000,
       "tag": "0347_vault_held",
       "breakpoints": true
+    },
+    {
+      "idx": 348,
+      "version": "7",
+      "when": 1790373660000,
+      "tag": "0347_must_change_password",
+      "breakpoints": true
     }
   ]
 }

@@ -51,6 +51,17 @@ To change the domain, run `scripts/install.sh --domain <host>` instead of editin
 | `MANTLE_PRE_ROLL_KEEP` | How many pre-update backups to keep. Default 3. |
 | `MANTLE_IMAGE_PRUNE` | `0` keeps old images after an update. By default they are removed. |
 
+## Box policy
+
+Rules for a company box. Set them in `.env` and restart. Nobody can change them from the app; **Settings** shows them read only. Empty means no rule, and the box works as it does today. See [Security](10-security.md#box-policy).
+
+| Variable | What it does |
+|---|---|
+| `MANTLE_POLICY_TELEGRAM` | `off` switches Telegram off for the box. The bots and chats are kept. |
+| `MANTLE_POLICY_MODEL_DENY` | Models no agent or worker may use, for example `deepseek/*,qwen/*`. While set, auto routers are blocked too. |
+| `MANTLE_POLICY_PROVIDER_ALLOW` | The only providers any agent or worker may use, for example `foundry,local`. |
+| `MANTLE_POLICY_PASSWORD_MIN` | The shortest password allowed (8 to 128), and common passwords are refused. A person with a weaker password must change it at the next sign-in. |
+
 ## Next
 
 - [Optional services](04-services.md)

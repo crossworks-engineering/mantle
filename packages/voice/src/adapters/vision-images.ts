@@ -16,6 +16,7 @@ import {
 } from './openrouter-vision';
 import { classifyProviderError } from '@mantle/std';
 import { recordVision, recordVisionTimeout } from './spend';
+import { assertModelAllowed } from './model-policy';
 import type { VisionExtractOptions } from './types';
 
 export type { ImagesRequestExtra, ImagesResult };
@@ -42,6 +43,7 @@ export async function extractImages(
   if (provider !== 'openrouter') {
     throw new Error(`vision: provider '${provider}' cannot take several images in one request`);
   }
+  assertModelAllowed('vision', provider, opts.model);
   let r: ImagesResult;
   try {
     r = await openrouterExtractImages(images, opts, extra);

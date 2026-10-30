@@ -63,6 +63,7 @@ import { auditPeersUnbound, unbindPeersActingAs } from '../peer-unbind';
 import { isAccessKey, lockLoginKeys } from '../access-keys';
 import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
+import { PasswordRuleError, passwordProblem, signInNeedsPasswordChange } from './password-rule';
 import {
   anyLoginRow,
   assetQueryAsHanded,
@@ -90,7 +91,7 @@ import {
   verifySessionCookie,
   type AppFrameTicket,
 } from './tokens';
-import { env } from '@mantle/config';
+import { env, passwordPolicyMin } from '@mantle/config';
 import { isLoginRole, type LoginRole } from '@mantle/client-types/role-names';
 
 /**
@@ -215,6 +216,10 @@ type Resolved = Readonly<{
   contactId: string | null;
   /** adminLogin(row): a user of the live Admin workspace now. */
   admin: boolean;
+  /** auth.users.must_change_password (0347), as read with the row: the
+   *  password hold (password-hold.ts) reads it, only while the box policy
+   *  sets a password rule. */
+  mustChangePassword: boolean;
 }>;
 
 /** The member routes' record of a login that is not an Admin user. */
@@ -617,6 +622,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
     epoch: row.sessionEpoch,
     contactId: row.contactId,
     admin,
+    mustChangePassword: row.mustChangePassword === true,
   };
 }
 
@@ -695,6 +701,7 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
       epoch: 0,
       contactId: null,
       admin: true,
+      mustChangePassword: false,
     };
     return { ...NO_LOGIN, resolved };
   }
@@ -2279,6 +2286,7 @@ export async function authenticatePassword(
       role: authUsers.role,
       disabledAt: authUsers.disabledAt,
       sessionEpoch: authUsers.sessionEpoch,
+      mustChangePassword: authUsers.mustChangePassword,
     })
     .from(authUsers)
     .where(sql`lower(${authUsers.email}) = lower(${email})`)
@@ -2294,9 +2302,41 @@ export async function authenticatePassword(
   // Refused like a wrong password (no role oracle).
   const role: string = row.role;
   const passwordRole = isLoginRole(role);
-  return ok && passwordRole && loginUsable(row)
-    ? { id: row.id, sessionEpoch: row.sessionEpoch }
-    : null;
+  if (!(ok && passwordRole && loginUsable(row))) return null;
+  await notePasswordAtSignIn(row.id, password, row.mustChangePassword);
+  return { id: row.id, sessionEpoch: row.sessionEpoch };
+}
+
+/**
+ * The box password policy at a good sign-in (docs/policy.md): while it sets
+ * a password rule, the login's must_change_password follows whether the
+ * password just taken fails it (set: the request gate holds the login to
+ * the change-password step, password-hold.ts; cleared: a rule lowered since
+ * lets it through). With no rule: nothing is read or written, as before.
+ * A credential column: the full-route spot login-credential, as
+ * updatePassword writes it.
+ */
+async function notePasswordAtSignIn(
+  loginId: string,
+  password: string,
+  flagged: boolean,
+): Promise<void> {
+  if (passwordPolicyMin() === null) return;
+  const needs = signInNeedsPasswordChange(password);
+  if (needs === flagged) return;
+  await writeLoginCredential(loginId, { mustChangePassword: needs });
+}
+
+/** A login's credential columns (the password hash, the policy's forced
+ *  change): never the narrow login's, the full-route spot login-credential
+ *  on a narrow exit (docs/runtime-role.md). */
+function writeLoginCredential(
+  loginId: string,
+  set: { passwordHash?: string; mustChangePassword: boolean },
+): Promise<unknown> {
+  return onFullSystemRoute('login-credential', () =>
+    db.update(authUsers).set(set).where(eq(authUsers.id, loginId)),
+  );
 }
 
 /** authenticatePassword, the login id only (the password bearer logins: an
@@ -2305,8 +2345,15 @@ export async function loginWithPassword(email: string, password: string): Promis
   return (await authenticatePassword(email, password))?.id ?? null;
 }
 
-/** The one password hash every login is stored with (bcrypt, cost 12). */
-export function hashLoginPassword(password: string): Promise<string> {
+/** The one password hash every login is stored with (bcrypt, cost 12), and
+ *  the one gate of every new password: one that fails the password rule in
+ *  force (password-rule.ts; with no box policy, today's 8 characters) is
+ *  refused here (PasswordRuleError, a 400), whichever writer asked. A route
+ *  checks passwordProblem first for its coded answer; this is the backstop
+ *  no writer can skip. */
+export async function hashLoginPassword(password: string): Promise<string> {
+  const problem = passwordProblem(password);
+  if (problem) throw new PasswordRuleError(problem);
   return bcrypt.hash(password, 12);
 }
 
@@ -2342,9 +2389,9 @@ export function setSessionCookie(
  *  login-credential on a narrow exit; docs/runtime-role.md). */
 export async function updatePassword(userId: string, newPassword: string): Promise<void> {
   const hash = await hashLoginPassword(newPassword);
-  await onFullSystemRoute('login-credential', () =>
-    db.update(authUsers).set({ passwordHash: hash }).where(eq(authUsers.id, userId)),
-  );
+  // A new password meets the rule (hashLoginPassword refused one that does
+  // not), so the policy's forced change is done.
+  await writeLoginCredential(userId, { passwordHash: hash, mustChangePassword: false });
 }
 
 export async function verifyPassword(userId: string, password: string): Promise<boolean> {

@@ -10,6 +10,7 @@ import {
 } from '@/lib/agent-telegram';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import type { RouteSwitches } from '@/lib/auth/route-switches';
 
 export const policy = routePolicy({
   GET: { class: 'area', area: 'assistants' },
@@ -24,6 +25,14 @@ export const policy = routePolicy({
     item: { none: 'manages the assistants area: the Admin step checks it' },
   },
 });
+/** Served under the box policy's Telegram switch (MANTLE_POLICY_TELEGRAM=off,
+ *  docs/policy.md): the gate answers 403 policy_telegram_off first while it is
+ *  off (lib/auth/route-switches.ts). */
+export const routeSwitches = {
+  GET: 'telegram-policy',
+  POST: 'telegram-policy',
+  DELETE: 'telegram-policy',
+} as const satisfies RouteSwitches;
 
 const IdParams = z.object({ id: z.string().uuid() });
 const ConnectBody = z.object({ token: z.string().min(10).max(200) });

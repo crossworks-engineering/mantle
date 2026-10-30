@@ -229,6 +229,7 @@ GET /api/people class=self scope=- caller=login gone=false
 GET /api/people/:id class=self scope=- caller=login gone=false
 GET /api/people/:id/photo class=self scope=- caller=loginAsset gone=false
 GET /api/people/presence class=self scope=- caller=login gone=false
+GET /api/policy class=area scope=area:settings caller=owner gone=false
 GET /api/presents class=content scope=content caller=owner gone=false
 GET /api/presents/:id class=content scope=content caller=owner gone=false
 GET /api/presents/:id/checks class=content scope=content caller=owner gone=false
@@ -500,6 +501,7 @@ HEAD /api/people class=self scope=- caller=login gone=false
 HEAD /api/people/:id class=self scope=- caller=login gone=false
 HEAD /api/people/:id/photo class=self scope=- caller=loginAsset gone=false
 HEAD /api/people/presence class=self scope=- caller=login gone=false
+HEAD /api/policy class=area scope=area:settings caller=owner gone=false
 HEAD /api/presents class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id/checks class=content scope=content caller=owner gone=false

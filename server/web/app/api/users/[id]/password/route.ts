@@ -12,6 +12,7 @@ import {
 import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
+import { passwordProblem, passwordProblemBody } from '@/lib/auth/password-rule';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -49,6 +50,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!parsed.success) {
     return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 });
   }
+  // The box password policy's rule (password-rule.ts): with none set, the
+  // schema's 8 characters above already answered.
+  const weak = passwordProblem(parsed.data.newPassword);
+  if (weak) return NextResponse.json(passwordProblemBody(weak), { status: 400 });
   const targetId = idParsed.data.id;
 
   const [target] = await db

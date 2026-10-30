@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { modelPolicyRefusal, modelPolicySet } from '@mantle/config';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { discoverModels } from '@/lib/ai-worker-rpc';
@@ -24,5 +25,12 @@ export async function POST(req: Request) {
   ownerCaller();
   const body = await readBody(req, Body);
   const { apiKeyId, kind, providerId } = body;
-  return NextResponse.json(await discoverModels(apiKeyId, kind, providerId));
+  const found = await discoverModels(apiKeyId, kind, providerId);
+  // The box policy's model block (docs/policy.md): a pick list never offers
+  // a blocked model. With no model rule, the list as found.
+  if (!modelPolicySet()) return NextResponse.json(found);
+  return NextResponse.json({
+    ...found,
+    available: found.available.filter((m) => modelPolicyRefusal(providerId, m.id) === null),
+  });
 }

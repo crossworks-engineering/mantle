@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { modelPolicyRefusal, modelPolicySet } from '@mantle/config';
 import { z } from 'zod';
 import { and, asc, eq } from 'drizzle-orm';
 import { conflictOnUnique, db, curatedModels, onFullSystemRoute } from '@mantle/db';
@@ -25,7 +26,21 @@ export async function GET() {
     .from(curatedModels)
     .where(eq(curatedModels.ownerId, user.id))
     .orderBy(asc(curatedModels.pool), asc(curatedModels.position), asc(curatedModels.createdAt));
-  return NextResponse.json({ pools: MODEL_POOLS, entries });
+  // The box policy's model block (docs/policy.md): a pool offers only the
+  // routes the policy allows, and an entry with none is left out. With no
+  // model rule, every entry as stored.
+  if (!modelPolicySet()) return NextResponse.json({ pools: MODEL_POOLS, entries });
+  const allowed = entries
+    .map((e) => ({
+      ...e,
+      // jsonb [{provider, model}] (schema/model-pools.ts CuratedRoute).
+      routes: (Array.isArray(e.routes)
+        ? (e.routes as { provider: string; model: string }[])
+        : []
+      ).filter((r) => modelPolicyRefusal(r.provider, r.model) === null),
+    }))
+    .filter((e) => e.routes.length > 0);
+  return NextResponse.json({ pools: MODEL_POOLS, entries: allowed });
 }
 
 const Route = z.object({

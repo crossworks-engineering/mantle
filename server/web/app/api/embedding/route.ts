@@ -10,6 +10,7 @@ import { EMBEDDING_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/mo
 import { errorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { modelPolicyBody, modelRoutesPolicyIssue } from '@/lib/model-policy-save';
 
 export const policy = routePolicy({
   GET: { class: 'area', area: 'settings' },
@@ -87,6 +88,15 @@ export async function POST(req: Request) {
   const primaryProvider = str(body.primary_provider) || 'local';
   const backupEnabled = body.backup_enabled === 'on' || body.backup_enabled === true;
   const backupProvider = orNull(body.backup_provider);
+
+  // The box policy's model block (lib/model-policy-save.ts): the embedder
+  // is a model like any other.
+  const blocked = modelRoutesPolicyIssue([
+    [primaryProvider, model],
+    [backupEnabled ? backupProvider : null, model],
+  ]);
+  if (blocked)
+    return NextResponse.json({ ok: false, ...modelPolicyBody(blocked) }, { status: 403 });
 
   const routes = {
     primaryProvider,

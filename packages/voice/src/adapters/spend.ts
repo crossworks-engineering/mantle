@@ -9,12 +9,17 @@
  * sits OUTSIDE the retry wrapper, so a call retried three times is one
  * recording: the attempt that answered.
  *
+ * The same wrappers are where the box policy's model check runs
+ * (model-policy.ts): before each call, so a blocked provider or model is
+ * refused before a byte leaves the box, on every capability.
+ *
  * Recording never costs a call its result: every recording, from reading the
  * result and the options to the recorder itself, runs inside `record`, which
  * swallows and logs any throw. A paid result is always returned, so a broken
  * recording can never turn into a retry that pays again.
  */
 import { errorMessage } from '@mantle/std';
+import { assertModelAllowed } from './model-policy';
 import { recordUsage, type ProviderUsage } from '@mantle/tracing';
 import type {
   ChatDispatcher,
@@ -101,6 +106,7 @@ function once<T extends object>(adapter: T, wrap: (a: T) => T): T {
 export function recordingChat(adapter: ChatDispatcher): ChatDispatcher {
   return once(adapter, (a) => {
     const chat = async (opts: ChatOptions): Promise<ChatResult> => {
+      assertModelAllowed('chat', a.providerId, opts.model);
       const r = await a.chat(opts);
       recordChat(a.providerId, opts, r);
       return r;
@@ -108,6 +114,7 @@ export function recordingChat(adapter: ChatDispatcher): ChatDispatcher {
     const inner = a.chatStream?.bind(a);
     const chatStream = inner
       ? async (opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> => {
+          assertModelAllowed('chat', a.providerId, opts.model);
           const r = await inner(opts, onDelta);
           recordChat(a.providerId, opts, r);
           return r;
@@ -121,6 +128,7 @@ export function recordingDecision(adapter: DecisionDispatcher): DecisionDispatch
   return once(adapter, (a) => ({
     ...a,
     decide: async (opts) => {
+      assertModelAllowed('decision', a.providerId, opts.model);
       const r = await a.decide(opts);
       record(() => ({
         capability: 'decision',
@@ -141,6 +149,7 @@ export function recordingEmbedding(adapter: EmbeddingDispatcher): EmbeddingDispa
   return once(adapter, (a) => ({
     ...a,
     embed: async (req) => {
+      assertModelAllowed('embedding', a.providerId, req.model);
       const r = await a.embed(req);
       record(() => ({
         capability: 'embedding',
@@ -161,6 +170,7 @@ export function recordingVision(adapter: VisionDispatcher): VisionDispatcher {
     return {
       ...a,
       extract: async (image, opts) => {
+        assertModelAllowed('vision', a.providerId, opts.model);
         const r = await a.extract(image, opts);
         recordVision(a.providerId, opts, r);
         return r;
@@ -168,6 +178,7 @@ export function recordingVision(adapter: VisionDispatcher): VisionDispatcher {
       ...(extractDocument
         ? {
             extractDocument: async (doc: Buffer, opts: VisionExtractOptions) => {
+              assertModelAllowed('vision', a.providerId, opts.model);
               const r = await extractDocument(doc, opts);
               recordVision(a.providerId, opts, r);
               return r;
@@ -182,6 +193,7 @@ export function recordingImageGen(adapter: ImageGenDispatcher): ImageGenDispatch
   return once(adapter, (a) => ({
     ...a,
     generate: async (opts) => {
+      assertModelAllowed('image_gen', a.providerId, opts.model);
       const r = await a.generate(opts);
       record(() => ({
         capability: 'image_gen',
@@ -198,6 +210,7 @@ export function recordingTts(adapter: TtsDispatcher): TtsDispatcher {
   return once(adapter, (a) => ({
     ...a,
     synthesize: async (opts) => {
+      assertModelAllowed('tts', a.providerId, opts.model);
       const r = await a.synthesize(opts);
       record(() => ({
         capability: 'tts',
@@ -214,6 +227,7 @@ export function recordingStt(adapter: SttDispatcher): SttDispatcher {
   return once(adapter, (a) => ({
     ...a,
     transcribe: async (audio, opts) => {
+      assertModelAllowed('stt', a.providerId, opts.model);
       const r = await a.transcribe(audio, opts);
       record(() => ({
         capability: 'stt',

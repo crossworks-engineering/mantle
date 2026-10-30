@@ -95,7 +95,7 @@ import {
   TERMINAL_TOOLS,
 } from '@mantle/tools';
 import {} from '@mantle/content';
-import { feature } from '@mantle/config';
+import { feature, telegramAllowed } from '@mantle/config';
 import { makeRegisterContext } from './register/context';
 import type { LoginMcpChannel, OwnerSurfaceVia } from '@mantle/tools';
 import { registerSearchTools } from './register/search';
@@ -189,7 +189,8 @@ export function registerMantleTools(
   // these rows exist to impose.
   registerBuiltinTools(PENDING_TOOLS);
   registerBuiltinTools(WORKER_GROUP_TOOLS);
-  registerBuiltinTools(TELEGRAM_OPERATOR_TOOLS);
+  // Not while the box policy switches Telegram off (docs/policy.md).
+  if (telegramAllowed()) registerBuiltinTools(TELEGRAM_OPERATOR_TOOLS);
 
   // ─── Notes / Tasks / Events / Journal / Email / Peers ──────────────────────
   //
@@ -352,7 +353,9 @@ export function registerMantleTools(
   });
   registerBuiltinTools(ENTITY_TOOLS);
   registerBuiltinTools(FILE_TOOLS, { only: new Set(['folder_list', 'file_list']) });
-  registerBuiltinTools(TELEGRAM_TOOLS);
+  // Not while the box policy switches Telegram off (MANTLE_POLICY_TELEGRAM,
+  // docs/policy.md): the tools leave the list, as they leave the agent's.
+  if (telegramAllowed()) registerBuiltinTools(TELEGRAM_TOOLS);
   registerBuiltinTools(TOOL_RESULT_TOOLS);
   registerBuiltinTools(IMAGE_TOOLS);
   registerBuiltinTools(APP_DATA_TOOLS);

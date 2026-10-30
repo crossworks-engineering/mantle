@@ -41,6 +41,16 @@ The installer generates these, and re-running it never replaces an existing key.
 - End a login's access in **Settings > Users** with **Disabled** or **Sign out everywhere**. It takes effect on the next request. See [Add users](07-logins.md).
 - Check **Settings > Audit log** when something appears that nobody remembers creating.
 
+## Box policy
+
+A company can lock a few things for every site with four lines in `.env` ([Environment variables](03-env-vars.md#box-policy)). The app cannot turn them off.
+
+- **Telegram off.** No bot polls or sends. The bots and chats are kept for later.
+- **Models.** Block model families and allow only some providers. A blocked model fails with a clear message and an alert. The model lists show only allowed models.
+- **Passwords.** A longer minimum and no common passwords. A person whose password is too weak changes it at the next sign-in before anything else.
+
+At start-up the log names every agent and worker on a blocked model. Fix those before you turn the policy on.
+
 ## The updater
 
 The updater container controls Docker on the host. It opens no ports and accepts only two requests from the app: update to a version, or switch an optional service. If you do not want that, stop the `updater` service and update from the command line. See [Update MantleOS](01-update.md).

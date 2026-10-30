@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { agents, db, telegramAccounts, telegramChats } from '@mantle/db';
 import { upsertTelegramChannel } from '@mantle/telegram';
-import { env } from '@mantle/config';
+import { TELEGRAM_POLICY_OFF_MESSAGE, env, telegramAllowed } from '@mantle/config';
 
 if (!env('ALLOWED_USER_ID')) {
   console.error('ALLOWED_USER_ID must be set.');
@@ -166,6 +166,8 @@ function readAllowFrom(dir: string): string[] {
 }
 
 async function getMe(token: string): Promise<{ id: number; username: string }> {
+  // The box policy switches Telegram off (docs/policy.md): no call to it.
+  if (!telegramAllowed()) throw new Error(TELEGRAM_POLICY_OFF_MESSAGE);
   const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
   if (!res.ok) throw new Error(`getMe HTTP ${res.status}`);
   const body = (await res.json()) as { ok: boolean; result?: { id: number; username: string } };

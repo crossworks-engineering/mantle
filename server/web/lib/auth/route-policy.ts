@@ -29,7 +29,7 @@
  * the page lists.
  */
 import type { WorkspaceArea } from '@mantle/client-types';
-import { env, feature } from '@mantle/config';
+import { TELEGRAM_POLICY_OFF_MESSAGE, env, feature, telegramAllowed } from '@mantle/config';
 import { registerPolicySource, systemActor, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
 import { keyMayCall, type KeyRoute } from '../api-v1';
@@ -413,7 +413,10 @@ const SELF_SCOPE: RouteClass = Object.freeze({ kind: 'self' });
  */
 export type { RouteSwitch } from './route-switches';
 const SWITCHES: Readonly<
-  Record<RouteSwitch, Readonly<{ on: () => boolean; status: 404; error: string }>>
+  Record<
+    RouteSwitch,
+    Readonly<{ on: () => boolean; status: 403 | 404; error: string; code?: string }>
+  >
 > = {
   // MANTLE_TURN_STREAMING (on unless set off): the streamed turn's stream
   // and its cancel do not exist while it is off.
@@ -424,15 +427,25 @@ const SWITCHES: Readonly<
     status: 404,
     error: 'not available in production',
   },
+  // The box policy switches Telegram off (MANTLE_POLICY_TELEGRAM=off,
+  // docs/policy.md): every Telegram settings route says so, for every
+  // credential. Nothing is removed while it is off (DELETE included).
+  'telegram-policy': {
+    on: telegramAllowed,
+    status: 403,
+    error: TELEGRAM_POLICY_OFF_MESSAGE,
+    code: 'policy_telegram_off',
+  },
 };
 
 /** The off answer of a row whose switch is off now, else null. */
 export function routeSwitchedOff(
   row: Pick<RouteRow, 'switch'>,
-): Readonly<{ status: number; body: { error: string } }> | null {
+): Readonly<{ status: number; body: { error: string; code?: string } }> | null {
   if (!row.switch) return null;
   const s = SWITCHES[row.switch];
-  return s.on() ? null : { status: s.status, body: { error: s.error } };
+  if (s.on()) return null;
+  return { status: s.status, body: s.code ? { error: s.error, code: s.code } : { error: s.error } };
 }
 
 /**

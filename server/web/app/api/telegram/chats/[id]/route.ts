@@ -7,6 +7,7 @@ import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import type { RouteSwitches } from '@/lib/auth/route-switches';
 
 export const policy = routePolicy({
   PATCH: {
@@ -15,6 +16,10 @@ export const policy = routePolicy({
     item: { none: 'manages the connectors area: the Admin step checks it' },
   },
 });
+/** Served under the box policy's Telegram switch (MANTLE_POLICY_TELEGRAM=off,
+ *  docs/policy.md): the gate answers 403 policy_telegram_off first while it is
+ *  off (lib/auth/route-switches.ts). */
+export const routeSwitches = { PATCH: 'telegram-policy' } as const satisfies RouteSwitches;
 
 const IdParams = z.object({ id: z.string().uuid() });
 

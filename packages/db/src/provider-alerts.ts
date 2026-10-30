@@ -14,8 +14,15 @@ import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { systemDb } from './gateway/handles';
 import { providerAlerts, type ProviderAlertRow } from './schema/provider-alerts';
 
-export type ProviderSubject = 'embedding' | 'extraction';
-export const PROVIDER_SUBJECTS: readonly ProviderSubject[] = ['embedding', 'extraction'];
+/** `model_policy` (0347): a call the box policy refused (@mantle/voice
+ *  model-policy.ts, docs/policy.md). The extract circuit reads only the
+ *  other two. */
+export type ProviderSubject = 'embedding' | 'extraction' | 'model_policy';
+export const PROVIDER_SUBJECTS: readonly ProviderSubject[] = [
+  'embedding',
+  'extraction',
+  'model_policy',
+];
 
 /** A transient failure (rate limit, 5xx, network) is shown only once it has
  *  lasted this long: a blip that retries fix never reaches an admin. */

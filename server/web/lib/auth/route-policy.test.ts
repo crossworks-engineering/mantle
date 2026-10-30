@@ -19,6 +19,7 @@
  * and isRenderPath, copied below as they were) and PUBLIC_PATHS, for every
  * pattern, method and a path spelled with escapes.
  */
+import { TELEGRAM_POLICY_OFF_MESSAGE, resetBoxPolicyForTests } from '@mantle/config';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -561,8 +562,47 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: the rows of the manifest', () => {
     expect(table.get(`GET ${stream}`)?.switch).toBe('turn-streaming');
     expect(table.get(`HEAD ${stream}`)?.switch).toBe('turn-streaming');
     expect(table.get(`POST ${cancel}`)?.switch).toBe('turn-streaming');
+    // The box policy's Telegram switch (docs/policy.md): every row of the
+    // Telegram settings routes, and nothing else.
+    const telegramFiles = [
+      'app/api/debug/telegram/route',
+      'app/api/telegram/moderated-chats/route',
+      'app/api/telegram/my-chats/route',
+      'app/api/telegram/my-chats/[id]/route',
+      'app/api/telegram/pair/route',
+      'app/api/telegram/chats/[id]/route',
+      'app/api/telegram/chats/[id]/unpair/route',
+      'app/api/telegram/chats/[id]/block/route',
+      'app/api/agents/[id]/telegram/route',
+      'app/api/agents/[id]/telegram/chats/route',
+    ].map(patternOf);
+    const telegramRows = [...table.values()].filter((r) => r.switch === 'telegram-policy');
+    expect(new Set(telegramRows.map((r) => r.key.slice(r.key.indexOf(' ') + 1)))).toEqual(
+      new Set(telegramFiles),
+    );
+    expect(
+      [...table.values()].filter(
+        (r) => telegramFiles.includes(r.key.slice(r.key.indexOf(' ') + 1)) && r.switch === null,
+      ),
+    ).toEqual([]);
+    const savedTelegram = process.env.MANTLE_POLICY_TELEGRAM;
+    try {
+      process.env.MANTLE_POLICY_TELEGRAM = 'off';
+      resetBoxPolicyForTests();
+      expect(routeSwitchedOff(telegramRows[0]!)).toEqual({
+        status: 403,
+        body: { error: TELEGRAM_POLICY_OFF_MESSAGE, code: 'policy_telegram_off' },
+      });
+    } finally {
+      if (savedTelegram === undefined) delete process.env.MANTLE_POLICY_TELEGRAM;
+      else process.env.MANTLE_POLICY_TELEGRAM = savedTelegram;
+      resetBoxPolicyForTests();
+    }
+    expect(routeSwitchedOff(telegramRows[0]!)).toBeNull();
     // No other row is switched.
-    const switched = [...table.values()].filter((r) => r.switch !== null).map((r) => r.key);
+    const switched = [...table.values()]
+      .filter((r) => r.switch !== null && r.switch !== 'telegram-policy')
+      .map((r) => r.key);
     expect(switched.sort()).toEqual(
       [`GET ${stream}`, `HEAD ${stream}`, `POST ${cancel}`, `POST ${queue}`].sort(),
     );

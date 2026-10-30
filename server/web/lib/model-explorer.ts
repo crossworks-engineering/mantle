@@ -18,6 +18,7 @@
  * the provider's own key on file by the one lookup (findProviderKeyId: the
  * 'default' label first, else the oldest key of that service).
  */
+import { modelPolicyRefusal, modelPolicySet } from '@mantle/config';
 import { findProviderKeyId, getApiKeyById } from '@mantle/api-keys';
 import {
   anthropicHeaders,
@@ -506,6 +507,21 @@ export async function fetchProviderModels(
   ownerId: string,
   provider: ProviderId,
   opts: { force?: boolean; keyId?: string | null } = {},
+): Promise<ProviderModelsResult> {
+  const result = await fetchProviderModelsCached(ownerId, provider, opts);
+  // The box policy's model block (docs/policy.md): a pick list never offers
+  // a blocked model. With no model rule, the list as fetched.
+  if (!modelPolicySet()) return result;
+  return {
+    ...result,
+    models: result.models.filter((m) => modelPolicyRefusal(provider, m.id) === null),
+  };
+}
+
+async function fetchProviderModelsCached(
+  ownerId: string,
+  provider: ProviderId,
+  opts: { force?: boolean; keyId?: string | null },
 ): Promise<ProviderModelsResult> {
   const fetcher = FETCHERS[provider];
   if (!fetcher) {

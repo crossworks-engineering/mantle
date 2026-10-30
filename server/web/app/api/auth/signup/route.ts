@@ -8,6 +8,7 @@ import { createFirstOwner } from '@/lib/auth/first-owner';
 import { refuseUnswitchedBrain } from '@/lib/auth/unswitched-brain';
 import { setupCodeConfigured, setupCodeMatches } from '@/lib/auth/setup-code';
 import { readJson } from '@/lib/read-body';
+import { passwordProblem, passwordProblemBody } from '@/lib/auth/password-rule';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -59,6 +60,10 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  // The box password policy's rule (password-rule.ts): with none set, the
+  // schema's 8 characters above already answered.
+  const weak = passwordProblem(parsed.data.password);
+  if (weak) return NextResponse.json(passwordProblemBody(weak), { status: 400 });
 
   if (setupCodeConfigured() && !setupCodeMatches(parsed.data.setupCode)) {
     auditFireAndForget({

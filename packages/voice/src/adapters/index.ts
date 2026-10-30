@@ -308,3 +308,13 @@ export {
   ASSEMBLYAI_STT_MODELS,
   ASSEMBLYAI_POLL_TIMEOUT_SECONDS,
 } from '../catalogs/assemblyai';
+// The box policy's one model check (MANTLE_POLICY_MODEL_DENY and
+// MANTLE_POLICY_PROVIDER_ALLOW): the recording wrappers ask it before every
+// call; the web-search tool, which builds its own client, and the pick lists
+// and save routes ask it here.
+export {
+  assertModelAllowed,
+  modelAllowed,
+  resetModelPolicyAlertThrottleForTests,
+  type ModelCapability,
+} from './model-policy';

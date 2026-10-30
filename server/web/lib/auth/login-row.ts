@@ -27,6 +27,10 @@ export type LoginRow = {
   /** auth.users.session_epoch (0181): every cookie and asset token signed
    *  with an older one is dead. */
   sessionEpoch: number;
+  /** auth.users.must_change_password (0347): the box password policy holds
+   *  the login to the change-password step while the rule is in force
+   *  (password-hold.ts). */
+  mustChangePassword: boolean;
   /** A user of the brain's live Admin workspace now, the login enabled
    *  (mantle_login_is_admin, 0304), read with the row: the
    *  second half of an Admin login (session.ts adminLogin). */
@@ -50,6 +54,7 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
       contactId: authUsers.contactId,
       disabledAt: authUsers.disabledAt,
       sessionEpoch: authUsers.sessionEpoch,
+      mustChangePassword: authUsers.mustChangePassword,
       // Membership of Admin with the same read: the bound id, as the
       // scope columns take it.
       adminMember: loginIsAdmin(id),

@@ -32,6 +32,7 @@ import {
 } from '@/lib/agent-telegram';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import type { RouteSwitches } from '@/lib/auth/route-switches';
 
 export const policy = routePolicy({
   POST: {
@@ -41,6 +42,10 @@ export const policy = routePolicy({
     limits: { rateLimit: ['telegramPair'] },
   },
 });
+/** Served under the box policy's Telegram switch (MANTLE_POLICY_TELEGRAM=off,
+ *  docs/policy.md): the gate answers 403 policy_telegram_off first while it is
+ *  off (lib/auth/route-switches.ts). */
+export const routeSwitches = { POST: 'telegram-policy' } as const satisfies RouteSwitches;
 
 const Body = z
   .object({

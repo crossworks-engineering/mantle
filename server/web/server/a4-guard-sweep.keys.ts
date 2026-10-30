@@ -19,6 +19,7 @@ const row = (id: string, role: LoginRole) => ({
   contactId: null,
   disabledAt: null,
   sessionEpoch: 0,
+  mustChangePassword: false,
 });
 
 /** The key tokens the sweep presents. */

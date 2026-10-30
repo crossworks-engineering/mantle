@@ -33,6 +33,7 @@
  */
 
 import { parseFlag, parseNumber, type NumberOptions } from './parse';
+import { policyProblems } from './policy';
 
 /** Every environment variable the server tree reads. Keep sorted.
  *
@@ -121,6 +122,10 @@ export type KnownEnvName =
   | 'MANTLE_MCP_TOOLSMITH_WRITE'
   | 'MANTLE_PG_DUMP'
   | 'MANTLE_PRINT_ORIGIN'
+  | 'MANTLE_POLICY_MODEL_DENY'
+  | 'MANTLE_POLICY_PASSWORD_MIN'
+  | 'MANTLE_POLICY_PROVIDER_ALLOW'
+  | 'MANTLE_POLICY_TELEGRAM'
   | 'MANTLE_PUBLIC_URL'
   | 'MANTLE_PUSH_RELAY_URL'
   | 'MANTLE_QUERY_ENRICH'
@@ -393,12 +398,14 @@ export function assertEnvShape(): void {
   if (publicUrl !== undefined && publicUrl !== '' && !/^https?:\/\//.test(publicUrl)) {
     problems.push('MANTLE_PUBLIC_URL must start with http:// or https://');
   }
+  problems.push(...policyProblems());
   if (problems.length > 0) {
     throw new Error(`[config] environment is malformed:\n  - ${problems.join('\n  - ')}`);
   }
 }
 
 export * from './services';
+export * from './policy';
 export * from './parse';
 export * from './numbers';
 export * from './features';

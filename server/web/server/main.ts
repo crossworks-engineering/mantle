@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFiles } from './env';
-import { assertEnvShape, bootSmokeExit, env, envNum, isBootSmoke } from '@mantle/config';
+import { assertEnvShape, bootSmokeExit, env, envNum, isBootSmoke, policySet } from '@mantle/config';
 import { onShutdown } from '@mantle/std/shutdown';
 import { log } from '@mantle/tracing';
 
@@ -177,6 +177,20 @@ void runAsSystem('boot:manifest-reconcile', () =>
     .then(({ reconcileManifestOnBoot }) => reconcileManifestOnBoot())
     .catch((err) => bootLog.error('manifest reconcile failed:', err)),
 );
+
+// The box policy's boot check (docs/policy.md): only when the operator set
+// a policy. Logs the rules and every assistant, worker or embedder on a
+// model the model block refuses, and opens or closes the model_policy
+// alert. With no policy set nothing runs.
+if (policySet()) {
+  void runAsSystem('boot:policy-check', () =>
+    import('../lib/policy-check')
+      .then(({ runPolicyBootCheck }) =>
+        runPolicyBootCheck({ info: (m) => bootLog.info(m), warn: (m) => bootLog.warn(m) }),
+      )
+      .catch((err) => bootLog.error('policy check failed:', err)),
+  );
+}
 
 // App table exports a restart left unsynced: their debounce
 // timers died with the old process. The usual hash-gated sync, once.
