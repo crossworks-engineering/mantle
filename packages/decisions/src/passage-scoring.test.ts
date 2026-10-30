@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   calls: [] as Array<{ state: any; questions: Record<string, unknown>; input: any }>,
   failGroup: -1,
+  limits: null as null | { model: string; limits: Record<string, unknown> },
 }));
 
 vi.mock('./decide', () => ({
+  deciderRequestLimits: vi.fn(async () => h.limits),
   DecideBatch: class {
     skipped = 0;
     note() {}
@@ -45,6 +47,7 @@ const passages = (n: number) =>
 beforeEach(() => {
   h.calls.length = 0;
   h.failGroup = -1;
+  h.limits = null;
 });
 
 describe('passageScoringPool', () => {
@@ -103,6 +106,17 @@ describe('scorePassages', () => {
     await scorePassages('o', 'q', passages(MAX_PASSAGE_POOL + 30));
     const sent = h.calls.reduce((n, c) => n + Object.keys(c.questions).length, 0);
     expect(sent).toBe(MAX_PASSAGE_POOL);
+  });
+
+  it('a model that takes 16 questions gets even requests, timeout scaled per request', async () => {
+    h.limits = {
+      model: 'm',
+      limits: { maxQuestions: 16, maxInputTokens: null, cutAt: null, source: 'careful' },
+    };
+    const r = await scorePassages('o', 'q', passages(25));
+    expect(h.calls.map((c) => Object.keys(c.questions).length)).toEqual([13, 12]);
+    expect(h.calls.every((c) => c.input.batch && c.input.timeoutFactor === 2)).toBe(true);
+    expect(r?.scores.size).toBe(25);
   });
 
   it('no passages or no question: no request', async () => {

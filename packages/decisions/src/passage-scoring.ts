@@ -16,7 +16,7 @@
  * supersede annotation stays in charge of that.
  */
 import type { DecisionAnswer, DecisionQuestion } from '@mantle/voice';
-import { DecideBatch, decide, type DecideOutcome } from './decide';
+import { decidePlanned, unitSize } from './request-planner';
 
 /** The rubric. Index 0 = useless, 3 = states the answer. Ordered, so the
  *  model's `score` is a probability-weighted position on it. */
@@ -32,9 +32,10 @@ export const PASSAGE_LEVELS: readonly string[] = [
  *  questions. */
 export const PASSAGE_THRESHOLD_DEFAULT = 1.5;
 
-/** One request holds at most this many passages: 20 passages ≈ 14k input
- *  tokens on a 32k window. A larger list goes out as parallel requests of
- *  this size (see `pool`). */
+/** The passages one request holds, as measured (25 passages, about 19,000
+ *  tokens, answered under 1.5 s). A larger list goes out as parallel
+ *  requests of this size (see `pool`); the request planner makes them
+ *  smaller for a model with lower limits. */
 export const MAX_PASSAGES_PER_REQUEST = 25;
 
 /** Ceiling on the use's `pool` setting: eight requests per search. The
@@ -87,10 +88,29 @@ export type PassageScoring = {
   ms: number;
 };
 
+/** What the model reads of one passage. */
+function passageEntry(p: ScorablePassage): Record<string, unknown> {
+  return {
+    document_title: p.title,
+    ...(p.heading ? { section: p.heading } : {}),
+    text: p.text.length > MAX_PASSAGE_CHARS ? p.text.slice(0, MAX_PASSAGE_CHARS) : p.text,
+  };
+}
+
+/** The question about the passage under key `k`. */
+function passageQuestion(k: string): DecisionQuestion {
+  return {
+    type: 'score',
+    instructions: `How well does \`passages.${k}\` answer \`question\`? Judge only \`passages.${k}\`.`,
+    criteria: PASSAGE_LEVELS.map((l) => l.replace(/The passage/g, `\`passages.${k}\``)),
+  };
+}
+
 /** Ask the decider to score `passages` against `question`, in parallel
- *  requests of `MAX_PASSAGES_PER_REQUEST` (one request for a short list).
+ *  requests the request planner sizes (one request for a short list).
  *  Returns null when the decider is off or every request failed: the caller
- *  keeps its list as is. A failed request leaves its passages unscored. */
+ *  keeps its list as is. A failed or refused request leaves its passages
+ *  unscored. */
 export async function scorePassages(
   ownerId: string,
   question: string,
@@ -98,83 +118,63 @@ export async function scorePassages(
 ): Promise<PassageScoring | null> {
   const list = passages.slice(0, MAX_PASSAGE_POOL);
   if (list.length === 0 || !question.trim()) return null;
-  const groups: ScorablePassage[][] = [];
-  for (let i = 0; i < list.length; i += MAX_PASSAGES_PER_REQUEST) {
-    groups.push(list.slice(i, i + MAX_PASSAGES_PER_REQUEST));
-  }
   // A fan-out is one decision to the breaker (see DecideBatch). Its requests
   // run side by side (the adapter's own connection pool; Node's global fetch
   // sent them one at a time), but eight at once still queue a little at the
   // provider, so each request may wait the worker timeout once per group
   // (capped at 5 s).
-  const batch = groups.length > 1 ? new DecideBatch() : undefined;
-  const t0 = Date.now();
-  const results = await Promise.all(
-    groups.map((g) => scoreGroup(ownerId, question, g, batch, groups.length)),
-  );
-  batch?.settle();
-  const answered = results.filter((r): r is PassageScoring => r !== null);
-  const first = answered[0];
+  const keysOf = new Map<ScorablePassage[], Map<string, string>>();
+  const plan = await decidePlanned({
+    ownerId,
+    use: 'passage_scoring',
+    units: list,
+    groupSize: MAX_PASSAGES_PER_REQUEST,
+    baseChars: JSON.stringify(question).length,
+    sizeOf: (p) => unitSize(passageEntry(p), { p000: passageQuestion('p000') }),
+    scaleTimeout: true,
+    build: (group) => {
+      const entries: Record<string, unknown> = {};
+      const questions: Record<string, DecisionQuestion> = {};
+      const keyById = new Map<string, string>();
+      group.forEach((p, i) => {
+        const k = `p${i + 1}`;
+        keyById.set(p.id, k);
+        entries[k] = passageEntry(p);
+        questions[k] = passageQuestion(k);
+      });
+      keysOf.set(group, keyById);
+      return {
+        state: { question, passages: entries },
+        questions,
+        summarize: (answers, use) => {
+          const threshold = use.threshold ?? PASSAGE_THRESHOLD_DEFAULT;
+          return {
+            passages: group.length,
+            would_drop: countBelow(answers, threshold),
+            threshold,
+          };
+        },
+      };
+    },
+  });
+  const answered = plan.results.filter((r) => r.outcome);
+  const first = answered[0]?.outcome;
   if (!first) return null;
   const scores = new Map<string, PassageScore>();
-  for (const r of answered) for (const [id, sc] of r.scores) scores.set(id, sc);
+  for (const { group, outcome } of answered) {
+    const keyById = keysOf.get(group)!;
+    for (const p of group) {
+      const a = outcome!.answers[keyById.get(p.id)!];
+      if (a && a.type === 'score') scores.set(p.id, { score: a.score, confidence: a.confidence });
+    }
+  }
   return {
     scores,
     mode: first.mode,
-    threshold: first.threshold,
-    cached: answered.every((r) => r.cached),
-    ms: groups.length > 1 ? Date.now() - t0 : first.ms,
+    threshold: first.use.threshold ?? PASSAGE_THRESHOLD_DEFAULT,
+    cached: answered.every((r) => r.outcome!.cached),
+    ms: plan.calls > 1 ? plan.ms : first.ms,
   };
-}
-
-/** One request: the passages of one group. */
-async function scoreGroup(
-  ownerId: string,
-  question: string,
-  batch: readonly ScorablePassage[],
-  fanOut: DecideBatch | undefined,
-  requests: number,
-): Promise<PassageScoring | null> {
-  const state: Record<string, unknown> = { question, passages: {} as Record<string, unknown> };
-  const questions: Record<string, DecisionQuestion> = {};
-  const keyById = new Map<string, string>();
-  batch.forEach((p, i) => {
-    const k = `p${i + 1}`;
-    keyById.set(p.id, k);
-    (state.passages as Record<string, unknown>)[k] = {
-      document_title: p.title,
-      ...(p.heading ? { section: p.heading } : {}),
-      text: p.text.length > MAX_PASSAGE_CHARS ? p.text.slice(0, MAX_PASSAGE_CHARS) : p.text,
-    };
-    questions[k] = {
-      type: 'score',
-      instructions: `How well does \`passages.${k}\` answer \`question\`? Judge only \`passages.${k}\`.`,
-      criteria: PASSAGE_LEVELS.map((l) => l.replace(/The passage/g, `\`passages.${k}\``)),
-    };
-  });
-
-  let threshold = PASSAGE_THRESHOLD_DEFAULT;
-  const outcome: DecideOutcome | null = await decide({
-    ownerId,
-    use: 'passage_scoring',
-    state,
-    questions,
-    summarize: (answers) => ({
-      passages: batch.length,
-      would_drop: countBelow(answers, threshold),
-      threshold,
-    }),
-    ...(fanOut ? { batch: fanOut, timeoutFactor: requests } : {}),
-  });
-  if (!outcome) return null;
-  threshold = outcome.use.threshold ?? PASSAGE_THRESHOLD_DEFAULT;
-
-  const scores = new Map<string, PassageScore>();
-  for (const p of batch) {
-    const a = outcome.answers[keyById.get(p.id)!];
-    if (a && a.type === 'score') scores.set(p.id, { score: a.score, confidence: a.confidence });
-  }
-  return { scores, mode: outcome.mode, threshold, cached: outcome.cached, ms: outcome.ms };
 }
 
 function countBelow(answers: Record<string, DecisionAnswer>, threshold: number): number {

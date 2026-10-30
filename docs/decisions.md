@@ -15,8 +15,9 @@ answers with probabilities in about 300 ms:
 
 The model is TypeSafe **Jev** (`~typesafe/jev-latest` on OpenRouter — the auto-updating alias), reached
 through OpenRouter's `POST /api/alpha/decisions` endpoint — not chat
-completions. Input-only billing ($0.042 per 1M tokens, answers free), 32k
-context. The endpoint is **alpha**; everything below is built so that it
+completions. Input-only billing ($0.042 per 1M tokens, answers free). Each
+request is sized to the chosen model (section 3, "Request size"), not to a
+fixed window. The endpoint is **alpha**; everything below is built so that it
 going away breaks nothing.
 
 ## 1. The rules
@@ -76,13 +77,14 @@ going away breaks nothing.
 | The one adapter                                                                                                                                                                     | `packages/voice/src/adapters/openrouter-decision.ts` (+ wire-shape test)                  |
 | **`decide()`**, `resolveUse`, per-owner resolution cache, in-process answer cache                                                                                                   | `packages/decisions/src/decide.ts`, `cache.ts`                                            |
 | Use: passage scoring                                                                                                                                                                | `packages/decisions/src/passage-scoring.ts`                                               |
+| Request size: the model's limits, `planGroups`, the check in `decide()`; the planner that sends a use's list as requests                                                            | `packages/decisions/src/request-limits.ts`, `request-planner.ts`                          |
 | Manifest entry (optional, `enabled: true`, built uses `live`)                                                                                                                       | `server/web/lib/system-manifest/manifest.ts`                                              |
 | Test button RPC + route                                                                                                                                                             | `server/web/lib/ai-worker-rpc.ts` `testDecision`, `app/api/ai-workers/[id]/test/decision` |
 | Model pool `decider` (output modality `decisions`; a chat model is rejected here and Jev is rejected in every text pool) + two template entries (Jev, then Perplexity Decider v1.2) | `packages/client-types/src/model-pools.ts`, `model-pools-data.json`                       |
 | Decision model profiles (the 2026-10-30 probe of 28 models; the pool refuses the 4 that cannot take the request)                                                                    | `packages/client-types/src/decision-models.ts`                                            |
 | Pricing fallback rows                                                                                                                                                               | `packages/tracing/src/pricing.ts`                                                         |
 
-`@mantle/decisions` depends on db, api-keys, voice, tracing. Both `@mantle/tools`
+`@mantle/decisions` depends on db, api-keys, client-types, voice, tracing. Both `@mantle/tools`
 and `@mantle/runtime` depend on it (a tool cannot import runtime), which is why
 it is its own package.
 
@@ -130,6 +132,41 @@ of traffic.
 
 A shadow week is read from these steps: per use, how many calls, cache hits,
 what the answers were, how many were under the floor, what it cost.
+
+### Request size
+
+Models take different requests. The 2026-10-30 probe found limits of 16
+questions and 16,384 tokens on some of them. So a request is sized from the
+chosen model, in one place:
+
+- **Limits** (`decisionRequestLimits`, packages/client-types/src/decision-models.ts):
+  a tested model (status `works`, `no_training_only` or `slow`) takes the
+  lowest of its profile's `maxQuestions` / `maxInputTokens` /
+  `suspectedCutAt` and the live catalog's context size. With none of these
+  known, there is no limit, and each use keeps the request it was measured
+  with. Any other model (untested, `fails_full_size`, `refused`) gets the
+  careful limits: 16 questions and 16,384 tokens, or the catalog's context
+  size when smaller.
+- **The planner** (`decidePlanned`, request-planner.ts) is the one place a
+  use's list becomes requests. Passage scoring, context pruning, version
+  grouping, history recall, Journal recall and rule reconcile go through it.
+  With no limit that binds, it sends the use's own chunks (25 passages, 40
+  context items, 60 version pairs, 10 exchanges, 40 Journal rules, 20 rule
+  pairs), as before. When the limits need more requests, it spreads the
+  items evenly over as many as they need, filled to 90% of the token limit
+  at 3 characters a token (an estimate that counts high). The requests share
+  one `DecideBatch`. An item too large for any request is not sent; it stays
+  unscored, and one `over_limit` step says how many.
+- **The check in `decide()`**: a request above the model's question or token
+  limit is not sent. The step is marked skipped (`over_limit`) and the
+  breaker does not hear it. This also covers the delegation hint and the
+  fact prefilter, which ask one question each. A reply that reports exactly
+  the model's token limit as its input tokens is a suspected silent cut: the
+  answer is not used, and it counts as a failure.
+
+For Jev (`~typesafe/jev-latest`) nothing binds, so its requests are the same
+as before. The per-item text caps (`MAX_PASSAGE_CHARS` and the others) stay:
+they were chosen on quality, not on window size.
 
 ## 4. Uses
 
@@ -469,8 +506,10 @@ Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
 
 1. Add the name to `DecisionUse` (`packages/db/src/schema/ai-workers.ts`).
 2. Write the use beside `passage-scoring.ts`: build a focused state, atomic
-   questions with contrastive criteria, call `decide()`, and give the caller a
-   **pure** apply function it can run in `live` and merely count in `shadow`.
+   questions with contrastive criteria, and give the caller a **pure** apply
+   function it can run in `live` and merely count in `shadow`. A use that
+   asks about a list sends it through `decidePlanned` (section 3, "Request
+   size"), never in chunks of its own; a single question calls `decide()`.
 3. At the call site: `decisionUseEnabled()` if the pool size depends on it,
    `null` → old path, honour `outcome.mode`.
 4. Add the use to the manifest `params.uses` (`{ enabled: false, mode:

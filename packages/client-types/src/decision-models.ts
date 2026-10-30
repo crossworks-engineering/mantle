@@ -10,9 +10,10 @@
  * and `fails_full_size` are a first read, not a verdict. A model that is not
  * here is untested: it may run, and nothing claims it works.
  *
- * Today this feeds the pool's refusal (`decisionModelRefusal`, read by
- * `poolModelIssue`) and the decider pool's re-curation (`poolPosition`). The request planner
- * and the worker screen read it later.
+ * It feeds the pool's refusal (`decisionModelRefusal`, read by
+ * `poolModelIssue`), the decider pool's re-curation (`poolPosition`) and the
+ * request planner's limits (`decisionRequestLimits`, read by
+ * @mantle/decisions). The worker screen reads it later.
  */
 
 export type DecisionModelStatus =
@@ -41,6 +42,11 @@ export type DecisionModelProfile = {
   /** Reported exactly this many input tokens for a larger request: a
    *  suspected silent cut. Unsafe until checked. */
   suspectedCutAt?: number;
+  /** Most questions it takes in one request, when measured. */
+  maxQuestions?: number;
+  /** Most input tokens it takes in one request, when measured and lower
+   *  than the catalog's context size. */
+  maxInputTokens?: number;
   /** A start value for passage scoring's threshold where Jev's 1.5 drops
    *  right passages. Tune it with eval:route. */
   thresholdStart?: number;
@@ -152,4 +158,63 @@ export function decisionModelRefusal(model: string | null | undefined): string |
     `this model ${p.note ?? REFUSED}. ` +
     'Pick a tested decision model such as ~typesafe/jev-latest or perplexity/pplx-decider-v1.2.'
   );
+}
+
+/** The size of one decision request a model takes. Null = no limit is known,
+ *  so the use's own size stands. */
+export type DecisionRequestLimits = {
+  maxQuestions: number | null;
+  maxInputTokens: number | null;
+  /** A reported input-token count exactly at this is a suspected silent cut:
+   *  the answer is not used. */
+  cutAt: number | null;
+  /** `profile`: a tested model, sized from its profile and the catalog.
+   *  `careful`: untested, or failed at full size, so the careful limits. */
+  source: 'profile' | 'careful';
+};
+
+/** Limits for a model that is untested or failed at full size. The probe's
+ *  failures were a 16-question limit and a 16,384-token limit (2026-10-30),
+ *  so a request this size passes both. */
+export const CAREFUL_DECISION_LIMITS = { maxQuestions: 16, maxInputTokens: 16_384 } as const;
+
+/**
+ * The request limits of a decision model (pure). `catalogContext` is the live
+ * catalog's context size for the model, or null when the catalog has not
+ * loaded or does not list it. A tested model (it took a full-size request)
+ * is sized from its profile and the catalog; with neither, no limit is known
+ * and each use keeps the size it was measured at. Any other model gets the
+ * careful limits, lowered to the catalog's context size when that is smaller.
+ */
+export function decisionRequestLimits(
+  model: string | null | undefined,
+  catalogContext: number | null,
+): DecisionRequestLimits {
+  const p = decisionModelProfile(model);
+  const ctx =
+    typeof catalogContext === 'number' && Number.isFinite(catalogContext) && catalogContext > 0
+      ? catalogContext
+      : null;
+  const low = (...xs: Array<number | null | undefined>): number | null => {
+    const known = xs.filter((x): x is number => typeof x === 'number');
+    return known.length > 0 ? Math.min(...known) : null;
+  };
+  const tested =
+    p !== null && (p.status === 'works' || p.status === 'no_training_only' || p.status === 'slow');
+  if (!tested) {
+    const tokens = low(CAREFUL_DECISION_LIMITS.maxInputTokens, ctx, p?.suspectedCutAt);
+    return {
+      maxQuestions: low(CAREFUL_DECISION_LIMITS.maxQuestions, p?.maxQuestions),
+      maxInputTokens: tokens,
+      cutAt: p?.suspectedCutAt ?? tokens,
+      source: 'careful',
+    };
+  }
+  const tokens = low(p.maxInputTokens, p.suspectedCutAt, ctx);
+  return {
+    maxQuestions: p.maxQuestions ?? null,
+    maxInputTokens: tokens,
+    cutAt: p.suspectedCutAt ?? tokens,
+    source: 'profile',
+  };
 }

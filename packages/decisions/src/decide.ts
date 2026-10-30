@@ -25,6 +25,12 @@
  *      compact `meta.answers` summary. A shadow week is read from these.
  *   5. Cached in-process on (use, model, state, questions) so a repeated
  *      question costs nothing.
+ *   6. Sized to the model. A request above the model's limits
+ *      (`request-limits.ts`) is not sent: the step says why, and the breaker
+ *      does not hear it. A reply that reports exactly the model's token
+ *      limit is a suspected silent cut and counts as a failure. The uses
+ *      that split a list go through the request planner
+ *      (`request-planner.ts`), so their requests fit.
  *
  * Rules for call sites (from the spikes, docs/decisions.md): Jev ranks, groups
  * and flags; CODE applies dates, `superseded_by` and thresholds; Jev alone
@@ -48,6 +54,7 @@ import {
   type DecisionQuestion,
 } from '@mantle/voice';
 import { deciderPrivacy } from './privacy';
+import { limitsForModel, requestOverLimit, type DecisionRequestLimits } from './request-limits';
 import { CircuitBreaker } from './breaker';
 import { DecisionCache } from './cache';
 
@@ -209,6 +216,15 @@ export function forgetResolvedDecider(ownerId?: string): void {
   else resolved.clear();
 }
 
+/** The request limits of the owner's decider model, or null when there is
+ *  no usable decider (then `decide()` sends nothing anyway). */
+export async function deciderRequestLimits(
+  ownerId: string,
+): Promise<{ model: string; limits: DecisionRequestLimits } | null> {
+  const r = await resolveDecider(ownerId);
+  return r ? { model: r.worker.model, limits: limitsForModel(r.worker.model) } : null;
+}
+
 /** Cheap pre-check for callers that want to size a candidate pool before
  *  paying for it (e.g. fetch more passages only when scoring is on). */
 export async function decisionUseEnabled(
@@ -271,6 +287,30 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
   if (hit) {
     return { answers: hit.answers, mode: use.mode, use, model: hit.model, cached: true, ms: 0 };
   }
+  // Above the model's limits: never sent, so the endpoint is not at fault and
+  // the breaker does not hear it. The step says why.
+  const limits = limitsForModel(worker.model);
+  const over = requestOverLimit(limits, input.state, input.questions);
+  if (over) {
+    return step(
+      {
+        name: `decide_${input.use}`,
+        kind: 'llm_call',
+        input: {
+          use: input.use,
+          mode: use.mode,
+          model: worker.model,
+          provider: worker.provider,
+          questions: over.questions,
+        },
+      },
+      async (h) => {
+        h.setMeta({ use: input.use, mode: use.mode, model: worker.model, over_limit: over.reason });
+        h.setSkipped('over_limit');
+        return null;
+      },
+    );
+  }
   // Open breaker: no call, no step. The caller runs its old path at once.
   if (!breaker.allow(worker.id)) {
     if (input.batch) input.batch.skipped++;
@@ -300,6 +340,12 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
           privacy: deciderPrivacy(params),
           timeoutMs: timeoutOf(params, input.timeoutFactor),
         });
+        if (limits.cutAt !== null && res.tokensIn === limits.cutAt) {
+          throw new Error(
+            `suspected silent cut: the model reported exactly ${limits.cutAt} input tokens, ` +
+              'its limit, so the answer is not used',
+          );
+        }
         const ms = Date.now() - t0;
         h.setMeta({
           use: input.use,

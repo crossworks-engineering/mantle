@@ -24,7 +24,8 @@
  * marks, not deletes.
  */
 import type { DecisionQuestion } from '@mantle/voice';
-import { DecideBatch, decide, type DecideOutcome } from './decide';
+import type { DecideOutcome } from './decide';
+import { decidePlanned, unitSize } from './request-planner';
 
 /** Retire the older rule when either answer is at or above this, unless the
  *  use's `threshold` says otherwise. */
@@ -35,8 +36,9 @@ export const RULE_RECONCILE_THRESHOLD_DEFAULT = 0.8;
  *  different rules and were not measured. */
 export const RULE_SIMILARITY_FLOOR = 0.7;
 
-/** Pairs per request: two questions each, so 40 questions (~330-400 ms in
- *  the spike). */
+/** Pairs per request as measured: two questions each, so 40 questions
+ *  (~330-400 ms in the spike). The request planner sends fewer to a model
+ *  with lower limits. */
 export const MAX_RULE_PAIRS = 20;
 
 /** Per-rule text cap inside a request. */
@@ -89,68 +91,68 @@ export function retiresOlder(score: RulePairScore | null, threshold: number): bo
 }
 
 /** Ask the decider about (older, newer) rule pairs. Null = use off, nothing
- *  to ask, or every group failed: the caller keeps both rules. */
+ *  to ask, or every request failed: the caller keeps both rules. */
 export async function judgeRulePairs(
   ownerId: string,
   pairs: readonly RulePair[],
 ): Promise<RuleReconcileJudgement | null> {
   if (pairs.length === 0) return null;
   const cap = (s: string) => (s.length > MAX_RULE_CHARS ? s.slice(0, MAX_RULE_CHARS) : s);
-  const groups: Array<{ start: number; pairs: readonly RulePair[] }> = [];
-  for (let i = 0; i < pairs.length; i += MAX_RULE_PAIRS) {
-    groups.push({ start: i, pairs: pairs.slice(i, i + MAX_RULE_PAIRS) });
-  }
 
-  const batch = new DecideBatch();
-  const t0 = Date.now();
-  const results = await Promise.all(
-    groups.map(async (g) => {
+  const plan = await decidePlanned({
+    ownerId,
+    use: 'rule_reconcile',
+    units: pairs.map((pair, i) => ({ pair, i })),
+    groupSize: MAX_RULE_PAIRS,
+    baseChars: 0,
+    sizeOf: ({ pair }) =>
+      unitSize([cap(pair.older), cap(pair.newer)], {
+        s000: sameRuleQuestion('a000', 'b000'),
+        r000: replacesRuleQuestion('a000', 'b000'),
+      }),
+    alwaysBatch: true,
+    build: (group) => {
       const rules: Record<string, string> = {};
       const questions: Record<string, DecisionQuestion> = {};
-      g.pairs.forEach((p, k) => {
+      group.forEach(({ pair }, k) => {
         const a = `a${k + 1}`;
         const b = `b${k + 1}`;
-        rules[a] = cap(p.older);
-        rules[b] = cap(p.newer);
+        rules[a] = cap(pair.older);
+        rules[b] = cap(pair.newer);
         questions[`s${k + 1}`] = sameRuleQuestion(a, b);
         questions[`r${k + 1}`] = replacesRuleQuestion(a, b);
       });
-      const outcome: DecideOutcome | null = await decide({
-        ownerId,
-        use: 'rule_reconcile',
-        batch,
+      return {
         state: { rules },
         questions,
         summarize: (answers, use) => {
           const t = use.threshold ?? RULE_RECONCILE_THRESHOLD_DEFAULT;
           return {
-            pairs: g.pairs.length,
-            would_retire: g.pairs.filter((_, k) => retiresOlder(scoreOf(answers, k), t)).length,
+            pairs: group.length,
+            would_retire: group.filter((_, k) => retiresOlder(scoreOf(answers, k), t)).length,
           };
         },
-      });
-      return { g, outcome };
-    }),
-  );
-  batch.settle();
+      };
+    },
+  });
 
-  const answered = results.filter((r) => r.outcome);
-  if (answered.length === 0) return null;
-  const first = answered[0]!.outcome!;
+  const answered = plan.results.filter((r) => r.outcome);
+  const first = answered[0]?.outcome;
+  if (!first) return null;
   const scores: Array<RulePairScore | null> = pairs.map(() => null);
-  for (const { g, outcome } of answered) {
-    g.pairs.forEach((_, k) => {
-      scores[g.start + k] = scoreOf(outcome!.answers, k);
+  for (const { group, outcome } of answered) {
+    group.forEach(({ i }, k) => {
+      scores[i] = scoreOf(outcome!.answers, k);
     });
   }
   return {
     scores,
     mode: first.mode,
     threshold: first.use.threshold ?? RULE_RECONCILE_THRESHOLD_DEFAULT,
-    calls: results.length,
-    failed: results.length - answered.length,
-    skipped: batch.skipped,
-    ms: Date.now() - t0,
+    calls: plan.calls,
+    failed: plan.failed,
+    skipped: plan.skipped,
+    ms: plan.ms,
   };
 }
 

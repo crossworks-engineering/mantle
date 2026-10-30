@@ -3,6 +3,7 @@ export {
   DecideBatch,
   clearDecisionCache,
   decide,
+  deciderRequestLimits,
   decisionUseEnabled,
   forgetResolvedDecider,
   resolveDecider,
@@ -14,6 +15,17 @@ export {
   type ResolvedUse,
 } from './decide';
 export { deciderPrivacy } from './privacy';
+export {
+  CHARS_PER_TOKEN,
+  PLAN_HEADROOM,
+  estimateTokens,
+  limitsForModel,
+  planGroups,
+  requestOverLimit,
+  type DecisionRequestLimits,
+  type UnitSize,
+} from './request-limits';
+export { decidePlanned, type PlannedRequest, type PlannedResult } from './request-planner';
 export {
   MAX_PASSAGES_PER_REQUEST,
   MAX_PASSAGE_CHARS,
