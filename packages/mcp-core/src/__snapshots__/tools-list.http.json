@@ -12377,7 +12377,7 @@
  },
  {
   "name": "api_key_set",
-  "description": "Add a secret to the vault and return its name, kind, target, tags and masked preview, **never the value**. Replacing an existing key **waits for the owner** to approve it in the app (the reply says queued for approval), and so does a token named for a service that already has one (it would become the key that service uses); any other new key is instant. A new key names its `kind`: token (an API key), password, ssh_key (a private key plus `user`), login (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target`. Do not echo the value back to the user. List names with `api_key_refs`; many at once: `api_key_import`.",
+  "description": "Add a secret to the vault and return its name, kind, target, tags and masked preview, **never the value**. A replace, or a token named for a service that already has one, **waits for the owner** to approve it in the app; any other new key is instant. A new key names its `kind`: token (an API key), password, ssh_key (a private key plus `user`), login (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target`. Never echo the value. List names with `api_key_refs`; many at once: `api_key_import`.",
   "inputSchema": {
    "type": "object",
    "properties": {
