@@ -270,7 +270,8 @@ function bareName(model: string): string {
 /**
  * Whether one deny pattern matches a provider and model (both lowercase).
  * A pattern is a glob on the model id (`deepseek/deepseek-chat`,
- * `qwen/*`); a bare word is a family (`deepseek` = `deepseek/*`). A family
+ * `qwen/*`), and one with no `:tag` matches every variant of the id
+ * (`:free`, `:nitro`); a bare word is a family (`deepseek` = `deepseek/*`). A family
  * pattern `<family>/*` also matches:
  *  - the provider of that name (`deepseek/*` blocks the direct `deepseek`
  *    provider whatever model it names);
@@ -282,8 +283,13 @@ function bareName(model: string): string {
 export function denyPatternMatches(pattern: string, provider: string, model: string): boolean {
   // A bare word (`deepseek`) is the family `deepseek/*`.
   if (!pattern.includes('/') && !pattern.includes('*')) pattern = `${pattern}/*`;
-  if (globToRegExp(pattern).test(model)) return true;
-  if (globToRegExp(pattern).test(`${provider}/${model}`)) return true;
+  const glob = globToRegExp(pattern);
+  // A pattern with no `:tag` of its own also matches the model's variants
+  // (`deepseek/deepseek-chat` blocks `deepseek/deepseek-chat:free`, `:nitro`).
+  const untagged = pattern.includes(':') ? model : model.replace(/:[^/]*$/, '');
+  for (const m of new Set([model, untagged])) {
+    if (glob.test(m) || glob.test(`${provider}/${m}`)) return true;
+  }
   const fam = /^([a-z0-9][a-z0-9._-]*)\/\*$/.exec(pattern)?.[1];
   if (!fam) return false;
   if (provider === fam) return true;

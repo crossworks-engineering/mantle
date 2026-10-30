@@ -213,6 +213,14 @@ describe('the model block', () => {
   it('an exact id and a glob', () => {
     expect(denyPatternMatches('openai/gpt-4o', 'openrouter', 'openai/gpt-4o')).toBe(true);
     expect(denyPatternMatches('openai/gpt-4o', 'openrouter', 'openai/gpt-4o-mini')).toBe(false);
+    // An exact id blocks its variants; a tagged pattern only that variant.
+    for (const v of [':free', ':nitro', ':floor', ':online']) {
+      expect(
+        denyPatternMatches('deepseek/deepseek-chat', 'openrouter', `deepseek/deepseek-chat${v}`),
+      ).toBe(true);
+    }
+    expect(denyPatternMatches('openai/gpt-4o:free', 'openrouter', 'openai/gpt-4o')).toBe(false);
+    expect(denyPatternMatches('openai/gpt-4o:free', 'openrouter', 'openai/gpt-4o:free')).toBe(true);
     expect(denyPatternMatches('*-preview', 'openrouter', 'google/gemini-preview')).toBe(true);
   });
 });
