@@ -424,12 +424,12 @@ type SetPlan =
  * A secret sent in the right field and again in a plain one (the name, a
  * target, a tag) would be stored and shown in clear there (the user is
  * sealed with the fields, and a device login may well be admin/admin):
- * refused, with a fixed text. Only secrets of 4 characters or more are
+ * refused, with a fixed text. Only secrets of 8 characters or more are
  * looked for, so a short one never refuses a name by chance.
  */
 function refuseSecretInPlainFields(input: VaultSetInput, row: ApiKey | null): void {
   const secrets = [input.value, input.passphrase, input.sudoPassword].filter(
-    (v): v is string => typeof v === 'string' && v.trim().length >= 4,
+    (v): v is string => typeof v === 'string' && v.trim().length >= 8,
   );
   if (secrets.length === 0) return;
   const plain = [
