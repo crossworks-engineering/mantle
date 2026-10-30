@@ -47,7 +47,6 @@ import {
   loadBearerToken,
   loadLoginRow,
   touchBearerToken,
-  passwordRuleColumns,
   type LoginRow,
 } from './login-row';
 import {
@@ -64,7 +63,12 @@ import { auditPeersUnbound, unbindPeersActingAs } from '../peer-unbind';
 import { isAccessKey, lockLoginKeys } from '../access-keys';
 import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
-import { PasswordRuleError, passwordProblem, signInNeedsPasswordChange } from './password-rule';
+import {
+  PasswordRuleError,
+  passwordProblem,
+  passwordRuleColumns,
+  signInNeedsPasswordChange,
+} from './password-rule';
 import {
   anyLoginRow,
   assetQueryAsHanded,

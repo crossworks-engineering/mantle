@@ -14,8 +14,8 @@ import {
   seedLoginScope,
   type LoginRole,
 } from '@mantle/db';
-import { passwordPolicyMin } from '@mantle/config';
 import { loginIsAdmin } from './admin-seat';
+import { passwordRuleColumns } from './password-rule';
 
 export type LoginRow = {
   id: string;
@@ -79,25 +79,6 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
     passwordCheckedMin: login.passwordCheckedMin ?? null,
     adminMember: adminMember === true,
   };
-}
-
-/**
- * The box password rule's columns of auth.users (0347:
- * must_change_password, password_checked_min), to spread into a select of
- * the login row: only while MANTLE_POLICY_PASSWORD_MIN sets a rule. With
- * none, nothing: the select is the one from before the policy (and runs on
- * a database a migration behind).
- */
-export function passwordRuleColumns(): {
-  mustChangePassword?: typeof authUsers.mustChangePassword;
-  passwordCheckedMin?: typeof authUsers.passwordCheckedMin;
-} {
-  return passwordPolicyMin() === null
-    ? {}
-    : {
-        mustChangePassword: authUsers.mustChangePassword,
-        passwordCheckedMin: authUsers.passwordCheckedMin,
-      };
 }
 
 /** The anchor (is_owner) login's id: the brain every login belongs to. */

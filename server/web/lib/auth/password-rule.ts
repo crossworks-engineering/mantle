@@ -16,6 +16,7 @@
  */
 import { DEFAULT_PASSWORD_MIN, passwordPolicyMin } from '@mantle/config';
 
+import { authUsers } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
 import { COMMON_PASSWORD_BASES, COMMON_PASSWORDS } from './common-passwords';
 
@@ -117,3 +118,22 @@ defineDomainError(PasswordRuleError, {
   status: 400,
   body: (e) => passwordProblemBody(e.problem),
 });
+
+/**
+ * The box password rule's columns of auth.users (0347:
+ * must_change_password, password_checked_min), to spread into a select of
+ * the login row: only while MANTLE_POLICY_PASSWORD_MIN sets a rule. With
+ * none, nothing: the select is the one from before the policy (and runs on
+ * a database a migration behind).
+ */
+export function passwordRuleColumns(): {
+  mustChangePassword?: typeof authUsers.mustChangePassword;
+  passwordCheckedMin?: typeof authUsers.passwordCheckedMin;
+} {
+  return passwordPolicyMin() === null
+    ? {}
+    : {
+        mustChangePassword: authUsers.mustChangePassword,
+        passwordCheckedMin: authUsers.passwordCheckedMin,
+      };
+}

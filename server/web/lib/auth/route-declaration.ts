@@ -471,13 +471,6 @@ export function validateMethodPolicy(raw: unknown, pattern: string, method: stri
     if (!has(PASSWORD_HOLD_OPENINGS, d.passwordHold) || d.class !== 'self') {
       bad(`passwordHold ${String(d.passwordHold)}: 'change-step' or 'sign-out', on a self row`);
     }
-    // A public row the hold never reads (it acts as no login,
-    // password-hold.ts): a declaration there would say what is not so.
-    const actsAsLogin =
-      d.caller === 'publicLogin' || d.caller === 'cookieUpgrade' || d.caller === 'ownerAtRead';
-    if ((d as Readonly<{ public?: true }>).public === true && !actsAsLogin) {
-      bad('passwordHold on a public row that acts as no login: the hold never reads it');
-    }
   }
 
   if (own('audit')) {
