@@ -66,6 +66,10 @@ ChatGPT registers once for the whole ChatGPT app, so every person in that ChatGP
 
 ChatGPT tells MantleOS which server the sign-in is for. When that is not this brain, the sign-in page shows **This sign-in names another server** with that server's name. The app could hand the access to that other server. Press **Allow** only if you trust that server with this brain. MantleOS does not refuse the sign-in, so older clients keep working.
 
+## Fewer clicks
+
+ChatGPT asks before every write call, and some plans only offer "Allow once". Ask for one batch call instead of many small ones (for example one `table_rows_upsert` for many rows), upload files in the MantleOS web app, and build apps in the MantleOS chat. The tips are in [Screen help: MCP](../06-help/mcp.md).
+
 ## If it fails
 
 - **ChatGPT says it cannot reach the server**: open the connector URL in a browser. A 404 means the connector is off in **Settings > MCP**.
