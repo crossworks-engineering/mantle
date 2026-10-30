@@ -98,8 +98,9 @@ describe('planCuration', () => {
     },
   ];
 
-  it('curates the decider pool from tested working models only', () => {
+  it('curates the decider pool from the shipped shortlist only, Jev first', () => {
     const decisions = { inputModalities: ['text'], outputModalities: ['decisions'], outputPerM: 0 };
+    const at = (id: string, inputPerM: number) => row(id, { ...decisions, inputPerM });
     const plan = planCuration({
       capturedAt: AT,
       pools: [
@@ -112,18 +113,27 @@ describe('planCuration', () => {
         },
       ],
       catalog: [
-        row('respan/span-01-lite:free', { ...decisions, inputPerM: 0 }),
-        row('baseten/joey-1', { ...decisions, inputPerM: 0.01 }),
-        row('respan/span-02', { ...decisions, inputPerM: 0.01 }),
-        row('perplexity/pplx-decider-v1.2', { ...decisions, inputPerM: 0.02 }),
-        row('~typesafe/jev-latest', { ...decisions, inputPerM: 0.042 }),
+        // Every working model of the probe, plus cheap ones that do not work.
+        at('respan/span-01-lite:free', 0),
+        at('baseten/joey-1', 0.01),
+        at('respan/span-02', 0.01),
+        at('perplexity/pplx-decider-v1.2', 0.02),
+        at('nace-ai/drex-v1.5', 0.04),
+        at('microsoft/microsoft-decision-1', 0.042),
+        at('typesafe/jev-1.14', 0.042),
+        at('typesafe/jev-1.13', 0.042),
+        at('~typesafe/jev-latest', 0.042),
+        at('cloudflare/clef-omni', 0.15),
       ],
       benchmarks: [],
       usage: [],
       current: [],
+      required: { decider: ['~typesafe/jev-latest'] },
     });
-    const ids = plan.entries.map((e) => e.routes[0]!.model).sort();
-    expect(ids).toEqual(['perplexity/pplx-decider-v1.2', '~typesafe/jev-latest']);
+    const ids = [...plan.entries]
+      .sort((a, b) => a.position - b.position)
+      .map((e) => e.routes[0]!.model);
+    expect(ids).toEqual(['~typesafe/jev-latest', 'perplexity/pplx-decider-v1.2']);
   });
 
   it('keeps one entry per family, and the alias wins its family slot', () => {

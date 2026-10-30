@@ -11,7 +11,7 @@
  * here is untested: it may run, and nothing claims it works.
  *
  * Today this feeds the pool's refusal (`decisionModelRefusal`, read by
- * `poolModelIssue`) and the decider pool's re-curation. The request planner
+ * `poolModelIssue`) and the decider pool's re-curation (`poolPosition`). The request planner
  * and the worker screen read it later.
  */
 
@@ -44,6 +44,9 @@ export type DecisionModelProfile = {
   /** A start value for passage scoring's threshold where Jev's 1.5 drops
    *  right passages. Tune it with eval:route. */
   thresholdStart?: number;
+  /** Its place in the shipped decider pool. A product decision (2026-10-30),
+   *  not a ranking: re-curation offers only these, in this order. */
+  poolPosition?: number;
   note?: string;
 };
 
@@ -52,14 +55,21 @@ const REFUSED =
 
 export const DECISION_MODEL_PROFILES: readonly DecisionModelProfile[] = [
   // Group A: work today, under 1.5 s.
-  { id: '~typesafe/jev-latest', status: 'works', privacy: 'zdr', note: 'the shipped default' },
+  {
+    id: '~typesafe/jev-latest',
+    status: 'works',
+    privacy: 'zdr',
+    poolPosition: 0,
+    note: 'the shipped default',
+  },
   { id: 'typesafe/jev-1.14', status: 'works', privacy: 'zdr' },
   { id: 'typesafe/jev-1.13', status: 'works', privacy: 'zdr' },
   {
     id: 'perplexity/pplx-decider-v1.2',
     status: 'works',
     privacy: 'zdr',
-    note: 'tied Jev on quality at about half the cost; slower (median 643 ms)',
+    poolPosition: 1,
+    note: 'the second choice: tied Jev on quality at about half the cost; slower (median 643 ms)',
   },
   {
     id: 'microsoft/microsoft-decision-1',

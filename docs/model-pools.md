@@ -38,7 +38,11 @@ render cost comparisons. Pool vocabulary: `packages/client-types/src/model-pools
 ## Pool fit: readers vs generators
 
 Every pool declares a `modality` contract (`packages/client-types/src/model-pools.ts`),
-and `poolModelIssue(pool, modalities)` checks a candidate against it.
+and `poolModelIssue(pool, modalities, modelId)` checks a candidate against it.
+With the model id, the `decider` pool also refuses a decision model that
+cannot take Mantle's request (`packages/client-types/src/decision-models.ts`),
+with or without the catalog. Every save path for a pool entry runs it on each
+OpenRouter route (`server/web/lib/model-pool-routes.ts`).
 
 The reason it exists: **"Read images" and "Image generation" both accept image
 input**, so the input side alone cannot tell them apart. On 2026-09-02 the

@@ -64,6 +64,16 @@ describe('pickForPool', () => {
     expect(pickForPool('cheapest', tts, 'tts')?.name).toBe('budget-fit');
     expect(pickForPool('cost-aware', [], 'tts')).toBeNull();
   });
+  it('the decider keeps its first entry in every paid combo, however cheap the second', () => {
+    const decider = [
+      entry('decider', 0, '~typesafe/jev-latest', 0.042, 0),
+      entry('decider', 1, 'perplexity/pplx-decider-v1.2', 0.02, 0),
+    ];
+    for (const key of ['best-advanced', 'cost-aware', 'cheapest'] as const) {
+      expect(pickForPool(key, decider, 'decider')?.name, key).toBe('~typesafe/jev-latest');
+    }
+    expect(pickForPool('free', decider, 'decider')).toBeNull();
+  });
 });
 
 describe('resolveRoute', () => {

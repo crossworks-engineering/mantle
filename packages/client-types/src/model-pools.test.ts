@@ -231,5 +231,10 @@ describe('decision model profiles', () => {
     );
     expect(shipped).toEqual(['~typesafe/jev-latest', 'perplexity/pplx-decider-v1.2']);
     for (const id of shipped) expect(decisionModelProfile(id)?.status, id).toBe('works');
+    // The profile's shortlist and the template agree, in order.
+    const shortlist = DECISION_MODEL_PROFILES.filter((p) => p.poolPosition !== undefined)
+      .sort((a, b) => a.poolPosition! - b.poolPosition!)
+      .map((p) => p.id);
+    expect(shortlist).toEqual(shipped);
   });
 });

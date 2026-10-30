@@ -78,6 +78,12 @@ export function pickForPool(key: ComboKey, entries: PoolEntry[], pool: string): 
     .map((e) => ({ e, b: blendedPerM(e.pricing) }))
     .filter((x): x is { e: PoolEntry; b: number } => x.b != null);
 
+  // The decider takes the pool's first entry in every paid combo: a decision
+  // model is chosen on measured quality, speed and privacy
+  // (decision-models.ts), which its price says nothing about, and the
+  // shipped second choice must not become the default by being cheaper.
+  if (pool === 'decider' && key !== 'free') return sorted[0]!;
+
   if (key === 'best-advanced') {
     if (priced.length === 0) return sorted[0]!;
     return priced.reduce((m, x) => (x.b > m.b ? x : m)).e;
