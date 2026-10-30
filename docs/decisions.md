@@ -51,16 +51,19 @@ going away breaks nothing.
    literally. **Never let a Jev answer alone authorise a side effect:** text
    inside the state can steer it.
 7. **The state leaves the box** (OpenRouter → TypeSafe). Every call carries
-   a privacy block. `params.privacy` is `zdr` (the default: `provider: { zdr:
-true, data_collection: 'deny' }`) or `no_training` (`data_collection:
-'deny'` only, for a model with no zero-retention route, such as GPT-6
-   Luna Decisions). The old `params.zdr` is still read: `true` is `zdr`,
-   `false` is `no_training` (it used to send no block at all). If the two
-   keys disagree, the stricter wins; an unknown value is `zdr`. One read,
-   `deciderPrivacy()` in `packages/decisions/src/privacy.ts`; one mapping to
-   the wire, `decisionProviderPrefs()` in the adapter. A 404 under `zdr`
-   gets an error that names the admin's choice; Mantle never retries with
-   less privacy. Keep the worker off on a brain whose owner has not opted in.
+   a privacy block. `params.privacy` is `zdr`, the default, which sends
+   `provider: { zdr: true, data_collection: 'deny' }`. Or it is
+   `no_training`, which sends `data_collection: 'deny'` only, for a model
+   with no zero-retention route such as GPT-6 Luna Decisions. The old
+   `params.zdr` is still read: `true` is `zdr`, `false` is `no_training` (it
+   used to send no block at all). If the two keys disagree, the stricter
+   wins; an unknown value is `zdr`. So today an admin chooses `no_training`
+   by unticking "Request zero data retention" on the worker (`zdr: false`).
+   One read, `deciderPrivacy()` in `packages/decisions/src/privacy.ts`; one
+   mapping to the wire, `decisionProviderPrefs()` in the adapter. A 404
+   under `zdr` gets an error that names the admin's choice; Mantle never
+   retries with less privacy. Keep the worker off on a brain whose owner
+   has not opted in.
 
 ## 2. Where it lives
 

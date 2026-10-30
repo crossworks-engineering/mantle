@@ -531,8 +531,8 @@ const model_pool_list: BuiltinToolDef = {
 };
 
 /**
- * Catalog-checked pool fit: does this entry's OpenRouter route actually do
- * what the pool needs? The reason this exists is the "Read images" trap — an
+ * Catalog-checked pool fit: does each of this entry's OpenRouter routes
+ * actually do what the pool needs? The reason this exists is the "Read images" trap — an
  * image GENERATOR (Nano Banana Pro, GPT Image) accepts images just like a
  * reader does, so a curator picking on names alone lands one in the vision
  * pool, where it bills image-generation tokens and returns a picture the
@@ -540,24 +540,32 @@ const model_pool_list: BuiltinToolDef = {
  *
  * Fail-open: only a LOADED catalog that positively contradicts the pool
  * rejects. No OpenRouter route, an unknown slug, or an unreachable catalog
- * all return null — an outage must never block curation.
+ * all return null — an outage must never block curation. The one exception
+ * is our own evidence: the decider pool refuses a decision model that cannot
+ * take the request, catalog or not.
  */
 async function poolFitIssue(pool: string, routes: CuratedRoute[]): Promise<string | null> {
-  const route = routes.find((r) => r.provider === 'openrouter');
-  if (!route) return null;
+  const orRoutes = routes.filter((r) => r.provider === 'openrouter');
+  if (orRoutes.length === 0) return null;
   // Our own probe's refusal needs no catalog (a refused decision model).
-  const refused = poolModelIssue(pool, null, route.model);
-  if (refused) return refused;
+  for (const r of orRoutes) {
+    const refused = poolModelIssue(pool, null, r.model);
+    if (refused) return refused;
+  }
   const res = await loadCatalog();
   if (!res.ok) return null;
-  const slug = route.model.trim().toLowerCase();
-  const hit = res.models.find((m) => m.id.toLowerCase() === slug);
-  if (!hit) return null;
-  return poolModelIssue(
-    pool,
-    { input: hit.inputModalities, output: hit.outputModalities },
-    route.model,
-  );
+  for (const r of orRoutes) {
+    const slug = r.model.trim().toLowerCase();
+    const hit = res.models.find((m) => m.id.toLowerCase() === slug);
+    if (!hit) continue;
+    const issue = poolModelIssue(
+      pool,
+      { input: hit.inputModalities, output: hit.outputModalities },
+      r.model,
+    );
+    if (issue) return issue;
+  }
+  return null;
 }
 
 const model_pool_set: BuiltinToolDef = {

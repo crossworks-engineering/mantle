@@ -3,8 +3,8 @@ import { fallbackCostMicroUsd } from './pricing';
 
 describe('fallbackCostMicroUsd', () => {
   it('prices every decision model that answers a full-size request', () => {
-    // Groups A and B of the 2026-10-30 probe. A route with no usage.cost
-    // (Foundry) prices from these rows, or its spend reads $0.
+    // Groups A and B of the 2026-10-30 probe. A call that reports no
+    // usage.cost prices from these rows, or its spend reads $0.
     for (const id of [
       '~typesafe/jev-latest',
       'typesafe/jev-1.14',

@@ -98,6 +98,34 @@ describe('planCuration', () => {
     },
   ];
 
+  it('curates the decider pool from tested working models only', () => {
+    const decisions = { inputModalities: ['text'], outputModalities: ['decisions'], outputPerM: 0 };
+    const plan = planCuration({
+      capturedAt: AT,
+      pools: [
+        {
+          id: 'decider',
+          label: 'Decider',
+          description: 'x',
+          group: 'workers' as const,
+          modality: { input: [], output: 'decisions' as const },
+        },
+      ],
+      catalog: [
+        row('respan/span-01-lite:free', { ...decisions, inputPerM: 0 }),
+        row('baseten/joey-1', { ...decisions, inputPerM: 0.01 }),
+        row('respan/span-02', { ...decisions, inputPerM: 0.01 }),
+        row('perplexity/pplx-decider-v1.2', { ...decisions, inputPerM: 0.02 }),
+        row('~typesafe/jev-latest', { ...decisions, inputPerM: 0.042 }),
+      ],
+      benchmarks: [],
+      usage: [],
+      current: [],
+    });
+    const ids = plan.entries.map((e) => e.routes[0]!.model).sort();
+    expect(ids).toEqual(['perplexity/pplx-decider-v1.2', '~typesafe/jev-latest']);
+  });
+
   it('keeps one entry per family, and the alias wins its family slot', () => {
     const plan = planCuration({
       capturedAt: AT,

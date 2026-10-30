@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { db, curatedModels, onNarrowSpots, onFullSystemRoute } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { MODEL_POOL_IDS } from '@/lib/model-pools';
+import { poolRoutesIssue } from '@/lib/model-pool-routes';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -64,6 +65,25 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: message }, { status: 400 });
   }
   const b = parsed.data;
+  // A new route or a move to another pool is checked as an add is: against
+  // the entry's pool and routes after the patch.
+  if (b.pool !== undefined || b.routes !== undefined) {
+    const [stored] = await db
+      .select({ name: curatedModels.name, pool: curatedModels.pool, routes: curatedModels.routes })
+      .from(curatedModels)
+      .where(and(eq(curatedModels.id, idParsed.data.id), eq(curatedModels.ownerId, user.id)));
+    if (!stored) return NextResponse.json({ error: 'Entry not found.' }, { status: 404 });
+    const storedRoutes = Array.isArray(stored.routes)
+      ? (stored.routes as { provider: string; model: string }[])
+      : [];
+    const issue = await poolRoutesIssue(b.pool ?? stored.pool, b.routes ?? storedRoutes);
+    if (issue) {
+      return NextResponse.json(
+        { error: `'${b.name ?? stored.name}' does not fit this pool: ${issue}` },
+        { status: 400 },
+      );
+    }
+  }
   const set = {
     ...(b.pool !== undefined ? { pool: b.pool } : {}),
     ...(b.name !== undefined ? { name: b.name } : {}),

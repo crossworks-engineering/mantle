@@ -88,9 +88,10 @@ const PRICING: Record<string, PricePerToken> = {
   'typesafe/jev-1.14': { input: 0.000000042, output: 0 },
   '~typesafe/jev-latest': { input: 0.000000042, output: 0 },
   // The other decision models that answer a full-size request (groups A and
-  // B of the 2026-10-30 probe; OpenRouter list prices that day). A route
-  // with no `usage.cost` (Foundry) prices from these. Span-02 bills the state
-  // once per question, so its token count is already the large one.
+  // B of the 2026-10-30 probe; OpenRouter list prices that day). A call that
+  // reports no `usage.cost` prices from these, as a direct route such as
+  // Foundry will. Span-02 bills the state once per question, so its token
+  // count is already the large one.
   'perplexity/pplx-decider-v1.2': { input: 0.00000002, output: 0 },
   'microsoft/microsoft-decision-1': { input: 0.000000042, output: 0 },
   'nace-ai/drex-v1.5': { input: 0.00000004, output: 0 },

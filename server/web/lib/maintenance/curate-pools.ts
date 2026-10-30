@@ -31,6 +31,7 @@
  * caller's decision, behind `--apply`.
  */
 
+import { decisionModelProfile } from '@mantle/client-types/decision-models';
 import { MODEL_POOLS, poolModelIssue, type ModelPoolDef } from '@mantle/client-types/model-pools';
 
 /** One row of OpenRouter's catalog, as `model_catalog` already parses it. */
@@ -241,6 +242,11 @@ function isExcluded(id: string): boolean {
  */
 function poolAllows(pool: string, id: string, row: CatalogRow): boolean {
   if (pool === 'search' || pool === 'search_advanced') return vendorOf(id) === 'perplexity';
+  // The decider pool is curated from the models our own probe saw answer a
+  // full-size request under the default privacy. The catalog cannot tell a
+  // decision model that times out, refuses `zdr` or bills per question from
+  // one that works, and price alone would rank those first.
+  if (pool === 'decider') return decisionModelProfile(id)?.status === 'works';
   // The voice pools need an ENGINE. `poolModelIssue` deliberately fails open
   // here — it is a save-time guard that must never block an owner's judgement
   // during a catalog outage — so a chat model that merely ACCEPTS audio passes

@@ -120,6 +120,17 @@ describe('adoptWorkerParams', () => {
     expect(out).toMatchObject({ zdr: true, timeout_ms: 1500, defer_below: 0.6, act_alone_at: 0.9 });
   });
 
+  it("does not add the manifest's zdr beside an operator's privacy", () => {
+    const out = adoptWorkerParams(
+      'decider',
+      { uses: live.uses, privacy: 'no_training' },
+      decider.params,
+    ) as Record<string, unknown>;
+    expect(out.privacy).toBe('no_training');
+    expect('zdr' in out).toBe(false);
+    expect(out).toMatchObject({ timeout_ms: 1500, defer_below: 0.6 });
+  });
+
   it('takes the manifest params when the decider row has none', () => {
     expect(adoptWorkerParams('decider', null, decider.params)).toBe(decider.params);
   });

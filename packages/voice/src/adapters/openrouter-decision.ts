@@ -128,9 +128,10 @@ export function decisionErrorMessage(
   const base = `openrouter-decision ${status}: ${providerMessage}`;
   if (status !== 404 || decisionProviderPrefs(opts.privacy).zdr !== true) return base;
   return (
-    `${base}. If '${opts.model}' has no zero-data-retention route, the decider stays off for it: ` +
-    `an admin may set the decider's privacy to 'no_training' (no data collection, retention allowed). ` +
-    `Mantle never loosens privacy by itself.`
+    `${base}. If '${opts.model}' has no zero-data-retention route, every call to it fails under ` +
+    `privacy 'zdr'. An admin may lower the decider's privacy to 'no_training' (no data ` +
+    `collection, retention allowed): untick 'Request zero data retention' on the decider ` +
+    `worker, which saves zdr: false. Mantle never loosens privacy by itself.`
   );
 }
 

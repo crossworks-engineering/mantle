@@ -68,5 +68,10 @@ export function adoptWorkerParams(
   if (kind !== 'decider' || !live) return manifest;
   const m = (manifest ?? {}) as DeciderParams;
   const l = live as DeciderParams;
-  return { ...m, ...l, uses: { ...m.uses, ...l.uses } };
+  // `privacy` and the old `zdr` are one setting (deciderPrivacy reads the
+  // stricter), so the manifest's `zdr: true` is not added beside an
+  // operator's `privacy`: it would quietly undo a 'no_training' choice.
+  const { zdr: _manifestZdr, ...manifestRest } = m;
+  const base = 'privacy' in l ? manifestRest : m;
+  return { ...base, ...l, uses: { ...m.uses, ...l.uses } };
 }

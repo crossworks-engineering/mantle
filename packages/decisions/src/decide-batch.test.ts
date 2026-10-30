@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   states: [] as Array<{ message?: string }>,
   timeouts: [] as number[],
   privacies: [] as unknown[],
+  params: {} as Record<string, unknown>,
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -17,7 +18,10 @@ vi.mock('@mantle/db', () => ({
     provider: 'openrouter',
     model: 'jev',
     apiKeyId: 'k1',
-    params: { uses: { journal_recall: { enabled: true }, passage_scoring: { enabled: true } } },
+    params: {
+      ...h.params,
+      uses: { journal_recall: { enabled: true }, passage_scoring: { enabled: true } },
+    },
   })),
   bumpWorkerUsage: vi.fn(async () => {}),
 }));
@@ -93,6 +97,7 @@ beforeEach(() => {
   h.states = [];
   h.timeouts = [];
   h.privacies = [];
+  h.params = {};
   clearDecisionCache();
   forgetResolvedDecider();
 });
@@ -119,6 +124,12 @@ describe('privacy', () => {
   it('a worker with no privacy setting sends zdr, as before', async () => {
     await single('private');
     expect(h.privacies).toEqual(['zdr']);
+  });
+
+  it('the old zdr: false reaches the adapter as no_training', async () => {
+    h.params = { zdr: false };
+    await single('public');
+    expect(h.privacies).toEqual(['no_training']);
   });
 });
 

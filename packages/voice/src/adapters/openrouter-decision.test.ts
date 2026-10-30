@@ -92,6 +92,7 @@ describe('decisionErrorMessage', () => {
     });
     expect(msg).toContain('openrouter-decision 404: No endpoints found');
     expect(msg).toContain("'no_training'");
+    expect(msg).toContain('zdr: false');
     expect(msg).toContain('never loosens');
   });
 

@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { and, asc, eq } from 'drizzle-orm';
 import { conflictOnUnique, db, curatedModels, onFullSystemRoute } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
-import { MODEL_POOLS, MODEL_POOL_IDS, poolModelIssue } from '@/lib/model-pools';
+import { MODEL_POOLS, MODEL_POOL_IDS } from '@/lib/model-pools';
+import { poolRoutesIssue } from '@/lib/model-pool-routes';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -66,18 +67,13 @@ export async function POST(req: Request) {
   // generation" both accept images, so an image GENERATOR reads like a
   // perfect vision model on inputs alone — the catalog's output modalities
   // are what separate them. Fail-open: an unloaded catalog or a non-
-  // OpenRouter route allows the save (see catalogModalities).
-  const orRoute = b.routes.find((r) => r.provider === 'openrouter');
-  if (orRoute) {
-    const { refreshModelCatalog, catalogModalities } = await import('@mantle/tracing');
-    await refreshModelCatalog();
-    const issue = poolModelIssue(b.pool, catalogModalities(orRoute.model), orRoute.model);
-    if (issue) {
-      return NextResponse.json(
-        { error: `'${b.name}' does not fit this pool: ${issue}` },
-        { status: 400 },
-      );
-    }
+  // OpenRouter route allows the save (see poolRoutesIssue).
+  const issue = await poolRoutesIssue(b.pool, b.routes);
+  if (issue) {
+    return NextResponse.json(
+      { error: `'${b.name}' does not fit this pool: ${issue}` },
+      { status: 400 },
+    );
   }
   // Append at the end of the pool.
   const inPool = await db

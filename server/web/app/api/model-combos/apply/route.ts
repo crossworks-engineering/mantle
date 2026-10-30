@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { getAgent, updateAgent } from '@/lib/agents';
-import { getAiWorker, updateAiWorker } from '@/lib/ai-workers';
+import { getAiWorker, openRouterModelIssue, updateAiWorker } from '@/lib/ai-workers';
 import { AGENT_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import { buildComboDiff, COMBO_DEFS } from '@/lib/model-combos';
 import { loadComboContext } from '@/lib/model-combos-context';
@@ -71,6 +71,20 @@ export async function POST(req: Request) {
       if (refused) {
         failed.push({ id: t.id, error: refused });
         continue;
+      }
+      // A worker takes the same model check as its settings form: the id
+      // exists and does the kind's job (a decider refuses a decision model
+      // that cannot take the request).
+      if (t.targetKind !== 'agent' && stored) {
+        const issue = await openRouterModelIssue({
+          kind: (stored as { kind: string }).kind,
+          provider: t.next.provider,
+          model: t.next.model,
+        });
+        if (issue) {
+          failed.push({ id: t.id, error: issue });
+          continue;
+        }
       }
       const patch = {
         provider: t.next.provider,
