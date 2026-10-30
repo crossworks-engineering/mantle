@@ -18,6 +18,12 @@
  *  - Nothing loosens by itself: approval defaults on for a password, an SSH
  *    key and a login, and a kind change never turns it off unless the caller
  *    says so.
+ *  - Over MCP, a write that replaces or deletes an existing secret waits for
+ *    the owner (a hold): its change is sealed on the key's row (held_enc,
+ *    0347), the caller parks a pending call that names the hold, never the
+ *    value, and the change lands only when that call is approved
+ *    (applyHeldVaultWrites), through this gate and these checks again.
+ *    Adding a new key is instant. The Keys screen writes at once.
  *
  * Internal writers that seal connector or sandbox state (mcp-oauth.ts,
  * sandbox_publish) and onboarding keep setApiKey: they are not an owner's
@@ -46,7 +52,7 @@ import {
   UUID_RE,
 } from '@mantle/std';
 import type { TestApiKeyResult } from '@mantle/client-types';
-import { checkedWorkspaceId, fieldsAad, maskPlaintext, valueAad } from './shape';
+import { checkedWorkspaceId, fieldsAad, heldAad, maskPlaintext, valueAad } from './shape';
 import { probeApiKey } from './probe';
 import { log } from '@mantle/tracing';
 
@@ -61,6 +67,10 @@ export type VaultActor = Readonly<{
   /** An MCP connection's kind and ids (an OAuth client, an API key, a
    *  linked brain), for the audit row. */
   connection?: Readonly<{ via: string; keyId?: string; peerId?: string; oauthClientId?: string }>;
+  /** An approved pending call runs the write (applyHeldVaultWrites): who
+   *  approved it (null: an approval that names no login), for the audit
+   *  row. Set by the server from the dispatch's caller, never from input. */
+  approval?: Readonly<{ approver: string | null }>;
 }>;
 
 /** A secret as every vault reply shows it: never a value. */
@@ -122,18 +132,43 @@ export type VaultSetInput = {
 
 export type VaultSetResult = {
   key: VaultKeySummary;
-  op: 'add' | 'replace';
+  /** `held`: an MCP replace that waits for the owner's approval; nothing
+   *  was written yet (`held` says what was asked). */
+  op: 'add' | 'replace' | 'held';
   /** A value or fields were written (an add, or a replace of either): a
    *  connector that signs in with this name now sends another secret, so
    *  the caller voids its read-only marks (access matrix T7,
    *  afterVaultKeyReplaced). */
   secretWritten: boolean;
+  /** A held replace: its hold id (what the pending call names) and the
+   *  key as the change would leave it, for the approver. No value. */
+  held?: VaultHeld;
 };
+
+/** A change waiting for approval, as its pending call shows it. */
+export type VaultHeld = {
+  holdId: string;
+  kind: VaultKind;
+  target: string[];
+  masked: string;
+};
+
+/** A delete: the key deleted, or held for approval (`held`). */
+export type VaultDeleteResult = { key: VaultKeySummary; held?: VaultHeld };
 
 export type VaultTestResult = TestApiKeyResult & { name: string; kind: VaultKind };
 
 export type VaultImportResult =
-  | { ok: true; added: number; replaced: number; keys: VaultSetResult[] }
+  | {
+      ok: true;
+      added: number;
+      replaced: number;
+      /** Rows that replace a key and wait for one approval (MCP). */
+      held: number;
+      /** The one hold every held row names, when any is held. */
+      holdId?: string;
+      keys: VaultSetResult[];
+    }
   | { ok: false; failed: { row: number; reason: string }[] };
 
 // ── Shapes ───────────────────────────────────────────────────────────────────
@@ -330,6 +365,14 @@ async function gate(): Promise<void> {
   if (!(await callerHasAreaBound('keys'))) {
     throw new AccessError('area', undefined, { area: 'keys' });
   }
+}
+
+/** Whether a replace or delete by `who` waits for approval: an MCP client
+ *  (an agent a page or a document may steer could otherwise swap a key's
+ *  value for its own, so provider calls go to someone else's account), not
+ *  an approved pending call, not the Keys screen. */
+function mustHold(who: VaultActor): boolean {
+  return who.via === 'mcp' && !who.approval;
 }
 
 function summary(row: ApiKey): VaultKeySummary {
@@ -692,6 +735,9 @@ function planSet(
     set.anthropicWorkspaceId = null;
     changed.push('anthropic_workspace_id');
   }
+  // Any write to the key ends a change waiting for approval: it was asked
+  // of the key as it was, so its approval no longer applies.
+  if (row.heldEnc && changed.length > 0) set.heldEnc = null;
   return { op: 'replace', row, set, kind, changed, secretReplaced };
 }
 
@@ -742,7 +788,7 @@ async function writePlan(plan: SetPlan): Promise<ApiKey> {
 
 async function audit(
   who: VaultActor,
-  action: 'vault.key.set' | 'vault.key.delete' | 'vault.key.test',
+  action: 'vault.key.set' | 'vault.key.delete' | 'vault.key.test' | 'vault.key.hold',
   detail: Record<string, unknown>,
 ): Promise<void> {
   // The trail never fails the write it records (already made): logged.
@@ -760,6 +806,7 @@ async function audit(
         ...detail,
         via: who.via,
         ...(who.connection ? { connection: who.connection } : {}),
+        ...(who.approval ? { approvedBy: who.approval.approver } : {}),
       },
     })
     .catch((err: unknown) => {
@@ -789,6 +836,9 @@ export async function setVaultKey(
   const row = await findRow(ownerId, input.ref);
   if (!row && 'id' in input.ref) return null;
   const plan = planSet(ownerId, input, row, who.via);
+  if (plan.op === 'replace' && plan.changed.length > 0 && mustHold(who)) {
+    return holdPlan(who, plan, { op: 'set', input: heldInput(input) });
+  }
   return commitPlan(who, plan);
 }
 
@@ -809,16 +859,38 @@ async function commitPlan(who: VaultActor, plan: SetPlan): Promise<VaultSetResul
 
 // ── Delete ───────────────────────────────────────────────────────────────────
 
-/** Delete one secret; its summary, or null when `ref` names none. */
+/** Delete one secret: what was deleted, or (over MCP) the delete held
+ *  for approval; null when `ref` names none. */
 export async function deleteVaultKey(
   who: VaultActor,
   ownerId: string,
   ref: VaultRef,
-): Promise<VaultKeySummary | null> {
+): Promise<VaultDeleteResult | null> {
   if (!('id' in ref)) refParts(ref);
   await gate();
   const row = await findRow(ownerId, ref);
   if (!row) return null;
+  if (mustHold(who)) {
+    const holdId = await holdOn(ownerId, row, { op: 'delete' });
+    const key = summary(row);
+    await audit(who, 'vault.key.hold', {
+      keyId: key.id,
+      name: key.name,
+      kind: key.kind,
+      op: 'delete',
+      holdId,
+    });
+    return { key, held: { holdId, kind: row.kind, target: row.target, masked: row.masked } };
+  }
+  const key = await deleteRow(who, ownerId, row);
+  return key ? { key } : null;
+}
+
+async function deleteRow(
+  who: VaultActor,
+  ownerId: string,
+  row: ApiKey,
+): Promise<VaultKeySummary | null> {
   const [gone] = await db
     .delete(apiKeys)
     .where(and(eq(apiKeys.id, row.id), eq(apiKeys.userId, ownerId)))
@@ -827,6 +899,180 @@ export async function deleteVaultKey(
   const key = summary(gone);
   await audit(who, 'vault.key.delete', { keyId: key.id, name: key.name, kind: key.kind });
   return key;
+}
+
+// ── Holds: a replace or delete waiting for approval ─────────────────────────
+
+/** What a hold seals: a replace's input (its value and fields among it),
+ *  or a delete. `at`: the key's updated_at when asked, so a hold opens only
+ *  on the key as it was. */
+type HeldChange = { op: 'set'; input: Omit<VaultSetInput, 'ref'> } | { op: 'delete' };
+type SealedHold = HeldChange & { at: string };
+
+/** A set's input as a hold keeps it: everything but which key (the hold
+ *  is on the key's own row). */
+function heldInput(input: VaultSetInput): Omit<VaultSetInput, 'ref'> {
+  const { ref: _ref, ...rest } = input;
+  return rest;
+}
+
+/**
+ * Seal `change` on the key's row under a new hold id (or `holdId`, one
+ * import's rows under one), replacing any earlier hold: only the latest
+ * change asked of a key can be approved. The full-route spot model-route,
+ * as every write of a vault key's sealed columns. The hold id, never the
+ * value, is what the caller's pending call names.
+ */
+async function holdOn(
+  ownerId: string,
+  row: ApiKey,
+  change: HeldChange,
+  holdId: string = randomUUID(),
+): Promise<string> {
+  const sealed: SealedHold = { ...change, at: row.updatedAt.toISOString() };
+  const { ciphertext } = seal(JSON.stringify(sealed), heldAad(row.id, holdId));
+  const [held] = await onFullSystemRoute('model-route', () =>
+    db
+      .update(apiKeys)
+      .set({ heldEnc: ciphertext })
+      .where(and(eq(apiKeys.id, row.id), eq(apiKeys.userId, ownerId), eq(apiKeys.kind, row.kind)))
+      .returning({ id: apiKeys.id }),
+  );
+  if (!held) {
+    throw new ConflictError('The key changed at the same moment: read it again and retry.');
+  }
+  return holdId;
+}
+
+/** Hold a checked replace: its audit row, and the key as the change would
+ *  leave it (kind, target, masked preview), never a value. */
+async function holdPlan(
+  who: VaultActor,
+  plan: Extract<SetPlan, { op: 'replace' }>,
+  change: HeldChange,
+  holdId?: string,
+): Promise<VaultSetResult> {
+  const id = await holdOn(plan.row.userId, plan.row, change, holdId);
+  const key = summary(plan.row);
+  await audit(who, 'vault.key.hold', {
+    keyId: key.id,
+    name: key.name,
+    kind: key.kind,
+    op: 'replace',
+    changed: plan.changed,
+    holdId: id,
+  });
+  return {
+    key,
+    op: 'held',
+    secretWritten: false,
+    held: {
+      holdId: id,
+      kind: plan.kind,
+      target: plan.set.target ?? plan.row.target,
+      masked: plan.set.masked ?? plan.row.masked,
+    },
+  };
+}
+
+/** The change `holdId` holds on `row`, or null: none, another hold, the
+ *  key changed since it was asked, or a seal this master key cannot open. */
+function openHold(row: ApiKey, holdId: string): HeldChange | null {
+  if (!row.heldEnc) return null;
+  let held: SealedHold;
+  try {
+    held = JSON.parse(open(row.heldEnc, heldAad(row.id, holdId))) as SealedHold;
+  } catch {
+    // Neither the open's error nor a parse error goes out.
+    return null;
+  }
+  if (held.at !== row.updatedAt.toISOString()) return null;
+  return held;
+}
+
+/** The refusal of an approval whose change no longer applies. Fixed: it
+ *  names no key and echoes nothing. */
+export const VAULT_HOLD_GONE =
+  'This change no longer applies: the key was changed, deleted or asked for again since, so it was not made. Reject it and ask again.';
+
+export type VaultApplyResult = {
+  /** Each key's outcome, in the order asked. */
+  keys: { key: VaultKeySummary; op: 'replace' | 'delete'; secretWritten: boolean }[];
+};
+
+/**
+ * Make the changes `holdId` holds on the keys `keyIds` (an approved pending
+ * call, `who.approval` set): this gate again, in the approved run's scope,
+ * then every hold opened and checked again as a fresh write would be, all
+ * of them before any is written (one stale and none lands). Each write is
+ * audited naming the approver and clears its hold. Throws ConflictError
+ * (VAULT_HOLD_GONE) when a hold no longer applies.
+ */
+export async function applyHeldVaultWrites(
+  who: VaultActor,
+  ownerId: string,
+  holdId: string,
+  keyIds: readonly string[],
+): Promise<VaultApplyResult> {
+  if (!who.approval) throw new Error('applyHeldVaultWrites runs an approved pending call only');
+  if (!UUID_RE.test(holdId) || keyIds.length === 0 || !keyIds.every((k) => UUID_RE.test(k))) {
+    throw new InputError('This pending call names no change to make.');
+  }
+  await gate();
+  const steps: ({ op: 'delete'; row: ApiKey } | { op: 'set'; plan: SetPlan })[] = [];
+  for (const id of new Set(keyIds)) {
+    const row = await findRow(ownerId, { id });
+    const held = row ? openHold(row, holdId) : null;
+    if (!row || !held) throw new ConflictError(VAULT_HOLD_GONE);
+    if (held.op === 'delete') steps.push({ op: 'delete', row });
+    else {
+      steps.push({
+        op: 'set',
+        plan: planSet(ownerId, { ...held.input, ref: { id } }, row, who.via),
+      });
+    }
+  }
+  const keys: VaultApplyResult['keys'] = [];
+  for (const step of steps) {
+    if (step.op === 'delete') {
+      const key = await deleteRow(who, ownerId, step.row);
+      if (!key) throw new ConflictError(VAULT_HOLD_GONE);
+      keys.push({ key, op: 'delete', secretWritten: false });
+    } else {
+      const done = await commitPlan(who, step.plan);
+      keys.push({ key: done.key, op: 'replace', secretWritten: done.secretWritten });
+    }
+  }
+  return { keys };
+}
+
+/**
+ * Drop the changes `holdId` holds on `keyIds` (their pending call was
+ * rejected): the sealed values go now, not at the key's next write. Only a
+ * hold that id opens is cleared. No gate: it removes a change that was
+ * never made, for whoever may decide the call (pending.ts).
+ */
+export async function releaseVaultHolds(
+  ownerId: string,
+  holdId: string,
+  keyIds: readonly string[],
+): Promise<void> {
+  if (!UUID_RE.test(holdId)) return;
+  for (const id of new Set(keyIds)) {
+    if (!UUID_RE.test(id)) continue;
+    await onFullSystemRoute('model-route', async () => {
+      const [row] = await db
+        .select()
+        .from(apiKeys)
+        .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, ownerId)))
+        .limit(1);
+      if (!row?.heldEnc || !openHold(row, holdId)) return;
+      await db
+        .update(apiKeys)
+        .set({ heldEnc: null })
+        .where(and(eq(apiKeys.id, id), eq(apiKeys.heldEnc, row.heldEnc)));
+    });
+  }
 }
 
 // ── Test ─────────────────────────────────────────────────────────────────────
@@ -964,7 +1210,7 @@ export async function importVaultKeys(
   }
   await gate();
   const failed: { row: number; reason: string }[] = [];
-  const plans: SetPlan[] = [];
+  const plans: { plan: SetPlan; input: VaultSetInput }[] = [];
   const seen = new Set<string>();
   for (const [i, cells] of body.entries()) {
     const rowNo = i + 1 + offset;
@@ -996,15 +1242,31 @@ export async function importVaultKeys(
         ...(tags.trim() ? { tags: listCell(tags) } : {}),
       };
       parsedName(parsed.name);
-      plans.push(planSet(ownerId, input, await findRow(ownerId, input.ref), who.via));
+      plans.push({
+        plan: planSet(ownerId, input, await findRow(ownerId, input.ref), who.via),
+        input,
+      });
     } catch (err) {
       if (!(err instanceof InputError)) throw err;
       failed.push({ row: rowNo, reason: err.message });
     }
   }
   if (failed.length > 0) return { ok: false, failed };
+  // Over MCP, every row that replaces a key is held first, all under one
+  // hold id (one approval for the call), before any add is written: a hold
+  // that fails leaves nothing written.
+  const hold = mustHold(who) ? randomUUID() : undefined;
+  const holds = (plan: SetPlan): plan is Extract<SetPlan, { op: 'replace' }> =>
+    hold !== undefined && plan.op === 'replace' && plan.changed.length > 0;
   const keys: VaultSetResult[] = [];
-  for (const plan of plans) {
+  for (const { plan, input } of plans) {
+    if (holds(plan)) {
+      keys.push(await holdPlan(who, plan, { op: 'set', input: heldInput(input) }, hold));
+    }
+  }
+  const held = keys.length;
+  for (const { plan } of plans) {
+    if (holds(plan)) continue;
     const written = await commitPlan(who, plan);
     keys.push(written);
     await afterEach?.(written);
@@ -1013,6 +1275,8 @@ export async function importVaultKeys(
     ok: true,
     added: keys.filter((k) => k.op === 'add').length,
     replaced: keys.filter((k) => k.op === 'replace').length,
+    held,
+    ...(held > 0 ? { holdId: hold } : {}),
     keys,
   };
 }

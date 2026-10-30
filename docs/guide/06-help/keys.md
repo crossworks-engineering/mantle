@@ -29,6 +29,8 @@ A password, an SSH key or a login also needs a **target**: the hosts (`printer-0
 
 **Write-only.** You can add, replace, test and delete a secret from the Keys screen, from your MCP client (`api_key_set`, `api_key_test`, `api_key_delete`, `api_key_import`) or with a CSV import (`name,kind,target,user,secret,tags`). No screen, tool or API ever shows a value again, to you or to an agent: replace it instead. A test of a token calls its provider; a test of another kind only checks the stored shape. Every add, replace, test and delete is written to the audit log, without the value.
 
+**From an MCP client, a replace or a delete waits for you.** Adding a new key is instant. Replacing a key that exists, or deleting one, goes to Pending approvals: the item shows the key's name, kind, target and masked preview, never the value. It happens only when you approve it in the app (or on its Telegram card); an MCP client cannot approve it, so an agent a web page or a document steered cannot swap your key for its own. A CSV import adds its new keys at once and holds every row that replaces a key for one approval. Rejecting it drops the waiting value. If the key changes in the meantime, the approval does nothing and says so.
+
 ## Assistant
 
 The assistant cannot see or change keys. It can list masked key references when it builds a tool. Only your own MCP client has the write tools.
@@ -39,5 +41,6 @@ The assistant cannot see or change keys. It can list masked key references when 
 - Agents, workers and the embedding setup point at a key by id. HTTP tools use a `{{secret:service/label}}` reference filled in at call time.
 - Restore a backup without the same `MANTLE_MASTER_KEY` and every key is unreadable. Keep that key with your backups, stored apart.
 - Tools: `api_key_refs` (masked previews only); over MCP only, `api_key_set`, `api_key_test`, `api_key_delete` and `api_key_import`, which go through the one write gateway in `@mantle/api-keys` (`vault.ts`: the keys area check and the audit row).
+- A waiting MCP replace or delete is sealed on the key's own row (`held_enc`), bound to the row and to a hold id that the pending item carries instead of the value. Approving it runs the change through the same gateway again, with the keys area checked for the person who asked; any other write to the key first makes it stale.
 - Only a token is ever opened to call a provider or fill a `{{secret:...}}` reference. The other kinds are sealed with the row id and their kind, so nothing that opens a token can open them; their fields (user, passphrase, sudo password) are sealed apart. A new value clears the stored passphrase and sudo password unless they are sent again.
 - See [Models and API keys](../05-admin/05-models-and-keys.md).

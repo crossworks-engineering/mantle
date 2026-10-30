@@ -50,6 +50,7 @@ import {
 } from './pending-approval';
 import { withOriginScope } from './pending-origin';
 import { notifyPendingChanged } from './pending-notify';
+import { HELD_ON_MCP_ERROR, heldToolRow, isHeldTool, releaseHeldCall } from './held-tools';
 import type { ToolHandlerContext } from './types';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
@@ -396,6 +397,14 @@ export async function rejectPendingCall(
   }
   // Repaint the badge / any open card the moment the status flips.
   if (row) void notifyPendingChanged(ownerId);
+  // A rejected vault change: its sealed value goes now (held-tools.ts).
+  // The rejection stands whatever the release meets: a hold left behind
+  // never applies without an approval, and the key's next write clears it.
+  if (row && isHeldTool(row.toolSlug)) {
+    await releaseHeldCall(ownerId, row.args as Record<string, unknown>).catch((err: unknown) => {
+      console.error('[pending] could not release a rejected hold:', errorMessage(err));
+    });
+  }
   if (row && row.toolSlug === 'ask_human') {
     return settleAskHuman(row, 'rejected');
   }
@@ -431,6 +440,9 @@ export async function approvePendingCall(
      *  naming it, so the owner's own confirmed
      *  app_delete is purged after 30 days and anyone else's is held. */
     approverLoginId?: string;
+    /** The approval comes over MCP (pending_approve): a held vault
+     *  change is refused there (held-tools.ts HELD_ON_MCP_ERROR). */
+    viaMcp?: true;
   },
 ): Promise<PendingSummary | null> {
   // Who approves (deciderOf): the scope's login, else the one the path
@@ -454,7 +466,7 @@ export async function approvePendingCall(
     !runnerRow(waiting.toolSlug) &&
     decidesRow(ownerId, opts?.approverLoginId, waiting)
   ) {
-    judgedTool = await enabledTool(ownerId, waiting.toolSlug);
+    judgedTool = await approvalTool(ownerId, waiting.toolSlug);
     // A stamped call whose tool is gone or disabled: no re-check can judge
     // it, and it never falls back to the rule of a call with no stamp.
     if (!judgedTool) throw new ApprovalRefusedError(PENDING_NO_TOOL_ERROR);
@@ -494,6 +506,13 @@ export async function approvePendingCall(
     claimed = (await claimElevatedPendingCall(ownerId, id)) ?? undefined;
   }
   if (!claimed) return null;
+  // A held vault change is a person's to approve, never an MCP
+  // connection's (the one that asked could approve its own): put back,
+  // pending, and refused.
+  if (opts?.viaMcp && isHeldTool(claimed.toolSlug)) {
+    await unclaimPendingCall(claimed.id);
+    throw new ApprovalRefusedError(HELD_ON_MCP_ERROR);
+  }
   // Fail closed: a stamped call this approval claimed without
   // judging it (not read, or decided between the read and the claim) is put
   // back, pending, and refused: it never runs by the legacy rule.
@@ -519,7 +538,7 @@ export async function approvePendingCall(
   // Resolve the tool by slug (not the snapshot at queue time — the
   // operator might have edited the handler in the meantime). A re-checked
   // call runs the tool it was judged with.
-  const tool = origin ? judgedTool : await enabledTool(ownerId, claimed.toolSlug);
+  const tool = origin ? judgedTool : await approvalTool(ownerId, claimed.toolSlug);
   if (!tool) {
     const errRow = await settlePendingCall(claimed.id, {
       error: `tool '${claimed.toolSlug}' is not registered or disabled`,
@@ -653,6 +672,13 @@ function approvalContext(
   approverLoginId?: string,
 ) {
   return { ownerId, surface: approvalSurface(row, approverLoginId) };
+}
+
+/** The tool an approval runs: a held vault tool by its builtin (MCP only,
+ *  it has no row; held-tools.ts), else the enabled row named `slug`, or
+ *  null. */
+async function approvalTool(ownerId: string, slug: string): Promise<Tool | null> {
+  return heldToolRow(slug) ?? (await enabledTool(ownerId, slug));
 }
 
 /** The enabled tool row named `slug`, or null. */

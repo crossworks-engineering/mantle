@@ -2423,6 +2423,13 @@
       "when": 1790287260000,
       "tag": "0346_vault_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 347,
+      "version": "7",
+      "when": 1790287320000,
+      "tag": "0347_vault_held",
+      "breakpoints": true
     }
   ]
 }

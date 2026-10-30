@@ -56,6 +56,7 @@ import {
   liveWorkspaceIds,
   loginScopeFor,
   SCOPE_AREAS,
+  scopeLeftForSystem,
   withoutLeftScope,
   withTurnScope,
   type PendingOrigin,
@@ -174,6 +175,20 @@ export async function pendingOriginNow(
     admin: { holds: view.holdsAdmin, areas: [...view.areas] },
     actor: stampActor(),
   };
+}
+
+/**
+ * pendingOriginNow for a call that queues itself while it runs whole on the
+ * system pool (a `systemWhole` tool after its area check, admin-gate.ts
+ * runGated: the vault's held changes): the scope that run left, which is
+ * the one the call was asked in. Outside such a run: pendingOriginNow.
+ */
+export async function pendingOriginOfCaller(
+  surface: ToolHandlerContext['surface'],
+): Promise<PendingOrigin> {
+  const left = currentWorkspaceScope() ? null : scopeLeftForSystem();
+  if (!left) return pendingOriginNow(surface);
+  return withTurnScope(left, () => pendingOriginNow(surface));
 }
 
 /** The actor the queuing turn runs as, as the stamp keeps it: an

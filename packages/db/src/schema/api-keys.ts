@@ -77,6 +77,10 @@ export const apiKeys = pgTable(
       .default(sql`'{}'::text[]`)
       .notNull(),
     viaTailnet: boolean('via_tailnet').notNull().default(false),
+    /** A replace or delete an MCP client asked for, waiting for the
+     *  owner's approval: sealed, AAD `<id>:held:<hold id>` (0347). Any
+     *  other write to the key clears it. Null: nothing waits. */
+    heldEnc: bytea('held_enc'),
     useCount: integer('use_count').notNull().default(0),
     lastUsed: timestamp('last_used', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

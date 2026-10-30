@@ -18,6 +18,8 @@
  * Tables touched:
  *   - api_keys.key_enc
  *   - api_keys.fields_enc             (nullable: a token has none; vault v2)
+ *   - api_keys.held_enc               (cleared, not re-sealed: a change
+ *                                      waiting for approval, 0347)
  *   - email_accounts.imap_config_enc  (nullable — accounts without IMAP creds are skipped)
  *   - channels.credentials_enc        (telegram bot token; see docs/comms-channels.md)
  *   - secrets.ciphertext
@@ -33,7 +35,7 @@
 import { db, apiKeys, channels, emailAccounts, secrets } from '@mantle/db';
 import { fieldsAad, valueAad } from '@mantle/api-keys';
 import { currentSealVersion, open, seal, sealedKeyVersion } from '@mantle/crypto';
-import { eq } from 'drizzle-orm';
+import { eq, isNotNull } from 'drizzle-orm';
 import { env } from '@mantle/config';
 
 async function assertReady(): Promise<void> {
@@ -134,6 +136,20 @@ async function main() {
       `[rotate] api_keys fields: scanned ${scanned}, resealed ${resealed}, already v2 ${alreadyV2}`,
     );
     all.push({ scanned, resealed, alreadyV2 });
+  }
+
+  // api_keys.held_enc (0347): a change an MCP client asked for, waiting
+  // for approval. Not re-sealed: its AAD names the hold its pending call
+  // carries, which this script does not read, and the rotation's write of
+  // the key above makes it stale anyway (its approval says so). Cleared, so
+  // no value sealed under the old key is left behind.
+  {
+    const cleared = await db
+      .update(apiKeys)
+      .set({ heldEnc: null })
+      .where(isNotNull(apiKeys.heldEnc))
+      .returning({ id: apiKeys.id });
+    console.log(`[rotate] api_keys held changes cleared: ${cleared.length}`);
   }
 
   // email_accounts.imap_config_enc is nullable — accounts that don't

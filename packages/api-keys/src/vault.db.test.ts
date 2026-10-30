@@ -1,9 +1,11 @@
 /**
  * The vault's write gateway (vault v2 part 1) on a real migrated database
- * (0346): add, replace, test, delete and import of each kind; no reply and
- * no audit row ever holds a value; a password, an SSH key or a login is
- * never opened by a read path; nothing loosens by itself. Made-up values
- * only; nothing calls a provider (the token tested here has no adapter).
+ * (0346, 0347): add, replace, test, delete and import of each kind; no
+ * reply and no audit row ever holds a value; a password, an SSH key or a
+ * login is never opened by a read path; nothing loosens by itself; over
+ * MCP a replace or a delete waits for approval (a hold) and lands only
+ * when applied as an approved call. Made-up values only; nothing calls a
+ * provider (the token tested here has no adapter).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run vault.db.test
  */
@@ -219,7 +221,8 @@ describe.skipIf(!URL)('the vault write gateway', () => {
   });
 
   it('over MCP, widening where a key may be used needs the secret again', async () => {
-    const mcp = { loginId: owner, via: 'mcp' } as const;
+    // As an approved call makes it (an MCP replace that is not one holds).
+    const mcp = { loginId: owner, via: 'mcp', approval: { approver: owner } } as const;
     await set(who, owner, {
       ref: { name: 'cam-1' },
       kind: 'password',
@@ -251,7 +254,7 @@ describe.skipIf(!URL)('the vault write gateway', () => {
   });
 
   it('a new value clears the old sudo password, so a replace cannot move it unseen', async () => {
-    const mcp = { loginId: owner, via: 'mcp' } as const;
+    const mcp = { loginId: owner, via: 'mcp', approval: { approver: owner } } as const;
     const { open } = await import('@mantle/crypto');
     const fieldsOf = async (id: string) => {
       const [row] = (await exec(
@@ -370,14 +373,114 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     });
   });
 
+  it('over MCP, a replace and a delete wait for approval; only an approved call makes them', async () => {
+    const mcp = { loginId: owner, via: 'mcp' } as const;
+    const approved = { ...mcp, approval: { approver: owner } } as const;
+    const apply = (a: typeof mcp | typeof approved, hold: string, ids: string[]) =>
+      sys(() => keys.applyHeldVaultWrites(a, owner, hold, ids));
+    const heldOf = async (id: string) =>
+      (
+        (await exec(sqlTag`select held_enc from api_keys where id = ${id}`)) as unknown as {
+          held_enc: Buffer | null;
+        }[]
+      )[0]!.held_enc;
+
+    const first = v('held-1');
+    await set(who, owner, { ref: { name: 'held-key' }, kind: 'token', value: first });
+    // A new key over MCP is instant.
+    const added = await set(mcp, owner, {
+      ref: { name: 'held-new' },
+      kind: 'token',
+      value: v('held-new'),
+    });
+    expect(added).toMatchObject({ op: 'add', secretWritten: true });
+
+    // A replace holds: nothing written, the reply and the row's other
+    // columns carry no value.
+    const second = v('held-2');
+    const held = await set(mcp, owner, { ref: { name: 'held-key' }, value: second });
+    expect(held).toMatchObject({ op: 'held', secretWritten: false, held: { kind: 'token' } });
+    noValue(held);
+    expect(await keys.getApiKey(owner, 'held-key')).toEqual({ apiKey: first });
+    expect(await heldOf(held!.key.id)).not.toBeNull();
+    const hold = held!.held!.holdId;
+
+    // Another hold id opens nothing; a caller that is no approved call is refused.
+    await expect(apply(approved, randomUUID(), [held!.key.id])).rejects.toThrow(
+      keys.VAULT_HOLD_GONE,
+    );
+    await expect(apply(mcp, hold, [held!.key.id])).rejects.toThrow(/approved pending call/);
+    expect(await keys.getApiKey(owner, 'held-key')).toEqual({ apiKey: first });
+
+    // The approval makes it, once, and clears the hold.
+    const done = await apply(approved, hold, [held!.key.id]);
+    expect(done.keys).toMatchObject([{ op: 'replace', secretWritten: true }]);
+    noValue(done);
+    expect(await keys.getApiKey(owner, 'held-key')).toEqual({ apiKey: second });
+    expect(await heldOf(held!.key.id)).toBeNull();
+    await expect(apply(approved, hold, [held!.key.id])).rejects.toThrow(keys.VAULT_HOLD_GONE);
+
+    // A write to the key since the hold voids it.
+    const stale = await set(mcp, owner, { ref: { name: 'held-key' }, value: v('held-3') });
+    await set(who, owner, { ref: { name: 'held-key' }, tags: ['later'] });
+    await expect(apply(approved, stale!.held!.holdId, [stale!.key.id])).rejects.toThrow(
+      keys.VAULT_HOLD_GONE,
+    );
+    expect(await keys.getApiKey(owner, 'held-key')).toEqual({ apiKey: second });
+
+    // A delete holds; a release (a rejection) drops it and it never applies.
+    const d1 = await del(mcp, owner, { name: 'held-key' });
+    expect(d1).toMatchObject({ key: { name: 'held-key' }, held: { kind: 'token' } });
+    expect((await keys.listApiKeys(owner)).some((k) => k.name === 'held-key')).toBe(true);
+    await sys(() => keys.releaseVaultHolds(owner, d1!.held!.holdId, [d1!.key.id]));
+    expect(await heldOf(d1!.key.id)).toBeNull();
+    await expect(apply(approved, d1!.held!.holdId, [d1!.key.id])).rejects.toThrow(
+      keys.VAULT_HOLD_GONE,
+    );
+    // A release under another hold id leaves a hold alone.
+    const d2 = await del(mcp, owner, { name: 'held-key' });
+    await sys(() => keys.releaseVaultHolds(owner, randomUUID(), [d2!.key.id]));
+    expect(await heldOf(d2!.key.id)).not.toBeNull();
+    const gone = await apply(approved, d2!.held!.holdId, [d2!.key.id]);
+    expect(gone.keys).toMatchObject([{ op: 'delete', key: { name: 'held-key' } }]);
+    expect((await keys.listApiKeys(owner)).some((k) => k.name === 'held-key')).toBe(false);
+
+    // An import adds at once and holds its replace rows under one hold.
+    const imported = await imp(
+      mcp,
+      owner,
+      [`held-new,token,,,${v('held-new-2')},`, `held-add,token,,,${v('held-add')},`].join('\n'),
+    );
+    expect(imported).toMatchObject({ ok: true, added: 1, replaced: 0, held: 1 });
+    if (!imported.ok) return;
+    noValue(imported);
+    const heldRow = imported.keys.find((k) => k.op === 'held')!;
+    expect(heldRow.key.name).toBe('held-new');
+    expect(heldRow.held!.holdId).toBe(imported.holdId);
+    const applied = await apply(approved, imported.holdId!, [heldRow.key.id]);
+    expect(applied.keys).toMatchObject([{ op: 'replace', key: { name: 'held-new' } }]);
+    expect(await keys.getApiKey(owner, 'held-new')).toEqual({ apiKey: values.at(-2) });
+
+    // The audit trail: each hold, and the approved write naming its approver.
+    const rows = await audits();
+    noValue(rows);
+    expect(rows.filter((r) => r.action === 'vault.key.hold').length).toBeGreaterThanOrEqual(5);
+    const approvedSet = rows.find(
+      (r) => r.action === 'vault.key.set' && r.detail.approvedBy === owner,
+    );
+    expect(approvedSet!.detail).toMatchObject({ name: 'held-key', via: 'mcp', op: 'replace' });
+  });
+
   it('deletes by name, and every write left an audit row with no value', async () => {
     const gone = await del(who, owner, { name: 'printer-07' });
-    expect(gone).toMatchObject({ name: 'printer-07', kind: 'ssh_key' });
+    expect(gone).toMatchObject({ key: { name: 'printer-07', kind: 'ssh_key' } });
     expect(await del(who, owner, { name: 'printer-07' })).toBeNull();
     const rows = await audits();
     noValue(rows);
     const actions = new Set(rows.map((r) => r.action));
-    expect(actions).toEqual(new Set(['vault.key.set', 'vault.key.test', 'vault.key.delete']));
+    expect(actions).toEqual(
+      new Set(['vault.key.set', 'vault.key.test', 'vault.key.delete', 'vault.key.hold']),
+    );
     const deleted = rows.find((r) => r.action === 'vault.key.delete');
     expect(deleted!.detail).toMatchObject({ name: 'printer-07', kind: 'ssh_key', via: 'web' });
     const add = rows.find((r) => r.action === 'vault.key.set' && r.detail.name === 'pi-lab-3');

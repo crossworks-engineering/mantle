@@ -1,0 +1,25 @@
+-- Credential vault v2: a change an MCP client asks for that replaces or
+-- deletes an existing secret waits for the owner's approval (the pending
+-- list), so an agent a page or a document steers cannot swap a key's value
+-- for its own or drop a key by itself. Adding a new key stays instant.
+--
+-- held_enc  the change waiting for approval, sealed (@mantle/crypto) with
+--           AAD `<id>:held:<hold id>`: the new value and fields of a
+--           replace, or a delete's marker. The hold id rides on the pending
+--           call's arguments, never the value, so the pending item, its
+--           preview, its trace and the logs name the key and its masked
+--           preview only. Opened by the vault's write gateway alone, when
+--           the call is approved, and only while the key is as it was when
+--           asked: every other write to the key clears it. Null: nothing
+--           waits.
+--
+-- Grants come from the access matrix (applyViewerGrants), never from here:
+-- api_keys stays closed to every workspace role, and the narrow login gets
+-- no UPDATE of the new column (a hold and its clear run at the full-route
+-- spot model-route).
+--
+-- Additive: no value is rewritten, no trigger, no LLM work. Re-runnable.
+-- Revert: packages/db/rollback/0347_vault_held.revert.sql.
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+ALTER TABLE "public"."api_keys" ADD COLUMN IF NOT EXISTS "held_enc" bytea;

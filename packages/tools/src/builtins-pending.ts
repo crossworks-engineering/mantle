@@ -93,7 +93,7 @@ export const pending_approve: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Approve a pending tool call',
   description:
-    'Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned. For a runner `ask_human` question, approval completes the run step and `answer` carries the free-text reply the run continues with (omit it for a plain yes / option-pick approval). When the row carries a `form` (see its args), answer per sub-question with `answers` instead.',
+    'Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned. For a runner `ask_human` question, approval completes the run step and `answer` carries the free-text reply the run continues with (omit it for a plain yes / option-pick approval). When the row carries a `form` (see its args), answer per sub-question with `answers` instead. A change to a stored key (`api_key_set`, `api_key_delete`, `api_key_import`) is approved by a person in the app, never here.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -147,11 +147,12 @@ export const pending_approve: BuiltinToolDef = {
     const approver = ownerSurfaceLoginId(ctx.surface) ?? currentWorkspaceScope()?.loginId ?? null;
     let row;
     try {
-      row = await approvePendingCall(
-        ctx.ownerId,
-        id,
-        (approver ? { ...decision, approverLoginId: approver } : decision) as never,
-      );
+      // Over MCP: a held vault change is refused here (held-tools.ts).
+      row = await approvePendingCall(ctx.ownerId, id, {
+        ...decision,
+        ...(approver ? { approverLoginId: approver } : {}),
+        viaMcp: true,
+      } as never);
     } catch (err) {
       // The approval rule refused this approver (pending-approval.ts): the
       // call stays pending for an Admin user who may approve it.

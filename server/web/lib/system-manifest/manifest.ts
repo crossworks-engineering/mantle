@@ -856,8 +856,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'tables-rows',
     name: 'Tables row writes',
     description:
-      'Single-row inserts + updates ("log this expense") — the light write slice of the grid. Schema/column/tab work, imports, reorders, and multi-row transforms stay with the Ledger specialist; row deletes stay deliberate-only (table-admin).',
-    toolSlugs: ['table_row_add', 'table_row_update'],
+      'Row inserts + updates, one row or a batch ("log this expense", "mark these five done") — the light write slice of the grid. Schema/column/tab work, imports, reorders, and transforms that need logic stay with the Ledger specialist; row deletes stay deliberate-only (table-admin).',
+    toolSlugs: ['table_row_add', 'table_row_update', 'table_rows_add', 'table_rows_upsert'],
   },
   {
     slug: 'pages-draft',
@@ -1427,7 +1427,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // Grants are pure tool groups: the generalist's effective set is the
     // union of these bundles. Page/table work is HYBRID: the persona holds the LIGHT slices
     // directly — `tables-read` (answer from grids; tool_grounding's table_sql
-    // ladder assumed this all along), `tables-rows` (single-row writes), and
+    // ladder assumed this all along), `tables-rows` (row writes, one or a batch), and
     // `pages-draft` (create / draft-write / single-block fixes) — while HEAVY
     // transforms (multi-block restyles, schema/column work, imports) stay
     // delegated to the Pages / Ledger specialists (no `pages`/`tables`/

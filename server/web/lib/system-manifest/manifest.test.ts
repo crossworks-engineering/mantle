@@ -207,6 +207,10 @@ describe('system manifest integrity', () => {
     expect(grant.has('table_row_add'), 'persona logs single rows directly (tables-rows)').toBe(
       true,
     );
+    // A batch is one call, never a loop of single-row writes.
+    expect(grant.has('table_rows_add'), 'persona appends many rows in one call').toBe(true);
+    expect(grant.has('table_rows_upsert'), 'persona updates many rows in one call').toBe(true);
+    expect(grant.has('table_row_delete'), 'row deletes stay deliberate-only').toBe(false);
     expect(
       grant.has('page_update'),
       'live-overwrite stays with Pages (persona is draft-only)',

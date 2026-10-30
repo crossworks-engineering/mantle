@@ -18,6 +18,13 @@ export function fieldsAad(id: string): string {
   return `${id}:fields`;
 }
 
+/** The AAD a row's `held_enc` (a change waiting for approval) is sealed
+ *  with: the row and the hold its pending call names, so a hold opens only
+ *  for the call that asked for it. */
+export function heldAad(id: string, holdId: string): string {
+  return `${id}:held:${holdId}`;
+}
+
 /** Compute the display mask, shown to the owner and to agents: the first
  *  4 and last 4 characters only of a value of 32 or more (a provider key,
  *  where eight leave most of it unseen), the last 4 of one of 16 to 31,

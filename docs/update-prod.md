@@ -1593,6 +1593,26 @@ row per write and never answers a value.
 - **Master key rotation:** `pnpm -C server/web rotate:master-key` re-seals
   `fields_enc` too, each with its own AAD.
 
+## Going up to 0347 (vault: MCP replace and delete wait for approval)
+
+Migration 0347 adds one nullable column, `api_keys.held_enc`. Over MCP, a
+write that replaces or deletes an existing key no longer lands at once: the
+vault gateway seals the change on the key's row and the tool parks a
+pending call that names the key, its kind, target and masked preview, never
+the value. A person approves it on the Pending screen (or its Telegram
+card); `pending_approve` over MCP refuses it. Adding a new key stays
+instant, and the Keys screen is unchanged.
+
+- **What it changes for readers:** an MCP client that replaces or deletes a
+  key gets `queued_for_approval` and a `pending_id`.
+- **Rolling back below it:** optional. The revert
+  (`packages/db/rollback/0347_vault_held.revert.sql`) clears every waiting
+  change and takes 0347 off the ledger; the column stays. A pending call
+  left from it fails on approval in the older image (its tool has no row):
+  reject it.
+- **Master key rotation:** clears `held_enc` (a waiting change is asked
+  again after it).
+
 ## Rollback
 
 ```bash

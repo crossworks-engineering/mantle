@@ -9,19 +9,34 @@
  * ever granted a vault write. Write-only: a reply carries the name, kind,
  * target, tags and the masked preview, never a value; the value inputs are
  * redacted from every trace and from the MCP call log.
+ *
+ * A replace or a delete of an existing key waits for the owner: the
+ * gateway seals the change on the key (a hold) and the tool parks a pending
+ * call naming the hold, the key's name, kind, target and masked preview,
+ * never the value. Its approval (on the Pending screen or a Telegram card,
+ * never over MCP: held-tools.ts) runs the tool again as an approved call,
+ * which makes the held change through the gateway, its gate and checks
+ * again. Adding a new key is instant.
  */
 import {
+  applyHeldVaultWrites,
   deleteVaultKey,
   importVaultKeys,
+  releaseVaultHolds,
   setVaultKey,
   testVaultKey,
   type VaultActor,
+  type VaultHeld,
   type VaultKeySummary,
   type VaultKind,
   type VaultSetInput,
 } from '@mantle/api-keys';
+import { parkPendingCall } from '@mantle/db';
 import { AccessError, ConflictError, InputError } from '@mantle/std';
 import { afterVaultKeyReplaced } from '../vault-follow-up';
+import { heldCallKeys } from '../held-tools';
+import { notifyPendingCreated } from '../pending-notify';
+import { pendingOriginOfCaller } from '../pending-origin';
 import { CS } from '../client-sourced-rule';
 import { str } from '../coerce';
 import { type BuiltinToolDef, type ToolHandlerContext, type ToolHandlerResult } from '../types';
@@ -33,8 +48,14 @@ const VAULT_WRITE = 'changes the secrets tools and agents sign in with';
  *  (vault-keys.test.ts pins it equal to VAULT_KINDS). */
 export const VAULT_KIND_ENUM: readonly VaultKind[] = ['token', 'password', 'ssh_key', 'login'];
 
+/** Whether this run is an approved pending call (pending.ts sets the
+ *  caller; an MCP call never has it): it makes a held change. */
+function approvedRun(ctx: ToolHandlerContext): boolean {
+  return ctx.caller?.entry === 'pending';
+}
+
 /** Who writes, for the vault's audit row: the connection's login (none on
- *  the owner's stdio client). */
+ *  the owner's stdio client), and on an approved call who approved it. */
 function vaultActor(ctx: ToolHandlerContext): VaultActor {
   const s = ctx.surface;
   const loginId = s && 'loginId' in s && typeof s.loginId === 'string' ? s.loginId : null;
@@ -49,7 +70,82 @@ function vaultActor(ctx: ToolHandlerContext): VaultActor {
         ...(mcp.oauthClientId ? { oauthClientId: mcp.oauthClientId } : {}),
       }
     : undefined;
-  return { loginId, via: 'mcp', ...(connection ? { connection } : {}) };
+  return {
+    loginId,
+    via: 'mcp',
+    ...(connection ? { connection } : {}),
+    ...(approvedRun(ctx) ? { approval: { approver: ctx.caller?.approval?.approver ?? null } } : {}),
+  };
+}
+
+/** A held change as its pending call shows it: the key's name and the
+ *  kind, target and masked preview the change leaves, never a value. */
+function heldPreview(name: string, held: VaultHeld, keyId: string) {
+  return { name, kind: held.kind, target: held.target, masked: held.masked, key_id: keyId };
+}
+
+const QUEUED =
+  'Queued for the owner: a change to a stored key applies once a person approves it on the Pending screen in the app. Do not retry, and do not approve it yourself.';
+
+/**
+ * Park a held change for approval: a pending call named `slug` whose
+ * arguments carry the hold and the keys' previews, never a value, asked
+ * by this connection's login in the scope it asked in. Nothing parked: the
+ * holds are dropped and the call says so.
+ */
+async function parkHeld(
+  ctx: ToolHandlerContext,
+  slug: string,
+  args: Record<string, unknown>,
+): Promise<ToolHandlerResult> {
+  const loginId = vaultActor(ctx).loginId;
+  const pendingId = await parkPendingCall({
+    ownerId: ctx.ownerId,
+    agentId: null,
+    toolSlug: slug,
+    args,
+    ...(loginId ? { loginId } : {}),
+    origin: await pendingOriginOfCaller(ctx.surface),
+  });
+  const held = heldCallKeys(args);
+  if (!pendingId) {
+    if (held) await releaseVaultHolds(ctx.ownerId, held.holdId, held.keyIds);
+    return {
+      ok: false,
+      error: 'The change could not be queued for approval, so nothing changed: try again.',
+    };
+  }
+  void notifyPendingCreated({ ownerId: ctx.ownerId, pendingId, toolSlug: slug, args, via: 'MCP' });
+  ctx.step?.setOutput({ op: 'held', pending_id: pendingId });
+  return {
+    ok: true,
+    output: { status: 'queued_for_approval', pending_id: pendingId, message: QUEUED },
+  };
+}
+
+/** An approved call: make the change its arguments hold, through the
+ *  gateway (its gate and checks again), and void a connector's marks for
+ *  each secret replaced. */
+async function applyHeld(
+  input: Record<string, unknown>,
+  ctx: ToolHandlerContext,
+): Promise<ToolHandlerResult> {
+  const held = heldCallKeys(input);
+  if (!held) {
+    return {
+      ok: false,
+      error: 'This approved call names no held change, so nothing changed: reject such calls.',
+    };
+  }
+  const result = await applyHeldVaultWrites(vaultActor(ctx), ctx.ownerId, held.holdId, held.keyIds);
+  for (const k of result.keys) {
+    if (k.secretWritten) await afterVaultKeyReplaced(ctx.ownerId, k.key.service, k.key.label);
+  }
+  ctx.step?.setOutput({ op: 'approved', keys: result.keys.length });
+  return {
+    ok: true,
+    output: { keys: result.keys.map((k) => ({ ...reply(k.key), op: k.op })) },
+  };
 }
 
 /** A secret as a tool answers it: never a value. */
@@ -118,7 +214,7 @@ export const api_key_set: BuiltinToolDef = {
   },
   name: 'Add or replace a vault key',
   description:
-    'Add a secret to the vault, or replace the one with that name, and return its name, kind, target, tags and masked preview, **never the value**. A new key names its `kind`: token (an API key), password, ssh_key (a private key plus `user`), login (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target` and waits for the owner on each use unless `needs_approval` is false. Do not echo the value back to the user. List names with `api_key_refs`; many at once: `api_key_import`.',
+    'Add a secret to the vault and return its name, kind, target, tags and masked preview, **never the value**. Replacing an existing key **waits for the owner** to approve it in the app (the reply says `queued_for_approval`); adding a new one is instant. A new key names its `kind`: token (an API key), password, ssh_key (a private key plus `user`), login (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target`. Do not echo the value back to the user. List names with `api_key_refs`; many at once: `api_key_import`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -178,6 +274,7 @@ export const api_key_set: BuiltinToolDef = {
   redactInputFields: ['value', 'user', 'passphrase', 'sudo_password'],
   handler: (input, ctx) =>
     answer(async () => {
+      if (approvedRun(ctx)) return applyHeld(input, ctx);
       const name = str(input.name);
       const target = strList(input.target);
       const tags = strList(input.tags);
@@ -201,6 +298,13 @@ export const api_key_set: BuiltinToolDef = {
       };
       const result = await setVaultKey(vaultActor(ctx), ctx.ownerId, set);
       if (!result) return { ok: false, error: NOT_FOUND };
+      if (result.op === 'held' && result.held) {
+        return parkHeld(ctx, 'api_key_set', {
+          op: 'replace',
+          ...heldPreview(result.key.name, result.held, result.key.id),
+          hold_id: result.held.holdId,
+        });
+      }
       if (result.secretWritten) {
         await afterVaultKeyReplaced(ctx.ownerId, result.key.service, result.key.label);
       }
@@ -213,7 +317,7 @@ export const api_key_set: BuiltinToolDef = {
           message:
             result.op === 'add'
               ? 'Added. The value is sealed: confirm by name only, never repeat it.'
-              : 'Replaced. The value is sealed: confirm by name only, never repeat it.',
+              : 'Nothing to change: the key is already as asked.',
         },
       };
     }),
@@ -281,7 +385,7 @@ export const api_key_delete: BuiltinToolDef = {
   },
   name: 'Delete a vault key',
   description:
-    'Delete a vault key by name and return what was deleted (name, kind, target), never the value. Not reversible: agents, workers and tools that use it are left with no key, so check the name with `api_key_refs` and ask the user first. To change a value use `api_key_set` instead.',
+    'Ask to delete a vault key by name: it **waits for the owner** to approve it in the app (the reply says `queued_for_approval`), then the key is gone, not reversible: agents, workers and tools that use it are left with no key. Check the name with `api_key_refs` first. Never returns the value. To change a value use `api_key_set` instead.',
   inputSchema: {
     type: 'object',
     properties: { name: NAME_PARAM },
@@ -289,10 +393,18 @@ export const api_key_delete: BuiltinToolDef = {
   },
   handler: (input, ctx) =>
     answer(async () => {
+      if (approvedRun(ctx)) return applyHeld(input, ctx);
       const name = str(input.name);
       const gone = await deleteVaultKey(vaultActor(ctx), ctx.ownerId, { name });
       if (!gone) return { ok: false, error: NOT_FOUND };
-      return { ok: true, output: { deleted: reply(gone) } };
+      if (gone.held) {
+        return parkHeld(ctx, 'api_key_delete', {
+          op: 'delete',
+          ...heldPreview(gone.key.name, gone.held, gone.key.id),
+          hold_id: gone.held.holdId,
+        });
+      }
+      return { ok: true, output: { deleted: reply(gone.key) } };
     }),
 };
 
@@ -312,7 +424,7 @@ export const api_key_import: BuiltinToolDef = {
   },
   name: 'Import vault keys from CSV',
   description:
-    "Add or replace many vault keys from CSV text and return the counts and each key's name, kind and target, never a value. Columns: name,kind,target,user,secret,tags (a header row is skipped; targets and tags split on ';'; quote an SSH key's lines). Every row is checked first: one bad row and **nothing is written**, and each bad row comes back by number with the reason. For one key use `api_key_set`.",
+    "Add or replace many vault keys from CSV text and return the counts and each key's name, kind and target, never a value. Columns: name,kind,target,user,secret,tags (a header row is skipped; targets and tags split on ';'; quote an SSH key's lines). Every row is checked first: one bad row and **nothing is written**, and each bad row comes back by number with the reason. New keys are added at once; rows that replace a key **wait for the owner** to approve them together in the app (`pending_id`). For one key use `api_key_set`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -329,6 +441,7 @@ export const api_key_import: BuiltinToolDef = {
   redactInputFields: ['csv'],
   handler: (input, ctx) =>
     answer(async () => {
+      if (approvedRun(ctx)) return applyHeld(input, ctx);
       // Each written row's follow-up runs as it lands (a connector's marks).
       const result = await importVaultKeys(
         vaultActor(ctx),
@@ -346,13 +459,31 @@ export const api_key_import: BuiltinToolDef = {
             .join(' ')}`,
         };
       }
-      ctx.step?.setOutput({ added: result.added, replaced: result.replaced });
+      const keys = result.keys.filter((k) => k.op !== 'held');
+      // The rows that replace a key: one pending call for all of them.
+      const held = result.keys.flatMap((k) =>
+        k.op === 'held' && k.held ? [heldPreview(k.key.name, k.held, k.key.id)] : [],
+      );
+      const queued =
+        held.length > 0 && result.holdId
+          ? await parkHeld(ctx, 'api_key_import', {
+              op: 'replace',
+              hold_id: result.holdId,
+              keys: held,
+            })
+          : null;
+      ctx.step?.setOutput({ added: result.added, replaced: result.replaced, held: held.length });
       return {
         ok: true,
         output: {
           added: result.added,
           replaced: result.replaced,
-          keys: result.keys.map((k) => ({ ...reply(k.key), op: k.op })),
+          keys: keys.map((k) => ({ ...reply(k.key), op: k.op })),
+          ...(queued
+            ? queued.ok
+              ? { waiting: held.map((k) => k.name), ...(queued.output as Record<string, unknown>) }
+              : { waiting_error: queued.error }
+            : {}),
         },
       };
     }),
