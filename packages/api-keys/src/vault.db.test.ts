@@ -516,7 +516,10 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     noValue(rows);
     expect(rows.filter((r) => r.action === 'vault.key.hold').length).toBeGreaterThanOrEqual(5);
     const approvedSet = rows.find(
-      (r) => r.action === 'vault.key.set' && r.detail.approvedBy === owner,
+      (r) =>
+        r.action === 'vault.key.set' &&
+        r.detail.approvedBy === owner &&
+        r.detail.name === 'held-key',
     );
     expect(approvedSet!.detail).toMatchObject({ name: 'held-key', via: 'mcp', op: 'replace' });
   });
@@ -531,7 +534,9 @@ describe.skipIf(!URL)('the vault write gateway', () => {
     expect(actions).toEqual(
       new Set(['vault.key.set', 'vault.key.test', 'vault.key.delete', 'vault.key.hold']),
     );
-    const deleted = rows.find((r) => r.action === 'vault.key.delete');
+    const deleted = rows.find(
+      (r) => r.action === 'vault.key.delete' && r.detail.name === 'printer-07',
+    );
     expect(deleted!.detail).toMatchObject({ name: 'printer-07', kind: 'ssh_key', via: 'web' });
     const add = rows.find((r) => r.action === 'vault.key.set' && r.detail.name === 'pi-lab-3');
     expect(add!.detail).toMatchObject({ op: 'add', changed: ['value', 'fields'] });
