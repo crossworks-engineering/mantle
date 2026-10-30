@@ -321,9 +321,48 @@ the table. The nightly `mcp-calls-reap` sweep removes rows older than 90
 days (by hand `pnpm -C server/web mcp-calls:reap`, dry run unless
 `--apply`). No model runs on any of it.
 
+## ChatGPT and the `resource` value (corporate plan phase 3)
+
+ChatGPT connects as any MCP client does: RFC 9728 discovery from the 401,
+RFC 7591 registration, PKCE S256, then the token endpoint
+([09-connect-chatgpt.md](./guide/07-api/09-connect-chatgpt.md)). It also
+sends the RFC 8707 `resource` value (the protected resource metadata's
+`resource`, `${MANTLE_PUBLIC_URL}/api/mcp`) on the authorization request
+and on both token grants, as the MCP spec asks every client to.
+
+An access token here is an opaque handle to a row in this box's database,
+honoured only at this box's `/api/mcp`, so it is bound to that one
+resource whatever the client sent: there is no `aud` claim to copy the
+value into. `server/web/lib/mcp-resource.ts` checks each value against
+the public URL and the origin the request came in on (an old host name the
+box still serves), the MCP endpoint or the bare origin, and logs one line
+(`[mcp-oauth] resource mismatch at ...`) for a value that names another
+server. It never refuses: a Claude connector that sends no value, and an
+old host name, work as before (plan section 2.1). The whole flow, for a
+ChatGPT-shaped client, a Claude-shaped one and an old host, is
+`server/web/lib/mcp-connector-flow.db.test.ts`.
+
+ChatGPT registers ONCE per workspace app and every person in that ChatGPT
+workspace signs in on that one client id. A member's own Disconnect
+(`disconnectLoginClient`) revokes only their grants; the admin's
+Disconnect in Settings, MCP (`disconnectClient`) deletes the client row,
+which ends every person's grants and leaves ChatGPT with `invalid_client`
+until a ChatGPT admin adds the app again.
+
 ## Not done, and why
 
 - Static tokens for admin logins: admins have OAuth, peers and API keys.
+- Client ID Metadata Documents (OpenAI's preferred registration, the MCP
+  spec's SHOULD): dynamic registration still works for ChatGPT, so it is
+  later. ChatGPT prefers it when a server offers it, so offering
+  `client_id_metadata_document_supported` changes how the ChatGPT apps
+  already connected sign in: it needs its own plan.
+- RFC 9207 `iss` on the authorization response: optional for ChatGPT.
+  Advertising it lets ChatGPT use its stable redirect URI, which the
+  existing ChatGPT registrations may not hold, so turning it on is a
+  change for connected clients, made only with a plan for them.
+- `offline_access` in `scopes_supported`: refresh tokens are issued on
+  every grant whatever the scope, so it is not advertised.
 - http and recipe tools on MCP: their egress is not classified.
 - Pending peers verify, as for the federation routes.
 - The admin's connected-clients list in Settings, MCP shows every login's

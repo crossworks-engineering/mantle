@@ -7,7 +7,7 @@
  * refused (plan section 2.1: a box that changes nothing behaves as
  * today). The grant logic itself is stood in.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 const h = vi.hoisted(() => ({ exchanged: 0, refreshed: 0 }));
 
@@ -28,11 +28,21 @@ vi.mock('@/lib/mcp-oauth', () => ({
   isRemoteMcpEnabled: async () => true,
   exchangeAuthCode: async () => {
     h.exchanged += 1;
-    return { ok: true, tokens: TOKENS, login: { id: 'l1', email: 'a@example.invalid' }, clientId: 'c1' };
+    return {
+      ok: true,
+      tokens: TOKENS,
+      login: { id: 'l1', email: 'a@example.invalid' },
+      clientId: 'c1',
+    };
   },
   refreshAccessToken: async () => {
     h.refreshed += 1;
-    return { ok: true, tokens: TOKENS, login: { id: 'l1', email: 'a@example.invalid' }, clientId: 'c1' };
+    return {
+      ok: true,
+      tokens: TOKENS,
+      login: { id: 'l1', email: 'a@example.invalid' },
+      clientId: 'c1',
+    };
   },
 }));
 
@@ -56,7 +66,7 @@ const CODE = {
 };
 const REFRESH = { grant_type: 'refresh_token', refresh_token: 'rt-0', client_id: 'c1' };
 
-let warn: ReturnType<typeof vi.spyOn>;
+let warn: MockInstance<typeof console.warn>;
 beforeEach(() => {
   process.env.MANTLE_PUBLIC_URL = 'https://brain.example';
   h.exchanged = 0;

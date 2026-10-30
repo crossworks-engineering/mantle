@@ -4,14 +4,22 @@ title: MCP connector
 
 ## MCP connector
 
-The MCP connector lets an outside AI client, such as Claude, connect to this brain and use its tools. It is off until you turn it on.
+The MCP connector lets an outside AI client, such as Claude or ChatGPT, connect to this brain and use its tools. It is off until you turn it on.
 
 1. Switch on **Enable remote MCP**.
 2. Copy the **Connector URL**.
 3. In claude.ai, open Settings, then Connectors, then Add custom connector, and paste the URL.
 4. Sign in to this brain and approve access when asked.
 
-Click **Check endpoint** to test that the connector answers. **Connected clients** lists every client that has signed in. Disconnect one to cut its access at once.
+ChatGPT (Business, Enterprise or Edu, on the web) uses the same URL:
+
+1. A ChatGPT workspace admin opens Plugins, presses +, then Add custom MCP server, and pastes the URL.
+2. They choose OAuth, sign in to this brain and allow access.
+3. They publish the app for the ChatGPT workspace. Each person then signs in once with their own login.
+
+ChatGPT sees only what the signed-in login can see. What a tool returns goes into the company's OpenAI workspace. After a MantleOS update, a ChatGPT admin presses Refresh on the app. See [Connect ChatGPT over MCP](../07-api/09-connect-chatgpt.md).
+
+Click **Check endpoint** to test that the connector answers. **Connected clients** lists every client that has signed in. Disconnect one to cut its access at once. A ChatGPT app is one client for its whole ChatGPT workspace: disconnecting it here cuts every person in that workspace, and a ChatGPT admin must add it again.
 
 Every login can use Claude on this brain with its own rights only: it reads what its workspaces hold and changes what they let it change, and nothing more. There is no switch per login. It changes rows in a mini app only where the app's **MCP access** is on. A login whose client cannot sign in makes its own key under **API access**.
 

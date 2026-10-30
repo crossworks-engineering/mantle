@@ -3,10 +3,10 @@
  * what a log line repeats of a value that does not. Nothing here refuses:
  * lib/mcp-resource.ts only logs.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { canonicalResource, noteResource, resourceNamesThisBox } from './mcp-resource';
 
-let warn: ReturnType<typeof vi.spyOn>;
+let warn: MockInstance<typeof console.warn>;
 beforeEach(() => {
   process.env.MANTLE_PUBLIC_URL = 'https://brain.example';
   warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

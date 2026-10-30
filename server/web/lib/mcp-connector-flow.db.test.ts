@@ -107,11 +107,7 @@ describe.skipIf(!URL_)('the MCP connector flow (ChatGPT and Claude)', () => {
     });
 
   /** Register, consent and exchange, as one client runs it. */
-  const signIn = async (o: {
-    clientName: string;
-    redirect: string;
-    resource: string | null;
-  }) => {
+  const signIn = async (o: { clientName: string; redirect: string; resource: string | null }) => {
     const reg = await req('/api/oauth/register', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -227,9 +223,7 @@ describe.skipIf(!URL_)('the MCP connector flow (ChatGPT and Claude)', () => {
     const challenge = await mcp(null, 'tools/list');
     expect(challenge.status).toBe(401);
     const www = challenge.headers.get('www-authenticate') ?? '';
-    expect(www).toContain(
-      `resource_metadata="${PUBLIC}/.well-known/oauth-protected-resource"`,
-    );
+    expect(www).toContain(`resource_metadata="${PUBLIC}/.well-known/oauth-protected-resource"`);
     const prm = (await (await req('/.well-known/oauth-protected-resource')).json()) as Json;
     expect(prm.resource).toBe(`${PUBLIC}/api/mcp`);
     const as = (await (await req('/.well-known/oauth-authorization-server')).json()) as Json;

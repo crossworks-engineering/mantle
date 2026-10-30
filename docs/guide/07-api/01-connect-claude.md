@@ -90,4 +90,5 @@ To cut a client off, press **Disconnect** next to it under **Connected clients**
 ## Next
 
 - [MCP as a login](02-mcp-login.md): every login connects with its own rights.
+- [Connect ChatGPT over MCP](09-connect-chatgpt.md): the same connector in ChatGPT.
 - [Toolsmith](05-toolsmith.md): build new tools from Claude Code.
