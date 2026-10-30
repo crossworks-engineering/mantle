@@ -132,9 +132,7 @@ describe.skipIf(!URL)('an Anthropic key carries its workspace id', () => {
     // Not ASCII letters, digits, _ or -: a space, a non-ASCII letter, a C1
     // control character, a dot. Each an InputError (a 400), never a 500.
     for (const bad of ['has space', 'wrkspc_é', 'wrkspc_\u0085x', 'wrkspc.x', 'x'.repeat(129)]) {
-      await expect(setWorkspace(owner, ant.id, bad)).rejects.toBeInstanceOf(
-        InputError,
-      );
+      await expect(setWorkspace(owner, ant.id, bad)).rejects.toBeInstanceOf(InputError);
       await expect(
         keys.setApiKey(owner, 'anthropic', 'bad', `test-ant-${tag}-bad`, {
           anthropicWorkspaceId: bad,

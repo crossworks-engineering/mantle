@@ -115,6 +115,10 @@ export function isAdminGateRefusal(text: string): boolean {
  *    skills, the makers of the heartbeats that run a saved skill
  *    (heartbeat-maker.ts), API key names (recipe steps are checked against
  *    tool rows, never run).
+ *  - api_key_set, api_key_test, api_key_delete, api_key_import: the vault
+ *    (api_keys) and its audit rows, through the vault's write gateway, which
+ *    asks the keys area again (@mantle/api-keys vault.ts); the CSV is text,
+ *    never a file; a token's test sends it to its provider only.
  *  - peer_list, peer_tools, peer_call, peer_query, peer_node_get,
  *    peer_search_chunks: peer rows and the linked brain over its link (the
  *    ids they take name the PEER's items, never this brain's).

@@ -111,7 +111,11 @@ export const api_key_set: BuiltinToolDef = {
     type: 'object',
     properties: {
       name: NAME_PARAM,
-      kind: { type: 'string', enum: [...VAULT_KIND_ENUM], description: 'Kind of secret; a new key without one is a token.' },
+      kind: {
+        type: 'string',
+        enum: [...VAULT_KIND_ENUM],
+        description: 'Kind of secret; a new key without one is a token.',
+      },
       value: {
         type: 'string',
         minLength: 1,
@@ -138,7 +142,7 @@ export const api_key_set: BuiltinToolDef = {
         items: { type: 'string', maxLength: 300 },
         maxItems: 32,
         description:
-          'Hosts or web origins it may be used on, e.g. ["printer-07.lan", "100.64.0.12:2222"] or ["https://api.example.com"]. Replaces the list.',
+          'Hosts or web origins it may be used on, e.g. ["printer-07.lan", "192.0.2.12:2222"] or ["https://api.example.com"]. Replaces the list.',
       },
       tags: {
         type: 'array',
@@ -146,7 +150,10 @@ export const api_key_set: BuiltinToolDef = {
         maxItems: 20,
         description: 'Groups an agent is granted by, e.g. ["printers"]. Replaces the list.',
       },
-      needs_approval: { type: 'boolean', description: 'Each use waits for the owner to approve it.' },
+      needs_approval: {
+        type: 'boolean',
+        description: 'Each use waits for the owner to approve it.',
+      },
       via_tailnet: {
         type: 'boolean',
         description: 'The target is reached through the tailnet (a device on a home or site LAN).',
@@ -290,7 +297,8 @@ export const api_key_import: BuiltinToolDef = {
         type: 'string',
         minLength: 1,
         maxLength: 1048576,
-        description: 'The CSV text, e.g. "name,kind,target,user,secret,tags\\npi-lab-3,login,pi-lab-3.lan,pi,…,pis".',
+        description:
+          'The CSV text, e.g. "name,kind,target,user,secret,tags\\npi-lab-3,login,pi-lab-3.lan,pi,…,pis".',
       },
     },
     required: ['csv'],

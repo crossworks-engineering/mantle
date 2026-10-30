@@ -15,7 +15,12 @@ export const policy = routePolicy({
   },
 });
 
-const Body = z.object({ csv: z.string().min(1).max(1024 * 1024) });
+const Body = z.object({
+  csv: z
+    .string()
+    .min(1)
+    .max(1024 * 1024),
+});
 
 /**
  * Import secrets from CSV text: name, kind, target, user, secret, tags (the

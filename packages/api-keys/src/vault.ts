@@ -153,7 +153,9 @@ export function approvalDefault(kind: VaultKind): boolean {
  * is svc/default, `svc/label` is itself, `svc/default` is `svc` (0346's
  * generated `name`). Null when it is no name; the reason never echoes it.
  */
-export function parseVaultName(raw: string): { service: string; label: string; name: string } | null {
+export function parseVaultName(
+  raw: string,
+): { service: string; label: string; name: string } | null {
   const s = raw.trim();
   const slash = s.indexOf('/');
   const service = slash < 0 ? s : s.slice(0, slash);
@@ -213,7 +215,7 @@ function canonicalTargets(list: readonly string[]): string[] {
     const t = canonicalTarget(raw);
     if (!t) {
       throw new InputError(
-        `target ${i + 1} is not a host (printer-07.lan, 100.64.0.12, host:2222) or a web origin (https://api.example.com, no path).`,
+        `target ${i + 1} is not a host (printer-07.lan, 192.0.2.12, host:2222) or a web origin (https://api.example.com, no path).`,
       );
     }
     if (!out.includes(t)) out.push(t);
@@ -265,7 +267,8 @@ export function checkVaultShape(kind: VaultKind, value: string, fields: VaultFie
     }
   } else {
     if (!value) throw new InputError(`value of a ${kind} must not be empty.`);
-    if (value.length > MAX_VALUE) throw new InputError(`value takes at most ${MAX_VALUE} characters.`);
+    if (value.length > MAX_VALUE)
+      throw new InputError(`value takes at most ${MAX_VALUE} characters.`);
     if (CONTROL_RE.test(value)) {
       throw new InputError('value must be one line with no control characters.');
     }
@@ -572,8 +575,7 @@ async function writePlan(plan: SetPlan): Promise<ApiKey> {
   }
   if (plan.changed.length === 0) return plan.row;
   const set = { ...plan.set, updatedAt: new Date() };
-  const write = () =>
-    db.update(apiKeys).set(set).where(eq(apiKeys.id, plan.row.id)).returning();
+  const write = () => db.update(apiKeys).set(set).where(eq(apiKeys.id, plan.row.id)).returning();
   // A new value alone is the narrow login's (key_enc, masked); a kind,
   // target, approval, tags, tailnet or fields change is not (0346): the
   // full-route spot model-route.
@@ -702,7 +704,12 @@ export async function testVaultKey(
     }
     result = { ok, message, provider: KIND_LABEL[row.kind], adapter: '' };
   }
-  await audit(who, 'vault.key.test', { keyId: key.id, name: key.name, kind: key.kind, ok: result.ok });
+  await audit(who, 'vault.key.test', {
+    keyId: key.id,
+    name: key.name,
+    kind: key.kind,
+    ok: result.ok,
+  });
   return { ...result, name: key.name, kind: key.kind };
 }
 
@@ -784,7 +791,8 @@ export async function importVaultKeys(
   const header = rows[0]?.map((c) => c.trim().toLowerCase());
   const body = header && header[0] === 'name' && header[4] === 'secret' ? rows.slice(1) : rows;
   const offset = rows.length - body.length;
-  if (body.length === 0) throw new InputError('The CSV has no rows: name,kind,target,user,secret,tags.');
+  if (body.length === 0)
+    throw new InputError('The CSV has no rows: name,kind,target,user,secret,tags.');
   if (body.length > VAULT_IMPORT_MAX_ROWS) {
     throw new InputError(`The CSV has more than ${VAULT_IMPORT_MAX_ROWS} rows: split it.`);
   }
