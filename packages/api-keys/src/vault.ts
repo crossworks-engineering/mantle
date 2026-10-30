@@ -572,19 +572,35 @@ const sshShapeStandIn =
 
 async function writePlan(plan: SetPlan): Promise<ApiKey> {
   if (plan.op === 'replace' && plan.changed.length === 0) return plan.row;
-  const set = plan.op === 'replace' ? { ...plan.set, updatedAt: new Date() } : {};
-  const write = () =>
-    plan.op === 'add'
-      ? db.insert(apiKeys).values(plan.values).returning()
-      : db.update(apiKeys).set(set).where(eq(apiKeys.id, plan.row.id)).returning();
+  const id = plan.op === 'add' ? plan.id : plan.row.id;
+  const set: Partial<typeof apiKeys.$inferInsert> =
+    plan.op === 'replace' ? { ...plan.set, updatedAt: new Date() } : {};
   // The full-route spot model-route (where a vault key goes): a key made
   // is not the narrow login's (access-matrix.ts NARROW_NEVER_INSERT: its
   // seal binds its id only), and neither is a kind, target, approval, tags,
-  // tailnet or fields change (0346); a new value alone (key_enc, masked) is.
+  // tailnet or fields change (0346). A new value or workspace id alone is
+  // (key_enc, key_version, masked, anthropic_workspace_id), by name.
   const atSpot = plan.op === 'add' || narrowNeedsSpot(apiKeys, 'update', set);
   const [row] = await conflictOnUnique(
     'A key of that name was saved at the same moment: list the keys and try again.',
-    () => (atSpot ? onFullSystemRoute('model-route', write) : write()),
+    () =>
+      atSpot
+        ? onFullSystemRoute('model-route', () =>
+            plan.op === 'add'
+              ? db.insert(apiKeys).values(plan.values).returning()
+              : db.update(apiKeys).set(set).where(eq(apiKeys.id, id)).returning(),
+          )
+        : db
+            .update(apiKeys)
+            .set({
+              keyEnc: set.keyEnc,
+              keyVersion: set.keyVersion,
+              masked: set.masked,
+              anthropicWorkspaceId: set.anthropicWorkspaceId,
+              updatedAt: set.updatedAt,
+            })
+            .where(eq(apiKeys.id, id))
+            .returning(),
   );
   if (!row) throw new Error(`failed to ${plan.op === 'add' ? 'insert' : 'update'} api_key`);
   return row;

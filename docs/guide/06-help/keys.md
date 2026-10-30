@@ -16,9 +16,7 @@ Open a key to **Test** it (a no-cost call to the provider), **Rotate** it to a n
 
 Rotating keeps the same entry, so everything that uses the key follows at once. Deleting is the risky one: agents and workers that used the key are left with no key set. One key often powers chat, embeddings and several workers.
 
-## Kinds of secret
-
-The vault holds four kinds of secret, each under a **name** that agents say (for example `printer-07`). A key you added before keeps `service` or `service/label` as its name.
+**Kinds of secret.** The vault holds four kinds of secret, each under a **name** that agents say (for example `printer-07`). A key you added before keeps `service` or `service/label` as its name.
 
 | Kind     | Holds                                                        |
 | -------- | ------------------------------------------------------------ |

@@ -1,5 +1,5 @@
 /**
- * The vault's write tools (vault-keys.ts) over a stand-in gateway: MCP only,
+ * The vault's write tools (toolsmith/vault-keys.ts) over a stand-in gateway: MCP only,
  * the value inputs redacted, the input mapped to the gateway as sent, a
  * refusal said in the gateway's words, a connector's marks voided after a
  * secret is written, and no reply carrying a value.
@@ -22,10 +22,10 @@ vi.mock('@mantle/api-keys', () => ({
   deleteVaultKey: h.del,
   importVaultKeys: h.imp,
 }));
-vi.mock('../vault-follow-up', () => ({ afterVaultKeyReplaced: h.after }));
+vi.mock('./vault-follow-up', () => ({ afterVaultKeyReplaced: h.after }));
 
 const { VAULT_KEY_TOOLS, VAULT_KIND_ENUM, api_key_set, api_key_import, api_key_delete } =
-  await import('./vault-keys');
+  await import('./toolsmith/vault-keys');
 
 const SECRET = 'test-not-a-real-secret-value';
 const ctx = {
@@ -119,9 +119,7 @@ describe('the vault write tools', () => {
     expect(nf.ok).toBe(false);
   });
 
-  it('api_key_delete names a missing key; api_key_import lists the bad rows', async () => {
-    h.del.mockResolvedValueOnce(null);
-    expect(await api_key_delete.handler({ name: 'gone' }, ctx)).toMatchObject({ ok: false });
+  it('api_key_import lists the bad rows and never a cell', async () => {
     h.imp.mockResolvedValueOnce({
       ok: false,
       failed: [
@@ -133,5 +131,23 @@ describe('the vault write tools', () => {
     if (r.ok) return;
     expect(r.error).toMatch(/row 3: the kind column/);
     expect(r.error).not.toContain(SECRET);
+  });
+});
+
+describe('api_key_delete', () => {
+  it('deletes the named key through the gateway and answers what went, no value', async () => {
+    h.del.mockResolvedValueOnce(key);
+    const r = await api_key_delete.handler({ name: 'pi-lab-3' }, ctx);
+    expect(h.del).toHaveBeenCalledWith({ loginId: 'login-1', via: 'mcp' }, 'owner-1', {
+      name: 'pi-lab-3',
+    });
+    expect(r).toMatchObject({ ok: true, output: { deleted: { name: 'pi-lab-3', kind: 'login' } } });
+  });
+
+  it('answers a missing key without echoing the name', async () => {
+    h.del.mockResolvedValueOnce(null);
+    const r = await api_key_delete.handler({ name: 'gone-key' }, ctx);
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).not.toContain('gone-key');
   });
 });

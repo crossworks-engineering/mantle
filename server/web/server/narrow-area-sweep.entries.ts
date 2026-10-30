@@ -144,6 +144,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'PATCH /api/keys/:id': { body: { anthropicWorkspaceId: null } },
   'DELETE /api/keys/:id': {},
   'POST /api/keys/:id/rotate': {},
+  'POST /api/keys/import': {},
   'DELETE /api/mcp-clients/:id': {},
   'POST /api/mcp-connectors': { body: { slug: 'sweep', url: 'https://203.0.113.10/mcp' } },
   'GET /api/mcp-connectors/oauth/callback': {
