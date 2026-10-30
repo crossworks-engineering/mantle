@@ -474,10 +474,14 @@ export const IN_HANDLER_ASKS = Object.freeze([
   'loginHoldsAdmin',
 ]);
 
-/** The gates, which ask by design: the HTTP gate and the tool gate. */
+/** The gates, which ask by design: the HTTP gate, the tool gate, and the
+ *  caller's area answer both the tool gate and the vault's write gateway
+ *  ask (moved out of admin-gate.ts in vault v2 part 1, so @mantle/api-keys
+ *  reads the same one). */
 export const AREA_GATES = Object.freeze([
   'server/web/lib/auth/session.ts',
   'packages/tools/src/admin-gate.ts',
+  'packages/db/src/gateway/caller-area.ts',
 ]);
 
 /** The call an expression makes when it is only a call of an ask

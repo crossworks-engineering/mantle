@@ -3,7 +3,8 @@
  *  step meta, response bodies, a key test's message). Covers the common
  *  transport encodings of the secret: raw, URL-encoded, and base64 (how
  *  Basic-auth credentials travel, and a form upstreams often echo back).
- *  The one scrub: @mantle/tools re-exports it (http-template.ts). */
+ *  The one scrub: @mantle/tools re-exports it (http-template.ts), and the
+ *  vault's key probe uses it (@mantle/api-keys probe.ts). */
 export function scrubSecrets(text: string, secrets: Map<string, string>): string {
   let out = text;
   for (const [key, plaintext] of secrets) {

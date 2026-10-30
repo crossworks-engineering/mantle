@@ -6,7 +6,8 @@
 # 2026-10-29 (a person's description): PUT /api/profile/description had no route on main; its cells are the branch's own answers.
 # 2026-10-29 (UI sounds): PUT /api/profile/sounds had no route on main; its cells are the branch's own answers.
 # 2026-10-29 (UI sounds, login bound): PUT /api/profile/sounds names its login (loginId), as the Desk's save does; the sweep body names none, so valid and nul are the 403 login-mismatch.
-# cells: 2514
+# 2026-10-30 (credential vault v2 part 1): POST /api/keys/import had no route on main; its cells are the branch's own answers.
+# cells: 2520
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -979,6 +980,12 @@ POST /api/keys/:id/rotate owner empty => 400 application/json {"error":"Plaintex
 POST /api/keys/:id/rotate owner nul => 404 application/json {"error":"Not found."}
 POST /api/keys/:id/rotate owner array => 400 application/json {"error":"Plaintext required."}
 POST /api/keys/:id/rotate owner chunked => 400 application/json {"error":"Plaintext required."}
+POST /api/keys/import owner valid => 400 application/json {"error":"Send csv: name,kind,target,user,secret,tags, one secret per row."}
+POST /api/keys/import owner malformed => 400 application/json {"error":"invalid JSON"}
+POST /api/keys/import owner empty => 400 application/json {"error":"Send csv: name,kind,target,user,secret,tags, one secret per row."}
+POST /api/keys/import owner nul => 400 application/json {"error":"Send csv: name,kind,target,user,secret,tags, one secret per row."}
+POST /api/keys/import owner array => 400 application/json {"error":"Send csv: name,kind,target,user,secret,tags, one secret per row."}
+POST /api/keys/import owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
 POST /api/keys/test owner valid => 500 application/json {"error":"internal error"}
 POST /api/keys/test owner malformed => 400 application/json {"error":"invalid input"}
 POST /api/keys/test owner empty => 400 application/json {"error":"invalid input"}

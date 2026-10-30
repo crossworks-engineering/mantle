@@ -67,7 +67,6 @@ export { withScope, withTurnScope, ScopeLostError, readTransaction } from './gat
 export {
   scopeHoldsAdmin,
   scopeHasArea,
-  callerHasArea,
   loginHasArea,
   loginAreas,
   loginHoldsAdmin,
@@ -91,6 +90,7 @@ export {
 export { afterOuterRollback, afterOuterCommit } from './gateway/role-tx';
 export { ACTOR_CHECK_DRIFT_SQL, EDIT_CHECK_DRIFT_SQL } from './gateway/check-mode';
 export { adminOrSystemScope } from './gateway/scope-answers';
+export { callerHasArea } from './gateway/caller-area';
 export { appHolderHomes, assertAppRunWriteHome } from './app-holder-homes';
 export {
   appRunHolders,

@@ -266,5 +266,5 @@ export function buildHttpRequest(
 }
 
 /** The one scrub of resolved secrets (raw, URL-encoded, base64), owned by
- *  the vault (@mantle/api-keys scrub.ts). */
-export { scrubSecrets } from '@mantle/api-keys';
+ *  the shared helpers (@mantle/std scrub-secrets.ts). */
+export { scrubSecrets } from '@mantle/std';

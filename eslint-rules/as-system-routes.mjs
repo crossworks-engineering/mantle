@@ -207,6 +207,9 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/lib/push/store.ts': ['push-device'],
   'server/web/app/api/users/[id]/route.ts': ['login-credential'],
   'packages/api-keys/src/index.ts': ['model-route'],
+  // The vault's write gateway: a key made, and a kind, target, approval,
+  // tags, tailnet or fields change (no narrow UPDATE on them, 0346).
+  'packages/api-keys/src/vault.ts': ['model-route'],
   'packages/tools/src/builtins-persona.ts': ['skill-text'],
   'packages/email/src/accounts.ts': ['mail-account'],
   'packages/microsoft/src/outlook/manage.ts': ['mail-account'],

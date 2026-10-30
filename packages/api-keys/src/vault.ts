@@ -38,11 +38,11 @@ import {
   VAULT_KINDS,
 } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
-import { AccessError, InputError, UUID_RE } from '@mantle/std';
+import { AccessError, InputError, isMcpManagedSecretService, UUID_RE } from '@mantle/std';
 import type { TestApiKeyResult } from '@mantle/client-types';
 import { checkedWorkspaceId, maskPlaintext } from './shape';
-import { isMcpManagedSecretService } from './services';
 import { probeApiKey } from './probe';
+import { log } from '@mantle/tracing';
 
 export { VAULT_KINDS, type VaultKind };
 
@@ -571,29 +571,23 @@ const sshShapeStandIn =
   '-----BEGIN OPENSSH PRIVATE KEY-----\nstored\n-----END OPENSSH PRIVATE KEY-----';
 
 async function writePlan(plan: SetPlan): Promise<ApiKey> {
-  if (plan.op === 'add') {
-    // A key made is not the narrow login's (access-matrix.ts
-    // NARROW_NEVER_INSERT): its seal binds its id only. The full-route spot
-    // model-route (where a vault key goes).
-    const [inserted] = await conflictOnUnique(
-      'A key of that name was saved at the same moment: list the keys and try again.',
-      () =>
-        onFullSystemRoute('model-route', () => db.insert(apiKeys).values(plan.values).returning()),
-    );
-    if (!inserted) throw new Error('failed to insert api_key');
-    return inserted;
-  }
-  if (plan.changed.length === 0) return plan.row;
-  const set = { ...plan.set, updatedAt: new Date() };
-  const write = () => db.update(apiKeys).set(set).where(eq(apiKeys.id, plan.row.id)).returning();
-  // A new value alone is the narrow login's (key_enc, masked); a kind,
-  // target, approval, tags, tailnet or fields change is not (0346): the
-  // full-route spot model-route.
-  const [updated] = narrowNeedsSpot(apiKeys, 'update', set)
-    ? await onFullSystemRoute('model-route', write)
-    : await write();
-  if (!updated) throw new Error('failed to update api_key');
-  return updated;
+  if (plan.op === 'replace' && plan.changed.length === 0) return plan.row;
+  const set = plan.op === 'replace' ? { ...plan.set, updatedAt: new Date() } : {};
+  const write = () =>
+    plan.op === 'add'
+      ? db.insert(apiKeys).values(plan.values).returning()
+      : db.update(apiKeys).set(set).where(eq(apiKeys.id, plan.row.id)).returning();
+  // The full-route spot model-route (where a vault key goes): a key made
+  // is not the narrow login's (access-matrix.ts NARROW_NEVER_INSERT: its
+  // seal binds its id only), and neither is a kind, target, approval, tags,
+  // tailnet or fields change (0346); a new value alone (key_enc, masked) is.
+  const atSpot = plan.op === 'add' || narrowNeedsSpot(apiKeys, 'update', set);
+  const [row] = await conflictOnUnique(
+    'A key of that name was saved at the same moment: list the keys and try again.',
+    () => (atSpot ? onFullSystemRoute('model-route', write) : write()),
+  );
+  if (!row) throw new Error(`failed to ${plan.op === 'add' ? 'insert' : 'update'} api_key`);
+  return row;
 }
 
 async function audit(
@@ -614,7 +608,7 @@ async function audit(
       detail: { ...detail, via: who.via },
     })
     .catch((err: unknown) => {
-      console.error(`[vault] failed to record ${action}:`, err);
+      log('vault').error(`failed to record ${action}:`, err);
     });
 }
 

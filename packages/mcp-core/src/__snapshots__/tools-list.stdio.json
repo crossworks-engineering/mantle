@@ -12478,7 +12478,7 @@
       "type": "string",
       "maxLength": 300
      },
-     "description": "Hosts or web origins it may be used on, e.g. [\"printer-07.lan\", \"100.64.0.12:2222\"] or [\"https://api.example.com\"]. Replaces the list."
+     "description": "Hosts or web origins it may be used on, e.g. [\"printer-07.lan\", \"192.0.2.12:2222\"] or [\"https://api.example.com\"]. Replaces the list."
     },
     "tags": {
      "maxItems": 20,

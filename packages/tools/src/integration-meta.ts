@@ -15,14 +15,13 @@
  * carries no ref.
  */
 
-import { isMcpManagedSecretService } from '@mantle/api-keys';
 import type {
   ToolGroupIntegration,
   ToolGroupMcpBinding,
   ToolGroupOauth2,
   ToolGroupOpenapiBinding,
 } from '@mantle/db';
-import { UUID_RE } from '@mantle/std';
+import { isMcpManagedSecretService, UUID_RE } from '@mantle/std';
 
 export type { ToolGroupIntegration, ToolGroupMcpBinding, ToolGroupOauth2, ToolGroupOpenapiBinding };
 
@@ -277,9 +276,9 @@ const AUTH_HEADER_RE = /^[A-Za-z0-9-]{1,64}$/;
 const MAX_AUTH_SCHEME_CHARS = 20;
 
 /** The vault namespace MCP connectors seal their OAuth state under: owned
- *  by the vault (@mantle/api-keys services.ts), which refuses it on every
+ *  in @mantle/std (vault-names.ts); the vault refuses it on every
  *  write the owner's clients make. */
-export { MCP_VAULT_SERVICE_PREFIX, isMcpManagedSecretService } from '@mantle/api-keys';
+export { MCP_VAULT_SERVICE_PREFIX, isMcpManagedSecretService } from '@mantle/std';
 
 /**
  * Validate + normalise the `integration.mcp` connector binding. Accepts camel

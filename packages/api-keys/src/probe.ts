@@ -14,10 +14,8 @@
  */
 import { getChatAdapter, getProvider, getSttAdapter, getTtsAdapter } from '@mantle/voice';
 import type { TestApiKeyResult } from '@mantle/client-types';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, isMcpManagedSecretService, scrubSecrets } from '@mantle/std';
 import { getApiKeyById } from './index';
-import { isMcpManagedSecretService } from './services';
-import { scrubSecrets } from './scrub';
 
 export type { TestApiKeyResult };
 
