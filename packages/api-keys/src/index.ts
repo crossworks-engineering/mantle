@@ -93,7 +93,7 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
  * connector by these reads; only the use gateway (vault part 2) will open
  * one, for its own target.
  */
-const OPENABLE = eq(apiKeys.kind, 'token');
+const openable = () => eq(apiKeys.kind, 'token');
 
 /**
  * Open a key row into its credential: the plaintext, plus what the row
@@ -102,7 +102,7 @@ const OPENABLE = eq(apiKeys.kind, 'token');
  * sends exactly this row's fields (anthropicHeaders reads the credential it
  * is given; nothing is looked up by the key value). A field a provider needs
  * later (an OpenAI organization or project) is filled here the same way.
- * Tokens only: every lookup below filters by OPENABLE, and this refuses
+ * Tokens only: every lookup below filters by openable(), and this refuses
  * another kind whatever reached it.
  */
 function openKeyRow(row: ApiKey): ProviderCredential {
@@ -125,7 +125,7 @@ export async function getApiKeyById(id: string): Promise<ProviderCredential | nu
   const [row] = await systemDb
     .select()
     .from(apiKeys)
-    .where(and(eq(apiKeys.id, id), OPENABLE))
+    .where(and(eq(apiKeys.id, id), openable()))
     .limit(1);
   if (!row) return null;
   const credential = openKeyRow(row);
@@ -152,7 +152,7 @@ export async function getApiKey(
         eq(apiKeys.userId, userId),
         eq(apiKeys.service, service),
         eq(apiKeys.label, label),
-        OPENABLE,
+        openable(),
       ),
     )
     .limit(1);
@@ -191,7 +191,7 @@ export async function findProviderKeyId(userId: string, service: string): Promis
   const [row] = await systemDb
     .select({ id: apiKeys.id })
     .from(apiKeys)
-    .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), OPENABLE))
+    .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), openable()))
     .orderBy(...PICK_ORDER())
     .limit(1);
   return row?.id ?? null;
@@ -207,7 +207,7 @@ export async function findProviderKeyIds(userId: string): Promise<Map<string, st
   const rows = await systemDb
     .select({ id: apiKeys.id, service: apiKeys.service })
     .from(apiKeys)
-    .where(and(eq(apiKeys.userId, userId), OPENABLE))
+    .where(and(eq(apiKeys.userId, userId), openable()))
     .orderBy(...PICK_ORDER());
   const out = new Map<string, string>();
   for (const r of rows) if (!out.has(r.service)) out.set(r.service, r.id);
@@ -245,7 +245,7 @@ export async function ownedKeyService(userId: string, id: string): Promise<strin
   const [row] = await systemDb
     .select({ service: apiKeys.service })
     .from(apiKeys)
-    .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId), OPENABLE))
+    .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId), openable()))
     .limit(1);
   return row?.service ?? null;
 }

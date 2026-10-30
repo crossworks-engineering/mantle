@@ -614,8 +614,15 @@ export async function setVaultKey(
   ownerId: string,
   input: VaultSetInput,
 ): Promise<VaultSetResult | null> {
-  // Pure checks first, so a refusal costs no database work.
+  // Pure checks first, so a refusal costs no database work (planSet runs
+  // them again with the row).
   if ('name' in input.ref) parsedName(input.ref.name);
+  if (input.kind !== undefined && !(VAULT_KINDS as readonly string[]).includes(input.kind)) {
+    throw new InputError(`kind must be one of ${VAULT_KINDS.join(', ')}.`);
+  }
+  if (input.target !== undefined) canonicalTargets(input.target);
+  if (input.tags !== undefined) canonicalTags(input.tags);
+  if (input.anthropicWorkspaceId !== undefined) checkedWorkspaceId(input.anthropicWorkspaceId);
   await gate();
   const row = await findRow(ownerId, input.ref);
   if (!row && 'id' in input.ref) return null;

@@ -87,6 +87,7 @@ describe('MCP tool hints on the surface', () => {
 
   it('pins the open-world tools', () => {
     expect(names((r) => r.hints?.openWorldHint)).toEqual([
+      'api_key_test',
       'api_tool_test',
       'email_page',
       'email_send',
@@ -117,6 +118,7 @@ describe('MCP tool hints on the surface', () => {
   it('pins the destructive tools', () => {
     expect(names((r) => r.hints?.destructiveHint)).toEqual([
       'api_docs_set',
+      'api_key_delete',
       'api_skill_set',
       'api_tool_delete',
       'api_tool_update',
@@ -155,6 +157,8 @@ describe('MCP tool hints on the surface', () => {
     expect(names((r) => !r.hints?.readOnlyHint && r.hints?.idempotentHint)).toEqual([
       'agent_set_thinking_effort',
       'api_docs_set',
+      'api_key_import',
+      'api_key_set',
       'api_skill_set',
       'app_source_set',
       'app_table_export_set',

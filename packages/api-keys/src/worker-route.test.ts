@@ -89,7 +89,12 @@ describe('resolveDefaultWorker', () => {
     const { seal } = await import('@mantle/crypto');
     h.worker = worker();
     h.rows = [
-      { id: 'k-1', service: 'openrouter', keyEnc: seal('sk-test-made-up', 'k-1').ciphertext },
+      {
+        id: 'k-1',
+        service: 'openrouter',
+        kind: 'token',
+        keyEnc: seal('sk-test-made-up', 'k-1').ciphertext,
+      },
     ];
     const r = await resolveDefaultWorker('o', 'vision');
     expect(r).toMatchObject({

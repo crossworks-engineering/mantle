@@ -761,6 +761,7 @@ POST /api/journal class=content scope=content caller=owner gone=false
 POST /api/journal/:id/resolve class=content scope=content caller=owner gone=false
 POST /api/keys class=area scope=area:keys caller=owner gone=false
 POST /api/keys/:id/rotate class=area scope=area:keys caller=owner gone=false
+POST /api/keys/import class=area scope=area:keys caller=owner gone=false
 POST /api/keys/test class=area scope=area:keys caller=owner gone=false
 POST /api/livekit/webhook class=public scope=- caller=- gone=false
 POST /api/mcp class=public scope=- caller=- gone=false

@@ -407,6 +407,7 @@ HEAD /api/keys: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-beare
 PATCH /api/keys/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 DELETE /api/keys/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/keys/:id/rotate: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
+POST /api/keys/import: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/keys/test: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/livekit/webhook: disabled-cookie=a3 bumped-cookie=a3 gone-cookie=a3 rotated-bearer=a3 expired-bearer=a3 key-unknown=a3 key-revoked=a3
 GET /api/mcp: disabled-cookie=a16 bumped-cookie=a16 gone-cookie=a16 rotated-bearer=a16 expired-bearer=a16 key-unknown=a16 key-revoked=a16

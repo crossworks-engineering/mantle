@@ -87,7 +87,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
   const b = parsed.data;
-  const name = b.name ?? (b.label === 'default' ? b.service! : `${b.service}/${b.label}`);
+  // service/label is a name too (svc/default is svc: parseVaultName).
+  const name = b.name ?? `${b.service}/${b.label}`;
   const value = b.value ?? b.plaintext;
   const result = await setVaultKey(vaultActor(user), user.id, {
     ref: { name },

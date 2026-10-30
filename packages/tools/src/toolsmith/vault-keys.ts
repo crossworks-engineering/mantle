@@ -15,7 +15,6 @@ import {
   importVaultKeys,
   setVaultKey,
   testVaultKey,
-  VAULT_KINDS,
   type VaultActor,
   type VaultKeySummary,
   type VaultKind,
@@ -28,6 +27,11 @@ import { str } from '../coerce';
 import { type BuiltinToolDef, type ToolHandlerContext, type ToolHandlerResult } from '../types';
 
 const VAULT_WRITE = 'changes the secrets tools and agents sign in with';
+
+/** The vault's kinds as the schema offers them: a literal, so a module
+ *  that stands in for @mantle/api-keys in a test still loads this one
+ *  (vault-keys.test.ts pins it equal to VAULT_KINDS). */
+export const VAULT_KIND_ENUM: readonly VaultKind[] = ['token', 'password', 'ssh_key', 'login'];
 
 /** Who writes, for the vault's audit row: the connection's login (none on
  *  the owner's stdio client). */
@@ -102,12 +106,12 @@ export const api_key_set: BuiltinToolDef = {
   },
   name: 'Add or replace a vault key',
   description:
-    'Add a secret to the vault, or replace the one with that name, and return its name, kind, target, tags and masked preview, **never the value**. Kinds: `token` (an API key), `password`, `ssh_key` (a private key plus `user`), `login` (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target` and waits for the owner on each use unless `needs_approval` is false. Do not echo the value back to the user. List names with `api_key_refs`; many at once: `api_key_import`.',
+    'Add a secret to the vault, or replace the one with that name, and return its name, kind, target, tags and masked preview, **never the value**. Kinds: token (an API key), password, ssh_key (a private key plus `user`), login (`user` plus a password in `value`). On a replace, leave out what stays and pass null to clear an optional field; changing `kind` needs a new `value`. A password, SSH key or login needs `target` and waits for the owner on each use unless `needs_approval` is false. Do not echo the value back to the user. List names with `api_key_refs`; many at once: `api_key_import`.',
   inputSchema: {
     type: 'object',
     properties: {
       name: NAME_PARAM,
-      kind: { type: 'string', enum: [...VAULT_KINDS], description: 'Kind of secret; a new key without one is a token.' },
+      kind: { type: 'string', enum: [...VAULT_KIND_ENUM], description: 'Kind of secret; a new key without one is a token.' },
       value: {
         type: 'string',
         minLength: 1,
