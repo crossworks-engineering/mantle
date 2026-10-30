@@ -258,7 +258,9 @@ call; the right tool whenever an agent has more than a couple of rows to add,
 instead of burning the per-turn tool budget row by row),
 **`table_rows_upsert`** (bulk merge keyed on chosen column(s): new keys
 added, changed rows patched, identical rows reported unchanged; the one-call
-form of "refresh this table from an export"), `table_cell_set`, `table_column_add`/`update`/`delete` (add/update take
+form of "refresh this table from an export"; with `key: ["@row_id"]` it
+updates many rows by their row id instead, for a table with no unique key
+column, and an unknown id rejects the whole call), `table_cell_set`, `table_column_add`/`update`/`delete` (add/update take
 `reference: {tab, column}` for linked columns),
 `table_set_aggregate`,
 `table_set_view`, and the tab CRUD, **`table_tab_add` / `table_tab_rename` /

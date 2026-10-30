@@ -268,3 +268,102 @@ describe('table_rows_upsert', () => {
     expect((res as { error: string }).error).toContain('Service Name');
   });
 });
+
+// key ["@row_id"]: the batch twin of table_row_update for a table with no
+// unique key column (r_c and r_d share every cell, so only the id tells them
+// apart). Update only; any bad row rejects the call before a write.
+describe('table_rows_upsert by row id', () => {
+  const KEY = ['@row_id'];
+  beforeEach(() => {
+    vi.mocked(getTable).mockResolvedValue(detailWithRows() as never);
+  });
+
+  it('updates many rows by id in one atomic batch, never adds', async () => {
+    vi.mocked(applyTableOps).mockResolvedValue({ ok: true, draftRev: 4, createdIds: [] });
+    const res = await rowsUpsert.handler(
+      {
+        table_id: TABLE_ID,
+        key: KEY,
+        rows: [
+          { '@row_id': 'r_c', 'Mol %': 10 },
+          { '@row_id': 'r_d', 'Mol %': 20 },
+          // identical to the stored row: counted, not written
+          { '@row_id': 'r_a', 'Mol %': '98.5' },
+        ],
+      },
+      ctx,
+    );
+    expect(res.ok).toBe(true);
+    const out = (res as { output: Record<string, unknown> }).output;
+    expect(out).toMatchObject({ added: 0, updated: 2, unchanged: 1 });
+    expect(out.ignored_columns).toBeUndefined();
+    expect(vi.mocked(applyTableOps)).toHaveBeenCalledTimes(1);
+    const ops = vi.mocked(applyTableOps).mock.calls[0]![2];
+    expect(ops).toEqual([
+      { op: 'row_update', rowId: 'r_c', cells: { c_mol: 10 } },
+      { op: 'row_update', rowId: 'r_d', cells: { c_mol: 20 } },
+    ]);
+  });
+
+  it('rejects the whole call when an id is not in the table: nothing written', async () => {
+    const res = await rowsUpsert.handler(
+      {
+        table_id: TABLE_ID,
+        key: KEY,
+        rows: [
+          { '@row_id': 'r_a', 'Mol %': 1 },
+          { '@row_id': 'r_gone', 'Mol %': 2 },
+        ],
+      },
+      ctx,
+    );
+    expect(res.ok).toBe(false);
+    expect((res as { error: string }).error).toContain('r_gone');
+    expect(vi.mocked(applyTableOps)).not.toHaveBeenCalled();
+  });
+
+  it('rejects a row with no id, a repeated id, or no cells to change', async () => {
+    const noId = await rowsUpsert.handler(
+      { table_id: TABLE_ID, key: KEY, rows: [{ 'Mol %': 1 }] },
+      ctx,
+    );
+    expect(noId.ok).toBe(false);
+    expect((noId as { error: string }).error).toContain('@row_id');
+
+    const dup = await rowsUpsert.handler(
+      {
+        table_id: TABLE_ID,
+        key: KEY,
+        rows: [
+          { '@row_id': 'r_a', 'Mol %': 1 },
+          { '@row_id': 'r_a', 'Mol %': 2 },
+        ],
+      },
+      ctx,
+    );
+    expect(dup.ok).toBe(false);
+    expect((dup as { error: string }).error).toContain('one row per key');
+
+    const empty = await rowsUpsert.handler(
+      { table_id: TABLE_ID, key: KEY, rows: [{ '@row_id': 'r_a' }] },
+      ctx,
+    );
+    expect(empty.ok).toBe(false);
+    expect((empty as { error: string }).error).toContain('no cells to change');
+    expect(vi.mocked(applyTableOps)).not.toHaveBeenCalled();
+  });
+
+  it('refuses @row_id mixed with key columns', async () => {
+    const res = await rowsUpsert.handler(
+      {
+        table_id: TABLE_ID,
+        key: ['@row_id', 'Service Name'],
+        rows: [{ '@row_id': 'r_a', 'Mol %': 1 }],
+      },
+      ctx,
+    );
+    expect(res.ok).toBe(false);
+    expect((res as { error: string }).error).toContain('alone');
+    expect(vi.mocked(applyTableOps)).not.toHaveBeenCalled();
+  });
+});

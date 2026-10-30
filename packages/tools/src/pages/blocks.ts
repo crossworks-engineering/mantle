@@ -195,7 +195,7 @@ export const page_block_update: BuiltinToolDef = {
   preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Replace one block in a page',
   description:
-    "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for TARGETED edits on large pages. **For a restructure touching more than ~10 blocks (resequencing / renumbering / merging sections), switch to ONE whole-body `page_update_draft` call instead — block-by-block surgery at that scale exhausts the turn's tool-call budget and strands the draft half-edited.** " +
+    "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for TARGETED edits on large pages. For 3+ block edits batch them in one `page_blocks_apply` call. **For a restructure touching more than ~10 blocks (resequencing / renumbering / merging sections), switch to ONE whole-body `page_update_draft` call instead — block-by-block surgery at that scale exhausts the turn's tool-call budget and strands the draft half-edited.** " +
     "⚠️ **MARKDOWN MUST INCLUDE THE STRUCTURAL PREFIX of the kind you want to keep.** If you're updating an `h2` heading and you submit `markdown: '📖 Title'`, the result is a PARAGRAPH (the heading is gone) — markdown without a `##` prefix parses as a paragraph. To keep block kind on the same edit: heading → `## new text`, h3 → `### new text`, foldable heading (`meta.fold` in page_blocks_list) → `## new text {fold}` (or `{fold=closed}`; drop the marker and it stops folding), blockquote → `> new text`, info callout → `:::info\\nnew text\\n:::`, bullet list item → `- new text` (wrap in a single-item list), code block → ```\\nnew code\\n```. Pre-flight check before each call: imagine your markdown rendered standalone — does the FIRST block produced match the kind you're replacing? If you intend to CHANGE the kind (e.g. heading → callout), that's a valid use; just be deliberate. If you intend to KEEP the kind, the structural prefix is part of the content.",
   inputSchema: {
     type: 'object',
@@ -291,7 +291,7 @@ export const page_block_insert_after: BuiltinToolDef = {
   preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Insert blocks after a target block',
   description:
-    'Insert one or more new blocks (parsed from markdown) directly after the block with the given id. Useful for adding a callout after a quote, or a new section heading after the previous section ends. Writes to DRAFT only. New blocks get fresh ids on save.',
+    'Insert one or more new blocks (parsed from markdown) directly after the block with the given id. Useful for adding a callout after a quote, or a new section heading after the previous section ends. Writes to DRAFT only. New blocks get fresh ids on save. For 3+ insertions batch them in one `page_blocks_apply` call.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -553,7 +553,7 @@ export const page_block_delete: BuiltinToolDef = {
   preconditions: PAGE_ID_PRE,
   name: 'Delete one block from a page',
   description:
-    'Remove a single block (by id) from a page. Writes to DRAFT only. **Refuses** when removing the block would leave a container (callout / column / listItem / tableCell) empty — most ProseMirror schemas reject that. In that case, target the container itself instead.',
+    'Remove a single block (by id) from a page. Writes to DRAFT only. **Refuses** when removing the block would leave a container (callout / column / listItem / tableCell) empty — most ProseMirror schemas reject that. In that case, target the container itself instead. To remove several blocks use one `page_blocks_apply` call.',
   inputSchema: {
     type: 'object',
     properties: {
