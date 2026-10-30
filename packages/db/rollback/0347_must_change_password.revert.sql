@@ -1,18 +1,19 @@
--- Rollback of 0347_must_change_password: what an operator MAY run before
+-- Rollback of 0347_must_change_password: what an operator MUST run before
 -- pinning the image one release back (plan v3.2 rule 2, a one-image
 -- rollback). Not a migration: nothing runs it on its own.
 --
--- Optional: the older image works with 0347 in place. It never reads or
--- writes `must_change_password` or `password_checked_min`, and an insert
--- takes their defaults (false, null). A login the newer image held for a password change is NOT held
--- by the older image (it has no such gate): pin the older image only if
--- that is acceptable, or have those logins change their password first.
--- So this revert keeps both columns, but clears their values (below). The provider alerts of
--- subject model_policy are deleted and the subject CHECK narrowed back to
--- 0230's (the older image's alert list knows only embedding and
+-- Required: the older image works with 0347's columns in place (it never
+-- reads or writes must_change_password or password_checked_min; an insert
+-- takes their defaults, false and null), but it writes a new password with
+-- no checked rule. So this revert clears every login's checked rule and
+-- flag (below): when 0347's image comes back, every login signs in once
+-- and is checked again. A login the newer image held is NOT held by the
+-- older image (it has no such gate). The columns stay. The provider alerts
+-- of subject model_policy are deleted and the subject CHECK narrowed back
+-- to 0230's (the older image's alert list knows only embedding and
 -- extraction). Then it takes 0347 off the ledger, so the next roll forward
--- runs it again (ADD COLUMN IF NOT EXISTS keeps the column and its values
--- as they are; the CHECK is dropped and made again).
+-- runs it again (ADD COLUMN IF NOT EXISTS keeps the columns; the CHECK is
+-- dropped and made again).
 --
 -- Copy it out, stop the web container (no model_policy alert may be written
 -- between the delete and the narrowed CHECK), run it as the superuser in one

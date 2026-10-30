@@ -35,8 +35,10 @@ gate, and every path goes through it.
 - The poll worker (`server/web/workers/telegram-poll.ts`) logs one line and
   polls nothing.
 - The Bot API transport (`botFor`, `packages/telegram/src/client.ts`) refuses,
-  so no path sends, edits or reads anything on Telegram (a reminder whose
-  channel is Telegram is skipped as a failed send).
+  so no path sends, edits or reads anything on Telegram. A reminder whose
+  channel is Telegram fails to send and is tried again each tick until
+  Telegram is on again or its channel changes; a heartbeat on a Telegram
+  chat still runs its turn and drops the reply.
 - The `telegram_*` tools leave every agent's tool list
   (`effectiveToolSlugs`) and the MCP tool list (`buildMantleMcpServer`). The
   grants stay.
@@ -69,8 +71,9 @@ Two settings, used together (one is fine too):
   box-level endpoints (`MANTLE_LOCAL_CHAT_URL`, `MANTLE_FOUNDRY_ENDPOINT`,
   the local embedder's) are used. OpenRouter never honours a base URL.
 - `MANTLE_POLICY_MODEL_DENY`: model patterns no route may call. A pattern is
-  a glob on the model id (`deepseek/deepseek-chat`, `qwen/*`); a bare word
-  is a family (`deepseek` is `deepseek/*`). A family
+  a glob on the model id (`deepseek/deepseek-chat`, `qwen/*`); one with no
+  `:tag` also blocks the id's variants (`:free`, `:nitro`); a bare word is a
+  family (`deepseek` is `deepseek/*`), the safest form. A family
   pattern `<family>/*` also blocks the provider of that name (the direct
   `deepseek` provider), a model id with the family as a path segment, and a
   local model name that starts with the family (`qwen2.5:7b`). While a deny
@@ -201,7 +204,11 @@ does not appear. It is read only: nothing in the app changes a rule.
 ## Rollback
 
 Migration 0347 adds `auth.users.must_change_password` and
-`password_checked_min` and the provider alert subject `model_policy`. Its
-revert, `packages/db/rollback/0347_must_change_password.revert.sql`, removes
-the `model_policy` alerts and narrows the subject check; the columns stay. An
+`password_checked_min` and the provider alert subject `model_policy`. Before
+pinning an older image, run its revert,
+`packages/db/rollback/0347_must_change_password.revert.sql` (required, not
+optional): it clears every login's checked rule (the older image writes a
+new password without one, so the roll forward checks every login again),
+removes the `model_policy` alerts and narrows the subject check; the columns
+stay. An
 older image has no hold: a login that was held signs in as before.

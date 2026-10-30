@@ -419,7 +419,11 @@ async function ensureOwner(o: Options, io: Io): Promise<{ id: string; email: str
           `No owner yet: send password=... (${rule.min}+ characters${rule.commonList ? ', not a common one' : ''}) on stdin.`,
         );
       }
-      bad(rule.commonList ? weak.message : `At least ${rule.min} characters.`);
+      bad(
+        rule.commonList || weak.code !== 'password_too_short'
+          ? weak.message
+          : `At least ${rule.min} characters.`,
+      );
       continue;
     }
     if (o.yes) break;
