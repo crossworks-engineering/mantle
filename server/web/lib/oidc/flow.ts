@@ -18,6 +18,14 @@
  * typed again; a held login (required mode, no session) starts it on its
  * held ticket. The callback links the provider account to that login, and
  * signs a held login in.
+ *
+ * A flow handed to a client (handoff.ts, every client holds a bearer): the
+ * callback sends a one-time code to the client's target instead, and the
+ * client spends it (exchange.ts). A sign-in or a link then ends there, not
+ * here, and the code is worth nothing without the client's verifier.
+ *
+ * Fresh sign-in: a linked login confirms who it is at key creation and MCP
+ * consent, in place of its password (lib/oidc/fresh.ts spends the code).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -27,6 +35,8 @@ import type {
   OidcAdminSummaryDTO,
   OidcCallbackResult,
   OidcConfigDTO,
+  OidcFreshStarted,
+  OidcHandoffPurpose,
   OidcLinkStarted,
   OidcOfferDismissed,
   OidcRefusal,
@@ -50,12 +60,25 @@ import {
   clearFlowCookie,
   clearOidcCookies,
   clearTicketCookie,
+  OIDC_CONSENT_QUERY_MAX,
   readFlowCookie,
   readTicketCookie,
   safeReturnPath,
   setFlowCookie,
+  ticketFromValue,
+  type FlowHandoff,
   type OidcFlow,
 } from './cookies';
+import {
+  HANDOFF_CODE_TTL_SECONDS,
+  handoffCodeUrl,
+  handoffFailedUrl,
+  newHandoffCode,
+  readHandoff,
+  readStartTicket,
+  signStartTicket,
+  type StartTicket,
+} from './handoff';
 import {
   authorizationUrl,
   identityFromCallback,
@@ -70,6 +93,8 @@ import {
   activeLoginsWithLinks,
   createLink,
   dismissOffer,
+  issueHandoffCode,
+  linkForSubject,
   loginHasPassword,
   loginIsAdminUser,
   loginLinked,
@@ -200,21 +225,69 @@ export async function oidcDismissOffer(
 
 // ── Sign-in ─────────────────────────────────────────────────────────────────
 
-/** GET /api/auth/oidc/start?return=<path>: off to the provider. */
+/** The URL that begins a flow from a start ticket (handoff.ts), in whichever
+ *  browser opens it. */
+function ticketStartUrl(s: OidcOn, ticket: StartTicket): string {
+  const url = new URL('/api/auth/oidc/start', new URL(s.redirectUri).origin);
+  url.searchParams.set('ticket', signStartTicket(ticket));
+  return url.toString();
+}
+
+/** A start ticket's flow, as the flow cookie holds it. */
+function ticketFlow(t: StartTicket, secrets: ReturnType<typeof newFlowSecrets>): OidcFlow {
+  const base = {
+    ...secrets,
+    loginId: t.loginId,
+    epoch: t.epoch,
+    returnTo: '/',
+    startedAt: Math.floor(Date.now() / 1000),
+  };
+  return t.purpose === 'link'
+    ? { ...base, purpose: 'link', held: t.held, handoff: t.handoff }
+    : {
+        ...base,
+        purpose: 'fresh',
+        ...(t.handoff ? { handoff: t.handoff } : {}),
+        ...(t.consent ? { consent: t.consent } : {}),
+      };
+}
+
+/**
+ * GET /api/auth/oidc/start: off to the provider. `?return=<path>` signs this
+ * browser in with a cookie; `?redirect=<target>&challenge=<S256>` hands the
+ * sign-in to a client (handoff.ts); `?ticket=<value>` begins a link or a
+ * fresh sign-in that started on a session.
+ */
 export async function oidcStartSignIn(req: Request): Promise<NextResponse> {
   const s = oidcSettings();
   if (s.mode === 'off') return oidcOffAnswer();
-  const returnTo = safeReturnPath(new URL(req.url).searchParams.get('return'));
+  const query = new URL(req.url).searchParams;
   const secrets = newFlowSecrets();
+  const raw = query.get('ticket');
+  const asked = query.has('redirect') || query.has('challenge');
+  const ticket = raw ? readStartTicket(raw) : null;
+  // A ticket that is no ticket, or a client's target the brain does not
+  // trust, is never redirected to: it stops on the sign-in screen.
+  if (raw && !ticket) return redirect(onBrain(s, '/login', 'expired'));
+  const handoff = asked ? readHandoff(s, query.get('redirect'), query.get('challenge')) : null;
+  if (asked && !handoff) return redirect(onBrain(s, '/login', 'failed'));
+  const flow: OidcFlow = ticket
+    ? ticketFlow(ticket, secrets)
+    : {
+        purpose: 'signin',
+        returnTo: safeReturnPath(query.get('return')),
+        ...secrets,
+        ...(handoff ? { handoff } : {}),
+      };
   let url: string;
   try {
-    url = await authorizationUrl(s, secrets);
+    url = await authorizationUrl(s, secrets, { link: flow.purpose !== 'signin' });
   } catch (err) {
     log('auth').warn(`company sign-in: the provider could not be read: ${errorMessage(err)}`);
-    return redirect(onBrain(s, '/login', 'unavailable'));
+    return redirect(flowEndUrl(s, flow, 'unavailable'));
   }
   const res = redirect(url);
-  setFlowCookie(res, req, { purpose: 'signin', returnTo, ...secrets });
+  setFlowCookie(res, req, flow);
   return res;
 }
 
@@ -242,9 +315,28 @@ async function mintSsoSession(
   });
 }
 
-/** Where a failed flow sends the browser: a sign-in (or a held link, which
- *  has no session to go back to) to the sign-in screen, an in-session link
- *  back where it started. */
+/** Where a failed flow sends the browser: back to the client that holds it;
+ *  a consent page's fresh sign-in back to that page; a sign-in (or a held
+ *  link, which has no session to go back to) to the sign-in screen, an
+ *  in-session link back where it started. */
+function flowEndUrl(s: OidcOn, flow: OidcFlow | null, result: OidcCallbackResult): string {
+  if (flow?.handoff) return handoffFailedUrl(flow.handoff, result);
+  if (flow?.purpose === 'fresh' && flow.consent) {
+    return consentUrl(s, flow.consent, { oidc: result });
+  }
+  const inSession = flow?.purpose === 'link' && !flow.held;
+  return onBrain(s, inSession ? flow.returnTo : '/login', result);
+}
+
+/** The MCP consent page on this brain, with `extra` beside its own query
+ *  (never an open redirect: the path is fixed). */
+function consentUrl(s: OidcOn, consent: string, extra: Record<string, string>): string {
+  const url = new URL('/api/oauth/authorize', new URL(s.redirectUri).origin);
+  url.search = consent;
+  for (const [k, v] of Object.entries(extra)) url.searchParams.set(k, v);
+  return `${url.toString()}#`;
+}
+
 function flowFailed(
   req: Request,
   s: OidcOn,
@@ -258,7 +350,7 @@ function flowFailed(
   // none: anyone can send one, and the failure is in the log.
   if (who.identity)
     auditFireAndForget({
-      actorId: who.loginId ?? (flow?.purpose === 'link' ? flow.loginId : null),
+      actorId: who.loginId ?? (flow && flow.purpose !== 'signin' ? flow.loginId : null),
       actorEmail: who.email ?? '(company sign-in)',
       action: 'auth.login_failed',
       method: 'GET',
@@ -271,8 +363,7 @@ function flowFailed(
       },
       ...requestMetaFrom(req),
     });
-  const inSession = flow?.purpose === 'link' && !flow.held;
-  const res = redirect(onBrain(s, inSession ? flow.returnTo : '/login', result));
+  const res = redirect(flowEndUrl(s, flow, result));
   clearFlowCookie(res, req);
   return res;
 }
@@ -301,15 +392,116 @@ export async function oidcCallback(req: Request, readLogin: LoginReader): Promis
       s,
       query,
       flow,
-      flow.purpose === 'link' ? { linkStartedAt: flow.startedAt } : {},
+      flow.purpose === 'signin' ? {} : { linkStartedAt: flow.startedAt },
     );
   } catch (err) {
     log('auth').warn(`company sign-in: the callback did not verify: ${errorMessage(err)}`);
     return flowFailed(req, s, flow, 'failed');
   }
-  return flow.purpose === 'signin'
-    ? signInLinked(req, s, flow, identity)
+  if (flow.purpose === 'fresh') return finishFresh(req, s, flow, identity);
+  if (flow.purpose === 'signin') {
+    return flow.handoff
+      ? handSignIn(req, s, flow, flow.handoff, identity)
+      : signInLinked(req, s, flow, identity);
+  }
+  return flow.handoff
+    ? handLink(req, s, flow, flow.handoff, identity)
     : finishLink(req, s, flow, identity, login);
+}
+
+/** Issue a one-time code for this flow's client (handoff.ts). */
+async function issueCode(
+  purpose: OidcHandoffPurpose,
+  row: { id: string; sessionEpoch: number },
+  challenge: string | null,
+  more: { identity?: ProviderIdentity; held?: boolean } = {},
+): Promise<string> {
+  const { code, hash } = newHandoffCode();
+  await issueHandoffCode({
+    codeHash: hash,
+    purpose,
+    loginId: row.id,
+    epoch: row.sessionEpoch,
+    challenge,
+    expiresAt: new Date(Date.now() + HANDOFF_CODE_TTL_SECONDS * 1000),
+    ...more,
+  });
+  return code;
+}
+
+/** A sign-in handed to a client: the checks of signInLinked, then a code in
+ *  place of a cookie. The bearer is made when the client spends it. */
+async function handSignIn(
+  req: Request,
+  s: OidcOn,
+  flow: OidcFlow,
+  handoff: FlowHandoff,
+  identity: ProviderIdentity,
+): Promise<NextResponse> {
+  const target = await signInTarget(identity.issuer, identity.subject);
+  if (!target) return flowFailed(req, s, flow, 'not-linked', { identity });
+  const { row } = target;
+  if (!row.usable) {
+    return flowFailed(req, s, flow, 'not-allowed', { identity, loginId: row.id, email: row.email });
+  }
+  const code = await issueCode('signin', row, handoff.challenge);
+  await touchLink(target.linkId).catch((err: unknown) =>
+    log('auth').warn(`company sign-in: the link's last use was not stamped: ${errorMessage(err)}`),
+  );
+  const res = redirect(handoffCodeUrl(handoff, code, 'signin'));
+  clearOidcCookies(res, req);
+  return res;
+}
+
+/** A link handed to a client: nothing is linked until the client that
+ *  started it spends the code with its verifier, so a start URL mailed to
+ *  someone else links nobody's account to the sender's login. */
+async function handLink(
+  req: Request,
+  s: OidcOn,
+  flow: Extract<OidcFlow, { purpose: 'link' }>,
+  handoff: FlowHandoff,
+  identity: ProviderIdentity,
+): Promise<NextResponse> {
+  const row = await oidcLoginRow(flow.loginId);
+  if (!row?.usable || row.sessionEpoch !== flow.epoch) {
+    return flowFailed(req, s, flow, 'expired', { identity });
+  }
+  const code = await issueCode('link', row, handoff.challenge, { identity, held: flow.held });
+  const res = redirect(handoffCodeUrl(handoff, code, 'link'));
+  clearOidcCookies(res, req);
+  return res;
+}
+
+/** A fresh sign-in: the provider account must be the one linked to the login
+ *  that asked. Its session is not needed here (a bearer client's browser has
+ *  none): the code goes back to the session that spends it. */
+async function finishFresh(
+  req: Request,
+  s: OidcOn,
+  flow: Extract<OidcFlow, { purpose: 'fresh' }>,
+  identity: ProviderIdentity,
+): Promise<NextResponse> {
+  const row = await oidcLoginRow(flow.loginId);
+  if (!row?.usable || row.sessionEpoch !== flow.epoch) {
+    return flowFailed(req, s, flow, 'expired', { identity });
+  }
+  const link = await linkForSubject(identity.issuer, identity.subject);
+  if (link?.loginId !== row.id) {
+    return flowFailed(req, s, flow, 'wrong-account', {
+      identity,
+      loginId: row.id,
+      email: row.email,
+    });
+  }
+  const code = await issueCode('fresh', row, flow.handoff?.challenge ?? null);
+  const res = redirect(
+    flow.handoff
+      ? handoffCodeUrl(flow.handoff, code, 'fresh')
+      : consentUrl(s, flow.consent ?? '', { fresh_code: code }),
+  );
+  clearOidcCookies(res, req);
+  return res;
 }
 
 async function signInLinked(
@@ -389,22 +581,29 @@ async function finishLink(
 
 // ── Link and unlink (the login itself) ──────────────────────────────────────
 
+const HandoffBody = z.object({ redirect: z.string().max(512), challenge: z.string().max(64) });
+
 const LinkBody = z.object({
   password: z.string().min(1).max(1024).optional(),
   returnTo: z.string().max(512).optional(),
+  handoff: HandoffBody.optional(),
+  ticket: z.string().max(1024).optional(),
 });
 
-/** Who may start a link on this request, or the refusal. */
+/** Who may start a link on this request, or the refusal. `handed`: the flow
+ *  ends at a client (so a bearer session may start it, and a token login's
+ *  ticket stands in for the cookie). */
 async function linkStarter(
   req: Request,
   login: Login | null,
   password: string | undefined,
+  handed: { ticket: string | undefined } | null,
 ): Promise<{ loginId: string; epoch: number; held: boolean } | NextResponse> {
-  const ticket = readTicketCookie(req);
+  const ticket = (handed?.ticket ? ticketFromValue(handed.ticket) : null) ?? readTicketCookie(req);
   if (login) {
-    // The callback finishes on the browser's cookie session: a bearer
-    // client (the phone, the split web client) links on the web.
-    if (login.source !== 'web') {
+    // With no handoff the callback finishes on the browser's cookie session:
+    // a bearer client must hand the flow to itself.
+    if (login.source !== 'web' && !handed) {
       return json({ error: 'Link your company sign-in in the web app.' }, 400);
     }
     const fresh =
@@ -467,10 +666,40 @@ export async function oidcStartLink(req: Request, readLogin: LoginReader): Promi
   const login = await readLogin();
   const parsed = LinkBody.safeParse((await readJson(req)) ?? {});
   if (!parsed.success) return json({ error: 'Invalid input.' }, 400);
-  const who = await linkStarter(req, login, parsed.data.password);
+  const asked = parsed.data.handoff;
+  const handoff = asked ? readHandoff(s, asked.redirect, asked.challenge) : null;
+  if (asked && !handoff) return json({ error: 'Invalid input.' }, 400);
+  const who = await linkStarter(
+    req,
+    login,
+    parsed.data.password,
+    handoff ? { ticket: parsed.data.ticket } : null,
+  );
   if (who instanceof NextResponse) return who;
   if (await loginLinked(who.loginId, issuerKey(s.issuer))) {
     return refusal(409, { error: 'This login is linked already.', code: 'already-linked' });
+  }
+  if (handoff) {
+    auditFireAndForget({
+      actorId: who.loginId,
+      actorEmail: login?.email ?? '(company sign-in)',
+      action: 'auth.oidc_link_started',
+      method: 'POST',
+      path: '/api/auth/oidc/link',
+      detail: { held: who.held, handed: true },
+      ...requestMetaFrom(req),
+    });
+    const res = json<OidcLinkStarted>({
+      url: ticketStartUrl(s, {
+        purpose: 'link',
+        loginId: who.loginId,
+        epoch: who.epoch,
+        held: who.held,
+        handoff,
+      }),
+    });
+    clearTicketCookie(res, req);
+    return res;
   }
   const secrets = newFlowSecrets();
   let url: string;
@@ -545,6 +774,50 @@ export async function oidcUnlinkSelf(req: Request, readLogin: LoginReader): Prom
   // went now: a retry after a failed end still ends the sessions.
   await endSessionsOf(login.loginId);
   return json({ ok: true, unlinked: removed });
+}
+
+// ── Fresh sign-in ───────────────────────────────────────────────────────────
+
+/** POST /api/auth/oidc/fresh: a linked login starts a fresh company sign-in
+ *  from any session, in place of its password (lib/oidc/fresh.ts). */
+export async function oidcStartFresh(req: Request, readLogin: LoginReader): Promise<NextResponse> {
+  const s = oidcSettings();
+  if (s.mode === 'off') return oidcOffAnswer();
+  const login = await readLogin();
+  if (!login) return unauthorizedRefusal();
+  const parsed = HandoffBody.safeParse((await readJson(req)) ?? {});
+  const handoff = parsed.success
+    ? readHandoff(s, parsed.data.redirect, parsed.data.challenge)
+    : null;
+  if (!handoff) return json({ error: 'Invalid input.' }, 400);
+  if (!(await loginLinked(login.loginId, issuerKey(s.issuer)))) {
+    return json({ error: 'This login is not linked to a company account.' }, 409);
+  }
+  return json<OidcFreshStarted>({
+    url: ticketStartUrl(s, {
+      purpose: 'fresh',
+      loginId: login.loginId,
+      epoch: login.sessionEpoch,
+      handoff,
+    }),
+  });
+}
+
+/** Where the MCP consent page sends a linked login to confirm with a fresh
+ *  sign-in; the flow comes back to the page with `query` and the code. Null
+ *  when company sign-in is off or the query will not fit the flow cookie. */
+export function freshConsentStart(
+  login: { loginId: string; sessionEpoch: number },
+  query: string,
+): string | null {
+  const s = oidcSettings();
+  if (s.mode === 'off' || query.length > OIDC_CONSENT_QUERY_MAX) return null;
+  return ticketStartUrl(s, {
+    purpose: 'fresh',
+    loginId: login.loginId,
+    epoch: login.sessionEpoch,
+    consent: query,
+  });
 }
 
 // ── The users area ──────────────────────────────────────────────────────────

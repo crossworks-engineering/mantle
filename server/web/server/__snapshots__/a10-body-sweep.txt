@@ -8,7 +8,8 @@
 # 2026-10-29 (UI sounds, login bound): PUT /api/profile/sounds names its login (loginId), as the Desk's save does; the sweep body names none, so valid and nul are the 403 login-mismatch.
 # 2026-10-30 (credential vault v2 part 1): POST /api/keys/import had no route on main; its cells are the branch's own answers.
 # 2026-10-30 (company sign-in, OIDC milestone 1): POST and DELETE /api/auth/oidc/link, POST /api/auth/oidc/offer, PATCH and DELETE /api/users/:id/oidc had no route on main; their cells are the branch's own answers (company sign-in off: 404 before any body read).
-# cells: 2520
+# 2026-10-31 (company sign-in, OIDC milestone 2): POST /api/auth/oidc/exchange and POST /api/auth/oidc/fresh had no route on main; their cells are the branch's own answers.
+# cells: 2532
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -459,6 +460,18 @@ POST /api/auth/token/refresh none empty => 401 application/json {"error":"unauth
 POST /api/auth/token/refresh none nul => 401 application/json {"error":"unauthorized"}
 POST /api/auth/token/refresh none array => 401 application/json {"error":"unauthorized"}
 POST /api/auth/token/refresh none chunked => 401 application/json {"error":"unauthorized"}
+POST /api/auth/oidc/exchange none valid => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/exchange none malformed => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/exchange none empty => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/exchange none nul => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/exchange none array => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/exchange none chunked => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/fresh none valid => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/fresh none malformed => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/fresh none empty => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/fresh none nul => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/fresh none array => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/fresh none chunked => 404 application/json {"error":"Not found."}
 POST /api/auth/oidc/link none valid => 404 application/json {"error":"Not found."}
 POST /api/auth/oidc/link none malformed => 404 application/json {"error":"Not found."}
 POST /api/auth/oidc/link none empty => 404 application/json {"error":"Not found."}

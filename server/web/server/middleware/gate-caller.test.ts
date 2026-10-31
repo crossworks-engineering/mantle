@@ -1805,6 +1805,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         // Company sign-in (lib/oidc): the login a public row reads.
         'GET /api/auth/oidc/status',
         'GET /api/auth/oidc/callback',
+        'POST /api/auth/oidc/fresh',
         'POST /api/auth/oidc/link',
         'DELETE /api/auth/oidc/link',
         'POST /api/auth/oidc/offer',

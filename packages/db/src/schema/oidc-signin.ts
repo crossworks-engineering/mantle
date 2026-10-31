@@ -1,5 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, pgTable, text, timestamp, uuid, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 
 /**
  * Company sign-in (OIDC, migration 0349, docs/oidc-sign-in.md).
@@ -57,6 +67,43 @@ export const oidcModeState = pgTable('oidc_mode_state', {
   mode: text('mode').notNull(),
   changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** What a one-time code is for (migration 0350). */
+export type OidcHandoffPurpose = 'signin' | 'link' | 'fresh';
+
+/** The provider account a link code carries until the client spends it. */
+export type OidcHandoffIdentity = {
+  issuer: string;
+  subject: string;
+  tid: string | null;
+  oid: string | null;
+  display: string | null;
+};
+
+/**
+ * A one-time code the callback hands to the client that started a flow
+ * (migration 0350, docs/oidc-sign-in.md). Keyed on the code's sha256, never
+ * the code. `challenge`: the client's S256 PKCE challenge, null only for the
+ * MCP consent page. `identity`: the account of a link, made when the code is
+ * spent. `held`: a link that started on a held ticket, so spending it also
+ * signs the login in. `login_id` FKs into auth.users in the SQL migration.
+ */
+export const oidcHandoffCodes = pgTable(
+  'oidc_handoff_codes',
+  {
+    codeHash: text('code_hash').primaryKey(),
+    purpose: text('purpose').$type<OidcHandoffPurpose>().notNull(),
+    loginId: uuid('login_id').notNull(),
+    epoch: integer('epoch').notNull(),
+    challenge: text('challenge'),
+    identity: jsonb('identity').$type<OidcHandoffIdentity>(),
+    held: boolean('held').notNull().default(false),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('oidc_handoff_codes_expires_idx').on(t.expiresAt)],
+);
 
 export type OidcSigninLink = typeof oidcSigninLinks.$inferSelect;
 export type OidcLoginState = typeof oidcLoginState.$inferSelect;

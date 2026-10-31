@@ -13,7 +13,8 @@
  * self-authenticate) — it's the human-in-the-loop step. The consent form carries
  * a session-bound HMAC token so a forged cross-site POST can't auto-approve.
  *
- * An admin or member re-types their password to Allow: a
+ * An admin or member re-types their password to Allow, or a login linked to
+ * a company account confirms with a fresh company sign-in (lib/oidc/fresh.ts): a
  * stolen session cookie alone must not approve a connector, whose refresh
  * tokens outlive the session. 10 tries a minute per login, counted before
  * the check. A password change, "sign out everywhere" and an admin's End sessions end
@@ -28,6 +29,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
 import { publicLoginItself, verifyPasswordForUse } from '@/lib/auth';
+import { freshConsentStart } from '@/lib/oidc/flow';
+import { passwordConfirms, spendConsentFresh, stepUpFor, type StepUp } from '@/lib/oidc/fresh';
 import { adminFacts, type Login } from '@/lib/auth/login';
 import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
@@ -198,7 +201,45 @@ export async function GET(req: Request) {
   }
 
   const token = consentToken(user.loginId, p);
-  return htmlPage(consentPage(validated.clientName, p, token, user.email, user.role));
+  // Back from a fresh company sign-in: the code rides the form to Allow, or
+  // the flow's reason why not.
+  const stepUp = await stepUpFor(user.loginId);
+  const freshCode = url.searchParams.get('fresh_code') ?? '';
+  const failed = url.searchParams.get('oidc');
+  return htmlPage(
+    consentPage(
+      validated.clientName,
+      p,
+      token,
+      user.email,
+      user.role,
+      { stepUp, freshCode },
+      failed ? freshFailedText(stepUp, failed) : undefined,
+    ),
+  );
+}
+
+/** Why a fresh sign-in came back with no code. */
+function freshFailedText(stepUp: StepUp, result: string): string {
+  const label = stepUp.kind === 'company' ? stepUp.label : 'company sign-in';
+  return result === 'wrong-account'
+    ? `That was another account. Confirm with the ${label} account linked to this login.`
+    : `${label} did not confirm you. Try again.`;
+}
+
+/** The query string that brings a browser back to this request. */
+function consentQuery(p: AuthorizeParams): string {
+  const q = new URLSearchParams({
+    response_type: 'code',
+    client_id: p.clientId,
+    redirect_uri: p.redirectUri,
+    state: p.state,
+    code_challenge: p.codeChallenge,
+    code_challenge_method: p.codeChallengeMethod,
+    scope: p.scope,
+  });
+  if (p.foreignResource) q.set('resource', p.foreignResource);
+  return q.toString();
 }
 
 /** Wrong (or missing) passwords at consent, per login, per minute. */
@@ -237,6 +278,18 @@ export async function POST(req: Request) {
     return htmlError('consent could not be verified — start the connection again', 400);
   }
 
+  const stepUp = await stepUpFor(user.loginId);
+  // A linked login confirms with a fresh company sign-in: off to the
+  // provider, and back to this page with a code for the form.
+  if (decision === 'confirm' && stepUp.kind === 'company') {
+    const start = freshConsentStart(
+      { loginId: user.loginId, sessionEpoch: user.consentEpoch },
+      consentQuery(p),
+    );
+    if (!start) return htmlError('this connection request is too long to confirm', 400);
+    return NextResponse.redirect(start, { status: 302 });
+  }
+
   // Deny → redirect back with an OAuth error (per spec), preserving state.
   if (decision !== 'allow') {
     const dest = new URL(p.redirectUri);
@@ -245,7 +298,8 @@ export async function POST(req: Request) {
     return NextResponse.redirect(dest, { status: 302 });
   }
 
-  // Every login re-types its password to Allow (see the header).
+  // Every login re-types its password to Allow, or a linked one confirms
+  // with a fresh company sign-in (see the header).
   const bucket = `oauth-consent-pw:${user.loginId}`;
   const tries = rateLimitLogin(bucket, CONSENT_PASSWORD_RATE);
   const again = (
@@ -261,6 +315,7 @@ export async function POST(req: Request) {
         consentToken(user.loginId, p),
         user.email,
         user.role,
+        { stepUp, freshCode: '' },
         message,
       ),
       status,
@@ -270,13 +325,24 @@ export async function POST(req: Request) {
     return again('Too many tries. Wait a minute, then try again.', 429, 'rate-limited');
   }
   const password = get('password');
-  // The box password rule checks the password typed here too
+  // The box password rule checks a password typed here too
   // (verifyPasswordForUse): one that fails it holds the login and grants
-  // nothing (docs/policy.md).
-  const checked = password ? await verifyPasswordForUse(user.loginId, password) : 'wrong';
+  // nothing (docs/policy.md). The fresh code is good for this login and
+  // session epoch only (lib/oidc/fresh.ts).
+  const confirmed = await spendConsentFresh(
+    { loginId: user.loginId, sessionEpoch: user.consentEpoch },
+    get('fresh_code'),
+  );
+  const checked = confirmed
+    ? 'ok'
+    : password && (await passwordConfirms(user.loginId))
+      ? await verifyPasswordForUse(user.loginId, password)
+      : 'wrong';
   if (checked === 'wrong') {
     return again(
-      'That password is not right. Type your Mantle password to allow.',
+      stepUp.kind === 'company'
+        ? `Confirm with ${stepUp.label} to allow.`
+        : 'That password is not right. Type your Mantle password to allow.',
       403,
       'password',
     );
@@ -405,12 +471,29 @@ function resourceHost(value: string): string {
   }
 }
 
+/** How the form confirms the login: its password, a fresh company sign-in
+ *  yet to come, or one that came back with its code. */
+function stepField(
+  confirm: { stepUp: StepUp; freshCode: string },
+  h: (v: string) => string,
+): string {
+  if (confirm.stepUp.kind === 'password') {
+    return `<label class="muted" for="consent-password" style="display:block;margin-bottom:6px;">Type your Mantle password to allow</label>
+    <input id="consent-password" class="pw" type="password" name="password" autocomplete="current-password" />`;
+  }
+  return confirm.freshCode
+    ? `<input type="hidden" name="fresh_code" value="${h(confirm.freshCode)}" />
+    <p class="muted">Confirmed with ${h(confirm.stepUp.label)}. Press Allow to finish.</p>`
+    : `<p class="muted">Confirm with ${h(confirm.stepUp.label)} to allow. You sign in there again.</p>`;
+}
+
 function consentPage(
   clientName: string,
   p: AuthorizeParams,
   token: string,
   email: string,
   role: Consenter['role'],
+  confirm: { stepUp: StepUp; freshCode: string },
   error?: string,
 ): string {
   const safeName = escapeHtml(clippedName(clientName));
@@ -453,12 +536,15 @@ function consentPage(
     ${p.foreignResource ? `<input type="hidden" name="resource" value="${h(p.foreignResource)}" />` : ''}
     <input type="hidden" name="consent_token" value="${h(token)}" />
     <input type="text" name="username" value="${h(email)}" autocomplete="username" hidden />
-    <label class="muted" for="consent-password" style="display:block;margin-bottom:6px;">Type your Mantle password to allow</label>
-    <input id="consent-password" class="pw" type="password" name="password" autocomplete="current-password" />
+    ${stepField(confirm, h)}
     ${error ? `<p class="err" role="alert">${h(error)}</p>` : ''}
     <div class="row">
       <button class="deny" type="submit" name="decision" value="deny">Deny</button>
-      <button class="allow" type="submit" name="decision" value="allow">Allow</button>
+      ${
+        confirm.stepUp.kind === 'company' && !confirm.freshCode
+          ? `<button class="allow" type="submit" name="decision" value="confirm">Confirm with ${h(confirm.stepUp.label)}</button>`
+          : '<button class="allow" type="submit" name="decision" value="allow">Allow</button>'
+      }
     </div>
   </form>
   <p class="foot">Only allow this if you started this connection yourself and ${returnHost} is the address of the app you meant. You can disconnect anytime in Settings.</p>`;

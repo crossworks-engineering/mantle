@@ -3,7 +3,7 @@ import { publicLoginItself, unauthorizedRefusal } from '@/lib/auth';
 import { publicBaseUrl } from '@mantle/content';
 import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-code';
 import { CACHE_CONTROL } from '@/lib/cache-control';
-import { ownOidcCookieEnd } from '@/lib/auth/own-device';
+import { ownCompanyBearer, ownOidcCookieEnd } from '@/lib/auth/own-device';
 import type { OidcRefusal } from '@mantle/client-types';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -42,11 +42,11 @@ export async function POST(req: Request) {
   if (!login) return unauthorizedRefusal();
   // A session made by company sign-in lasts MANTLE_OIDC_SESSION_HOURS; a
   // phone paired from it would hold a refreshable bearer that outlives it
-  // (and a provider block). Refused until the phone signs in with company
-  // sign-in itself (docs/oidc-sign-in.md, "Not in this milestone").
-  if (login.source === 'web' && ownOidcCookieEnd(req) !== null) {
+  // (and a provider block). The phone signs in with company sign-in itself
+  // (docs/oidc-sign-in.md).
+  if ((login.source === 'web' && ownOidcCookieEnd(req) !== null) || ownCompanyBearer(req)) {
     const body: OidcRefusal = {
-      error: 'A company sign-in session cannot pair a phone yet. Sign in on the phone itself.',
+      error: 'A company sign-in session cannot pair a phone. Sign in on the phone itself.',
       code: 'sso-session',
     };
     return NextResponse.json(body, { status: 403 });

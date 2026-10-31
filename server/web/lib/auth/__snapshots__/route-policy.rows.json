@@ -722,6 +722,8 @@
 "POST /api/auth/logout": {"class":"self","scope":{"kind":"self"},"public":true,"effect":"write","caller":"publicLogin","passwordHold":"sign-out","crossSite":"origin","actor":"http:no-login"},
 "POST /api/auth/mobile-login": {"class":"self","scope":{"kind":"self"},"public":true,"effect":"write","rateLimit":["authTokenLogin"],"actor":"http:no-login"},
 "POST /api/auth/mobile-logout": {"class":"self","scope":{"kind":"self"},"public":true,"effect":"write","actor":"http:no-login"},
+"POST /api/auth/oidc/exchange": {"class":"self","scope":{"kind":"self"},"public":true,"effect":"write","crossSite":"json","rateLimit":["oidcExchange"],"actor":"http:no-login"},
+"POST /api/auth/oidc/fresh": {"class":"self","scope":{"kind":"self"},"public":true,"effect":"write","caller":"publicLogin","crossSite":"json","rateLimit":["oidcLink"],"actor":"http:no-login"},
 "POST /api/auth/oidc/link": {"class":"self","scope":{"kind":"self"},"public":true,"effect":"write","caller":"publicLogin","crossSite":"json","rateLimit":["oidcLink"],"actor":"http:no-login"},
 "POST /api/auth/oidc/offer": {"class":"self","scope":{"kind":"self"},"public":true,"effect":"write","caller":"publicLogin","crossSite":"origin","actor":"http:no-login"},
 "POST /api/auth/pair": {"class":"self","scope":{"kind":"self"},"public":true,"effect":"write","caller":"publicLogin","rateLimit":["authPairIssue"],"actor":"http:no-login"},

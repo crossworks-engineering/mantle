@@ -721,6 +721,8 @@ POST /api/auth/login class=self scope=self caller=- gone=false
 POST /api/auth/logout class=self scope=self caller=publicLogin gone=false
 POST /api/auth/mobile-login class=self scope=self caller=- gone=false
 POST /api/auth/mobile-logout class=self scope=self caller=- gone=false
+POST /api/auth/oidc/exchange class=self scope=self caller=- gone=false
+POST /api/auth/oidc/fresh class=self scope=self caller=publicLogin gone=false
 POST /api/auth/oidc/link class=self scope=self caller=publicLogin gone=false
 POST /api/auth/oidc/offer class=self scope=self caller=publicLogin gone=false
 POST /api/auth/pair class=self scope=self caller=publicLogin gone=false

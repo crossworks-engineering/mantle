@@ -166,22 +166,32 @@ export const WEB_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
  *  year; the web client passes WEB_TOKEN_TTL_SECONDS. `epoch` binds the token
  *  to the login's session epoch (a CLIENT's device token always carries it:
  *  the session layer refuses the token once the row's epoch moves on, as it
- *  refuses the client's cookie). */
+ *  refuses the client's cookie). `oidc`: made by company sign-in (lib/oidc):
+ *  it always carries an epoch, lasts MANTLE_OIDC_SESSION_HOURS and is never
+ *  rotated to a longer life (the refresh route answers it with itself). */
 export function buildMobileToken(
   userId: string,
   jti: string,
   ttlSeconds: number = MOBILE_TOKEN_TTL_SECONDS,
   epoch?: number,
+  opts: { oidc?: boolean } = {},
 ): { value: string; expiresInSec: number; expiresAt: Date } {
   const { value, exp } = signClaims(
-    { uid: userId, jti, k: 'm', ...(epoch !== undefined ? { ep: epoch } : {}) },
+    {
+      uid: userId,
+      jti,
+      k: 'm',
+      ...(epoch !== undefined ? { ep: epoch } : {}),
+      ...(opts.oidc ? { so: 1 } : {}),
+    },
     ttlSeconds,
   );
   return { value, expiresInSec: ttlSeconds, expiresAt: new Date(exp * 1000) };
 }
 
-/** `ep` is set only on a token minted with an epoch (a client's). */
-export type MobileClaims = { uid: string; jti: string; exp: number; ep?: number };
+/** `ep` is set only on a token minted with an epoch (a client's, or one
+ *  company sign-in made). `oidc`: company sign-in made it. */
+export type MobileClaims = { uid: string; jti: string; exp: number; ep?: number; oidc?: true };
 
 /** Verify a mobile token's signature, expiry and kind. No DB — the caller must
  *  still confirm the mobile_tokens row is present and unrevoked, and compare
@@ -189,10 +199,22 @@ export type MobileClaims = { uid: string; jti: string; exp: number; ep?: number 
 export function verifyMobileToken(token: string): MobileClaims | null {
   const claims = verifySigned(token, 'm');
   if (!claims || typeof claims.uid !== 'string' || typeof claims.jti !== 'string') return null;
-  if (claims.ep === undefined) return { uid: claims.uid, jti: claims.jti, exp: claims.exp };
+  if (claims.so !== undefined && claims.so !== 1) return null;
+  if (claims.ep === undefined) {
+    // A company sign-in token is always bound to the login's epoch: a racing
+    // unlink ends it by the bump (store.ts signInTarget).
+    if (claims.so === 1) return null;
+    return { uid: claims.uid, jti: claims.jti, exp: claims.exp };
+  }
   const ep = epochClaim(claims);
   if (ep === null) return null;
-  return { uid: claims.uid, jti: claims.jti, exp: claims.exp, ep };
+  return {
+    uid: claims.uid,
+    jti: claims.jti,
+    exp: claims.exp,
+    ep,
+    ...(claims.so === 1 ? { oidc: true as const } : {}),
+  };
 }
 
 /** Extract the `jti` from a (valid) mobile token — used by logout to revoke. */

@@ -503,12 +503,15 @@ describe('the architecture ratchets (pinned counts)', () => {
     // /callback, POST and DELETE /link, POST /offer (publicLogin), GET (+HEAD)
     // /api/users/oidc, PATCH and DELETE /api/users/:id/oidc (owner, the users
     // area). Plus 4 with none: GET (+HEAD) /api/auth/oidc/config and /start
-    // (public, before sign-in).
-    expect(rows.filter((r) => r.caller).length).toBe(863);
+    // (public, before sign-in). Milestone 2 (+1 with a caller): POST
+    // /api/auth/oidc/fresh (publicLogin). Plus 1 with none: POST
+    // /api/auth/oidc/exchange (public, the code and verifier are the proof).
+    expect(rows.filter((r) => r.caller).length).toBe(864);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
-    // + the keys import row + the 2 policy rows + the 15 company sign-in rows.
-    expect(rows.length).toBe(928);
+    // + the keys import row + the 2 policy rows + the 15 company sign-in rows
+    // + the 2 rows of its second milestone.
+    expect(rows.length).toBe(930);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

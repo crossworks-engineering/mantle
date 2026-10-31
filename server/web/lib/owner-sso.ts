@@ -78,11 +78,14 @@ export async function handleOwnerSso(
   // enough because the shell re-fires upgradeOwnerCookie on EVERY page load:
   // the cookie renews continuously while the bearer stays valid. It is bound
   // to that device token (`deviceJti`): a revoke of the device ends the
-  // cookie on its next request, not a week later.
+  // cookie on its next request, not a week later. A token company sign-in
+  // made gives the cookie its own end and its mark: the upgrade never turns
+  // a short session into 7 days.
   const { value, maxAgeSec } = buildSessionCookie(login.loginId, {
     epoch: login.epoch,
-    ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS,
+    ttlSeconds: login.ssoSecondsLeft ?? OWNER_SSO_COOKIE_TTL_SECONDS,
     deviceJti: login.deviceJti,
+    oidc: login.ssoSecondsLeft !== null,
   });
   // An admin's call is on the trail already (api.write, at the gate); a
   // member's cookie is new since member MCP over OAuth, so it is logged.

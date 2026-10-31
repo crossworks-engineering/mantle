@@ -155,6 +155,8 @@ describe.each(OFF_VALUES)('company sign-in with MANTLE_OIDC_MODE=%j', (mode) => 
     const callback = await import('../../app/api/auth/oidc/callback/route');
     const link = await import('../../app/api/auth/oidc/link/route');
     const offer = await import('../../app/api/auth/oidc/offer/route');
+    const fresh = await import('../../app/api/auth/oidc/fresh/route');
+    const exchange = await import('../../app/api/auth/oidc/exchange/route');
     const userLink = await import('../../app/api/users/[id]/oidc/route');
     const answers = [
       await start.GET(req('/api/auth/oidc/start?return=/')),
@@ -162,6 +164,8 @@ describe.each(OFF_VALUES)('company sign-in with MANTLE_OIDC_MODE=%j', (mode) => 
       await link.POST(req('/api/auth/oidc/link', { method: 'POST', body: '{}' })),
       await link.DELETE(req('/api/auth/oidc/link', { method: 'DELETE' })),
       await offer.POST(req('/api/auth/oidc/offer', { method: 'POST' })),
+      await fresh.POST(req('/api/auth/oidc/fresh', { method: 'POST', body: '{}' })),
+      await exchange.POST(req('/api/auth/oidc/exchange', { method: 'POST', body: '{}' })),
       await userLink.PATCH(
         req(`/api/users/${LOGIN}/oidc`, { method: 'PATCH', body: '{"outside":true}' }),
         ctx,

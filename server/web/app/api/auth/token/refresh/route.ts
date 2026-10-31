@@ -26,7 +26,7 @@ import { LOGIN_ROLES } from '@mantle/client-types/role-names';
 import { CACHE_CONTROL } from '@/lib/cache-control';
 import { loginRole } from '@/lib/auth/admin-seat';
 import { routePolicy } from '@/lib/auth/route-declaration';
-import { DEVICE_BEARER, sessionHeld } from '@/lib/oidc/hold';
+import { bearerSessionKind, sessionHeld } from '@/lib/oidc/hold';
 
 export const policy = routePolicy({
   POST: {
@@ -73,6 +73,8 @@ export const policy = routePolicy({
  *    `auth.token_reuse`, and marks the rotated row handled: every later
  *    presentation is a plain 401 (presentRotatedToken, which every bearer
  *    route runs too).
+ *  - Company sign-in. Its token is answered with itself until it ends
+ *    (MANTLE_OIDC_SESSION_HOURS), then a 401: it never gets a longer life.
  *
  * The push devices the old token enrolled follow the new one.
  */
@@ -207,15 +209,17 @@ export async function POST(req: Request) {
   }
   // Company sign-in's one gate (lib/oidc/hold.ts): a bearer it holds is
   // not kept alive by rotating it.
-  if (await sessionHeld(row.userId, DEVICE_BEARER)) {
+  if (await sessionHeld(row.userId, bearerSessionKind(claims))) {
     refused('company-sign-in');
     return unauthorized();
   }
 
-  // Not yet: plenty of life left. The same token, its own expiry.
+  // Not yet: plenty of life left. The same token, its own expiry. A token
+  // company sign-in made never rotates: its short life is the point, and
+  // when it ends the person signs in through the provider again.
   const expiresAtMs = Math.min(row.expiresAt.getTime(), claims.exp * 1000);
   const leftSec = Math.floor((expiresAtMs - Date.now()) / 1000);
-  if (leftSec > ROTATE_WHEN_UNDER_SECONDS) {
+  if (leftSec > ROTATE_WHEN_UNDER_SECONDS || claims.oidc) {
     return NextResponse.json(
       {
         token,

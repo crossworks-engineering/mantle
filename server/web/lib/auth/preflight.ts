@@ -33,7 +33,7 @@ export function isTrustedOrigin(req: Request): boolean {
 
 /** The origins the brain answers cross-origin by name (MANTLE_API_CORS_ORIGINS
  *  without its '*': the wildcard is refused on /api/auth anyway). */
-function namedCorsOrigins(): string[] {
+export function namedCorsOrigins(): string[] {
   return (env('MANTLE_API_CORS_ORIGINS') ?? '')
     .split(',')
     .map((s) => s.trim().replace(/\/+$/, ''))

@@ -11,6 +11,7 @@
  * (`@crossworks/client-types/dto/access-keys`); the brain pins it to its
  * own list in a test.
  */
+import type { OidcFreshProof } from './auth';
 import type { LoginRole } from '../role-names';
 
 /** The parts of the brain a key can be limited to. */
@@ -74,8 +75,13 @@ export type AccessKeyList = {
    *  included: a login in the Admin workspace with its keys area (never the
    *  role). Everyone else's keys last at most 90 days. */
   maxExpiryDays: number | null;
-  /** Whether the create needs the caller's password: always. */
+  /** Whether the create needs the caller's password: always, unless
+   *  `stepUp` is set. */
   needsPassword: boolean;
+  /** A login linked to a company account confirms with a fresh company
+   *  sign-in in place of its password (POST /api/auth/oidc/fresh, then
+   *  `fresh` on the create). Absent: the password. */
+  stepUp?: { kind: 'company'; label: string };
 };
 
 /** POST /api/access-keys body. The key acts as the caller's own login:
@@ -92,6 +98,8 @@ export type AccessKeyCreateInput = {
   /** The caller's password, when `needsPassword` (never stored, never
    *  logged). */
   password?: string;
+  /** A fresh company sign-in, when the list answered `stepUp`. */
+  fresh?: OidcFreshProof;
 };
 
 /** POST /api/access-keys answer (201). `secret` is shown ONCE. */

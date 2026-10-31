@@ -52,6 +52,12 @@ keep their passwords once an admin marks them (unless the operator set
 the original account's password in the company's vault: it is the
 emergency admin.
 
+Key creation and MCP consent ask a linked person to sign in again. Mantle
+asks Entra for a fresh sign-in (`prompt=login`, `max_age=0`), and checks the ID
+token's `auth_time` when it comes: add `auth_time` as an optional claim of the
+ID token under Token configuration, or the fresh sign-in is asked for but not
+proven (one log line says so).
+
 Company sign-in alone does not stop a leaver. A block in Entra ends their
 company sign-in when that session ends (`MANTLE_OIDC_SESSION_HOURS`), but an
 API key or an MCP grant they made lives on, and so does their password

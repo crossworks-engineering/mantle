@@ -10,8 +10,9 @@
  *
  * Two kinds of session:
  *  - 'password': a cookie a password sign-in made (no company sign-in
- *    mark), or a device bearer (company sign-in mints none);
- *  - 'sso': a cookie company sign-in made (`so` claim, tokens.ts).
+ *    mark), or a device bearer from one;
+ *  - 'sso': a cookie or a device bearer company sign-in made (`so` claim,
+ *    tokens.ts).
  *
  * The table (`sessionMayAct`, pinned row by row in oidc-unit.test.ts):
  *  - off: a password session acts, with no read; an SSO session does not
@@ -46,7 +47,7 @@ export type RuleFacts = Readonly<{
   admin: boolean;
 }>;
 
-/** A session the gate judges. `secondsLeft`: an SSO cookie's life left. */
+/** A session the gate judges. `secondsLeft`: an SSO session's life left. */
 export type SessionKind = { kind: 'password' } | { kind: 'sso'; secondsLeft: number };
 
 /** Whether a login's outside mark keeps its password now: the operator
@@ -166,8 +167,15 @@ export function cookieSessionKind(c: { oidc?: true; exp: number }): SessionKind 
     : { kind: 'password' };
 }
 
-/** A device bearer is a password sign-in's, or a pairing from one. */
+/** A device bearer of a password sign-in, or a pairing from one. */
 export const DEVICE_BEARER: SessionKind = Object.freeze({ kind: 'password' });
+
+/** The kind of a device bearer the session verified (tokens.ts
+ *  verifyMobileToken): company sign-in's own (`so` claim), judged as its
+ *  cookie is, or a password sign-in's. */
+export function bearerSessionKind(c: { oidc?: true; exp: number }): SessionKind {
+  return c.oidc ? cookieSessionKind(c) : DEVICE_BEARER;
+}
 
 /** Forget the kept facts: all (tests), or one login's (a link, an unlink
  *  or an outside mark changed it, so the gate reads the new state at once:

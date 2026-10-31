@@ -35,7 +35,8 @@ export async function ownLiveDeviceJti(req: Request, loginId: string): Promise<s
  *  had (MANTLE_OIDC_SESSION_HOURS from its sign-in): a re-mint never turns
  *  it into a year. One that rides with a bearer is the web client's
  *  upgrade of it: the upgrade's 7 days, bound to the kept device token, so a
- *  revoke of that device ends it too. */
+ *  revoke of that device ends it too. A bearer company sign-in made gives
+ *  the cookie its end and its mark, as the upgrade does. */
 export function ownCookieOpts(
   req: Request,
   keptJti: string | null,
@@ -44,12 +45,34 @@ export function ownCookieOpts(
   // revoked bearer must not turn it into the 7-day upgrade cookie): the
   // session resolves on the cookie, so the cookie's own end is kept.
   const sso = ownOidcCookieEnd(req);
-  if (sso !== null) return { ttlSeconds: sso, oidc: true };
-  if (!bearerFromHeader(req.headers.get('authorization'))) return {};
+  if (sso !== null) {
+    return { ttlSeconds: sso, oidc: true, ...(keptJti ? { deviceJti: keptJti } : {}) };
+  }
+  const token = bearerFromHeader(req.headers.get('authorization'));
+  if (!token) return {};
+  const bearerEnd = ownOidcBearerEnd(token);
+  if (bearerEnd !== null) {
+    return { ttlSeconds: bearerEnd, oidc: true, ...(keptJti ? { deviceJti: keptJti } : {}) };
+  }
   return {
     ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS,
     ...(keptJti ? { deviceJti: keptJti } : {}),
   };
+}
+
+/** The seconds left on a device bearer company sign-in made (at least 1),
+ *  else null. */
+function ownOidcBearerEnd(token: string): number | null {
+  const c = verifyMobileToken(token);
+  return c?.oidc ? Math.max(1, c.exp - Math.floor(Date.now() / 1000)) : null;
+}
+
+/** Whether the request's device bearer is one company sign-in made. A phone
+ *  or a chat paired from such a session would outlive it, so pairing refuses
+ *  it, as it does the cookie (ownOidcCookieEnd). */
+export function ownCompanyBearer(req: Request): boolean {
+  const token = bearerFromHeader(req.headers.get('authorization'));
+  return !!token && ownOidcBearerEnd(token) !== null;
 }
 
 /** The seconds left on the request's session cookie when company sign-in

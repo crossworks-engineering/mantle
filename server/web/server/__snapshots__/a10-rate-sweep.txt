@@ -16,6 +16,7 @@
 # probes: 443
 # 2026-10-28 (calls, plan page 886126b4 section 12): GET and HEAD /api/messenger/capabilities and /api/messenger/c/:id/calls take messenger-read; POST /c/:id/call and /api/assistant/:agentId/call messenger-call (5 a minute per login); the two /call/token routes messenger-call-token (12); the other call writes messenger-write; POST /api/livekit/webhook livekit-webhook (600 a minute per address, the machine shape). Their probes are the branch's own answers (no route on main).
 # 2026-10-28 (the documents engine): the eight POST /api/v1/documents/* rows take documents (30 a minute per login, an Admin user's too), one bucket shared by all eight; their probes are the branch's own answers (no route on main).
+# 2026-10-31 (company sign-in, OIDC milestone 2): POST /api/auth/oidc/exchange and POST /api/auth/oidc/fresh had no route on main; their cells are the branch's own answers.
 # 2026-10-30 (company sign-in, OIDC milestone 1): GET and HEAD /api/auth/oidc/start and /api/auth/oidc/callback take auth:oidc-start and auth:oidc-callback (120 a minute per address), POST /api/auth/oidc/link auth:oidc-link (60, after the cross-site refusal); their probes are the branch's own answers (no route on main; company sign-in off: 404 under the limit).
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
@@ -61,6 +62,14 @@ GET /api/auth/oidc/callback none auth:oidc-callback scope => other address 404
 HEAD /api/auth/oidc/callback none auth:oidc-callback count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store 
 HEAD /api/auth/oidc/callback none auth:oidc-callback window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
 HEAD /api/auth/oidc/callback none auth:oidc-callback scope => other address 404
+POST /api/auth/oidc/fresh none auth:oidc-link count (ip 60/60s) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/auth/oidc/fresh none auth:oidc-link window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/auth/oidc/fresh none auth:oidc-link scope => other address 404
+POST /api/auth/oidc/fresh none auth:oidc-link order: cross-site => first 429 at 0; answer 403; then 404
+POST /api/auth/oidc/exchange none auth:oidc-exchange count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/auth/oidc/exchange none auth:oidc-exchange window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/auth/oidc/exchange none auth:oidc-exchange scope => other address 404
+POST /api/auth/oidc/exchange none auth:oidc-exchange order: cross-site => first 429 at 0; answer 403; then 404
 POST /api/auth/oidc/link none auth:oidc-link count (ip 60/60s) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 POST /api/auth/oidc/link none auth:oidc-link window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
 POST /api/auth/oidc/link none auth:oidc-link scope => other address 404

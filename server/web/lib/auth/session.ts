@@ -83,9 +83,11 @@ import {
 import { auditsAsWrite } from './route-scope';
 import {
   DEVICE_BEARER,
+  bearerSessionKind,
   cookieSessionKind,
   passwordRule as signInRule,
   sessionHeld,
+  type SessionKind,
 } from '../oidc/hold';
 import type { Login } from './login';
 import { takeRouteLimits, type LimitLogin } from '../route-limits';
@@ -450,12 +452,14 @@ type RotatedToken = { jti: string; userId: string; rotatedTo: string };
 
 /** What a device token (`Authorization: Bearer <mobile-token>`) resolves
  *  to (findBearer), with no effect: the login and the token's id, the
- *  token to stamp as used, a rotated token presented again. */
+ *  token to stamp as used, a rotated token presented again, and the kind
+ *  of session company sign-in's gate judges it as. */
 type FoundBearer = Readonly<{
   resolved: Resolved | null;
   jti: string | null;
   touch: string | null;
   rotated: RotatedToken | null;
+  kind: SessionKind;
 }>;
 
 const NO_BEARER: FoundBearer = Object.freeze({
@@ -463,6 +467,7 @@ const NO_BEARER: FoundBearer = Object.freeze({
   jti: null,
   touch: null,
   rotated: null,
+  kind: DEVICE_BEARER,
 });
 
 /**
@@ -497,8 +502,14 @@ async function findBearer(): Promise<FoundBearer> {
   if (!row || !loginUsable(row)) return NO_BEARER;
   if (claims.ep !== undefined && claims.ep !== row.sessionEpoch) return NO_BEARER;
 
-  const resolved = await resolvedFor(row, 'mobile', 'password');
-  return { resolved, jti: resolved ? claims.jti : null, touch: claims.jti, rotated: null };
+  const resolved = await resolvedFor(row, 'mobile', claims.oidc ? 'sso' : 'password');
+  return {
+    resolved,
+    jti: resolved ? claims.jti : null,
+    touch: claims.jti,
+    rotated: null,
+    kind: bearerSessionKind(claims),
+  };
 }
 
 /** The effects of a found device token, each time a guard reads it: the
@@ -520,14 +531,20 @@ async function applyBearerEffects(found: {
 }
 
 /** The device token's login and its id (the cookie upgrade binds the
- *  cookie it mints to it), its effects applied. */
-async function bearerLogin(): Promise<{ resolved: Resolved; jti: string } | null> {
+ *  cookie it mints to it), its effects applied, and its session kind. */
+async function bearerLogin(): Promise<{
+  resolved: Resolved;
+  jti: string;
+  kind: SessionKind;
+} | null> {
   const found = await requestLogins().bearer();
   // Company sign-in's gate (lib/oidc/hold.ts) before any effect: a bearer
   // it holds is not stamped and upgrades to nothing.
-  if (found.resolved && (await sessionHeld(found.resolved.loginId, DEVICE_BEARER))) return null;
+  if (found.resolved && (await sessionHeld(found.resolved.loginId, found.kind))) return null;
   await applyBearerEffects(found);
-  return found.resolved && found.jti ? { resolved: found.resolved, jti: found.jti } : null;
+  return found.resolved && found.jti
+    ? { resolved: found.resolved, jti: found.jti, kind: found.kind }
+    : null;
 }
 
 /** Most refreshes a cookie's device token can have gone through and still
@@ -760,7 +777,7 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
   // Mobile companion: Authorization: Bearer <mobile-token>.
   const found = await bearer();
   // A device bearer, through the same gate (no effect applied, no stamp).
-  if (found.resolved && (await sessionHeld(found.resolved.loginId, DEVICE_BEARER))) {
+  if (found.resolved && (await sessionHeld(found.resolved.loginId, found.kind))) {
     return NO_LOGIN;
   }
   return {
@@ -2274,15 +2291,23 @@ async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
  * The DEVICE TOKEN only, never the cookie (access matrix T2): an upgrade
  * from the cookie alone would renew that cookie forever, with no device
  * behind it to revoke. `deviceJti` names the token, and the cookie is bound
- * to it.
+ * to it. `ssoSecondsLeft`: the life left of a token company sign-in made
+ * (null for a password sign-in's): the cookie takes that end and the mark.
  */
 export async function getCookieUpgradeLoginOr401(): Promise<
-  | { loginId: string; email: string; role: LoginRole; epoch: number; deviceJti: string }
+  | {
+      loginId: string;
+      email: string;
+      role: LoginRole;
+      epoch: number;
+      deviceJti: string;
+      ssoSecondsLeft: number | null;
+    }
   | NextResponse
 > {
   const bearer = await bearerLogin();
   if (!bearer) return accessRefusal(new AccessError('unauthorized'));
-  const { resolved: res, jti: deviceJti } = bearer;
+  const { resolved: res, jti: deviceJti, kind } = bearer;
   if (res.admin) await auditMutation(res.user);
   return {
     loginId: res.user.actor.id,
@@ -2290,6 +2315,7 @@ export async function getCookieUpgradeLoginOr401(): Promise<
     role: displayRole(res.admin),
     epoch: res.epoch,
     deviceJti,
+    ssoSecondsLeft: kind.kind === 'sso' ? kind.secondsLeft : null,
   };
 }
 

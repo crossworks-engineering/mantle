@@ -335,6 +335,20 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     limits: [ip('auth:oidc-link', 60)],
     crossSite: true,
   },
+  {
+    row: 'POST /api/auth/oidc/fresh',
+    cred: 'none',
+    body: JSON_BODY,
+    limits: [ip('auth:oidc-link', 60)],
+    crossSite: true,
+  },
+  {
+    row: 'POST /api/auth/oidc/exchange',
+    cred: 'none',
+    body: JSON_BODY,
+    limits: [ip('auth:oidc-exchange', 120)],
+    crossSite: true,
+  },
   ...getHead('/api/auth/invite/:code', {
     cred: 'none',
     limits: [ip('auth:invite-preview', 30), failures('auth:invite-preview:failed', 600)],

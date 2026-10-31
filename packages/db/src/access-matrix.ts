@@ -296,6 +296,10 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
     narrow: 'read',
     why: "a login's outside mark decides whether it keeps a password in required mode (0349): written only at the full-route spot oidc-link, never by narrow work",
   },
+  'public.oidc_handoff_codes': {
+    narrow: 'none',
+    why: 'a one-time code is a way in (0350): issued and spent only at the full-route spot oidc-link (server/web lib/oidc/store.ts), so the runtime role holds no right on it',
+  },
 });
 
 /**
@@ -1455,6 +1459,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.oidc_signin_links'), narrow: 'read' },
   { ...none('public.oidc_login_state'), narrow: 'read' },
   { ...none('public.oidc_mode_state'), narrow: 'read' },
+  // The one-time codes of company sign-in (0350): issued and spent at the
+  // full-route spot oidc-link only.
+  { ...none('public.oidc_handoff_codes'), narrow: 'none' },
   // The lowering guard's marks and the client request ledger (0197): the
   // tool loop and client_request_create write them as the system.
   none('public.client_sourced_nodes', 'system'),
@@ -1679,6 +1686,7 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.oidc_signin_links', // 0349
   'public.oidc_login_state', // 0349
   'public.oidc_mode_state', // 0349
+  'public.oidc_handoff_codes', // 0350
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as
