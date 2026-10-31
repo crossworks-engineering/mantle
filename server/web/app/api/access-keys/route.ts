@@ -100,7 +100,9 @@ async function handleGET(login: Login) {
   const facts = await adminFacts(login);
   const keys = await listAccessKeys(facts.admin ? null : login.loginId);
   const maxDays = maxKeyDays(facts.areas.has('keys'));
-  const stepUp = await stepUpFor(login.loginId);
+  // Whether the login is linked: the list runs in the login's own scope,
+  // which holds no read of company sign-in's links.
+  const stepUp = await inRuleInQuery(() => stepUpFor(login.loginId));
   return NextResponse.json(
     {
       keys,
@@ -249,7 +251,8 @@ async function handlePOST(login: Login, req: Request) {
 }
 
 // The login the pipeline answered (any login). The list
-// runs where the request runs, by its definer (listAccessKeys). Making a key
+// runs where the request runs, by its definer (listAccessKeys); only its
+// step-up read leaves the scope. Making a key
 // still leaves the scope by name: its password check reads the login's hash
 // and the new key's row is written on the system pool.
 export async function GET() {
