@@ -206,13 +206,9 @@ export const BARE_FETCH_ALLOWED = {
  * @type {Record<string, { kind: string; why: string }>}
  */
 export const RAW_HTTP_ALLOWED = {
-  'packages/std/src/egress.ts': {
+  'packages/std/src/undici.ts': {
     kind: 'fetch layer',
-    why: 'the one egress fetch: loads undici for the pinned Agent whose lookup answers only checked addresses',
-  },
-  'packages/voice/src/adapters/provider-fetch.ts': {
-    kind: 'fetch layer',
-    why: 'the model-provider HTTP pool: loads undici for the provider Agent (and the tailnet ProxyAgent built on it in tailnet.ts)',
+    why: 'loads undici for the pinned Agent of egress.ts and the provider and tailnet Agents, and runs a call through one of them on Bun',
   },
   'server/web/lib/tailscale.ts': {
     kind: 'owner config',

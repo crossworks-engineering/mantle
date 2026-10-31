@@ -10,7 +10,8 @@
     "./db-watch": "./src/db-watch.ts",
     "./egress": "./src/egress.ts",
     "./egress-test-net": "./src/egress-test-net.ts",
-    "./shutdown": "./src/shutdown.ts"
+    "./shutdown": "./src/shutdown.ts",
+    "./undici": "./src/undici.ts"
   },
   "dependencies": {
     "undici": "^8.12.3"

@@ -30,6 +30,11 @@ stay free of node builtins). On top of the platform fetch:
   `2002::/16`) are judged by the IPv4 rules; Teredo `2001::/32`, local-use
   NAT64, site-local `fec0::/10`, multicast `ff00::/8`, documentation and
   discard space are refused for every caller.
+- **The pin on Bun.** Bun ignores a `dispatcher` with no error, and the name
+  `undici` loads a stand-in there. A pinned hop on Bun runs through undici's
+  own fetch, loaded from the package's file
+  ([`undici.ts`](../packages/std/src/undici.ts)), with the same Agent and the
+  same lookup.
 - **Secret headers across origins.** On a hop to another origin it drops
   Authorization, Cookie and Proxy-Authorization by name (as the platform
   does) and any header whose value carries one of the caller's `secrets`

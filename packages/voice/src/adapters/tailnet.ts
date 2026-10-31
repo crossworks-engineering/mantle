@@ -19,9 +19,9 @@ import { env } from '@mantle/config';
  * The unit tests cover the SELECTION logic and a local CONNECT proxy; the
  * actual NAT traversal is validated by the operator once their tailnet is up.
  */
+import { loadUndici } from '@mantle/std/undici';
 import {
   fetchVia,
-  loadUndici,
   providerAgentOptions,
   providerFetch,
   type ProviderFetchOptions,
@@ -62,7 +62,6 @@ export async function tailnetFetch(
 
 /** Test seam — clears the cached agent so an env change takes effect. */
 export function _resetTailnetProxy(): void {
-  // Bun's undici ProxyAgent has no close.
-  void _agent?.close?.().catch(() => {});
+  void _agent?.close().catch(() => {});
   _agent = undefined;
 }
