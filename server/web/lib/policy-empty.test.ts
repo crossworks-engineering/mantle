@@ -87,14 +87,22 @@ describe('every MANTLE_POLICY_* empty: the box as before', () => {
   });
 
   it('models: every shipped default stays callable, auto routers too', () => {
-    for (const a of MANIFEST_AGENTS) {
-      const r = a as { provider?: string; model?: string };
+    const defaults = [...MANIFEST_AGENTS, ...MANIFEST_WORKERS]
+      .map((d) => d as { provider?: string; model?: string })
+      .filter((d) => typeof d.model === 'string' && d.model !== 'inherit');
+    expect(defaults.length).toBeGreaterThan(0);
+    for (const r of defaults) {
       expect(modelPolicyRefusal(r.provider ?? 'openrouter', r.model)).toBeNull();
     }
-    for (const w of MANIFEST_WORKERS) {
-      const r = w as { provider?: string; model?: string };
-      expect(modelPolicyRefusal(r.provider ?? 'openrouter', r.model)).toBeNull();
+    // The loop asks the real check: the same defaults under a deny-all rule
+    // are refused (audit round 8).
+    process.env.MANTLE_POLICY_MODEL_DENY = '*';
+    resetBoxPolicyForTests();
+    for (const r of defaults) {
+      expect(modelPolicyRefusal(r.provider ?? 'openrouter', r.model)).not.toBeNull();
     }
+    delete process.env.MANTLE_POLICY_MODEL_DENY;
+    resetBoxPolicyForTests();
     expect(modelPolicyRefusal('openrouter', 'openrouter/auto')).toBeNull();
     // A route's own base URL anywhere: no endpoint rule.
     expect(modelPolicyRefusal('local', 'llama3', 'http://any.example:1234/v1')).toBeNull();

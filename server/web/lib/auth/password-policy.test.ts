@@ -149,6 +149,18 @@ describe('MANTLE_POLICY_PASSWORD_MIN=12', () => {
       'Monday2026!!',
       'passwordpassword',
       'welcomewelcome',
+      // Audit round 8: spaces and digits between, digits for letters.
+      'welcome welcome',
+      'Summer Summer 2026',
+      'Welcome1Welcome1',
+      'Password1!Password1!',
+      'password2026password',
+      'P@$$w0rd2026!',
+      'P4ssw0rd2026',
+      'Adm1n2026!!!',
+      'Letme1n2026!',
+      '1q2w3e4r5t6y7u',
+      '1qaz2wsx3edc4rfv',
     ]) {
       expect(passwordProblem(weak)?.code, weak).toBe('password_common');
     }
@@ -165,6 +177,10 @@ describe('MANTLE_POLICY_PASSWORD_MIN=12', () => {
       'tree free reed',
       'street trees',
       'redder trees',
+      // Any script's letters are letters; many digits around a word are not
+      // decoration.
+      'Привет как дела hello',
+      '8472-9931-5520-test',
     ]) {
       expect(passwordProblem(good), good).toBeNull();
     }

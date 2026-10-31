@@ -117,7 +117,8 @@ the extract queue pauses as for any lasting provider failure.
 off the allow-list for its list at all. A save of a blocked model is
 refused with `403 { error, code: 'model_policy' }` (assistants, workers, model
 combos, model pools, the embedder; `server/web/lib/model-policy-save.ts`).
-Seeded defaults are not checked at save: the boot check names them.
+Seeded defaults, the onboarding Models step and an agent clone are not
+checked at save: the boot check names them, and every call is checked.
 
 **The boot check.** With a policy set, the web process logs the rules at
 start-up, then one line for every enabled assistant, worker and embedder
