@@ -346,8 +346,6 @@ function checkedLookup(allowLan: boolean) {
   };
 }
 
-const NATIVE_FETCH = globalThis.fetch;
-
 const pinnedAgents = new Map<boolean, UndiciAgent>();
 
 /** The pinned Agent for this mode: its connections go only to addresses
@@ -362,22 +360,6 @@ function pinnedDispatcher(allowLan: boolean): UndiciAgent {
   const agent = new undici.Agent({ connect: { lookup: checkedLookup(allowLan) } });
   pinnedAgents.set(allowLan, agent);
   return agent;
-}
-
-/**
- * A hop to a pinned address. A fetch on globalThis that is not the platform's
- * own (a test stub) wins, as in provider-fetch.ts.
- */
-function pinnedFetch(
-  target: RequestInfo | URL,
-  init: RequestInit,
-  allowLan: boolean,
-): Promise<Response> {
-  const dispatcher = pinnedDispatcher(allowLan);
-  if (globalThis.fetch !== NATIVE_FETCH) {
-    return fetch(target, { ...init, dispatcher } as RequestInit);
-  }
-  return fetchThrough(dispatcher, target, init, fetch);
 }
 
 /** A refusal raised inside the connect comes back as fetch's TypeError
@@ -549,7 +531,9 @@ export async function egressFetch(
     }
     const pinned = !(u && opts.exempt?.(u));
     try {
-      return await (pinned ? pinnedFetch(target, reqInit, allowLan) : fetch(target, reqInit));
+      return await (pinned
+        ? fetchThrough(pinnedDispatcher(allowLan), target, reqInit, fetch)
+        : fetch(target, reqInit));
     } catch (err) {
       throw unwrapRefusal(err);
     }
