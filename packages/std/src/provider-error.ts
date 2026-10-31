@@ -626,15 +626,18 @@ export const RETRYABLE_STATUS: ReadonlySet<number> = new Set([
  * body, and the message alone cannot tell them apart. Retrying a real
  * malformed payload would turn one loud bug into three silent ones.
  *
- * The message strings are V8's, and V8 has changed them before. The tests
- * parse REAL malformed JSON rather than asserting hand-written strings, so the
- * next V8 wording change fails them instead of silently narrowing this again.
+ * Bun says these two as "Unexpected EOF" and "Unterminated string".
+ *
+ * The message strings are the engines', and V8 has changed them before. The
+ * tests parse REAL malformed JSON rather than asserting hand-written strings,
+ * so the next wording change fails them instead of silently narrowing this
+ * again.
  */
 export function isEmptyJsonBodyError(err: unknown): boolean {
   if (!(err instanceof SyntaxError)) return false;
   return (
-    /unexpected end of (json )?input/i.test(err.message) ||
-    /unterminated string in json/i.test(err.message)
+    /unexpected (end of (json )?input|eof)/i.test(err.message) ||
+    /unterminated string/i.test(err.message)
   );
 }
 

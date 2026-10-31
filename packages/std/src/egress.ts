@@ -555,9 +555,13 @@ export async function egressFetch(
     // The deadline covers the body read too, so it stays armed after the
     // headers arrive; unref'd, it never holds the process open, and firing
     // after a finished read aborts nothing. A plain abort, so the error reads
-    // as a caller's own timer would ("This operation was aborted").
+    // as a caller's own timer would ("This operation was aborted"), named here
+    // because Bun's default words differ.
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs);
+    const timer = setTimeout(
+      () => ctrl.abort(new DOMException('This operation was aborted', 'AbortError')),
+      opts.timeoutMs,
+    );
     (timer as { unref?: () => void }).unref?.();
     signal = signal ? AbortSignal.any([signal, ctrl.signal]) : ctrl.signal;
   }
