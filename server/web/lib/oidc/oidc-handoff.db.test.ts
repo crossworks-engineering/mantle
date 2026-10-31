@@ -316,6 +316,23 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     }
   });
 
+  it('a link handed to an app needs proof of a fresh sign-in too', async () => {
+    const signIn = await call('/api/auth/token', {
+      method: 'POST',
+      body: { email: emailOf(person), password: PASSWORD },
+    });
+    const { token, oidcTicket } = (await signIn.json()) as { token: string; oidcTicket: string };
+    const start = await call('/api/auth/oidc/link', {
+      method: 'POST',
+      bearer: token,
+      body: { handoff: { redirect: TARGET, challenge: CHALLENGE }, ticket: oidcTicket },
+    });
+    h.subject = 'sub-link';
+    h.authTime = false;
+    const done = await browser(pathOf(((await start.json()) as { url: string }).url));
+    expect(done).toBe(`${TARGET}#oidc=failed&${ISS}`);
+  });
+
   it('a fresh sign-in with no proof of when it happened buys nothing', async () => {
     await linkDirect(person, 'sub-p');
     const { token } = await signInBearer('sub-p');
@@ -337,6 +354,14 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     const byBearer = await call(url, { method: 'POST', bearer: token, body });
     expect(byBearer.status).toBe(403);
     expect(await byBearer.json()).toMatchObject({ code: 'sso-session' });
+    // Postgres matches a uuid in any case, so the path's case changes nothing.
+    const upper = await call(`/api/users/${admin.toUpperCase()}/password`, {
+      method: 'POST',
+      bearer: token,
+      body,
+    });
+    expect(upper.status).toBe(403);
+    expect(await upper.json()).toMatchObject({ code: 'sso-session' });
     const { buildSessionCookie } = await import('@/lib/auth/tokens');
     const sso = `mantle_session=${buildSessionCookie(admin, { ttlSeconds: 3600, oidc: true }).value}`;
     const byCookie = await call(url, { method: 'POST', cookies: [sso], body });
@@ -585,11 +610,8 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     expect(made.status).toBe(201);
   });
 
-  it('the MCP consent page confirms a linked login with a fresh sign-in', async () => {
-    await linkDirect(admin, 'sub-admin');
-    const { buildSessionCookie } = await import('@/lib/auth/tokens');
-    const session = `mantle_session=${buildSessionCookie(admin).value}`;
-    const redirect = 'https://client.example.invalid/callback';
+  /** An MCP client's consent request: a new client, and its query string. */
+  const consentRequest = async (redirect: string) => {
     const reg = await call('/api/oauth/register', {
       method: 'POST',
       body: {
@@ -601,16 +623,39 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
       },
     });
     expect(reg.status).toBe(201);
-    const clientId = ((await reg.json()) as { client_id: string }).client_id;
-    const q = new URLSearchParams({
+    return new URLSearchParams({
       response_type: 'code',
-      client_id: clientId,
+      client_id: ((await reg.json()) as { client_id: string }).client_id,
       redirect_uri: redirect,
       code_challenge: CHALLENGE,
       code_challenge_method: 'S256',
       state: 'st',
       scope: 'mcp',
     });
+  };
+
+  it('off: the consent page is the password page, whatever the query says', async () => {
+    await linkDirect(admin, 'sub-admin');
+    setMode('off');
+    const { buildSessionCookie } = await import('@/lib/auth/tokens');
+    const session = `mantle_session=${buildSessionCookie(admin).value}`;
+    const q = await consentRequest('https://client.example.invalid/callback');
+    const page = await call(`/api/oauth/authorize?${q}`, { cookies: [session] });
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain('Type your Mantle password to allow');
+    expect(html).not.toContain('value="confirm"');
+    const extra = `${q}&oidc=wrong-account&fresh_code=abc`;
+    const same = await call(`/api/oauth/authorize?${extra}`, { cookies: [session] });
+    expect(await same.text()).toBe(html);
+  });
+
+  it('the MCP consent page confirms a linked login with a fresh sign-in', async () => {
+    await linkDirect(admin, 'sub-admin');
+    const { buildSessionCookie } = await import('@/lib/auth/tokens');
+    const session = `mantle_session=${buildSessionCookie(admin).value}`;
+    const redirect = 'https://client.example.invalid/callback';
+    const q = await consentRequest(redirect);
     const page = await call(`/api/oauth/authorize?${q}`, { cookies: [session] });
     expect(page.status).toBe(200);
     const html = await page.text();
@@ -678,6 +723,14 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
       form: form2,
     });
     expect(cross.status).toBe(403);
+    // Nor does it allow more than the page showed.
+    const wide = new URL(await browser(await confirm()));
+    const wider = await post({
+      decision: 'allow',
+      fresh_code: wide.searchParams.get('fresh_code')!,
+      scope: 'mcp more',
+    });
+    expect(wider.status).toBe(403);
     // A consent code buys no key either.
     const again2 = new URL(await browser(await confirm()));
     const key = await call('/api/access-keys', {
@@ -730,7 +783,8 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     });
     const body = (await signIn.json()) as { token: string; oidcTicket?: string };
     expect(body.oidcTicket).toBeUndefined();
+    // The key list stays as it was: it reads no link (they are off).
     const list = await call('/api/access-keys', { bearer: body.token });
-    expect(((await list.json()) as { needsPassword: boolean }).needsPassword).toBe(true);
+    expect(list.status).toBe(200);
   });
 });

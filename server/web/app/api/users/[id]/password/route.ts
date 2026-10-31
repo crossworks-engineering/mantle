@@ -60,7 +60,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // schema's 8 characters above already answered.
   const weak = passwordProblem(parsed.data.newPassword);
   if (weak) return NextResponse.json(passwordProblemBody(weak), { status: 400 });
-  const targetId = idParsed.data.id;
+  // The schema keeps a path id's case, and Postgres matches a uuid in any
+  // case: lowered, so `self` below cannot miss the caller's own login.
+  const targetId = idParsed.data.id.toLowerCase();
 
   const [target] = await db
     .select({ id: authUsers.id, email: authUsers.email, role: authUsers.role })

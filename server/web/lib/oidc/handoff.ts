@@ -58,8 +58,7 @@ function trustedOrigins(s: OidcOn): Set<string> {
   return new Set([...ownOrigins(s), ...namedCorsOrigins()]);
 }
 
-/** This brain's public origin: what the flow's fragment names as `iss`, and
- *  what the public config read answers. */
+/** This brain's public origin: what the flow's fragment names as `iss`. */
 export function brainOrigin(s: OidcOn): string {
   return new URL(s.redirectUri).origin;
 }
@@ -111,16 +110,22 @@ export function handoffFailedUrl(s: OidcOn, h: FlowHandoff, result: OidcCallback
   return `${h.redirect}#oidc=${result}&iss=${encodeURIComponent(brainOrigin(s))}`;
 }
 
-/** What a consent page's fresh code is bound to: this client, this redirect
- *  and this request's challenge, so it confirms this one consent and no
- *  other. Kept where a client's challenge goes; `consent:` can never be one. */
+/** What a consent page's fresh code is bound to: this client, this redirect,
+ *  this request's challenge and what the person was shown it asks for, so it
+ *  confirms this one consent and no other. Kept where a client's challenge
+ *  goes; `consent:` can never be one. */
 export function consentBinding(q: {
   clientId: string;
   redirectUri: string;
   codeChallenge: string;
+  scope: string;
+  foreignResource: string;
 }): string {
   const made = createHash('sha256')
-    .update(`${q.clientId}\n${q.redirectUri}\n${q.codeChallenge}`, 'utf8')
+    .update(
+      JSON.stringify([q.clientId, q.redirectUri, q.codeChallenge, q.scope, q.foreignResource]),
+      'utf8',
+    )
     .digest('base64url');
   return `consent:${made}`;
 }
