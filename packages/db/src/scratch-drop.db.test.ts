@@ -137,7 +137,7 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
     try {
       // One connection that has run a query and sits idle, one mid query.
       await Promise.all([sql`select 1`.execute(), sql`select 2`.execute()]);
-      const running = sql<{ n: number }[]>`select pg_sleep(0.4), 7 as n`.execute();
+      const running = sql<{ n: number }[]>`select pg_sleep(1.5), 7 as n`.execute();
       await pollUntil(() => active(admin, scratch.name), { what: 'the sleep to start' });
       const t0 = Date.now();
       const warned = await warnsOf(() => scratch.drop());
@@ -149,7 +149,7 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
       expect(warned).toHaveLength(1);
       const said = String(warned[0]?.[0]);
       expect(said).toContain(scratch.name);
-      expect(said).toMatch(/pid \d+: select pg_sleep\(0\.4\)/);
+      expect(said).toMatch(/pid \d+: select pg_sleep\(1\.5\)/);
       const [gone] = await admin<{ n: number }[]>`
         select count(*)::int as n from pg_database where datname = ${scratch.name}`;
       expect(gone?.n).toBe(0);
@@ -166,7 +166,7 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
     try {
       // A comment stands in for a CREATE ROLE's literal: pg_stat_activity
       // shows the query text as sent, comments included.
-      const running = sql.unsafe("select pg_sleep(0.4) /* PASSWORD 'hunter2' */").execute();
+      const running = sql.unsafe("select pg_sleep(1.5) /* PASSWORD 'hunter2' */").execute();
       await pollUntil(() => active(admin, scratch.name), { what: 'the sleep to start' });
       const warned = await warnsOf(() => scratch.drop());
       await running;
