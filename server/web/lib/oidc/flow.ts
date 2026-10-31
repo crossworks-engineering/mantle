@@ -71,6 +71,9 @@ import {
 } from './cookies';
 import {
   HANDOFF_CODE_TTL_SECONDS,
+  appTarget,
+  brainOrigin,
+  consentBinding,
   handoffCodeUrl,
   handoffFailedUrl,
   newHandoffCode,
@@ -163,7 +166,8 @@ function redirect(url: URL | string): NextResponse {
 /** GET /api/auth/oidc/config: the mode and the button's label. */
 export function oidcConfigAnswer(): NextResponse {
   const s = oidcSettings();
-  const body: OidcConfigDTO = s.mode === 'off' ? { mode: 'off' } : { mode: s.mode, label: s.label };
+  const body: OidcConfigDTO =
+    s.mode === 'off' ? { mode: 'off' } : { mode: s.mode, label: s.label, brain: brainOrigin(s) };
   return json(body);
 }
 
@@ -228,7 +232,7 @@ export async function oidcDismissOffer(
 /** The URL that begins a flow from a start ticket (handoff.ts), in whichever
  *  browser opens it. */
 function ticketStartUrl(s: OidcOn, ticket: StartTicket): string {
-  const url = new URL('/api/auth/oidc/start', new URL(s.redirectUri).origin);
+  const url = new URL('/api/auth/oidc/start', brainOrigin(s));
   url.searchParams.set('ticket', signStartTicket(ticket));
   return url.toString();
 }
@@ -281,7 +285,11 @@ export async function oidcStartSignIn(req: Request): Promise<NextResponse> {
       };
   let url: string;
   try {
-    url = await authorizationUrl(s, secrets, { link: flow.purpose !== 'signin' });
+    // A code for an app is never handed over silently: any app can claim the
+    // scheme and start a flow of its own (handoff.ts).
+    url = await authorizationUrl(s, secrets, {
+      again: flow.purpose !== 'signin' || appTarget(flow.handoff),
+    });
   } catch (err) {
     log('auth').warn(`company sign-in: the provider could not be read: ${errorMessage(err)}`);
     return redirect(flowEndUrl(s, flow, 'unavailable'));
@@ -320,7 +328,7 @@ async function mintSsoSession(
  *  link, which has no session to go back to) to the sign-in screen, an
  *  in-session link back where it started. */
 function flowEndUrl(s: OidcOn, flow: OidcFlow | null, result: OidcCallbackResult): string {
-  if (flow?.handoff) return handoffFailedUrl(flow.handoff, result);
+  if (flow?.handoff) return handoffFailedUrl(s, flow.handoff, result);
   if (flow?.purpose === 'fresh' && flow.consent) {
     return consentUrl(s, flow.consent, { oidc: result });
   }
@@ -331,7 +339,7 @@ function flowEndUrl(s: OidcOn, flow: OidcFlow | null, result: OidcCallbackResult
 /** The MCP consent page on this brain, with `extra` beside its own query
  *  (never an open redirect: the path is fixed). */
 function consentUrl(s: OidcOn, consent: string, extra: Record<string, string>): string {
-  const url = new URL('/api/oauth/authorize', new URL(s.redirectUri).origin);
+  const url = new URL('/api/oauth/authorize', brainOrigin(s));
   url.search = consent;
   for (const [k, v] of Object.entries(extra)) url.searchParams.set(k, v);
   return `${url.toString()}#`;
@@ -392,7 +400,11 @@ export async function oidcCallback(req: Request, readLogin: LoginReader): Promis
       s,
       query,
       flow,
-      flow.purpose === 'signin' ? {} : { linkStartedAt: flow.startedAt },
+      flow.purpose === 'signin'
+        ? {}
+        : flow.purpose === 'link'
+          ? { linkStartedAt: flow.startedAt }
+          : { freshStartedAt: flow.startedAt },
     );
   } catch (err) {
     log('auth').warn(`company sign-in: the callback did not verify: ${errorMessage(err)}`);
@@ -413,7 +425,7 @@ export async function oidcCallback(req: Request, readLogin: LoginReader): Promis
 async function issueCode(
   purpose: OidcHandoffPurpose,
   row: { id: string; sessionEpoch: number },
-  challenge: string | null,
+  challenge: string,
   more: { identity?: ProviderIdentity; held?: boolean } = {},
 ): Promise<string> {
   const { code, hash } = newHandoffCode();
@@ -448,7 +460,7 @@ async function handSignIn(
   await touchLink(target.linkId).catch((err: unknown) =>
     log('auth').warn(`company sign-in: the link's last use was not stamped: ${errorMessage(err)}`),
   );
-  const res = redirect(handoffCodeUrl(handoff, code, 'signin'));
+  const res = redirect(handoffCodeUrl(s, handoff, code, 'signin'));
   clearOidcCookies(res, req);
   return res;
 }
@@ -468,9 +480,19 @@ async function handLink(
     return flowFailed(req, s, flow, 'expired', { identity });
   }
   const code = await issueCode('link', row, handoff.challenge, { identity, held: flow.held });
-  const res = redirect(handoffCodeUrl(handoff, code, 'link'));
+  const res = redirect(handoffCodeUrl(s, handoff, code, 'link'));
   clearOidcCookies(res, req);
   return res;
+}
+
+/** The binding of the consent request a fresh flow came from (handoff.ts). */
+function consentCodeBinding(consent: string): string {
+  const q = new URLSearchParams(consent);
+  return consentBinding({
+    clientId: q.get('client_id') ?? '',
+    redirectUri: q.get('redirect_uri') ?? '',
+    codeChallenge: q.get('code_challenge') ?? '',
+  });
 }
 
 /** A fresh sign-in: the provider account must be the one linked to the login
@@ -494,10 +516,14 @@ async function finishFresh(
       email: row.email,
     });
   }
-  const code = await issueCode('fresh', row, flow.handoff?.challenge ?? null);
+  const code = await issueCode(
+    'fresh',
+    row,
+    flow.handoff?.challenge ?? consentCodeBinding(flow.consent ?? ''),
+  );
   const res = redirect(
     flow.handoff
-      ? handoffCodeUrl(flow.handoff, code, 'fresh')
+      ? handoffCodeUrl(s, flow.handoff, code, 'fresh')
       : consentUrl(s, flow.consent ?? '', { fresh_code: code }),
   );
   clearOidcCookies(res, req);
@@ -704,7 +730,7 @@ export async function oidcStartLink(req: Request, readLogin: LoginReader): Promi
   const secrets = newFlowSecrets();
   let url: string;
   try {
-    url = await authorizationUrl(s, secrets, { link: true });
+    url = await authorizationUrl(s, secrets, { again: true });
   } catch (err) {
     log('auth').warn(`company sign-in: the provider could not be read: ${errorMessage(err)}`);
     return json({ error: 'Company sign-in is not reachable now. Try again later.' }, 503);

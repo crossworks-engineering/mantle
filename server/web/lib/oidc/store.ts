@@ -284,7 +284,7 @@ export async function issueHandoffCode(row: {
   purpose: OidcHandoffPurpose;
   loginId: string;
   epoch: number;
-  challenge: string | null;
+  challenge: string;
   identity?: OidcHandoffIdentity;
   held?: boolean;
   expiresAt: Date;
@@ -302,7 +302,7 @@ export type SpentHandoffCode = Readonly<{
   purpose: OidcHandoffPurpose;
   loginId: string;
   epoch: number;
-  challenge: string | null;
+  challenge: string;
   identity: OidcHandoffIdentity | null;
   held: boolean;
 }>;

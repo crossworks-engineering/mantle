@@ -13,10 +13,10 @@
 -- Only the code's sha256 is kept. A code lasts 2 minutes and works once:
 -- `used_at` is set by the one statement that spends it, before the verifier
 -- is compared, so a wrong guess burns the code. `challenge` is the client's
--- S256 challenge; null only for the MCP consent page, a page of this brain
--- whose code the signed-in login itself spends. `identity` is the provider
--- account of a link, made only when the client spends the code. A code goes
--- with its login (ON DELETE CASCADE).
+-- S256 challenge, or for the MCP consent page (a page of this brain, whose
+-- code the signed-in login itself spends) the `consent:` binding to that one
+-- request. `identity` is the provider account of a link, made only when the
+-- client spends the code. A code goes with its login (ON DELETE CASCADE).
 --
 -- Written only at the full-route spot oidc-link (server/web
 -- lib/oidc/store.ts): a code is a way in, so neither the narrow login nor the
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS "public"."oidc_handoff_codes" (
   "purpose" text NOT NULL,
   "login_id" uuid NOT NULL REFERENCES "auth"."users"("id") ON DELETE CASCADE,
   "epoch" integer NOT NULL,
-  "challenge" text,
+  "challenge" text NOT NULL,
   "identity" jsonb,
   "held" boolean DEFAULT false NOT NULL,
   "expires_at" timestamp with time zone NOT NULL,

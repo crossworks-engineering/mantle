@@ -13,18 +13,26 @@ import type { OidcFreshProof } from '@mantle/client-types';
 import { handoffCodeHash, verifierMatches } from './handoff';
 import { passwordRule } from './hold';
 import { issuerKey, oidcSettings } from './settings';
-import { loginLinked, spendHandoffCode } from './store';
+import { loginHasPassword, loginLinked, spendHandoffCode } from './store';
 
-/** How a login confirms who it is. */
-export type StepUp = Readonly<{ kind: 'password' } | { kind: 'company'; label: string }>;
+/** How a login confirms who it is. `passwordToo`: it may also type its
+ *  password, as the original account must be able to while the provider is
+ *  down. */
+export type StepUp = Readonly<
+  { kind: 'password' } | { kind: 'company'; label: string; passwordToo: boolean }
+>;
 
 /** How `loginId` confirms: a linked login with a fresh sign-in. */
 export async function stepUpFor(loginId: string): Promise<StepUp> {
   const s = oidcSettings();
-  if (s.mode === 'off') return { kind: 'password' };
-  return (await loginLinked(loginId, issuerKey(s.issuer)))
-    ? { kind: 'company', label: s.label }
-    : { kind: 'password' };
+  if (s.mode === 'off' || !(await loginLinked(loginId, issuerKey(s.issuer)))) {
+    return { kind: 'password' };
+  }
+  return {
+    kind: 'company',
+    label: s.label,
+    passwordToo: (await passwordConfirms(loginId)) && (await loginHasPassword(loginId)),
+  };
 }
 
 /** Whether a typed password can confirm this login: not in required mode
@@ -45,20 +53,22 @@ export async function spendFresh(
     loginId: login.loginId,
     epoch: login.sessionEpoch,
   });
-  return !!spent?.challenge && verifierMatches(proof.verifier, spent.challenge);
+  return !!spent && verifierMatches(proof.verifier, spent.challenge);
 }
 
 /** Spend the MCP consent page's fresh sign-in: a page of this brain, so no
- *  verifier. The code is good only for the login and epoch that asked, so
- *  it is worth nothing outside that session. */
+ *  verifier. The code is good only for the login and epoch that asked, and
+ *  only for this consent (`binding`, handoff.ts consentBinding), so it is
+ *  worth nothing outside that session and that form. */
 export async function spendConsentFresh(
   login: { loginId: string; sessionEpoch: number },
   code: string,
+  binding: string,
 ): Promise<boolean> {
   if (oidcSettings().mode === 'off' || code.length === 0 || code.length > 128) return false;
   const spent = await spendHandoffCode(handoffCodeHash(code), ['fresh'], {
     loginId: login.loginId,
     epoch: login.sessionEpoch,
   });
-  return !!spent && spent.challenge === null;
+  return !!spent && spent.challenge === binding;
 }

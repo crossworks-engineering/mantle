@@ -242,8 +242,10 @@ client and the brain, on top of the PKCE between the brain and the provider:
    `GET /api/auth/oidc/start?redirect=<target>&challenge=<S256>`.
 2. The provider signs the person in and comes back to the callback, as usual.
 3. The callback sends the browser to the target with a one-time code, in the
-   fragment: `<target>#oidc=code&code=<c>&purpose=signin`, or
-   `<target>#oidc=<why it stopped>`.
+   fragment: `<target>#oidc=code&code=<c>&purpose=signin&iss=<brain>`, or
+   `<target>#oidc=<why it stopped>&iss=<brain>`. The client compares `iss` with
+   the `brain` the config read answered, so a code from another brain is never
+   spent here (a device can hold several).
 4. The client sends `POST /api/auth/oidc/exchange { code, verifier,
 deviceName? }` and gets what the flow was for.
 
@@ -251,13 +253,18 @@ A code is 256 random bits, lasts 2 minutes and works once. Only its sha256 is
 kept (`oidc_handoff_codes`). The verifier is compared after the code is spent,
 so a wrong one burns the code. Every failure answers the same 401.
 
-Targets, the only places a flow ends (a mailed start URL can send a code
-nowhere else):
+Targets, the only places a flow ends. Each is one exact URL, never an origin:
+a brain serves mini apps and shared pages that run other people's script, and
+any page that receives a code could send it on.
 
 - `mantle://oidc`, the desktop app and the phone. Any app can claim a custom
-  scheme, which is why a code is worth nothing without the verifier.
-- A page on this brain's public origin, on `MANTLE_CLIENT_ORIGIN`, or on a
-  named `MANTLE_API_CORS_ORIGINS` entry. Never the `*` wildcard.
+  scheme and start a flow of its own, so a flow that ends here always asks the
+  provider to sign the person in (`prompt=login`, `max_age=0`): a code is
+  never handed over silently.
+- `<origin>/auth/oidc`, the web app's own page, where the origin is this
+  brain's public origin, `MANTLE_CLIENT_ORIGIN` or a named
+  `MANTLE_API_CORS_ORIGINS` entry. Never the `*` wildcard. A client origin must
+  be a named CORS entry too, or it cannot post the exchange.
 
 The bearer is a device token like any other (listed and revoked in
 Settings > Logins), with three differences. It lasts
@@ -281,24 +288,27 @@ login linked to a company account does that with a fresh company sign-in, in
 place of its password (`server/web/lib/oidc/fresh.ts`). The provider signs the
 person in again (`prompt=login`, `max_age=0`), the account that comes back must
 be the one linked to this login (else `wrong-account`), and one code buys one
-request, for the login and session epoch that asked. When the ID token says
-when the person signed in, it must be at or after the flow's start, as for a
-link. A provider that sends no `auth_time` is let through, with one log line:
-for Entra, add it as an optional claim ([oidc-entra.md](oidc-entra.md)).
+request, for the login and session epoch that asked. The ID token must say
+when the person signed in (`auth_time`, at or after the flow's start). Unlike a
+link, a fresh sign-in with no `auth_time` is refused: it stands in for a
+password, so it must be proven, and refusing it strands nobody. For Entra, add
+it as an optional claim ([oidc-entra.md](oidc-entra.md)).
 
-- `GET /api/access-keys` answers `stepUp: { kind: 'company', label }` and
-  `needsPassword: false` for a linked login. The client calls
+- `GET /api/access-keys` answers `stepUp: { kind: 'company', label,
+passwordToo }` and `needsPassword: false` for a linked login. The client calls
   `POST /api/auth/oidc/fresh { redirect, challenge }`, opens `url`, and sends
   `fresh: { code, verifier }` on the create. A failure answers 403 with
   `reason: 'fresh-sign-in'`.
 - The MCP consent page is a page of this brain, so it needs no verifier: its
   **Confirm** button runs the flow in that browser and comes back to the page
-  with a code, spent by the same session on Allow.
+  with a code, bound to that client, redirect and challenge, and spent by the
+  same session on Allow.
 
 In required mode a typed password does not confirm a login whose only way in
-is company sign-in. In optional mode it still does, for an app from before
-this milestone. The original account and an unlinked login keep their
-password.
+is company sign-in. In optional mode it still does (`passwordToo`), for an app
+from before this milestone and for a provider that is down. The original
+account keeps its password in every mode: it is the emergency admin. An
+unlinked login confirms with its password.
 
 ## Routes
 
@@ -355,6 +365,11 @@ The types are in `packages/client-types/src/dto/auth.ts` (`OidcConfigDTO`,
   lives in the client's memory for those minutes.
 - A person invited while the mode is on still chooses a password at the
   invite: a first sign-in with no password at all is not in this milestone.
+- A password change from a company sign-in bearer ends that bearer (its epoch
+  moves on): the person signs in with the provider again.
+- A consent page's fresh code rides the page's query string, so a proxy log
+  in front of the brain can see it. It works once, for 2 minutes, for that
+  login, session and consent.
 - Required mode needs a client that has the company sign-in screens: keep
   `optional` until each client has shipped them (plan section 14).
 
