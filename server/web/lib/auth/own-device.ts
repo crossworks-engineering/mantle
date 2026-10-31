@@ -50,9 +50,11 @@ export function ownCookieOpts(
   }
   const token = bearerFromHeader(req.headers.get('authorization'));
   if (!token) return {};
-  const bearerEnd = ownOidcBearerEnd(token);
-  if (bearerEnd !== null) {
-    return { ttlSeconds: bearerEnd, oidc: true, ...(keptJti ? { deviceJti: keptJti } : {}) };
+  // Only the live device token of this login: a revoked or foreign bearer
+  // riding along must not put the mark on a password cookie.
+  const bearerEnd = keptJti ? ownOidcBearerEnd(token) : null;
+  if (keptJti && bearerEnd !== null) {
+    return { ttlSeconds: bearerEnd, oidc: true, deviceJti: keptJti };
   }
   return {
     ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS,

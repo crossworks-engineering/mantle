@@ -28,12 +28,14 @@ import {
 } from '@mantle/db/test-support';
 
 const ISSUER = 'https://idp.example.invalid/realms/company';
-const h = vi.hoisted(() => ({ subject: 'sub-x' }));
+const h = vi.hoisted(() => ({ subject: 'sub-x', again: [] as boolean[], authTime: true }));
 
 vi.mock('./provider', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  authorizationUrl: async (_s: unknown, f: { state: string }, o?: { link?: boolean }) =>
-    `${'https://idp.example.invalid/realms/company'}/auth?state=${f.state}&fresh=${o?.link ? 1 : 0}`,
+  authorizationUrl: async (_s: unknown, f: { state: string }, o?: { again?: boolean }) => {
+    h.again.push(o?.again === true);
+    return `${'https://idp.example.invalid/realms/company'}/auth?state=${f.state}`;
+  },
   identityFromCallback: async (_s: unknown, q: URLSearchParams, f: { state: string }) => {
     if (q.get('state') !== f.state) throw new Error('state mismatch');
     return {
@@ -51,8 +53,12 @@ type Row = Record<string, unknown>;
 
 const VERIFIER = 'v'.repeat(43);
 const CHALLENGE = createHash('sha256').update(VERIFIER).digest('base64url');
+const BRAIN = 'https://brain.example.invalid';
 const TARGET = 'mantle://oidc';
 const AS_CLIENT = `redirect=${encodeURIComponent(TARGET)}&challenge=${CHALLENGE}`;
+const WEB_TARGET = `${BRAIN}/auth/oidc`;
+const AS_WEB = `redirect=${encodeURIComponent(WEB_TARGET)}&challenge=${CHALLENGE}`;
+const ISS = `iss=${encodeURIComponent(BRAIN)}`;
 
 describe.skipIf(!URL_)('company sign-in handed to a client', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
@@ -212,6 +218,7 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     const done = await browser(`/api/auth/oidc/start?${AS_CLIENT}`);
     expect(done.startsWith(`${TARGET}#oidc=code&code=`)).toBe(true);
     expect(fragment(done).get('purpose')).toBe('signin');
+    expect(fragment(done).get('iss')).toBe(BRAIN);
     const code = fragment(done).get('code')!;
     // Only the hash is kept.
     const rows = await asSuperuser()<Row>`select code_hash from oidc_handoff_codes`;
@@ -255,7 +262,34 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
   it('an account linked to nobody gets no code, and the client hears why', async () => {
     h.subject = 'sub-nobody';
     const done = await browser(`/api/auth/oidc/start?${AS_CLIENT}`);
-    expect(done).toBe(`${TARGET}#oidc=not-linked`);
+    expect(done).toBe(`${TARGET}#oidc=not-linked&${ISS}`);
+  });
+
+  it('the public config names this brain, for the client to compare', async () => {
+    const res = await call('/api/auth/oidc/config');
+    expect(await res.json()).toEqual({ mode: 'optional', label: 'Company', brain: BRAIN });
+  });
+
+  it('the provider asks again for an app, and not for the web page', async () => {
+    await linkDirect(person, 'sub-p');
+    h.subject = 'sub-p';
+    h.again.length = 0;
+    await browser(`/api/auth/oidc/start?${AS_CLIENT}`);
+    expect(h.again).toEqual([true]);
+    h.again.length = 0;
+    const done = await browser(`/api/auth/oidc/start?${AS_WEB}`);
+    expect(h.again).toEqual([false]);
+    expect(done.startsWith(`${WEB_TARGET}#oidc=code`)).toBe(true);
+    h.again.length = 0;
+    await browser('/api/auth/oidc/start?return=/');
+    expect(h.again).toEqual([false]);
+  });
+
+  it("a page that runs other people's script is no target, on the brain itself", async () => {
+    const frame = encodeURIComponent(`${BRAIN}/s/token/frame?t=x`);
+    const res = await call(`/api/auth/oidc/start?redirect=${frame}&challenge=${CHALLENGE}`);
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toContain('brain.example.invalid/login?oidc=failed');
   });
 
   it('the bearer never rotates: refresh answers it with itself', async () => {
@@ -287,6 +321,13 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     const pair = await call('/api/auth/pair', { method: 'POST', bearer: token });
     expect(pair.status).toBe(403);
     expect(await pair.json()).toMatchObject({ code: 'sso-session' });
+    const chat = await call('/api/telegram/pair', {
+      method: 'POST',
+      bearer: token,
+      body: { code: 'abc123' },
+    });
+    expect(chat.status).toBe(403);
+    expect(await chat.json()).toMatchObject({ code: 'sso-session' });
   });
 
   it('an unlink ends it, and off ends it', async () => {
@@ -398,7 +439,7 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     const list = await call('/api/access-keys', { bearer: token });
     expect(await list.json()).toMatchObject({
       needsPassword: false,
-      stepUp: { kind: 'company', label: 'Company' },
+      stepUp: { kind: 'company', label: 'Company', passwordToo: true },
     });
     const startFresh = async () => {
       const res = await call('/api/auth/oidc/fresh', {
@@ -412,7 +453,9 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
 
     // The provider asks again, and another account gets nothing.
     h.subject = 'sub-someone-else';
-    expect(await browser(await startFresh())).toBe(`${TARGET}#oidc=wrong-account`);
+    h.again.length = 0;
+    expect(await browser(await startFresh())).toBe(`${TARGET}#oidc=wrong-account&${ISS}`);
+    expect(h.again).toEqual([true]);
 
     h.subject = 'sub-p';
     const done = await browser(await startFresh());
@@ -461,6 +504,8 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     await linkDirect(person, 'sub-p');
     const { token } = await signInBearer('sub-p');
     setMode('required');
+    const list = await call('/api/access-keys', { bearer: token });
+    expect(await list.json()).toMatchObject({ stepUp: { passwordToo: false } });
     const made = await call('/api/access-keys', {
       method: 'POST',
       bearer: token,
@@ -511,7 +556,8 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     expect(page.status).toBe(200);
     const html = await page.text();
     expect(html).toContain('Confirm with Company');
-    expect(html).not.toContain('name="password"');
+    // Optional mode: the password is still a way in, so it is offered too.
+    expect(html).toContain('name="password"');
     const consentToken = /name="consent_token" value="([^"]+)"/.exec(html)![1]!;
     const post = (fields: Record<string, string>) => {
       const form = new URLSearchParams(q);
@@ -553,6 +599,59 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     expect(to.searchParams.get('code')).toBeTruthy();
     // One code, one grant.
     expect((await post({ decision: 'allow', fresh_code: code })).status).toBe(403);
+
+    // A code is good for this consent only: another request's form gets
+    // nothing from it, and the code is gone.
+    const again = new URL(await browser(await confirm()));
+    const q2 = new URLSearchParams(q);
+    const other2 = 'x'.repeat(43);
+    q2.set('code_challenge', other2);
+    const page2 = await call(`/api/oauth/authorize?${q2}`, { cookies: [session] });
+    const token2 = /name="consent_token" value="([^"]+)"/.exec(await page2.text())![1]!;
+    const form2 = new URLSearchParams(q2);
+    form2.delete('response_type');
+    form2.set('consent_token', token2);
+    form2.set('decision', 'allow');
+    form2.set('fresh_code', again.searchParams.get('fresh_code')!);
+    const cross = await call('/api/oauth/authorize', {
+      method: 'POST',
+      cookies: [session],
+      form: form2,
+    });
+    expect(cross.status).toBe(403);
+    // A consent code buys no key either.
+    const again2 = new URL(await browser(await confirm()));
+    const key = await call('/api/access-keys', {
+      method: 'POST',
+      cookies: [session],
+      body: { ...KEY, fresh: { code: again2.searchParams.get('fresh_code')!, verifier: VERIFIER } },
+    });
+    expect(key.status).toBe(403);
+
+    // Required: the password is no way in for this login, so it is not
+    // offered, and the only way forward is the fresh sign-in.
+    setMode('required');
+    const sso = `mantle_session=${buildSessionCookie(admin, { ttlSeconds: 3600, oidc: true }).value}`;
+    const required = await call(`/api/oauth/authorize?${q}`, { cookies: [sso] });
+    expect(required.status).toBe(200);
+    const body = await required.text();
+    expect(body).toContain('Confirm with Company');
+    expect(body).not.toContain('name="password"');
+    expect(body).not.toContain('value="allow"');
+  });
+
+  it('the emergency admin: the original account keeps its password in required mode', async () => {
+    const [anchor] = await asSuperuser()<{ id: string }>`select id from auth.users where is_owner`;
+    await asSuperuser()`update auth.users set password_hash = 'x' where id = ${anchor!.id}`;
+    await linkDirect(anchor!.id, 'sub-anchor');
+    setMode('required');
+    const { stepUpFor } = await import('./fresh');
+    expect(await stepUpFor(anchor!.id)).toEqual({
+      kind: 'company',
+      label: 'Company',
+      passwordToo: true,
+    });
+    expect(await stepUpFor(person)).toEqual({ kind: 'password' });
   });
 
   it('off: nothing here is open', async () => {

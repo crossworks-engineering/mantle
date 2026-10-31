@@ -108,7 +108,7 @@ export async function oidcExchange(req: Request): Promise<NextResponse> {
   if (!parsed.success) return refused(401, CODE_GONE);
   const { code, verifier, deviceName } = parsed.data;
   const spent = await spendHandoffCode(handoffCodeHash(code), ['signin', 'link']);
-  if (!spent?.challenge || !verifierMatches(verifier, spent.challenge)) {
+  if (!spent || !verifierMatches(verifier, spent.challenge)) {
     return refused(401, CODE_GONE);
   }
   // The login as the code found it: a disable, a password change or a sign

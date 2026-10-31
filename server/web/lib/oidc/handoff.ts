@@ -7,8 +7,11 @@
  * the verifier. A code in the wrong hands is worth nothing, so a custom
  * scheme, which any app may claim, is a safe place to send one.
  *
- * Only the targets below are ever redirected to: a mailed start URL cannot
- * send a code anywhere else.
+ * Only the targets below are ever redirected to, and each is one exact URL,
+ * never an origin: a brain serves mini apps and shared pages that run other
+ * people's script, and any page that receives a code could send it on. The
+ * flow's fragment names the brain that sent it (`iss`), so a client that holds
+ * several brains can tell a code from another brain (RFC 9207).
  *
  * A start ticket carries a flow that begins on a session (a link, a fresh
  * sign-in) to whichever browser opens it, since a bearer client's own request
@@ -25,8 +28,13 @@ import { OIDC_CONSENT_QUERY_MAX, type FlowHandoff } from './cookies';
 import { isLoopbackHost } from './provider';
 import type { OidcOn } from './settings';
 
-/** The one app target: the desktop app and the phone. */
+/** The one app target: the desktop app and the phone. Any app may claim a
+ *  custom scheme, so a flow that ends here always asks the provider to sign
+ *  the person in (appTarget): a code is never handed over silently. */
 export const APP_REDIRECT = 'mantle://oidc';
+/** The one web target's path, on a trusted origin: the client's own page that
+ *  spends the code, which runs no script but the client's. */
+export const WEB_REDIRECT_PATH = '/auth/oidc';
 /** How long a one-time code lasts, seconds. */
 export const HANDOFF_CODE_TTL_SECONDS = 2 * 60;
 /** How long a start ticket lasts: the browser opens it at once. */
@@ -39,15 +47,22 @@ const VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/;
  *  client's, or a named cross-origin caller (never the '*' wildcard). */
 function trustedOrigins(s: OidcOn): Set<string> {
   const client = (env('MANTLE_CLIENT_ORIGIN') ?? '').replace(/\/+$/, '');
-  return new Set([
-    new URL(s.redirectUri).origin,
-    ...(client ? [client] : []),
-    ...namedCorsOrigins(),
-  ]);
+  return new Set([brainOrigin(s), ...(client ? [client] : []), ...namedCorsOrigins()]);
 }
 
-/** `raw` when the flow may end there, else null. No fragment (the flow's
- *  own goes there) and no user info. */
+/** This brain's public origin: what the flow's fragment names as `iss`, and
+ *  what the public config read answers. */
+export function brainOrigin(s: OidcOn): string {
+  return new URL(s.redirectUri).origin;
+}
+
+/** Whether a flow ends at the app target, where the provider must ask. */
+export function appTarget(h: FlowHandoff | undefined): boolean {
+  return h?.redirect === APP_REDIRECT;
+}
+
+/** `raw` when the flow may end there, else null: exactly the app target, or
+ *  exactly the web path on a trusted origin. */
 export function handoffTarget(s: OidcOn, raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.length === 0 || raw.length > 512) return null;
   if (raw === APP_REDIRECT) return raw;
@@ -57,9 +72,9 @@ export function handoffTarget(s: OidcOn, raw: unknown): string | null {
   } catch {
     return null;
   }
-  if (url.hash || url.username || url.password) return null;
   const secure = url.protocol === 'https:';
   if (!secure && !(url.protocol === 'http:' && isLoopbackHost(url.hostname))) return null;
+  if (raw !== `${url.origin}${WEB_REDIRECT_PATH}`) return null;
   return trustedOrigins(s).has(url.origin) ? raw : null;
 }
 
@@ -72,11 +87,30 @@ export function readHandoff(s: OidcOn, redirect: unknown, challenge: unknown): F
 
 /** The flow's end at the client: a code, or why it stopped. In the fragment:
  *  it never reaches a server, a log or a Referer. */
-export function handoffCodeUrl(h: FlowHandoff, code: string, purpose: OidcHandoffPurpose): string {
-  return `${h.redirect}#oidc=code&code=${code}&purpose=${purpose}`;
+export function handoffCodeUrl(
+  s: OidcOn,
+  h: FlowHandoff,
+  code: string,
+  purpose: OidcHandoffPurpose,
+): string {
+  return `${h.redirect}#oidc=code&code=${code}&purpose=${purpose}&iss=${encodeURIComponent(brainOrigin(s))}`;
 }
-export function handoffFailedUrl(h: FlowHandoff, result: OidcCallbackResult): string {
-  return `${h.redirect}#oidc=${result}`;
+export function handoffFailedUrl(s: OidcOn, h: FlowHandoff, result: OidcCallbackResult): string {
+  return `${h.redirect}#oidc=${result}&iss=${encodeURIComponent(brainOrigin(s))}`;
+}
+
+/** What a consent page's fresh code is bound to: this client, this redirect
+ *  and this request's challenge, so it confirms this one consent and no
+ *  other. Kept where a client's challenge goes; `consent:` can never be one. */
+export function consentBinding(q: {
+  clientId: string;
+  redirectUri: string;
+  codeChallenge: string;
+}): string {
+  const made = createHash('sha256')
+    .update(`${q.clientId}\n${q.redirectUri}\n${q.codeChallenge}`, 'utf8')
+    .digest('base64url');
+  return `consent:${made}`;
 }
 
 /** A new one-time code and the hash that is kept. */

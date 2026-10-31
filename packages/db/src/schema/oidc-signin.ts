@@ -83,9 +83,9 @@ export type OidcHandoffIdentity = {
 /**
  * A one-time code the callback hands to the client that started a flow
  * (migration 0350, docs/oidc-sign-in.md). Keyed on the code's sha256, never
- * the code. `challenge`: the client's S256 PKCE challenge, null only for the
- * MCP consent page. `identity`: the account of a link, made when the code is
- * spent. `held`: a link that started on a held ticket, so spending it also
+ * the code. `challenge`: the client's S256 PKCE challenge, or the MCP consent
+ * page's `consent:` binding. `identity`: the account of a link, made when the
+ * code is spent. `held`: a link that started on a held ticket, so spending it also
  * signs the login in. `login_id` FKs into auth.users in the SQL migration.
  */
 export const oidcHandoffCodes = pgTable(
@@ -95,7 +95,7 @@ export const oidcHandoffCodes = pgTable(
     purpose: text('purpose').$type<OidcHandoffPurpose>().notNull(),
     loginId: uuid('login_id').notNull(),
     epoch: integer('epoch').notNull(),
-    challenge: text('challenge'),
+    challenge: text('challenge').notNull(),
     identity: jsonb('identity').$type<OidcHandoffIdentity>(),
     held: boolean('held').notNull().default(false),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),

@@ -30,6 +30,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
 import { publicLoginItself, verifyPasswordForUse } from '@/lib/auth';
 import { freshConsentStart } from '@/lib/oidc/flow';
+import { consentBinding } from '@/lib/oidc/handoff';
 import { passwordConfirms, spendConsentFresh, stepUpFor, type StepUp } from '@/lib/oidc/fresh';
 import { adminFacts, type Login } from '@/lib/auth/login';
 import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
@@ -205,7 +206,7 @@ export async function GET(req: Request) {
   // the flow's reason why not.
   const stepUp = await stepUpFor(user.loginId);
   const freshCode = url.searchParams.get('fresh_code') ?? '';
-  const failed = url.searchParams.get('oidc');
+  const failed = stepUp.kind === 'company' ? url.searchParams.get('oidc') : null;
   return htmlPage(
     consentPage(
       validated.clientName,
@@ -221,7 +222,7 @@ export async function GET(req: Request) {
 
 /** Why a fresh sign-in came back with no code. */
 function freshFailedText(stepUp: StepUp, result: string): string {
-  const label = stepUp.kind === 'company' ? stepUp.label : 'company sign-in';
+  const label = stepUp.kind === 'company' ? stepUp.label : 'Company sign-in';
   return result === 'wrong-account'
     ? `That was another account. Confirm with the ${label} account linked to this login.`
     : `${label} did not confirm you. Try again.`;
@@ -332,6 +333,7 @@ export async function POST(req: Request) {
   const confirmed = await spendConsentFresh(
     { loginId: user.loginId, sessionEpoch: user.consentEpoch },
     get('fresh_code'),
+    consentBinding(p),
   );
   const checked = confirmed
     ? 'ok'
@@ -477,14 +479,21 @@ function stepField(
   confirm: { stepUp: StepUp; freshCode: string },
   h: (v: string) => string,
 ): string {
-  if (confirm.stepUp.kind === 'password') {
-    return `<label class="muted" for="consent-password" style="display:block;margin-bottom:6px;">Type your Mantle password to allow</label>
+  const passwordField = (text: string) =>
+    `<label class="muted" for="consent-password" style="display:block;margin-bottom:6px;">${text}</label>
     <input id="consent-password" class="pw" type="password" name="password" autocomplete="current-password" />`;
+  if (confirm.stepUp.kind === 'password') {
+    return passwordField('Type your Mantle password to allow');
   }
-  return confirm.freshCode
-    ? `<input type="hidden" name="fresh_code" value="${h(confirm.freshCode)}" />
-    <p class="muted">Confirmed with ${h(confirm.stepUp.label)}. Press Allow to finish.</p>`
-    : `<p class="muted">Confirm with ${h(confirm.stepUp.label)} to allow. You sign in there again.</p>`;
+  if (confirm.freshCode) {
+    return `<input type="hidden" name="fresh_code" value="${h(confirm.freshCode)}" />
+    <p class="muted">Confirmed with ${h(confirm.stepUp.label)}. Press Allow to finish.</p>`;
+  }
+  const label = h(confirm.stepUp.label);
+  return confirm.stepUp.passwordToo
+    ? `<p class="muted">Confirm with ${label} to allow. You sign in there again.</p>
+    ${passwordField('Or type your Mantle password and press Allow')}`
+    : `<p class="muted">Confirm with ${label} to allow. You sign in there again.</p>`;
 }
 
 function consentPage(
@@ -543,7 +552,12 @@ function consentPage(
       ${
         confirm.stepUp.kind === 'company' && !confirm.freshCode
           ? `<button class="allow" type="submit" name="decision" value="confirm">Confirm with ${h(confirm.stepUp.label)}</button>`
-          : '<button class="allow" type="submit" name="decision" value="allow">Allow</button>'
+          : ''
+      }
+      ${
+        confirm.stepUp.kind === 'password' || confirm.freshCode || confirm.stepUp.passwordToo
+          ? '<button class="allow" type="submit" name="decision" value="allow">Allow</button>'
+          : ''
       }
     </div>
   </form>

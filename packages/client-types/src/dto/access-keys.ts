@@ -80,8 +80,9 @@ export type AccessKeyList = {
   needsPassword: boolean;
   /** A login linked to a company account confirms with a fresh company
    *  sign-in in place of its password (POST /api/auth/oidc/fresh, then
-   *  `fresh` on the create). Absent: the password. */
-  stepUp?: { kind: 'company'; label: string };
+   *  `fresh` on the create). Absent: the password. `passwordToo`: it may
+   *  type its password instead (while its provider is down, say). */
+  stepUp?: { kind: 'company'; label: string; passwordToo: boolean };
 };
 
 /** POST /api/access-keys body. The key acts as the caller's own login:

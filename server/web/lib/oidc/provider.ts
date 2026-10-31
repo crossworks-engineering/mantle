@@ -87,13 +87,14 @@ export function newFlowSecrets(): FlowSecrets {
   };
 }
 
-/** The provider's sign-in URL for one flow. `link`: the person signs in at
- *  the provider again (prompt=login), so a link never takes whichever
- *  account the browser happens to be signed into. */
+/** The provider's sign-in URL for one flow. `again`: the person signs in at
+ *  the provider again (prompt=login), so a link, a fresh sign-in or a code
+ *  for an app never takes whichever account the browser happens to be signed
+ *  into, with nobody looking. */
 export async function authorizationUrl(
   s: OidcOn,
   f: FlowSecrets,
-  opts: { link?: boolean } = {},
+  opts: { again?: boolean } = {},
 ): Promise<string> {
   const config = await providerConfig(s);
   const url = client.buildAuthorizationUrl(config, {
@@ -104,9 +105,9 @@ export async function authorizationUrl(
     nonce: f.nonce,
     code_challenge: await client.calculatePKCECodeChallenge(f.codeVerifier),
     code_challenge_method: 'S256',
-    // A link must be a fresh sign-in at the provider, never the account the
-    // browser is already in: both standard asks (a provider honours one).
-    ...(opts.link ? { prompt: 'login', max_age: '0' } : {}),
+    // A fresh sign-in at the provider, never the account the browser is
+    // already in: both standard asks (a provider honours one).
+    ...(opts.again ? { prompt: 'login', max_age: '0' } : {}),
   });
   return url.toString();
 }
@@ -139,7 +140,7 @@ export async function identityFromCallback(
   s: OidcOn,
   query: URLSearchParams,
   f: FlowSecrets,
-  opts: { linkStartedAt?: number } = {},
+  opts: { linkStartedAt?: number; freshStartedAt?: number } = {},
 ): Promise<ProviderIdentity> {
   const config = await providerConfig(s);
   const current = new URL(s.redirectUri);
@@ -159,12 +160,19 @@ export async function identityFromCallback(
   // provider that sends no auth_time is let through (never strand anyone,
   // plan 17.1), said once in the log: the fresh sign-in is then asked, not
   // proven.
-  if (opts.linkStartedAt !== undefined) {
+  //
+  // A fresh sign-in stands in for a password, so there it must be proven: a
+  // provider that sends no auth_time is refused (OIDC Core requires it when
+  // max_age is sent). That strands nobody: it stops one key or one consent.
+  const startedAt = opts.freshStartedAt ?? opts.linkStartedAt;
+  if (startedAt !== undefined) {
     const at = claims.auth_time;
     if (typeof at === 'number') {
-      if (at < opts.linkStartedAt - AUTH_TIME_SKEW_SECONDS) {
-        throw new Error('the provider sign-in is older than the link');
+      if (at < startedAt - AUTH_TIME_SKEW_SECONDS) {
+        throw new Error('the provider sign-in is older than the flow');
       }
+    } else if (opts.freshStartedAt !== undefined) {
+      throw new Error('the provider sent no auth_time on a fresh sign-in');
     } else if (!warnedNoAuthTime) {
       warnedNoAuthTime = true;
       // Loaded here: this module stays free of the tracing store.

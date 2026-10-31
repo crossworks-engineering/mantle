@@ -40,7 +40,16 @@ export type OidcMode = 'off' | 'optional' | 'required';
  *  `GET /api/auth/oidc/start?redirect=<target>&challenge=<S256>` (see
  *  OidcHandoff); `?return=<path>` signs the browser itself in with a
  *  cookie. */
-export type OidcConfigDTO = { mode: 'off' } | { mode: 'optional' | 'required'; label: string };
+export type OidcConfigDTO =
+  | { mode: 'off' }
+  | {
+      mode: 'optional' | 'required';
+      label: string;
+      /** This brain's public origin. Keep it with the flow: a code whose
+       *  fragment names another `iss` came from another brain, and is not
+       *  spent. */
+      brain: string;
+    };
 
 /** GET /api/auth/oidc/status (the signed-in login; 401 without one). Off:
  *  `{ mode: 'off' }` only. */
@@ -71,14 +80,19 @@ export type OidcStatusDTO =
  * Handing a flow to a client that is not the browser's cookie session
  * (docs/oidc-sign-in.md "Handing a sign-in to a client"). The client makes a
  * PKCE verifier (RFC 7636: 43 to 128 unreserved characters), keeps it, and
- * sends its S256 challenge (43 base64url characters) and where the flow ends:
+ * sends its S256 challenge (43 base64url characters) and where the flow ends,
+ * one exact URL:
  *  - `mantle://oidc`, the desktop app and the phone;
- *  - a page of the web app, on this brain's public origin,
- *    MANTLE_CLIENT_ORIGIN or a named MANTLE_API_CORS_ORIGINS entry.
- * The browser comes back to `redirect` with a fragment: `#oidc=code&code=<c>`
- * and `purpose=<OidcHandoffPurpose>`, or `#oidc=<OidcCallbackResult>` when the
- * flow stopped. A code lasts 2 minutes, works once and is worth nothing
- * without the verifier.
+ *  - `<origin>/auth/oidc`, the web app's own page, where the origin is this
+ *    brain's public origin, MANTLE_CLIENT_ORIGIN or a named
+ *    MANTLE_API_CORS_ORIGINS entry.
+ * The browser comes back there with a fragment:
+ * `#oidc=code&code=<c>&purpose=<OidcHandoffPurpose>&iss=<brain>`, or
+ * `#oidc=<OidcCallbackResult>&iss=<brain>` when the flow stopped. Compare
+ * `iss` with the `brain` the config read answered before spending anything.
+ * A code lasts 2 minutes, works once and is worth nothing without the
+ * verifier. A flow to `mantle://oidc` always asks the person to sign in at the
+ * provider.
  */
 export type OidcHandoff = { redirect: string; challenge: string };
 export type OidcHandoffPurpose = 'signin' | 'link' | 'fresh';

@@ -4,11 +4,15 @@
  * device bearer. Through the app on Postgres: oidc-handoff.db.test.ts.
  */
 import { createHash } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { signClaims } from '@mantle/crypto';
 import { buildMobileToken, verifyMobileToken } from '@/lib/auth/tokens';
+import { ownCookieOpts } from '@/lib/auth/own-device';
 import {
   APP_REDIRECT,
+  WEB_REDIRECT_PATH,
+  appTarget,
+  consentBinding,
   handoffCodeUrl,
   handoffFailedUrl,
   handoffTarget,
@@ -21,6 +25,13 @@ import {
 } from './handoff';
 import { bearerSessionKind, DEVICE_BEARER } from './hold';
 import type { OidcOn } from './settings';
+
+vi.mock('./store', () => {
+  const noRead = () => {
+    throw new Error('read while off');
+  };
+  return { loginLinked: noRead, loginHasPassword: noRead, spendHandoffCode: noRead };
+});
 
 const BRAIN = 'https://brain.example.invalid';
 const s = { mode: 'optional', redirectUri: `${BRAIN}/api/auth/oidc/callback` } as OidcOn;
@@ -38,34 +49,51 @@ describe('where a flow may end', () => {
     delete process.env.MANTLE_API_CORS_ORIGINS;
   });
 
-  it('takes the app target and a page of the brain itself', () => {
+  it('takes the app target and the web page on the brain itself', () => {
     expect(handoffTarget(s, APP_REDIRECT)).toBe('mantle://oidc');
-    expect(handoffTarget(s, `${BRAIN}/login`)).toBe(`${BRAIN}/login`);
+    expect(handoffTarget(s, `${BRAIN}/auth/oidc`)).toBe(`${BRAIN}/auth/oidc`);
+    expect(WEB_REDIRECT_PATH).toBe('/auth/oidc');
   });
 
-  it('takes the client origin and a named cross-origin caller', () => {
+  it('takes the web page on the client origin and a named cross-origin caller', () => {
     process.env.MANTLE_CLIENT_ORIGIN = 'https://app.example.invalid/';
     process.env.MANTLE_API_CORS_ORIGINS = 'https://other.example.invalid, http://localhost:3001';
-    expect(handoffTarget(s, 'https://app.example.invalid/login')).toBeTruthy();
-    expect(handoffTarget(s, 'https://other.example.invalid/login')).toBeTruthy();
-    expect(handoffTarget(s, 'http://localhost:3001/login')).toBeTruthy();
+    expect(handoffTarget(s, 'https://app.example.invalid/auth/oidc')).toBeTruthy();
+    expect(handoffTarget(s, 'https://other.example.invalid/auth/oidc')).toBeTruthy();
+    expect(handoffTarget(s, 'http://localhost:3001/auth/oidc')).toBeTruthy();
   });
 
   it('never takes the wildcard for a target', () => {
     process.env.MANTLE_API_CORS_ORIGINS = '*';
-    expect(handoffTarget(s, 'https://evil.example.invalid/login')).toBeNull();
+    expect(handoffTarget(s, 'https://evil.example.invalid/auth/oidc')).toBeNull();
+  });
+
+  // A brain serves pages that run other people's script: any of these could
+  // send a code on.
+  it.each([
+    `${BRAIN}/s/token/frame?t=x`,
+    `${BRAIN}/api/presents/1/frame`,
+    `${BRAIN}/login`,
+    `${BRAIN}/`,
+    `${BRAIN}/auth/oidc/`,
+    `${BRAIN}/auth/oidc/x`,
+    `${BRAIN}/auth/oidc?x=1`,
+    `${BRAIN}/auth/oidc/../../s/token/frame`,
+    `${BRAIN}/AUTH/OIDC`,
+  ])('refuses a page of a trusted origin that is not the one target: %s', (raw) => {
+    expect(handoffTarget(s, raw)).toBeNull();
   });
 
   it.each([
-    'https://evil.example.invalid/login',
-    `${BRAIN}.evil.example.invalid/login`,
+    'https://evil.example.invalid/auth/oidc',
+    `${BRAIN}.evil.example.invalid/auth/oidc`,
     'mantle://oidc/other',
     'mantle://evil',
     'other://oidc',
     'javascript:alert(1)',
-    `${BRAIN}/login#x`,
-    `https://user:pw@brain.example.invalid/login`,
-    'http://brain.example.invalid/login',
+    `${BRAIN}/auth/oidc#x`,
+    `https://user:pw@brain.example.invalid/auth/oidc`,
+    'http://brain.example.invalid/auth/oidc',
     '',
     `${BRAIN}/${'a'.repeat(600)}`,
     42,
@@ -84,10 +112,21 @@ describe('where a flow may end', () => {
     expect(readHandoff(s, 'https://evil.example.invalid/', CHALLENGE)).toBeNull();
   });
 
-  it('puts the code in the fragment, never the query', () => {
-    const h = { redirect: `${BRAIN}/login`, challenge: CHALLENGE };
-    expect(handoffCodeUrl(h, 'c', 'signin')).toBe(`${BRAIN}/login#oidc=code&code=c&purpose=signin`);
-    expect(handoffFailedUrl(h, 'not-linked')).toBe(`${BRAIN}/login#oidc=not-linked`);
+  it('puts the code in the fragment, and names the brain that sent it', () => {
+    const h = { redirect: `${BRAIN}/auth/oidc`, challenge: CHALLENGE };
+    const iss = encodeURIComponent(BRAIN);
+    expect(handoffCodeUrl(s, h, 'c', 'signin')).toBe(
+      `${BRAIN}/auth/oidc#oidc=code&code=c&purpose=signin&iss=${iss}`,
+    );
+    expect(handoffFailedUrl(s, h, 'not-linked')).toBe(
+      `${BRAIN}/auth/oidc#oidc=not-linked&iss=${iss}`,
+    );
+  });
+
+  it('knows a flow to an app, where the provider must ask', () => {
+    expect(appTarget({ redirect: APP_REDIRECT, challenge: CHALLENGE })).toBe(true);
+    expect(appTarget({ redirect: `${BRAIN}/auth/oidc`, challenge: CHALLENGE })).toBe(false);
+    expect(appTarget(undefined)).toBe(false);
   });
 });
 
@@ -107,6 +146,60 @@ describe('the code and the verifier', () => {
     expect(verifierMatches('short', CHALLENGE)).toBe(false);
     expect(verifierMatches(`${VERIFIER}\n`, CHALLENGE)).toBe(false);
     expect(verifierMatches('a'.repeat(129), CHALLENGE)).toBe(false);
+  });
+});
+
+describe('the consent binding', () => {
+  const q = { clientId: 'c', redirectUri: 'https://x.invalid/cb', codeChallenge: 'ch' };
+
+  it('names one request', () => {
+    expect(consentBinding(q)).toBe(consentBinding({ ...q }));
+    expect(consentBinding({ ...q, clientId: 'd' })).not.toBe(consentBinding(q));
+    expect(consentBinding({ ...q, redirectUri: 'https://y.invalid/' })).not.toBe(consentBinding(q));
+    expect(consentBinding({ ...q, codeChallenge: 'other' })).not.toBe(consentBinding(q));
+  });
+
+  it('can never pass as a client challenge', () => {
+    expect(verifierMatches(VERIFIER, consentBinding(q))).toBe(false);
+  });
+});
+
+describe('off', () => {
+  beforeEach(() => {
+    process.env.MANTLE_OIDC_MODE = 'off';
+  });
+  afterEach(() => {
+    delete process.env.MANTLE_OIDC_MODE;
+  });
+
+  it('a step-up reads nothing, and a fresh proof buys nothing', async () => {
+    const { spendConsentFresh, spendFresh, stepUpFor } = await import('./fresh');
+    const login = { loginId: 'l1', sessionEpoch: 0 };
+    expect(await stepUpFor('l1')).toEqual({ kind: 'password' });
+    expect(await spendFresh(login, { code: 'c', verifier: VERIFIER })).toBe(false);
+    expect(await spendConsentFresh(login, 'c', 'b')).toBe(false);
+  });
+});
+
+describe('re-minting a cookie beside a bearer', () => {
+  beforeEach(() => {
+    process.env.SESSION_SECRET = 'oidc-handoff-test-secret-at-least-32-chars';
+  });
+  const withBearer = (token: string) =>
+    new Request(`${BRAIN}/x`, { headers: { authorization: `Bearer ${token}` } });
+
+  it('a live company bearer gives the cookie its end and its mark', () => {
+    const { value } = buildMobileToken('u1', 'j1', 3600, 2, { oidc: true });
+    const opts = ownCookieOpts(withBearer(value), 'j1');
+    expect(opts).toMatchObject({ oidc: true, deviceJti: 'j1' });
+    expect(opts.ttlSeconds).toBeLessThanOrEqual(3600);
+  });
+
+  it('a revoked or foreign company bearer puts no mark on a password cookie', () => {
+    const { value } = buildMobileToken('u1', 'j1', 3600, 2, { oidc: true });
+    const opts = ownCookieOpts(withBearer(value), null);
+    expect(opts.oidc).toBeUndefined();
+    expect(opts.deviceJti).toBeUndefined();
   });
 });
 

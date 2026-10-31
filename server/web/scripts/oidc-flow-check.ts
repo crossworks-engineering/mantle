@@ -133,7 +133,7 @@ async function main(): Promise<void> {
   );
   // A link flow asks the provider to sign in again, and completes.
   const lf = newFlowSecrets();
-  const linkUrl = await authorizationUrl(s, lf, { link: true });
+  const linkUrl = await authorizationUrl(s, lf, { again: true });
   check(
     'a link flow asks for a fresh sign-in (prompt=login)',
     new URL(linkUrl).searchParams.get('prompt') === 'login',
@@ -148,6 +148,21 @@ async function main(): Promise<void> {
     (
       await identityFromCallback(s, linkQuery, lf, {
         linkStartedAt: Math.floor(Date.now() / 1000) - 5,
+      })
+    ).subject === identity.subject,
+  );
+  // A fresh sign-in, which must prove when it happened: this provider must
+  // send auth_time, or every linked person loses key creation and MCP consent.
+  const ff = newFlowSecrets();
+  const freshQuery = await signInAtProvider(
+    await authorizationUrl(s, ff, { again: true }),
+    s.redirectUri,
+  );
+  check(
+    'a fresh sign-in verifies: the provider sends auth_time',
+    (
+      await identityFromCallback(s, freshQuery, ff, {
+        freshStartedAt: Math.floor(Date.now() / 1000) - 5,
       })
     ).subject === identity.subject,
   );
