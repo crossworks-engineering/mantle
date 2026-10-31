@@ -96,6 +96,8 @@ describe('readMultipartUpload', () => {
       ['field', 'parentPath', 'files.inbox'],
       ['file', 'dropped.bak', randomBytes(400 * 1024)],
     ]);
+    // Before the read: Bun drops a FormData request's type once its body is read.
+    const type = full.headers.get('content-type')!;
     const body = new Uint8Array(await full.arrayBuffer());
     let sent = false;
     const stream = new ReadableStream<Uint8Array>(
@@ -114,7 +116,7 @@ describe('readMultipartUpload', () => {
     );
     return new Request('http://localhost/api/files/files', {
       method: 'POST',
-      headers: { 'content-type': full.headers.get('content-type')! },
+      headers: { 'content-type': type },
       body: stream,
       // @ts-expect-error duplex is required for a streaming body in undici
       duplex: 'half',
