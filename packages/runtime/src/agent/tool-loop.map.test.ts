@@ -11,7 +11,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const dispatched: Array<{ slug: string; input: Record<string, unknown> }> = [];
-const gate = { refuseCall: new Map<string, string>(), unlisted: new Set<string>() };
+const gate = {
+  refuseCall: new Map<string, string>(),
+  unlisted: new Set<string>(),
+  patchContactFind: false,
+};
 const parked: Record<string, unknown>[] = [];
 
 vi.mock('@mantle/tools', async () => {
@@ -60,7 +64,14 @@ vi.mock('@mantle/tools', async () => {
     builtinPolicy: () => null,
     policyUntrusted: () => false,
     PRIVATE_OUTPUT_TOOL_SLUGS: new Set<string>(),
-    getDynamicSchema: () => undefined,
+    // A schema hook for one tool, as generate_image's per-worker enum: the
+    // schema reply must hand back what the model is sent.
+    getDynamicSchema: (slug: string) =>
+      slug === 'contact_find' && gate.patchContactFind
+        ? async (d: { parameters: Record<string, unknown> }) => ({
+            parameters: { ...d.parameters, description: 'PATCHED-SCHEMA' },
+          })
+        : undefined,
     // The one gate's call check runs in dispatchTool: refused here as it
     // would refuse, before anything runs.
     dispatchTool: vi.fn(async (tool: { slug: string }, input: Record<string, unknown>) => {
@@ -214,6 +225,7 @@ beforeEach(() => {
   gate.refuseCall.clear();
   parked.length = 0;
   gate.unlisted.clear();
+  gate.patchContactFind = false;
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -302,6 +314,20 @@ describe('runToolLoop with map tool loading', () => {
     expect(errors[0]).toContain('"required":["to","body"]');
     expect(errors[1]).not.toContain('Input schema of email_send');
     expect(dispatched).toEqual([]);
+  });
+
+  it('hands back the schema the model is sent, dynamic hooks applied, in both lazy modes', async () => {
+    gate.patchContactFind = true;
+    for (const mode of ['map', 'deferred'] as const) {
+      const { adapter } = adapterWith([
+        [call('c1', 'tool_call', { name: 'contact_find', arguments: { nme: 'Bob' } })],
+        [call('c2', 'use_tool', { name: 'contact_find', arguments: { nme: 'Bob' } })],
+        'ok',
+      ]);
+      const r = await run(adapter, mode);
+      const reply = errorsOf(r).find((e) => e.includes('Input schema of contact_find'));
+      expect(reply, mode).toContain('PATCHED-SCHEMA');
+    }
   });
 
   it('refuses a name the loop does not list with the closest listed names', async () => {

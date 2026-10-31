@@ -65,6 +65,16 @@ describe('renderToolMap', () => {
     ).toBe('search: files web\nother:\n- search');
   });
 
+  it('puts a name with an empty word on the other list', () => {
+    expect(
+      renderToolMap(
+        ['foo__a', 'foo__b', 'foo_c'],
+        () => null,
+        () => null,
+      ),
+    ).toBe('other:\n- foo__a\n- foo__b\n- foo_c');
+  });
+
   it('puts one-tool areas on the other list, with or without a line', () => {
     const map = renderToolMap(
       ['video_ingest', 'calculate', 'note_get', 'note_list'],
@@ -138,7 +148,10 @@ describe('buildMapToolset', () => {
   it('leaves a tool named like a meta tool out of the map and the suggestions', () => {
     const set = build([...DEFS, def('tool_help', 'An owner tool.'), def('tool_call', 'Another.')]);
     expect(set.mapped.has('tool_help')).toBe(false);
+    expect(set.systemBlock).not.toMatch(/\btool\b[^\n]*: [^\n]*\bhelp\b/);
     expect(set.systemBlock).not.toContain('- tool_help');
+    expect(set.help({ names: ['tool_help'] }).tools).toEqual([]);
+    expect(set.search('help').tools.map((t) => t.name)).not.toContain('tool_help');
     expect(set.didYouMean('tool_hepl')).not.toContain('tool_help');
   });
 
@@ -194,6 +207,17 @@ describe('tool_help', () => {
     expect(r2.tools).toHaveLength(1);
     expect(JSON.stringify(r2.tools).length).toBeLessThan(TOOL_HELP_MAX_CHARS);
     expect(r2.note).toContain('2 more not shown');
+  });
+
+  it('takes one name as a string, and answers only a few unknown names', () => {
+    expect(
+      build()
+        .help({ names: 'email_send' })
+        .tools.map((t) => t.name),
+    ).toEqual(['email_send']);
+    const r = build().help({ names: Array.from({ length: 12 }, (_, i) => `nope_${i}`) });
+    expect(r.note.match(/No tool named/g)).toHaveLength(5);
+    expect(r.note).toContain('7 more names are not tools either');
   });
 
   it('says what to send when it gets neither', () => {

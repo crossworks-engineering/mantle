@@ -45,6 +45,8 @@ export const TOOL_HELP_AREA_LIMIT = 15;
 export const TOOL_HELP_MAX_CHARS = 40_000;
 /** How many granted names a wrong name is answered with. */
 const DID_YOU_MEAN_COUNT = 3;
+/** How many unknown names one `tool_help` answers with a did-you-mean. */
+const HELP_UNKNOWN_LIMIT = 5;
 
 // The text the bench measured (run2.ts MAP_RULE / MAP_BLOCK), word for word.
 const MAP_RULE =
@@ -136,8 +138,8 @@ function areaOf(slug: string): [string, string] {
  * line per area of two or more tools, with its gloss when `glossOf` gives one.
  * A one-tool area goes on the `other:` list, one line per name, with
  * `describe`'s line when it gives one (names only otherwise); so does a
- * tool named just like its area (`search` beside `search_web`), which the
- * grammar cannot write.
+ * tool the grammar cannot write: one named just like its area (`search`
+ * beside `search_web`), or one with an empty word (`foo__bar`).
  */
 export function renderToolMap(
   slugs: readonly string[],
@@ -148,7 +150,7 @@ export function renderToolMap(
   const other: string[] = [];
   for (const s of [...new Set(slugs)].sort()) {
     const [area, rest] = areaOf(s);
-    if (rest === '') other.push(s);
+    if (rest === '' || s.includes('__') || s.endsWith('_')) other.push(s);
     else byArea.set(area, [...(byArea.get(area) ?? []), rest]);
   }
   const areas = [...byArea.keys()].sort(
@@ -215,18 +217,17 @@ export function buildMapToolset(
   groups: readonly GroupSource[],
   sources?: ReadonlyMap<string, ToolSource>,
 ): MapToolset | null {
-  const { core, rest } = splitCore(defs);
-  const deferred = buildDeferredToolset(defs, groups, sources);
+  // A tool named like a meta tool cannot be called in this mode (the loop
+  // takes the name): never offered, by the map, the tool_search alias,
+  // tool_help or a did-you-mean.
+  const callable = defs.filter((d) => !MAP_META_SLUGS.has(d.function.name));
+  const { core, rest } = splitCore(callable);
+  const deferred = buildDeferredToolset(callable, groups, sources);
   if (rest.length === 0 || !deferred) return null;
   const defBy = new Map(defs.map((d) => [d.function.name, d]));
   const sourceOf = (slug: string): ToolSource =>
     sources ? (sources.get(slug) ?? 'remote') : 'builtin';
-  // A tool named like a meta tool cannot be called in this mode (the loop
-  // takes the name): never offered.
-  const mapped = rest
-    .map((d) => d.function.name)
-    .filter((s) => !MAP_META_SLUGS.has(s))
-    .sort();
+  const mapped = rest.map((d) => d.function.name).sort();
   const mappedSet = new Set(mapped);
   // A gloss is the brain's word on its own tools: only on an area whose
   // granted tools are all builtins, so a tool someone else named into an
@@ -241,7 +242,7 @@ export function buildMapToolset(
         ? null
         : summarize(defBy.get(slug)!.function.description, OTHER_SUMMARY_CHARS) || null,
   );
-  const names = [...defBy.keys()].filter((s) => !MAP_META_SLUGS.has(s)).sort();
+  const names = callable.map((d) => d.function.name).sort();
   const didYouMean = (name: string): string[] =>
     names
       .map((n) => [n, distance(name, n)] as const)
@@ -277,16 +278,22 @@ export function buildMapToolset(
     `${left.length} more not shown (too many at once): call tool_help again with their names: ` +
     `${left.join(', ')}.`;
   const help = (q: { names?: unknown; area?: unknown }): ToolHelpResult => {
-    const asked = Array.isArray(q.names)
-      ? [...new Set(q.names.filter((n): n is string => typeof n === 'string').map((n) => n.trim()))]
-      : [];
+    const list = typeof q.names === 'string' ? [q.names] : Array.isArray(q.names) ? q.names : [];
+    const asked = [
+      ...new Set(list.filter((n): n is string => typeof n === 'string').map((n) => n.trim())),
+    ].filter(Boolean);
     if (asked.length > 0) {
       const known = asked.filter((n) => names.includes(n));
       const unknown = asked.filter((n) => !names.includes(n));
       const { tools, left } = cards(known);
-      const notes = unknown.map(
-        (n) => `No tool named '${n}'. Did you mean: ${didYouMean(n).join(', ')}?`,
-      );
+      const notes = unknown
+        .slice(0, HELP_UNKNOWN_LIMIT)
+        .map((n) => `No tool named '${n}'. Did you mean: ${didYouMean(n).join(', ')}?`);
+      if (unknown.length > HELP_UNKNOWN_LIMIT) {
+        notes.push(
+          `${unknown.length - HELP_UNKNOWN_LIMIT} more names are not tools either: check them in the tool map.`,
+        );
+      }
       if (left.length) notes.push(leftNote(left));
       if (tools.length) notes.push('Call one with tool_call.');
       return { tools, note: notes.join(' ') };

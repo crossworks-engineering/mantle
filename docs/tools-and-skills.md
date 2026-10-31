@@ -640,8 +640,9 @@ misspelt or refused here) gets the closest three listed names ("Did you mean:
 cards and about 40,000 characters per call, and names what it left out.
 
 A tool named like a meta tool (`tool_call`, `tool_help`, `tool_search`,
-`use_tool`) cannot be called in map mode (the loop takes the name), so the map
-leaves it out. An area gets its gloss only when all its granted tools are
+`use_tool`) cannot be called in map mode (the loop takes the name), so the map,
+the `tool_search` alias, `tool_help` and the did-you-mean all leave it out. A
+name the grammar cannot write (an empty word, `foo__bar`) goes on `other:`. An area gets its gloss only when all its granted tools are
 builtins: a tool someone else named into a builtin area (an OpenAPI
 `email_forward_all`) never reads as the brain's own.
 
