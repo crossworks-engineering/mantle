@@ -52,6 +52,8 @@ administrator root qwerty qwertz azerty asdf zxcvbnm iloveyou monkey dragon
 master shadow sunshine princess football baseball superman batman starwars
 pokemon summer winter spring autumn company secret test guest default
 hello abc abcd abcdef trustno freedom computer internet
+january february march april may june july august september october
+november december monday tuesday wednesday thursday friday saturday sunday
 `;
 
 export const COMMON_PASSWORD_BASES: ReadonlySet<string> = new Set(

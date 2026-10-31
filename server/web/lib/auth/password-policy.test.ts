@@ -145,12 +145,29 @@ describe('MANTLE_POLICY_PASSWORD_MIN=12', () => {
       '0987654321zz',
       '2026Welcome!',
       'qwertyuiop12',
+      'October2026!',
+      'Monday2026!!',
+      'passwordpassword',
+      'welcomewelcome',
     ]) {
       expect(passwordProblem(weak)?.code, weak).toBe('password_common');
     }
-    // A long random string of digits is not a run.
-    expect(passwordProblem('839201746385')).toBeNull();
-    expect(passwordProblem('Tuesday rain on the 7th floor')).toBeNull();
+    // A long random string of digits is not a run, and the pairs and threes
+    // inside ordinary words (tre, st, def) are not either (audit round 7).
+    for (const good of [
+      '839201746385',
+      'Tuesday rain on the 7th floor',
+      'Tutors stress tests',
+      'a red deer feeds',
+      'deer feed reeds',
+      'Ted fed red deer',
+      'tutor stutters',
+      'tree free reed',
+      'street trees',
+      'redder trees',
+    ]) {
+      expect(passwordProblem(good), good).toBeNull();
+    }
   });
 
   it('the one hash refuses a password the rule refuses, with its code', async () => {

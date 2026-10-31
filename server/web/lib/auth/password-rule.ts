@@ -43,45 +43,59 @@ export function passwordRule(): Readonly<{ min: number; commonList: boolean }> {
     : { min, commonList: true };
 }
 
-/** Runs a person types without thinking: counting, the alphabet, the
- *  keyboard rows, each either way round. */
+/** Runs a person types without thinking: counting (round past 9), the
+ *  alphabet, the keyboard rows. A run reads one way along one of these, or
+ *  the other way along it reversed. */
 const SEQUENCES = [
-  '01234567890',
+  '0123456789'.repeat(2) + '0',
   'abcdefghijklmnopqrstuvwxyz',
   'qwertyuiop',
   'asdfghjkl',
   'zxcvbnm',
   '!@#$%^&*()',
-];
-const SEQUENCE_STEPS: ReadonlySet<string> = new Set(
-  SEQUENCES.flatMap((seq) => {
-    const steps: string[] = [];
-    for (let i = 0; i + 1 < seq.length; i++) {
-      steps.push(seq.charAt(i) + seq.charAt(i + 1), seq.charAt(i + 1) + seq.charAt(i));
-    }
-    return steps;
-  }),
-);
+].flatMap((seq) => [seq, [...seq].reverse().join('')]);
 
-/** `lower` with every run of 3 or more repeated or sequential characters
- *  (`1111`, `1234567890`, `qwerty`, `cba`) and all white space taken out. */
+/** The shortest sequential run taken out: 4, so the pairs and threes inside
+ *  ordinary words (`tre` in `street`, `def` in `defer`) are left alone. */
+const MIN_SEQUENCE_RUN = 4;
+/** The shortest repeat taken out (`111`, `aaa`). */
+const MIN_REPEAT_RUN = 3;
+
+/** How long the run at `s[i]` is: the longer of a repeat of one character and
+ *  a stretch that reads along one sequence in one direction; 0 under the
+ *  minimums. */
+function runAt(s: string, i: number): number {
+  let repeat = 1;
+  while (s.charAt(i + repeat) !== '' && s.charAt(i + repeat) === s.charAt(i)) repeat++;
+  let along = 0;
+  for (const seq of SEQUENCES) {
+    let len = 0;
+    while (i + len < s.length && seq.includes(s.slice(i, i + len + 1))) len++;
+    along = Math.max(along, len);
+  }
+  return Math.max(repeat >= MIN_REPEAT_RUN ? repeat : 0, along >= MIN_SEQUENCE_RUN ? along : 0);
+}
+
+/** `lower` with its repeated and sequential runs (`111`, `1234567890`,
+ *  `qwerty`, `dcba`) and all white space taken out. */
 function withoutRuns(lower: string): string {
   const s = lower.replace(/\s+/g, '');
   let out = '';
-  let start = 0;
-  for (let i = 1; i <= s.length; i++) {
-    const prev = s.charAt(i - 1);
-    const next = s.charAt(i);
-    const continues = next !== '' && (next === prev || SEQUENCE_STEPS.has(prev + next));
-    if (continues) continue;
-    if (i - start < 3) out += s.slice(start, i);
-    start = i;
+  for (let i = 0; i < s.length;) {
+    const run = runAt(s, i);
+    if (run > 0) {
+      i += run;
+    } else {
+      out += s.charAt(i);
+      i++;
+    }
   }
   return out;
 }
 
 /** A common password: on the list; a listed password or base word with only
- *  digits and symbols before or after it (`Welcome2026!`, `2026welcome`);
+ *  digits and symbols before or after it (`Welcome2026!`, `2026welcome`),
+ *  or said twice or more (`welcomewelcome`);
  *  fewer than 4 different characters (`abababababab`); or, with its repeated
  *  and sequential runs taken out, fewer than 4 characters left
  *  (`123456789012`, `1234567890ab`, `Qwertyuiop12`, 12 spaces). */
@@ -91,6 +105,11 @@ export function isCommonPassword(password: string): boolean {
   if (new Set(lower.replace(/\s+/g, '')).size < 4) return true;
   if (withoutRuns(lower).length < 4) return true;
   const stripped = lower.replace(/^[^a-z]+/, '').replace(/[^a-z]+$/, '');
+  // One listed word said twice or more (`passwordpassword`).
+  const unit = /^(.+?)\1+$/.exec(stripped)?.[1];
+  if (unit !== undefined && (COMMON_PASSWORD_BASES.has(unit) || COMMON_PASSWORDS.has(unit))) {
+    return true;
+  }
   return (
     stripped !== lower && (COMMON_PASSWORD_BASES.has(stripped) || COMMON_PASSWORDS.has(stripped))
   );
