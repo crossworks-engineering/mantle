@@ -44,8 +44,8 @@ export function passwordRule(): Readonly<{ min: number; commonList: boolean }> {
 }
 
 /** Runs a person types without thinking: counting (round past 9), the
- *  alphabet, the keyboard rows. A run reads one way along one of these, or
- *  the other way along it reversed. */
+ *  alphabet, the keyboard rows and columns. A run reads one way along one of
+ *  these, or the other way along it reversed. */
 const SEQUENCES = [
   '0123456789'.repeat(2) + '0',
   'abcdefghijklmnopqrstuvwxyz',
@@ -53,6 +53,9 @@ const SEQUENCES = [
   'asdfghjkl',
   'zxcvbnm',
   '!@#$%^&*()',
+  '1q2w3e4r5t6y7u8i9o0p',
+  '1qaz2wsx3edc4rfv5tgb6yhn7ujm8ik9ol0p',
+  'qazwsxedcrfvtgbyhnujmikolp',
 ].flatMap((seq) => [seq, [...seq].reverse().join('')]);
 
 /** The shortest sequential run taken out: 4, so the pairs and threes inside
@@ -93,26 +96,53 @@ function withoutRuns(lower: string): string {
   return out;
 }
 
-/** A common password: on the list; a listed password or base word with only
- *  digits and symbols before or after it (`Welcome2026!`, `2026welcome`),
- *  or said twice or more (`welcomewelcome`);
- *  fewer than 4 different characters (`abababababab`); or, with its repeated
- *  and sequential runs taken out, fewer than 4 characters left
- *  (`123456789012`, `1234567890ab`, `Qwertyuiop12`, 12 spaces). */
+/** Digits and symbols written for the letters they look like. */
+const LOOK_ALIKES: Readonly<Record<string, string>> = {
+  '@': 'a',
+  '4': 'a',
+  $: 's',
+  '5': 's',
+  '0': 'o',
+  '1': 'i',
+  '3': 'e',
+  '7': 't',
+};
+
+/** The most digits and symbols a password may carry around or between
+ *  listed words and still be read as those words (`Password1!Password1!`
+ *  is; `8472-9931-5520-test` is not). */
+const MAX_DECORATION = 8;
+
+/** `word` is a listed password or base word, or one said twice or more. */
+function isListedWord(word: string): boolean {
+  const unit = /^(.+?)\1+$/u.exec(word)?.[1] ?? word;
+  return (
+    COMMON_PASSWORD_BASES.has(word) ||
+    COMMON_PASSWORDS.has(word) ||
+    COMMON_PASSWORD_BASES.has(unit) ||
+    COMMON_PASSWORDS.has(unit)
+  );
+}
+
+/** A common password: on the list; fewer than 4 different characters
+ *  (`abababababab`); with its repeated and sequential runs taken out, fewer
+ *  than 4 characters left (`123456789012`, `1234567890ab`, `Qwertyuiop12`,
+ *  12 spaces); or a listed password or base word (also with digits for
+ *  letters, `P@$$w0rd`) said once or more with a few digits and symbols
+ *  around or between (`Welcome2026!`, `2026welcome`, `welcome welcome`,
+ *  `Welcome1Welcome1`). Letters are any script's: a passphrase in Cyrillic
+ *  or Greek is read as letters. */
 export function isCommonPassword(password: string): boolean {
   const lower = password.trim().toLowerCase();
   if (COMMON_PASSWORDS.has(lower)) return true;
-  if (new Set(lower.replace(/\s+/g, '')).size < 4) return true;
+  const compact = lower.replace(/\s+/g, '');
+  if (new Set(compact).size < 4) return true;
   if (withoutRuns(lower).length < 4) return true;
-  const stripped = lower.replace(/^[^a-z]+/, '').replace(/[^a-z]+$/, '');
-  // One listed word said twice or more (`passwordpassword`).
-  const unit = /^(.+?)\1+$/.exec(stripped)?.[1];
-  if (unit !== undefined && (COMMON_PASSWORD_BASES.has(unit) || COMMON_PASSWORDS.has(unit))) {
-    return true;
-  }
-  return (
-    stripped !== lower && (COMMON_PASSWORD_BASES.has(stripped) || COMMON_PASSWORDS.has(stripped))
-  );
+  const letters = compact.replace(/[^\p{L}]+/gu, '');
+  if (compact.length - letters.length <= MAX_DECORATION && isListedWord(letters)) return true;
+  const ends = compact.replace(/^[^\p{L}]+/u, '').replace(/[^\p{L}]+$/u, '');
+  if (compact.length - ends.length > MAX_DECORATION) return false;
+  return isListedWord([...ends].map((c) => LOOK_ALIKES[c] ?? c).join(''));
 }
 
 /** What is wrong with `password` as a new password, or null when it meets

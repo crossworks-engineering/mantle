@@ -709,7 +709,8 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
       contactId: null,
       admin: true,
       mustChangePassword: false,
-      passwordCheckedMin: null,
+      // The stand-in has no password: checked under whatever rule is set.
+      passwordCheckedMin: passwordPolicyMin(),
     };
     return { ...NO_LOGIN, resolved };
   }
