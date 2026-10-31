@@ -623,8 +623,8 @@ word): `area (gloss): object(verb verb) verb`. `page: block(update)` reads as
 `page_block_update`; `.` is the bare object (`web: search(. pro)` is
 `web_search` and `web_search_pro`). Areas with more tools come first. Each
 area line carries one gloss from `TOOL_AREA_GLOSSES`
-(`packages/tools/src/selection/areas.ts`), shown only when a builtin of that
-area is granted. An area with one tool goes on an `other:` list, one line per
+(`packages/tools/src/selection/areas.ts`). An area with one tool, or a tool named just like its area, goes on an
+`other:` list, one line per
 name, with the opening of its description (70 characters) when the text is
 brain-authored, the name alone when a remote party wrote it (`toolSourceOf`,
 as for the catalog). Everything is sorted, so the block is byte-stable for a
@@ -632,11 +632,18 @@ grant in any order.
 
 Dispatch is the deferred path: `tool_call` unwraps to the real call before
 the guards, the validator, the gate and the trace, so a tool the gate refuses
-is refused the same way through `tool_call` as by its own name. Two replies
-are the map's own: wrong arguments to a mapped tool get its input schema back
-once per tool per turn, and a name the loop does not list (made up, misspelt
-or refused here) gets the closest three listed names ("Did you mean: ...").
-Only listed names are ever suggested.
+is refused the same way through `tool_call` as by its own name. As in deferred
+loading, wrong arguments to a mapped tool get its input schema back once per
+tool per turn. The map's own reply: a name the loop does not list (made up,
+misspelt or refused here) gets the closest three listed names ("Did you mean:
+..."). Only listed names are ever suggested. `tool_help` returns at most 15
+cards and about 40,000 characters per call, and names what it left out.
+
+A tool named like a meta tool (`tool_call`, `tool_help`, `tool_search`,
+`use_tool`) cannot be called in map mode (the loop takes the name), so the map
+leaves it out. An area gets its gloss only when all its granted tools are
+builtins: a tool someone else named into a builtin area (an OpenAPI
+`email_forward_all`) never reads as the brain's own.
 
 **Adding a builtin area.** A new area with two or more tools outside the core
 needs a gloss in `TOOL_AREA_GLOSSES`; `areas.test.ts` fails until it has one,

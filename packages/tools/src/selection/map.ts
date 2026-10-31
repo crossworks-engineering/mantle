@@ -24,6 +24,7 @@
 import { TOOL_AREA_GLOSSES } from './areas';
 import {
   buildDeferredToolset,
+  MAP_META_SLUGS,
   splitCore,
   TOOL_CALL_SLUG,
   TOOL_HELP_SLUG,
@@ -36,8 +37,12 @@ import { summarize, type GroupSource } from './rank';
 /** The `other:` line of a one-tool area: its description's opening, capped. */
 const OTHER_SUMMARY_CHARS = 70;
 const HELP_DESCRIPTION_CHARS = 600;
-/** How many tools one `tool_help {area}` returns. */
+/** How many tools one `tool_help` returns, by names or by area. */
 export const TOOL_HELP_AREA_LIMIT = 15;
+/** The most characters of cards one `tool_help` returns: a connector's
+ *  schema can be large, and the result lands in the uncached tail. The
+ *  first card always goes; the note names the ones left out. */
+export const TOOL_HELP_MAX_CHARS = 40_000;
 /** How many granted names a wrong name is answered with. */
 const DID_YOU_MEAN_COUNT = 3;
 
@@ -130,7 +135,9 @@ function areaOf(slug: string): [string, string] {
  * Render the map of `slugs`. Areas with more tools first, then by name; one
  * line per area of two or more tools, with its gloss when `glossOf` gives one.
  * A one-tool area goes on the `other:` list, one line per name, with
- * `describe`'s line when it gives one (names only otherwise).
+ * `describe`'s line when it gives one (names only otherwise); so does a
+ * tool named just like its area (`search` beside `search_web`), which the
+ * grammar cannot write.
  */
 export function renderToolMap(
   slugs: readonly string[],
@@ -138,19 +145,20 @@ export function renderToolMap(
   describe: (slug: string) => string | null,
 ): string {
   const byArea = new Map<string, string[]>();
+  const other: string[] = [];
   for (const s of [...new Set(slugs)].sort()) {
     const [area, rest] = areaOf(s);
-    byArea.set(area, [...(byArea.get(area) ?? []), rest]);
+    if (rest === '') other.push(s);
+    else byArea.set(area, [...(byArea.get(area) ?? []), rest]);
   }
   const areas = [...byArea.keys()].sort(
     (a, b) => byArea.get(b)!.length - byArea.get(a)!.length || (a < b ? -1 : a > b ? 1 : 0),
   );
   const lines: string[] = [];
-  const other: string[] = [];
   for (const area of areas) {
     const rests = byArea.get(area)!;
     if (rests.length === 1) {
-      other.push(rests[0] ? `${area}_${rests[0]}` : area);
+      other.push(`${area}_${rests[0]}`);
       continue;
     }
     // rests are sorted (slugs were), so objects and their verbs are too.
@@ -161,8 +169,7 @@ export function renderToolMap(
     }
     const parts: string[] = [];
     for (const [object, verbs] of byObject) {
-      if (object === '') parts.push('(self)');
-      else if (verbs.length === 1) parts.push(verbs[0] ? `${object}_${verbs[0]}` : object);
+      if (verbs.length === 1) parts.push(verbs[0] ? `${object}_${verbs[0]}` : object);
       else parts.push(`${object}(${verbs.map((v) => v || '.').join(' ')})`);
     }
     const gloss = glossOf(area);
@@ -214,22 +221,27 @@ export function buildMapToolset(
   const defBy = new Map(defs.map((d) => [d.function.name, d]));
   const sourceOf = (slug: string): ToolSource =>
     sources ? (sources.get(slug) ?? 'remote') : 'builtin';
-  const mapped = rest.map((d) => d.function.name).sort();
+  // A tool named like a meta tool cannot be called in this mode (the loop
+  // takes the name): never offered.
+  const mapped = rest
+    .map((d) => d.function.name)
+    .filter((s) => !MAP_META_SLUGS.has(s))
+    .sort();
   const mappedSet = new Set(mapped);
-  // A gloss is the brain's word on its own tools: only on an area that holds
-  // a granted builtin, so an outside tool named like an area gets none.
-  const builtinAreas = new Set(
-    mapped.filter((s) => sourceOf(s) === 'builtin').map((s) => areaOf(s)[0]),
-  );
+  // A gloss is the brain's word on its own tools: only on an area whose
+  // granted tools are all builtins, so a tool someone else named into an
+  // area (an OpenAPI `email_forward_all`) never reads as the brain's own.
+  const glossed = new Set(mapped.map((s) => areaOf(s)[0]));
+  for (const s of mapped) if (sourceOf(s) !== 'builtin') glossed.delete(areaOf(s)[0]);
   const map = renderToolMap(
     mapped,
-    (area) => (builtinAreas.has(area) ? (TOOL_AREA_GLOSSES[area] ?? null) : null),
+    (area) => (glossed.has(area) ? (TOOL_AREA_GLOSSES[area] ?? null) : null),
     (slug) =>
       sourceOf(slug) === 'remote'
         ? null
         : summarize(defBy.get(slug)!.function.description, OTHER_SUMMARY_CHARS) || null,
   );
-  const names = [...defBy.keys()].sort();
+  const names = [...defBy.keys()].filter((s) => !MAP_META_SLUGS.has(s)).sort();
   const didYouMean = (name: string): string[] =>
     names
       .map((n) => [n, distance(name, n)] as const)
@@ -244,18 +256,40 @@ export function buildMapToolset(
       input_schema: d.function.parameters,
     };
   };
+  /** Cards for `slugs`, up to the count and character caps; the rest named. */
+  const cards = (
+    slugs: readonly string[],
+  ): { tools: ReturnType<typeof card>[]; left: string[] } => {
+    const tools: ReturnType<typeof card>[] = [];
+    let chars = 0;
+    for (const [i, s] of slugs.entries()) {
+      const c = card(s);
+      const size = JSON.stringify(c).length;
+      if (i >= TOOL_HELP_AREA_LIMIT || (tools.length > 0 && chars + size > TOOL_HELP_MAX_CHARS)) {
+        return { tools, left: slugs.slice(i) };
+      }
+      tools.push(c);
+      chars += size;
+    }
+    return { tools, left: [] };
+  };
+  const leftNote = (left: readonly string[]) =>
+    `${left.length} more not shown (too many at once): call tool_help again with their names: ` +
+    `${left.join(', ')}.`;
   const help = (q: { names?: unknown; area?: unknown }): ToolHelpResult => {
     const asked = Array.isArray(q.names)
       ? [...new Set(q.names.filter((n): n is string => typeof n === 'string').map((n) => n.trim()))]
       : [];
     if (asked.length > 0) {
-      const known = asked.filter((n) => defBy.has(n));
-      const unknown = asked.filter((n) => !defBy.has(n));
+      const known = asked.filter((n) => names.includes(n));
+      const unknown = asked.filter((n) => !names.includes(n));
+      const { tools, left } = cards(known);
       const notes = unknown.map(
         (n) => `No tool named '${n}'. Did you mean: ${didYouMean(n).join(', ')}?`,
       );
-      if (known.length) notes.push('Call one with tool_call.');
-      return { tools: known.map(card), note: notes.join(' ') };
+      if (left.length) notes.push(leftNote(left));
+      if (tools.length) notes.push('Call one with tool_call.');
+      return { tools, note: notes.join(' ') };
     }
     const area = typeof q.area === 'string' ? q.area.trim().replace(/_+$/, '') : '';
     if (!area) {
@@ -271,15 +305,12 @@ export function buildMapToolset(
         note: `No area '${area}' in the tool map. Pick an area from the map, or pass full tool names as \`names\`.`,
       };
     }
-    const shown = inArea.slice(0, TOOL_HELP_AREA_LIMIT);
-    const more = inArea.length - shown.length;
+    const { tools, left } = cards(inArea);
     return {
-      tools: shown.map(card),
-      note:
-        more > 0
-          ? `Showing ${shown.length} of ${inArea.length} tools in '${area}'. For the other ${more}, ` +
-            `call tool_help with their names: ${inArea.slice(shown.length).join(', ')}.`
-          : 'Call one with tool_call.',
+      tools,
+      note: left.length
+        ? `Showing ${tools.length} of ${inArea.length} tools in '${area}'. ${leftNote(left)}`
+        : 'Call one with tool_call.',
     };
   };
   return {

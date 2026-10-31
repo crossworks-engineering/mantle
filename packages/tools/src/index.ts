@@ -81,6 +81,8 @@ export {
   USE_TOOL_SLUG,
   TOOL_CALL_SLUG,
   TOOL_HELP_SLUG,
+  DEFERRED_META_SLUGS,
+  MAP_META_SLUGS,
   TOOL_SEARCH_LIMIT,
   type DeferredToolDef,
   type DeferredToolset,

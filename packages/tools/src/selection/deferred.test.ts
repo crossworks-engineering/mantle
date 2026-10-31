@@ -6,6 +6,7 @@ import {
   toolSourceOf,
   CORE_TOOL_SLUGS,
   isAlwaysFull,
+  MAP_META_SLUGS,
   TOOL_SEARCH_SLUG,
   unwrapUseTool,
   USE_TOOL_SLUG,
@@ -210,9 +211,14 @@ describe('unwrapUseTool', () => {
       ok: false,
       error: 'tool_call needs `name`: the tool to call, as named in the tool map.',
     });
-    for (const meta of ['tool_call', 'tool_help', 'tool_search', 'use_tool']) {
-      expect(unwrapUseTool(`{"name":"${meta}","arguments":{}}`, 'tool_call').ok).toBe(false);
+    for (const meta of MAP_META_SLUGS) {
+      expect(
+        unwrapUseTool(`{"name":"${meta}","arguments":{}}`, 'tool_call', MAP_META_SLUGS).ok,
+      ).toBe(false);
     }
+    // Deferred loading's use_tool refuses only its own two, as before.
+    expect(unwrapUseTool('{"name":"tool_help","arguments":{}}').ok).toBe(true);
+    expect(unwrapUseTool('{"name":"tool_search","arguments":{}}').ok).toBe(false);
   });
 });
 

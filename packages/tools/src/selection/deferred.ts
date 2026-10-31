@@ -39,7 +39,10 @@ export const USE_TOOL_SLUG = 'use_tool';
  *  every wrapper and never wraps one in another. */
 export const TOOL_CALL_SLUG = 'tool_call';
 export const TOOL_HELP_SLUG = 'tool_help';
-const META_SLUGS: ReadonlySet<string> = new Set([
+/** The names each mode's loop takes as its own: deferred loading's two,
+ *  and the map's four (its own and deferred's, kept as aliases). */
+export const DEFERRED_META_SLUGS: ReadonlySet<string> = new Set([TOOL_SEARCH_SLUG, USE_TOOL_SLUG]);
+export const MAP_META_SLUGS: ReadonlySet<string> = new Set([
   TOOL_SEARCH_SLUG,
   USE_TOOL_SLUG,
   TOOL_CALL_SLUG,
@@ -263,12 +266,15 @@ export function buildDeferredToolset(
 
 /**
  * Unwrap a `use_tool` call (or the map's `tool_call`, the same shape) into
- * the real tool call. Returns the inner slug and its arguments as a JSON
+ * the real tool call. `meta` is the mode's own tools (DEFERRED_META_SLUGS
+ * or MAP_META_SLUGS). Returns the inner slug and its arguments as a JSON
  * string, or an error the model can act on.
  */
 export function unwrapUseTool(
   argumentsRaw: string,
   wrapper: string = USE_TOOL_SLUG,
+  /** The mode's meta tools, which a wrapper never calls. */
+  meta: ReadonlySet<string> = DEFERRED_META_SLUGS,
 ): { ok: true; slug: string; argumentsRaw: string } | { ok: false; error: string } {
   let parsed: unknown;
   try {
@@ -289,7 +295,7 @@ export function unwrapUseTool(
     };
   }
   const name = o.name.trim();
-  if (META_SLUGS.has(name)) {
+  if (meta.has(name)) {
     return { ok: false, error: `${wrapper} cannot call ${name}; call it directly.` };
   }
   const inner = o.arguments === undefined ? {} : o.arguments;

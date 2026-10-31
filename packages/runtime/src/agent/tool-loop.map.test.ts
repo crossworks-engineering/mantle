@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const dispatched: Array<{ slug: string; input: Record<string, unknown> }> = [];
 const gate = { refuseCall: new Map<string, string>(), unlisted: new Set<string>() };
+const parked: Record<string, unknown>[] = [];
 
 vi.mock('@mantle/tools', async () => {
   // tool_search ranks with each builtin's usageTier (A5 step 6d), read from
@@ -84,6 +85,7 @@ vi.mock('@mantle/tools', async () => {
       spillMaxBytes: 10_000_000,
     })),
     notifyPendingCreated: vi.fn(async () => {}),
+    pendingOriginNow: vi.fn(async () => ({ v: 1, stamped: true })),
     isBuiltinReadOnly: vi.fn(() => false),
   };
 });
@@ -94,6 +96,11 @@ vi.mock('@mantle/db', () => ({
   pendingToolCalls: {},
   // The R6 shim: no database here, the scope is not under test.
   withViewer: vi.fn(async (_for: unknown, fn: () => Promise<unknown>) => fn()),
+  // The approval queue's one park: the row it is handed, recorded.
+  parkPendingCall: vi.fn(async (row: Record<string, unknown>) => {
+    parked.push(row);
+    return `pending-${parked.length}`;
+  }),
 }));
 
 vi.mock('@mantle/tools/client-sourced', async (importOriginal) => ({
@@ -205,6 +212,7 @@ beforeEach(() => {
   dispatched.length = 0;
   groupsLoaded.length = 0;
   gate.refuseCall.clear();
+  parked.length = 0;
   gate.unlisted.clear();
 });
 afterEach(() => vi.clearAllMocks());
@@ -359,11 +367,86 @@ describe('runToolLoop with map tool loading', () => {
     expect(JSON.stringify(wrappedCalls[0]!.messages)).not.toContain('email_send');
   });
 
+  it('queues a requires_confirm tool through tool_call as by its own name', async () => {
+    const confirmed = TOOLS.map((t) =>
+      t.slug === 'email_send' ? ({ ...t, requiresConfirm: true } as Tool) : t,
+    );
+    const args = { to: 'b@example.com', body: 'hi' };
+    const results = [];
+    for (const first of [
+      call('c1', 'email_send', args),
+      call('c1', 'tool_call', { name: 'email_send', arguments: args }),
+    ]) {
+      const { adapter } = adapterWith([[first], 'queued']);
+      results.push(
+        await runToolLoop({
+          agentRole: null,
+          adapter,
+          apiKey: 'k',
+          model: 'm',
+          params: { tool_loading: 'map' },
+          ownerId: 'owner-1',
+          initialMessages: [{ role: 'user', content: 'email Bob' }],
+          tools: confirmed,
+        }),
+      );
+    }
+    expect(dispatched).toEqual([]);
+    expect(parked.map((r) => [r.toolSlug, r.args])).toEqual([
+      ['email_send', args],
+      ['email_send', args],
+    ]);
+    for (const r of results) {
+      expect(r.toolCalls[0]).toMatchObject({
+        slug: 'email_send',
+        status: 'skipped',
+        error: 'queued_for_approval',
+      });
+    }
+  });
+
+  it('counts the real tool against the per-tool cap, direct and wrapped alike', async () => {
+    const { adapter } = adapterWith([
+      // One call per round: a batch that starts under a cap completes.
+      [call('c1', 'contact_find', { name: 'A' })],
+      [call('c2', 'tool_call', { name: 'contact_find', arguments: { name: 'B' } })],
+      [call('c3', 'tool_call', { name: 'contact_find', arguments: { name: 'C' } })],
+      'ok',
+    ]);
+    const r = await runToolLoop({
+      agentRole: null,
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: { tool_loading: 'map' },
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'find them' }],
+      tools: TOOLS,
+      maxCallsPerToolPerTurn: 2,
+    });
+    expect(dispatched.map((d) => d.input.name)).toEqual(['A', 'B']);
+    expect(r.toolCalls.map((t) => t.slug)).toEqual([
+      'contact_find',
+      'contact_find',
+      'contact_find',
+    ]);
+    expect(r.toolCalls[2]!.status).toBe('error');
+  });
+
   it('turns a malformed tool_call into a corrective error', async () => {
     const { adapter } = adapterWith([[call('c1', 'tool_call', { arguments: {} })], 'ok']);
     const r = await run(adapter);
     expect(dispatched).toEqual([]);
     expect(r.toolCalls[0]!.error).toContain('tool_call needs `name`');
+  });
+
+  it('keeps use_tool in deferred loading as it was: tool_help is just an unknown name', async () => {
+    const { adapter } = adapterWith([
+      [call('c1', 'use_tool', { name: 'tool_help', arguments: {} })],
+      'ok',
+    ]);
+    const r = await run(adapter, 'deferred');
+    expect(r.toolCalls[0]!.error).toBe("tool 'tool_help' is not in this agent's allowlist");
   });
 
   it('does not take tool_call or tool_help in deferred loading', async () => {

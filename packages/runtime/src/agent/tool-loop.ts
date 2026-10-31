@@ -44,6 +44,8 @@ import {
   USE_TOOL_SLUG,
   TOOL_CALL_SLUG,
   TOOL_HELP_SLUG,
+  DEFERRED_META_SLUGS,
+  MAP_META_SLUGS,
   type DeferredToolDef,
   type DeferredToolset,
   type MapToolset,
@@ -682,7 +684,9 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const loading = args.params.tool_loading;
   const lazyMode = (loading === 'deferred' || loading === 'map') && allToolDefs.length > 0;
   const catalogGroups = lazyMode ? await loadToolGroupsForCatalog(args.ownerId) : [];
-  const toolSources = new Map(loopTools.map((t) => [t.slug, toolSourceOf(t.handler)]));
+  const toolSources = lazyMode
+    ? new Map(loopTools.map((t) => [t.slug, toolSourceOf(t.handler)]))
+    : undefined;
   const deferred: DeferredToolset | null =
     lazyMode && loading === 'deferred'
       ? buildDeferredToolset(allToolDefs, catalogGroups, toolSources)
@@ -704,6 +708,9 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const toolsForModel = lazy ? lazy.sent : allToolDefs;
   /** Deferred or mapped tools whose schema an argument error already handed back. */
   const schemaShown = new Set<string>();
+  /** The schema the model would have been sent (dynamic hooks applied), the
+   *  one tool_search and tool_help show: the schema reply hands back the same. */
+  const sentSchemaOf = new Map(allToolDefs.map((d) => [d.function.name, d.function.parameters]));
 
   const messages: ChatMessage[] = lazy
     ? withCatalogBlock(args.initialMessages, lazy.systemBlock)
@@ -931,7 +938,11 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         lazy &&
         (call.function.name === USE_TOOL_SLUG || (toolMap && call.function.name === TOOL_CALL_SLUG))
       ) {
-        const unwrapped = unwrapUseTool(call.function.arguments ?? '{}', call.function.name);
+        const unwrapped = unwrapUseTool(
+          call.function.arguments ?? '{}',
+          call.function.name,
+          toolMap ? MAP_META_SLUGS : DEFERRED_META_SLUGS,
+        );
         if (unwrapped.ok) {
           call = {
             ...call,
@@ -1083,7 +1094,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         schemaShown.add(slug);
         outcome = {
           ...outcome,
-          error: `${outcome.error}\nInput schema of ${slug}: ${JSON.stringify(tool.inputSchema ?? {})}`,
+          error: `${outcome.error}\nInput schema of ${slug}: ${JSON.stringify(sentSchemaOf.get(slug) ?? tool.inputSchema ?? {})}`,
         };
       }
       // Map loading: a name this loop does not list (made up, misspelt, or

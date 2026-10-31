@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 // The tool_search alias ranks with each builtin's usageTier: the registry.
 import '../registry';
 import { TOOL_CALL_SLUG, TOOL_HELP_SLUG, type DeferredToolDef, type ToolSource } from './deferred';
-import { buildMapToolset, renderToolMap, TOOL_HELP_AREA_LIMIT } from './map';
+import { buildMapToolset, renderToolMap, TOOL_HELP_AREA_LIMIT, TOOL_HELP_MAX_CHARS } from './map';
 
 const def = (
   name: string,
@@ -53,6 +53,16 @@ describe('renderToolMap', () => {
       () => null,
     );
     expect(map).toBe('page: block(get update) commit\nweb: fetch search(. pro)');
+  });
+
+  it('puts a tool named just like its area on the other list', () => {
+    expect(
+      renderToolMap(
+        ['search', 'search_web', 'search_files'],
+        () => null,
+        () => null,
+      ),
+    ).toBe('search: files web\nother:\n- search');
   });
 
   it('puts one-tool areas on the other list, with or without a line', () => {
@@ -115,12 +125,21 @@ describe('buildMapToolset', () => {
     expect(block).toContain('- video_ingest: Download a video and index its transcript.');
   });
 
-  it('glosses an area only when a granted builtin is in it', () => {
-    const remoteOnly = new Map(SOURCES);
-    remoteOnly.set('email_send', 'remote');
-    remoteOnly.set('email_list', 'remote');
-    const block = buildMapToolset(DEFS, [], remoteOnly)!.systemBlock;
+  it('glosses an area only when all its granted tools are builtins', () => {
+    const mixed = new Map(SOURCES);
+    mixed.set('email_send', 'remote');
+    const block = buildMapToolset(DEFS, [], mixed)!.systemBlock;
     expect(block).toContain('\nemail: list send');
+    expect(build().systemBlock).toContain(
+      "\nemail (the owner's email: list, read, send): list send",
+    );
+  });
+
+  it('leaves a tool named like a meta tool out of the map and the suggestions', () => {
+    const set = build([...DEFS, def('tool_help', 'An owner tool.'), def('tool_call', 'Another.')]);
+    expect(set.mapped.has('tool_help')).toBe(false);
+    expect(set.systemBlock).not.toContain('- tool_help');
+    expect(set.didYouMean('tool_hepl')).not.toContain('tool_help');
   });
 
   it('returns null when every granted tool is core', () => {
@@ -159,6 +178,22 @@ describe('tool_help', () => {
     const r = buildMapToolset(many, [])!.help({ area: 'table' });
     expect(r.tools).toHaveLength(TOOL_HELP_AREA_LIMIT);
     expect(r.note).toContain('table_t15, table_t16');
+  });
+
+  it('caps a names request by count and by size, naming the rest', () => {
+    const many = Array.from({ length: TOOL_HELP_AREA_LIMIT + 3 }, (_, i) =>
+      def(`table_t${String(i).padStart(2, '0')}`, 'A table tool.'),
+    );
+    const set = buildMapToolset(many, [])!;
+    const r = set.help({ names: many.map((d) => d.function.name) });
+    expect(r.tools).toHaveLength(TOOL_HELP_AREA_LIMIT);
+    expect(r.note).toContain('3 more not shown');
+    const big = { type: 'object', properties: { x: { description: 'y'.repeat(25_000) } } };
+    const huge = ['a_one', 'a_two', 'a_three'].map((n) => def(n, 'Big.', big.properties));
+    const r2 = buildMapToolset(huge, [])!.help({ area: 'a' });
+    expect(r2.tools).toHaveLength(1);
+    expect(JSON.stringify(r2.tools).length).toBeLessThan(TOOL_HELP_MAX_CHARS);
+    expect(r2.note).toContain('2 more not shown');
   });
 
   it('says what to send when it gets neither', () => {
