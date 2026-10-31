@@ -28,11 +28,11 @@ export type LoginRow = {
   /** auth.users.session_epoch (0181): every cookie and asset token signed
    *  with an older one is dead. */
   sessionEpoch: number;
-  /** auth.users.must_change_password (0347): the box password policy holds
+  /** auth.users.must_change_password (0348): the box password policy holds
    *  the login to the change-password step while the rule is in force
    *  (password-hold.ts). */
   mustChangePassword: boolean;
-  /** auth.users.password_checked_min (0347): read with the flag. */
+  /** auth.users.password_checked_min (0348): read with the flag. */
   passwordCheckedMin: number | null;
   /** A user of the brain's live Admin workspace now, the login enabled
    *  (mantle_login_is_admin, 0304), read with the row: the
@@ -57,7 +57,7 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
       contactId: authUsers.contactId,
       disabledAt: authUsers.disabledAt,
       sessionEpoch: authUsers.sessionEpoch,
-      // The box password rule's columns (0347), read only while a rule is
+      // The box password rule's columns (0348), read only while a rule is
       // set: a box with none reads the row as before.
       ...passwordRuleColumns(),
       // Membership of Admin with the same read: the bound id, as the

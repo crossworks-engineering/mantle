@@ -211,11 +211,11 @@ defineDomainError(PasswordRuleError, {
 });
 
 /**
- * The box password rule's columns of auth.users (0347:
+ * The box password rule's columns of auth.users (0348:
  * must_change_password, password_checked_min), to spread into a select of
  * the login row: only while MANTLE_POLICY_PASSWORD_MIN sets a rule. With
  * none, nothing: the select is the one from before the policy. (The
- * password writers set both columns always, so a box runs on 0347.)
+ * password writers set both columns always, so a box runs on 0348.)
  */
 export function passwordRuleColumns(): {
   mustChangePassword?: typeof authUsers.mustChangePassword;

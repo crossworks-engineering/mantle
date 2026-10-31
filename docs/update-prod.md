@@ -1597,8 +1597,8 @@ row per write and never answers a value.
 
 Migration 0347 adds one nullable column, `api_keys.held_enc`. Over MCP, a
 write that replaces or deletes an existing key no longer lands at once: the
-vault gateway seals the change on the key's row and the tool parks a
-Xthe value. A person approves it on the Pending screen (or its Telegram
+vault gateway seals the change on the key's row and the tool parks a pending call that never carries
+the value. A person approves it on the Pending screen (or its Telegram
 card); `pending_approve` over MCP refuses it. So does adding a token
 named for a service that already has one (it would become the key that
 service's provider calls use). Any other new key is instant, and the Keys
@@ -1614,9 +1614,9 @@ screen is unchanged.
 - **Master key rotation:** clears `held_enc` (a waiting change is asked
   again after it).
 
-## Going up to 0347 (box policy, part 1)
+## Going up to 0348 (box policy, part 1)
 
-Migration 0347 adds `auth.users.must_change_password` (default false) and
+Migration 0348 adds `auth.users.must_change_password` (default false) and
 `password_checked_min` (null), and lets `provider_alerts` hold the subject
 `model_policy`. Additive. A box with
 no `MANTLE_POLICY_*` values never reads either; a new password writes the
@@ -1630,13 +1630,13 @@ values it already holds (docs/policy.md).
 - **Before a policy goes on a live box:** set it on a copy first, or read
   the boot log (`box policy blocks ...` lines): every assistant or worker
   on a blocked model fails until it is moved.
-- **Rolling back below it:** the older image runs with 0347 in place, but
+- **Rolling back below it:** the older image runs with 0348 in place, but
   it has no hold: a held login signs in as before. Run the revert
-  (`packages/db/rollback/0347_must_change_password.revert.sql`) before
+  (`packages/db/rollback/0348_must_change_password.revert.sql`) before
   pinning the older tag, with the app containers stopped (web, api, workers): it clears every
   login's checked rule (so the next roll forward has each login sign in
   once again: the older image does not record a password's rule), deletes
-  the `model_policy` alerts, narrows the subject check back and takes 0347
+  the `model_policy` alerts, narrows the subject check back and takes 0348
   off the ledger. The columns stay.
 
 ## Rollback

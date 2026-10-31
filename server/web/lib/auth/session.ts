@@ -221,7 +221,7 @@ type Resolved = Readonly<{
   contactId: string | null;
   /** adminLogin(row): a user of the live Admin workspace now. */
   admin: boolean;
-  /** auth.users.must_change_password and password_checked_min (0347), as
+  /** auth.users.must_change_password and password_checked_min (0348), as
    *  read with the row: the password hold (password-hold.ts) reads them,
    *  only while the box policy sets a password rule. */
   mustChangePassword: boolean;

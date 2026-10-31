@@ -160,7 +160,7 @@ function buildCircuit(ownerId: string): ProviderCircuit {
     },
     deadLetterCount: countDeadLetteredExtracts,
     store: {
-      // The circuit's subjects only: a model_policy alert (0347) is the box
+      // The circuit's subjects only: a model_policy alert (0348) is the box
       // policy's, never probed or paused here.
       listOpen: async () =>
         (await listOpenProviderAlerts(ownerId))

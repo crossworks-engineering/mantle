@@ -147,7 +147,7 @@ with `code` one of `password_too_short`, `password_too_long`,
 
 **Checked once under the rule.** Each login records the minimum its
 password was last checked against (`auth.users.password_checked_min`,
-migration 0347): at a password sign-in (the web sign-in and the device token
+migration 0348): at a password sign-in (the web sign-in and the device token
 routes), at a password prompt (making an API key, MCP consent) and with a
 new password. A new password set while no rule is in force records none,
 so it is checked when a rule comes back. While a rule is set, a login whose password was never checked
@@ -165,7 +165,7 @@ or a linked brain must also sign in once. The Policy panel and the boot log
 count the logins still to check.
 
 **The forced change.** When the password checked fails the rule, the
-login's `must_change_password` flag is set (migration 0347), and a password
+login's `must_change_password` flag is set (migration 0348), and a password
 prompt grants nothing (no key, no consent). The login then reaches only the
 routes whose declaration says `passwordHold: 'change-step'` or `'sign-out'`
 (`server/web/lib/auth/route-declaration.ts`; only a row that acts as the
@@ -206,10 +206,10 @@ does not appear. It is read only: nothing in the app changes a rule.
 
 ## Rollback
 
-Migration 0347 adds `auth.users.must_change_password` and
+Migration 0348 adds `auth.users.must_change_password` and
 `password_checked_min` and the provider alert subject `model_policy`. Before
 pinning an older image, run its revert,
-`packages/db/rollback/0347_must_change_password.revert.sql` (required, not
+`packages/db/rollback/0348_must_change_password.revert.sql` (required, not
 optional): it clears every login's checked rule (the older image writes a
 new password without one, so the roll forward checks every login again),
 removes the `model_policy` alerts and narrows the subject check; the columns

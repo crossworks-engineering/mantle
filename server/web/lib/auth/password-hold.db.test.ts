@@ -3,7 +3,7 @@
  * (createApp), with MANTLE_POLICY_PASSWORD_MIN=12 (docs/policy.md):
  *
  *   - a sign-in with a password that fails the rule sets
- *     must_change_password and records the rule (0347); the login then
+ *     must_change_password and records the rule (0348); the login then
  *     reaches the change step and whoami, every other route answers 403
  *     password_change_required;
  *   - the change refuses a common password (400 password_common) and takes

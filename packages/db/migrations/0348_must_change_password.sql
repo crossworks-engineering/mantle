@@ -29,7 +29,7 @@
 --
 -- Additive: two columns, one with a constant default (no table rewrite on
 -- Postgres 11+), and one wider CHECK, no trigger, no LLM work. Re-runnable.
--- Revert: packages/db/rollback/0347_must_change_password.revert.sql.
+-- Revert: packages/db/rollback/0348_must_change_password.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 -- Both tables in one statement first, in one order, so no other session
