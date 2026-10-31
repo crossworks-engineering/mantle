@@ -3,9 +3,9 @@
 #
 # It reports and never blocks: `continue-on-error` keeps the job green, and the
 # step summary carries the list. It becomes a required gate later, when the
-# baseline is empty. About 2 hours 20 minutes by estimate (Node 28, Bun 100, from
-# the workstation times), so it runs on main, on feat/bun-** and by hand, and not
-# on every branch.
+# baseline is empty. About an hour by estimate (Node and Bun about 28 minutes
+# each, from the workstation times), so it runs on main, on feat/bun-** and by
+# hand, and not on every branch.
 
 name: bun-lane
 
@@ -22,7 +22,7 @@ concurrency:
 jobs:
   compare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 200
+    timeout-minutes: 130
     continue-on-error: true
     permissions:
       contents: read

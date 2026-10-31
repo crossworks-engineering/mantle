@@ -7,7 +7,7 @@ const ROOT = join(import.meta.dirname, '..');
 
 /** The most entries scripts/bun-baseline.json may hold. Lower it as the list
  *  shrinks, and never raise it: a new failure on Bun gets fixed, not listed. */
-const BASELINE_CEILING = 226;
+const BASELINE_CEILING = 56;
 
 const baseline = JSON.parse(readFileSync(join(ROOT, 'scripts/bun-baseline.json'), 'utf8')) as {
   bun: string;

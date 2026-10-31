@@ -33,9 +33,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE_FILE = join(ROOT, 'scripts/bun-baseline.json');
 const VITEST = 'node_modules/vitest/vitest.mjs';
-/** Ends a run that hangs. A Bun run takes 26 minutes on the workstation, and a
- *  GitHub runner took about four times Node's workstation time. */
-const RUN_TIMEOUT_MS = 150 * 60 * 1000;
+/** Ends a run that hangs. A run takes 7 minutes on the workstation, and a GitHub
+ *  runner took about four times that for the same Node suite. */
+const RUN_TIMEOUT_MS = 60 * 60 * 1000;
 /** The key of a test file that failed before any of its tests ran. */
 const FILE_LEVEL = '<file>';
 const NOT_RUN = new Set(['pending', 'skipped', 'todo', 'disabled']);
