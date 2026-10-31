@@ -11,7 +11,8 @@
  * never an origin: a brain serves mini apps and shared pages that run other
  * people's script, and any page that receives a code could send it on. The
  * flow's fragment names the brain that sent it (`iss`), so a client that holds
- * several brains can tell a code from another brain (RFC 9207).
+ * several brains can tell a code from another brain (RFC 9207): the client
+ * compares it with the origin it connected to itself.
  *
  * A start ticket carries a flow that begins on a session (a link, a fresh
  * sign-in) to whichever browser opens it, since a bearer client's own request
@@ -30,7 +31,8 @@ import type { OidcOn } from './settings';
 
 /** The one app target: the desktop app and the phone. Any app may claim a
  *  custom scheme, so a flow that ends here always asks the provider to sign
- *  the person in (appTarget): a code is never handed over silently. */
+ *  the person in, and must prove it did (mustAsk): a code is never handed
+ *  over silently. */
 export const APP_REDIRECT = 'mantle://oidc';
 /** The one web target's path, on a trusted origin: the client's own page that
  *  spends the code, which runs no script but the client's. */
@@ -43,11 +45,17 @@ const START_TICKET_TTL_SECONDS = 5 * 60;
 const CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
 const VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/;
 
-/** A web target's origin the brain trusts: its own public origin, the
- *  client's, or a named cross-origin caller (never the '*' wildcard). */
-function trustedOrigins(s: OidcOn): Set<string> {
+/** The origins that may receive a code with no question: the brain's own
+ *  page and its client's. */
+function ownOrigins(s: OidcOn): Set<string> {
   const client = (env('MANTLE_CLIENT_ORIGIN') ?? '').replace(/\/+$/, '');
-  return new Set([brainOrigin(s), ...(client ? [client] : []), ...namedCorsOrigins()]);
+  return new Set([brainOrigin(s), ...(client ? [client] : [])]);
+}
+
+/** A web target's origin the brain trusts: its own, or a named cross-origin
+ *  caller (never the '*' wildcard). */
+function trustedOrigins(s: OidcOn): Set<string> {
+  return new Set([...ownOrigins(s), ...namedCorsOrigins()]);
 }
 
 /** This brain's public origin: what the flow's fragment names as `iss`, and
@@ -56,9 +64,13 @@ export function brainOrigin(s: OidcOn): string {
   return new URL(s.redirectUri).origin;
 }
 
-/** Whether a flow ends at the app target, where the provider must ask. */
-export function appTarget(h: FlowHandoff | undefined): boolean {
-  return h?.redirect === APP_REDIRECT;
+/** Whether the provider must ask the person, and prove it did, before this
+ *  flow may end: at the app target, which any app can claim, and at a named
+ *  cross-origin caller, which was listed for bearer calls, not to receive
+ *  sign-ins with nobody looking. */
+export function mustAsk(s: OidcOn, h: FlowHandoff): boolean {
+  if (h.redirect === APP_REDIRECT) return true;
+  return !ownOrigins(s).has(new URL(h.redirect).origin);
 }
 
 /** `raw` when the flow may end there, else null: exactly the app target, or

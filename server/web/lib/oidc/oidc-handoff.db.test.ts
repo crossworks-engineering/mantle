@@ -36,8 +36,15 @@ vi.mock('./provider', async (importOriginal) => ({
     h.again.push(o?.again === true);
     return `${'https://idp.example.invalid/realms/company'}/auth?state=${f.state}`;
   },
-  identityFromCallback: async (_s: unknown, q: URLSearchParams, f: { state: string }) => {
+  identityFromCallback: async (
+    _s: unknown,
+    q: URLSearchParams,
+    f: { state: string },
+    o?: { freshStartedAt?: number },
+  ) => {
     if (q.get('state') !== f.state) throw new Error('state mismatch');
+    // A provider that sends no auth_time, as provider.ts answers it.
+    if (o?.freshStartedAt !== undefined && !h.authTime) throw new Error('no auth_time');
     return {
       issuer: 'https://idp.example.invalid/realms/company',
       subject: h.subject,
@@ -193,6 +200,7 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
 
   afterEach(async () => {
     setMode('optional');
+    h.authTime = true;
     await asSuperuser()`delete from oidc_signin_links`;
     const { forgetHolds } = await import('./hold');
     forgetHolds();
@@ -265,11 +273,6 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     expect(done).toBe(`${TARGET}#oidc=not-linked&${ISS}`);
   });
 
-  it('the public config names this brain, for the client to compare', async () => {
-    const res = await call('/api/auth/oidc/config');
-    expect(await res.json()).toEqual({ mode: 'optional', label: 'Company', brain: BRAIN });
-  });
-
   it('the provider asks again for an app, and not for the web page', async () => {
     await linkDirect(person, 'sub-p');
     h.subject = 'sub-p';
@@ -283,6 +286,65 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     h.again.length = 0;
     await browser('/api/auth/oidc/start?return=/');
     expect(h.again).toEqual([false]);
+  });
+
+  it('a provider that cannot prove it asked signs nobody in on an app', async () => {
+    await linkDirect(person, 'sub-p');
+    h.subject = 'sub-p';
+    h.authTime = false;
+    expect(await browser(`/api/auth/oidc/start?${AS_CLIENT}`)).toBe(`${TARGET}#oidc=failed&${ISS}`);
+    // The brain's own page never asked, so it needs no proof.
+    const web = await browser(`/api/auth/oidc/start?${AS_WEB}`);
+    expect(fragment(web).get('oidc')).toBe('code');
+  });
+
+  it('a named cross-origin caller gets a code only after the provider asks', async () => {
+    process.env.MANTLE_API_CORS_ORIGINS = 'https://partner.example.invalid';
+    try {
+      await linkDirect(person, 'sub-p');
+      h.subject = 'sub-p';
+      h.again.length = 0;
+      const redirect = encodeURIComponent('https://partner.example.invalid/auth/oidc');
+      const start = `/api/auth/oidc/start?redirect=${redirect}&challenge=${CHALLENGE}`;
+      const done = await browser(start);
+      expect(h.again).toEqual([true]);
+      expect(fragment(done).get('oidc')).toBe('code');
+      h.authTime = false;
+      expect(fragment(await browser(start)).get('oidc')).toBe('failed');
+    } finally {
+      delete process.env.MANTLE_API_CORS_ORIGINS;
+    }
+  });
+
+  it('a fresh sign-in with no proof of when it happened buys nothing', async () => {
+    await linkDirect(person, 'sub-p');
+    const { token } = await signInBearer('sub-p');
+    const res = await call('/api/auth/oidc/fresh', {
+      method: 'POST',
+      bearer: token,
+      body: { redirect: TARGET, challenge: CHALLENGE },
+    });
+    h.authTime = false;
+    const done = await browser(pathOf(((await res.json()) as { url: string }).url));
+    expect(done).toBe(`${TARGET}#oidc=failed&${ISS}`);
+  });
+
+  it('a company session cannot reset its own password with no old password', async () => {
+    await linkDirect(admin, 'sub-admin');
+    const { token } = await signInBearer('sub-admin');
+    const url = `/api/users/${admin}/password`;
+    const body = { newPassword: 'a new password 2' };
+    const byBearer = await call(url, { method: 'POST', bearer: token, body });
+    expect(byBearer.status).toBe(403);
+    expect(await byBearer.json()).toMatchObject({ code: 'sso-session' });
+    const { buildSessionCookie } = await import('@/lib/auth/tokens');
+    const sso = `mantle_session=${buildSessionCookie(admin, { ttlSeconds: 3600, oidc: true }).value}`;
+    const byCookie = await call(url, { method: 'POST', cookies: [sso], body });
+    expect(byCookie.status).toBe(403);
+    expect(await byCookie.json()).toMatchObject({ code: 'sso-session' });
+    const [row] = await asSuperuser()<{ hash: string }>`
+      select password_hash as hash from auth.users where id = ${admin}`;
+    expect(bcrypt.compareSync(PASSWORD, row!.hash)).toBe(true);
   });
 
   it("a page that runs other people's script is no target, on the brain itself", async () => {

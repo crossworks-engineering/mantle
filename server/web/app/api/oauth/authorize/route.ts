@@ -487,13 +487,25 @@ function stepField(
   }
   if (confirm.freshCode) {
     return `<input type="hidden" name="fresh_code" value="${h(confirm.freshCode)}" />
-    <p class="muted">Confirmed with ${h(confirm.stepUp.label)}. Press Allow to finish.</p>`;
+    <p class="muted">Press Allow to finish.</p>`;
   }
   const label = h(confirm.stepUp.label);
   return confirm.stepUp.passwordToo
     ? `<p class="muted">Confirm with ${label} to allow. You sign in there again.</p>
     ${passwordField('Or type your Mantle password and press Allow')}`
     : `<p class="muted">Confirm with ${label} to allow. You sign in there again.</p>`;
+}
+
+/** The form's forward buttons: Allow, Confirm with the company's sign-in, or
+ *  both while a password still confirms this login. */
+function actionButtons(
+  confirm: { stepUp: StepUp; freshCode: string },
+  h: (v: string) => string,
+): string {
+  const allow = '<button class="allow" type="submit" name="decision" value="allow">Allow</button>';
+  if (confirm.stepUp.kind === 'password' || confirm.freshCode) return allow;
+  const button = `<button class="allow" type="submit" name="decision" value="confirm">Confirm with ${h(confirm.stepUp.label)}</button>`;
+  return confirm.stepUp.passwordToo ? `${button}\n      ${allow}` : button;
 }
 
 function consentPage(
@@ -549,16 +561,7 @@ function consentPage(
     ${error ? `<p class="err" role="alert">${h(error)}</p>` : ''}
     <div class="row">
       <button class="deny" type="submit" name="decision" value="deny">Deny</button>
-      ${
-        confirm.stepUp.kind === 'company' && !confirm.freshCode
-          ? `<button class="allow" type="submit" name="decision" value="confirm">Confirm with ${h(confirm.stepUp.label)}</button>`
-          : ''
-      }
-      ${
-        confirm.stepUp.kind === 'password' || confirm.freshCode || confirm.stepUp.passwordToo
-          ? '<button class="allow" type="submit" name="decision" value="allow">Allow</button>'
-          : ''
-      }
+      ${actionButtons(confirm, h)}
     </div>
   </form>
   <p class="foot">Only allow this if you started this connection yourself and ${returnHost} is the address of the app you meant. You can disconnect anytime in Settings.</p>`;
