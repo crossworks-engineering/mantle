@@ -892,6 +892,11 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
    * (a provider probe, a child process).
    */
   const NOT_2XX: Readonly<Record<string, readonly ['after' | 'offline' | 'none', string]>> = {
+    // Company sign-in is off in the sweep: both answer 404 before any write
+    // (oidc-off.test.ts); on, they run at the spot oidc-link and the
+    // users area's routes are driven on Postgres in oidc-routes.db.test.ts.
+    'PATCH /api/users/:id/oidc': ['none', 'company sign-in is off here: 404, no write'],
+    'DELETE /api/users/:id/oidc': ['none', 'company sign-in is off here: 404, no write'],
     'GET /api/mcp-connectors/oauth/callback': [
       'after',
       'the pending authorization abandoned (tool_groups written), then the denial page',

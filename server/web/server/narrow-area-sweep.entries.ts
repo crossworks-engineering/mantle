@@ -269,6 +269,10 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'DELETE /api/users/:id/agent': {},
   'DELETE /api/users/:id/devices/:jti': {},
   'POST /api/users/:id/password': {},
+  // Company sign-in (lib/oidc): the sweep runs with it off, where both
+  // answer 404 before any write.
+  'PATCH /api/users/:id/oidc': { body: { outside: true } },
+  'DELETE /api/users/:id/oidc': {},
 });
 
 /** The push relay the sweep's fetch answers for (/api/push/connect, reset). */

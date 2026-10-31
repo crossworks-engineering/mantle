@@ -174,6 +174,38 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     expect: { member: { status: 200 }, unknown: { status: 200 } },
     cookieOnly: true,
   },
+  // Company sign-in (lib/oidc): the sweeps run with MANTLE_OIDC_MODE off,
+  // where the status read says off to anyone and reads no login, and the
+  // rest answer 404 before any read (oidc-off.test.ts is the acceptance
+  // test; oidc-flow.test.ts and oidc-routes.db.test.ts drive them on).
+  {
+    key: 'GET /api/auth/oidc/status',
+    path: '/api/auth/oidc/status',
+    expect: { member: { status: 200 }, unknown: { status: 200 } },
+  },
+  {
+    key: 'GET /api/auth/oidc/callback',
+    path: '/api/auth/oidc/callback?code=c&state=s',
+    expect: { member: { status: 404 }, unknown: { status: 404 } },
+  },
+  {
+    key: 'POST /api/auth/oidc/link',
+    path: '/api/auth/oidc/link',
+    init: json({}),
+    expect: { member: { status: 404 }, unknown: { status: 404 } },
+  },
+  {
+    key: 'DELETE /api/auth/oidc/link',
+    path: '/api/auth/oidc/link',
+    init: { method: 'DELETE' },
+    expect: { member: { status: 404 }, unknown: { status: 404 } },
+  },
+  {
+    key: 'POST /api/auth/oidc/offer',
+    path: '/api/auth/oidc/offer',
+    init: { method: 'POST' },
+    expect: { member: { status: 404 }, unknown: { status: 404 } },
+  },
   // The password token logins read no session: a cookie or a bearer of any
   // role buys nothing, and a bad body is the same 401 for everyone.
   ...(['mobile-login', 'token', 'device-login'] as const).map((name): PublicSessionRoute => ({

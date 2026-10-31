@@ -4,6 +4,8 @@ import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { clearOidcCookies } from '@/lib/oidc/cookies';
+import { oidcSettings } from '@/lib/oidc/settings';
 
 export const policy = routePolicy({
   POST: {
@@ -64,5 +66,9 @@ export async function POST(req: Request) {
     path: '/',
     maxAge: 0,
   });
+  // Company sign-in's short cookies (a held or fresh ticket a link could
+  // start on) go too: cleared whenever company sign-in is on (the request
+  // is not asked whether it carries them); off, the answer is as before.
+  if (oidcSettings().mode !== 'off') clearOidcCookies(res, req);
   return res;
 }

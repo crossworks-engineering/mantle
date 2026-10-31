@@ -179,6 +179,17 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `update telegram_chats set login_id = '${member}' where false`,
       `update telegram_chats set allowlist_status = 'allowed' where false`,
       `delete from telegram_chats where false`,
+      // Company sign-in (0349): a link is a way in, the outside mark keeps
+      // a password; both are written at the spot oidc-link only.
+      `insert into oidc_signin_links default values`,
+      `update oidc_signin_links set login_id = '${member}' where false`,
+      `update oidc_signin_links set subject = 'x' where false`,
+      `delete from oidc_signin_links where false`,
+      `insert into oidc_login_state default values`,
+      `update oidc_login_state set outside = true where false`,
+      `delete from oidc_login_state where false`,
+      `insert into oidc_mode_state (mode) values ('required')`,
+      `update oidc_mode_state set mode = 'optional' where false`,
     ];
     for (const s of refused) expect(await run(nl, [s]), s).toBe('42501');
     for (const s of [
@@ -201,6 +212,9 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       'peer_shares',
       'peer_share_scopes',
       'telegram_chats',
+      'oidc_signin_links',
+      'oidc_login_state',
+      'oidc_mode_state',
     ]) {
       const [g] = await su<{ i: boolean }[]>`
         select has_table_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, 'INSERT')

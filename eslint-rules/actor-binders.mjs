@@ -91,10 +91,10 @@ export const ACTOR_BINDER_PINS = {
   'server/web/lib/realtime.ts': 3,
   'server/web/lib/runs/execute-item.ts': 1,
   // The snapshot copies, the manifest reconcile, the app table exports and
-  // the box policy check (only with a policy set, docs/policy.md) run as
-  // binder calls; the workspaces step runs through systemWork (its
-  // assistant attach is workspace system work, 0307).
-  'server/web/server/main.ts': 4,
+  // the box policy check (only with a policy set, docs/policy.md) and the
+  // company sign-in boot check run as binder calls; the workspaces step runs
+  // through systemWork (its assistant attach is workspace system work, 0307).
+  'server/web/server/main.ts': 5,
   // The gate's own slot, and a render page's (the /s page): bound here, not
   // in server/pages/share.tsx or print.ts.
   'server/web/server/middleware/gate.ts': 2,

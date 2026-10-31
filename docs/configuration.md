@@ -191,6 +191,7 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `PARSER_SLOT_HOLD_MAX_MS` | the caller | whole, at least 1 | a job slot held longer turns the parser /healthz to 503 (autoheal restarts it), ms (default parserSlotHoldMaxMs, @mantle/files/parser-wire) |
 | `PARSER_MAX_UPLOAD_MB` | 512 | whole, at least 1 | largest file the parser takes, MB (the streamed upload cap, MANTLE_MAX_UPLOAD_MB) |
 | `PARSER_CLIENT_CONCURRENCY` | 2 | whole, at least 1 | parser jobs one brain process sends at once |
+| `MANTLE_OIDC_SESSION_HOURS` | 12 | whole, above 0, max 168 | life of a session made by company sign-in, hours (1 to 168) |
 | `MANTLE_LOCAL_EMBED_BATCH` | 16 | whole, at least 1 | texts per request to the local embedder |
 | `MANTLE_LOCAL_EMBED_TIMEOUT_MS` | the caller | whole, at least 1000 | local embedder request timeout, ms (default PROVIDER_TIMEOUTS.localEmbed, @mantle/std) |
 

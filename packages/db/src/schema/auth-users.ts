@@ -41,13 +41,13 @@ export const authUsers = authSchema.table('users', {
    *  each request: bumping it ends them all (password change, disable, role
    *  change, sign out everywhere). A token without the claim counts as 0. */
   sessionEpoch: integer('session_epoch').notNull().default(0),
-  /** The box password policy's forced change (0347, docs/policy.md): set at
+  /** The box password policy's forced change (0348, docs/policy.md): set at
    *  a password sign-in while MANTLE_POLICY_PASSWORD_MIN is set and the
    *  password fails the rule. Read only while that rule is in force: the
    *  login then reaches nothing but the change-password step. Any new
    *  password clears it. */
   mustChangePassword: boolean('must_change_password').notNull().default(false),
-  /** The rule's minimum the password was last checked against (0347): at a
+  /** The rule's minimum the password was last checked against (0348): at a
    *  sign-in, a password prompt or a new password, under a box password
    *  rule. Null: never. While a rule is set, a login checked under none (or
    *  under a lower minimum) must sign in once before anything else. */

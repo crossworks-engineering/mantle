@@ -13,10 +13,12 @@ import { env } from '@mantle/config';
  */
 
 /** The `k` claim: mobile bearer, asset token, app frame, render cookie,
- *  contact visitor (contact shares), app tool confirmation. 'c' (the retired
- *  team-chat credential) and 't' (the retired team-visitor cookie) are
- *  reserved: no verifier takes them. */
-export type TokenKind = 'm' | 'a' | 'f' | 'r' | 'v' | 'q';
+ *  contact visitor (contact shares), app tool confirmation, company sign-in
+ *  flow state ('o') and company sign-in ticket ('h', the short proof of a
+ *  password sign-in that may start a link: server/web lib/oidc). 'c' (the
+ *  retired team-chat credential) and 't' (the retired team-visitor cookie)
+ *  are reserved: no verifier takes them. */
+export type TokenKind = 'm' | 'a' | 'f' | 'r' | 'v' | 'q' | 'o' | 'h';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every

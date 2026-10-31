@@ -272,7 +272,8 @@ Its rights, made equal to the access matrix at every migrate inside
   `login-credential`; a pairing code, an MCP authorization code, a member
   invite, a peer's way in, a peer share and a Telegram chat's pairing each
   at its own spot (`pair-code`, `oauth-code`, `member-invite`,
-  `peer-access`, `peer-share`, `telegram-pair`); an assistant made, cloned,
+  `peer-access`, `peer-share`, `telegram-pair`), and a company sign-in
+  link, an unlink and the outside mark at `oidc-link` (0349); an assistant made, cloned,
   granted a tool group or a delegate, or assigned to a login at
   `assistant-grant`, a tool
   group made, removed or its tools changed at `tool-group-grant` (S7b part

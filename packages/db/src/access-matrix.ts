@@ -284,6 +284,18 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
     narrow: 'none',
     why: 'an archive (0272): nothing reads or writes it at run time',
   },
+  'public.oidc_signin_links': {
+    narrow: 'read',
+    why: 'a company sign-in link is a way in (0349): made and removed only at the full-route spot oidc-link (server/web lib/oidc/store.ts: a link, an unlink), never by narrow work',
+  },
+  'public.oidc_mode_state': {
+    narrow: 'read',
+    why: 'the mode the last boot applied (0349): written only by the company sign-in boot step at the full-route spot oidc-link, never by narrow work',
+  },
+  'public.oidc_login_state': {
+    narrow: 'read',
+    why: "a login's outside mark decides whether it keeps a password in required mode (0349): written only at the full-route spot oidc-link, never by narrow work",
+  },
 });
 
 /**
@@ -1438,6 +1450,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.access_keys'),
   none('public.pairing_codes'),
   none('public.member_invites'),
+  // Company sign-in (0349): which provider account signs in as a login,
+  // and the outside mark. Written at the full-route spot oidc-link only.
+  { ...none('public.oidc_signin_links'), narrow: 'read' },
+  { ...none('public.oidc_login_state'), narrow: 'read' },
+  { ...none('public.oidc_mode_state'), narrow: 'read' },
   // The lowering guard's marks and the client request ledger (0197): the
   // tool loop and client_request_create write them as the system.
   none('public.client_sourced_nodes', 'system'),
@@ -1659,6 +1676,9 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.messenger_call_participants', // 0342
   'public.messenger_call_webhooks', // 0342
   'public.mcp_calls', // 0345
+  'public.oidc_signin_links', // 0349
+  'public.oidc_login_state', // 0349
+  'public.oidc_mode_state', // 0349
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as

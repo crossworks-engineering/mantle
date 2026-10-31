@@ -6,6 +6,7 @@ DELETE /api/apps/:id class=content scope=content caller=owner gone=false
 DELETE /api/apps/:id/draft class=content scope=content caller=owner gone=false
 DELETE /api/apps/:id/snapshots/:sid class=content scope=content caller=owner gone=false
 DELETE /api/apps/deleted/:id class=content scope=content caller=owner gone=false
+DELETE /api/auth/oidc/link class=self scope=self caller=publicLogin gone=false
 DELETE /api/calendar/:id class=area scope=area:connectors caller=owner gone=false
 DELETE /api/contacts/:id class=content scope=content caller=owner gone=false
 DELETE /api/contacts/:id/shares class=content scope=content caller=owner gone=false
@@ -62,6 +63,7 @@ DELETE /api/tree/:kind/folders/:id class=content scope=content caller=owner gone
 DELETE /api/users/:id class=area scope=area:users caller=owner gone=false
 DELETE /api/users/:id/agent class=area scope=area:users caller=owner gone=false
 DELETE /api/users/:id/devices/:jti class=area scope=area:users caller=owner gone=false
+DELETE /api/users/:id/oidc class=area scope=area:users caller=owner gone=false
 DELETE /api/workspaces/:id/resources/:kind/:refId class=self scope=- caller=login gone=false
 DELETE /api/workspaces/:id/users/:loginId class=self scope=- caller=login gone=false
 GET /.well-known/oauth-authorization-server class=public scope=- caller=- gone=false
@@ -102,6 +104,10 @@ GET /api/attachments/:id class=area scope=area:connectors caller=ownerAsset gone
 GET /api/audit class=area scope=area:settings caller=owner gone=false
 GET /api/auth/bootstrap-state class=self scope=self caller=- gone=false
 GET /api/auth/invite/:code class=self scope=self caller=- gone=false
+GET /api/auth/oidc/callback class=self scope=self caller=publicLogin gone=false
+GET /api/auth/oidc/config class=self scope=self caller=- gone=false
+GET /api/auth/oidc/start class=self scope=self caller=- gone=false
+GET /api/auth/oidc/status class=self scope=self caller=publicLogin gone=false
 GET /api/auth/pair/:id class=self scope=self caller=publicLogin gone=false
 GET /api/auth/whoami class=self scope=self caller=publicLogin gone=false
 GET /api/backups class=area scope=area:settings caller=owner gone=false
@@ -300,6 +306,7 @@ GET /api/updates/check class=self scope=self caller=session gone=false
 GET /api/updates/status class=area scope=area:settings caller=owner gone=false
 GET /api/users class=area scope=area:users caller=owner gone=false
 GET /api/users/:id/devices class=area scope=area:users caller=owner gone=false
+GET /api/users/oidc class=area scope=area:users caller=owner gone=false
 GET /api/v1/contacts class=content scope=content caller=owner gone=false
 GET /api/v1/contacts/:id class=content scope=content caller=owner gone=false
 GET /api/v1/events class=content scope=content caller=owner gone=false
@@ -374,6 +381,10 @@ HEAD /api/attachments/:id class=area scope=area:connectors caller=ownerAsset gon
 HEAD /api/audit class=area scope=area:settings caller=owner gone=false
 HEAD /api/auth/bootstrap-state class=self scope=self caller=- gone=false
 HEAD /api/auth/invite/:code class=self scope=self caller=- gone=false
+HEAD /api/auth/oidc/callback class=self scope=self caller=publicLogin gone=false
+HEAD /api/auth/oidc/config class=self scope=self caller=- gone=false
+HEAD /api/auth/oidc/start class=self scope=self caller=- gone=false
+HEAD /api/auth/oidc/status class=self scope=self caller=publicLogin gone=false
 HEAD /api/auth/pair/:id class=self scope=self caller=publicLogin gone=false
 HEAD /api/auth/whoami class=self scope=self caller=publicLogin gone=false
 HEAD /api/backups class=area scope=area:settings caller=owner gone=false
@@ -572,6 +583,7 @@ HEAD /api/updates/check class=self scope=self caller=session gone=false
 HEAD /api/updates/status class=area scope=area:settings caller=owner gone=false
 HEAD /api/users class=area scope=area:users caller=owner gone=false
 HEAD /api/users/:id/devices class=area scope=area:users caller=owner gone=false
+HEAD /api/users/oidc class=area scope=area:users caller=owner gone=false
 HEAD /api/v1/contacts class=content scope=content caller=owner gone=false
 HEAD /api/v1/contacts/:id class=content scope=content caller=owner gone=false
 HEAD /api/v1/events class=content scope=content caller=owner gone=false
@@ -653,6 +665,7 @@ PATCH /api/tool-groups/:id class=area scope=area:assistants caller=owner gone=fa
 PATCH /api/tools/:id class=area scope=area:assistants caller=owner gone=false
 PATCH /api/tree/:kind/folders/:id class=content scope=content caller=owner gone=false
 PATCH /api/users/:id class=area scope=area:users caller=owner gone=false
+PATCH /api/users/:id/oidc class=area scope=area:users caller=owner gone=false
 PATCH /api/v1/pages/:id class=content scope=content caller=ownerAtRead gone=false
 PATCH /api/v1/tables/:id/rows/:rowId class=content scope=content caller=owner gone=false
 PATCH /api/v1/tasks/:id class=content scope=content caller=owner gone=false
@@ -708,6 +721,8 @@ POST /api/auth/login class=self scope=self caller=- gone=false
 POST /api/auth/logout class=self scope=self caller=publicLogin gone=false
 POST /api/auth/mobile-login class=self scope=self caller=- gone=false
 POST /api/auth/mobile-logout class=self scope=self caller=- gone=false
+POST /api/auth/oidc/link class=self scope=self caller=publicLogin gone=false
+POST /api/auth/oidc/offer class=self scope=self caller=publicLogin gone=false
 POST /api/auth/pair class=self scope=self caller=publicLogin gone=false
 POST /api/auth/pair/claim class=self scope=self caller=- gone=false
 POST /api/auth/signup class=self scope=self caller=- gone=false

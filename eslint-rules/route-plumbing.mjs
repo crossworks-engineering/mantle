@@ -133,6 +133,8 @@ export const RATE_LIMIT_ALLOW = Object.freeze({
     "the /api/v1 key gate takes the key's budget (rateLimitAccessKey) once it has resolved the key: a budget per key, not per row",
   'server/web/lib/workspace-turn.ts':
     "the chat turn budget of a login that is not an Admin user (6 a minute), counted per queued turn so a retry with the same Idempotency-Key, answered from the turn route's cache, spends nothing (docs/request-plumbing.md, Rate limits)",
+  'server/web/lib/oidc/flow.ts':
+    "the link start's password failure budget (company sign-in), taken around the password check and given back on a right one, as at key creation; the per-address limit is the row's (oidcLink)",
   'server/web/app/api/access-keys/route.ts':
     'a failure budget around the password check (taken before it, given back on a right password: M2 audit N2) and the keys made an hour, counted only once the password passed; neither is a gate on the request',
   'server/web/app/api/oauth/authorize/route.ts':

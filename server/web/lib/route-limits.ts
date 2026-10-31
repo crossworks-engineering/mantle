@@ -119,6 +119,14 @@ export const RATE_LIMITS = {
    *  nothing. */
   authTokenLogin: perIp('auth:token-login', 10),
   ownerSso: perIp('owner-sso:ip', 30),
+  /** Company sign-in (docs/oidc-sign-in.md): each start and callback calls
+   *  the provider. Sized for a company behind one address signing in at the
+   *  start of a day (sessions last MANTLE_OIDC_SESSION_HOURS). A link start
+   *  may check a password: the address limit here, and the login's own
+   *  failure budget around the check (lib/oidc/flow.ts). */
+  oidcStart: perIp('auth:oidc-start', 120),
+  oidcCallback: perIp('auth:oidc-callback', 120),
+  oidcLink: perIp('auth:oidc-link', 60),
   /** The invite routes are code oracles: every request counts per address,
    *  and the brain's failed codes count toward a cap of their own (a guard
    *  against a distributed flood: member-invites.ts). */

@@ -1,0 +1,36 @@
+-- Rollback of 0349_oidc_signin: what an operator MAY run before pinning the
+-- image one release back (plan v3.2 rule 2, a one-image rollback). Not a
+-- migration: nothing runs it on its own.
+--
+-- Optional: the older image works with 0349 in place. It never reads or
+-- writes any of the three tables, and the older migrate's grants leave a
+-- table its access matrix does not list closed to the workspace and narrow
+-- roles (the roles' grants are made from the matrix, never by default). So
+-- this revert keeps the tables and the links people made. It forgets the
+-- mode the last boot applied (below) and takes 0349 off the ledger, so the
+-- next roll forward runs it again (every statement in 0349 is IF NOT
+-- EXISTS, so the tables and rows stay as they are).
+--
+-- The older image has no company sign-in, so nobody can unlink while it
+-- runs: an admin who must remove a link (a leaver, a link someone else
+-- made) does it before the rollback, or removes every link with the lines
+-- below (every linked person links again after the roll forward), added
+-- AFTER the last statement of this file, in the same transaction (before
+-- it, the DELETE below fails on a table that is gone):
+--   DROP TABLE IF EXISTS "public"."oidc_signin_links";
+--   DROP TABLE IF EXISTS "public"."oidc_login_state";
+--   DROP TABLE IF EXISTS "public"."oidc_mode_state";
+--
+-- Run it while the newer image is still up, as the superuser, in one
+-- transaction:
+--   docker exec mantle_web cat /app/packages/db/rollback/0349_oidc_signin.revert.sql \
+--     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
+-- then pin the older image straight away (docs/update-prod.md "Rollback").
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+-- The mode the last boot applied is forgotten: the roll forward's boot ends
+-- the old sessions again if the box is required (sessions made while the
+-- older image ran included).
+DELETE FROM "public"."oidc_mode_state";
+--> statement-breakpoint
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790546460000;

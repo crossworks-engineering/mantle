@@ -56,5 +56,7 @@ export type MemberInvitePreview = {
 
 /** POST /api/auth/invite/accept (public) { code, password, email? }: the
  *  member login is created and the session cookie is set, as a login does.
- *  Any failure about the code is a uniform 401. */
-export type MemberInviteAccepted = { ok: true; email: string };
+ *  Any failure about the code is a uniform 401. `linkRequired` (company
+ *  sign-in in required mode, OidcRefusalCode `sso-link-required`): the
+ *  login was made but holds no session yet; show the one link step. */
+export type MemberInviteAccepted = { ok: true; email: string; linkRequired?: true };

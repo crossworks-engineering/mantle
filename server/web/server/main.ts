@@ -107,6 +107,7 @@ if (isBootSmoke()) {
     () => import('../lib/snapshot-copies'),
     () => import('@mantle/content/app-table-exports'),
     () => import('../lib/policy-check'),
+    () => import('../lib/oidc/boot'),
   ]);
 }
 
@@ -192,6 +193,13 @@ if (policySet()) {
       .catch((err) => bootLog.error('policy check failed:', err)),
   );
 }
+// Company sign-in: a line when it is on, and a warning when it is required
+// while some active logins are not linked yet. Off: no read.
+void runAsSystem('boot:oidc-check', () =>
+  import('../lib/oidc/boot')
+    .then(({ oidcBootCheck }) => oidcBootCheck())
+    .catch((err) => bootLog.error('company sign-in boot check failed:', err)),
+);
 
 // App table exports a restart left unsynced: their debounce
 // timers died with the old process. The usual hash-gated sync, once.

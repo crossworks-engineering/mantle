@@ -57,12 +57,19 @@ export { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME };
  *  that passes the wrong value signs the user out, never in). */
 export function buildSessionCookie(
   userId: string,
-  opts: { epoch?: number; ttlSeconds?: number; deviceJti?: string } = {},
+  opts: { epoch?: number; ttlSeconds?: number; deviceJti?: string; oidc?: boolean } = {},
 ): { value: string; maxAgeSec: number } {
   const ttlSeconds = opts.ttlSeconds ?? ONE_YEAR_SECONDS;
   return {
     value: signClaims(
-      { uid: userId, ep: opts.epoch ?? 0, ...(opts.deviceJti ? { dj: opts.deviceJti } : {}) },
+      {
+        uid: userId,
+        ep: opts.epoch ?? 0,
+        ...(opts.deviceJti ? { dj: opts.deviceJti } : {}),
+        // `so`: made by company sign-in (lib/oidc). Its short life is kept
+        // when the session re-mints its own cookie (own-device.ts).
+        ...(opts.oidc ? { so: 1 } : {}),
+      },
       ttlSeconds,
     ).value,
     maxAgeSec: ttlSeconds,
@@ -82,7 +89,7 @@ export function buildSessionCookie(
  */
 export function verifySessionCookie(
   value: string,
-): { uid: string; exp: number; ep: number; dj?: string } | null {
+): { uid: string; exp: number; ep: number; dj?: string; oidc?: true } | null {
   const claims = verifySigned(value, null);
   if (!claims || typeof claims.uid !== 'string') return null;
   const ep = epochClaim(claims);
@@ -90,7 +97,14 @@ export function verifySessionCookie(
   // `dj`: the device token a bearer-to-cookie upgrade minted this cookie
   // from (lib/owner-sso.ts). The cookie lives only while that device does.
   if (claims.dj !== undefined && typeof claims.dj !== 'string') return null;
-  return { uid: claims.uid, exp: claims.exp, ep, ...(claims.dj ? { dj: claims.dj } : {}) };
+  if (claims.so !== undefined && claims.so !== 1) return null;
+  return {
+    uid: claims.uid,
+    exp: claims.exp,
+    ep,
+    ...(claims.dj ? { dj: claims.dj } : {}),
+    ...(claims.so === 1 ? { oidc: true as const } : {}),
+  };
 }
 
 // ── Render cookies (`k:'r'`) ────────────────────────────────────────────────

@@ -12,8 +12,9 @@
  */
 import { OWNER_SSO_COOKIE_TTL_SECONDS } from '../owner-sso';
 import { loadBearerToken } from './login-row';
+import { requestCookie } from '../../server/http-compat/headers';
 import { bearerFromHeader } from './request';
-import { verifyMobileToken } from './tokens';
+import { SESSION_COOKIE_NAME, verifyMobileToken, verifySessionCookie } from './tokens';
 
 /** The request's bearer, when it is a live device token of `loginId`: its
  *  id, the one to keep. Null for no bearer, another login's, or one that is
@@ -30,16 +31,34 @@ export async function ownLiveDeviceJti(req: Request, loginId: string): Promise<s
 }
 
 /** How to re-mint the caller's own cookie. A cookie on its own (a password
- *  sign-in) keeps its year. One that rides with a bearer is the web client's
+ *  sign-in) keeps its year. One made by company sign-in keeps the end it
+ *  had (MANTLE_OIDC_SESSION_HOURS from its sign-in): a re-mint never turns
+ *  it into a year. One that rides with a bearer is the web client's
  *  upgrade of it: the upgrade's 7 days, bound to the kept device token, so a
  *  revoke of that device ends it too. */
 export function ownCookieOpts(
   req: Request,
   keptJti: string | null,
-): { ttlSeconds?: number; deviceJti?: string } {
+): { ttlSeconds?: number; deviceJti?: string; oidc?: boolean } {
+  // Checked first, whatever Authorization header rides along (a junk or
+  // revoked bearer must not turn it into the 7-day upgrade cookie): the
+  // session resolves on the cookie, so the cookie's own end is kept.
+  const sso = ownOidcCookieEnd(req);
+  if (sso !== null) return { ttlSeconds: sso, oidc: true };
   if (!bearerFromHeader(req.headers.get('authorization'))) return {};
   return {
     ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS,
     ...(keptJti ? { deviceJti: keptJti } : {}),
   };
+}
+
+/** The seconds left on the request's session cookie when company sign-in
+ *  made it (at least 1), else null. Read with the session's own parser
+ *  (requestCookie: the first cookie of the name, one layer of quotes
+ *  stripped, as findLogin reads it), so the cookie judged here is the one
+ *  the session resolved, never a sibling's or a differently spelt copy. */
+export function ownOidcCookieEnd(req: Request): number | null {
+  const v = requestCookie(req, SESSION_COOKIE_NAME)?.value;
+  const c = v ? verifySessionCookie(v) : null;
+  return c?.oidc ? Math.max(1, c.exp - Math.floor(Date.now() / 1000)) : null;
 }

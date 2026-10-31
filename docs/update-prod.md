@@ -1639,6 +1639,28 @@ values it already holds (docs/policy.md).
   the `model_policy` alerts, narrows the subject check back and takes 0348
   off the ledger. The columns stay.
 
+## Going up to 0349 (company sign-in, OIDC milestone 1)
+
+Migration 0349 adds three empty tables: `oidc_signin_links` (which company
+account, the provider's issuer plus its subject, signs in as which login),
+`oidc_mode_state` (the mode the last boot applied) and `oidc_login_state`
+(an admin's "outside person" mark and a login's
+dismissed link offer). While `MANTLE_OIDC_MODE` is unset or off (the
+default) nothing reads them: the sign-in screen, password sign-in and the session
+life stay as they are, and the box calls no sign-in provider
+([oidc-sign-in.md](oidc-sign-in.md)).
+
+- **What it changes for readers:** nothing until the operator sets
+  `MANTLE_OIDC_MODE`.
+- **Rolling back below it:** optional. The older image never reads any
+  table. The revert (`packages/db/rollback/0349_oidc_signin.revert.sql`)
+  takes 0349 off the ledger and keeps the links. It forgets the mode the
+  last boot applied, so a required box ends the old sessions again at the
+  roll forward (sessions made while the older image ran too). Its header
+  names the three
+  `DROP TABLE` lines that remove the links too. The older image has no
+  unlink, so remove a leaver's link before the rollback, or drop them all.
+
 ## Rollback
 
 ```bash

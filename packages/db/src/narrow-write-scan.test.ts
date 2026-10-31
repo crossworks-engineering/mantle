@@ -40,7 +40,7 @@ const { FULL_ROUTE_SPOT_WRAPPERS, FULL_ROUTE_SPOT_CALLBACKS } = (await import(
 const tables = tablesOf(schema as Record<string, unknown>);
 /** onFullSystemRoute and the one-spot helpers (as-system-routes.mjs
  *  FULL_ROUTE_SPOT_WRAPPERS). */
-const CALLS = ['onFullSystemRoute', 'onNarrowSpots', 'profileWrite'];
+const CALLS = ['onFullSystemRoute', 'onNarrowSpots', 'profileWrite', 'oidcWrite'];
 
 describe('the static narrow write scan', () => {
   const found = scanRepo(repo, ['server', 'packages'], tables, CALLS);

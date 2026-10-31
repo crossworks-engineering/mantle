@@ -22,6 +22,8 @@ import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { inviteFailed } from '@/lib/member-invites';
 import { readJson } from '@/lib/read-body';
 import { passwordProblem, passwordProblemBody } from '@/lib/auth/password-rule';
+import { offerTicketAfterPassword, passwordSignInRule } from '@/lib/oidc/rules';
+import { setTicketCookie } from '@/lib/oidc/cookies';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -95,9 +97,18 @@ export async function POST(req: Request) {
     ...requestMetaFrom(req),
   });
 
+  // Company sign-in in required mode (lib/oidc/rules.ts): the new login
+  // gets no session yet; it holds the ticket of the one link step.
+  if ((await passwordSignInRule(redeemed.loginId)) !== 'allow') {
+    const held: MemberInviteAccepted = { ok: true, email: redeemed.email, linkRequired: true };
+    const res = NextResponse.json(held);
+    setTicketCookie(res, req, { loginId: redeemed.loginId, epoch: 0, held: true });
+    return res;
+  }
   const body: MemberInviteAccepted = { ok: true, email: redeemed.email };
   const res = NextResponse.json(body);
   // A login made by this redeem: its session epoch is the column default, 0.
   setSessionCookie(res, req, redeemed.loginId, 0);
+  offerTicketAfterPassword(res, req, redeemed.loginId, 0);
   return res;
 }

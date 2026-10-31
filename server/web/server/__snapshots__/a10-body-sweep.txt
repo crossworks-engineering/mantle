@@ -7,6 +7,7 @@
 # 2026-10-29 (UI sounds): PUT /api/profile/sounds had no route on main; its cells are the branch's own answers.
 # 2026-10-29 (UI sounds, login bound): PUT /api/profile/sounds names its login (loginId), as the Desk's save does; the sweep body names none, so valid and nul are the 403 login-mismatch.
 # 2026-10-30 (credential vault v2 part 1): POST /api/keys/import had no route on main; its cells are the branch's own answers.
+# 2026-10-30 (company sign-in, OIDC milestone 1): POST and DELETE /api/auth/oidc/link, POST /api/auth/oidc/offer, PATCH and DELETE /api/users/:id/oidc had no route on main; their cells are the branch's own answers (company sign-in off: 404 before any body read).
 # cells: 2520
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -458,6 +459,36 @@ POST /api/auth/token/refresh none empty => 401 application/json {"error":"unauth
 POST /api/auth/token/refresh none nul => 401 application/json {"error":"unauthorized"}
 POST /api/auth/token/refresh none array => 401 application/json {"error":"unauthorized"}
 POST /api/auth/token/refresh none chunked => 401 application/json {"error":"unauthorized"}
+POST /api/auth/oidc/link none valid => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/link none malformed => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/link none empty => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/link none nul => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/link none array => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/link none chunked => 404 application/json {"error":"Not found."}
+DELETE /api/auth/oidc/link none valid => 404 application/json {"error":"Not found."}
+DELETE /api/auth/oidc/link none malformed => 404 application/json {"error":"Not found."}
+DELETE /api/auth/oidc/link none empty => 404 application/json {"error":"Not found."}
+DELETE /api/auth/oidc/link none nul => 404 application/json {"error":"Not found."}
+DELETE /api/auth/oidc/link none array => 404 application/json {"error":"Not found."}
+DELETE /api/auth/oidc/link none chunked => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/offer none valid => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/offer none malformed => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/offer none empty => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/offer none nul => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/offer none array => 404 application/json {"error":"Not found."}
+POST /api/auth/oidc/offer none chunked => 404 application/json {"error":"Not found."}
+PATCH /api/users/:id/oidc owner valid => 404 application/json {"error":"Not found."}
+PATCH /api/users/:id/oidc owner malformed => 404 application/json {"error":"Not found."}
+PATCH /api/users/:id/oidc owner empty => 404 application/json {"error":"Not found."}
+PATCH /api/users/:id/oidc owner nul => 404 application/json {"error":"Not found."}
+PATCH /api/users/:id/oidc owner array => 404 application/json {"error":"Not found."}
+PATCH /api/users/:id/oidc owner chunked => 404 application/json {"error":"Not found."}
+DELETE /api/users/:id/oidc owner valid => 404 application/json {"error":"Not found."}
+DELETE /api/users/:id/oidc owner malformed => 404 application/json {"error":"Not found."}
+DELETE /api/users/:id/oidc owner empty => 404 application/json {"error":"Not found."}
+DELETE /api/users/:id/oidc owner nul => 404 application/json {"error":"Not found."}
+DELETE /api/users/:id/oidc owner array => 404 application/json {"error":"Not found."}
+DELETE /api/users/:id/oidc owner chunked => 404 application/json {"error":"Not found."}
 POST /api/backups owner valid => 500 application/json {"error":"internal error"}
 POST /api/backups owner malformed => 400 application/json {"error":"enabled: Invalid input: expected boolean, received undefined"}
 POST /api/backups owner empty => 400 application/json {"error":"enabled: Invalid input: expected boolean, received undefined"}

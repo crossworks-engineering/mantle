@@ -410,7 +410,7 @@ export function passwordPolicyMin(): number | null {
 }
 
 /**
- * What the password rule holds a login to now (0347; docs/policy.md):
+ * What the password rule holds a login to now (0348; docs/policy.md):
  *  - 'change': its must_change_password flag is set (a password that fails
  *    the rule was taken): only the change-password step.
  *  - 'recheck': its password was never checked under this rule

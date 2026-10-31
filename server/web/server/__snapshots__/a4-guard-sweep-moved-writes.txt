@@ -981,7 +981,7 @@ w979 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111
 w980 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
 w981 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
 
-# moved cells of a write: 4292
+# moved cells of a write: 4316
 first POST /api/access-keys owner-cookie=w1
 first POST /api/access-keys admin-cookie=w1
 first POST /api/access-keys limited-cookie=w1
@@ -3260,6 +3260,20 @@ first DELETE /api/users/:id/devices/:jti member-cookie=w1
 first DELETE /api/users/:id/devices/:jti admin-bearer=w1
 first DELETE /api/users/:id/devices/:jti member-bearer=w1
 first DELETE /api/users/:id/devices/:jti revoked-bearer=w1
+first PATCH /api/users/:id/oidc owner-cookie=w1
+first PATCH /api/users/:id/oidc admin-cookie=w1
+first PATCH /api/users/:id/oidc limited-cookie=w1
+first PATCH /api/users/:id/oidc member-cookie=w1
+first PATCH /api/users/:id/oidc admin-bearer=w1
+first PATCH /api/users/:id/oidc member-bearer=w1
+first PATCH /api/users/:id/oidc revoked-bearer=w1
+first DELETE /api/users/:id/oidc owner-cookie=w1
+first DELETE /api/users/:id/oidc admin-cookie=w1
+first DELETE /api/users/:id/oidc limited-cookie=w1
+first DELETE /api/users/:id/oidc member-cookie=w1
+first DELETE /api/users/:id/oidc admin-bearer=w1
+first DELETE /api/users/:id/oidc member-bearer=w1
+first DELETE /api/users/:id/oidc revoked-bearer=w1
 first POST /api/users/:id/password owner-cookie=w1
 first POST /api/users/:id/password admin-cookie=w1
 first POST /api/users/:id/password limited-cookie=w1
@@ -5129,6 +5143,16 @@ more DELETE /api/users/:id/devices/:jti bumped-cookie=w1
 more DELETE /api/users/:id/devices/:jti gone-cookie=w1
 more DELETE /api/users/:id/devices/:jti rotated-bearer=w1
 more DELETE /api/users/:id/devices/:jti expired-bearer=w1
+more PATCH /api/users/:id/oidc disabled-cookie=w1
+more PATCH /api/users/:id/oidc bumped-cookie=w1
+more PATCH /api/users/:id/oidc gone-cookie=w1
+more PATCH /api/users/:id/oidc rotated-bearer=w1
+more PATCH /api/users/:id/oidc expired-bearer=w1
+more DELETE /api/users/:id/oidc disabled-cookie=w1
+more DELETE /api/users/:id/oidc bumped-cookie=w1
+more DELETE /api/users/:id/oidc gone-cookie=w1
+more DELETE /api/users/:id/oidc rotated-bearer=w1
+more DELETE /api/users/:id/oidc expired-bearer=w1
 more POST /api/users/:id/password disabled-cookie=w1
 more POST /api/users/:id/password bumped-cookie=w1
 more POST /api/users/:id/password gone-cookie=w1

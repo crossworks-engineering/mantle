@@ -283,6 +283,15 @@ export const ENV_NUMBERS = {
     doc: 'parser jobs one brain process sends at once',
   },
 
+  // Company sign-in (docs/oidc-sign-in.md)
+  MANTLE_OIDC_SESSION_HOURS: {
+    default: 12,
+    int: 'floor',
+    positive: true,
+    max: 168,
+    doc: 'life of a session made by company sign-in, hours (1 to 168)',
+  },
+
   // Local models
   MANTLE_LOCAL_EMBED_BATCH: {
     default: 16,

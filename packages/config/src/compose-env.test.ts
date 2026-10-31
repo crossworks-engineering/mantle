@@ -39,6 +39,15 @@ const BOX_FLAGS = [
   'MANTLE_POLICY_PROVIDER_ALLOW',
   'MANTLE_POLICY_PASSWORD_MIN',
   'MANTLE_POLICY_ENDPOINT_ALLOW',
+  // Company sign-in (docs/oidc-sign-in.md): without its lines a mode set in
+  // the host .env would never reach the app, and required would apply nothing.
+  'MANTLE_OIDC_MODE',
+  'MANTLE_OIDC_ISSUER',
+  'MANTLE_OIDC_CLIENT_ID',
+  'MANTLE_OIDC_CLIENT_SECRET',
+  'MANTLE_OIDC_LABEL',
+  'MANTLE_OIDC_SESSION_HOURS',
+  'MANTLE_OIDC_OUTSIDE',
 ];
 
 describe('compose passes the box flags to the app services', () => {

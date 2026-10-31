@@ -184,12 +184,15 @@ owner rows open to members (124):
   PUT /api/recall/maps/:id/cards/:card
   PUT /api/tables/:id/draft
   PUT /api/tree/items/:id/pin
-public (no credential, or its own) (16):
+public (no credential, or its own) (20):
+  DELETE /api/auth/oidc/link
   GET /.well-known/oauth-authorization-server
   GET /.well-known/oauth-protected-resource
   GET /api/appearance
   GET /api/appearance/logo
   GET /api/auth/bootstrap-state
+  GET /api/auth/oidc/config
+  GET /api/auth/oidc/status
   GET /api/auth/pair/:id
   GET /api/auth/whoami
   GET /api/federation/node/:id
@@ -198,6 +201,7 @@ public (no credential, or its own) (16):
   GET /pair
   POST /api/auth/logout
   POST /api/auth/mobile-logout
+  POST /api/auth/oidc/offer
   POST /api/federation/chunks
   POST /api/federation/query
   POST /api/oauth/authorize

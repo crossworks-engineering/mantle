@@ -26,6 +26,7 @@ import { LOGIN_ROLES } from '@mantle/client-types/role-names';
 import { CACHE_CONTROL } from '@/lib/cache-control';
 import { loginRole } from '@/lib/auth/admin-seat';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { DEVICE_BEARER, sessionHeld } from '@/lib/oidc/hold';
 
 export const policy = routePolicy({
   POST: {
@@ -202,6 +203,12 @@ export async function POST(req: Request) {
               : null;
   if (why) {
     refused(why);
+    return unauthorized();
+  }
+  // Company sign-in's one gate (lib/oidc/hold.ts): a bearer it holds is
+  // not kept alive by rotating it.
+  if (await sessionHeld(row.userId, DEVICE_BEARER)) {
+    refused('company-sign-in');
     return unauthorized();
   }
 

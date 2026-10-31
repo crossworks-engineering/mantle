@@ -3,6 +3,8 @@ import { publicLoginItself, unauthorizedRefusal } from '@/lib/auth';
 import { publicBaseUrl } from '@mantle/content';
 import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-code';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { ownOidcCookieEnd } from '@/lib/auth/own-device';
+import type { OidcRefusal } from '@mantle/client-types';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -30,7 +32,7 @@ export const policy = routePolicy({
  * string to encode as the QR (`<brain>/pair#v=1&code=…`); `id` is what
  * GET /api/auth/pair/[id] polls.
  */
-export async function POST() {
+export async function POST(req: Request) {
   // With the generic api.write row an Admin user's write writes (and any
   // login's with a key: the gate refuses a key here). A public row: the
   // login the pipeline answers at this read.
@@ -38,6 +40,17 @@ export async function POST() {
   // authPairIssue) and throws the one 429 over it.
   const login = await publicLoginItself({ audit: true });
   if (!login) return unauthorizedRefusal();
+  // A session made by company sign-in lasts MANTLE_OIDC_SESSION_HOURS; a
+  // phone paired from it would hold a refreshable bearer that outlives it
+  // (and a provider block). Refused until the phone signs in with company
+  // sign-in itself (docs/oidc-sign-in.md, "Not in this milestone").
+  if (login.source === 'web' && ownOidcCookieEnd(req) !== null) {
+    const body: OidcRefusal = {
+      error: 'A company sign-in session cannot pair a phone yet. Sign in on the phone itself.',
+      code: 'sso-session',
+    };
+    return NextResponse.json(body, { status: 403 });
+  }
 
   const issued = await issuePairCode(login.loginId);
   return NextResponse.json(

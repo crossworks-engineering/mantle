@@ -31,6 +31,8 @@ import {
   previewMyTelegramChat,
 } from '@/lib/agent-telegram';
 import { readJson } from '@/lib/read-body';
+import { ownOidcCookieEnd } from '@/lib/auth/own-device';
+import type { OidcRefusal } from '@mantle/client-types';
 import { routePolicy } from '@/lib/auth/route-declaration';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
 
@@ -66,6 +68,16 @@ export async function POST(req: Request) {
   // The gate took the row's per-login limit (lib/route-limits.ts
   // telegramPair).
   const login = chatCaller();
+  // A chat paired from a session made by company sign-in would act as the
+  // login after that session (and a provider block) ended: refused, as
+  // pairing a phone is (docs/oidc-sign-in.md).
+  if (ownOidcCookieEnd(req) !== null) {
+    const body: OidcRefusal = {
+      error: 'A company sign-in session cannot pair a Telegram chat yet.',
+      code: 'sso-session',
+    };
+    return NextResponse.json(body, { status: 403 });
+  }
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(

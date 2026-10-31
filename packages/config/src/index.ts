@@ -32,7 +32,7 @@
  * its own config block).
  */
 
-import { parseFlag, parseNumber, type NumberOptions } from './parse';
+import { FLAG_OFF_WORDS, FLAG_ON_WORDS, parseFlag, parseNumber, type NumberOptions } from './parse';
 import { policyProblems } from './policy';
 
 /** Every environment variable the server tree reads. Keep sorted.
@@ -120,6 +120,13 @@ export type KnownEnvName =
   | 'MANTLE_MCP_DIR'
   | 'MANTLE_MCP_TERMINAL'
   | 'MANTLE_MCP_TOOLSMITH_WRITE'
+  | 'MANTLE_OIDC_CLIENT_ID'
+  | 'MANTLE_OIDC_CLIENT_SECRET'
+  | 'MANTLE_OIDC_ISSUER'
+  | 'MANTLE_OIDC_LABEL'
+  | 'MANTLE_OIDC_MODE'
+  | 'MANTLE_OIDC_OUTSIDE'
+  | 'MANTLE_OIDC_SESSION_HOURS'
   | 'MANTLE_PG_DUMP'
   | 'MANTLE_PRINT_ORIGIN'
   | 'MANTLE_POLICY_ENDPOINT_ALLOW'
@@ -174,6 +181,9 @@ export type KnownEnvName =
   | 'MS_REDIRECT_URI'
   | 'MS_TENANT'
   | 'NODE_ENV'
+  | 'OIDC_CHECK_PASSWORD'
+  | 'OIDC_CHECK_REMOTE'
+  | 'OIDC_CHECK_USER'
   | 'OTLP_LOGS_ENDPOINT'
   | 'OTLP_TRACES_ENDPOINT'
   | 'PARSER_CAD_DIR'
@@ -304,6 +314,9 @@ export const INTERNAL_ENV: Partial<Record<KnownEnvName, string>> = {
   VERIFY_OWNER_ID: 'script: owner for verify-push-m2',
   VERIFY_AGENT_SLUG: 'script: agent for verify-push-m2',
   DOCS_MODEL: 'script: model for seed-docs',
+  OIDC_CHECK_USER: "script: the test provider's user for oidc:flow-check",
+  OIDC_CHECK_PASSWORD: "script: the test provider's password for oidc:flow-check",
+  OIDC_CHECK_REMOTE: 'script: on lets oidc:flow-check sign in at a non-loopback test provider',
   MANTLE_MCP_DIR: 'script: where the dev MCP bridge finds server/mcp',
   MANTLE_DEV_EMAIL: 'script: display email for the detached dev session',
   MANTLE_CRASH_TEST: 'script: the crash-test harness in server/api',
@@ -400,9 +413,85 @@ export function assertEnvShape(): void {
     problems.push('MANTLE_PUBLIC_URL must start with http:// or https://');
   }
   problems.push(...policyProblems());
+  // Company sign-in: nothing is asked of its settings while the mode is off
+  // (corporate plan 2.1). Required with a setting missing stops the boot:
+  // the operator's policy would not apply (optional falls back to
+  // passwords, logged, server/web lib/oidc/settings.ts).
+  const oidcMode = parseOidcMode(env('MANTLE_OIDC_MODE'));
+  if (oidcMode === null) {
+    problems.push(
+      'MANTLE_OIDC_MODE must be off, optional or required (empty is off; an on word is optional)',
+    );
+  } else if (oidcMode !== 'off') {
+    const outside = (env('MANTLE_OIDC_OUTSIDE') ?? '').trim().toLowerCase();
+    if (
+      outside !== '' &&
+      !(FLAG_ON_WORDS as readonly string[]).includes(outside) &&
+      !(FLAG_OFF_WORDS as readonly string[]).includes(outside)
+    ) {
+      problems.push('MANTLE_OIDC_OUTSIDE must be on or off');
+    }
+    const oidcIssuer = (env('MANTLE_OIDC_ISSUER') ?? '').trim();
+    if (oidcIssuer !== '' && !/^https?:\/\//.test(oidcIssuer)) {
+      problems.push(
+        'MANTLE_OIDC_ISSUER must start with https:// (http:// on a loopback test only)',
+      );
+    }
+    if (oidcMode === 'required') {
+      for (const name of [
+        'MANTLE_OIDC_ISSUER',
+        'MANTLE_OIDC_CLIENT_ID',
+        'MANTLE_PUBLIC_URL',
+      ] as const) {
+        if ((env(name) ?? '').trim() === '') {
+          problems.push(`${name} must be set when MANTLE_OIDC_MODE is required`);
+        }
+      }
+      // A value the sign-in cannot use would turn the policy off (settings
+      // read it as off) or lock linked logins out (plain http refused):
+      // required stops the boot instead.
+      for (const name of ['MANTLE_OIDC_ISSUER', 'MANTLE_PUBLIC_URL'] as const) {
+        const raw = (env(name) ?? '').trim();
+        if (raw === '') continue;
+        let url: URL | null = null;
+        try {
+          url = new URL(raw);
+        } catch {
+          problems.push(`${name} must be a URL when MANTLE_OIDC_MODE is required`);
+        }
+        if (
+          url &&
+          url.protocol === 'http:' &&
+          !/^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(url.hostname)
+        ) {
+          problems.push(
+            `${name} must use https when MANTLE_OIDC_MODE is required (http only on a loopback test)`,
+          );
+        }
+      }
+    }
+  }
   if (problems.length > 0) {
     throw new Error(`[config] environment is malformed:\n  - ${problems.join('\n  - ')}`);
   }
+}
+
+/** The sign-in modes of MANTLE_OIDC_MODE (docs/oidc-sign-in.md). */
+export type OidcMode = 'off' | 'optional' | 'required';
+
+/**
+ * MANTLE_OIDC_MODE from its raw string: blank or an off word is off; an on
+ * word (an operator who turns it on and says no more) is optional, never
+ * required; `optional` and `required` are themselves. Anything else is null:
+ * assertEnvShape refuses it at boot, so a typo never picks a mode.
+ */
+export function parseOidcMode(raw: string | null | undefined): OidcMode | null {
+  const v = raw?.trim().toLowerCase();
+  if (!v) return 'off';
+  if (v === 'optional' || v === 'required') return v;
+  if ((FLAG_OFF_WORDS as readonly string[]).includes(v)) return 'off';
+  if ((FLAG_ON_WORDS as readonly string[]).includes(v)) return 'optional';
+  return null;
 }
 
 export * from './services';

@@ -36,6 +36,19 @@ export type AuditEntry = {
     | 'push.relay_registered'
     | 'auth.device_revoked'
     | 'auth.password_change'
+    // Company sign-in (lib/oidc, docs/oidc-sign-in.md): a password sign-in
+    // the required mode refused (detail.reason: sso-required or
+    // link-required), a login that linked or removed its company account,
+    // or hid the link offer; an admin marked an outside person or removed
+    // a login's link.
+    | 'auth.login_refused'
+    | 'auth.oidc_link_started'
+    | 'auth.oidc_linked'
+    | 'auth.oidc_unlinked'
+    | 'auth.oidc_offer_dismissed'
+    | 'auth.oidc_sessions_ended'
+    | 'users.oidc_outside'
+    | 'users.oidc_unlinked'
     // A member's bearer became a session cookie (POST /api/auth/sso), what
     // carries it to the MCP consent page. An admin's is an api.write.
     | 'auth.sso'

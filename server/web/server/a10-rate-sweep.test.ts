@@ -320,6 +320,21 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     sharesWith: others(TOKEN_LOGINS, row),
   })),
   { row: 'POST /api/auth/sso', cred: 'none', limits: [ip('owner-sso:ip', 30)] },
+  // Company sign-in (lib/oidc, 2026-10-30): the sweep runs with it off,
+  // where start's limit is the gate's (no caller) and the callback and the
+  // link start answer 404 before the read that takes theirs.
+  ...getHead('/api/auth/oidc/start', { cred: 'none', limits: [ip('auth:oidc-start', 120)] }),
+  ...getHead('/api/auth/oidc/callback', {
+    cred: 'none',
+    limits: [ip('auth:oidc-callback', 120)],
+  }),
+  {
+    row: 'POST /api/auth/oidc/link',
+    cred: 'none',
+    body: JSON_BODY,
+    limits: [ip('auth:oidc-link', 60)],
+    crossSite: true,
+  },
   ...getHead('/api/auth/invite/:code', {
     cred: 'none',
     limits: [ip('auth:invite-preview', 30), failures('auth:invite-preview:failed', 600)],

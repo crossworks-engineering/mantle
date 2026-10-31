@@ -4,6 +4,7 @@ import { db, authUsers, eq, sql } from '@mantle/db';
 import { authenticatePassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
+import { offerTicketAfterPassword, passwordRefusal, passwordSignInRule } from '@/lib/oidc/rules';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -51,6 +52,18 @@ export async function POST(req: Request) {
   }
 
   const userId = login.id;
+  // Company sign-in in required mode (lib/oidc/rules.ts): a linked login
+  // uses it only; an unlinked one is held to the link step. Off and
+  // optional: 'allow', with no read.
+  const sso = await passwordSignInRule(userId);
+  if (sso !== 'allow') {
+    return passwordRefusal(
+      req,
+      sso,
+      { path: '/api/auth/login', email, loginId: userId },
+      { epoch: login.sessionEpoch },
+    );
+  }
   await db
     .update(authUsers)
     .set({ lastLoginAt: sql`now()` })
@@ -66,5 +79,6 @@ export async function POST(req: Request) {
 
   const res = NextResponse.json({ ok: true });
   setSessionCookie(res, req, userId, login.sessionEpoch);
+  offerTicketAfterPassword(res, req, userId, login.sessionEpoch);
   return res;
 }

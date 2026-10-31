@@ -52,28 +52,59 @@ export function keyMadeText(
 /** Send the notice. Never throws. */
 export async function notifyKeyMade(n: KeyMadeNotice): Promise<void> {
   try {
-    if (n.role === 'admin') {
-      await pushToAdmin(n.ownerId, n.loginId, keyMadeText(n, { withName: true }));
-      return;
-    }
-    const text = keyMadeText(n, { withName: false });
-    const assistant = await defaultWorkspaceAssistant(n.ownerId, n.loginId);
-    if (!assistant) return;
-    await appendThreadMessage({
+    const admin = n.role === 'admin';
+    await noticeToLogin({
       ownerId: n.ownerId,
-      agentId: assistant.id,
       loginId: n.loginId,
-      direction: 'outbound',
-      text,
-      channel: 'web',
+      admin,
+      text: keyMadeText(n, { withName: admin }),
+      deepLink: '/settings/api-access',
+      collapseKey: 'api-key-made',
     });
   } catch (err) {
     console.error('[access-keys] key-made notice failed:', err);
   }
 }
 
+/**
+ * A fixed notice to one login about its own credentials (a key made, a
+ * company sign-in link made): a push sealed to an Admin user's own devices,
+ * or one message in a member's own thread with their default assistant
+ * (above). `text` is the caller's fixed text: never caller-chosen text in a
+ * member's model-facing thread. Throws on a failure; the callers log it.
+ */
+export async function noticeToLogin(n: {
+  ownerId: string;
+  loginId: string;
+  admin: boolean;
+  text: string;
+  deepLink: string;
+  collapseKey: string;
+}): Promise<void> {
+  if (n.admin) {
+    await pushToAdmin(n.ownerId, n.loginId, n.text, n.deepLink, n.collapseKey);
+    return;
+  }
+  const assistant = await defaultWorkspaceAssistant(n.ownerId, n.loginId);
+  if (!assistant) return;
+  await appendThreadMessage({
+    ownerId: n.ownerId,
+    agentId: assistant.id,
+    loginId: n.loginId,
+    direction: 'outbound',
+    text: n.text,
+    channel: 'web',
+  });
+}
+
 /** A push sealed to ONE admin's own devices (never another admin's). */
-async function pushToAdmin(ownerId: string, loginId: string, text: string): Promise<void> {
+async function pushToAdmin(
+  ownerId: string,
+  loginId: string,
+  text: string,
+  deepLink: string,
+  collapseKey: string,
+): Promise<void> {
   // Loaded here: the route must not load the push store on every import.
   const { getPushInstance, listAdminSubscriptions } = await import('./push/store');
   const { sendToDevices } = await import('./push/notify');
@@ -84,8 +115,8 @@ async function pushToAdmin(ownerId: string, loginId: string, text: string): Prom
   await sendToDevices(
     instance,
     devices,
-    { v: 1, t: 'Mantle', b: text, deepLink: '/settings/api-access', ts: Date.now() },
-    'api-key-made',
+    { v: 1, t: 'Mantle', b: text, deepLink, ts: Date.now() },
+    collapseKey,
     { opaqueFor: loginId },
   );
 }

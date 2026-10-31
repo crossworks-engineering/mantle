@@ -629,7 +629,10 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // module; the workspace role reads six under the participant rule).
 // mcp_calls all (0345: the MCP call log, system-written, INSERT only on the
 // narrow route; its reap runs outside every scope).
-const NARROW_COUNTS = { all: 107, read: 40, none: 8 };
+// oidc_signin_links, oidc_login_state and oidc_mode_state read (0349: a
+// link, the outside mark and the boot's applied mode are written at the
+// spot oidc-link only).
+const NARROW_COUNTS = { all: 107, read: 43, none: 8 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));

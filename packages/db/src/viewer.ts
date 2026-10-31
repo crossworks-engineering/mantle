@@ -1154,6 +1154,8 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
     'a phone pairing code minted for a login (pairing_codes INSERT, login-self /api/auth/pair, pair-code.ts issuePairCode): a code signs a phone in as the login, a way in the narrow login may not mint (no INSERT on pairing_codes; it may delete one)',
   'oauth-code':
     "an MCP client's authorization code minted for a login (oauth_auth_codes INSERT, /api/oauth/authorize, mcp-oauth.ts mintAuthCode): the code exchanges for the login's token, a way in the narrow login may not mint (it may delete one)",
+  'oidc-link':
+    "a company sign-in link made or removed and a login's company sign-in state (oidc_signin_links INSERT, DELETE and its last-use stamp; oidc_login_state: the users area's outside mark and the login's own dismissed offer; server/web lib/oidc/store.ts, 0349): a link signs a provider account in as the login and the outside mark keeps a password in required mode, so the narrow login only reads both tables",
   'member-invite':
     'a member invite minted (member_invites INSERT, the users area, member-invites.ts createMemberInvite): its code redeems into a new login; the narrow login may only revoke one (revoked_at, never cleared: 0319)',
   'peer-access':

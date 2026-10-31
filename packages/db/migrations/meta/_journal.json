@@ -2437,6 +2437,13 @@
       "when": 1790460060000,
       "tag": "0348_must_change_password",
       "breakpoints": true
+    },
+    {
+      "idx": 349,
+      "version": "7",
+      "when": 1790546460000,
+      "tag": "0349_oidc_signin",
+      "breakpoints": true
     }
   ]
 }

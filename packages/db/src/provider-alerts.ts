@@ -14,7 +14,7 @@ import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { systemDb } from './gateway/handles';
 import { providerAlerts, type ProviderAlertRow } from './schema/provider-alerts';
 
-/** `model_policy` (0347): a call the box policy refused (@mantle/voice
+/** `model_policy` (0348): a call the box policy refused (@mantle/voice
  *  model-policy.ts, docs/policy.md). The extract circuit reads only the
  *  other two. */
 export type ProviderSubject = 'embedding' | 'extraction' | 'model_policy';

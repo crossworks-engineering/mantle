@@ -159,6 +159,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],
   'server/web/lib/pair-code.ts': ['pair-code'],
+  'server/web/lib/oidc/store.ts': ['oidc-link'],
   'server/web/lib/mcp-oauth.ts': ['oauth-code'],
   'packages/content/src/member-invites.ts': ['member-invite'],
   'packages/content/src/peers/registry.ts': ['peer-access'],
@@ -245,6 +246,13 @@ export const FULL_ROUTE_SPOT_WRAPPERS = Object.freeze({
     spot: 'profile-row',
     from: 'packages/content/src/profile-preferences.ts',
     callers: ['packages/content/src/profile-preferences.ts', 'packages/content/src/backup.ts'],
+  },
+  // Company sign-in: every write of oidc_signin_links and oidc_login_state
+  // (a link made or removed, its last use, the outside mark, the offer).
+  oidcWrite: {
+    spot: 'oidc-link',
+    from: 'server/web/lib/oidc/store.ts',
+    callers: ['server/web/lib/oidc/store.ts'],
   },
 });
 

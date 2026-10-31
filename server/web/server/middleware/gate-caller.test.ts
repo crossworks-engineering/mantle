@@ -1802,6 +1802,12 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         'GET /api/oauth/authorize',
         'POST /api/oauth/authorize',
         'POST /api/auth/sso',
+        // Company sign-in (lib/oidc): the login a public row reads.
+        'GET /api/auth/oidc/status',
+        'GET /api/auth/oidc/callback',
+        'POST /api/auth/oidc/link',
+        'DELETE /api/auth/oidc/link',
+        'POST /api/auth/oidc/offer',
       ]),
     );
     expect(keysOf('ownerAtRead')).toEqual(['PATCH /api/pages/:id', 'PATCH /api/v1/pages/:id']);

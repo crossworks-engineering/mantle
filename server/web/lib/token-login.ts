@@ -10,6 +10,7 @@ import { updateTheAppResponse } from '@/lib/mobile-build';
 import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from './cache-control';
 import { loginIsAdmin, loginRole } from '@/lib/auth/admin-seat';
+import { passwordRefusal, passwordSignInRule } from '@/lib/oidc/rules';
 
 /**
  * Shared credentials→bearer flow behind BOTH token-login routes:
@@ -83,6 +84,18 @@ export async function handleTokenLogin(
       ...requestMetaFrom(req),
     });
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
+  }
+
+  // Company sign-in in required mode (lib/oidc/rules.ts): no bearer for a
+  // linked login, nor for an unlinked one (it links on the web first).
+  const sso = await passwordSignInRule(userId);
+  if (sso !== 'allow') {
+    return passwordRefusal(req, sso, {
+      path: opts.path,
+      email,
+      loginId: userId,
+      channel: opts.channel,
+    });
   }
 
   const [login] =

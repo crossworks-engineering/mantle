@@ -81,6 +81,7 @@ import {
   type RouteRow,
 } from './route-policy';
 import { auditsAsWrite } from './route-scope';
+import { DEVICE_BEARER, cookieSessionKind, sessionHeld } from '../oidc/hold';
 import type { Login } from './login';
 import { takeRouteLimits, type LimitLogin } from '../route-limits';
 import {
@@ -514,6 +515,9 @@ async function applyBearerEffects(found: {
  *  cookie it mints to it), its effects applied. */
 async function bearerLogin(): Promise<{ resolved: Resolved; jti: string } | null> {
   const found = await requestLogins().bearer();
+  // Company sign-in's gate (lib/oidc/hold.ts) before any effect: a bearer
+  // it holds is not stamped and upgrades to nothing.
+  if (found.resolved && (await sessionHeld(found.resolved.loginId, DEVICE_BEARER))) return null;
   await applyBearerEffects(found);
   return found.resolved && found.jti ? { resolved: found.resolved, jti: found.jti } : null;
 }
@@ -729,7 +733,11 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
       // a role change or "sign out everywhere" bumps the row.
       // A cookie the bearer upgrade minted lives only while its device does.
       const deviceOk = !data.dj || (await cookieDeviceAlive(data.dj, data.uid));
-      if (row && loginUsable(row) && row.sessionEpoch === data.ep && deviceOk) {
+      // Company sign-in's one gate (lib/oidc/hold.ts): whether this
+      // cookie, by its kind and life left, may act now. A password cookie
+      // outside required mode: no read.
+      const held = row ? await sessionHeld(row.id, cookieSessionKind(data)) : false;
+      if (row && loginUsable(row) && row.sessionEpoch === data.ep && deviceOk && !held) {
         const resolved = await resolvedFor(row, 'web');
         if (resolved) return { ...NO_LOGIN, resolved, mode: 'rw' };
       }
@@ -737,6 +745,10 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
   }
   // Mobile companion: Authorization: Bearer <mobile-token>.
   const found = await bearer();
+  // A device bearer, through the same gate (no effect applied, no stamp).
+  if (found.resolved && (await sessionHeld(found.resolved.loginId, DEVICE_BEARER))) {
+    return NO_LOGIN;
+  }
   return {
     resolved: found.resolved,
     mode: found.resolved ? 'rw' : null,
@@ -2393,13 +2405,16 @@ export function setSessionCookie(
   loginId: string,
   epoch: number,
   /** `deviceJti`: the device token the cookie rides with (the web client's
-   *  upgrade): the cookie then lives only while that device does. */
-  opts: { ttlSeconds?: number; deviceJti?: string } = {},
+   *  upgrade): the cookie then lives only while that device does. `oidc`: a
+   *  session made by company sign-in (lib/oidc), marked so a re-mint keeps
+   *  its short life (own-device.ts ownCookieOpts). */
+  opts: { ttlSeconds?: number; deviceJti?: string; oidc?: boolean } = {},
 ): void {
   const { value, maxAgeSec } = buildSessionCookie(loginId, {
     epoch,
     ttlSeconds: opts.ttlSeconds,
     deviceJti: opts.deviceJti,
+    oidc: opts.oidc,
   });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,
