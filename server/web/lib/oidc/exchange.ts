@@ -23,7 +23,6 @@ import { buildMobileToken, stampCompanySignIn } from '@/lib/auth';
 import { loginRole } from '@/lib/auth/admin-seat';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { brainIdField } from '@/lib/brain-identity';
-import { CACHE_CONTROL } from '@/lib/cache-control';
 import { readJson } from '@/lib/read-body';
 import { deviceLabel } from '@/lib/token-login';
 import { oidcOffAnswer } from './flow';
@@ -33,8 +32,6 @@ import { notifyLinkMade } from './notify';
 import { oidcSettings, type OidcOn } from './settings';
 import { createLink, oidcLoginRow, spendHandoffCode, type OidcLoginRow } from './store';
 
-const NO_STORE = { 'Cache-Control': CACHE_CONTROL.none } as const;
-
 const Body = z.object({
   code: z.string().min(1).max(128),
   verifier: z.string().min(1).max(128),
@@ -43,7 +40,7 @@ const Body = z.object({
 });
 
 function refused(status: number, body: OidcExchangeRefusal): NextResponse {
-  return NextResponse.json(body, { status, headers: NO_STORE });
+  return NextResponse.json(body, { status });
 }
 
 const CODE_GONE: OidcExchangeRefusal = {
@@ -97,7 +94,7 @@ async function bearerAnswer(
     sso: true,
     ...(how === 'link' ? { linked: true as const } : {}),
   };
-  return NextResponse.json(body, { headers: NO_STORE });
+  return NextResponse.json(body);
 }
 
 /** POST /api/auth/oidc/exchange. */
@@ -149,5 +146,5 @@ export async function oidcExchange(req: Request): Promise<NextResponse> {
     ...requestMetaFrom(req),
   });
   if (spent.held) return bearerAnswer(req, s, row, deviceName, 'link');
-  return NextResponse.json({ linked: true } satisfies OidcLinkAnswer, { headers: NO_STORE });
+  return NextResponse.json({ linked: true } satisfies OidcLinkAnswer);
 }

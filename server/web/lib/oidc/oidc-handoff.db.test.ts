@@ -498,11 +498,8 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
   it('a fresh sign-in: the linked account or nothing, one code for one key', async () => {
     await linkDirect(person, 'sub-p');
     const { token } = await signInBearer('sub-p');
-    const list = await call('/api/access-keys', { bearer: token });
-    expect(await list.json()).toMatchObject({
-      needsPassword: false,
-      stepUp: { kind: 'company', label: 'Company', passwordToo: true },
-    });
+    const status = await call('/api/auth/oidc/status', { bearer: token });
+    expect(await status.json()).toMatchObject({ linked: true, passwordConfirms: true });
     const startFresh = async () => {
       const res = await call('/api/auth/oidc/fresh', {
         method: 'POST',
@@ -566,8 +563,8 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     await linkDirect(person, 'sub-p');
     const { token } = await signInBearer('sub-p');
     setMode('required');
-    const list = await call('/api/access-keys', { bearer: token });
-    expect(await list.json()).toMatchObject({ stepUp: { passwordToo: false } });
+    const status = await call('/api/auth/oidc/status', { bearer: token });
+    expect(await status.json()).toMatchObject({ linked: true, passwordConfirms: false });
     const made = await call('/api/access-keys', {
       method: 'POST',
       bearer: token,
@@ -734,8 +731,6 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     const body = (await signIn.json()) as { token: string; oidcTicket?: string };
     expect(body.oidcTicket).toBeUndefined();
     const list = await call('/api/access-keys', { bearer: body.token });
-    const keys = (await list.json()) as { needsPassword: boolean; stepUp?: unknown };
-    expect(keys.needsPassword).toBe(true);
-    expect(keys.stepUp).toBeUndefined();
+    expect(((await list.json()) as { needsPassword: boolean }).needsPassword).toBe(true);
   });
 });
