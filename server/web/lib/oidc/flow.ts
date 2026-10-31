@@ -89,7 +89,7 @@ import {
   newFlowSecrets,
   type ProviderIdentity,
 } from './provider';
-import { forgetHolds, outsideHonoured } from './hold';
+import { forgetHolds, outsideHonoured, ruleOf } from './hold';
 import { notifyLinkMade } from './notify';
 import { oidcSettings, type OidcOn } from './settings';
 import {
@@ -200,6 +200,8 @@ export async function oidcStatusAnswer(readLogin: LoginReader): Promise<NextResp
     offer: !linked && !outside && !dismissed,
     linkRequired: s.mode === 'required' && !linked && !owner && !outside,
     canUnlink: linked && mayUnlink(s, owner, outside),
+    passwordConfirms:
+      !!facts && ruleOf(s, facts) === 'allow' && (await loginHasPassword(login.loginId)),
   };
   return json(body);
 }

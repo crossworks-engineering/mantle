@@ -300,18 +300,18 @@ link, a fresh sign-in with no `auth_time` is refused: it stands in for a
 password, so it must be proven, and refusing it strands nobody. For Entra, add
 it as an optional claim ([oidc-entra.md](oidc-entra.md)).
 
-- `GET /api/access-keys` answers `stepUp: { kind: 'company', label,
-passwordToo }` and `needsPassword: false` for a linked login. The client calls
-  `POST /api/auth/oidc/fresh { redirect, challenge }`, opens `url`, and sends
-  `fresh: { code, verifier }` on the create. A failure answers 403 with
-  `reason: 'fresh-sign-in'`.
+- At key creation the client reads `GET /api/auth/oidc/status`: a `linked`
+  login calls `POST /api/auth/oidc/fresh { redirect, challenge }`, opens `url`,
+  and sends `fresh: { code, verifier }` on `POST /api/access-keys`. Where the
+  status says `passwordConfirms` it may offer the password too. A failure
+  answers 403 with `reason: 'fresh-sign-in'`.
 - The MCP consent page is a page of this brain, so it needs no verifier: its
   **Confirm** button runs the flow in that browser and comes back to the page
   with a code, bound to that client, redirect and challenge, and spent by the
   same session on Allow.
 
 In required mode a typed password does not confirm a login whose only way in
-is company sign-in. In optional mode it still does (`passwordToo`), for an app
+is company sign-in. In optional mode it still does (`passwordConfirms`), for an app
 from before this milestone and for a provider that is down. The original
 account keeps its password in every mode: it is the emergency admin. An
 unlinked login confirms with its password.

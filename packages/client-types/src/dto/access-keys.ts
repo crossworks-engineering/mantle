@@ -75,14 +75,11 @@ export type AccessKeyList = {
    *  included: a login in the Admin workspace with its keys area (never the
    *  role). Everyone else's keys last at most 90 days. */
   maxExpiryDays: number | null;
-  /** Whether the create needs the caller's password: always, unless
-   *  `stepUp` is set. */
+  /** Whether the create needs the caller's password: always on the wire. A
+   *  login that GET /api/auth/oidc/status calls `linked` sends `fresh`
+   *  instead (POST /api/auth/oidc/fresh), or its password where the status
+   *  says `passwordConfirms`. */
   needsPassword: boolean;
-  /** A login linked to a company account confirms with a fresh company
-   *  sign-in in place of its password (POST /api/auth/oidc/fresh, then
-   *  `fresh` on the create). Absent: the password. `passwordToo`: it may
-   *  type its password instead (while its provider is down, say). */
-  stepUp?: { kind: 'company'; label: string; passwordToo: boolean };
 };
 
 /** POST /api/access-keys body. The key acts as the caller's own login:
@@ -99,7 +96,7 @@ export type AccessKeyCreateInput = {
   /** The caller's password, when `needsPassword` (never stored, never
    *  logged). */
   password?: string;
-  /** A fresh company sign-in, when the list answered `stepUp`. */
+  /** A fresh company sign-in, for a linked login. */
   fresh?: OidcFreshProof;
 };
 

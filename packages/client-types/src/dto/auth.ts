@@ -65,6 +65,10 @@ export type OidcStatusDTO =
       /** DELETE /api/auth/oidc/link is open to it (optional mode, or an
        *  owner or outside login, while linked). */
       canUnlink: boolean;
+      /** A linked login confirms key creation with a fresh sign-in; this says
+       *  whether it may type its password instead (optional mode, or the
+       *  original account: a provider can be down). */
+      passwordConfirms: boolean;
     };
 
 /**
