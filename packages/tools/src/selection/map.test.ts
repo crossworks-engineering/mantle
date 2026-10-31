@@ -97,7 +97,7 @@ describe('buildMapToolset', () => {
     );
     expect(set.systemBlock).toContain('page (rich documents: drafts, blocks, commit, share): ');
     expect(set.systemBlock).toContain('block(append delete) commit');
-    expect(set.systemBlock).toContain('web (search the web, fetch a page, crawl or map a site): ');
+    expect(set.systemBlock).toContain('web (web search, page fetch, crawl or map a site): ');
   });
 
   it('is byte-stable whatever order the grant comes in', () => {
