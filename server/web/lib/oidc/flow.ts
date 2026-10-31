@@ -376,6 +376,18 @@ function flowFailed(
   return res;
 }
 
+/** What the ID token must show of when the person signed in: only a link in
+ *  a brain or client page may rest on the asking. A flow that stands in for a
+ *  password, or ends where nobody watches (mustAsk), must prove it. */
+function freshRule(
+  s: OidcOn,
+  flow: OidcFlow,
+): { linkStartedAt?: number; freshStartedAt?: number } {
+  if (flow.startedAt === undefined) return {};
+  const proven = flow.purpose !== 'link' || (!!flow.handoff && mustAsk(s, flow.handoff));
+  return proven ? { freshStartedAt: flow.startedAt } : { linkStartedAt: flow.startedAt };
+}
+
 /** GET /api/auth/oidc/callback: back from the provider. */
 export async function oidcCallback(req: Request, readLogin: LoginReader): Promise<NextResponse> {
   const s = oidcSettings();
@@ -396,16 +408,7 @@ export async function oidcCallback(req: Request, readLogin: LoginReader): Promis
   if (query.has('error')) return flowFailed(req, s, flow, 'cancelled');
   let identity: ProviderIdentity;
   try {
-    identity = await identityFromCallback(
-      s,
-      query,
-      flow,
-      flow.purpose === 'link'
-        ? { linkStartedAt: flow.startedAt }
-        : flow.startedAt === undefined
-          ? {}
-          : { freshStartedAt: flow.startedAt },
-    );
+    identity = await identityFromCallback(s, query, flow, freshRule(s, flow));
   } catch (err) {
     log('auth').warn(`company sign-in: the callback did not verify: ${errorMessage(err)}`);
     return flowFailed(req, s, flow, 'failed');
@@ -492,6 +495,8 @@ function consentCodeBinding(consent: string): string {
     clientId: q.get('client_id') ?? '',
     redirectUri: q.get('redirect_uri') ?? '',
     codeChallenge: q.get('code_challenge') ?? '',
+    scope: q.get('scope') ?? '',
+    foreignResource: q.get('resource') ?? '',
   });
 }
 

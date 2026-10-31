@@ -161,9 +161,12 @@ export async function identityFromCallback(
   // plan 17.1), said once in the log: the fresh sign-in is then asked, not
   // proven.
   //
-  // A fresh sign-in stands in for a password, so there it must be proven: a
+  // A fresh sign-in stands in for a password, and a code handed to an app or
+  // a named origin goes where nobody watches, so there it must be proven: a
   // provider that sends no auth_time is refused (OIDC Core requires it when
-  // max_age is sent). That strands nobody: it stops one key or one consent.
+  // max_age is sent). In required mode that stops every linked person on the
+  // desktop app and the phone until the provider sends it, so
+  // oidc:flow-check tests it before a box turns on (docs/oidc-sign-in.md).
   const startedAt = opts.freshStartedAt ?? opts.linkStartedAt;
   if (startedAt !== undefined) {
     const at = claims.auth_time;

@@ -147,9 +147,10 @@ the subject when the provider sends them; nothing matches on them.
   (`prompt=login`, `max_age=0`), so a link does not take whichever account
   the browser happens to be signed into. When the ID token says when the
   person signed in (`auth_time`), that time must be at or after the link
-  started (one minute of clock skew allowed); an older one is refused. A
-  provider that sends no `auth_time` is let through, with one log line:
-  the fresh sign-in was asked for, not proven.
+  started (one minute of clock skew allowed); an older one is refused. On
+  the web app, a provider that sends no `auth_time` is let through, with one
+  log line: the fresh sign-in was asked for, not proven. A link handed to the
+  desktop app, the phone or a named origin must prove it.
 - A login links itself, in its own session, with one click right after a
   password sign-in (the 5-minute ticket: a cookie on the same browser, used
   up when the link starts, or `oidcTicket` in a token login's answer), or
@@ -264,7 +265,9 @@ any page that receives a code could send it on.
   provider to sign the person in (`prompt=login`, `max_age=0`) and must prove
   it did (`auth_time` at or after the flow's start): a code is never handed
   over silently. A provider that sends no `auth_time` signs nobody in on the
-  desktop app or the phone.
+  desktop app or the phone, and links nobody there, and each try ends with a
+  bare `failed` and one log line. Run `oidc:flow-check` before a box turns
+  company sign-in on: it fails on such a provider.
 - `<origin>/auth/oidc`, the web app's own page, on this brain's public origin
   or `MANTLE_CLIENT_ORIGIN`. A client origin must be a named CORS entry too, or
   it cannot post the exchange.
@@ -297,8 +300,8 @@ be the one linked to this login (else `wrong-account`), and one code buys one
 request, for the login and session epoch that asked. The ID token must say
 when the person signed in (`auth_time`, at or after the flow's start). Unlike a
 link, a fresh sign-in with no `auth_time` is refused: it stands in for a
-password, so it must be proven, and refusing it strands nobody. For Entra, add
-it as an optional claim ([oidc-entra.md](oidc-entra.md)).
+password, so it must be proven. For Entra, add it as an optional claim
+([oidc-entra.md](oidc-entra.md)).
 
 - At key creation the client reads `GET /api/auth/oidc/status`: a `linked`
   login calls `POST /api/auth/oidc/fresh { redirect, challenge }`, opens `url`,
@@ -307,8 +310,8 @@ it as an optional claim ([oidc-entra.md](oidc-entra.md)).
   answers 403 with `reason: 'fresh-sign-in'`.
 - The MCP consent page is a page of this brain, so it needs no verifier: its
   **Confirm** button runs the flow in that browser and comes back to the page
-  with a code, bound to that client, redirect and challenge, and spent by the
-  same session on Allow.
+  with a code, bound to that client, redirect, challenge, scope and resource,
+  and spent by the same session on Allow.
 
 In required mode a typed password does not confirm a login whose only way in
 is company sign-in. In optional mode it still does (`passwordConfirms`), for an app

@@ -154,13 +154,23 @@ describe('the code and the verifier', () => {
 });
 
 describe('the consent binding', () => {
-  const q = { clientId: 'c', redirectUri: 'https://x.invalid/cb', codeChallenge: 'ch' };
+  const q = {
+    clientId: 'c',
+    redirectUri: 'https://x.invalid/cb',
+    codeChallenge: 'ch',
+    scope: 'mcp',
+    foreignResource: '',
+  };
 
   it('names one request', () => {
     expect(consentBinding(q)).toBe(consentBinding({ ...q }));
     expect(consentBinding({ ...q, clientId: 'd' })).not.toBe(consentBinding(q));
     expect(consentBinding({ ...q, redirectUri: 'https://y.invalid/' })).not.toBe(consentBinding(q));
     expect(consentBinding({ ...q, codeChallenge: 'other' })).not.toBe(consentBinding(q));
+    expect(consentBinding({ ...q, scope: 'mcp more' })).not.toBe(consentBinding(q));
+    expect(consentBinding({ ...q, foreignResource: 'https://y.invalid/' })).not.toBe(
+      consentBinding(q),
+    );
   });
 
   it('can never pass as a client challenge', () => {
