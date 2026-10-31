@@ -422,9 +422,10 @@ function forkChild(): Child {
   const child: Child = { proc, alive: true, doomed: false };
   children.add(child);
   // An idle pool must not keep the server (or a test run) from exiting; a
-  // running statement's own timer holds the event loop while it waits.
+  // running statement's own timer holds the event loop while it waits. Bun's
+  // channel has no unref.
   proc.unref();
-  proc.channel?.unref();
+  proc.channel?.unref?.();
   proc.on('message', (m: Reply & { id?: number }) => {
     const onReply = child.onReply;
     child.onReply = undefined;

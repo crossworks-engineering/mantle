@@ -174,7 +174,8 @@ export function providerFetch(
  * lets the next one trust a test server's self-signed certificate.
  */
 export function _resetProviderDispatcher(ca?: string): void {
-  void agent?.close().catch(() => {});
+  // Bun's undici Agent has no close.
+  void agent?.close?.().catch(() => {});
   agent = undefined;
   testConnect = ca ? { ca } : undefined;
 }

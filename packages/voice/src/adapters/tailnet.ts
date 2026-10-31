@@ -62,6 +62,7 @@ export async function tailnetFetch(
 
 /** Test seam — clears the cached agent so an env change takes effect. */
 export function _resetTailnetProxy(): void {
-  void _agent?.close().catch(() => {});
+  // Bun's undici ProxyAgent has no close.
+  void _agent?.close?.().catch(() => {});
   _agent = undefined;
 }
