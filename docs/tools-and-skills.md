@@ -602,6 +602,55 @@ the rule line in `tool_search` reduces. Real turns that need a search:
 the agent's other params too). Delegated specialists use their own setting.
 The MCP surface is unaffected (MCP clients do their own deferral).
 
+## Map tool loading: every tool named, cheaply
+
+`params.tool_loading: 'map'` is the third mode
+(`packages/tools/src/selection/map.ts`). It sends the same core as
+`'deferred'` (same list, same order, heartbeat affordances after), then two
+meta tools:
+
+- `tool_call {name, arguments}`: calls any granted tool by its full name;
+- `tool_help {names? | area?}`: returns full descriptions (first 600
+  characters) and input schemas, by name or for one area (up to 15 tools;
+  the note names the rest).
+
+`use_tool` and `tool_search` are not sent, but the loop still takes them as
+aliases (a model used to deferred loading may call them).
+
+The first system block gets a TOOL MAP in place of the catalog: every other
+granted tool's name, written as a grammar, one line per area (the slug's first
+word): `area (gloss): object(verb verb) verb`. `page: block(update)` reads as
+`page_block_update`; `.` is the bare object (`web: search(. pro)` is
+`web_search` and `web_search_pro`). Areas with more tools come first. Each
+area line carries one gloss from `TOOL_AREA_GLOSSES`
+(`packages/tools/src/selection/areas.ts`), shown only when a builtin of that
+area is granted. An area with one tool goes on an `other:` list, one line per
+name, with the opening of its description (70 characters) when the text is
+brain-authored, the name alone when a remote party wrote it (`toolSourceOf`,
+as for the catalog). Everything is sorted, so the block is byte-stable for a
+grant in any order.
+
+Dispatch is the deferred path: `tool_call` unwraps to the real call before
+the guards, the validator, the gate and the trace, so a tool the gate refuses
+is refused the same way through `tool_call` as by its own name. Two replies
+are the map's own: wrong arguments to a mapped tool get its input schema back
+once per tool per turn, and a name the loop does not list (made up, misspelt
+or refused here) gets the closest three listed names ("Did you mean: ...").
+Only listed names are ever suggested.
+
+**Adding a builtin area.** A new area with two or more tools outside the core
+needs a gloss in `TOOL_AREA_GLOSSES`; `areas.test.ts` fails until it has one,
+and fails on a gloss whose area is gone. Keep a gloss short, plain, and free of
+parentheses (it sits inside the area line's own).
+
+**Measured (2026-10-31, 101 cases, an assistant's grant).** Right first tool,
+map with glosses vs deferred: Sonnet 5 90 vs 90, Sonnet 5.5 88 vs 87, Grok 4.7
+90 vs 89, Haiku 5.5 88 vs 91; 22 to 39% cheaper per turn. A names-only map
+lost cases. Weak spots: Sonnet 5 sent correct arguments first time in 89% vs
+98% (the schema reply covers it), and Grok made up 8 names (the did-you-mean
+recovered them). Keep small models on `'deferred'`. The MCP surface is
+unaffected.
+
 ## House style: the owner's prose layer (v0.214.0)
 
 Skills teach _how to do something well_; they ship with the product and speak

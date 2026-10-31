@@ -35,6 +35,16 @@ import {
 
 export const TOOL_SEARCH_SLUG = 'tool_search';
 export const USE_TOOL_SLUG = 'use_tool';
+/** The tool map's meta tools (map.ts), named here so unwrapUseTool knows
+ *  every wrapper and never wraps one in another. */
+export const TOOL_CALL_SLUG = 'tool_call';
+export const TOOL_HELP_SLUG = 'tool_help';
+const META_SLUGS: ReadonlySet<string> = new Set([
+  TOOL_SEARCH_SLUG,
+  USE_TOOL_SLUG,
+  TOOL_CALL_SLUG,
+  TOOL_HELP_SLUG,
+]);
 
 // The core (CORE_TOOL_SLUGS) lives in core.ts, its own file, so the
 // architecture count can leave exactly it out.
@@ -169,6 +179,25 @@ const USE_TOOL_DEF: DeferredToolDef = {
 };
 
 /**
+ * The granted tools a lazy mode (deferred, map) sends in full, and the rest.
+ * Core first in CORE_TOOL_SLUGS order; heartbeat affordances after, in grant
+ * order (Array.prototype.sort is stable). `rest` keeps grant order.
+ */
+export function splitCore(defs: readonly DeferredToolDef[]): {
+  core: DeferredToolDef[];
+  rest: DeferredToolDef[];
+} {
+  const rank = (name: string) => {
+    const i = CORE_TOOL_SLUGS.indexOf(name);
+    return i < 0 ? CORE_TOOL_SLUGS.length : i;
+  };
+  const core = defs
+    .filter((d) => isAlwaysFull(d.function.name))
+    .sort((a, b) => rank(a.function.name) - rank(b.function.name));
+  return { core, rest: defs.filter((d) => !isAlwaysFull(d.function.name)) };
+}
+
+/**
  * Split a turn's full tool definitions into the sent set and the deferred
  * catalog. `defs` must be in grant order (as buildToolsForModel returns them);
  * `groups` give each tool its flow (any order; sorted by slug here so the
@@ -183,16 +212,7 @@ export function buildDeferredToolset(
    *  treated as code-authored. */
   sources?: ReadonlyMap<string, ToolSource>,
 ): DeferredToolset | null {
-  const rank = (name: string) => {
-    const i = CORE_TOOL_SLUGS.indexOf(name);
-    return i < 0 ? CORE_TOOL_SLUGS.length : i;
-  };
-  // Core first in list order; heartbeat affordances after, in grant order
-  // (Array.prototype.sort is stable).
-  const core = defs
-    .filter((d) => isAlwaysFull(d.function.name))
-    .sort((a, b) => rank(a.function.name) - rank(b.function.name));
-  const rest = defs.filter((d) => !isAlwaysFull(d.function.name));
+  const { core, rest } = splitCore(defs);
   if (rest.length === 0) return null;
   const defBy = new Map(rest.map((d) => [d.function.name, d]));
   const sortedGroups = [...groups].sort((a, b) => a.slug.localeCompare(b.slug));
@@ -242,11 +262,13 @@ export function buildDeferredToolset(
 }
 
 /**
- * Unwrap a `use_tool` call into the real tool call. Returns the inner slug and
- * its arguments as a JSON string, or an error the model can act on.
+ * Unwrap a `use_tool` call (or the map's `tool_call`, the same shape) into
+ * the real tool call. Returns the inner slug and its arguments as a JSON
+ * string, or an error the model can act on.
  */
 export function unwrapUseTool(
   argumentsRaw: string,
+  wrapper: string = USE_TOOL_SLUG,
 ): { ok: true; slug: string; argumentsRaw: string } | { ok: false; error: string } {
   let parsed: unknown;
   try {
@@ -254,25 +276,27 @@ export function unwrapUseTool(
   } catch {
     return {
       ok: false,
-      error: 'use_tool arguments are not valid JSON. Send {"name": "<tool>", "arguments": {...}}.',
+      error: `${wrapper} arguments are not valid JSON. Send {"name": "<tool>", "arguments": {...}}.`,
     };
   }
   const o = (parsed ?? {}) as { name?: unknown; arguments?: unknown };
   if (typeof o.name !== 'string' || o.name.trim() === '') {
     return {
       ok: false,
-      error: 'use_tool needs `name`: the tool to call, as listed by tool_search.',
+      error:
+        `${wrapper} needs \`name\`: the tool to call, ` +
+        (wrapper === TOOL_CALL_SLUG ? 'as named in the tool map.' : 'as listed by tool_search.'),
     };
   }
   const name = o.name.trim();
-  if (name === USE_TOOL_SLUG || name === TOOL_SEARCH_SLUG) {
-    return { ok: false, error: `use_tool cannot call ${name}; call it directly.` };
+  if (META_SLUGS.has(name)) {
+    return { ok: false, error: `${wrapper} cannot call ${name}; call it directly.` };
   }
   const inner = o.arguments === undefined ? {} : o.arguments;
   if (typeof inner !== 'object' || inner === null || Array.isArray(inner)) {
     return {
       ok: false,
-      error: `use_tool \`arguments\` must be an object matching ${name}'s input schema.`,
+      error: `${wrapper} \`arguments\` must be an object matching ${name}'s input schema.`,
     };
   }
   return { ok: true, slug: name, argumentsRaw: JSON.stringify(inner) };

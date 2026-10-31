@@ -96,8 +96,10 @@ export interface AgentParamsDTO {
    *  worker's chip above the chat composer). Absent/false = off. */
   suggest_follow_up?: boolean;
   /** How granted tools reach the model. 'deferred' = a stable core in full +
-   *  `tool_search` over the rest (same grant, cache-safe). Absent = 'full'. */
-  tool_loading?: 'full' | 'deferred';
+   *  `tool_search` over the rest (same grant, cache-safe). 'map' = the same
+   *  core + a tool map naming every other granted tool, called through
+   *  `tool_call`. Absent = 'full'. */
+  tool_loading?: 'full' | 'deferred' | 'map';
 }
 
 /** One persona note (jsonb element). Soft-retired, never deleted — the read

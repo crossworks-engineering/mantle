@@ -216,8 +216,10 @@ export type AgentParams = {
    *  "Deferred tool loading"). 'full' (the default when absent) sends every
    *  granted tool's definition on every call. 'deferred' sends a small stable
    *  core in full and lists the rest by name for `tool_search`; every granted
-   *  tool stays callable and the cached prefix stays the same. */
-  tool_loading?: 'full' | 'deferred';
+   *  tool stays callable and the cached prefix stays the same. 'map' sends
+   *  the same core and names every other granted tool in a compact tool map
+   *  (one glossed line per area), called through `tool_call`. */
+  tool_loading?: 'full' | 'deferred' | 'map';
 };
 
 /**

@@ -54,7 +54,7 @@ const Params = z
     suggest_follow_up: z.boolean().optional(),
     // How granted tools reach the model: full list, or a stable core + tool_search
     // (docs/tools-and-skills.md "Deferred tool loading"). Absent = full.
-    tool_loading: z.enum(['full', 'deferred']).optional(),
+    tool_loading: z.enum(['full', 'deferred', 'map']).optional(),
   })
   .strict();
 

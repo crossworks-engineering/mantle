@@ -35,13 +35,19 @@ import {
   validateToolArgs,
   getDynamicSchema,
   buildDeferredToolset,
+  buildMapToolset,
   toolSourceOf,
   unwrapUseTool,
   maskToolDatabaseErrors,
   turnListedTools,
   TOOL_SEARCH_SLUG,
   USE_TOOL_SLUG,
+  TOOL_CALL_SLUG,
+  TOOL_HELP_SLUG,
+  type DeferredToolDef,
   type DeferredToolset,
+  type MapToolset,
+  type ToolSearchResult,
   type ValidateArgsResult,
   type ResultHandlingConfig,
   type ToolCallRecord,
@@ -666,20 +672,41 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // one; a name the grant does not give, or the gate does not list here, is
   // refused. The sent array is fixed for the turn (and for the grant and
   // scope), so the cached prefix does not move.
+  //
+  // Map tool loading (params.tool_loading = 'map', selection/map.ts): the same
+  // core, then every other granted tool named in a tool map in the same
+  // cached block, called through tool_call (use_tool and tool_search stay
+  // accepted as aliases). The same toolsByName and the same dispatch below,
+  // so a tool the gate refuses is refused the same way through tool_call as
+  // by its own name; a name the loop does not list gets a did-you-mean.
+  const loading = args.params.tool_loading;
+  const lazyMode = (loading === 'deferred' || loading === 'map') && allToolDefs.length > 0;
+  const catalogGroups = lazyMode ? await loadToolGroupsForCatalog(args.ownerId) : [];
+  const toolSources = new Map(loopTools.map((t) => [t.slug, toolSourceOf(t.handler)]));
   const deferred: DeferredToolset | null =
-    args.params.tool_loading === 'deferred' && allToolDefs.length > 0
-      ? buildDeferredToolset(
-          allToolDefs,
-          await loadToolGroupsForCatalog(args.ownerId),
-          new Map(loopTools.map((t) => [t.slug, toolSourceOf(t.handler)])),
-        )
+    lazyMode && loading === 'deferred'
+      ? buildDeferredToolset(allToolDefs, catalogGroups, toolSources)
       : null;
-  const toolsForModel = deferred ? deferred.sent : allToolDefs;
-  /** Deferred tools whose schema an argument error already handed back. */
+  const toolMap: MapToolset | null =
+    lazyMode && loading === 'map' ? buildMapToolset(allToolDefs, catalogGroups, toolSources) : null;
+  /** What dispatch reads of either lazy mode: what is sent, the block for
+   *  the cached system prompt, the tools not sent in full, the search. */
+  const lazy: {
+    sent: DeferredToolDef[];
+    systemBlock: string;
+    notSent: ReadonlySet<string>;
+    search: (query: string, flow?: string) => ToolSearchResult;
+  } | null = deferred
+    ? { ...deferred, notSent: deferred.deferred }
+    : toolMap
+      ? { ...toolMap, notSent: toolMap.mapped }
+      : null;
+  const toolsForModel = lazy ? lazy.sent : allToolDefs;
+  /** Deferred or mapped tools whose schema an argument error already handed back. */
   const schemaShown = new Set<string>();
 
-  const messages: ChatMessage[] = deferred
-    ? withCatalogBlock(args.initialMessages, deferred.systemBlock)
+  const messages: ChatMessage[] = lazy
+    ? withCatalogBlock(args.initialMessages, lazy.systemBlock)
     : [...args.initialMessages];
   // The turn's latest USER message — threaded to handlers via ctx.agent so
   // invoke_agent can attach the user's verbatim ask to a delegation (the
@@ -895,12 +922,16 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         continue;
       }
       const startedAt = Date.now();
-      // Deferred loading: `use_tool {name, arguments}` IS the inner call from
-      // here on (guards, validation, step name, ledger), so it is capped and
-      // traced as the real tool. A malformed wrapper becomes a parse error.
+      // Deferred or map loading: `use_tool {name, arguments}` (map: also
+      // `tool_call`) IS the inner call from here on (guards, validation, step
+      // name, ledger), so it is capped and traced as the real tool. A
+      // malformed wrapper becomes a parse error.
       let useToolError: string | null = null;
-      if (deferred && call.function.name === USE_TOOL_SLUG) {
-        const unwrapped = unwrapUseTool(call.function.arguments ?? '{}');
+      if (
+        lazy &&
+        (call.function.name === USE_TOOL_SLUG || (toolMap && call.function.name === TOOL_CALL_SLUG))
+      ) {
+        const unwrapped = unwrapUseTool(call.function.arguments ?? '{}', call.function.name);
         if (unwrapped.ok) {
           call = {
             ...call,
@@ -917,29 +948,50 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         await skipToolCall(call, pre.reason, pre.note, pre.firstCallId);
         continue;
       }
-      if (deferred && slug === TOOL_SEARCH_SLUG) {
-        const parsedSearch = parseToolArgs(call.function.arguments);
-        const q = parsedSearch.ok ? parsedSearch.input : {};
-        const query = typeof q.query === 'string' ? q.query : '';
-        const flow = typeof q.flow === 'string' && q.flow ? q.flow : undefined;
-        const searchSig = `${slug}::${canonicalJson({ query, flow: flow ?? null })}`;
-        const postSearch = guards.postParse(slug, searchSig);
-        if (postSearch) {
-          await skipToolCall(call, postSearch.reason, postSearch.note);
+      // tool_search (deferred, and map's alias) and tool_help (map) answer
+      // from the grant without dispatching: capped and traced like a call.
+      if (lazy && (slug === TOOL_SEARCH_SLUG || (toolMap && slug === TOOL_HELP_SLUG))) {
+        const parsedLookup = parseToolArgs(call.function.arguments);
+        const q = parsedLookup.ok ? parsedLookup.input : {};
+        let lookupArgs: Record<string, unknown>;
+        let answer: () => { result: ToolSearchResult; error: string | null };
+        if (slug === TOOL_SEARCH_SLUG) {
+          const query = typeof q.query === 'string' ? q.query : '';
+          const flow = typeof q.flow === 'string' && q.flow ? q.flow : undefined;
+          lookupArgs = { query, flow };
+          answer = () =>
+            query.trim()
+              ? { result: lazy.search(query, flow), error: null }
+              : {
+                  result: {
+                    tools: [],
+                    note: 'tool_search needs `query`: the action you need, in plain words.',
+                  },
+                  error: 'tool_search called without a query',
+                };
+        } else {
+          lookupArgs = { names: q.names ?? null, area: q.area ?? null };
+          answer = () => {
+            const result = toolMap!.help(q);
+            return {
+              result,
+              error: result.tools.length ? null : 'tool_help found no tool for its names or area',
+            };
+          };
+        }
+        const lookupSig = `${slug}::${canonicalJson(lookupArgs)}`;
+        const postLookup = guards.postParse(slug, lookupSig);
+        if (postLookup) {
+          await skipToolCall(call, postLookup.reason, postLookup.note);
           continue;
         }
         guards.admit(slug);
         const found = await step(
-          { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: { query, flow } } },
+          { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: lookupArgs } },
           async (handle) => {
-            const r = query.trim()
-              ? deferred.search(query, flow)
-              : {
-                  tools: [],
-                  note: 'tool_search needs `query`: the action you need, in plain words.',
-                };
-            handle.setOutput({ hits: r.tools.map((t) => t.name) });
-            if (!query.trim()) handle.setError('tool_search called without a query');
+            const r = answer();
+            handle.setOutput({ hits: r.result.tools.map((t) => t.name) });
+            if (r.error) handle.setError(r.error);
             return r;
           },
         );
@@ -947,14 +999,14 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
           slug,
           argsJson: call.function.arguments ?? '{}',
           durationMs: Date.now() - startedAt,
-          status: query.trim() ? 'success' : 'error',
-          ...(query.trim() ? {} : { error: 'tool_search called without a query' }),
+          status: found.error ? 'error' : 'success',
+          ...(found.error ? { error: found.error } : {}),
         });
         messages.push({
           role: 'tool',
           toolCallId: call.id,
-          content: JSON.stringify(found),
-          ...(query.trim() ? {} : { isError: true as const }),
+          content: JSON.stringify(found.result),
+          ...(found.error ? { isError: true as const } : {}),
         });
         continue;
       }
@@ -1015,15 +1067,16 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // failed, the log keeps the detail. The one masking (@mantle/tools
       // tool-error-mask.ts).
       let outcome = await maskToolDatabaseErrors(`tool ${slug}`, execute);
-      // Deferred loading: a model may call a catalog tool by name without
-      // loading it first, and then guess its arguments. When such a call fails
-      // on its arguments, hand back the real schema once per tool per turn so
-      // the retry is right (the schema is what tool_search would have shown).
+      // Deferred or map loading: a model may call a tool it holds no schema
+      // for, and guess its arguments. When such a call fails on its
+      // arguments, hand back the real schema once per tool per turn so the
+      // retry is right (the schema is what tool_search or tool_help would
+      // have shown).
       if (
-        deferred &&
+        lazy &&
         tool &&
         !outcome.ok &&
-        deferred.deferred.has(slug) &&
+        lazy.notSent.has(slug) &&
         (argParseError || argValidation?.error) &&
         !schemaShown.has(slug)
       ) {
@@ -1031,6 +1084,15 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         outcome = {
           ...outcome,
           error: `${outcome.error}\nInput schema of ${slug}: ${JSON.stringify(tool.inputSchema ?? {})}`,
+        };
+      }
+      // Map loading: a name this loop does not list (made up, misspelt, or
+      // refused here) is refused as before, with the closest listed names,
+      // so the retry can pick a real one. Only listed names are offered.
+      if (toolMap && !tool && !argParseError && !outcome.ok) {
+        outcome = {
+          ...outcome,
+          error: `${outcome.error}. Did you mean: ${toolMap.didYouMean(slug).join(', ')}?`,
         };
       }
       // A picture for the model: shown after the batch's results to a model

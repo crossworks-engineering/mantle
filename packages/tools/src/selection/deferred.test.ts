@@ -200,6 +200,20 @@ describe('unwrapUseTool', () => {
     expect(unwrapUseTool('{"name":"use_tool","arguments":{}}').ok).toBe(false);
     expect(unwrapUseTool('not json').ok).toBe(false);
   });
+
+  it("serves the map's tool_call, and never wraps one meta tool in another", () => {
+    expect(unwrapUseTool('{"name":"email_send","arguments":{}}', 'tool_call')).toMatchObject({
+      ok: true,
+      slug: 'email_send',
+    });
+    expect(unwrapUseTool('{"arguments":{}}', 'tool_call')).toEqual({
+      ok: false,
+      error: 'tool_call needs `name`: the tool to call, as named in the tool map.',
+    });
+    for (const meta of ['tool_call', 'tool_help', 'tool_search', 'use_tool']) {
+      expect(unwrapUseTool(`{"name":"${meta}","arguments":{}}`, 'tool_call').ok).toBe(false);
+    }
+  });
 });
 
 describe('toolSourceOf', () => {

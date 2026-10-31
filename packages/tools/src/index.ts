@@ -79,12 +79,15 @@ export {
   CORE_TOOL_SLUGS,
   TOOL_SEARCH_SLUG,
   USE_TOOL_SLUG,
+  TOOL_CALL_SLUG,
+  TOOL_HELP_SLUG,
   TOOL_SEARCH_LIMIT,
   type DeferredToolDef,
   type DeferredToolset,
   type ToolSearchResult,
   type ToolSource,
 } from './selection/deferred';
+export { buildMapToolset, type MapToolset, type ToolHelpResult } from './selection/map';
 export { type GroupSource as ToolGroupSource } from './selection/rank';
 export { knownFlowForGroup } from './selection/flows';
 export {
