@@ -379,10 +379,7 @@ function flowFailed(
 /** What the ID token must show of when the person signed in: only a link in
  *  a brain or client page may rest on the asking. A flow that stands in for a
  *  password, or ends where nobody watches (mustAsk), must prove it. */
-function freshRule(
-  s: OidcOn,
-  flow: OidcFlow,
-): { linkStartedAt?: number; freshStartedAt?: number } {
+function freshRule(s: OidcOn, flow: OidcFlow): { linkStartedAt?: number; freshStartedAt?: number } {
   if (flow.startedAt === undefined) return {};
   const proven = flow.purpose !== 'link' || (!!flow.handoff && mustAsk(s, flow.handoff));
   return proven ? { freshStartedAt: flow.startedAt } : { linkStartedAt: flow.startedAt };
