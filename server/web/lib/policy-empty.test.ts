@@ -38,6 +38,7 @@ const KEYS = [
   'MANTLE_POLICY_MODEL_DENY',
   'MANTLE_POLICY_PROVIDER_ALLOW',
   'MANTLE_POLICY_PASSWORD_MIN',
+  'MANTLE_POLICY_ENDPOINT_ALLOW',
 ] as const;
 const saved: Record<string, string | undefined> = {};
 beforeEach(() => {

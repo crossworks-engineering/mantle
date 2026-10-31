@@ -43,12 +43,54 @@ export function passwordRule(): Readonly<{ min: number; commonList: boolean }> {
     : { min, commonList: true };
 }
 
-/** A common password: on the list, or a listed password or base word with
- *  only digits and symbols after it (`Welcome2026!`, `Qwertyuiop12`). */
+/** Runs a person types without thinking: counting, the alphabet, the
+ *  keyboard rows, each either way round. */
+const SEQUENCES = [
+  '01234567890',
+  'abcdefghijklmnopqrstuvwxyz',
+  'qwertyuiop',
+  'asdfghjkl',
+  'zxcvbnm',
+  '!@#$%^&*()',
+];
+const SEQUENCE_STEPS: ReadonlySet<string> = new Set(
+  SEQUENCES.flatMap((seq) => {
+    const steps: string[] = [];
+    for (let i = 0; i + 1 < seq.length; i++) {
+      steps.push(seq.charAt(i) + seq.charAt(i + 1), seq.charAt(i + 1) + seq.charAt(i));
+    }
+    return steps;
+  }),
+);
+
+/** `lower` with every run of 3 or more repeated or sequential characters
+ *  (`1111`, `1234567890`, `qwerty`, `cba`) and all white space taken out. */
+function withoutRuns(lower: string): string {
+  const s = lower.replace(/\s+/g, '');
+  let out = '';
+  let start = 0;
+  for (let i = 1; i <= s.length; i++) {
+    const prev = s.charAt(i - 1);
+    const next = s.charAt(i);
+    const continues = next !== '' && (next === prev || SEQUENCE_STEPS.has(prev + next));
+    if (continues) continue;
+    if (i - start < 3) out += s.slice(start, i);
+    start = i;
+  }
+  return out;
+}
+
+/** A common password: on the list; a listed password or base word with only
+ *  digits and symbols before or after it (`Welcome2026!`, `2026welcome`);
+ *  fewer than 4 different characters (`abababababab`); or, with its repeated
+ *  and sequential runs taken out, fewer than 4 characters left
+ *  (`123456789012`, `1234567890ab`, `Qwertyuiop12`, 12 spaces). */
 export function isCommonPassword(password: string): boolean {
   const lower = password.trim().toLowerCase();
   if (COMMON_PASSWORDS.has(lower)) return true;
-  const stripped = lower.replace(/[^a-z]+$/, '');
+  if (new Set(lower.replace(/\s+/g, '')).size < 4) return true;
+  if (withoutRuns(lower).length < 4) return true;
+  const stripped = lower.replace(/^[^a-z]+/, '').replace(/[^a-z]+$/, '');
   return (
     stripped !== lower && (COMMON_PASSWORD_BASES.has(stripped) || COMMON_PASSWORDS.has(stripped))
   );
@@ -123,8 +165,8 @@ defineDomainError(PasswordRuleError, {
  * The box password rule's columns of auth.users (0347:
  * must_change_password, password_checked_min), to spread into a select of
  * the login row: only while MANTLE_POLICY_PASSWORD_MIN sets a rule. With
- * none, nothing: the select is the one from before the policy (and runs on
- * a database a migration behind).
+ * none, nothing: the select is the one from before the policy. (The
+ * password writers set both columns always, so a box runs on 0347.)
  */
 export function passwordRuleColumns(): {
   mustChangePassword?: typeof authUsers.mustChangePassword;

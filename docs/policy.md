@@ -43,7 +43,7 @@ gate, and every path goes through it.
   (`effectiveToolSlugs`) and the MCP tool list (`buildMantleMcpServer`). The
   grants stay.
 - Every Telegram settings route answers `403 { error, code:
-  'policy_telegram_off' }` (the route switch `telegram-policy`,
+'policy_telegram_off' }` (the route switch `telegram-policy`,
   `server/web/lib/auth/route-switches.ts`).
 - Every bot, channel, chat and pairing row stays. Remove the setting and
   restart, and Telegram works as before.
@@ -132,7 +132,9 @@ uses it until it is moved.
 72 bytes) sets the password rule: at least
 `n` characters, and not a common password from a list bundled in the image
 (`server/web/lib/auth/common-passwords.ts`; no outside call, no symbol
-rules). With no value the rule is today's: 8 characters, no list.
+rules). A password that is mostly a run (`123456789012`, `qwertyuiop12`,
+`111111111111`) or has fewer than 4 different characters counts as common
+too. With no value the rule is today's: 8 characters, no list.
 
 **One function.** Every new password goes through `passwordProblem` and the
 one hash, `hashLoginPassword`, which refuses a password the rule refuses
