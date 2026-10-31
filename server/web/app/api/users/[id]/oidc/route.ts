@@ -31,12 +31,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const id = IdParams.safeParse(await ctx.params);
   if (!id.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
-  return oidcAdminSetOutside(req, id.data.id, { id: user.actor.id, email: user.email });
+  return oidcAdminSetOutside(req, id.data.id.toLowerCase(), {
+    id: user.actor.id,
+    email: user.email,
+  });
 }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const id = IdParams.safeParse(await ctx.params);
   if (!id.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
-  return oidcAdminUnlink(req, id.data.id, { id: user.actor.id, email: user.email });
+  return oidcAdminUnlink(req, id.data.id.toLowerCase(), { id: user.actor.id, email: user.email });
 }

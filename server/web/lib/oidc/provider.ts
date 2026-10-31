@@ -165,25 +165,27 @@ export async function identityFromCallback(
   // a named origin goes where nobody watches, so there it must be proven: a
   // provider that sends no auth_time is refused (OIDC Core requires it when
   // max_age is sent). In required mode that stops every linked person on the
-  // desktop app and the phone until the provider sends it, so
-  // oidc:flow-check tests it before a box turns on (docs/oidc-sign-in.md).
+  // desktop app and the phone until the provider sends it, so the first
+  // sign-in of any kind without it says so in the log, while a box is still
+  // on optional.
+  const at = claims.auth_time;
+  if (typeof at !== 'number' && !warnedNoAuthTime) {
+    warnedNoAuthTime = true;
+    // Loaded here: this module stays free of the tracing store.
+    void import('@mantle/tracing').then(({ log }) =>
+      log('auth').warn(
+        'company sign-in: the provider sends no auth_time: the desktop app, the phone, key creation and MCP consent fail until it does, and a link on the web is asked (prompt=login), not proven',
+      ),
+    );
+  }
   const startedAt = opts.freshStartedAt ?? opts.linkStartedAt;
   if (startedAt !== undefined) {
-    const at = claims.auth_time;
     if (typeof at === 'number') {
       if (at < startedAt - AUTH_TIME_SKEW_SECONDS) {
         throw new Error('the provider sign-in is older than the flow');
       }
     } else if (opts.freshStartedAt !== undefined) {
       throw new Error('the provider sent no auth_time on a fresh sign-in');
-    } else if (!warnedNoAuthTime) {
-      warnedNoAuthTime = true;
-      // Loaded here: this module stays free of the tracing store.
-      void import('@mantle/tracing').then(({ log }) =>
-        log('auth').warn(
-          'company sign-in: the provider sends no auth_time on a link; a fresh sign-in is asked (prompt=login), not proven',
-        ),
-      );
     }
   }
   // The library checks the token's issuer against the discovered one; the
