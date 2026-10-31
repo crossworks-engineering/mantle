@@ -163,6 +163,15 @@ export function capRequestBody(req: Request, maxBytes: number): Request {
     duplex: 'half',
     signal: req.signal,
   } as RequestInit);
+  // Bun's formData() refuses a type it cannot parse before it reads a byte, so
+  // a body over the ceiling would never reach it. Read first, as Node does.
+  if (process.versions.bun) {
+    const type = req.headers.get('content-type');
+    capped.formData = async () =>
+      new Response(await capped.arrayBuffer(), {
+        headers: type ? { 'content-type': type } : {},
+      }).formData();
+  }
   return capped;
 }
 

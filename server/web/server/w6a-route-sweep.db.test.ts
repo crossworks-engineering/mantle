@@ -1086,8 +1086,16 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
 
   it('L2: the system-pool writes of request scopes are the pinned list', () => {
     // Runs after the Admin and member sweeps above (same file, in order).
-    expect([...scopeWrites].filter((w) => !REQUEST_SCOPE_SYSTEM_WRITES.has(w)).sort()).toEqual([]);
-    expect([...scopeWrites].filter((w) => w.startsWith('member ')).sort()).toEqual(
+    // Bun's stacks lose the frames behind a `.then`, so a write can have no
+    // file to name. It must still be a write the list pins for that route.
+    const named = (w: string) =>
+      (process.versions.bun &&
+        w.endsWith(' ?') &&
+        [...REQUEST_SCOPE_SYSTEM_WRITES].find((p) => p.startsWith(w.slice(0, -1)))) ||
+      w;
+    const writes = [...new Set([...scopeWrites].map(named))];
+    expect(writes.filter((w) => !REQUEST_SCOPE_SYSTEM_WRITES.has(w)).sort()).toEqual([]);
+    expect(writes.filter((w) => w.startsWith('member ')).sort()).toEqual(
       MEMBER_SCOPE_SYSTEM_WRITES,
     );
   });
