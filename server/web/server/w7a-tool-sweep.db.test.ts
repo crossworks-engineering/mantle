@@ -77,7 +77,7 @@ type Schema = {
 
 /** A permission or scope failure (what the sweep forbids). */
 const BAD =
-  /permission denied|row-level security|42501|turn scope|outside its turn scope|has no viewer level|only outside a viewer scope|already inside|needs an allowlisted reason|scope-lost|its scope would change|not a user of the (Admin|assistant)/i;
+  /permission denied|row-level security|\b42501\b|turn scope|outside its turn scope|has no viewer level|only outside a viewer scope|already inside|needs an allowlisted reason|scope-lost|its scope would change|not a user of the (Admin|assistant)/i;
 /** The database's item-workspace refusals (allowed: the turn's scope says no). */
 const ITEM_WS =
   /not allowed to (add items to that folder|delete this item|move this item)|placing this app adds a workspace you do not moderate|a node's login can only be your own/i;
