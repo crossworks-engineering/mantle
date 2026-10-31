@@ -266,8 +266,8 @@ any page that receives a code could send it on.
   it did (`auth_time` at or after the flow's start): a code is never handed
   over silently. A provider that sends no `auth_time` signs nobody in on the
   desktop app or the phone, and links nobody there, and each try ends with a
-  bare `failed` and one log line. Run `oidc:flow-check` before a box turns
-  company sign-in on: it fails on such a provider.
+  bare `failed`. The first sign-in of any kind with no `auth_time` writes one
+  log line, so read the log while a box is on `optional`, before `required`.
 - `<origin>/auth/oidc`, the web app's own page, on this brain's public origin
   or `MANTLE_CLIENT_ORIGIN`. A client origin must be a named CORS entry too, or
   it cannot post the exchange.
