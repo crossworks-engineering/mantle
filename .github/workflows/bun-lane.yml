@@ -69,6 +69,10 @@ jobs:
           pnpm -C packages/db init-scratch
           pnpm -C packages/db migrate
 
+      # build-check gets this file from typecheck. Without it about 30 tests skip.
+      - name: Generate the route manifest
+        run: pnpm -C server/web route-manifest
+
       - name: Compare Node and Bun
         env:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
