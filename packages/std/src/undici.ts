@@ -74,8 +74,10 @@ async function undiciFetch(
 
 /**
  * `platformFetch` through `dispatcher`, or undici's own fetch on Bun. A
- * `platformFetch` that is not Bun's (a test stub, even one set before this
- * module loaded) is called as it is, as on Node.
+ * `platformFetch` written in JavaScript (a test stub, even one set before
+ * this module loaded) is called as it is, as on Node. Bun's own fetch is
+ * native code; anything that is not a function of ours takes undici's path,
+ * so the pin holds when in doubt.
  */
 export function fetchThrough(
   dispatcher: Dispatcher,
@@ -83,8 +85,8 @@ export function fetchThrough(
   init: RequestInit,
   platformFetch: typeof fetch,
 ): Promise<Response> {
-  const bunFetch = (globalThis as { Bun?: { fetch: typeof fetch } }).Bun?.fetch;
-  const undici = platformFetch === bunFetch ? loadUndici() : null;
+  const native = Function.prototype.toString.call(platformFetch).includes('[native code]');
+  const undici = process.versions.bun && native ? loadUndici() : null;
   if (undici) return undiciFetch(undici, input, init, dispatcher);
   // The built-in RequestInit type has no `dispatcher`; the runtime accepts it.
   return platformFetch(input, { ...init, dispatcher } as RequestInit);
