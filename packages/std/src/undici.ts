@@ -37,8 +37,11 @@ export function loadUndici(): Undici | null {
 
 /**
  * A call through undici's own fetch. It knows only its own Request and
- * FormData classes, so those go in as parts. The answer comes back as the
- * runtime's Response, so a caller's `instanceof Response` holds.
+ * FormData classes, so those go in as parts, and a Request's body goes in as
+ * bytes, so it keeps its length. The answer comes back as the runtime's
+ * Response, so a caller's `instanceof Response` holds. The pipe takes undici's
+ * stream at once: undici cancels an unread stream when its own Response is
+ * collected, and that one is gone when this returns.
  */
 async function undiciFetch(
   undici: Undici,
@@ -48,22 +51,25 @@ async function undiciFetch(
 ): Promise<Response> {
   const req = input instanceof Request ? input : null;
   const headers = new Headers(init.headers ?? req?.headers);
-  let body = init.body === undefined ? req?.body : init.body;
+  let body = init.body;
+  if (body === undefined && req?.body) body = await req.arrayBuffer();
   if (body instanceof FormData) {
     const form = new Response(body);
     headers.set('content-type', form.headers.get('content-type') ?? '');
     body = await form.arrayBuffer();
   }
   const res = await undici.fetch(req?.url ?? input.toString(), {
-    method: req?.method,
-    signal: req?.signal,
     ...(body instanceof ReadableStream ? { duplex: 'half' } : {}),
     ...init,
+    method: init.method ?? req?.method,
+    signal: init.signal ?? req?.signal,
+    redirect: init.redirect ?? req?.redirect,
     headers: [...headers],
     body,
     dispatcher,
   } as import('undici').RequestInit);
-  const out = new Response(res.body as BodyInit | null, {
+  const stream = res.body as unknown as ReadableStream<Uint8Array> | null;
+  const out = new Response(stream?.pipeThrough(new TransformStream()), {
     status: res.status,
     statusText: res.statusText,
     headers: [...res.headers],
@@ -73,11 +79,11 @@ async function undiciFetch(
 }
 
 /**
- * `platformFetch` through `dispatcher`, or undici's own fetch on Bun. A
- * `platformFetch` written in JavaScript (a test stub, even one set before
- * this module loaded) is called as it is, as on Node. Bun's own fetch is
- * native code; anything that is not a function of ours takes undici's path,
- * so the pin holds when in doubt.
+ * `platformFetch` through `dispatcher`, or undici's own fetch on Bun. Bun's
+ * fetch is native code. One written in JavaScript is a test stub (even one set
+ * before this module loaded) and is called as on Node. Outside a test it is a
+ * wrapper that would hand the dispatcher to Bun's fetch and lose it, so it is
+ * refused: a dropped pin or proxy must not pass in silence.
  */
 export function fetchThrough(
   dispatcher: Dispatcher,
@@ -86,6 +92,9 @@ export function fetchThrough(
   platformFetch: typeof fetch,
 ): Promise<Response> {
   const native = Function.prototype.toString.call(platformFetch).includes('[native code]');
+  if (process.versions.bun && !native && process.env.NODE_ENV !== 'test') {
+    throw new Error('fetch is wrapped: on Bun a wrapper would drop the dispatcher');
+  }
   const undici = process.versions.bun && native ? loadUndici() : null;
   if (undici) return undiciFetch(undici, input, init, dispatcher);
   // The built-in RequestInit type has no `dispatcher`; the runtime accepts it.

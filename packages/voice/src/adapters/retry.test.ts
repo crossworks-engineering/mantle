@@ -142,6 +142,9 @@ describe('isEmptyJsonBodyError', () => {
   });
 
   it.each([
+    ['a complete body that quotes the words', 'unexpected EOF'],
+    ['a complete body that quotes the other words', 'unterminated string'],
+    ['the same words inside an object', '{"e":unexpected EOF}'],
     ['a complete but malformed body', '{"id":,}'],
     ['a bare token', 'nope'],
   ])('does NOT match %s (a real bug, not a stall)', (_label, body) => {

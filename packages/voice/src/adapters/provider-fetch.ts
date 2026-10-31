@@ -97,8 +97,9 @@ function isEventStream(res: Response): boolean {
 }
 
 /**
- * Fetch through a given undici dispatcher with the built-in fetch (native
- * Request/Response), under the call's deadline. A replaced global fetch (a
+ * Fetch through a given undici dispatcher (fetchThrough: the built-in fetch, or
+ * undici's own on Bun, with native Request/Response either way), under the
+ * call's deadline. A replaced global fetch (a
  * test stub) still wins, untouched: it gets the caller's init as given.
  */
 export async function fetchVia(

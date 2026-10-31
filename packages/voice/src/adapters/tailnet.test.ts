@@ -115,7 +115,7 @@ describe('no bare require in the voice adapters', () => {
   // The server runs as ESM, where `require` does not exist, but vitest supplies
   // one, so a bare `require('undici')` passed every test here and still threw
   // "require is not defined" in the brain the moment a tailnet proxy was set.
-  // Node-only modules load through provider-fetch.ts's loadUndici() instead.
+  // Node-only modules load through loadUndici() in @mantle/std/undici instead.
   it('has no require( call outside tests', () => {
     const dir = new URL('.', import.meta.url);
     const offenders = readdirSync(dir)

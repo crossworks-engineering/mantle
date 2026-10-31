@@ -32,6 +32,8 @@ import { repoPathOf, stripComments } from './arch-counts.mjs';
 
 /** @type {AllowList} */
 export const RAW_ENV_ALLOWED = {
+  'packages/std/src/undici.ts':
+    '@mantle/std sits below @mantle/config; on Bun one NODE_ENV read keeps a wrapped fetch from dropping the pin outside a test',
   'packages/config/src/index.ts': 'env() and envDynamic() themselves: the one reader',
   'packages/client-types/src/turn-streaming.ts':
     'the published, browser-safe turn streaming readers (the brain reads feature("turnStreaming")); the server one honours the legacy alias as env() does',

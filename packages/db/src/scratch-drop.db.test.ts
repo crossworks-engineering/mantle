@@ -138,15 +138,21 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
   /**
    * A query that runs until the wait has seen it: it waits on a lock this
    * connection holds, and `release` lets it finish. A timed query cannot stay
-   * running that long under load: a new connection can stall for seconds while
-   * other suites create databases, and the query ends first.
+   * running that long under load. These tests take the longer limit for the
+   * same load: when the suites start together, CREATE DATABASE alone can take
+   * many seconds, and a test past its limit runs on and takes the next test's
+   * console.warn spy with it.
    */
   const LOCK = 7713;
   const lockHolder = async (url: string) => {
     const held = postgres(url, { max: 1, onnotice: () => {} });
     await held`select pg_advisory_lock(${LOCK})`;
+    // Some time after the warning: a wait that stopped at its warning would
+    // force the drop and kill the query first.
     const release = () => {
-      void held`select pg_advisory_unlock(${LOCK})`.execute().catch(() => {});
+      setTimeout(() => {
+        void held`select pg_advisory_unlock(${LOCK})`.execute().catch(() => {});
+      }, 150);
     };
     return { held, release };
   };
@@ -179,7 +185,7 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
       await sql.end({ timeout: 0 });
       await admin.end();
     }
-  });
+  }, 60_000);
 
   it("the warning never prints a running query's password literal", async () => {
     const scratch = await createEmptyScratchDatabase(URL!);
@@ -204,7 +210,7 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
       await sql.end({ timeout: 0 });
       await admin.end();
     }
-  });
+  }, 60_000);
 
   it('does not wait on an idle-in-transaction session: it is not running anything', async () => {
     const scratch = await createEmptyScratchDatabase(URL!);
@@ -230,7 +236,7 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
       await sql.end({ timeout: 0 });
       await admin.end();
     }
-  });
+  }, 60_000);
 
   it('stops waiting after its limit, so a stuck query cannot hold the teardown', async () => {
     const scratch = await createEmptyScratchDatabase(URL!);

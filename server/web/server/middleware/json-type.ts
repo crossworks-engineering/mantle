@@ -3,7 +3,8 @@
  * `application/json` on Node and `application/json;charset=utf-8` on Bun, and
  * more than a thousand routes call it. This runs outside everything else
  * (server/app.ts), so it sees the answer that goes out, a refusal and the
- * app's error answer included. On Node it changes nothing.
+ * app's error answer included. On Node it touches only an answer that already
+ * says this exact type, which no route writes.
  */
 import type { MiddlewareHandler } from 'hono';
 

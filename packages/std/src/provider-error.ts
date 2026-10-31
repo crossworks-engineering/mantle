@@ -626,7 +626,10 @@ export const RETRYABLE_STATUS: ReadonlySet<number> = new Set([
  * body, and the message alone cannot tell them apart. Retrying a real
  * malformed payload would turn one loud bug into three silent ones.
  *
- * Bun says these two as "Unexpected EOF" and "Unterminated string".
+ * Bun says these two as "JSON Parse error: Unexpected EOF" and "JSON Parse
+ * error: Unterminated string". Both patterns hold to the start of the message:
+ * V8 quotes a short body in its own error, so a complete body that reads
+ * "unexpected EOF" must not match.
  *
  * The message strings are the engines', and V8 has changed them before. The
  * tests parse REAL malformed JSON rather than asserting hand-written strings,
@@ -636,8 +639,8 @@ export const RETRYABLE_STATUS: ReadonlySet<number> = new Set([
 export function isEmptyJsonBodyError(err: unknown): boolean {
   if (!(err instanceof SyntaxError)) return false;
   return (
-    /unexpected (end of (json )?input|eof)/i.test(err.message) ||
-    /unterminated string/i.test(err.message)
+    /^(?:JSON Parse error: )?unexpected (?:end of (?:json )?input|eof)/i.test(err.message) ||
+    /^(?:JSON Parse error: )?unterminated string/i.test(err.message)
   );
 }
 
