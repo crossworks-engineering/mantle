@@ -14,12 +14,18 @@ import {
   authUsers,
   db,
   eq,
+  gt,
+  inArray,
   isNull,
+  lt,
+  oidcHandoffCodes,
   oidcLoginState,
   oidcModeState,
   oidcSigninLinks,
   onFullSystemRoute,
   sql,
+  type OidcHandoffIdentity,
+  type OidcHandoffPurpose,
 } from '@mantle/db';
 import { isLoginRole } from '@mantle/client-types/role-names';
 import { loginIsAdmin } from '@/lib/auth/admin-seat';
@@ -70,8 +76,9 @@ export async function loginHasPassword(loginId: string): Promise<boolean> {
   return row?.has === true;
 }
 
-/** Every write of the two tables, at the one full-route spot (a link and
- *  the outside mark are ways in: the narrow role may not write them). */
+/** Every write of these tables, at the one full-route spot (a link, the
+ *  outside mark and a one-time code are ways in: the narrow role may not
+ *  write them). */
 function oidcWrite<T>(fn: () => PromiseLike<T>): Promise<T> {
   return onFullSystemRoute('oidc-link', fn);
 }
@@ -265,6 +272,78 @@ export async function createLink(
     if (name === null) throw err;
     return name === 'oidc_signin_links_login_issuer_key' ? 'has-other' : 'taken';
   }
+}
+
+/** How long a spent or lapsed one-time code stays before a later issue
+ *  clears it, milliseconds. */
+const SPENT_CODE_KEEP_MS = 60 * 60 * 1000;
+
+/** Keep one one-time code (handoff.ts), and clear the old ones. */
+export async function issueHandoffCode(row: {
+  codeHash: string;
+  purpose: OidcHandoffPurpose;
+  loginId: string;
+  epoch: number;
+  challenge: string | null;
+  identity?: OidcHandoffIdentity;
+  held?: boolean;
+  expiresAt: Date;
+}): Promise<void> {
+  await oidcWrite(async () => {
+    await db
+      .delete(oidcHandoffCodes)
+      .where(lt(oidcHandoffCodes.expiresAt, new Date(Date.now() - SPENT_CODE_KEEP_MS)));
+    await db.insert(oidcHandoffCodes).values(row);
+  });
+}
+
+/** A spent one-time code. */
+export type SpentHandoffCode = Readonly<{
+  purpose: OidcHandoffPurpose;
+  loginId: string;
+  epoch: number;
+  challenge: string | null;
+  identity: OidcHandoffIdentity | null;
+  held: boolean;
+}>;
+
+/**
+ * Spend a one-time code, for one of `purposes`: one statement, so a code works
+ * once however many requests race. The caller compares the verifier after
+ * this, so a wrong guess burns the code. `login`: the login that may spend it
+ * (a fresh sign-in, spent by its own session), else anyone holding the code
+ * and its verifier.
+ */
+export async function spendHandoffCode(
+  codeHash: string,
+  purposes: readonly OidcHandoffPurpose[],
+  login?: { loginId: string; epoch: number },
+): Promise<SpentHandoffCode | null> {
+  const [row] = await oidcWrite(() =>
+    db
+      .update(oidcHandoffCodes)
+      .set({ usedAt: sql`now()` })
+      .where(
+        and(
+          eq(oidcHandoffCodes.codeHash, codeHash),
+          inArray(oidcHandoffCodes.purpose, [...purposes]),
+          isNull(oidcHandoffCodes.usedAt),
+          gt(oidcHandoffCodes.expiresAt, sql`now()`),
+          ...(login
+            ? [eq(oidcHandoffCodes.loginId, login.loginId), eq(oidcHandoffCodes.epoch, login.epoch)]
+            : []),
+        ),
+      )
+      .returning({
+        purpose: oidcHandoffCodes.purpose,
+        loginId: oidcHandoffCodes.loginId,
+        epoch: oidcHandoffCodes.epoch,
+        challenge: oidcHandoffCodes.challenge,
+        identity: oidcHandoffCodes.identity,
+        held: oidcHandoffCodes.held,
+      }),
+  );
+  return row ?? null;
 }
 
 /** Stamp a link's last use (a sign-in). */

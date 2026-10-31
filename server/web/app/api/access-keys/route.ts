@@ -35,6 +35,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { anyLoginCaller, sessionRole, verifyPasswordForUse } from '@/lib/auth';
 import { passwordChangeRequiredBody } from '@/lib/auth/password-hold';
+import { passwordConfirms, spendFresh, stepUpFor } from '@/lib/oidc/fresh';
 import { adminFacts, type Login } from '@/lib/auth/login';
 import {
   ACCESS_KEY_ACCESS,
@@ -86,6 +87,7 @@ const Body = z
       .max(50)
       .optional(),
     password: z.string().max(1000).optional(),
+    fresh: z.object({ code: z.string().max(128), verifier: z.string().max(128) }).optional(),
   })
   // A key is always the caller's own: a body that names a login is refused
   // rather than quietly ignored.
@@ -98,6 +100,7 @@ async function handleGET(login: Login) {
   const facts = await adminFacts(login);
   const keys = await listAccessKeys(facts.admin ? null : login.loginId);
   const maxDays = maxKeyDays(facts.areas.has('keys'));
+  const stepUp = await stepUpFor(login.loginId);
   return NextResponse.json(
     {
       keys,
@@ -106,8 +109,10 @@ async function handleGET(login: Login) {
       areas: [...ACCESS_KEY_AREAS],
       defaultExpiryDays: Math.min(DEFAULT_ACCESS_KEY_EXPIRY_DAYS, maxDays ?? Infinity),
       maxExpiryDays: maxDays,
-      // Every login re-types its password (kept on the wire for older apps).
-      needsPassword: true,
+      // Every login re-types its password (kept on the wire for older apps),
+      // or confirms with a fresh company sign-in when it is linked to one.
+      needsPassword: stepUp.kind === 'password',
+      ...(stepUp.kind === 'company' ? { stepUp } : {}),
     } satisfies AccessKeyList,
     { headers: NO_STORE },
   );
@@ -148,15 +153,22 @@ async function handlePOST(login: Login, req: Request) {
   const bucket = `akey-pw:${login.loginId}`;
   const tries = rateLimitLogin(bucket, PASSWORD_RATE);
   if (!tries.ok) return rateLimitedResponse(tries.retryAfterSec);
-  // The box password rule checks the password typed here too
-  // (verifyPasswordForUse): one that fails it holds the login and makes no
-  // key (docs/policy.md).
-  const checked = body.password
-    ? await verifyPasswordForUse(login.loginId, body.password)
-    : 'wrong';
+  // A linked login confirms with a fresh company sign-in in place of the
+  // password (lib/oidc/fresh.ts). The box password rule checks a password
+  // typed here too (verifyPasswordForUse): one that fails it holds the login
+  // and makes no key (docs/policy.md).
+  const confirmed = body.fresh ? await spendFresh(login, body.fresh) : false;
+  const checked = confirmed
+    ? 'ok'
+    : body.password && (await passwordConfirms(login.loginId))
+      ? await verifyPasswordForUse(login.loginId, body.password)
+      : 'wrong';
   if (checked === 'wrong') {
+    const stepUp = await stepUpFor(login.loginId);
     return NextResponse.json(
-      { error: 'Type your password to make a key.', reason: 'password' },
+      stepUp.kind === 'company'
+        ? { error: `Confirm with ${stepUp.label} to make a key.`, reason: 'fresh-sign-in' }
+        : { error: 'Type your password to make a key.', reason: 'password' },
       { status: 403 },
     );
   }

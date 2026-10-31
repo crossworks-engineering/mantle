@@ -35,8 +35,11 @@ export type OidcMode = 'off' | 'optional' | 'required';
 
 /** GET /api/auth/oidc/config (public, no login). Off: `{ mode: 'off' }`
  *  only, and the client shows no company sign-in at all. Otherwise the
- *  button's label ("Sign in with {label}"); the button opens
- *  `GET /api/auth/oidc/start?return=<path>` as a top-level navigation. */
+ *  button's label ("Sign in with {label}"). A client that holds a bearer
+ *  (the web app, the desktop app, the phone) opens
+ *  `GET /api/auth/oidc/start?redirect=<target>&challenge=<S256>` (see
+ *  OidcHandoff); `?return=<path>` signs the browser itself in with a
+ *  cookie. */
 export type OidcConfigDTO = { mode: 'off' } | { mode: 'optional' | 'required'; label: string };
 
 /** GET /api/auth/oidc/status (the signed-in login; 401 without one). Off:
@@ -64,14 +67,80 @@ export type OidcStatusDTO =
       canUnlink: boolean;
     };
 
-/** POST /api/auth/oidc/link { password?, returnTo? }: start a link. Opens
- *  on the 5-minute ticket a password sign-in on this browser set (used up
- *  by the start), or on
- *  the session with the login's password typed again. Navigate the window
- *  to `url`; the provider returns to the brain, which links and sends the
- *  browser to `returnTo` with `?oidc=linked` (or `?oidc=<OidcCallbackError>`). */
-export type OidcLinkStartBody = { password?: string; returnTo?: string };
+/**
+ * Handing a flow to a client that is not the browser's cookie session
+ * (docs/oidc-sign-in.md "Handing a sign-in to a client"). The client makes a
+ * PKCE verifier (RFC 7636: 43 to 128 unreserved characters), keeps it, and
+ * sends its S256 challenge (43 base64url characters) and where the flow ends:
+ *  - `mantle://oidc`, the desktop app and the phone;
+ *  - a page of the web app, on this brain's public origin,
+ *    MANTLE_CLIENT_ORIGIN or a named MANTLE_API_CORS_ORIGINS entry.
+ * The browser comes back to `redirect` with a fragment: `#oidc=code&code=<c>`
+ * and `purpose=<OidcHandoffPurpose>`, or `#oidc=<OidcCallbackResult>` when the
+ * flow stopped. A code lasts 2 minutes, works once and is worth nothing
+ * without the verifier.
+ */
+export type OidcHandoff = { redirect: string; challenge: string };
+export type OidcHandoffPurpose = 'signin' | 'link' | 'fresh';
+
+/** POST /api/auth/oidc/link: start a link.
+ *
+ * With `handoff` (any client, a bearer one too): opens on the session or a
+ * held login, on `ticket` (OidcRefusal.ticket or oidcTicket from a token
+ * sign-in), or on the session with the login's password typed again. Open
+ * `url` in the browser, then spend the code at POST /api/auth/oidc/exchange:
+ * the link is made there.
+ *
+ * With no `handoff`: the browser's own cookie session. Opens on the 5-minute
+ * ticket a password sign-in on this browser set (used up by the start), or
+ * on the session with the login's password typed again. Navigate the window
+ * to `url`; the provider returns to the brain, which links and sends the
+ * browser to `returnTo` with `?oidc=linked` (or `?oidc=<OidcCallbackError>`). */
+export type OidcLinkStartBody = {
+  password?: string;
+  returnTo?: string;
+  handoff?: OidcHandoff;
+  ticket?: string;
+};
 export type OidcLinkStarted = { url: string };
+
+/** POST /api/auth/oidc/exchange (no login): spend a code from the flow's
+ *  redirect, for a sign-in or a link. `fresh` codes are not spent here: they
+ *  go in the request they confirm (OidcFreshProof). */
+export type OidcExchangeBody = { code: string; verifier: string; deviceName?: string };
+
+/** A sign-in's answer: a bearer, as POST /api/auth/device-login answers one.
+ *  It lasts MANTLE_OIDC_SESSION_HOURS and is never rotated: when it ends
+ *  the person signs in through the provider again. `linked` when a link
+ *  from a held login signed it in. */
+export type OidcTokenAnswer = {
+  token: string;
+  expiresIn: number;
+  expiresAt: string;
+  deviceId: string;
+  role: string;
+  loginId: string;
+  brainId?: string;
+  sso: true;
+  linked?: true;
+};
+/** A link made for a login that already has its session. */
+export type OidcLinkAnswer = { linked: true };
+export type OidcExchanged = OidcTokenAnswer | OidcLinkAnswer;
+
+/** The `code` of a refused exchange: the code is gone (`expired`, also a
+ *  wrong verifier), the account is another login's (`taken`), or this login
+ *  already holds another account of the provider (`has-other`). */
+export type OidcExchangeRefusal = { error: string; code: 'expired' | 'taken' | 'has-other' };
+
+/** POST /api/auth/oidc/fresh: a linked login confirms who it is with a fresh
+ *  company sign-in (the provider asks again: prompt=login, max_age=0), in
+ *  place of its password. Open `url` in the browser, then send the code and
+ *  the verifier as `fresh` in the request it confirms (OidcFreshProof). */
+export type OidcFreshStartBody = OidcHandoff;
+export type OidcFreshStarted = { url: string };
+/** A fresh sign-in spent on a request: one code, one request. */
+export type OidcFreshProof = { code: string; verifier: string };
 
 /** The `code` of a refused password sign-in (403 from /api/auth/login,
  *  /api/auth/token, /api/auth/device-login and /api/auth/mobile-login), or
@@ -80,7 +149,7 @@ export type OidcLinkStarted = { url: string };
  *  - `sso-link-required`: the password was right; link before going on.
  *    The cookie login also set the ticket: show the one "Link your company
  *    sign-in" step, whose button is POST /api/auth/oidc/link with no body.
- *    The token logins set none: link on the web first.
+ *    The token logins answer `ticket` instead: send it with the handoff.
  *  - `password-needed`: a link start with no fresh ticket: ask for the
  *    password and send it.
  *  - `already-linked`: the login holds a link already.
@@ -89,11 +158,15 @@ export type OidcLinkStarted = { url: string };
  *    session); the phone signs in itself. */
 export type OidcRefusalCode =
   'sso-required' | 'sso-link-required' | 'password-needed' | 'already-linked' | 'sso-session';
-export type OidcRefusal = { error: string; code: OidcRefusalCode };
+/** `ticket`: a token login's held ticket on `sso-link-required` (5 minutes,
+ *  good only to start the link). */
+export type OidcRefusal = { error: string; code: OidcRefusalCode; ticket?: string };
 
 /** The `oidc` query value the callback sends the browser back with:
  *  `linked` on a link, else why it stopped. A sign-in that works carries
- *  none. Failures of a sign-in land on `/login?oidc=<code>`. */
+ *  none. Failures of a sign-in land on `/login?oidc=<code>`.
+ *  `wrong-account`: a fresh sign-in used another account than the one
+ *  linked to this login. */
 export type OidcCallbackResult =
   | 'linked'
   | 'expired'
@@ -103,7 +176,8 @@ export type OidcCallbackResult =
   | 'not-linked'
   | 'not-allowed'
   | 'taken'
-  | 'has-other';
+  | 'has-other'
+  | 'wrong-account';
 
 /** POST /api/auth/oidc/offer: hide the link offer for 7 days. */
 export type OidcOfferDismissed = { ok: true; until: string };

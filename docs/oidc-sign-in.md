@@ -8,9 +8,10 @@ session, and no call to any provider (corporate plan section 2.1; the
 acceptance test is `server/web/lib/oidc/oidc-off.test.ts`).
 
 Code: `server/web/lib/oidc/` (settings, provider, cookies, rules, store,
-flow), the routes under `server/web/app/api/auth/oidc/` and
-`server/web/app/api/users/oidc/`, migration
-`packages/db/migrations/0349_oidc_signin.sql`. A provider guide:
+flow, handoff, exchange, fresh), the routes under
+`server/web/app/api/auth/oidc/` and `server/web/app/api/users/oidc/`,
+migrations `packages/db/migrations/0349_oidc_signin.sql` and
+`0350_oidc_handoff_codes.sql`. A provider guide:
 [oidc-entra.md](oidc-entra.md).
 
 ## Settings
@@ -70,8 +71,10 @@ Required mode never strands anyone (plan section 17.1):
   a link step they cannot finish: leave it on while outside people have
   logins.
 - The token logins (`/api/auth/token`, `/api/auth/device-login`,
-  `/api/auth/mobile-login`) refuse both cases with 403 and set no ticket: a
-  bearer client links on the web first.
+  `/api/auth/mobile-login`) refuse both cases with 403 and set no cookie. On
+  `sso-link-required` they answer the held ticket in the body (`ticket`), and
+  the client starts the link on it, handed to itself (see "Handing a sign-in
+  to a client").
 
 If the provider is down, the operator sets the mode back to `optional`:
 every login still has its password.
@@ -148,10 +151,10 @@ the subject when the provider sends them; nothing matches on them.
   provider that sends no `auth_time` is let through, with one log line:
   the fresh sign-in was asked for, not proven.
 - A login links itself, in its own session, with one click right after a
-  password sign-in on the same browser (the 5-minute ticket, used up when
-  the link starts), or later with its password typed again (5 tries in 15
-  minutes per login, each failure audited). A held login links on its held
-  ticket.
+  password sign-in (the 5-minute ticket: a cookie on the same browser, used
+  up when the link starts, or `oidcTicket` in a token login's answer), or
+  later with its password typed again (5 tries in 15 minutes per login, each
+  failure audited). A held login links on its held ticket.
 - The login is told when a link is made on it (an Admin user's own phones,
   a member's thread with their assistant), as for an API key made.
 - A link is removed only by an unlink: the login's own where it may, or an
@@ -204,16 +207,17 @@ never reaches this brain), and neither a session:
   it, set only while company sign-in is on. Sign out clears both cookies.
 
 A session made by company sign-in is the normal session cookie
-(`buildSessionCookie`) with the life of `MANTLE_OIDC_SESSION_HOURS`, marked
-(`so`) so a re-mint of it (a password change) keeps the end it had and
-never becomes a year, whatever bearer header rides along. Such a session
-cannot pair a phone or a Telegram chat (403 `sso-session`): either would
-be a session that outlives it. An API key or an MCP grant can still be made
-from it (each asks for the password): those are credentials of their own,
-not sessions, so the session gate does not judge them, and their leaver
-rules are Phase 5 (plan section 10.3). Refusing them would shut a person
-who signs in only with the company account out of MCP clients. Sign out ends the
-Mantle session only (no single logout).
+(`buildSessionCookie`), or a device bearer (see below), with the life of
+`MANTLE_OIDC_SESSION_HOURS`, marked (`so`) so a re-mint of it (a password
+change) keeps the end it had and never becomes a year, whatever bearer
+header rides along. Such a session cannot pair a phone or a Telegram chat
+(403 `sso-session`): either would be a session that outlives it. An API key
+or an MCP grant can still be made from it, with a fresh sign-in (see "Fresh
+sign-in"): those are credentials of their own, not sessions, so the session
+gate does not judge them, and their leaver rules are Phase 5 (plan section
+10.3). Refusing them would shut a person who signs in only with the company
+account out of MCP clients. Sign out ends the Mantle session only (no single
+logout).
 
 Failures go back to the browser as `?oidc=<code>`: `expired`, `cancelled`
 (the provider said no), `failed` (the token did not verify), `unavailable`
@@ -227,35 +231,97 @@ next page. Each failed callback writes an
 `auth.login_failed` audit row with the reason, and the provider account's
 issuer and subject when one came back.
 
+## Handing a sign-in to a client
+
+The web app, the desktop app and the phone all hold a bearer, and the
+provider's sign-in runs in a browser, so the callback cannot give them a
+cookie. They use one flow (`server/web/lib/oidc/handoff.ts`), PKCE between the
+client and the brain, on top of the PKCE between the brain and the provider:
+
+1. The client makes a verifier and keeps it. It opens, in the system browser,
+   `GET /api/auth/oidc/start?redirect=<target>&challenge=<S256>`.
+2. The provider signs the person in and comes back to the callback, as usual.
+3. The callback sends the browser to the target with a one-time code, in the
+   fragment: `<target>#oidc=code&code=<c>&purpose=signin`, or
+   `<target>#oidc=<why it stopped>`.
+4. The client sends `POST /api/auth/oidc/exchange { code, verifier,
+deviceName? }` and gets what the flow was for.
+
+A code is 256 random bits, lasts 2 minutes and works once. Only its sha256 is
+kept (`oidc_handoff_codes`). The verifier is compared after the code is spent,
+so a wrong one burns the code. Every failure answers the same 401.
+
+Targets, the only places a flow ends (a mailed start URL can send a code
+nowhere else):
+
+- `mantle://oidc`, the desktop app and the phone. Any app can claim a custom
+  scheme, which is why a code is worth nothing without the verifier.
+- A page on this brain's public origin, on `MANTLE_CLIENT_ORIGIN`, or on a
+  named `MANTLE_API_CORS_ORIGINS` entry. Never the `*` wildcard.
+
+The bearer is a device token like any other (listed and revoked in
+Settings > Logins), with three differences. It lasts
+`MANTLE_OIDC_SESSION_HOURS`. It carries the login's session epoch, so an
+unlink ends it. It never rotates: `POST /api/auth/token/refresh` answers it
+with itself until it ends, then the person signs in through the provider. The
+gate judges it as a company sign-in session (`bearerSessionKind`,
+`server/web/lib/oidc/hold.ts`), and the cookie `POST /api/auth/sso` upgrades it
+to takes its end and its mark.
+
+A link handed to a client (`POST /api/auth/oidc/link { handoff, ticket? }`)
+answers a start URL for whichever browser opens it. The callback links
+nothing: the link is made when the client spends the code. So a start URL
+mailed to someone else links nobody's account to the sender's login: the
+code reaches their app or browser, which holds no verifier.
+
+## Fresh sign-in
+
+Key creation and MCP consent ask a person to prove who they are again. A
+login linked to a company account does that with a fresh company sign-in, in
+place of its password (`server/web/lib/oidc/fresh.ts`). The provider signs the
+person in again (`prompt=login`, `max_age=0`), the account that comes back must
+be the one linked to this login (else `wrong-account`), and one code buys one
+request, for the login and session epoch that asked. When the ID token says
+when the person signed in, it must be at or after the flow's start, as for a
+link. A provider that sends no `auth_time` is let through, with one log line:
+for Entra, add it as an optional claim ([oidc-entra.md](oidc-entra.md)).
+
+- `GET /api/access-keys` answers `stepUp: { kind: 'company', label }` and
+  `needsPassword: false` for a linked login. The client calls
+  `POST /api/auth/oidc/fresh { redirect, challenge }`, opens `url`, and sends
+  `fresh: { code, verifier }` on the create. A failure answers 403 with
+  `reason: 'fresh-sign-in'`.
+- The MCP consent page is a page of this brain, so it needs no verifier: its
+  **Confirm** button runs the flow in that browser and comes back to the page
+  with a code, spent by the same session on Allow.
+
+In required mode a typed password does not confirm a login whose only way in
+is company sign-in. In optional mode it still does, for an app from before
+this milestone. The original account and an unlinked login keep their
+password.
+
 ## Routes
 
-| Route                                                 | Who                                                   | What                                                           |
-| ----------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
-| `GET /api/auth/oidc/config`                           | anyone                                                | `{ mode: 'off' }`, or `{ mode, label }` for the sign-in button |
-| `GET /api/auth/oidc/start?return=<path>`              | anyone                                                | to the provider (a top-level navigation)                       |
-| `GET /api/auth/oidc/callback`                         | the provider's redirect                               | signs a linked login in, or finishes a link                    |
-| `GET /api/auth/oidc/status`                           | the signed-in login                                   | linked, the offer, whether it must link                        |
-| `POST /api/auth/oidc/link` `{ password?, returnTo? }` | the signed-in login (cookie session), or a held login | `{ url }` to open                                              |
-| `DELETE /api/auth/oidc/link`                          | the signed-in login                                   | removes its own link where it may                              |
-| `POST /api/auth/oidc/offer`                           | the signed-in login                                   | hides the offer for 7 days                                     |
-| `GET /api/users/oidc`                                 | the users area                                        | counts and each active login's link and outside mark           |
-| `PATCH /api/users/:id/oidc` `{ outside }`             | the users area                                        | marks or clears an outside person                              |
-| `DELETE /api/users/:id/oidc`                          | the users area                                        | removes a login's link                                         |
+| Route                                                                    | Who                                  | What                                                                                              |
+| ------------------------------------------------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `GET /api/auth/oidc/config`                                              | anyone                               | `{ mode: 'off' }`, or `{ mode, label }` for the sign-in button                                    |
+| `GET /api/auth/oidc/start`                                               | anyone                               | to the provider (a top-level navigation): `?return=<path>`, `?redirect=&challenge=` or `?ticket=` |
+| `GET /api/auth/oidc/callback`                                            | the provider's redirect              | signs a linked login in, or finishes a link                                                       |
+| `GET /api/auth/oidc/status`                                              | the signed-in login                  | linked, the offer, whether it must link                                                           |
+| `POST /api/auth/oidc/link` `{ password?, returnTo?, handoff?, ticket? }` | the signed-in login, or a held login | `{ url }` to open. With no `handoff`, a cookie session only                                       |
+| `POST /api/auth/oidc/exchange` `{ code, verifier, deviceName? }`         | anyone with a code and its verifier  | a bearer, or a link made                                                                          |
+| `POST /api/auth/oidc/fresh` `{ redirect, challenge }`                    | the signed-in login, linked          | `{ url }` to open                                                                                 |
+| `DELETE /api/auth/oidc/link`                                             | the signed-in login                  | removes its own link where it may                                                                 |
+| `POST /api/auth/oidc/offer`                                              | the signed-in login                  | hides the offer for 7 days                                                                        |
+| `GET /api/users/oidc`                                                    | the users area                       | counts and each active login's link and outside mark                                              |
+| `PATCH /api/users/:id/oidc` `{ outside }`                                | the users area                       | marks or clears an outside person                                                                 |
+| `DELETE /api/users/:id/oidc`                                             | the users area                       | removes a login's link                                                                            |
 
 The types are in `packages/client-types/src/dto/auth.ts` (`OidcConfigDTO`,
 `OidcStatusDTO`, `OidcRefusal`, `OidcAdminSummaryDTO` and the rest).
 
 ## Not in this milestone
 
-- The client and phone screens (the button, the offer card, the link step,
-  the profile and Users settings).
-- A sign-in for a bearer client (the desktop app, the phone, the split web
-  client): the system browser and a one-time code exchanged for a bearer.
-- A first link inside the invite page: in required mode an invite accept
-  makes the login and holds it at the link step (403-free: `linkRequired`),
-  and the client takes it there.
-- Fresh company sign-in (`max_age=0`) in place of the password at key
-  creation and MCP consent.
 - SCIM and the short lives of keys and MCP grants for leavers (Phase 5).
   Until then a block at the provider does not reach every way in: an API
   key or an MCP grant a person made (with the password they still know)
@@ -284,10 +350,13 @@ The types are in `packages/client-types/src/dto/auth.ts` (`OidcConfigDTO`,
   whether a password is right (within their rate limits), as before the
   milestone a right one gave a session.
 - A held ticket (5 minutes) is not ended by anything but its use or its
-  time: someone at the same browser in those minutes can start the link.
-- Required mode has no sign-in for a linked login on the phone, the desktop
-  app or the split web client yet: keep `optional` until the client
-  milestone ships (plan section 14).
+  time: someone at the same browser in those minutes can start the link. A
+  ticket in a token login's answer is not used up by a link start either; it
+  lives in the client's memory for those minutes.
+- A person invited while the mode is on still chooses a password at the
+  invite: a first sign-in with no password at all is not in this milestone.
+- Required mode needs a client that has the company sign-in screens: keep
+  `optional` until each client has shipped them (plan section 14).
 
 ## Testing
 

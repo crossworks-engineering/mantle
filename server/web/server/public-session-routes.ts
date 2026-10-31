@@ -206,6 +206,18 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     init: { method: 'POST' },
     expect: { member: { status: 404 }, unknown: { status: 404 } },
   },
+  {
+    key: 'POST /api/auth/oidc/fresh',
+    path: '/api/auth/oidc/fresh',
+    init: json({}),
+    expect: { member: { status: 404 }, unknown: { status: 404 } },
+  },
+  {
+    key: 'POST /api/auth/oidc/exchange',
+    path: '/api/auth/oidc/exchange',
+    init: json({}),
+    expect: { member: { status: 404 }, unknown: { status: 404 } },
+  },
   // The password token logins read no session: a cookie or a bearer of any
   // role buys nothing, and a bad body is the same 401 for everyone.
   ...(['mobile-login', 'token', 'device-login'] as const).map((name): PublicSessionRoute => ({
