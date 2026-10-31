@@ -23,13 +23,26 @@
  * (@mantle/telegram chat-login.ts) ask the same state where they find
  * their login.
  *
+ * Company sign-in (docs/oidc-sign-in.md) decides which of those holds a
+ * credential meets, by how it came (a password session, an SSO session, a
+ * grant a session made): lib/oidc/hold.ts credentialPasswordHold, the same
+ * facts its session gate reads. Where the password is no way in (required
+ * mode, a linked login) nothing is held; an SSO session never meets the
+ * recheck it could not clear.
+ *
  * With no password rule this returns at once and reads nothing: a box
  * without the policy runs every request exactly as before.
  */
-import { passwordHoldState, passwordPolicyMin } from '@mantle/config';
+import {
+  passwordHoldState,
+  passwordPolicyMin,
+  type CredentialKind,
+  type PasswordHold,
+} from '@mantle/config';
 import { authUsers, db, eq } from '@mantle/db';
+import { credentialPasswordHold } from '../oidc/hold';
 import type { RouteCaller, RouteRow } from './route-policy';
-import type { RequestLogins } from './session';
+import { requestLogins, type RequestLogins } from './session';
 import { passwordRule } from './password-rule';
 
 /** The code a 'change' hold answers with (a client keys its change-password
@@ -78,7 +91,7 @@ export function passwordRecheckRequiredBody(): Record<string, unknown> {
  * every hold. The gate's default answers no-store (apiCacheDefault).
  */
 export function holdAnswer(
-  state: 'change' | 'recheck' | null,
+  state: PasswordHold,
   row: Pick<RouteRow, 'passwordHold'>,
 ): Response | null {
   if (state === null || row.passwordHold === 'sign-out') return null;
@@ -102,22 +115,41 @@ export async function passwordHoldAnswer(
   if (passwordPolicyMin() === null) return null;
   if (row.public && !(row.caller && PUBLIC_ACTS_AS_LOGIN.has(row.caller))) return null;
   const finding = logins.login();
-  let state: 'change' | 'recheck' | null;
+  let found: Awaited<typeof finding>;
   try {
-    const found = await finding;
-    state = found.resolved
-      ? passwordHoldState(found.resolved.mustChangePassword, found.resolved.passwordCheckedMin)
-      : null;
+    found = await finding;
   } catch {
     logins.keepFailure(finding);
     return null;
   }
-  return holdAnswer(state, row);
+  return holdAnswer(await foundHold(found.resolved), row);
 }
 
-/** The hold on `loginId` now (whoami's answer, MCP's refusal). With no
- *  password rule: null, and nothing is read. */
-export async function loginPasswordHold(loginId: string): Promise<'change' | 'recheck' | null> {
+/** The hold a found login's credential meets. */
+async function foundHold(
+  r: {
+    loginId: string;
+    mustChangePassword: boolean;
+    passwordCheckedMin: number | null;
+    credential: CredentialKind;
+  } | null,
+): Promise<PasswordHold> {
+  if (!r) return null;
+  const state = passwordHoldState(r.mustChangePassword, r.passwordCheckedMin);
+  return credentialPasswordHold(r.loginId, state, r.credential);
+}
+
+/** The hold the request's own credential meets (whoami's answer): the
+ *  login the gate found, as found. With no password rule: null, and
+ *  nothing is read. */
+export async function requestPasswordHold(): Promise<PasswordHold> {
+  if (passwordPolicyMin() === null) return null;
+  return foundHold((await requestLogins().login()).resolved);
+}
+
+/** The hold a grant (an MCP grant, an API key on MCP) of `loginId` meets
+ *  now: MCP's refusal. With no password rule: null, and nothing is read. */
+export async function grantPasswordHold(loginId: string): Promise<PasswordHold> {
   if (passwordPolicyMin() === null) return null;
   const [row] = await db
     .select({
@@ -127,5 +159,7 @@ export async function loginPasswordHold(loginId: string): Promise<'change' | 're
     .from(authUsers)
     .where(eq(authUsers.id, loginId))
     .limit(1);
-  return row ? passwordHoldState(row.flag, row.checkedMin) : null;
+  return row
+    ? credentialPasswordHold(loginId, passwordHoldState(row.flag, row.checkedMin), 'grant')
+    : null;
 }

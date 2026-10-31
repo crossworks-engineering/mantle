@@ -6,7 +6,7 @@ import { brainIdField } from '@/lib/brain-identity';
 import { loginWorkspaces } from '@/lib/login-workspaces';
 import { workspaceCaller } from '@/lib/workspaces';
 import { routePolicy } from '@/lib/auth/route-declaration';
-import { loginPasswordHold } from '@/lib/auth/password-hold';
+import { requestPasswordHold } from '@/lib/auth/password-hold';
 import { passwordRule } from '@/lib/auth/password-rule';
 
 export const policy = routePolicy({
@@ -62,9 +62,11 @@ export async function GET() {
     ...ROUTES[role],
     ...(await brainIdField()),
     ...(await loginWorkspaces('whoami', workspaceCaller(login), (await adminFacts(login)).admin)),
-    // Only while the box password policy holds the login: the client's
-    // change-password step reads why and what a new password needs.
-    ...((await loginPasswordHold(login.loginId)) === 'change'
+    // Only while the box password policy holds this credential (an SSO
+    // session of a login whose password is no way in is never held): the
+    // client's change-password step reads why and what a new password
+    // needs.
+    ...((await requestPasswordHold()) === 'change'
       ? { mustChangePassword: true as const, passwordRule: passwordRule() }
       : {}),
   };

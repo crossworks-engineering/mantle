@@ -98,7 +98,10 @@ vi.mock('./provider', async (importOriginal) => ({
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  verifyPassword: async () => h.passwordOk,
+  // The link start's prompt (verifyPasswordForUse): no password rule in
+  // this file, so a right password is 'ok'.
+  verifyPasswordForUse: async () => (h.passwordOk ? 'ok' : 'wrong'),
+  stampCompanySignIn: async () => {},
   endLoginSessions: async (id: string) => {
     h.ended.push(id);
     return 1;

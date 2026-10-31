@@ -37,6 +37,7 @@ import {
 } from '@mantle/db';
 import { PROVIDER_ERROR_REASONS } from '@mantle/std';
 import { passwordRule } from './auth/password-rule';
+import { issuerKey, oidcSettings } from './oidc/settings';
 
 /** An agent row whose model is another's (it inherits): no route of its own. */
 const INHERIT = 'inherit';
@@ -151,14 +152,23 @@ export type PolicyReport = {
 
 /** How many enabled logins the password rule holds now: `change` (a weak
  *  password, held to the change step) and `recheck` (not yet checked under
- *  the rule: they sign in once). Zero with no rule. */
+ *  the rule: they sign in once). Zero with no rule. A login whose password
+ *  is no way in (company sign-in required, linked to the provider, not the
+ *  original account: @mantle/config passwordIsWayIn) is outside the rule
+ *  and not counted. */
 export async function heldLoginCounts(): Promise<{ change: number; recheck: number }> {
   const min = passwordPolicyMin();
   if (min === null) return { change: 0, recheck: 0 };
+  const s = oidcSettings();
+  const counted =
+    s.mode === 'required'
+      ? sql`(${authUsers.isOwner} or not exists (select 1 from oidc_signin_links k
+              where k.login_id = ${authUsers.id} and k.issuer = ${issuerKey(s.issuer)}))`
+      : sql`true`;
   const [row] = await db
     .select({
-      change: sql<number>`count(*) filter (where ${authUsers.mustChangePassword})::int`,
-      recheck: sql<number>`count(*) filter (where not ${authUsers.mustChangePassword} and (${authUsers.passwordCheckedMin} is null or ${authUsers.passwordCheckedMin} < ${min}))::int`,
+      change: sql<number>`count(*) filter (where ${counted} and ${authUsers.mustChangePassword})::int`,
+      recheck: sql<number>`count(*) filter (where ${counted} and not ${authUsers.mustChangePassword} and (${authUsers.passwordCheckedMin} is null or ${authUsers.passwordCheckedMin} < ${min}))::int`,
     })
     .from(authUsers)
     .where(isNull(authUsers.disabledAt));

@@ -10,9 +10,10 @@
  * not a common password (a bundled list, no outside call, no symbol rules;
  * plan "Corporate sign-in", section 6.4). docs/policy.md.
  *
- * Phase 4 (company sign-in) hooks in here: a login that signs in through the
- * company's provider sets no password, and this stays the only rule for the
- * ones that do.
+ * Company sign-in: a login whose password is no way in (required mode, a
+ * linked login) is outside this rule. Its password is not checked at a
+ * sign-in or a prompt (session.ts notePasswordChecked), and no hold reaches
+ * its credentials (lib/oidc/hold.ts credentialPasswordHold).
  */
 import { DEFAULT_PASSWORD_MIN, passwordPolicyMin } from '@mantle/config';
 

@@ -118,6 +118,12 @@ The facts are kept 10 seconds per login (forgotten at once on a link, an
 unlink or an outside mark), and a failed read holds. API keys, MCP grants
 and linked brains are not judged by it (Phase 5).
 
+The box password rule (docs/policy.md) asks the same facts for its hold
+(`credentialPasswordHold` in the same file): where the password is no way
+in (required mode, a linked login) nothing holds a credential of that
+login; an SSO session never meets the recheck it could not clear; and the
+callback is open under every hold.
+
 A person outside the company invited while the mode is `required` is held
 at the link step they cannot finish: an admin marks the new login outside
 (`PATCH /api/users/:id/oidc`) and the person signs in with the password they

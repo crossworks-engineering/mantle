@@ -187,6 +187,26 @@ column is read (a new password and the first owner write the values a box
 without a rule already holds: false and null), so a box whose operator
 removes the rule lets every login through again.
 
+**With company sign-in.** The hold is about the login's password, so it
+applies by how a credential came (`server/web/lib/oidc/hold.ts`
+`credentialPasswordHold`, the table in `@mantle/config` `passwordHoldFor`;
+docs/oidc-sign-in.md):
+
+| Credential                                         | Password no way in (required, linked) | `change` | `recheck`                        |
+| -------------------------------------------------- | ------------------------------------- | -------- | -------------------------------- |
+| password session (a plain cookie, a device bearer) | nothing                               | held     | held                             |
+| company sign-in session (marked cookie)            | nothing                               | held     | never                            |
+| a grant (API key, MCP grant, Telegram chat)        | nothing                               | held     | held, unless the login is linked |
+
+A login company sign-in's required mode keeps to its company account is
+outside the rule: nothing holds it, and a password typed for it (a refused
+sign-in, a prompt) writes nothing. An SSO session never meets the recheck,
+which only a password sign-in clears. A linked login's grant may have been
+made in an SSO session, so it is not rechecked either; its password is
+still checked at its next use. Company sign-in's callback is open under
+every hold (`passwordHold: 'sign-out'`): a held cookie in the browser does
+not stop a sign-in, and the new session meets the hold by its own kind. The Policy panel's counts leave out the logins outside the rule.
+
 A password change ends the login's other sessions and revokes its API keys,
 MCP connectors and linked brains, as every password change does; a forced
 change too. A person held on turning the rule on makes new keys after the

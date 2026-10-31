@@ -26,6 +26,12 @@
  *    unlinked one with its password, which holds it to the one link step.
  *    Nobody is stranded (section 17.1 rule 4).
  */
+import {
+  passwordHoldFor,
+  passwordIsWayIn,
+  type CredentialKind,
+  type PasswordHold,
+} from '@mantle/config';
 import { TtlCache, errorMessage } from '@mantle/std';
 import { issuerKey, oidcSettings, type OidcOn, type OidcSettings } from './settings';
 import { oidcRuleFacts } from './store';
@@ -59,7 +65,7 @@ export function ruleOf(s: OidcSettings, f: RuleFacts | null): PasswordRule {
   // in here.
   if (!f) return 'link-required';
   if (f.owner) return 'allow';
-  if (f.linked) return 'sso-required';
+  if (!passwordIsWayIn(s.mode, f)) return 'sso-required';
   if (outsideHonoured(s, f)) return 'allow';
   return 'link-required';
 }
@@ -125,6 +131,31 @@ export function sessionHeld(loginId: string, kind: SessionKind): boolean | Promi
       return true;
     },
   );
+}
+
+/**
+ * The password hold (lib/auth/password-hold.ts) that applies to a
+ * credential of `kind` for `loginId`, whose hold by the password rule alone
+ * is `hold`: the same facts and rule this gate reads (@mantle/config
+ * passwordHoldFor holds the table). No read while off, nor in optional mode
+ * but for a grant's recheck (whether the login is linked). A read that
+ * fails keeps the hold (fail closed).
+ */
+export function credentialPasswordHold(
+  loginId: string,
+  hold: PasswordHold,
+  kind: CredentialKind,
+): PasswordHold | Promise<PasswordHold> {
+  if (hold === null) return null;
+  const s = oidcSettings();
+  const decide = (f: RuleFacts | null): PasswordHold =>
+    passwordHoldFor(hold, kind, {
+      passwordWayIn: ruleOf(s, f) !== 'sso-required',
+      companyWayIn: s.mode !== 'off' && !!f?.linked,
+    });
+  if (s.mode === 'off') return decide(null);
+  if (s.mode === 'optional' && !(kind === 'grant' && hold === 'recheck')) return decide(null);
+  return factsOf(loginId, s).then(decide, () => hold);
 }
 
 /** The kind of a session cookie the session verified (tokens.ts

@@ -26,7 +26,14 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, liveWorkspaceSql, systemWork, telegramChats } from '@mantle/db';
-import { passwordHoldState, passwordPolicyMin } from '@mantle/config';
+import {
+  issuerKey,
+  passwordHoldFor,
+  passwordHoldState,
+  passwordIsWayIn,
+  passwordPolicyMin,
+  readOidcSettings,
+} from '@mantle/config';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { botAgentIdSql } from './chat-assistant';
@@ -109,18 +116,36 @@ export async function chatLoginRefusal(args: {
   return (await loginPasswordHeld(loginId)) ? 'password_hold' : null;
 }
 
-/** Whether the box password rule holds `loginId` (@mantle/config
- *  passwordHoldState). With no rule: false, and nothing is read. */
+/** Whether the box password rule holds `loginId`'s chat (@mantle/config
+ *  passwordHoldState). A paired chat is a grant a session made, so company
+ *  sign-in's rule for one applies (@mantle/config passwordHoldFor, the
+ *  web gate's table): the login's link to the provider in .env and its
+ *  anchor mark, read with the row (as server/web lib/oidc/store.ts
+ *  oidcRuleFacts does). With no rule: false, and nothing is read. */
 async function loginPasswordHeld(loginId: string): Promise<boolean> {
   if (passwordPolicyMin() === null) return false;
+  const s = readOidcSettings().settings;
+  const issuer = s.mode === 'off' ? null : issuerKey(s.issuer);
   const rows = (await telegramSystemWork(() =>
     db.execute(sql`
-      select must_change_password as flag, password_checked_min as checked
-        from auth.users where id = ${loginId}::uuid
+      select u.must_change_password as flag, u.password_checked_min as checked,
+             u.is_owner as owner,
+             (${issuer}::text is not null and exists (
+               select 1 from oidc_signin_links k
+                where k.login_id = u.id and k.issuer = ${issuer}::text
+             )) as linked
+        from auth.users u where u.id = ${loginId}::uuid
     `),
-  )) as unknown as { flag: boolean; checked: number | null }[];
+  )) as unknown as { flag: boolean; checked: number | null; owner: boolean; linked: boolean }[];
   const r = rows[0];
-  return !!r && passwordHoldState(r.flag, r.checked) !== null;
+  if (!r) return false;
+  const f = { owner: r.owner === true, linked: r.linked === true };
+  return (
+    passwordHoldFor(passwordHoldState(r.flag, r.checked), 'grant', {
+      passwordWayIn: passwordIsWayIn(s.mode, f),
+      companyWayIn: s.mode !== 'off' && f.linked,
+    }) !== null
+  );
 }
 
 let moderatesFailedLogged = false;

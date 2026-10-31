@@ -9,7 +9,7 @@
 import { cookies, headers } from '../../server/http-compat/headers';
 import { NextResponse } from '../../server/http-compat';
 import { RedirectError } from '../../server/http-compat/redirect-error';
-import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import {
   db,
@@ -81,7 +81,12 @@ import {
   type RouteRow,
 } from './route-policy';
 import { auditsAsWrite } from './route-scope';
-import { DEVICE_BEARER, cookieSessionKind, sessionHeld } from '../oidc/hold';
+import {
+  DEVICE_BEARER,
+  cookieSessionKind,
+  passwordRule as signInRule,
+  sessionHeld,
+} from '../oidc/hold';
 import type { Login } from './login';
 import { takeRouteLimits, type LimitLogin } from '../route-limits';
 import {
@@ -97,7 +102,7 @@ import {
   verifySessionCookie,
   type AppFrameTicket,
 } from './tokens';
-import { env, passwordPolicyMin } from '@mantle/config';
+import { env, passwordPolicyMin, type CredentialKind } from '@mantle/config';
 import { isLoginRole, type LoginRole } from '@mantle/client-types/role-names';
 
 /**
@@ -227,6 +232,9 @@ type Resolved = Readonly<{
    *  only while the box policy sets a password rule. */
   mustChangePassword: boolean;
   passwordCheckedMin: number | null;
+  /** How the credential came (@mantle/config CredentialKind): the password
+   *  hold applies by it (lib/oidc/hold.ts credentialPasswordHold). */
+  credential: CredentialKind;
 }>;
 
 /** The member routes' record of a login that is not an Admin user. */
@@ -414,7 +422,7 @@ async function findMemberAsset(url: string): Promise<MemberCaller | null> {
   if (!claims?.act) return null;
   const row = await loadLoginRow(claims.act);
   if (!row || !loginUsable(row) || row.sessionEpoch !== claims.ep) return null;
-  const resolved = await resolvedFor(row, 'web');
+  const resolved = await resolvedFor(row, 'web', 'grant');
   return resolved && !resolved.admin && resolved.user.id === claims.uid ? memberOf(resolved) : null;
 }
 
@@ -433,7 +441,7 @@ async function findLoginAsset(url: string): Promise<Resolved | null> {
   if (!claims) return null;
   const row = await loadLoginRow(claims.act ?? claims.uid);
   if (!row || !loginUsable(row) || row.sessionEpoch !== claims.ep) return null;
-  const resolved = await resolvedFor(row, 'web');
+  const resolved = await resolvedFor(row, 'web', 'grant');
   return resolved && resolved.user.id === claims.uid ? resolved : null;
 }
 
@@ -489,7 +497,7 @@ async function findBearer(): Promise<FoundBearer> {
   if (!row || !loginUsable(row)) return NO_BEARER;
   if (claims.ep !== undefined && claims.ep !== row.sessionEpoch) return NO_BEARER;
 
-  const resolved = await resolvedFor(row, 'mobile');
+  const resolved = await resolvedFor(row, 'mobile', 'password');
   return { resolved, jti: resolved ? claims.jti : null, touch: claims.jti, rotated: null };
 }
 
@@ -620,7 +628,11 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
  * no login (null), never an admin. Null too when the brain has no anchor (a
  * corrupt state).
  */
-async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved | null> {
+async function resolvedFor(
+  row: LoginRow,
+  source: AuthSource,
+  credential: CredentialKind,
+): Promise<Resolved | null> {
   if (!isLoginRole(row.role)) return null;
   const admin = adminLogin(row);
   const user = await sessionUserFor(admin ? row : { ...row, isOwner: false });
@@ -634,6 +646,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
     admin,
     mustChangePassword: row.mustChangePassword === true,
     passwordCheckedMin: row.passwordCheckedMin ?? null,
+    credential,
   };
 }
 
@@ -665,7 +678,7 @@ async function findKeyLogin(): Promise<FoundLogin | undefined> {
   const ctx = getRequestContext();
   const grant = ctx?.accessKey;
   if (!ctx || !grant || !keyOnRow(grant, currentRoute(), ctx.path).ok) return NO_LOGIN;
-  const resolved = await resolvedFor(grant.login, 'api');
+  const resolved = await resolvedFor(grant.login, 'api', 'grant');
   // A read key's request runs as login(ro).
   return { ...NO_LOGIN, resolved, mode: grant.access === 'read_write' ? 'rw' : 'ro' };
 }
@@ -715,6 +728,7 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
       mustChangePassword: false,
       // The stand-in has no password: checked under whatever rule is set.
       passwordCheckedMin: passwordPolicyMin(),
+      credential: 'password',
     };
     return { ...NO_LOGIN, resolved };
   }
@@ -738,7 +752,7 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
       // outside required mode: no read.
       const held = row ? await sessionHeld(row.id, cookieSessionKind(data)) : false;
       if (row && loginUsable(row) && row.sessionEpoch === data.ep && deviceOk && !held) {
-        const resolved = await resolvedFor(row, 'web');
+        const resolved = await resolvedFor(row, 'web', data.oidc ? 'sso' : 'password');
         if (resolved) return { ...NO_LOGIN, resolved, mode: 'rw' };
       }
     }
@@ -942,7 +956,7 @@ const HTTP_ADMIN_FOR = 'httpAdminFor';
 /** The request's logins, as the gate bound them on the caller; a fresh set
  *  outside a routed request (and inside a call nested in one with a caller
  *  of its own), where each guard resolves on its own. */
-function requestLogins(): RequestLogins {
+export function requestLogins(): RequestLogins {
   return boundLogins(currentCaller()) ?? new RequestLogins();
 }
 
@@ -2340,6 +2354,12 @@ export async function authenticatePassword(
  * and password_checked_min records the rule it was checked under. With no
  * rule: nothing is read or written, as before. Returns whether the login
  * must now change its password.
+ *
+ * Only where the password is a way in: a login company sign-in's required
+ * mode keeps to its company account (sso-required: its password sign-in is
+ * refused) is outside the rule, so a password typed for it, right or weak,
+ * writes nothing and holds none of its sessions (off and optional: no
+ * read).
  */
 async function notePasswordChecked(
   loginId: string,
@@ -2348,6 +2368,7 @@ async function notePasswordChecked(
 ): Promise<boolean> {
   const min = passwordPolicyMin();
   if (min === null) return false;
+  if ((await signInRule(loginId)) === 'sso-required') return false;
   const needs = signInNeedsPasswordChange(password);
   if (needs !== now.mustChangePassword || now.passwordCheckedMin !== min) {
     await writeLoginCredential(loginId, { mustChangePassword: needs, passwordCheckedMin: min });
@@ -2366,15 +2387,28 @@ export async function notePasswordSet(loginId: string): Promise<void> {
 }
 
 /** A login's credential columns (the password hash, the policy's forced
- *  change): never the narrow login's, the full-route spot login-credential
- *  on a narrow exit (docs/runtime-role.md). */
+ *  change, a company sign-in's last sign-in stamp): never the narrow
+ *  login's, the full-route spot login-credential on a narrow exit
+ *  (docs/runtime-role.md). */
 function writeLoginCredential(
   loginId: string,
-  set: { passwordHash?: string; mustChangePassword?: boolean; passwordCheckedMin?: number | null },
+  set: {
+    passwordHash?: string;
+    mustChangePassword?: boolean;
+    passwordCheckedMin?: number | null;
+    lastLoginAt?: SQL;
+  },
 ): Promise<unknown> {
   return onFullSystemRoute('login-credential', () =>
     db.update(authUsers).set(set).where(eq(authUsers.id, loginId)),
   );
+}
+
+/** A company sign-in's last sign-in stamp (last_login_at). Its callback
+ *  reads the browser's cookie first (the row's limit), so it may run as
+ *  another login, whose narrow exit holds no write of the column. */
+export async function stampCompanySignIn(loginId: string): Promise<void> {
+  await writeLoginCredential(loginId, { lastLoginAt: sql`now()` });
 }
 
 /** authenticatePassword, the login id only (the password bearer logins: an

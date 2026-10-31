@@ -21,7 +21,6 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { authUsers, db, eq, sql } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import type {
@@ -36,10 +35,12 @@ import type {
 import {
   endLoginSessions,
   setSessionCookie,
+  stampCompanySignIn,
   unauthorizedRefusal,
-  verifyPassword,
+  verifyPasswordForUse,
 } from '@/lib/auth';
 import type { Login } from '@/lib/auth/login';
+import { passwordChangeRequiredBody } from '@/lib/auth/password-hold';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
 import { forgetRelayDevices } from '@/lib/push/store';
@@ -225,10 +226,7 @@ async function mintSsoSession(
   row: { id: string; email: string; sessionEpoch: number },
   how: 'signin' | 'link',
 ): Promise<void> {
-  await db
-    .update(authUsers)
-    .set({ lastLoginAt: sql`now()` })
-    .where(eq(authUsers.id, row.id));
+  await stampCompanySignIn(row.id);
   setSessionCookie(res, req, row.id, row.sessionEpoch, {
     ttlSeconds: s.sessionSeconds,
     oidc: true,
@@ -425,7 +423,11 @@ async function linkStarter(
       const bucket = `oidc-link-pw:${login.loginId}`;
       const tries = rateLimitLogin(bucket, LINK_PASSWORD_RATE);
       if (!tries.ok) return rateLimitedResponse(tries.retryAfterSec);
-      if (!(await verifyPassword(login.loginId, password))) {
+      // The box password rule checks the password typed here too, as at
+      // key creation and MCP consent (verifyPasswordForUse): one that fails
+      // it holds the login to the change step and starts no link.
+      const checked = await verifyPasswordForUse(login.loginId, password);
+      if (checked === 'wrong') {
         auditFireAndForget({
           actorId: login.loginId,
           actorEmail: login.email,
@@ -438,6 +440,7 @@ async function linkStarter(
         return json({ error: 'Current password is incorrect.' }, 401);
       }
       rateLimitLoginRefund(bucket);
+      if (checked === 'held') return json(passwordChangeRequiredBody(), 403);
     }
     return { loginId: login.loginId, epoch: login.sessionEpoch, held: false };
   }

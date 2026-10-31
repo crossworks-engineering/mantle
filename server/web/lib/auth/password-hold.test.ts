@@ -26,7 +26,11 @@ function logins(found: Promise<unknown>) {
   };
 }
 const as = (mustChangePassword: boolean, passwordCheckedMin: number | null) =>
-  logins(Promise.resolve({ resolved: { mustChangePassword, passwordCheckedMin } }));
+  logins(
+    Promise.resolve({
+      resolved: { loginId: 'l', mustChangePassword, passwordCheckedMin, credential: 'password' },
+    }),
+  );
 const held = () => as(true, 12);
 const unchecked = () => as(false, null);
 const free = () => as(false, 12);
@@ -129,13 +133,17 @@ describe('MANTLE_POLICY_PASSWORD_MIN set', () => {
 });
 
 describe('the rows that declare passwordHold', () => {
-  it('are the change step, whoami, sign-out and keeping a session, nothing else', () => {
+  it('are the change step, whoami, sign-out, keeping a session and company sign-in coming back, nothing else', () => {
     const open = [...ROUTE_POLICY.values()]
       .filter((r) => r.passwordHold !== null)
       .map((r) => `${r.key} ${r.passwordHold}`)
       .sort();
     expect(open).toEqual(
       [
+        // A sign-in callback acts as the login it signs in, not the cookie
+        // it meets (lib/oidc callback route).
+        'GET /api/auth/oidc/callback sign-out',
+        'HEAD /api/auth/oidc/callback sign-out',
         'GET /api/auth/whoami change-step',
         'HEAD /api/auth/whoami change-step',
         'POST /api/auth/change-password change-step',

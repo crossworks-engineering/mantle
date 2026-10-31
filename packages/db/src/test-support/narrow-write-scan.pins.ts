@@ -296,11 +296,6 @@ export const NARROW_SCAN_OPEN: Readonly<
     tag: 'covered-across-files',
     why: "POST /api/auth/login stamps the login's last login: a public route with no login (no exit: the system pool, full route)",
   },
-  'server/web/lib/oidc/flow.ts update auth.users [last_login_at]': {
-    n: 1,
-    tag: 'covered-across-files',
-    why: "mintSsoSession stamps the login's last login: only the company sign-in callback's sign-in and held link, a public route that read no login (no exit: the system pool, full route; an in-session link mints no session)",
-  },
   'server/web/app/api/auth/pair/claim/route.ts update auth.users [last_login_at]': {
     n: 1,
     tag: 'covered-across-files',

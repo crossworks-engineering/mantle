@@ -28,7 +28,7 @@ import { mcpToolPolicyOf, type McpCaller } from '@mantle/mcp-core';
 import { isLoginRole } from '@mantle/client-types/role-names';
 import { bearerFrom } from './auth/request';
 import { loadLoginRow } from './auth/login-row';
-import { loginPasswordHold } from './auth/password-hold';
+import { grantPasswordHold } from './auth/password-hold';
 import { loginIsAdmin } from './auth/admin-seat';
 import { adminLogin, memberLogin } from './auth/session';
 import {
@@ -96,11 +96,12 @@ function memberMcpCaller(
 /** Resolve the caller from the request's bearer, or null (answer 401). A
  *  login the box password policy holds (password-hold.ts: a password to
  *  change, or one not yet checked under the rule) is no caller until the
- *  person signs in or changes it in the app, whichever credential it came
- *  by. */
+ *  person signs in or changes it in the app. Every MCP credential is a
+ *  grant a session made (grantPasswordHold): a linked login's is not held
+ *  to a recheck its SSO session could not clear. */
 export async function resolveMcpCaller(req: Request): Promise<McpCaller | null> {
   const caller = await findMcpCaller(req);
-  if (caller && (await loginPasswordHold(caller.loginId)) !== null) return null;
+  if (caller && (await grantPasswordHold(caller.loginId)) !== null) return null;
   return caller;
 }
 

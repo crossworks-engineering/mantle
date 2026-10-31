@@ -496,6 +496,7 @@ export function parseOidcMode(raw: string | null | undefined): OidcMode | null {
 
 export * from './services';
 export * from './policy';
+export * from './oidc';
 export * from './parse';
 export * from './numbers';
 export * from './features';

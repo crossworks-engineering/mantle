@@ -4,6 +4,12 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
   GET: {
+    // Never the password hold's answer: a sign-in callback acts as the
+    // login it signs in, not as the cookie it meets (a held password
+    // cookie must not turn company sign-in into a raw 401 or 403). The new
+    // session meets the hold, by its own kind, on its next request; a link
+    // started only on a session the hold let through.
+    passwordHold: 'sign-out',
     class: 'self',
     public: true,
     caller: 'publicLogin',
