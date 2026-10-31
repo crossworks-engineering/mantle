@@ -71,11 +71,11 @@ import {
 } from './cookies';
 import {
   HANDOFF_CODE_TTL_SECONDS,
-  appTarget,
   brainOrigin,
   consentBinding,
   handoffCodeUrl,
   handoffFailedUrl,
+  mustAsk,
   newHandoffCode,
   readHandoff,
   readStartTicket,
@@ -166,8 +166,7 @@ function redirect(url: URL | string): NextResponse {
 /** GET /api/auth/oidc/config: the mode and the button's label. */
 export function oidcConfigAnswer(): NextResponse {
   const s = oidcSettings();
-  const body: OidcConfigDTO =
-    s.mode === 'off' ? { mode: 'off' } : { mode: s.mode, label: s.label, brain: brainOrigin(s) };
+  const body: OidcConfigDTO = s.mode === 'off' ? { mode: 'off' } : { mode: s.mode, label: s.label };
   return json(body);
 }
 
@@ -275,6 +274,8 @@ export async function oidcStartSignIn(req: Request): Promise<NextResponse> {
   if (raw && !ticket) return redirect(onBrain(s, '/login', 'expired'));
   const handoff = asked ? readHandoff(s, query.get('redirect'), query.get('challenge')) : null;
   if (asked && !handoff) return redirect(onBrain(s, '/login', 'failed'));
+  // A sign-in the provider must ask for and prove: handoff.ts mustAsk.
+  const ask = !!handoff && mustAsk(s, handoff);
   const flow: OidcFlow = ticket
     ? ticketFlow(ticket, secrets)
     : {
@@ -282,14 +283,11 @@ export async function oidcStartSignIn(req: Request): Promise<NextResponse> {
         returnTo: safeReturnPath(query.get('return')),
         ...secrets,
         ...(handoff ? { handoff } : {}),
+        ...(ask ? { startedAt: Math.floor(Date.now() / 1000) } : {}),
       };
   let url: string;
   try {
-    // A code for an app is never handed over silently: any app can claim the
-    // scheme and start a flow of its own (handoff.ts).
-    url = await authorizationUrl(s, secrets, {
-      again: flow.purpose !== 'signin' || appTarget(flow.handoff),
-    });
+    url = await authorizationUrl(s, secrets, { again: flow.purpose !== 'signin' || ask });
   } catch (err) {
     log('auth').warn(`company sign-in: the provider could not be read: ${errorMessage(err)}`);
     return redirect(flowEndUrl(s, flow, 'unavailable'));
@@ -400,10 +398,10 @@ export async function oidcCallback(req: Request, readLogin: LoginReader): Promis
       s,
       query,
       flow,
-      flow.purpose === 'signin'
-        ? {}
-        : flow.purpose === 'link'
-          ? { linkStartedAt: flow.startedAt }
+      flow.purpose === 'link'
+        ? { linkStartedAt: flow.startedAt }
+        : flow.startedAt === undefined
+          ? {}
           : { freshStartedAt: flow.startedAt },
     );
   } catch (err) {

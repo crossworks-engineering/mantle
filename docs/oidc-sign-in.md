@@ -210,8 +210,9 @@ A session made by company sign-in is the normal session cookie
 (`buildSessionCookie`), or a device bearer (see below), with the life of
 `MANTLE_OIDC_SESSION_HOURS`, marked (`so`) so a re-mint of it (a password
 change) keeps the end it had and never becomes a year, whatever bearer
-header rides along. Such a session cannot pair a phone or a Telegram chat
-(403 `sso-session`): either would be a session that outlives it. An API key
+header rides along. Such a session cannot pair a phone or a Telegram chat, or
+reset its own password with no old password (403 `sso-session`): each would be
+a way in that outlives it. An API key
 or an MCP grant can still be made from it, with a fresh sign-in (see "Fresh
 sign-in"): those are credentials of their own, not sessions, so the session
 gate does not judge them, and their leaver rules are Phase 5 (plan section
@@ -244,8 +245,9 @@ client and the brain, on top of the PKCE between the brain and the provider:
 3. The callback sends the browser to the target with a one-time code, in the
    fragment: `<target>#oidc=code&code=<c>&purpose=signin&iss=<brain>`, or
    `<target>#oidc=<why it stopped>&iss=<brain>`. The client compares `iss` with
-   the `brain` the config read answered, so a code from another brain is never
-   spent here (a device can hold several).
+   the origin it connected to itself, never a value a brain told it, so a code
+   from another brain is never sent here (a device can hold several). A client
+   must connect to the brain's public URL, not an alias.
 4. The client sends `POST /api/auth/oidc/exchange { code, verifier,
 deviceName? }` and gets what the flow was for.
 
@@ -259,12 +261,16 @@ any page that receives a code could send it on.
 
 - `mantle://oidc`, the desktop app and the phone. Any app can claim a custom
   scheme and start a flow of its own, so a flow that ends here always asks the
-  provider to sign the person in (`prompt=login`, `max_age=0`): a code is
-  never handed over silently.
-- `<origin>/auth/oidc`, the web app's own page, where the origin is this
-  brain's public origin, `MANTLE_CLIENT_ORIGIN` or a named
-  `MANTLE_API_CORS_ORIGINS` entry. Never the `*` wildcard. A client origin must
-  be a named CORS entry too, or it cannot post the exchange.
+  provider to sign the person in (`prompt=login`, `max_age=0`) and must prove
+  it did (`auth_time` at or after the flow's start): a code is never handed
+  over silently. A provider that sends no `auth_time` signs nobody in on the
+  desktop app or the phone.
+- `<origin>/auth/oidc`, the web app's own page, on this brain's public origin
+  or `MANTLE_CLIENT_ORIGIN`. A client origin must be a named CORS entry too, or
+  it cannot post the exchange.
+- `<origin>/auth/oidc` on another named `MANTLE_API_CORS_ORIGINS` entry, under
+  the same ask and proof as the app target: that list was made for bearer
+  calls, not to receive sign-ins with nobody looking. Never the `*` wildcard.
 
 The bearer is a device token like any other (listed and revoked in
 Settings > Logins), with three differences. It lasts
@@ -367,6 +373,10 @@ The types are in `packages/client-types/src/dto/auth.ts` (`OidcConfigDTO`,
   invite: a first sign-in with no password at all is not in this milestone.
 - A password change from a company sign-in bearer ends that bearer (its epoch
   moves on): the person signs in with the provider again.
+- A ticket in a token login's answer can start a link again within its 5
+  minutes (held starts share the login's failure budget).
+- A flow whose flow cookie is gone (another `start` overwrote it) ends on the
+  brain's sign-in screen, not at the client.
 - A consent page's fresh code rides the page's query string, so a proxy log
   in front of the brain can see it. It works once, for 2 minutes, for that
   login, session and consent.

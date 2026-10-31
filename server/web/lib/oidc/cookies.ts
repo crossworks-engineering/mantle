@@ -58,7 +58,13 @@ export type FlowHandoff = Readonly<{ redirect: string; challenge: string }>;
 export type OidcFlow = FlowSecrets &
   Readonly<{ handoff?: FlowHandoff }> &
   (
-    | Readonly<{ purpose: 'signin'; returnTo: string }>
+    | Readonly<{
+        purpose: 'signin';
+        returnTo: string;
+        /** Set when the provider must ask and prove it did (handoff.ts
+         *  mustAsk): when the flow started, seconds. */
+        startedAt?: number;
+      }>
     | Readonly<{
         purpose: 'link';
         returnTo: string;
@@ -143,6 +149,7 @@ export function setFlowCookie(res: NextResponse, req: Request, flow: OidcFlow): 
     claims.hr = flow.handoff.redirect;
     claims.hc = flow.handoff.challenge;
   }
+  if (flow.purpose === 'signin' && flow.startedAt !== undefined) claims.at = flow.startedAt;
   if (flow.purpose === 'link') {
     claims.uid = flow.loginId;
     claims.ep = flow.epoch;
@@ -176,7 +183,10 @@ export function readFlowCookie(req: Request): OidcFlow | null {
     const challenge = str(c.hc, 64);
     const handoff = redirect && challenge ? { handoff: { redirect, challenge } } : {};
     const base = { returnTo, state, nonce, codeVerifier, ...handoff };
-    if (c.p === 'signin') return { purpose: 'signin', ...base };
+    if (c.p === 'signin') {
+      const at = epochOf(c.at);
+      return { purpose: 'signin', ...base, ...(at === null ? {} : { startedAt: at }) };
+    }
     if (c.p === 'link' || c.p === 'fresh') {
       const loginId = str(c.uid, 64);
       const epoch = epochOf(c.ep);

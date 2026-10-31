@@ -9,7 +9,13 @@ import {
   updatePassword,
   ownerCallerWithSource,
 } from '@/lib/auth';
-import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
+import {
+  ownCompanyBearer,
+  ownCookieOpts,
+  ownLiveDeviceJti,
+  ownOidcCookieEnd,
+} from '@/lib/auth/own-device';
+import type { OidcRefusal } from '@mantle/client-types';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
 import { passwordProblem, passwordProblemBody } from '@/lib/auth/password-rule';
@@ -75,6 +81,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const self = targetId === user.actor.id;
+  // A session company sign-in made lasts MANTLE_OIDC_SESSION_HOURS. Resetting
+  // its own password with no old password would turn it into a way in that
+  // outlives it, and a block at the provider (as pairing a phone would).
+  // /api/auth/change-password, which asks for the old one, stays open.
+  if (self && (ownOidcCookieEnd(req) !== null || ownCompanyBearer(req))) {
+    const body: OidcRefusal = {
+      error: 'A company sign-in session cannot reset its own password.',
+      code: 'sso-session',
+    };
+    return NextResponse.json(body, { status: 403 });
+  }
   // Before anything is revoked: the caller's own live device token, on a
   // bearer request or riding with the web client's cookie (T15).
   const keepJti = self ? await ownLiveDeviceJti(req, targetId) : null;

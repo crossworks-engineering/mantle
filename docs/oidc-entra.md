@@ -52,11 +52,11 @@ keep their passwords once an admin marks them (unless the operator set
 the original account's password in the company's vault: it is the
 emergency admin.
 
-Key creation and MCP consent ask a linked person to sign in again. Mantle
-asks Entra for a fresh sign-in (`prompt=login`, `max_age=0`) and refuses one
-whose ID token has no `auth_time`: add `auth_time` as an optional claim of the
-ID token under Token configuration, or those two steps fail for every linked
-person.
+Add `auth_time` as an optional claim of the ID token under Token
+configuration. Mantle asks Entra for a fresh sign-in (`prompt=login`,
+`max_age=0`) on the desktop app, on the phone, at key creation and at MCP
+consent, and refuses one whose ID token has no `auth_time`: without the claim
+those four fail for every linked person.
 
 Company sign-in alone does not stop a leaver. A block in Entra ends their
 company sign-in when that session ends (`MANTLE_OIDC_SESSION_HOURS`), but an

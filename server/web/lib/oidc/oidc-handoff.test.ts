@@ -11,11 +11,11 @@ import { ownCookieOpts } from '@/lib/auth/own-device';
 import {
   APP_REDIRECT,
   WEB_REDIRECT_PATH,
-  appTarget,
   consentBinding,
   handoffCodeUrl,
   handoffFailedUrl,
   handoffTarget,
+  mustAsk,
   newHandoffCode,
   handoffCodeHash,
   readHandoff,
@@ -123,10 +123,14 @@ describe('where a flow may end', () => {
     );
   });
 
-  it('knows a flow to an app, where the provider must ask', () => {
-    expect(appTarget({ redirect: APP_REDIRECT, challenge: CHALLENGE })).toBe(true);
-    expect(appTarget({ redirect: `${BRAIN}/auth/oidc`, challenge: CHALLENGE })).toBe(false);
-    expect(appTarget(undefined)).toBe(false);
+  it('asks at an app and a named cross-origin caller, never silently', () => {
+    process.env.MANTLE_CLIENT_ORIGIN = 'https://app.example.invalid';
+    process.env.MANTLE_API_CORS_ORIGINS = 'http://localhost:3001';
+    const ask = (redirect: string) => mustAsk(s, { redirect, challenge: CHALLENGE });
+    expect(ask(APP_REDIRECT)).toBe(true);
+    expect(ask('http://localhost:3001/auth/oidc')).toBe(true);
+    expect(ask(`${BRAIN}/auth/oidc`)).toBe(false);
+    expect(ask('https://app.example.invalid/auth/oidc')).toBe(false);
   });
 });
 

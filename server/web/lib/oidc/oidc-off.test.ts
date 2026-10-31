@@ -40,6 +40,8 @@ vi.mock('./store', () => {
     setOutside: trap('setOutside'),
     dismissOffer: trap('dismissOffer'),
     activeLoginsWithLinks: trap('activeLoginsWithLinks'),
+    issueHandoffCode: trap('issueHandoffCode'),
+    spendHandoffCode: trap('spendHandoffCode'),
   };
 });
 

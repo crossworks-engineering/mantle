@@ -40,16 +40,7 @@ export type OidcMode = 'off' | 'optional' | 'required';
  *  `GET /api/auth/oidc/start?redirect=<target>&challenge=<S256>` (see
  *  OidcHandoff); `?return=<path>` signs the browser itself in with a
  *  cookie. */
-export type OidcConfigDTO =
-  | { mode: 'off' }
-  | {
-      mode: 'optional' | 'required';
-      label: string;
-      /** This brain's public origin. Keep it with the flow: a code whose
-       *  fragment names another `iss` came from another brain, and is not
-       *  spent. */
-      brain: string;
-    };
+export type OidcConfigDTO = { mode: 'off' } | { mode: 'optional' | 'required'; label: string };
 
 /** GET /api/auth/oidc/status (the signed-in login; 401 without one). Off:
  *  `{ mode: 'off' }` only. */
@@ -88,11 +79,14 @@ export type OidcStatusDTO =
  *    MANTLE_API_CORS_ORIGINS entry.
  * The browser comes back there with a fragment:
  * `#oidc=code&code=<c>&purpose=<OidcHandoffPurpose>&iss=<brain>`, or
- * `#oidc=<OidcCallbackResult>&iss=<brain>` when the flow stopped. Compare
- * `iss` with the `brain` the config read answered before spending anything.
+ * `#oidc=<OidcCallbackResult>&iss=<brain>` when the flow stopped. Before
+ * spending anything, compare `iss` with the origin the client itself connected
+ * to, never with a value a brain told it: a device can hold several brains,
+ * and a code from another one must never be sent here. So a client must
+ * connect to the brain's public URL (MANTLE_PUBLIC_URL), not an alias.
  * A code lasts 2 minutes, works once and is worth nothing without the
  * verifier. A flow to `mantle://oidc` always asks the person to sign in at the
- * provider.
+ * provider, and fails on a provider that sends no `auth_time`.
  */
 export type OidcHandoff = { redirect: string; challenge: string };
 export type OidcHandoffPurpose = 'signin' | 'link' | 'fresh';
@@ -167,9 +161,9 @@ export type OidcFreshProof = { code: string; verifier: string };
  *  - `password-needed`: a link start with no fresh ticket: ask for the
  *    password and send it.
  *  - `already-linked`: the login holds a link already.
- *  - `sso-session`: POST /api/auth/pair from a session company sign-in
- *    made: a phone cannot be paired from it yet (it would outlive the
- *    session); the phone signs in itself. */
+ *  - `sso-session`: a session company sign-in made cannot do this: pair a
+ *    phone or a chat, or reset its own password with no old password, since
+ *    each would outlive the session. The phone signs in itself. */
 export type OidcRefusalCode =
   'sso-required' | 'sso-link-required' | 'password-needed' | 'already-linked' | 'sso-session';
 /** `ticket`: a token login's held ticket on `sso-link-required` (5 minutes,
