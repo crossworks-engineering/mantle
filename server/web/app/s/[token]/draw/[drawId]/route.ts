@@ -1,3 +1,4 @@
+import { NextResponse } from '@/server/http-compat';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { isEmbeddedDrawAllowed } from '@/lib/shares';
 import { getDrawSvg } from '@mantle/content';
@@ -26,7 +27,7 @@ export const policy = routePolicy({
  */
 
 function notFound() {
-  return new Response('Not found', {
+  return new NextResponse('Not found', {
     status: 404,
     headers: { 'Cache-Control': CACHE_CONTROL.none },
   });

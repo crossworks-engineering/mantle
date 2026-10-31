@@ -14,6 +14,18 @@ describe('NextResponse shim', () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
+  it('a string body says the same default type on every runtime', () => {
+    const type = (res: Response) => res.headers.get('content-type');
+    expect(type(new NextResponse('x', { status: 404 }))).toBe('text/plain;charset=UTF-8');
+    expect(type(new NextResponse('x', { headers: { 'cache-control': 'no-store' } }))).toBe(
+      'text/plain;charset=UTF-8',
+    );
+    expect(type(new NextResponse('<b>', { headers: { 'content-type': 'text/html' } }))).toBe(
+      'text/html',
+    );
+    expect(type(new NextResponse(null, { status: 204 }))).toBeNull();
+  });
+
   it('json() respects caller headers (Cache-Control: no-store pattern)', () => {
     const res = NextResponse.json({}, { status: 401, headers: { 'Cache-Control': 'no-store' } });
     expect(res.headers.get('cache-control')).toBe('no-store');

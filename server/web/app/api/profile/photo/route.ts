@@ -102,7 +102,7 @@ export async function GET() {
     const key = prefs.avatarPhotoKey;
     const type = prefs.avatarPhotoType;
     if (!key || !type) {
-      return new Response('Not found', { status: 404, headers: notFound });
+      return new NextResponse('Not found', { status: 404, headers: notFound });
     }
     const obj = await getContent(key);
     const headers = new Headers({
@@ -117,6 +117,6 @@ export async function GET() {
     return new Response(webStream as unknown as ReadableStream, { headers });
   } catch {
     // Storage unreachable / object gone — an avatar must never 500 the shell.
-    return new Response('Not found', { status: 404, headers: notFound });
+    return new NextResponse('Not found', { status: 404, headers: notFound });
   }
 }

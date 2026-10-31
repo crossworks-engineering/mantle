@@ -40,7 +40,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const reader = readerAssetCaller();
   const user = reader.user;
   const { id } = await ctx.params;
-  if (!isUuid(id)) return new Response('Invalid id', { status: 400 });
+  if (!isUuid(id)) return new NextResponse('Invalid id', { status: 400 });
   const url = new URL(req.url);
   // `nofill=1` = read the cache, never render. The print surface sets it
   // because that page is ITSELF loaded by the browser sidecar: a render
@@ -61,7 +61,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (url.searchParams.get('raw') !== '1') {
     return NextResponse.json({ svg });
   }
-  if (!svg) return new Response('Not found', { status: 404 });
+  if (!svg) return new NextResponse('Not found', { status: 404 });
   return new Response(svg, {
     status: 200,
     headers: {

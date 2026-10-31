@@ -40,7 +40,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return NextResponse.json({ ...facts, current: facts.posterRev === facts.rev });
   }
   const poster = await getPresentPoster(reader.user.id, id);
-  if (!poster) return new Response('Not found', { status: 404 });
+  if (!poster) return new NextResponse('Not found', { status: 404 });
   // The poster changes with a save: the browser keeps it, and asks again
   // each time with the poster's rev as its tag.
   const etag = `"${id}.${poster.posterRev}"`;

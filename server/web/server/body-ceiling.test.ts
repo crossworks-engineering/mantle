@@ -217,6 +217,16 @@ describe('the body ceiling: reading', () => {
     expect(capRequestBody(none, MB)).toBe(none);
   });
 
+  it('capRequestBody: formData() stops at the ceiling on a multipart body', async () => {
+    const capped = capRequestBody(
+      streamReq('http://x/', 2 * MB, { 'content-type': 'multipart/form-data; boundary=x' }),
+      MB,
+    );
+    await expect(capped.formData()).rejects.toThrow();
+    // Each runtime words the error its own way: the mark is what the loader reads.
+    expect(bodyWentOver(capped)).toBe(true);
+  });
+
   it('readJsonNoNul reads at most the JSON ceiling; under it, it is JSON as before', async () => {
     await expect(
       readJsonNoNul(streamReq('http://x/', JSON_BODY_CEILING_BYTES + 64 * 1024)),

@@ -1,3 +1,4 @@
+import { NextResponse } from '@/server/http-compat';
 import { createHash } from 'node:crypto';
 import { APP_VERSION } from '@mantle/client-types/version';
 import { and, eq } from 'drizzle-orm';
@@ -55,7 +56,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   if (!agent?.avatar) {
     // No generated avatar → let the client fall back to its initials avatar.
-    return new Response('no_avatar', { status: 404 });
+    return new NextResponse('no_avatar', { status: 404 });
   }
 
   // Fail soft: a brain with unreadable prefs still serves an avatar in the
