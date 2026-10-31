@@ -381,13 +381,16 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     // parameters would take it).
     await nl.unsafe(`alter role current_user set application_name = 'narrow-cell'`);
     await nl.unsafe(`alter role current_user in database "${dbName}" set search_path = pg_catalog`);
+    // This database's row only: the every-database row is the server's, and
+    // another suite's migrate can take it back at any moment.
     const stored = async () =>
       (
         await su<{ n: number }[]>`
           select count(*)::int as n from pg_db_role_setting s join pg_roles r on r.oid = s.setrole
-           where r.rolname = ${NARROW}`
+           where r.rolname = ${NARROW}
+             and s.setdatabase = (select oid from pg_database where datname = ${dbName})`
       )[0]!.n;
-    expect(await stored()).toBe(2);
+    expect(await stored()).toBe(1);
     const raw = postgres(
       rr.runtimeDatabaseUrl(scratch.url, rr.narrowRolePassword(KEY()), rr.NARROW_ROLE),
       { max: 1, prepare: false, onnotice: () => {} },
@@ -406,8 +409,9 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     }
     // The boot line names it (read as the system pool reads it).
     const probe = await rr.readNarrowLogin(su);
-    expect(probe).toEqual({ login: true, settings: 2 });
-    expect(rr.narrowLoginNote(probe!, true)).toMatch(/2 stored setting row\(s\).*next migrate/);
+    expect(probe).toMatchObject({ login: true });
+    expect(probe!.settings).toBeGreaterThanOrEqual(1);
+    expect(rr.narrowLoginNote(probe!, true)).toMatch(/\d stored setting row\(s\).*next migrate/);
     // migrate's role step takes every one back.
     await rr.ensureRuntimeRoles(su, KEY(), { login: true, warn: () => {} });
     expect(await stored()).toBe(0);

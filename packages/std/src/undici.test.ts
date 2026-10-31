@@ -68,13 +68,16 @@ describe('a call through a dispatcher, the same on every runtime', () => {
 
   it('keeps a body the caller reads late, past a collection', async () => {
     const gc = (globalThis as { Bun?: { gc: (sync: boolean) => void } }).Bun?.gc;
-    for (let i = 0; i < 20; i++) {
+    // Allocation and an async collection, as under load: a forced full
+    // collection on its own does not reach undici's Response in time.
+    for (let i = 0; i < 40; i++) {
       const res = await fetchThrough(agent, `${base}/echo`, {}, fetch);
-      gc?.(true);
-      await new Promise((r) => setTimeout(r, 5));
+      new Uint8Array(5_000_000).fill(1);
+      gc?.(false);
+      await new Promise((r) => setTimeout(r, 1));
       expect(await res.json()).toMatchObject({ method: 'GET' });
     }
-  });
+  }, 30_000);
 
   it('calls a stub as it is, with the dispatcher', async () => {
     const stub = vi.fn(async () => new Response('stubbed'));

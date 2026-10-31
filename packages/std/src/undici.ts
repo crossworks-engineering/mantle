@@ -83,7 +83,8 @@ async function undiciFetch(
  * fetch is native code. One written in JavaScript is a test stub (even one set
  * before this module loaded) and is called as on Node. Outside a test it is a
  * wrapper that would hand the dispatcher to Bun's fetch and lose it, so it is
- * refused: a dropped pin or proxy must not pass in silence.
+ * refused: a dropped pin must not pass in silence. A wrapper set after
+ * provider-fetch.ts loaded takes fetchVia's stub path and does not reach here.
  */
 export function fetchThrough(
   dispatcher: Dispatcher,

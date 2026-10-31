@@ -34,7 +34,8 @@ stay free of node builtins). On top of the platform fetch:
   `undici` loads a stand-in there. A pinned hop on Bun runs through undici's
   own fetch, loaded from the package's file
   ([`undici.ts`](../packages/std/src/undici.ts)), with the same Agent and the
-  same lookup.
+  same lookup. A global fetch wrapped in JavaScript is refused there outside a
+  test, because it would hand the dispatcher to Bun's fetch and lose the pin.
 - **Secret headers across origins.** On a hop to another origin it drops
   Authorization, Cookie and Proxy-Authorization by name (as the platform
   does) and any header whose value carries one of the caller's `secrets`
