@@ -7,6 +7,7 @@
  *   pnpm bun:compare --keep <dir>          also keep node.json and bun.json there
  *   pnpm bun:compare --reports <n> <b>     compare two saved reports, run nothing
  *   pnpm bun:compare --write-baseline      write this run's list to the baseline
+ *   pnpm bun:compare --summary <file>      also append the result to that file
  *
  * Exit 0: nothing new on Bun. Exit 1: a test does worse than the baseline
  * says. Exit 2: the compare could not run (no report, wrong Bun version).
@@ -32,8 +33,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE_FILE = join(ROOT, 'scripts/bun-baseline.json');
 const VITEST = 'node_modules/vitest/vitest.mjs';
-/** Ends a run that hangs: a real one takes 15 minutes on the workstation. */
-const RUN_TIMEOUT_MS = 45 * 60 * 1000;
+/** Ends a run that hangs. A Bun run takes 26 minutes on the workstation, and a
+ *  GitHub runner took about four times Node's workstation time. */
+const RUN_TIMEOUT_MS = 150 * 60 * 1000;
 /** The key of a test file that failed before any of its tests ran. */
 const FILE_LEVEL = '<file>';
 const NOT_RUN = new Set(['pending', 'skipped', 'todo', 'disabled']);
@@ -178,9 +180,7 @@ function main() {
   const verdict = checkBaseline(compared, baseline.failures, bun);
   const text = summary(compared, verdict, seconds);
   console.log(`\n${text}`);
-  if (process.env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\`\`\`\n${text}\n\`\`\`\n`);
-  }
+  if (flag('--summary')) appendFileSync(value('--summary'), `\`\`\`\n${text}\n\`\`\`\n`);
 
   if (flag('--write-baseline')) {
     const failures = [...compared.bunOnly, ...compared.notRun].sort();
