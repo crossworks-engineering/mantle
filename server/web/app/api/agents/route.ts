@@ -112,10 +112,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
   // The box policy's model block (lib/model-policy-save.ts): no blocked
-  // model is saved by hand.
+  // model is saved by hand. A backup that is off runs nothing: not checked.
   const blocked = modelRoutesPolicyIssue([
     [parsed.data.provider ?? 'openrouter', parsed.data.model, parsed.data.baseUrl],
-    [parsed.data.backupProvider, parsed.data.backupModel, parsed.data.backupBaseUrl],
+    [
+      parsed.data.backupEnabled ? parsed.data.backupProvider : null,
+      parsed.data.backupModel,
+      parsed.data.backupBaseUrl,
+    ],
   ]);
   if (blocked) return NextResponse.json(modelPolicyBody(blocked), { status: 403 });
   // A key with a base URL of the writer's choosing is the keys area's

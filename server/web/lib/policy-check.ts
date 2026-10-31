@@ -96,6 +96,7 @@ export async function blockedModelRoutes(): Promise<BlockedModelRoute[]> {
         model: embeddingConfig.model,
         primaryProvider: embeddingConfig.primaryProvider,
         primaryBaseUrl: embeddingConfig.primaryBaseUrl,
+        backupEnabled: embeddingConfig.backupEnabled,
         backupProvider: embeddingConfig.backupProvider,
         backupBaseUrl: embeddingConfig.backupBaseUrl,
       })
@@ -126,7 +127,7 @@ export async function blockedModelRoutes(): Promise<BlockedModelRoute[]> {
   }
   for (const e of embedRows) {
     add('embedding', 'primary', e.primaryProvider, e.model, e.primaryBaseUrl);
-    add('embedding', 'backup', e.backupProvider, e.model, e.backupBaseUrl);
+    if (e.backupEnabled) add('embedding', 'backup', e.backupProvider, e.model, e.backupBaseUrl);
   }
   const blocked: BlockedModelRoute[] = [];
   for (const { baseUrl, ...r } of routes) {

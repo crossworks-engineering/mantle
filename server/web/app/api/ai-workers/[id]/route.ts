@@ -95,7 +95,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       rest.baseUrl !== undefined ||
       rest.backupProvider !== undefined ||
       rest.backupModel !== undefined ||
-      rest.backupBaseUrl !== undefined)
+      rest.backupBaseUrl !== undefined ||
+      rest.backupEnabled !== undefined)
   ) {
     const now = await getAiWorker(user.id, idParsed.data.id);
     if (!now) return NextResponse.json({ error: 'not found' }, { status: 404 });
@@ -105,8 +106,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         rest.model ?? now.model,
         rest.baseUrl !== undefined ? rest.baseUrl : now.baseUrl,
       ],
+      // A backup that is off runs nothing: not checked.
       [
-        rest.backupProvider !== undefined ? rest.backupProvider : now.backupProvider,
+        (rest.backupEnabled ?? now.backupEnabled)
+          ? rest.backupProvider !== undefined
+            ? rest.backupProvider
+            : now.backupProvider
+          : null,
         rest.backupModel !== undefined ? rest.backupModel : now.backupModel,
         rest.backupBaseUrl !== undefined ? rest.backupBaseUrl : now.backupBaseUrl,
       ],

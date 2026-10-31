@@ -117,10 +117,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       p.baseUrl !== undefined ||
       p.backupProvider !== undefined ||
       p.backupModel !== undefined ||
-      p.backupBaseUrl !== undefined)
+      p.backupBaseUrl !== undefined ||
+      p.backupEnabled !== undefined)
   ) {
     const [now] = await db
       .select({
+        backupEnabled: agents.backupEnabled,
         provider: agents.provider,
         model: agents.model,
         baseUrl: agents.baseUrl,
@@ -138,8 +140,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
           p.model ?? now.model,
           p.baseUrl !== undefined ? p.baseUrl : now.baseUrl,
         ],
+        // A backup that is off runs nothing: not checked.
         [
-          p.backupProvider !== undefined ? p.backupProvider : now.backupProvider,
+          (p.backupEnabled ?? now.backupEnabled)
+            ? p.backupProvider !== undefined
+              ? p.backupProvider
+              : now.backupProvider
+            : null,
           p.backupModel !== undefined ? p.backupModel : now.backupModel,
           p.backupBaseUrl !== undefined ? p.backupBaseUrl : now.backupBaseUrl,
         ],

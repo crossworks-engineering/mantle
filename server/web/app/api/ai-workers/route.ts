@@ -86,10 +86,11 @@ export async function POST(req: Request) {
   // A key with a base URL of the writer's choosing is the keys area's
   // (lib/model-route-pair.ts).
   // The box policy's model block (lib/model-policy-save.ts), with each
-  // route's own base URL: no blocked model or endpoint is saved by hand.
+  // route's own base URL: no blocked model or endpoint is saved by hand. A
+  // backup that is off runs nothing: not checked.
   const blocked = modelRoutesPolicyIssue([
     [body.provider, body.model, body.baseUrl],
-    [body.backupProvider, body.backupModel, body.backupBaseUrl],
+    [body.backupEnabled ? body.backupProvider : null, body.backupModel, body.backupBaseUrl],
   ]);
   if (blocked) return NextResponse.json(modelPolicyBody(blocked), { status: 403 });
   const keysRefused = await modelRoutesRefusal(user, null, body, AGENT_ROUTES);
