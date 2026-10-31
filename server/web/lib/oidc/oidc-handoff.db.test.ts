@@ -21,8 +21,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import {
   asSuperuser,
   createMigratedScratchDatabase,
+  ensureAdminUsers,
   ensureTestAnchor,
   runWorkspacesSwitch,
+  superuserClient,
 } from '@mantle/db/test-support';
 
 const ISSUER = 'https://idp.example.invalid/realms/company';
@@ -61,17 +63,24 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
   const person = randomUUID();
   const heldOne = randomUUID();
   const other = randomUUID();
+  const admin = randomUUID();
   const PASSWORD = 'first password 1';
   const emailOf = (id: string) => `${tag}-${id.slice(0, 8)}@example.com`;
   let ip = 0;
 
   const call = (
     path: string,
-    init: { method?: string; cookies?: (string | null)[]; body?: unknown; bearer?: string } = {},
+    init: {
+      method?: string;
+      cookies?: (string | null)[];
+      body?: unknown;
+      bearer?: string;
+      form?: URLSearchParams;
+    } = {},
   ) => {
     ip += 1;
     const headers: Record<string, string> = {
-      'content-type': 'application/json',
+      'content-type': init.form ? 'application/x-www-form-urlencoded' : 'application/json',
       'x-forwarded-for': `198.51.100.${ip % 250}`,
       'x-forwarded-proto': 'https',
     };
@@ -82,7 +91,9 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
       app.request(path, {
         method: init.method ?? 'GET',
         headers,
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+        body:
+          init.form?.toString() ??
+          (init.body === undefined ? undefined : JSON.stringify(init.body)),
       }),
     );
   };
@@ -153,10 +164,25 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
     await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${person}, ${emailOf(person)}, ${hash}, 'member'),
       (${heldOne}, ${emailOf(heldOne)}, ${hash}, 'member'),
-      (${other}, ${emailOf(other)}, ${hash}, 'member')`;
+      (${other}, ${emailOf(other)}, ${hash}, 'member'),
+      (${admin}, ${emailOf(admin)}, ${hash}, 'admin')`;
     await runWorkspacesSwitch(scratch.url);
+    const su = superuserClient(scratch.url);
+    try {
+      await su`select set_config('mantle.actor', 'system:test', false)`;
+      await ensureAdminUsers(su, [admin]);
+    } finally {
+      await su.end();
+    }
     const { createApp } = await import('../../server/app');
     app = await createApp();
+    const { buildSessionCookie } = await import('@/lib/auth/tokens');
+    const on = await call('/api/mcp-settings', {
+      method: 'PATCH',
+      cookies: [`mantle_session=${buildSessionCookie(admin).value}`],
+      body: { enabled: true },
+    });
+    expect(on.status).toBe(200);
   }, 120_000);
 
   afterEach(async () => {
@@ -453,6 +479,80 @@ describe.skipIf(!URL_)('company sign-in handed to a client', () => {
       body: { ...KEY, password: PASSWORD },
     });
     expect(made.status).toBe(201);
+  });
+
+  it('the MCP consent page confirms a linked login with a fresh sign-in', async () => {
+    await linkDirect(admin, 'sub-admin');
+    const { buildSessionCookie } = await import('@/lib/auth/tokens');
+    const session = `mantle_session=${buildSessionCookie(admin).value}`;
+    const redirect = 'https://client.example.invalid/callback';
+    const reg = await call('/api/oauth/register', {
+      method: 'POST',
+      body: {
+        client_name: 'A client',
+        redirect_uris: [redirect],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+      },
+    });
+    expect(reg.status).toBe(201);
+    const clientId = ((await reg.json()) as { client_id: string }).client_id;
+    const q = new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: redirect,
+      code_challenge: CHALLENGE,
+      code_challenge_method: 'S256',
+      state: 'st',
+      scope: 'mcp',
+    });
+    const page = await call(`/api/oauth/authorize?${q}`, { cookies: [session] });
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain('Confirm with Company');
+    expect(html).not.toContain('name="password"');
+    const consentToken = /name="consent_token" value="([^"]+)"/.exec(html)![1]!;
+    const post = (fields: Record<string, string>) => {
+      const form = new URLSearchParams(q);
+      form.delete('response_type');
+      form.set('consent_token', consentToken);
+      for (const [k, v] of Object.entries(fields)) form.set(k, v);
+      return call('/api/oauth/authorize', { method: 'POST', cookies: [session], form });
+    };
+
+    // Allow with no confirmation grants nothing.
+    expect((await post({ decision: 'allow' })).status).toBe(403);
+
+    // Confirm goes to the provider; another account gets no code.
+    const confirm = async () => {
+      const res = await post({ decision: 'confirm' });
+      expect(res.status).toBe(302);
+      return pathOf(res.headers.get('location')!);
+    };
+    h.subject = 'sub-someone-else';
+    const wrong = new URL(await browser(await confirm()));
+    expect(wrong.pathname).toBe('/api/oauth/authorize');
+    expect(wrong.searchParams.get('oidc')).toBe('wrong-account');
+    expect(wrong.searchParams.get('fresh_code')).toBeNull();
+    const shown = await call(pathOf(wrong.toString()), { cookies: [session] });
+    expect(await shown.text()).toContain('That was another account');
+
+    // The linked account comes back with a code, for the form's Allow.
+    h.subject = 'sub-admin';
+    const back = new URL(await browser(await confirm()));
+    const code = back.searchParams.get('fresh_code')!;
+    expect(code).toBeTruthy();
+    const ready = await (await call(pathOf(back.toString()), { cookies: [session] })).text();
+    expect(ready).toContain('name="fresh_code"');
+    expect(ready).toContain('value="allow"');
+    const allow = await post({ decision: 'allow', fresh_code: code });
+    expect(allow.status).toBe(302);
+    const to = new URL(allow.headers.get('location')!);
+    expect(`${to.origin}${to.pathname}`).toBe(redirect);
+    expect(to.searchParams.get('code')).toBeTruthy();
+    // One code, one grant.
+    expect((await post({ decision: 'allow', fresh_code: code })).status).toBe(403);
   });
 
   it('off: nothing here is open', async () => {
