@@ -98,6 +98,8 @@ def _view_item(it: dict, iid: str, where: str) -> dict:
         window = [_num(v, f"{where}.window") for v in window]
         if window[2] <= window[0] or window[3] <= window[1]:
             raise SpecError(f"{where}.window must have x1 above x0 and y1 above y0")
+        if not (math.isfinite(window[2] - window[0]) and math.isfinite(window[3] - window[1])):
+            raise SpecError(f"{where}.window is too large to draw")
     edge = it.get("edge", MAX_EDGE)
     if isinstance(edge, bool) or not isinstance(edge, int) or not MIN_EDGE <= edge <= MAX_VIEW_EDGE:
         raise SpecError(f"{where}.edge must be a whole number from {MIN_EDGE} to {MAX_VIEW_EDGE}")
@@ -333,11 +335,8 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
     texts = doc_texts(doc)
     msp = doc.modelspace()
     items = spec["items"]
-    frame = None
-    if any(it["kind"] == "view" for it in items):
-        frame = dwg_frame.layout_frame(msp)
-        if frame is None:
-            raise SpecError("the drawing has nothing in model space to frame")
+    views = any(it["kind"] == "view" for it in items)
+    frame = dwg_frame.layout_frame(msp) if views else None
     dpi = 100.0
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_axes([0, 0, 1, 1])
@@ -349,16 +348,25 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
     )
     full = (ax.get_xlim(), ax.get_ylim())
     ax.set_aspect("auto")
-    if frame is not None:
-        # What was really drawn: a quick box undersizes a far note's text.
+    if views:
+        # What was really drawn: a quick box undersizes a text's reach.
         (fx0, fx1), (fy0, fy1) = full
-        frame["full"] = [fx0, fy0, fx1, fy1]
+        drawn = [fx0, fy0, fx1, fy1]
+        if frame is not None:
+            frame["full"] = drawn
+            if not frame["framed"]:
+                frame["sheet"] = drawn
+
+        def window_of(it):
+            if it["window"] or it["full"]:
+                return it["window"] or drawn
+            if frame is None:
+                raise SpecError("the drawing has nothing in model space to frame")
+            return frame["sheet"]
+
         # A view that names no window takes the sheet, or all of it.
         items = [
-            {**it, "window": it["window"] or frame["full" if it["full"] else "sheet"]}
-            if it["kind"] == "view"
-            else it
-            for it in items
+            {**it, "window": window_of(it)} if it["kind"] == "view" else it for it in items
         ]
     planned = plan(items, texts)
     overlay = []

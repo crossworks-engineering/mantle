@@ -357,6 +357,12 @@ export async function runAppToolBroker(
       ? withViewer(scope.actsFor, dispatch, writes && writer ? { writes: writer } : {})
       : dispatch(),
   );
-  if (!result.ok) logError(result.error, 200);
-  return NextResponse.json(result);
+  if (!result.ok) {
+    logError(result.error, 200);
+    return NextResponse.json(result);
+  }
+  // A picture for a model: the app's kit reads `output` alone, so it would
+  // cross the bridge for nothing.
+  const { modelImages: _forAModel, ...forTheApp } = result;
+  return NextResponse.json(forTheApp);
 }

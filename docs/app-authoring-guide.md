@@ -395,7 +395,9 @@ the queries are correct, not guessed.
 
 An app has no network of its own, so a picture reaches it through a tool. Two
 declared tools answer one when the call says `bytes: true`, as base64 in the
-output. Only an app's call gets that; at most 16 MB a call.
+output. Only an app's call gets that; at most 16 MB a call. Past 4 reads or 2
+drawings at once the call answers an error that says to call again, so read
+them a few at a time.
 
 ```tsx
 // A stored image (declare file_read):

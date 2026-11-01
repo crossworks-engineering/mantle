@@ -128,6 +128,20 @@ def png_is_blank(path: str) -> bool:
     return sum(hist[:250]) / total < 0.0005
 
 
+def png_has_no_ink(path: str) -> bool:
+    """True when not one pixel of a saved view has ink. A view is often a small
+    window on one small thing, so png_is_blank's share of the page, tuned on
+    whole sheets, would call a lone circle blank. A probe that cannot run
+    returns False, as there."""
+    try:
+        from PIL import Image  # noqa: PLC0415 (probe-only import)
+
+        with Image.open(path) as im:
+            return im.convert("L").point(lambda v: 255 if v < 250 else 0).getbbox() is None
+    except Exception:
+        return False
+
+
 def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
     """`--dwf-render` child entry: raster every 2D sheet of `src` into
     `outdir` and write `index.json` describing what happened. Runs in its own
@@ -499,11 +513,15 @@ def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
     except dwg_crop.SpecError as err:
         sys.stderr.write(f"crop spec: {err}\n")
         return 1
+    except Exception as err:
+        # Its name only: a traceback's paths are nothing a caller should read.
+        sys.stderr.write(f"the crops could not be drawn: {type(err).__name__}\n")
+        return 1
     index["converter"] = converter
     for crop in index["crops"]:
         if crop.get("view"):
             # A window with nothing in it is an answer: the caller moves it.
-            crop["blank"] = png_is_blank(os.path.join(outdir, crop["file"]))
+            crop["blank"] = png_has_no_ink(os.path.join(outdir, crop["file"]))
     with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, allow_nan=False)
     return 0

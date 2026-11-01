@@ -10,8 +10,13 @@ First the border: the largest closed polyline whose box holds at least
 BORDER_HOLDS of the drawing's geometry (text does not count, so notes beside
 the sheet cannot move it). Everything outside it is off the sheet. On 32 real
 drawings 31 had one, and it framed tighter than the stray rule below on 22.
-A second closed box of about the same size outside it means sheets tiled in
-one model space, so there is no one border.
+
+A closed box is not always the sheet, and a wrong one cuts real content, so it
+loses to any of these: an entity whose box holds it (the real border is a
+block, and this is a battery limit inside it), a second closed box of about
+its size outside it (sheets tiled in one model space), or more than
+STRAY_SHARE of all the entities outside it, text included (a title block and a
+legend are mostly text).
 
 With no border, the stray rule (`sheet_frame`). A group of entities is stray
 only when all three hold, along one axis:
@@ -35,7 +40,7 @@ from __future__ import annotations
 
 import math
 
-BORDER_HOLDS = 0.60
+BORDER_HOLDS = 0.90
 # A closed box this share of the border's area, outside it: a second sheet.
 SECOND_SHEET_AREA = 0.5
 STRAY_SHARE = 0.10
@@ -126,10 +131,19 @@ def _area(box) -> float:
     return (box[2] - box[0]) * (box[3] - box[1])
 
 
+def _contains(outer, box) -> bool:
+    return (
+        outer != box
+        and outer[0] <= box[0]
+        and outer[1] <= box[1]
+        and outer[2] >= box[2]
+        and outer[3] >= box[3]
+    )
+
+
 def sheet_border(entities) -> tuple | None:
     """The sheet's border among `entities` ((kind, box); kind is TEXT, CLOSED
-    or OTHER), or None when no closed box holds the drawing, or when a second
-    one of about its size sits outside it (tiled sheets)."""
+    or OTHER), or None when no closed box is one (the header says when)."""
     geometry = [_centre(b) for k, b in entities if k != TEXT]
     closed = sorted((b for k, b in entities if k == CLOSED), key=_area, reverse=True)
     for box in closed:
@@ -137,12 +151,15 @@ def sheet_border(entities) -> tuple | None:
             return None
         if sum(1 for c in geometry if _holds(box, c)) < BORDER_HOLDS * len(geometry):
             continue
+        if any(k != TEXT and _contains(b, box) for k, b in entities):
+            return None
         for other in closed:
             if _area(other) < _area(box) * SECOND_SHEET_AREA:
                 break
             if not _holds(box, _centre(other)):
                 return None
-        return box
+        outside = sum(1 for _k, b in entities if not _holds(box, _centre(b)))
+        return None if outside > STRAY_SHARE * len(entities) else box
     return None
 
 

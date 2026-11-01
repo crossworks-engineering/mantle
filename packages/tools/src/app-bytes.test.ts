@@ -16,8 +16,9 @@ const files = vi.hoisted(() => ({
 }));
 vi.mock('@mantle/files', () => files);
 
-import { APP_BYTES_MAX } from './app-bytes';
+import { APP_BYTES_IN_FLIGHT, APP_BYTES_MAX, appBytesRefusal } from './app-bytes';
 import { file_read } from './files/read';
+import { appBrokerCaller, ownerWebCaller, runCaller, turnCaller } from './gate-callers';
 import type { ToolHandlerContext } from './types';
 
 const FILE_ID = '22222222-2222-4222-8222-222222222222';
@@ -96,10 +97,49 @@ describe('file_read bytes', () => {
     expect(await read(app)).toMatchObject({ ok: false });
   });
 
+  it('turns a burst away, and frees the slots after', async () => {
+    let open!: () => void;
+    const held = new Promise<void>((r) => (open = r));
+    files.readFileById.mockImplementation(async () => {
+      await held;
+      return { row: META, bytes: Buffer.from('picture'), path: null };
+    });
+    const first = Array.from({ length: APP_BYTES_IN_FLIGHT }, () => read(app));
+    expect(await read(app)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('a few at a time'),
+    });
+    open();
+    await Promise.all(first);
+    expect((await read(app)).ok).toBe(true);
+  });
+
   it('leaves the text read of a text file as it was', async () => {
     const text = { ...META, filename: 'n.txt', isText: true };
     files.fileById.mockResolvedValue(text);
     files.readFileById.mockResolvedValue({ row: text, bytes: Buffer.from('hello'), path: null });
     expect(await read(app, {})).toEqual({ ok: true, output: { file: text, content: 'hello' } });
+  });
+});
+
+describe('who the bytes are for, by the real callers', () => {
+  const verdict = { ok: true } as Parameters<typeof appBrokerCaller>[1];
+  const asCaller = (caller: ToolHandlerContext['caller']) =>
+    appBytesRefusal({ ownerId: 'o1', caller });
+
+  it.each([
+    ['an admin run', { kind: 'web' }],
+    ['a team run', { kind: 'team' }],
+  ])('an app broker on %s may', (_who, surface) => {
+    const caller = appBrokerCaller(surface as Parameters<typeof appBrokerCaller>[0], verdict);
+    expect(asCaller(caller)).toBeNull();
+  });
+
+  it.each([
+    ['a chat turn', turnCaller],
+    ['a run', runCaller],
+    ['the owner web', ownerWebCaller],
+  ])('%s may not', (_who, caller) => {
+    expect(asCaller(caller())).toContain('show_image');
   });
 });

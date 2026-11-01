@@ -36,7 +36,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   sets its own (`PUT /api/profile/description`); the users area sets
   anyone's (`PATCH /api/users/:id`, listed on `GET /api/users`). It is
   open to every login and agent that may see the card: on `GET
-/api/people`, in the messenger directory (whose search now matches it)
+  /api/people`, in the messenger directory (whose search now matches it)
   and on one conversation's people. `messenger_directory` and
   `messenger_open` carry it to agents, so one asked to message "the
   developer" can find who that is. Stored as the profile key

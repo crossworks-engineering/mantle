@@ -14,8 +14,14 @@ import {
   listFolders,
   readFileById,
 } from '@mantle/files';
-import { appBytesRefusal, appBytesTooLarge, APP_BYTES_MAX } from '../app-bytes';
-import { type BuiltinToolDef } from '../types';
+import {
+  APP_BYTES_BUSY,
+  APP_BYTES_MAX,
+  appBytesRefusal,
+  appBytesTooLarge,
+  withAppBytesSlot,
+} from '../app-bytes';
+import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str, strOpt, boolOpt as bool } from '../coerce';
 import { FILE_ID_PRE } from '../builtins-common';
 
@@ -145,26 +151,30 @@ export const file_read: BuiltinToolDef = {
       if (meta.sizeBytes > APP_BYTES_MAX) {
         return { ok: false, error: appBytesTooLarge(meta.filename, meta.sizeBytes) };
       }
-      const res = await readFileById({ ownerId: ctx.ownerId, fileId });
-      if (!res) {
+      const read = await withAppBytesSlot(async (): Promise<ToolHandlerResult> => {
+        const res = await readFileById({ ownerId: ctx.ownerId, fileId });
+        if (!res) {
+          return {
+            ok: false,
+            error:
+              'the file has no bytes to read: it may still be uploading. Try again in a moment.',
+          };
+        }
+        // Read, not trusted from the row: the size on the row can be stale.
+        if (res.bytes.length > APP_BYTES_MAX) {
+          return { ok: false, error: appBytesTooLarge(meta.filename, res.bytes.length) };
+        }
+        ctx.step?.setOutput({ binary: !meta.isText, bytes: res.bytes.length });
         return {
-          ok: false,
-          error: 'the file has no bytes to read: it may still be uploading. Try again in a moment.',
+          ok: true,
+          output: {
+            file: meta,
+            mime_type: meta.mimeType,
+            content_base64: res.bytes.toString('base64'),
+          },
         };
-      }
-      // Read, not trusted from the row: the size on the row can be stale.
-      if (res.bytes.length > APP_BYTES_MAX) {
-        return { ok: false, error: appBytesTooLarge(meta.filename, res.bytes.length) };
-      }
-      ctx.step?.setOutput({ binary: !meta.isText, bytes: res.bytes.length });
-      return {
-        ok: true,
-        output: {
-          file: meta,
-          mime_type: meta.mimeType,
-          content_base64: res.bytes.toString('base64'),
-        },
-      };
+      });
+      return read ?? { ok: false, error: APP_BYTES_BUSY };
     }
 
     // Resolve the readable text once. Binary (pdf/docx/xlsx): the raw bytes

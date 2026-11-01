@@ -16,6 +16,28 @@ import type { ToolHandlerContext } from './types';
  *  photo is well under it; a larger file belongs in a download link. */
 export const APP_BYTES_MAX = 16 * 1024 * 1024;
 
+/** The most of these one process holds at once. Each keeps a whole file and
+ *  its base64 in memory, and a member's app may call 120 times a minute, so a
+ *  burst is turned away, not queued: a queue would hold every file it waits
+ *  with. The app calls again. */
+export const APP_BYTES_IN_FLIGHT = 4;
+
+let held = 0;
+
+export const APP_BYTES_BUSY =
+  'Too many pictures are being read at once: call again in a moment, and read them a few at a time.';
+
+/** Run `fn` holding one of the slots, or answer null when none is free. */
+export async function withAppBytesSlot<T>(fn: () => Promise<T>): Promise<T | null> {
+  if (held >= APP_BYTES_IN_FLIGHT) return null;
+  held += 1;
+  try {
+    return await fn();
+  } finally {
+    held -= 1;
+  }
+}
+
 /** Why this call may not have the bytes, or null when it may. */
 export function appBytesRefusal(ctx: ToolHandlerContext): string | null {
   if ((ctx.caller ?? currentToolCaller())?.entry === 'app') return null;

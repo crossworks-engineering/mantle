@@ -216,8 +216,10 @@ The picture of a DWG or DXF frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked
 far off the sheet would otherwise hold the sheet in a corner of the picture.
 The frame is the sheet's border when there is one: the largest closed polyline
-whose box holds at least 60% of the geometry, text not counted, with no second
-one of about its size beside it (tiled sheets). With no border, a group is left
+whose box holds at least 90% of the geometry, text not counted. It loses to a
+larger entity that holds it, to a second one of about its size beside it
+(tiled sheets), and to more than 10% of all entities outside it, text included.
+With no border, a group is left
 out only when it is few (at most 10% of the entities), small (at most 25% of
 the main group's span) and far (at least 25% of that span away), along one
 axis. A drawing with nothing outside the frame draws as it always did.

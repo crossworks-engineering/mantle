@@ -5,7 +5,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const files = vi.hoisted(() => ({ parserDwgCrop: vi.fn(), readFileById: vi.fn() }));
+const files = vi.hoisted(() => ({
+  fileById: vi.fn(),
+  parserDwgCrop: vi.fn(),
+  readFileById: vi.fn(),
+}));
 vi.mock('@mantle/files', () => files);
 
 import { APP_BYTES_MAX } from './app-bytes';
@@ -14,10 +18,11 @@ import type { ToolHandlerContext } from './types';
 
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
 const FILE_ID = '11111111-1111-4111-8111-111111111111';
-const row = (extension: string) => ({
+const row = (extension: string, sizeBytes = 2) => ({
   id: FILE_ID,
   filename: `sheet.${extension}`,
   extension,
+  sizeBytes,
 });
 const FRAME = {
   full: [0, 0, 9000, 500],
@@ -53,6 +58,7 @@ const call = (input: Record<string, unknown>) =>
 
 beforeEach(() => {
   files.parserDwgCrop.mockReset().mockResolvedValue(crop());
+  files.fileById.mockReset().mockResolvedValue(row('dwg'));
   files.readFileById.mockReset().mockResolvedValue({ row: row('dwg'), bytes: Buffer.from('AC') });
 });
 
@@ -97,7 +103,7 @@ describe('dwg_render', () => {
   });
 
   it('draws a dxf too, whatever the case of its extension', async () => {
-    files.readFileById.mockResolvedValue({ row: row('DXF'), bytes: Buffer.from('0') });
+    files.fileById.mockResolvedValue(row('DXF'));
     expect((await call({})).ok).toBe(true);
   });
 
@@ -113,6 +119,7 @@ describe('dwg_render', () => {
     [{ window: [1, 2, 3] }, 'four numbers'],
     [{ window: [1, 2, 'x', 4] }, 'four numbers'],
     [{ window: [1, 2, null, 4] }, 'four numbers'],
+    [{ window: [-1e308, 0, 1e308, 1] }, 'four numbers'],
     [{ window: [5, 2, 3, 4] }, 'x1 above x0'],
     [{ window: [1, 9, 3, 4] }, 'y1 above y0'],
     [{ window: [1, 2, 3, 4], full: true }, 'pass one of them'],
@@ -122,11 +129,11 @@ describe('dwg_render', () => {
     const r = await call(input);
     expect(r.ok).toBe(false);
     expect((r as { error: string }).error).toContain(words);
-    expect(files.readFileById).not.toHaveBeenCalled();
+    expect(files.fileById).not.toHaveBeenCalled();
   });
 
   it('points at the lookup for an unknown file', async () => {
-    files.readFileById.mockResolvedValue(null);
+    files.fileById.mockResolvedValue(null);
     expect(await call({})).toMatchObject({
       ok: false,
       error: expect.stringContaining('file_list'),
@@ -134,12 +141,50 @@ describe('dwg_render', () => {
   });
 
   it('refuses a file that is not a drawing and does not ask the parser', async () => {
-    files.readFileById.mockResolvedValue({ row: row('pdf'), bytes: Buffer.from('%PDF') });
+    files.fileById.mockResolvedValue(row('pdf'));
     expect(await call({})).toMatchObject({
       ok: false,
       error: expect.stringContaining('sheet.pdf is not one'),
     });
+    expect(files.readFileById).not.toHaveBeenCalled();
     expect(files.parserDwgCrop).not.toHaveBeenCalled();
+  });
+
+  it('refuses a very large file before it loads the bytes', async () => {
+    files.fileById.mockResolvedValue(row('dwg', 65 * 1024 * 1024));
+    expect(await call({})).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('too large to draw'),
+    });
+    expect(files.readFileById).not.toHaveBeenCalled();
+  });
+
+  it('turns a burst away before it reads a byte, and frees the slots after', async () => {
+    let open!: () => void;
+    const held = new Promise<void>((r) => (open = r));
+    files.parserDwgCrop.mockImplementation(async () => {
+      await held;
+      return crop();
+    });
+    const first = [call({}), call({})];
+    await vi.waitFor(() => expect(files.parserDwgCrop).toHaveBeenCalledTimes(2));
+    expect(await call({})).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('call again in a moment'),
+    });
+    expect(files.readFileById).toHaveBeenCalledTimes(2);
+    open();
+    await Promise.all(first);
+    expect((await call({})).ok).toBe(true);
+  });
+
+  it('frees its slot when the read throws', async () => {
+    files.readFileById.mockRejectedValue(new Error('disk'));
+    await expect(call({})).rejects.toThrow('disk');
+    await expect(call({})).rejects.toThrow('disk');
+    await expect(call({})).rejects.toThrow('disk');
+    files.readFileById.mockResolvedValue({ row: row('dwg'), bytes: Buffer.from('AC') });
+    expect((await call({})).ok).toBe(true);
   });
 
   it('tells a retryable failure from a verdict', async () => {
@@ -153,6 +198,17 @@ describe('dwg_render', () => {
     expect(await call({})).toMatchObject({
       ok: false,
       error: expect.stringContaining('call again in a moment'),
+    });
+    files.parserDwgCrop.mockResolvedValue({
+      ok: false,
+      code: 'timeout',
+      message: 'ran past its limit',
+      retryable: true,
+      terminal: false,
+    });
+    expect(await call({})).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('ran past its limit'),
     });
     files.parserDwgCrop.mockResolvedValue({
       ok: false,
@@ -225,6 +281,11 @@ describe('dwg_render', () => {
         error: expect.stringContaining('past the 16.0 MB'),
       });
     });
+  });
+
+  it('needs a file id', async () => {
+    expect(await dwg_render.handler({}, ctx)).toMatchObject({ ok: false });
+    expect(files.fileById).not.toHaveBeenCalled();
   });
 
   it('is a read that names its file, fenced as data', () => {

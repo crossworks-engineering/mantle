@@ -150,12 +150,11 @@ class BorderTests(unittest.TestCase):
         self.assertGreater(w[2], 9000)
         self.assertGreater(w[3], w[1])
 
-    def test_text_does_not_count_for_the_border(self):
-        # Geometry inside the box is under 60% once 300 labels are ignored or
-        # not: the labels outside must not outvote it.
-        labels = [(dwg_frame.TEXT, (5000.0 + i, 0.0, 5000.0 + i, 0.0)) for i in range(300)]
+    def test_a_few_notes_outside_do_not_move_the_border(self):
+        labels = [(dwg_frame.TEXT, (5000.0 + i, 0.0, 5000.0 + i, 0.0)) for i in range(15)]
         f = dwg_frame.drawing_frame(bordered() + labels)
         self.assertLess(f["sheet"][2], 830)
+        self.assertEqual(f["off_sheet"][0]["entities"], 15)
 
     def test_no_stray_is_the_old_picture(self):
         f = dwg_frame.drawing_frame(bordered())
@@ -186,6 +185,28 @@ class BorderTests(unittest.TestCase):
         self.assertTrue(f["framed"])
         self.assertLess(f["sheet"][2], 900)
 
+    def test_a_box_inside_a_block_border_is_not_the_border(self):
+        # The sheet is a block; the closed box is a battery limit in it, and
+        # the title block and the legend are text.
+        drawing = [(dwg_frame.OTHER, (0.0, 0.0, 841.0, 594.0))]
+        drawing.append((dwg_frame.CLOSED, (100.0, 100.0, 500.0, 450.0)))
+        drawing += entities(sheet(x=110.0, y=110.0, w=380.0, h=330.0, n=120)[1:])
+        drawing += entities(sheet(x=510.0, y=20.0, w=320.0, h=540.0, n=100)[1:], dwg_frame.TEXT)
+        f = dwg_frame.drawing_frame(drawing)
+        self.assertFalse(f["framed"])
+
+    def test_a_closed_box_with_the_legend_outside_it_is_not_the_border(self):
+        # No block round it this time: what stands outside is too much.
+        drawing = [(dwg_frame.CLOSED, (100.0, 100.0, 500.0, 450.0))]
+        drawing += entities(sheet(x=110.0, y=110.0, w=380.0, h=330.0, n=120)[1:])
+        drawing += entities(sheet(x=510.0, y=20.0, w=320.0, h=540.0, n=100)[1:], dwg_frame.TEXT)
+        f = dwg_frame.drawing_frame(drawing)
+        self.assertGreater(f["sheet"][2], 800)
+
+    def test_a_smaller_tile_stays(self):
+        boxes = bordered(n=300) + bordered(x=1000.0, w=400.0, h=300.0, n=60)
+        self.assertFalse(dwg_frame.drawing_frame(boxes)["framed"])
+
     def test_nothing_to_read(self):
         self.assertIsNone(dwg_frame.drawing_frame([]))
 
@@ -203,6 +224,12 @@ class ViewSpecTests(unittest.TestCase):
             dwg_crop.parse_spec({"items": [{"id": "v", "kind": "view", "window": [5, 5, 5, 9]}]})
         with self.assertRaises(dwg_crop.SpecError):
             dwg_crop.parse_spec({"items": [{"id": "v", "kind": "view", "window": [1, 2, 3]}]})
+
+    def test_a_window_too_large_to_draw(self):
+        with self.assertRaises(dwg_crop.SpecError):
+            dwg_crop.parse_spec(
+                {"items": [{"id": "v", "kind": "view", "window": [-1e308, 0, 1e308, 1]}]}
+            )
 
     def test_the_edge_is_held_to_its_range(self):
         for edge in (10, dwg_crop.MAX_VIEW_EDGE + 1, "wide"):
@@ -354,6 +381,66 @@ class RenderTests(unittest.TestCase):
             x0, _, x1, _ = index["frame"]["off_sheet"][0]["window"]
             # 8 letters of height 20, not the start point alone.
             self.assertGreater(x1 - x0, 60)
+
+    def test_a_lone_small_thing_is_not_blank(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "a.dxf")
+            doc = ezdxf.new("R2018")
+            msp = doc.modelspace()
+            msp.add_lwpolyline([(0, 0), (800, 0), (800, 500), (0, 500)], close=True)
+            msp.add_circle((2000, 2000), radius=3)
+            doc.saveas(src)
+            spec = os.path.join(d, "spec.json")
+            with open(spec, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "items": [
+                            {"id": "v", "kind": "view", "window": [1900, 1900, 2100, 2100],
+                             "edge": 800}
+                        ],
+                        "overview": False,
+                    },
+                    f,
+                )
+            p = self.run_cad("--dwg-crop", src, d, spec)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            with open(os.path.join(d, "index.json"), encoding="utf-8") as f:
+                self.assertFalse(json.load(f)["crops"][0]["blank"])
+
+    def test_with_nothing_off_the_sheet_the_view_keeps_long_text(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "a.dxf")
+            doc = ezdxf.new("R2018")
+            msp = doc.modelspace()
+            msp.add_lwpolyline([(0, 0), (800, 0), (800, 500), (0, 500)], close=True)
+            for i in range(1, 12):
+                msp.add_line((20, i * 40), (780, i * 40))
+            msp.add_text("A LONG LABEL", height=30).set_placement((600, 250))
+            doc.saveas(src)
+            spec = os.path.join(d, "spec.json")
+            with open(spec, "w", encoding="utf-8") as f:
+                json.dump({"items": [{"id": "v", "kind": "view"}], "overview": False}, f)
+            p = self.run_cad("--dwg-crop", src, d, spec)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            with open(os.path.join(d, "index.json"), encoding="utf-8") as f:
+                index = json.load(f)
+            self.assertEqual(index["crops"][0]["window"], index["frame"]["full"])
+            self.assertFalse(index["frame"]["framed"])
+            self.assertGreater(index["crops"][0]["window"][2], 830)
+
+    def test_a_named_window_needs_no_frame(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "a.dxf")
+            ezdxf.new("R2018").saveas(src)
+            spec = os.path.join(d, "spec.json")
+            with open(spec, "w", encoding="utf-8") as f:
+                json.dump(
+                    {"items": [{"id": "v", "kind": "view", "window": [0, 0, 10, 10]}],
+                     "overview": False},
+                    f,
+                )
+            p = self.run_cad("--dwg-crop", src, d, spec)
+            self.assertEqual(p.returncode, 0, p.stderr)
 
     def test_an_empty_window_says_it_is_blank(self):
         with tempfile.TemporaryDirectory() as d:

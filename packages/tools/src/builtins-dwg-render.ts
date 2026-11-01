@@ -11,7 +11,13 @@
  * sees it as an image; a mini app asks for `bytes` and gets it in the output
  * (app-bytes.ts), so an app can show a drawing with no sandbox step.
  */
-import { parserDwgCrop, readFileById, type DwgFrame, type DwgWindow } from '@mantle/files';
+import {
+  fileById,
+  parserDwgCrop,
+  readFileById,
+  type DwgFrame,
+  type DwgWindow,
+} from '@mantle/files';
 import { APP_BYTES_MAX, appBytesRefusal, appBytesTooLarge } from './app-bytes';
 import { FILE_ID_PRE } from './builtins-common';
 import { boolOpt as bool, str } from './coerce';
@@ -20,12 +26,24 @@ import type { BuiltinToolDef } from './types';
 /** A view's long edge, in pixels: dwg_crop.py's MIN_EDGE and MAX_VIEW_EDGE. */
 const EDGE = { min: 480, max: 4000, default: 2000 } as const;
 
+/** The largest drawing this draws, as a real sheet is far under it. A larger
+ *  file is read whole into memory only to wait for the parser. */
+const DWG_FILE_MAX_BYTES = 64 * 1024 * 1024;
+
+/** Drawings this process draws at once. The parser takes one job at a time,
+ *  for the whole brain, and extraction waits in the same line: a burst from
+ *  an app is turned away here, before a byte is read, rather than queued with
+ *  every file in memory. */
+const DWG_RENDER_IN_FLIGHT = 2;
+
+let drawing = 0;
+
 /** The caller's window, or the words that fix it. */
 function windowOf(raw: unknown): { window?: DwgWindow } | { error: string } {
   if (raw === undefined) return {};
   const n: number[] =
     Array.isArray(raw) && raw.length === 4 && raw.every((v) => Number.isFinite(v)) ? raw : [];
-  if (n.length !== 4) {
+  if (n.length !== 4 || !Number.isFinite(n[2]! - n[0]!) || !Number.isFinite(n[3]! - n[1]!)) {
     return { error: 'window must be four numbers, x0, y0, x1, y1, e.g. [1200, 400, 2400, 1100]' };
   }
   const [x0, y0, x1, y1] = n as DwgWindow;
@@ -98,6 +116,7 @@ export const dwg_render: BuiltinToolDef = {
   },
   handler: async (input, ctx) => {
     const fileId = str(input.file_id);
+    if (!fileId) return { ok: false, error: 'file_id required: find it with file_list.' };
     const asked = windowOf(input.window);
     if ('error' in asked) return { ok: false, error: asked.error };
     const full = bool(input.full) === true;
@@ -115,37 +134,58 @@ export const dwg_render: BuiltinToolDef = {
       };
     }
 
-    const file = await readFileById({ ownerId: ctx.ownerId, fileId });
-    if (!file) {
+    const row = await fileById({ ownerId: ctx.ownerId, fileId });
+    if (!row) {
       return {
         ok: false,
         error: 'file not found: find the right id with file_list or search_nodes, then call again.',
       };
     }
-    const { row } = file;
     if (!/^(dwg|dxf)$/i.test(row.extension)) {
       return {
         ok: false,
         error: `dwg_render draws .dwg and .dxf files; ${row.filename} is not one. A DWF has its sheets as pictures on the file already. Find the drawing with file_list or search_nodes.`,
       };
     }
-
-    const drawn = await parserDwgCrop(file.bytes, {
-      items: [
-        {
-          id: 'view',
-          kind: 'view',
-          edge,
-          ...(asked.window ? { window: asked.window } : {}),
-          ...(full ? { full } : {}),
-        },
-      ],
-      overview: false,
-    });
-    if (!drawn.ok) {
+    if (row.sizeBytes > DWG_FILE_MAX_BYTES) {
       return {
         ok: false,
-        error: drawn.retryable
+        error: `${row.filename} is too large to draw here. Its text and coordinates are in its table: read them with table_sql.`,
+      };
+    }
+    if (drawing >= DWG_RENDER_IN_FLIGHT) {
+      return {
+        ok: false,
+        error: 'Other drawings are being drawn: call again in a moment, one drawing at a time.',
+      };
+    }
+    drawing += 1;
+    let drawn: Awaited<ReturnType<typeof parserDwgCrop>>;
+    try {
+      const file = await readFileById({ ownerId: ctx.ownerId, fileId });
+      if (!file) {
+        return { ok: false, error: 'the file has no bytes to read: call again in a moment.' };
+      }
+      drawn = await parserDwgCrop(file.bytes, {
+        items: [
+          {
+            id: 'view',
+            kind: 'view',
+            edge,
+            ...(asked.window ? { window: asked.window } : {}),
+            ...(full ? { full } : {}),
+          },
+        ],
+        overview: false,
+      });
+    } finally {
+      drawing -= 1;
+    }
+    if (!drawn.ok) {
+      const busy = drawn.code === 'busy' || drawn.code === 'unavailable';
+      return {
+        ok: false,
+        error: busy
           ? `The parser is busy or restarting (${drawn.code}): call again in a moment.`
           : `The parser could not draw this file (${drawn.code}): ${drawn.message}`,
       };
@@ -154,7 +194,7 @@ export const dwg_render: BuiltinToolDef = {
     if (!crop) {
       return {
         ok: false,
-        error: `The parser returned no picture for this window${drawn.value.capped.length ? ` (${drawn.value.capped.join('; ')})` : ''}: try a smaller \`edge\` or a smaller \`window\`.`,
+        error: `The parser returned no picture: this drawing takes too long to draw, or the picture is too large${drawn.value.capped.length ? ` (${drawn.value.capped.join('; ')})` : ''}. A smaller \`edge\` helps only with the size.`,
       };
     }
     const base = {
