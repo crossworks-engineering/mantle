@@ -75,7 +75,10 @@ const HFS_IGNORED = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
  */
 function badGitPart(part: string): string | null {
   if (part.includes(':')) return "a ':' in a name";
-  const plain = part.replace(HFS_IGNORED, '').replace(/[. ]+$/, '').toLowerCase();
+  const plain = part
+    .replace(HFS_IGNORED, '')
+    .replace(/[. ]+$/, '')
+    .toLowerCase();
   if (plain === '.git' || plain === 'git~1') return "a '.git' part";
   if (plain === '.gitmodules' || /^gitmod~\d$/.test(plain)) return "a '.gitmodules' file";
   return null;

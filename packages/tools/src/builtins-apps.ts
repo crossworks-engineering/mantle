@@ -1945,7 +1945,8 @@ async function exportGitBundle(
   if (gitExportsRunning >= GIT_EXPORT_MAX_PARALLEL) {
     return {
       ok: false,
-      error: 'other git exports are running: try again in a minute, or compare versions in place with code_diff',
+      error:
+        'other git exports are running: try again in a minute, or compare versions in place with code_diff',
     };
   }
   gitExportsRunning++;
