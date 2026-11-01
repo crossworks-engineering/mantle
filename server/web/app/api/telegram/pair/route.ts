@@ -31,7 +31,7 @@ import {
   previewMyTelegramChat,
 } from '@/lib/agent-telegram';
 import { readJson } from '@/lib/read-body';
-import { ownOidcCookieEnd } from '@/lib/auth/own-device';
+import { ownCompanyBearer, ownOidcCookieEnd } from '@/lib/auth/own-device';
 import type { OidcRefusal } from '@mantle/client-types';
 import { routePolicy } from '@/lib/auth/route-declaration';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
   // A chat paired from a session made by company sign-in would act as the
   // login after that session (and a provider block) ended: refused, as
   // pairing a phone is (docs/oidc-sign-in.md).
-  if (ownOidcCookieEnd(req) !== null) {
+  if (ownOidcCookieEnd(req) !== null || ownCompanyBearer(req)) {
     const body: OidcRefusal = {
       error: 'A company sign-in session cannot pair a Telegram chat yet.',
       code: 'sso-session',

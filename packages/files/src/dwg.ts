@@ -257,6 +257,14 @@ async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {
     .join(', ');
   if (typeLine) out.push(`Entities: ${typeLine}`);
 
+  // The picture frames the sheet, so it must say what it left out.
+  if (r.png && r.frame?.framed) {
+    const off = r.frame.offSheet.reduce((n, g) => n + g.entities, 0);
+    out.push(
+      `Picture: frames the sheet. ${off} ${off === 1 ? 'entity sits' : 'entities sit'} off the sheet and ${off === 1 ? 'is' : 'are'} not in it (dwg_render with full: true shows them).`,
+    );
+  }
+
   if (r.layers.length) {
     out.push('', 'Layers (by entity count):');
     for (const layer of r.layers.slice(0, DIGEST_LAYERS)) {

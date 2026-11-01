@@ -922,6 +922,53 @@ describe('render retry provenance (render_converter)', () => {
   });
 });
 
+describe('the sheet frame (frame)', () => {
+  const FRAME = {
+    full: [0, 0, 9000, 500],
+    sheet: [-10, -10, 810, 510],
+    off_sheet: [
+      { window: [8900, 100, 9000, 140], entities: 2 },
+      { window: [7000, 0, 7100, 40], entities: 1 },
+    ],
+    framed: true,
+  };
+
+  it('reads the frame and says in the digest what the picture left out', async () => {
+    stubSidecar({ ...sidecarReply(), frame: FRAME });
+    try {
+      const { parserDwgRender } = await import('./parser-cad');
+      const res = await parserDwgRender(dwgFixture(15));
+      expect(res.ok && res.value.frame).toEqual({
+        full: FRAME.full,
+        sheet: FRAME.sheet,
+        offSheet: FRAME.off_sheet,
+        framed: true,
+      });
+      expect(await parseDwg(dwgFixture(15))).toContain(
+        'Picture: frames the sheet. 3 entities sit off the sheet and are not in it',
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('says nothing when nothing was left out, and reads an older reply as null', async () => {
+    stubSidecar({ ...sidecarReply(), frame: { ...FRAME, off_sheet: [], framed: false } });
+    try {
+      expect(await parseDwg(dwgFixture(16))).not.toContain('Picture:');
+      vi.unstubAllGlobals();
+      stubSidecar();
+      const { parserDwgRender } = await import('./parser-cad');
+      const res = await parserDwgRender(dwgFixture(17));
+      expect(res.ok && res.value.frame).toBe(null);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('dwgRenderDpi', () => {
   // The compose anchor is `DWG_RENDER_DPI: ${DWG_RENDER_DPI:-}`, so an unset
   // dial arrives as the EMPTY STRING — and Number('') is 0, which is finite.

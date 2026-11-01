@@ -190,6 +190,11 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `delete from oidc_login_state where false`,
       `insert into oidc_mode_state (mode) values ('required')`,
       `update oidc_mode_state set mode = 'optional' where false`,
+      // Its one-time codes (0350): no right at all.
+      `select 1 from oidc_handoff_codes`,
+      `insert into oidc_handoff_codes default values`,
+      `update oidc_handoff_codes set used_at = now() where false`,
+      `delete from oidc_handoff_codes where false`,
     ];
     for (const s of refused) expect(await run(nl, [s]), s).toBe('42501');
     for (const s of [
@@ -215,6 +220,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       'oidc_signin_links',
       'oidc_login_state',
       'oidc_mode_state',
+      'oidc_handoff_codes',
     ]) {
       const [g] = await su<{ i: boolean }[]>`
         select has_table_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, 'INSERT')

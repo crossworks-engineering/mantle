@@ -9536,6 +9536,53 @@
   }
  },
  {
+  "name": "dwg_render",
+  "description": "Draw one uploaded DWG or DXF file and return the picture with the window it shows. Saves nothing. With no `window` it draws the sheet: anything far off the sheet is left out, and the reply lists each such group with its window. Name a `window` in drawing units to read fine print or an off-sheet note, or set `full` for all of model space. For the text and its coordinates use `table_sql` on the drawing's table; for a piping circuit use `circuit_trace`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_id": {
+     "type": "string",
+     "description": "The drawing's file id, from `file_list` or `search`."
+    },
+    "window": {
+     "minItems": 4,
+     "maxItems": 4,
+     "type": "array",
+     "items": {
+      "type": "number"
+     },
+     "description": "The part to draw, in drawing units: x0, y0, x1, y1, e.g. [1200, 400, 2400, 1100]. An earlier reply of this tool gives windows; the Texts tab gives coordinates."
+    },
+    "full": {
+     "type": "boolean",
+     "description": "Draw all of model space. Not with `window`."
+    },
+    "edge": {
+     "type": "integer",
+     "minimum": 480,
+     "maximum": 4000,
+     "description": "The picture's long edge in pixels."
+    },
+    "bytes": {
+     "type": "boolean",
+     "description": "Mini apps only: return the picture as base64 in the output."
+    }
+   },
+   "required": [
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "dwg_render",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "diagram_render",
   "description": "Lay out and draw a diagram template's data (`flow`: boxes and arrows; `pid`: a P&ID first draft) and return the picture, the data errors and the layout warnings. Saves nothing: the look while you compose. When it is right, save it with `present_create` (same `template` and `data`) and export it for a page with `present_export`. For a hand-drawn diagram type use `diagram_guide`.",
   "inputSchema": {

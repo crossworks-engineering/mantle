@@ -10,7 +10,9 @@ import { updateTheAppResponse } from '@/lib/mobile-build';
 import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from './cache-control';
 import { loginIsAdmin, loginRole } from '@/lib/auth/admin-seat';
-import { passwordRefusal, passwordSignInRule } from '@/lib/oidc/rules';
+import { offerTicketInBody, passwordRefusal, passwordSignInRule } from '@/lib/oidc/rules';
+import { oidcSettings } from '@/lib/oidc/settings';
+import { oidcLoginRow } from '@/lib/oidc/store';
 
 /**
  * Shared credentials→bearer flow behind BOTH token-login routes:
@@ -86,16 +88,22 @@ export async function handleTokenLogin(
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
 
+  // Company sign-in, read only while it is on: the login's epoch, for the
+  // ticket a link starts on.
+  const epoch =
+    oidcSettings().mode === 'off' ? undefined : (await oidcLoginRow(userId))?.sessionEpoch;
+
   // Company sign-in in required mode (lib/oidc/rules.ts): no bearer for a
-  // linked login, nor for an unlinked one (it links on the web first).
+  // linked login, nor for an unlinked one, which answers the held ticket
+  // its client starts the one link step on.
   const sso = await passwordSignInRule(userId);
   if (sso !== 'allow') {
-    return passwordRefusal(req, sso, {
-      path: opts.path,
-      email,
-      loginId: userId,
-      channel: opts.channel,
-    });
+    return passwordRefusal(
+      req,
+      sso,
+      { path: opts.path, email, loginId: userId, channel: opts.channel },
+      epoch === undefined ? undefined : { epoch, inBody: true },
+    );
   }
 
   const [login] =
@@ -149,6 +157,7 @@ export async function handleTokenLogin(
       expiresIn: expiresInSec,
       expiresAt: expiresAt.toISOString(),
       deviceId: jti,
+      ...offerTicketInBody(userId, epoch),
       // device-login: the login and this brain (the key a device holding
       // several logins files the session under, docs/mobile-companion-backend.md).
       ...(opts.withRole

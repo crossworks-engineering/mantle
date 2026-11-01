@@ -209,11 +209,27 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/pdf/rasterize`   | `pdfRasterize` | 180 s      | PDF pages to PNG for OCR                         |
 | `/pdf/info`        | `pdfInfo`      | 60 s       | PDF page count                                   |
 | `/pdf/unlock`      | `pdfUnlock`    | 60 s       | a locked PDF's text with one candidate password  |
-| `/dwg/render`      | `dwgRender`    | 240 s      | DWG/DXF registry, bones and a model-space PNG    |
-| `/dwg/crop`        | `dwgCrop`      | 240 s      | DWG/DXF close-up crops                           |
+| `/dwg/render`      | `dwgRender`    | 240 s      | DWG/DXF registry, bones and a PNG of the sheet   |
+| `/dwg/crop`        | `dwgCrop`      | 240 s      | DWG/DXF close-up crops and `view` pictures       |
 | `/extract-audio`   | `extractAudio` | 600 s      | a video or audio file to mp3 (ffmpeg)            |
 | `/image/thumbnail` | `thumbnail`    | 30 s       | an image to a bounded JPEG                       |
 | `/image/vision`    | `visionImage`  | 60 s       | HEIC/HEIF to JPEG for a vision model             |
+
+The picture of a DWG or DXF frames the sheet, not model space
+(`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked
+far off the sheet would otherwise hold the sheet in a corner of the picture.
+The frame is the sheet's border when there is one: the largest closed polyline
+whose box holds at least 90% of the geometry, text not counted. It loses to a
+larger entity that holds it, to a second one of about its size beside it
+(tiled sheets), and to more than 10% of all entities outside it, text included.
+With no border, a group is left
+out only when it is few (at most 10% of the entities), small (at most 25% of
+the main group's span) and far (at least 25% of that span away), along one
+axis. A drawing with nothing outside the frame draws as it always did.
+What is left out is in the reply (`frame.off_sheet`, with each group's window)
+and in the digest, and its text is in the workbook as before. `dwg_render`
+asks for a `view` item of the crop job: the sheet, a window, or all of model
+space, on the same page size, so strokes weigh the same.
 
 `GET /healthz` answers the running and queued job counts and the reader
 versions the image carries (pdfjs, anydoc, exceljs, mammoth, python, ezdxf,

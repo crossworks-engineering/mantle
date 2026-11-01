@@ -127,6 +127,9 @@ export const RATE_LIMITS = {
   oidcStart: perIp('auth:oidc-start', 120),
   oidcCallback: perIp('auth:oidc-callback', 120),
   oidcLink: perIp('auth:oidc-link', 60),
+  /** A client spends its one-time code: at most one a sign-in, so sized as
+   *  the start. A code is 256 random bits and burnt by a wrong verifier. */
+  oidcExchange: perIp('auth:oidc-exchange', 120),
   /** The invite routes are code oracles: every request counts per address,
    *  and the brain's failed codes count toward a cap of their own (a guard
    *  against a distributed flood: member-invites.ts). */

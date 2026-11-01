@@ -19,6 +19,21 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   is in `docs/parser.md` ("Scans that drew blank before the decoders"). Reading
   them again spends model money, so it waits for the owner's word.
 
+## Unreleased: a drawing's picture frames the sheet, and dwg_render
+
+- **Fixed:** the picture of a DWG or DXF frames the sheet, not all of model
+  space. A note parked far off the sheet no longer holds the sheet in a
+  corner. What is left out is said in the digest and in `frame.off_sheet`.
+  A drawing with nothing far off draws as before. A stored picture stays as
+  it is until its file is extracted again.
+- **Added:** `dwg_render` (group `circuits`, and MCP) draws one uploaded DWG
+  or DXF on request: the sheet, a window in drawing units, or all of model
+  space. Read only: the picture goes back to the caller and nothing is saved.
+- **Added:** a mini app can show a picture. `file_read` and `dwg_render` take
+  `bytes: true` from an app's own call and answer base64 (at most 16 MB a
+  call), which the app turns into a data: or blob: URL. An agent or an MCP
+  client gets a refusal that names what to use instead.
+
 ## Unreleased: the UI sounds save names its login
 
 - **Fixed:** `PUT /api/profile/sounds` now takes `loginId`, the login the

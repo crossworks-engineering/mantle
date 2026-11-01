@@ -58,7 +58,11 @@ export {
   type DwgCropItem,
   type DwgCropSpec,
   type DwgCrops,
+  type DwgFrame,
   type DwgRender,
+  type DwgViewItem,
+  type DwgViewSpec,
+  type DwgWindow,
 } from './parser-cad';
 
 export { MAX_UPLOAD_BYTES, maxStreamedUploadBytes } from './limits';

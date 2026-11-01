@@ -14,7 +14,14 @@ import {
   listFolders,
   readFileById,
 } from '@mantle/files';
-import { type BuiltinToolDef } from '../types';
+import {
+  APP_BYTES_BUSY,
+  APP_BYTES_MAX,
+  appBytesRefusal,
+  appBytesTooLarge,
+  withAppBytesSlot,
+} from '../app-bytes';
+import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str, strOpt, boolOpt as bool } from '../coerce';
 import { FILE_ID_PRE } from '../builtins-common';
 
@@ -120,6 +127,10 @@ export const file_read: BuiltinToolDef = {
         description:
           'Load the ENTIRE extracted text even when the document is large. Default false: a large, indexed document returns its opening + a section outline + a pointer to read_section (almost always what you want). Set true only when you genuinely need the complete text.',
       },
+      bytes: {
+        type: 'boolean',
+        description: "Mini apps only: return the file's bytes as base64, to show a stored image.",
+      },
     },
     required: ['file_id'],
   },
@@ -133,6 +144,38 @@ export const file_read: BuiltinToolDef = {
         ok: false,
         error: 'file not found — find the right id with file_list / search_nodes, then re-issue.',
       };
+
+    if (bool(input.bytes) === true) {
+      const refused = appBytesRefusal(ctx);
+      if (refused) return { ok: false, error: refused };
+      if (meta.sizeBytes > APP_BYTES_MAX) {
+        return { ok: false, error: appBytesTooLarge(meta.filename, meta.sizeBytes) };
+      }
+      const read = await withAppBytesSlot(async (): Promise<ToolHandlerResult> => {
+        const res = await readFileById({ ownerId: ctx.ownerId, fileId });
+        if (!res) {
+          return {
+            ok: false,
+            error:
+              'the file has no bytes to read: it may still be uploading. Try again in a moment.',
+          };
+        }
+        // Read, not trusted from the row: the size on the row can be stale.
+        if (res.bytes.length > APP_BYTES_MAX) {
+          return { ok: false, error: appBytesTooLarge(meta.filename, res.bytes.length) };
+        }
+        ctx.step?.setOutput({ binary: !meta.isText, bytes: res.bytes.length });
+        return {
+          ok: true,
+          output: {
+            file: meta,
+            mime_type: meta.mimeType,
+            content_base64: res.bytes.toString('base64'),
+          },
+        };
+      });
+      return read ?? { ok: false, error: APP_BYTES_BUSY };
+    }
 
     // Resolve the readable text once. Binary (pdf/docx/xlsx): the raw bytes
     // aren't useful to the LLM, but the extractor persists the parsed text as

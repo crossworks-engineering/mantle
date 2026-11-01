@@ -1317,6 +1317,24 @@
    "peerRisky": false
   }
  },
+ "dwg_render": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "files",
+   "peerRisky": false
+  }
+ },
  "email_get": {
   "readOnly": true,
   "peerRisky": false,

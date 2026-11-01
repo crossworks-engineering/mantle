@@ -168,6 +168,7 @@ const NO_WRITE_FOUND: readonly string[] = [
   'diagram_types',
   'draw_get',
   'draw_list',
+  'dwg_render',
   'email_get',
   'email_list',
   'entity_facts',

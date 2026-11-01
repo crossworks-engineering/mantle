@@ -393,6 +393,11 @@ export const NARROW_SCAN_OPEN: Readonly<
     tag: 'covered-across-files',
     why: 'the public /api/oauth token and register routes, and the /api/mcp bearer check before any exit (ownerFromBearer: tests only): full route',
   },
+  'server/web/lib/oidc/exchange.ts insert public.mobile_tokens': {
+    n: 1,
+    tag: 'covered-across-files',
+    why: 'bearerAnswer: only POST /api/auth/oidc/exchange, a public route with no login (no exit: the system pool, full route)',
+  },
   'server/web/lib/pair-code.ts insert public.mobile_tokens': {
     n: 1,
     tag: 'covered-across-files',

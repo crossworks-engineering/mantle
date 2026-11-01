@@ -33,6 +33,7 @@ import { bumpWorkerUsage, currentActor, type AiWorker } from '@mantle/db';
 import { resolveDefaultWorker } from '@mantle/api-keys';
 import { parserDwgCrop, readFileById } from '@mantle/files';
 import { extractImages, multiImageProvider, type ProviderCredential } from '@mantle/voice';
+import { dwg_render } from './builtins-dwg-render';
 import { CS } from './client-sourced-rule';
 import { traceCircuit, type RegisterInput, type SheetInput } from './circuit-trace/walk';
 import { CIRCUIT_DRAWING_STEPS, VERIFY_ONCE } from './circuit-trace/workflow';
@@ -565,5 +566,5 @@ const circuit_verify: BuiltinToolDef = {
   handler: (input, ctx) => circuitVerifyHandler(input, ctx.ownerId),
 };
 
-export const CIRCUIT_TOOLS: BuiltinToolDef[] = [circuit_trace, circuit_verify];
+export const CIRCUIT_TOOLS: BuiltinToolDef[] = [circuit_trace, circuit_verify, dwg_render];
 export const CIRCUIT_TOOL_SLUGS: readonly string[] = CIRCUIT_TOOLS.map((t) => t.slug);

@@ -25,12 +25,15 @@ answers `crashed`, the brain keeps the drawing as a file.
                 path: the registry (layers, texts, blocks, counts) and the
                 bones (dwg_bones.py: segments, a snapped network of nodes,
                 every insert with its box, per-circuit rows on `Circuit
-                <name>` layers), then model.png.
+                <name>` layers), then model.png, framed on the sheet
+                (dwg_frame.py: a note far off the sheet is left out and
+                listed in `frame.off_sheet`).
   --dwg-crop    close-up crops of ONE drawing for the image check
                 (dwg_crop.py): point and path items, zoomed so the smallest
                 text in the window reads at about 14 px (long edge at most
                 2000 px), the trace overlaid in fixed colours, plus a sheet
-                overview.
+                overview. Also `view` items, the pictures of dwg_render: a
+                window, the sheet, or all of model space.
 
 The parser container has no network route out; nothing here fetches.
 Moved from the media sidecar (its app.py), whose HTTP server, yt-dlp and
@@ -69,17 +72,22 @@ RENDER_PAGE_INCHES = 33.0
 SAVEFIG_OPTS = {"facecolor": "white", "bbox_inches": "tight", "pad_inches": 0.0}
 
 
-def cad_page_inches(layout) -> tuple[float, float]:
-    """Figure size for a DXF layout: the drawing's own aspect, with its long
+def cad_page_inches(layout, frame: dict | None = None) -> tuple[float, float]:
+    """Figure size for a DXF layout: the aspect of the sheet it frames (the
+    `frame` of dwg_frame.py, else the drawing's own extents), with its long
     edge at RENDER_PAGE_INCHES. Falls back to a square when the extents cannot
     be read: a rendered drawing with wasted margin beats no drawing."""
     ratio = 1.0
     try:
-        from ezdxf import bbox  # noqa: PLC0415 (child-only import)
+        if frame is not None and frame["framed"]:
+            x0, y0, x1, y1 = frame["sheet"]
+            ratio = (y1 - y0) / (x1 - x0)
+        else:
+            from ezdxf import bbox  # noqa: PLC0415 (child-only import)
 
-        ext = bbox.extents(layout, fast=True)
-        if ext.has_data and ext.size.x > 0 and ext.size.y > 0:
-            ratio = ext.size.y / ext.size.x
+            ext = bbox.extents(layout, fast=True)
+            if ext.has_data and ext.size.x > 0 and ext.size.y > 0:
+                ratio = ext.size.y / ext.size.x
     except Exception:
         ratio = 1.0
     # Clamp the extreme shapes: a strip drawing must not produce a 1-inch edge
@@ -118,6 +126,20 @@ def png_is_blank(path: str) -> bool:
     if total == 0:
         return True
     return sum(hist[:250]) / total < 0.0005
+
+
+def png_has_no_ink(path: str) -> bool:
+    """True when not one pixel of a saved view has ink. A view is often a small
+    window on one small thing, so png_is_blank's share of the page, tuned on
+    whole sheets, would call a lone circle blank. A probe that cannot run
+    returns False, as there."""
+    try:
+        from PIL import Image  # noqa: PLC0415 (probe-only import)
+
+        with Image.open(path) as im:
+            return im.convert("L").point(lambda v: 255 if v < 250 else 0).getbbox() is None
+    except Exception:
+        return False
 
 
 def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
@@ -327,6 +349,8 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     from ezdxf.addons.drawing.matplotlib import MatplotlibBackend  # noqa: PLC0415
     from ezdxf.addons.drawing.properties import LayoutProperties  # noqa: PLC0415
 
+    import dwg_frame  # noqa: PLC0415 - child-only; sits next to this file
+
     max_pixels = 30_000_000
 
     doc, converter = open_cad(src, outdir)
@@ -347,13 +371,20 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
         stored a white rectangle, and the only clue was its byte size."""
         try:
             msp_layout = document.modelspace()
+            # The sheet, not model space: a note parked far off the sheet
+            # would otherwise hold the sheet in a corner of the picture, and
+            # the same pixels would read far less of it. A drawing with no
+            # stray draws exactly as it always did.
+            frame = dwg_frame.layout_frame(msp_layout)
+            index["frame"] = frame
+            framed = frame is not None and frame["framed"]
             # Page shaped to the DRAWING, long edge pinned to the page size.
             # A square page would work (equal aspect centres the drawing in it),
             # but a landscape P&ID would then carry ~35% white margin into
             # every vision call. `bbox.extents(fast=True)` is ~0.6s on a 9.7k
             # entity drawing and uses cached bounding boxes; any failure falls
             # back to the square, which is wasteful but never wrong.
-            fig = plt.figure(figsize=cad_page_inches(msp_layout))
+            fig = plt.figure(figsize=cad_page_inches(msp_layout, frame))
             ax = fig.add_axes([0, 0, 1, 1])
             ax.set_axis_off()
             # ACI colour 7 has NO fixed colour: ezdxf resolves it against the
@@ -376,13 +407,23 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
             Frontend(
                 RenderContext(document), MatplotlibBackend(ax, adjust_figure=False)
             ).draw_layout(msp_layout, finalize=True, layout_properties=lp)
+            # The note stays drawn, outside the axes' limits. Saved at the
+            # whole page: a tight bbox would measure the note too. The aspect
+            # stays equal, so a sheet past the page's clamped shape gains a
+            # margin and is never stretched.
+            save_opts = SAVEFIG_OPTS
+            if framed:
+                x0, y0, x1, y1 = frame["sheet"]
+                ax.set_xlim(x0, x1)
+                ax.set_ylim(y0, y1)
+                save_opts = {"facecolor": "white"}
             # The page is fixed, so the output-pixel cap maps straight to a dpi
             # ceiling: clamp BEFORE the first savefig instead of paying an
             # over-budget render only to redo it smaller. Conservative: it
             # assumes the full square page, while the tight bbox below crops to
             # the drawing's own aspect. The measured guard stays as backstop.
             eff_dpi = min(dpi, max(50, int((max_pixels / (RENDER_PAGE_INCHES**2)) ** 0.5)))
-            fig.savefig(png, dpi=eff_dpi, **SAVEFIG_OPTS)
+            fig.savefig(png, dpi=eff_dpi, **save_opts)
             with open(png, "rb") as f:
                 head = f.read(24)
             if head[:8] == b"\x89PNG\r\n\x1a\n":
@@ -394,7 +435,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
                         fig.savefig(
                             png,
                             dpi=max(50, int(eff_dpi * (max_pixels / pixels) ** 0.5)),
-                            **SAVEFIG_OPTS,
+                            **save_opts,
                         )
                     except Exception:
                         pass  # keep the over-budget-but-valid first PNG
@@ -467,8 +508,20 @@ def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
     doc, converter = open_cad(src, outdir)
     if doc is None:
         return 1
-    index = dwg_crop.render(doc, spec, outdir, deadline=started + CROP_BUDGET_S)
+    try:
+        index = dwg_crop.render(doc, spec, outdir, deadline=started + CROP_BUDGET_S)
+    except dwg_crop.SpecError as err:
+        sys.stderr.write(f"crop spec: {err}\n")
+        return 1
+    except Exception as err:
+        # Stderr is the job's answer: the reason, never a traceback's paths.
+        sys.stderr.write(f"the crops could not be drawn: {type(err).__name__}: {err}"[:300] + "\n")
+        return 1
     index["converter"] = converter
+    for crop in index["crops"]:
+        if crop.get("view"):
+            # A window with nothing in it is an answer: the caller moves it.
+            crop["blank"] = png_has_no_ink(os.path.join(outdir, crop["file"]))
     with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, allow_nan=False)
     return 0

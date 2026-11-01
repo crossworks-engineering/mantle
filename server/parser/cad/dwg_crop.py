@@ -18,6 +18,10 @@ Planning is pure (no ezdxf, no matplotlib) so it is tested on its own:
     middle half of some crop and none sits only on an edge. Past
     MAX_PATH_TILES the crops zoom out instead of multiplying.
   - One small overview of the sheet, with every crop's window drawn on it.
+  - A view item is a picture a caller asked to look at (dwg_render): the
+    window it names, or the sheet (dwg_frame.py) when it names none, or the
+    whole extents with `full`, at the long edge it asks for. On the same
+    RENDER_PAGE_INCHES as the model render, so its strokes weigh the same.
 
 Rendering draws the model space once with ezdxf, adds the trace overlay in
 fixed, solid colours (main red, branch blue, deadleg orange: the words the
@@ -32,9 +36,16 @@ from __future__ import annotations
 import math
 import time
 
+import dwg_frame
+
 TEXT_PX = 14.0
 MAX_EDGE = 2000
 MIN_EDGE = 480
+# A view's long edge, in pixels. Past this a vision model scales it down
+# anyway; a caller reads fine print by naming a smaller window.
+MAX_VIEW_EDGE = 4000
+# cad.py's RENDER_PAGE_INCHES (its comment says why the page sets the stroke).
+VIEW_PAGE_INCHES = 33.0
 OVERVIEW_EDGE = 1000
 MAX_CROPS = 48
 MAX_ITEMS = 40
@@ -79,9 +90,26 @@ def _pt(v, what: str) -> tuple:
     return (_num(v[0], what), _num(v[1], what))
 
 
+def _view_item(it: dict, iid: str, where: str) -> dict:
+    window = it.get("window")
+    if window is not None:
+        if not isinstance(window, (list, tuple)) or len(window) != 4:
+            raise SpecError(f"{where}.window must be [x0, y0, x1, y1]")
+        window = [_num(v, f"{where}.window") for v in window]
+        if window[2] <= window[0] or window[3] <= window[1]:
+            raise SpecError(f"{where}.window must have x1 above x0 and y1 above y0")
+        if not (math.isfinite(window[2] - window[0]) and math.isfinite(window[3] - window[1])):
+            raise SpecError(f"{where}.window is too large to draw")
+    edge = it.get("edge", MAX_EDGE)
+    if isinstance(edge, bool) or not isinstance(edge, int) or not MIN_EDGE <= edge <= MAX_VIEW_EDGE:
+        raise SpecError(f"{where}.edge must be a whole number from {MIN_EDGE} to {MAX_VIEW_EDGE}")
+    return {"id": iid, "kind": "view", "window": window, "full": it.get("full") is True,
+            "edge": edge, "marks": []}
+
+
 def parse_spec(spec) -> dict:
-    """Validate the app's spec: items (point or path), the overlay, and the
-    overview switch. Raises SpecError naming the field."""
+    """Validate the app's spec: items (point, path or view), the overlay, and
+    the overview switch. Raises SpecError naming the field."""
     if not isinstance(spec, dict):
         raise SpecError("the spec must be an object")
     raw_items = spec.get("items")
@@ -98,6 +126,9 @@ def parse_spec(spec) -> dict:
         if not isinstance(iid, str) or not iid or len(iid) > 80:
             raise SpecError(f"{where}.id must be a short string")
         kind = it.get("kind")
+        if kind == "view":
+            items.append(_view_item(it, iid, where))
+            continue
         pad = _num(it.get("pad"), f"{where}.pad")
         if pad <= 0:
             raise SpecError(f"{where}.pad must be above 0")
@@ -115,7 +146,7 @@ def parse_spec(spec) -> dict:
                           "points": [_pt(p, f"{where}.points") for p in pts],
                           "pad": pad, "marks": marks})
         else:
-            raise SpecError(f"{where}.kind must be 'point' or 'path'")
+            raise SpecError(f"{where}.kind must be 'point', 'path' or 'view'")
     overlay = []
     total = 0
     for j, group in enumerate(spec.get("overlay") or []):
@@ -189,6 +220,23 @@ def plan(items, texts) -> dict:
     capped = []
     for it in items:
         made = []
+        if it["kind"] == "view":
+            if len(crops) >= MAX_CROPS:
+                capped.append(it["id"])
+                continue
+            x0, y0, x1, y1 = it["window"]
+            scale = it["edge"] / max(x1 - x0, y1 - y0, 1e-9)
+            wpx = max(16, int(round((x1 - x0) * scale)))
+            hpx = max(16, int(round((y1 - y0) * scale)))
+            local = text_scale(texts, x0, y0, x1, y1, heights)
+            crops.append({
+                "id": it["id"], "part": 0, "of": 1,
+                "window": [x0, y0, x1, y1], "width": wpx, "height": hpx,
+                "text_px": None if local is None else round(TEXT_PX * scale / local, 1),
+                "marks": [], "view": True,
+                "dpi": max(wpx, hpx) / VIEW_PAGE_INCHES,
+            })
+            continue
         if it["kind"] == "point":
             cx, cy = it["at"]
             w = _window(cx, cy, it["pad"], it["pad"])
@@ -285,9 +333,11 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
     from ezdxf.addons.drawing.properties import LayoutProperties  # noqa: PLC0415
 
     texts = doc_texts(doc)
-    planned = plan(spec["items"], texts)
-    dpi = 100.0
     msp = doc.modelspace()
+    items = spec["items"]
+    views = any(it["kind"] == "view" for it in items)
+    frame = dwg_frame.layout_frame(msp) if views else None
+    dpi = 100.0
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_axis_off()
@@ -298,6 +348,27 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
     )
     full = (ax.get_xlim(), ax.get_ylim())
     ax.set_aspect("auto")
+    if views:
+        # What was really drawn: a quick box undersizes a text's reach.
+        (fx0, fx1), (fy0, fy1) = full
+        drawn = [fx0, fy0, fx1, fy1]
+        if frame is not None:
+            frame["full"] = drawn
+            if not frame["framed"]:
+                frame["sheet"] = drawn
+
+        def window_of(it):
+            if it["window"] or it["full"]:
+                return it["window"] or drawn
+            if frame is None:
+                raise SpecError("the drawing has nothing in model space to frame")
+            return frame["sheet"]
+
+        # A view that names no window takes the sheet, or all of it.
+        items = [
+            {**it, "window": window_of(it)} if it["kind"] == "view" else it for it in items
+        ]
+    planned = plan(items, texts)
     overlay = []
     for g in spec["overlay"]:
         if not g["segs"]:
@@ -310,14 +381,14 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
         ax.add_collection(lc)
         overlay.append(lc)
 
-    def save(path, window, wpx, hpx, extra):
-        fig.set_size_inches(wpx / dpi, hpx / dpi)
+    def save(path, window, wpx, hpx, extra, at_dpi=dpi):
+        fig.set_size_inches(wpx / at_dpi, hpx / at_dpi)
         ax.set_xlim(window[0], window[2])
         ax.set_ylim(window[1], window[3])
         for lc in overlay:
-            lc.set_linewidth(OVERLAY_PX * 72.0 / dpi)
+            lc.set_linewidth(OVERLAY_PX * 72.0 / at_dpi)
         try:
-            fig.savefig(path, dpi=dpi, facecolor="white")
+            fig.savefig(path, dpi=at_dpi, facecolor="white")
         finally:
             for a in extra:
                 a.remove()
@@ -336,7 +407,8 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
             ax.add_patch(ring)
             extra.append(ring)
         name = f"crop-{n}.png"
-        save(os.path.join(outdir, name), c["window"], c["width"], c["height"], extra)
+        save(os.path.join(outdir, name), c["window"], c["width"], c["height"], extra,
+             c.get("dpi", dpi))
         out_crops.append({**c, "file": name})
     overview = None
     if spec["overview"] and time.time() <= deadline:
@@ -356,4 +428,7 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
         overview = {"file": "overview.png", "window": [fx0, fy0, fx1, fy1],
                     "width": wpx, "height": hpx}
     plt.close("all")
-    return {"crops": out_crops, "overview": overview, "capped": sorted(set(cut))}
+    result = {"crops": out_crops, "overview": overview, "capped": sorted(set(cut))}
+    if frame is not None:
+        result["frame"] = frame
+    return result

@@ -7,7 +7,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { setTicketCookie } from './cookies';
+import { setTicketCookie, signTicket } from './cookies';
 import { passwordRule, type PasswordRule } from './hold';
 import { oidcSettings, type OidcSettings } from './settings';
 import type { OidcRefusal } from '@mantle/client-types';
@@ -24,28 +24,29 @@ export function passwordSignInRule(
 }
 
 /**
- * The 403 for a password sign-in the rule refused. `ticket`: the cookie
- * login's (and the invite's) login and session epoch, so a 'link-required'
- * answer carries the held ticket the one link step starts on; the token
- * logins pass none (a bearer client links on the web).
+ * The 403 for a password sign-in the rule refused. `ticket`: the login's
+ * session epoch, so a 'link-required' answer carries the held ticket the one
+ * link step starts on. The cookie login (and the invite) sets it as a cookie;
+ * a token login, with `inBody`, answers it, for a bearer client to hand the
+ * link to itself.
  */
 export function passwordRefusal(
   req: Request,
   rule: Exclude<PasswordRule, 'allow'>,
   at: { path: string; email: string; loginId: string; channel?: string },
-  ticket?: { epoch: number },
+  ticket?: { epoch: number; inBody?: boolean },
 ): NextResponse {
   const s = oidcSettings();
   const label = s.mode === 'off' ? '' : s.label;
+  const held = { loginId: at.loginId, epoch: ticket?.epoch ?? 0, held: true };
   const body: OidcRefusal =
     rule === 'sso-required'
       ? { error: `Sign in with ${label}.`, code: 'sso-required' }
-      : ticket
-        ? { error: 'Link your company sign-in to continue.', code: 'sso-link-required' }
-        : {
-            error: 'Link your company sign-in on the web first, then sign in here.',
-            code: 'sso-link-required',
-          };
+      : {
+          error: 'Link your company sign-in to continue.',
+          code: 'sso-link-required',
+          ...(ticket?.inBody ? { ticket: signTicket(held).value } : {}),
+        };
   auditFireAndForget({
     actorId: at.loginId,
     actorEmail: at.email,
@@ -56,9 +57,7 @@ export function passwordRefusal(
     ...requestMetaFrom(req),
   });
   const res = NextResponse.json(body, { status: 403 });
-  if (rule === 'link-required' && ticket) {
-    setTicketCookie(res, req, { loginId: at.loginId, epoch: ticket.epoch, held: true });
-  }
+  if (rule === 'link-required' && ticket && !ticket.inBody) setTicketCookie(res, req, held);
   return res;
 }
 
@@ -75,4 +74,15 @@ export function offerTicketAfterPassword(
 ): void {
   if (oidcSettings().mode === 'off') return;
   setTicketCookie(res, req, { loginId, epoch, held: false });
+}
+
+/** The same ticket for a token login's answer, for a client that holds no
+ *  cookie (`oidcTicket`). Off: nothing, so the answer is the same bytes as
+ *  before. */
+export function offerTicketInBody(
+  loginId: string,
+  epoch: number | undefined,
+): { oidcTicket?: string } {
+  if (oidcSettings().mode === 'off' || epoch === undefined) return {};
+  return { oidcTicket: signTicket({ loginId, epoch, held: false }).value };
 }

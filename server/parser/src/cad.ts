@@ -17,7 +17,7 @@ import { PARSER_ANSWER_MAX_BYTES, PARSER_PICTURES_BUDGET_BYTES } from '@mantle/f
 import { childEnv, runChild, type Ended } from './proc';
 import { JobFailure } from './job-failure';
 
-/** Where cad.py, dwg_bones.py and dwg_crop.py sit. */
+/** Where cad.py, dwg_bones.py, dwg_crop.py and dwg_frame.py sit. */
 const CAD_DIR =
   env('PARSER_CAD_DIR') ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'cad');
 
