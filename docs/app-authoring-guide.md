@@ -613,19 +613,22 @@ workspace turn).
 
 `app_export` with `format: "git"` writes the versions as a git bundle (a
 `.bundle` file), where a package export lands. Each version (each publish)
-is one commit on `main`, oldest first. The commit time is the version's
-time; the message is `vN publish: <note>`, and a version restored from an
-older one says so. The author is the role the row names (`owner`, `member`,
-`agent`, `mcp`, `system`) and the login id when the row names one: never an
-email or a person's name. The bundle holds code only: no data, no draft, no
-declared tools, no secret. It needs a read of the app (as a package export
-without data). An app with no version yet has nothing to bundle: publish it
-first. A path git may not hold (a `.git` or `.gitmodules` name in any of
-its disguises, a `:`) is left out, and the answer lists it under `skipped`.
-The commits are deterministic: the same versions give the same commit ids
-on every export. One export reads at most 256 MB of code over all its
-versions and writes a bundle of at most 64 MB; a brain runs two at a time.
-Past that, compare in place with `app_log` and `code_diff`.
+is one commit on `main`, oldest first. A commit holds only what a version
+row never changes, so the same versions give the same commit ids on every
+export: the commit time is the version's time (UTC), the message is
+`vN publish` (and "Restored from vM." when it was), and the author is the
+role the row names (`owner`, `member`, `agent`, `mcp`, `system`), never an
+email or a person's name. What can change later rides beside the commits
+as git notes (`refs/notes/commits`): the version's note (the History tab
+can edit it) and the login id the row names (cleared when that login is
+deleted). The bundle holds code only: no data, no draft, no declared tools,
+no secret. It needs a read of the app (as a package export without data).
+An app with no version yet has nothing to bundle: publish it first. A path
+git may not hold (a `.git`, `.gitmodules` or `.gitattributes` name in any
+of its disguises, a `:`) is left out, and the answer lists it under
+`skipped`. One export reads at most 5000 versions and 256 MB of code over
+all of them, and writes a bundle of at most 64 MB; each brain process runs
+two at a time. Past that, compare in place with `app_log` and `code_diff`.
 
 Whoever reads an app reads every version's code this way (and with
 `code_diff`): a secret once written in the code and removed later is still
@@ -639,7 +642,8 @@ then works with plain git:
 curl -sfL -o app.bundle https://example.com/api/v1/files/<file_id>/download \
   -H "Authorization: Bearer mtlk_..."
 git clone app.bundle my-app && cd my-app
-git log -p            # each version and what it changed
+git fetch origin 'refs/notes/commits:refs/notes/commits'   # notes and logins
+git log -p            # each version, its note, and what it changed
 git blame App.tsx     # which version wrote each line
 git bisect start      # find the version that broke something
 ```

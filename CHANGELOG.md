@@ -16,16 +16,18 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   with `app_snapshot_list`'s gate (a read of the app, `ownerOnly` +
   `loginTurns`), on MCP and in the `apps` group.
 - **Added:** `app_export` takes `format: "git"`: the app's versions as a
-  git bundle (`.bundle`), one commit per publish on `main`, oldest first,
-  with the version's time, `vN publish: <note>`, and an author that is the
-  row's role and login id, never an email. Code only (no data, no draft, no
-  secret), with a package export's read right. Written in TypeScript (a
-  pack and the bundle header; no `git` binary on the box). An outside agent
-  downloads it with `GET /api/v1/files/{id}/download` and runs
-  `git clone`, then log, blame and bisect (docs/app-authoring-guide.md,
-  "History: versions and snapshots"). The same versions give the same
-  commit ids on every export. Bounded: 256 MB of code read, a 64 MB bundle,
-  two exports at a time per process, written on disk, not in memory.
+  git bundle (`.bundle`), one commit per publish on `main`, oldest first.
+  Each commit holds only what a version row never changes (time, `vN
+publish`, the restore it came from, the role as author, never an email),
+  so the same versions give the same commit ids on every export; the
+  editable note and the login id ride as git notes (`refs/notes/commits`).
+  Code only (no data, no draft, no secret), with a package export's read
+  right. Written in TypeScript (a pack and the bundle header, streamed to
+  disk; no `git` binary on the box). Bounded: 5000 versions, 256 MB of code
+  read, a 64 MB bundle, two exports at a time per process. An outside agent
+  downloads it with `GET /api/v1/files/{id}/download` and runs `git clone`,
+  then log, blame and bisect (docs/app-authoring-guide.md, "History:
+  versions and snapshots").
 
 ## Unreleased: code tools, edit a mini app's source in place
 

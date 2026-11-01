@@ -37,7 +37,13 @@ export type BundleCommit = {
   /** Seconds since the epoch. */
   time: number;
   message: string;
+  /** Text that may change later (a note, a login): kept in git notes
+   *  (refs/notes/commits), outside the commit, so it never moves an id. */
+  gitNote?: string;
 };
+
+/** The ref the notes are on (what `git log` shows by default). */
+export const NOTES_REF = 'refs/notes/commits';
 
 export type BundleResult = {
   /** The bundle file's size. */
@@ -80,7 +86,15 @@ function badGitPart(part: string): string | null {
     .replace(/[. ]+$/, '')
     .toLowerCase();
   if (plain === '.git' || plain === 'git~1') return "a '.git' part";
-  if (plain === '.gitmodules' || /^gitmod~\d$/.test(plain)) return "a '.gitmodules' file";
+  // The NTFS short names include git's hashed ones (gi7eba~N, gi7d29~N).
+  if (plain === '.gitmodules' || /^(gitmod|gi7eba)~\d$/.test(plain)) {
+    return "a '.gitmodules' file";
+  }
+  // fsck reads .gitattributes too (a line too long fails a checked clone);
+  // an app's build has no use for one.
+  if (plain === '.gitattributes' || /^(gitatt|gi7d29)~\d$/.test(plain)) {
+    return "a '.gitattributes' file";
+  }
   return null;
 }
 
@@ -100,6 +114,9 @@ export class GitBundleWriter {
   /** The previous version's blobs by path: a file whose text is the same
    *  is not hashed again. */
   private lastBlobs = new Map<string, { text: string; id: string }>();
+  /** Each commit's git note, by commit id. */
+  private readonly notes = new Map<string, string>();
+  private lastTime = 0;
 
   /** `workPath`: a file of the caller's to hold the deflated objects (it
    *  is made, and removed by `finish` or `discard`). */
@@ -209,6 +226,25 @@ export class GitBundleWriter {
       `${message || 'version'}\n`,
     ].join('\n');
     this.parent = await this.put('commit', Buffer.from(body, 'utf8'));
+    this.lastTime = Math.max(0, Math.floor(c.time));
+    const note = (c.gitNote ?? '').replace(/\r\n?/g, '\n').replace(/\0/g, '').trim();
+    if (note) this.notes.set(this.parent, `${note}\n`);
+  }
+
+  /** The notes commit (one tree of blobs named by commit id, no parent),
+   *  or null with no notes. Its time is the last version's. */
+  private async notesCommit(): Promise<string | null> {
+    if (this.notes.size === 0) return null;
+    const ids = [...this.notes.keys()].sort();
+    const entries: Buffer[] = [];
+    for (const id of ids) {
+      const blob = await this.put('blob', Buffer.from(this.notes.get(id)!, 'utf8'));
+      entries.push(Buffer.from(`100644 ${id}\0`), Buffer.from(blob, 'hex'));
+    }
+    const tree = await this.put('tree', Buffer.concat(entries));
+    const who = `notes <> ${this.lastTime} +0000`;
+    const body = `tree ${tree}\nauthor ${who}\ncommitter ${who}\n\nversion notes\n`;
+    return this.put('commit', Buffer.from(body, 'utf8'));
   }
 
   /** Write the bundle to `dest`: the refs (main and HEAD at the last
@@ -216,11 +252,16 @@ export class GitBundleWriter {
   async finish(dest: string): Promise<BundleResult> {
     const head = this.parent;
     if (!head || !this.work) throw new Error('a bundle needs at least one commit');
+    const notes = await this.notesCommit();
     await this.work.close();
     this.work = null;
     const out = await open(dest, 'w');
     try {
-      await out.write(`# v2 git bundle\n${head} refs/heads/${BUNDLE_BRANCH}\n${head} HEAD\n\n`);
+      await out.write(
+        `# v2 git bundle\n${head} refs/heads/${BUNDLE_BRANCH}\n` +
+          (notes ? `${notes} ${NOTES_REF}\n` : '') +
+          `${head} HEAD\n\n`,
+      );
       const sha = createHash('sha1');
       const packHead = Buffer.alloc(12);
       packHead.write('PACK', 0, 'ascii');

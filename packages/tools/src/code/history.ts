@@ -30,6 +30,10 @@ const ONE_FILE_DIFF_LINES = 2000;
 /** Diff lines all files together show at most; the files past it are
  *  listed with no diff. */
 const ALL_DIFF_LINES = 1500;
+/** Characters all diffs together show at most (a line can be long: a
+ *  minified file); a diff past it is listed without its text, or, for one
+ *  `path`, cut. */
+const ALL_DIFF_CHARS = 200_000;
 /** The line-match work one call may do over all its files (DIFF_MAX_CELLS
  *  is one file's); past it a file's change shows as a whole-block replace. */
 const ALL_DIFF_CELLS = 5 * DIFF_MAX_CELLS;
@@ -192,6 +196,7 @@ const code_diff: BuiltinToolDef = {
         : 'pass path for that one file';
       let budget = ALL_DIFF_LINES;
       let cells = ALL_DIFF_CELLS;
+      let chars = ALL_DIFF_CHARS;
       let coarse = 0;
       let unchanged = 0;
       let omitted = 0;
@@ -206,7 +211,7 @@ const code_diff: BuiltinToolDef = {
           continue;
         }
         const change = !had ? 'added' : !has ? 'removed' : 'modified';
-        if (!asked && budget <= 0) {
+        if (!asked && (budget <= 0 || chars <= 0)) {
           omitted++;
           files.push({ path: p, change, diff_omitted: true });
           continue;
@@ -217,7 +222,16 @@ const code_diff: BuiltinToolDef = {
         const allowed = Math.min(DIFF_MAX_CELLS, cells);
         if (cost > allowed) coarse++;
         cells -= Math.min(cost, allowed);
-        const diff = unifiedDiff(p, before, after, max, cutHint, allowed);
+        let diff = unifiedDiff(p, before, after, max, cutHint, allowed);
+        if (diff.length > chars) {
+          if (!asked) {
+            omitted++;
+            files.push({ path: p, change, diff_omitted: true });
+            continue;
+          }
+          diff = `${diff.slice(0, chars)}\n… diff cut at ${chars} characters; ${cutHint}`;
+        }
+        chars -= diff.length;
         budget -= diff.split('\n').length;
         files.push({ path: p, change, diff });
       }

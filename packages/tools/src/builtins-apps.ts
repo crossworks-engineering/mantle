@@ -74,7 +74,7 @@ import {
   restoreAppSnapshot,
   type AppVersionSource,
 } from '@mantle/content/app-snapshots';
-import { GitBundleWriter, BUNDLE_BRANCH } from './code/git-bundle';
+import { GitBundleWriter, BUNDLE_BRANCH, NOTES_REF } from './code/git-bundle';
 import { recordIngest } from '@mantle/tracing';
 import { buildAndStageApp } from './app-build-stage';
 import { APP_ICON_MAX, APP_TINTS, type AppTint } from '@mantle/client-types/app-nav';
@@ -1513,6 +1513,7 @@ const app_log: BuiltinToolDef = {
       before_seq: {
         type: 'integer',
         minimum: 1,
+        maximum: 2147483647,
         description: 'Only entries older than this seq: the next page, e.g. 12.',
       },
       versions_only: {
@@ -1533,7 +1534,7 @@ const app_log: BuiltinToolDef = {
     const limit = Math.min(Math.max(asked, 1), 200);
     const before =
       typeof input.before_seq === 'number' && input.before_seq >= 1
-        ? Math.floor(input.before_seq)
+        ? Math.min(Math.floor(input.before_seq), 2147483647)
         : null;
     try {
       const { lines, more } = await appHistoryLine(ctx.ownerId, id, {
@@ -1906,24 +1907,32 @@ export const GIT_BUNDLE_MAX_BYTES = 64 * 1024 * 1024;
  *  sizes) one git export reads: the work, which deduplication hides from
  *  the bundle's size. */
 export const GIT_EXPORT_MAX_SOURCE_BYTES = 256 * 1024 * 1024;
+/** The most versions one git export reads. */
+export const GIT_EXPORT_MAX_VERSIONS = 5000;
 /** Git exports at a time per process. */
 export const GIT_EXPORT_MAX_PARALLEL = 2;
 let gitExportsRunning = 0;
 
-/** A version's commit author: the role the row names, and its login id
- *  when it names one. Never an email or a person's name. */
-export function versionAuthor(v: Pick<AppVersionSource, 'actor' | 'actorLoginId'>): string {
-  return v.actorLoginId ? `${v.actor} ${v.actorLoginId}` : v.actor;
+/** A version's commit author: the role the row names (owner, member,
+ *  agent, mcp, system). Never an email or a person's name, and never the
+ *  login id: a deleted login clears it on the row, which would move the
+ *  commit id. The login goes in the version's git note. */
+export function versionAuthor(v: Pick<AppVersionSource, 'actor'>): string {
+  return v.actor;
 }
 
-/** A version's commit message: `vN publish: <note>`, and where it was
- *  restored from when the note does not say so. */
-export function versionMessage(v: Pick<AppVersionSource, 'seq' | 'note' | 'restoredFrom'>): string {
+/** A version's commit message, from fields a row never changes: `vN
+ *  publish`, and the version it was restored from. The note (which the
+ *  History tab can edit) goes in the git note, so the id stays. */
+export function versionMessage(v: Pick<AppVersionSource, 'seq' | 'restoredFrom'>): string {
+  const head = `v${v.seq} publish`;
+  return v.restoredFrom !== null ? `${head}\n\nRestored from v${v.restoredFrom}.` : head;
+}
+
+/** A version's git note: its note and the login the row names. */
+export function versionGitNote(v: Pick<AppVersionSource, 'note' | 'actorLoginId'>): string {
   const note = (v.note ?? '').trim();
-  const head = `v${v.seq} publish${note ? `: ${note}` : ''}`;
-  return v.restoredFrom !== null && !new RegExp(`\\bv${v.restoredFrom}\\b`).test(note)
-    ? `${head}\n\nRestored from v${v.restoredFrom}.`
-    : head;
+  return [note, v.actorLoginId ? `login: ${v.actorLoginId}` : ''].filter(Boolean).join('\n\n');
 }
 
 const MB = (n: number) => Math.ceil(n / 1024 / 1024);
@@ -1950,8 +1959,8 @@ async function exportGitBundle(
     };
   }
   gitExportsRunning++;
-  const work = await appPackageTempPath('.gitwork');
-  const dest = await appPackageTempPath('.bundle');
+  let work: string | null = null;
+  let dest: string | null = null;
   let writer: GitBundleWriter | null = null;
   try {
     await assertMayCopyApp(id, false);
@@ -1970,6 +1979,14 @@ async function exportGitBundle(
         error: `the app's ${totals.versions} versions hold ${MB(totals.sourceBytes)} MB of code in all, past the ${MB(GIT_EXPORT_MAX_SOURCE_BYTES)} MB one git export reads: compare versions in place with app_log and code_diff instead`,
       };
     }
+    if (totals.versions > GIT_EXPORT_MAX_VERSIONS) {
+      return {
+        ok: false,
+        error: `the app has ${totals.versions} versions, past the ${GIT_EXPORT_MAX_VERSIONS} one git export reads: compare versions in place with app_log and code_diff instead`,
+      };
+    }
+    work = await appPackageTempPath('.gitwork');
+    dest = await appPackageTempPath('.bundle');
     writer = new GitBundleWriter(work);
     let versions = 0;
     for await (const v of appVersionSources(ctx.ownerId, id)) {
@@ -1979,6 +1996,7 @@ async function exportGitBundle(
         author: versionAuthor(v),
         time: v.createdAt.getTime() / 1000,
         message: versionMessage(v),
+        gitNote: versionGitNote(v),
       });
       versions++;
       if (writer.packedBytes > GIT_BUNDLE_MAX_BYTES) {
@@ -2019,7 +2037,7 @@ async function exportGitBundle(
           ? { skipped: bundle.skipped.slice(0, 20), skipped_count: bundle.skipped.length }
           : {}),
         ...(landedIn ? { landedIn } : {}),
-        hint: `Download the file (GET /api/v1/files/${file.id}/download with an API key), then: git clone ${file.filename}. Each commit is one version: git log -p, git blame, git bisect.`,
+        hint: `Download the file (GET /api/v1/files/${file.id}/download with an API key), then: git clone ${file.filename}. Each commit is one version: git log -p, git blame, git bisect. The notes and logins are git notes: git fetch origin '${NOTES_REF}:${NOTES_REF}'.`,
       },
     };
   } catch (err) {
@@ -2027,8 +2045,8 @@ async function exportGitBundle(
   } finally {
     gitExportsRunning--;
     await writer?.discard();
-    await rm(work, { force: true });
-    await rm(dest, { force: true });
+    if (work) await rm(work, { force: true });
+    if (dest) await rm(dest, { force: true });
   }
 }
 
