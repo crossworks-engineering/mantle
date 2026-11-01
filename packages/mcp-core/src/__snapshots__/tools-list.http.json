@@ -7717,7 +7717,7 @@
    "properties": {
     "id": {
      "type": "string",
-     "description": "The app's id (UUID) — from `app_list`."
+     "description": "The app's id (UUID), from `app_list`."
     },
     "limit": {
      "type": "integer",
@@ -7728,7 +7728,7 @@
     "before_seq": {
      "type": "integer",
      "minimum": 1,
-     "maximum": 9007199254740991,
+     "maximum": 2147483647,
      "description": "Only entries older than this seq: the next page, e.g. 12."
     },
     "versions_only": {
@@ -8140,6 +8140,7 @@
     },
     "path": {
      "type": "string",
+     "maxLength": 512,
      "description": "Only this file, e.g. 'App.tsx'."
     }
    },

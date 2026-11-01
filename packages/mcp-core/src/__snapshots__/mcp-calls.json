@@ -3,7 +3,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged.",
   "tools": {
    "count": 322,
-   "sha256": "112020e486a5ff67544c16a8c7fd7e3676ef9cd53cb96765ec7bb92f5cb9f72d"
+   "sha256": "f5268182bb3b0e1c5666ae7638a27b01a09ebc2cd583078085eb240be7b5b300"
   },
   "calls": [
    {
@@ -660,7 +660,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 323,
-   "sha256": "f558f0b1672f99a41d2cb9d44f3967bb9b067654c80d3589bcfdb528922f05ca"
+   "sha256": "4c3dd08ce9013744e5747d27a295cbc9872dbbabe3c1fc686fb0d049170a7473"
   },
   "calls": [
    {
@@ -1488,7 +1488,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 216,
-   "sha256": "8f4c4e0b1e9b42e2f26cf133193249b49c0c8564a51562e1e05e84bdda92cee8"
+   "sha256": "addb081ee12ca3392ecc521b219e5634a70ae4f0632d1d43d89be8e7d39496ad"
   },
   "calls": [
    {
@@ -2359,7 +2359,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 84,
-   "sha256": "347365af87e55d092bd5323a04633e242b3dfb9a6af332e592e930fa21210c86"
+   "sha256": "0719e0edcbe78b821b1a0025b6e5533caf595dce4ba984a58a27b374e792c299"
   },
   "calls": [
    {
@@ -2932,7 +2932,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 216,
-   "sha256": "f6d88666bd7d16338a6d1c964871307b14ba233450c247c04f05d6b30f894138"
+   "sha256": "13000ab506fcf6be37ecf69644f922cea0924287e8ae6300cc1e11758aa5795f"
   },
   "calls": [
    {
@@ -4357,7 +4357,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 83,
-   "sha256": "16bc379c79eae284510c9a74eef4379151a08449aaa16c01d96287735d8cb7ae"
+   "sha256": "bd6ae67b8ede901b5a62c610ce748645a5c328a869070087c9fe122fe6617eed"
   },
   "calls": [
    {
@@ -4940,7 +4940,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 220,
-   "sha256": "7c8ccf4c1950c0ee4992a60c1672534a116b16208118952e035534abac928a2a"
+   "sha256": "0785fe93aba982ebb5bf70627aec88443fed8139136349727a667967640a6714"
   },
   "calls": [
    {
@@ -5740,7 +5740,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 179,
-   "sha256": "4d6029878c96508502e8eef52f5b6c63c0fd5bee32d657d5339b67c5f87145be"
+   "sha256": "9a19cc02bb365b140bb8fa03e01772daa4b6c64a49d58f7dede583cc09a75a42"
   },
   "calls": [
    {

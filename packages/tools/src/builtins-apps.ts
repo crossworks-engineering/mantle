@@ -83,7 +83,7 @@ import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { notFound } from './errors';
-import { errorMessage, UUID_RE } from '@mantle/std';
+import { errorMessage, publicErrorText, UUID_RE } from '@mantle/std';
 import { actingLoginId, isOwnerSurface, loginTurnSurfaceId, OWNER_ONLY_ERROR } from './surface';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import { and as andWhere, eq as eqWhere, sql as sqlTag } from 'drizzle-orm';
@@ -1574,7 +1574,7 @@ const app_log: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorText(err, 'app_log') };
     }
   },
 };
@@ -2041,7 +2041,7 @@ async function exportGitBundle(
       },
     };
   } catch (err) {
-    return { ok: false, error: errorMessage(err) };
+    return { ok: false, error: publicErrorText(err, 'app_export git') };
   } finally {
     gitExportsRunning--;
     await writer?.discard();
