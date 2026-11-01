@@ -132,6 +132,18 @@ describe('a call through a dispatcher, the same on every runtime', () => {
     if (isBun) expect(cancelled).toHaveLength(1);
   });
 
+  it.runIf(isBun)('on Bun, a signal aborted before the call cancels the body', async () => {
+    const ctrl = new AbortController();
+    const cancelled: unknown[] = [];
+    const body = new ReadableStream({ cancel: (why) => void cancelled.push(why) });
+    const init = { method: 'POST', body, duplex: 'half' } as RequestInit;
+    const req = new Request(`${base}/echo`, init);
+    ctrl.abort();
+    const sent = fetchThrough(agent, req, { signal: ctrl.signal }, fetch);
+    await expect(sent).rejects.toMatchObject({ name: 'AbortError' });
+    expect(cancelled).toHaveLength(1);
+  });
+
   it.runIf(isBun)(
     'on Bun, a body the caller drops unread ends the connection',
     async () => {

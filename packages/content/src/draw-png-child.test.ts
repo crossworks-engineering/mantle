@@ -62,6 +62,9 @@ describe.runIf(process.versions.bun)('a child that does not answer', () => {
   it.each([
     ['a cut reply', 'process.stdout.write(`{"ok":true,"png":"abc`)', /gave no answer/],
     ['no reply', '', /gave no answer/],
+    ['valid JSON of the wrong shape', 'process.stdout.write(`{"ok":true}`)', /gave no answer/],
+    ['a null reply', 'process.stdout.write(`null`)', /gave no answer/],
+    ['its own reason', 'process.stdout.write(`{"ok":false,"error":"no fonts"}`)', /no fonts/],
     ['a crash', 'process.exit(3)', /stopped \(exit 3\)/],
   ])('%s rejects, and frees its slot', async (_label, source, error) => {
     standIn.source = source || 'process.exit(0)';

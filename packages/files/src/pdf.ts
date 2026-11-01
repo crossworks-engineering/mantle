@@ -251,7 +251,17 @@ export async function extractPdfImages(
             }
             wanted.push(name);
           }
-          if (!fetch) return candidates;
+          if (!fetch) {
+            // pdfjs began to decode each image when it made the operator list,
+            // and cleanup does not stop that. On Node this loop outruns the
+            // decoder and the job exits first. On Bun the decodes run as it
+            // goes and pile up: a large Flate scan went past the parser's 2 GB
+            // limit. So on Bun a page's images finish before the next page.
+            if (process.versions.bun) {
+              for (const name of wanted) await resolveImage(page, name);
+            }
+            return candidates;
+          }
 
           // A caption is only ever attached to a page's sole picture.
           let caption: string | undefined;

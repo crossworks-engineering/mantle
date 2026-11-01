@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { checkBaseline, compareRuns, readResults } from '../scripts/bun-compare.mjs';
+import { checkBaseline, compareRuns, readResults, silentBunExit } from '../scripts/bun-compare.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 
@@ -51,6 +51,14 @@ describe('the Bun compare (scripts/bun-compare.mjs)', () => {
     const read = readResults(report, '/repo');
     expect(read.get('h.test.ts > a')).toBe('passed');
     expect(read.get('h.test.ts > <file>')).toBe('failed');
+  });
+
+  it('names a Bun run that exits badly with no failed test', () => {
+    const clean = { bunOnly: [], notRun: [] };
+    expect(silentBunExit({ node: 0, bun: 1 }, clean)).toBe(true);
+    expect(silentBunExit({ node: 0, bun: 0 }, clean)).toBe(false);
+    expect(silentBunExit({ node: 1, bun: 1 }, clean)).toBe(false);
+    expect(silentBunExit({ node: 0, bun: 1 }, { bunOnly: ['a'], notRun: [] })).toBe(false);
   });
 
   it('lets a failure win when two tests share a name', () => {

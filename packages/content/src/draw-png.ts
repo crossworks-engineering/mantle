@@ -153,6 +153,9 @@ async function renderInWorker(job: RenderJob, timeoutMs: number): Promise<Render
   });
 }
 
+/** The render child's own reason, as it said it. */
+class RenderRefused extends Error {}
+
 /** Run one job in its own process, killed at the deadline. */
 function renderInChild(job: RenderJob, timeoutMs: number): Promise<RenderResult> {
   const child = fileURLToPath(new URL('./draw-png-child.ts', import.meta.url));
@@ -178,19 +181,16 @@ function renderInChild(job: RenderJob, timeoutMs: number): Promise<RenderResult>
         reject(new Error(`the picture renderer stopped (${signal ?? `exit ${code}`})`));
         return;
       }
-      let reply: ChildReply;
       try {
-        reply = JSON.parse(Buffer.concat(out).toString('utf8')) as ChildReply;
-      } catch {
-        reject(new Error('the picture renderer gave no answer'));
-        return;
+        const reply = JSON.parse(Buffer.concat(out).toString('utf8')) as ChildReply;
+        if (!reply.ok) throw new RenderRefused(reply.error);
+        const png = new Uint8Array(Buffer.from(reply.png, 'base64'));
+        resolve({ png, width: reply.width, height: reply.height });
+      } catch (err) {
+        reject(
+          err instanceof RenderRefused ? err : new Error('the picture renderer gave no answer'),
+        );
       }
-      if (!reply.ok) {
-        reject(new Error(reply.error));
-        return;
-      }
-      const png = new Uint8Array(Buffer.from(reply.png, 'base64'));
-      resolve({ png, width: reply.width, height: reply.height });
     });
     proc.stdin.end(JSON.stringify(sent));
   });

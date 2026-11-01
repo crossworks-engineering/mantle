@@ -123,6 +123,14 @@ function assertBunVersion() {
   return wanted;
 }
 
+/**
+ * A Bun run that exited badly with no failure in its report: an unhandled error
+ * reaches the exit code and not the JSON. Node's clean exit is the yardstick.
+ */
+export function silentBunExit(exits, compared) {
+  return exits.bun !== 0 && exits.node === 0 && compared.bunOnly.length === 0;
+}
+
 /** vitest exits 1 on any failure, which is expected here: the report decides. */
 function runSuite(label, command, args, outFile) {
   console.log(`\n--- ${label} ---`);
@@ -134,7 +142,7 @@ function runSuite(label, command, args, outFile) {
   );
   const secs = Math.round((Date.now() - t0) / 1000);
   console.log(`${label}: exit ${run.status ?? run.signal}, ${secs}s`);
-  return secs;
+  return { secs, exit: run.status ?? run.signal };
 }
 
 function list(title, keys) {
@@ -167,15 +175,16 @@ function main() {
   let nodeFile = value('--reports');
   let bunFile = value('--reports', 2);
   let seconds = null;
+  let exits = null;
   if (!flag('--reports')) {
     const dir = value('--keep') ?? mkdtempSync(join(tmpdir(), 'bun-compare-'));
     mkdirSync(dir, { recursive: true });
     nodeFile = join(dir, 'node.json');
     bunFile = join(dir, 'bun.json');
-    seconds = {
-      node: runSuite('Node', process.execPath, [], nodeFile),
-      bun: runSuite('Bun', 'bun', ['--bun'], bunFile),
-    };
+    const node = runSuite('Node', process.execPath, [], nodeFile);
+    const bun = runSuite('Bun', 'bun', ['--bun'], bunFile);
+    seconds = { node: node.secs, bun: bun.secs };
+    exits = { node: node.exit, bun: bun.exit };
   }
 
   const bun = readReport(bunFile);
@@ -191,6 +200,10 @@ function main() {
     writeFileSync(BASELINE_FILE, `${JSON.stringify({ bun: version, failures }, null, 2)}\n`);
     console.log(`\nWrote ${failures.length} entries to scripts/bun-baseline.json`);
     return;
+  }
+  if (exits && silentBunExit(exits, compared)) {
+    console.log(`\nBun exited ${exits.bun} with no failure in its report: read its log above.`);
+    process.exit(1);
   }
   if (verdict.fresh.length > 0) process.exit(1);
 }

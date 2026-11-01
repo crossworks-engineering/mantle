@@ -68,9 +68,10 @@ function callerStream(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8A
  *  a producer that stalls hears of it. */
 async function requestBytes(req: Request, signal?: AbortSignal | null): Promise<ArrayBuffer> {
   if (!signal || !req.body) return req.arrayBuffer();
-  signal.throwIfAborted();
   const reader = req.body.getReader();
   const stop = () => void reader.cancel(signal.reason).catch(() => {});
+  if (signal.aborted) stop();
+  signal.throwIfAborted();
   signal.addEventListener('abort', stop, { once: true });
   try {
     const parts: Uint8Array<ArrayBuffer>[] = [];

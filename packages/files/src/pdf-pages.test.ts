@@ -90,9 +90,10 @@ describe('the pictures pass, page by page', () => {
       `[pdf-pages] 40-page scan: +${Math.round(run.riseMb)} MB, ${Math.round(run.ms)} ms`,
     );
     expect(run.value).toEqual([]);
-    // Bun frees a decoded page later than Node. Its rise was 250 to 550 MB, and
-    // the fault this guards against, every page at once, is about 2.4 GB.
-    expect(run.riseMb).toBeLessThan(process.versions.bun ? 800 : 500);
+    // Above the photo test's peak this rose by nothing on either runtime. On
+    // Bun a scan's decodes piled up, by 250 to 550 MB here and past 2 GB on a
+    // larger scan, until a page's images finished before the next page (pdf.ts).
+    expect(run.riseMb).toBeLessThan(200);
     expect(run.ms).toBeLessThan(45_000);
   }, 60_000);
 
