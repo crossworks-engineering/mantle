@@ -38,6 +38,7 @@ export function badNewPath(path: string): string | null {
   if (!path) return 'path is required, e.g. App.tsx or lib/fmt.ts';
   // A control character would forge lines in search hits and diff
   // headers; `__proto__` is no plain-object key.
+  // eslint-disable-next-line no-control-regex -- control characters are what it removes or refuses
   if (/[\u0000-\u001f\u007f]/.test(path) || path === '__proto__') {
     return `path '${JSON.stringify(path).slice(1, -1)}' has a character or name a file may not use: pick a plain name, e.g. lib/fmt.ts`;
   }
