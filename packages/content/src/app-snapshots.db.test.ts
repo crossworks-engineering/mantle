@@ -118,6 +118,56 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     expect(file && existsSync(file.path)).toBe(true);
   });
 
+  it('reads the line for an audit: row fields, a published tree by seq, the versions in order (code_diff, app_log, git export)', async () => {
+    const id = await publishedApp('audit');
+    // A code-tool write (an undo row, not an entry), a snapshot that keeps
+    // the draft, then a second version.
+    await apps.changeDraftSource(
+      owner,
+      id,
+      (t) => ({ entry: t.entry, files: { ...t.files, 'App.tsx': 'export default () => "two";' } }),
+      { actor: 'mcp', note: 'code_write App.tsx' },
+    );
+    await snaps.createAppSnapshot(owner, id, { note: 'keeps the draft' });
+    await apps.setDraftBuild(owner, id, GREEN);
+    await apps.publishApp(owner, id, { note: 'second', actor: 'owner' });
+
+    const { lines, more } = await snaps.appHistoryLine(owner, id, { limit: 10 });
+    expect(more).toBe(false);
+    expect(lines.map((l) => [l.seq, l.kind, l.trigger, l.note])).toEqual([
+      [lines[0]!.seq, 'version', 'publish', 'second'],
+      [lines[1]!.seq, 'snapshot', 'manual', 'keeps the draft'],
+      [1, 'version', 'publish', 'first'],
+    ]);
+    expect(lines.every((l) => l.trigger !== 'pre_code_edit')).toBe(true);
+    expect(lines[2]).toMatchObject({ actor: 'owner', fileCount: 1, hasData: false });
+    const page = await snaps.appHistoryLine(owner, id, {
+      limit: 1,
+      beforeSeq: lines[0]!.seq,
+      versionsOnly: true,
+    });
+    expect(page).toMatchObject({ lines: [{ seq: 1 }], more: false });
+
+    // The snapshot's published tree, never the draft it kept beside it.
+    const snapSeq = lines[1]!.seq;
+    const entry = await snaps.appHistorySource(owner, id, snapSeq);
+    expect(entry?.source?.files['App.tsx']).toBe('export default () => "one";');
+    expect(entry && 'draft' in entry).toBe(false);
+    // A code-tool row is no entry.
+    const [undo] = await admin<{ seq: number }[]>`select seq from node_snapshots
+      where node_id = ${id} and trigger = 'pre_code_edit'`;
+    expect(undo).toBeDefined();
+    expect(await snaps.appHistorySource(owner, id, undo!.seq)).toBeNull();
+    expect(await snaps.appHistorySource(randomUUID(), id, 1)).toBeNull();
+
+    const versions = [];
+    for await (const v of snaps.appVersionSources(owner, id)) versions.push(v);
+    expect(versions.map((v) => [v.seq, v.note, v.source?.files['App.tsx']])).toEqual([
+      [1, 'first', 'export default () => "one";'],
+      [lines[0]!.seq, 'second', 'export default () => "two";'],
+    ]);
+  });
+
   it("a publish writes its summary with the code; an author's alone, with nothing to publish, lands too (J9)", async () => {
     const key = 'published' + '_summary';
     const app = await apps.createApp(owner, { title: `${tag} summary` });
