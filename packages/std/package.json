@@ -13,6 +13,8 @@
     "./self-spawn": "./src/self-spawn.ts",
     "./shutdown": "./src/shutdown.ts",
     "./undici": "./src/undici.ts"
+    "./kill-with-parent": "./src/kill-with-parent.ts",
+    "./shutdown": "./src/shutdown.ts"
   },
   "dependencies": {
     "undici": "^8.12.3"

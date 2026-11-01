@@ -21,7 +21,8 @@
  * fresh one. A child that dies any other way (the OOM killer, an operator)
  * leaves the pool the same way. Each statement opens and closes its own
  * connection inside the child, so a reused child carries nothing from one
- * statement to the next.
+ * statement to the next. A child also dies with this process: one inside a
+ * statement cannot see this process go, so killWithParent gives each a guard.
  *
  * Inside the child, three engine-level locks hold whatever the text says
  * (a regex can be fooled; the engine cannot):
@@ -50,6 +51,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { envDynamic, envNum, envNumDefault } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { runtimeFlags } from '@mantle/std/self-spawn';
+import { killWithParent } from '@mantle/std/kill-with-parent';
 
 /** How long one app statement may run. */
 export const APP_SQL_TIMEOUT_MS = 5_000;
@@ -136,7 +138,8 @@ function restoring(file) {
   }
 }
 process.title = 'mantle-app-sql';
-// The parent is gone (exited or crashed): so is the reason to live.
+// The parent is gone (exited or crashed): so is the reason to live. An idle
+// child hears it here; in a statement it cannot, and its guard kills it.
 process.on('disconnect', () => process.exit(0));
 // About what a row costs once serialized: keys, values, a little framing.
 function valueBytes(v) {
@@ -421,6 +424,7 @@ function forkChild(): Child {
     serialization: 'advanced',
     env: childEnv(),
   });
+  killWithParent(proc);
   const child: Child = { proc, alive: true, doomed: false };
   children.add(child);
   // An idle pool must not keep the server (or a test run) from exiting; a
