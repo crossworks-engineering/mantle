@@ -54,7 +54,12 @@ export type BundleResult = {
   /** Paths left out of a commit: a name git may not hold (a `.git` part,
    *  `..`), one a folder of the same name took, or a second key of a path. */
   skipped: { commit: number; path: string; why: string }[];
+  /** All paths left out (`skipped` keeps the first SKIPPED_KEPT). */
+  skippedCount: number;
 };
+
+/** The skipped paths a result lists by name. */
+export const SKIPPED_KEPT = 20;
 
 /** The branch the bundle carries. */
 export const BUNDLE_BRANCH = 'main';
@@ -90,6 +95,12 @@ function badGitPart(part: string): string | null {
   if (plain === '.gitmodules' || /^(gitmod|gi7eba)~\d$/.test(plain)) {
     return "a '.gitmodules' file";
   }
+  // git's fallback 8.3 names: 8 characters, a prefix of the hashed name,
+  // `~` and a number (is_ntfs_dot_generic).
+  const short = plain.length === 8 ? /^([^~]{0,6})~[1-9]\d*$/.exec(plain) : null;
+  if (short && ('gi7eba'.startsWith(short[1]!) || 'gi7d29'.startsWith(short[1]!))) {
+    return "a '.gitmodules' or '.gitattributes' short name";
+  }
   // fsck reads .gitattributes too (a line too long fails a checked clone);
   // an app's build has no use for one.
   if (plain === '.gitattributes' || /^(gitatt|gi7d29)~\d$/.test(plain)) {
@@ -111,6 +122,7 @@ export class GitBundleWriter {
   private parent: string | null = null;
   private count = 0;
   private readonly skipped: BundleResult['skipped'] = [];
+  private skippedCount = 0;
   /** The previous version's blobs by path: a file whose text is the same
    *  is not hashed again. */
   private lastBlobs = new Map<string, { text: string; id: string }>();
@@ -179,8 +191,8 @@ export class GitBundleWriter {
       if (had === undefined) keyOf.set(path, raw);
       else if (raw === path) {
         keyOf.set(path, raw);
-        this.skipped.push({ commit: n, path: had, why: 'two keys name one path' });
-      } else this.skipped.push({ commit: n, path: raw, why: 'two keys name one path' });
+        this.skip({ commit: n, path: had, why: 'two keys name one path' });
+      } else this.skip({ commit: n, path: raw, why: 'two keys name one path' });
     }
     const root = emptyDir();
     const blobs = new Map<string, { text: string; id: string }>();
@@ -189,7 +201,7 @@ export class GitBundleWriter {
       const parts = path.split('/');
       const why = badNewPath(path) ?? parts.map(badGitPart).find((w) => w !== null) ?? null;
       if (why) {
-        this.skipped.push({ commit: n, path: raw, why });
+        this.skip({ commit: n, path: raw, why });
         continue;
       }
       let dir = root;
@@ -205,7 +217,7 @@ export class GitBundleWriter {
       }
       const name = parts[parts.length - 1]!;
       if (clash || dir.dirs.has(name)) {
-        this.skipped.push({ commit: n, path: raw, why: 'a file and a folder of one name' });
+        this.skip({ commit: n, path: raw, why: 'a file and a folder of one name' });
         continue;
       }
       const text = c.files[raw]!;
@@ -215,7 +227,8 @@ export class GitBundleWriter {
     }
     this.lastBlobs = blobs;
     const tree = await this.tree(root);
-    const who = `${oneLine(c.author)} <> ${Math.max(0, Math.floor(c.time))} +0000`;
+    const time = Number.isFinite(c.time) ? Math.min(Math.max(0, Math.floor(c.time)), 2 ** 32) : 0;
+    const who = `${oneLine(c.author)} <> ${time} +0000`;
     const message = c.message.replace(/\r\n?/g, '\n').replace(/\0/g, '').trim();
     const body = [
       `tree ${tree}`,
@@ -226,7 +239,7 @@ export class GitBundleWriter {
       `${message || 'version'}\n`,
     ].join('\n');
     this.parent = await this.put('commit', Buffer.from(body, 'utf8'));
-    this.lastTime = Math.max(0, Math.floor(c.time));
+    this.lastTime = time;
     const note = (c.gitNote ?? '').replace(/\r\n?/g, '\n').replace(/\0/g, '').trim();
     if (note) this.notes.set(this.parent, `${note}\n`);
   }
@@ -275,11 +288,23 @@ export class GitBundleWriter {
       }
       await out.write(sha.digest());
       const { size } = await out.stat();
-      return { bytes: size, head, commits: this.count, skipped: [...this.skipped] };
+      return {
+        bytes: size,
+        head,
+        commits: this.count,
+        skipped: [...this.skipped],
+        skippedCount: this.skippedCount,
+      };
     } finally {
       await out.close();
       await rm(this.workPath, { force: true });
     }
+  }
+
+  /** List a path left out: the first SKIPPED_KEPT, and a count of all. */
+  private skip(entry: BundleResult['skipped'][number]): void {
+    this.skippedCount++;
+    if (this.skipped.length < SKIPPED_KEPT) this.skipped.push(entry);
   }
 
   /** Remove the work file (a bundle given up on). */
