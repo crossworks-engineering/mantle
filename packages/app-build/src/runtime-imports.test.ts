@@ -220,6 +220,15 @@ describe('lintRuntimeImports: a large export list is cut', () => {
     expect(misspelt[0]!.text).toMatch(/It exports: evaluate, evaluateAll, fn0/);
   });
 
+  it('does not rank a one-letter export as close', () => {
+    const withE = { ...RT, mathjs: ['e', 'pi', ...big] };
+    const msgs = lintRuntimeImports(src({ 'a.ts': "import { nope } from 'mathjs';\n" }), withE);
+    expect(msgs[0]!.text).toMatch(/It exports: e, pi, fn0/);
+    const fmt = { ...RT, mathjs: [...big, 'format'] };
+    const held = lintRuntimeImports(src({ 'a.ts': "import { formatUnit } from 'mathjs';\n" }), fmt);
+    expect(held[0]!.text).toMatch(/It exports: format, fn0/);
+  });
+
   it('keeps a short list whole', () => {
     const msgs = lintRuntimeImports(src({ 'a.ts': "import host from '@host';\n" }), RT);
     expect(msgs[0]!.text).not.toContain('more (');

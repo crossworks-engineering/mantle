@@ -110,7 +110,10 @@ export const CANVAS_MODULES: readonly CanvasModule[] = [
     // Zod 4 compiles object parsers with `new Function` when it may, and
     // probes for that on first use. The frame has no 'unsafe-eval': the
     // probe would fail (caught) and log a CSP violation. jitless skips the
-    // probe and the compile, so Zod never asks.
+    // probe and the object compile, so parsing never asks. What jitless does
+    // not cover is code that asks itself: `z.compile()` (it tries, is
+    // refused, and falls back or throws) or a `config({ jitless: false })`.
+    // The CSP refuses both; the zod guide says not to.
     source: "import { config } from 'zod';\nconfig({ jitless: true });\nexport * from 'zod';",
   },
   {

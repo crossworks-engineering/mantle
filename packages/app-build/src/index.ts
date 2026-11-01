@@ -567,11 +567,13 @@ const EXPORTS_SHOWN = 60;
 function exportList(names: readonly string[], wanted: string): string {
   if (names.length <= EXPORTS_SHOWN) return names.join(', ');
   const w = wanted.toLowerCase();
-  const close = names.filter((n) => {
-    const l = n.toLowerCase();
-    return w !== 'default' && (l.includes(w) || w.includes(l));
-  });
-  const shown = [...new Set([...close, ...names])].slice(0, EXPORTS_SHOWN);
+  const lower = (n: string) => n.toLowerCase();
+  // A name holding the wanted one first (`evaluat` finds `evaluate`), then
+  // one the wanted name holds (`formatDate` finds `format`), never a name
+  // so short that every word holds it (mathjs exports `e`).
+  const holding = w === 'default' ? [] : names.filter((n) => lower(n).includes(w));
+  const held = w === 'default' ? [] : names.filter((n) => n.length >= 3 && w.includes(lower(n)));
+  const shown = [...new Set([...holding, ...held, ...names])].slice(0, EXPORTS_SHOWN);
   return `${shown.join(', ')} and ${names.length - shown.length} more (canvas_library with for: 'app' gives the usual imports)`;
 }
 

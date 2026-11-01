@@ -34,8 +34,14 @@ precision: 32 })` for decimal work.
   `median`, `std`.
 - Compute in `useMemo` keyed on the inputs; the parser is fast, but a
   re-render should not parse again.
-- The expression parser runs no JavaScript and reaches nothing outside the
-  frame. People can type formulas into an app.
+- The parser runs no JavaScript, so a person may type a formula for their
+  own use. A formula SAVED by one person and run in another person's app is
+  untrusted input: evaluate it with a limited instance, as math.js's
+  security notes advise. `const safe = create(all)`, keep
+  `const run = safe.evaluate`, then `safe.import({ import: off, createUnit:
+off, evaluate: off, parse: off, simplify: off, derivative: off, resolve:
+off }, { override: true })` with `off = () => { throw new Error('off') }`,
+  and refuse huge matrix sizes.
 
 ## App example
 

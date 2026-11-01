@@ -4,6 +4,26 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: eleven more libraries for mini apps
+
+- **Added:** a mini app may import `mathjs` (units and engineering maths),
+  `date-fns`, `zod` (form checks), `@tanstack/react-table` (v9) and
+  `@tanstack/react-virtual` (big grids, long lists), `@dnd-kit/core` and
+  `@dnd-kit/sortable` (drag and drop), `fuse.js` (fuzzy search),
+  `papaparse` (CSV), `pdf-lib` (make a PDF), `qrcode`, and `markdown-it`
+  with `dompurify`. Each is served by the brain as its own file and loads
+  only when an app imports it; an app that imports none loads the same
+  runtime as before. `canvas_library` with `for: 'app'` has a guide for
+  each, and the app authoring guide a table of which library does which
+  job. A Present canvas may import the plain ones too (no canvas guide).
+- **Security:** none reaches the network or compiles code. Zod runs with
+  `jitless` on, so it never probes for `new Function` under the frame's
+  CSP; Papa Parse refuses `download` and `worker` with an error that says
+  so; markdown-it output goes through DOMPurify, which the guides require.
+- **Changed:** an import the runtime does not export now lists at most 60
+  of the module's names, the close ones first (mathjs exports over a
+  thousand).
+
 ## Unreleased: PDF scans in JPX, CCITT and JBIG2 draw
 
 - **Fixed:** a PDF scan whose images use JPX (JPEG 2000), CCITT or JBIG2

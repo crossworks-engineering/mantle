@@ -232,6 +232,18 @@ describe('canvas_library for a mini app', () => {
     expect((res as { output: { import: string[] } }).output.import).toEqual(['motion/react']);
   });
 
+  it('a kit library asked for a canvas points to its app guide, and says if a canvas can import it', async () => {
+    const plain = await tool.handler({ name: 'mathjs' }, ctx);
+    expect(plain.ok).toBe(false);
+    expect((plain as { error: string }).error).toContain("for: 'app'");
+    expect((plain as { error: string }).error).toContain('A canvas may import mathjs too');
+    const react = await tool.handler({ name: 'dnd-kit' }, ctx);
+    expect((react as { error: string }).error).toContain('apps only');
+    expect((react as { error: string }).error).not.toContain('@dnd-kit/core too');
+    // 'math' still means KaTeX.
+    expect(resolveCanvasLibrary('math')?.name).toBe('katex');
+  });
+
   it('the diagram templates have an app guide but no canvas guide', async () => {
     const asCanvas = await tool.handler({ name: 'pid' }, ctx);
     expect(asCanvas.ok).toBe(false);

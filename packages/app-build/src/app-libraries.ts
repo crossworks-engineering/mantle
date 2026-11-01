@@ -21,46 +21,83 @@
  * `three/examples/jsm/...`) is refused like any other unlisted import.
  */
 
-/** A canvas-runtime module an app may import: the specifier as written in
- *  app source, and the canvas_library guide that covers it. */
-export type AppLibrary = Readonly<{ specifier: string; guide: string }>;
+/** A library an app may import: the specifier as written in app source,
+ *  the canvas_library guide that covers it, and a one-line hint of what to
+ *  use it for (read as is by agents: code_view lists the imports with it). */
+export type AppLibrary = Readonly<{ specifier: string; guide: string; hint: string }>;
 
 /** An app-runtime library: also the entry it is built as (build-runtime.ts). */
 export type AppRuntimeLibrary = AppLibrary & Readonly<{ entry: string }>;
 
 /** Taken from the canvas runtime's manifest (must be in CANVAS_MODULES). */
 export const APP_CANVAS_LIBRARIES: readonly AppLibrary[] = [
-  { specifier: 'echarts', guide: 'echarts' },
-  { specifier: 'd3', guide: 'd3' },
-  { specifier: 'three', guide: 'three' },
+  { specifier: 'echarts', guide: 'echarts', hint: 'business charts and dashboards' },
+  { specifier: 'd3', guide: 'd3', hint: 'custom charts, scales, shapes, force graphs' },
+  { specifier: 'three', guide: 'three', hint: '3D scenes' },
   // The addon imports `three` through the import map, so a scene and its
   // controls share one Three.
-  { specifier: 'three/addons/controls/OrbitControls.js', guide: 'three' },
-  { specifier: 'konva', guide: 'konva' },
-  { specifier: 'katex', guide: 'katex' },
+  {
+    specifier: 'three/addons/controls/OrbitControls.js',
+    guide: 'three',
+    hint: 'orbit, zoom and pan for a 3D scene',
+  },
+  { specifier: 'konva', guide: 'konva', hint: '2D shapes people drag and click' },
+  { specifier: 'katex', guide: 'katex', hint: 'typeset formulas' },
   // The diagram templates (flow, pid): `render` + `domMeasurer` draw a
   // template's data to an SVG string in the app's own document.
-  { specifier: '@mantle/diagram-templates/browser', guide: 'diagram-templates' },
-  { specifier: 'mathjs', guide: 'mathjs' },
-  { specifier: 'date-fns', guide: 'date-fns' },
-  { specifier: 'zod', guide: 'zod' },
-  { specifier: 'fuse.js', guide: 'fuse' },
-  { specifier: 'papaparse', guide: 'papaparse' },
-  { specifier: 'pdf-lib', guide: 'pdf-lib' },
-  { specifier: 'qrcode', guide: 'qrcode' },
+  {
+    specifier: '@mantle/diagram-templates/browser',
+    guide: 'diagram-templates',
+    hint: 'flow and P&ID diagrams drawn from data',
+  },
+  {
+    specifier: 'mathjs',
+    guide: 'mathjs',
+    hint: 'units and engineering maths, formulas people type',
+  },
+  { specifier: 'date-fns', guide: 'date-fns', hint: 'dates: format, add business days, ranges' },
+  { specifier: 'zod', guide: 'zod', hint: 'form checks and the shape of rows' },
+  { specifier: 'fuse.js', guide: 'fuse', hint: 'fuzzy search (typos, partial words)' },
+  { specifier: 'papaparse', guide: 'papaparse', hint: 'CSV in and out' },
+  { specifier: 'pdf-lib', guide: 'pdf-lib', hint: 'make or fill a PDF' },
+  { specifier: 'qrcode', guide: 'qrcode', hint: 'QR codes for labels and tags' },
   // One guide: markdown-it's HTML reaches the DOM only through DOMPurify.
-  { specifier: 'markdown-it', guide: 'markdown' },
-  { specifier: 'dompurify', guide: 'markdown' },
+  {
+    specifier: 'markdown-it',
+    guide: 'markdown',
+    hint: 'markdown to HTML; always pass the HTML through dompurify',
+  },
+  { specifier: 'dompurify', guide: 'markdown', hint: 'sanitize HTML before it reaches the DOM' },
 ];
 
 /** Built into the app runtime itself (build-runtime.ts ENTRY_SRC). */
 export const APP_RUNTIME_LIBRARIES: readonly AppRuntimeLibrary[] = [
-  { specifier: 'motion/react', guide: 'motion', entry: 'motion-react' },
-  { specifier: '@tanstack/react-table', guide: 'tanstack-table', entry: 'tanstack-table' },
-  { specifier: '@tanstack/react-virtual', guide: 'tanstack-virtual', entry: 'tanstack-virtual' },
+  { specifier: 'motion/react', guide: 'motion', entry: 'motion-react', hint: 'animation' },
+  {
+    specifier: '@tanstack/react-table',
+    guide: 'tanstack-table',
+    entry: 'tanstack-table',
+    hint: 'big grids: sort, filter (v9 API: useTable)',
+  },
+  {
+    specifier: '@tanstack/react-virtual',
+    guide: 'tanstack-virtual',
+    entry: 'tanstack-virtual',
+    hint: 'long lists that render only the rows on screen',
+  },
   // Sortable imports core: splitting gives both one copy, so one drag context.
-  { specifier: '@dnd-kit/core', guide: 'dnd-kit', entry: 'dnd-kit-core' },
-  { specifier: '@dnd-kit/sortable', guide: 'dnd-kit', entry: 'dnd-kit-sortable' },
+  {
+    specifier: '@dnd-kit/core',
+    guide: 'dnd-kit',
+    entry: 'dnd-kit-core',
+    hint: 'drag and drop',
+  },
+  {
+    specifier: '@dnd-kit/sortable',
+    guide: 'dnd-kit',
+    entry: 'dnd-kit-sortable',
+    hint: 'reorder a list or a board by dragging (with @dnd-kit/core)',
+  },
 ];
 
 /** Canvas libraries an app may NOT import, and why. The error text names

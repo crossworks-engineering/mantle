@@ -28,7 +28,11 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import esbuild from 'esbuild';
 import { KIT } from './kit.ts';
-import { APP_RUNTIME_LIBRARIES, appCanvasLibraries } from './app-libraries.ts';
+import {
+  APP_RUNTIME_LIBRARIES,
+  appCanvasLibraries,
+  type AppRuntimeLibrary,
+} from './app-libraries.ts';
 
 const REAL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ENTRY_NS = 'rt-entry';
@@ -67,12 +71,6 @@ const ENTRY_SRC: Record<string, string> = {
   badge: KIT['@/components/ui/badge']!,
   separator: KIT['@/components/ui/separator']!,
   host: KIT['@host']!,
-  // The libraries that import React (app-libraries.ts): built here, where
-  // splitting gives them the one shared React, not in the canvas runtime.
-  // ESM, so `export *` carries their names across the boundary.
-  ...Object.fromEntries(
-    APP_RUNTIME_LIBRARIES.map((l) => [l.entry, `export * from ${JSON.stringify(l.specifier)};`]),
-  ),
 };
 
 /** Specifier as written in app source → entry name. This is the contract the
@@ -90,8 +88,37 @@ export const RUNTIME_SPECIFIERS: Record<string, string> = {
   '@/components/ui/badge': 'badge',
   '@/components/ui/separator': 'separator',
   '@host': 'host',
-  ...Object.fromEntries(APP_RUNTIME_LIBRARIES.map((l) => [l.specifier, l.entry])),
 };
+
+/**
+ * Add the libraries that import React (app-libraries.ts) to the entries and
+ * the specifier map: built here, where splitting gives them the one shared
+ * React, not in the canvas runtime. ESM, so `export *` carries their names
+ * across the boundary. Throws on a name that is taken: a library entry or
+ * specifier equal to a runtime one would replace it silently (an entry named
+ * `host` would replace the bridge), and an entry named like `chunk` would be
+ * read as one of the split chunks.
+ */
+export function addRuntimeLibraries(
+  entries: Record<string, string>,
+  specifiers: Record<string, string>,
+  libraries: readonly AppRuntimeLibrary[],
+): void {
+  for (const l of libraries) {
+    if (/^chunk($|-)/.test(l.entry) || !/^[a-z][a-z0-9-]*$/.test(l.entry)) {
+      throw new Error(`app runtime: library entry '${l.entry}' is not a usable entry name`);
+    }
+    if (Object.hasOwn(entries, l.entry)) {
+      throw new Error(`app runtime: library entry '${l.entry}' is taken`);
+    }
+    if (Object.hasOwn(specifiers, l.specifier)) {
+      throw new Error(`app runtime: library specifier '${l.specifier}' is taken`);
+    }
+    entries[l.entry] = `export * from ${JSON.stringify(l.specifier)};`;
+    specifiers[l.specifier] = l.entry;
+  }
+}
+addRuntimeLibraries(ENTRY_SRC, RUNTIME_SPECIFIERS, APP_RUNTIME_LIBRARIES);
 
 /** esbuild plugin: serve the virtual entry sources + bind the kit's own
  *  `@/lib/utils` import to the same `utils` module (so `cn` isn't duplicated).

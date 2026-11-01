@@ -37,7 +37,8 @@ fetched only by an app that imports it); it is not bundled into the app.
   changed before it breaks a chart.
 - No eval: this brain runs Zod with `jitless` on (the frame has no
   `unsafe-eval`), so parsing is the plain interpreter, fast enough for
-  forms and thousands of rows.
+  forms and thousands of rows. Do not call `z.compile()` or set
+  `jitless: false`: both try `new Function`, which the frame refuses.
 
 ## App example
 

@@ -6,7 +6,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildApp, type AppSource } from './index';
-import { APP_CANVAS_LIBRARIES, APP_LIBRARY_SPECIFIERS, appCanvasLibraries } from './app-libraries';
+import {
+  APP_CANVAS_LIBRARIES,
+  APP_LIBRARY_SPECIFIERS,
+  APP_RUNTIME_LIBRARIES,
+  appCanvasLibraries,
+} from './app-libraries';
+import { addRuntimeLibraries } from './build-runtime';
 import { CANVAS_MODULE_SPECIFIERS } from './canvas-runtime';
 import { LIBRARY_EXPORTS_FIXTURE, RUNTIME_EXPORTS_FIXTURE } from './runtime-exports.fixture';
 
@@ -115,5 +121,39 @@ describe('mini-app library imports', () => {
       APP_CANVAS_LIBRARIES.map((l) => l.specifier).sort(),
     );
     expect(out.imports['reveal.js']).toBeUndefined();
+  });
+
+  it('every library carries a one-line hint an agent can read', () => {
+    for (const l of [...APP_CANVAS_LIBRARIES, ...APP_RUNTIME_LIBRARIES]) {
+      expect(l.hint.trim().length, l.specifier).toBeGreaterThan(3);
+      expect(l.hint.length, l.specifier).toBeLessThanOrEqual(80);
+      expect(l.hint, l.specifier).not.toMatch(/[\n\u2013\u2014]/);
+    }
+  });
+
+  it('a runtime library may not take a runtime entry or specifier, nor a chunk name', () => {
+    const base = (): { entries: Record<string, string>; specs: Record<string, string> } => ({
+      entries: { host: 'h', react: 'r' },
+      specs: { '@host': 'host' },
+    });
+    const lib = (entry: string, specifier = 'x-lib') => [
+      { specifier, entry, guide: 'g', hint: 'h' },
+    ];
+    for (const [entry, specifier, why] of [
+      ['host', 'x-lib', /entry 'host' is taken/],
+      ['x-lib', '@host', /specifier '@host' is taken/],
+      ['chunk', 'x-lib', /not a usable entry name/],
+      ['chunk-a', 'x-lib', /not a usable entry name/],
+      ['Bad Name', 'x-lib', /not a usable entry name/],
+    ] as const) {
+      const b = base();
+      expect(() => addRuntimeLibraries(b.entries, b.specs, lib(entry, specifier))).toThrow(why);
+    }
+    const b = base();
+    addRuntimeLibraries(b.entries, b.specs, lib('x-lib'));
+    expect(b.specs['x-lib']).toBe('x-lib');
+    expect(b.entries['x-lib']).toBe('export * from "x-lib";');
+    // The same library twice is refused on the second pass.
+    expect(() => addRuntimeLibraries(b.entries, b.specs, lib('x-lib'))).toThrow(/taken/);
   });
 });

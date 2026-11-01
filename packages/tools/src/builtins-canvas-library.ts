@@ -30,6 +30,7 @@ import {
   APP_CANVAS_LIBRARIES,
   APP_LIBRARIES_LEFT_OUT,
   APP_RUNTIME_LIBRARIES,
+  CANVAS_MODULE_SPECIFIERS,
 } from '@mantle/app-build';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { str } from './coerce';
@@ -146,7 +147,7 @@ export const APP_KIT_LIBRARIES: readonly CanvasLibrary[] = [
     name: 'mathjs',
     pkg: 'mathjs',
     useFor: 'engineering maths with units (2 inch to mm, bar to kPa), formulas people type',
-    aliases: ['math.js', 'math', 'units'],
+    aliases: ['math.js', 'units', 'unit'],
   },
   {
     name: 'date-fns',
@@ -405,9 +406,15 @@ export async function canvasLibraryHandler(
   }
   const kit = lib ? null : find(APP_KIT_LIBRARIES, asked);
   if (kit) {
+    // The plain ones are canvas-runtime files a canvas may import too; the
+    // React ones live in the app runtime only.
+    const inCanvas = appSpecifiers(kit).filter((s) => CANVAS_MODULE_SPECIFIERS.includes(s));
+    const canvas = inCanvas.length
+      ? `A canvas may import ${inCanvas.join(', ')} too, with no canvas guide`
+      : 'It needs React, so it is for apps only; a canvas has no React';
     return {
       ok: false,
-      error: `'${asked}' has an app guide only: in a mini app, call canvas_library with name '${kit.name}' and for: 'app'. A canvas may import the same specifiers (${appSpecifiers(kit).join(', ')}), with no canvas guide; the canvas guides are ${CANVAS_LIBRARIES.map((l) => l.name).join(', ')}.`,
+      error: `'${asked}' has an app guide only: in a mini app, call canvas_library with name '${kit.name}' and for: 'app'. ${canvas}. The canvas guides are ${CANVAS_LIBRARIES.map((l) => l.name).join(', ')}.`,
     };
   }
   if (!lib && find([CANVAS_ZOOM_GUIDE], asked)) {
