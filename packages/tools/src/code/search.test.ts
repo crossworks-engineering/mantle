@@ -47,6 +47,37 @@ describe('searchFiles', () => {
   });
 
   it(
+    'one caller runs one regex search at a time',
+    async () => {
+      const slow = { 'x.ts': 'a'.repeat(30) + '!' };
+      const first = searchFiles(slow, '^(a+)+$', {
+        regex: true,
+        ignoreCase: false,
+        cap: 5,
+        caller: 'c1',
+      });
+      const second = await searchFiles(FILES, 'a', {
+        regex: true,
+        ignoreCase: false,
+        cap: 5,
+        caller: 'c1',
+      });
+      expect(second).toEqual({
+        error: expect.stringMatching(/a regex search of yours is still running/),
+      });
+      const other = await searchFiles(FILES, 'a', {
+        regex: true,
+        ignoreCase: false,
+        cap: 5,
+        caller: 'c2',
+      });
+      expect(other).toMatchObject({ total: 4 });
+      await first;
+    },
+    REGEX_TIMEOUT_MS + 5000,
+  );
+
+  it(
     'a backtracking regex is stopped at the timeout',
     async () => {
       const files = { 'x.ts': 'a'.repeat(40) + '!' };

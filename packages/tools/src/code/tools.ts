@@ -453,6 +453,7 @@ const code_search: BuiltinToolDef = {
         regex: input.regex === true,
         ignoreCase: input.ignore_case === true,
         cap,
+        caller: `${ctx.ownerId}:${actingLoginId(ctx.surface) ?? ctx.surface?.kind ?? ''}`,
       });
       if ('error' in res) return { ok: false, error: res.error };
       ctx.step?.setOutput({ target: store.ref, total: res.total });
