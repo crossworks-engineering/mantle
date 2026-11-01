@@ -875,7 +875,7 @@ The app's level (its Access control) decides who runs the PUBLISHED build, and t
 ## Editing an app in place (the code tools)
 To CHANGE an app that exists, don't read every file and write whole files back. Each code tool takes \`target: 'app:<id>'\` and works on the DRAFT:
 - \`code_view\` (no path: the file tree and its \`rev\`; with a path: numbered lines, \`start\`/\`end\` for a range), \`code_search\` (\`file:line: text\` hits; \`regex\`, \`glob\`).
-- \`code_edit\` replaces exact text: each edit's \`old\` must match ONCE (copy it from code_view without the line numbers; add surrounding lines when it matches more, or set \`replace_all\`). All edits apply or none; it returns a diff. \`code_insert\` adds lines after a line number; \`code_write\` writes a whole file; \`code_undo\` puts a file back one step.
+- \`code_edit\` replaces exact text: each edit's \`old\` must match ONCE (copy it from code_view without the line numbers; add surrounding lines when it matches more, or set \`replace_all\`). All edits apply or none; it returns a diff. \`code_insert\` adds lines after a line number; \`code_write\` writes a whole file. Every write returns an \`edit_id\`: \`code_undo\` with it takes that write back (only while its files are as it left them; else change them with code_edit), and returns its own \`edit_id\` to redo.
 - Pass the \`rev\` you read as \`base_rev\`: if the user or another agent changed the draft since, the write fails with the current rev; read again and redo the change. \`build: true\` builds in the same call and returns the errors.
 
 ## Workflow

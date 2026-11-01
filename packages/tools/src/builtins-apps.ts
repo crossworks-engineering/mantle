@@ -454,6 +454,7 @@ const app_file_write: BuiltinToolDef = {
           id,
           path,
           rev: res.rev,
+          edit_id: res.editId,
           file_count: Object.keys(res.after.files).length,
           draft_saved: true,
           hint: 'Run app_build to compile this draft and surface any errors.',
@@ -527,6 +528,7 @@ const app_file_delete: BuiltinToolDef = {
           path,
           deleted: true,
           rev: res.rev,
+          edit_id: res.editId,
           file_count: Object.keys(res.after.files).length,
         },
       };
@@ -620,6 +622,7 @@ const app_source_set: BuiltinToolDef = {
           id,
           entry,
           rev: res.rev,
+          edit_id: res.editId,
           file_count: Object.keys(files).length,
           draft_saved: true,
           hint: 'Run app_build to compile this draft and surface any errors.',

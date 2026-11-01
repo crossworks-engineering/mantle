@@ -95,7 +95,14 @@ beforeEach(() => {
   // The one draft write: the change runs over the tree as it stands.
   vi.mocked(changeDraftSource).mockImplementation(async (_o, _id, change) => {
     const before = { entry: 'App.tsx', files: { 'App.tsx': 'a' } };
-    return { before, after: change(before), beforeRev: 'r0', rev: 'r1', written: true };
+    return {
+      before,
+      after: change(before),
+      beforeRev: 'r0',
+      rev: 'r1',
+      written: true,
+      editId: 'e1',
+    };
   });
   vi.mocked(setManifest).mockResolvedValue({ toolSlugs: [] } as never);
   vi.mocked(resolveTool).mockResolvedValue({ slug: 'x' } as never);

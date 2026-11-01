@@ -22,18 +22,18 @@ import {
   AppSourceLimitError,
   AppUndoEmptyError,
   AppUndoEntryError,
-  AppUndoUntrackedError,
+  AppUndoStaleError,
   CannotDeleteEntryError,
   changeDraftSource,
   getApp,
   MAX_APP_FILE_BYTES,
   sourceRev,
-  undoDraftFile,
+  undoCodeEdit,
   workingSource,
   type DraftChange,
 } from '@mantle/content';
 import type { AppSource } from '@mantle/db';
-import { publicErrorText } from '@mantle/std';
+import { publicErrorText, UUID_RE } from '@mantle/std';
 import { buildAndStageApp } from '../app-build-stage';
 import { historyActor, ownerOnlyRefusal, withAuthorCeiling, WHO_HINT } from '../builtins-apps';
 import { CS } from '../client-sourced-rule';
@@ -85,6 +85,8 @@ type BuildReport =
       hint: string;
     };
 
+type UndoResult = DraftChange & { undid: string; files: string[] };
+
 /** What the tools need of a target kind. */
 type CodeStore = {
   /** The target, as the tools write it back (`app:<id>`). */
@@ -94,7 +96,11 @@ type CodeStore = {
     fn: (tree: AppSource) => AppSource,
     opts: { baseRev: string | null; dryRun?: boolean; note: string },
   ): Promise<DraftChange | null>;
-  undo(path: string, baseRev: string | null): Promise<DraftChange | null>;
+  undo(opts: {
+    editId: string | null;
+    path: string | null;
+    baseRev: string | null;
+  }): Promise<UndoResult | null>;
   build(): Promise<BuildReport | null>;
 };
 
@@ -116,11 +122,11 @@ function appStore(ctx: Ctx, id: string): CodeStore {
         baseRev: opts.baseRev,
         dryRun: opts.dryRun,
       }),
-    undo: (path, baseRev) =>
-      undoDraftFile(ctx.ownerId, id, path, {
+    undo: (o) =>
+      undoCodeEdit(ctx.ownerId, id, {
         actor: historyActor(ctx),
         actorLoginId: actingLoginId(ctx.surface),
-        baseRev,
+        ...o,
       }),
     async build() {
       const res = await buildAndStageApp(ctx.ownerId, id);
@@ -179,7 +185,7 @@ function writeError(err: unknown): Fail {
     err instanceof AppSourceLimitError ||
     err instanceof AppUndoEmptyError ||
     err instanceof AppUndoEntryError ||
-    err instanceof AppUndoUntrackedError
+    err instanceof AppUndoStaleError
   ) {
     return { ok: false, error: err.message };
   }
@@ -292,6 +298,7 @@ async function writeFile(
         path,
         rev: res.rev,
         base_rev: res.beforeRev,
+        edit_id: res.editId,
         ...(opts.dryRun ? { dry_run: true } : {}),
         written: res.written,
         ...(created
@@ -301,7 +308,7 @@ async function writeFile(
         hint: opts.dryRun
           ? 'Dry run: nothing was written. Send the same call without dry_run to apply it.'
           : res.written
-            ? 'Saved in the DRAFT. Build with app_build (or pass build: true); the published app changes only at app_publish.'
+            ? 'Saved in the DRAFT. Build with app_build (or pass build: true); the published app changes only at app_publish. code_undo with this edit_id takes it back.'
             : 'Nothing changed: the file already holds this text.',
       },
     };
@@ -691,59 +698,68 @@ const code_undo: BuiltinToolDef = {
   loginTurns: true,
   name: 'Undo a source edit',
   description:
-    "Put one file of a mini app's DRAFT back as it was before the last write that changed it (`code_edit`, `code_insert`, `code_write`, `app_file_write`, `app_file_delete`, `app_source_set`); returns a diff and the new `rev`. Call it again to step further back. A file that write created is removed. It never replaces a change made outside the code tools (the editor, an import): then it fails, and `code_edit` or `code_write` makes the change. `base_rev` refuses a draft changed since you read it. Only recent edits are kept; for a whole earlier version use `app_snapshot_restore`.",
+    "Take back one write to a mini app's DRAFT: `edit_id` (every write returns one), or with only `path` the newest write that changed that file. Its files go back as they were before it (a file it created is removed), only if each is still exactly as that write left it; else it fails and changes nothing, so later work is never replaced: then change the file with `code_edit` or `code_write`. The undo returns its own `edit_id` (undo that to redo), a diff and the new `rev`. Only recent writes are kept; for a whole earlier version use `app_snapshot_restore`.",
   inputSchema: {
     type: 'object',
-    properties: { target: TARGET_PROP, path: PATH_PROP, base_rev: BASE_REV_PROP },
-    required: ['target', 'path'],
+    properties: {
+      target: TARGET_PROP,
+      edit_id: {
+        type: 'string',
+        description: 'The write to take back, from its result, e.g. 6f1c…',
+      },
+      path: {
+        type: 'string',
+        description:
+          "Without edit_id: undo the newest write of this file. With it: only this file of that write. E.g. 'App.tsx'.",
+      },
+      base_rev: BASE_REV_PROP,
+    },
+    required: ['target'],
   },
   handler: async (input, ctx) => {
+    // The owner's surfaces only, first (as app_file_write).
     const refused = ownerOnlyRefusal(ctx);
     if (refused) return refused;
     const store = openTarget(ctx, input.target);
     if ('ok' in store) return store;
-    if (!normCodePath(input.path)) return { ok: false, error: 'path is required, e.g. App.tsx' };
+    const editId = str(input.edit_id).trim() || null;
+    if (editId && !UUID_RE.test(editId)) {
+      return {
+        ok: false,
+        error: `edit_id '${editId.slice(0, 60)}' is not one: copy it from the write's result`,
+      };
+    }
+    if (!editId && !normCodePath(input.path)) {
+      return {
+        ok: false,
+        error: 'give the edit_id of the write to take back, or a path to undo its newest write',
+      };
+    }
     try {
       const tree = await store.read();
       if (!tree) return missingApp(store);
-      // A deleted file stored under an old-style key (`./x.ts`) is in the
-      // rows by that key: try it as given first.
-      const exact = str(input.path).trim();
-      let path = codeFileKey(tree.files, input.path);
+      const path = normCodePath(input.path) ? codeFileKey(tree.files, input.path) : null;
       const baseRev = str(input.base_rev).trim() || null;
-      let res: DraftChange | null;
-      try {
-        res = await store.undo(path, baseRev);
-      } catch (err) {
-        if (!(err instanceof AppUndoEmptyError) || exact === path || !exact) throw err;
-        try {
-          res = await store.undo(exact, baseRev);
-          path = exact;
-        } catch (again) {
-          // Nothing under the key as typed either: the first answer stands.
-          if (again instanceof AppUndoEmptyError) throw err;
-          throw again;
-        }
-      }
+      const res = await store.undo({ editId, path, baseRev });
       if (!res) return missingApp(store);
-      const removed = !Object.hasOwn(res.after.files, path);
-      ctx.step?.setOutput({ target: store.ref, path, rev: res.rev, removed });
+      ctx.step?.setOutput({ target: store.ref, undid: res.undid, files: res.files.length });
+      const files = res.files.map((p) =>
+        Object.hasOwn(res.after.files, p)
+          ? {
+              path: p,
+              diff: unifiedDiff(p, toLf(res.before.files[p] ?? ''), toLf(res.after.files[p]!)),
+            }
+          : { path: p, removed: true },
+      );
       return {
         ok: true,
         output: {
           target: store.ref,
-          path,
+          undid: res.undid,
+          edit_id: res.editId,
           rev: res.rev,
-          ...(removed
-            ? { removed: true }
-            : {
-                diff: unifiedDiff(
-                  path,
-                  toLf(res.before.files[path] ?? ''),
-                  toLf(res.after.files[path]!),
-                ),
-              }),
-          hint: 'Put back in the DRAFT. Build with app_build; call code_undo again to go one more step back.',
+          files,
+          hint: 'Taken back in the DRAFT. Build with app_build; code_undo with this edit_id puts the change back.',
         },
       };
     } catch (err) {

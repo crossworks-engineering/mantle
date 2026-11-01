@@ -30,6 +30,7 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'node_id', // common node-id param (tool_grounding)
   'base_rev', // the code tools' revision check param (app_authoring)
   'replace_all', // code_edit's edit flag (app_authoring)
+  'edit_id', // the id a code-tool write returns, code_undo's param (app_authoring)
   'block_id', // page block tools' target param (page_editing)
   'created_ids', // page_blocks_apply result field, batch chaining (page_editing)
   'deleted_ids', // page_blocks_apply result field, batch chaining (page_editing)
