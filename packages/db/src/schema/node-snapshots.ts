@@ -50,8 +50,8 @@ export const nodeSnapshots = pgTable(
     seq: integer('seq').notNull(),
     /** 'publish' | 'commit' (a table) | 'manual' | 'pre_restore' |
      *  'pre_schema' | 'pre_delete' | 'pre_import' | 'nightly' |
-     *  'pre_mcp_write' | 'pre_code_edit' | 'pre_code_undo' (0350: the code
-     *  tools' undo stack, code only, left out of the History list). */
+     *  'pre_mcp_write' | 'pre_code_edit' (0350: what a code-tool write
+     *  changed, for code_undo; left out of the History list). */
     trigger: text('trigger').notNull(),
     note: text('note'),
     /** Who the row names: HISTORY_ACTORS (@mantle/client-types/role-names). */
@@ -95,16 +95,16 @@ export type AppSnapshotCode = {
   draft: AppSource | null;
   manifest: AppManifest;
   publishedBuild: BuildRef | null;
-  /** On a `pre_code_edit` / `pre_code_undo` row (0350): the working tree is `source`. The
-   *  author ceiling when it was taken, only when 'team'; on an undo's own
-   *  row, the file it put back and the row it went back to. */
+  /** On a `pre_code_edit` row (0350, a code-tool write; its id is the
+   *  write's edit_id): `source.files` holds only the files the write
+   *  changed, as they were before (a file it created is absent). `changed`:
+   *  each file it changed with its new text's short hash (null: removed);
+   *  the author ceiling when it was taken, only when 'team'; on an undo's
+   *  row, the edit it took back. */
   codeEdit?: {
-    /** Each file the write changed, with its new text's short hash (null:
-     *  removed): an undo checks one file's text chains through the rows,
-     *  and a gap is an outside change. */
-    changed?: Record<string, string | null>;
+    changed: Record<string, string | null>;
     authorLevel?: 'team';
-    undo?: { path: string; fromSeq: number };
+    undoOf?: string;
   };
 };
 

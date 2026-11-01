@@ -13,7 +13,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
     ...actual,
     getApp: vi.fn(),
     changeDraftSource: vi.fn(),
-    undoDraftFile: vi.fn(),
+    undoCodeEdit: vi.fn(),
   };
 });
 vi.mock('../app-build-stage', () => ({ buildAndStageApp: vi.fn() }));
@@ -21,11 +21,11 @@ vi.mock('../app-build-stage', () => ({ buildAndStageApp: vi.fn() }));
 import {
   AppDraftRevError,
   AppUndoEmptyError,
-  AppUndoUntrackedError,
+  AppUndoStaleError,
   changeDraftSource,
   getApp,
   sourceRev,
-  undoDraftFile,
+  undoCodeEdit,
 } from '@mantle/content';
 import { buildAndStageApp } from '../app-build-stage';
 import { APP_TOOLS } from '../builtins-apps';
@@ -76,6 +76,7 @@ beforeEach(() => {
       beforeRev: sourceRev(TREE),
       rev,
       written: !opts.dryRun && rev !== sourceRev(TREE),
+      editId: !opts.dryRun && rev !== sourceRev(TREE) ? 'e1' : null,
     };
   });
 });
@@ -260,7 +261,7 @@ describe('a key stored before the one path rule', () => {
     vi.mocked(getApp).mockResolvedValue({ source: OLD, draft: null } as never);
     vi.mocked(changeDraftSource).mockImplementation(async (_o, _id, change) => {
       const after = change(OLD);
-      return { before: OLD, after, beforeRev: 'r0', rev: 'r1', written: true };
+      return { before: OLD, after, beforeRev: 'r0', rev: 'r1', written: true, editId: 'e1' };
     });
   });
 
@@ -277,23 +278,6 @@ describe('a key stored before the one path rule', () => {
     const change = vi.mocked(changeDraftSource).mock.calls[0]![2];
     expect(Object.keys(change(OLD).files).sort()).toEqual(['./x.ts', 'App.tsx']);
     expect(change(OLD).files['./x.ts']).toBe('new\n');
-  });
-
-  it('an undo of a deleted old-style key tries the key as given', async () => {
-    vi.mocked(undoDraftFile)
-      .mockRejectedValueOnce(new AppUndoEmptyError('y.ts'))
-      .mockResolvedValueOnce({
-        before: OLD,
-        after: { ...OLD, files: { ...OLD.files, './y.ts': 'back\n' } },
-        beforeRev: 'r0',
-        rev: 'r1',
-        written: true,
-        fromSeq: 3,
-        teamRules: false,
-      });
-    const out = outputOf(await tool('code_undo').handler({ target: TARGET, path: './y.ts' }, ctx));
-    expect(vi.mocked(undoDraftFile).mock.calls.map((c) => c[2])).toEqual(['y.ts', './y.ts']);
-    expect(out.path).toBe('./y.ts');
   });
 
   it('app_file_write refuses a new path outside the app', async () => {
@@ -319,7 +303,7 @@ describe('CRLF files', () => {
     vi.mocked(getApp).mockResolvedValue({ source: CRLF, draft: null } as never);
     vi.mocked(changeDraftSource).mockImplementation(async (_o, _id, change) => {
       const after = change(CRLF);
-      return { before: CRLF, after, beforeRev: 'r0', rev: 'r1', written: true };
+      return { before: CRLF, after, beforeRev: 'r0', rev: 'r1', written: true, editId: 'e1' };
     });
   });
 
@@ -396,42 +380,78 @@ describe('code_insert and code_write', () => {
 });
 
 describe('code_undo', () => {
-  it('puts the file back and returns the diff', async () => {
-    const after = { entry: 'App.tsx', files: { ...TREE.files, 'App.tsx': 'old\n' } };
-    vi.mocked(undoDraftFile).mockResolvedValue({
-      before: TREE,
-      after,
-      beforeRev: sourceRev(TREE),
-      rev: sourceRev(after),
-      written: true,
-      fromSeq: 7,
-      teamRules: false,
-    });
-    const out = outputOf(
-      await tool('code_undo').handler({ target: TARGET, path: 'App.tsx', base_rev: 'r9' }, ctx),
-    );
-    expect(undoDraftFile).toHaveBeenCalledWith(
-      'o1',
-      APP_ID,
-      'App.tsx',
-      expect.objectContaining({ actor: 'agent', baseRev: 'r9' }),
-    );
-    expect(out).toMatchObject({ rev: sourceRev(after) });
-    expect(out.diff).toContain('+old');
+  const EDIT = '22222222-3333-4444-8555-666666666666';
+  const undone = (after: Record<string, string>, files: string[]) => ({
+    before: TREE,
+    after: { entry: 'App.tsx', files: after },
+    beforeRev: sourceRev(TREE),
+    rev: 'r2',
+    written: true,
+    editId: 'e9',
+    undid: EDIT,
+    files,
+    teamRules: false,
   });
 
-  it('an undo over work done outside the code tools says what to use', async () => {
-    vi.mocked(undoDraftFile).mockRejectedValue(new AppUndoUntrackedError('App.tsx'));
+  it('takes back a write by edit_id: each file it changed, with a diff', async () => {
+    vi.mocked(undoCodeEdit).mockResolvedValue(
+      undone({ 'App.tsx': 'old\n' }, ['App.tsx', 'lib/fmt.ts']),
+    );
+    const out = outputOf(
+      await tool('code_undo').handler({ target: TARGET, edit_id: EDIT, base_rev: 'r9' }, ctx),
+    );
+    expect(undoCodeEdit).toHaveBeenCalledWith(
+      'o1',
+      APP_ID,
+      expect.objectContaining({ actor: 'agent', editId: EDIT, path: null, baseRev: 'r9' }),
+    );
+    expect(out).toMatchObject({ undid: EDIT, edit_id: 'e9', rev: 'r2' });
+    expect(out.files).toEqual([
+      { path: 'App.tsx', diff: expect.stringContaining('+old') },
+      { path: 'lib/fmt.ts', removed: true },
+    ]);
+  });
+
+  it('with only a path, undoes its newest write (an old-style key by its exact name)', async () => {
+    const OLD = { entry: 'App.tsx', files: { 'App.tsx': 'a\n', './x.ts': 'x\n' } };
+    vi.mocked(getApp).mockResolvedValue({ source: OLD, draft: null } as never);
+    vi.mocked(undoCodeEdit).mockResolvedValue(undone({ 'App.tsx': 'a\n' }, ['./x.ts']));
+    await tool('code_undo').handler({ target: TARGET, path: './x.ts' }, ctx);
+    expect(vi.mocked(undoCodeEdit).mock.calls[0]![2]).toMatchObject({
+      editId: null,
+      path: './x.ts',
+    });
+  });
+
+  it('needs an edit_id or a path, and a real edit_id', async () => {
+    expect(errorOf(await tool('code_undo').handler({ target: TARGET }, ctx))).toMatch(
+      /give the edit_id/,
+    );
     expect(
-      errorOf(await tool('code_undo').handler({ target: TARGET, path: 'App.tsx' }, ctx)),
-    ).toMatch(/'App.tsx' changed outside the code tools.*code_edit or code_write/);
+      errorOf(await tool('code_undo').handler({ target: TARGET, edit_id: 'nope' }, ctx)),
+    ).toMatch(/is not one: copy it from the write/);
+    expect(undoCodeEdit).not.toHaveBeenCalled();
+  });
+
+  it('later work on the file refuses the undo and says what to use', async () => {
+    vi.mocked(undoCodeEdit).mockRejectedValue(new AppUndoStaleError('App.tsx'));
+    expect(
+      errorOf(await tool('code_undo').handler({ target: TARGET, edit_id: EDIT }, ctx)),
+    ).toMatch(/'App.tsx' changed after that write.*code_edit or code_write/);
   });
 
   it('nothing to undo says what to use instead', async () => {
-    vi.mocked(undoDraftFile).mockRejectedValue(new AppUndoEmptyError('App.tsx'));
+    vi.mocked(undoCodeEdit).mockRejectedValue(new AppUndoEmptyError({ path: 'App.tsx' }));
     expect(
       errorOf(await tool('code_undo').handler({ target: TARGET, path: 'App.tsx' }, ctx)),
-    ).toMatch(/no earlier text of 'App.tsx'.*app_snapshot_restore/);
+    ).toMatch(/no kept write changed 'App.tsx'.*app_snapshot_restore/);
+  });
+
+  it('every write returns its edit_id', async () => {
+    const out = outputOf(
+      await tool('code_write').handler({ target: TARGET, path: 'lib/n.ts', content: 'n\n' }, ctx),
+    );
+    expect(out.edit_id).toBe('e1');
   });
 });
 
@@ -497,7 +517,7 @@ describe('gate parity with the app tools', () => {
       ),
     ).toBe(OWNER_ONLY_ERROR);
     expect(changeDraftSource).not.toHaveBeenCalled();
-    expect(undoDraftFile).not.toHaveBeenCalled();
+    expect(undoCodeEdit).not.toHaveBeenCalled();
   });
 
   it("the audit and the queue read the target's app as the item", () => {

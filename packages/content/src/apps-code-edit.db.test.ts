@@ -1,8 +1,9 @@
 /**
  * The code tools' draft write on Postgres (0350): changeDraftSource checks
- * the revision under the row lock and records the code as it stood
- * (`pre_code_edit`), undoDraftFile walks one file back through those rows,
- * the History list leaves them out, and they are pruned on their own line.
+ * the revision under the row lock and records what each write changed
+ * (`pre_code_edit`, its id the write's edit_id); undoCodeEdit takes one
+ * write back only while its files are as that write left them; the History
+ * list and the lookups by id leave the rows out; the newest 20 are kept.
  * Seeds its own owner and apps on random ids; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/apps-code-edit.db.test.ts
  */
@@ -62,40 +63,36 @@ describe.skipIf(!URL)('the code tools draft write on Postgres', () => {
                   where node_id = ${id} and trigger = 'pre_code_edit'`
     )[0]!.n as number;
 
-  it('writes the draft, records the old code, and the rev follows the content', async () => {
+  const draftOf = async (id: string) => (await apps.getApp(owner, id))!.draft!.files;
+  const undo = (id: string, o: { editId?: string; path?: string; baseRev?: string | null }) =>
+    apps.undoCodeEdit(owner, id, { ...opts, ...o });
+
+  it('writes the draft, records only what changed, and returns its edit_id', async () => {
     const app = await newApp('write');
-    const before = await apps.getApp(owner, app.id);
-    const rev0 = apps.sourceRev(apps.workingSource(before!));
+    const rev0 = apps.sourceRev(apps.workingSource((await apps.getApp(owner, app.id))!));
     const res = await apps.changeDraftSource(owner, app.id, setFile('lib/a.ts', 'a1\n'), opts);
-    expect(res).toMatchObject({ beforeRev: rev0, written: true });
+    expect(res).toMatchObject({ beforeRev: rev0, written: true, editId: expect.any(String) });
+    expect((await draftOf(app.id))['lib/a.ts']).toBe('a1\n');
+    // The rev a read gives is the rev the write returned.
     const after = await apps.getApp(owner, app.id);
-    expect(after?.draft?.files['lib/a.ts']).toBe('a1\n');
-    // The rev a read gives is the rev the write returned (jsonb's own key
-    // order is never hashed).
     expect(apps.sourceRev(apps.workingSource(after!))).toBe(res!.rev);
-    expect(await codeRows(app.id)).toBe(1);
+    const [row] = await admin`select code->'source'->'files' as files,
+                                     code->'codeEdit'->'changed' as changed
+                                from node_snapshots where id = ${res!.editId}`;
+    // A created file: absent before, its new text's hash after.
+    expect(row!.files).toEqual({});
+    expect(Object.keys(row!.changed as object)).toEqual(['lib/a.ts']);
   });
 
   it('a stale base_rev is refused with the current rev, and nothing is written', async () => {
     const app = await newApp('stale');
     const first = await apps.changeDraftSource(owner, app.id, setFile('x.ts', '1'), opts);
-    // Someone else writes meanwhile.
     await apps.changeDraftSource(owner, app.id, setFile('y.ts', '2'), opts);
     const err = await apps
       .changeDraftSource(owner, app.id, setFile('x.ts', 'mine'), { ...opts, baseRev: first!.rev })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(apps.AppDraftRevError);
-    const now = await apps.getApp(owner, app.id);
-    expect((err as InstanceType<typeof apps.AppDraftRevError>).currentRev).toBe(
-      apps.sourceRev(apps.workingSource(now!)),
-    );
-    expect(now?.draft?.files['x.ts']).toBe('1');
-    // With the current rev it goes through.
-    const ok = await apps.changeDraftSource(owner, app.id, setFile('x.ts', 'mine'), {
-      ...opts,
-      baseRev: apps.sourceRev(apps.workingSource(now!)),
-    });
-    expect(ok?.written).toBe(true);
+    expect((await draftOf(app.id))['x.ts']).toBe('1');
   });
 
   it('a throw inside the change, a dry run and a no-op write nothing', async () => {
@@ -114,203 +111,141 @@ describe.skipIf(!URL)('the code tools draft write on Postgres', () => {
       ...opts,
       dryRun: true,
     });
-    expect(dry).toMatchObject({ written: false });
-    expect(dry?.after.files['a.ts']).toBe('x');
+    expect(dry).toMatchObject({ written: false, editId: null });
     const same = await apps.changeDraftSource(owner, app.id, (t) => t, opts);
-    expect(same).toMatchObject({ written: false });
+    expect(same).toMatchObject({ written: false, editId: null });
     expect((await apps.getApp(owner, app.id))?.hasDraft).toBe(false);
     expect(await codeRows(app.id)).toBe(0);
   });
 
-  it('undo steps one file back, edit by edit, past edits of other files', async () => {
-    const app = await newApp('undo');
-    await apps.changeDraftSource(owner, app.id, setFile('a.ts', 'v1'), opts);
-    await apps.changeDraftSource(owner, app.id, setFile('a.ts', 'v2'), opts);
-    await apps.changeDraftSource(owner, app.id, setFile('b.ts', 'other'), opts);
-    await apps.changeDraftSource(owner, app.id, setFile('a.ts', 'v3'), opts);
-
-    const u1 = await apps.undoDraftFile(owner, app.id, 'a.ts', opts);
-    expect(u1?.after.files['a.ts']).toBe('v2');
-    expect(u1?.after.files['b.ts']).toBe('other');
-    const u2 = await apps.undoDraftFile(owner, app.id, 'a.ts', opts);
-    expect(u2?.after.files['a.ts']).toBe('v1');
-    // Before v1 the file did not exist: the undo removes it.
-    const u3 = await apps.undoDraftFile(owner, app.id, 'a.ts', opts);
-    expect(Object.hasOwn(u3!.after.files, 'a.ts')).toBe(false);
-    await expect(apps.undoDraftFile(owner, app.id, 'a.ts', opts)).rejects.toBeInstanceOf(
-      apps.AppUndoEmptyError,
+  it('undo by edit_id puts back every file that write changed', async () => {
+    const app = await newApp('many');
+    await apps.changeDraftSource(owner, app.id, setFile('a.ts', 'a1'), opts);
+    const tree = (await apps.getApp(owner, app.id))!.draft!;
+    const set = await apps.changeDraftSource(
+      owner,
+      app.id,
+      () => ({ entry: tree.entry, files: { ...tree.files, 'a.ts': 'a2', 'b.ts': 'b2' } }),
+      opts,
     );
-    // The draft read back is the undo's tree.
-    const now = await apps.getApp(owner, app.id);
-    expect(apps.sourceRev(apps.workingSource(now!))).toBe(u3!.rev);
+    const u = await undo(app.id, { editId: set!.editId! });
+    expect(u?.files).toEqual(['a.ts', 'b.ts']);
+    expect(u?.after.files['a.ts']).toBe('a1');
+    expect(Object.hasOwn(u!.after.files, 'b.ts')).toBe(false);
+    // The undo is a write with its own edit_id: undoing it redoes.
+    const redo = await undo(app.id, { editId: u!.editId! });
+    expect(redo?.after.files).toMatchObject({ 'a.ts': 'a2', 'b.ts': 'b2' });
+    // With a path, only that file of the write.
+    const one = await undo(app.id, { editId: redo!.editId!, path: 'b.ts' });
+    // The redo created b.ts: taking back only that file removes it, a.ts stays.
+    expect(one?.files).toEqual(['b.ts']);
+    expect(one?.after.files['a.ts']).toBe('a2');
+    expect(Object.hasOwn(one!.after.files, 'b.ts')).toBe(false);
   });
 
-  it('the entry file is never undone away', async () => {
+  it('undo last takes the newest write of the path; again, it redoes', async () => {
+    const app = await newApp('last');
+    await apps.changeDraftSource(owner, app.id, setFile('l.ts', 'v1'), opts);
+    await apps.changeDraftSource(owner, app.id, setFile('l.ts', 'v2'), opts);
+    await apps.changeDraftSource(owner, app.id, setFile('m.ts', 'other'), opts);
+    const u1 = await undo(app.id, { path: 'l.ts' });
+    expect(u1?.after.files['l.ts']).toBe('v1');
+    const u2 = await undo(app.id, { path: 'l.ts' });
+    expect(u2?.after.files['l.ts']).toBe('v2');
+    await expect(undo(app.id, { path: 'never.ts' })).rejects.toBeInstanceOf(apps.AppUndoEmptyError);
+  });
+
+  it('never replaces later work on the file: another write, or the editor', async () => {
+    const app = await newApp('stale-undo');
+    const w1 = await apps.changeDraftSource(owner, app.id, setFile('s.ts', 'agent'), opts);
+    const w2 = await apps.changeDraftSource(owner, app.id, setFile('o.ts', 'other'), opts);
+    await apps.changeDraftSource(owner, app.id, setFile('s.ts', 'agent 2'), opts);
+    // w1's file changed since: refused, nothing written.
+    await expect(undo(app.id, { editId: w1!.editId! })).rejects.toBeInstanceOf(
+      apps.AppUndoStaleError,
+    );
+    // w2's file did not: fine.
+    await undo(app.id, { editId: w2!.editId! });
+    // The person saves s.ts in the editor (no code-tool row).
+    const tree = (await apps.getApp(owner, app.id))!.draft!;
+    await apps.saveDraftSource(owner, app.id, {
+      ...tree,
+      files: { ...tree.files, 's.ts': 'person' },
+    });
+    const now = apps.sourceRev(apps.workingSource((await apps.getApp(owner, app.id))!));
+    for (const baseRev of [now, null]) {
+      await expect(undo(app.id, { path: 's.ts', baseRev })).rejects.toBeInstanceOf(
+        apps.AppUndoStaleError,
+      );
+    }
+    expect((await draftOf(app.id))['s.ts']).toBe('person');
+    // A stale base_rev answers first.
+    await expect(undo(app.id, { path: 's.ts', baseRev: w1!.rev })).rejects.toBeInstanceOf(
+      apps.AppDraftRevError,
+    );
+  });
+
+  it('a deleted file comes back; the entry file is never undone away', async () => {
     const app = await newApp('entry');
-    const entry = (await apps.getApp(owner, app.id))!.source.entry;
-    // A row whose tree lacks the entry (an app_source_set that renamed it).
-    await apps.changeDraftSource(
+    await apps.changeDraftSource(owner, app.id, setFile('d.ts', 'keep me'), opts);
+    const del = await apps.changeDraftSource(
+      owner,
+      app.id,
+      (t) => {
+        const files = { ...t.files };
+        delete files['d.ts'];
+        return { entry: t.entry, files };
+      },
+      opts,
+    );
+    const back = await undo(app.id, { editId: del!.editId! });
+    expect(back?.after.files['d.ts']).toBe('keep me');
+    // An app_source_set that renamed the entry, then an undo of it.
+    const renamed = await apps.changeDraftSource(
       owner,
       app.id,
       () => ({ entry: 'Main.tsx', files: { 'Main.tsx': 'm' } }),
       opts,
     );
-    await apps.changeDraftSource(
-      owner,
-      app.id,
-      (t) => ({ entry, files: { ...t.files, [entry]: 'e' } }),
-      opts,
-    );
-    await expect(apps.undoDraftFile(owner, app.id, entry, opts)).rejects.toBeInstanceOf(
+    await expect(undo(app.id, { editId: renamed!.editId! })).rejects.toBeInstanceOf(
       apps.AppUndoEntryError,
     );
   });
 
-  it('undo after undo walks back, never swinging between two texts (A, B, A, B)', async () => {
-    const app = await newApp('swing');
-    await apps.changeDraftSource(owner, app.id, setFile('s.ts', 'A'), opts);
-    await apps.changeDraftSource(owner, app.id, setFile('s.ts', 'B'), opts);
-    await apps.changeDraftSource(owner, app.id, setFile('s.ts', 'A'), opts);
-    await apps.changeDraftSource(owner, app.id, setFile('s.ts', 'B'), opts);
-    const seen: (string | undefined)[] = [];
-    for (;;) {
-      const u = await apps.undoDraftFile(owner, app.id, 's.ts', opts).catch((e: unknown) => e);
-      if (u instanceof apps.AppUndoEmptyError) break;
-      seen.push((u as { after: { files: Record<string, string> } }).after.files['s.ts']);
-      expect(seen.length).toBeLessThan(10);
-    }
-    // B -> A -> B -> A -> (no file): each step one write further back.
-    expect(seen).toEqual(['A', 'B', 'A', undefined]);
-  });
-
-  it('a new edit after an undo is what the next undo takes back', async () => {
-    const app = await newApp('redo');
-    await apps.changeDraftSource(owner, app.id, setFile('r.ts', 'v1'), opts);
-    await apps.changeDraftSource(owner, app.id, setFile('r.ts', 'v2'), opts);
-    await apps.undoDraftFile(owner, app.id, 'r.ts', opts); // v1
-    await apps.changeDraftSource(owner, app.id, setFile('r.ts', 'v3'), opts);
-    const u = await apps.undoDraftFile(owner, app.id, 'r.ts', opts);
-    expect(u?.after.files['r.ts']).toBe('v1');
-  });
-
-  it('an undo never replaces an editor save (base_rev or not); other files still undo', async () => {
-    const app = await newApp('editor');
-    const w = await apps.changeDraftSource(owner, app.id, setFile('e.ts', 'agent'), opts);
-    await apps.changeDraftSource(owner, app.id, setFile('o.ts', 'other'), opts);
-    // The person saves e.ts in the editor (no code-tool row).
-    const tree = (await apps.getApp(owner, app.id))!.draft!;
-    await apps.saveDraftSource(owner, app.id, {
-      ...tree,
-      files: { ...tree.files, 'e.ts': 'person' },
-    });
-    // From the agent's stale read: the stale check answers.
-    await expect(
-      apps.undoDraftFile(owner, app.id, 'e.ts', { ...opts, baseRev: w!.rev }),
-    ).rejects.toBeInstanceOf(apps.AppDraftRevError);
-    // With the current rev, or none: the outside change is never replaced.
-    const now = apps.sourceRev(apps.workingSource((await apps.getApp(owner, app.id))!));
-    for (const baseRev of [now, null]) {
-      await expect(
-        apps.undoDraftFile(owner, app.id, 'e.ts', { ...opts, baseRev }),
-      ).rejects.toBeInstanceOf(apps.AppUndoUntrackedError);
-    }
-    expect((await apps.getApp(owner, app.id))?.draft?.files['e.ts']).toBe('person');
-    // Another file's undo is not held up by it, and keeps the person's text.
-    const u = await apps.undoDraftFile(owner, app.id, 'o.ts', opts);
-    expect(u?.after.files['e.ts']).toBe('person');
-    expect(Object.hasOwn(u!.after.files, 'o.ts')).toBe(false);
-  });
-
-  it('a code-tool write after an outside change does not hide it from the undo', async () => {
-    const app = await newApp('gap');
-    await apps.changeDraftSource(owner, app.id, setFile('x.ts', 'a'), opts);
-    await apps.changeDraftSource(owner, app.id, setFile('x.ts', 'b'), opts);
-    // The person saves x.ts = c in the editor, then an agent writes y.ts.
-    const tree = (await apps.getApp(owner, app.id))!.draft!;
-    await apps.saveDraftSource(owner, app.id, { ...tree, files: { ...tree.files, 'x.ts': 'c' } });
-    await apps.changeDraftSource(owner, app.id, setFile('y.ts', 'y'), opts);
-    // Undoing x.ts goes back past the editor's save: refused without base_rev.
-    await expect(apps.undoDraftFile(owner, app.id, 'x.ts', opts)).rejects.toBeInstanceOf(
-      apps.AppUndoUntrackedError,
-    );
-    // Undoing y.ts (the newest write, after the save) is fine.
-    const u = await apps.undoDraftFile(owner, app.id, 'y.ts', opts);
-    expect(u?.after.files['x.ts']).toBe('c');
-  });
-
-  it('the prune keeps one unbroken window: undos between kept writes stay', async () => {
-    const app = await newApp('suffix');
-    for (let i = 1; i <= apps.APP_CODE_EDIT_KEEP + 5; i++) {
-      await apps.changeDraftSource(owner, app.id, setFile(`f${i % 3}.ts`, `v${i}`), opts);
-      if (i % 4 === 0) await apps.undoDraftFile(owner, app.id, `f${i % 3}.ts`, opts);
-    }
-    const rows = await admin`select seq, trigger from node_snapshots
-                              where node_id = ${app.id}
-                                and trigger in ('pre_code_edit', 'pre_code_undo')
-                              order by seq desc`;
-    const edits = rows.filter((r) => r.trigger === 'pre_code_edit');
-    expect(edits).toHaveLength(apps.APP_CODE_EDIT_KEEP);
-    const oldestEdit = Math.min(...edits.map((r) => r.seq as number));
-    // No undo row older than the oldest write kept, and every undo row
-    // newer than it is kept (the window has no hole).
-    expect(rows.filter((r) => (r.seq as number) < oldestEdit)).toEqual([]);
-    expect(rows.filter((r) => r.trigger === 'pre_code_undo').length).toBeGreaterThan(0);
-    // And an undo walks back without a false outside-change refusal.
-    await expect(apps.undoDraftFile(owner, app.id, 'f1.ts', opts)).resolves.toBeTruthy();
-  });
-
-  it('undos keep their own line: they never push the writes out of the window', async () => {
-    const app = await newApp('window');
-    for (let i = 1; i <= apps.APP_CODE_EDIT_KEEP; i++) {
-      await apps.changeDraftSource(owner, app.id, setFile('w.ts', `v${i}`), opts);
-    }
-    // 20 writes: the first row holds no w.ts; undo walks all the way back.
-    const seen: (string | undefined)[] = [];
-    for (;;) {
-      const u = await apps.undoDraftFile(owner, app.id, 'w.ts', opts).catch((e: unknown) => e);
-      if (u instanceof apps.AppUndoEmptyError) break;
-      seen.push((u as { after: { files: Record<string, string> } }).after.files['w.ts']);
-      expect(seen.length).toBeLessThanOrEqual(apps.APP_CODE_EDIT_KEEP);
-    }
-    expect(seen).toHaveLength(apps.APP_CODE_EDIT_KEEP);
-    expect(seen.at(-1)).toBeUndefined();
-    expect(await codeRows(app.id)).toBe(apps.APP_CODE_EDIT_KEEP);
-  });
-
-  it('undo to code taken at team rules brings the author ceiling back to team', async () => {
+  it('undo of code taken at team rules brings the author ceiling back to team', async () => {
     const app = await newApp('ceiling');
     await apps.setAppAuthorLevel(owner, app.id, 'team');
-    // A non-Admin login's code, then the owner's replacement (its row holds
-    // the team-era code), then the owner trusts the app's tools.
     await apps.changeDraftSource(owner, app.id, setFile('t.ts', 'member code'), opts);
-    await apps.changeDraftSource(owner, app.id, setFile('t.ts', 'owner code'), opts);
+    const owners = await apps.changeDraftSource(owner, app.id, setFile('t.ts', 'owner code'), opts);
     await apps.setAppAuthorLevel(owner, app.id, 'admin');
-    const u = await apps.undoDraftFile(owner, app.id, 't.ts', opts);
+    const u = await undo(app.id, { editId: owners!.editId! });
     expect(u?.after.files['t.ts']).toBe('member code');
     expect(u?.teamRules).toBe(true);
     expect((await apps.getApp(owner, app.id))?.authorLevel).toBe('team');
   });
 
-  it('the rows are hidden from the snapshot lookups by id', async () => {
-    const app = await newApp('byid');
-    await apps.changeDraftSource(owner, app.id, setFile('h.ts', '1'), opts);
-    const [row] = await admin`select id from node_snapshots
-                               where node_id = ${app.id} and trigger = 'pre_code_edit' limit 1`;
-    expect(await snaps.getAppSnapshot(owner, app.id, row!.id as string)).toBeNull();
-    expect(await snaps.setAppSnapshotNote(owner, app.id, row!.id as string, 'x')).toBe(false);
+  it('an edit_id of another app, or unknown, is not found', async () => {
+    const a = await newApp('a');
+    const b = await newApp('b');
+    const w = await apps.changeDraftSource(owner, a.id, setFile('a.ts', '1'), opts);
+    await expect(undo(b.id, { editId: w!.editId! })).rejects.toBeInstanceOf(apps.AppUndoEmptyError);
+    await expect(undo(a.id, { editId: randomUUID() })).rejects.toBeInstanceOf(
+      apps.AppUndoEmptyError,
+    );
   });
 
-  it('the History list leaves the rows out; they keep their own line', async () => {
+  it('the rows are hidden from the History list and the lookups by id; 20 are kept', async () => {
     const app = await newApp('prune');
+    let last = '';
     for (let i = 0; i <= apps.APP_CODE_EDIT_KEEP + 2; i++) {
-      await apps.changeDraftSource(owner, app.id, setFile('a.ts', `v${i}`), opts);
+      last = (await apps.changeDraftSource(owner, app.id, setFile('a.ts', `v${i}`), opts))!.editId!;
     }
     expect(await codeRows(app.id)).toBe(apps.APP_CODE_EDIT_KEEP);
-    const listed = await snaps.listAppSnapshots(owner, app.id);
-    expect(listed.filter((e) => (e.trigger as string) === 'pre_code_edit')).toEqual([]);
-    // A manual snapshot still lists, and is never pruned by the code line.
+    expect(await snaps.listAppSnapshots(owner, app.id)).toEqual([]);
+    expect(await snaps.getAppSnapshot(owner, app.id, last)).toBeNull();
+    expect(await snaps.setAppSnapshotNote(owner, app.id, last, 'x')).toBe(false);
+    // A manual snapshot still lists.
     await snaps.createAppSnapshot(owner, app.id, { actor: 'owner', withData: false });
-    await apps.changeDraftSource(owner, app.id, setFile('a.ts', 'last'), opts);
     expect((await snaps.listAppSnapshots(owner, app.id)).map((e) => e.trigger)).toEqual(['manual']);
   });
 });

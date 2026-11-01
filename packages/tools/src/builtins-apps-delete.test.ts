@@ -62,7 +62,7 @@ beforeEach(() => {
   // The change runs over the tree; one that throws fails the write.
   vi.mocked(changeDraftSource).mockImplementation(async (_o, _id, change) => {
     const after = change(TREE);
-    return { before: TREE, after, beforeRev: 'r0', rev: 'r1', written: true };
+    return { before: TREE, after, beforeRev: 'r0', rev: 'r1', written: true, editId: 'e1' };
   });
 });
 

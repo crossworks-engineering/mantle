@@ -851,19 +851,14 @@ export async function writeDraftFile(
 
 // ── The code tools' draft writes (packages/tools/src/code/) ─────────────────
 
-/** The `node_snapshots.trigger` of the row a code-tool write records first
- *  (0350): the working tree as it stood, code only. code_undo reads them. */
+/** The `node_snapshots.trigger` of the row each code-tool write records
+ *  (0350): what the write changed, so code_undo can take it back. The row's
+ *  id is the write's `edit_id`. */
 export const CODE_EDIT_TRIGGER = 'pre_code_edit';
-/** The row a code_undo records first: what the undo replaced. It does not
- *  count toward the write rows kept, so undos never push the writes they
- *  walk back through out of the window (pruneCodeEdits). */
-export const CODE_UNDO_TRIGGER = 'pre_code_undo';
-/** The code tools' rows: hidden from the History list and the lookups by id. */
-export const CODE_TOOL_TRIGGERS: readonly string[] = [CODE_EDIT_TRIGGER, CODE_UNDO_TRIGGER];
-/** The write rows kept per app (the undo rows among them stay too). */
+/** The rows kept per app. */
 export const APP_CODE_EDIT_KEEP = 20;
-/** And of those only as many as fit in this many bytes of code (the newest
- *  always stays): a row holds one working tree, up to 50 × 256 KB. */
+/** And of those only as many as fit in this many bytes of kept text (the
+ *  newest always stays). */
 export const APP_CODE_EDIT_MAX_BYTES = 64 * 1024 * 1024;
 
 /**
@@ -878,6 +873,12 @@ export function sourceRev(source: AppSource): string {
     .sort()
     .map((p) => [p, source.files[p]]);
   return codeHash({ entry: source.entry, files }).slice(0, 16);
+}
+
+/** A file's text as a write's row marks it: a short hash, null when the
+ *  file is not there. */
+function fileHash(text: string | undefined): string | null {
+  return text === undefined ? null : codeHash(text).slice(0, 16);
 }
 
 /** The tree changed since the `base_rev` the caller read. */
@@ -899,26 +900,44 @@ defineDomainError(AppDraftRevError, {
   body: (e) => ({ error: e.message, reason: 'conflict' }),
 });
 
-/** code_undo found no earlier text of the file. */
+/** code_undo found no write to take back. */
 export class AppUndoEmptyError extends Error {
-  constructor(path: string) {
+  constructor(what: { editId: string } | { path: string }) {
     super(
-      `no earlier text of '${path}' is kept: the code tools keep an app's recent writes, and none of those before this point changed this file. Put back a whole version with app_snapshot_restore (mode 'code') instead`,
+      'editId' in what
+        ? `no kept write ${what.editId} on this app: the code tools keep an app's recent writes, and this one is older or of another app. Put back a whole version with app_snapshot_restore (mode 'code') instead`
+        : `no kept write changed '${what.path}': the code tools keep an app's recent writes. Put back a whole version with app_snapshot_restore (mode 'code') instead`,
     );
     this.name = 'AppUndoEmptyError';
   }
 }
 
 defineDomainError(AppUndoEmptyError, {
-  reason: 'there is no earlier text of the file to put back; the message says what to use',
+  reason: 'there is no kept write to take back; the message says what to use',
   status: 409,
 });
 
-/** code_undo would remove the entry file (the text it goes back to had none). */
+/** A file the write changed is no longer as that write left it. */
+export class AppUndoStaleError extends Error {
+  constructor(readonly path: string) {
+    super(
+      `'${path}' changed after that write (another write, the editor, an import or a restore), so the undo would replace that work. Read it with code_view, then change it with code_edit or code_write`,
+    );
+    this.name = 'AppUndoStaleError';
+  }
+}
+
+defineDomainError(AppUndoStaleError, {
+  reason: 'a file changed after the write the undo takes back; the message says what to use',
+  status: 409,
+  body: (e) => ({ error: e.message, reason: 'conflict' }),
+});
+
+/** code_undo would remove the entry file (the write created it). */
 export class AppUndoEntryError extends Error {
   constructor(path: string) {
     super(
-      `undo would remove '${path}', the app's entry file (the app had no such file before that write). Write the text you want with code_write instead`,
+      `undo would remove '${path}', the app's entry file (that write created it). Write the text you want with code_write instead`,
     );
     this.name = 'AppUndoEntryError';
   }
@@ -928,42 +947,6 @@ defineDomainError(AppUndoEntryError, {
   reason: 'the undo would remove the entry file; the message says what to use',
   status: 409,
 });
-
-/** The file changed outside the code tools (the editor, an import, a
- *  restore) after the write an undo would take back: the undo would replace
- *  that work, which no row holds, so it is never done. */
-export class AppUndoUntrackedError extends Error {
-  constructor(path: string) {
-    super(
-      `'${path}' changed outside the code tools (the editor, an import or a restore) after the write an undo would take back, so an undo would replace that work. Read the file with code_view, then change it with code_edit or code_write`,
-    );
-    this.name = 'AppUndoUntrackedError';
-  }
-}
-
-defineDomainError(AppUndoUntrackedError, {
-  reason: 'the file changed outside the code tools; the message says what to use instead',
-  status: 409,
-  body: (e) => ({ error: e.message, reason: 'conflict' }),
-});
-
-/** A file's text as the history rows mark it: a short hash, null when the
- *  file is not there. */
-function fileHash(text: string | undefined): string | null {
-  return text === undefined ? null : codeHash(text).slice(0, 16);
-}
-
-/** What a write changed: each file it changed, with its new text's hash
- *  (null: removed). */
-function changedFiles(before: AppSource, after: AppSource): Record<string, string | null> {
-  const out: Record<string, string | null> = {};
-  for (const p of new Set([...Object.keys(before.files), ...Object.keys(after.files)])) {
-    const a = Object.hasOwn(before.files, p) ? before.files[p] : undefined;
-    const b = Object.hasOwn(after.files, p) ? after.files[p] : undefined;
-    if (a !== b) out[p] = fileHash(b);
-  }
-  return out;
-}
 
 /** What a draft change did. */
 export type DraftChange = {
@@ -975,6 +958,9 @@ export type DraftChange = {
   rev: string;
   /** Whether the draft was written (false: a dry run, or nothing changed). */
   written: boolean;
+  /** The write's history row, what code_undo takes (null when nothing was
+   *  written). */
+  editId: string | null;
 };
 
 type CodeEditOpts = {
@@ -987,51 +973,62 @@ type CodeEditOpts = {
 
 type LockedApp = NonNullable<Awaited<ReturnType<typeof lockAppRow>>>;
 
-/** Record the working tree as it stands on the app's history line (a
- *  `pre_code_edit` row), inside the write's transaction, after its row
- *  lock, as a publish appends its version. The author ceiling at the time
- *  rides along (`codeEdit.authorLevel`): code taken while the app ran at
- *  team rules brings them back when an undo restores it. */
+/**
+ * Record what a write changes, as the row its `edit_id` names, inside the
+ * write's transaction after the row lock (as a publish appends its
+ * version): each file it changes, as it was before (`source.files`; a file
+ * it creates is absent there) and the hash of what it leaves (`changed`,
+ * null for a file it removes). The author ceiling at the time rides along:
+ * code taken while the app ran at team rules brings them back when an undo
+ * restores it. Null when the write changes no file.
+ */
 async function recordCodeEdit(
   tx: DbTx,
   ownerId: string,
   id: string,
   app: LockedApp,
-  opts: CodeEditOpts & { after: AppSource; undo?: { path: string; fromSeq: number } },
-): Promise<void> {
-  const tree = app.draft ?? app.source;
-  await insertNodeSnapshot(tx, {
+  before: AppSource,
+  after: AppSource,
+  opts: CodeEditOpts & { undoOf?: string },
+): Promise<string> {
+  const was: Record<string, string> = {};
+  const changed: Record<string, string | null> = {};
+  for (const p of new Set([...Object.keys(before.files), ...Object.keys(after.files)])) {
+    const a = Object.hasOwn(before.files, p) ? before.files[p] : undefined;
+    const b = Object.hasOwn(after.files, p) ? after.files[p] : undefined;
+    if (a === b) continue;
+    changed[p] = fileHash(b);
+    if (a !== undefined) was[p] = a;
+  }
+  const row = await insertNodeSnapshot(tx, {
     ownerId,
     nodeId: id,
     nodeKind: 'app',
-    trigger: opts.undo ? CODE_UNDO_TRIGGER : CODE_EDIT_TRIGGER,
+    trigger: CODE_EDIT_TRIGGER,
     note: opts.note?.slice(0, 500) || null,
     actor: opts.actor,
     actorLoginId: opts.actorLoginId ?? null,
     code: {
-      source: tree,
+      source: { entry: before.entry, files: was },
       draft: null,
       manifest: app.manifest,
       publishedBuild: null,
       codeEdit: {
-        changed: changedFiles(tree, opts.after),
+        changed,
         ...(app.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
-        ...(opts.undo ? { undo: opts.undo } : {}),
+        ...(opts.undoOf ? { undoOf: opts.undoOf } : {}),
       },
     },
-    sourceHash: codeHash(tree),
+    sourceHash: codeHash(was),
   });
+  return row.id;
 }
 
 /**
- * Keep the app's code-tool rows as one window, the newest of them: up to
- * APP_CODE_EDIT_KEEP write rows (`pre_code_edit`; an undo's row does not
- * count), only undo rows newer than the oldest write row kept, and within
- * APP_CODE_EDIT_MAX_BYTES of code in all (the newest row always stays).
- * One statement ranked by seq over both triggers, so what stays is an
- * unbroken run: undoDraftFile's chain never meets a hole a prune made.
- * Under the app's history lock, after the write has committed: a failure
- * is logged, never the call's error (the write stands).
+ * Keep the app's newest APP_CODE_EDIT_KEEP code-tool rows, within
+ * APP_CODE_EDIT_MAX_BYTES of kept text (the newest always stays), in one
+ * ranked statement under the app's history lock, after the write has
+ * committed: a failure is logged, never the call's error (the write stands).
  */
 async function pruneCodeEdits(id: string): Promise<void> {
   try {
@@ -1040,18 +1037,14 @@ async function pruneCodeEdits(id: string): Promise<void> {
       await tx.delete(nodeSnapshots).where(
         sql`${nodeSnapshots.id} in (
           select id from (
-            select id, trigger,
+            select id,
                    row_number() over w as rn,
-                   sum(case when trigger = ${CODE_EDIT_TRIGGER} then 1 else 0 end) over w as edits,
                    sum(coalesce(source_bytes, 0)) over w as cum
               from node_snapshots
-             where node_id = ${id} and trigger in (${CODE_EDIT_TRIGGER}, ${CODE_UNDO_TRIGGER})
+             where node_id = ${id} and trigger = ${CODE_EDIT_TRIGGER}
             window w as (order by seq desc rows between unbounded preceding and current row)
           ) ranked
-          where rn > 1
-            and (edits > ${APP_CODE_EDIT_KEEP}
-                 or (trigger = ${CODE_UNDO_TRIGGER} and edits >= ${APP_CODE_EDIT_KEEP})
-                 or cum > ${APP_CODE_EDIT_MAX_BYTES})
+          where rn > ${APP_CODE_EDIT_KEEP} or (rn > 1 and cum > ${APP_CODE_EDIT_MAX_BYTES})
         )`,
       );
     });
@@ -1067,15 +1060,23 @@ function assertBaseRev(baseRev: string | null | undefined, current: string): voi
   if (baseRev && baseRev !== current) throw new AppDraftRevError(baseRev, current);
 }
 
+/** Write the draft, under the row lock the caller holds. */
+async function writeDraftTree(tx: DbTx, id: string, after: AppSource): Promise<void> {
+  await tx
+    .update(apps)
+    .set({ draftSource: after, draftUpdatedAt: new Date(), draftBuild: null })
+    .where(eq(apps.nodeId, id));
+}
+
 /**
  * Change the draft through `change` (the working tree in, the new tree
  * out), under the row lock: the one write of the code tools, app_file_write,
  * app_file_delete and app_source_set. With `baseRev`, a tree whose revision
  * is another throws AppDraftRevError and nothing is written. `change` may
- * throw: its error is the call's, and nothing is written. Before a real
- * write the tree as it stood goes on the history line (`pre_code_edit`), so
- * code_undo can put a file back. A dry run, or a change that changes
- * nothing, writes nothing. Null when the app is missing or not this owner's.
+ * throw: its error is the call's, and nothing is written. A real write
+ * records what it changed first (its `editId`). A dry run, or a change that
+ * changes nothing, writes nothing. Null when the app is missing or not
+ * this owner's.
  */
 export async function changeDraftSource(
   ownerId: string,
@@ -1093,134 +1094,102 @@ export async function changeDraftSource(
     assertSourceWithinLimits(after);
     const rev = sourceRev(after);
     if (opts.dryRun || rev === beforeRev) {
-      return { before, after, beforeRev, rev, written: false };
+      return { before, after, beforeRev, rev, written: false, editId: null };
     }
-    await recordCodeEdit(tx, ownerId, id, app, { ...opts, after });
-    await tx
-      .update(apps)
-      .set({ draftSource: after, draftUpdatedAt: new Date(), draftBuild: null })
-      .where(eq(apps.nodeId, id));
-    return { before, after, beforeRev, rev, written: true };
+    const editId = await recordCodeEdit(tx, ownerId, id, app, before, after, opts);
+    await writeDraftTree(tx, id, after);
+    return { before, after, beforeRev, rev, written: true, editId };
   });
   if (res?.written) await pruneCodeEdits(id);
   return res;
 }
 
 /**
- * Put one file back as it was before the last write that changed it, read
- * from the `pre_code_edit` rows. The undo is a write too: it records its own
- * row first (`codeEdit.undo`: the file and the row it went back to), so what
- * it replaces stays on the history line, and it takes `baseRev`.
- *
- * Which row: the newest write row (not an undo's) whose text of `path`
- * differs from the draft's (a row an edit of another file took holds the
- * same text, and is passed over), older than the cursor. The cursor is the
- * row the last undo of this file went back to, while nothing changed the
- * file since (each newer row and the draft hold the text it put back): so
- * undo after undo walks further back and never swings between two texts.
- * A file the row did not hold is removed (never the entry). Code taken
- * while the app ran at team rules brings the author ceiling back to team,
- * as a snapshot restore does. Throws AppUndoEmptyError when there is no
- * such row. Null when the app is missing or not this owner's.
+ * Take back one code-tool write: `editId` names it, or, with only `path`,
+ * the newest kept write that changed that file. Every file it changed (only
+ * `path` when both are given) goes back to its text before the write,
+ * removed when the write created it, and only if each is still exactly as
+ * that write left it (its hash): else AppUndoStaleError and nothing is
+ * written, so later work (another write, the editor, an import, a restore)
+ * is never replaced. The undo is a write too, with its own `editId`:
+ * undoing it puts the change back. Code taken while the app ran at team
+ * rules brings the author ceiling back to team, as a snapshot restore does.
+ * Null when the app is missing or not this owner's.
  */
-export async function undoDraftFile(
+export async function undoCodeEdit(
   ownerId: string,
   id: string,
-  path: string,
-  opts: CodeEditOpts & { baseRev?: string | null },
-): Promise<(DraftChange & { fromSeq: number; teamRules: boolean }) | null> {
+  opts: CodeEditOpts & { editId?: string | null; path?: string | null; baseRev?: string | null },
+): Promise<(DraftChange & { undid: string; files: string[]; teamRules: boolean }) | null> {
   const res = await db.transaction(async (tx) => {
     const app = await lockAppRow(tx, ownerId, id);
     if (!app) return null;
     const before = app.draft ?? app.source;
     const beforeRev = sourceRev(before);
     assertBaseRev(opts.baseRev, beforeRev);
-    const current = Object.hasOwn(before.files, path) ? before.files[path] : undefined;
-    // Only the one file's text is read from each row, never the whole code.
     const code = nodeSnapshots.code;
-    const rows = await tx
-      .select({
-        seq: nodeSnapshots.seq,
-        present: sql<boolean>`jsonb_exists(${code}->'source'->'files', ${path})`,
-        text: sql<string | null>`${code}->'source'->'files'->>${path}`,
-        undoPath: sql<string | null>`${code}->'codeEdit'->'undo'->>'path'`,
-        changedHas: sql<boolean>`coalesce(jsonb_exists(${code}->'codeEdit'->'changed', ${path}), false)`,
-        changedHash: sql<string | null>`${code}->'codeEdit'->'changed'->>${path}`,
-        undoFrom: sql<number | null>`(${code}->'codeEdit'->'undo'->>'fromSeq')::int`,
-        team: sql<boolean>`coalesce(${code}->'codeEdit'->>'authorLevel' = 'team', false)`,
-      })
+    const path = opts.path ?? null;
+    const [row] = await tx
+      .select({ id: nodeSnapshots.id, code: nodeSnapshots.code })
       .from(nodeSnapshots)
       .where(
         and(
           eq(nodeSnapshots.nodeId, id),
           eq(nodeSnapshots.ownerId, ownerId),
-          inArray(nodeSnapshots.trigger, [...CODE_TOOL_TRIGGERS]),
+          eq(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
+          opts.editId
+            ? eq(nodeSnapshots.id, opts.editId)
+            : sql`jsonb_exists(${code}->'codeEdit'->'changed', ${path ?? ''})`,
         ),
       )
-      .orderBy(desc(nodeSnapshots.seq));
-    const textOf = (r: (typeof rows)[number]) => (r.present ? (r.text ?? '') : undefined);
-    let cursor = Number.POSITIVE_INFINITY;
-    const lastUndo = rows.findIndex((r) => r.undoPath === path && r.undoFrom !== null);
-    if (lastUndo !== -1) {
-      const from = rows[lastUndo]!.undoFrom!;
-      const back = rows.find((r) => r.seq === from);
-      const put = back ? textOf(back) : current;
-      const unchanged = current === put && rows.slice(0, lastUndo).every((r) => textOf(r) === put);
-      if (unchanged) cursor = from;
+      .orderBy(desc(nodeSnapshots.seq))
+      .limit(1);
+    const changed = row?.code?.codeEdit?.changed;
+    if (!row || !changed) {
+      throw new AppUndoEmptyError(opts.editId ? { editId: opts.editId } : { path: path ?? '' });
     }
-    const hitAt = rows.findIndex(
-      (r) => r.undoPath === null && r.seq < cursor && textOf(r) !== current,
-    );
-    const hit = rows[hitAt];
-    if (!hit) throw new AppUndoEmptyError(path);
-    // From the hit to now, the file's text must chain: what each write
-    // left it as (its `changed` mark, else the text it found) is what the
-    // next write found, and the newest left it as the draft holds it. A gap
-    // is a change made outside the code tools (the editor, an import, a
-    // restore), which no row holds: the undo would replace it, so it is
-    // refused, base_rev or not. Changes to other files do not count.
-    for (let k = 0; k <= hitAt; k++) {
-      const r = rows[k]!;
-      const left = r.changedHas ? r.changedHash : fileHash(textOf(r));
-      const next = fileHash(k === 0 ? current : textOf(rows[k - 1]!));
-      if (left !== next) throw new AppUndoUntrackedError(path);
+    if (path !== null && !Object.hasOwn(changed, path)) {
+      throw new AppUndoEmptyError({ path });
     }
-    const files = { ...before.files };
-    const restored = textOf(hit);
-    if (restored !== undefined) files[path] = restored;
-    else {
-      if (path === before.entry) throw new AppUndoEntryError(path);
-      delete files[path];
+    const files = path !== null ? [path] : Object.keys(changed).sort();
+    const was = row.code!.source.files;
+    const next = { ...before.files };
+    for (const p of files) {
+      const now = Object.hasOwn(before.files, p) ? before.files[p] : undefined;
+      if (fileHash(now) !== changed[p]) throw new AppUndoStaleError(p);
+      if (Object.hasOwn(was, p)) next[p] = was[p]!;
+      else {
+        if (p === before.entry) throw new AppUndoEntryError(p);
+        delete next[p];
+      }
     }
-    const after: AppSource = { entry: before.entry, files };
+    const after: AppSource = { entry: before.entry, files: next };
     assertSourceWithinLimits(after);
-    const rev = sourceRev(after);
-    await recordCodeEdit(tx, ownerId, id, app, {
+    const editId = await recordCodeEdit(tx, ownerId, id, app, before, after, {
       ...opts,
-      note: `code_undo ${path}`,
-      after,
-      undo: { path, fromSeq: hit.seq },
+      note: `code_undo ${row.id}`,
+      undoOf: row.id,
     });
     // The author ceiling first, in the same transaction (restoreAppSnapshot's
     // rule): only an admin's own "trust its tools" lifts it again.
-    if (hit.team && app.authorLevel !== 'team') {
+    const teamRules = row.code?.codeEdit?.authorLevel === 'team';
+    if (teamRules && app.authorLevel !== 'team') {
       await tx
         .update(apps)
         .set({ authorLevel: 'team', updatedAt: new Date() })
         .where(eq(apps.nodeId, id));
     }
-    await tx
-      .update(apps)
-      .set({ draftSource: after, draftUpdatedAt: new Date(), draftBuild: null })
-      .where(eq(apps.nodeId, id));
+    await writeDraftTree(tx, id, after);
     return {
       before,
       after,
       beforeRev,
-      rev,
+      rev: sourceRev(after),
       written: true,
-      fromSeq: hit.seq,
-      teamRules: hit.team,
+      editId,
+      undid: row.id,
+      files,
+      teamRules,
     };
   });
   if (res) await pruneCodeEdits(id);

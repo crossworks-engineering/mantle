@@ -20,7 +20,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
-import { and, desc, eq, gte, isNotNull, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
 import {
   appDatabases,
   apps,
@@ -38,7 +38,7 @@ import { defineDomainError } from '@mantle/std';
 import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
 import {
   AppRestoreDraftError,
-  CODE_TOOL_TRIGGERS,
+  CODE_EDIT_TRIGGER,
   restoreAppDraft,
   restoreAppLive,
   type AppHistoryActor,
@@ -555,7 +555,7 @@ export async function listAppSnapshots(
         eq(nodeSnapshots.ownerId, ownerId),
         // The code tools' undo stack (apps.ts changeDraftSource) is not a
         // version anyone picks: code_undo reads it, the list leaves it out.
-        notInArray(nodeSnapshots.trigger, [...CODE_TOOL_TRIGGERS]),
+        ne(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
       ),
     )
     .orderBy(desc(nodeSnapshots.seq))
@@ -583,7 +583,7 @@ export async function getAppSnapshot(
         eq(nodeSnapshots.ownerId, ownerId),
         // The code tools' rows are code_undo's alone: no restore, note or
         // delete by id reaches them (as the list leaves them out).
-        notInArray(nodeSnapshots.trigger, [...CODE_TOOL_TRIGGERS]),
+        ne(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
       ),
     )
     .limit(1);
@@ -633,7 +633,7 @@ export async function setAppSnapshotNote(
         eq(nodeSnapshots.id, snapshotId),
         eq(nodeSnapshots.nodeId, appId),
         eq(nodeSnapshots.ownerId, ownerId),
-        notInArray(nodeSnapshots.trigger, [...CODE_TOOL_TRIGGERS]),
+        ne(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
       ),
     )
     .returning({ id: nodeSnapshots.id });
