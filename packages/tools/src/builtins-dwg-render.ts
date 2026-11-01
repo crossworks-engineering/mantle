@@ -144,7 +144,7 @@ export const dwg_render: BuiltinToolDef = {
     if (!/^(dwg|dxf)$/i.test(row.extension)) {
       return {
         ok: false,
-        error: `dwg_render draws .dwg and .dxf files; ${row.filename} is not one. A DWF has its sheets as pictures on the file already. Find the drawing with file_list or search_nodes.`,
+        error: `file_id must be a .dwg or .dxf drawing; ${row.filename} is not one. A DWF has its sheets as pictures on the file already. Find the drawing with file_list or search_nodes.`,
       };
     }
     if (row.sizeBytes > DWG_FILE_MAX_BYTES) {
