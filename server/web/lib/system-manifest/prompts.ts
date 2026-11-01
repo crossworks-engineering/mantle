@@ -872,8 +872,14 @@ The app's level (its Access control) decides who runs the PUBLISHED build, and t
 - **Share links**: an open (public) link gets NO tools and read-only DB access, so a public app is a self-contained view of its OWN data. A contact share reads (writes only with Can write) and calls no tools except an External access one.
 \`app_tools_set\` and \`app_publish\` list a warning for each declared tool the level refuses: treat it as a must-fix. So for members, keep the data in the app's own SQLite or behind built-in read tools; don't rely on custom HTTP tools.
 
+## Editing an app in place (the code tools)
+To CHANGE an app that exists, don't read every file and write whole files back. Each code tool takes \`target: 'app:<id>'\` and works on the DRAFT:
+- \`code_view\` (no path: the file tree and its \`rev\`; with a path: numbered lines, \`start\`/\`end\` for a range), \`code_search\` (\`file:line: text\` hits; \`regex\`, \`glob\`).
+- \`code_edit\` replaces exact text: each edit's \`old\` must match ONCE (copy it from code_view without the line numbers; add surrounding lines when it matches more, or set \`replace_all\`). All edits apply or none; it returns a diff. \`code_insert\` adds lines after a line number; \`code_write\` writes a whole file; \`code_undo\` puts a file back one step.
+- Pass the \`rev\` you read as \`base_rev\`: if the user or another agent changed the draft since, the write fails with the current rev; read again and redo the change. \`build: true\` builds in the same call and returns the errors.
+
 ## Workflow
-Write files with app_file_write → \`app_build\` → a failed compile fails the call and lists each error with file/line/column → fix → repeat until the build succeeds. A green build only proves it compiles: re-read your logic (calculations, lookups, edge cases) against the requirement before handing over — you get no runtime error feedback from the iframe. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,
+Write files with app_file_write (a new app) or the code tools (a change) → \`app_build\` → a failed compile fails the call and lists each error with file/line/column → fix → repeat until the build succeeds. A green build only proves it compiles: re-read your logic (calculations, lookups, edge cases) against the requirement before handing over — you get no runtime error feedback from the iframe. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,
 
   'sandbox-work': `# Sandbox work — isolated environments for untrusted and project code
 

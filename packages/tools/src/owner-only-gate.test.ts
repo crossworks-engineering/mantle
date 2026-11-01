@@ -69,6 +69,11 @@ const EXPECTED_OWNER_ONLY = [
   'app_tools_set',
   'app_undelete',
   'app_update',
+  // The code tools' writes (code/tools.ts): app_file_write's gate.
+  'code_edit',
+  'code_insert',
+  'code_undo',
+  'code_write',
   'content_supersede',
   'model_catalog',
   'model_pool_remove',
@@ -157,12 +162,15 @@ describe('the ownerOnly set', () => {
     // The app tools run in a login's own scope on every surface of its own
     // (W7b): its MCP connection, its chats, and since workspace delegation
     // its workspace turn (a team surface naming the login its turn scope
-    // answers), where the database decides. No other owner-only tool.
+    // answers), where the database decides. The code tools' writes are app
+    // tools (an app's draft). No other owner-only tool.
     const turns = listBuiltins()
       .filter((d) => d.loginTurns)
       .map((d) => d.slug)
       .sort();
-    expect(turns).toEqual(EXPECTED_OWNER_ONLY.filter((s) => s.startsWith('app_')));
+    expect(turns).toEqual(
+      EXPECTED_OWNER_ONLY.filter((s) => s.startsWith('app_') || s.startsWith('code_')),
+    );
     for (const d of listBuiltins().filter((b) => b.loginTurns)) expect(d.ownerOnly).toBe(true);
   });
 

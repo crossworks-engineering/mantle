@@ -55,8 +55,9 @@ export type ToolItemArg = Readonly<{
   param: string;
   /** How it names the item: `id`, its node id (default); `recall-map`, a
    *  Recall map by its slug, a former slug or its id; `recall-revision`, a
-   *  Recall revision's id, whose map is the item. */
-  by?: 'id' | 'recall-map' | 'recall-revision';
+   *  Recall revision's id, whose map is the item; `code-target`, a code
+   *  tool's target (`app:<id>` names the app, code/target-ref.ts). */
+  by?: 'id' | 'recall-map' | 'recall-revision' | 'code-target';
   /** The least the run asks of the item in every case, so the least the
    *  queue-time check may refuse for: `change` (default), an edit or a
    *  manage; `read`, a source it only reads, or a write whose need depends

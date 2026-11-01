@@ -27,6 +27,7 @@ import {
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { editCheckRefusalError, mapAccessError, UUID_RE } from '@mantle/std';
 import { namedToolPolicy, type ToolItemArg } from './tool-policy';
+import { appIdOfCodeTarget } from './code/target-ref';
 
 /** The item arguments a builtin (or an owner MCP surface tool) declares. */
 export function itemArgsOf(builtin: string): readonly ToolItemArg[] {
@@ -48,6 +49,12 @@ function nodeId(ref: string): string | null {
   return UUID_RE.test(id) ? id : null;
 }
 
+/** The node an argument names by its input alone: its id, or the app a
+ *  code target names. */
+function inputNodeId(arg: ToolItemArg, ref: string): string | null {
+  return arg.by === 'code-target' ? appIdOfCodeTarget(ref) : nodeId(ref);
+}
+
 /** Whether an argument names its item by something the database resolves. */
 function resolved(arg: ToolItemArg): boolean {
   return arg.by === 'recall-map' || arg.by === 'recall-revision';
@@ -62,7 +69,7 @@ export function idArgTargets(
   for (const arg of args) {
     if (resolved(arg)) continue;
     for (const ref of refsOf(arg, input)) {
-      const id = nodeId(ref);
+      const id = inputNodeId(arg, ref);
       if (id) out.push(id);
     }
   }
@@ -90,7 +97,7 @@ async function resolveRef(arg: ToolItemArg, ref: string, ownerId: string): Promi
       .limit(1);
     return row?.node ?? null;
   }
-  return nodeId(ref);
+  return inputNodeId(arg, ref);
 }
 
 /** Whether the audit needs the database for a call's targets. */

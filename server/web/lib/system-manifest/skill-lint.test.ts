@@ -28,6 +28,8 @@ const SLUG_SHAPE = /^[a-z][a-z0-9]*(_[a-z0-9]+)+$/;
 const NOT_A_TOOL_SLUG = new Set<string>([
   // Tool param / result fields the skills teach by name
   'node_id', // common node-id param (tool_grounding)
+  'base_rev', // the code tools' revision check param (app_authoring)
+  'replace_all', // code_edit's edit flag (app_authoring)
   'block_id', // page block tools' target param (page_editing)
   'created_ids', // page_blocks_apply result field, batch chaining (page_editing)
   'deleted_ids', // page_blocks_apply result field, batch chaining (page_editing)

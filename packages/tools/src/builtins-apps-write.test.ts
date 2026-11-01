@@ -9,7 +9,7 @@
  *
  *  - `app_source_set` replaces the WHOLE draft tree. An entry path that is not
  *    among the files would save a tree that can never build, so that check
- *    has to run before saveDraftSource and not after.
+ *    has to run before changeDraftSource and not after.
  *  - `app_tools_set` IS the runtime allowlist for host.tools.call. A slug the
  *    owner does not have must fail the whole call rather than be dropped, or
  *    the app ships declaring a capability that silently never resolves.
@@ -28,8 +28,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
   return {
     ...actual,
     createApp: vi.fn(),
-    writeDraftFile: vi.fn(),
-    saveDraftSource: vi.fn(),
+    changeDraftSource: vi.fn(),
     setManifest: vi.fn(),
     updateAppMeta: vi.fn(),
     notifyAppNavChanged: vi.fn(),
@@ -48,8 +47,8 @@ vi.mock('./resolve', () => ({ resolveTool: vi.fn(), resolveTools: vi.fn() }));
 
 import {
   createApp,
-  writeDraftFile,
-  saveDraftSource,
+  changeDraftSource,
+  AppDraftRevError,
   setManifest,
   updateAppMeta,
   AppSourceLimitError,
@@ -93,11 +92,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   // clearAllMocks clears CALLS, not implementations: re-set every default.
   vi.mocked(createApp).mockResolvedValue(NEW_APP as never);
-  vi.mocked(writeDraftFile).mockResolvedValue({
-    entry: 'App.tsx',
-    files: { 'App.tsx': 'a', 'lib/fmt.ts': 'b' },
-  } as never);
-  vi.mocked(saveDraftSource).mockResolvedValue(true as never);
+  // The one draft write: the change runs over the tree as it stands.
+  vi.mocked(changeDraftSource).mockImplementation(async (_o, _id, change) => {
+    const before = { entry: 'App.tsx', files: { 'App.tsx': 'a' } };
+    return { before, after: change(before), beforeRev: 'r0', rev: 'r1', written: true };
+  });
   vi.mocked(setManifest).mockResolvedValue({ toolSlugs: [] } as never);
   vi.mocked(resolveTool).mockResolvedValue({ slug: 'x' } as never);
   vi.mocked(createAppTableExport).mockResolvedValue({
@@ -159,7 +158,7 @@ describe('app_file_write', () => {
     expect(errorOf(await fileWrite.handler({ path: 'App.tsx', content: 'x' }, ctx))).toMatch(
       /id and path are required/,
     );
-    expect(writeDraftFile).not.toHaveBeenCalled();
+    expect(changeDraftSource).not.toHaveBeenCalled();
   });
 
   it('writes the file into the DRAFT under the caller and reports the tree size', async () => {
@@ -167,24 +166,35 @@ describe('app_file_write', () => {
       { id: APP_ID, path: ' lib/fmt.ts ', content: 'export const x = 1;' },
       ctx,
     );
-    expect(writeDraftFile).toHaveBeenCalledWith('o1', APP_ID, 'lib/fmt.ts', 'export const x = 1;');
+    expect(changeDraftSource).toHaveBeenCalledWith(
+      'o1',
+      APP_ID,
+      expect.any(Function),
+      expect.objectContaining({ actor: 'agent', note: 'app_file_write lib/fmt.ts' }),
+    );
+    const change = vi.mocked(changeDraftSource).mock.calls[0]![2];
+    expect(change({ entry: 'App.tsx', files: { 'App.tsx': 'a' } }).files).toEqual({
+      'App.tsx': 'a',
+      'lib/fmt.ts': 'export const x = 1;',
+    });
     expect(outputOf(res)).toMatchObject({
       id: APP_ID,
       path: 'lib/fmt.ts',
+      rev: 'r1',
       file_count: 2,
       draft_saved: true,
     });
   });
 
   it('reports a missing app rather than a silent no-op', async () => {
-    vi.mocked(writeDraftFile).mockResolvedValue(null as never);
+    vi.mocked(changeDraftSource).mockResolvedValue(null as never);
     expect(
       errorOf(await fileWrite.handler({ id: APP_ID, path: 'a.ts', content: '' }, ctx)),
     ).toMatch(/not found/);
   });
 
   it('surfaces the size-limit refusal with its reason intact', async () => {
-    vi.mocked(writeDraftFile).mockRejectedValue(
+    vi.mocked(changeDraftSource).mockRejectedValue(
       new AppSourceLimitError('file too large (300000 bytes; max 262144)'),
     );
     expect(
@@ -203,7 +213,7 @@ describe('app_source_set', () => {
     expect(errorOf(await sourceSet.handler({ id: APP_ID, files }, ctx))).toMatch(
       /entry is required/,
     );
-    expect(saveDraftSource).not.toHaveBeenCalled();
+    expect(changeDraftSource).not.toHaveBeenCalled();
   });
 
   it('refuses a files value that is not a path map', async () => {
@@ -213,7 +223,7 @@ describe('app_source_set', () => {
     expect(
       errorOf(await sourceSet.handler({ id: APP_ID, entry: 'App.tsx', files: 'App.tsx' }, ctx)),
     ).toMatch(/files must be an object/);
-    expect(saveDraftSource).not.toHaveBeenCalled();
+    expect(changeDraftSource).not.toHaveBeenCalled();
   });
 
   it('refuses a file whose contents are not a string, naming the file', async () => {
@@ -222,7 +232,7 @@ describe('app_source_set', () => {
       ctx,
     );
     expect(errorOf(res)).toMatch(/'data\.json' contents must be a string/);
-    expect(saveDraftSource).not.toHaveBeenCalled();
+    expect(changeDraftSource).not.toHaveBeenCalled();
   });
 
   it('refuses an entry that is not among the files, listing what IS there', async () => {
@@ -230,29 +240,49 @@ describe('app_source_set', () => {
     const res = await sourceSet.handler({ id: APP_ID, entry: 'Main.tsx', files }, ctx);
     expect(errorOf(res)).toMatch(/entry 'Main\.tsx' must be one of the files/);
     expect(errorOf(res)).toMatch(/App\.tsx, util\.ts/);
-    expect(saveDraftSource).not.toHaveBeenCalled();
+    expect(changeDraftSource).not.toHaveBeenCalled();
   });
 
   it('replaces the whole draft tree under the caller', async () => {
     const res = await sourceSet.handler({ id: APP_ID, entry: ' App.tsx ', files }, ctx);
-    expect(saveDraftSource).toHaveBeenCalledWith('o1', APP_ID, { entry: 'App.tsx', files });
+    expect(changeDraftSource).toHaveBeenCalledWith(
+      'o1',
+      APP_ID,
+      expect.any(Function),
+      expect.objectContaining({ baseRev: null, note: 'app_source_set' }),
+    );
+    const change = vi.mocked(changeDraftSource).mock.calls[0]![2];
+    expect(change({ entry: 'Old.tsx', files: { 'Old.tsx': 'x' } })).toEqual({
+      entry: 'App.tsx',
+      files,
+    });
     expect(outputOf(res)).toMatchObject({
       id: APP_ID,
       entry: 'App.tsx',
+      rev: 'r1',
       file_count: 2,
       draft_saved: true,
     });
   });
 
+  it('passes base_rev, and a stale one fails with the current rev', async () => {
+    vi.mocked(changeDraftSource).mockRejectedValue(new AppDraftRevError('aaaa', 'bbbb'));
+    const err = errorOf(
+      await sourceSet.handler({ id: APP_ID, entry: 'App.tsx', files, base_rev: 'aaaa' }, ctx),
+    );
+    expect(vi.mocked(changeDraftSource).mock.calls[0]![3]).toMatchObject({ baseRev: 'aaaa' });
+    expect(err).toMatch(/changed since rev aaaa: it is rev bbbb now/);
+  });
+
   it('reports a missing app as a failure', async () => {
-    vi.mocked(saveDraftSource).mockResolvedValue(false as never);
+    vi.mocked(changeDraftSource).mockResolvedValue(null as never);
     expect(errorOf(await sourceSet.handler({ id: APP_ID, entry: 'App.tsx', files }, ctx))).toMatch(
       /not found/,
     );
   });
 
   it('surfaces the size-limit refusal with its reason intact', async () => {
-    vi.mocked(saveDraftSource).mockRejectedValue(
+    vi.mocked(changeDraftSource).mockRejectedValue(
       new AppSourceLimitError('too many files (51; max 50)'),
     );
     expect(errorOf(await sourceSet.handler({ id: APP_ID, entry: 'App.tsx', files }, ctx))).toMatch(

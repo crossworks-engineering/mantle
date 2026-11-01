@@ -20,7 +20,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
-import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
 import {
   appDatabases,
   apps,
@@ -38,6 +38,7 @@ import { defineDomainError } from '@mantle/std';
 import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
 import {
   AppRestoreDraftError,
+  CODE_EDIT_TRIGGER,
   restoreAppDraft,
   restoreAppLive,
   type AppHistoryActor,
@@ -548,7 +549,15 @@ export async function listAppSnapshots(
   const rows = await db
     .select(summaryCols)
     .from(nodeSnapshots)
-    .where(and(eq(nodeSnapshots.nodeId, appId), eq(nodeSnapshots.ownerId, ownerId)))
+    .where(
+      and(
+        eq(nodeSnapshots.nodeId, appId),
+        eq(nodeSnapshots.ownerId, ownerId),
+        // The code tools' undo stack (apps.ts changeDraftSource) is not a
+        // version anyone picks: code_undo reads it, the list leaves it out.
+        ne(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
+      ),
+    )
     .orderBy(desc(nodeSnapshots.seq))
     .limit(Math.min(Math.max(opts.limit ?? 100, 1), 500));
   return rows.map(toSummary);

@@ -1,0 +1,18 @@
+/**
+ * A code tool's `target` argument, read without a store: `app:<id>` (an app's
+ * draft source tree), or a bare app id. A leaf (no import of a builtin), so
+ * the gate's readers of a call's arguments (item-args.ts, the client-sourced
+ * rule, the author ceiling) read the app a target names the same way the
+ * tools do. A target of another kind (a later `sandbox:<name>`) names no app.
+ */
+import { UUID_RE } from '@mantle/std';
+
+export const APP_TARGET_PREFIX = 'app:';
+
+/** The app id a target names (lower case), or null when it names none. */
+export function appIdOfCodeTarget(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  const id = v.startsWith(APP_TARGET_PREFIX) ? v.slice(APP_TARGET_PREFIX.length).trim() : v;
+  return UUID_RE.test(id) ? id : null;
+}

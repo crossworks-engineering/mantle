@@ -43,6 +43,9 @@ export type ClientSourcedWriteRule = Readonly<{
   /** Input fields naming apps by id: the app and the brain tables it
    *  exports (app-table-exports.ts). */
   apps?: readonly string[];
+  /** Input fields naming an app by a code target (`app:<id>`, the code
+   *  tools): the app, as `apps`. A target that names no app waits. */
+  appTargets?: readonly string[];
   /** Node ids it writes that depend on another field (a source it
    *  supersedes). */
   extraNodes?: (input: Input) => unknown[];
@@ -72,6 +75,8 @@ export const CS = Object.freeze({
   }),
   /** A write into the app its `id` names (and the tables it exports). */
   onApp: Object.freeze({ kind: 'write', apps: ['id'] }) as ClientSourcedWriteRule,
+  /** A write into the app its code `target` names (the code tools). */
+  onCodeTarget: Object.freeze({ kind: 'write', appTargets: ['target'] }) as ClientSourcedWriteRule,
   /** The call overwrites an existing file named by its path. */
   overwrites: (input: Input): boolean => isTrue(input.overwrite),
   /** The source a call supersedes, when it asks to (`supersede_source`). */

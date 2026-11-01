@@ -97,6 +97,8 @@ const onNodes = (...fields: string[]): Extract<MainRule, { kind: 'write' }> => (
 const creates = (...parentFields: string[]) =>
   ({ kind: 'write', nodes: parentFields, creates: true }) as const;
 const onApp = { kind: 'write', apps: ['id'] } as const;
+/** The code tools name their app by a target (`app:<id>`). */
+const onCodeTarget = { kind: 'write', appTargets: ['target'] } as const;
 const isTrue = (v: unknown) => v === true || v === 'true';
 const overwrites = (input: Input) => isTrue(input.overwrite);
 const supersedes = (field: string) => (input: Input) =>
@@ -254,6 +256,11 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   app_table_export_remove: onApp,
   app_snapshot_create: onApp,
   app_snapshot_restore: onApp,
+  // The code tools' writes (code/tools.ts): the app their target names.
+  code_edit: onCodeTarget,
+  code_insert: onCodeTarget,
+  code_write: onCodeTarget,
+  code_undo: onCodeTarget,
   app_snapshot_delete: onApp,
   app_undelete: creates(),
   app_duplicate: onApp,

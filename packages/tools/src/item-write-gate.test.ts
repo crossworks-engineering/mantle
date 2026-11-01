@@ -235,6 +235,10 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ...(['app_file_write', 'app_file_delete', 'app_source_set', 'app_tools_set'] as const).map(
     (slug) => [slug, entry('id', 'manage', APP_CODE)] as const,
   ),
+  // The code tools' writes name the app by their target (`app:<id>`).
+  ...(['code_edit', 'code_insert', 'code_write', 'code_undo'] as const).map(
+    (slug) => [slug, entry('target', 'manage', APP_CODE)] as const,
+  ),
   ['app_snapshot_create', entry('id', 'edit', SNAPSHOTS)],
   ['app_snapshot_delete', entry('id', 'edit', SNAPSHOTS)],
   // Part 3: the last 29. Each library asks the item first (assertItemRight,
@@ -286,8 +290,8 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
 describe('the writes the database checks (the pre-check removal)', () => {
   it('each is a builtin that declares no items now, its item argument one of its own', () => {
     // 72 entries went in Part 1 (69 builtins), the last 29 in Part 3; the
-    // tree's custom order added tree_item_place.
-    expect(DATABASE_CHECKED.size).toBe(102);
+    // tree's custom order added tree_item_place; the code tools four.
+    expect(DATABASE_CHECKED.size).toBe(106);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();
