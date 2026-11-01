@@ -286,7 +286,7 @@ export async function dropReadOnlyRole(_sql: Sql, name: string): Promise<void> {
   const sql = postgres(adminUrl, { max: 1, onnotice: () => {} });
   try {
     await withRoleRetry(() => sql.unsafe(`drop owned by "${name}"`));
-    await sql.unsafe(`drop role if exists "${name}"`);
+    await withRoleRetry(() => sql.unsafe(`drop role if exists "${name}"`));
   } finally {
     await sql.end();
   }

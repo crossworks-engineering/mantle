@@ -380,14 +380,22 @@ export async function runRoleStatement(
 
 /** Two processes setting the same (cluster-wide) role at once make Postgres
  *  answer "tuple concurrently updated" (XX000) to one of them: parallel DB
- *  test files do exactly that. The statements are idempotent, so try again. */
+ *  test files do exactly that. Two that each change many catalog rows, in a
+ *  different order (a REVOKE on all tables, a DROP OWNED), can instead answer
+ *  "deadlock detected" (40P01) to one of them, whose statement is rolled back.
+ *  One that walks every table can meet a table another process just dropped:
+ *  "cache lookup failed for relation", or "tuple concurrently deleted". The
+ *  statements are idempotent, so try again. */
+const ROLE_RACE =
+  /tuple concurrently (?:updated|deleted)|deadlock detected|cache lookup failed for relation/;
+
 export async function withRoleRetry<T>(fn: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await fn();
     } catch (err) {
       const msg = errorMessage(err);
-      if (attempt >= 12 || !/tuple concurrently updated/.test(msg)) throw err;
+      if (attempt >= 12 || !ROLE_RACE.test(msg)) throw err;
       // Jittered: colliding callers retrying in step collide again (48
       // parallel test files hit five attempts of fixed backoff).
       await new Promise((r) => setTimeout(r, 20 + Math.random() * 60 * attempt));

@@ -521,9 +521,9 @@ describe.skipIf(!URL)('the image check store', () => {
     const counter = { n: 0 };
     const run = async (deps: import('./verify').VerifyDeps) => {
       const r = await verifyCircuit(anchor, { circuit, kinds: ['end'] }, deps);
-      return (
-        (r as unknown as { output?: { not_asked?: { why: string }[] } }).output?.not_asked ?? []
-      );
+      // A refusal or an empty result names itself here, not as an empty list.
+      expect(r).toMatchObject({ ok: true, output: { not_asked: expect.any(Array) } });
+      return (r as unknown as { output: { not_asked: { why: string }[] } }).output.not_asked;
     };
     // The parser could not crop the drawing.
     const old = await run(
