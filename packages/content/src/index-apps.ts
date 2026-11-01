@@ -94,6 +94,7 @@ export {
   sourceRev,
   AppDraftRevError,
   AppUndoEmptyError,
+  AppUndoEntryError,
   CODE_EDIT_TRIGGER,
   APP_CODE_EDIT_KEEP,
   type DraftChange,

@@ -8,6 +8,10 @@
 import { Worker } from 'node:worker_threads';
 
 export const REGEX_TIMEOUT_MS = 3000;
+/** Regex searches running at once in this process; more wait their turn. */
+export const REGEX_WORKERS_MAX = 2;
+/** Searches waiting for a worker; past this a search is refused. */
+const REGEX_QUEUE_MAX = 16;
 /** A hit's line is cut to this many characters. */
 export const HIT_TEXT_MAX = 200;
 
@@ -40,7 +44,8 @@ function runSearch(job: Job): SearchHits {
     const lines = text.split('\n');
     let inFile = false;
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]!;
+      const raw = lines[i]!;
+      const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
       const hit = re
         ? re.test(line)
         : (job.ignoreCase ? line.toLowerCase() : line).includes(needle);
@@ -89,8 +94,48 @@ export async function searchFiles(
       error: `pattern is not a valid regular expression (${(err as Error).message}). Fix it, or search the plain text with regex false`,
     };
   }
+  if (!(await takeWorker())) {
+    return {
+      error:
+        'too many regex searches are running on this brain: try again in a few seconds, or search the plain text with regex false',
+    };
+  }
+  try {
+    return await runInWorker(job);
+  } finally {
+    releaseWorker();
+  }
+}
+
+let running = 0;
+const waiting: (() => void)[] = [];
+
+/** A worker slot: at once when one is free, else in line (false when the
+ *  line is full). */
+async function takeWorker(): Promise<boolean> {
+  if (running < REGEX_WORKERS_MAX) {
+    running++;
+    return true;
+  }
+  if (waiting.length >= REGEX_QUEUE_MAX) return false;
+  await new Promise<void>((go) => waiting.push(go));
+  return true;
+}
+
+function releaseWorker(): void {
+  const go = waiting.shift();
+  if (go) go();
+  else running--;
+}
+
+/** One search in a fresh worker, ended at the timeout or when it answers. */
+function runInWorker(job: Job): Promise<SearchHits | { error: string }> {
   return new Promise((resolve) => {
-    const worker = new Worker(WORKER_SRC, { eval: true, workerData: job });
+    const worker = new Worker(WORKER_SRC, {
+      eval: true,
+      workerData: job,
+      resourceLimits: { maxOldGenerationSizeMb: 256 },
+    });
     const timer = setTimeout(() => {
       void worker.terminate();
       resolve({
@@ -104,6 +149,7 @@ export async function searchFiles(
     });
     worker.once('error', (err: Error) => {
       clearTimeout(timer);
+      void worker.terminate();
       resolve({ error: `the search failed: ${err.message}` });
     });
   });

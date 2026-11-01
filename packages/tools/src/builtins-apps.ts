@@ -92,6 +92,7 @@ import {
 import { appAuthorSummary } from './publish-summary';
 import { CS } from './client-sourced-rule';
 import { scopeOutsideAdmin } from './outside-admin';
+import { normCodePath } from './code/target-ref';
 
 /**
  * This file's one system door: the trash of deleted apps (their
@@ -420,7 +421,7 @@ const app_file_write: BuiltinToolDef = {
     const refused = ownerOnlyRefusal(ctx);
     if (refused) return refused;
     const id = str(input.id).trim();
-    const path = str(input.path).trim();
+    const path = normCodePath(input.path);
     if (!id || !path) return { ok: false, error: 'id and path are required' };
     const content = str(input.content);
     try {
@@ -430,7 +431,11 @@ const app_file_write: BuiltinToolDef = {
         ctx.ownerId,
         id,
         (tree) => ({ entry: tree.entry, files: { ...tree.files, [path]: content } }),
-        { actor: historyActor(ctx), note: `app_file_write ${path}` },
+        {
+          actor: historyActor(ctx),
+          actorLoginId: actingLoginId(ctx.surface),
+          note: `app_file_write ${path}`,
+        },
       );
       if (!res) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, path, bytes: Buffer.byteLength(content, 'utf8') });
@@ -484,19 +489,26 @@ const app_file_delete: BuiltinToolDef = {
     const refused = ownerOnlyRefusal(ctx);
     if (refused) return refused;
     const id = str(input.id).trim();
-    const path = str(input.path).trim();
+    const path = normCodePath(input.path);
     if (!id || !path) return { ok: false, error: 'id and path are required' };
     try {
       const res = await changeDraftSource(
         ctx.ownerId,
         id,
         (tree) => {
-          if (path === tree.entry) throw new CannotDeleteEntryError();
+          // A key written before the one path rule (`./x.ts`) still goes.
+          const raw = str(input.path).trim();
+          const key = Object.hasOwn(tree.files, raw) ? raw : path;
+          if (key === tree.entry) throw new CannotDeleteEntryError();
           const files = { ...tree.files };
-          delete files[path];
+          delete files[key];
           return { entry: tree.entry, files };
         },
-        { actor: historyActor(ctx), note: `app_file_delete ${path}` },
+        {
+          actor: historyActor(ctx),
+          actorLoginId: actingLoginId(ctx.surface),
+          note: `app_file_delete ${path}`,
+        },
       );
       if (!res) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, path, deleted: true });
@@ -588,6 +600,7 @@ const app_source_set: BuiltinToolDef = {
     try {
       const res = await changeDraftSource(ctx.ownerId, id, () => ({ entry, files }), {
         actor: historyActor(ctx),
+        actorLoginId: actingLoginId(ctx.surface),
         note: 'app_source_set',
         baseRev: str(input.base_rev).trim() || null,
       });

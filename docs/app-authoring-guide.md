@@ -75,7 +75,7 @@ Anthropic text editor tool and the MCP filesystem server's `edit_file`.
 | `code_edit(target, path, edits[], dry_run?, base_rev?, build?)`  | Each edit is `{ old, new, replace_all? }`. `old` must match exactly once (else the call fails, says how many hits and on which lines). All edits apply or none. Returns a unified diff and the new `rev`. |
 | `code_insert(target, path, after_line, text, base_rev?, build?)` | Adds lines after a line number (0 is the top).                                                                                                                                                            |
 | `code_write(target, path, content, base_rev?, build?)`           | Creates or replaces one whole file (`app_file_write` with the revision check).                                                                                                                            |
-| `code_undo(target, path)`                                        | Puts the file back as it was before the last write that changed it; again to step further back.                                                                                                           |
+| `code_undo(target, path, base_rev?)`                             | Puts the file back as it was before the last write that changed it; again to step further back.                                                                                                           |
 
 - **The revision (`rev`).** Every read and write returns the tree's `rev`.
   Pass it back as `base_rev`: when another agent, the editor or a restore
@@ -87,10 +87,17 @@ Anthropic text editor tool and the MCP filesystem server's `edit_file`.
   (file, line, column). The edit is saved either way; a failed build never
   replaces the last good preview.
 - **Undo.** Every write through these tools, `app_file_write`,
-  `app_file_delete` and `app_source_set` first records the code as it stood
-  on the app's history line (a `pre_code_edit` entry, code only). The newest
-  20 are kept per app, and the History tab leaves them out. `code_undo` reads
-  them; for a whole earlier version use `app_snapshot_restore`.
+  `app_file_delete` and `app_source_set` first records the working tree as
+  it stood on the app's history line (a `pre_code_edit` entry, code only).
+  The newest 20 are kept per app (fewer when they pass 64 MB), and the
+  History tab leaves them out. `code_undo` reads them: each call goes one
+  write further back for that file. An undo is a write too: it records what
+  it replaces and takes `base_rev`, so an edit made in the editor since is
+  not lost unseen. Undoing to code taken while the app ran at team rules
+  puts the app back at team rules, as a snapshot restore does. For a whole
+  earlier version use `app_snapshot_restore`.
+- **Line ends.** A file with CRLF line ends shows with LF in `code_view`;
+  edits and inserts match on that text and keep the file's CRLF.
 - **Access** is the app tools': `code_view` and `code_search` read what
   `app_get` reads; the four writes ask what `app_file_write` asks.
 

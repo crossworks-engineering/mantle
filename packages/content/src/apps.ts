@@ -53,12 +53,15 @@ import { defineDomainError } from '@mantle/std';
 import { notifyAppNavChanged } from './app-nav';
 import { codeHash, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
 import { lockAppHistory } from './app-history-lock';
+import { log } from '@mantle/tracing';
 import type { AppRow, AppDetail, AppTint, HistoryActor } from '@mantle/client-types';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { asKindRootRepair } from './kind-root';
 import { dedupeTags } from './tags';
 import { assertManagesNewItemHome } from './tree/visibility';
 export type { AppRow, AppDetail };
+
+const logApps = log('apps');
 
 export const APPS_ROOT_LABEL = 'apps';
 
@@ -758,6 +761,7 @@ async function lockAppRow(tx: DbTx, ownerId: string, id: string, opts: { newApp?
       draftUpdatedAt: draftColumn<Date>(apps.draftUpdatedAt),
       publishedBuild: apps.publishedBuild,
       restoredFromSeq: apps.restoredFromSeq,
+      authorLevel: apps.authorLevel,
     })
     .from(apps)
     .innerJoin(nodes, eq(nodes.id, apps.nodeId))
@@ -772,6 +776,7 @@ async function lockAppRow(tx: DbTx, ownerId: string, id: string, opts: { newApp?
     draftUpdatedAt: row.draftUpdatedAt ?? null,
     publishedBuild: row.publishedBuild ?? null,
     restoredFromSeq: row.restoredFromSeq ?? null,
+    authorLevel: row.authorLevel === 'team' ? ('team' as const) : ('admin' as const),
   };
 }
 
@@ -849,10 +854,13 @@ export async function writeDraftFile(
 // ── The code tools' draft writes (packages/tools/src/code/) ─────────────────
 
 /** The `node_snapshots.trigger` of the row a code-tool write records first
- *  (0350): the code as it stood, code only. code_undo reads them back. */
+ *  (0350): the working tree as it stood, code only. code_undo reads them. */
 export const CODE_EDIT_TRIGGER = 'pre_code_edit';
 /** The `pre_code_edit` rows kept per app, on their own line. */
 export const APP_CODE_EDIT_KEEP = 20;
+/** And of those only as many as fit in this many bytes of code (the newest
+ *  always stays): a row holds one working tree, up to 50 × 256 KB. */
+export const APP_CODE_EDIT_MAX_BYTES = 64 * 1024 * 1024;
 
 /**
  * The revision of a working tree (the draft, else the published tree): a
@@ -891,7 +899,7 @@ defineDomainError(AppDraftRevError, {
 export class AppUndoEmptyError extends Error {
   constructor(path: string) {
     super(
-      `no earlier text of '${path}' is kept: the code tools keep the last ${APP_CODE_EDIT_KEEP} edits of an app, and this file was not changed by them since. Put back a whole version with app_snapshot_restore (mode 'code') instead`,
+      `no earlier text of '${path}' is kept: the code tools keep the last ${APP_CODE_EDIT_KEEP} writes of an app, and none before this point changed this file. Put back a whole version with app_snapshot_restore (mode 'code') instead`,
     );
     this.name = 'AppUndoEmptyError';
   }
@@ -899,6 +907,21 @@ export class AppUndoEmptyError extends Error {
 
 defineDomainError(AppUndoEmptyError, {
   reason: 'there is no earlier text of the file to put back; the message says what to use',
+  status: 409,
+});
+
+/** code_undo would remove the entry file (the text it goes back to had none). */
+export class AppUndoEntryError extends Error {
+  constructor(path: string) {
+    super(
+      `undo would remove '${path}', the app's entry file (the app had no such file before that write). Write the text you want with code_write instead`,
+    );
+    this.name = 'AppUndoEntryError';
+  }
+}
+
+defineDomainError(AppUndoEntryError, {
+  reason: 'the undo would remove the entry file; the message says what to use',
   status: 409,
 });
 
@@ -916,21 +939,27 @@ export type DraftChange = {
 
 type CodeEditOpts = {
   actor: AppHistoryActor;
+  /** The login the call acts as, when it names one. */
   actorLoginId?: string | null;
   /** On the history row: what the write was, e.g. 'code_edit App.tsx'. */
   note?: string;
 };
 
-/** Record the code as it stands on the app's history line (a
+type LockedApp = NonNullable<Awaited<ReturnType<typeof lockAppRow>>>;
+
+/** Record the working tree as it stands on the app's history line (a
  *  `pre_code_edit` row), inside the write's transaction, after its row
- *  lock, as a publish appends its version. */
+ *  lock, as a publish appends its version. The author ceiling at the time
+ *  rides along (`codeEdit.authorLevel`): code taken while the app ran at
+ *  team rules brings them back when an undo restores it. */
 async function recordCodeEdit(
   tx: DbTx,
   ownerId: string,
   id: string,
-  app: NonNullable<Awaited<ReturnType<typeof lockAppRow>>>,
-  opts: CodeEditOpts,
+  app: LockedApp,
+  opts: CodeEditOpts & { undo?: { path: string; fromSeq: number } },
 ): Promise<void> {
+  const tree = app.draft ?? app.source;
   await insertNodeSnapshot(tx, {
     ownerId,
     nodeId: id,
@@ -940,39 +969,55 @@ async function recordCodeEdit(
     actor: opts.actor,
     actorLoginId: opts.actorLoginId ?? null,
     code: {
-      source: app.source,
-      draft: app.draft,
+      source: tree,
+      draft: null,
       manifest: app.manifest,
-      publishedBuild: app.publishedBuild,
+      publishedBuild: null,
+      codeEdit: {
+        ...(app.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
+        ...(opts.undo ? { undo: opts.undo } : {}),
+      },
     },
-    sourceHash: codeHash(app.source),
+    sourceHash: codeHash(tree),
   });
 }
 
-/** Keep the newest APP_CODE_EDIT_KEEP `pre_code_edit` rows of the app,
- *  under its history lock (one statement: a row taken meanwhile stays). */
+/** Keep the newest APP_CODE_EDIT_KEEP `pre_code_edit` rows of the app, as
+ *  many as fit in APP_CODE_EDIT_MAX_BYTES, under its history lock (one
+ *  statement: a row taken meanwhile stays). After the write has committed,
+ *  so a failure is logged, never the call's: the write stands. */
 async function pruneCodeEdits(id: string): Promise<void> {
-  await db.transaction(async (tx) => {
-    await lockAppHistory(tx, id);
-    await pruneHistoryRows(
-      id,
-      [CODE_EDIT_TRIGGER],
-      APP_CODE_EDIT_KEEP,
-      Number.MAX_SAFE_INTEGER,
-      tx,
-    );
-  });
+  try {
+    await db.transaction(async (tx) => {
+      await lockAppHistory(tx, id);
+      await pruneHistoryRows(
+        id,
+        [CODE_EDIT_TRIGGER],
+        APP_CODE_EDIT_KEEP,
+        APP_CODE_EDIT_MAX_BYTES,
+        tx,
+        'source',
+      );
+    });
+  } catch (err) {
+    logApps.error(`app ${id}: pruning the code edit history failed:`, err);
+  }
+}
+
+/** The base revision check, under the row lock. */
+function assertBaseRev(baseRev: string | null | undefined, current: string): void {
+  if (baseRev && baseRev !== current) throw new AppDraftRevError(baseRev, current);
 }
 
 /**
  * Change the draft through `change` (the working tree in, the new tree
- * out), under the row lock: the one write of the code tools, app_file_write
- * and app_source_set. With `baseRev`, a tree whose revision is another
- * throws AppDraftRevError and nothing is written. `change` may throw: its
- * error is the call's, and nothing is written. Before a real write the code
- * as it stood goes on the history line (`pre_code_edit`), so code_undo can
- * put a file back. A dry run, or a change that changes nothing, writes
- * nothing. Null when the app is missing or not this owner's.
+ * out), under the row lock: the one write of the code tools, app_file_write,
+ * app_file_delete and app_source_set. With `baseRev`, a tree whose revision
+ * is another throws AppDraftRevError and nothing is written. `change` may
+ * throw: its error is the call's, and nothing is written. Before a real
+ * write the tree as it stood goes on the history line (`pre_code_edit`), so
+ * code_undo can put a file back. A dry run, or a change that changes
+ * nothing, writes nothing. Null when the app is missing or not this owner's.
  */
 export async function changeDraftSource(
   ownerId: string,
@@ -985,9 +1030,7 @@ export async function changeDraftSource(
     if (!app) return null;
     const before = app.draft ?? app.source;
     const beforeRev = sourceRev(before);
-    if (opts.baseRev && opts.baseRev !== beforeRev) {
-      throw new AppDraftRevError(opts.baseRev, beforeRev);
-    }
+    assertBaseRev(opts.baseRev, beforeRev);
     const after = change(before);
     assertSourceWithinLimits(after);
     const rev = sourceRev(after);
@@ -1006,33 +1049,45 @@ export async function changeDraftSource(
 }
 
 /**
- * Put one file back as it was before the last code-tool write that changed
- * it: the newest `pre_code_edit` row whose text of `path` differs from the
- * draft's (a row an edit of another file took holds the same text, and is
- * passed over). A file the row did not hold is removed. The undo records no
- * row of its own, so a second undo goes one step further back. Throws
- * AppUndoEmptyError when no row holds another text. Null when the app is
- * missing or not this owner's.
+ * Put one file back as it was before the last write that changed it, read
+ * from the `pre_code_edit` rows. The undo is a write too: it records its own
+ * row first (`codeEdit.undo`: the file and the row it went back to), so what
+ * it replaces stays on the history line, and it takes `baseRev`.
+ *
+ * Which row: the newest write row (not an undo's) whose text of `path`
+ * differs from the draft's (a row an edit of another file took holds the
+ * same text, and is passed over), older than the cursor. The cursor is the
+ * row the last undo of this file went back to, while nothing changed the
+ * file since (each newer row and the draft hold the text it put back): so
+ * undo after undo walks further back and never swings between two texts.
+ * A file the row did not hold is removed (never the entry). Code taken
+ * while the app ran at team rules brings the author ceiling back to team,
+ * as a snapshot restore does. Throws AppUndoEmptyError when there is no
+ * such row. Null when the app is missing or not this owner's.
  */
 export async function undoDraftFile(
   ownerId: string,
   id: string,
   path: string,
-): Promise<(DraftChange & { fromSeq: number }) | null> {
-  return db.transaction(async (tx) => {
+  opts: CodeEditOpts & { baseRev?: string | null },
+): Promise<(DraftChange & { fromSeq: number; teamRules: boolean }) | null> {
+  const res = await db.transaction(async (tx) => {
     const app = await lockAppRow(tx, ownerId, id);
     if (!app) return null;
     const before = app.draft ?? app.source;
+    const beforeRev = sourceRev(before);
+    assertBaseRev(opts.baseRev, beforeRev);
     const current = Object.hasOwn(before.files, path) ? before.files[path] : undefined;
-    // The tree each row kept: its draft, else its published tree. Only the
-    // one file's text is read, never the whole code.
-    const tree = sql`(case when jsonb_typeof(${nodeSnapshots.code}->'draft') = 'object'
-                       then ${nodeSnapshots.code}->'draft' else ${nodeSnapshots.code}->'source' end)->'files'`;
+    // Only the one file's text is read from each row, never the whole code.
+    const code = nodeSnapshots.code;
     const rows = await tx
       .select({
         seq: nodeSnapshots.seq,
-        present: sql<boolean>`jsonb_exists(${tree}, ${path})`,
-        text: sql<string | null>`${tree}->>${path}`,
+        present: sql<boolean>`jsonb_exists(${code}->'source'->'files', ${path})`,
+        text: sql<string | null>`${code}->'source'->'files'->>${path}`,
+        undoPath: sql<string | null>`${code}->'codeEdit'->'undo'->>'path'`,
+        undoFrom: sql<number | null>`(${code}->'codeEdit'->'undo'->>'fromSeq')::int`,
+        team: sql<boolean>`coalesce(${code}->'codeEdit'->>'authorLevel' = 'team', false)`,
       })
       .from(nodeSnapshots)
       .where(
@@ -1043,16 +1098,40 @@ export async function undoDraftFile(
         ),
       )
       .orderBy(desc(nodeSnapshots.seq));
-    const hit = rows.find((r) => (r.present ? (r.text ?? '') : undefined) !== current);
+    const textOf = (r: (typeof rows)[number]) => (r.present ? (r.text ?? '') : undefined);
+    let cursor = Number.POSITIVE_INFINITY;
+    const lastUndo = rows.findIndex((r) => r.undoPath === path && r.undoFrom !== null);
+    if (lastUndo !== -1) {
+      const from = rows[lastUndo]!.undoFrom!;
+      const back = rows.find((r) => r.seq === from);
+      const put = back ? textOf(back) : current;
+      const unchanged = current === put && rows.slice(0, lastUndo).every((r) => textOf(r) === put);
+      if (unchanged) cursor = from;
+    }
+    const hit = rows.find((r) => r.undoPath === null && r.seq < cursor && textOf(r) !== current);
     if (!hit) throw new AppUndoEmptyError(path);
     const files = { ...before.files };
-    if (hit.present) files[path] = hit.text ?? '';
+    const restored = textOf(hit);
+    if (restored !== undefined) files[path] = restored;
     else {
-      if (path === before.entry) throw new CannotDeleteEntryError();
+      if (path === before.entry) throw new AppUndoEntryError(path);
       delete files[path];
     }
     const after: AppSource = { entry: before.entry, files };
     assertSourceWithinLimits(after);
+    await recordCodeEdit(tx, ownerId, id, app, {
+      ...opts,
+      note: `code_undo ${path}`,
+      undo: { path, fromSeq: hit.seq },
+    });
+    // The author ceiling first, in the same transaction (restoreAppSnapshot's
+    // rule): only an admin's own "trust its tools" lifts it again.
+    if (hit.team && app.authorLevel !== 'team') {
+      await tx
+        .update(apps)
+        .set({ authorLevel: 'team', updatedAt: new Date() })
+        .where(eq(apps.nodeId, id));
+    }
     await tx
       .update(apps)
       .set({ draftSource: after, draftUpdatedAt: new Date(), draftBuild: null })
@@ -1060,12 +1139,15 @@ export async function undoDraftFile(
     return {
       before,
       after,
-      beforeRev: sourceRev(before),
+      beforeRev,
       rev: sourceRev(after),
       written: true,
       fromSeq: hit.seq,
+      teamRules: hit.team,
     };
   });
+  if (res) await pruneCodeEdits(id);
+  return res;
 }
 
 export class CannotDeleteEntryError extends Error {
