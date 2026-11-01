@@ -16,6 +16,7 @@ base image". Inside a sandbox the installed list with versions is
 | `kit/go/go.mod` + `go.sum` | the Go kit, pre-fetched into the module cache; staticcheck is its `tool` line |
 | `kit/rust/Cargo.toml` + `Cargo.lock` | the Rust kit, fetched (not built) into the cargo cache |
 | `kit-manifest.py` | writes `/etc/mantle/sandbox-kit.json` from what is installed |
+| `verify-rust-manifest.py` | proves rustup's components carry the pinned release manifest's hashes |
 | `sandbox-smoke.sh` | `/usr/local/bin/sandbox-smoke`: SQLite and a first build in every language |
 
 ## Changing the image
@@ -34,6 +35,8 @@ new.
      `kit/rust/Cargo.toml`: wasm-pack only uses a wasm-bindgen CLI on PATH that
      matches the crate a build resolves.
    - Moving `APT_SNAPSHOT` to a newer date takes the distro's security fixes.
+   - A new `RUST_VERSION` needs its `RUST_CHANNEL_SHA256`:
+     `https://static.rust-lang.org/dist/channel-rust-<version>.toml.sha256`.
 2. Regenerate the lock you touched, in a throwaway container on the
    workstation (never Docker on a Mac):
    - Python: `uv pip compile --universal --generate-hashes --python-version 3.12 --no-header requirements.in -o requirements.lock`
@@ -57,13 +60,18 @@ new.
    Both runs must end `0 failed`. Run it with a sandbox's limits too
    (`--memory 1g --cpus 1 --pids-limit 512`), the size a real sandbox has.
 5. On main, `.github/workflows/sandbox-image.yml` builds both platforms
-   natively, runs `sandbox-smoke` online and offline on each, and pushes the
-   tag (it refuses to overwrite one that exists unless forced).
+   natively, runs `sandbox-smoke` online and offline on each, pushes the image
+   it tested as `<TAG>-amd64` / `<TAG>-arm64`, and then the multi-arch `<TAG>`.
+   It refuses to overwrite a published tag unless forced, and fails a push that
+   changes the image without a new `TAG`.
 
 ## Licences
 
 The kits are chosen permissive (MIT, BSD, Apache-2.0, ISC, PSF, Unlicense,
-Zlib). The exceptions, kept on purpose:
+Zlib, 0BSD, MIT-0, CC0, CDLA-Permissive-2.0, Unicode-3.0, HPND (Pillow), the
+OpenSSL licence (aws-lc-sys)). Where a package offers a choice (jszip "MIT or
+GPL-3.0", r-efi "MIT or Apache-2.0 or LGPL-2.1"), it is taken under MIT. The
+exceptions, kept on purpose:
 
 - **psycopg / psycopg-binary**: LGPL-3.0, used as an unmodified library, which
   the LGPL allows; asked for by name (Postgres from Python). Its bundled libpq
@@ -71,4 +79,11 @@ Zlib). The exceptions, kept on purpose:
 - **lightningcss** (MPL-2.0, file-level copyleft), pulled in by vitest, and
   **certifi** (MPL-2.0), pulled in by requests: unmodified.
 - **Bun** is MIT and links JavaScriptCore (LGPL-2.1), unmodified.
-- **Claude Code** (Anthropic's own terms) was in the image before v4.
+- **numpy / scipy wheels** bundle libgfortran (GPL-3.0 with the GCC runtime
+  library exception, which covers this use).
+- **hashicorp/golang-lru** (MPL-2.0) is in the Go module cache as a test-only
+  dependency of modernc.org/libc; nothing built from the kit links it.
+- **buffers** (an exceljs dependency) declares no licence in its package.json.
+- **Claude Code** is under Anthropic's own terms (not open source). It is
+  redistributed in this public image as v1 to v3 did; whether that is covered
+  by its terms is for the owner to confirm.

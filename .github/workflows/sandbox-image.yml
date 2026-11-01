@@ -4,9 +4,12 @@
 # runs `sandbox-smoke` online and with the network off, and only then is
 # pushed by digest; the merge job tags the multi-arch manifest.
 #
-# Runs when infra/sandbox-image changes on main, or by hand. An existing tag
-# is NOT overwritten unless `force` is set: boxes pull by tag, so a tag's
-# content never changes under them. Bump TAG for any change.
+# Runs when infra/sandbox-image changes on main, or by hand (main only). An
+# existing tag is NOT overwritten unless `force` is set: boxes pull by tag, so
+# a tag's content never changes under them. Bump TAG for any change: a push
+# that changes the image but not the tag fails. The image pushed is the one
+# the smoke test ran on (per platform as <TAG>-amd64 / <TAG>-arm64, then the
+# multi-arch <TAG>).
 #
 # Secrets: DOCKERHUB_USERNAME / DOCKERHUB_TOKEN, the same pair release.yml uses.
 
@@ -25,8 +28,14 @@ on:
         type: boolean
         default: false
 
+# One run at a time: two quick pushes must not both see the tag missing.
+concurrency:
+  group: sandbox-image
+  cancel-in-progress: false
+
 jobs:
   check:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -37,6 +46,8 @@ jobs:
       IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle-sandbox
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Read the tag
         id: pin
@@ -68,13 +79,22 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # A push that changes the image (anything but its README) under a tag
+      # that is already published would never reach a box: fail, bump TAG.
       - name: Skip if the tag is already published
         id: exists
         env:
           TAG: ${{ steps.pin.outputs.tag }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          FORCE: ${{ inputs.force }}
         run: |
-          if docker buildx imagetools inspect "${IMAGE}:${TAG}" >/dev/null 2>&1 \
-             && [ "${{ inputs.force }}" != "true" ]; then
+          if docker buildx imagetools inspect "${IMAGE}:${TAG}" >/dev/null 2>&1 && [ "$FORCE" != "true" ]; then
+            if [ "$EVENT" = push ] && [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
+               && git diff --name-only "$BEFORE" HEAD -- infra/sandbox-image ':!infra/sandbox-image/README.md' | grep -q .; then
+              echo "::error::infra/sandbox-image changed but ${IMAGE}:${TAG} is already published: bump infra/sandbox-image/TAG and every default"
+              exit 1
+            fi
             echo "${IMAGE}:${TAG} already exists; not overwriting (run by hand with force to replace)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
@@ -95,6 +115,7 @@ jobs:
       contents: read
     env:
       IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle-sandbox
+      TAG: ${{ needs.check.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -120,13 +141,13 @@ jobs:
       # plus the apt set, no-new-privileges), online and then offline.
       - name: sandbox-smoke (online)
         run: |
-          docker run --rm --memory 1g --cpus 1 --pids-limit 512 --cap-drop ALL \
+          docker run --rm --init --memory 1g --cpus 1 --pids-limit 512 --cap-drop ALL \
             --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETGID \
             --cap-add SETUID --cap-add KILL --cap-add SETPCAP --security-opt no-new-privileges \
             mantle-sandbox:smoke sandbox-smoke
       - name: sandbox-smoke (network off)
         run: |
-          docker run --rm --network none --memory 1g --cpus 1 --pids-limit 512 --cap-drop ALL \
+          docker run --rm --init --network none --memory 1g --cpus 1 --pids-limit 512 --cap-drop ALL \
             --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETGID \
             --cap-add SETUID --cap-add KILL --cap-add SETPCAP --security-opt no-new-privileges \
             mantle-sandbox:smoke sandbox-smoke
@@ -139,22 +160,20 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # The same build from the cache, pushed BY DIGEST (no tag yet).
-      - id: push
-        uses: docker/build-push-action@v6
-        with:
-          context: infra/sandbox-image
-          platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=sandbox-${{ matrix.platform }}
-
-      - name: Export digest
+      # The image the smoke test ran on, pushed as is under a per-platform tag.
+      - name: Push the tested image
         env:
           PLATFORM: ${{ matrix.platform }}
         run: |
+          set -eu
+          arch=${PLATFORM#linux/}
+          docker tag mantle-sandbox:smoke "${IMAGE}:${TAG}-${arch}"
+          docker push "${IMAGE}:${TAG}-${arch}"
+          digest=$(docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE}:${TAG}-${arch}" \
+            | grep -F "${IMAGE}@sha256:" | head -1 | sed 's/.*@sha256://')
+          [ -n "$digest" ] || { echo "::error::no pushed digest for ${IMAGE}:${TAG}-${arch}"; exit 1; }
           mkdir -p "${{ runner.temp }}/digests"
-          digest="${{ steps.push.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          touch "${{ runner.temp }}/digests/${digest}"
           echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
@@ -193,6 +212,16 @@ jobs:
           if [ "$n" -ne 2 ]; then
             echo "expected 2 per-arch digests (amd64 + arm64), got $n:" >&2
             ls -1 >&2
+            exit 1
+          fi
+
+      # Again here, right before the tag is written (the build took a while).
+      - name: Refuse to overwrite a published tag
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          if docker buildx imagetools inspect "${IMAGE}:${TAG}" >/dev/null 2>&1 && [ "$FORCE" != "true" ]; then
+            echo "::error::${IMAGE}:${TAG} appeared while this run built; not overwriting"
             exit 1
           fi
 

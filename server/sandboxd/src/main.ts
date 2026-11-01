@@ -94,7 +94,10 @@ const DISK_BUDGET_BYTES = Number(process.env.SANDBOX_DISK_BUDGET_BYTES || 10 * 1
  *  refuse that pull while the disk under the sandboxes dir (on a standard box
  *  the same disk as Docker's) has less than this free, so a first sandbox can
  *  never fill the box. 0 turns the check off. */
-const PULL_MIN_FREE_BYTES = Number(process.env.SANDBOX_PULL_MIN_FREE_BYTES || 10 * 1024 ** 3);
+const PULL_MIN_FREE_BYTES = (() => {
+  const n = Number(process.env.SANDBOX_PULL_MIN_FREE_BYTES || 10 * 1024 ** 3);
+  return Number.isFinite(n) && n >= 0 ? n : 10 * 1024 ** 3; // a typo keeps the floor
+})();
 const EXPORT_MAX_BYTES = Number(process.env.SANDBOX_EXPORT_MAX_BYTES || 100 * 1024 * 1024);
 const IMPORT_MAX_BYTES = Number(process.env.SANDBOX_IMPORT_MAX_BYTES || 100 * 1024 * 1024);
 
@@ -435,7 +438,9 @@ async function createSandbox(input: CreateInput) {
   if (!ID_RE.test(id)) throw new HttpError(400, 'id must be a uuid');
   if (typeof ownerId !== 'string' || !ownerId) throw new HttpError(400, 'ownerId is required');
   const image = input.image ?? DEFAULT_IMAGE;
-  if (!IMAGE_RE.test(image)) throw new HttpError(400, `image '${image}' is not a valid reference`);
+  if (!IMAGE_RE.test(image) || image.includes('..')) {
+    throw new HttpError(400, `image '${image}' is not a valid reference`);
+  }
   const network =
     input.network === 'none' ? 'none' : input.network === 'balanced' ? 'balanced' : 'full';
 

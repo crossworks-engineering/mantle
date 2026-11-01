@@ -24,14 +24,20 @@
 #
 # Reproducible by construction:
 #   - base images pinned by digest; apt from a dated snapshot.ubuntu.com
-#     snapshot (removed again at the end, so a sandbox's own apt is live);
-#     docker-ce-cli pinned to a version, its repo key checked by fingerprint;
+#     snapshot (taken off again at the end, so a sandbox's own apt is live),
+#     except ca-certificates (needed to reach the snapshot) and the docker
+#     step, both from the live archives, signature-checked; docker-ce-cli
+#     pinned to a version, and only Docker's one key (by fingerprint) trusted;
 #   - every downloaded binary checked against a pinned sha256;
 #   - every library from a lockfile with hashes: kit/python/requirements.lock
-#     (pip --require-hashes), kit/node/package-lock.json (npm ci),
-#     kit/go/go.sum, kit/rust/Cargo.lock (cargo fetch --locked);
-#   - the Rust toolchain pinned to an exact release (rustup checks each
-#     component against the release manifest's sha256).
+#     (pip --require-hashes), kit/node/package-lock.json (npm ci, install
+#     scripts run with no network), kit/go/go.sum, kit/rust/Cargo.lock (cargo
+#     fetch --locked);
+#   - the Rust toolchain: rustup checks each component against the release
+#     manifest, and verify-rust-manifest.py proves those are the hashes of the
+#     manifest pinned here (RUST_CHANNEL_SHA256);
+#   - duckdb's sqlite and excel extensions are checked by duckdb's own
+#     signature check, not pinned here.
 # How to bump a version, regenerate a lock and build: infra/sandbox-image/README.md.
 #
 # Boxes pull by the pinned tag (SANDBOX_DEFAULT_IMAGE), so an image update is
@@ -43,6 +49,16 @@ ARG NODE_IMAGE=node:26.13.0-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97
 ARG UBUNTU_IMAGE=ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 
 FROM ${NODE_IMAGE} AS node
+
+# The Node kit from its lock (integrity-checked), in a stage of its own so the
+# final image gets it as one layer. Install scripts do not run in `npm ci`
+# (which has the network); the three the kit has (claude-code links its
+# locked platform binary; esbuild, pnpm) run next with no network at all, so
+# they can only use what the lock put there.
+FROM node AS nodekit
+COPY kit/node /kit
+RUN cd /kit && npm ci --no-audit --no-fund --ignore-scripts
+RUN --network=none cd /kit && npm rebuild --no-audit --no-fund @anthropic-ai/claude-code esbuild pnpm
 
 FROM ${UBUNTU_IMAGE}
 
@@ -79,13 +95,19 @@ RUN apt-get update \
     && rm /etc/apt/apt.conf.d/50mantle-snapshot \
     && rm -rf /var/lib/apt/lists/*
 
-# docker CLI only (no daemon): Docker's apt repo, key checked by fingerprint,
-# the CLI pinned to one version.
+# docker CLI only (no daemon): Docker's apt repo, the CLI pinned to one
+# version. The download must hold exactly one key, Docker's (by fingerprint),
+# and only that key is exported into the keyring apt trusts.
 RUN install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc \
-    && fpr=$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | awk -F: '/^fpr/ { print $10; exit }') \
-    && [ "$fpr" = "$DOCKER_REPO_KEY" ] || { echo "docker repo key fingerprint is $fpr, expected $DOCKER_REPO_KEY" >&2; exit 1; } \
-    && echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" > /etc/apt/sources.list.d/docker.list \
+    && g=$(mktemp -d) \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o "$g/docker.asc" \
+    && keys=$(gpg --show-keys --with-colons "$g/docker.asc" | awk -F: '/^pub/ { n++ } END { print n + 0 }') \
+    && fpr=$(gpg --show-keys --with-colons "$g/docker.asc" | awk -F: '/^fpr/ { print $10; exit }') \
+    && [ "$keys" = 1 ] && [ "$fpr" = "$DOCKER_REPO_KEY" ] || { echo "docker repo key: $keys keys, first $fpr, expected exactly $DOCKER_REPO_KEY" >&2; exit 1; } \
+    && gpg --batch --homedir "$g" --import "$g/docker.asc" \
+    && gpg --batch --homedir "$g" --export "$DOCKER_REPO_KEY" > /etc/apt/keyrings/docker.gpg \
+    && rm -rf "$g" \
+    && echo "deb [signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable" > /etc/apt/sources.list.d/docker.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends "docker-ce-cli=${DOCKER_CLI_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
@@ -106,19 +128,17 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
     && node -v && npm -v
 
-# The Node kit from its lock (integrity-checked), its tools linked onto PATH.
+# The Node kit (built in the nodekit stage above), its tools linked onto PATH.
 # /node_modules points at it: Node, Bun, esbuild, tsc and vitest all walk up
 # the directory tree to find a package, so `import` (ESM) and `require` of a
 # kit library work from any project with no install and no network, after the
 # project's own node_modules. NODE_PATH covers `require` of `npm i -g` ones.
-RUN cd /opt/mantle-kit/node \
-    && npm ci --no-audit --no-fund \
-    && npm cache clean --force \
-    && ln -s /opt/mantle-kit/node/node_modules /node_modules \
+COPY --from=nodekit /kit/node_modules /opt/mantle-kit/node/node_modules
+RUN ln -s /opt/mantle-kit/node/node_modules /node_modules \
     && for b in pnpm pnpx claude biome esbuild tsc vitest; do \
          ln -s "/opt/mantle-kit/node/node_modules/.bin/$b" "/usr/local/bin/$b"; \
        done \
-    && pnpm -v && claude --version && tsc -v
+    && pnpm -v && claude --version && tsc -v && esbuild --version
 ENV NODE_PATH=/opt/mantle-kit/node/node_modules:/usr/local/lib/node_modules
 
 # Bun (x64: the baseline build, which needs no AVX2).
@@ -139,10 +159,11 @@ RUN case "$TARGETARCH" in \
     && cd / && rm -rf "$d" && bun --version
 
 # Go, with the kit pre-fetched into the module cache and staticcheck built
-# from the kit's go.mod tool line (both checked against kit/go/go.sum). The
-# tidy in a copy WITHOUT go.sum asks the checksum database for every module
-# (so its tiles land in the cache for offline use), and every hash it gets
-# must be one kit/go/go.sum already pins. Only the module zips stay (go
+# from the kit's go.mod tool line (both checked against kit/go/go.sum, which
+# no step may change: it is compared with the committed copy after). The tidy
+# in a copy WITHOUT go.sum asks the checksum database for every module (so its
+# lookups and tiles land in the cache, for offline use), and every hash it
+# gets must be one the committed go.sum pins. Only the module zips stay (go
 # extracts one on first use, offline): the extracted copies doubled the size.
 ARG GO_VERSION=1.27.3
 ARG GO_SHA256_AMD64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
@@ -155,27 +176,31 @@ RUN case "$TARGETARCH" in \
     && echo "$sum  /tmp/go.tgz" | sha256sum -c - \
     && tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz \
     && cd /opt/mantle-kit/go \
+    && t=$(mktemp -d) && cp go.mod go.sum kit.go "$t/" \
     && go mod download all \
     && go mod verify \
-    && t=$(mktemp -d) && cp go.mod kit.go "$t/" \
-    && (cd "$t" && go mod tidy && sort go.sum > new && sort /opt/mantle-kit/go/go.sum > pinned \
+    && go install tool \
+    && cmp go.sum "$t/go.sum" \
+    && (cd "$t" && rm go.sum && go mod tidy && sort go.sum > new && sort /opt/mantle-kit/go/go.sum > pinned \
         && extra=$(comm -13 pinned new) && [ -z "$extra" ] || { echo "go.sum lines not in kit/go/go.sum: $extra" >&2; exit 1; }) \
     && rm -rf "$t" \
-    && go install tool \
     && go clean -cache \
     && find /opt/go/pkg/mod -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} + \
-    && touch /opt/go/pkg/mod/cache/download/sumdb/sum.golang.org/supported \
     && go version && staticcheck -version
 # The module cache is the first proxy: a kit module resolves from it with no
-# network (its checksum database tiles are cached beside it, so go.sum checks
-# still run); anything else falls through to the public proxy.
+# network, and its checksum lookups come from the cache too, so go.sum checks
+# still run offline. A module outside the kit falls through to the public
+# proxy and the public checksum database.
 ENV GOPROXY=file:///opt/go/pkg/mod/cache/download,https://proxy.golang.org,direct
 
-# Rust: rustup (checksum-pinned) installs an exact toolchain, minimal profile.
+# Rust: rustup (checksum-pinned) installs an exact toolchain, minimal profile,
+# proven against the pinned release manifest (verify-rust-manifest.py).
+COPY verify-rust-manifest.py /opt/mantle-kit/verify-rust-manifest.py
 ARG RUSTUP_VERSION=1.29.2
 ARG RUSTUP_SHA256_AMD64=5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4
 ARG RUSTUP_SHA256_ARM64=a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697
 ARG RUST_VERSION=1.99.1
+ARG RUST_CHANNEL_SHA256=fb152be80975c194aa5fc684b2aec3a6e14e2b855efe2faa4e5f8ae6e590f463
 RUN case "$TARGETARCH" in \
       amd64) t=x86_64-unknown-linux-gnu; sum=$RUSTUP_SHA256_AMD64 ;; \
       arm64) t=aarch64-unknown-linux-gnu; sum=$RUSTUP_SHA256_ARM64 ;; \
@@ -187,6 +212,11 @@ RUN case "$TARGETARCH" in \
     && /tmp/rustup-init -y --no-modify-path --profile minimal \
     --default-toolchain "$RUST_VERSION" --component rustfmt,clippy --target wasm32-unknown-unknown \
     && rm /tmp/rustup-init \
+    && curl -fsSL -o /tmp/channel.toml "https://static.rust-lang.org/dist/channel-rust-${RUST_VERSION}.toml" \
+    && echo "$RUST_CHANNEL_SHA256  /tmp/channel.toml" | sha256sum -c - \
+    && /usr/bin/python3 -I /opt/mantle-kit/verify-rust-manifest.py /tmp/channel.toml \
+       "$RUSTUP_HOME/toolchains/${RUST_VERSION}-${t}/lib/rustlib" \
+    && rm /tmp/channel.toml \
     && rustc -V && cargo -V
 
 # The WebAssembly tools as checksum-pinned release binaries: wasm-pack finds

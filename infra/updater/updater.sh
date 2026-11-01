@@ -1287,27 +1287,37 @@ prune_media() {
 
 # ── the sandbox base image: pull the pin, prune old ones ────────────────────
 # A release can move the sandbox base image (SANDBOX_DEFAULT_IMAGE's compose
-# default) to a new tag; 24.04-v4 carries every language and is about 2 to 3
-# GB larger than v3. On a box with the sandboxes profile on, sandbox_image_sync
+# default) to a new tag; 24.04-v4 carries every language and is about 3.4 GB
+# larger than v3. On a box with the sandboxes profile on, sandbox_image_sync
 # runs after every OK roll and once at startup (so the re-exec after the roll
-# that brings it does the same, whichever updater ran that roll):
-#   1. the pinned image is pulled when it is not local yet, but only with
-#      MANTLE_SANDBOX_PULL_MIN_FREE_MB (10240) free on the stack's disk; with
-#      less it says so and pulls nothing;
-#   2. old images of exactly <ns>/mantle-sandbox go, keeping the pin now, the
-#      pin before the roll, the two newest images of the repository (so the
-#      previous tag survives the rolls that do not move the pin) and every
-#      image any container was made from, running or stopped: every sandbox
-#      keeps its image. Only when the pin is an image of <ns>/mantle-sandbox:
-#      a box pinned to some other image is left alone.
+# that brings a new pin does the same, whichever updater ran that roll):
+#   1. when the pin is not local yet, old images go first, so the pull has
+#      the room (see 3), then it is pulled, but only with
+#      MANTLE_SANDBOX_PULL_MIN_FREE_MB (10240) free on the stack's disk, and
+#      for at most MANTLE_SANDBOX_PULL_TIMEOUT_S (1200) seconds. A failed pull
+#      is recorded (/signal/sandbox-pull-failed) and the startup pass does not
+#      try that pin again for six hours; a roll always tries.
+#   2. once local, the pin is recorded (/signal/sandbox-pins: the pin and the
+#      one before it), so a later startup pass still knows the previous pin.
+#   3. old images of exactly <ns>/mantle-sandbox go, keeping the pin now, the
+#      pin before the roll, the two recorded pins, the two newest images of
+#      the repository, and every image any container was made from, running
+#      or stopped: every sandbox keeps its image. Only when the pin is an
+#      image of <ns>/mantle-sandbox: a box pinned to some other image is left
+#      alone. On a Docker shared by several stacks, a tag another stack pins
+#      but no container uses yet can go (it pulls again); so can a local,
+#      never-pushed <ns>/mantle-sandbox tag outside that set.
 # Never forced (docker rmi refuses an image a container uses), never another
 # repository, never on a box with sandboxes off (off loses nothing). The prune
-# is off with MANTLE_IMAGE_PRUNE=0; the pull still runs.
+# is off with MANTLE_IMAGE_PRUNE=0; the pull still runs. The free-disk check
+# reads the stack's disk, which is Docker's on a standard box; a box with
+# Docker's data on another disk is not covered by it.
 
 # image_id <ref>: the local image id of <ref> ("" when it is not local).
 image_id() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null; }
 
-# containers_image_ids: the image id of every container, running or stopped.
+# containers_image_ids: the image id of every container, running or stopped;
+# status 1 when the containers cannot be listed.
 containers_image_ids() {
   cii_all=$(docker ps -aq --no-trunc 2>/dev/null) || return 1
   for cii in $cii_all; do
@@ -1316,48 +1326,83 @@ containers_image_ids() {
   return 0
 }
 
-# sandbox_image_sync <pin-before-the-roll or "">
+# sandbox_prune <repo> <ids to keep>: old images of exactly <repo>, keeping
+# <ids>, the recorded pins, the two newest and every container's image.
+sandbox_prune() {
+  # Without the list of images in use, keep everything.
+  sp_used=$(containers_image_ids) || {
+    echo "[updater] image prune: $1 skipped (the containers could not be listed)"
+    return 0
+  }
+  sp_pins=""
+  if [ -f "$SIG/sandbox-pins" ]; then
+    while read -r sp_ref; do
+      [ -n "$sp_ref" ] && sp_pins="$sp_pins
+$(image_id "$sp_ref")"
+    done < "$SIG/sandbox-pins"
+  fi
+  sp_newest=$(docker image ls --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' "$1" 2>/dev/null \
+    | awk -v r="$1" 'NF { ref = $2; sub(/:[^:]*$/, "", ref); if (ref == r) print $1 }' \
+    | awk '!seen[$0]++' | head -2)
+  prune_rmi "$1" "$(printf '%s\n%s\n%s\n%s\n' "$2" "$sp_pins" "$sp_newest" "$sp_used")"
+}
+
+# sandbox_pull_failed_recently <pin>: the last pull of <pin> failed under six
+# hours ago.
+sandbox_pull_failed_recently() {
+  [ -f "$SIG/sandbox-pull-failed" ] || return 1
+  read -r spf_pin spf_at < "$SIG/sandbox-pull-failed" || return 1
+  [ "$spf_pin" = "$1" ] || return 1
+  spf_at=$(num_or "$spf_at" 0)
+  [ $(($(date +%s) - spf_at)) -lt 21600 ]
+}
+
+# sandbox_image_sync <pin before the roll, or ""> <roll|startup>
 sandbox_image_sync() {
   profile_active sandboxes || return 0
   sis_pin=$(sandbox_base_image) || return 0
   sis_repo="${pi_ns:-$(env_val MANTLE_IMAGE_NAMESPACE)}"
   sis_repo="${sis_repo:-titanwest}/mantle-sandbox"
+  sis_prune=1
+  [ "$(env_val MANTLE_IMAGE_PRUNE)" != 0 ] || sis_prune=""
+  case "$sis_pin" in
+    "$sis_repo":* | "$sis_repo"@*) : ;;
+    *)
+      [ -z "$sis_prune" ] || echo "[updater] image prune: $sis_repo skipped (the sandbox base image is $sis_pin, not one of it)"
+      sis_prune=""
+      ;;
+  esac
+  sis_prev=""
+  [ -z "$1" ] || sis_prev=$(image_id "$1")
   if [ -z "$(image_id "$sis_pin")" ]; then
+    if [ "$2" = startup ] && sandbox_pull_failed_recently "$sis_pin"; then
+      echo "[updater] sandbox base image $sis_pin: its last pull failed under six hours ago; the next roll tries again"
+      return 0
+    fi
+    [ -z "$sis_prune" ] || sandbox_prune "$sis_repo" "$sis_prev"
     sis_min=$(num_or "$(env_val MANTLE_SANDBOX_PULL_MIN_FREE_MB)" 10240)
-    sis_free=$(free_kb "$STACK")
+    sis_free=$(num_or "$(free_kb "$STACK")" "")
     if [ -z "$sis_free" ] || [ "$sis_free" -lt $((sis_min * 1024)) ]; then
       echo "[updater] ⚠ sandbox base image $sis_pin NOT pulled: $((${sis_free:-0} / 1024)) MB free, need $sis_min MB (MANTLE_SANDBOX_PULL_MIN_FREE_MB). Free space (old images, old backups); the next roll or updater restart pulls it"
       return 0
     fi
-    echo "[updater] pulling the sandbox base image $sis_pin ($((sis_free / 1024)) MB free)"
-    if ! docker pull "$sis_pin" > /dev/null 2>&1; then
+    sis_to=$(num_or "$(env_val MANTLE_SANDBOX_PULL_TIMEOUT_S)" 1200)
+    echo "[updater] pulling the sandbox base image $sis_pin ($((sis_free / 1024)) MB free, at most ${sis_to}s)"
+    if ! timeout "$sis_to" docker pull "$sis_pin" > /dev/null 2>&1 || [ -z "$(image_id "$sis_pin")" ]; then
+      printf '%s %s\n' "$sis_pin" "$(date +%s)" > "$SIG/sandbox-pull-failed"
       echo "[updater] ⚠ the sandbox base image $sis_pin did not download; the first new sandbox will fetch it"
       return 0
     fi
+    rm -f "$SIG/sandbox-pull-failed"
   fi
-  if [ "$(env_val MANTLE_IMAGE_PRUNE)" = 0 ]; then
-    return 0
-  fi
-  case "$sis_pin" in
-    "$sis_repo":* | "$sis_repo"@*) : ;;
-    *)
-      echo "[updater] image prune: $sis_repo skipped (the sandbox base image is $sis_pin, not one of it)"
-      return 0
-      ;;
-  esac
   sis_cur=$(image_id "$sis_pin")
   [ -n "$sis_cur" ] || return 0
-  sis_prev=""
-  [ -z "$1" ] || sis_prev=$(image_id "$1")
-  sis_newest=$(docker image ls --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' "$sis_repo" 2>/dev/null \
-    | awk -v r="$sis_repo" 'NF { ref = $2; sub(/:[^:]*$/, "", ref); if (ref == r) print $1 }' \
-    | awk '!seen[$0]++' | head -2)
-  # Without the list of images in use, keep everything.
-  sis_used=$(containers_image_ids) || {
-    echo "[updater] image prune: $sis_repo skipped (the containers could not be listed)"
-    return 0
-  }
-  prune_rmi "$sis_repo" "$(printf '%s\n%s\n%s\n%s\n' "$sis_cur" "$sis_prev" "$sis_newest" "$sis_used")"
+  if [ -f "$SIG/sandbox-pins" ]; then sis_last=$(head -1 "$SIG/sandbox-pins"); else sis_last=""; fi
+  if [ "$sis_last" != "$sis_pin" ]; then
+    printf '%s\n%s\n' "$sis_pin" "$sis_last" > "$SIG/sandbox-pins.tmp" && mv "$SIG/sandbox-pins.tmp" "$SIG/sandbox-pins"
+  fi
+  [ -n "$sis_prune" ] || return 0
+  sandbox_prune "$sis_repo" "$(printf '%s\n%s\n' "$sis_cur" "$sis_prev")"
 }
 
 # topup_scripts: install an operator script the RUNNING release names but the
@@ -2006,7 +2051,7 @@ else
   write_stack_info
   # The sandbox base image the running release pins (see sandbox_image_sync):
   # also how the roll that brings a new pin pulls it, through this re-exec.
-  sandbox_image_sync "" | tee -a "$SIG/update.log"
+  sandbox_image_sync "" startup | tee -a "$SIG/update.log"
 fi
 
 # We deliberately do NOT dead-sleep when unconfigured. Staying in the poll loop
@@ -2265,7 +2310,7 @@ while true; do
         # Old images of this product only, after the status is terminal: a
         # prune problem must never turn an OK roll into a failed one.
         prune_images "$PREV_SERVER_IMG" "$PREV_CLIENT_IMG" "$PREV_PARSER_IMG" "$PREV_MEDIA_IMG"
-        sandbox_image_sync "$PREV_SBX_PIN" | tee -a "$SIG/update.log"
+        sandbox_image_sync "$PREV_SBX_PIN" roll | tee -a "$SIG/update.log"
         # Self-refresh LAST, on the success path only: a failed roll should
         # change as little as possible, and the status the UI polls is already
         # terminal. Sets UPDATER_REFRESH for the write_stack_info below.

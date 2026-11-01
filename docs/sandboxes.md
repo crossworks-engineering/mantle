@@ -239,9 +239,14 @@ a `balanced` sandbox reaches the registries for it (see below).
 
 **Reproducible.** Base images pinned by digest; apt from a dated
 snapshot.ubuntu.com snapshot (taken off again at the end, so a sandbox's own
-apt is live); every downloaded binary checked against a pinned sha256; every
-library from a lockfile with hashes in `infra/sandbox-image/kit/`. Bumping a
-version: `infra/sandbox-image/README.md`.
+apt is live), except ca-certificates and the Docker CLI step, which come from
+the live archives, signature-checked (the CLI pinned to a version, and only
+Docker's one key trusted); every downloaded binary checked against a pinned
+sha256; every library from a lockfile with hashes in
+`infra/sandbox-image/kit/`, and npm's install scripts run with no network; the
+Rust toolchain proven against a pinned release manifest. duckdb's two
+extensions rest on duckdb's own signature check. Bumping a version:
+`infra/sandbox-image/README.md`.
 
 **Tags and disk.** Defaults pin the versioned tag (`24.04-vN`) everywhere:
 updating the image is an explicit env change, never silent drift. Bump
@@ -251,9 +256,16 @@ the base image on a box with sandboxes on (`sandbox_image_sync`): after every
 OK roll and at its own start it pulls the pinned image when it is not local,
 only with `MANTLE_SANDBOX_PULL_MIN_FREE_MB` (10240) free, and removes old
 images of exactly `<ns>/mantle-sandbox`, keeping the pin now, the pin before
-the roll, the two newest of the repository and every image a container (every
-sandbox, running or stopped) was made from. `MANTLE_IMAGE_PRUNE=0` turns the
-removal off. A box with sandboxes off keeps every image.
+the roll, the last two pins it recorded (`/signal/sandbox-pins`), the two
+newest of the repository and every image a container (every sandbox, running
+or stopped) was made from. A pull runs at most `MANTLE_SANDBOX_PULL_TIMEOUT_S`
+(1200) seconds, and a pin whose pull failed is not retried at the updater's
+start for six hours (a roll always retries). `MANTLE_IMAGE_PRUNE=0` turns the
+removal off. A box with sandboxes off keeps every image. Both disk checks (the
+updater's and sandboxd's) read the stack's or the sandboxes dir's disk, which
+is Docker's on a standard box; a box with Docker's data on another disk is not
+covered by them. On a Docker shared by several stacks, a sandbox tag another
+stack pins but no container uses yet can go (that stack pulls it again).
 
 ## Surface
 
@@ -266,6 +278,13 @@ mutate the registry when sandboxd is unreachable.
 
 ## Security model, honestly
 
+- The balanced tier's Go entries (`proxy.golang.org`, `sum.golang.org`) are a
+  wider door than the other registries: the Go module proxy fetches any public
+  host a module path names, so a balanced workload can make it GET an
+  arbitrary URL (and carry data out in the path). GitHub was already a door of
+  that size. An operator who wants balanced to mean registries in the strict
+  sense removes the two hosts (`SANDBOX_EGRESS_ALLOW` only adds; the defaults
+  live in `server/sandboxd/src/egress.ts`) and keeps Go to the kit, offline.
 - The box is the trust boundary; sandboxes protect the **brain from the
   workload** (mistakes and malice in untrusted code), not owners from
   themselves. Network isolation and the egress tiers are the load-bearing

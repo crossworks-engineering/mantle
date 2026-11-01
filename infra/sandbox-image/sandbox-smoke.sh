@@ -153,6 +153,11 @@ check "go build + run (modernc.org/sqlite)" expect 12 bash -c "go build -o smoke
 check "gofmt" bash -c '[ -z "$(gofmt -l .)" ]'
 check "go vet" go vet ./...
 check "staticcheck" staticcheck ./...
+# Online only: a module OUTSIDE the kit still resolves and is checked against
+# the public checksum database (the module cache must not stand in for it).
+if [ "$net" = online ]; then
+  check "go get outside the kit (online, sumdb-checked)" go get github.com/google/btree@v1.1.3
+fi
 
 # ── Rust ─────────────────────────────────────────────────────────────────────
 export CARGO_TARGET_DIR="$W/cargo-target"
