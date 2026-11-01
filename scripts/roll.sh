@@ -35,6 +35,11 @@
 #      gets one holding the value the running mantle_web has (the
 #      functions are this checkout's infra/updater/updater.sh). A failure
 #      is said and the roll goes on: nothing on the box changes its value.
+#   3c. the documents engine on by default: a box without the `documents`
+#      profile gets it (the functions are this checkout's
+#      infra/updater/updater.sh), unless MANTLE_DOCUMENTS_OFF=1 or the
+#      newest accepted Settings > Services switch of it was an off; it prints
+#      the disk and memory it adds, and never fails the roll
 #   4. request: request.json holding only {"target": <tag>}, written into the
 #      updater's signal dir by a throwaway alpine container (the dir is
 #      root-owned on the host), exactly as the in-app Update button would
@@ -731,6 +736,25 @@ else
   echo "⚠ runtime role: the line was not written (the updater writes it on the roll once it runs this release)"
 fi
 
+# ── 3c. the documents engine: on by default ─────────────────────────────────
+# A box gets the documents engine (Gotenberg) on at this roll unless an admin
+# switched it off on purpose; the box's own updater does the same on every
+# roll once it runs this release. Sent from this checkout's updater.sh, so the
+# roll that brings the release (run by the updater before it) already pulls
+# and starts it. It prints what it adds (disk, memory) and never fails.
+EDD_FUNCS=$(sed -n -e '/^file_owner() /p' -e '/^file_mode() /p' -e '/^env_val() /p' \
+  -e '/^num_or() /p' -e '/^free_kb() /p' -e '/^profile_active() /p' -e '/^DOCUMENTS_IMAGE_MB=/p' \
+  -e '/^env_rewrite() {/,/^}/p' -e '/^persist_env() {/,/^}/p' -e '/^profiles_csv() {/,/^}/p' \
+  -e '/^gen_token() {/,/^}/p' -e '/^documents_switched_off() {/,/^}/p' \
+  -e '/^ensure_documents_default() {/,/^}/p' \
+  "$ROOT/infra/updater/updater.sh")
+if EDD_OUT=$(printf "STACK='%s'\n%s\nensure_documents_default\n" "$STACK" "$EDD_FUNCS" | rsh 'sh -s' 2>&1); then
+  echo "${EDD_OUT:-documents engine: on already}"
+else
+  echo "$EDD_OUT"
+  echo "⚠ documents engine: not checked (the updater switches it on at a roll once it runs this release)"
+fi
+
 # ── 4. request ───────────────────────────────────────────────────────────────
 echo "▶ requesting $TAG at $(date -u +%H:%M:%SZ) (previous started_at: ${OLD_STARTED:-none})"
 rsh 'sh -s' <<EOF || die "REQUEST FAILED: could not write request.json"
@@ -932,6 +956,24 @@ EOF
     exit 1
   fi
   echo "mantle_parser: reachable from mantle_web"
+fi
+
+# The documents engine, when the box runs it: its health, never fatal (the
+# brain answers that the service is unavailable until it is up).
+if rsh "docker inspect mantle_gotenberg" > /dev/null 2>&1; then
+  GS=""; waited=0
+  while :; do
+    GS=$(rsh "docker inspect -f '{{.State.Health.Status}}' mantle_gotenberg" 2>/dev/null || true)
+    [ "$GS" = healthy ] && break
+    [ "$waited" -ge 180 ] && break
+    sleep "$POLL"; waited=$((waited + POLL))
+    [ "$POLL" -gt 0 ] || waited=$((waited + 1))
+  done
+  if [ "$GS" = healthy ]; then
+    echo "mantle_gotenberg: healthy (the documents engine; up to 2 GB memory)"
+  else
+    echo "⚠ mantle_gotenberg: ${GS:-unknown} after 180s; the documents tools answer unavailable until it is healthy (docker logs mantle_gotenberg)"
+  fi
 fi
 
 # ── 7. counts after ──────────────────────────────────────────────────────────

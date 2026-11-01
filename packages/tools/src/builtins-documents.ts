@@ -14,13 +14,39 @@
  * A page print carries a render cookie for the acting login (the print
  * surface asks an Admin login of it); a call with no login actor converts
  * files and inline text only.
+ *
+ * Mini apps (docs/app-authoring-guide.md, "Reports"): an app the Admin
+ * workspace alone holds runs them as the admin, and the file lands where an
+ * admin's export lands. A team app (team rules, member-app-tools.ts) may
+ * call them too (policy memberApp 'documents'): its inputs are read in the
+ * app's scope, it prints HTML, markdown or files, never a page of the brain
+ * (`node_id`: the render cookie would carry the login's whole rights, not
+ * the app's), and its file lands at the top of Files, homed in the one
+ * workspace that holds the app, only for a user who moderates that
+ * workspace (teamAppSaveRefusal: the create rule everywhere). Any app may
+ * pass `bytes: true` instead: nothing is saved, and the PDF or picture
+ * comes back as base64 within the caps of file_read's bytes (app-bytes.ts).
  */
 import { registerToolService } from '@mantle/config';
-import { currentActor } from '@mantle/db';
+import {
+  currentActor,
+  currentWorkspaceScope,
+  inAppRunWrite,
+  withCreateHome,
+} from '@mantle/db';
 import { runDocuments, type DocumentsCall, type DocumentsResult } from '@mantle/documents';
 import { errorMessage } from '@mantle/std';
 import { recordIngest } from '@mantle/tracing';
+import {
+  APP_BYTES_BUSY,
+  APP_BYTES_MAX,
+  appBytesRefusal,
+  appBytesTooLarge,
+  withAppBytesSlot,
+} from './app-bytes';
 import { CS } from './client-sourced-rule';
+import { boolOpt as bool } from './coerce';
+import { currentToolCaller } from './gate-callers';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import type { ToolPolicy } from './tool-policy';
 
@@ -31,7 +57,43 @@ const POLICY: ToolPolicy = {
   scope: 'any',
   creates: 'file',
   clientSourced: CS.creates(),
+  memberApp: 'documents',
 };
+
+/** Why a team app may not print `node_id`. */
+export const TEAM_APP_NO_NODE_PRINT =
+  "A team app can't print a page or a drawing of the brain (node_id): print HTML or markdown the app builds, or convert files with file_ids.";
+
+/**
+ * Why a team app's call may not save its file here, or the workspace it
+ * lands in: the one workspace beyond Admin that holds the app (the app's
+ * scope, AppRunFor), for a user who moderates it (a new item lands in a
+ * workspace you moderate, docs/workspaces.md), in a run that may write (the
+ * broker's write scope, inAppRunWrite). Else nothing is saved, and the
+ * refusal says to pass `bytes: true`. Exported for tests.
+ */
+export function teamAppSaveRefusal(): { home: string } | { refused: string } {
+  const bytesInstead =
+    'Pass bytes: true to get the file back in the app instead (nothing is saved).';
+  if (!inAppRunWrite()) {
+    return {
+      refused: `This run can't save a file: a team app saves only in a request that may write, as a login that writes (not a read-only key). ${bytesInstead}`,
+    };
+  }
+  const scope = currentWorkspaceScope();
+  const holder = scope?.ws.length === 1 ? scope.ws[0]! : null;
+  if (!holder) {
+    return {
+      refused: `This app's file has no workspace to land in: a team app saves only when exactly one workspace beyond Admin holds it, and you are in it. ${bytesInstead}`,
+    };
+  }
+  if (!scope!.modWs.includes(holder)) {
+    return {
+      refused: `Saving a file in this app's workspace needs a user who moderates it. ${bytesInstead}`,
+    };
+  }
+  return { home: holder };
+}
 
 const INPUT_PROPERTIES = {
   file_ids: {
@@ -48,6 +110,11 @@ const INPUT_PROPERTIES = {
   filename: {
     type: 'string',
     description: "The output name's stem, e.g. 'q3-pack' (the extension follows the output).",
+  },
+  bytes: {
+    type: 'boolean',
+    description:
+      'Mini apps only: hand the PDF or picture back as base64 and save nothing, e.g. to show or download it in the app.',
   },
 } as const;
 
@@ -93,14 +160,71 @@ function output(result: DocumentsResult): Record<string, unknown> {
   };
 }
 
+/** A result handed back to a mini app (`bytes: true`): the bytes as base64,
+ *  within file_read's cap. */
+function bytesOutput(result: DocumentsResult & { kind: 'bytes' }): ToolHandlerResult {
+  if (result.bytes.length > APP_BYTES_MAX) {
+    return { ok: false, error: appBytesTooLarge(result.filename, result.bytes.length) };
+  }
+  return {
+    ok: true,
+    output: {
+      route: result.route,
+      filename: result.filename,
+      mime_type: result.contentType,
+      size_bytes: result.bytes.length,
+      content_base64: result.bytes.toString('base64'),
+    },
+  };
+}
+
 async function run(
   ctx: ToolHandlerContext,
+  input: Record<string, unknown>,
   call: DocumentsCall,
   what: string,
 ): Promise<ToolHandlerResult> {
+  const wantsBytes = bool(input.bytes) === true;
+  if (wantsBytes) {
+    const refused = appBytesRefusal(ctx);
+    if (refused) return { ok: false, error: refused };
+  }
+  const caller = { ownerId: ctx.ownerId, actorLoginId: actorLoginId() };
+  // A team app's run (team rules): no page print, and a file only in the
+  // workspace that holds the app (see the module comment).
+  const team = (ctx.caller ?? currentToolCaller())?.appRules === 'team';
+  if (team && typeof input.node_id === 'string' && input.node_id) {
+    return { ok: false, error: TEAM_APP_NO_NODE_PRINT };
+  }
+  let home: string | null = null;
+  if (team && !wantsBytes) {
+    const save = teamAppSaveRefusal();
+    if ('refused' in save) return { ok: false, error: save.refused };
+    home = save.home;
+  }
+  if (wantsBytes) {
+    const done = await withAppBytesSlot(async (): Promise<ToolHandlerResult> => {
+      let result: DocumentsResult;
+      try {
+        result = await runDocuments(call, caller, 'bytes');
+      } catch (err) {
+        return { ok: false, error: errorMessage(err) };
+      }
+      if (result.kind !== 'bytes') return { ok: true, output: output(result) };
+      ctx.step?.setOutput({ route: result.route, bytes: result.bytes.length });
+      return bytesOutput(result);
+    });
+    return done ?? { ok: false, error: APP_BYTES_BUSY };
+  }
   let result: DocumentsResult;
   try {
-    result = await runDocuments(call, { ownerId: ctx.ownerId, actorLoginId: actorLoginId() });
+    // A team app's file is homed in the app's workspace, whatever the
+    // folder: never the runner's private workspace, never Admin.
+    result = home
+      ? await withCreateHome({ createWs: home, privateWs: home }, () =>
+          runDocuments(call, caller),
+        )
+      : await runDocuments(call, caller);
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }
@@ -193,6 +317,7 @@ const pdf_render: BuiltinToolDef = {
   handler: async (input, ctx) =>
     run(
       ctx,
+      input,
       {
         route: `chromium/convert/${chromiumSource(input)}`,
         inputs: inputsOf(input),
@@ -218,6 +343,7 @@ const screenshot_render: BuiltinToolDef = {
   handler: async (input, ctx) =>
     run(
       ctx,
+      input,
       {
         route: `chromium/screenshot/${chromiumSource(input)}`,
         inputs: inputsOf(input),
@@ -243,6 +369,7 @@ const office_to_pdf: BuiltinToolDef = {
   handler: async (input, ctx) =>
     run(
       ctx,
+      input,
       {
         route: 'libreoffice/convert',
         inputs: inputsOf(input),
@@ -322,6 +449,7 @@ const pdf_tools: BuiltinToolDef = {
     }
     return run(
       ctx,
+      input,
       { route, inputs: inputsOf(input), options: options(input), filename: filename(input) },
       `PDF ${op}`,
     );

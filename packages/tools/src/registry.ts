@@ -93,6 +93,13 @@ export function isBuiltinTeamTableRowWrite(slug: string): boolean {
   return tableBuiltin(slug)?.policy.memberApp === 'table-rows';
 }
 
+/** Is this builtin one of the documents tools a team app may call
+ *  (`policy.memberApp` 'documents', runtime-policy.ts memberAppRefusal)?
+ *  Unknown slugs answer false. */
+export function isBuiltinTeamDocuments(slug: string): boolean {
+  return tableBuiltin(slug)?.policy.memberApp === 'documents';
+}
+
 /** The argument a `table-rows` write names its Table in (its only item
  *  argument, policy itemArgs: `table_id` for the row writes, `id` for
  *  table_commit), or null for any other builtin. */

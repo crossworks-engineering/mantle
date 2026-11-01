@@ -107,18 +107,26 @@ export function shellToolPolicy(row: Row): RuntimeToolPolicy {
 }
 
 /** The registry facts of a built-in an app calls: whether it is a read,
- *  whether it starts paid model work, and whether it is a row write a team
- *  app may make (`tableRows`: policy memberApp 'table-rows'). */
-export type AppBuiltinFacts = { readOnly: boolean; spends: boolean; tableRows?: boolean };
+ *  whether it starts paid model work, whether it is a row write a team
+ *  app may make (`tableRows`: policy memberApp 'table-rows'), and whether
+ *  it is one of the documents tools (`documents`: policy memberApp
+ *  'documents'). */
+export type AppBuiltinFacts = {
+  readOnly: boolean;
+  spends: boolean;
+  tableRows?: boolean;
+  documents?: boolean;
+};
 
 /** What a team app may call, in one sentence: the refusal and the author's
  *  warning name it, so neither drifts from this rule. */
 export const TEAM_APP_TOOLS_ALLOWED =
-  'A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app and publish its draft (table_commit), as the user running it, when that user may write there.';
+  "A team app may call read-only built-in tools; add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app and publish its draft (table_commit), as the user running it, when that user may write there; and the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true.";
 
 /** Why a member's app run may not call a built-in tool, or null (rules 2
  *  to 4 of member-app-tools.ts, on the resolved row: its slug or its
- *  builtin ref refused, it spends, it writes, it needs a confirm;
+ *  builtin ref refused, it spends, it writes (but a `table-rows` write and
+ *  a documents tool), it needs a confirm;
  *  `refused`: whether no team app calls a name, member-app-tools.ts
  *  memberAppRefusedName, the policy's `memberApp`). The one reading of
  *  them: memberAppToolVerdict and appToolPolicy both ask it.
@@ -132,7 +140,14 @@ export const TEAM_APP_TOOLS_ALLOWED =
  *  holders as AppRunFor reads them), and it runs as the running login in
  *  the app's scope, so the database's own checks (the item's Write switch,
  *  a Moderator, the actor and edit checks) decide whether that user may. A
- *  shared link runs no built-in at all (contactAppToolVerdict). */
+ *  shared link runs no built-in at all (contactAppToolVerdict).
+ *
+ *  A documents tool (policy memberApp 'documents', builtins-documents.ts)
+ *  is let through too: it reads its inputs in the app's scope (never a page
+ *  print, whose render cookie carries the login's whole rights), and its
+ *  only write is the file it saves, in the one workspace that holds the
+ *  app, for a user who moderates that workspace (the create rule
+ *  everywhere); else nothing is saved and the app gets the bytes. */
 export function memberAppRefusal(
   slug: string,
   ref: string,
@@ -146,7 +161,7 @@ export function memberAppRefusal(
   if (builtin.spends) {
     return `The tool '${slug}' starts paid model work on every call, so a team app can't use it.`;
   }
-  if (!builtin.readOnly && builtin.tableRows !== true) {
+  if (!builtin.readOnly && builtin.tableRows !== true && builtin.documents !== true) {
     return `The tool '${slug}' changes data or reaches outside the brain, so a team app can't use it. ${TEAM_APP_TOOLS_ALLOWED}`;
   }
   if (requiresConfirm) {

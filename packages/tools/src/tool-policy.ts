@@ -221,8 +221,12 @@ type ToolPolicyFields = Readonly<{
    *  the app, as the running login, whose own rights the database checks
    *  (runtime-policy.ts memberAppRefusal). Only the row writes and table_commit
    *  carry it: no table create, delete or rename, no column, tab or snapshot
-   *  change, no row delete. */
-  memberApp?: 'ok' | 'refused' | 'table-rows';
+   *  change, no row delete. `documents`: one of the four documents tools
+   *  (builtins-documents.ts), which a team app may call: its inputs are read
+   *  in the app's scope, and its file is saved in the workspace that holds
+   *  the app for a user who moderates it there, or handed back to the app
+   *  (`bytes`) and saved nowhere. */
+  memberApp?: 'ok' | 'refused' | 'table-rows' | 'documents';
   /** It reads the owner's PRIVATE corpus (mail, the Journal): a turn that
    *  serves a workspace user (a team turn, a workspace run or Telegram
    *  turn) is offered it only when the owner opted in (teamPrivateReads),

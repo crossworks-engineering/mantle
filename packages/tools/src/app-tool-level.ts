@@ -220,6 +220,24 @@ export async function appRunTableWrite(verdict: AppToolVerdict): Promise<string 
   return teamTableWriteArg(h.ref);
 }
 
+/** Whether an allowed call of an app run is a documents tool that saves its
+ *  file (policy memberApp 'documents', without `bytes: true`): at team
+ *  rules it then runs in the app's scope as a write, as the running login,
+ *  and lands its file in the workspace that holds the app for a user who
+ *  moderates it (builtins-documents.ts teamAppSaveRefusal); `bytes: true`
+ *  saves nothing and keeps the read-only scope. */
+export async function appRunFileSave(
+  verdict: AppToolVerdict,
+  input: Readonly<Record<string, unknown>>,
+): Promise<boolean> {
+  if (!verdict.ok) return false;
+  const h = verdict.tool.handler as Tool['handler'] | undefined;
+  if (h?.kind !== 'builtin') return false;
+  // Lazy: the registry imports every builtin, app_tools_set among them.
+  const { isBuiltinTeamDocuments } = await import('./registry');
+  return isBuiltinTeamDocuments(h.ref) && input.bytes !== true;
+}
+
 /** The largest input a team app's Table write takes, bytes: a few thousand
  *  rows a call, well under the broker's body ceiling; the draft's own
  *  ceiling is applyTableOps'. */
@@ -246,7 +264,7 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
     if (level !== 'team') return [];
     const declared = [...new Set(app.manifest.toolSlugs ?? [])];
     // Lazy: the registry imports every builtin, app_tools_set among them.
-    const { isBuiltinTeamTableRowWrite } = await import('./registry');
+    const { isBuiltinTeamDocuments, isBuiltinTeamTableRowWrite } = await import('./registry');
     const warnings: string[] = [];
     /** How many live workspaces beyond Admin hold the app, once asked. */
     let holders: number | undefined;
@@ -268,6 +286,16 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
             holders === 1
               ? `The tool '${slug}' runs here only on a Table homed in the workspace that holds this app, as the user running it, who needs Write on that Table (or to be a Moderator of its workspace): on its own workspace's Tables the app does what that user may do there. Row changes land in the Table's draft; table_commit publishes it. Any other Table is refused: an app a workspace other than Admin holds runs the team rules.`
               : `The tool '${slug}' writes no Table here: a team app's row writes run only when exactly one workspace beyond Admin holds the app (${holders} do), on a Table homed in that workspace. Keep the app in one workspace (beside Admin) for its row writes to run.`,
+          );
+        }
+        // A documents tool saves only for a user who moderates the app's
+        // workspace; with bytes: true it saves nothing and runs for everyone.
+        if (h.kind === 'builtin' && isBuiltinTeamDocuments(h.ref)) {
+          holders ??= (await appRunHolders({ id: appId })).length;
+          warnings.push(
+            holders === 1
+              ? `The tool '${slug}' saves its file at the top of Files, in the workspace that holds this app, only for a user who moderates that workspace; anyone else gets an error. Pass bytes: true to hand the PDF or picture back to the app for everyone (nothing is saved). A team app prints HTML, markdown or files, never a page by node_id.`
+              : `The tool '${slug}' saves no file here: a team app saves only when exactly one workspace beyond Admin holds the app (${holders} do). Pass bytes: true to hand the PDF or picture back to the app (nothing is saved), or keep the app in one workspace beside Admin.`,
           );
         }
         continue;

@@ -199,10 +199,11 @@ CORE="${MANTLE_CORE:-}"
 # always runs it.
 HELPERS="${MANTLE_HELPERS:-}"
 # The documents engine (Gotenberg: Office to PDF, page prints, the PDF
-# tools): 1=enable, 0=disable, empty=keep .env as-is. Off by default on every
-# shape (a 2 GB cap; see docker-compose.yml). The password is generated
-# whether or not it is on, so a later Settings > Services switch starts one
-# container instead of restarting the brain.
+# tools): 1=enable, 0=disable, empty=keep .env as-is on an existing box and
+# ON on a fresh one (a 2 GB cap; see docker-compose.yml). 0 also writes
+# MANTLE_DOCUMENTS_OFF=1, so the updater's roll keeps it off. The password is
+# generated whether or not it is on, so a later Settings > Services switch
+# starts one container instead of restarting the brain.
 DOCUMENTS="${MANTLE_DOCUMENTS:-}"
 # Owner web UI (the separate client stack): 1=run it, 0=headless (API + MCP +
 # share pages only — no signup, no owner screens), empty=keep .env as-is
@@ -268,15 +269,17 @@ ${B}Options${RS}
                          format is read by the parser service, which a core
                          keeps.)
   --no-helpers           Shed the PDF browser again on a core box
-  --documents            The documents engine (Gotenberg, ~700 MB image):
-                         Office files to PDF, page and HTML prints with
-                         headers and page numbers, merge/split/stamp/encrypt
-                         and the other PDF tools, for agents, MCP, the HTTP
-                         API and mini-app reports. Off by default; persists
-                         via COMPOSE_PROFILES in .env. Also a switch in
+  --documents            The documents engine (Gotenberg, ~700 MB image,
+                         2.4 GB on disk, up to 2 GB memory): Office files to
+                         PDF, page and HTML prints with headers and page
+                         numbers, merge/split/stamp/encrypt and the other PDF
+                         tools, for agents, MCP, the HTTP API and mini apps.
+                         ON by default on a new box; persists via
+                         COMPOSE_PROFILES in .env. Also a switch in
                          Settings > Services.
-  --no-documents         Switch the documents engine off again (nothing it
-                         made is removed)
+  --no-documents         Switch the documents engine off (nothing it made is
+                         removed). Writes MANTLE_DOCUMENTS_OFF=1, so a roll
+                         keeps it off.
   --client               Run the owner web UI (the default; a separate small
                          container on its own version stream)
   --no-client            Headless box: API + MCP + share pages only. No owner
@@ -834,6 +837,11 @@ if [[ $INTERACTIVE -eq 1 && $FRESH_BOX -eq 1 ]]; then
     fi
     if confirm "Bundle the LOCAL embedder?" "$emb_d"; then LOCAL_EMBEDDER=1; else LOCAL_EMBEDDER=0; fi
   fi
+  if [[ -z "$DOCUMENTS" ]]; then
+    doc_d=y; if [[ "$(envval MANTLE_DOCUMENTS_OFF)" == 1 ]]; then doc_d=n; fi
+    inf "${DIM}The documents engine (Gotenberg, ~700 MB image, 2.4 GB on disk, up to 2 GB memory): Office to PDF, page prints and the PDF tools, for agents, MCP and mini apps.${RS}"
+    if confirm "Run the documents engine?" "$doc_d"; then DOCUMENTS=1; else DOCUMENTS=0; fi
+  fi
   if [[ -z "$CLIENT" ]]; then
     cli_d=y; if [[ "$(envval MANTLE_CLIENT_ENABLED)" == 0 ]]; then cli_d=n; fi
     inf "${DIM}The owner web UI is a separate small container — signup and every owner screen live in it. Skip it only for a headless memory core driven over MCP/API.${RS}"
@@ -1067,14 +1075,23 @@ if [[ -n "$CORE" ]]; then
   fi
 fi
 # ── The documents engine (Gotenberg) ─────────────────────────────────────────
-# A compose profile on every shape, off by default. Flag not passed → keep
-# .env as-is (Settings > Services switches it on a running box).
+# A compose profile on every shape, ON by default: a fresh box with no flag
+# gets it unless an earlier --no-documents left MANTLE_DOCUMENTS_OFF=1. Flag
+# not passed on an existing box → keep .env as-is (the updater's roll turns
+# it on unless MANTLE_DOCUMENTS_OFF=1; Settings > Services switches it).
+if [[ -z "$DOCUMENTS" && $FRESH_BOX -eq 1 && "$(getval MANTLE_DOCUMENTS_OFF)" != 1 ]]; then
+  DOCUMENTS=1
+fi
 if [[ -n "$DOCUMENTS" ]]; then
   rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'documents' | grep -v '^$' | paste -sd, -)" || rest=""
   if [[ "$DOCUMENTS" == 1 ]]; then
     upsert COMPOSE_PROFILES "${rest:+$rest,}documents"
-    ok "Documents engine ON: Gotenberg starts with the stack (Office to PDF, page prints, the PDF tools)"
+    if grep -qE '^MANTLE_DOCUMENTS_OFF=' "$ENV_FILE" 2>/dev/null; then
+      tmp="$(mktemp)"; grep -vE '^MANTLE_DOCUMENTS_OFF=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
+    fi
+    ok "Documents engine ON: Gotenberg starts with the stack (Office to PDF, page prints, the PDF tools; ~700 MB download, 2.4 GB on disk, up to 2 GB memory)"
   else
+    upsert MANTLE_DOCUMENTS_OFF 1
     if [[ -n "$rest" ]]; then
       upsert COMPOSE_PROFILES "$rest"
     elif grep -qE '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null; then
@@ -1230,7 +1247,7 @@ row "Version"     "$IMAGE_TAG"
 row "Embedder"    "$(if [[ "$(getval COMPOSE_PROFILES)" == *local-embedder* ]]; then printf 'bundled (local)'; else printf 'online — chosen during onboarding'; fi)"
 row "Shape"       "$(if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then if [[ "$(getval COMPOSE_PROFILES)" == *helpers* ]]; then printf 'core + doc helpers (channel workers off)'; else printf 'core (channel workers + doc helpers off)'; fi; else printf 'full'; fi)"
 row "Sandboxes"   "$(if [[ "$(getval COMPOSE_PROFILES)" == *sandboxes* ]]; then printf 'on (coder agent gets isolated containers)'; else printf 'off'; fi)"
-row "Documents"   "$(if [[ "$(getval COMPOSE_PROFILES)" == *documents* ]]; then printf 'on (Gotenberg: Office to PDF, page prints, PDF tools)'; else printf 'off (switch on in Settings > Services or with --documents)'; fi)"
+row "Documents"   "$(if [[ "$(getval COMPOSE_PROFILES)" == *documents* ]]; then printf 'on (Gotenberg: Office to PDF, page prints, PDF tools)'; else printf 'off (Settings > Services or --documents turns it on)'; fi)"
 row "Owner UI"    "$(if [[ "$(getval MANTLE_CLIENT_ENABLED)" == 0 ]]; then printf 'off — headless (MCP / API only)'; else printf 'on (tag: %s)' "$(getval MANTLE_CLIENT_IMAGE_TAG | grep . || echo latest)"; fi)"
 if [[ "$DEBUG_PORT" != 3000 ]]; then row "Debug port" "127.0.0.1:$DEBUG_PORT  ${DIM}(3000 was taken)${RS}"; fi
 existing="$(docker ps -aq --filter "label=com.docker.compose.project=mantle" 2>/dev/null | head -1)"

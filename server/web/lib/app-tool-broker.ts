@@ -58,6 +58,7 @@ import {
 import {
   APP_TABLE_WRITE_MAX_BYTES,
   appBrokerCaller,
+  appRunFileSave,
   appRunTableWrite,
   appToolLevel,
   appToolRefusal,
@@ -324,12 +325,15 @@ export async function runAppToolBroker(
   // A Table write the team rules allowed (a row write or table_commit on
   // the app's own workspace's Table): the argument naming its Table.
   const tableArg = await appRunTableWrite(verdict);
+  // A documents tool that saves its file (no `bytes: true`).
+  const fileSave = await appRunFileSave(verdict, input);
   const scope = { actsFor: await run.actsFor() };
   // It runs in the app's scope as a write, as the running login, only for
   // a login that may write in this request (appRunWriter); a read keeps
-  // the read-only scope.
-  const writes = scope.actsFor !== null && tableArg !== null;
-  const tableRefusal = !writes
+  // the read-only scope. A documents save with no writer runs read-only,
+  // and the tool answers why it saved nothing (teamAppSaveRefusal).
+  const writes = scope.actsFor !== null && (tableArg !== null || fileSave);
+  const tableRefusal = !(writes && tableArg !== null)
     ? null
     : !writer
       ? 'This run cannot change data: a team app writes a Table only in a request that may write, as a login that writes (not a read-only key).'
@@ -344,7 +348,14 @@ export async function runAppToolBroker(
   // An outside call names its kind, so the log shows which calls reached
   // outside the brain; a write keeps its input too; a
   // Table write names its Table and its row count.
-  logCall({ ...tagged, ...outsideCallLogDetail(verdict, input, tableArg) }, true);
+  logCall(
+    {
+      ...tagged,
+      ...outsideCallLogDetail(verdict, input, tableArg),
+      ...(fileSave && scope.actsFor ? { write: true, saves: 'file' } : {}),
+    },
+    true,
+  );
   // Through the one gate as the app's broker.
   const dispatch = () =>
     dispatchTool(verdict.tool, input, {

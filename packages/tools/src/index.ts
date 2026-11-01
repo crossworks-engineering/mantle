@@ -334,6 +334,7 @@ export {
   appToolVerdict,
   appRunWrites,
   appRunTableWrite,
+  appRunFileSave,
   APP_TABLE_WRITE_MAX_BYTES,
   appToolWarnings,
   movedAppToolWarnings,

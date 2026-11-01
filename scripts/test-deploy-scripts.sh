@@ -579,6 +579,15 @@ install_run --localhost -y --skip-up --data-dir "$T/stack/data" || true
 check "a re-run keeps the same code" test "$(code_line)" = "$first"
 check "and writes it once" test "$(grep -c '^MANTLE_SETUP_CODE=' "$T/stack/.env")" = 1
 check "a re-run says it was kept" grep -q 'MANTLE_SETUP_CODE kept' "$T/out"
+check "a fresh install runs the documents engine" grep -qE '^COMPOSE_PROFILES=(.*,)?documents(,.*)?$' "$T/stack/.env"
+install_run --localhost -y --skip-up --data-dir "$T/stack/data" --no-documents || true
+check "--no-documents: profile dropped, MANTLE_DOCUMENTS_OFF=1 written" sh -c "
+  ! grep -qE '^COMPOSE_PROFILES=.*documents' '$T/stack/.env' && grep -qx 'MANTLE_DOCUMENTS_OFF=1' '$T/stack/.env'"
+install_run --localhost -y --skip-up --data-dir "$T/stack/data" || true
+check "a re-run with no flag keeps it off" sh -c "! grep -qE '^COMPOSE_PROFILES=.*documents' '$T/stack/.env'"
+install_run --localhost -y --skip-up --data-dir "$T/stack/data" --documents || true
+check "--documents: on again, the off line dropped" sh -c "
+  grep -qE '^COMPOSE_PROFILES=(.*,)?documents' '$T/stack/.env' && ! grep -q '^MANTLE_DOCUMENTS_OFF=' '$T/stack/.env'"
 check "two installs do not share a code" sh -c "test \"\$(env PATH='$T/bin':\"\$PATH\" '$BASH' -c \"\$(awk 'index(\$0, \"gen_setup_code() {\") == 1 { p = 1 } p { print } p && /^}\$/ { exit }' '$ROOT/scripts/install.sh'); gen_setup_code\")\" != '$first'"
 
 CURL_BOOT='{"firstRun":true,"setupCodeRequired":true}' install_run --setup-code || true
@@ -1545,6 +1554,7 @@ case "$1" in
           a=$1; shift; set -- "$@" "$(printf '%s' "$a" | sed "s#^/signal/#$RS/sig/#")"; n=$((n - 1))
         done
         exec "$@" ;;
+      *service.toggle*) echo "${FAKE_DOCS_AUDIT:-none}" ;;
       *api/version*) echo '{"version":"fake"}' ;;
       *healthz*) [ -z "${FAKE_PARSER_UNREACHABLE:-}" ] || exit 1 ;;
       *psql*)
@@ -1605,6 +1615,15 @@ check "happy: stack dir read from the updater" grep -q "(stack $RS/stack)" "$RS/
 check "happy: prints /api/version" grep -q 'version: {"version":"fake"}' "$RS/out"
 check "happy: counts printed before and after" sh -c "grep -q 'before: apps=11 sandboxes=2 app-db files=7' '$RS/out' && grep -q 'after:  apps=11 sandboxes=2 app-db files=7' '$RS/out'"
 check "happy: the runtime role's line written before the request (S4a)" sh -c "grep -qx 'MANTLE_DB_RUNTIME_ROLE=0' '$RS/stack/.env' && grep -q 'wrote 0, from .env' '$RS/out'"
+check "happy: the documents engine on by default before the request, its cost said" sh -c "
+  grep -qx 'COMPOSE_PROFILES=documents' '$RS/stack/.env' && grep -q 'documents engine ON by default' '$RS/out' && grep -q 'up to 2 GB memory' '$RS/out'"
+check "happy: the documents engine's health reported" grep -q 'mantle_gotenberg: healthy' "$RS/out"
+
+roll_box docsoff
+printf 'MANTLE_DOCUMENTS_OFF=1\n' > "$RS/stack/.env"
+roll_sh --ssh fakebox v8
+check "documents off on purpose: the roll keeps it off" sh -c "
+  test '$rc' = 0 && ! grep -q '^COMPOSE_PROFILES=' '$RS/stack/.env' && grep -q 'stays off: MANTLE_DOCUMENTS_OFF=1' '$RS/out'"
 
 roll_box dumpfail
 FAKE_DUMP=fail roll_sh --ssh fakebox v8
@@ -2272,6 +2291,54 @@ check "core shape read from COMPOSE_FILE" test "$(svc_field 'j.core')" = true
 check "verbs advertise the roll and the service switch" test "$(svc_field 'j.verbs.join()')" = roll,service
 check "no token VALUE in the file" sh -c "! grep -q sekrit '$SJ'"
 
+echo "updater.sh: the documents engine is on by default at a roll"
+# ensure_documents_default: the profile joins COMPOSE_PROFILES unless it is
+# switched off on purpose (MANTLE_DOCUMENTS_OFF=1, or the newest accepted
+# Settings > Services switch in the audit log was an off), with the disk and
+# memory it adds in the log. Never fails.
+DD_STUB='docker() {
+  case "$*" in
+    *service.toggle*) [ "${FAKE_DOCS_AUDIT:-none}" != fail ] || return 1; echo "${FAKE_DOCS_AUDIT:-none}" ;;
+  esac
+  return 0
+}'
+dd_case() { # <name> <.env lines>: a stack, then the function under the stub
+  DD="$WORK/docs-default-$1"; fake_stack "$DD"
+  printf '%b' "$2" >> "$DD/stack/.env"
+  cp "$DD/stack/.env" "$DD/env.before"
+  updater_run "$DD/stack" "$DD/sig" "$DD/img" "$DD_STUB
+ensure_documents_default; echo rc=\$?" > "$DD/out" 2>&1
+}
+dd_case none 'COMPOSE_PROFILES=sandboxes\nGOTENBERG_PASSWORD=keep\n'
+check "documents default: on, appended to the profiles" grep -qx 'COMPOSE_PROFILES=sandboxes,documents' "$DD/stack/.env"
+check "documents default: the password kept" grep -qx 'GOTENBERG_PASSWORD=keep' "$DD/stack/.env"
+check "documents default: the log names the disk and memory it adds" sh -c "
+  grep -q 'documents engine ON by default' '$DD/out' && grep -q '2.4 GB on disk and up to 2 GB memory' '$DD/out' && grep -q 'MB disk free' '$DD/out'"
+check "documents default: returns 0" grep -qx 'rc=0' "$DD/out"
+check ".env keeps mode 600" test "$(mode_of "$DD/stack/.env")" = 600
+dd_case noprofiles ''
+check "documents default: no profiles before, documents alone, password provisioned" sh -c "
+  grep -qx 'COMPOSE_PROFILES=documents' '$DD/stack/.env' && grep -qE '^GOTENBERG_PASSWORD=[0-9a-f]{64}$' '$DD/stack/.env'"
+dd_case already 'COMPOSE_PROFILES=documents,sandboxes\n'
+check "documents default: already on, .env untouched, nothing said" sh -c "
+  cmp -s '$DD/stack/.env' '$DD/env.before' && test \"\$(cat '$DD/out')\" = rc=0"
+dd_case marker 'COMPOSE_PROFILES=sandboxes\nMANTLE_DOCUMENTS_OFF=1\n'
+check "documents default: MANTLE_DOCUMENTS_OFF=1 keeps it off" sh -c "
+  cmp -s '$DD/stack/.env' '$DD/env.before' && grep -q 'stays off: MANTLE_DOCUMENTS_OFF=1' '$DD/out'"
+FAKE_DOCS_AUDIT=false dd_case audited 'COMPOSE_PROFILES=sandboxes\n'
+check "documents default: an earlier Settings off keeps it off and writes the line" sh -c "
+  grep -qx 'COMPOSE_PROFILES=sandboxes' '$DD/stack/.env' && grep -qx 'MANTLE_DOCUMENTS_OFF=1' '$DD/stack/.env' && grep -q 'switched it off in Settings' '$DD/out'"
+FAKE_DOCS_AUDIT=true dd_case auditon 'COMPOSE_PROFILES=sandboxes\n'
+check "documents default: an earlier Settings on (later removed by hand) turns it on" grep -qx 'COMPOSE_PROFILES=sandboxes,documents' "$DD/stack/.env"
+FAKE_DOCS_AUDIT=fail dd_case auditfail 'COMPOSE_PROFILES=sandboxes\n'
+check "documents default: an unreadable audit log switches nothing on, says so" sh -c "
+  cmp -s '$DD/stack/.env' '$DD/env.before' && grep -q 'audit log could not be read' '$DD/out' && grep -qx 'rc=0' '$DD/out'"
+dd_case disk 'COMPOSE_PROFILES=sandboxes\nMANTLE_SERVICE_MIN_FREE_MB=999999999\n'
+check "documents default: too little disk switches nothing on, says so" sh -c "
+  cmp -s '$DD/stack/.env' '$DD/env.before' && grep -q 'not switched on: .* MB free' '$DD/out'"
+check "documents default: roll.sh sends the same functions" sh -c "
+  grep -q 'ensure_documents_default' '$ROOT/scripts/roll.sh' && grep -q \"/^documents_switched_off() {/,/^}/p\" '$ROOT/scripts/roll.sh'"
+
 echo "updater.sh: optional-service and parser tokens provisioned on a roll"
 TK="$WORK/tokens"; fake_stack "$TK"
 printf 'SANDBOXD_TOKEN=\nPARSER_TOKEN=keepme\n' >> "$TK/stack/.env"
@@ -2533,6 +2600,12 @@ printf 'GOTENBERG_PASSWORD=keep\n' >> "$T/stack/.env"
 svc_run
 check "documents off: profile dropped, gotenberg stopped and removed, the password kept" sh -c "
   grep -qx 'COMPOSE_PROFILES=sandboxes' '$T/stack/.env' && grep -qE 'profile documents stop gotenberg$' '$T/calls' && grep -qE 'profile documents rm -f gotenberg$' '$T/calls' && grep -qx 'GOTENBERG_PASSWORD=keep' '$T/stack/.env'"
+check "documents off: MANTLE_DOCUMENTS_OFF=1 written, so a roll keeps it off" grep -qx 'MANTLE_DOCUMENTS_OFF=1' "$T/stack/.env"
+svc_case docsonagain '{"service":"documents","enable":true}'
+printf 'GOTENBERG_PASSWORD=keep\nMANTLE_DOCUMENTS_OFF=1\n' >> "$T/stack/.env"
+svc_run
+check "documents on again: the off-on-purpose line is dropped" sh -c "
+  grep -q '\"ok\":true' '$T/sig/service-status.json' && ! grep -q '^MANTLE_DOCUMENTS_OFF=' '$T/stack/.env'"
 svc_case helpoff '{"service":"helpers","enable":false}'
 printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"

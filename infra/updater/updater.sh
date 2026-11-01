@@ -1472,6 +1472,80 @@ ensure_service_tokens() {
   fi
 }
 
+# ── the documents engine: on by default ─────────────────────────────────────
+# Mini apps and agents make their PDFs through it, so a box runs it unless an
+# admin switched it off on purpose. A new install writes the profile
+# (scripts/install.sh); an existing box gets it on its next roll, here and in
+# scripts/roll.sh (which sends these functions, so the roll that brings this
+# release already starts it). "On purpose" is MANTLE_DOCUMENTS_OFF=1 in .env
+# (written by a Settings > Services off and by install.sh --no-documents), or,
+# for an off from before that line existed, the newest accepted Settings >
+# Services switch of documents in the audit log. Off works as before: the
+# profile is left out and nothing else changes.
+#
+# The engine: about 700 MB to download, 2.4 GB on disk, up to 2 GB memory
+# (docker-compose.yml mem_limit 2g; about 300 MB resident after the first
+# job). Too little disk (MANTLE_SERVICE_MIN_FREE_MB plus the image) or an
+# unreadable audit log switches nothing on, says why, and the next roll tries
+# again. It always returns 0: it never fails a roll.
+DOCUMENTS_IMAGE_MB=2560
+
+# documents_switched_off: 0 when the newest accepted Settings > Services
+# switch of documents was an off, 1 when it was an on or there was none, 2
+# when the audit log could not be read.
+documents_switched_off() {
+  dso_v=$(docker exec mantle_pg psql -U postgres -d postgres -Atc \
+    "select coalesce((select detail->>'enable' from audit_log where action = 'service.toggle' and detail->>'service' = 'documents' and detail->>'accepted' = 'true' order by created_at desc limit 1), 'none')" \
+    < /dev/null 2>/dev/null) || return 2
+  case "$dso_v" in
+    false) return 0 ;;
+    true | none) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+
+ensure_documents_default() {
+  profile_active documents && return 0
+  if [ "$(env_val MANTLE_DOCUMENTS_OFF)" = 1 ]; then
+    echo "[updater] documents engine stays off: MANTLE_DOCUMENTS_OFF=1 (switched off on purpose)"
+    return 0
+  fi
+  documents_switched_off
+  edd_off=$?
+  if [ "$edd_off" -eq 0 ]; then
+    persist_env MANTLE_DOCUMENTS_OFF 1 || true
+    echo "[updater] documents engine stays off: an admin switched it off in Settings > Services (MANTLE_DOCUMENTS_OFF=1 written)"
+    return 0
+  fi
+  if [ "$edd_off" -ne 1 ]; then
+    echo "[updater] ⚠ documents engine not switched on: the audit log could not be read (is mantle_pg up?); the next roll tries again"
+    return 0
+  fi
+  edd_min_mb=$(( $(num_or "$(env_val MANTLE_SERVICE_MIN_FREE_MB)" 4096) + DOCUMENTS_IMAGE_MB ))
+  edd_free=$(free_kb "$STACK")
+  if [ -n "$edd_free" ] && [ "$edd_free" -lt $((edd_min_mb * 1024)) ]; then
+    echo "[updater] ⚠ documents engine not switched on: $((edd_free / 1024)) MB free, it needs $edd_min_mb MB (2.4 GB for its image); free space and roll again"
+    return 0
+  fi
+  if [ -z "$(env_val GOTENBERG_PASSWORD)" ]; then
+    if ! edd_tok=$(gen_token) || ! persist_env GOTENBERG_PASSWORD "$edd_tok"; then
+      echo "[updater] ⚠ documents engine not switched on: GOTENBERG_PASSWORD could not be written"
+      return 0
+    fi
+  fi
+  edd_rest=$(profiles_csv)
+  if ! persist_env COMPOSE_PROFILES "${edd_rest:+$edd_rest,}documents"; then
+    echo "[updater] ⚠ documents engine not switched on: COMPOSE_PROFILES could not be written"
+    return 0
+  fi
+  edd_mt=$(awk '/^MemTotal:/ { print int($2 / 1024); exit }' /proc/meminfo 2>/dev/null)
+  edd_ma=$(awk '/^MemAvailable:/ { print int($2 / 1024); exit }' /proc/meminfo 2>/dev/null)
+  edd_fmb='?'
+  [ -z "$edd_free" ] || edd_fmb=$((edd_free / 1024))
+  echo "[updater] documents engine ON by default (Gotenberg: Office to PDF, page prints, the PDF tools, mini-app PDFs). It adds about 700 MB to download, 2.4 GB on disk and up to 2 GB memory (mem_limit 2g; about 300 MB after the first job). This box: $(num_or "$edd_mt" '?') MB memory, $(num_or "$edd_ma" '?') MB available, $edd_fmb MB disk free. Switch it off in Settings > Services; it then stays off."
+  return 0
+}
+
 # ensure_parser_token: the parser service's bearer token, written once and
 # never rotated, when the compose this roll brings runs the parser. Before the
 # token exists the parser serves without one on its internal network (the
@@ -1673,6 +1747,10 @@ service_on() {
     so_rest=$(profiles_csv)
     persist_env COMPOSE_PROFILES "${so_rest:+$so_rest,}$1" || { service_on_failed "$1" "could not write COMPOSE_PROFILES"; return 1; }
   fi
+  # On again: no longer off on purpose (ensure_documents_default).
+  if [ "$1" = documents ] && grep -q '^MANTLE_DOCUMENTS_OFF=' "$STACK/.env" 2>/dev/null; then
+    env_rewrite '/^MANTLE_DOCUMENTS_OFF=/d' || { service_on_failed "$1" "could not write .env"; return 1; }
+  fi
 
   write_service_status pulling "$1" true "$SVC_STARTED" "" null ""
   svc_log "downloading $so_svc"
@@ -1757,6 +1835,11 @@ service_off() {
   svc_compose "$1" rm -f $so_svc || { SVC_ERR="could not remove the $so_svc container; nothing changed in .env"; return 1; }
   persist_env COMPOSE_PROFILES "$(profiles_without "$1")" \
     || { SVC_ERR="$so_svc is stopped but COMPOSE_PROFILES could not be written; the next roll would start it again"; return 1; }
+  # Off on purpose: a roll leaves it off (ensure_documents_default).
+  if [ "$1" = documents ]; then
+    persist_env MANTLE_DOCUMENTS_OFF 1 \
+      || { SVC_ERR="$so_svc is stopped but MANTLE_DOCUMENTS_OFF could not be written; the next roll would start it again"; return 1; }
+  fi
   return 0
 }
 
@@ -2011,6 +2094,9 @@ while true; do
     # After the compose refresh (the check reads the compose this roll brings
     # up) and before the pull/up that recreates the app containers with it.
     ensure_service_tokens
+    # The documents engine joins the profiles before the pull below fetches
+    # it (unless switched off on purpose; never fails the roll).
+    ensure_documents_default 2>&1 | tee -a "$SIG/update.log"
     if docker compose --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1; then
       write_status rolling "$TARGET" "$STARTED" "" null ""
       # Recreate every service EXCEPT this updater. A bare `up -d` would recreate

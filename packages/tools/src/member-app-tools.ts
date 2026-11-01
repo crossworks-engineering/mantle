@@ -21,7 +21,12 @@
  *      read can spend). One exception: a Table write the policy marks
  *      `table-rows` (add a row or rows, upsert rows, update a row, set a
  *      cell, and commit the draft, table_commit),
- *      on a Table homed in the workspace that holds the app (rule 6);
+ *      on a Table homed in the workspace that holds the app (rule 6); and
+ *      the four documents tools (`documents`: pdf_render, screenshot_render,
+ *      office_to_pdf, pdf_tools), which read their inputs in the app's scope
+ *      and save their file only in the workspace that holds the app, for a
+ *      user who moderates it (builtins-documents.ts teamAppSaveRefusal), or
+ *      hand it back to the app and save nothing;
  *   5. an ENABLED system-wide tool group holds it (not an adminOnly one:
  *      those run only in the Admin workspace);
  *   6. a Table write names, in its item argument (`table_id`, or `id` for
@@ -178,12 +183,18 @@ export async function memberAppToolVerdict(
     return outsideToolVerdict(ownerId, tool, slug, 'member', loginId, check);
   }
   // Lazy: the registry imports every builtin, app_tools_set among them.
-  const { isBuiltinReadOnly, isBuiltinSpending, isBuiltinTeamTableRowWrite, teamTableWriteArg } =
-    await import('./registry');
+  const {
+    isBuiltinReadOnly,
+    isBuiltinSpending,
+    isBuiltinTeamDocuments,
+    isBuiltinTeamTableRowWrite,
+    teamTableWriteArg,
+  } = await import('./registry');
   const builtin: AppBuiltinFacts = {
     readOnly: isBuiltinReadOnly(tool.handler.ref),
     spends: isBuiltinSpending(tool.handler.ref),
     tableRows: isBuiltinTeamTableRowWrite(tool.handler.ref),
+    documents: isBuiltinTeamDocuments(tool.handler.ref),
   };
   // Rules 2 to 4 on the row: the app tool's policy (runtime-policy.ts), the
   // one reading of them.
@@ -197,9 +208,10 @@ export async function memberAppToolVerdict(
       reason: `The tool '${slug}' is only in Admin-only tool groups, so this app can't use it outside the Admin workspace.`,
     };
   }
-  // Rule 6: a write rules 2 to 4 let through (only a `table-rows` Table
-  // write) changes only a Table homed in the holder of the app.
-  if (!builtin.readOnly) {
+  // Rule 6: a Table write rules 2 to 4 let through changes only a Table
+  // homed in the holder of the app. A documents tool names no Table: its
+  // one write, the file, is held to the holder where it runs.
+  if (!builtin.readOnly && !builtin.documents) {
     const arg = teamTableWriteArg(tool.handler.ref);
     const target = await tableRowsTargetRefusal(ownerId, slug, arg, check);
     if (target) return { ok: false, status: 403, reason: target };

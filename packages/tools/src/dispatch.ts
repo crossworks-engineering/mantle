@@ -36,6 +36,7 @@ import {
   getBuiltinHandler,
   isBuiltinReadOnly,
   isBuiltinSpending,
+  isBuiltinTeamDocuments,
   isBuiltinTeamTableRowWrite,
 } from './registry';
 // The `app-tool` policy source (an app broker's call).
@@ -191,6 +192,7 @@ async function appToolRun(
           readOnly: isBuiltinReadOnly(h.ref),
           spends: isBuiltinSpending(h.ref),
           tableRows: isBuiltinTeamTableRowWrite(h.ref),
+          documents: isBuiltinTeamDocuments(h.ref),
         }
       : null;
   const ref = Object.freeze({
