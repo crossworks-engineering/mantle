@@ -42,6 +42,7 @@ import { notFound } from '../errors';
 import { actingLoginId } from '../surface';
 import type { ToolPolicy } from '../tool-policy';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from '../types';
+import { CODE_HISTORY_TOOLS } from './history';
 import { appKit, type CodeKit } from './kit';
 import { searchFiles } from './search';
 import {
@@ -819,6 +820,7 @@ const code_undo: BuiltinToolDef = {
 export const CODE_TOOLS: BuiltinToolDef[] = [
   code_view,
   code_search,
+  ...CODE_HISTORY_TOOLS,
   code_edit,
   code_insert,
   code_write,
