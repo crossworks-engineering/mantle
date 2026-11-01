@@ -45,6 +45,7 @@ const SANCTIONED_ESSAYS = new Set<string>([
 const NOT_A_TOOL_SLUG = new Set<string>([
   'internal_date', // email_list result field (Gmail internalDate)
   'base_rev', // the code tools' (and app_source_set's) revision check param
+  'edit_id', // the id each code-tool write returns, code_undo's param
   'mentioned_in', // page_mention result field
   'draft_doc', // pages draft-state field on page rows
   'next_ordinal', // read_section paging cursor field

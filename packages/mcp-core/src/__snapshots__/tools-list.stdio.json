@@ -7982,7 +7982,7 @@
  },
  {
   "name": "code_view",
-  "description": "Read a mini app's source. With no `path`: the file tree (each file's size and line count), the entry file and the tree's `rev`. With a `path`: that file as numbered lines, only `start`..`end` when given. Reads the DRAFT, else the published code. Pass `rev` back as `base_rev` on a write. To find text across files use `code_search`; for the manifest and build state use `app_get`.",
+  "description": "Read a mini app's source. With no `path`: the file tree (each file's size and line count), the tree's `rev`, and what this target can use (language, entry rule, allowed imports, each library's guide). With a `path`: that file as numbered lines, only `start`..`end` when given. Reads the DRAFT, else the published code. Pass `rev` back as `base_rev` on a write. To find text across files use `code_search`; for the manifest and build state use `app_get`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8022,7 +8022,7 @@
  },
  {
   "name": "code_search",
-  "description": "Find text in a mini app's source: `file:line: text` hits in path order, capped (the result says how many there were in all). A plain substring by default; `regex: true` takes a JavaScript regular expression, stopped if it runs too long. `glob` narrows the files ('*.tsx', 'lib/**'). Reads the DRAFT, else the published code. Then read around a hit with `code_view`, or change it with `code_edit`.",
+  "description": "Find text in a mini app's source: `file:line: text` hits in path order, capped (the result says how many there were in all). A plain substring by default; `regex: true` takes a JavaScript regular expression, stopped if it runs too long. `glob` narrows the files ('*.tsx', 'lib/**'). Reads the DRAFT, else the published code. Then read around a hit with `code_view`, or change it with `code_edit`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8071,7 +8071,7 @@
  },
  {
   "name": "code_edit",
-  "description": "Replace exact text in one file of a mini app's DRAFT; returns a unified diff and the new `rev`. Each edit's `old` must match exactly once (copy it from `code_view`, without line numbers) unless `replace_all`; else the call fails, says how many hits and on which lines, and changes nothing. All edits apply or none. `dry_run` returns the diff only. `build: true` runs `app_build` after. The published app is untouched until `app_publish`; `code_undo` puts the file back. To add lines use `code_insert`; for a whole file use `code_write`.",
+  "description": "Replace exact text in one file of a mini app's DRAFT; returns a unified diff and the new `rev`. Each edit's `old` must match exactly once (copy it from `code_view`, without line numbers) unless `replace_all`; else the call fails, says how many hits and on which lines, and changes nothing. All edits apply or none. `dry_run` returns the diff only. `build: true` runs `app_build` after. The published app is untouched until `app_publish`; `code_undo` with its `edit_id` takes it back. To add lines use `code_insert`; for a whole file use `code_write`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8141,7 +8141,7 @@
  },
  {
   "name": "code_insert",
-  "description": "Insert lines into one file of a mini app's DRAFT after line `after_line` (0: at the top; the file's line count: at the end); returns a diff and the new `rev`. Line numbers come from `code_view`: pass its `rev` as `base_rev`, so a draft changed since is refused rather than written at a moved line. `build: true` runs `app_build` after. For a change inside existing lines use `code_edit`.",
+  "description": "Insert lines into one file of a mini app's DRAFT after line `after_line` (0: at the top; the file's line count: at the end); returns a diff and the new `rev`. Line numbers come from `code_view`: pass its `rev` as `base_rev`, so a draft changed since is refused rather than written at a moved line. `build: true` runs `app_build` after. For a change inside existing lines use `code_edit`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8191,7 +8191,7 @@
  },
  {
   "name": "code_write",
-  "description": "Create or replace one whole file in a mini app's DRAFT; returns the new `rev`, and a diff when it replaced a file. For a change of a few lines use `code_edit`, which sends less and leaves the rest alone. `base_rev` refuses a draft changed since you read it. `build: true` runs `app_build` after. The published app is untouched until `app_publish`; `code_undo` puts the old text back. Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. ",
+  "description": "Create or replace one whole file in a mini app's DRAFT; returns the new `rev`, and a diff when it replaced a file. For a change of a few lines use `code_edit`, which sends less and leaves the rest alone. `base_rev` refuses a draft changed since you read it. `build: true` runs `app_build` after. The published app is untouched until `app_publish`; `code_undo` with its `edit_id` takes it back. `code_view` with no path lists the files and what this target can use (language, allowed imports). Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. ",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8233,7 +8233,7 @@
  },
  {
   "name": "code_undo",
-  "description": "Take back one write to a mini app's DRAFT: `edit_id` (every write returns one), or with only `path` the newest write that changed that file. Its files go back as they were before it (a file it created is removed), only if each is still exactly as that write left it; else it fails and changes nothing, so later work is never replaced: then change the file with `code_edit` or `code_write`. The undo returns its own `edit_id` (undo that to redo), a diff and the new `rev`. Only recent writes are kept; for a whole earlier version use `app_snapshot_restore`.",
+  "description": "Take back one write to a mini app's DRAFT: `edit_id` (every write returns one), or with only `path` the newest write that changed that file. Its files go back as they were before it (a file it created is removed), only if each is still exactly as that write left it; else it fails and changes nothing, so later work is never replaced: then change the file with `code_edit` or `code_write`. The undo returns its own `edit_id` (undo that to redo), a diff and the new `rev`. Only recent writes are kept; for a whole earlier version use `app_snapshot_restore`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
   "inputSchema": {
    "type": "object",
    "properties": {

@@ -874,6 +874,9 @@ To CHANGE an app that exists, don't read every file and write whole files back. 
 - \`code_edit\` replaces exact text: each edit's \`old\` must match ONCE (copy it from code_view without the line numbers; add surrounding lines when it matches more, or set \`replace_all\`). All edits apply or none; it returns a diff. \`code_insert\` adds lines after a line number; \`code_write\` writes a whole file. Every write returns an \`edit_id\`: \`code_undo\` with it takes that write back (only while its files are as it left them; else change them with code_edit), and returns its own \`edit_id\` to redo.
 - Pass the \`rev\` you read as \`base_rev\`: if the user or another agent changed the draft since, the write fails with the current rev; read again and redo the change. \`build: true\` builds in the same call and returns the errors.
 
+## Languages and kits
+An app is TSX (React) in the browser. \`code_view\` with the target and no path returns \`kit\`: the language, the entry rule, every import the build allows (each library with its guide) and the libraries refused, read live from the build, so trust it over memory. Read a library's guide with \`canvas_library\` (\`for: 'app'\`) before using it; an import not on the list fails the build, and the error names the list.
+
 ## Workflow
 Write files with app_file_write (a new app) or the code tools (a change) → \`app_build\` → a failed compile fails the call and lists each error with file/line/column → fix → repeat until the build succeeds. A green build only proves it compiles: re-read your logic (calculations, lookups, edge cases) against the requirement before handing over: you get no runtime error feedback from the iframe. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,
 

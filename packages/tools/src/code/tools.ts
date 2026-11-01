@@ -42,6 +42,7 @@ import { notFound } from '../errors';
 import { actingLoginId } from '../surface';
 import type { ToolPolicy } from '../tool-policy';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from '../types';
+import { appKit, type CodeKit } from './kit';
 import { searchFiles } from './search';
 import {
   appIdOfCodeTarget,
@@ -91,6 +92,8 @@ type UndoResult = DraftChange & { undid: string; files: string[] };
 type CodeStore = {
   /** The target, as the tools write it back (`app:<id>`). */
   ref: string;
+  /** What the target can use (language, entry, imports), read live. */
+  kit(entry: string): CodeKit;
   read(): Promise<CodeTree | null>;
   change(
     fn: (tree: AppSource) => AppSource,
@@ -108,6 +111,7 @@ type CodeStore = {
 function appStore(ctx: Ctx, id: string): CodeStore {
   return {
     ref: `${APP_TARGET_PREFIX}${id}`,
+    kit: appKit,
     async read() {
       const app = await getApp(ctx.ownerId, id);
       if (!app) return null;
@@ -141,7 +145,7 @@ function appStore(ctx: Ctx, id: string): CodeStore {
           text: e.text,
         })),
         more: Math.max(0, res.errors.length - BUILD_ERRORS_MAX),
-        hint: 'The edit is saved in the draft; the build failed. Fix the files at these places and write again with build: true. The last good preview is untouched.',
+        hint: 'The edit is saved in the draft; the build failed. Fix the files at these places and write again with build: true (code_view with no path lists the imports an app may use). The last good preview is untouched.',
       };
     },
   };
@@ -325,7 +329,7 @@ const code_view: BuiltinToolDef = {
   policy: READ_POLICY,
   name: 'View source code',
   description:
-    "Read a mini app's source. With no `path`: the file tree (each file's size and line count), the entry file and the tree's `rev`. With a `path`: that file as numbered lines, only `start`..`end` when given. Reads the DRAFT, else the published code. Pass `rev` back as `base_rev` on a write. To find text across files use `code_search`; for the manifest and build state use `app_get`.",
+    "Read a mini app's source. With no `path`: the file tree (each file's size and line count), the tree's `rev`, and what this target can use (language, entry rule, allowed imports, each library's guide). With a `path`: that file as numbered lines, only `start`..`end` when given. Reads the DRAFT, else the published code. Pass `rev` back as `base_rev` on a write. To find text across files use `code_search`; for the manifest and build state use `app_get`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -352,7 +356,16 @@ const code_view: BuiltinToolDef = {
             lines: splitLines(tree.files[p]!).lines.length,
           }));
         ctx.step?.setOutput({ target: store.ref, files: files.length });
-        return { ok: true, output: { target: store.ref, entry: tree.entry, rev: tree.rev, files } };
+        return {
+          ok: true,
+          output: {
+            target: store.ref,
+            entry: tree.entry,
+            rev: tree.rev,
+            files,
+            kit: store.kit(tree.entry),
+          },
+        };
       }
       if (!Object.hasOwn(tree.files, path)) return noFile(store, tree, path);
       // A CRLF file shows (and is edited) with LF; its writes keep CRLF.
@@ -395,7 +408,7 @@ const code_search: BuiltinToolDef = {
   policy: READ_POLICY,
   name: 'Search source code',
   description:
-    "Find text in a mini app's source: `file:line: text` hits in path order, capped (the result says how many there were in all). A plain substring by default; `regex: true` takes a JavaScript regular expression, stopped if it runs too long. `glob` narrows the files ('*.tsx', 'lib/**'). Reads the DRAFT, else the published code. Then read around a hit with `code_view`, or change it with `code_edit`.",
+    "Find text in a mini app's source: `file:line: text` hits in path order, capped (the result says how many there were in all). A plain substring by default; `regex: true` takes a JavaScript regular expression, stopped if it runs too long. `glob` narrows the files ('*.tsx', 'lib/**'). Reads the DRAFT, else the published code. Then read around a hit with `code_view`, or change it with `code_edit`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -498,7 +511,7 @@ const code_edit: BuiltinToolDef = {
   loginTurns: true,
   name: 'Edit source code',
   description:
-    "Replace exact text in one file of a mini app's DRAFT; returns a unified diff and the new `rev`. Each edit's `old` must match exactly once (copy it from `code_view`, without line numbers) unless `replace_all`; else the call fails, says how many hits and on which lines, and changes nothing. All edits apply or none. `dry_run` returns the diff only. `build: true` runs `app_build` after. The published app is untouched until `app_publish`; `code_undo` puts the file back. To add lines use `code_insert`; for a whole file use `code_write`.",
+    "Replace exact text in one file of a mini app's DRAFT; returns a unified diff and the new `rev`. Each edit's `old` must match exactly once (copy it from `code_view`, without line numbers) unless `replace_all`; else the call fails, says how many hits and on which lines, and changes nothing. All edits apply or none. `dry_run` returns the diff only. `build: true` runs `app_build` after. The published app is untouched until `app_publish`; `code_undo` with its `edit_id` takes it back. To add lines use `code_insert`; for a whole file use `code_write`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -588,7 +601,7 @@ const code_insert: BuiltinToolDef = {
   loginTurns: true,
   name: 'Insert lines into source code',
   description:
-    "Insert lines into one file of a mini app's DRAFT after line `after_line` (0: at the top; the file's line count: at the end); returns a diff and the new `rev`. Line numbers come from `code_view`: pass its `rev` as `base_rev`, so a draft changed since is refused rather than written at a moved line. `build: true` runs `app_build` after. For a change inside existing lines use `code_edit`.",
+    "Insert lines into one file of a mini app's DRAFT after line `after_line` (0: at the top; the file's line count: at the end); returns a diff and the new `rev`. Line numbers come from `code_view`: pass its `rev` as `base_rev`, so a draft changed since is refused rather than written at a moved line. `build: true` runs `app_build` after. For a change inside existing lines use `code_edit`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -651,7 +664,7 @@ const code_write: BuiltinToolDef = {
   loginTurns: true,
   name: 'Write a source file',
   description:
-    "Create or replace one whole file in a mini app's DRAFT; returns the new `rev`, and a diff when it replaced a file. For a change of a few lines use `code_edit`, which sends less and leaves the rest alone. `base_rev` refuses a draft changed since you read it. `build: true` runs `app_build` after. The published app is untouched until `app_publish`; `code_undo` puts the old text back. " +
+    "Create or replace one whole file in a mini app's DRAFT; returns the new `rev`, and a diff when it replaced a file. For a change of a few lines use `code_edit`, which sends less and leaves the rest alone. `base_rev` refuses a draft changed since you read it. `build: true` runs `app_build` after. The published app is untouched until `app_publish`; `code_undo` with its `edit_id` takes it back. `code_view` with no path lists the files and what this target can use (language, allowed imports). " +
     WHO_HINT,
   inputSchema: {
     type: 'object',
@@ -698,7 +711,7 @@ const code_undo: BuiltinToolDef = {
   loginTurns: true,
   name: 'Undo a source edit',
   description:
-    "Take back one write to a mini app's DRAFT: `edit_id` (every write returns one), or with only `path` the newest write that changed that file. Its files go back as they were before it (a file it created is removed), only if each is still exactly as that write left it; else it fails and changes nothing, so later work is never replaced: then change the file with `code_edit` or `code_write`. The undo returns its own `edit_id` (undo that to redo), a diff and the new `rev`. Only recent writes are kept; for a whole earlier version use `app_snapshot_restore`.",
+    "Take back one write to a mini app's DRAFT: `edit_id` (every write returns one), or with only `path` the newest write that changed that file. Its files go back as they were before it (a file it created is removed), only if each is still exactly as that write left it; else it fails and changes nothing, so later work is never replaced: then change the file with `code_edit` or `code_write`. The undo returns its own `edit_id` (undo that to redo), a diff and the new `rev`. Only recent writes are kept; for a whole earlier version use `app_snapshot_restore`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
   inputSchema: {
     type: 'object',
     properties: {
