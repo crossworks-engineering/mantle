@@ -420,11 +420,11 @@ describe('code_undo', () => {
     expect(out.diff).toContain('+old');
   });
 
-  it('an undo over work done outside the code tools asks for base_rev', async () => {
-    vi.mocked(undoDraftFile).mockRejectedValue(new AppUndoUntrackedError('cur-rev'));
+  it('an undo over work done outside the code tools says what to use', async () => {
+    vi.mocked(undoDraftFile).mockRejectedValue(new AppUndoUntrackedError('App.tsx'));
     expect(
       errorOf(await tool('code_undo').handler({ target: TARGET, path: 'App.tsx' }, ctx)),
-    ).toMatch(/changed outside the code tools.*base_rev cur-rev/);
+    ).toMatch(/'App.tsx' changed outside the code tools.*code_edit or code_write/);
   });
 
   it('nothing to undo says what to use instead', async () => {

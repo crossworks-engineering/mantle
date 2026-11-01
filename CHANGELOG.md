@@ -78,8 +78,9 @@ text` hits, capped; a regex runs in a worker and is stopped after 3 s),
   such write (an undo too) first records the working tree as it stood (code
   only), the newest 20 per app within 64 MB, left out of the History list
   and the lookups by id; `code_undo` reads them, one write further back per
-  call, and an undo to code taken at team rules puts the app back at team
-  rules. Rollback:
+  call, never past a change made outside the code tools to that file, and
+  an undo to code taken at team rules puts the app back at team rules.
+  Rollback:
   `packages/db/rollback/0350_code_edit_history.revert.sql` (optional).
 
 ## Unreleased: the UI sounds save names its login
