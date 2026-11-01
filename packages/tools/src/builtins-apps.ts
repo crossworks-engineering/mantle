@@ -92,7 +92,7 @@ import {
 import { appAuthorSummary } from './publish-summary';
 import { CS } from './client-sourced-rule';
 import { scopeOutsideAdmin } from './outside-admin';
-import { codeFileKey, normCodePath } from './code/target-ref';
+import { badNewPath, codeFileKey, normCodePath } from './code/target-ref';
 
 /**
  * This file's one system door: the trash of deleted apps (their
@@ -430,11 +430,16 @@ const app_file_write: BuiltinToolDef = {
       const res = await changeDraftSource(
         ctx.ownerId,
         id,
-        (tree) => ({
-          entry: tree.entry,
-          // A key stored before the one path rule (`./x.ts`) is written there.
-          files: { ...tree.files, [codeFileKey(tree.files, input.path)]: content },
-        }),
+        (tree) => {
+          // A key stored before the one path rule (`./x.ts`) is written
+          // there; a new file takes the code tools' rule for a new path.
+          const key = codeFileKey(tree.files, input.path);
+          if (!Object.hasOwn(tree.files, key)) {
+            const bad = badNewPath(key);
+            if (bad) throw new AppSourceLimitError(bad);
+          }
+          return { entry: tree.entry, files: { ...tree.files, [key]: content } };
+        },
         {
           actor: historyActor(ctx),
           actorLoginId: actingLoginId(ctx.surface),

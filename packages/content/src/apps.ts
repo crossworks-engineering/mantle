@@ -994,6 +994,7 @@ async function recordCodeEdit(
       manifest: app.manifest,
       publishedBuild: null,
       codeEdit: {
+        beforeRev: sourceRev(tree),
         afterRev: opts.afterRev,
         ...(app.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
         ...(opts.undo ? { undo: opts.undo } : {}),
@@ -1011,16 +1012,24 @@ async function pruneCodeEdits(id: string): Promise<void> {
   try {
     await db.transaction(async (tx) => {
       await lockAppHistory(tx, id);
-      for (const trigger of CODE_TOOL_TRIGGERS) {
-        await pruneHistoryRows(
-          id,
-          [trigger],
-          APP_CODE_EDIT_KEEP,
-          APP_CODE_EDIT_MAX_BYTES,
-          tx,
-          'source',
-        );
-      }
+      await pruneHistoryRows(
+        id,
+        [CODE_EDIT_TRIGGER],
+        APP_CODE_EDIT_KEEP,
+        APP_CODE_EDIT_MAX_BYTES,
+        tx,
+        'source',
+      );
+      // An undo's row is read for its marks, its tree only to keep what the
+      // undo replaced: a quarter of the bytes.
+      await pruneHistoryRows(
+        id,
+        [CODE_UNDO_TRIGGER],
+        APP_CODE_EDIT_KEEP,
+        APP_CODE_EDIT_MAX_BYTES / 4,
+        tx,
+        'source',
+      );
     });
   } catch (err) {
     // The logger at the call, not at import: a module that mocks
@@ -1111,6 +1120,7 @@ export async function undoDraftFile(
         present: sql<boolean>`jsonb_exists(${code}->'source'->'files', ${path})`,
         text: sql<string | null>`${code}->'source'->'files'->>${path}`,
         undoPath: sql<string | null>`${code}->'codeEdit'->'undo'->>'path'`,
+        beforeRev: sql<string | null>`${code}->'codeEdit'->>'beforeRev'`,
         afterRev: sql<string | null>`${code}->'codeEdit'->>'afterRev'`,
         undoFrom: sql<number | null>`(${code}->'codeEdit'->'undo'->>'fromSeq')::int`,
         team: sql<boolean>`coalesce(${code}->'codeEdit'->>'authorLevel' = 'team', false)`,
@@ -1124,14 +1134,6 @@ export async function undoDraftFile(
         ),
       )
       .orderBy(desc(nodeSnapshots.seq));
-    // The draft must be what the code tools' last write left (each row says
-    // the revision its write made): else the editor, an import or a restore
-    // changed it since, and only a caller that read it (base_rev) undoes
-    // over that work.
-    const newest = rows[0];
-    if (!opts.baseRev && newest?.afterRev && newest.afterRev !== beforeRev) {
-      throw new AppUndoUntrackedError(beforeRev);
-    }
     const textOf = (r: (typeof rows)[number]) => (r.present ? (r.text ?? '') : undefined);
     let cursor = Number.POSITIVE_INFINITY;
     const lastUndo = rows.findIndex((r) => r.undoPath === path && r.undoFrom !== null);
@@ -1142,8 +1144,23 @@ export async function undoDraftFile(
       const unchanged = current === put && rows.slice(0, lastUndo).every((r) => textOf(r) === put);
       if (unchanged) cursor = from;
     }
-    const hit = rows.find((r) => r.undoPath === null && r.seq < cursor && textOf(r) !== current);
+    const hitAt = rows.findIndex(
+      (r) => r.undoPath === null && r.seq < cursor && textOf(r) !== current,
+    );
+    const hit = rows[hitAt];
     if (!hit) throw new AppUndoEmptyError(path);
+    // The rows from the hit to now are one chain: each write began on the
+    // tree the one before it left (its beforeRev is that row's afterRev),
+    // and the newest left the draft as it is. A gap is a change made
+    // outside the code tools (the editor, an import, a restore), which the
+    // rows do not hold: only a caller that read the draft (base_rev) undoes
+    // over it.
+    if (!opts.baseRev) {
+      for (let k = 0; k <= hitAt; k++) {
+        const next = k === 0 ? beforeRev : rows[k - 1]!.beforeRev;
+        if (rows[k]!.afterRev !== next) throw new AppUndoUntrackedError(beforeRev);
+      }
+    }
     const files = { ...before.files };
     const restored = textOf(hit);
     if (restored !== undefined) files[path] = restored;

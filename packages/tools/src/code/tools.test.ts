@@ -279,6 +279,33 @@ describe('a key stored before the one path rule', () => {
     expect(change(OLD).files['./x.ts']).toBe('new\n');
   });
 
+  it('an undo of a deleted old-style key tries the key as given', async () => {
+    vi.mocked(undoDraftFile)
+      .mockRejectedValueOnce(new AppUndoEmptyError('y.ts'))
+      .mockResolvedValueOnce({
+        before: OLD,
+        after: { ...OLD, files: { ...OLD.files, './y.ts': 'back\n' } },
+        beforeRev: 'r0',
+        rev: 'r1',
+        written: true,
+        fromSeq: 3,
+        teamRules: false,
+      });
+    const out = outputOf(await tool('code_undo').handler({ target: TARGET, path: './y.ts' }, ctx));
+    expect(vi.mocked(undoDraftFile).mock.calls.map((c) => c[2])).toEqual(['y.ts', './y.ts']);
+    expect(out.path).toBe('./y.ts');
+  });
+
+  it('app_file_write refuses a new path outside the app', async () => {
+    const err = errorOf(
+      await appTool('app_file_write').handler(
+        { id: APP_ID, path: 'a/../../x.ts', content: 'y' },
+        ctx,
+      ),
+    );
+    expect(err).toMatch(/must be relative inside the app/);
+  });
+
   it('app_file_write writes the exact key too', async () => {
     await appTool('app_file_write').handler({ id: APP_ID, path: './x.ts', content: 'y' }, ctx);
     const change = vi.mocked(changeDraftSource).mock.calls[0]![2];
@@ -307,6 +334,15 @@ describe('CRLF files', () => {
     );
     const change = vi.mocked(changeDraftSource).mock.calls[0]![2];
     expect(change(CRLF).files['App.tsx']).toBe('a\r\nx\r\n');
+  });
+
+  it('a file with mixed line ends shows as stored', async () => {
+    const MIXED = { entry: 'App.tsx', files: { 'App.tsx': 'a\r\nb\nc' } };
+    vi.mocked(getApp).mockResolvedValue({ source: MIXED, draft: null } as never);
+    const view = outputOf(
+      await tool('code_view').handler({ target: TARGET, path: 'App.tsx' }, ctx),
+    );
+    expect(view.text).toBe('1\ta\r\n2\tb\n3\tc');
   });
 
   it('an insert keeps CRLF', async () => {

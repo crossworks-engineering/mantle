@@ -99,7 +99,9 @@ export type AppSnapshotCode = {
    *  author ceiling when it was taken, only when 'team'; on an undo's own
    *  row, the file it put back and the row it went back to. */
   codeEdit?: {
-    /** The tree's revision the write made. */
+    /** The tree's revision before the write (this row's tree) and the
+     *  one it made: the rows chain, and a gap is an outside change. */
+    beforeRev?: string;
     afterRev?: string;
     authorLevel?: 'team';
     undo?: { path: string; fromSeq: number };
