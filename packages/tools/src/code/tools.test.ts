@@ -21,6 +21,7 @@ vi.mock('../app-build-stage', () => ({ buildAndStageApp: vi.fn() }));
 import {
   AppDraftRevError,
   AppUndoEmptyError,
+  AppUndoUntrackedError,
   changeDraftSource,
   getApp,
   sourceRev,
@@ -253,6 +254,38 @@ describe('code_edit', () => {
   });
 });
 
+describe('a key stored before the one path rule', () => {
+  const OLD = { entry: 'App.tsx', files: { 'App.tsx': 'a\n', './x.ts': 'old\n' } };
+  beforeEach(() => {
+    vi.mocked(getApp).mockResolvedValue({ source: OLD, draft: null } as never);
+    vi.mocked(changeDraftSource).mockImplementation(async (_o, _id, change) => {
+      const after = change(OLD);
+      return { before: OLD, after, beforeRev: 'r0', rev: 'r1', written: true };
+    });
+  });
+
+  it('is reached by its exact name, and edited in place (no second file)', async () => {
+    const view = outputOf(await tool('code_view').handler({ target: TARGET, path: './x.ts' }, ctx));
+    expect(view).toMatchObject({ path: './x.ts', text: '1\told' });
+    const out = outputOf(
+      await tool('code_edit').handler(
+        { target: TARGET, path: './x.ts', edits: [{ old: 'old', new: 'new' }] },
+        ctx,
+      ),
+    );
+    expect(out.path).toBe('./x.ts');
+    const change = vi.mocked(changeDraftSource).mock.calls[0]![2];
+    expect(Object.keys(change(OLD).files).sort()).toEqual(['./x.ts', 'App.tsx']);
+    expect(change(OLD).files['./x.ts']).toBe('new\n');
+  });
+
+  it('app_file_write writes the exact key too', async () => {
+    await appTool('app_file_write').handler({ id: APP_ID, path: './x.ts', content: 'y' }, ctx);
+    const change = vi.mocked(changeDraftSource).mock.calls[0]![2];
+    expect(change(OLD).files).toEqual({ 'App.tsx': 'a\n', './x.ts': 'y' });
+  });
+});
+
 describe('CRLF files', () => {
   const CRLF = { entry: 'App.tsx', files: { 'App.tsx': 'a\r\nb\r\n' } };
   beforeEach(() => {
@@ -321,7 +354,8 @@ describe('code_insert and code_write', () => {
         await tool('code_write').handler({ target: TARGET, path: '../x.ts', content: '' }, ctx),
       ),
     ).toMatch(/no '\.\.'/);
-    expect(changeDraftSource).toHaveBeenCalledTimes(1);
+    // The bad path is refused inside the change, before anything is written.
+    expect(changeDraftSource).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -348,6 +382,13 @@ describe('code_undo', () => {
     );
     expect(out).toMatchObject({ rev: sourceRev(after) });
     expect(out.diff).toContain('+old');
+  });
+
+  it('an undo over work done outside the code tools asks for base_rev', async () => {
+    vi.mocked(undoDraftFile).mockRejectedValue(new AppUndoUntrackedError('cur-rev'));
+    expect(
+      errorOf(await tool('code_undo').handler({ target: TARGET, path: 'App.tsx' }, ctx)),
+    ).toMatch(/changed outside the code tools.*base_rev cur-rev/);
   });
 
   it('nothing to undo says what to use instead', async () => {

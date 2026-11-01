@@ -61,8 +61,6 @@ import { dedupeTags } from './tags';
 import { assertManagesNewItemHome } from './tree/visibility';
 export type { AppRow, AppDetail };
 
-const logApps = log('apps');
-
 export const APPS_ROOT_LABEL = 'apps';
 
 /** A fresh app: one entry file with a trivial component. */
@@ -856,7 +854,12 @@ export async function writeDraftFile(
 /** The `node_snapshots.trigger` of the row a code-tool write records first
  *  (0350): the working tree as it stood, code only. code_undo reads them. */
 export const CODE_EDIT_TRIGGER = 'pre_code_edit';
-/** The `pre_code_edit` rows kept per app, on their own line. */
+/** The row a code_undo records first: what the undo replaced. Its own line,
+ *  so undos never push the writes they walk back through out of the window. */
+export const CODE_UNDO_TRIGGER = 'pre_code_undo';
+/** The code tools' rows: hidden from the History list and the lookups by id. */
+export const CODE_TOOL_TRIGGERS: readonly string[] = [CODE_EDIT_TRIGGER, CODE_UNDO_TRIGGER];
+/** The rows of each line kept per app. */
 export const APP_CODE_EDIT_KEEP = 20;
 /** And of those only as many as fit in this many bytes of code (the newest
  *  always stays): a row holds one working tree, up to 50 × 256 KB. */
@@ -899,7 +902,7 @@ defineDomainError(AppDraftRevError, {
 export class AppUndoEmptyError extends Error {
   constructor(path: string) {
     super(
-      `no earlier text of '${path}' is kept: the code tools keep the last ${APP_CODE_EDIT_KEEP} writes of an app, and none before this point changed this file. Put back a whole version with app_snapshot_restore (mode 'code') instead`,
+      `no earlier text of '${path}' is kept: the code tools keep an app's recent writes, and none of those before this point changed this file. Put back a whole version with app_snapshot_restore (mode 'code') instead`,
     );
     this.name = 'AppUndoEmptyError';
   }
@@ -923,6 +926,23 @@ export class AppUndoEntryError extends Error {
 defineDomainError(AppUndoEntryError, {
   reason: 'the undo would remove the entry file; the message says what to use',
   status: 409,
+});
+
+/** The draft changed outside the code tools since their last write (the
+ *  editor, an import, a restore): an undo would replace that work unseen. */
+export class AppUndoUntrackedError extends Error {
+  constructor(readonly currentRev: string) {
+    super(
+      `the draft changed outside the code tools since their last write (the editor, an import or a restore), and an undo would replace that work. Read the file with code_view first; to undo over it anyway, pass base_rev ${currentRev}`,
+    );
+    this.name = 'AppUndoUntrackedError';
+  }
+}
+
+defineDomainError(AppUndoUntrackedError, {
+  reason: 'the draft changed outside the code tools; the message says how to undo over it',
+  status: 409,
+  body: (e) => ({ error: e.message, reason: 'conflict' }),
 });
 
 /** What a draft change did. */
@@ -957,14 +977,14 @@ async function recordCodeEdit(
   ownerId: string,
   id: string,
   app: LockedApp,
-  opts: CodeEditOpts & { undo?: { path: string; fromSeq: number } },
+  opts: CodeEditOpts & { afterRev: string; undo?: { path: string; fromSeq: number } },
 ): Promise<void> {
   const tree = app.draft ?? app.source;
   await insertNodeSnapshot(tx, {
     ownerId,
     nodeId: id,
     nodeKind: 'app',
-    trigger: CODE_EDIT_TRIGGER,
+    trigger: opts.undo ? CODE_UNDO_TRIGGER : CODE_EDIT_TRIGGER,
     note: opts.note?.slice(0, 500) || null,
     actor: opts.actor,
     actorLoginId: opts.actorLoginId ?? null,
@@ -974,6 +994,7 @@ async function recordCodeEdit(
       manifest: app.manifest,
       publishedBuild: null,
       codeEdit: {
+        afterRev: opts.afterRev,
         ...(app.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
         ...(opts.undo ? { undo: opts.undo } : {}),
       },
@@ -990,17 +1011,21 @@ async function pruneCodeEdits(id: string): Promise<void> {
   try {
     await db.transaction(async (tx) => {
       await lockAppHistory(tx, id);
-      await pruneHistoryRows(
-        id,
-        [CODE_EDIT_TRIGGER],
-        APP_CODE_EDIT_KEEP,
-        APP_CODE_EDIT_MAX_BYTES,
-        tx,
-        'source',
-      );
+      for (const trigger of CODE_TOOL_TRIGGERS) {
+        await pruneHistoryRows(
+          id,
+          [trigger],
+          APP_CODE_EDIT_KEEP,
+          APP_CODE_EDIT_MAX_BYTES,
+          tx,
+          'source',
+        );
+      }
     });
   } catch (err) {
-    logApps.error(`app ${id}: pruning the code edit history failed:`, err);
+    // The logger at the call, not at import: a module that mocks
+    // @mantle/tracing without `log` still loads this one.
+    log('apps').error(`app ${id}: pruning the code edit history failed:`, err);
   }
 }
 
@@ -1037,7 +1062,7 @@ export async function changeDraftSource(
     if (opts.dryRun || rev === beforeRev) {
       return { before, after, beforeRev, rev, written: false };
     }
-    await recordCodeEdit(tx, ownerId, id, app, opts);
+    await recordCodeEdit(tx, ownerId, id, app, { ...opts, afterRev: rev });
     await tx
       .update(apps)
       .set({ draftSource: after, draftUpdatedAt: new Date(), draftBuild: null })
@@ -1086,6 +1111,7 @@ export async function undoDraftFile(
         present: sql<boolean>`jsonb_exists(${code}->'source'->'files', ${path})`,
         text: sql<string | null>`${code}->'source'->'files'->>${path}`,
         undoPath: sql<string | null>`${code}->'codeEdit'->'undo'->>'path'`,
+        afterRev: sql<string | null>`${code}->'codeEdit'->>'afterRev'`,
         undoFrom: sql<number | null>`(${code}->'codeEdit'->'undo'->>'fromSeq')::int`,
         team: sql<boolean>`coalesce(${code}->'codeEdit'->>'authorLevel' = 'team', false)`,
       })
@@ -1094,10 +1120,18 @@ export async function undoDraftFile(
         and(
           eq(nodeSnapshots.nodeId, id),
           eq(nodeSnapshots.ownerId, ownerId),
-          eq(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
+          inArray(nodeSnapshots.trigger, [...CODE_TOOL_TRIGGERS]),
         ),
       )
       .orderBy(desc(nodeSnapshots.seq));
+    // The draft must be what the code tools' last write left (each row says
+    // the revision its write made): else the editor, an import or a restore
+    // changed it since, and only a caller that read it (base_rev) undoes
+    // over that work.
+    const newest = rows[0];
+    if (!opts.baseRev && newest?.afterRev && newest.afterRev !== beforeRev) {
+      throw new AppUndoUntrackedError(beforeRev);
+    }
     const textOf = (r: (typeof rows)[number]) => (r.present ? (r.text ?? '') : undefined);
     let cursor = Number.POSITIVE_INFINITY;
     const lastUndo = rows.findIndex((r) => r.undoPath === path && r.undoFrom !== null);
@@ -1119,9 +1153,11 @@ export async function undoDraftFile(
     }
     const after: AppSource = { entry: before.entry, files };
     assertSourceWithinLimits(after);
+    const rev = sourceRev(after);
     await recordCodeEdit(tx, ownerId, id, app, {
       ...opts,
       note: `code_undo ${path}`,
+      afterRev: rev,
       undo: { path, fromSeq: hit.seq },
     });
     // The author ceiling first, in the same transaction (restoreAppSnapshot's
@@ -1140,7 +1176,7 @@ export async function undoDraftFile(
       before,
       after,
       beforeRev,
-      rev: sourceRev(after),
+      rev,
       written: true,
       fromSeq: hit.seq,
       teamRules: hit.team,

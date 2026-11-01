@@ -2,7 +2,8 @@
 -- the image one release back (plan v3.2 rule 2, a one-image rollback). Not a
 -- migration: nothing runs it on its own.
 --
--- Optional: the older image never writes a `pre_code_edit` row, and its
+-- Optional: the older image never writes a `pre_code_edit` or
+-- `pre_code_undo` row, and its
 -- History list would show the rows this release wrote under an empty label.
 -- This revert removes those rows (an undo stack only: the published versions
 -- and every snapshot stay), narrows the check back, and takes 0350 off the
@@ -15,7 +16,7 @@
 -- then pin the older image straight away (docs/update-prod.md "Rollback").
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
-DELETE FROM "public"."node_snapshots" WHERE "trigger" = 'pre_code_edit';
+DELETE FROM "public"."node_snapshots" WHERE "trigger" IN ('pre_code_edit', 'pre_code_undo');
 --> statement-breakpoint
 ALTER TABLE "public"."node_snapshots" DROP CONSTRAINT IF EXISTS "node_snapshots_trigger_ck";
 --> statement-breakpoint

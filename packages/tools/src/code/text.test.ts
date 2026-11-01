@@ -201,8 +201,12 @@ describe('globMatcher', () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
-  it('refuses a glob that expands past the cap', () => {
+  it('refuses a glob that expands past the caps', () => {
     expect(globMatcher('{a,b,c,d}{a,b,c,d}{a,b,c,d}')).toBeNull();
+    // 32 choices of about 190 tokens each: past the token cap.
+    expect(
+      globMatcher('{' + Array.from({ length: 32 }, (_, i) => 'a'.repeat(150) + i).join(',') + '}'),
+    ).toBeNull();
   });
 });
 
@@ -212,7 +216,15 @@ describe('CRLF', () => {
     expect(crlfOf('a\nb\n')).toBe(false);
     expect(toLf('a\r\nb\r\n')).toBe('a\nb\n');
     expect(toCrlf('a\nb\n')).toBe('a\r\nb\r\n');
-    expect(toCrlf('a\r\nb\n')).toBe('a\r\nb\r\n');
+  });
+
+  it('round-trips exactly, a lone CR included; a mixed file is not CRLF', () => {
+    for (const t of ['a\r\r\nb\r\n', 'x\r\n', 'a\r\nb\r\nc']) {
+      expect(crlfOf(t), JSON.stringify(t)).toBe(true);
+      expect(toCrlf(toLf(t))).toBe(t);
+    }
+    expect(crlfOf('a\r\nb\nc')).toBe(false);
+    expect(crlfOf('no newline')).toBe(false);
   });
 });
 

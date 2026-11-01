@@ -92,8 +92,10 @@ Anthropic text editor tool and the MCP filesystem server's `edit_file`.
   The newest 20 are kept per app (fewer when they pass 64 MB), and the
   History tab leaves them out. `code_undo` reads them: each call goes one
   write further back for that file. An undo is a write too: it records what
-  it replaces and takes `base_rev`, so an edit made in the editor since is
-  not lost unseen. Undoing to code taken while the app ran at team rules
+  it replaces (a `pre_code_undo` entry, on a line of its own) and takes
+  `base_rev`. When the draft changed outside the code tools since their last
+  write (the editor, an import, a restore), an undo without `base_rev` is
+  refused, so that work is never replaced unseen. Undoing to code taken while the app ran at team rules
   puts the app back at team rules, as a snapshot restore does. For a whole
   earlier version use `app_snapshot_restore`.
 - **Line ends.** A file with CRLF line ends shows with LF in `code_view`;

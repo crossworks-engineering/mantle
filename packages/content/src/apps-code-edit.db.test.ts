@@ -207,16 +207,45 @@ describe.skipIf(!URL)('the code tools draft write on Postgres', () => {
       apps.undoDraftFile(owner, app.id, 'e.ts', { ...opts, baseRev: w!.rev }),
     ).rejects.toBeInstanceOf(apps.AppDraftRevError);
     expect((await apps.getApp(owner, app.id))?.draft?.files['e.ts']).toBe('person');
-    // Without one it goes through, and the person's text is kept on a row.
-    const before = await codeRows(app.id);
-    await apps.undoDraftFile(owner, app.id, 'e.ts', opts);
-    expect(await codeRows(app.id)).toBe(before + 1);
+    // Without base_rev the undo sees the change made outside the code tools
+    // and refuses, naming the current rev.
+    const now = apps.sourceRev(apps.workingSource((await apps.getApp(owner, app.id))!));
+    const untracked = await apps
+      .undoDraftFile(owner, app.id, 'e.ts', opts)
+      .catch((e: unknown) => e);
+    expect(untracked).toBeInstanceOf(apps.AppUndoUntrackedError);
+    expect((untracked as Error).message).toContain(`base_rev ${now}`);
+    // With the current rev it goes through, and the person's text is kept
+    // on the undo's own row (its own line).
+    await apps.undoDraftFile(owner, app.id, 'e.ts', { ...opts, baseRev: now });
     const [row] = await admin`select code->'source'->'files'->>'e.ts' as text,
                                      code->'codeEdit'->'undo'->>'path' as path
                                 from node_snapshots
-                               where node_id = ${app.id} and trigger = 'pre_code_edit'
+                               where node_id = ${app.id} and trigger = 'pre_code_undo'
                                order by seq desc limit 1`;
     expect(row).toEqual({ text: 'person', path: 'e.ts' });
+    // Undo after that undo needs no base_rev: the draft is the code tools'.
+    await expect(apps.undoDraftFile(owner, app.id, 'e.ts', opts)).rejects.toBeInstanceOf(
+      apps.AppUndoEmptyError,
+    );
+  });
+
+  it('undos keep their own line: they never push the writes out of the window', async () => {
+    const app = await newApp('window');
+    for (let i = 1; i <= apps.APP_CODE_EDIT_KEEP; i++) {
+      await apps.changeDraftSource(owner, app.id, setFile('w.ts', `v${i}`), opts);
+    }
+    // 20 writes: the first row holds no w.ts; undo walks all the way back.
+    const seen: (string | undefined)[] = [];
+    for (;;) {
+      const u = await apps.undoDraftFile(owner, app.id, 'w.ts', opts).catch((e: unknown) => e);
+      if (u instanceof apps.AppUndoEmptyError) break;
+      seen.push((u as { after: { files: Record<string, string> } }).after.files['w.ts']);
+      expect(seen.length).toBeLessThanOrEqual(apps.APP_CODE_EDIT_KEEP);
+    }
+    expect(seen).toHaveLength(apps.APP_CODE_EDIT_KEEP);
+    expect(seen.at(-1)).toBeUndefined();
+    expect(await codeRows(app.id)).toBe(apps.APP_CODE_EDIT_KEEP);
   });
 
   it('undo to code taken at team rules brings the author ceiling back to team', async () => {

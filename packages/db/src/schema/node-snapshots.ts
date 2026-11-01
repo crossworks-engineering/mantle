@@ -50,8 +50,8 @@ export const nodeSnapshots = pgTable(
     seq: integer('seq').notNull(),
     /** 'publish' | 'commit' (a table) | 'manual' | 'pre_restore' |
      *  'pre_schema' | 'pre_delete' | 'pre_import' | 'nightly' |
-     *  'pre_mcp_write' | 'pre_code_edit' (0350: the code tools' undo
-     *  stack, code only, left out of the History list). */
+     *  'pre_mcp_write' | 'pre_code_edit' | 'pre_code_undo' (0350: the code
+     *  tools' undo stack, code only, left out of the History list). */
     trigger: text('trigger').notNull(),
     note: text('note'),
     /** Who the row names: HISTORY_ACTORS (@mantle/client-types/role-names). */
@@ -95,10 +95,12 @@ export type AppSnapshotCode = {
   draft: AppSource | null;
   manifest: AppManifest;
   publishedBuild: BuildRef | null;
-  /** On a `pre_code_edit` row (0350): the working tree is `source`. The
+  /** On a `pre_code_edit` / `pre_code_undo` row (0350): the working tree is `source`. The
    *  author ceiling when it was taken, only when 'team'; on an undo's own
    *  row, the file it put back and the row it went back to. */
   codeEdit?: {
+    /** The tree's revision the write made. */
+    afterRev?: string;
     authorLevel?: 'team';
     undo?: { path: string; fromSeq: number };
   };

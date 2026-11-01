@@ -21,7 +21,7 @@ text` hits, capped; a regex runs in a worker and is stopped after 3 s),
 - **Changed:** `app_file_write`, `app_file_delete` and `app_source_set`
   write through the same draft write. `app_source_set` takes `base_rev`;
   `app_get`, `app_file_write` and `app_source_set` return the `rev`.
-- **Migration 0350:** `node_snapshots.trigger` gains `pre_code_edit`: each
+- **Migration 0350:** `node_snapshots.trigger` gains `pre_code_edit` and `pre_code_undo`: each
   such write (an undo too) first records the working tree as it stood (code
   only), the newest 20 per app within 64 MB, left out of the History list
   and the lookups by id; `code_undo` reads them, one write further back per
