@@ -6729,6 +6729,10 @@
      "type": "string",
      "description": "The output name's stem, e.g. 'q3-pack' (the extension follows the output)."
     },
+    "bytes": {
+     "type": "boolean",
+     "description": "Mini apps only: hand the PDF or picture back as base64 and save nothing, e.g. to show or download it in the app."
+    },
     "workspace": {
      "type": "string",
      "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
@@ -6788,6 +6792,10 @@
      "type": "string",
      "description": "The output name's stem, e.g. 'q3-pack' (the extension follows the output)."
     },
+    "bytes": {
+     "type": "boolean",
+     "description": "Mini apps only: hand the PDF or picture back as base64 and save nothing, e.g. to show or download it in the app."
+    },
     "workspace": {
      "type": "string",
      "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
@@ -6827,6 +6835,10 @@
     "filename": {
      "type": "string",
      "description": "The output name's stem, e.g. 'q3-pack' (the extension follows the output)."
+    },
+    "bytes": {
+     "type": "boolean",
+     "description": "Mini apps only: hand the PDF or picture back as base64 and save nothing, e.g. to show or download it in the app."
     },
     "workspace": {
      "type": "string",
@@ -6891,6 +6903,10 @@
     "filename": {
      "type": "string",
      "description": "The output name's stem, e.g. 'q3-pack' (the extension follows the output)."
+    },
+    "bytes": {
+     "type": "boolean",
+     "description": "Mini apps only: hand the PDF or picture back as base64 and save nothing, e.g. to show or download it in the app."
     },
     "watermark_file_id": {
      "type": "string",

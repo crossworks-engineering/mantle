@@ -28,12 +28,7 @@
  * comes back as base64 within the caps of file_read's bytes (app-bytes.ts).
  */
 import { registerToolService } from '@mantle/config';
-import {
-  currentActor,
-  currentWorkspaceScope,
-  inAppRunWrite,
-  withCreateHome,
-} from '@mantle/db';
+import { currentActor, currentWorkspaceScope, inAppRunWrite, withCreateHome } from '@mantle/db';
 import { runDocuments, type DocumentsCall, type DocumentsResult } from '@mantle/documents';
 import { errorMessage } from '@mantle/std';
 import { recordIngest } from '@mantle/tracing';
@@ -202,32 +197,33 @@ async function run(
     if ('refused' in save) return { ok: false, error: save.refused };
     home = save.home;
   }
+  // One call of the engine: the bytes handed back (`bytes: true`), or the
+  // file landed; a team app's file is homed in the app's workspace,
+  // whatever the folder: never the runner's private workspace, never Admin.
+  const convert = async (): Promise<DocumentsResult | { error: string }> => {
+    try {
+      if (wantsBytes) return await runDocuments(call, caller, 'bytes');
+      return home
+        ? await withCreateHome({ createWs: home, privateWs: home }, () =>
+            runDocuments(call, caller),
+          )
+        : await runDocuments(call, caller);
+    } catch (err) {
+      return { error: errorMessage(err) };
+    }
+  };
   if (wantsBytes) {
     const done = await withAppBytesSlot(async (): Promise<ToolHandlerResult> => {
-      let result: DocumentsResult;
-      try {
-        result = await runDocuments(call, caller, 'bytes');
-      } catch (err) {
-        return { ok: false, error: errorMessage(err) };
-      }
+      const result = await convert();
+      if ('error' in result) return { ok: false, error: result.error };
       if (result.kind !== 'bytes') return { ok: true, output: output(result) };
       ctx.step?.setOutput({ route: result.route, bytes: result.bytes.length });
       return bytesOutput(result);
     });
     return done ?? { ok: false, error: APP_BYTES_BUSY };
   }
-  let result: DocumentsResult;
-  try {
-    // A team app's file is homed in the app's workspace, whatever the
-    // folder: never the runner's private workspace, never Admin.
-    result = home
-      ? await withCreateHome({ createWs: home, privateWs: home }, () =>
-          runDocuments(call, caller),
-        )
-      : await runDocuments(call, caller);
-  } catch (err) {
-    return { ok: false, error: errorMessage(err) };
-  }
+  const result = await convert();
+  if ('error' in result) return { ok: false, error: result.error };
   if (result.kind === 'file') {
     ctx.step?.setOutput({
       file_id: result.file.id,
