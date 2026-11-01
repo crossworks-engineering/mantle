@@ -25,7 +25,8 @@ Building and changing apps is handed to the app specialist. It writes the code, 
 
 - An app is real code: TSX files (up to 50, 256 KB each) compiled on the server. The entry file default-exports an `App` component.
 - It runs in a sandboxed iframe with no access to your session or cookies. It reaches your data only through the tools you allow for that app.
-- Imports are limited to React, the built-in UI kit, Lucide icons, the host bridge and the app's own files.
+- Imports are limited to React, the built-in UI kit, Lucide icons, the host bridge, the app's own files and the libraries the brain serves. Charts and pictures: ECharts, D3, Three.js, Konva, KaTeX, Motion and the diagram templates. Work: math.js (units and engineering maths), date-fns (dates), Zod (form checks), TanStack Table and Virtual (big grids, long lists), dnd-kit (drag and drop), Fuse.js (fuzzy search), Papa Parse (CSV), pdf-lib (make a PDF), qrcode (labels and tags), and markdown-it with DOMPurify (markdown, always sanitized). The app specialist reads a short guide for each (`canvas_library`), written for the exact version the brain serves.
+- An app has no network: it cannot load map tiles or call an outside API, and it cannot download a file. Data comes from the brain through the tools you allow.
 - An app can have its own SQLite database. `app_db_list` and `app_db_query` let the assistant read it.
 - **MCP access** (beside **Informational** on the app) lets the users who run the app reach its data from their own MCP client: they read it, and where their grant has **Writable** on they change rows (never the schema), unless the app is informational. Off by default. See [MCP as a login](../07-api/02-mcp-login.md).
 - Building uses `app_create`, `app_file_write`, `app_build`, `app_tools_set` and others. Delete and publish (`app_delete`, `app_publish`) are in a separate admin group.

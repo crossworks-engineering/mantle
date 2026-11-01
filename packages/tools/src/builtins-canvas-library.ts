@@ -138,6 +138,78 @@ export const APP_ONLY_LIBRARIES: readonly CanvasLibrary[] = [
   },
 ];
 
+/** The mini-app kit: libraries with an app guide only. The plain ones are
+ *  served from the canvas runtime, the React ones from the app runtime
+ *  (app-build app-libraries.ts). */
+export const APP_KIT_LIBRARIES: readonly CanvasLibrary[] = [
+  {
+    name: 'mathjs',
+    pkg: 'mathjs',
+    useFor: 'engineering maths with units (2 inch to mm, bar to kPa), formulas people type',
+    aliases: ['math.js', 'math', 'units'],
+  },
+  {
+    name: 'date-fns',
+    pkg: 'date-fns',
+    useFor: 'dates: format, add, compare, ranges, week days',
+    aliases: ['datefns', 'dates', 'date'],
+  },
+  {
+    name: 'zod',
+    pkg: 'zod',
+    useFor: 'form checks and data shapes, with messages for people',
+    aliases: ['validation', 'schema', 'forms'],
+  },
+  {
+    name: 'tanstack-table',
+    pkg: '@tanstack/react-table',
+    useFor: 'big grids: sort, filter, select, paginate',
+    aliases: ['@tanstack/react-table', 'react-table', 'table', 'grid', 'datagrid'],
+  },
+  {
+    name: 'tanstack-virtual',
+    pkg: '@tanstack/react-virtual',
+    useFor: 'long lists and grids that render only the rows on screen',
+    aliases: ['@tanstack/react-virtual', 'react-virtual', 'virtual', 'virtualizer'],
+  },
+  {
+    name: 'dnd-kit',
+    pkg: '@dnd-kit/core',
+    useFor: 'drag and drop: reorder a list, move cards between columns',
+    aliases: ['@dnd-kit/core', '@dnd-kit/sortable', 'dndkit', 'drag', 'sortable'],
+  },
+  {
+    name: 'fuse',
+    pkg: 'fuse.js',
+    useFor: 'fuzzy search over a list (typos, partial words)',
+    aliases: ['fuse.js', 'fusejs', 'fuzzy', 'search'],
+  },
+  {
+    name: 'papaparse',
+    pkg: 'papaparse',
+    useFor: 'CSV in and out',
+    aliases: ['papa', 'csv'],
+  },
+  {
+    name: 'pdf-lib',
+    pkg: 'pdf-lib',
+    useFor: 'make or fill a PDF in the browser',
+    aliases: ['pdflib', 'pdf'],
+  },
+  {
+    name: 'qrcode',
+    pkg: 'qrcode',
+    useFor: 'QR codes for labels and tags',
+    aliases: ['qr', 'qr-code'],
+  },
+  {
+    name: 'markdown',
+    pkg: 'markdown-it',
+    useFor: 'render markdown safely (markdown-it, then DOMPurify)',
+    aliases: ['markdown-it', 'markdownit', 'md', 'dompurify', 'purify', 'sanitize'],
+  },
+];
+
 /**
  * `zoom`: zoom and pan for any canvas's SVG (`zoomable` from the diagram
  * runtime). Its guide is the canvas_authoring skill's own section
@@ -212,6 +284,7 @@ export function appSpecifiers(lib: CanvasLibrary): string[] {
 export const APP_GUIDE_LIBRARIES: readonly CanvasLibrary[] = [
   ...CANVAS_LIBRARIES,
   ...APP_ONLY_LIBRARIES,
+  ...APP_KIT_LIBRARIES,
 ].filter((l) => appSpecifiers(l).length > 0);
 
 const key = (s: string) => s.toLowerCase().trim().replace(/\s+/g, '');
@@ -273,7 +346,7 @@ export function appGuide(appMd: string, canvasMd: string | null): string {
 }
 
 async function appLibraryHandler(asked: string): Promise<ToolHandlerResult> {
-  const lib = find([...CANVAS_LIBRARIES, ...APP_ONLY_LIBRARIES], asked);
+  const lib = find([...CANVAS_LIBRARIES, ...APP_ONLY_LIBRARIES, ...APP_KIT_LIBRARIES], asked);
   const valid = APP_GUIDE_LIBRARIES.map((l) => l.name).join(', ');
   if (!lib) {
     return {
@@ -330,6 +403,13 @@ export async function canvasLibraryHandler(
       error: `'${asked}' has no canvas guide: a template canvas is written for you by \`diagram_render\` and \`present_create\` (get the data contract with \`diagram_guide\`). In a mini app, call canvas_library with for: 'app'. For zoom and pan in a canvas ask for 'zoom'.`,
     };
   }
+  const kit = lib ? null : find(APP_KIT_LIBRARIES, asked);
+  if (kit) {
+    return {
+      ok: false,
+      error: `'${asked}' has an app guide only: in a mini app, call canvas_library with name '${kit.name}' and for: 'app'. A canvas may import the same specifiers (${appSpecifiers(kit).join(', ')}), with no canvas guide; the canvas guides are ${CANVAS_LIBRARIES.map((l) => l.name).join(', ')}.`,
+    };
+  }
   if (!lib && find([CANVAS_ZOOM_GUIDE], asked)) {
     return { ok: true, output: { library: 'zoom', version: null, guide: canvasZoomGuide() } };
   }
@@ -367,7 +447,7 @@ const canvas_library: BuiltinToolDef = {
     properties: {
       name: {
         type: 'string',
-        description: `The library: ${CANVAS_LIBRARIES.map((l) => l.name).join(', ')}; or 'data' for saving what viewers add (\`mantle.data\`, built into the frame); for an app also ${APP_ONLY_LIBRARIES.map((l) => l.name).join(', ')}.`,
+        description: `The library: ${CANVAS_LIBRARIES.map((l) => l.name).join(', ')}; or 'data' for saving what viewers add (\`mantle.data\`, built into the frame); for an app also ${[...APP_ONLY_LIBRARIES, ...APP_KIT_LIBRARIES].map((l) => l.name).join(', ')}.`,
       },
       for: {
         type: 'string',

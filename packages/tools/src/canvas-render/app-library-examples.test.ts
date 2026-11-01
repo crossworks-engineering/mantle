@@ -20,7 +20,7 @@
  * `canvas-runtime`, `app-runtime` and `share-runtime` scripts). Without
  * either it skips, and says so loudly.
  */
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Browser, Frame, HTTPRequest } from 'puppeteer-core';
@@ -185,6 +185,9 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
   function serve(frameHtml: string, refused: string[], served: string[], parentHtml: string) {
     return async (req: HTTPRequest) => {
       const url = new URL(req.url());
+      // A data: URL never leaves the page (the frame's img-src allows it):
+      // the browser's own picker icon of a date input is one.
+      if (url.protocol === 'data:') return req.continue();
       if (url.origin !== ORIGIN) {
         refused.push(req.url());
         return req.abort('blockedbyclient');
@@ -563,21 +566,33 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
     }, 120_000);
   }
 
-  it('only d3 and echarts carry an eval path, and each is named', () => {
-    // Every library module an app can import, scanned for the two ways to
-    // compile code at run time. The app frame has no 'unsafe-eval', so a
-    // call throws EvalError (catchable; the frame lives on, next test).
+  it('only d3, echarts and zod carry an eval path, and each is named', () => {
+    // Every library module an app can import, and every shared chunk of the
+    // app runtime (a library's code that two entries share lands in one,
+    // not in either entry), scanned for the ways to compile code at run
+    // time: `new Function(`, `eval(`, and the Function constructor taken
+    // into a name first (`=Function,` then `new r(...)`). The app frame has
+    // no 'unsafe-eval', so a call throws EvalError (catchable; the frame
+    // lives on, next test).
     //  - d3: dsv's objectConverter (csvParse, tsvParse, dsvFormat().parse)
     //  - echarts: parseJSON's fallback when there is no JSON.parse (never in
     //    a browser this frame runs in)
-    const withEval = Object.entries(imports)
-      .filter(([, url]) => url.endsWith('.js'))
-      .filter(([, url]) =>
-        /new Function\(|[^.\w]eval\(/.test(readFileSync(path.join(PUBLIC, url), 'utf8')),
-      )
+    //  - zod: the JIT object parser and its probe, both skipped because the
+    //    runtime entry sets `jitless` (canvas-runtime.ts), and `compile()`,
+    //    which an app would have to call itself (it then throws a Zod error)
+    const EVAL = /new Function\(|[^.\w]eval\(|[=(,]\s*Function\s*[,;)]/;
+    const chunks = readdirSync(path.join(PUBLIC, 'app-runtime')).filter((f) =>
+      f.startsWith('chunk-'),
+    );
+    const files: [string, string][] = [
+      ...Object.entries(imports).filter(([, url]) => url.endsWith('.js')),
+      ...chunks.map((f): [string, string] => [`chunk ${f}`, `/app-runtime/${f}`]),
+    ];
+    const withEval = files
+      .filter(([, url]) => EVAL.test(readFileSync(path.join(PUBLIC, url), 'utf8')))
       .map(([spec]) => spec)
       .sort();
-    expect(withEval).toEqual(['d3', 'echarts']);
+    expect(withEval).toEqual(['d3', 'echarts', 'zod']);
   });
 
   it('the frame still has no network and no eval, with the libraries loaded', async () => {

@@ -125,9 +125,9 @@ describe('buildApp: type-only imports', () => {
   });
 
   it.each([
-    "import type { ZodType } from 'zod';",
-    "import { type ZodType } from 'zod';",
-    "export type { ZodType } from 'zod';",
+    "import type { Schema } from 'yup';",
+    "import { type Schema } from 'yup';",
+    "export type { Schema } from 'yup';",
   ])('allows a disallowed package imported type-only: %s', async (head) => {
     const res = await buildApp(app(head), { runtimeExports: RT });
     expect(res.errors).toEqual([]);
@@ -135,12 +135,12 @@ describe('buildApp: type-only imports', () => {
   });
 
   it.each([
-    "import { z } from 'zod'; console.log(z);",
-    "import { type ZodType, z } from 'zod'; console.log(z);",
+    "import { object } from 'yup'; console.log(object);",
+    "import { type Schema, object } from 'yup'; console.log(object);",
   ])('refuses the same package imported as a value: %s', async (head) => {
     const res = await buildApp(app(head), { runtimeExports: RT });
     expect(res.ok).toBe(false);
-    expect(res.errors[0]!.text).toContain("Import 'zod' is not allowed in a mini app");
+    expect(res.errors[0]!.text).toContain("Import 'yup' is not allowed in a mini app");
   });
 });
 
@@ -195,5 +195,33 @@ describe('lintRuntimeImports: re-exports link like imports', () => {
   it('an export without from does not reach over to a later import', () => {
     const text = "export const o = { nope: 1 }\nexport { o as p }\nimport { host } from '@host'\n";
     expect(lintRuntimeImports(src({ 'a.ts': text }), RT)).toEqual([]);
+  });
+});
+
+describe('lintRuntimeImports: a large export list is cut', () => {
+  // mathjs exports over a thousand names: listing them all would bury the fix.
+  const big = Array.from({ length: 1200 }, (_, i) => `fn${i}`).concat(['evaluate', 'evaluateAll']);
+  const runtime = { ...RT, mathjs: big };
+
+  it('names the close matches first, then cuts the list', () => {
+    const msgs = lintRuntimeImports(
+      src({ 'a.ts': "import { evalute } from 'mathjs';\n" }),
+      runtime,
+    );
+    expect(msgs).toHaveLength(1);
+    const text = msgs[0]!.text;
+    expect(text).toContain("'mathjs' does not export 'evalute'");
+    expect(text).toContain('and 1142 more');
+    expect(text.length).toBeLessThan(1200);
+    const misspelt = lintRuntimeImports(
+      src({ 'a.ts': "import { evaluat } from 'mathjs';\n" }),
+      runtime,
+    );
+    expect(misspelt[0]!.text).toMatch(/It exports: evaluate, evaluateAll, fn0/);
+  });
+
+  it('keeps a short list whole', () => {
+    const msgs = lintRuntimeImports(src({ 'a.ts': "import host from '@host';\n" }), RT);
+    expect(msgs[0]!.text).not.toContain('more (');
   });
 });

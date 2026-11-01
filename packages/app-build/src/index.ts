@@ -560,6 +560,21 @@ function importedNames(clause: string): { names: string[]; namespace: boolean } 
   return { names, namespace };
 }
 
+/** A module's export names for an error. A large surface (mathjs exports
+ *  over a thousand) is cut, so the message stays one a model reads; the
+ *  names close to the wanted one come first, so the cut never hides them. */
+const EXPORTS_SHOWN = 60;
+function exportList(names: readonly string[], wanted: string): string {
+  if (names.length <= EXPORTS_SHOWN) return names.join(', ');
+  const w = wanted.toLowerCase();
+  const close = names.filter((n) => {
+    const l = n.toLowerCase();
+    return w !== 'default' && (l.includes(w) || w.includes(l));
+  });
+  const shown = [...new Set([...close, ...names])].slice(0, EXPORTS_SHOWN);
+  return `${shown.join(', ')} and ${names.length - shown.length} more (canvas_library with for: 'app' gives the usual imports)`;
+}
+
 /**
  * Static lint: every import of a SHARED RUNTIME specifier must name something
  * that specifier actually exports.
@@ -606,7 +621,7 @@ export function lintRuntimeImports(
               ? `'${spec}' has no default export. Use a named import, e.g. import { ${available[0]} } from '${spec}'.`
               : `'${spec}' does not export '${name}'.`;
           out.push({
-            text: `${hint} It exports: ${available.join(', ')}. Left as-is the app builds but fails to load in the browser, with no error the app can catch.`,
+            text: `${hint} It exports: ${exportList(available, name)}. Left as-is the app builds but fails to load in the browser, with no error the app can catch.`,
             location: { file, line, column },
           });
         }

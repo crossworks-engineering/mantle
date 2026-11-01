@@ -68,17 +68,22 @@ Only these resolve, esbuild **rejects any other bare import**:
 - the vendored libraries, by these exact names (see Libraries below; call
   `canvas_library(name, for: 'app')` first): `echarts`, `d3`, `three`,
   `three/addons/controls/OrbitControls.js`, `konva`, `katex`, `motion/react`,
-  `@mantle/diagram-templates/browser`
+  `@mantle/diagram-templates/browser`, `mathjs`, `date-fns`, `zod`,
+  `@tanstack/react-table`, `@tanstack/react-virtual`, `@dnd-kit/core`,
+  `@dnd-kit/sortable`, `fuse.js`, `papaparse`, `pdf-lib`, `qrcode`,
+  `markdown-it`, `dompurify`
 
-No `axios`, no `date-fns`, no arbitrary npm. Bring helpers as local files.
+No `axios`, no `lodash`, no arbitrary npm. Bring helpers as local files.
 Type-only imports (`import type { ReactNode } from 'react'`, `import { type X }`,
 `export type { X } from`) are erased at compile time, so neither check counts them.
 
-## Libraries: charts, 3D, shapes, formulas, motion, diagrams
+## Libraries: charts, 3D, grids, maths, dates, forms, files, diagrams
 
-The same pinned library set a Present canvas uses, served by the brain to
-the app frame (never from a CDN, never bundled into the app: an app pays for
-a library only when it imports it, and every app shares one cached copy).
+A pinned library set, served by the brain to the app frame (never from a
+CDN, never bundled into the app: each library is its own file, so an app
+pays for a library only when it imports it, and every app shares one
+cached copy). The plain libraries are the files a Present canvas loads; the
+ones that need React run on the app's one shared React.
 **Call `canvas_library(name, for: 'app')` before you use one.** It returns the
 import as an app writes it, the library's API for this exact version, the
 React pattern, and a complete `App.tsx` that a browser test renders.
@@ -94,6 +99,35 @@ React pattern, and a complete `App.tsx` that a browser test renders.
 | `import { motion, AnimatePresence } from 'motion/react'`                  | animation                                   |
 | `import { render, domMeasurer } from '@mantle/diagram-templates/browser'` | flow and P&ID diagrams drawn from data      |
 
+### Which library for which job
+
+| The job                                           | Import                                                                                                           | Guide (`canvas_library`) |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| Units and engineering maths, formulas people type | `import { evaluate, unit, format } from 'mathjs'`                                                                | `mathjs`                 |
+| Dates: format, add business days, ranges          | `import { format, addBusinessDays, parseISO } from 'date-fns'`                                                   | `date-fns`               |
+| Form checks, the shape of rows                    | `import { z } from 'zod'`                                                                                        | `zod`                    |
+| A big grid: sort, filter                          | `import { useTable, tableFeatures, createColumnHelper } from '@tanstack/react-table'`                            | `tanstack-table`         |
+| A long list (thousands of rows)                   | `import { useVirtualizer } from '@tanstack/react-virtual'`                                                       | `tanstack-virtual`       |
+| Drag and drop, reorder a list, a board            | `import { DndContext } from '@dnd-kit/core'`, `import { SortableContext, useSortable } from '@dnd-kit/sortable'` | `dnd-kit`                |
+| Fuzzy search (typos, partial words)               | `import Fuse from 'fuse.js'`                                                                                     | `fuse`                   |
+| CSV in and out                                    | `import Papa from 'papaparse'`                                                                                   | `papaparse`              |
+| Make or fill a PDF                                | `import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'`                                                      | `pdf-lib`                |
+| QR codes for labels and tags                      | `import QRCode from 'qrcode'`                                                                                    | `qrcode`                 |
+| Show markdown                                     | `import MarkdownIt from 'markdown-it'` and `import DOMPurify from 'dompurify'`                                   | `markdown`               |
+
+**Markdown is always sanitized.** `markdown-it` output reaches the DOM only
+through DOMPurify: `DOMPurify.sanitize(md.render(text))`, then
+`dangerouslySetInnerHTML`. Text from `host.db` was typed by someone; never
+put markdown-it HTML in the page without it.
+
+TanStack Table is **v9** (`useTable`, `tableFeatures`): the v8 API
+(`useReactTable`, `getCoreRowModel`) does not exist in it. Its guide has the
+v9 pattern.
+
+The large ones (mathjs about 750 KB, zod about 450 KB, pdf-lib about 440 KB)
+load only in an app that imports them; an app that imports none of the
+libraries loads the same base runtime as before.
+
 The React pattern, the same for each library that owns a DOM node: a
 container with a real height in a `useRef`; create the chart, scene or stage
 in a `useEffect`; return a cleanup that disposes it (`chart.dispose()`,
@@ -104,10 +138,20 @@ a library that paints a canvas, read again when the host switches theme.
 Exact names only: `echarts/core`, `three/examples/jsm/...` and `d3-scale` are
 refused. Not available in an app: `reveal.js` (a deck is a Present canvas),
 `alpinejs` (it competes with React for the DOM and needs `unsafe-eval`),
-plain `motion` (use `motion/react`). The frame has no `unsafe-eval`, so
+plain `motion` (use `motion/react`), `date-fns/locale` and every other
+subpath, `@dnd-kit/utilities`. The frame has no `unsafe-eval`, so
 `d3.csvParse` (it compiles its row reader with `new Function`) fails here: use
-`d3.csvParseRows` or rows from `host.db`. No library can reach the network:
-data comes from `host.db` or a declared tool.
+`d3.csvParseRows`, `papaparse`, or rows from `host.db`. Zod runs with
+`jitless` on for the same reason (set by the brain; nothing to do).
+
+**Not possible in the frame** (no network, by its CSP, and no downloads, by
+its sandbox): web map tiles (Leaflet, MapLibre, Google Maps need a tile
+server; draw a site plan as SVG, or with `d3` geo projections from data you
+hold), live fetches from any API (data comes from `host.db` or a declared
+tool), and a file download (`papaparse` and `pdf-lib` make the bytes; keep
+them in `host.db`, export rows to a Table, or make the report with
+`pdf_render`, below). `papaparse` refuses `download` and `worker` with an
+error that says so.
 
 A diagram template (`flow`, `pid`) takes data and returns an SVG string;
 with `{ theme: 'tokens' }` it draws in the app's theme, light and dark, and

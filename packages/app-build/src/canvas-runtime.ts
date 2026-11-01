@@ -92,6 +92,71 @@ export const CANVAS_MODULES: readonly CanvasModule[] = [
     entry: 'alpine',
     pkg: 'alpinejs',
     source: "import Alpine from 'alpinejs';\nexport default Alpine;",
+  }, // The mini-app kit (app-libraries.ts): plain libraries with no React, so
+  // one vendored file each, here, as the canvas set. Each loads only when
+  // imported; none reaches the network or compiles code at run time (the
+  // app-library browser test watches the frame).
+  { specifier: 'mathjs', entry: 'mathjs', pkg: 'mathjs', source: "export * from 'mathjs';" },
+  {
+    specifier: 'date-fns',
+    entry: 'date-fns',
+    pkg: 'date-fns',
+    source: "export * from 'date-fns';",
+  },
+  {
+    specifier: 'zod',
+    entry: 'zod',
+    pkg: 'zod',
+    // Zod 4 compiles object parsers with `new Function` when it may, and
+    // probes for that on first use. The frame has no 'unsafe-eval': the
+    // probe would fail (caught) and log a CSP violation. jitless skips the
+    // probe and the compile, so Zod never asks.
+    source: "import { config } from 'zod';\nconfig({ jitless: true });\nexport * from 'zod';",
+  },
+  {
+    specifier: 'fuse.js',
+    entry: 'fuse',
+    pkg: 'fuse.js',
+    source: "import Fuse from 'fuse.js';\nexport default Fuse;",
+  },
+  {
+    specifier: 'papaparse',
+    entry: 'papaparse',
+    pkg: 'papaparse',
+    // Papa Parse can fetch a URL (`download`, by XHR) and start a worker
+    // from a blob (`worker`). A canvas or an app parses text or a File it
+    // already holds; this says so, rather than leave the frame's CSP to
+    // refuse the request with a less helpful error.
+    source: [
+      "import Papa from 'papaparse';",
+      'const parse = Papa.parse;',
+      'Papa.parse = function (input, config) {',
+      '  if (config && (config.download || config.worker)) {',
+      "    throw new Error(\"Papa.parse: 'download' and 'worker' are off here (no network, no workers). Pass the CSV text or a File.\");",
+      '  }',
+      '  return parse.call(Papa, input, config);',
+      '};',
+      'export default Papa;',
+    ].join('\n'),
+  },
+  { specifier: 'pdf-lib', entry: 'pdf-lib', pkg: 'pdf-lib', source: "export * from 'pdf-lib';" },
+  {
+    specifier: 'qrcode',
+    entry: 'qrcode',
+    pkg: 'qrcode',
+    source: "import QRCode from 'qrcode';\nexport default QRCode;",
+  },
+  {
+    specifier: 'markdown-it',
+    entry: 'markdown-it',
+    pkg: 'markdown-it',
+    source: "import MarkdownIt from 'markdown-it';\nexport default MarkdownIt;",
+  },
+  {
+    specifier: 'dompurify',
+    entry: 'dompurify',
+    pkg: 'dompurify',
+    source: "import DOMPurify from 'dompurify';\nexport default DOMPurify;",
   },
 ];
 

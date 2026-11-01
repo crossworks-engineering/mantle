@@ -6,7 +6,7 @@
  * each build's inputs.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { RUNTIME_EXPORTS_FIXTURE } from './runtime-exports.fixture';
+import { LIBRARY_EXPORTS_FIXTURE, RUNTIME_EXPORTS_FIXTURE } from './runtime-exports.fixture';
 
 const seen = vi.hoisted(() => [] as string[][]);
 
@@ -23,16 +23,7 @@ vi.mock('esbuild', async (importOriginal) => {
 const { buildApp, APP_LIBRARY_SPECIFIERS } = await import('./index');
 
 /** The runtime shapes of the libraries (subsets), as app-libraries.test.ts. */
-const RT: Record<string, string[]> = {
-  ...RUNTIME_EXPORTS_FIXTURE,
-  echarts: ['init'],
-  d3: ['select'],
-  three: ['Scene'],
-  'three/addons/controls/OrbitControls.js': ['OrbitControls'],
-  konva: ['default'],
-  katex: ['default'],
-  '@mantle/diagram-templates/browser': ['render'],
-};
+const RT: Record<string, string[]> = { ...RUNTIME_EXPORTS_FIXTURE, ...LIBRARY_EXPORTS_FIXTURE };
 
 describe('library imports read no file', () => {
   for (const spec of APP_LIBRARY_SPECIFIERS) {

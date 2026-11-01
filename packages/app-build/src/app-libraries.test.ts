@@ -8,20 +8,11 @@ import { describe, expect, it } from 'vitest';
 import { buildApp, type AppSource } from './index';
 import { APP_CANVAS_LIBRARIES, APP_LIBRARY_SPECIFIERS, appCanvasLibraries } from './app-libraries';
 import { CANVAS_MODULE_SPECIFIERS } from './canvas-runtime';
-import { RUNTIME_EXPORTS_FIXTURE } from './runtime-exports.fixture';
+import { LIBRARY_EXPORTS_FIXTURE, RUNTIME_EXPORTS_FIXTURE } from './runtime-exports.fixture';
 
 /** The fixture plus the library shapes the canvas runtime manifest records
- *  (subsets; the browser test checks the real build). */
-const RT: Record<string, string[]> = {
-  ...RUNTIME_EXPORTS_FIXTURE,
-  echarts: ['init', 'graphic', 'use'],
-  d3: ['select', 'scaleLinear', 'axisBottom'],
-  three: ['Scene', 'WebGLRenderer', 'PerspectiveCamera', 'Mesh'],
-  'three/addons/controls/OrbitControls.js': ['OrbitControls'],
-  konva: ['default'],
-  katex: ['default'],
-  '@mantle/diagram-templates/browser': ['domMeasurer', 'mount', 'render'],
-};
+ *  (subsets; app-libraries.build.test.ts checks them against the real build). */
+const RT: Record<string, string[]> = { ...RUNTIME_EXPORTS_FIXTURE, ...LIBRARY_EXPORTS_FIXTURE };
 
 const app = (body: string): AppSource => ({
   entry: 'App.tsx',

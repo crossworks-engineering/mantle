@@ -28,7 +28,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import esbuild from 'esbuild';
 import { KIT } from './kit.ts';
-import { appCanvasLibraries } from './app-libraries.ts';
+import { APP_RUNTIME_LIBRARIES, appCanvasLibraries } from './app-libraries.ts';
 
 const REAL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ENTRY_NS = 'rt-entry';
@@ -67,10 +67,12 @@ const ENTRY_SRC: Record<string, string> = {
   badge: KIT['@/components/ui/badge']!,
   separator: KIT['@/components/ui/separator']!,
   host: KIT['@host']!,
-  // Motion's React API (app-libraries.ts): it imports React, so it is built
-  // here, where splitting gives it the one shared React, not in the canvas
-  // runtime. ESM, so `export *` carries its names across the boundary.
-  'motion-react': "export * from 'motion/react';",
+  // The libraries that import React (app-libraries.ts): built here, where
+  // splitting gives them the one shared React, not in the canvas runtime.
+  // ESM, so `export *` carries their names across the boundary.
+  ...Object.fromEntries(
+    APP_RUNTIME_LIBRARIES.map((l) => [l.entry, `export * from ${JSON.stringify(l.specifier)};`]),
+  ),
 };
 
 /** Specifier as written in app source → entry name. This is the contract the
@@ -88,7 +90,7 @@ export const RUNTIME_SPECIFIERS: Record<string, string> = {
   '@/components/ui/badge': 'badge',
   '@/components/ui/separator': 'separator',
   '@host': 'host',
-  'motion/react': 'motion-react',
+  ...Object.fromEntries(APP_RUNTIME_LIBRARIES.map((l) => [l.specifier, l.entry])),
 };
 
 /** esbuild plugin: serve the virtual entry sources + bind the kit's own

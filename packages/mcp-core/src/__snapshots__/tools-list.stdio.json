@@ -10017,7 +10017,7 @@
    "properties": {
     "name": {
      "type": "string",
-     "description": "The library: echarts, d3, three, motion, reveal.js, konva, katex, alpinejs; or 'data' for saving what viewers add (`mantle.data`, built into the frame); for an app also diagram-templates."
+     "description": "The library: echarts, d3, three, motion, reveal.js, konva, katex, alpinejs; or 'data' for saving what viewers add (`mantle.data`, built into the frame); for an app also diagram-templates, mathjs, date-fns, zod, tanstack-table, tanstack-virtual, dnd-kit, fuse, papaparse, pdf-lib, qrcode, markdown."
     },
     "for": {
      "type": "string",

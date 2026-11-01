@@ -8,9 +8,14 @@
  * import check, so the bundler leaves the import bare (index.ts) and the
  * frame resolves it, as it resolves React.
  *
- * The one exception is `motion/react`: Motion's React API imports React, so
- * it is built into the APP runtime against the one shared React
- * (build-runtime.ts), not taken from the canvas set, which has no React.
+ * The exceptions are the libraries that import React (`motion/react`, the
+ * TanStack table and virtualizer, dnd-kit): they are built into the APP
+ * runtime against the one shared React (build-runtime.ts), not taken from
+ * the canvas set, which has no React.
+ *
+ * Each library is its own content-hashed file, fetched only when an app
+ * imports it: the import map is an address book, so a large library (pdf-lib,
+ * mathjs) costs an app that does not import it nothing.
  *
  * Every entry is an exact specifier. A subpath (`echarts/core`,
  * `three/examples/jsm/...`) is refused like any other unlisted import.
@@ -19,6 +24,9 @@
 /** A canvas-runtime module an app may import: the specifier as written in
  *  app source, and the canvas_library guide that covers it. */
 export type AppLibrary = Readonly<{ specifier: string; guide: string }>;
+
+/** An app-runtime library: also the entry it is built as (build-runtime.ts). */
+export type AppRuntimeLibrary = AppLibrary & Readonly<{ entry: string }>;
 
 /** Taken from the canvas runtime's manifest (must be in CANVAS_MODULES). */
 export const APP_CANVAS_LIBRARIES: readonly AppLibrary[] = [
@@ -33,11 +41,26 @@ export const APP_CANVAS_LIBRARIES: readonly AppLibrary[] = [
   // The diagram templates (flow, pid): `render` + `domMeasurer` draw a
   // template's data to an SVG string in the app's own document.
   { specifier: '@mantle/diagram-templates/browser', guide: 'diagram-templates' },
+  { specifier: 'mathjs', guide: 'mathjs' },
+  { specifier: 'date-fns', guide: 'date-fns' },
+  { specifier: 'zod', guide: 'zod' },
+  { specifier: 'fuse.js', guide: 'fuse' },
+  { specifier: 'papaparse', guide: 'papaparse' },
+  { specifier: 'pdf-lib', guide: 'pdf-lib' },
+  { specifier: 'qrcode', guide: 'qrcode' },
+  // One guide: markdown-it's HTML reaches the DOM only through DOMPurify.
+  { specifier: 'markdown-it', guide: 'markdown' },
+  { specifier: 'dompurify', guide: 'markdown' },
 ];
 
 /** Built into the app runtime itself (build-runtime.ts ENTRY_SRC). */
-export const APP_RUNTIME_LIBRARIES: readonly AppLibrary[] = [
-  { specifier: 'motion/react', guide: 'motion' },
+export const APP_RUNTIME_LIBRARIES: readonly AppRuntimeLibrary[] = [
+  { specifier: 'motion/react', guide: 'motion', entry: 'motion-react' },
+  { specifier: '@tanstack/react-table', guide: 'tanstack-table', entry: 'tanstack-table' },
+  { specifier: '@tanstack/react-virtual', guide: 'tanstack-virtual', entry: 'tanstack-virtual' },
+  // Sortable imports core: splitting gives both one copy, so one drag context.
+  { specifier: '@dnd-kit/core', guide: 'dnd-kit', entry: 'dnd-kit-core' },
+  { specifier: '@dnd-kit/sortable', guide: 'dnd-kit', entry: 'dnd-kit-sortable' },
 ];
 
 /** Canvas libraries an app may NOT import, and why. The error text names

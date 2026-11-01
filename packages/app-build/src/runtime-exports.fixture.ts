@@ -29,4 +29,61 @@ export const RUNTIME_EXPORTS_FIXTURE: Record<string, string[]> = {
   '@/components/ui/separator': ['Separator'],
   '@host': ['__mount', 'host'],
   'motion/react': ['motion', 'AnimatePresence', 'animate', 'useAnimate', 'useReducedMotion'],
+  '@tanstack/react-table': [
+    'useTable',
+    'tableFeatures',
+    'createColumnHelper',
+    'createSortedRowModel',
+    'rowSortingFeature',
+    'sortFn_alphanumeric',
+    'columnFilteringFeature',
+    'globalFilteringFeature',
+    'createFilteredRowModel',
+    'filterFn_includesString',
+    'FlexRender',
+  ],
+  '@tanstack/react-virtual': ['useVirtualizer', 'useWindowVirtualizer'],
+  '@dnd-kit/core': [
+    'DndContext',
+    'closestCenter',
+    'KeyboardSensor',
+    'PointerSensor',
+    'useSensor',
+    'useSensors',
+    'useDraggable',
+    'useDroppable',
+    'DragOverlay',
+  ],
+  '@dnd-kit/sortable': [
+    'SortableContext',
+    'useSortable',
+    'arrayMove',
+    'sortableKeyboardCoordinates',
+    'verticalListSortingStrategy',
+  ],
+};
+
+/**
+ * The canvas-runtime libraries an app reads (app-libraries.ts
+ * APP_CANVAS_LIBRARIES), as subsets of what the canvas runtime's manifest
+ * records. `app-libraries.build.test.ts` builds the real canvas runtime and
+ * asserts every name here is real and every library is here.
+ */
+export const LIBRARY_EXPORTS_FIXTURE: Record<string, string[]> = {
+  echarts: ['init', 'graphic', 'use'],
+  d3: ['select', 'scaleLinear', 'axisBottom'],
+  three: ['Scene', 'WebGLRenderer', 'PerspectiveCamera', 'Mesh'],
+  'three/addons/controls/OrbitControls.js': ['OrbitControls'],
+  konva: ['default'],
+  katex: ['default'],
+  '@mantle/diagram-templates/browser': ['domMeasurer', 'mount', 'render'],
+  mathjs: ['evaluate', 'unit', 'create', 'all', 'format', 'round'],
+  'date-fns': ['format', 'addDays', 'differenceInCalendarDays', 'parseISO', 'isWeekend'],
+  zod: ['z', 'object', 'string', 'number', 'ZodError', 'prettifyError'],
+  'fuse.js': ['default'],
+  papaparse: ['default'],
+  'pdf-lib': ['PDFDocument', 'StandardFonts', 'rgb'],
+  qrcode: ['default'],
+  'markdown-it': ['default'],
+  dompurify: ['default'],
 };
