@@ -6,6 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
+import { withRoleRetry } from './viewer-roles';
 import {
   ACCESS_MATRIX,
   WORKSPACE_NODE_TYPES,
@@ -240,14 +241,15 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
   });
 
   it('re-applying heals drift: extra tables and columns are revoked', async () => {
-    await sql.unsafe(`GRANT SELECT ON "public"."secrets" TO mantle_view_user`);
-    await sql.unsafe(`GRANT SELECT ("email") ON "auth"."users" TO mantle_view_user`);
+    const grant = (text: string) => withRoleRetry(() => sql.unsafe(text));
+    await grant(`GRANT SELECT ON "public"."secrets" TO mantle_view_user`);
+    await grant(`GRANT SELECT ("email") ON "auth"."users" TO mantle_view_user`);
     // An old migration's grant to a retired role, as on a fresh install.
-    await sql.unsafe(`GRANT SELECT ON "public"."nodes" TO mantle_view_team`);
+    await grant(`GRANT SELECT ON "public"."nodes" TO mantle_view_team`);
     // And the write role: a write right on a system-only table, a truncate.
-    await sql.unsafe(`GRANT INSERT ON "public"."node_embeds" TO mantle_write_user`);
-    await sql.unsafe(`GRANT TRUNCATE ON "public"."nodes" TO mantle_write_user`);
-    await applyViewerGrants(sql);
+    await grant(`GRANT INSERT ON "public"."node_embeds" TO mantle_write_user`);
+    await grant(`GRANT TRUNCATE ON "public"."nodes" TO mantle_write_user`);
+    await withRoleRetry(() => applyViewerGrants(sql));
     for (const [t, p] of [
       ['public.node_embeds', 'INSERT'],
       ['public.nodes', 'TRUNCATE'],

@@ -337,6 +337,17 @@ export async function superuserExec<T = Record<string, unknown>>(
 ): Promise<T[]> {
   const { sql: text, params } =
     typeof query === 'string' ? { sql: query, params: [] } : new PgDialect().sqlToQuery(query);
+  // A grant, or a function dropped while another file runs a grant, can meet
+  // "tuple concurrently updated" on a shared cluster.
+  return withRoleRetry(() => superuserStatement<T>(url, query, text, params));
+}
+
+async function superuserStatement<T>(
+  url: string,
+  query: SQL | string,
+  text: string,
+  params: unknown[],
+): Promise<T[]> {
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   if (typeof query !== 'string') {
     // As the app's drizzle pools send them (drizzle-orm/postgres-js): a

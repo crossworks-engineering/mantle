@@ -36,7 +36,7 @@ const VITEST = 'node_modules/vitest/vitest.mjs';
 /** Ends a run that hangs. A run takes 7 minutes on the workstation, and a GitHub
  *  runner took about four times that for the same Node suite. */
 const RUN_TIMEOUT_MS = 60 * 60 * 1000;
-/** The key of a test file that failed before any of its tests ran. */
+/** The key of a test file that failed outside its tests (a load, a hook). */
 const FILE_LEVEL = '<file>';
 const NOT_RUN = new Set(['pending', 'skipped', 'todo', 'disabled']);
 
@@ -57,6 +57,10 @@ export function readResults(report, root = ROOT) {
     }
     for (const test of file.assertionResults) {
       put(`${name} > ${test.fullName || test.title}`, test.status);
+    }
+    // Every test passed and the file failed: a hook threw. vitest exits 1.
+    if (file.status === 'failed' && !file.assertionResults.some((t) => t.status === 'failed')) {
+      put(`${name} > ${FILE_LEVEL}`, 'failed');
     }
   }
   return out;

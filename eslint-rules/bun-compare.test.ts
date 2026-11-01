@@ -43,6 +43,16 @@ describe('the Bun compare (scripts/bun-compare.mjs)', () => {
     expect(readResults(report, '/repo').get('b.test.ts > <file>')).toBe('failed');
   });
 
+  it('keeps a file whose hook failed after every test passed', () => {
+    const test = { fullName: 'a', title: 'a', status: 'passed' };
+    const report = {
+      testResults: [{ name: '/repo/h.test.ts', status: 'failed', assertionResults: [test] }],
+    };
+    const read = readResults(report, '/repo');
+    expect(read.get('h.test.ts > a')).toBe('passed');
+    expect(read.get('h.test.ts > <file>')).toBe('failed');
+  });
+
   it('lets a failure win when two tests share a name', () => {
     const row = (status: string) => ({ fullName: 'row', title: 'row', status });
     const failFirst = {
