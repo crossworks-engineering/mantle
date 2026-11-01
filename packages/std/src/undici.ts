@@ -64,17 +64,22 @@ function callerStream(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8A
   return own;
 }
 
-/** A Request's body as bytes. A body that stalls must not outlive the abort. */
+/** A Request's body as bytes. An abort stops the read and cancels the body, so
+ *  a producer that stalls hears of it. */
 async function requestBytes(req: Request, signal?: AbortSignal | null): Promise<ArrayBuffer> {
-  if (!signal) return req.arrayBuffer();
+  if (!signal || !req.body) return req.arrayBuffer();
   signal.throwIfAborted();
-  let stop = () => {};
-  const aborted = new Promise<never>((_, reject) => {
-    stop = () => reject(signal.reason);
-    signal.addEventListener('abort', stop, { once: true });
-  });
+  const reader = req.body.getReader();
+  const stop = () => void reader.cancel(signal.reason).catch(() => {});
+  signal.addEventListener('abort', stop, { once: true });
   try {
-    return await Promise.race([req.arrayBuffer(), aborted]);
+    const parts: Uint8Array<ArrayBuffer>[] = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      signal.throwIfAborted();
+      if (done) return await new Blob(parts).arrayBuffer();
+      parts.push(value);
+    }
   } finally {
     signal.removeEventListener('abort', stop);
   }

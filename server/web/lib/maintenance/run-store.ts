@@ -142,7 +142,12 @@ export function startRun(
 
   let child: ChildProcess;
   try {
-    const { command, args: argv } = tsCommand(import.meta.url, task.script, args);
+    // Not tsx's own process on Node, as maintain.ts starts one: tsx keeps a
+    // parent, so a SIGKILL here would miss a script that traps SIGTERM and
+    // 'close' would never come. Bun has no parent to miss.
+    const { command, args: argv } = process.versions.bun
+      ? tsCommand(import.meta.url, task.script, args)
+      : { command: 'pnpm', args: ['exec', 'tsx', task.script, ...args] };
     child = spawn(command, argv, {
       cwd,
       env,

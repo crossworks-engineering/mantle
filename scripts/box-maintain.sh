@@ -210,9 +210,10 @@ exit \$rc"
 
 # The env arrives through a pipe: docker reads /dev/fd/N, nothing on disk.
 # mantle_web env first, then the overrides (-e wins over --env-file).
-# Bun ignores NODE_OPTIONS. Its heap follows the size it believes the machine
-# has, so BUN_JSC_forceRAMSize holds it near the same cap (a target, not a
-# wall), and the container limit is the hard stop on both runtimes.
+# A task runs on Node today. For one on Bun, which ignores NODE_OPTIONS: its
+# heap follows the size it believes the machine has, so BUN_JSC_forceRAMSize
+# holds it near the same cap (a target, not a wall). The container limit is the
+# hard stop on both runtimes.
 docker run -d --rm --init --name "$NAME" --label mantle.maint=1 \
   --memory "$MEM" --memory-swap "$MEM" \
   --network "container:$WEB" \

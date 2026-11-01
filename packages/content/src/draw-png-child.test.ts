@@ -3,12 +3,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { DRAW_PNG_CHILD_MEMORY_MB, renderDrawSvgPng } from './draw-png';
 
 const spawned = vi.hoisted(() => [] as { command: string; args: string[]; env: unknown }[]);
+/** A child's source to run in place of the real one. */
+const standIn = vi.hoisted(() => ({ source: '' }));
 vi.mock('node:child_process', async (load) => {
   const real = await load<typeof import('node:child_process')>();
   return {
     ...real,
     spawn: (command: string, args: string[], opts: { env?: unknown }) => {
       spawned.push({ command, args, env: opts.env });
+      if (standIn.source) {
+        return real.spawn(process.execPath, ['-e', standIn.source], opts as never);
+      }
       return real.spawn(command, args, opts as never);
     },
   };
@@ -51,6 +56,23 @@ describe('the largest job the bounds allow', () => {
     const png = await renderDrawSvgPng(big, { timeoutMs: 60_000 });
     expect(png.width).toBe(2000);
   }, 90_000);
+});
+
+describe.runIf(process.versions.bun)('a child that does not answer', () => {
+  it.each([
+    ['a cut reply', 'process.stdout.write(`{"ok":true,"png":"abc`)', /gave no answer/],
+    ['no reply', '', /gave no answer/],
+    ['a crash', 'process.exit(3)', /stopped \(exit 3\)/],
+  ])('%s rejects, and frees its slot', async (_label, source, error) => {
+    standIn.source = source || 'process.exit(0)';
+    try {
+      for (let i = 0; i < 4; i++) {
+        await expect(renderDrawSvgPng(svg, { longEdge: 200 })).rejects.toThrow(error);
+      }
+    } finally {
+      standIn.source = '';
+    }
+  });
 });
 
 describe('where a render runs', () => {

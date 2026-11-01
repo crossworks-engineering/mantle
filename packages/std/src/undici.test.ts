@@ -114,7 +114,11 @@ describe('a call through a dispatcher, the same on every runtime', () => {
 
   it('an abort stops a Request body that stalls', async () => {
     const ctrl = new AbortController();
-    const stalled = new ReadableStream({ start: (c) => c.enqueue(new Uint8Array([1])) });
+    const cancelled: unknown[] = [];
+    const stalled = new ReadableStream({
+      start: (c) => c.enqueue(new Uint8Array([1])),
+      cancel: (why) => void cancelled.push(why),
+    });
     const req = new Request(`${base}/echo`, {
       method: 'POST',
       body: stalled,
@@ -124,6 +128,8 @@ describe('a call through a dispatcher, the same on every runtime', () => {
     const hung = fetchThrough(agent, req, {}, fetch);
     setTimeout(() => ctrl.abort(), 20);
     await expect(hung).rejects.toMatchObject({ name: 'AbortError' });
+    // On Bun this code reads the body. Node's fetch keeps its own stream.
+    if (isBun) expect(cancelled).toHaveLength(1);
   });
 
   it.runIf(isBun)(

@@ -22,10 +22,23 @@ export function runtimeFlags(): string[] {
   return process.versions.bun ? ['--no-env-file'] : [];
 }
 
+/** The flags this process started with, less its env files: `--env-file`
+ *  beats `--no-env-file` on Bun, and this process's env reaches a child only
+ *  through the `env` its caller gives. */
+function ownFlags(): string[] {
+  const own: string[] = [];
+  for (let i = 0; i < process.execArgv.length; i++) {
+    const flag = process.execArgv[i]!;
+    if (flag === '--env-file' || flag === '--env-file-if-exists') i++;
+    else if (!/^--env-file(?:-if-exists)?=/.test(flag)) own.push(flag);
+  }
+  return own;
+}
+
 /** This runtime on `script`, with the flags this process has: a file this
  *  process could load itself. */
 export function selfCommand(script: string, args: readonly string[] = []): Command {
-  const own = process.execArgv;
+  const own = ownFlags();
   const flags = own.includes('--no-env-file') ? [] : runtimeFlags();
   return { command: process.execPath, args: [...flags, ...own, script, ...args] };
 }

@@ -44,8 +44,8 @@ export const DRAW_PNG_TIMEOUT_MS = 20_000;
 const MAX_CONCURRENT = 2;
 const MAX_WAITING = 6;
 /** The kernel limit on a render process (Bun). Unlike the worker's limit, it
- *  covers WebAssembly memory too. The largest job the input bounds allow takes
- *  about 1,400 MB of it (draw-png-child.test.ts). */
+ *  covers WebAssembly memory too. Flat pictures at the input bounds take about
+ *  1,400 MB of it (draw-png-child.test.ts). A job past it is refused. */
 export const DRAW_PNG_CHILD_MEMORY_MB = 1536;
 
 /** A part of the scene, as fractions of its width and height (0 to 1, from
@@ -178,7 +178,13 @@ function renderInChild(job: RenderJob, timeoutMs: number): Promise<RenderResult>
         reject(new Error(`the picture renderer stopped (${signal ?? `exit ${code}`})`));
         return;
       }
-      const reply = JSON.parse(Buffer.concat(out).toString('utf8')) as ChildReply;
+      let reply: ChildReply;
+      try {
+        reply = JSON.parse(Buffer.concat(out).toString('utf8')) as ChildReply;
+      } catch {
+        reject(new Error('the picture renderer gave no answer'));
+        return;
+      }
       if (!reply.ok) {
         reject(new Error(reply.error));
         return;

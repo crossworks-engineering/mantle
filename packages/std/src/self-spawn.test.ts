@@ -43,6 +43,23 @@ describe('a new process of this runtime', () => {
     expect(run({ command: process.execPath, args: argv }).stdout.trim()).toBe('none');
   });
 
+  it('a child does not inherit an env file from the flags of this process', () => {
+    const named = file('named.env', 'SELF_SPAWN_SECRET=from-the-named-file\n');
+    const script = file('named.mjs', 'console.log(process.env.SELF_SPAWN_SECRET ?? "none");');
+    const before = process.execArgv;
+    process.execArgv = ['--smol-flag', `--env-file=${named}`, '--env-file', named];
+    try {
+      const cmd = selfCommand(script);
+      expect(cmd.args).not.toContain(named);
+      expect(cmd.args.join(' ')).not.toContain('env-file=');
+      expect(cmd.args).toContain('--smol-flag');
+      const real = { ...cmd, args: cmd.args.filter((a) => a !== '--smol-flag') };
+      expect(run(real).stdout.trim()).toBe('none');
+    } finally {
+      process.execArgv = before;
+    }
+  });
+
   it.runIf(isBun && process.platform === 'linux')(
     'withMemoryLimit stops a heap, a buffer and WebAssembly memory',
     () => {
