@@ -232,10 +232,17 @@ export async function createReadOnlyRole(
       select nspname from pg_namespace
        where nspname !~ '^pg_' and nspname <> 'information_schema'`;
     for (const { nspname } of schemas) {
-      await withRoleRetry(() => sql.unsafe(`grant usage on schema "${nspname}" to "${name}"`));
-      await withRoleRetry(() =>
-        sql.unsafe(`grant select on all tables in schema "${nspname}" to "${name}"`),
-      );
+      try {
+        await withRoleRetry(() => sql.unsafe(`grant usage on schema "${nspname}" to "${name}"`));
+        await withRoleRetry(() =>
+          sql.unsafe(`grant select on all tables in schema "${nspname}" to "${name}"`),
+        );
+      } catch (err) {
+        // A test's own schema may go while this runs (viewer.db.test.ts drops
+        // viewer_test): a schema that is gone has nothing to grant.
+        const [left] = await sql`select 1 from pg_namespace where nspname = ${nspname}`;
+        if (left) throw err;
+      }
     }
     // What the demo's reader is granted besides SELECT (0256): the owner's
     // app sidebar asks for the Team workspace; the chips ask each workspace's
