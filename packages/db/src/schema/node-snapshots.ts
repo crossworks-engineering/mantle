@@ -95,6 +95,13 @@ export type AppSnapshotCode = {
   draft: AppSource | null;
   manifest: AppManifest;
   publishedBuild: BuildRef | null;
+  /** On a `pre_code_edit` row (0350): the working tree is `source`. The
+   *  author ceiling when it was taken, only when 'team'; on an undo's own
+   *  row, the file it put back and the row it went back to. */
+  codeEdit?: {
+    authorLevel?: 'team';
+    undo?: { path: string; fromSeq: number };
+  };
 };
 
 export type AppSnapshotMeta = {

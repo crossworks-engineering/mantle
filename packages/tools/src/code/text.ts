@@ -31,12 +31,11 @@ function lineNumbersOf(text: string, offsets: readonly number[]): number[] {
   return out;
 }
 
-/** Every start offset of `needle` in `text` (non-overlapping). */
+/** Every start offset of `needle` in `text`, overlapping ones too: `aa`
+ *  in `aaa` is two places, so it is not "once". */
 function offsetsOf(text: string, needle: string): number[] {
   const out: number[] = [];
-  for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + needle.length)) {
-    out.push(i);
-  }
+  for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + 1)) out.push(i);
   return out;
 }
 
@@ -59,6 +58,11 @@ export function numberedView(
 ): NumberedView | { error: string } {
   const { lines } = splitLines(content);
   const total = lines.length;
+  for (const [k, v] of Object.entries(range)) {
+    if (v !== undefined && (!Number.isInteger(v) || v < 1)) {
+      return { error: `${k} must be a whole line number, 1 or more (got ${v})` };
+    }
+  }
   const start = range.start ?? 1;
   if (total === 0) return { text: '', total: 0, start: 0, end: 0, more: 0 };
   if (start > total) {
@@ -96,7 +100,11 @@ export function applyEdits(
         error: `${which}: old is empty. Quote the exact text to replace; to add lines use code_insert, to write a whole file use code_write`,
       };
     }
-    if (e.old === e.new) return { error: `${which}: old and new are the same text` };
+    if (e.old === e.new) {
+      return {
+        error: `${which}: old and new are the same text, so it changes nothing. Put the replacement text in new`,
+      };
+    }
     const hits = offsetsOf(text, e.old);
     if (hits.length === 0) {
       const near = nearMatch(text, e.old);
@@ -116,8 +124,11 @@ export function applyEdits(
         error: `${which}: old matches ${hits.length} times (lines ${shown}). Add surrounding lines to old so it matches once, or set replace_all. Nothing was changed`,
       };
     }
-    text = text.split(e.old).join(e.new);
-    replaced += hits.length;
+    // split/join: no `$` patterns, and replace_all takes the matches from
+    // the left without overlap.
+    const parts = text.split(e.old);
+    text = parts.join(e.new);
+    replaced += parts.length - 1;
   }
   return { text, replaced };
 }
@@ -264,39 +275,108 @@ export function unifiedDiff(path: string, before: string, after: string, maxLine
   return out.join('\n');
 }
 
-/**
- * A file glob as an anchored RegExp: `*` any run within one path segment,
- * `**` any run across segments (`**` before a slash: none too), `?` one
- * character, `{a,b}` either. A glob with no `/` matches the file name in any folder.
- */
-export function globToRegExp(glob: string): RegExp {
-  let src = '';
+/** The most `{a,b}` alternatives a glob may expand to. */
+const GLOB_MAX_ALTERNATIVES = 32;
+
+type GlobToken = { kind: 'char'; c: string } | { kind: '?' | '*' | '**' | '**/' };
+
+function globTokens(glob: string): GlobToken[] {
+  const out: GlobToken[] = [];
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]!;
-    if (c === '*') {
-      if (glob[i + 1] === '*') {
+    if (c === '?') out.push({ kind: '?' });
+    else if (c !== '*') out.push({ kind: 'char', c });
+    else {
+      let n = 1;
+      while (glob[i + 1] === '*') {
+        n++;
         i++;
-        if (glob[i + 1] === '/') {
-          i++;
-          src += '(?:[^]*/)?';
-        } else src += '[^]*';
-      } else src += '[^/]*';
-    } else if (c === '?') src += '[^/]';
-    else if (c === '{') {
-      const close = glob.indexOf('}', i);
-      if (close === -1) src += '\\{';
-      else {
-        src +=
-          '(?:' +
-          glob
-            .slice(i + 1, close)
-            .split(',')
-            .map((p) => p.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'))
-            .join('|') +
-          ')';
-        i = close;
       }
-    } else src += c.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+      if (n === 1) out.push({ kind: '*' });
+      else if (glob[i + 1] === '/') {
+        out.push({ kind: '**/' });
+        i++;
+      } else out.push({ kind: '**' });
+    }
   }
-  return new RegExp(glob.includes('/') ? `^${src}$` : `(?:^|/)${src}$`);
+  return out;
 }
+
+/** The one-level `{a,b}` expansions of a glob, or null past the cap. */
+function expandBraces(glob: string): string[] | null {
+  const open = glob.indexOf('{');
+  const close = open === -1 ? -1 : glob.indexOf('}', open);
+  if (close === -1) return [glob];
+  const head = glob.slice(0, open);
+  const rest = expandBraces(glob.slice(close + 1));
+  if (!rest) return null;
+  const out: string[] = [];
+  for (const alt of glob.slice(open + 1, close).split(',')) {
+    for (const tail of rest) {
+      out.push(head + alt + tail);
+      if (out.length > GLOB_MAX_ALTERNATIVES) return null;
+    }
+  }
+  return out;
+}
+
+/** Whether `path` matches the tokens: one pass of a table, tokens × path
+ *  characters, so no glob can make it backtrack. */
+function tokensMatch(tokens: readonly GlobToken[], path: string): boolean {
+  const L = path.length;
+  // next[j]: tokens after this one match path[j..].
+  let next = new Uint8Array(L + 1);
+  next[L] = 1;
+  for (let t = tokens.length - 1; t >= 0; t--) {
+    const tok = tokens[t]!;
+    const cur = new Uint8Array(L + 1);
+    let anySlash = 0; // '**/': a '/' at k >= j with next[k + 1]
+    for (let j = L; j >= 0; j--) {
+      const ch = j < L ? path[j] : undefined;
+      switch (tok.kind) {
+        case 'char':
+          cur[j] = ch === tok.c && next[j + 1] ? 1 : 0;
+          break;
+        case '?':
+          cur[j] = ch !== undefined && ch !== '/' && next[j + 1] ? 1 : 0;
+          break;
+        case '*':
+          cur[j] = next[j] || (ch !== undefined && ch !== '/' && cur[j + 1]) ? 1 : 0;
+          break;
+        case '**':
+          cur[j] = next[j] || (ch !== undefined && cur[j + 1]) ? 1 : 0;
+          break;
+        case '**/':
+          if (ch === '/' && next[j + 1]) anySlash = 1;
+          cur[j] = next[j] || anySlash ? 1 : 0;
+          break;
+      }
+    }
+    next = cur;
+  }
+  return next[0] === 1;
+}
+
+/**
+ * A file glob as a matcher: `*` any run within one path segment, `**` any
+ * run across segments (`**` before a slash: none too), `?` one character,
+ * `{a,b}` either. A glob with no `/` matches the file name in any folder.
+ * Linear in the path for any glob (no regular expression), so a caller's
+ * glob cannot stall the process; null when it expands past the cap.
+ */
+export function globMatcher(glob: string): ((path: string) => boolean) | null {
+  const alts = expandBraces(glob);
+  if (!alts) return null;
+  const compiled = alts.map((g) => {
+    const tokens = globTokens(g);
+    return g.includes('/') ? tokens : [{ kind: '**/' } as GlobToken, ...tokens];
+  });
+  return (path) => compiled.some((tokens) => tokensMatch(tokens, path));
+}
+
+/** A text with CRLF line ends, as the tools work on it (LF), and back. */
+export function crlfOf(text: string): boolean {
+  return text.includes('\r\n');
+}
+export const toLf = (text: string): string => text.replace(/\r\n/g, '\n');
+export const toCrlf = (text: string): string => text.replace(/\r?\n/g, '\r\n');

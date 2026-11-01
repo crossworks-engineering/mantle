@@ -16,3 +16,9 @@ export function appIdOfCodeTarget(value: unknown): string | null {
   const id = v.startsWith(APP_TARGET_PREFIX) ? v.slice(APP_TARGET_PREFIX.length).trim() : v;
   return UUID_RE.test(id) ? id : null;
 }
+
+/** A file path as an app's tree keys it: trimmed, no leading `./` or `/`.
+ *  The one rule for the code tools and app_file_write / app_file_delete. */
+export function normCodePath(raw: unknown): string {
+  return (typeof raw === 'string' ? raw : '').trim().replace(/^(\.\/|\/)+/, '');
+}

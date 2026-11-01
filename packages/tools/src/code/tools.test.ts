@@ -139,6 +139,19 @@ describe('code_search', () => {
     expect(out.hint).toMatch(/Showing 1 of 2 hits/);
   });
 
+  it('a glob of many stars answers at once', async () => {
+    const started = Date.now();
+    const out = outputOf(
+      await tool('code_search').handler(
+        { target: TARGET, pattern: 'label', glob: '*'.repeat(150) + 'x' },
+        ctx,
+      ),
+    );
+    // App.tsx ends in x: the glob holds, and it answered at once.
+    expect(out).toMatchObject({ total: 2 });
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it('a glob that matches no file teaches', async () => {
     expect(
       errorOf(
@@ -240,6 +253,39 @@ describe('code_edit', () => {
   });
 });
 
+describe('CRLF files', () => {
+  const CRLF = { entry: 'App.tsx', files: { 'App.tsx': 'a\r\nb\r\n' } };
+  beforeEach(() => {
+    vi.mocked(getApp).mockResolvedValue({ source: CRLF, draft: null } as never);
+    vi.mocked(changeDraftSource).mockImplementation(async (_o, _id, change) => {
+      const after = change(CRLF);
+      return { before: CRLF, after, beforeRev: 'r0', rev: 'r1', written: true };
+    });
+  });
+
+  it('view shows LF; an edit copied from it matches and keeps CRLF', async () => {
+    const view = outputOf(
+      await tool('code_view').handler({ target: TARGET, path: 'App.tsx' }, ctx),
+    );
+    expect(view.text).toBe('1\ta\n2\tb');
+    await tool('code_edit').handler(
+      { target: TARGET, path: 'App.tsx', edits: [{ old: 'a\nb', new: 'a\nx' }] },
+      ctx,
+    );
+    const change = vi.mocked(changeDraftSource).mock.calls[0]![2];
+    expect(change(CRLF).files['App.tsx']).toBe('a\r\nx\r\n');
+  });
+
+  it('an insert keeps CRLF', async () => {
+    await tool('code_insert').handler(
+      { target: TARGET, path: 'App.tsx', after_line: 1, text: 'n' },
+      ctx,
+    );
+    const change = vi.mocked(changeDraftSource).mock.calls[0]![2];
+    expect(change(CRLF).files['App.tsx']).toBe('a\r\nn\r\nb\r\n');
+  });
+});
+
 describe('code_insert and code_write', () => {
   it('inserts after a line', async () => {
     const out = outputOf(
@@ -289,9 +335,17 @@ describe('code_undo', () => {
       rev: sourceRev(after),
       written: true,
       fromSeq: 7,
+      teamRules: false,
     });
-    const out = outputOf(await tool('code_undo').handler({ target: TARGET, path: 'App.tsx' }, ctx));
-    expect(undoDraftFile).toHaveBeenCalledWith('o1', APP_ID, 'App.tsx');
+    const out = outputOf(
+      await tool('code_undo').handler({ target: TARGET, path: 'App.tsx', base_rev: 'r9' }, ctx),
+    );
+    expect(undoDraftFile).toHaveBeenCalledWith(
+      'o1',
+      APP_ID,
+      'App.tsx',
+      expect.objectContaining({ actor: 'agent', baseRev: 'r9' }),
+    );
     expect(out).toMatchObject({ rev: sourceRev(after) });
     expect(out.diff).toContain('+old');
   });

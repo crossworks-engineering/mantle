@@ -67,7 +67,7 @@ export function envMbBytes(
 /**
  * Prune one node's pruneable history rows in ONE statement: of the rows with one of `triggers`, keep
  * the newest `keep`, and of those only as many as fit in `maxBytes` (the
- * newest always stays, whatever its size). Returns the removed rows' file
+ * newest always stays, whatever its size; `size` says which bytes count). Returns the removed rows' file
  * paths: the caller removes the files after the rows.
  *
  * One statement, ranked by `seq`, so a row another process inserts
@@ -83,6 +83,9 @@ export async function pruneHistoryRows(
   /** The transaction holding the node's history lock: the delete runs on
    *  it, never on a second connection. */
   q: Pick<typeof db, 'delete'> = db,
+  /** What `maxBytes` counts: the database copies (default), or the code
+   *  (the code tools' rows, which hold no copy). */
+  size: 'db' | 'source' = 'db',
 ): Promise<(string | null)[]> {
   if (!triggers.length) return [];
   const list = sql.join(
@@ -96,7 +99,7 @@ export async function pruneHistoryRows(
        select id from (
          select id,
                 row_number() over w as rn,
-                sum(coalesce(db_bytes, 0)) over w as cum
+                sum(coalesce(${size === 'source' ? sql`source_bytes` : sql`db_bytes`}, 0)) over w as cum
            from node_snapshots
           where node_id = ${nodeId} and trigger in (${list})
          window w as (order by seq desc rows between unbounded preceding and current row)

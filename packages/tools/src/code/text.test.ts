@@ -6,10 +6,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyEdits,
-  globToRegExp,
+  crlfOf,
+  globMatcher,
   insertAfterLine,
   numberedView,
   splitLines,
+  toCrlf,
+  toLf,
   unifiedDiff,
 } from './text';
 
@@ -45,6 +48,16 @@ describe('applyEdits: match once', () => {
     const out = applyEdits(SRC, [{ old: 'setN', new: 'setCount', replace_all: true }]);
     expect(out).toMatchObject({ replaced: 2 });
     expect('text' in out && out.text).not.toMatch(/setN\b/);
+  });
+
+  it('overlapping matches are more than one place', () => {
+    expect(applyEdits('aaa', [{ old: 'aa', new: 'b' }])).toMatchObject({
+      error: expect.stringMatching(/matches 2 times/),
+    });
+    expect(applyEdits('aaa', [{ old: 'aa', new: 'b', replace_all: true }])).toEqual({
+      text: 'ba',
+      replaced: 1,
+    });
   });
 
   it('refuses an empty old and an edit that changes nothing', () => {
@@ -113,6 +126,15 @@ describe('numberedView', () => {
     expect(v).toMatchObject({ start: 1, end: 2, more: 2 });
   });
 
+  it('a start or end below 1, or not whole, is an error', () => {
+    expect(numberedView('a\n', { start: -5 }, 10)).toMatchObject({
+      error: expect.stringMatching(/start must be/),
+    });
+    expect(numberedView('a\n', { end: 1.5 }, 10)).toMatchObject({
+      error: expect.stringMatching(/end must be/),
+    });
+  });
+
   it('a start past the end is an error', () => {
     expect(numberedView('a\n', { start: 5 }, 10)).toEqual({
       error: expect.stringMatching(/past the end/),
@@ -154,15 +176,43 @@ describe('unifiedDiff', () => {
   });
 });
 
-describe('globToRegExp', () => {
+describe('globMatcher', () => {
+  const m = (glob: string, path: string) => globMatcher(glob)!(path);
   it('matches names in any folder without a slash, paths with one', () => {
-    expect(globToRegExp('*.tsx').test('App.tsx')).toBe(true);
-    expect(globToRegExp('*.tsx').test('lib/Chart.tsx')).toBe(true);
-    expect(globToRegExp('*.tsx').test('lib/fmt.ts')).toBe(false);
-    expect(globToRegExp('lib/**').test('lib/a/b.ts')).toBe(true);
-    expect(globToRegExp('lib/*').test('lib/a/b.ts')).toBe(false);
-    expect(globToRegExp('**/*.{ts,tsx}').test('App.tsx')).toBe(true);
-    expect(globToRegExp('a.b').test('axb')).toBe(false);
+    expect(m('*.tsx', 'App.tsx')).toBe(true);
+    expect(m('*.tsx', 'lib/Chart.tsx')).toBe(true);
+    expect(m('*.tsx', 'lib/fmt.ts')).toBe(false);
+    expect(m('lib/**', 'lib/a/b.ts')).toBe(true);
+    expect(m('lib/*', 'lib/a/b.ts')).toBe(false);
+    expect(m('lib/*', 'lib/a.ts')).toBe(true);
+    expect(m('**/*.{ts,tsx}', 'App.tsx')).toBe(true);
+    expect(m('**/*.{ts,tsx}', 'a/b/c.ts')).toBe(true);
+    expect(m('src/**/x.ts', 'src/x.ts')).toBe(true);
+    expect(m('a?c.ts', 'abc.ts')).toBe(true);
+    expect(m('a?c.ts', 'a/c.ts')).toBe(false);
+    expect(m('a.b', 'axb')).toBe(false);
+  });
+
+  it('a glob of many stars cannot stall the process (no regex, no backtracking)', () => {
+    const started = Date.now();
+    const glob = '*'.repeat(400) + 'z';
+    for (let i = 0; i < 50; i++) m(glob, 'components/ExpenseReportTable.tsx');
+    expect(m('*a*a*a*a*a*a*a*a*a*a*a*a*z', 'a'.repeat(256))).toBe(false);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it('refuses a glob that expands past the cap', () => {
+    expect(globMatcher('{a,b,c,d}{a,b,c,d}{a,b,c,d}')).toBeNull();
+  });
+});
+
+describe('CRLF', () => {
+  it('reads CRLF and writes it back', () => {
+    expect(crlfOf('a\r\nb\r\n')).toBe(true);
+    expect(crlfOf('a\nb\n')).toBe(false);
+    expect(toLf('a\r\nb\r\n')).toBe('a\nb\n');
+    expect(toCrlf('a\nb\n')).toBe('a\r\nb\r\n');
+    expect(toCrlf('a\r\nb\n')).toBe('a\r\nb\r\n');
   });
 });
 

@@ -4,6 +4,31 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: code tools, edit a mini app's source in place
+
+- **Added:** six plain tools that view and edit a mini app's DRAFT source
+  without moving whole files, over MCP and in the brain: `code_view` (the
+  file tree, or numbered lines of one file), `code_search` (`file:line:
+text` hits, capped; a regex runs in a worker and is stopped after 3 s),
+  `code_edit` (exact text that must match once, all edits or none, a dry
+  run, a unified diff), `code_insert`, `code_write` and `code_undo`. Each
+  takes `target: "app:<id>"`; the brain makes no model call. Every read and
+  write returns the tree's `rev`, and a write with a stale `base_rev` fails
+  with the current one; `build: true` runs `app_build` in the same call and
+  returns its errors. Access is the app tools': the reads ask what
+  `app_get` asks, the writes what `app_file_write` asks. Granted with the
+  `apps` tool group (Appsmith); a `code` line on the tool map.
+- **Changed:** `app_file_write`, `app_file_delete` and `app_source_set`
+  write through the same draft write. `app_source_set` takes `base_rev`;
+  `app_get`, `app_file_write` and `app_source_set` return the `rev`.
+- **Migration 0350:** `node_snapshots.trigger` gains `pre_code_edit`: each
+  such write (an undo too) first records the working tree as it stood (code
+  only), the newest 20 per app within 64 MB, left out of the History list
+  and the lookups by id; `code_undo` reads them, one write further back per
+  call, and an undo to code taken at team rules puts the app back at team
+  rules. Rollback:
+  `packages/db/rollback/0350_code_edit_history.revert.sql` (optional).
+
 ## Unreleased: the UI sounds save names its login
 
 - **Fixed:** `PUT /api/profile/sounds` now takes `loginId`, the login the
@@ -21,7 +46,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   sets its own (`PUT /api/profile/description`); the users area sets
   anyone's (`PATCH /api/users/:id`, listed on `GET /api/users`). It is
   open to every login and agent that may see the card: on `GET
-  /api/people`, in the messenger directory (whose search now matches it)
+/api/people`, in the messenger directory (whose search now matches it)
   and on one conversation's people. `messenger_directory` and
   `messenger_open` carry it to agents, so one asked to message "the
   developer" can find who that is. Stored as the profile key

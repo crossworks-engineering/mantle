@@ -21,6 +21,7 @@ import {
   AppDraftRevError,
   AppSourceLimitError,
   AppUndoEmptyError,
+  AppUndoEntryError,
   CannotDeleteEntryError,
   changeDraftSource,
   getApp,
@@ -36,16 +37,20 @@ import { historyActor, ownerOnlyRefusal, withAuthorCeiling, WHO_HINT } from '../
 import { CS } from '../client-sourced-rule';
 import { str } from '../coerce';
 import { notFound } from '../errors';
+import { actingLoginId } from '../surface';
 import type { ToolPolicy } from '../tool-policy';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from '../types';
 import { searchFiles } from './search';
-import { appIdOfCodeTarget, APP_TARGET_PREFIX } from './target-ref';
+import { appIdOfCodeTarget, APP_TARGET_PREFIX, normCodePath } from './target-ref';
 import {
   applyEdits,
-  globToRegExp,
+  crlfOf,
+  globMatcher,
   insertAfterLine,
   numberedView,
   splitLines,
+  toCrlf,
+  toLf,
   unifiedDiff,
   type TextEdit,
 } from './text';
@@ -81,7 +86,7 @@ type CodeStore = {
     fn: (tree: AppSource) => AppSource,
     opts: { baseRev: string | null; dryRun?: boolean; note: string },
   ): Promise<DraftChange | null>;
-  undo(path: string): Promise<DraftChange | null>;
+  undo(path: string, baseRev: string | null): Promise<DraftChange | null>;
   build(): Promise<BuildReport | null>;
 };
 
@@ -98,11 +103,17 @@ function appStore(ctx: Ctx, id: string): CodeStore {
     change: (fn, opts) =>
       changeDraftSource(ctx.ownerId, id, fn, {
         actor: historyActor(ctx),
+        actorLoginId: actingLoginId(ctx.surface),
         note: opts.note,
         baseRev: opts.baseRev,
         dryRun: opts.dryRun,
       }),
-    undo: (path) => undoDraftFile(ctx.ownerId, id, path),
+    undo: (path, baseRev) =>
+      undoDraftFile(ctx.ownerId, id, path, {
+        actor: historyActor(ctx),
+        actorLoginId: actingLoginId(ctx.surface),
+        baseRev,
+      }),
     async build() {
       const res = await buildAndStageApp(ctx.ownerId, id);
       if (!res) return null;
@@ -136,13 +147,6 @@ function openTarget(ctx: Ctx, raw: unknown): CodeStore | Fail {
 const missingApp = (store: CodeStore): Fail =>
   notFound('app', store.ref.slice(APP_TARGET_PREFIX.length), 'app_list');
 
-/** A file path as the tree keys it: no leading `./` or `/`. */
-function normPath(raw: unknown): string {
-  return str(raw)
-    .trim()
-    .replace(/^(\.\/|\/)+/, '');
-}
-
 /** A path a write may create: relative, no `..` or empty segment. */
 function badNewPath(path: string): string | null {
   if (!path) return 'path is required, e.g. App.tsx or lib/fmt.ts';
@@ -174,7 +178,8 @@ function writeError(err: unknown): Fail {
   if (
     err instanceof AppDraftRevError ||
     err instanceof AppSourceLimitError ||
-    err instanceof AppUndoEmptyError
+    err instanceof AppUndoEmptyError ||
+    err instanceof AppUndoEntryError
   ) {
     return { ok: false, error: err.message };
   }
@@ -283,7 +288,7 @@ async function writeFile(
         written: res.written,
         ...(created
           ? { created: true, lines: splitLines(after).lines.length }
-          : { diff: unifiedDiff(path, before, after) }),
+          : { diff: unifiedDiff(path, toLf(before), toLf(after)) }),
         ...(await maybeBuild(store, input, res.written)),
         hint: opts.dryRun
           ? 'Dry run: nothing was written. Send the same call without dry_run to apply it.'
@@ -322,7 +327,7 @@ const code_view: BuiltinToolDef = {
     try {
       const tree = await store.read();
       if (!tree) return missingApp(store);
-      const path = normPath(input.path);
+      const path = normCodePath(input.path);
       if (!path) {
         const files = Object.keys(tree.files)
           .sort()
@@ -335,8 +340,9 @@ const code_view: BuiltinToolDef = {
         return { ok: true, output: { target: store.ref, entry: tree.entry, rev: tree.rev, files } };
       }
       if (!Object.hasOwn(tree.files, path)) return noFile(store, tree, path);
+      // A CRLF file shows (and is edited) with LF; its writes keep CRLF.
       const view = numberedView(
-        tree.files[path]!,
+        toLf(tree.files[path]!),
         {
           start: typeof input.start === 'number' ? input.start : undefined,
           end: typeof input.end === 'number' ? input.end : undefined,
@@ -391,6 +397,7 @@ const code_search: BuiltinToolDef = {
       },
       glob: {
         type: 'string',
+        maxLength: 200,
         description: "Only files whose path matches, e.g. '*.tsx' or 'lib/**'.",
       },
       ignore_case: {
@@ -417,11 +424,17 @@ const code_search: BuiltinToolDef = {
       const tree = await store.read();
       if (!tree) return missingApp(store);
       const glob = str(input.glob).trim();
-      const re = glob ? globToRegExp(glob) : null;
-      const files = re
-        ? Object.fromEntries(Object.entries(tree.files).filter(([p]) => re.test(p)))
+      const match = glob ? globMatcher(glob) : null;
+      if (glob && !match) {
+        return {
+          ok: false,
+          error: `glob '${glob}' has too many {a,b} choices: split it into narrower globs`,
+        };
+      }
+      const files = match
+        ? Object.fromEntries(Object.entries(tree.files).filter(([p]) => match(p)))
         : tree.files;
-      if (re && Object.keys(files).length === 0) {
+      if (match && Object.keys(files).length === 0) {
         return {
           ok: false,
           error: `glob '${glob}' matches no file in ${store.ref}. Its files: ${Object.keys(tree.files).sort().slice(0, 20).join(', ')}`,
@@ -509,7 +522,7 @@ const code_edit: BuiltinToolDef = {
     // The owner's surfaces only, first (as app_file_write).
     const refused = ownerOnlyRefusal(ctx);
     if (refused) return refused;
-    const path = normPath(input.path);
+    const path = normCodePath(input.path);
     if (!path) return { ok: false, error: 'path is required, e.g. App.tsx' };
     if (!Array.isArray(input.edits) || input.edits.length === 0) {
       return { ok: false, error: 'edits needs at least one { old, new }' };
@@ -532,10 +545,18 @@ const code_edit: BuiltinToolDef = {
             `no file '${path}' in the app: list the files with code_view, or create it with code_write`,
           );
         }
-        const out = applyEdits(tree.files[path]!, edits);
+        const file = tree.files[path]!;
+        const crlf = crlfOf(file);
+        const out = applyEdits(
+          crlf ? toLf(file) : file,
+          crlf ? edits.map((e) => ({ ...e, old: toLf(e.old), new: toLf(e.new) })) : edits,
+        );
         if ('error' in out) throw new ChangeRefused(`${out.error} (${path})`);
         replaced = out.replaced;
-        return { entry: tree.entry, files: { ...tree.files, [path]: out.text } };
+        return {
+          entry: tree.entry,
+          files: { ...tree.files, [path]: crlf ? toCrlf(out.text) : out.text },
+        };
       },
       { note: `code_edit ${path}`, dryRun: input.dry_run === true, path },
     );
@@ -572,7 +593,7 @@ const code_insert: BuiltinToolDef = {
     // The owner's surfaces only, first (as app_file_write).
     const refused = ownerOnlyRefusal(ctx);
     if (refused) return refused;
-    const path = normPath(input.path);
+    const path = normCodePath(input.path);
     if (!path) return { ok: false, error: 'path is required, e.g. App.tsx' };
     const after = input.after_line;
     if (typeof after !== 'number' || !Number.isInteger(after) || after < 0) {
@@ -589,9 +610,14 @@ const code_insert: BuiltinToolDef = {
             `no file '${path}' in the app: list the files with code_view, or create it with code_write`,
           );
         }
-        const out = insertAfterLine(tree.files[path]!, after, text);
+        const file = tree.files[path]!;
+        const crlf = crlfOf(file);
+        const out = insertAfterLine(crlf ? toLf(file) : file, after, toLf(text));
         if ('error' in out) throw new ChangeRefused(`${out.error} (${path})`);
-        return { entry: tree.entry, files: { ...tree.files, [path]: out.text } };
+        return {
+          entry: tree.entry,
+          files: { ...tree.files, [path]: crlf ? toCrlf(out.text) : out.text },
+        };
       },
       { note: `code_insert ${path}`, path },
     );
@@ -622,7 +648,7 @@ const code_write: BuiltinToolDef = {
     // The owner's surfaces only, first (as app_file_write).
     const refused = ownerOnlyRefusal(ctx);
     if (refused) return refused;
-    const path = normPath(input.path);
+    const path = normCodePath(input.path);
     const bad = badNewPath(path);
     if (bad) return { ok: false, error: bad };
     if (typeof input.content !== 'string') {
@@ -645,10 +671,10 @@ const code_undo: BuiltinToolDef = {
   loginTurns: true,
   name: 'Undo a source edit',
   description:
-    "Put one file of a mini app's DRAFT back as it was before the last write that changed it (`code_edit`, `code_insert`, `code_write`, `app_file_write`, `app_file_delete`, `app_source_set`); returns a diff and the new `rev`. Call it again to step further back. A file that write created is removed. Only recent edits are kept; for a whole earlier version use `app_snapshot_restore`.",
+    "Put one file of a mini app's DRAFT back as it was before the last write that changed it (`code_edit`, `code_insert`, `code_write`, `app_file_write`, `app_file_delete`, `app_source_set`); returns a diff and the new `rev`. Call it again to step further back. A file that write created is removed. `base_rev` refuses a draft changed since you read it (an edit in the editor, say). Only recent edits are kept; for a whole earlier version use `app_snapshot_restore`.",
   inputSchema: {
     type: 'object',
-    properties: { target: TARGET_PROP, path: PATH_PROP },
+    properties: { target: TARGET_PROP, path: PATH_PROP, base_rev: BASE_REV_PROP },
     required: ['target', 'path'],
   },
   handler: async (input, ctx) => {
@@ -656,10 +682,10 @@ const code_undo: BuiltinToolDef = {
     if (refused) return refused;
     const store = openTarget(ctx, input.target);
     if ('ok' in store) return store;
-    const path = normPath(input.path);
+    const path = normCodePath(input.path);
     if (!path) return { ok: false, error: 'path is required, e.g. App.tsx' };
     try {
-      const res = await store.undo(path);
+      const res = await store.undo(path, str(input.base_rev).trim() || null);
       if (!res) return missingApp(store);
       const removed = !Object.hasOwn(res.after.files, path);
       ctx.step?.setOutput({ target: store.ref, path, rev: res.rev, removed });
@@ -671,7 +697,13 @@ const code_undo: BuiltinToolDef = {
           rev: res.rev,
           ...(removed
             ? { removed: true }
-            : { diff: unifiedDiff(path, res.before.files[path] ?? '', res.after.files[path]!) }),
+            : {
+                diff: unifiedDiff(
+                  path,
+                  toLf(res.before.files[path] ?? ''),
+                  toLf(res.after.files[path]!),
+                ),
+              }),
           hint: 'Put back in the DRAFT. Build with app_build; call code_undo again to go one more step back.',
         },
       };

@@ -581,6 +581,9 @@ export async function getAppSnapshot(
         eq(nodeSnapshots.id, snapshotId),
         eq(nodeSnapshots.nodeId, appId),
         eq(nodeSnapshots.ownerId, ownerId),
+        // The code tools' rows are code_undo's alone: no restore, note or
+        // delete by id reaches them (as the list leaves them out).
+        ne(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
       ),
     )
     .limit(1);
@@ -630,6 +633,7 @@ export async function setAppSnapshotNote(
         eq(nodeSnapshots.id, snapshotId),
         eq(nodeSnapshots.nodeId, appId),
         eq(nodeSnapshots.ownerId, ownerId),
+        ne(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
       ),
     )
     .returning({ id: nodeSnapshots.id });
