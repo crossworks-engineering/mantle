@@ -565,6 +565,57 @@ export const A8_TOOL_CONTENT: Readonly<
     },
   },
   app_build: { needs: 'the app runtime manifest', seed: async (s) => (await seedApp(s), {}) },
+  // A file to remove (a delete of a file the tree lacks changes nothing).
+  app_file_delete: {
+    needs: 'a second file in the app',
+    seed: async (s) => {
+      await seedApp(s);
+      const source = { entry: 'App.tsx', files: { 'App.tsx': APP_SOURCE, 'a8.txt': 'a8' } };
+      await asFixture(s.sql, s.item.id, async (tx) => {
+        await tx`update apps set source = ${tx.json(source)} where node_id = ${s.item.id}`;
+      });
+      return { path: 'a8.txt' };
+    },
+  },
+  // The code tools (tools code/): text that is in the app's tree.
+  code_edit: {
+    needs: 'source with the text the edit replaces',
+    seed: async (s) => (
+      await seedApp(s),
+      { path: 'App.tsx', edits: [{ old: 'return null;', new: 'return null; // a8' }] }
+    ),
+  },
+  code_insert: {
+    needs: 'a source file to insert into',
+    seed: async (s) => (await seedApp(s), { path: 'App.tsx', after_line: 0, text: '// a8' }),
+  },
+  // A code-tool write to take back (content apps.ts undoCodeEdit): its row
+  // marks App.tsx as left as the app's source holds it.
+  code_undo: {
+    needs: 'a code-tool write of the app',
+    seed: async (s) => {
+      await seedApp(s);
+      const id = randomUUID();
+      const hash = createHash('sha256')
+        .update(JSON.stringify(APP_SOURCE))
+        .digest('hex')
+        .slice(0, 16);
+      const code = {
+        source: { entry: 'App.tsx', files: { 'App.tsx': '// a8 before' } },
+        draft: null,
+        manifest: {},
+        publishedBuild: null,
+        codeEdit: { changed: { 'App.tsx': hash } },
+      };
+      await asFixture(s.sql, s.item.id, async (tx) => {
+        await tx`insert into node_snapshots
+                   (id, owner_id, node_id, node_kind, seq, trigger, actor, code)
+                 values (${id}, ${s.fx.owner}, ${s.item.id}, 'app', 1, 'pre_code_edit', 'agent',
+                         ${tx.json(code)})`;
+      });
+      return { edit_id: id };
+    },
+  },
   // A staged draft and its green build to publish (with neither, a publish
   // returns early and changes nothing).
   app_publish: {
