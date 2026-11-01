@@ -20,7 +20,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
-import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, lt, ne, sql } from 'drizzle-orm';
 import {
   appDatabases,
   apps,
@@ -30,12 +30,13 @@ import {
   nodeSnapshots,
   nodes,
   type AppSnapshotCode,
+  type AppSource,
   itemHomeSql,
   snapshotBytesUsed,
   snapshotHomeMeta,
 } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
-import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
+import type { AppRestoreMode, AppSnapshot, HistoryActor } from '@mantle/client-types';
 import {
   AppRestoreDraftError,
   CODE_EDIT_TRIGGER,
@@ -589,6 +590,164 @@ export async function getAppSnapshot(
     .limit(1);
   if (!row) return null;
   return { ...toSummary(row), code: row.code ?? null, schemaVersion: row.schemaVersion };
+}
+
+// ── Reading the line (code_diff, app_log, app_export's git mode) ───────────
+
+/** One entry of an app's history as an audit reads it: the row's own
+ *  fields (who, when, why, sizes), never its code. */
+export type AppHistoryLine = {
+  seq: number;
+  kind: 'version' | 'snapshot';
+  trigger: string;
+  note: string | null;
+  actor: HistoryActor;
+  /** The login the row names, when it names one. */
+  actorLoginId: string | null;
+  createdAt: string;
+  fileCount: number;
+  sourceBytes: number;
+  hasData: boolean;
+  dbBytes: number | null;
+  restoredFrom: number | null;
+};
+
+/** The entries of an app's history, newest first: at most `limit`, below
+ *  `beforeSeq` when given (the next page), versions only when asked. The
+ *  code tools' undo rows are not entries (as listAppSnapshots). The
+ *  caller's scope reads the rows (an app it does not read has none). */
+export async function appHistoryLine(
+  ownerId: string,
+  appId: string,
+  opts: { limit: number; beforeSeq?: number | null; versionsOnly?: boolean },
+): Promise<{ lines: AppHistoryLine[]; more: boolean }> {
+  const limit = Math.min(Math.max(Math.floor(opts.limit), 1), 500);
+  const rows = await db
+    .select({
+      seq: nodeSnapshots.seq,
+      trigger: nodeSnapshots.trigger,
+      note: nodeSnapshots.note,
+      actor: nodeSnapshots.actor,
+      actorLoginId: nodeSnapshots.actorLoginId,
+      createdAt: nodeSnapshots.createdAt,
+      restoredFrom: nodeSnapshots.restoredFrom,
+      dbPath: nodeSnapshots.dbPath,
+      dbBytes: nodeSnapshots.dbBytes,
+      fileCount: sql<number>`coalesce(${nodeSnapshots.fileCount}, 0)`,
+      sourceBytes: sql<number>`coalesce(${nodeSnapshots.sourceBytes}, 0)`,
+    })
+    .from(nodeSnapshots)
+    .where(
+      and(
+        eq(nodeSnapshots.nodeId, appId),
+        eq(nodeSnapshots.ownerId, ownerId),
+        ne(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
+        opts.beforeSeq != null ? lt(nodeSnapshots.seq, opts.beforeSeq) : undefined,
+        opts.versionsOnly ? eq(nodeSnapshots.trigger, 'publish') : undefined,
+      ),
+    )
+    .orderBy(desc(nodeSnapshots.seq))
+    .limit(limit + 1);
+  return {
+    lines: rows.slice(0, limit).map((r) => ({
+      seq: r.seq,
+      kind: r.trigger === 'publish' ? 'version' : 'snapshot',
+      trigger: r.trigger,
+      note: r.note,
+      actor: r.actor,
+      actorLoginId: r.actorLoginId,
+      createdAt: r.createdAt.toISOString(),
+      fileCount: Number(r.fileCount),
+      sourceBytes: Number(r.sourceBytes),
+      hasData: r.dbPath !== null,
+      dbBytes: r.dbBytes,
+      restoredFrom: r.restoredFrom,
+    })),
+    more: rows.length > limit,
+  };
+}
+
+/** The published tree an entry holds, by seq: its code's `source` only,
+ *  read out in the database, so the draft kept beside it never leaves.
+ *  Null when the line has no such entry (an undo row is none). */
+export async function appHistorySource(
+  ownerId: string,
+  appId: string,
+  seq: number,
+): Promise<{ seq: number; trigger: string; createdAt: string; source: AppSource | null } | null> {
+  const [row] = await db
+    .select({
+      seq: nodeSnapshots.seq,
+      trigger: nodeSnapshots.trigger,
+      createdAt: nodeSnapshots.createdAt,
+      source: sql<AppSource | null>`${nodeSnapshots.code}->'source'`,
+    })
+    .from(nodeSnapshots)
+    .where(
+      and(
+        eq(nodeSnapshots.nodeId, appId),
+        eq(nodeSnapshots.ownerId, ownerId),
+        eq(nodeSnapshots.seq, seq),
+        ne(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  return { ...row, createdAt: row.createdAt.toISOString(), source: row.source ?? null };
+}
+
+/** A version (a publish) with the tree it made live. */
+export type AppVersionSource = {
+  seq: number;
+  note: string | null;
+  actor: HistoryActor;
+  actorLoginId: string | null;
+  createdAt: Date;
+  restoredFrom: number | null;
+  source: AppSource | null;
+};
+
+/** The app's versions, oldest first, each with its published tree (the
+ *  code's `source`, never its draft): one row's code read at a time, so a
+ *  caller holds one tree at once. In the caller's scope. */
+export async function* appVersionSources(
+  ownerId: string,
+  appId: string,
+): AsyncGenerator<AppVersionSource> {
+  const versions = await db
+    .select({
+      seq: nodeSnapshots.seq,
+      note: nodeSnapshots.note,
+      actor: nodeSnapshots.actor,
+      actorLoginId: nodeSnapshots.actorLoginId,
+      createdAt: nodeSnapshots.createdAt,
+      restoredFrom: nodeSnapshots.restoredFrom,
+    })
+    .from(nodeSnapshots)
+    .where(
+      and(
+        eq(nodeSnapshots.nodeId, appId),
+        eq(nodeSnapshots.ownerId, ownerId),
+        eq(nodeSnapshots.trigger, 'publish'),
+      ),
+    )
+    .orderBy(asc(nodeSnapshots.seq));
+  for (const v of versions) {
+    const [row] = await db
+      .select({ source: sql<AppSource | null>`${nodeSnapshots.code}->'source'` })
+      .from(nodeSnapshots)
+      .where(
+        and(
+          eq(nodeSnapshots.nodeId, appId),
+          eq(nodeSnapshots.ownerId, ownerId),
+          eq(nodeSnapshots.seq, v.seq),
+          eq(nodeSnapshots.trigger, 'publish'),
+        ),
+      )
+      .limit(1);
+    // A version pruned or gone since the list was read is left out.
+    if (row) yield { ...v, source: row.source ?? null };
+  }
 }
 
 /** The absolute path of a snapshot's database copy (for a download), or

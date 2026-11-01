@@ -50,6 +50,7 @@ import {
 } from '@mantle/content/app-trash';
 import {
   AppPackageError,
+  assertMayCopyApp,
   appPackageMaxBytes,
   takeAppImportSlot,
   appPackageTempPath,
@@ -64,17 +65,21 @@ import { FILE_ID_PRE } from './tables/common';
 import {
   AppSnapshotBudgetError,
   AppSnapshotRefusedError,
+  appHistoryLine,
+  appVersionSources,
   createAppSnapshot,
   deleteAppSnapshot,
   listAppSnapshots,
   restoreAppSnapshot,
+  type AppVersionSource,
 } from '@mantle/content/app-snapshots';
+import { GitBundleWriter, BUNDLE_BRANCH } from './code/git-bundle';
 import { recordIngest } from '@mantle/tracing';
 import { buildAndStageApp } from './app-build-stage';
 import { APP_ICON_MAX, APP_TINTS, type AppTint } from '@mantle/client-types/app-nav';
 import { resolveTool } from './resolve';
 import { appToolWarnings } from './app-tool-level';
-import type { BuiltinToolDef, ToolPrecondition } from './types';
+import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { actingLoginId, isOwnerSurface, loginTurnSurfaceId, OWNER_ONLY_ERROR } from './surface';
@@ -1477,6 +1482,98 @@ const app_snapshot_list: BuiltinToolDef = {
   },
 };
 
+const app_log: BuiltinToolDef = {
+  slug: 'app_log',
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['app'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'apps',
+  },
+  ownerOnly: true,
+  loginTurns: true,
+  preconditions: APP_ID_PRE,
+  name: "Read a mini app's version line",
+  description:
+    "An app's history line for an audit, newest first: each entry's seq (v1, v2 …), kind (version: a publish; snapshot: code and data), trigger, note, who (actor, and the login when the row names one), when, file count and size. Reads the rows only, never the code. Page on with `before_seq`. Compare two entries' code with `code_diff` ('v3' to 'v5'); for the entry ids `app_snapshot_restore` takes use `app_snapshot_list`; for the whole line as git commits use `app_export` with format git.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 200,
+        default: 50,
+        description: 'Max entries to return.',
+      },
+      before_seq: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Only entries older than this seq: the next page, e.g. 12.',
+      },
+      versions_only: {
+        type: 'boolean',
+        default: false,
+        description: 'Only the versions (publishes), no snapshots.',
+      },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    // The schema's bounds, kept here too (a run item reaches it unchecked).
+    const asked = typeof input.limit === 'number' ? Math.floor(input.limit) : 50;
+    const limit = Math.min(Math.max(asked, 1), 200);
+    const before =
+      typeof input.before_seq === 'number' && input.before_seq >= 1
+        ? Math.floor(input.before_seq)
+        : null;
+    try {
+      const { lines, more } = await appHistoryLine(ctx.ownerId, id, {
+        limit,
+        beforeSeq: before,
+        versionsOnly: input.versions_only === true,
+      });
+      ctx.step?.setOutput({ id, count: lines.length });
+      const last = lines[lines.length - 1];
+      return {
+        ok: true,
+        output: {
+          id,
+          entries: lines.map((l) => ({
+            seq: l.seq,
+            ref: `v${l.seq}`,
+            kind: l.kind,
+            trigger: l.trigger,
+            note: l.note,
+            actor: l.actor,
+            ...(l.actorLoginId ? { actor_login_id: l.actorLoginId } : {}),
+            at: l.createdAt,
+            files: l.fileCount,
+            source_bytes: l.sourceBytes,
+            has_data: l.hasData,
+            ...(l.dbBytes !== null ? { db_bytes: l.dbBytes } : {}),
+            ...(l.restoredFrom !== null ? { restored_from: l.restoredFrom } : {}),
+          })),
+          more,
+          ...(more && last
+            ? { hint: `More entries: call again with before_seq ${last.seq}.` }
+            : lines.length === 0
+              ? { hint: 'No history yet: publishing (app_publish) records a version.' }
+              : {}),
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
 const app_snapshot_restore: BuiltinToolDef = {
   slug: 'app_snapshot_restore',
   policy: {
@@ -1787,6 +1884,108 @@ const app_duplicate: BuiltinToolDef = {
 
 // ── Export and import as brain files ────────────────────────────────────────
 
+/** A file name's stem from an app's title. */
+function exportStem(title: string): string {
+  return (
+    title
+      .replace(/[^\w.-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60)
+      .toLowerCase() || 'app'
+  );
+}
+
+/** The largest git bundle app_export writes (its objects are held in
+ *  memory while it is made). */
+export const GIT_BUNDLE_MAX_BYTES = 128 * 1024 * 1024;
+
+/** A version's commit author: the role the row names, and its login id
+ *  when it names one. Never an email or a person's name. */
+export function versionAuthor(v: Pick<AppVersionSource, 'actor' | 'actorLoginId'>): string {
+  return v.actorLoginId ? `${v.actor} ${v.actorLoginId}` : v.actor;
+}
+
+/** A version's commit message: `vN publish: <note>`, and where it was
+ *  restored from. */
+export function versionMessage(v: Pick<AppVersionSource, 'seq' | 'note' | 'restoredFrom'>): string {
+  const note = (v.note ?? '').trim();
+  const head = `v${v.seq} publish${note ? `: ${note}` : ''}`;
+  return v.restoredFrom !== null ? `${head}\n\nRestored from v${v.restoredFrom}.` : head;
+}
+
+/**
+ * app_export's git mode: the app's versions (each publish) as commits of
+ * one branch, oldest first, in a `.bundle` file saved where a package
+ * export lands. Code only: each version's published tree (never the draft a
+ * row keeps, nor the data, the manifest's tools or any secret). The right
+ * is a package's without data (assertMayCopyApp: a read of the app), and
+ * the rows are read in the caller's scope.
+ */
+async function exportGitBundle(
+  ctx: Parameters<BuiltinToolDef['handler']>[1],
+  id: string,
+): Promise<ToolHandlerResult> {
+  try {
+    await assertMayCopyApp(id, false);
+    const app = await getApp(ctx.ownerId, id);
+    if (!app) return { ok: false, error: `app ${id} not found` };
+    const writer = new GitBundleWriter();
+    let versions = 0;
+    for await (const v of appVersionSources(ctx.ownerId, id)) {
+      if (!v.source) continue;
+      writer.add({
+        files: v.source.files,
+        author: versionAuthor(v),
+        time: v.createdAt.getTime() / 1000,
+        message: versionMessage(v),
+      });
+      versions++;
+      if (writer.packedBytes > GIT_BUNDLE_MAX_BYTES) {
+        return {
+          ok: false,
+          error: `the app's versions pass the ${GIT_BUNDLE_MAX_BYTES / 1024 / 1024} MB a git bundle may hold: compare versions in place with code_diff and app_log instead`,
+        };
+      }
+    }
+    if (versions === 0) {
+      return {
+        ok: false,
+        error: `app ${id} has no version yet: a git bundle holds the published versions. Publish it (app_publish) first, or export the package (format mantleapp)`,
+      };
+    }
+    const bundle = writer.finish();
+    const filename = `${exportStem(app.title)}.bundle`;
+    const { file, landedIn } = await saveExport({
+      ownerId: ctx.ownerId,
+      filename,
+      bytes: bundle.bytes,
+    });
+    ctx.step?.setOutput({ id, file_id: file.id, commits: bundle.commits });
+    return {
+      ok: true,
+      output: {
+        id,
+        format: 'git',
+        file_id: file.id,
+        filename: file.filename,
+        path: `${file.parentPath}/${file.filename}`,
+        size_bytes: file.sizeBytes,
+        commits: bundle.commits,
+        branch: BUNDLE_BRANCH,
+        head: bundle.head,
+        has_data: false,
+        ...(bundle.skipped.length
+          ? { skipped: bundle.skipped.slice(0, 20), skipped_count: bundle.skipped.length }
+          : {}),
+        ...(landedIn ? { landedIn } : {}),
+        hint: `Download the file (GET /api/v1/files/${file.id}/download with an API key), then: git clone ${file.filename}. Each commit is one version: git log -p, git blame, git bisect.`,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+}
+
 const app_export: BuiltinToolDef = {
   slug: 'app_export',
   policy: {
@@ -1804,7 +2003,7 @@ const app_export: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Export a mini app as a file',
   description:
-    "Save an app as a `.mantleapp` file, in Auto-filed / Exports when the caller may change it (the owner or an Admin Moderator), else the top of Files: its code (no draft for a member), declared tools and schema, and a copy of its data unless with_data is false. A taken name gets a `-2` suffix. Returns the file id and landedIn. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file.",
+    "Save an app as a `.mantleapp` file, in Auto-filed / Exports when the caller may change it (the owner or an Admin Moderator), else the top of Files: its code (no draft for a member), declared tools and schema, and a copy of its data unless with_data is false. A taken name gets a `-2` suffix. Returns the file id and landedIn. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file. `format: 'git'` saves a `.bundle` instead: each version (publish) one commit, code only (no data, no draft), for `git clone` and log, diff, blame, bisect on another machine.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1812,7 +2011,13 @@ const app_export: BuiltinToolDef = {
       with_data: {
         type: 'boolean',
         default: true,
-        description: "False: the code only, no copy of the app's database.",
+        description: "False: the code only, no copy of the app's database. A git bundle never holds data.",
+      },
+      format: {
+        type: 'string',
+        enum: ['mantleapp', 'git'],
+        default: 'mantleapp',
+        description: "'git': the versions as a git bundle; 'mantleapp': the app as a package.",
       },
     },
     required: ['id'],
@@ -1822,6 +2027,11 @@ const app_export: BuiltinToolDef = {
     if (refused) return refused;
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
+    const format = str(input.format).trim() || 'mantleapp';
+    if (format === 'git') return exportGitBundle(ctx, id);
+    if (format !== 'mantleapp') {
+      return { ok: false, error: `format must be 'mantleapp' or 'git' (got '${format.slice(0, 40)}')` };
+    }
     const tmp = await appPackageTempPath('.mantleapp');
     try {
       const written = await writeAppPackage(ctx.ownerId, id, tmp, {
@@ -1831,13 +2041,7 @@ const app_export: BuiltinToolDef = {
       const spooled = await spoolUpload(createReadStream(tmp), {
         maxBytes: appPackageMaxBytes() + 64 * 1024 * 1024,
       });
-      const filename = `${
-        written.title
-          .replace(/[^\w.-]+/g, '-')
-          .replace(/^-+|-+$/g, '')
-          .slice(0, 60)
-          .toLowerCase() || 'app'
-      }.mantleapp`;
+      const filename = `${exportStem(written.title)}.mantleapp`;
       // Where an export lands: Auto-filed when the caller may change it, else the
       // caller's create home (saveExport). The package holds what the
       // caller reads: writeAppPackage asks the app's read (its data an
@@ -2130,6 +2334,7 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_delete,
   app_snapshot_create,
   app_snapshot_list,
+  app_log,
   app_snapshot_restore,
   app_snapshot_delete,
   app_deleted_list,

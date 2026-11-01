@@ -259,7 +259,14 @@ function lineOps(a: readonly string[], b: readonly string[]): Op[] {
  * a longer one is cut and says so on its last line. Empty when nothing
  * changed.
  */
-export function unifiedDiff(path: string, before: string, after: string, maxLines = 400): string {
+export function unifiedDiff(
+  path: string,
+  before: string,
+  after: string,
+  maxLines = 400,
+  /** What the cut line says to do next. */
+  cutHint = 'view the file with code_view',
+): string {
   if (before === after) return '';
   const ops = lineOps(splitLines(before).lines, splitLines(after).lines);
   const CONTEXT = 3;
@@ -296,7 +303,7 @@ export function unifiedDiff(path: string, before: string, after: string, maxLine
     const cut = out.length - maxLines;
     return [
       ...out.slice(0, maxLines),
-      `… diff cut: ${cut} more line(s); view the file with code_view`,
+      `… diff cut: ${cut} more line(s); ${cutHint}`,
     ].join('\n');
   }
   return out.join('\n');
