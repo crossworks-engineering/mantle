@@ -24,7 +24,8 @@
  * the app's), and its file lands at the top of Files, homed in the one
  * workspace that holds the app, only for a user who moderates that
  * workspace (teamAppSaveRefusal: the create rule everywhere), indexed by
- * its metadata only (no model reads it: a loop of saves spends nothing). Any app may
+ * its metadata only (no model reads it: a loop of saves starts no
+ * extraction or summary, only the embedding of its name and folder). Any app may
  * pass `bytes: true` instead: nothing is saved, and the PDF or picture
  * comes back as base64 within the caps of file_read's bytes (app-bytes.ts).
  */

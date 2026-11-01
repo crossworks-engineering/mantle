@@ -158,7 +158,8 @@ Mini apps declare the tools with `app_tools_set` and call them with
   is the only one in its scope.) The file is indexed by its metadata only
   (`data.indexing: 'metadata'`, `@mantle/files` indexing.ts): it is found
   by name and folder, and no model reads it, so an app's loop of saves
-  starts no extraction or summary. Only a user who
+  starts no extraction or summary (only the embedding of that name and
+  folder). Only a user who
   moderates that workspace saves there, in a request that writes as a login
   that writes (`teamAppSaveRefusal` in `builtins-documents.ts`; the broker
   enters the app's write scope for the call, as for a Table row write).
@@ -166,7 +167,8 @@ Mini apps declare the tools with `app_tools_set` and call them with
 - **`bytes: true`** (any app, never an agent or MCP: `appBytesRefusal`)
   saves nothing and answers `{ route, filename, mime_type, size_bytes,
 content_base64 }`, within the caps of `file_read`'s bytes (`app-bytes.ts`:
-  16 MB a call, four at a time per process). A saved file reads back with
+  16 MB a call; the engine's own in-flight caps bound the memory, and the
+  base64 copy takes one of the four slots). A saved file reads back with
   `file_read({ file_id, bytes: true })`, in the same caps.
 - A shared link (open or coded) runs no built-in tool, these included
   (`contactAppToolVerdict`).

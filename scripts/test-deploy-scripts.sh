@@ -1577,7 +1577,9 @@ case "$1" in
 esac
 exit 0
 STUB
-chmod +x "$RB/ssh" "$RB/docker" "$RB/df"
+# The box's coreutils timeout: run the command, no limit here.
+printf '#!/bin/sh\nshift\nexec "$@"\n' > "$RB/timeout"
+chmod +x "$RB/ssh" "$RB/docker" "$RB/df" "$RB/timeout"
 
 roll_box() { # <name>: a fake box; its db-dump.sh follows FAKE_DUMP (ok, fail, lossy)
   RS="$WORK/rollbox-$1"; mkdir -p "$RS/stack/scripts" "$RS/stack/infra/updater" "$RS/sig" "$RS/tmp"
@@ -2296,7 +2298,8 @@ echo "updater.sh: the documents engine is on by default at a roll"
 # switched off on purpose (MANTLE_DOCUMENTS_OFF=1, or the newest accepted
 # Settings > Services switch in the audit log was an off), with the disk and
 # memory it adds in the log. Never fails.
-DD_STUB='docker() {
+DD_STUB='timeout() { shift; "$@"; }
+docker() {
   case "$*" in
     *service.toggle*) [ "${FAKE_DOCS_AUDIT:-none}" != fail ] || return 1; echo "${FAKE_DOCS_AUDIT:-none}" ;;
     *"--profile documents pull gotenberg"*)

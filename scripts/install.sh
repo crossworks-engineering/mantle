@@ -1080,7 +1080,12 @@ fi
 # not passed on an existing box → keep .env as-is (the updater's roll turns
 # it on unless MANTLE_DOCUMENTS_OFF=1; Settings > Services switches it).
 if [[ -z "$DOCUMENTS" && $FRESH_BOX -eq 1 && "$(getval MANTLE_DOCUMENTS_OFF)" != 1 ]]; then
-  DOCUMENTS=1
+  # The updater's floor too: under 3000 MB of memory it stays off, and says so.
+  if [[ -n "${mem_mb:-}" && $mem_mb -lt 3000 ]]; then
+    warn "Documents engine left off: this box has ${mem_mb} MB of memory and it may use up to 2 GB (switch it on with --documents or Settings > Services)"
+  else
+    DOCUMENTS=1
+  fi
 fi
 if [[ -n "$DOCUMENTS" ]]; then
   rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'documents' | grep -v '^$' | paste -sd, -)" || rest=""
