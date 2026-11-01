@@ -68,6 +68,7 @@ const SAMPLE: BundleCommit[] = [
     author: `member ${LOGIN}`,
     time: T0 + 3600,
     message: 'v3 publish: add fmt',
+    gitNote: `add fmt\n\nlogin: ${LOGIN}`,
   },
   {
     files: {
@@ -105,6 +106,19 @@ describe('GitBundleWriter', () => {
       `agent||${T0 + 7200}|v4 publish`,
     ]);
     expect(res.commits).toBe(3);
+  });
+
+  it('carries notes on their own ref, which git log shows once fetched', () => {
+    expect(git(repo, 'ls-remote', res.file)).toMatch(/refs\/notes\/commits/);
+    git(repo, 'fetch', '-q', 'origin', 'refs/notes/commits:refs/notes/commits');
+    const notes = git(repo, 'log', '--format=%s|%N').trim().split('\n').filter(Boolean);
+    expect(notes).toEqual([
+      'v4 publish|',
+      'v3 publish: add fmt|add fmt',
+      `login: ${LOGIN}`,
+      'v1 publish: first cut|',
+    ]);
+    git(repo, 'fsck', '--strict', '--no-dangling');
   });
 
   it('shows each change with log -p', () => {
@@ -154,6 +168,9 @@ describe('GitBundleWriter', () => {
       'a/.gitmodules',
       '.GITMODULES.',
       'gitmod~1',
+      'gi7eba~1',
+      '.gitattributes',
+      'GI7D29~1',
       'x:y.ts',
     ];
     const res2 = await bundle([

@@ -53,6 +53,7 @@ import {
   APP_TOOLS,
   GIT_EXPORT_MAX_SOURCE_BYTES,
   versionAuthor,
+  versionGitNote,
   versionMessage,
 } from '../builtins-apps';
 import { OWNER_ONLY_ERROR } from '../surface';
@@ -188,6 +189,23 @@ describe('code_diff', () => {
     expect(files[0]!.diff).toMatch(/diff cut: \d+ more line\(s\); pass path for that one file/);
     expect(files.some((f) => f.diff_omitted)).toBe(true);
     expect(out.hint).toMatch(/listed without a diff/);
+  });
+
+  it('keeps long lines inside a character budget', async () => {
+    const wide = (tag: string) =>
+      Object.fromEntries(
+        Array.from({ length: 5 }, (_, i) => [`m${i}.js`, `${tag}${'x'.repeat(100_000)}\n`]),
+      );
+    vi.mocked(getApp).mockResolvedValue({
+      title: 'A',
+      source: { entry: 'm0.js', files: wide('a') },
+      draft: { entry: 'm0.js', files: wide('b') },
+    } as never);
+    const out = outputOf(await codeDiff.handler({ target: TARGET }, ctx));
+    expect(JSON.stringify(out.files).length).toBeLessThan(250_000);
+    expect((out.files as { diff_omitted?: boolean }[]).some((f) => f.diff_omitted)).toBe(true);
+    const one = outputOf(await codeDiff.handler({ target: TARGET, path: 'm0.js' }, ctx));
+    expect((one.files as { diff: string }[])[0]!.diff.length).toBeLessThan(201_000);
   });
 
   it('runs on the owner surfaces only (the history list gate)', async () => {
@@ -372,7 +390,7 @@ describe("app_export's git mode", () => {
   });
 
   it('passes a refused read through and reads nothing', async () => {
-    vi.mocked(assertMayCopyApp).mockRejectedValue(new Error('no read'));
+    vi.mocked(assertMayCopyApp).mockRejectedValueOnce(new Error('no read'));
     expect(errorOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx))).toMatch(/no read/);
     expect(appVersionSources).not.toHaveBeenCalled();
   });
@@ -383,15 +401,24 @@ describe("app_export's git mode", () => {
     );
   });
 
-  it('names authors by role and login id, never more', () => {
-    expect(versionAuthor({ actor: 'owner', actorLoginId: null })).toBe('owner');
-    expect(versionAuthor({ actor: 'member', actorLoginId: 'l1' })).toBe('member l1');
-    expect(versionMessage({ seq: 4, note: ' fix ', restoredFrom: null })).toBe('v4 publish: fix');
-    expect(versionMessage({ seq: 8, note: 'restored v3', restoredFrom: 3 })).toBe(
-      'v8 publish: restored v3',
-    );
-    expect(versionMessage({ seq: 5, note: null, restoredFrom: 2 })).toBe(
-      'v5 publish\n\nRestored from v2.',
-    );
+  it('builds each commit from fields a row never changes; the note and login are git notes', () => {
+    expect(versionAuthor({ actor: 'member' })).toBe('member');
+    expect(versionMessage({ seq: 4, restoredFrom: null })).toBe('v4 publish');
+    expect(versionMessage({ seq: 5, restoredFrom: 2 })).toBe('v5 publish\n\nRestored from v2.');
+    expect(versionGitNote({ note: ' fix ', actorLoginId: 'l1' })).toBe('fix\n\nlogin: l1');
+    expect(versionGitNote({ note: null, actorLoginId: null })).toBe('');
+  });
+
+  it('keeps the commit ids when a note is edited or a login deleted', async () => {
+    const run = async (note: string | null, login: string | null) => {
+      vi.mocked(appVersionSources).mockReturnValueOnce(
+        versions([
+          version(1, { 'App.tsx': 'a\n' }, { note, actor: 'member', actorLoginId: login }),
+        ]),
+      );
+      return outputOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx)).head;
+    };
+    const first = await run('first', 'l1');
+    expect(await run('edited', null)).toBe(first);
   });
 });
