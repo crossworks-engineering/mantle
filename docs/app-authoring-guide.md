@@ -120,6 +120,11 @@ through DOMPurify: `DOMPurify.sanitize(md.render(text))`, then
 `dangerouslySetInnerHTML`. Text from `host.db` was typed by someone; never
 put markdown-it HTML in the page without it.
 
+**math.js is not a sandbox for other people's formulas.** A person's own
+formula is fine; formula text another person saved can hang the tab or
+quietly change math.js's numbers for the session. Save the inputs and keep
+the formula in the app's code.
+
 TanStack Table is **v9** (`useTable`, `tableFeatures`): the v8 API
 (`useReactTable`, `getCoreRowModel`) does not exist in it. Its guide has the
 v9 pattern.

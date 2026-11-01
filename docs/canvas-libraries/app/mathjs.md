@@ -32,35 +32,13 @@ bundled into the app.
 precision: 32 })` for decimal work.
 - Also: matrices (`multiply`, `inv`, `lusolve`), statistics (`mean`, `std`).
 - Compute in `useMemo` keyed on the inputs.
-- A formula SAVED by one person and run in another person's app is
-  untrusted. The parser cannot reach JavaScript, the page or `host`, but it
-  can change math.js's own state in that tab. Run saved formulas through a
-  limited instance (math.js's security notes), with a new scope each call
-  and `typed` hidden, so nothing outlives the call:
-
-```tsx
-const safe = create(all); // set any config before the import below
-const evaluate = safe.evaluate;
-const off = () => {
-  throw new Error('Not allowed in a saved formula');
-};
-safe.import(
-  {
-    import: off,
-    createUnit: off,
-    evaluate: off,
-    parse: off,
-    simplify: off,
-    derivative: off,
-    resolve: off,
-    reviver: off,
-    config: off,
-  },
-  { override: true },
-);
-const runSaved = (f: string, vars: Record<string, unknown> = {}) =>
-  evaluate(f, { ...vars, typed: undefined });
-```
+- A formula a person types for their own use is fine: the parser runs no
+  JavaScript and reaches nothing outside math.js. math.js is NOT a sandbox
+  for formula text another person saved: such text can hang the tab, or
+  quietly change math.js's numbers (a unit prefix, a value passed in) for
+  the rest of the session, with no error. Do not run it. Save the inputs
+  (numbers, units, the choice from a fixed list of formulas) and keep the
+  formula itself in the app's code.
 
 ## App example
 
