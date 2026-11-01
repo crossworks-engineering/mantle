@@ -18,6 +18,7 @@ vi.mock('@mantle/content/app-snapshots', async (importOriginal) => {
     appHistorySource: vi.fn(),
     appHistoryLine: vi.fn(),
     appVersionSources: vi.fn(),
+    appVersionTotals: vi.fn(),
   };
 });
 vi.mock('@mantle/content/app-package', async (importOriginal) => {
@@ -26,7 +27,16 @@ vi.mock('@mantle/content/app-package', async (importOriginal) => {
 });
 vi.mock('@mantle/files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/files')>();
-  return { ...actual, saveExport: vi.fn() };
+  return {
+    ...actual,
+    saveExport: vi.fn(),
+    // The spool keeps what it read, for the test to look at.
+    spoolUpload: vi.fn(async (stream: AsyncIterable<Buffer>) => {
+      const chunks: Buffer[] = [];
+      for await (const c of stream) chunks.push(c);
+      return { bytes: Buffer.concat(chunks) };
+    }),
+  };
 });
 
 import { getApp } from '@mantle/content';
@@ -35,10 +45,16 @@ import {
   appHistoryLine,
   appHistorySource,
   appVersionSources,
+  appVersionTotals,
   type AppVersionSource,
 } from '@mantle/content/app-snapshots';
 import { saveExport } from '@mantle/files';
-import { APP_TOOLS, versionAuthor, versionMessage } from '../builtins-apps';
+import {
+  APP_TOOLS,
+  GIT_EXPORT_MAX_SOURCE_BYTES,
+  versionAuthor,
+  versionMessage,
+} from '../builtins-apps';
 import { OWNER_ONLY_ERROR } from '../surface';
 import type { BuiltinToolDef, ToolHandlerContext } from '../types';
 import { parseDiffRef } from './history';
@@ -265,7 +281,11 @@ describe("app_export's git mode", () => {
     yield* list;
   }
 
+  const spooledBytes = (call: number) =>
+    (vi.mocked(saveExport).mock.calls[call]![0].spooled as unknown as { bytes: Buffer }).bytes;
+
   beforeEach(() => {
+    vi.mocked(appVersionTotals).mockResolvedValue({ versions: 2, sourceBytes: 100 });
     vi.mocked(saveExport).mockResolvedValue({
       file: { id: 'f1', filename: 'my-app.bundle', parentPath: 'files', sizeBytes: 10 },
       landedIn: null,
@@ -284,7 +304,7 @@ describe("app_export's git mode", () => {
     expect(appVersionSources).toHaveBeenCalledWith('o1', APP_ID);
     const saved = vi.mocked(saveExport).mock.calls[0]![0];
     expect(saved.filename).toBe('my-app.bundle');
-    expect(saved.bytes!.subarray(0, 16).toString()).toBe('# v2 git bundle\n');
+    expect(spooledBytes(0).subarray(0, 16).toString()).toBe('# v2 git bundle\n');
     expect(out).toMatchObject({
       format: 'git',
       file_id: 'f1',
@@ -305,11 +325,41 @@ describe("app_export's git mode", () => {
     const one = outputOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx));
     const two = outputOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx));
     expect(one.head).toBe(two.head);
-    const [a, b] = vi.mocked(saveExport).mock.calls.map((c) => c[0].bytes!);
-    expect(a!.equals(b!)).toBe(true);
+    expect(spooledBytes(0).equals(spooledBytes(1))).toBe(true);
+  });
+
+  it('refuses more code than one export reads, before it reads any', async () => {
+    vi.mocked(appVersionTotals).mockResolvedValue({
+      versions: 900,
+      sourceBytes: GIT_EXPORT_MAX_SOURCE_BYTES + 1,
+    });
+    expect(errorOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx))).toMatch(
+      /900 versions hold \d+ MB of code.*app_log and code_diff/,
+    );
+    expect(appVersionSources).not.toHaveBeenCalled();
+  });
+
+  it('runs two at a time and says so to a third', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    async function* slow() {
+      await gate;
+      yield version(1, { 'App.tsx': 'a\n' });
+    }
+    vi.mocked(appVersionSources).mockImplementation(() => slow());
+    const first = exp.handler({ id: APP_ID, format: 'git' }, ctx);
+    const second = exp.handler({ id: APP_ID, format: 'git' }, ctx);
+    await vi.waitFor(() => expect(appVersionSources).toHaveBeenCalledTimes(2));
+    expect(errorOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx))).toMatch(
+      /other git exports are running/,
+    );
+    release();
+    outputOf(await first);
+    outputOf(await second);
   });
 
   it('refuses an app with no version, and names what to do', async () => {
+    vi.mocked(appVersionTotals).mockResolvedValue({ versions: 0, sourceBytes: 0 });
     vi.mocked(appVersionSources).mockReturnValue(versions([]));
     expect(errorOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx))).toMatch(
       /no version yet.*app_publish/,
@@ -333,6 +383,9 @@ describe("app_export's git mode", () => {
     expect(versionAuthor({ actor: 'owner', actorLoginId: null })).toBe('owner');
     expect(versionAuthor({ actor: 'member', actorLoginId: 'l1' })).toBe('member l1');
     expect(versionMessage({ seq: 4, note: ' fix ', restoredFrom: null })).toBe('v4 publish: fix');
+    expect(versionMessage({ seq: 8, note: 'restored v3', restoredFrom: 3 })).toBe(
+      'v8 publish: restored v3',
+    );
     expect(versionMessage({ seq: 5, note: null, restoredFrom: 2 })).toBe(
       'v5 publish\n\nRestored from v2.',
     );

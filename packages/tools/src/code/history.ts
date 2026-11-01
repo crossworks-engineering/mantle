@@ -21,7 +21,7 @@ import { notFound } from '../errors';
 import type { ToolPolicy } from '../tool-policy';
 import type { BuiltinToolDef } from '../types';
 import { appIdOfCodeTarget, APP_TARGET_PREFIX, codeFileKey, normCodePath } from './target-ref';
-import { toLf, unifiedDiff } from './text';
+import { DIFF_MAX_CELLS, splitLines, toLf, unifiedDiff } from './text';
 
 /** Diff lines one file shows at most when all files are compared. */
 const FILE_DIFF_LINES = 400;
@@ -30,6 +30,9 @@ const ONE_FILE_DIFF_LINES = 2000;
 /** Diff lines all files together show at most; the files past it are
  *  listed with no diff. */
 const ALL_DIFF_LINES = 1500;
+/** The line-match work one call may do over all its files (DIFF_MAX_CELLS
+ *  is one file's); past it a file's change shows as a whole-block replace. */
+const ALL_DIFF_CELLS = 5 * DIFF_MAX_CELLS;
 
 type Fail = { ok: false; error: string };
 
@@ -188,6 +191,8 @@ const code_diff: BuiltinToolDef = {
         ? 'compare fewer versions apart, or read the file with code_view (the draft)'
         : 'pass path for that one file';
       let budget = ALL_DIFF_LINES;
+      let cells = ALL_DIFF_CELLS;
+      let coarse = 0;
       let unchanged = 0;
       let omitted = 0;
       const files: Record<string, unknown>[] = [];
@@ -207,7 +212,12 @@ const code_diff: BuiltinToolDef = {
           continue;
         }
         const max = asked ? ONE_FILE_DIFF_LINES : Math.min(FILE_DIFF_LINES, budget);
-        const diff = unifiedDiff(p, before, after, max, cutHint);
+        // The match's cost at most (before the common head and tail go).
+        const cost = splitLines(before).lines.length * splitLines(after).lines.length;
+        const allowed = Math.min(DIFF_MAX_CELLS, cells);
+        if (cost > allowed) coarse++;
+        cells -= Math.min(cost, allowed);
+        const diff = unifiedDiff(p, before, after, max, cutHint, allowed);
         budget -= diff.split('\n').length;
         files.push({ path: p, change, diff });
       }
@@ -219,6 +229,11 @@ const code_diff: BuiltinToolDef = {
       if (omitted) {
         notes.push(
           `${omitted} changed file(s) are listed without a diff (the answer's limit): pass path for one.`,
+        );
+      }
+      if (coarse) {
+        notes.push(
+          `${coarse} file diff(s) may show a large change as whole blocks (the compare's work limit): pass path for one.`,
         );
       }
       if (files.length === 0) notes.push(`No change between ${a.ref} and ${b.ref}.`);
