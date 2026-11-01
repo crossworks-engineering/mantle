@@ -269,7 +269,10 @@ async function setWakeScript(id: string, command: string): Promise<{ wake: strin
 }
 
 async function ensureImage(image: string): Promise<void> {
-  if (PULL_MIN_FREE_BYTES > 0 && !(await docker.imageExists(image))) {
+  // A local image is used as it is: tags are pinned, and a create must not
+  // need the registry (or download a re-pushed tag past the disk floor).
+  if (await docker.imageExists(image)) return;
+  if (PULL_MIN_FREE_BYTES > 0) {
     const fs = await statfs(SANDBOXES_DIR).catch(() => null);
     const free = fs ? fs.bavail * fs.bsize : null;
     if (free !== null && free < PULL_MIN_FREE_BYTES) {
@@ -279,8 +282,6 @@ async function ensureImage(image: string): Promise<void> {
       );
     }
   }
-  // Create-then-pull-on-404 would need a throwaway create; probing the pull
-  // path directly is simpler and a no-op when the image is already local.
   await docker.pullImage(image);
 }
 

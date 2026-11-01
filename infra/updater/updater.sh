@@ -1299,6 +1299,7 @@ prune_media() {
 #      try that pin again for six hours; a roll always tries.
 #   2. once local, the pin is recorded (/signal/sandbox-pins: the pin and the
 #      one before it), so a later startup pass still knows the previous pin.
+#      A startup pass that finds no record prunes nothing that time.
 #   3. old images of exactly <ns>/mantle-sandbox go, keeping the pin now, the
 #      pin before the roll, the two recorded pins, the two newest images of
 #      the repository, and every image any container was made from, running
@@ -1394,6 +1395,13 @@ sandbox_image_sync() {
   esac
   sis_prev=""
   [ -z "$1" ] || sis_prev=$(image_id "$1")
+  # A startup pass with no recorded pins (the first start of this code, maybe
+  # right after an older updater rolled to a new pin) cannot know the pin
+  # before: it pulls and records, and the next pass prunes.
+  if [ "$2" = startup ] && [ ! -f "$SIG/sandbox-pins" ] && [ -n "$sis_prune" ]; then
+    echo "[updater] image prune: $sis_repo skipped this once (no pins recorded yet; the next roll or start prunes)"
+    sis_prune=""
+  fi
   if [ -z "$(image_id "$sis_pin")" ]; then
     if [ "$2" = startup ] && sandbox_pull_failed_recently "$sis_pin"; then
       echo "[updater] sandbox base image $sis_pin: its last pull failed under six hours ago; the next roll tries again"

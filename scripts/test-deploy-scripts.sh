@@ -1276,6 +1276,20 @@ check "startup pass: the recorded previous pin (v3) survives outside the two new
 check "startup pass: the rest go" \
   test "$(sort "$T/state/removed" | tr '\n' ' ')" = "sha256:X0 test/mantle-sandbox:24.04-v1 test/mantle-sandbox:24.04-v2 "
 
+sbx_case prevonly
+# The pin before the roll (v1) is third newest, no container uses it and no
+# pins are recorded: only the roll's own argument keeps it.
+: > "$T/state/containers"
+PREV_PIN=test/mantle-sandbox:24.04-v1 FAKE_PULL_ID=sha256:X4 roll_lib "$T" "$sbx_sync"
+check "the pin before the roll is kept on its own (third newest, unused, unrecorded)" \
+  test "$(sort "$T/state/removed" | tr '\n' ' ')" = "sha256:X0 test/mantle-sandbox:24.04-v2 "
+
+sbx_case firststart
+FAKE_PULL_ID=sha256:X4 SYNC_PASS=startup roll_lib "$T" "$sbx_sync"
+check "a startup pass with no recorded pins: pulls, records, prunes nothing" sh -c "
+  grep -qx 'docker pull test/mantle-sandbox:24.04-v4' '$T/calls' && test ! -e '$T/state/removed' &&
+  test \"\$(head -1 '$T/sig/sandbox-pins')\" = test/mantle-sandbox:24.04-v4 && grep -q 'skipped this once' '$T/sig/update.log'"
+
 sbx_case pullfail
 FAKE_PULL_FAIL=1 roll_lib "$T" "$sbx_sync"
 check "a failed pull is recorded" grep -q '^test/mantle-sandbox:24.04-v4 [0-9]' "$T/sig/sandbox-pull-failed"

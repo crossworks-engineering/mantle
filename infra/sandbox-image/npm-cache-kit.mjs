@@ -1,42 +1,89 @@
-// Fill npm's cache so `npm install --offline <kit package>` works in a new
-// project with no network (the Dockerfile's nodekit stage runs this in a
-// directory where the kit's libraries were just installed from the lock).
+// Fill npm's cache so `npm install --offline --before=<kit date> <kit package>`
+// works in a new project with no network, and prove it gives exactly the
+// lock's packages. The Dockerfile's nodekit stage runs this in a directory
+// where the kit's libraries were just installed from the lock.
 //
 // An install from a lockfile caches only the tarballs; resolving a package
 // with no lockfile also needs its registry metadata. So every package of the
 // lock that this platform installs gets `npm cache add` (metadata and
-// tarball), and then each one's registry integrity must equal the lock's:
-// the cache can only ever hand out the tarballs the lock pins.
+// tarball) and `npm view` (the full metadata, with publish times), and each
+// one's registry integrity must equal the lock's. The kit date is one second
+// after the newest locked version was published: with `--before` set to it,
+// npm resolves every range to what the lock holds, whatever the registry has
+// published since. Last, every kit library is installed that way, offline, in
+// an empty project, and every package it installs must be one the lock pins.
 //
-// Usage: node npm-cache-kit.mjs <cache dir>   (in the installed directory)
+// Usage: node npm-cache-kit.mjs <cache dir> <file to write the kit date to> <the kit's lock>
+// (run where the libraries were installed: its package.json lists them, its
+// lock is the kit's lock trimmed to them; the check is against the whole one)
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-const cache = process.argv[2];
+const [cache, dateFile, kitLock] = process.argv.slice(2);
 const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+const kit = JSON.parse(readFileSync(kitLock, 'utf8'));
+const libs = Object.keys(JSON.parse(readFileSync('package.json', 'utf8')).dependencies);
 const libc = process.report?.getReport().header.glibcVersionRuntime ? 'glibc' : 'musl';
-const fits = (want, have) => !want || want.includes(have) || want.every((w) => w.startsWith('!') && w !== `!${have}`);
+// npm-install-checks: a list of allowed values, or of "!value" exclusions.
+const fits = (want, have) => {
+  if (!want) return true;
+  if (want.includes(`!${have}`)) return false;
+  return want.includes(have) || want.includes('any') || want.every((w) => w.startsWith('!'));
+};
+const nameOf = (path, p) => p.name ?? path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length);
 
-const pinned = new Map();
-for (const [path, p] of Object.entries(lock.packages)) {
-  if (!path || p.link || !p.version) continue;
-  if (!fits(p.os, process.platform) || !fits(p.cpu, process.arch) || !fits(p.libc, libc)) continue;
-  const name = p.name ?? path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length);
-  pinned.set(`${name}@${p.version}`, p.integrity);
-}
+// name@version -> integrity, for the packages of a lock this platform installs
+const pinsOf = (l) => {
+  const out = new Map();
+  for (const [path, p] of Object.entries(l.packages)) {
+    if (!path || p.link || !p.version) continue;
+    if (!fits(p.os, process.platform) || !fits(p.cpu, process.arch) || !fits(p.libc, libc)) continue;
+    out.set(`${nameOf(path, p)}@${p.version}`, p.integrity);
+  }
+  return out;
+};
+const pinned = pinsOf(lock);
+const kitPins = pinsOf(kit);
 
-const npm = (args) => execFileSync('npm', [...args, '--cache', cache, '--no-audit', '--no-fund'], { encoding: 'utf8' });
+const npm = (args, cwd) =>
+  execFileSync('npm', [...args, '--cache', cache, '--no-audit', '--no-fund'], { encoding: 'utf8', cwd });
 const specs = [...pinned.keys()];
 for (let i = 0; i < specs.length; i += 40) npm(['cache', 'add', ...specs.slice(i, i + 40)]);
 
 const wrong = [];
+let newest = 0;
 for (const [spec, integrity] of pinned) {
-  const got = npm(['view', '--offline', spec, 'dist.integrity']).trim();
-  if (got !== integrity) wrong.push(`${spec}: registry ${got || '(none)'} != lock ${integrity}`);
+  const version = spec.slice(spec.lastIndexOf('@') + 1);
+  const view = JSON.parse(npm(['view', spec, 'dist.integrity', 'time', '--json']));
+  if (view['dist.integrity'] !== integrity) {
+    wrong.push(`${spec}: registry ${view['dist.integrity'] ?? '(none)'} != lock ${integrity}`);
+  }
+  const at = Date.parse(view.time?.[version] ?? '');
+  if (!Number.isFinite(at)) wrong.push(`${spec}: no publish time`);
+  else newest = Math.max(newest, at);
 }
 if (wrong.length) {
   console.error(`npm cache: ${wrong.length} package(s) differ from the lock:\n  ${wrong.join('\n  ')}`);
   process.exit(1);
 }
-console.log(`npm cache: ${pinned.size} kit packages cached, every one matching the lock`);
+const before = new Date(newest + 1000).toISOString();
+
+// The proof: the whole kit, offline, as of the kit date, in an empty project.
+const proj = mkdtempSync(join(tmpdir(), 'kit-offline-'));
+writeFileSync(join(proj, 'package.json'), '{"name":"kit-offline","private":true}\n');
+npm(['install', '--offline', `--before=${before}`, '--ignore-scripts', ...libs], proj);
+const got = JSON.parse(readFileSync(join(proj, 'package-lock.json'), 'utf8'));
+for (const [path, p] of Object.entries(got.packages)) {
+  if (!path || p.link) continue;
+  const spec = `${nameOf(path, p)}@${p.version}`;
+  if (kitPins.get(spec) !== p.integrity) wrong.push(`${spec}: offline install is not the lock's`);
+}
+if (wrong.length) {
+  console.error(`npm cache: an offline install drifts from the lock:\n  ${wrong.join('\n  ')}`);
+  process.exit(1);
+}
+writeFileSync(dateFile, `${before}\n`);
+console.log(`npm cache: ${pinned.size} kit packages, each matching the lock; offline installs as of ${before} give the lock's`);

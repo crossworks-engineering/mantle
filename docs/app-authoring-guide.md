@@ -681,8 +681,9 @@ The exact list with versions is in the sandbox at
 proves the whole kit in a few minutes. With no network, Rust needs
 `CARGO_NET_OFFLINE=true` (for `cargo` and `wasm-pack` alike), and an ESM
 Node or Bun project installs the kit packages it imports with `npm install
---offline <packages>` (from the image's cache); Go, Python and `require` of the
-Node kit need nothing extra.
+--offline --before=<kit date> <packages>` (the date is in the manifest; it
+makes npm pick the kit's versions from the image's cache); Go, Python and
+`require` of the Node kit need nothing extra.
 
 **The boundary stays:** a sandbox works on a SQLite file inside it. It never
 reaches the brain's live app databases: copy a file in with `sandbox_import`,

@@ -82,7 +82,7 @@ check "bun kit (NODE_PATH)" bash -c 'cd / && bun -e "
   const { z } = require(\"zod\"); z.string().parse(\"ok\");
   const { format } = require(\"date-fns\"); format(new Date(0), \"yyyy\");"'
 mkdir -p "$W/bare" && cd "$W/bare"
-check "npm install in a folder with no package.json stays in it" bash -c "cd '$W/bare' && npm install --offline --no-audit --no-fund date-fns >/dev/null && test -f package.json && test -d node_modules/date-fns && test ! -e /package.json && test -d /opt/mantle-kit/node/node_modules/zod"
+check "npm install in a folder with no package.json stays in it" bash -c "cd '$W/bare' && npm install --offline --before=\"\$(cat /opt/mantle-kit/node/npm-before)\" --no-audit --no-fund date-fns >/dev/null && test -f package.json && test -d node_modules/date-fns && test ! -e /package.json && test -d /opt/mantle-kit/node/node_modules/zod"
 mkdir -p "$W/esm" && cd "$W/esm" && echo '{"name":"esm","private":true,"type":"module"}' > package.json
 cat > "$W/esm/app.ts" <<'EOF'
 import { z } from 'zod';
@@ -91,7 +91,7 @@ const Row = z.object({ tag: z.string(), qty: z.coerce.number() });
 const rows: unknown[] = parse('tag,qty\nA,1\nB,2\n', { columns: true });
 console.log(rows.map((r) => Row.parse(r).qty).reduce((a, b) => a + b, 0));
 EOF
-check "npm install --offline in a project (kit, from the cache)" bash -c "cd '$W/esm' && npm install --offline --no-audit --no-fund zod csv-parse exceljs vitest >/dev/null && test -d node_modules/zod && test ! -e /package.json"
+check "npm install --offline in a project (kit, from the cache)" bash -c "cd '$W/esm' && npm install --offline --before=\"\$(cat /opt/mantle-kit/node/npm-before)\" --no-audit --no-fund zod csv-parse exceljs cheerio jsonwebtoken typescript esbuild vitest >/dev/null && test -d node_modules/zod && test ! -e /package.json"
 check "node ESM import of the kit" expect ok bash -c "cd '$W/esm' && node --input-type=module -e \"import { z } from 'zod'; import { parse } from 'csv-parse/sync'; import ExcelJS from 'exceljs'; z.string().parse('x'); console.log('ok')\""
 check "esbuild bundle + node (ESM)" bash -c "cd '$W/esm' && esbuild app.ts --bundle --platform=node --format=esm --outfile=out.mjs --log-level=warning && [ \"\$(node out.mjs)\" = 3 ]"
 check "bun run ts" expect 3 bash -c "cd '$W/esm' && bun app.ts"
@@ -104,6 +104,7 @@ import { sum } from './sum';
 test('sum', () => expect(sum(1, 2)).toBe(3));
 EOF
 check "tsc --noEmit" bash -c "cd '$W/esm' && tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext --skipLibCheck sum.ts"
+check "npx finds the kit's tools offline" bash -c "cd '$W/bare' && npx --no-install tsc -v && npx --no-install vitest --version && npx --no-install biome --version"
 check "biome check" bash -c "cd '$W/esm' && biome check --formatter-enabled=false sum.ts"
 check "vitest" bash -c "cd '$W/esm' && vitest run --reporter=dot sum.test.ts"
 

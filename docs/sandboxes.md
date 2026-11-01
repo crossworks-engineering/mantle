@@ -70,8 +70,9 @@ Optional: `SANDBOX_DEFAULT_IMAGE` (pin a different base image),
 `SANDBOX_MAX_COUNT` (default 3), `SANDBOX_IDLE_STOP_MINUTES` (default 60),
 `SANDBOX_DISK_BUDGET_BYTES` (default 10 GB), `SANDBOX_EGRESS_ALLOW`
 (extra balanced-tier hosts, comma-separated), `SANDBOX_PULL_MIN_FREE_BYTES`
-(default 10 GB: sandboxd refuses to download a base image that is not local
-while the disk under the sandboxes dir has less free; 0 turns it off).
+(default 10 GB: sandboxd refuses to download an image that is not local
+while the disk under the sandboxes dir has less free; 0 turns it off). An
+image that is local is used as it is, with no registry call.
 
 ## Architecture
 
@@ -202,7 +203,7 @@ and a first build works with no network:
 
 | Language | Kit (pre-installed, or in the package cache) | Tools |
 | --- | --- | --- |
-| Node 26 + npm + pnpm | zod, date-fns, csv-parse, exceljs, cheerio, esbuild, typescript, jsonwebtoken (`require` from anywhere; `npm install --offline` for ESM) | biome, vitest, tsc |
+| Node 26 + npm + pnpm | zod, date-fns, csv-parse, exceljs, cheerio, esbuild, typescript, jsonwebtoken (`require` from anywhere; for ESM, `npm install --offline --before=<kit date>`) | biome, vitest, tsc |
 | Bun | the Node kit through `require`; `bun:sqlite`, `bun test` built in | |
 | Python 3.12 (venv `/opt/venv`) | requests, httpx, flask, fastapi, uvicorn, pandas, numpy, pydantic, pyyaml, python-dateutil, openpyxl, xlsxwriter, python-docx, pypdf, pdfplumber, beautifulsoup4, lxml, psycopg[binary], sqlite-utils, jinja2, matplotlib, plotly, scipy, pint, ezdxf, shapely, networkx | ruff, pytest |
 | Go | modernc.org/sqlite, yaml.v3, excelize, cobra, chi, pgx, testify (module cache) | gofmt, go vet, staticcheck |
@@ -222,16 +223,21 @@ from what is installed, so it cannot drift. An agent reads it with one
 `sandbox_exec` instead of trying commands; `sandbox_create`'s description
 points at it. **`sandbox-smoke`** in the image proves the kit: one SQLite file
 read from every language, a first build in Go, Rust and WebAssembly, the Node
-kit by `require` and by an ESM project installed with `npm install --offline`
-(which must stay in the project), every Python import, every formatter,
+kit by `require` and by an ESM project installed offline (which must stay in
+the project), `npx` of the kit's tools, every Python import, every formatter,
 linter and test runner. CI runs it with the network
 on and with `--network none`.
 
 **Offline use.** Python and `require` of the Node kit (`NODE_PATH`) need
 nothing. An ESM project (Node, Bun, esbuild, tsc, vitest) installs the kit
 packages it imports into its own `node_modules` with `npm install --offline
-<packages>`, from the image's npm cache. The kit's command-line tools sit last
-on PATH, so `npm i -g` of a newer one wins. Go's `GOPROXY` lists the module cache first (its checksum
+--before=<kit date> <packages>`, from the image's npm cache. The kit date is in
+`/opt/mantle-kit/node/npm-before` and the manifest; with it npm picks exactly
+the kit's versions (the build proves it for every kit library). The kit's
+tools (tsc, esbuild, vitest, biome, pnpm, claude) are in `/usr/local/bin`, so
+`npx` finds them offline too; `npm i -g --force <tool>` replaces one. Claude
+Code does not update itself (`DISABLE_AUTOUPDATER`): the image is the pin.
+Go's `GOPROXY` lists the module cache first (its checksum
 database tiles are cached too, so go.sum checks still run): `go mod tidy`
 resolves the kit offline, and pins it to the kit's versions (`go get
 mod@vX.Y.Z` for another). `GOTOOLCHAIN=local`: no toolchain downloads. Rust

@@ -16,6 +16,7 @@ from importlib import metadata
 from pathlib import Path
 
 KIT = Path("/opt/mantle-kit")
+NPM_BEFORE = (KIT / "node/npm-before").read_text().strip()
 
 
 def run(*cmd: str) -> str:
@@ -97,16 +98,19 @@ manifest = {
         "node": {
             "version": ver("node", "-v"),
             "npm": ver("npm", "-v"),
+            "npm_offline_before": NPM_BEFORE,
             **node_kit(),
             "use": (
                 "require() finds every kit library from any directory (NODE_PATH). For ESM "
-                "import, install the kit libraries a project uses into it with "
-                "`npm install --offline <packages>` (from the image's npm cache, no network)."
+                "import, install the kit libraries a project uses into it, offline: "
+                f"`npm install --offline --before={NPM_BEFORE} <packages>` (the image's npm "
+                "cache; the date makes npm pick the kit's versions). The tools (tsc, esbuild, "
+                "vitest, biome, pnpm, claude) are on PATH, npx finds them too."
             ),
         },
         "bun": {
             "version": ver("bun", "--version"),
-            "use": "bun runs .ts directly; bun:sqlite and bun test are built in; it uses a project's node_modules (npm install --offline) for the Node kit.",
+            "use": "bun runs .ts directly; bun:sqlite and bun test are built in; for the Node kit it uses a project's node_modules (the npm install above).",
         },
         "python": {
             "version": ver("python3", "--version"),
