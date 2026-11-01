@@ -28,7 +28,7 @@ Claude then works through these tools:
 
 Every edit lands in the draft. The published app does not change until `app_publish`.
 
-To change an app you already have, ask Claude to fix or change it. It finds the place with `code_search`, reads the lines with `code_view`, and replaces only those lines with `code_edit`. If you or another agent changed the draft in the meantime, the edit fails and Claude reads the file again, so no change is lost.
+To change an app you already have, ask Claude to fix or change it. It finds the place with `code_search`, reads the lines with `code_view`, and replaces only those lines with `code_edit`. Claude passes the revision it read: if you or another agent changed the draft in the meantime, the edit fails and Claude reads the file again, so no change is lost.
 
 ## Check it worked
 

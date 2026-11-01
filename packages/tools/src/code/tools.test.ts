@@ -177,6 +177,13 @@ describe('code_search', () => {
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
+  it('clamps max_results to the schema bounds in the handler', async () => {
+    const out = outputOf(
+      await tool('code_search').handler({ target: TARGET, pattern: 'e', max_results: 1e9 }, ctx),
+    );
+    expect((out.hits as string[]).length).toBeLessThanOrEqual(200);
+  });
+
   it('a glob that matches no file teaches', async () => {
     expect(
       errorOf(
@@ -388,6 +395,14 @@ describe('code_insert and code_write', () => {
         ),
       ),
     ).toMatch(/has 1 line\(s\)\. Use 1/);
+  });
+
+  it('refuses a new path with a control character or named __proto__', async () => {
+    for (const path of ['a\nb.ts', '__proto__']) {
+      expect(
+        errorOf(await tool('code_write').handler({ target: TARGET, path, content: 'x' }, ctx)),
+      ).toMatch(/a character or name a file may not use/);
+    }
   });
 
   it('creates a file, and refuses a path that leaves the app', async () => {

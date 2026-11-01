@@ -70,6 +70,8 @@ export const VIEW_MAX_LINES = 2000;
 const EDITS_MAX = 50;
 /** The longest search pattern. */
 const PATTERN_MAX = 1000;
+/** File diffs one undo returns at most; the rest are listed by path. */
+const UNDO_DIFFS_MAX = 10;
 /** Build errors a write with `build: true` returns at most. */
 const BUILD_ERRORS_MAX = 10;
 
@@ -479,7 +481,9 @@ const code_search: BuiltinToolDef = {
           error: `glob '${glob}' matches no file in ${store.ref}. Its files: ${Object.keys(tree.files).sort().slice(0, 20).join(', ')}`,
         };
       }
-      const cap = typeof input.max_results === 'number' ? input.max_results : 50;
+      // The schema's bounds, kept here too (a run item reaches it unchecked).
+      const asked = typeof input.max_results === 'number' ? Math.floor(input.max_results) : 50;
+      const cap = Math.min(Math.max(asked, 1), 200);
       const res = await searchFiles(files, pattern, {
         regex: input.regex === true,
         ignoreCase: input.ignore_case === true,
@@ -783,13 +787,15 @@ const code_undo: BuiltinToolDef = {
       const res = await store.undo({ editId, path, baseRev });
       if (!res) return missingApp(store);
       ctx.step?.setOutput({ target: store.ref, undid: res.undid, files: res.files.length });
-      const files = res.files.map((p) =>
-        Object.hasOwn(res.after.files, p)
-          ? {
-              path: p,
-              diff: unifiedDiff(p, toLf(res.before.files[p] ?? ''), toLf(res.after.files[p]!)),
-            }
-          : { path: p, removed: true },
+      const files = res.files.map((p, i) =>
+        !Object.hasOwn(res.after.files, p)
+          ? { path: p, removed: true }
+          : i < UNDO_DIFFS_MAX
+            ? {
+                path: p,
+                diff: unifiedDiff(p, toLf(res.before.files[p] ?? ''), toLf(res.after.files[p]!)),
+              }
+            : { path: p, restored: true, hint: 'view it with code_view' },
       );
       return {
         ok: true,

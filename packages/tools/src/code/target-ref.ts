@@ -36,6 +36,11 @@ export function codeFileKey(files: Readonly<Record<string, string>>, raw: unknow
  *  app_file_write create files by this one rule. */
 export function badNewPath(path: string): string | null {
   if (!path) return 'path is required, e.g. App.tsx or lib/fmt.ts';
+  // A control character would forge lines in search hits and diff
+  // headers; `__proto__` is no plain-object key.
+  if (/[\u0000-\u001f\u007f]/.test(path) || path === '__proto__') {
+    return `path '${JSON.stringify(path).slice(1, -1)}' has a character or name a file may not use: pick a plain name, e.g. lib/fmt.ts`;
+  }
   if (path.includes('\\') || path.split('/').some((p) => p === '' || p === '.' || p === '..')) {
     return `path '${path}' must be relative inside the app, with no '..', '.' or empty part (e.g. lib/fmt.ts)`;
   }
