@@ -284,14 +284,17 @@ export async function appRunHolders(app: AppRunFor): Promise<string[]> {
  *  (@mantle/content AppRuntime.toolRules). A structural fact, read on the
  *  admin pool whatever the caller's scope: an Admin user's request scope that
  *  does not include the holder cannot see the holder's grant row, and read
- *  there it would run a team app at admin rules. An id that is not a uuid
- *  answers true (the stricter rules). */
-export async function appHeldBeyondAdmin(appId: string): Promise<boolean> {
-  if (!UUID_RE.test(appId)) return true;
+ *  there it would run a team app at admin rules. Only `ownerId`'s app
+ *  answers (any other node: false); an id that is not a uuid answers true
+ *  (the stricter rules). */
+export async function appHeldBeyondAdmin(ownerId: string, appId: string): Promise<boolean> {
+  if (!UUID_RE.test(ownerId) || !UUID_RE.test(appId)) return true;
   const [row] = (await getAdminDb().execute(
     sqlTag`select exists (
-             select 1 from item_grants g join workspaces w on w.id = g.workspace_id and not w.is_admin
-              where g.node_id = ${appId} and not g.excluded) as held`,
+             select 1 from nodes n
+               join item_grants g on g.node_id = n.id and not g.excluded
+               join workspaces w on w.id = g.workspace_id and not w.is_admin
+              where n.id = ${appId} and n.owner_id = ${ownerId} and n.type = 'app') as held`,
   )) as unknown as { held: boolean }[];
   return row?.held === true;
 }

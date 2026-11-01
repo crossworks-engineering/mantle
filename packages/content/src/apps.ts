@@ -473,7 +473,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
   return {
     id,
     title: row.title,
-    toolRules: (await appHeldBeyondAdmin(id)) ? 'team' : 'admin',
+    toolRules: (await appHeldBeyondAdmin(ownerId, id)) ? 'team' : 'admin',
     manifest: row.manifest ?? {},
     draftBuild: row.draftBuild ?? null,
     publishedBuild: row.publishedBuild ?? null,
