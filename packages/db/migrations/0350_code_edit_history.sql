@@ -4,9 +4,10 @@
 -- app_source_set first records the app's working tree as it stood (code
 -- only, no database copy) on the app's own history line (`pre_code_edit`),
 -- so code_undo can put one file back; an undo records what it replaces
--- (`pre_code_undo`). Each kind is pruned on its own line (the newest
--- APP_CODE_EDIT_KEEP per app) and the History list and the lookups by id
--- leave them out, as an undo stack, not a version anyone picks.
+-- (`pre_code_undo`). They are pruned as one window per app (the newest
+-- APP_CODE_EDIT_KEEP write rows and the undo rows among them) and the
+-- History list and the lookups by id leave them out, as an undo stack, not
+-- a version anyone picks.
 --
 -- Additive, no new table, no trigger, no LLM work.
 -- Revert: packages/db/rollback/0350_code_edit_history.revert.sql.
