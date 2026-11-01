@@ -9563,6 +9563,10 @@
      "minimum": 480,
      "maximum": 4000,
      "description": "The picture's long edge in pixels."
+    },
+    "bytes": {
+     "type": "boolean",
+     "description": "Mini apps only: return the picture as base64 in the output."
     }
    },
    "required": [

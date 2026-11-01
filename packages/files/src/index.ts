@@ -60,6 +60,8 @@ export {
   type DwgCrops,
   type DwgFrame,
   type DwgRender,
+  type DwgViewItem,
+  type DwgViewSpec,
   type DwgWindow,
 } from './parser-cad';
 

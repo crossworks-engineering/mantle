@@ -425,11 +425,8 @@ export async function parserDwgRender(
 const DWG_CROP_WIRE_MAX_BYTES = 160 * 1024 * 1024;
 
 /** One item to crop: a spot (`point`) or a traced path (`path`), in drawing
- *  units; `marks` get a green ring. A `view` is a picture to look at: its
- *  `window`, else the sheet, or all of model space with `full`, at a long
- *  edge of `edge` pixels. Mirrors dwg_crop.parse_spec. */
+ *  units; `marks` get a green ring. Mirrors dwg_crop.parse_spec. */
 export type DwgCropItem =
-  | { id: string; kind: 'view'; window?: DwgWindow; full?: boolean; edge?: number }
   | { id: string; kind: 'point'; at: [number, number]; pad: number; marks?: [number, number][] }
   | {
       id: string;
@@ -446,6 +443,18 @@ export type DwgCropSpec = {
   overview?: boolean;
 };
 
+/** A picture to look at: `window`, else the sheet, or all of model space
+ *  with `full`, at a long edge of `edge` pixels. Mirrors dwg_crop.parse_spec. */
+export type DwgViewItem = {
+  id: string;
+  kind: 'view';
+  window?: DwgWindow;
+  full?: boolean;
+  edge?: number;
+};
+
+export type DwgViewSpec = { items: DwgViewItem[]; overview: false };
+
 export type DwgCrop = {
   id: string;
   /** Which crop of the item (a path is several) and of how many. */
@@ -458,7 +467,7 @@ export type DwgCrop = {
   /** The smallest text in the window, in pixels (null: no text there). */
   textPx: number | null;
   /** A view with nothing drawn in its window. */
-  blank: boolean;
+  blank?: true;
   png: Buffer;
 };
 
@@ -469,7 +478,7 @@ export type DwgCrops = {
   /** Item ids the CAD tier did not crop (its crop cap or time budget). */
   capped: string[];
   /** The drawing's frame, when a `view` asked for one. */
-  frame: DwgFrame | null;
+  frame?: DwgFrame;
 };
 
 function windowOf(v: unknown): DwgWindow | null {
@@ -500,7 +509,7 @@ function readFrame(v: unknown): DwgFrame | null {
  */
 export async function parserDwgCrop(
   dwg: Buffer,
-  spec: DwgCropSpec,
+  spec: DwgCropSpec | DwgViewSpec,
 ): Promise<ParserResult<DwgCrops>> {
   return asResult(async () => {
     const body = await parserJson('dwgCrop', dwg, { spec }, DWG_CROP_WIRE_MAX_BYTES);
@@ -517,12 +526,13 @@ export async function parserDwgCrop(
         width: count(o.width),
         height: count(o.height),
         textPx: finite(o.text_px),
-        blank: o.blank === true,
+        ...(o.blank === true ? { blank: true as const } : {}),
         png: Buffer.from(o.png_base64, 'base64'),
       });
     }
     const ov = body.overview as Record<string, unknown> | null | undefined;
     const ovWindow = ov ? windowOf(ov.window) : null;
+    const frame = readFrame(body.frame);
     return {
       converter: typeof body.converter === 'string' ? body.converter : null,
       crops,
@@ -531,7 +541,7 @@ export async function parserDwgCrop(
           ? { window: ovWindow, png: Buffer.from(ov.png_base64, 'base64') }
           : null,
       capped: Array.isArray(body.capped) ? body.capped.map(text).filter(Boolean) : [],
-      frame: readFrame(body.frame),
+      ...(frame ? { frame } : {}),
     };
   });
 }

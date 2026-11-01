@@ -391,6 +391,29 @@ admin-only app, mint a recipe tool that returns precisely that); then build
 the app against it. You're binding the app to data you've actually inspected, so
 the queries are correct, not guessed.
 
+## Pictures: a stored image, a drawing
+
+An app has no network of its own, so a picture reaches it through a tool. Two
+declared tools answer one when the call says `bytes: true`, as base64 in the
+output. Only an app's call gets that; at most 16 MB a call.
+
+```tsx
+// A stored image (declare file_read):
+const f = await host.tools.call('file_read', { file_id: imageId, bytes: true });
+const src = `data:${f.mime_type};base64,${f.content_base64}`;
+
+// A DWG or DXF, framed on its sheet (declare dwg_render):
+const d = await host.tools.call('dwg_render', { file_id: dwgId, edge: 4000, bytes: true });
+// d.window is what it shows, d.sheet the sheet, d.off_sheet what sits off it.
+// Pass a window to zoom: { file_id: dwgId, window: d.off_sheet[0].window, bytes: true }
+```
+
+`file_read` without `bytes` still gives the text the extractor read, and
+`content: null` for a picture. `dwg_render` draws on each call, which takes
+seconds, one drawing at a time across the brain: draw when a person opens a
+drawing, and keep the answer in state. Do not store the base64 in a Table or
+a text file. A window with nothing in it answers a `note` and no picture.
+
 ## Reports: a PDF from the app
 
 An app that holds the Admin workspace alone (an admin built it, the Admin

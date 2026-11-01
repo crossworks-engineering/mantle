@@ -14,6 +14,10 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Added:** `dwg_render` (group `circuits`, and MCP) draws one uploaded DWG
   or DXF on request: the sheet, a window in drawing units, or all of model
   space. Read only: the picture goes back to the caller and nothing is saved.
+- **Added:** a mini app can show a picture. `file_read` and `dwg_render` take
+  `bytes: true` from an app's own call and answer base64 (at most 16 MB a
+  call), which the app turns into a data: or blob: URL. An agent or an MCP
+  client gets a refusal that names what to use instead.
 
 ## Unreleased: the UI sounds save names its login
 

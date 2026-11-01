@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const files = vi.hoisted(() => ({ parserDwgCrop: vi.fn(), readFileById: vi.fn() }));
 vi.mock('@mantle/files', () => files);
 
+import { APP_BYTES_MAX } from './app-bytes';
 import { dwg_render } from './builtins-dwg-render';
 import type { ToolHandlerContext } from './types';
 
@@ -37,7 +38,6 @@ const crop = (over: Record<string, unknown> = {}) => ({
         width: 2000,
         height: 1268,
         textPx: 9.5,
-        blank: false,
         png: Buffer.from('picture'),
         ...over,
       },
@@ -181,6 +181,49 @@ describe('dwg_render', () => {
     expect(await call({})).toMatchObject({
       ok: false,
       error: expect.stringContaining('smaller `edge`'),
+    });
+  });
+
+  describe('bytes', () => {
+    const app = { ...ctx, caller: { entry: 'app' } } as unknown as ToolHandlerContext;
+    const asApp = (input: Record<string, unknown>) =>
+      dwg_render.handler({ file_id: FILE_ID, ...input }, app);
+
+    it('hands an app the picture in its output, and no model image', async () => {
+      const r = await asApp({ bytes: true, window: [1, 2, 3, 4] });
+      expect(r).toMatchObject({
+        ok: true,
+        output: {
+          mime_type: 'image/png',
+          content_base64: Buffer.from('picture').toString('base64'),
+          window: [-10, -10, 810, 510],
+          off_sheet: FRAME.offSheet,
+        },
+      });
+      expect(r).not.toHaveProperty('modelImages');
+    });
+
+    it.each([
+      ['an agent', ctx],
+      ['an MCP client', { ...ctx, caller: { entry: 'mcp' } } as unknown as ToolHandlerContext],
+    ])('refuses %s before it reads the file', async (_who, who) => {
+      const r = await dwg_render.handler({ file_id: FILE_ID, bytes: true }, who);
+      expect(r).toMatchObject({ ok: false, error: expect.stringContaining('show_image') });
+      expect(files.readFileById).not.toHaveBeenCalled();
+    });
+
+    it('sends a blank window no bytes', async () => {
+      files.parserDwgCrop.mockResolvedValue(crop({ blank: true }));
+      const r = await asApp({ bytes: true });
+      expect(JSON.stringify(r)).not.toContain('content_base64');
+    });
+
+    it('refuses a picture past the cap', async () => {
+      files.parserDwgCrop.mockResolvedValue(crop({ png: Buffer.alloc(APP_BYTES_MAX + 1) }));
+      expect(await asApp({ bytes: true })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining('past the 16.0 MB'),
+      });
     });
   });
 

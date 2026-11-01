@@ -7,9 +7,12 @@
  * a `view` of the crop job, so the reading stays in the parser (docs/parser.md).
  *
  * Read only: the picture goes back to the caller and nothing is saved. The
- * drawing's text is the uploader's, so the result is fenced as data.
+ * drawing's text is the uploader's, so the result is fenced as data. A model
+ * sees it as an image; a mini app asks for `bytes` and gets it in the output
+ * (app-bytes.ts), so an app can show a drawing with no sandbox step.
  */
 import { parserDwgCrop, readFileById, type DwgFrame, type DwgWindow } from '@mantle/files';
+import { APP_BYTES_MAX, appBytesRefusal, appBytesTooLarge } from './app-bytes';
 import { FILE_ID_PRE } from './builtins-common';
 import { boolOpt as bool, str } from './coerce';
 import type { BuiltinToolDef } from './types';
@@ -34,7 +37,7 @@ function windowOf(raw: unknown): { window?: DwgWindow } | { error: string } {
   return { window: [x0, y0, x1, y1] };
 }
 
-const frameOutput = (f: DwgFrame | null) =>
+const frameOutput = (f: DwgFrame | undefined) =>
   f
     ? {
         sheet: f.sheet,
@@ -86,6 +89,10 @@ export const dwg_render: BuiltinToolDef = {
         default: EDGE.default,
         description: "The picture's long edge in pixels.",
       },
+      bytes: {
+        type: 'boolean',
+        description: 'Mini apps only: return the picture as base64 in the output.',
+      },
     },
     required: ['file_id'],
   },
@@ -97,6 +104,9 @@ export const dwg_render: BuiltinToolDef = {
     if (full && asked.window) {
       return { ok: false, error: 'full and window draw different things: pass one of them' };
     }
+    const wantsBytes = bool(input.bytes) === true;
+    const refused = wantsBytes ? appBytesRefusal(ctx) : null;
+    if (refused) return { ok: false, error: refused };
     const edge = input.edge === undefined ? EDGE.default : Number(input.edge);
     if (!Number.isInteger(edge) || edge < EDGE.min || edge > EDGE.max) {
       return {
@@ -156,7 +166,7 @@ export const dwg_render: BuiltinToolDef = {
       smallest_text_px: crop.textPx,
       ...frameOutput(drawn.value.frame),
     };
-    ctx.step?.setOutput({ width: crop.width, height: crop.height, blank: crop.blank });
+    ctx.step?.setOutput({ width: crop.width, height: crop.height, blank: crop.blank === true });
     if (crop.blank) {
       return {
         ok: true,
@@ -166,10 +176,17 @@ export const dwg_render: BuiltinToolDef = {
         },
       };
     }
+    const base64 = crop.png.toString('base64');
+    if (wantsBytes) {
+      if (crop.png.length > APP_BYTES_MAX) {
+        return { ok: false, error: appBytesTooLarge(row.filename, crop.png.length) };
+      }
+      return { ok: true, output: { ...base, mime_type: 'image/png', content_base64: base64 } };
+    }
     return {
       ok: true,
       output: base,
-      modelImages: [{ mimeType: 'image/png', base64: crop.png.toString('base64') }],
+      modelImages: [{ mimeType: 'image/png', base64 }],
     };
   },
 };
