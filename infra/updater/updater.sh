@@ -1313,6 +1313,26 @@ prune_media() {
 # reads the stack's disk, which is Docker's on a standard box; a box with
 # Docker's data on another disk is not covered by it.
 
+# run_bounded <secs> <cmd...>: run <cmd>, stopped (TERM) after <secs>; its
+# exit status. Portable sh, no timeout(1): the harness sources this file on a
+# Mac, which has none. The watcher counts whole seconds, so it ends within a
+# second of the command. A stopped `docker pull` cancels the pull.
+run_bounded() {
+  rb_s=$(num_or "$1" 1200); shift
+  "$@" &
+  rb_pid=$!
+  (
+    rb_n=$rb_s
+    while [ "$rb_n" -gt 0 ]; do sleep 1; rb_n=$((rb_n - 1)); done
+    kill "$rb_pid" 2> /dev/null
+  ) &
+  rb_w=$!
+  wait "$rb_pid"
+  rb_rc=$?
+  kill "$rb_w" 2> /dev/null
+  return "$rb_rc"
+}
+
 # image_id <ref>: the local image id of <ref> ("" when it is not local).
 image_id() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null; }
 
@@ -1388,7 +1408,7 @@ sandbox_image_sync() {
     fi
     sis_to=$(num_or "$(env_val MANTLE_SANDBOX_PULL_TIMEOUT_S)" 1200)
     echo "[updater] pulling the sandbox base image $sis_pin ($((sis_free / 1024)) MB free, at most ${sis_to}s)"
-    if ! timeout "$sis_to" docker pull "$sis_pin" > /dev/null 2>&1 || [ -z "$(image_id "$sis_pin")" ]; then # portability: box-side (the harness stubs timeout)
+    if ! run_bounded "$sis_to" docker pull "$sis_pin" > /dev/null 2>&1 || [ -z "$(image_id "$sis_pin")" ]; then
       printf '%s %s\n' "$sis_pin" "$(date +%s)" > "$SIG/sandbox-pull-failed"
       echo "[updater] ⚠ the sandbox base image $sis_pin did not download; the first new sandbox will fetch it"
       return 0
@@ -1902,7 +1922,7 @@ service_on() {
       else
         svc_log "downloading the sandbox base image $so_img"
         so_sto=$(num_or "$(env_val MANTLE_SANDBOX_PULL_TIMEOUT_S)" 1200)
-        if ! timeout "$so_sto" docker pull "$so_img" >> "$SIG/service.log" 2>&1; then # portability: box-side (the harness stubs timeout)
+        if ! run_bounded "$so_sto" docker pull "$so_img" >> "$SIG/service.log" 2>&1; then
           svc_log "⚠ the sandbox base image did not download; the first new sandbox will fetch it"
         fi
       fi

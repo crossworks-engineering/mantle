@@ -873,8 +873,6 @@ fi
 # filter (the worst case: the updater must pick its repository itself), and
 # `rmi` refuses whatever $FAKE_STATE/in-use lists.
 ROLL_STUB='
-# busybox timeout cannot run a shell function: run the command as is.
-timeout() { shift; "$@"; }
 docker() {
   echo "docker $*" >> "$CALLS"
   case "$1" in
@@ -1231,6 +1229,13 @@ IMGS
 }
 sbx_sync='free_kb() { echo "${FAKE_FREE_KB:-99999999}"; }
 sandbox_image_sync "${PREV_PIN:-}" "${SYNC_PASS:-roll}" >> "$SIG/update.log"'
+
+echo "updater.sh: run_bounded stops a command at its limit"
+T="$WORK/rb"; fake_stack "$T"; mkdir -p "$T/state"
+out=$(roll_lib "$T" 's0=$(date +%s); run_bounded 1 sleep 5; rc=$?; echo "$rc $(( $(date +%s) - s0 ))"; run_bounded 5 sh -c "exit 3"; echo "fast=$?"')
+check "run_bounded: a command past its limit is stopped (non-zero, well before it would end)" \
+  sh -c "set -- $(printf '%s' "$out" | head -1); [ \"\$1\" -ne 0 ] && [ \"\$2\" -lt 4 ]"
+check "run_bounded: a command inside its limit keeps its own exit status" sh -c "printf '%s' '$out' | grep -qx 'fast=3'"
 
 echo "updater.sh: the sandbox base image: pulled with enough disk, old ones pruned"
 sbx_case pull
@@ -2533,8 +2538,6 @@ echo "updater.sh: the service switch (service-request.json)"
 # The one new input surface on the Docker-socket holder. Every path: the
 # whitelist, on, off, and each failure, with .env and the calls checked.
 SVC_STUB='
-# busybox timeout cannot run a shell function: run the command as is.
-timeout() { shift; "$@"; }
 docker() {
   echo "docker $*" >> "$CALLS"
   case "$1" in
