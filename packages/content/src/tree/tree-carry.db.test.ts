@@ -6,6 +6,11 @@
  * clamped to three folder levels. Against a real, migrated Postgres and a
  * temporary files root:
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/tree/tree-carry.db.test.ts
+ *
+ * A carry reaches every personal space in the database (one brain per
+ * database), so a test file that moves a folder of the same path moves this
+ * file's rows too. Keep these folder names to this file: "Clients" here met
+ * tree-kinds.db.test.ts moving its own, at random, when the two overlapped.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -87,11 +92,11 @@ describe.skipIf(!URL)('members’ drafts follow the brain’s folders', () => {
   });
 
   it('a rename carries the drafts and folders of every member under the folder', async () => {
-    const f = await tree.createTreeFolder(brain, 'notes', { parentId: null, name: 'Clients' });
-    const draft = await spaceRow(space, 'note', 'notes.clients');
-    const mine = await spaceRow(space, 'branch', 'notes.clients.mine');
-    const deep = await spaceRow(space, 'note', 'notes.clients.mine');
-    const theirs = await spaceRow(otherSpace, 'note', 'notes.clients');
+    const f = await tree.createTreeFolder(brain, 'notes', { parentId: null, name: 'Buyers' });
+    const draft = await spaceRow(space, 'note', 'notes.buyers');
+    const mine = await spaceRow(space, 'branch', 'notes.buyers.mine');
+    const deep = await spaceRow(space, 'note', 'notes.buyers.mine');
+    const theirs = await spaceRow(otherSpace, 'note', 'notes.buyers');
     const elsewhere = await spaceRow(space, 'note', 'notes');
     await tree.updateTreeFolder(brain, 'notes', f.id, { name: 'Customers' });
     expect(await pathOf(draft)).toBe('notes.customers');
@@ -176,22 +181,22 @@ describe.skipIf(!URL)('members’ drafts follow the brain’s folders', () => {
   });
 
   it('a lift whose rows land on each other’s old paths goes through (audit C3)', async () => {
-    // The member's own "Proj" inside the brain's "Proj", each holding "Y":
-    // lifting maps notes.proj.proj.y onto notes.proj.y, which itself moves
+    // The member's own "Campaign" inside the brain's "Campaign", each holding "Y":
+    // lifting maps notes.campaign.campaign.y onto notes.campaign.y, which itself moves
     // on to notes.y. A one-pass rewrite hit the unique index by row order.
-    const proj = await tree.createTreeFolder(brain, 'notes', { parentId: null, name: 'Proj' });
+    const proj = await tree.createTreeFolder(brain, 'notes', { parentId: null, name: 'Campaign' });
     // Inner rows first: a one-pass rewrite then meets them before the outer
-    // "Y" has left notes.proj.y.
-    const yInner = await spaceRow(space, 'branch', 'notes.proj.proj.y');
-    const ownProj = await spaceRow(space, 'branch', 'notes.proj.proj');
-    const yOuter = await spaceRow(space, 'branch', 'notes.proj.y');
-    const inInner = await spaceRow(space, 'note', 'notes.proj.proj.y');
+    // "Y" has left notes.campaign.y.
+    const yInner = await spaceRow(space, 'branch', 'notes.campaign.campaign.y');
+    const ownCampaign = await spaceRow(space, 'branch', 'notes.campaign.campaign');
+    const yOuter = await spaceRow(space, 'branch', 'notes.campaign.y');
+    const inInner = await spaceRow(space, 'note', 'notes.campaign.campaign.y');
     await tree.deleteTreeFolder(brain, 'notes', proj.id);
     expect(await pathOf(proj.id)).toBeNull();
     expect(await pathOf(yOuter)).toBe('notes.y');
-    expect(await pathOf(ownProj)).toBe('notes.proj');
-    expect(await pathOf(yInner)).toBe('notes.proj.y');
-    expect(await pathOf(inInner)).toBe('notes.proj.y');
+    expect(await pathOf(ownCampaign)).toBe('notes.campaign');
+    expect(await pathOf(yInner)).toBe('notes.campaign.y');
+    expect(await pathOf(inInner)).toBe('notes.campaign.y');
     const [left] = (await m.db.execute(sqlTag`
       select count(*)::int as n from nodes where path <@ 'mantle_carry_tmp'`)) as unknown as {
       n: number;

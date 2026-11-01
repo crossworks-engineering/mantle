@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { imagePagesPdf, type FixtureImage } from './pdf-fixtures.test-helper';
+import { flatJpeg, imagePagesPdf, type FixtureImage } from './pdf-fixtures.test-helper';
 import { extractPdfImages } from './pdf';
 
 /** A 3000x3000 RGB photo-sized image (27 MB decoded). All zero, so the
@@ -106,6 +106,25 @@ describe('the pictures pass, page by page', () => {
     expect(run.riseMb).toBeLessThan(200);
     expect(run.ms).toBeLessThan(45_000);
   }, 60_000);
+
+  it('reads a 20-page JPEG scan bounded, and returns nothing for it', async () => {
+    const pages = 20;
+    // 27.5 MP, the size of the scan that was killed at the parser's limit.
+    const side = 5244;
+    const one = { width: side, height: side, jpeg: flatJpeg(side, side) };
+    const pdf = imagePagesPdf({
+      images: Array.from({ length: pages }, () => one),
+      pages: Array.from({ length: pages }, (_, p) => ({ draw: [p] })),
+    });
+    const run = await measure(() => extractPdfImages(pdf));
+    console.info(
+      `[pdf-pages] 20-page JPEG scan: +${Math.round(run.riseMb)} MB, ${Math.round(run.ms)} ms`,
+    );
+    expect(run.value).toEqual([]);
+    // Node rises about 455 MB and Bun about 330 MB. Bun rose 670 to 790 MB
+    // without the collection after each page.
+    expect(run.riseMb).toBeLessThan(600);
+  }, 180_000);
 
   it('stops once the cap holds enough real pictures', async () => {
     const pdf = imagePagesPdf({
