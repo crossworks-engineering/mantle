@@ -23,12 +23,11 @@
  * limit and job deadline stand behind these bounds.
  */
 
-import { createRequire } from 'node:module';
-import path from 'node:path';
 import {
   declaresOversizeImage,
   isPdfLimitError,
   PDF_MAX_IMAGE_PIXELS,
+  pdfjsAssetDir,
   PdfLimitError,
   withPdf,
 } from './pdf-open';
@@ -79,23 +78,13 @@ export function pageRenderScale(width: number, height: number, wanted: number): 
   return scale;
 }
 
-/** pdfjs's CMap and standard-font directories, as `getDocument` wants them
- *  (trailing slash). Resolved from the installed package, not the working
- *  directory, so they are found wherever the process runs. */
-function pdfjsAssetUrls(): { cMapUrl: string; standardFontDataUrl: string } {
-  const root = path.dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json'));
-  return {
-    cMapUrl: `${path.join(root, 'cmaps')}/`,
-    standardFontDataUrl: `${path.join(root, 'standard_fonts')}/`,
-  };
-}
-
 /** The `getDocument` settings a render uses: those of the previous renderer
  *  (pdf-to-png-converter), so a normal page renders to the same pixels. A
  *  function because the asset paths are resolved at call time. */
 function renderParams() {
   return {
-    ...pdfjsAssetUrls(),
+    cMapUrl: pdfjsAssetDir('cmaps'),
+    standardFontDataUrl: pdfjsAssetDir('standard_fonts'),
     cMapPacked: true,
     useSystemFonts: false,
     enableXfa: true,

@@ -9,6 +9,8 @@
  * `parsePdf` and renderable content for `rasterizePdfToPngs`.
  */
 
+import { deflateSync } from 'node:zlib';
+
 /** A valid one-page PDF with a single Helvetica text object. */
 export function helveticaPdf(text = 'Hello Mantle'): Buffer {
   const stream = `BT /F1 12 Tf 20 100 Td (${text}) Tj ET`;
@@ -133,6 +135,89 @@ export function imagePagesPdf(opts: {
     );
   });
   return assemblePdf(objs);
+}
+
+/** The image codecs a scan comes in, beside plain Flate. */
+export type ScanCodec = 'jpx' | 'ccitt' | 'jbig2' | 'flate';
+
+/** Width and height of the page and of its one image, in points and pixels. */
+export const SCAN_SIZE = { width: 120, height: 90 };
+
+/** The test image: black up to x 40, three-wide stripes every six to x 80, then
+ *  white. Dark on the left and light on the right, so a page drawn inverted
+ *  or not at all fails the same check. */
+function scanSampleIsBlack(x: number): boolean {
+  return x < 40 || (x >= 44 && x < 80 && (x - 44) % 6 < 3);
+}
+
+/** The test image as 8-bit grayscale samples. */
+function scanSamples(): Buffer {
+  const { width, height } = SCAN_SIZE;
+  const row = Buffer.alloc(width, 255);
+  for (let x = 0; x < width; x++) if (scanSampleIsBlack(x)) row[x] = 0;
+  return Buffer.concat(Array.from({ length: height }, () => row));
+}
+
+/**
+ * The test image as real encoders write it, not bytes built by hand: a decoder
+ * bug or a fixture bug must not cancel out. Each one was checked with decoders
+ * that are not pdfjs (Poppler, Ghostscript).
+ *  - jpx: Pillow (OpenJPEG), `quality_layers=[20]`, lossy.
+ *  - ccitt: the strip of a Group 4 TIFF, from Pillow (libtiff), of the image
+ *    inverted: its TIFF is BlackIsZero, so libtiff codes the black pixels as
+ *    white runs, and in a PDF that reads back inverted.
+ *  - jbig2: `jbig2 -p` (jbig2enc 0.30), an arithmetic-coded generic region.
+ */
+const SCAN_STREAMS: Record<Exclude<ScanCodec, 'flate'>, { dict: string; base64: string }> = {
+  jpx: {
+    dict: '/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /JPXDecode',
+    base64:
+      'AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAAAtanAyaAAAABZpaGRyAAAAWgAAAHgAAQcHAAAAAAAPY29scgEAAAAAABEAAAGganAyY/9P/1EAKQAAAAAAeAAAAFoAAAAAAAAAAAAAAHgAAABaAAAAAAAAAAAAAQcBAf9SAAwAAAABAAIEBAAA/1wAEUJfUlAFUAVQR1fTV9NXYv9kACUAAUNyZWF0ZWQgYnkgT3BlbkpQRUcgdmVyc2lvbiAyLjUuMP+QAAoAAAAAASEAAf+Tz5tAABFQU/MTQ1niDbK6Cr//f/6TSkV+TUTVVdABXKqINF9A3803UGk4AAgOe04Bn/9MHmnjeCJnpuWreCJnphDfeCJnpYsC8EKFz+EP6ukBc6k0svyaUMygXOpNLL8mlDMoFzqTSy/JpQzKBc6k0svyaUMygXOpNLL8mkSziAk4j+gs3014VWHWQH9txXUckwnAYQF2fYdf+TCCA6VGXxXUPjVY4NQ+NVjg1D41WODUPjU5oKbjjp0C9j+l4fi2/2Y2/xjb+F1XCrRHAGTEiXvxRJ6YvxRJ6YvxRJ6YvxRJ6Yt4FcfErHN7gOCNrc/1R/1buAWYnslvRCYxxr//cAmHzzgAAAAwkJf/Ueugz0VBwy3/2Q==',
+  },
+  ccitt: {
+    dict:
+      '/ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /CCITTFaxDecode ' +
+      `/DecodeParms << /K -1 /Columns ${SCAN_SIZE.width} /Rows ${SCAN_SIZE.height} /BlackIs1 false >>`,
+    base64:
+      'JqDYbjEYjEYjF//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////4AIAI',
+  },
+  jbig2: {
+    dict: '/ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /JBIG2Decode',
+    base64:
+      'AAAAADAAAQAAABMAAAB4AAAAWgAAAAAAAAAAAQAAAAAAASYAAQAAAD8AAAB4AAAAWgAAAAAAAAAAAAAD//3/Av7+/v9YcQQBzb+OlLMr68tlZlgwP1fX8/9//3//f/9//3//f/9//6w=',
+  },
+};
+
+/**
+ * A one-page scan: one image filling the page in the given codec, no text
+ * layer. The test image (`scanSampleIsBlack`) is the same in each codec, and
+ * `flate` needs no decoder module, so it is the control.
+ */
+export function scanPdf(codec: ScanCodec): Buffer {
+  const { width, height } = SCAN_SIZE;
+  const { dict, stream } =
+    codec === 'flate'
+      ? {
+          dict: '/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode',
+          stream: deflateSync(scanSamples()),
+        }
+      : {
+          dict: SCAN_STREAMS[codec].dict,
+          stream: Buffer.from(SCAN_STREAMS[codec].base64, 'base64'),
+        };
+  const content = `q ${width} 0 0 ${height} 0 0 cm /Im1 Do Q`;
+  return assemblePdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] ` +
+      '/Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    [
+      `<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} ${dict} ` +
+        `/Length ${stream.length} >>`,
+      stream,
+    ],
+  ]);
 }
 
 /**
