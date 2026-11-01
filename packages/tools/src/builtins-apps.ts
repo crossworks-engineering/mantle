@@ -2011,7 +2011,8 @@ const app_export: BuiltinToolDef = {
       with_data: {
         type: 'boolean',
         default: true,
-        description: "False: the code only, no copy of the app's database. A git bundle never holds data.",
+        description:
+          "False: the code only, no copy of the app's database. A git bundle never holds data.",
       },
       format: {
         type: 'string',
@@ -2030,7 +2031,10 @@ const app_export: BuiltinToolDef = {
     const format = str(input.format).trim() || 'mantleapp';
     if (format === 'git') return exportGitBundle(ctx, id);
     if (format !== 'mantleapp') {
-      return { ok: false, error: `format must be 'mantleapp' or 'git' (got '${format.slice(0, 40)}')` };
+      return {
+        ok: false,
+        error: `format must be 'mantleapp' or 'git' (got '${format.slice(0, 40)}')`,
+      };
     }
     const tmp = await appPackageTempPath('.mantleapp');
     try {

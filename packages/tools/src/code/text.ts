@@ -301,10 +301,7 @@ export function unifiedDiff(
   }
   if (out.length > maxLines) {
     const cut = out.length - maxLines;
-    return [
-      ...out.slice(0, maxLines),
-      `… diff cut: ${cut} more line(s); ${cutHint}`,
-    ].join('\n');
+    return [...out.slice(0, maxLines), `… diff cut: ${cut} more line(s); ${cutHint}`].join('\n');
   }
   return out.join('\n');
 }
