@@ -117,6 +117,18 @@ describe('GitBundleWriter', () => {
     expect(git(repo, 'rev-list', '--count', 'HEAD').trim()).toBe('3');
   });
 
+  it('gives the same commit ids for the same versions, every time', () => {
+    const again = sample();
+    expect(again.head).toBe(res.head);
+    expect(again.bytes.equals(res.bytes)).toBe(true);
+    // Key order in the stored tree does not matter.
+    const a = new GitBundleWriter();
+    a.add({ files: { 'b.ts': '2\n', 'a.ts': '1\n' }, author: 'owner', time: T0, message: 'v1' });
+    const b = new GitBundleWriter();
+    b.add({ files: { 'a.ts': '1\n', 'b.ts': '2\n' }, author: 'owner', time: T0, message: 'v1' });
+    expect(a.finish().head).toBe(b.finish().head);
+  });
+
   it('writes a blob two versions share once', () => {
     const w = new GitBundleWriter();
     const files = { 'a.ts': 'same\n' };
