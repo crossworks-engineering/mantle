@@ -84,7 +84,9 @@ publish`, the restore it came from, the role as author, never an email),
   Code only (no data, no draft, no secret), with a package export's read
   right. Written in TypeScript (a pack and the bundle header, streamed to
   disk; no `git` binary on the box). Bounded: 5000 versions, 256 MB of code
-  read, a 64 MB bundle, two exports at a time per process. An outside agent
+  read, a 64 MB bundle, two exports at a time per process. A name git
+  refuses on a checked clone (`.git`, `.gitmodules`, `.gitattributes` and
+  their NTFS short names) is left out and listed. An outside agent
   downloads it with `GET /api/v1/files/{id}/download` and runs `git clone`,
   then log, blame and bisect (docs/app-authoring-guide.md, "History:
   versions and snapshots").

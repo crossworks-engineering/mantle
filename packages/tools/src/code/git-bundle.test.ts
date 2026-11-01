@@ -171,6 +171,10 @@ describe('GitBundleWriter', () => {
       'gi7eba~1',
       '.gitattributes',
       'GI7D29~1',
+      'g~123456',
+      'gi~12345',
+      'gi7eb~12',
+      '~1234567',
       'x:y.ts',
     ];
     const res2 = await bundle([

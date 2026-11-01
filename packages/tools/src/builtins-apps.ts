@@ -2033,8 +2033,8 @@ async function exportGitBundle(
         branch: BUNDLE_BRANCH,
         head: bundle.head,
         has_data: false,
-        ...(bundle.skipped.length
-          ? { skipped: bundle.skipped.slice(0, 20), skipped_count: bundle.skipped.length }
+        ...(bundle.skippedCount
+          ? { skipped: bundle.skipped, skipped_count: bundle.skippedCount }
           : {}),
         ...(landedIn ? { landedIn } : {}),
         hint: `Download the file (GET /api/v1/files/${file.id}/download with an API key), then: git clone ${file.filename}. Each commit is one version: git log -p, git blame, git bisect. The notes and logins are git notes: git fetch origin '${NOTES_REF}:${NOTES_REF}'.`,

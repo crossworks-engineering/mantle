@@ -139,6 +139,7 @@ const code_diff: BuiltinToolDef = {
       },
       path: {
         type: 'string',
+        maxLength: 512,
         description: "Only this file, e.g. 'App.tsx'.",
       },
     },
@@ -183,7 +184,7 @@ const code_diff: BuiltinToolDef = {
           ].sort();
           return {
             ok: false,
-            error: `no file '${asked}' in ${a.ref} or ${b.ref}. Its files: ${all.slice(0, 20).join(', ')}${all.length > 20 ? ', …' : ''}`,
+            error: `no file '${asked.slice(0, 120)}' in ${a.ref} or ${b.ref}. Its files: ${all.slice(0, 20).join(', ')}${all.length > 20 ? ', …' : ''}`,
           };
         }
         paths = [key];
