@@ -67,6 +67,7 @@ import {
   AppSnapshotRefusedError,
   appHistoryLine,
   appVersionSources,
+  appVersionTotals,
   createAppSnapshot,
   deleteAppSnapshot,
   listAppSnapshots,
@@ -81,6 +82,7 @@ import { resolveTool } from './resolve';
 import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
+import { notFound } from './errors';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { actingLoginId, isOwnerSurface, loginTurnSurfaceId, OWNER_ONLY_ERROR } from './surface';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
@@ -1500,7 +1502,7 @@ const app_log: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      id: { type: 'string', description: "The app's id (UUID), from `app_list`." },
       limit: {
         type: 'integer',
         minimum: 1,
@@ -1564,7 +1566,9 @@ const app_log: BuiltinToolDef = {
           ...(more && last
             ? { hint: `More entries: call again with before_seq ${last.seq}.` }
             : lines.length === 0
-              ? { hint: 'No history yet: publishing (app_publish) records a version.' }
+              ? {
+                  hint: 'No entries for this id: check the id with app_list, or publish (app_publish) to record a version.',
+                }
               : {}),
         },
       };
@@ -1895,9 +1899,16 @@ function exportStem(title: string): string {
   );
 }
 
-/** The largest git bundle app_export writes (its objects are held in
- *  memory while it is made). */
-export const GIT_BUNDLE_MAX_BYTES = 128 * 1024 * 1024;
+/** The largest git bundle app_export writes (on disk while it is made,
+ *  then stored as a file). */
+export const GIT_BUNDLE_MAX_BYTES = 64 * 1024 * 1024;
+/** The most code (all versions' trees together, as the rows keep their
+ *  sizes) one git export reads: the work, which deduplication hides from
+ *  the bundle's size. */
+export const GIT_EXPORT_MAX_SOURCE_BYTES = 256 * 1024 * 1024;
+/** Git exports at a time per process. */
+export const GIT_EXPORT_MAX_PARALLEL = 2;
+let gitExportsRunning = 0;
 
 /** A version's commit author: the role the row names, and its login id
  *  when it names one. Never an email or a person's name. */
@@ -1906,12 +1917,16 @@ export function versionAuthor(v: Pick<AppVersionSource, 'actor' | 'actorLoginId'
 }
 
 /** A version's commit message: `vN publish: <note>`, and where it was
- *  restored from. */
+ *  restored from when the note does not say so. */
 export function versionMessage(v: Pick<AppVersionSource, 'seq' | 'note' | 'restoredFrom'>): string {
   const note = (v.note ?? '').trim();
   const head = `v${v.seq} publish${note ? `: ${note}` : ''}`;
-  return v.restoredFrom !== null ? `${head}\n\nRestored from v${v.restoredFrom}.` : head;
+  return v.restoredFrom !== null && !new RegExp(`\\bv${v.restoredFrom}\\b`).test(note)
+    ? `${head}\n\nRestored from v${v.restoredFrom}.`
+    : head;
 }
+
+const MB = (n: number) => Math.ceil(n / 1024 / 1024);
 
 /**
  * app_export's git mode: the app's versions (each publish) as commits of
@@ -1919,21 +1934,46 @@ export function versionMessage(v: Pick<AppVersionSource, 'seq' | 'note' | 'resto
  * export lands. Code only: each version's published tree (never the draft a
  * row keeps, nor the data, the manifest's tools or any secret). The right
  * is a package's without data (assertMayCopyApp: a read of the app), and
- * the rows are read in the caller's scope.
+ * the rows are read in the caller's scope. The work is bounded before any
+ * code is read (GIT_EXPORT_MAX_SOURCE_BYTES), the bundle is written on disk
+ * (GitBundleWriter), and a process runs GIT_EXPORT_MAX_PARALLEL at a time.
  */
 async function exportGitBundle(
   ctx: Parameters<BuiltinToolDef['handler']>[1],
   id: string,
 ): Promise<ToolHandlerResult> {
+  if (gitExportsRunning >= GIT_EXPORT_MAX_PARALLEL) {
+    return {
+      ok: false,
+      error: 'other git exports are running: try again in a minute, or compare versions in place with code_diff',
+    };
+  }
+  gitExportsRunning++;
+  const work = await appPackageTempPath('.gitwork');
+  const dest = await appPackageTempPath('.bundle');
+  let writer: GitBundleWriter | null = null;
   try {
     await assertMayCopyApp(id, false);
     const app = await getApp(ctx.ownerId, id);
-    if (!app) return { ok: false, error: `app ${id} not found` };
-    const writer = new GitBundleWriter();
+    if (!app) return notFound('app', id, 'app_list');
+    const totals = await appVersionTotals(ctx.ownerId, id);
+    if (totals.versions === 0) {
+      return {
+        ok: false,
+        error: `app ${id} has no version yet: a git bundle holds the published versions. Publish it (app_publish) first, or export the package (format mantleapp)`,
+      };
+    }
+    if (totals.sourceBytes > GIT_EXPORT_MAX_SOURCE_BYTES) {
+      return {
+        ok: false,
+        error: `the app's ${totals.versions} versions hold ${MB(totals.sourceBytes)} MB of code in all, past the ${MB(GIT_EXPORT_MAX_SOURCE_BYTES)} MB one git export reads: compare versions in place with app_log and code_diff instead`,
+      };
+    }
+    writer = new GitBundleWriter(work);
     let versions = 0;
     for await (const v of appVersionSources(ctx.ownerId, id)) {
       if (!v.source) continue;
-      writer.add({
+      await writer.add({
         files: v.source.files,
         author: versionAuthor(v),
         time: v.createdAt.getTime() / 1000,
@@ -1943,23 +1983,23 @@ async function exportGitBundle(
       if (writer.packedBytes > GIT_BUNDLE_MAX_BYTES) {
         return {
           ok: false,
-          error: `the app's versions pass the ${GIT_BUNDLE_MAX_BYTES / 1024 / 1024} MB a git bundle may hold: compare versions in place with code_diff and app_log instead`,
+          error: `the app's versions pass the ${MB(GIT_BUNDLE_MAX_BYTES)} MB a git bundle may hold: compare versions in place with app_log and code_diff instead`,
         };
       }
     }
     if (versions === 0) {
       return {
         ok: false,
-        error: `app ${id} has no version yet: a git bundle holds the published versions. Publish it (app_publish) first, or export the package (format mantleapp)`,
+        error: `app ${id} has no version with code: compare in place with app_log and code_diff, or export the package (format mantleapp)`,
       };
     }
-    const bundle = writer.finish();
-    const filename = `${exportStem(app.title)}.bundle`;
-    const { file, landedIn } = await saveExport({
-      ownerId: ctx.ownerId,
-      filename,
-      bytes: bundle.bytes,
+    const bundle = await writer.finish(dest);
+    writer = null;
+    const spooled = await spoolUpload(createReadStream(dest), {
+      maxBytes: GIT_BUNDLE_MAX_BYTES + 64 * 1024 * 1024,
     });
+    const filename = `${exportStem(app.title)}.bundle`;
+    const { file, landedIn } = await saveExport({ ownerId: ctx.ownerId, filename, spooled });
     ctx.step?.setOutput({ id, file_id: file.id, commits: bundle.commits });
     return {
       ok: true,
@@ -1983,6 +2023,11 @@ async function exportGitBundle(
     };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
+  } finally {
+    gitExportsRunning--;
+    await writer?.discard();
+    await rm(work, { force: true });
+    await rm(dest, { force: true });
   }
 }
 

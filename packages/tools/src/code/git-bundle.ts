@@ -9,7 +9,11 @@
  *
  * `git clone app.bundle` then gives the version line as commits: log, diff,
  * blame and bisect work on the outside agent's own machine. Nothing here
- * reads a database; the caller hands in the versions.
+ * reads a database; the caller hands in the versions, one at a time.
+ *
+ * On disk, not in memory: each new object is deflated (off the event loop)
+ * and appended to a work file; `finish` writes the bundle file from it with
+ * one running SHA-1. The process holds one version's files and the ids.
  *
  * Deterministic: the same versions give the same commit ids, every export.
  * Every input to an id is fixed: paths sorted (git's order), one file mode
@@ -17,8 +21,13 @@
  * caller gives in +0000, the message as given, each commit on the one before.
  */
 import { createHash } from 'node:crypto';
-import { deflateSync } from 'node:zlib';
+import { createReadStream } from 'node:fs';
+import { open, rm, type FileHandle } from 'node:fs/promises';
+import { promisify } from 'node:util';
+import { deflate as deflateCb } from 'node:zlib';
 import { badNewPath, normCodePath } from './target-ref';
+
+const deflate = promisify(deflateCb);
 
 /** One commit: a version's files and who made it, when. */
 export type BundleCommit = {
@@ -31,12 +40,13 @@ export type BundleCommit = {
 };
 
 export type BundleResult = {
-  bytes: Buffer;
+  /** The bundle file's size. */
+  bytes: number;
   /** The tip commit's id (refs/heads/main and HEAD). */
   head: string;
   commits: number;
   /** Paths left out of a commit: a name git may not hold (a `.git` part,
-   *  `..`), or one a folder of the same name took. */
+   *  `..`), one a folder of the same name took, or a second key of a path. */
   skipped: { commit: number; path: string; why: string }[];
 };
 
@@ -46,15 +56,28 @@ export const BUNDLE_BRANCH = 'main';
 type ObjType = 'commit' | 'tree' | 'blob';
 const TYPE_CODE: Record<ObjType, number> = { commit: 1, tree: 2, blob: 3 };
 
-/** A folder of a commit's tree: files by name, folders by name. */
+/** A folder of a commit's tree: blob ids by name, folders by name. */
 type Dir = { files: Map<string, string>; dirs: Map<string, Dir> };
 
 const emptyDir = (): Dir => ({ files: new Map(), dirs: new Map() });
 
-/** Why git may not hold a path part, or null. `.git` in any case (and with
- *  the dots or spaces Windows drops) is refused by every git client. */
+/** Code points HFS+ ignores in a name (git's is_hfs_dotgit drops them
+ *  before it compares). */
+const HFS_IGNORED = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
+
+/**
+ * Why git may not hold a path part, or null: what git's own checks refuse
+ * on a checkout or an fsck'd clone (verify_path, is_ntfs_dotgit,
+ * is_hfs_dotgit), so the bundle always clones. `.git` in any case, with the
+ * code points HFS+ drops, the dots or spaces Windows drops, a `:` stream
+ * name, or as its 8.3 short name `git~1`; and `.gitmodules` the same ways
+ * (an app has no submodule).
+ */
 function badGitPart(part: string): string | null {
-  if (part.replace(/[. ]+$/, '').toLowerCase() === '.git') return "a '.git' part";
+  if (part.includes(':')) return "a ':' in a name";
+  const plain = part.replace(HFS_IGNORED, '').replace(/[. ]+$/, '').toLowerCase();
+  if (plain === '.git' || plain === 'git~1') return "a '.git' part";
+  if (plain === '.gitmodules' || /^gitmod~\d$/.test(plain)) return "a '.gitmodules' file";
   return null;
 }
 
@@ -65,39 +88,44 @@ function oneLine(s: string): string {
 }
 
 export class GitBundleWriter {
-  private readonly objects = new Map<string, Buffer>();
-  private readonly order: string[] = [];
+  private readonly ids = new Set<string>();
+  private work: FileHandle | null = null;
+  private packed = 0;
+  private parent: string | null = null;
+  private count = 0;
+  private readonly skipped: BundleResult['skipped'] = [];
+  /** The previous version's blobs by path: a file whose text is the same
+   *  is not hashed again. */
+  private lastBlobs = new Map<string, { text: string; id: string }>();
+
+  /** `workPath`: a file of the caller's to hold the deflated objects (it
+   *  is made, and removed by `finish` or `discard`). */
+  constructor(private readonly workPath: string) {}
+
+  /** The size of the pack so far (the deflated objects). */
+  get packedBytes(): number {
+    return this.packed;
+  }
 
   /** Store an object once; its id. */
-  private put(type: ObjType, body: Buffer): string {
+  private async put(type: ObjType, body: Buffer): Promise<string> {
     const id = createHash('sha1').update(`${type} ${body.length}\0`).update(body).digest('hex');
-    if (!this.objects.has(id)) {
-      this.objects.set(id, packEntry(type, body));
-      this.order.push(id);
+    if (!this.ids.has(id)) {
+      this.ids.add(id);
+      this.work ??= await open(this.workPath, 'w');
+      const entry = Buffer.concat([entryHead(type, body.length), await deflate(body)]);
+      await this.work.write(entry);
+      this.packed += entry.length;
     }
     return id;
   }
 
-  /** The size of the pack so far (the deflated objects). */
-  get packedBytes(): number {
-    let n = 0;
-    for (const b of this.objects.values()) n += b.length;
-    return n;
-  }
-
-  private tree(dir: Dir): string {
+  private async tree(dir: Dir): Promise<string> {
     const entries: { name: string; mode: string; id: string; sortKey: string }[] = [];
-    for (const [name, text] of dir.files) {
-      entries.push({
-        name,
-        mode: '100644',
-        id: this.put('blob', Buffer.from(text, 'utf8')),
-        sortKey: name,
-      });
-    }
+    for (const [name, id] of dir.files) entries.push({ name, mode: '100644', id, sortKey: name });
     for (const [name, sub] of dir.dirs) {
       // git orders a folder as if its name ended in '/'.
-      entries.push({ name, mode: '40000', id: this.tree(sub), sortKey: `${name}/` });
+      entries.push({ name, mode: '40000', id: await this.tree(sub), sortKey: `${name}/` });
     }
     entries.sort((a, b) => Buffer.compare(Buffer.from(a.sortKey), Buffer.from(b.sortKey)));
     const body = Buffer.concat(
@@ -106,23 +134,38 @@ export class GitBundleWriter {
     return this.put('tree', body);
   }
 
-  private parent: string | null = null;
-  private count = 0;
-  private readonly skipped: BundleResult['skipped'] = [];
+  /** A file's blob id: the previous version's when the text is the same. */
+  private async blob(path: string, text: string): Promise<string> {
+    const last = this.lastBlobs.get(path);
+    if (last && last.text === text) return last.id;
+    return this.put('blob', Buffer.from(text, 'utf8'));
+  }
 
   /**
    * Add a commit on the one before (oldest first). Paths are the tree's keys
-   * made plain (normCodePath); one git may not hold is left out and listed.
-   * One at a time, so a caller holds one version's files at once and can
-   * stop at a size (packedBytes).
+   * made plain (normCodePath); a key that is already plain wins over another
+   * that names the same path, and one git may not hold is left out and
+   * listed. One at a time, so a caller holds one version's files at once
+   * and can stop at a size (packedBytes).
    */
-  add(c: BundleCommit): void {
+  async add(c: BundleCommit): Promise<void> {
     const n = ++this.count;
-    const root = emptyDir();
-    // Sorted, so which of two clashing paths is kept does not depend on
-    // the key order the row was stored in.
+    // Each path's key: the plain one when the tree holds it, else the first
+    // in sort order, so which text is kept does not depend on stored order.
+    const keyOf = new Map<string, string>();
     for (const raw of Object.keys(c.files).sort()) {
       const path = normCodePath(raw);
+      const had = keyOf.get(path);
+      if (had === undefined) keyOf.set(path, raw);
+      else if (raw === path) {
+        keyOf.set(path, raw);
+        this.skipped.push({ commit: n, path: had, why: 'two keys name one path' });
+      } else this.skipped.push({ commit: n, path: raw, why: 'two keys name one path' });
+    }
+    const root = emptyDir();
+    const blobs = new Map<string, { text: string; id: string }>();
+    for (const path of [...keyOf.keys()].sort()) {
+      const raw = keyOf.get(path)!;
       const parts = path.split('/');
       const why = badNewPath(path) ?? parts.map(badGitPart).find((w) => w !== null) ?? null;
       if (why) {
@@ -141,19 +184,19 @@ export class GitBundleWriter {
         dir = sub;
       }
       const name = parts[parts.length - 1]!;
-      if (clash || dir.dirs.has(name) || dir.files.has(name)) {
+      if (clash || dir.dirs.has(name)) {
         this.skipped.push({ commit: n, path: raw, why: 'a file and a folder of one name' });
         continue;
       }
-      dir.files.set(name, c.files[raw]!);
+      const text = c.files[raw]!;
+      const id = await this.blob(path, text);
+      blobs.set(path, { text, id });
+      dir.files.set(name, id);
     }
-    const tree = this.tree(root);
+    this.lastBlobs = blobs;
+    const tree = await this.tree(root);
     const who = `${oneLine(c.author)} <> ${Math.max(0, Math.floor(c.time))} +0000`;
-    const message = c.message
-      .replace(/\r\n?/g, '\n')
-      // eslint-disable-next-line no-control-regex -- control characters are what it removes or refuses
-      .replace(/\u0000/g, '')
-      .trim();
+    const message = c.message.replace(/\r\n?/g, '\n').replace(/\0/g, '').trim();
     const body = [
       `tree ${tree}`,
       ...(this.parent ? [`parent ${this.parent}`] : []),
@@ -162,39 +205,51 @@ export class GitBundleWriter {
       '',
       `${message || 'version'}\n`,
     ].join('\n');
-    this.parent = this.put('commit', Buffer.from(body, 'utf8'));
+    this.parent = await this.put('commit', Buffer.from(body, 'utf8'));
   }
 
-  /** The bundle: the refs (main and HEAD at the last commit) and the pack. */
-  finish(): BundleResult {
+  /** Write the bundle to `dest`: the refs (main and HEAD at the last
+   *  commit), then the pack and its SHA-1, read back from the work file. */
+  async finish(dest: string): Promise<BundleResult> {
     const head = this.parent;
-    if (!head) throw new Error('a bundle needs at least one commit');
-    const header = Buffer.from(
-      `# v2 git bundle\n${head} refs/heads/${BUNDLE_BRANCH}\n${head} HEAD\n\n`,
-      'utf8',
-    );
-    return {
-      bytes: Buffer.concat([header, this.pack()]),
-      head,
-      commits: this.count,
-      skipped: [...this.skipped],
-    };
+    if (!head || !this.work) throw new Error('a bundle needs at least one commit');
+    await this.work.close();
+    this.work = null;
+    const out = await open(dest, 'w');
+    try {
+      await out.write(`# v2 git bundle\n${head} refs/heads/${BUNDLE_BRANCH}\n${head} HEAD\n\n`);
+      const sha = createHash('sha1');
+      const packHead = Buffer.alloc(12);
+      packHead.write('PACK', 0, 'ascii');
+      packHead.writeUInt32BE(2, 4);
+      packHead.writeUInt32BE(this.ids.size, 8);
+      sha.update(packHead);
+      await out.write(packHead);
+      for await (const chunk of createReadStream(this.workPath)) {
+        sha.update(chunk as Buffer);
+        await out.write(chunk as Buffer);
+      }
+      await out.write(sha.digest());
+      const { size } = await out.stat();
+      return { bytes: size, head, commits: this.count, skipped: [...this.skipped] };
+    } finally {
+      await out.close();
+      await rm(this.workPath, { force: true });
+    }
   }
 
-  private pack(): Buffer {
-    const head = Buffer.alloc(12);
-    head.write('PACK', 0, 'ascii');
-    head.writeUInt32BE(2, 4);
-    head.writeUInt32BE(this.order.length, 8);
-    const body = Buffer.concat([head, ...this.order.map((id) => this.objects.get(id)!)]);
-    return Buffer.concat([body, createHash('sha1').update(body).digest()]);
+  /** Remove the work file (a bundle given up on). */
+  async discard(): Promise<void> {
+    await this.work?.close();
+    this.work = null;
+    await rm(this.workPath, { force: true });
   }
 }
 
-/** One pack entry: the type and the inflated size (git's varint: 4 bits
- *  of size in the first byte, 7 in each after), then the deflated body. */
-function packEntry(type: ObjType, body: Buffer): Buffer {
-  let size = body.length;
+/** A pack entry's head: the type and the inflated size (git's varint: 4
+ *  bits of size in the first byte, 7 in each after). */
+function entryHead(type: ObjType, length: number): Buffer {
+  let size = length;
   const head: number[] = [(TYPE_CODE[type] << 4) | (size & 0x0f)];
   size >>>= 4;
   while (size > 0) {
@@ -202,5 +257,5 @@ function packEntry(type: ObjType, body: Buffer): Buffer {
     head.push(size & 0x7f);
     size >>>= 7;
   }
-  return Buffer.concat([Buffer.from(head), deflateSync(body)]);
+  return Buffer.from(head);
 }

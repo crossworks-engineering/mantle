@@ -641,6 +641,7 @@ export async function appHistoryLine(
       and(
         eq(nodeSnapshots.nodeId, appId),
         eq(nodeSnapshots.ownerId, ownerId),
+        eq(nodeSnapshots.nodeKind, 'app'),
         ne(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
         opts.beforeSeq != null ? lt(nodeSnapshots.seq, opts.beforeSeq) : undefined,
         opts.versionsOnly ? eq(nodeSnapshots.trigger, 'publish') : undefined,
@@ -687,6 +688,7 @@ export async function appHistorySource(
       and(
         eq(nodeSnapshots.nodeId, appId),
         eq(nodeSnapshots.ownerId, ownerId),
+        eq(nodeSnapshots.nodeKind, 'app'),
         eq(nodeSnapshots.seq, seq),
         ne(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
       ),
@@ -694,6 +696,32 @@ export async function appHistorySource(
     .limit(1);
   if (!row) return null;
   return { ...row, createdAt: row.createdAt.toISOString(), source: row.source ?? null };
+}
+
+/** How many versions an app has and the size of their code in all (the
+ *  sizes kept on the rows): what a git export would read, asked before it
+ *  reads any code. */
+export async function appVersionTotals(
+  ownerId: string,
+  appId: string,
+): Promise<{ versions: number; sourceBytes: number }> {
+  const [row] = await db
+    .select({
+      versions: sql<number>`count(*)::int`,
+      // A row from before the sizes were kept is measured in the database.
+      sourceBytes: sql<number>`coalesce(sum(coalesce(${nodeSnapshots.sourceBytes},
+        octet_length((${nodeSnapshots.code}->'source')::text))), 0)::bigint`,
+    })
+    .from(nodeSnapshots)
+    .where(
+      and(
+        eq(nodeSnapshots.nodeId, appId),
+        eq(nodeSnapshots.ownerId, ownerId),
+        eq(nodeSnapshots.nodeKind, 'app'),
+        eq(nodeSnapshots.trigger, 'publish'),
+      ),
+    );
+  return { versions: Number(row?.versions ?? 0), sourceBytes: Number(row?.sourceBytes ?? 0) };
 }
 
 /** A version (a publish) with the tree it made live. */
@@ -728,6 +756,7 @@ export async function* appVersionSources(
       and(
         eq(nodeSnapshots.nodeId, appId),
         eq(nodeSnapshots.ownerId, ownerId),
+        eq(nodeSnapshots.nodeKind, 'app'),
         eq(nodeSnapshots.trigger, 'publish'),
       ),
     )
@@ -740,6 +769,7 @@ export async function* appVersionSources(
         and(
           eq(nodeSnapshots.nodeId, appId),
           eq(nodeSnapshots.ownerId, ownerId),
+          eq(nodeSnapshots.nodeKind, 'app'),
           eq(nodeSnapshots.seq, v.seq),
           eq(nodeSnapshots.trigger, 'publish'),
         ),

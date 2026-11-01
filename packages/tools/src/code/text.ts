@@ -201,7 +201,12 @@ type Op = { kind: ' ' | '-' | '+'; line: string };
 
 /** The line ops from `a` to `b`: common head and tail, then an LCS of the
  *  middle while it stays small, else the middle as one replace. */
-function lineOps(a: readonly string[], b: readonly string[]): Op[] {
+/** The most cells (lines before x lines after, past the common head and
+ *  tail) one file's line match may fill; a larger change shows as the old
+ *  lines removed and the new ones added. */
+export const DIFF_MAX_CELLS = 2_000_000;
+
+function lineOps(a: readonly string[], b: readonly string[], maxCells: number): Op[] {
   let head = 0;
   while (head < a.length && head < b.length && a[head] === b[head]) head++;
   let tail = 0;
@@ -215,7 +220,7 @@ function lineOps(a: readonly string[], b: readonly string[]): Op[] {
   const am = a.slice(head, a.length - tail);
   const bm = b.slice(head, b.length - tail);
   const mid: Op[] = [];
-  if (am.length * bm.length <= 2_000_000) {
+  if (am.length * bm.length <= maxCells) {
     const n = am.length;
     const m = bm.length;
     const w = m + 1;
@@ -266,9 +271,15 @@ export function unifiedDiff(
   maxLines = 400,
   /** What the cut line says to do next. */
   cutHint = 'view the file with code_view',
+  /** The line match's work limit (DIFF_MAX_CELLS at most). */
+  maxCells = DIFF_MAX_CELLS,
 ): string {
   if (before === after) return '';
-  const ops = lineOps(splitLines(before).lines, splitLines(after).lines);
+  const ops = lineOps(
+    splitLines(before).lines,
+    splitLines(after).lines,
+    Math.min(maxCells, DIFF_MAX_CELLS),
+  );
   const CONTEXT = 3;
   const changed = ops.map((o) => o.kind !== ' ');
   const out: string[] = [`--- a/${path}`, `+++ b/${path}`];
