@@ -933,11 +933,14 @@ defineDomainError(AppUndoStaleError, {
   body: (e) => ({ error: e.message, reason: 'conflict' }),
 });
 
-/** code_undo would remove the entry file (the write created it). */
+/** code_undo would remove the entry file (the write created it), or the
+ *  write moved the entry, which an undo does not move back. */
 export class AppUndoEntryError extends Error {
-  constructor(path: string) {
+  constructor(path: string, moved = false) {
     super(
-      `undo would remove '${path}', the app's entry file (that write created it). Write the text you want with code_write instead`,
+      moved
+        ? `that write made '${path}' the app's entry file, and an undo does not move the entry back. Send the tree you want with app_source_set instead`
+        : `undo would remove '${path}', the app's entry file (that write created it). Write the text you want with code_write instead`,
     );
     this.name = 'AppUndoEntryError';
   }
@@ -1015,6 +1018,7 @@ async function recordCodeEdit(
       publishedBuild: null,
       codeEdit: {
         changed,
+        ...(before.entry !== after.entry ? { entryWas: before.entry } : {}),
         ...(app.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
         ...(opts.undoOf ? { undoOf: opts.undoOf } : {}),
       },
@@ -1148,6 +1152,9 @@ export async function undoCodeEdit(
     if (!row || !changed) {
       throw new AppUndoEmptyError(opts.editId ? { editId: opts.editId } : { path: path ?? '' });
     }
+    if (row.code!.codeEdit!.entryWas !== undefined) {
+      throw new AppUndoEntryError(before.entry, true);
+    }
     if (path !== null && !Object.hasOwn(changed, path)) {
       throw new AppUndoEmptyError({ path });
     }
@@ -1165,6 +1172,10 @@ export async function undoCodeEdit(
     }
     const after: AppSource = { entry: before.entry, files: next };
     assertSourceWithinLimits(after);
+    // A write that changed no file (nothing to take back): no write here.
+    if (sourceRev(after) === beforeRev) {
+      throw new AppUndoEmptyError(opts.editId ? { editId: opts.editId } : { path: path ?? '' });
+    }
     const editId = await recordCodeEdit(tx, ownerId, id, app, before, after, {
       ...opts,
       note: `code_undo ${row.id}`,

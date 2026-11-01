@@ -66,6 +66,10 @@ import {
 
 /** Lines one code_view returns at most; a longer range says where to go on. */
 export const VIEW_MAX_LINES = 2000;
+/** Edits one code_edit takes at most (the schema's maxItems). */
+const EDITS_MAX = 50;
+/** The longest search pattern. */
+const PATTERN_MAX = 1000;
 /** Build errors a write with `build: true` returns at most. */
 const BUILD_ERRORS_MAX = 10;
 
@@ -415,6 +419,7 @@ const code_search: BuiltinToolDef = {
       target: TARGET_PROP,
       pattern: {
         type: 'string',
+        maxLength: PATTERN_MAX,
         minLength: 1,
         description: "What to find, e.g. 'useState' or 'host\\.db\\.(query|exec)'.",
       },
@@ -448,6 +453,12 @@ const code_search: BuiltinToolDef = {
     if ('ok' in store) return store;
     const pattern = str(input.pattern);
     if (!pattern) return { ok: false, error: "pattern is required, e.g. 'useState'" };
+    if (pattern.length > PATTERN_MAX) {
+      return {
+        ok: false,
+        error: `pattern is ${pattern.length} characters; keep it under ${PATTERN_MAX}`,
+      };
+    }
     try {
       const tree = await store.read();
       if (!tree) return missingApp(store);
@@ -520,7 +531,7 @@ const code_edit: BuiltinToolDef = {
       edits: {
         type: 'array',
         minItems: 1,
-        maxItems: 50,
+        maxItems: EDITS_MAX,
         description: 'Applied in order, each to the text the one before left.',
         items: {
           type: 'object',
@@ -556,13 +567,29 @@ const code_edit: BuiltinToolDef = {
     if (!Array.isArray(input.edits) || input.edits.length === 0) {
       return { ok: false, error: 'edits needs at least one { old, new }' };
     }
+    // The schema's cap, enforced here too: a run item reaches the handler
+    // unchecked, and every edit runs under the app's row lock.
+    if (input.edits.length > EDITS_MAX) {
+      return {
+        ok: false,
+        error: `edits holds ${input.edits.length}; send at most ${EDITS_MAX} per call, or write the file with code_write`,
+      };
+    }
     const edits: TextEdit[] = [];
+    let editChars = 0;
     for (const [i, e] of (input.edits as unknown[]).entries()) {
       const o = (e ?? {}) as Record<string, unknown>;
       if (typeof o.old !== 'string' || typeof o.new !== 'string') {
         return { ok: false, error: `edit ${i + 1} needs old and new as text` };
       }
       edits.push({ old: o.old, new: o.new, replace_all: o.replace_all === true });
+      editChars += o.old.length + o.new.length;
+    }
+    if (editChars > 2 * MAX_APP_FILE_BYTES) {
+      return {
+        ok: false,
+        error: 'the edits are larger than the file may be: write the file with code_write instead',
+      };
     }
     let replaced = 0;
     const res = await writeFile(
@@ -711,7 +738,7 @@ const code_undo: BuiltinToolDef = {
   loginTurns: true,
   name: 'Undo a source edit',
   description:
-    "Take back one write to a mini app's DRAFT: `edit_id` (every write returns one), or with only `path` the newest write that changed that file. Its files go back as they were before it (a file it created is removed), only if each is still exactly as that write left it; else it fails and changes nothing, so later work is never replaced: then change the file with `code_edit` or `code_write`. The undo returns its own `edit_id` (undo that to redo), a diff and the new `rev`. Only recent writes are kept; for a whole earlier version use `app_snapshot_restore`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
+    "Take back one write to a mini app's DRAFT: `edit_id` (every write returns one), or with only `path` the newest write of that file (a second such call redoes; pass `edit_id`s to go further back). Its files go back as before it (a file it created is removed), only if each is still as that write left it; else it fails and changes nothing: change the file with `code_edit` or `code_write`. Returns its own `edit_id`, a diff and the new `rev`. Only recent writes are kept; for an earlier version use `app_snapshot_restore`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -790,6 +817,13 @@ export const CODE_TOOLS: BuiltinToolDef[] = [
   code_insert,
   code_write,
   code_undo,
-].map((def) => withAuthorCeiling(def, (input) => appIdOfCodeTarget(input.target)));
+].map((def) =>
+  withAuthorCeiling(
+    def,
+    (input) => appIdOfCodeTarget(input.target),
+    // code_edit alone has a dry run that writes nothing.
+    def.slug === 'code_edit' ? { dryRun: true } : {},
+  ),
+);
 
 export const CODE_TOOL_SLUGS: string[] = CODE_TOOLS.map((t) => t.slug);

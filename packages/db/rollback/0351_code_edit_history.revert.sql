@@ -2,11 +2,14 @@
 -- the image one release back (plan v3.2 rule 2, a one-image rollback). Not a
 -- migration: nothing runs it on its own.
 --
--- Optional: the older image never writes a `pre_code_edit` row, and its
--- History list would show the rows this release wrote under an empty label.
--- This revert removes those rows (an undo stack only: the published versions
--- and every snapshot stay), narrows the check back, and takes 0351 off the
--- ledger, so the next roll forward runs it again.
+-- Run it before pinning the older image: that image's History list and
+-- snapshot lookups know nothing of `pre_code_edit` rows, so it would list
+-- them under an empty label and could restore one, and a row holds only the
+-- files one write changed, so a code restore from it would replace the
+-- draft with a partial tree. This revert removes those rows (an undo record
+-- only: the published versions and every snapshot stay), narrows the check
+-- back, and takes 0351 off the ledger, so the next roll forward runs it
+-- again.
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:
