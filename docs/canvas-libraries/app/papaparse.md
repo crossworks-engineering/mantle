@@ -24,10 +24,14 @@ the app.
   not drop them in silence.
 - A file people pick (`<input type="file" accept=".csv">`):
   `Papa.parse(file, { header: true, complete: (r) => setRows(r.data) })`.
-  It reads the file in the frame; nothing is uploaded.
+  It reads the file in the frame; nothing is uploaded. Check `file.size`
+  first and refuse a big file (a few MB): with no worker, parsing blocks
+  the tab.
 - Text out: `Papa.unparse(rows)` writes CSV from objects (the keys become
   the header) or from arrays; `{ columns: ['tag', 'value'] }` picks and
-  orders columns, `{ delimiter: ';' }` for a European Excel.
+  orders columns, `{ delimiter: ';' }` for a European Excel. Rows other
+  people typed: add `escapeFormulae: true`, so a cell like `=HYPERLINK(...)`
+  does not run as a formula when the CSV is opened in Excel.
 - Here `download: true` (fetch a URL) and `worker: true` (parse in a
   worker) throw: the frame has no network and no workers. Parse text or a
   File the app already holds.

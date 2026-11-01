@@ -101,19 +101,19 @@ React pattern, and a complete `App.tsx` that a browser test renders.
 
 ### Which library for which job
 
-| The job                                              | Import                                                                                                           | Guide (`canvas_library`) |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| Units and engineering maths, formulas a person types | `import { evaluate, unit, format } from 'mathjs'`                                                                | `mathjs`                 |
-| Dates: format, add business days, ranges             | `import { format, addBusinessDays, parseISO } from 'date-fns'`                                                   | `date-fns`               |
-| Form checks, the shape of rows                       | `import { z } from 'zod'`                                                                                        | `zod`                    |
-| A big grid: sort, filter                             | `import { useTable, tableFeatures, createColumnHelper } from '@tanstack/react-table'`                            | `tanstack-table`         |
-| A long list (thousands of rows)                      | `import { useVirtualizer } from '@tanstack/react-virtual'`                                                       | `tanstack-virtual`       |
-| Drag and drop, reorder a list, a board               | `import { DndContext } from '@dnd-kit/core'`, `import { SortableContext, useSortable } from '@dnd-kit/sortable'` | `dnd-kit`                |
-| Fuzzy search (typos, partial words)                  | `import Fuse from 'fuse.js'`                                                                                     | `fuse`                   |
-| CSV in and out                                       | `import Papa from 'papaparse'`                                                                                   | `papaparse`              |
-| Make or fill a PDF                                   | `import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'`                                                      | `pdf-lib`                |
-| QR codes for labels and tags                         | `import QRCode from 'qrcode'`                                                                                    | `qrcode`                 |
-| Show markdown                                        | `import MarkdownIt from 'markdown-it'` and `import DOMPurify from 'dompurify'`                                   | `markdown`               |
+| The job                                                                | Import                                                                                                           | Guide (`canvas_library`) |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| Units and engineering maths, formulas a person types for their own use | `import { evaluate, unit, format } from 'mathjs'`                                                                | `mathjs`                 |
+| Dates: format, add business days, ranges                               | `import { format, addBusinessDays, parseISO } from 'date-fns'`                                                   | `date-fns`               |
+| Form checks, the shape of rows                                         | `import { z } from 'zod'`                                                                                        | `zod`                    |
+| A big grid: sort, filter                                               | `import { useTable, tableFeatures, createColumnHelper } from '@tanstack/react-table'`                            | `tanstack-table`         |
+| A long list (thousands of rows)                                        | `import { useVirtualizer } from '@tanstack/react-virtual'`                                                       | `tanstack-virtual`       |
+| Drag and drop, reorder a list, a board                                 | `import { DndContext } from '@dnd-kit/core'`, `import { SortableContext, useSortable } from '@dnd-kit/sortable'` | `dnd-kit`                |
+| Fuzzy search (typos, partial words)                                    | `import Fuse from 'fuse.js'`                                                                                     | `fuse`                   |
+| CSV in and out                                                         | `import Papa from 'papaparse'`                                                                                   | `papaparse`              |
+| Make or fill a PDF                                                     | `import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'`                                                      | `pdf-lib`                |
+| QR codes for labels and tags                                           | `import QRCode from 'qrcode'`                                                                                    | `qrcode`                 |
+| Show markdown                                                          | `import MarkdownIt from 'markdown-it'` and `import DOMPurify from 'dompurify'`                                   | `markdown`               |
 
 **Markdown is always sanitized.** `markdown-it` output reaches the DOM only
 through DOMPurify: `DOMPurify.sanitize(md.render(text))`, then
@@ -123,7 +123,8 @@ put markdown-it HTML in the page without it.
 **math.js is not a sandbox for other people's formulas.** A person's own
 formula is fine; formula text another person saved can hang the tab or
 quietly change math.js's numbers for the session. Save the inputs and keep
-the formula in the app's code.
+the formula in the app's code; pass saved values as numbers in the scope
+(`evaluate(f, { p: Number(saved.p) })`), never spliced into expression text.
 
 TanStack Table is **v9** (`useTable`, `tableFeatures`): the v8 API
 (`useReactTable`, `getCoreRowModel`) does not exist in it. Its guide has the

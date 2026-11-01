@@ -16,9 +16,8 @@ fetched only by an app that imports it); it is not bundled into the app.
 
 - Async: `await PDFDocument.create()`, then `await pdf.save()` gives the
   bytes (`Uint8Array`). Run it in a handler or an effect, not in render.
-- A page: `pdf.addPage([595.28, 841.89])` is A4 in points (72 to the inch);
-  `[612, 792]` is US Letter. The origin is the BOTTOM left: y grows up, so
-  the first line sits near `height - 50`.
+- `pdf.addPage([595.28, 841.89])` is A4 in points (US Letter `[612, 792]`).
+  The origin is the BOTTOM left: y grows up.
 - Text: `const font = await pdf.embedFont(StandardFonts.Helvetica)`, then
   `page.drawText('PT-1042', { x, y, size: 11, font, color: rgb(0, 0, 0) })`.
   `font.widthOfTextAtSize(text, size)` measures; pdf-lib does not wrap.
@@ -32,6 +31,7 @@ fetched only by an app that imports it); it is not bundled into the app.
   from `qrcode` too).
 - A PDF people pick: `PDFDocument.load(await file.arrayBuffer())`; fill
   its form with `getForm().getTextField('Name').setText(...)`, `flatten()`.
+  Check `file.size` first: a big PDF blocks the tab while it loads.
 - Getting it out: the frame cannot download a file or show a PDF (no
   downloads, no nested frame). Keep the bytes in `host.db` as a BLOB, or,
   for a report that lands in the admin's files, use `pdf_render` (the app

@@ -38,7 +38,9 @@ precision: 32 })` for decimal work.
   quietly change math.js's numbers (a unit prefix, a value passed in) for
   the rest of the session, with no error. Do not run it. Save the inputs
   (numbers, units, the choice from a fixed list of formulas) and keep the
-  formula itself in the app's code.
+  formula itself in the app's code. Pass saved inputs as scope values
+  (`evaluate(f, { p: Number(saved.p) })`) or to `unit(Number(n), u)` with
+  `u` from a fixed list; never build expression text from saved values.
 
 ## App example
 

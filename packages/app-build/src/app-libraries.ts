@@ -53,7 +53,7 @@ export const APP_CANVAS_LIBRARIES: readonly AppLibrary[] = [
   {
     specifier: 'mathjs',
     guide: 'mathjs',
-    hint: 'units and engineering maths, formulas a person types',
+    hint: 'units and engineering maths, formulas a person types for their own use',
   },
   { specifier: 'date-fns', guide: 'date-fns', hint: 'dates: format, add business days, ranges' },
   { specifier: 'zod', guide: 'zod', hint: 'form checks and the shape of rows' },

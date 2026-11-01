@@ -21,6 +21,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   Zod runs with `jitless` on, so it never probes for `new Function`
   under the frame's CSP; Papa Parse refuses `download` and `worker` with an error that says
   so; markdown-it output goes through DOMPurify, which the guides require.
+  math.js runs a person's own formulas; the guides say never to run formula
+  text another person saved (math.js is not a sandbox for it).
 - **Changed:** an import the runtime does not export now lists at most 60
   of the module's names, the close ones first (mathjs exports over a
   thousand).

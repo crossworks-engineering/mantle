@@ -146,7 +146,8 @@ export const APP_KIT_LIBRARIES: readonly CanvasLibrary[] = [
   {
     name: 'mathjs',
     pkg: 'mathjs',
-    useFor: 'engineering maths with units (2 inch to mm, bar to kPa), formulas a person types',
+    useFor:
+      'engineering maths with units (2 inch to mm, bar to kPa), formulas a person types for their own use',
     aliases: ['math.js', 'units', 'unit'],
   },
   {
