@@ -30,8 +30,10 @@ the app.
 - Text out: `Papa.unparse(rows)` writes CSV from objects (the keys become
   the header) or from arrays; `{ columns: ['tag', 'value'] }` picks and
   orders columns, `{ delimiter: ';' }` for a European Excel. Rows other
-  people typed: add `escapeFormulae: true`, so a cell like `=HYPERLINK(...)`
-  does not run as a formula when the CSV is opened in Excel.
+  people typed: add `escapeFormulae: /^[=+\-@\t\r]/` (not `true`, which
+  misses a cell with a line break), so a cell like `=HYPERLINK(...)` does
+  not run as a formula in Excel. Keep numbers as numbers: a string `'-5'`
+  gets the escape too.
 - Here `download: true` (fetch a URL) and `worker: true` (parse in a
   worker) throw: the frame has no network and no workers. Parse text or a
   File the app already holds.

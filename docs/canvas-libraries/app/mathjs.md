@@ -41,6 +41,7 @@ precision: 32 })` for decimal work.
   formula itself in the app's code. Pass saved inputs as scope values
   (`evaluate(f, { p: Number(saved.p) })`) or to `unit(Number(n), u)` with
   `u` from a fixed list; never build expression text from saved values.
+  Check `Number.isFinite` first: `Number('2+3')` is `NaN`, silently.
 
 ## App example
 
