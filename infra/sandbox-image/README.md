@@ -61,9 +61,10 @@ new.
    (`--memory 1g --cpus 1 --pids-limit 512`), the size a real sandbox has.
 5. On main, `.github/workflows/sandbox-image.yml` builds both platforms
    natively, runs `sandbox-smoke` online and offline on each, pushes the image
-   it tested as `<TAG>-amd64` / `<TAG>-arm64`, and then the multi-arch `<TAG>`.
-   It refuses to overwrite a published tag unless forced, and fails a push that
-   changes the image without a new `TAG`.
+   it tested as `<TAG>-amd64` / `<TAG>-arm64` (rewritten by each build; boxes
+   never pull them), and then the multi-arch `<TAG>`. It refuses to overwrite
+   a published `<TAG>` unless forced, stops when it cannot tell whether the tag
+   exists, and fails a push that changes the image without a new `TAG`.
 
 ## Licences
 

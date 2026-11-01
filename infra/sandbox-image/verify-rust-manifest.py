@@ -30,9 +30,11 @@ for pkg, entry in pinned["pkg"].items():
         if name not in installed:
             continue
         got = stored["pkg"].get(pkg, {}).get("target", {}).get(target, {})
-        for key in ("hash", "xz_hash"):
-            if key in build and got.get(key) != build[key]:
-                problems.append(f"{name}: {key} {got.get(key)} != pinned {build[key]}")
+        # Every hash either side carries (hash, xz_hash, zst_hash, any later
+        # one): a stored manifest may not add a tarball the pinned one lacks.
+        for key in sorted(k for k in set(build) | set(got) if k.endswith("hash")):
+            if got.get(key) != build.get(key):
+                problems.append(f"{name}: {key} {got.get(key)} != pinned {build.get(key)}")
         matched.add(name)
 
 for name in installed:

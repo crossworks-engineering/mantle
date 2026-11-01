@@ -2533,6 +2533,8 @@ echo "updater.sh: the service switch (service-request.json)"
 # The one new input surface on the Docker-socket holder. Every path: the
 # whitelist, on, off, and each failure, with .env and the calls checked.
 SVC_STUB='
+# busybox timeout cannot run a shell function: run the command as is.
+timeout() { shift; "$@"; }
 docker() {
   echo "docker $*" >> "$CALLS"
   case "$1" in
@@ -2624,17 +2626,23 @@ check "new token: status done" grep -q '"phase":"done".*"ok":true' "$T/sig/servi
 # ── on, sandboxes: host dir + base image ──
 svc_case sbx '{"service":"sandboxes","enable":true}'
 printf 'services:\n  sandboxd:\n    environment:\n      SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-test/mantle-sandbox:24.04-v9}\n' > "$T/stack/docker-compose.yml"
-svc_run
+SVC_PRE='free_kb() { echo 99999999; }' svc_run
 check "sandboxes on: the host dir is host-absolute under the data dir" grep -qx "MANTLE_SANDBOXES_HOST_DIR=$T/stack/data/sandboxes" "$T/stack/.env"
 check "sandboxes on: pulls sandboxd" grep -qE 'compose .*--profile sandboxes pull sandboxd$' "$T/calls"
 check "sandboxes on: pre-pulls the base image from the compose default" grep -qx 'docker pull test/mantle-sandbox:24.04-v9' "$T/calls"
 check "sandboxes on: status done" grep -q '"phase":"done","service":"sandboxes"' "$T/sig/service-status.json"
 svc_case sbxbase '{"service":"sandboxes","enable":true}'
 printf 'SANDBOX_DEFAULT_IMAGE=test/pinned:1\nMANTLE_SANDBOXES_HOST_DIR=/srv/sbx\n' >> "$T/stack/.env"
-FAKE_BASE_PULL_FAIL=1 svc_run
+FAKE_BASE_PULL_FAIL=1 SVC_PRE='free_kb() { echo 99999999; }' svc_run
 check "sandboxes on: an .env image pin wins" grep -qx 'docker pull test/pinned:1' "$T/calls"
 check "sandboxes on: an existing host dir is kept" grep -qx 'MANTLE_SANDBOXES_HOST_DIR=/srv/sbx' "$T/stack/.env"
 check "sandboxes on: a failed base-image pull is not fatal" grep -q '"phase":"done".*"ok":true' "$T/sig/service-status.json"
+svc_case sbxlow '{"service":"sandboxes","enable":true}'
+printf 'SANDBOX_DEFAULT_IMAGE=test/pinned:1\nMANTLE_SANDBOXES_HOST_DIR=/srv/sbx\n' >> "$T/stack/.env"
+SVC_PRE='free_kb() { echo 8000000; }' svc_run
+check "sandboxes on, under the sandbox pull floor: the base image is not pulled" sh -c "! grep -q 'docker pull test/pinned:1' '$T/calls'"
+check "sandboxes on, under the floor: says so, and the service still comes on" sh -c "
+  grep -q 'is not downloaded now: 7812 MB free, need 10240 MB' '$T/sig/service.log' && grep -q '\"phase\":\"done\".*\"ok\":true' '$T/sig/service-status.json'"
 svc_case sbxspace '{"service":"sandboxes","enable":true}'
 sed -i.bak 's|^MANTLE_DATA_DIR=.*|MANTLE_DATA_DIR=/srv/my data|' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
 cp "$T/stack/.env" "$T/env.before"

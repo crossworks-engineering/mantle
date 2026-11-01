@@ -202,7 +202,7 @@ and a first build works with no network:
 
 | Language | Kit (pre-installed, or in the package cache) | Tools |
 | --- | --- | --- |
-| Node 26 + npm + pnpm | zod, date-fns, csv-parse, exceljs, cheerio, esbuild, typescript, jsonwebtoken (`import` and `require` from anywhere) | biome, vitest, tsc |
+| Node 26 + npm + pnpm | zod, date-fns, csv-parse, exceljs, cheerio, esbuild, typescript, jsonwebtoken (`require` from anywhere; `npm install --offline` for ESM) | biome, vitest, tsc |
 | Bun | the Node kit through `require`; `bun:sqlite`, `bun test` built in | |
 | Python 3.12 (venv `/opt/venv`) | requests, httpx, flask, fastapi, uvicorn, pandas, numpy, pydantic, pyyaml, python-dateutil, openpyxl, xlsxwriter, python-docx, pypdf, pdfplumber, beautifulsoup4, lxml, psycopg[binary], sqlite-utils, jinja2, matplotlib, plotly, scipy, pint, ezdxf, shapely, networkx | ruff, pytest |
 | Go | modernc.org/sqlite, yaml.v3, excelize, cobra, chi, pgx, testify (module cache) | gofmt, go vet, staticcheck |
@@ -222,13 +222,16 @@ from what is installed, so it cannot drift. An agent reads it with one
 `sandbox_exec` instead of trying commands; `sandbox_create`'s description
 points at it. **`sandbox-smoke`** in the image proves the kit: one SQLite file
 read from every language, a first build in Go, Rust and WebAssembly, the Node
-kit by `require` and by ESM `import`, every Python import, every formatter,
+kit by `require` and by an ESM project installed with `npm install --offline`
+(which must stay in the project), every Python import, every formatter,
 linter and test runner. CI runs it with the network
 on and with `--network none`.
 
-**Offline use.** Python and the Node kit need nothing: `/node_modules` links to
-the kit, and Node, Bun, esbuild, tsc and vitest walk up to it, so `import` and
-`require` work from any project (its own `node_modules` first). Go's `GOPROXY` lists the module cache first (its checksum
+**Offline use.** Python and `require` of the Node kit (`NODE_PATH`) need
+nothing. An ESM project (Node, Bun, esbuild, tsc, vitest) installs the kit
+packages it imports into its own `node_modules` with `npm install --offline
+<packages>`, from the image's npm cache. The kit's command-line tools sit last
+on PATH, so `npm i -g` of a newer one wins. Go's `GOPROXY` lists the module cache first (its checksum
 database tiles are cached too, so go.sum checks still run): `go mod tidy`
 resolves the kit offline, and pins it to the kit's versions (`go get
 mod@vX.Y.Z` for another). `GOTOOLCHAIN=local`: no toolchain downloads. Rust
@@ -259,7 +262,8 @@ images of exactly `<ns>/mantle-sandbox`, keeping the pin now, the pin before
 the roll, the last two pins it recorded (`/signal/sandbox-pins`), the two
 newest of the repository and every image a container (every sandbox, running
 or stopped) was made from. A pull runs at most `MANTLE_SANDBOX_PULL_TIMEOUT_S`
-(1200) seconds, and a pin whose pull failed is not retried at the updater's
+(1200) seconds (switching sandboxes on uses the same floor and limit), and a
+pin whose pull failed is not retried at the updater's
 start for six hours (a roll always retries). `MANTLE_IMAGE_PRUNE=0` turns the
 removal off. A box with sandboxes off keeps every image. Both disk checks (the
 updater's and sandboxd's) read the stack's or the sandboxes dir's disk, which
@@ -284,7 +288,9 @@ mutate the registry when sandboxd is unreachable.
   arbitrary URL (and carry data out in the path). GitHub was already a door of
   that size. An operator who wants balanced to mean registries in the strict
   sense removes the two hosts (`SANDBOX_EGRESS_ALLOW` only adds; the defaults
-  live in `server/sandboxd/src/egress.ts`) and keeps Go to the kit, offline.
+  live in `server/sandboxd/src/egress.ts`, so that is a code change and a new
+  server image) and keeps Go to the kit, offline. A checksum-database lookup
+  makes the proxy fetch too.
 - The box is the trust boundary; sandboxes protect the **brain from the
   workload** (mistakes and malice in untrusted code), not owners from
   themselves. Network isolation and the egress tiers are the load-bearing

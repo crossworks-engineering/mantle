@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: box. Inside the sandbox image (Ubuntu, GNU tools); never on a Mac.
 # sandbox-smoke: prove the sandbox kit works, online or with the network off.
 #
 # For every language it opens and queries one SQLite file, and for the
@@ -6,10 +7,11 @@
 #   sqlite3 CLI, duckdb CLI (sqlite + csv), node:sqlite, bun:sqlite,
 #   python sqlite3 + sqlite-utils, Go (modernc.org/sqlite, gofmt, go vet,
 #   staticcheck), Rust (rusqlite bundled, rustfmt, clippy), a wasm-pack build
-#   of a wasm-bindgen crate, the Node kit (require, and ESM with no install),
+#   of a wasm-bindgen crate, the Node kit (require, and an ESM project that
+#   installs it with npm --offline),
 #   the Python kit (every import), ruff, pytest, biome, vitest, tsc, esbuild.
 # Every build here runs offline on purpose (cargo --offline, Go from the
-# module-cache proxy, Node from the kit): a pass means a sandbox with no network can
+# module-cache proxy, npm from its cache): a pass means a sandbox with no network can
 # do the same.
 #
 # Usage: sandbox-smoke [-k] [-q]   (-k keeps the work dir, -q prints failures only)
@@ -79,6 +81,8 @@ check "node kit (require via NODE_PATH)" bash -c 'cd / && node -e "
 check "bun kit (NODE_PATH)" bash -c 'cd / && bun -e "
   const { z } = require(\"zod\"); z.string().parse(\"ok\");
   const { format } = require(\"date-fns\"); format(new Date(0), \"yyyy\");"'
+mkdir -p "$W/bare" && cd "$W/bare"
+check "npm install in a folder with no package.json stays in it" bash -c "cd '$W/bare' && npm install --offline --no-audit --no-fund date-fns >/dev/null && test -f package.json && test -d node_modules/date-fns && test ! -e /package.json && test -d /opt/mantle-kit/node/node_modules/zod"
 mkdir -p "$W/esm" && cd "$W/esm" && echo '{"name":"esm","private":true,"type":"module"}' > package.json
 cat > "$W/esm/app.ts" <<'EOF'
 import { z } from 'zod';
@@ -87,7 +91,8 @@ const Row = z.object({ tag: z.string(), qty: z.coerce.number() });
 const rows: unknown[] = parse('tag,qty\nA,1\nB,2\n', { columns: true });
 console.log(rows.map((r) => Row.parse(r).qty).reduce((a, b) => a + b, 0));
 EOF
-check "node ESM import of the kit (no install)" expect ok bash -c "cd '$W/esm' && node --input-type=module -e \"import { z } from 'zod'; import { parse } from 'csv-parse/sync'; import ExcelJS from 'exceljs'; z.string().parse('x'); console.log('ok')\""
+check "npm install --offline in a project (kit, from the cache)" bash -c "cd '$W/esm' && npm install --offline --no-audit --no-fund zod csv-parse exceljs vitest >/dev/null && test -d node_modules/zod && test ! -e /package.json"
+check "node ESM import of the kit" expect ok bash -c "cd '$W/esm' && node --input-type=module -e \"import { z } from 'zod'; import { parse } from 'csv-parse/sync'; import ExcelJS from 'exceljs'; z.string().parse('x'); console.log('ok')\""
 check "esbuild bundle + node (ESM)" bash -c "cd '$W/esm' && esbuild app.ts --bundle --platform=node --format=esm --outfile=out.mjs --log-level=warning && [ \"\$(node out.mjs)\" = 3 ]"
 check "bun run ts" expect 3 bash -c "cd '$W/esm' && bun app.ts"
 cat > "$W/esm/sum.ts" <<'EOF'

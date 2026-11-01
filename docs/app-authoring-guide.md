@@ -679,8 +679,10 @@ The exact list with versions is in the sandbox at
 `/etc/mantle/sandbox-kit.json`: read it with one `sandbox_exec` (`cat
 /etc/mantle/sandbox-kit.json`) instead of trying commands. `sandbox-smoke`
 proves the whole kit in a few minutes. With no network, Rust needs
-`CARGO_NET_OFFLINE=true` (for `cargo` and `wasm-pack` alike); Go, Python and
-the Node kit (`import` or `require`, from any directory) need nothing extra.
+`CARGO_NET_OFFLINE=true` (for `cargo` and `wasm-pack` alike), and an ESM
+Node or Bun project installs the kit packages it imports with `npm install
+--offline <packages>` (from the image's cache); Go, Python and `require` of the
+Node kit need nothing extra.
 
 **The boundary stays:** a sandbox works on a SQLite file inside it. It never
 reaches the brain's live app databases: copy a file in with `sandbox_import`,

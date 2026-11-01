@@ -99,13 +99,14 @@ manifest = {
             "npm": ver("npm", "-v"),
             **node_kit(),
             "use": (
-                "import and require() find every kit library from any project with no install "
-                "(/node_modules links to the kit; a project's own node_modules comes first)."
+                "require() finds every kit library from any directory (NODE_PATH). For ESM "
+                "import, install the kit libraries a project uses into it with "
+                "`npm install --offline <packages>` (from the image's npm cache, no network)."
             ),
         },
         "bun": {
             "version": ver("bun", "--version"),
-            "use": "bun runs .ts directly; bun:sqlite and bun test are built in; the Node kit resolves as in Node.",
+            "use": "bun runs .ts directly; bun:sqlite and bun test are built in; it uses a project's node_modules (npm install --offline) for the Node kit.",
         },
         "python": {
             "version": ver("python3", "--version"),

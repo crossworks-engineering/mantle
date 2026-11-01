@@ -81,6 +81,8 @@ jobs:
 
       # A push that changes the image (anything but its README) under a tag
       # that is already published would never reach a box: fail, bump TAG.
+      # "Absent" only on the registry's own not-found answer: any other error
+      # (rate limit, outage, auth) stops the run rather than overwrite a tag.
       - name: Skip if the tag is already published
         id: exists
         env:
@@ -89,11 +91,23 @@ jobs:
           BEFORE: ${{ github.event.before }}
           FORCE: ${{ inputs.force }}
         run: |
-          if docker buildx imagetools inspect "${IMAGE}:${TAG}" >/dev/null 2>&1 && [ "$FORCE" != "true" ]; then
-            if [ "$EVENT" = push ] && [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
-               && git diff --name-only "$BEFORE" HEAD -- infra/sandbox-image ':!infra/sandbox-image/README.md' | grep -q .; then
-              echo "::error::infra/sandbox-image changed but ${IMAGE}:${TAG} is already published: bump infra/sandbox-image/TAG and every default"
-              exit 1
+          set -eu
+          published=no
+          if out=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" 2>&1); then
+            published=yes
+          else
+            case "$out" in
+              *"not found"* | *"manifest unknown"* | *MANIFEST_UNKNOWN*) : ;;
+              *) echo "::error::cannot tell whether ${IMAGE}:${TAG} exists: $out"; exit 1 ;;
+            esac
+          fi
+          if [ "$published" = yes ] && [ "$FORCE" != "true" ]; then
+            if [ "$EVENT" = push ] && [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+              changed=$(git diff --name-only "$BEFORE" HEAD -- infra/sandbox-image ':!infra/sandbox-image/README.md')
+              if [ -n "$changed" ]; then
+                echo "::error::infra/sandbox-image changed but ${IMAGE}:${TAG} is already published: bump infra/sandbox-image/TAG and every default"
+                exit 1
+              fi
             fi
             echo "${IMAGE}:${TAG} already exists; not overwriting (run by hand with force to replace)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -220,9 +234,17 @@ jobs:
         env:
           FORCE: ${{ inputs.force }}
         run: |
-          if docker buildx imagetools inspect "${IMAGE}:${TAG}" >/dev/null 2>&1 && [ "$FORCE" != "true" ]; then
-            echo "::error::${IMAGE}:${TAG} appeared while this run built; not overwriting"
-            exit 1
+          set -u
+          if out=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" 2>&1); then
+            if [ "$FORCE" != "true" ]; then
+              echo "::error::${IMAGE}:${TAG} appeared while this run built; not overwriting"
+              exit 1
+            fi
+          else
+            case "$out" in
+              *"not found"* | *"manifest unknown"* | *MANIFEST_UNKNOWN*) : ;;
+              *) echo "::error::cannot tell whether ${IMAGE}:${TAG} exists: $out"; exit 1 ;;
+            esac
           fi
 
       - name: Create + push the multi-arch manifest

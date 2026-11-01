@@ -59,6 +59,19 @@ FROM node AS nodekit
 COPY kit/node /kit
 RUN cd /kit && npm ci --no-audit --no-fund --ignore-scripts
 RUN --network=none cd /kit && npm rebuild --no-audit --no-fund @anthropic-ai/claude-code esbuild pnpm
+# npm's cache, holding the kit's libraries and test runner (not the CLI-only
+# tools: claude-code, pnpm, biome), from the same lock: what `npm install
+# --offline <kit package>` installs from in a project with no network.
+# npm-cache-kit.mjs adds each package's registry metadata and checks every
+# cached package against the lock.
+COPY npm-cache-kit.mjs /npm-cache-kit.mjs
+RUN mkdir /libs && cp /kit/package.json /kit/package-lock.json /libs/ && cd /libs \
+    && node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json")); \
+         for (const k of ["@anthropic-ai/claude-code", "pnpm", "@biomejs/biome"]) delete p.dependencies[k]; \
+         fs.writeFileSync("package.json", JSON.stringify(p, null, 2))' \
+    && npm install --no-audit --no-fund --ignore-scripts --cache /npm-cache \
+    && node /npm-cache-kit.mjs /npm-cache \
+    && cd / && rm -rf /libs /npm-cache/_logs
 
 FROM ${UBUNTU_IMAGE}
 
@@ -128,18 +141,16 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
     && node -v && npm -v
 
-# The Node kit (built in the nodekit stage above), its tools linked onto PATH.
-# /node_modules points at it: Node, Bun, esbuild, tsc and vitest all walk up
-# the directory tree to find a package, so `import` (ESM) and `require` of a
-# kit library work from any project with no install and no network, after the
-# project's own node_modules. NODE_PATH covers `require` of `npm i -g` ones.
+# The Node kit (built in the nodekit stage above). `require` finds a kit
+# library from any directory (NODE_PATH); an ESM project installs the ones it
+# imports into its own node_modules with `npm install --offline`, from the
+# cache. The kit's tools are LAST on PATH, so an `npm i -g` of a newer one
+# (Claude Code updating itself, say) lands in /usr/local/bin and wins.
 COPY --from=nodekit /kit/node_modules /opt/mantle-kit/node/node_modules
-RUN ln -s /opt/mantle-kit/node/node_modules /node_modules \
-    && for b in pnpm pnpx claude biome esbuild tsc vitest; do \
-         ln -s "/opt/mantle-kit/node/node_modules/.bin/$b" "/usr/local/bin/$b"; \
-       done \
-    && pnpm -v && claude --version && tsc -v && esbuild --version
-ENV NODE_PATH=/opt/mantle-kit/node/node_modules:/usr/local/lib/node_modules
+COPY --from=nodekit /npm-cache /root/.npm
+ENV NODE_PATH=/opt/mantle-kit/node/node_modules:/usr/local/lib/node_modules \
+    PATH=${PATH}:/opt/mantle-kit/node/node_modules/.bin
+RUN pnpm -v && claude --version && tsc -v && esbuild --version && biome --version && vitest --version
 
 # Bun (x64: the baseline build, which needs no AVX2).
 ARG BUN_VERSION=1.4.4

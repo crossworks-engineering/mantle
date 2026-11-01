@@ -1388,7 +1388,7 @@ sandbox_image_sync() {
     fi
     sis_to=$(num_or "$(env_val MANTLE_SANDBOX_PULL_TIMEOUT_S)" 1200)
     echo "[updater] pulling the sandbox base image $sis_pin ($((sis_free / 1024)) MB free, at most ${sis_to}s)"
-    if ! timeout "$sis_to" docker pull "$sis_pin" > /dev/null 2>&1 || [ -z "$(image_id "$sis_pin")" ]; then
+    if ! timeout "$sis_to" docker pull "$sis_pin" > /dev/null 2>&1 || [ -z "$(image_id "$sis_pin")" ]; then # portability: box-side (the harness stubs timeout)
       printf '%s %s\n' "$sis_pin" "$(date +%s)" > "$SIG/sandbox-pull-failed"
       echo "[updater] ⚠ the sandbox base image $sis_pin did not download; the first new sandbox will fetch it"
       return 0
@@ -1891,10 +1891,21 @@ service_on() {
   # shellcheck disable=SC2086  # one argument per compose service
   svc_compose "$1" pull $so_svc || { service_on_failed "$1" "the download failed"; return 1; }
   if [ "$1" = sandboxes ]; then
+    # The base image is several GB: the same floor and time limit as
+    # sandbox_image_sync. Not pulled now, it is pulled at the next roll or
+    # updater start (and sandboxd refuses a pull on a nearly full disk).
     if so_img=$(sandbox_base_image); then
-      svc_log "downloading the sandbox base image $so_img"
-      docker pull "$so_img" >> "$SIG/service.log" 2>&1 \
-        || svc_log "⚠ the sandbox base image did not download; the first new sandbox will fetch it"
+      so_smin=$(num_or "$(env_val MANTLE_SANDBOX_PULL_MIN_FREE_MB)" 10240)
+      so_sfree=$(num_or "$(free_kb "$STACK")" "")
+      if [ -z "$so_sfree" ] || [ "$so_sfree" -lt $((so_smin * 1024)) ]; then
+        svc_log "⚠ the sandbox base image $so_img is not downloaded now: $((${so_sfree:-0} / 1024)) MB free, need $so_smin MB (MANTLE_SANDBOX_PULL_MIN_FREE_MB)"
+      else
+        svc_log "downloading the sandbox base image $so_img"
+        so_sto=$(num_or "$(env_val MANTLE_SANDBOX_PULL_TIMEOUT_S)" 1200)
+        if ! timeout "$so_sto" docker pull "$so_img" >> "$SIG/service.log" 2>&1; then # portability: box-side (the harness stubs timeout)
+          svc_log "⚠ the sandbox base image did not download; the first new sandbox will fetch it"
+        fi
+      fi
     fi
   fi
 
