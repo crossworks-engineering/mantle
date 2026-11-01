@@ -212,7 +212,9 @@ export const dwg_render: BuiltinToolDef = {
         ok: true,
         output: {
           ...base,
-          note: 'Nothing is drawn in this window, so there is no picture. `sheet` and `off_sheet` give where the drawing is.',
+          note: drawn.value.frame
+            ? 'Nothing is drawn in this window, so there is no picture. `sheet` and `off_sheet` give where the drawing is.'
+            : 'Nothing is drawn in this window, so there is no picture, and model space may be empty.',
         },
       };
     }

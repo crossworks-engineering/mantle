@@ -8,15 +8,15 @@ but in `layout_frame`, so it is tested on its own).
 
 First the border: the largest closed polyline whose box holds at least
 BORDER_HOLDS of the drawing's geometry (text does not count, so notes beside
-the sheet cannot move it). Everything outside it is off the sheet. On 32 real
-drawings 31 had one, and it framed tighter than the stray rule below on 22.
+the sheet cannot move it). Everything outside it is off the sheet.
 
 A closed box is not always the sheet, and a wrong one cuts real content, so it
 loses to any of these: an entity whose box holds it (the real border is a
-block, and this is a battery limit inside it), a second closed box of about
-its size outside it (sheets tiled in one model space), or more than
+block, and this is a battery limit inside it), an entity outside it that spans
+it from edge to edge (the real border is loose lines), a second closed box of
+about its size outside it (sheets tiled in one model space), or more than
 STRAY_SHARE of all the entities outside it, text included (a title block and a
-legend are mostly text).
+legend are mostly text). When in doubt the stray rule decides, which keeps more.
 
 With no border, the stray rule (`sheet_frame`). A group of entities is stray
 only when all three hold, along one axis:
@@ -43,6 +43,9 @@ import math
 BORDER_HOLDS = 0.90
 # A closed box this share of the border's area, outside it: a second sheet.
 SECOND_SHEET_AREA = 0.5
+# Closed boxes tried, largest first: the border is among the largest, and each
+# failed try is a pass over the geometry.
+MAX_BORDER_TRIES = 32
 STRAY_SHARE = 0.10
 STRAY_SPAN = 0.25
 STRAY_GAP = 0.25
@@ -141,17 +144,28 @@ def _contains(outer, box) -> bool:
     )
 
 
+def _spans(outer, box) -> bool:
+    """`outer`, outside `box`, runs past both of its edges on one axis. A line
+    inside a sheet can touch both edges of its border; a line outside cannot
+    be longer than the sheet it is off."""
+    if _holds(box, _centre(outer)):
+        return False
+    across = outer[0] <= box[0] and outer[2] >= box[2]
+    along = outer[1] <= box[1] and outer[3] >= box[3]
+    return across or along
+
+
 def sheet_border(entities) -> tuple | None:
     """The sheet's border among `entities` ((kind, box); kind is TEXT, CLOSED
     or OTHER), or None when no closed box is one (the header says when)."""
     geometry = [_centre(b) for k, b in entities if k != TEXT]
     closed = sorted((b for k, b in entities if k == CLOSED), key=_area, reverse=True)
-    for box in closed:
+    for box in closed[:MAX_BORDER_TRIES]:
         if _area(box) <= 0:
             return None
         if sum(1 for c in geometry if _holds(box, c)) < BORDER_HOLDS * len(geometry):
             continue
-        if any(k != TEXT and _contains(b, box) for k, b in entities):
+        if any(k != TEXT and (_contains(b, box) or _spans(b, box)) for k, b in entities):
             return None
         for other in closed:
             if _area(other) < _area(box) * SECOND_SHEET_AREA:

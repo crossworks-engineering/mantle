@@ -115,6 +115,16 @@ describe('dwg_render', () => {
     expect(JSON.stringify(r)).toContain('Nothing is drawn in this window');
   });
 
+  it('does not point at a frame it does not have', async () => {
+    const blank = crop({ blank: true });
+    files.parserDwgCrop.mockResolvedValue({
+      ...blank,
+      value: { ...blank.value, frame: undefined },
+    });
+    const r = await call({ window: [0, 0, 10, 10] });
+    expect(JSON.stringify(r)).toContain('model space may be empty');
+  });
+
   it.each([
     [{ window: [1, 2, 3] }, 'four numbers'],
     [{ window: [1, 2, 'x', 4] }, 'four numbers'],

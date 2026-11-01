@@ -203,6 +203,31 @@ class BorderTests(unittest.TestCase):
         f = dwg_frame.drawing_frame(drawing)
         self.assertGreater(f["sheet"][2], 800)
 
+    def test_a_box_inside_a_loose_line_border_is_not_the_border(self):
+        drawing = [(dwg_frame.CLOSED, (100.0, 100.0, 500.0, 450.0))]
+        drawing += entities(sheet(x=110.0, y=110.0, w=380.0, h=330.0, n=400)[1:])
+        drawing += entities(
+            [
+                (0.0, 0.0, 841.0, 0.0),
+                (0.0, 594.0, 841.0, 594.0),
+                (0.0, 0.0, 0.0, 594.0),
+                (841.0, 0.0, 841.0, 594.0),
+            ]
+        )
+        title = sheet(x=600.0, y=20.0, w=220.0, h=100.0, n=30)[1:]
+        drawing += entities(title, dwg_frame.TEXT)
+        self.assertFalse(dwg_frame.drawing_frame(drawing)["framed"])
+
+    def test_a_line_inside_that_touches_both_edges_keeps_the_border(self):
+        divider = [(dwg_frame.OTHER, (0.0, 100.0, 800.0, 100.0))]
+        note = [(dwg_frame.TEXT, (5000.0, 0.0, 5000.0, 0.0))]
+        self.assertTrue(dwg_frame.drawing_frame(bordered() + divider + note)["framed"])
+
+    def test_only_the_largest_closed_boxes_are_tried(self):
+        small = [(dwg_frame.CLOSED, (i * 1.0, 0.0, i + 1.0, 1.0)) for i in range(400)]
+        with mock.patch.object(dwg_frame, "MAX_BORDER_TRIES", 4):
+            self.assertIsNone(dwg_frame.sheet_border(small + entities(sheet())))
+
     def test_a_smaller_tile_stays(self):
         boxes = bordered(n=300) + bordered(x=1000.0, w=400.0, h=300.0, n=60)
         self.assertFalse(dwg_frame.drawing_frame(boxes)["framed"])

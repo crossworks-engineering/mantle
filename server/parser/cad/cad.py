@@ -514,8 +514,8 @@ def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
         sys.stderr.write(f"crop spec: {err}\n")
         return 1
     except Exception as err:
-        # Its name only: a traceback's paths are nothing a caller should read.
-        sys.stderr.write(f"the crops could not be drawn: {type(err).__name__}\n")
+        # Stderr is the job's answer: the reason, never a traceback's paths.
+        sys.stderr.write(f"the crops could not be drawn: {type(err).__name__}: {err}"[:300] + "\n")
         return 1
     index["converter"] = converter
     for crop in index["crops"]:
