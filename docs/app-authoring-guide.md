@@ -692,7 +692,7 @@ or read and write the app's data with the app database tools above.
 ## History: versions and snapshots
 
 Every app has one numbered history line (v1, v2 …), on its **History** tab
-and through `app_snapshot_list`.
+and through `app_snapshot_list` (and `app_log`, for an audit; below).
 
 - **Versions.** Each publish records the code that went live (source,
   manifest, the build it runs), with an optional `note`. Code only, never
@@ -728,6 +728,55 @@ data, so `data` and `full` need a snapshot.
 The copies live under `APP_DB_DIR/_snapshots/<owner>/<app>/` and ride the
 backup (`mantle-app-dbs-<ts>/_snapshots`). Download one from the History tab
 as a `.sqlite` file.
+
+### Audit the line: compare in place, or take it away as git
+
+Two read tools look at the line inside Mantle. They need a read of the app
+and run where `app_snapshot_list` runs (the owner, a member, a login's
+workspace turn).
+
+- `app_log` lists the entries newest first: seq, kind (version or
+  snapshot), trigger, note, who (`actor`, and `actor_login_id` when the row
+  names a login), when, the file count and size. It reads the rows only,
+  never the code. Page on with `before_seq`; `versions_only` leaves the
+  snapshots out.
+- `code_diff` compares two states as unified diffs: `from` and `to` are
+  `draft`, `live` (the published code) or an entry by its seq (`v3`). The
+  default is `live` to `draft`: what a publish would change. An entry's side
+  is the code it made live, never the draft a snapshot kept beside it. Pass
+  `path` for one file. A long answer is cut and says so; a caller that may
+  not see the draft gets the live code on that side, and the answer says
+  `no_draft`.
+
+`app_export` with `format: "git"` writes the versions as a git bundle (a
+`.bundle` file), where a package export lands. Each version (each publish)
+is one commit on `main`, oldest first. The commit time is the version's
+time; the message is `vN publish: <note>`, and a version restored from an
+older one says so. The author is the role the row names (`owner`, `member`,
+`agent`, `mcp`, `system`) and the login id when the row names one: never an
+email or a person's name. The bundle holds code only: no data, no draft, no
+declared tools, no secret. It needs a read of the app (as a package export
+without data). An app with no version yet has nothing to bundle: publish it
+first. A path git may not hold (a `.git` part) is left out, and the answer
+lists it under `skipped`.
+
+An outside agent (Claude Code, say) takes it to its own disk with the file
+download of the HTTP API and an API key ([API keys](guide/07-api/08-api-keys.md)),
+then works with plain git:
+
+```sh
+curl -sfL -o app.bundle https://example.com/api/v1/files/<file_id>/download \
+  -H "Authorization: Bearer mtlk_..."
+git clone app.bundle my-app && cd my-app
+git log -p            # each version and what it changed
+git blame App.tsx     # which version wrote each line
+git bisect start      # find the version that broke something
+```
+
+`file_id` is in `app_export`'s answer (its `hint` names the route). The
+bundle is a copy to read: there is no push back. Change the app with the
+code tools (`code_edit`, `code_write`) and publish; a new export carries the
+new version.
 
 **Recently deleted.** Deleting an app takes a snapshot first (code, name,
 look and data), and its history stays for 30 days: `app_deleted_list` (or

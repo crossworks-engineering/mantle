@@ -237,6 +237,23 @@ async function seedApp(s: Parameters<Seed>[0], open = false): Promise<void> {
   });
 }
 
+/** A version (a publish row) of the app at seq 1, its tree one line
+ *  older than the app's source. */
+async function seedVersion(s: Parameters<Seed>[0]): Promise<void> {
+  const { sql, fx, item } = s;
+  const code = {
+    source: { entry: 'App.tsx', files: { 'App.tsx': `// a8 v1\n${APP_SOURCE}` } },
+    draft: null,
+    manifest: {},
+    publishedBuild: null,
+  };
+  await asFixture(sql, item.id, async (tx) => {
+    await tx`insert into node_snapshots
+               (owner_id, node_id, node_kind, seq, trigger, actor, code, file_count, source_bytes)
+             values (${fx.owner}, ${item.id}, 'app', 1, 'publish', 'owner', ${tx.json(code)}, 1, 60)`;
+  });
+}
+
 /** The app's own database: its manifest declares one table (a8), made with
  *  a row (content app-broker.ts: a seed's table must exist; an export reads
  *  it). */
@@ -615,6 +632,16 @@ export const A8_TOOL_CONTENT: Readonly<
       });
       return { edit_id: id };
     },
+  },
+  // The history tools read a version row (content app-snapshots
+  // appHistorySource, appHistoryLine): one that holds an older tree.
+  code_diff: {
+    needs: 'a version of the app',
+    seed: async (s) => (await seedApp(s), await seedVersion(s), { from: 'v1', to: 'live' }),
+  },
+  app_log: {
+    needs: 'a version of the app',
+    seed: async (s) => (await seedApp(s), await seedVersion(s), {}),
   },
   // A staged draft and its green build to publish (with neither, a publish
   // returns early and changes nothing).

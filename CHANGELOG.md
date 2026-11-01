@@ -4,6 +4,27 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: app history for audits (compare in place, git bundle)
+
+- **Added:** `code_diff` compares two states of a mini app's source as
+  unified diffs: `draft`, `live` or a history entry by seq (`v3`); live to
+  draft by default; all files or one `path`, cut and said so past the
+  answer's limit. An entry's side is the code it made live, never the draft
+  a snapshot kept. `app_log` lists the history line for an audit (seq,
+  kind, trigger, note, actor and login id, time, file count and size),
+  from the rows only, never the code; `before_seq` pages on. Both are reads
+  with `app_snapshot_list`'s gate (a read of the app, `ownerOnly` +
+  `loginTurns`), on MCP and in the `apps` group.
+- **Added:** `app_export` takes `format: "git"`: the app's versions as a
+  git bundle (`.bundle`), one commit per publish on `main`, oldest first,
+  with the version's time, `vN publish: <note>`, and an author that is the
+  row's role and login id, never an email. Code only (no data, no draft, no
+  secret), with a package export's read right. Written in TypeScript (a
+  pack and the bundle header; no `git` binary on the box). An outside agent
+  downloads it with `GET /api/v1/files/{id}/download` and runs
+  `git clone`, then log, blame and bisect (docs/app-authoring-guide.md,
+  "History: versions and snapshots").
+
 ## Unreleased: a SQL process has a memory limit
 
 - **Fixed:** one row of many large columns could take a SQL process to several
