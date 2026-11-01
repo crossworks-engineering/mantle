@@ -17,9 +17,9 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   each, and the app authoring guide a table of which library does which
   job. A Present canvas may import the plain ones too (no canvas guide).
 - **Security:** none reaches the network, and none compiles code unless an
-  app calls `z.compile()` itself, which the frame refuses. Zod runs with
-  `jitless` on, so it never probes for `new Function` under the frame's
-  CSP; Papa Parse refuses `download` and `worker` with an error that says
+  app calls `z.compile()` or turns `jitless` off, which the frame refuses.
+  Zod runs with `jitless` on, so it never probes for `new Function`
+  under the frame's CSP; Papa Parse refuses `download` and `worker` with an error that says
   so; markdown-it output goes through DOMPurify, which the guides require.
 - **Changed:** an import the runtime does not export now lists at most 60
   of the module's names, the close ones first (mathjs exports over a

@@ -30,18 +30,37 @@ bundled into the app.
   (`const math = create(all); math.createUnit('ksi', '1000 psi')`), not
   changes to the shared one. `create(all, { number: 'BigNumber',
 precision: 32 })` for decimal work.
-- Matrices: `multiply`, `inv`, `det`, `lusolve`; statistics: `mean`,
-  `median`, `std`.
-- Compute in `useMemo` keyed on the inputs; the parser is fast, but a
-  re-render should not parse again.
-- The parser runs no JavaScript, so a person may type a formula for their
-  own use. A formula SAVED by one person and run in another person's app is
-  untrusted input: evaluate it with a limited instance, as math.js's
-  security notes advise. `const safe = create(all)` (set any config now),
-  keep `const run = safe.evaluate`, then `safe.import({ import: off,
-createUnit: off, evaluate: off, parse: off, simplify: off, derivative:
-off, resolve: off, reviver: off, config: off }, { override: true })` with
-  `off = () => { throw new Error('off') }`, and refuse huge matrix sizes.
+- Also: matrices (`multiply`, `inv`, `lusolve`), statistics (`mean`, `std`).
+- Compute in `useMemo` keyed on the inputs.
+- A formula SAVED by one person and run in another person's app is
+  untrusted. The parser cannot reach JavaScript, the page or `host`, but it
+  can change math.js's own state in that tab. Run saved formulas through a
+  limited instance (math.js's security notes), with a new scope each call
+  and `typed` hidden, so nothing outlives the call:
+
+```tsx
+const safe = create(all); // set any config before the import below
+const evaluate = safe.evaluate;
+const off = () => {
+  throw new Error('Not allowed in a saved formula');
+};
+safe.import(
+  {
+    import: off,
+    createUnit: off,
+    evaluate: off,
+    parse: off,
+    simplify: off,
+    derivative: off,
+    resolve: off,
+    reviver: off,
+    config: off,
+  },
+  { override: true },
+);
+const runSaved = (f: string, vars: Record<string, unknown> = {}) =>
+  evaluate(f, { ...vars, typed: undefined });
+```
 
 ## App example
 
