@@ -193,41 +193,32 @@ describe.skipIf(!URL)('the code tools draft write on Postgres', () => {
     expect(u?.after.files['r.ts']).toBe('v1');
   });
 
-  it('an undo records what it replaces, and takes base_rev (an editor save is not lost)', async () => {
+  it('an undo never replaces an editor save (base_rev or not); other files still undo', async () => {
     const app = await newApp('editor');
     const w = await apps.changeDraftSource(owner, app.id, setFile('e.ts', 'agent'), opts);
-    // The person saves in the editor meanwhile (no code-tool row).
+    await apps.changeDraftSource(owner, app.id, setFile('o.ts', 'other'), opts);
+    // The person saves e.ts in the editor (no code-tool row).
     const tree = (await apps.getApp(owner, app.id))!.draft!;
     await apps.saveDraftSource(owner, app.id, {
       ...tree,
       files: { ...tree.files, 'e.ts': 'person' },
     });
-    // An undo from the agent's stale read is refused.
+    // From the agent's stale read: the stale check answers.
     await expect(
       apps.undoDraftFile(owner, app.id, 'e.ts', { ...opts, baseRev: w!.rev }),
     ).rejects.toBeInstanceOf(apps.AppDraftRevError);
-    expect((await apps.getApp(owner, app.id))?.draft?.files['e.ts']).toBe('person');
-    // Without base_rev the undo sees the change made outside the code tools
-    // and refuses, naming the current rev.
+    // With the current rev, or none: the outside change is never replaced.
     const now = apps.sourceRev(apps.workingSource((await apps.getApp(owner, app.id))!));
-    const untracked = await apps
-      .undoDraftFile(owner, app.id, 'e.ts', opts)
-      .catch((e: unknown) => e);
-    expect(untracked).toBeInstanceOf(apps.AppUndoUntrackedError);
-    expect((untracked as Error).message).toContain(`base_rev ${now}`);
-    // With the current rev it goes through, and the person's text is kept
-    // on the undo's own row (its own line).
-    await apps.undoDraftFile(owner, app.id, 'e.ts', { ...opts, baseRev: now });
-    const [row] = await admin`select code->'source'->'files'->>'e.ts' as text,
-                                     code->'codeEdit'->'undo'->>'path' as path
-                                from node_snapshots
-                               where node_id = ${app.id} and trigger = 'pre_code_undo'
-                               order by seq desc limit 1`;
-    expect(row).toEqual({ text: 'person', path: 'e.ts' });
-    // Undo after that undo needs no base_rev: the draft is the code tools'.
-    await expect(apps.undoDraftFile(owner, app.id, 'e.ts', opts)).rejects.toBeInstanceOf(
-      apps.AppUndoEmptyError,
-    );
+    for (const baseRev of [now, null]) {
+      await expect(
+        apps.undoDraftFile(owner, app.id, 'e.ts', { ...opts, baseRev }),
+      ).rejects.toBeInstanceOf(apps.AppUndoUntrackedError);
+    }
+    expect((await apps.getApp(owner, app.id))?.draft?.files['e.ts']).toBe('person');
+    // Another file's undo is not held up by it, and keeps the person's text.
+    const u = await apps.undoDraftFile(owner, app.id, 'o.ts', opts);
+    expect(u?.after.files['e.ts']).toBe('person');
+    expect(Object.hasOwn(u!.after.files, 'o.ts')).toBe(false);
   });
 
   it('a code-tool write after an outside change does not hide it from the undo', async () => {

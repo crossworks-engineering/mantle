@@ -26,6 +26,7 @@ import {
   CannotDeleteEntryError,
   changeDraftSource,
   getApp,
+  MAX_APP_FILE_BYTES,
   sourceRev,
   undoDraftFile,
   workingSource,
@@ -558,6 +559,7 @@ const code_edit: BuiltinToolDef = {
         const out = applyEdits(
           crlf ? toLf(file) : file,
           crlf ? edits.map((e) => ({ ...e, old: toLf(e.old), new: toLf(e.new) })) : edits,
+          MAX_APP_FILE_BYTES,
         );
         if ('error' in out) throw new ChangeRefused(`${out.error} (${path})`);
         replaced = out.replaced;
@@ -618,6 +620,11 @@ const code_insert: BuiltinToolDef = {
           );
         }
         const file = tree.files[key]!;
+        if (file.length + text.length > MAX_APP_FILE_BYTES) {
+          throw new ChangeRefused(
+            `the insert would take '${path}' past the file limit of ${MAX_APP_FILE_BYTES} bytes: insert less, or split the file`,
+          );
+        }
         const crlf = crlfOf(file);
         const out = insertAfterLine(crlf ? toLf(file) : file, after, crlf ? toLf(text) : text);
         if ('error' in out) throw new ChangeRefused(`${out.error} (${path})`);
@@ -683,7 +690,7 @@ const code_undo: BuiltinToolDef = {
   loginTurns: true,
   name: 'Undo a source edit',
   description:
-    "Put one file of a mini app's DRAFT back as it was before the last write that changed it (`code_edit`, `code_insert`, `code_write`, `app_file_write`, `app_file_delete`, `app_source_set`); returns a diff and the new `rev`. Call it again to step further back. A file that write created is removed. `base_rev` refuses a draft changed since you read it (an edit in the editor, say). Only recent edits are kept; for a whole earlier version use `app_snapshot_restore`.",
+    "Put one file of a mini app's DRAFT back as it was before the last write that changed it (`code_edit`, `code_insert`, `code_write`, `app_file_write`, `app_file_delete`, `app_source_set`); returns a diff and the new `rev`. Call it again to step further back. A file that write created is removed. It never replaces a change made outside the code tools (the editor, an import): then it fails, and `code_edit` or `code_write` makes the change. `base_rev` refuses a draft changed since you read it. Only recent edits are kept; for a whole earlier version use `app_snapshot_restore`.",
   inputSchema: {
     type: 'object',
     properties: { target: TARGET_PROP, path: PATH_PROP, base_rev: BASE_REV_PROP },

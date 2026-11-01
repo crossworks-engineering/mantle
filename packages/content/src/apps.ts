@@ -929,22 +929,41 @@ defineDomainError(AppUndoEntryError, {
   status: 409,
 });
 
-/** The draft changed outside the code tools since their last write (the
- *  editor, an import, a restore): an undo would replace that work unseen. */
+/** The file changed outside the code tools (the editor, an import, a
+ *  restore) after the write an undo would take back: the undo would replace
+ *  that work, which no row holds, so it is never done. */
 export class AppUndoUntrackedError extends Error {
-  constructor(readonly currentRev: string) {
+  constructor(path: string) {
     super(
-      `the draft changed outside the code tools since their last write (the editor, an import or a restore), and an undo would replace that work. Read the file with code_view first; to undo over it anyway, pass base_rev ${currentRev}`,
+      `'${path}' changed outside the code tools (the editor, an import or a restore) after the write an undo would take back, so an undo would replace that work. Read the file with code_view, then change it with code_edit or code_write`,
     );
     this.name = 'AppUndoUntrackedError';
   }
 }
 
 defineDomainError(AppUndoUntrackedError, {
-  reason: 'the draft changed outside the code tools; the message says how to undo over it',
+  reason: 'the file changed outside the code tools; the message says what to use instead',
   status: 409,
   body: (e) => ({ error: e.message, reason: 'conflict' }),
 });
+
+/** A file's text as the history rows mark it: a short hash, null when the
+ *  file is not there. */
+function fileHash(text: string | undefined): string | null {
+  return text === undefined ? null : codeHash(text).slice(0, 16);
+}
+
+/** What a write changed: each file it changed, with its new text's hash
+ *  (null: removed). */
+function changedFiles(before: AppSource, after: AppSource): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const p of new Set([...Object.keys(before.files), ...Object.keys(after.files)])) {
+    const a = Object.hasOwn(before.files, p) ? before.files[p] : undefined;
+    const b = Object.hasOwn(after.files, p) ? after.files[p] : undefined;
+    if (a !== b) out[p] = fileHash(b);
+  }
+  return out;
+}
 
 /** What a draft change did. */
 export type DraftChange = {
@@ -978,7 +997,7 @@ async function recordCodeEdit(
   ownerId: string,
   id: string,
   app: LockedApp,
-  opts: CodeEditOpts & { afterRev: string; undo?: { path: string; fromSeq: number } },
+  opts: CodeEditOpts & { after: AppSource; undo?: { path: string; fromSeq: number } },
 ): Promise<void> {
   const tree = app.draft ?? app.source;
   await insertNodeSnapshot(tx, {
@@ -995,8 +1014,7 @@ async function recordCodeEdit(
       manifest: app.manifest,
       publishedBuild: null,
       codeEdit: {
-        beforeRev: sourceRev(tree),
-        afterRev: opts.afterRev,
+        changed: changedFiles(tree, opts.after),
         ...(app.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
         ...(opts.undo ? { undo: opts.undo } : {}),
       },
@@ -1077,7 +1095,7 @@ export async function changeDraftSource(
     if (opts.dryRun || rev === beforeRev) {
       return { before, after, beforeRev, rev, written: false };
     }
-    await recordCodeEdit(tx, ownerId, id, app, { ...opts, afterRev: rev });
+    await recordCodeEdit(tx, ownerId, id, app, { ...opts, after });
     await tx
       .update(apps)
       .set({ draftSource: after, draftUpdatedAt: new Date(), draftBuild: null })
@@ -1126,8 +1144,8 @@ export async function undoDraftFile(
         present: sql<boolean>`jsonb_exists(${code}->'source'->'files', ${path})`,
         text: sql<string | null>`${code}->'source'->'files'->>${path}`,
         undoPath: sql<string | null>`${code}->'codeEdit'->'undo'->>'path'`,
-        beforeRev: sql<string | null>`${code}->'codeEdit'->>'beforeRev'`,
-        afterRev: sql<string | null>`${code}->'codeEdit'->>'afterRev'`,
+        changedHas: sql<boolean>`coalesce(jsonb_exists(${code}->'codeEdit'->'changed', ${path}), false)`,
+        changedHash: sql<string | null>`${code}->'codeEdit'->'changed'->>${path}`,
         undoFrom: sql<number | null>`(${code}->'codeEdit'->'undo'->>'fromSeq')::int`,
         team: sql<boolean>`coalesce(${code}->'codeEdit'->>'authorLevel' = 'team', false)`,
       })
@@ -1155,17 +1173,17 @@ export async function undoDraftFile(
     );
     const hit = rows[hitAt];
     if (!hit) throw new AppUndoEmptyError(path);
-    // The rows from the hit to now are one chain: each write began on the
-    // tree the one before it left (its beforeRev is that row's afterRev),
-    // and the newest left the draft as it is. A gap is a change made
-    // outside the code tools (the editor, an import, a restore), which the
-    // rows do not hold: only a caller that read the draft (base_rev) undoes
-    // over it.
-    if (!opts.baseRev) {
-      for (let k = 0; k <= hitAt; k++) {
-        const next = k === 0 ? beforeRev : rows[k - 1]!.beforeRev;
-        if (rows[k]!.afterRev !== next) throw new AppUndoUntrackedError(beforeRev);
-      }
+    // From the hit to now, the file's text must chain: what each write
+    // left it as (its `changed` mark, else the text it found) is what the
+    // next write found, and the newest left it as the draft holds it. A gap
+    // is a change made outside the code tools (the editor, an import, a
+    // restore), which no row holds: the undo would replace it, so it is
+    // refused, base_rev or not. Changes to other files do not count.
+    for (let k = 0; k <= hitAt; k++) {
+      const r = rows[k]!;
+      const left = r.changedHas ? r.changedHash : fileHash(textOf(r));
+      const next = fileHash(k === 0 ? current : textOf(rows[k - 1]!));
+      if (left !== next) throw new AppUndoUntrackedError(path);
     }
     const files = { ...before.files };
     const restored = textOf(hit);
@@ -1180,7 +1198,7 @@ export async function undoDraftFile(
     await recordCodeEdit(tx, ownerId, id, app, {
       ...opts,
       note: `code_undo ${path}`,
-      afterRev: rev,
+      after,
       undo: { path, fromSeq: hit.seq },
     });
     // The author ceiling first, in the same transaction (restoreAppSnapshot's

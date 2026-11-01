@@ -50,6 +50,26 @@ describe('applyEdits: match once', () => {
     expect('text' in out && out.text).not.toMatch(/setN\b/);
   });
 
+  it('an edit that would pass the file cap is refused before its text is built', () => {
+    const big = 'a'.repeat(1000);
+    const out = applyEdits(big, [{ old: 'a', new: 'x'.repeat(2000), replace_all: true }], 4000);
+    expect(out).toMatchObject({
+      error: expect.stringMatching(/would grow to 2000000 characters, past the file limit of 4000/),
+    });
+    expect(applyEdits(big, [{ old: 'a', new: 'bb', replace_all: true }], 4000)).toMatchObject({
+      replaced: 1000,
+    });
+  });
+
+  it('many matches report the first ten lines and "more than 10"', () => {
+    const out = applyEdits('x\n'.repeat(30), [{ old: 'x', new: 'y' }]);
+    expect(out).toMatchObject({
+      error: expect.stringMatching(
+        /matches more than 10 times \(lines 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, …\)/,
+      ),
+    });
+  });
+
   it('overlapping matches are more than one place', () => {
     expect(applyEdits('aaa', [{ old: 'aa', new: 'b' }])).toMatchObject({
       error: expect.stringMatching(/matches 2 times/),

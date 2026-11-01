@@ -8233,7 +8233,7 @@
  },
  {
   "name": "code_undo",
-  "description": "Put one file of a mini app's DRAFT back as it was before the last write that changed it (`code_edit`, `code_insert`, `code_write`, `app_file_write`, `app_file_delete`, `app_source_set`); returns a diff and the new `rev`. Call it again to step further back. A file that write created is removed. `base_rev` refuses a draft changed since you read it (an edit in the editor, say). Only recent edits are kept; for a whole earlier version use `app_snapshot_restore`.",
+  "description": "Put one file of a mini app's DRAFT back as it was before the last write that changed it (`code_edit`, `code_insert`, `code_write`, `app_file_write`, `app_file_delete`, `app_source_set`); returns a diff and the new `rev`. Call it again to step further back. A file that write created is removed. It never replaces a change made outside the code tools (the editor, an import): then it fails, and `code_edit` or `code_write` makes the change. `base_rev` refuses a draft changed since you read it. Only recent edits are kept; for a whole earlier version use `app_snapshot_restore`.",
   "inputSchema": {
    "type": "object",
    "properties": {

@@ -31,13 +31,29 @@ function lineNumbersOf(text: string, offsets: readonly number[]): number[] {
   return out;
 }
 
-/** Every start offset of `needle` in `text`, overlapping ones too: `aa`
- *  in `aaa` is two places, so it is not "once". */
-function offsetsOf(text: string, needle: string): number[] {
+/** The start offsets of `needle` in `text`, overlapping ones too (`aa` in
+ *  `aaa` is two places, so it is not "once"), at most `limit` of them. */
+function offsetsOf(text: string, needle: string, limit: number): number[] {
   const out: number[] = [];
-  for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + 1)) out.push(i);
+  for (
+    let i = text.indexOf(needle);
+    i !== -1 && out.length < limit;
+    i = text.indexOf(needle, i + 1)
+  ) {
+    out.push(i);
+  }
   return out;
 }
+
+/** How many times `needle` is replaced from the left without overlap. */
+function replaceCount(text: string, needle: string): number {
+  let n = 0;
+  for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + needle.length)) n++;
+  return n;
+}
+
+/** The match-once places reported at most (one more says "more"). */
+const HITS_SHOWN = 10;
 
 export type NumberedView = {
   /** `<n>\t<line>` rows, the number padded to the widest shown. */
@@ -90,6 +106,9 @@ export type TextEdit = { old: string; new: string; replace_all?: boolean };
 export function applyEdits(
   content: string,
   edits: readonly TextEdit[],
+  /** The longest the text may grow to, in characters (the file cap): an
+   *  edit past it is refused before its text is built. */
+  maxChars = Number.POSITIVE_INFINITY,
 ): { text: string; replaced: number } | { error: string } {
   let text = content;
   let replaced = 0;
@@ -105,7 +124,8 @@ export function applyEdits(
         error: `${which}: old and new are the same text, so it changes nothing. Put the replacement text in new`,
       };
     }
-    const hits = offsetsOf(text, e.old);
+    const all = e.replace_all === true;
+    const hits = offsetsOf(text, e.old, all ? 1 : HITS_SHOWN + 1);
     if (hits.length === 0) {
       const near = nearMatch(text, e.old);
       return {
@@ -117,11 +137,18 @@ export function applyEdits(
           'Nothing was changed',
       };
     }
-    if (hits.length > 1 && e.replace_all !== true) {
-      const lines = lineNumbersOf(text, hits);
-      const shown = lines.slice(0, 10).join(', ') + (lines.length > 10 ? ', …' : '');
+    if (hits.length > 1 && !all) {
+      const more = hits.length > HITS_SHOWN;
+      const lines = lineNumbersOf(text, hits.slice(0, HITS_SHOWN));
       return {
-        error: `${which}: old matches ${hits.length} times (lines ${shown}). Add surrounding lines to old so it matches once, or set replace_all. Nothing was changed`,
+        error: `${which}: old matches ${more ? `more than ${HITS_SHOWN}` : hits.length} times (lines ${lines.join(', ')}${more ? ', …' : ''}). Add surrounding lines to old so it matches once, or set replace_all. Nothing was changed`,
+      };
+    }
+    const count = all ? replaceCount(text, e.old) : 1;
+    const grows = text.length + count * (e.new.length - e.old.length);
+    if (grows > maxChars) {
+      return {
+        error: `${which}: the file would grow to ${grows} characters, past the file limit of ${maxChars}. Replace less (drop replace_all, or a shorter new), or split the file. Nothing was changed`,
       };
     }
     // split/join: no `$` patterns, and replace_all takes the matches from
