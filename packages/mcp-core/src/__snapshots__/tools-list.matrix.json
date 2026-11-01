@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "e68d74d5796791af9d90a324bdace15d1851e7b55a66ee9beab0960c79ec4f74",
+  "sha256": "7a2f9e356644332efeaf7b3995be80b3b0cdd5d46f0dcbe55fd03b4c9a101776",
   "names": [
    "tree_list",
    "search",
@@ -153,6 +153,12 @@
    "app_import",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
+   "code_edit",
+   "code_insert",
+   "code_write",
+   "code_undo",
    "node_read",
    "search_chunks",
    "read_section",
@@ -214,7 +220,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "6a354a90172a9cd17547222af601f03865ed516ba4eec68f3c1e1e398350bab8",
+  "sha256": "9b7afbe31cfe832a3f3d2dad24d3bd46b5ac8705a07170fed26ca368839194a8",
   "names": [
    "tree_list",
    "search",
@@ -410,6 +416,12 @@
    "app_import",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
+   "code_edit",
+   "code_insert",
+   "code_write",
+   "code_undo",
    "sandbox_create",
    "sandbox_exec",
    "sandbox_list",
@@ -535,7 +547,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "06fa18b1c4954cd44e6dd7af2fd0b3cfedaa5ea67aaf707d78b27d03267dc359",
+  "sha256": "1db668c73ceaa26237b84381358d3c94632d2198cf587b2687a73e7462227331",
   "names": [
    "tree_list",
    "search",
@@ -714,6 +726,12 @@
    "app_import",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
+   "code_edit",
+   "code_insert",
+   "code_write",
+   "code_undo",
    "sandbox_create",
    "sandbox_exec",
    "sandbox_list",
@@ -810,7 +828,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "a238a1c0505a0a3f0b2e4091167794c0acc2e638231b548ec5c324dba060fa74",
+  "sha256": "aa11950480aa542d73e618d095fe123bc503284ebfb8be723eeef1b88e6e8c43",
   "names": [
    "tree_list",
    "search",
@@ -989,6 +1007,12 @@
    "app_import",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
+   "code_edit",
+   "code_insert",
+   "code_write",
+   "code_undo",
    "node_read",
    "search_chunks",
    "read_section",
@@ -1068,7 +1092,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "c46288e267c60d6bcfa98072f9eaa7824512e1458184c2fa3ad09d43db48abd9",
+  "sha256": "49b4bf45770ca582aaffd97493427b72576f8e56adb2c37d7bdb223d271d0ba5",
   "names": [
    "tree_list",
    "search",
@@ -1192,6 +1216,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -1249,7 +1275,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "181caca74e08c63a5a9c58038f82bda1cbd76f9d17c0795a8f726e34ffc9cf78",
+  "sha256": "31c83bbd70a5ea200d123f842d8feacc47564c65b8999be72e4cf46e9ef7b730",
   "names": [
    "tree_list",
    "search",
@@ -1392,6 +1418,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -1471,7 +1499,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "5e4f4411e4a0b7814a59557d4f77c9602aeeb07282f9a5800b0dafce83f6e957",
+  "sha256": "2580311777f5ea96176722e969340a401a2a93804b8a83ec91d29a36cde44790",
   "names": [
    "tree_list",
    "search",
@@ -1610,6 +1638,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -1680,7 +1710,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "0d78178d1d2dfb4c85774115cdcda4c68bbe9b0ba84d34d5135e1e20981a9ccf",
+  "sha256": "d3460e5d2aff20da46c7ea292e1477d41a4f78dfe2fbbad936e9ba61313c19bc",
   "names": [
    "tree_list",
    "search",
@@ -1819,6 +1849,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -2062,7 +2094,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "c46288e267c60d6bcfa98072f9eaa7824512e1458184c2fa3ad09d43db48abd9",
+  "sha256": "49b4bf45770ca582aaffd97493427b72576f8e56adb2c37d7bdb223d271d0ba5",
   "names": [
    "tree_list",
    "search",
@@ -2186,6 +2218,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -2243,7 +2277,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "181caca74e08c63a5a9c58038f82bda1cbd76f9d17c0795a8f726e34ffc9cf78",
+  "sha256": "31c83bbd70a5ea200d123f842d8feacc47564c65b8999be72e4cf46e9ef7b730",
   "names": [
    "tree_list",
    "search",
@@ -2386,6 +2420,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -2465,7 +2501,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "5e4f4411e4a0b7814a59557d4f77c9602aeeb07282f9a5800b0dafce83f6e957",
+  "sha256": "2580311777f5ea96176722e969340a401a2a93804b8a83ec91d29a36cde44790",
   "names": [
    "tree_list",
    "search",
@@ -2604,6 +2640,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -2674,7 +2712,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "0d78178d1d2dfb4c85774115cdcda4c68bbe9b0ba84d34d5135e1e20981a9ccf",
+  "sha256": "d3460e5d2aff20da46c7ea292e1477d41a4f78dfe2fbbad936e9ba61313c19bc",
   "names": [
    "tree_list",
    "search",
@@ -2813,6 +2851,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -2880,7 +2920,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "c46288e267c60d6bcfa98072f9eaa7824512e1458184c2fa3ad09d43db48abd9",
+  "sha256": "49b4bf45770ca582aaffd97493427b72576f8e56adb2c37d7bdb223d271d0ba5",
   "names": [
    "tree_list",
    "search",
@@ -3004,6 +3044,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -3061,7 +3103,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "10fd8fd1df7e0202387272771c5fb2baf506f56cafa4253fa71f64c24034da30",
+  "sha256": "42b8dfa32869486162720c490db4cef808a07261b5955ec638f77d5977605af2",
   "names": [
    "tree_list",
    "search",
@@ -3205,6 +3247,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -3286,7 +3330,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "3c9d678e607a35a41540fab5ef2dd732b6c2f834fdbe2191933ec08da9bee58b",
+  "sha256": "fbb9fd49780815a4ca4b352519e45e9e2975ebee4831cc71df11f9db62ff9288",
   "names": [
    "tree_list",
    "search",
@@ -3425,6 +3469,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -3496,7 +3542,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "0a97c5d4868db8d1e91448462578d9f6df7014ed31f32a01cf5ec2971b3295de",
+  "sha256": "aef95de59a10b9fcab7263dd9e9fd057327cb5bc0c4474ebcc1079cb36198582",
   "names": [
    "tree_list",
    "search",
@@ -3635,6 +3681,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -3703,7 +3751,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/false:": {
-  "sha256": "fce43ca05eb3ec4cbdffe24957dea1ceb46353baf6b9eb9be71691c432a85b2b",
+  "sha256": "74b2d640b9b0cc773bf76acda8d037d334554adac4e60566878216a3d081ae67",
   "names": [
    "tree_list",
    "search",
@@ -3746,6 +3794,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "search_chunks",
    "read_section",
@@ -3789,7 +3839,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "af003ce95c7f41bf978d528fe94cbe001ce7d049674326a8792943cfb01ca1fc",
+  "sha256": "9cf290ac3625ad33add507abfcab1efefa0005765d155a4330c01fa710503f12",
   "names": [
    "tree_list",
    "search",
@@ -3849,6 +3899,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "sandbox_list",
    "sandbox_ls",
    "sandbox_mcp_tools",
@@ -3905,7 +3957,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "1b476a9b93434e93c28bfbce50a2408c98d0ca914e5923f93110a25538f70094",
+  "sha256": "ed87b515d242cf6569c0b463ff295eccc20d9ad41ccb0be6c5915d46473e0008",
   "names": [
    "tree_list",
    "search",
@@ -3956,6 +4008,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "sandbox_list",
    "sandbox_ls",
    "sandbox_mcp_tools",
@@ -4005,7 +4059,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:": {
-  "sha256": "fa4c2e33ec9d967cd72b6f7aec4e78012ca6e938908b498a1145f30f242c2871",
+  "sha256": "01ce506eec719b95bf9bdd7bac306caea0aac4fca0b80eca45de4a16e6f80d00",
   "names": [
    "tree_list",
    "search",
@@ -4056,6 +4110,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "search_chunks",
    "read_section",
@@ -4101,7 +4157,7 @@
   ]
  },
  "admin/key/ro/null/[]/false:": {
-  "sha256": "e9a7628cfcd3bf5bdfa31bf2b6a0d7ff6218a2745a5e67d105a595bb5dd83ecf",
+  "sha256": "7131695c7d60b0fa55a06c9be3ed3e758bc5c6154827da7ee59ffb74d44ca237",
   "names": [
    "tree_list",
    "search",
@@ -4144,6 +4200,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -4186,7 +4244,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "eaf5203ee5af19a2f2d983a089c171eee1a7bc39bc6aaa1526864d016fbf5729",
+  "sha256": "5c7fc88da647df5fbca19c451981319951cc777bac6db132393fa6f0cd6b7c09",
   "names": [
    "tree_list",
    "search",
@@ -4238,6 +4296,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -4290,7 +4350,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "fe5aba685a1b9e6641f12b73214c9a70bffb684fe2fedad2604b6d06caeffb27",
+  "sha256": "21e04dab4545a2ae8f6c0aea7341affbede9409b00278fddbc99172f4ddc057b",
   "names": [
    "tree_list",
    "search",
@@ -4339,6 +4399,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -4384,7 +4446,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:": {
-  "sha256": "a758e83543ba46c2f07a1db99c0ec9687c92b63ce127dc12fd212043b042cfef",
+  "sha256": "49ee9ef3a77031867a47d542d9746df66b0f482744c7d09a8cb6997ecdaeb5b1",
   "names": [
    "tree_list",
    "search",
@@ -4433,6 +4495,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -4585,7 +4649,7 @@
   "names": []
  },
  "admin/peer/ro/null/[]/false:": {
-  "sha256": "e9a7628cfcd3bf5bdfa31bf2b6a0d7ff6218a2745a5e67d105a595bb5dd83ecf",
+  "sha256": "7131695c7d60b0fa55a06c9be3ed3e758bc5c6154827da7ee59ffb74d44ca237",
   "names": [
    "tree_list",
    "search",
@@ -4628,6 +4692,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -4670,7 +4736,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "eaf5203ee5af19a2f2d983a089c171eee1a7bc39bc6aaa1526864d016fbf5729",
+  "sha256": "5c7fc88da647df5fbca19c451981319951cc777bac6db132393fa6f0cd6b7c09",
   "names": [
    "tree_list",
    "search",
@@ -4722,6 +4788,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -4774,7 +4842,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "fe5aba685a1b9e6641f12b73214c9a70bffb684fe2fedad2604b6d06caeffb27",
+  "sha256": "21e04dab4545a2ae8f6c0aea7341affbede9409b00278fddbc99172f4ddc057b",
   "names": [
    "tree_list",
    "search",
@@ -4823,6 +4891,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -4868,7 +4938,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:": {
-  "sha256": "a758e83543ba46c2f07a1db99c0ec9687c92b63ce127dc12fd212043b042cfef",
+  "sha256": "49ee9ef3a77031867a47d542d9746df66b0f482744c7d09a8cb6997ecdaeb5b1",
   "names": [
    "tree_list",
    "search",
@@ -4917,6 +4987,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -4961,7 +5033,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "e9a7628cfcd3bf5bdfa31bf2b6a0d7ff6218a2745a5e67d105a595bb5dd83ecf",
+  "sha256": "7131695c7d60b0fa55a06c9be3ed3e758bc5c6154827da7ee59ffb74d44ca237",
   "names": [
    "tree_list",
    "search",
@@ -5004,6 +5076,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -5046,7 +5120,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "eaf5203ee5af19a2f2d983a089c171eee1a7bc39bc6aaa1526864d016fbf5729",
+  "sha256": "5c7fc88da647df5fbca19c451981319951cc777bac6db132393fa6f0cd6b7c09",
   "names": [
    "tree_list",
    "search",
@@ -5098,6 +5172,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -5150,7 +5226,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "fe5aba685a1b9e6641f12b73214c9a70bffb684fe2fedad2604b6d06caeffb27",
+  "sha256": "21e04dab4545a2ae8f6c0aea7341affbede9409b00278fddbc99172f4ddc057b",
   "names": [
    "tree_list",
    "search",
@@ -5199,6 +5275,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -5244,7 +5322,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "a758e83543ba46c2f07a1db99c0ec9687c92b63ce127dc12fd212043b042cfef",
+  "sha256": "49ee9ef3a77031867a47d542d9746df66b0f482744c7d09a8cb6997ecdaeb5b1",
   "names": [
    "tree_list",
    "search",
@@ -5293,6 +5371,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -5337,7 +5417,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "e68d74d5796791af9d90a324bdace15d1851e7b55a66ee9beab0960c79ec4f74",
+  "sha256": "7a2f9e356644332efeaf7b3995be80b3b0cdd5d46f0dcbe55fd03b4c9a101776",
   "names": [
    "tree_list",
    "search",
@@ -5490,6 +5570,12 @@
    "app_import",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
+   "code_edit",
+   "code_insert",
+   "code_write",
+   "code_undo",
    "node_read",
    "search_chunks",
    "read_section",
@@ -5551,7 +5637,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "6a354a90172a9cd17547222af601f03865ed516ba4eec68f3c1e1e398350bab8",
+  "sha256": "9b7afbe31cfe832a3f3d2dad24d3bd46b5ac8705a07170fed26ca368839194a8",
   "names": [
    "tree_list",
    "search",
@@ -5747,6 +5833,12 @@
    "app_import",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
+   "code_edit",
+   "code_insert",
+   "code_write",
+   "code_undo",
    "sandbox_create",
    "sandbox_exec",
    "sandbox_list",
@@ -5872,7 +5964,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "06fa18b1c4954cd44e6dd7af2fd0b3cfedaa5ea67aaf707d78b27d03267dc359",
+  "sha256": "1db668c73ceaa26237b84381358d3c94632d2198cf587b2687a73e7462227331",
   "names": [
    "tree_list",
    "search",
@@ -6051,6 +6143,12 @@
    "app_import",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
+   "code_edit",
+   "code_insert",
+   "code_write",
+   "code_undo",
    "sandbox_create",
    "sandbox_exec",
    "sandbox_list",
@@ -6147,7 +6245,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "a238a1c0505a0a3f0b2e4091167794c0acc2e638231b548ec5c324dba060fa74",
+  "sha256": "aa11950480aa542d73e618d095fe123bc503284ebfb8be723eeef1b88e6e8c43",
   "names": [
    "tree_list",
    "search",
@@ -6326,6 +6424,12 @@
    "app_import",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
+   "code_edit",
+   "code_insert",
+   "code_write",
+   "code_undo",
    "node_read",
    "search_chunks",
    "read_section",
@@ -6405,7 +6509,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "c46288e267c60d6bcfa98072f9eaa7824512e1458184c2fa3ad09d43db48abd9",
+  "sha256": "49b4bf45770ca582aaffd97493427b72576f8e56adb2c37d7bdb223d271d0ba5",
   "names": [
    "tree_list",
    "search",
@@ -6529,6 +6633,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -6586,7 +6692,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "181caca74e08c63a5a9c58038f82bda1cbd76f9d17c0795a8f726e34ffc9cf78",
+  "sha256": "31c83bbd70a5ea200d123f842d8feacc47564c65b8999be72e4cf46e9ef7b730",
   "names": [
    "tree_list",
    "search",
@@ -6729,6 +6835,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -6808,7 +6916,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "5e4f4411e4a0b7814a59557d4f77c9602aeeb07282f9a5800b0dafce83f6e957",
+  "sha256": "2580311777f5ea96176722e969340a401a2a93804b8a83ec91d29a36cde44790",
   "names": [
    "tree_list",
    "search",
@@ -6947,6 +7055,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -7017,7 +7127,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "0d78178d1d2dfb4c85774115cdcda4c68bbe9b0ba84d34d5135e1e20981a9ccf",
+  "sha256": "d3460e5d2aff20da46c7ea292e1477d41a4f78dfe2fbbad936e9ba61313c19bc",
   "names": [
    "tree_list",
    "search",
@@ -7156,6 +7266,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -7399,7 +7511,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "c46288e267c60d6bcfa98072f9eaa7824512e1458184c2fa3ad09d43db48abd9",
+  "sha256": "49b4bf45770ca582aaffd97493427b72576f8e56adb2c37d7bdb223d271d0ba5",
   "names": [
    "tree_list",
    "search",
@@ -7523,6 +7635,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -7580,7 +7694,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "181caca74e08c63a5a9c58038f82bda1cbd76f9d17c0795a8f726e34ffc9cf78",
+  "sha256": "31c83bbd70a5ea200d123f842d8feacc47564c65b8999be72e4cf46e9ef7b730",
   "names": [
    "tree_list",
    "search",
@@ -7723,6 +7837,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -7802,7 +7918,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "5e4f4411e4a0b7814a59557d4f77c9602aeeb07282f9a5800b0dafce83f6e957",
+  "sha256": "2580311777f5ea96176722e969340a401a2a93804b8a83ec91d29a36cde44790",
   "names": [
    "tree_list",
    "search",
@@ -7941,6 +8057,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -8011,7 +8129,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "0d78178d1d2dfb4c85774115cdcda4c68bbe9b0ba84d34d5135e1e20981a9ccf",
+  "sha256": "d3460e5d2aff20da46c7ea292e1477d41a4f78dfe2fbbad936e9ba61313c19bc",
   "names": [
    "tree_list",
    "search",
@@ -8150,6 +8268,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -8217,7 +8337,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "c46288e267c60d6bcfa98072f9eaa7824512e1458184c2fa3ad09d43db48abd9",
+  "sha256": "49b4bf45770ca582aaffd97493427b72576f8e56adb2c37d7bdb223d271d0ba5",
   "names": [
    "tree_list",
    "search",
@@ -8341,6 +8461,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -8398,7 +8520,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "10fd8fd1df7e0202387272771c5fb2baf506f56cafa4253fa71f64c24034da30",
+  "sha256": "42b8dfa32869486162720c490db4cef808a07261b5955ec638f77d5977605af2",
   "names": [
    "tree_list",
    "search",
@@ -8542,6 +8664,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -8623,7 +8747,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "3c9d678e607a35a41540fab5ef2dd732b6c2f834fdbe2191933ec08da9bee58b",
+  "sha256": "fbb9fd49780815a4ca4b352519e45e9e2975ebee4831cc71df11f9db62ff9288",
   "names": [
    "tree_list",
    "search",
@@ -8762,6 +8886,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -8833,7 +8959,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "0a97c5d4868db8d1e91448462578d9f6df7014ed31f32a01cf5ec2971b3295de",
+  "sha256": "aef95de59a10b9fcab7263dd9e9fd057327cb5bc0c4474ebcc1079cb36198582",
   "names": [
    "tree_list",
    "search",
@@ -8972,6 +9098,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -9040,7 +9168,7 @@
   ]
  },
  "member/oauth/ro/null/[]/false:": {
-  "sha256": "fce43ca05eb3ec4cbdffe24957dea1ceb46353baf6b9eb9be71691c432a85b2b",
+  "sha256": "74b2d640b9b0cc773bf76acda8d037d334554adac4e60566878216a3d081ae67",
   "names": [
    "tree_list",
    "search",
@@ -9083,6 +9211,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "search_chunks",
    "read_section",
@@ -9126,7 +9256,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "af003ce95c7f41bf978d528fe94cbe001ce7d049674326a8792943cfb01ca1fc",
+  "sha256": "9cf290ac3625ad33add507abfcab1efefa0005765d155a4330c01fa710503f12",
   "names": [
    "tree_list",
    "search",
@@ -9186,6 +9316,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "sandbox_list",
    "sandbox_ls",
    "sandbox_mcp_tools",
@@ -9242,7 +9374,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "1b476a9b93434e93c28bfbce50a2408c98d0ca914e5923f93110a25538f70094",
+  "sha256": "ed87b515d242cf6569c0b463ff295eccc20d9ad41ccb0be6c5915d46473e0008",
   "names": [
    "tree_list",
    "search",
@@ -9293,6 +9425,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "sandbox_list",
    "sandbox_ls",
    "sandbox_mcp_tools",
@@ -9342,7 +9476,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:": {
-  "sha256": "fa4c2e33ec9d967cd72b6f7aec4e78012ca6e938908b498a1145f30f242c2871",
+  "sha256": "01ce506eec719b95bf9bdd7bac306caea0aac4fca0b80eca45de4a16e6f80d00",
   "names": [
    "tree_list",
    "search",
@@ -9393,6 +9527,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "search_chunks",
    "read_section",
@@ -9438,7 +9574,7 @@
   ]
  },
  "member/key/ro/null/[]/false:": {
-  "sha256": "e9a7628cfcd3bf5bdfa31bf2b6a0d7ff6218a2745a5e67d105a595bb5dd83ecf",
+  "sha256": "7131695c7d60b0fa55a06c9be3ed3e758bc5c6154827da7ee59ffb74d44ca237",
   "names": [
    "tree_list",
    "search",
@@ -9481,6 +9617,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -9523,7 +9661,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "eaf5203ee5af19a2f2d983a089c171eee1a7bc39bc6aaa1526864d016fbf5729",
+  "sha256": "5c7fc88da647df5fbca19c451981319951cc777bac6db132393fa6f0cd6b7c09",
   "names": [
    "tree_list",
    "search",
@@ -9575,6 +9713,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -9627,7 +9767,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "fe5aba685a1b9e6641f12b73214c9a70bffb684fe2fedad2604b6d06caeffb27",
+  "sha256": "21e04dab4545a2ae8f6c0aea7341affbede9409b00278fddbc99172f4ddc057b",
   "names": [
    "tree_list",
    "search",
@@ -9676,6 +9816,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -9721,7 +9863,7 @@
   ]
  },
  "member/key/ro/null/[]/true:": {
-  "sha256": "a758e83543ba46c2f07a1db99c0ec9687c92b63ce127dc12fd212043b042cfef",
+  "sha256": "49ee9ef3a77031867a47d542d9746df66b0f482744c7d09a8cb6997ecdaeb5b1",
   "names": [
    "tree_list",
    "search",
@@ -9770,6 +9912,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -9922,7 +10066,7 @@
   "names": []
  },
  "member/peer/ro/null/[]/false:": {
-  "sha256": "e9a7628cfcd3bf5bdfa31bf2b6a0d7ff6218a2745a5e67d105a595bb5dd83ecf",
+  "sha256": "7131695c7d60b0fa55a06c9be3ed3e758bc5c6154827da7ee59ffb74d44ca237",
   "names": [
    "tree_list",
    "search",
@@ -9965,6 +10109,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -10007,7 +10153,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "eaf5203ee5af19a2f2d983a089c171eee1a7bc39bc6aaa1526864d016fbf5729",
+  "sha256": "5c7fc88da647df5fbca19c451981319951cc777bac6db132393fa6f0cd6b7c09",
   "names": [
    "tree_list",
    "search",
@@ -10059,6 +10205,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -10111,7 +10259,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "fe5aba685a1b9e6641f12b73214c9a70bffb684fe2fedad2604b6d06caeffb27",
+  "sha256": "21e04dab4545a2ae8f6c0aea7341affbede9409b00278fddbc99172f4ddc057b",
   "names": [
    "tree_list",
    "search",
@@ -10160,6 +10308,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -10205,7 +10355,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:": {
-  "sha256": "a758e83543ba46c2f07a1db99c0ec9687c92b63ce127dc12fd212043b042cfef",
+  "sha256": "49ee9ef3a77031867a47d542d9746df66b0f482744c7d09a8cb6997ecdaeb5b1",
   "names": [
    "tree_list",
    "search",
@@ -10254,6 +10404,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -10298,7 +10450,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "e9a7628cfcd3bf5bdfa31bf2b6a0d7ff6218a2745a5e67d105a595bb5dd83ecf",
+  "sha256": "7131695c7d60b0fa55a06c9be3ed3e758bc5c6154827da7ee59ffb74d44ca237",
   "names": [
    "tree_list",
    "search",
@@ -10341,6 +10493,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
@@ -10383,7 +10537,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "eaf5203ee5af19a2f2d983a089c171eee1a7bc39bc6aaa1526864d016fbf5729",
+  "sha256": "5c7fc88da647df5fbca19c451981319951cc777bac6db132393fa6f0cd6b7c09",
   "names": [
    "tree_list",
    "search",
@@ -10435,6 +10589,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -10487,7 +10643,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "fe5aba685a1b9e6641f12b73214c9a70bffb684fe2fedad2604b6d06caeffb27",
+  "sha256": "21e04dab4545a2ae8f6c0aea7341affbede9409b00278fddbc99172f4ddc057b",
   "names": [
    "tree_list",
    "search",
@@ -10536,6 +10692,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "brain_capacity",
    "read_section",
@@ -10581,7 +10739,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "a758e83543ba46c2f07a1db99c0ec9687c92b63ce127dc12fd212043b042cfef",
+  "sha256": "49ee9ef3a77031867a47d542d9746df66b0f482744c7d09a8cb6997ecdaeb5b1",
   "names": [
    "tree_list",
    "search",
@@ -10630,6 +10788,8 @@
    "app_deleted_list",
    "app_errors",
    "app_authoring_guide",
+   "code_view",
+   "code_search",
    "node_read",
    "read_section",
    "entity_search",
