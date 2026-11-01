@@ -50,8 +50,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { envDynamic, envNum, envNumDefault } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
-import { runtimeFlags } from '@mantle/std/self-spawn';
 import { killWithParent } from '@mantle/std/kill-with-parent';
+import { runtimeFlags } from '@mantle/std/self-spawn';
 
 /** How long one app statement may run. */
 export const APP_SQL_TIMEOUT_MS = 5_000;
@@ -447,14 +447,23 @@ function forkChild(): Child {
     const onReply = child.onReply;
     child.onReply = undefined;
     onReply?.({ ok: false, error: why });
-    // A statement waiting for a free child gets the slot this one held.
+    // A statement waiting for a free child gets the slot this one held. A
+    // fork that throws here would reach no caller: that waiter times out.
     const next = waiting.shift();
-    if (next) next(forkChild());
+    if (next) {
+      try {
+        next(forkChild());
+      } catch (err) {
+        console.warn(`[app-sql] no new SQL process: ${errorMessage(err)}`);
+      }
+    }
   };
   proc.once('exit', (code, signal) =>
     gone(`the SQL process exited (${signal ?? `code ${code}`}) before it answered`),
   );
-  proc.once('error', (err) => {
+  // on, not once: a failed spawn and a failed send can each raise one, and an
+  // 'error' with no listener would take the whole server down.
+  proc.on('error', (err) => {
     gone(`the SQL process failed: ${errorMessage(err)}`);
     proc.kill('SIGKILL');
   });
@@ -494,7 +503,11 @@ function release(c: Child): void {
   if (!c.alive || c.doomed) return;
   const next = waiting.shift();
   if (next) return next(c);
-  c.idleTimer = setTimeout(() => c.proc.kill(), APP_SQL_CHILD_IDLE_MS);
+  c.idleTimer = setTimeout(() => {
+    idle.splice(idle.indexOf(c), 1);
+    c.doomed = true;
+    c.proc.kill();
+  }, APP_SQL_CHILD_IDLE_MS);
   c.idleTimer.unref();
   idle.push(c);
 }

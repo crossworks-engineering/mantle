@@ -114,7 +114,11 @@ export async function readCircuitSheets(
   const preBones: string[] = [];
   const unreadable: string[] = [];
   for (const t of tables) {
-    const r = await readSheet(ownerId, t, circuit).catch(() => null);
+    const r = await readSheet(ownerId, t, circuit).catch((err: unknown) => {
+      // The reason stays in the log: it can hold a storage path.
+      console.warn(`[circuit_trace] table ${t.id} not read: ${errorMessage(err)}`);
+      return null;
+    });
     if (!r) unreadable.push(t.title);
     else if (r.kind === 'sheet') sheets.push(r.sheet);
     else if (r.kind === 'no-bones') preBones.push(r.title);

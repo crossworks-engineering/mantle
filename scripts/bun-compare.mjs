@@ -139,18 +139,37 @@ export function silentBunExit(exit, bun) {
   return exit !== 0 && ![...bun.values()].includes('failed');
 }
 
+/**
+ * A test that fails on both runtimes is in neither "on Bun only" list, and it
+ * would hide an unhandled error from silentBunExit. The compare proves nothing
+ * until it is fixed, so it fails too.
+ */
+export function failedOnBoth(node, bun) {
+  return [...bun]
+    .filter(([key, s]) => s === 'failed' && node.get(key) === 'failed')
+    .map(([k]) => k);
+}
+
 /** A run that vitest did not end itself: a signal, or no exit code at all. */
 export function killedRun(exit) {
   return typeof exit !== 'number';
 }
 
 /** vitest exits 1 on any failure, which is expected here: the report decides. */
-function runSuite(label, command, args, outFile) {
+function runSuite(label, command, args, outFile, config = []) {
   console.log(`\n--- ${label} ---`);
   const t0 = Date.now();
   const run = spawnSync(
     command,
-    [...args, VITEST, 'run', '--reporter=dot', '--reporter=json', `--outputFile.json=${outFile}`],
+    [
+      ...args,
+      VITEST,
+      'run',
+      ...config,
+      '--reporter=dot',
+      '--reporter=json',
+      `--outputFile.json=${outFile}`,
+    ],
     { cwd: ROOT, stdio: 'inherit', timeout: RUN_TIMEOUT_MS },
   );
   const secs = Math.round((Date.now() - t0) / 1000);
@@ -163,15 +182,18 @@ function list(title, keys) {
   return [`${title} (${keys.length}):`, ...keys.map((key) => `  ${key}`)];
 }
 
-function summary(compared, verdict, seconds, silent) {
+function summary(compared, verdict, seconds, silent, both, serial) {
   const lines = [
     ...(silent ? [`Bun exited ${silent} with no failed test: read its log.`] : []),
+    ...(serial ? [`Serial tests on Bun: exit ${serial}. Read its log.`] : []),
     `On Bun only: ${compared.bunOnly.length} failed, ${compared.notRun.length} not run.`,
+    `On both: ${both.length} failed.`,
     `Against the baseline: ${verdict.fresh.length} new, ${verdict.fixed.length} fixed.`,
   ];
   if (seconds) lines.push(`Time: Node ${seconds.node}s, Bun ${seconds.bun}s.`);
   return [
     ...lines,
+    ...list('Failed on both', both),
     ...list('New on Bun', verdict.fresh),
     ...list('Fixed on Bun, take these off with --write-baseline', verdict.fixed),
   ].join('\n');
@@ -200,20 +222,32 @@ function main() {
     rmSync(bunFile, { force: true });
     const node = runSuite('Node', process.execPath, [], nodeFile);
     const bun = runSuite('Bun', 'bun', ['--bun'], bunFile);
+    // The serial lane alone on Bun: the default config leaves those files out.
+    const serialFile = join(dir, 'bun-serial.json');
+    rmSync(serialFile, { force: true });
+    const serial = runSuite('Bun serial', 'bun', ['--bun'], serialFile, [
+      '--config',
+      'vitest.serial.config.ts',
+    ]);
     seconds = { node: node.secs, bun: bun.secs };
-    exits = { node: node.exit, bun: bun.exit };
-    if (killedRun(node.exit) || killedRun(bun.exit)) {
-      console.error(`bun compare: a run was killed: Node ${node.exit}, Bun ${bun.exit}`);
+    exits = { node: node.exit, bun: bun.exit, serial: serial.exit };
+    if (killedRun(node.exit) || killedRun(bun.exit) || killedRun(serial.exit)) {
+      console.error(
+        `bun compare: a run was killed: Node ${node.exit}, Bun ${bun.exit}, serial ${serial.exit}`,
+      );
       process.exit(2);
     }
   }
 
+  const node = readReport(nodeFile);
   const bun = readReport(bunFile);
-  const compared = compareRuns(readReport(nodeFile), bun);
+  const compared = compareRuns(node, bun);
+  const both = failedOnBoth(node, bun);
   const baseline = loadBaseline();
   const verdict = checkBaseline(compared, baseline.failures, bun);
   const silent = exits && silentBunExit(exits.bun, bun) ? exits.bun : 0;
-  const text = summary(compared, verdict, seconds, silent);
+  const serial = exits?.serial ?? 0;
+  const text = summary(compared, verdict, seconds, silent, both, serial);
   console.log(`\n${text}`);
   if (flag('--summary')) appendFileSync(value('--summary'), `\`\`\`\n${text}\n\`\`\`\n`);
 
@@ -223,7 +257,7 @@ function main() {
     console.log(`\nWrote ${failures.length} entries to scripts/bun-baseline.json`);
     return;
   }
-  if (silent || verdict.fresh.length > 0) process.exit(1);
+  if (silent || serial || both.length > 0 || verdict.fresh.length > 0) process.exit(1);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

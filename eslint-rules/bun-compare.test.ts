@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   checkBaseline,
   compareRuns,
+  failedOnBoth,
   killedRun,
   readResults,
   silentBunExit,
@@ -65,6 +66,19 @@ describe('the Bun compare (scripts/bun-compare.mjs)', () => {
     expect(silentBunExit(1, clean)).toBe(true);
     expect(silentBunExit(0, clean)).toBe(false);
     expect(silentBunExit(1, failed)).toBe(false);
+  });
+
+  it('names a test that fails on both runtimes', () => {
+    const node = new Map([
+      ['a > b', 'failed'],
+      ['a > c', 'passed'],
+    ]);
+    const bun = new Map([
+      ['a > b', 'failed'],
+      ['a > c', 'failed'],
+      ['a > d', 'passed'],
+    ]);
+    expect(failedOnBoth(node, bun)).toEqual(['a > b']);
   });
 
   it('knows a killed run from one that vitest ended', () => {

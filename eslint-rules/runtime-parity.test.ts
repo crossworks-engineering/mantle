@@ -43,6 +43,16 @@ describe('settings that do nothing on Bun stay in one file', () => {
     },
   );
 
+  it.each(['packages/content/src/app-sql-runner.ts', 'packages/tabledb/src/sql-runner.ts'])(
+    '%s gives each child a guard, and hears every error of it',
+    (file) => {
+      const runner = readFileSync(join(ROOT, file), 'utf8');
+      expect(runner).toMatch(/killWithParent\(proc\)/);
+      expect(runner).toMatch(/proc\.on\('error'/);
+      expect(runner).not.toMatch(/proc\.once\('error'/);
+    },
+  );
+
   it('a worker limit', () => {
     expect(filesWith(/\bresourceLimits\b/)).toEqual(['packages/content/src/draw-png.ts']);
   });

@@ -108,6 +108,27 @@ describe('table_sql child processes', () => {
     for (const e of await endless) expect(e.status).toBe('rejected');
   });
 
+  it('refuses a value past the size limit, so its bytes never reach this process', async () => {
+    process.env.TABLE_SQL_TIMEOUT_MS = '5000';
+    await expect(runTableSql(file, 'SELECT zeroblob(943718400) AS b')).rejects.toThrow(/too big/);
+  });
+
+  it('refuses a reply past the size limit, and names the way out', async () => {
+    process.env.TABLE_SQL_TIMEOUT_MS = '5000';
+    const big = `with recursive c(x) as (select 1 union all select x+1 from c where x < 20)
+      select zeroblob(1048576) as b from c`;
+    await expect(runTableSql(file, big)).rejects.toThrow(/more than 16 MB: add a LIMIT/);
+    expect((await runTableSql(file, 'SELECT n FROM t LIMIT 1')).rows).toEqual([[1]]);
+  });
+
+  it('runs a statement again when its child died between two statements', async () => {
+    process.env.TABLE_SQL_TIMEOUT_MS = '5000';
+    await runTableSql(file, 'SELECT 1 AS one');
+    for (const pid of tableSqlChildPids()) process.kill(pid, 'SIGKILL');
+    const r = await runTableSql(file, 'SELECT n FROM t LIMIT 1');
+    expect(r.rows).toEqual([[1]]);
+  });
+
   it('refuses a statement that waits past its own limit for a child', async () => {
     process.env.TABLE_SQL_TIMEOUT_MS = '800';
     const endless = Promise.allSettled(Array.from({ length: 4 }, () => runTableSql(file, ENDLESS)));
