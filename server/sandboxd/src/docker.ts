@@ -130,6 +130,12 @@ async function json<T>(method: string, path: string, body?: unknown): Promise<T>
 
 export const ping = async (): Promise<boolean> => (await request('GET', '/_ping')).status === 200;
 
+/** Whether an image is local already (a pull would download nothing). The
+ *  reference is passed as is: callers validate it, and the daemon's route
+ *  takes a name with slashes unescaped. */
+export const imageExists = async (image: string): Promise<boolean> =>
+  (await request('GET', `/images/${image}/json`)).status === 200;
+
 /** Pull an image, consuming the progress stream to completion. */
 export async function pullImage(image: string): Promise<void> {
   const [name, tag = 'latest'] = image.split(':');

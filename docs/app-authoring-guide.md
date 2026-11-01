@@ -653,6 +653,39 @@ reads it while the app writes), and it's **included in the backup**
 consistent `VACUUM INTO`). App-authored data is real data, and it's protected
 like the rest of the brain.
 
+## The sandbox kit: work outside the app
+
+A mini app runs TSX in the browser. Heavy or offline work beside it (convert
+files, check a calculation, run a script, build a CLI tool, compile Rust to
+WebAssembly) runs in a **sandbox** (`sandbox_create`, `sandbox_exec`). The
+default sandbox image has every language with a short kit, so nothing needs
+an install and first builds work with no network:
+
+- **Node 26** and **Bun**: zod, date-fns, csv-parse, exceljs, cheerio,
+  esbuild, typescript; biome and vitest (Bun has `bun test`).
+- **Python 3.12**: pandas, numpy, pydantic, openpyxl, xlsxwriter,
+  python-docx, pypdf, pdfplumber, matplotlib, plotly, scipy, pint, ezdxf,
+  shapely, networkx and more; ruff and pytest.
+- **Go**: modernc.org/sqlite, yaml.v3, excelize, cobra, chi, pgx, testify in
+  the module cache; gofmt, go vet, staticcheck.
+- **Rust**: the wasm32-unknown-unknown target, wasm-pack, wasm-bindgen,
+  rustfmt, clippy; wasm-bindgen, js-sys, web-sys, serde, nalgebra, geo, dxf,
+  image, csv, rusqlite, reqwest and more in the cargo cache.
+- **SQLite in every language** (node:sqlite, bun:sqlite, sqlite3 +
+  sqlite-utils, modernc.org/sqlite, rusqlite) and the `sqlite3` and `duckdb`
+  command lines.
+
+The exact list with versions is in the sandbox at
+`/etc/mantle/sandbox-kit.json`: read it with one `sandbox_exec` (`cat
+/etc/mantle/sandbox-kit.json`) instead of trying commands. `sandbox-smoke`
+proves the whole kit in a few minutes. With no network, Rust needs
+`CARGO_NET_OFFLINE=true` (for `cargo` and `wasm-pack` alike); Go, Python and
+the Node kit (`import` or `require`, from any directory) need nothing extra.
+
+**The boundary stays:** a sandbox works on a SQLite file inside it. It never
+reaches the brain's live app databases: copy a file in with `sandbox_import`,
+or read and write the app's data with the app database tools above.
+
 ## History: versions and snapshots
 
 Every app has one numbered history line (v1, v2 …), on its **History** tab

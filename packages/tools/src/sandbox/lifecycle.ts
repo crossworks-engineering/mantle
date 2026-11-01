@@ -51,7 +51,10 @@ export const sandbox_create: BuiltinToolDef = {
   description:
     'Create a persistent isolated Ubuntu sandbox and return its id, name and files directory. ' +
     'Use one sandbox per project/task; it keeps installed packages and state until removed. ' +
-    'Work in /files (bind-mounted to the host, survives removal). The sandbox has NO access ' +
+    'Work in /files (bind-mounted to the host, survives removal). The default image has ' +
+    'Node 26, Bun, Python 3.12, Go and Rust (wasm32 + wasm-pack), SQLite in each, and a kit ' +
+    'of libraries per language that builds offline: `cat /etc/mantle/sandbox-kit.json` lists ' +
+    'them. The sandbox has NO access ' +
     'to the brain or its services — for commands on the server itself use `run_terminal`.',
   inputSchema: {
     type: 'object',
@@ -68,9 +71,10 @@ export const sandbox_create: BuiltinToolDef = {
       image: {
         type: 'string',
         description:
-          'Container image reference. The default ships python3+common libs, node22+pnpm, git, ' +
-          'docker CLI and claude code — only override for a specialist runtime, e.g. "golang:1.23".',
-        default: 'titanwest/mantle-sandbox:24.04-v3',
+          'Container image reference. The default ships every language with its kit (see ' +
+          '/etc/mantle/sandbox-kit.json), git, docker CLI and claude code — only override for a ' +
+          'specialist runtime, e.g. "postgres:18".',
+        default: 'titanwest/mantle-sandbox:24.04-v4',
       },
       network: {
         type: 'string',
@@ -115,7 +119,7 @@ export const sandbox_create: BuiltinToolDef = {
     const image =
       typeof input.image === 'string' && input.image
         ? input.image
-        : env('SANDBOX_DEFAULT_IMAGE') || 'titanwest/mantle-sandbox:24.04-v3';
+        : env('SANDBOX_DEFAULT_IMAGE') || 'titanwest/mantle-sandbox:24.04-v4';
     // Map the folder node to the path it occupies under the Files root, and
     // send only that RELATIVE part: sandboxd joins it onto the box's own
     // host-absolute root, which is the only path the docker daemon can resolve.

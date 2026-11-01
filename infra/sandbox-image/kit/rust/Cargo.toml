@@ -1,0 +1,30 @@
+# The sandbox image's Rust kit, exact versions. `cargo fetch` puts these crates
+# (and Cargo.lock's whole tree, checksums included) into the image's cargo
+# registry cache so first builds work offline. Nothing here is compiled.
+[package]
+name = "mantle-sandbox-kit"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# WebAssembly for mini apps
+wasm-bindgen = "=0.2.130"
+js-sys = "=0.3.107"
+web-sys = "=0.3.107"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+serde-wasm-bindgen = "=0.6.5"
+console_error_panic_hook = "=0.1.7"
+# compute
+nalgebra = "=0.35.0"
+geo = "=0.33.1"
+dxf = "=0.6.2"
+image = "=0.25.10"
+csv = "=1.4.0"
+# CLI
+rusqlite = { version = "=0.41.1", features = ["bundled"] }
+anyhow = "=1.0.104"
+regex = "=1.13.1"
+chrono = "=0.4.45"
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls", "json", "blocking", "http2", "charset"] }

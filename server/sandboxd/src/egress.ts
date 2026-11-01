@@ -4,7 +4,8 @@
  * A 'balanced' sandbox sits on an INTERNAL docker network (no NAT, no direct
  * route anywhere) and gets HTTP(S)_PROXY env pointing here. This proxy is the
  * sandbox's only road out, and it only leads to the allowlist: package
- * registries, GitHub, apt mirrors (plus SANDBOX_EGRESS_ALLOW extensions).
+ * registries (npm, PyPI, Go modules, crates.io), GitHub, apt mirrors (plus
+ * SANDBOX_EGRESS_ALLOW extensions).
  * apt/curl/pip/npm/git-over-https all honor proxy env; anything that ignores
  * it simply has no route — fail closed by topology, not by inspection.
  *
@@ -25,6 +26,10 @@ const DEFAULT_ALLOW = [
   'files.pythonhosted.org',
   'crates.io',
   'static.crates.io',
+  'index.crates.io',
+  // Go modules and their checksum database (GOPROXY's default)
+  'proxy.golang.org',
+  'sum.golang.org',
   // OS packages
   'archive.ubuntu.com',
   'security.ubuntu.com',

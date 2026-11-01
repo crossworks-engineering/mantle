@@ -45,6 +45,10 @@
 #            mantle-parser images go (the rollback set, the running set, the
 #            two newest of each and other repositories stay), and the removed
 #            media sidecar's images but its rollback one
+#   sandbox: on a box with sandboxes on, the pinned sandbox base image is
+#            pulled only with enough free disk, and old <ns>/mantle-sandbox
+#            images go but the pin, the pin before the roll, the two newest
+#            and every image a container was made from
 #   roll:    scripts/roll.sh backs up first (its own exit status), requests
 #            only the target, and stops loudly on a lost app, sandbox or
 #            app-db file
@@ -92,7 +96,14 @@ DOCKER_STUB='
 docker() {
   case "$1" in
     create) echo fakecid; return 0 ;;
-    rm|pull) return 0 ;;
+    rm) return 0 ;;
+    pull)
+      # FAKE_PULL_ID: the pulled image lands as the newest local one.
+      if [ -n "${FAKE_PULL_ID:-}" ]; then
+        { echo "$FAKE_PULL_ID $2"; cat "$FAKE_STATE/images" 2>/dev/null; } > "$FAKE_STATE/images.new"
+        mv "$FAKE_STATE/images.new" "$FAKE_STATE/images"
+      fi
+      return 0 ;;
     cp)
       src=${2#*:}; src=${src#/app/release/}
       if [ -d "$FAKE_IMG/$src" ]; then cp -R "$FAKE_IMG/$src" "$3"
@@ -872,7 +883,14 @@ docker() {
   echo "docker $*" >> "$CALLS"
   case "$1" in
     create) echo fakecid; return 0 ;;
-    rm|pull) return 0 ;;
+    rm) return 0 ;;
+    pull)
+      # FAKE_PULL_ID: the pulled image lands as the newest local one.
+      if [ -n "${FAKE_PULL_ID:-}" ]; then
+        { echo "$FAKE_PULL_ID $2"; cat "$FAKE_STATE/images" 2>/dev/null; } > "$FAKE_STATE/images.new"
+        mv "$FAKE_STATE/images.new" "$FAKE_STATE/images"
+      fi
+      return 0 ;;
     cp)
       src=${2#*:}; src=${src#/app/release/}
       if [ -d "$FAKE_IMG/$src" ]; then cp -R "$FAKE_IMG/$src" "$3"
@@ -891,7 +909,14 @@ docker() {
         esac
       fi
       echo "${FAKE_EXEC_OUT:-1000}"; return 0 ;;
-    image) cat "$FAKE_STATE/images"; return 0 ;;
+    image)
+      # image inspect -f <fmt> <ref>: the id of a local ref, or not found.
+      if [ "$2" = inspect ]; then
+        awk -v r="$5" '"'"'$2 == r || $1 == r { print $1; f = 1; exit } END { exit !f }'"'"' "$FAKE_STATE/images"
+        return
+      fi
+      cat "$FAKE_STATE/images"; return 0 ;;
+    ps) [ -z "${FAKE_PS_FAIL:-}" ] || return 1; cat "$FAKE_STATE/containers" 2>/dev/null; return 0 ;;
     rmi) grep -qxF "$2" "$FAKE_STATE/in-use" 2>/dev/null && return 1; echo "$2" >> "$FAKE_STATE/removed"; return 0 ;;
     compose)
       case "$*" in
@@ -1183,6 +1208,83 @@ rm "$T/state/mantle_web"
 FAKE_TS=20260105-000000 roll_loop "$T"
 check "no running server before the roll: server images left alone" sh -c "! grep -q mantle-server '$T/state/removed' 2>/dev/null"
 check "no running server before the roll: says so" grep -q 'image prune: test/mantle-server skipped' "$T/sig/update.log"
+
+# ── the sandbox base image (sandbox_image_sync) ──────────────────────────────
+sbx_case() { # <name>: a sandboxes-on stack pinning test/mantle-sandbox:24.04-v4 by compose default
+  T="$WORK/sbx-$1"; fake_stack "$T"; mkdir -p "$T/state"
+  printf 'COMPOSE_PROFILES=sandboxes\n' >> "$T/stack/.env"
+  printf 'services:\n  sandboxd:\n    environment:\n      SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-test/mantle-sandbox:24.04-v4}\n' > "$T/stack/docker-compose.yml"
+  # newest first, as `docker image ls` lists them; v4 (the pin) is not local
+  cat > "$T/state/images" <<'IMGS'
+sha256:X3 test/mantle-sandbox:24.04-v3
+sha256:X2 test/mantle-sandbox:24.04-v2
+sha256:X1 test/mantle-sandbox:24.04-v1
+sha256:X0 test/mantle-sandbox:<none>
+sha256:O1 other/mantle-sandbox:24.04-v1
+sha256:Y1 caddy:2-alpine
+IMGS
+  # one stopped sandbox, made from v1
+  echo c1 > "$T/state/containers"; echo sha256:X1 > "$T/state/c1"
+}
+sbx_sync='free_kb() { echo "${FAKE_FREE_KB:-99999999}"; }
+sandbox_image_sync "${PREV_PIN:-}" >> "$SIG/update.log"'
+
+echo "updater.sh: the sandbox base image: pulled with enough disk, old ones pruned"
+sbx_case pull
+PREV_PIN=test/mantle-sandbox:24.04-v3 FAKE_PULL_ID=sha256:X4 roll_lib "$T" "$sbx_sync"
+check "the new pin is pulled" grep -qx 'docker pull test/mantle-sandbox:24.04-v4' "$T/calls"
+check "removed exactly v2 and the dangling one (by id)" \
+  test "$(sort "$T/state/removed" | tr '\n' ' ')" = "sha256:X0 test/mantle-sandbox:24.04-v2 "
+check "kept the pin (v4), the pin before the roll (v3) and the stopped sandbox's image (v1)" \
+  sh -c "! grep -qE 'v4|v3|v1|X4|X3|X1' '$T/state/removed'"
+check "never another repository (other namespace, caddy)" sh -c "! grep -qE 'rmi .*(other/|caddy|O1|Y1)' '$T/calls'"
+check "never forced a removal" sh -c "! grep -qE 'rmi .*(-f|--force)' '$T/calls'"
+check "the pull and each removal are logged" sh -c "grep -q 'pulling the sandbox base image test/mantle-sandbox:24.04-v4' '$T/sig/update.log' && grep -q 'image prune: removed test/mantle-sandbox:24.04-v2' '$T/sig/update.log'"
+
+sbx_case lowdisk
+PREV_PIN=test/mantle-sandbox:24.04-v3 FAKE_PULL_ID=sha256:X4 FAKE_FREE_KB=4000000 roll_lib "$T" "$sbx_sync"
+check "too little disk: no pull, nothing removed" sh -c "! grep -q 'docker pull' '$T/calls' && test ! -e '$T/state/removed'"
+check "too little disk: says so with the numbers" grep -q 'sandbox base image test/mantle-sandbox:24.04-v4 NOT pulled: 3906 MB free, need 10240 MB' "$T/sig/update.log"
+
+sbx_case keepprev
+printf 'sha256:X4 test/mantle-sandbox:24.04-v4\n' | cat - "$T/state/images" > "$T/state/images.new" && mv "$T/state/images.new" "$T/state/images"
+: > "$T/state/containers"
+PREV_PIN=test/mantle-sandbox:24.04-v4 roll_lib "$T" "$sbx_sync"
+check "pin unchanged: no pull" sh -c "! grep -q 'docker pull' '$T/calls'"
+check "pin unchanged: the previous tag (v3, second newest) survives, older ones go" \
+  test "$(sort "$T/state/removed" | tr '\n' ' ')" = "sha256:X0 test/mantle-sandbox:24.04-v1 test/mantle-sandbox:24.04-v2 "
+
+sbx_case inuse
+echo test/mantle-sandbox:24.04-v2 > "$T/state/in-use"
+FAKE_PULL_ID=sha256:X4 roll_lib "$T" "$sbx_sync"
+check "an image docker refuses is kept and logged" grep -q 'image prune: kept test/mantle-sandbox:24.04-v2' "$T/sig/update.log"
+
+sbx_case off
+sed -i.bak '/^COMPOSE_PROFILES=/d' "$T/stack/.env"
+FAKE_PULL_ID=sha256:X4 roll_lib "$T" "$sbx_sync"
+check "sandboxes off: no pull, nothing removed" sh -c "! grep -qE 'docker (pull|rmi)' '$T/calls' && test ! -e '$T/state/removed'"
+
+sbx_case noprune
+printf 'MANTLE_IMAGE_PRUNE=0\n' >> "$T/stack/.env"
+FAKE_PULL_ID=sha256:X4 roll_lib "$T" "$sbx_sync"
+check "MANTLE_IMAGE_PRUNE=0: pulled, nothing removed" sh -c "grep -qx 'docker pull test/mantle-sandbox:24.04-v4' '$T/calls' && test ! -e '$T/state/removed'"
+
+sbx_case custom
+printf 'SANDBOX_DEFAULT_IMAGE=custom/box:1\n' >> "$T/stack/.env"
+printf 'sha256:K1 custom/box:1\n' >> "$T/state/images"
+roll_lib "$T" "$sbx_sync"
+check "pinned to another image: nothing removed, says so" sh -c "test ! -e '$T/state/removed' && grep -q 'image prune: test/mantle-sandbox skipped' '$T/sig/update.log'"
+
+sbx_case psfail
+FAKE_PULL_ID=sha256:X4 FAKE_PS_FAIL=1 roll_lib "$T" "$sbx_sync"
+check "containers cannot be listed: nothing removed, says so" sh -c "test ! -e '$T/state/removed' && grep -q 'containers could not be listed' '$T/sig/update.log'"
+
+roll_case sbxroll
+printf 'COMPOSE_PROFILES=sandboxes\nSANDBOX_DEFAULT_IMAGE=test/mantle-sandbox:24.04-v4\nMANTLE_SANDBOX_PULL_MIN_FREE_MB=1\n' >> "$T/stack/.env"
+FAKE_PULL_ID=sha256:X4 FAKE_TS=20260105-000000 roll_loop "$T"
+check "roll on a sandboxes box: status done" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
+check "roll on a sandboxes box: the pinned base image is pulled, once" test "$(grep -cx 'docker pull test/mantle-sandbox:24.04-v4' "$T/calls")" = 1
+check "roll on a sandboxes box: old sandbox images pruned (v2 kept as the second newest)" sh -c "! grep -q 'mantle-sandbox:24.04-v2' '$T/state/removed'"
 
 roll_case tokens
 # A compose whose app services read the live service state and that runs the

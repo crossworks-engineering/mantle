@@ -1,0 +1,20 @@
+{
+  "name": "mantle-sandbox-node-kit",
+  "private": true,
+  "description": "The sandbox image's Node and Bun kit, exact versions. package-lock.json pins every package with its integrity hash; the image installs it with npm ci.",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.316",
+    "@biomejs/biome": "2.6.4",
+    "cheerio": "1.2.0",
+    "csv-parse": "7.0.3",
+    "date-fns": "4.4.0",
+    "esbuild": "0.28.2",
+    "exceljs": "4.4.0",
+    "jsonwebtoken": "9.0.3",
+    "pnpm": "12.16.1",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5",
+    "zod": "4.6.7"
+  }
+}

@@ -38,6 +38,7 @@ import {
   readFile,
   rm,
   stat,
+  statfs,
   unlink,
   writeFile,
 } from 'node:fs/promises';
@@ -72,10 +73,11 @@ const EGRESS_PROXY_PORT = Number(process.env.SANDBOX_EGRESS_PROXY_PORT || 8092);
 /** How balanced sandboxes address the proxy: the sandboxd container name in
  *  prod (docker DNS on the shared network); an explicit IP on local rigs. */
 const EGRESS_PROXY_HOST = process.env.SANDBOX_EGRESS_PROXY_HOST || 'mantle_sandboxd';
-/** Batteries-included default (python3+libs, node22+pnpm, git, docker CLI,
- *  claude code — see infra/sandbox-image/Dockerfile). Pinned tag: updating
- *  the image is an explicit SANDBOX_DEFAULT_IMAGE change, never silent drift. */
-const DEFAULT_IMAGE = process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v3';
+/** Batteries-included default (Node 26, Bun, Python 3.12, Go, Rust with the
+ *  wasm32 target, each with its kit; see infra/sandbox-image/Dockerfile and
+ *  /etc/mantle/sandbox-kit.json inside). Pinned tag: updating the image is an
+ *  explicit SANDBOX_DEFAULT_IMAGE change, never silent drift. */
+const DEFAULT_IMAGE = process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v4';
 const MAX_SANDBOXES = Number(process.env.SANDBOX_MAX_COUNT || 3);
 const MEM_BYTES = Number(process.env.SANDBOX_MEM_BYTES || 1024 * 1024 * 1024);
 const NANO_CPUS = Number(process.env.SANDBOX_NANO_CPUS || 1e9); // 1 CPU
@@ -88,6 +90,11 @@ const IDLE_STOP_MINUTES = Number(process.env.SANDBOX_IDLE_STOP_MINUTES || 60);
 /** Refuse new sandboxes when the sandboxes dir exceeds this (existing ones
  *  keep working — the budget guards the box, it never deletes work). */
 const DISK_BUDGET_BYTES = Number(process.env.SANDBOX_DISK_BUDGET_BYTES || 10 * 1024 ** 3);
+/** A base image that is not local is pulled whole (24.04-v4 is several GB):
+ *  refuse that pull while the disk under the sandboxes dir (on a standard box
+ *  the same disk as Docker's) has less than this free, so a first sandbox can
+ *  never fill the box. 0 turns the check off. */
+const PULL_MIN_FREE_BYTES = Number(process.env.SANDBOX_PULL_MIN_FREE_BYTES || 10 * 1024 ** 3);
 const EXPORT_MAX_BYTES = Number(process.env.SANDBOX_EXPORT_MAX_BYTES || 100 * 1024 * 1024);
 const IMPORT_MAX_BYTES = Number(process.env.SANDBOX_IMPORT_MAX_BYTES || 100 * 1024 * 1024);
 
@@ -259,6 +266,16 @@ async function setWakeScript(id: string, command: string): Promise<{ wake: strin
 }
 
 async function ensureImage(image: string): Promise<void> {
+  if (PULL_MIN_FREE_BYTES > 0 && !(await docker.imageExists(image))) {
+    const fs = await statfs(SANDBOXES_DIR).catch(() => null);
+    const free = fs ? fs.bavail * fs.bsize : null;
+    if (free !== null && free < PULL_MIN_FREE_BYTES) {
+      throw new HttpError(
+        507,
+        `not enough disk to download the sandbox image '${image}': ${Math.round(free / 1024 ** 3)} GB free, ${Math.round(PULL_MIN_FREE_BYTES / 1024 ** 3)} GB needed (SANDBOX_PULL_MIN_FREE_BYTES) — free space on the box, then create again`,
+      );
+    }
+  }
   // Create-then-pull-on-404 would need a throwaway create; probing the pull
   // path directly is simpler and a no-op when the image is already local.
   await docker.pullImage(image);

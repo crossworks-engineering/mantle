@@ -69,7 +69,9 @@ stray root-owned directory on every box that never sets the variable.
 Optional: `SANDBOX_DEFAULT_IMAGE` (pin a different base image),
 `SANDBOX_MAX_COUNT` (default 3), `SANDBOX_IDLE_STOP_MINUTES` (default 60),
 `SANDBOX_DISK_BUDGET_BYTES` (default 10 GB), `SANDBOX_EGRESS_ALLOW`
-(extra balanced-tier hosts, comma-separated).
+(extra balanced-tier hosts, comma-separated), `SANDBOX_PULL_MIN_FREE_BYTES`
+(default 10 GB: sandboxd refuses to download a base image that is not local
+while the disk under the sandboxes dir has less free; 0 turns it off).
 
 ## Architecture
 
@@ -116,7 +118,9 @@ is and the reply says so when the key is not there yet.
 **Networks.** Sandboxes never join the app network. `full`-tier sandboxes
 live on `mantle_sandbox` (internet via NAT, no route to the brain);
 `balanced` sandboxes live on `mantle_sandbox_restricted` (`internal: true`,
-no NAT at all) and egress only through sandboxd's allowlisting CONNECT proxy;
+no NAT at all) and egress only through sandboxd's allowlisting CONNECT proxy
+(npm, PyPI, the Go module proxy and checksum database, crates.io, GitHub, the
+apt mirrors, plus `SANDBOX_EGRESS_ALLOW`);
 `none` sandboxes have no network. Only sandboxd straddles the networks.
 
 **Lifecycle hygiene.** A sandbox idle for an hour is chown-and-stopped
@@ -192,13 +196,64 @@ richer ergonomics than raw exec for file work, same blast radius.
 ## The base image
 
 `titanwest/mantle-sandbox` (built from `infra/sandbox-image/Dockerfile`,
-Ubuntu 24.04 LTS): python 3.12 with a global venv carrying
-requests/httpx/flask/fastapi/uvicorn/pandas/numpy, node 26 + pnpm (from npm),
-git, ripgrep, build-essential, vim/tmux, docker **CLI only** (no daemon,
-nested docker is a separate decision), Claude Code, and jsonwebtoken on
-`NODE_PATH`. Create-to-working-toolchain is ~5 seconds. Defaults pin the
-versioned tag (`24.04-vN`) everywhere: updating the image is an explicit env
-change, never silent drift. Bump the tag on every content change.
+Ubuntu 24.04 LTS). Since `24.04-v4` it carries every language, each with a
+short kit chosen by its job in Mantle, so a sandbox never installs a toolchain
+and a first build works with no network:
+
+| Language | Kit (pre-installed, or in the package cache) | Tools |
+| --- | --- | --- |
+| Node 26 + npm + pnpm | zod, date-fns, csv-parse, exceljs, cheerio, esbuild, typescript, jsonwebtoken (`import` and `require` from anywhere) | biome, vitest, tsc |
+| Bun | the Node kit through `require`; `bun:sqlite`, `bun test` built in | |
+| Python 3.12 (venv `/opt/venv`) | requests, httpx, flask, fastapi, uvicorn, pandas, numpy, pydantic, pyyaml, python-dateutil, openpyxl, xlsxwriter, python-docx, pypdf, pdfplumber, beautifulsoup4, lxml, psycopg[binary], sqlite-utils, jinja2, matplotlib, plotly, scipy, pint, ezdxf, shapely, networkx | ruff, pytest |
+| Go | modernc.org/sqlite, yaml.v3, excelize, cobra, chi, pgx, testify (module cache) | gofmt, go vet, staticcheck |
+| Rust (wasm32-unknown-unknown) | wasm-bindgen, js-sys, web-sys, serde, serde_json, serde-wasm-bindgen, console_error_panic_hook, nalgebra, geo, dxf, image, csv, rusqlite (bundled), anyhow, regex, chrono, reqwest (rustls) (cargo cache, fetched not built) | rustfmt, clippy, wasm-pack, wasm-bindgen, wasm-opt |
+
+SQLite works in every language (node:sqlite, bun:sqlite, sqlite3 +
+sqlite-utils, modernc.org/sqlite, rusqlite bundled), with the `sqlite3` and
+`duckdb` command lines beside them (duckdb has its sqlite and excel
+extensions installed). A sandbox works on a SQLite file inside it, never on the
+brain's live app databases: it gets a copy through `sandbox_import`. Also in
+the image: git, ripgrep, jq, build-essential, cmake, vim/tmux, docker **CLI
+only** (no daemon, nested docker is a separate decision) and Claude Code.
+
+**The kit manifest.** `/etc/mantle/sandbox-kit.json` lists every language,
+library and tool with its installed version, written at the end of the build
+from what is installed, so it cannot drift. An agent reads it with one
+`sandbox_exec` instead of trying commands; `sandbox_create`'s description
+points at it. **`sandbox-smoke`** in the image proves the kit: one SQLite file
+read from every language, a first build in Go, Rust and WebAssembly, the Node
+kit by `require` and by ESM `import`, every Python import, every formatter,
+linter and test runner. CI runs it with the network
+on and with `--network none`.
+
+**Offline use.** Python and the Node kit need nothing: `/node_modules` links to
+the kit, and Node, Bun, esbuild, tsc and vitest walk up to it, so `import` and
+`require` work from any project (its own `node_modules` first). Go's `GOPROXY` lists the module cache first (its checksum
+database tiles are cached too, so go.sum checks still run): `go mod tidy`
+resolves the kit offline, and pins it to the kit's versions (`go get
+mod@vX.Y.Z` for another). `GOTOOLCHAIN=local`: no toolchain downloads. Rust
+crates are fetched, not built: with no network set `CARGO_NET_OFFLINE=true`,
+which every cargo call takes, wasm-pack's included (wasm-pack finds
+wasm-bindgen and wasm-opt on PATH, so it downloads nothing). Anything outside the kit installs on demand;
+a `balanced` sandbox reaches the registries for it (see below).
+
+**Reproducible.** Base images pinned by digest; apt from a dated
+snapshot.ubuntu.com snapshot (taken off again at the end, so a sandbox's own
+apt is live); every downloaded binary checked against a pinned sha256; every
+library from a lockfile with hashes in `infra/sandbox-image/kit/`. Bumping a
+version: `infra/sandbox-image/README.md`.
+
+**Tags and disk.** Defaults pin the versioned tag (`24.04-vN`) everywhere:
+updating the image is an explicit env change, never silent drift. Bump
+`infra/sandbox-image/TAG` and every default on every content change (CI
+checks they agree). v4 is several GB larger than v3, so the updater handles
+the base image on a box with sandboxes on (`sandbox_image_sync`): after every
+OK roll and at its own start it pulls the pinned image when it is not local,
+only with `MANTLE_SANDBOX_PULL_MIN_FREE_MB` (10240) free, and removes old
+images of exactly `<ns>/mantle-sandbox`, keeping the pin now, the pin before
+the roll, the two newest of the repository and every image a container (every
+sandbox, running or stopped) was made from. `MANTLE_IMAGE_PRUNE=0` turns the
+removal off. A box with sandboxes off keeps every image.
 
 ## Surface
 

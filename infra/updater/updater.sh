@@ -1207,8 +1207,9 @@ s8b_seat_refusal() {
 # every box has it. mantle-media (the removed media sidecar) has no container
 # after the roll that removes it, so it takes its own rule (prune_media): all
 # of its images go but the rollback one, and that one on the next roll.
-# It never touches any other repository (mantle-sandbox, mantle-rustfs, caddy,
-# postgres, app or sandbox images), never volumes or containers, never runs a
+# It never touches any other repository (mantle-rustfs, caddy, postgres, app
+# or sandbox images; mantle-sandbox has its own rule, sandbox_image_sync),
+# never volumes or containers, never runs a
 # `system prune`, and never forces: `docker rmi` refuses an image a container
 # still uses, and that refusal is logged and left alone. Off with
 # MANTLE_IMAGE_PRUNE=0 in .env.
@@ -1282,6 +1283,81 @@ prune_media() {
     return 0
   fi
   prune_rmi "$pm_repo" "$1"
+}
+
+# ── the sandbox base image: pull the pin, prune old ones ────────────────────
+# A release can move the sandbox base image (SANDBOX_DEFAULT_IMAGE's compose
+# default) to a new tag; 24.04-v4 carries every language and is about 2 to 3
+# GB larger than v3. On a box with the sandboxes profile on, sandbox_image_sync
+# runs after every OK roll and once at startup (so the re-exec after the roll
+# that brings it does the same, whichever updater ran that roll):
+#   1. the pinned image is pulled when it is not local yet, but only with
+#      MANTLE_SANDBOX_PULL_MIN_FREE_MB (10240) free on the stack's disk; with
+#      less it says so and pulls nothing;
+#   2. old images of exactly <ns>/mantle-sandbox go, keeping the pin now, the
+#      pin before the roll, the two newest images of the repository (so the
+#      previous tag survives the rolls that do not move the pin) and every
+#      image any container was made from, running or stopped: every sandbox
+#      keeps its image. Only when the pin is an image of <ns>/mantle-sandbox:
+#      a box pinned to some other image is left alone.
+# Never forced (docker rmi refuses an image a container uses), never another
+# repository, never on a box with sandboxes off (off loses nothing). The prune
+# is off with MANTLE_IMAGE_PRUNE=0; the pull still runs.
+
+# image_id <ref>: the local image id of <ref> ("" when it is not local).
+image_id() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null; }
+
+# containers_image_ids: the image id of every container, running or stopped.
+containers_image_ids() {
+  cii_all=$(docker ps -aq --no-trunc 2>/dev/null) || return 1
+  for cii in $cii_all; do
+    docker inspect -f '{{.Image}}' "$cii" 2>/dev/null
+  done
+  return 0
+}
+
+# sandbox_image_sync <pin-before-the-roll or "">
+sandbox_image_sync() {
+  profile_active sandboxes || return 0
+  sis_pin=$(sandbox_base_image) || return 0
+  sis_repo="${pi_ns:-$(env_val MANTLE_IMAGE_NAMESPACE)}"
+  sis_repo="${sis_repo:-titanwest}/mantle-sandbox"
+  if [ -z "$(image_id "$sis_pin")" ]; then
+    sis_min=$(num_or "$(env_val MANTLE_SANDBOX_PULL_MIN_FREE_MB)" 10240)
+    sis_free=$(free_kb "$STACK")
+    if [ -z "$sis_free" ] || [ "$sis_free" -lt $((sis_min * 1024)) ]; then
+      echo "[updater] ⚠ sandbox base image $sis_pin NOT pulled: $((${sis_free:-0} / 1024)) MB free, need $sis_min MB (MANTLE_SANDBOX_PULL_MIN_FREE_MB). Free space (old images, old backups); the next roll or updater restart pulls it"
+      return 0
+    fi
+    echo "[updater] pulling the sandbox base image $sis_pin ($((sis_free / 1024)) MB free)"
+    if ! docker pull "$sis_pin" > /dev/null 2>&1; then
+      echo "[updater] ⚠ the sandbox base image $sis_pin did not download; the first new sandbox will fetch it"
+      return 0
+    fi
+  fi
+  if [ "$(env_val MANTLE_IMAGE_PRUNE)" = 0 ]; then
+    return 0
+  fi
+  case "$sis_pin" in
+    "$sis_repo":* | "$sis_repo"@*) : ;;
+    *)
+      echo "[updater] image prune: $sis_repo skipped (the sandbox base image is $sis_pin, not one of it)"
+      return 0
+      ;;
+  esac
+  sis_cur=$(image_id "$sis_pin")
+  [ -n "$sis_cur" ] || return 0
+  sis_prev=""
+  [ -z "$1" ] || sis_prev=$(image_id "$1")
+  sis_newest=$(docker image ls --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' "$sis_repo" 2>/dev/null \
+    | awk -v r="$sis_repo" 'NF { ref = $2; sub(/:[^:]*$/, "", ref); if (ref == r) print $1 }' \
+    | awk '!seen[$0]++' | head -2)
+  # Without the list of images in use, keep everything.
+  sis_used=$(containers_image_ids) || {
+    echo "[updater] image prune: $sis_repo skipped (the containers could not be listed)"
+    return 0
+  }
+  prune_rmi "$sis_repo" "$(printf '%s\n%s\n%s\n%s\n' "$sis_cur" "$sis_prev" "$sis_newest" "$sis_used")"
 }
 
 # topup_scripts: install an operator script the RUNNING release names but the
@@ -1928,6 +2004,9 @@ else
   echo "[updater] ready — stack: $STACK"
   topup_scripts
   write_stack_info
+  # The sandbox base image the running release pins (see sandbox_image_sync):
+  # also how the roll that brings a new pin pulls it, through this re-exec.
+  sandbox_image_sync "" | tee -a "$SIG/update.log"
 fi
 
 # We deliberately do NOT dead-sleep when unconfigured. Staying in the poll loop
@@ -2063,6 +2142,7 @@ while true; do
     PREV_CLIENT_IMG=$(container_image mantle_client_web)
     PREV_PARSER_IMG=$(container_image mantle_parser)
     PREV_MEDIA_IMG=$(container_image mantle_media)
+    PREV_SBX_PIN=$(sandbox_base_image) || PREV_SBX_PIN=""
 
     # Persist the tag so a later manual `docker compose up` doesn't roll back.
     # persist_env: temp-file rewrite that keeps .env's owner and mode (a bare
@@ -2185,6 +2265,7 @@ while true; do
         # Old images of this product only, after the status is terminal: a
         # prune problem must never turn an OK roll into a failed one.
         prune_images "$PREV_SERVER_IMG" "$PREV_CLIENT_IMG" "$PREV_PARSER_IMG" "$PREV_MEDIA_IMG"
+        sandbox_image_sync "$PREV_SBX_PIN" | tee -a "$SIG/update.log"
         # Self-refresh LAST, on the success path only: a failed roll should
         # change as little as possible, and the status the UI polls is already
         # terminal. Sets UPDATER_REFRESH for the write_stack_info below.

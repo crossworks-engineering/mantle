@@ -54,7 +54,7 @@
 #      masked. No automatic rollback: the operator decides.
 #   7. count again: ANY drop in apps, sandboxes or app-db files stops with a
 #      loud error (mini sandbox apps are never to be lost in a roll)
-#   8. print /api/version
+#   8. print /api/version, the free disk and the sandbox base images kept
 #
 # Usage:
 #   scripts/roll.sh [--dry-run] [--ack-connector-writes] [--ack-app-ddl] [--app-ddl-ids] <box-label> <tag>
@@ -1001,4 +1001,8 @@ docker exec mantle_web node -e "fetch('http://127.0.0.1:3000/api/version').then(
 EOF
   )"
 fi
+# Disk after, and the sandbox base images the updater kept (it pulls a newly
+# pinned one and prunes old ones after the roll, sandbox_image_sync).
+rsh "df -h '$STACK' | tail -1" || true
+rsh "docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep '/mantle-sandbox:' || true" || true
 echo "✔ $SSH_ALIAS rolled to $TAG; apps, sandboxes and app-db files intact"
