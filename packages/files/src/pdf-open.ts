@@ -24,7 +24,15 @@
  * (In the brain these were joined by a process-wide decode slot with wait and
  * hold deadlines; one job per process in a memory-limited container made them
  * unnecessary, and they are gone.)
+ *
+ * Every open also names pdfjs's decoder directory (`wasmUrl`). The JPX, CCITT
+ * and JBIG2 decoders are WebAssembly modules pdfjs loads from there the first
+ * time a page needs one, from the local disk. Without it pdfjs drops such an
+ * image and carries on with no error, so a scan renders as a white page.
  */
+
+import { createRequire } from 'node:module';
+import path from 'node:path';
 
 /**
  * The largest embedded image pdfjs will decode, in pixels (width x height, as
@@ -37,7 +45,8 @@
  *
  * Measured on Linux, rendering a one-page scan holding one image, peak RSS
  * rise: 70 M +1.05 GB, 75 M +1.13 GB, 80 M +1.19 to +1.21 GB (Flate; JPEG is
- * lower, +0.87 GB at 75 M). The 16000x16000 case drops from ~1.9 GB to the baseline. The
+ * lower, +0.87 GB at 75 M; a 27 MB JPX at 75 M rose 0.16 GB in the parser
+ * container). The 16000x16000 case drops from ~1.9 GB to the baseline. The
  * pictures pass opens with a lower cap of its own (`MAX_IMAGE_PIXELS` in
  * pdf.ts, 30 M), so pdfjs never decodes an image there that the pass would
  * only throw away.
@@ -176,15 +185,23 @@ export function declaresOversizeImage(
 
 // ─── opening ──────────────────────────────────────────────────────────
 
+/** A directory of the installed pdfjs-dist, as `getDocument` wants it
+ *  (trailing slash). Resolved from the package, not the working directory, so
+ *  it is found wherever the process runs. */
+export function pdfjsAssetDir(name: string): string {
+  const root = path.dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json'));
+  return `${path.join(root, name)}/`;
+}
+
 type Pdfjs = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 type GetDocumentParams = Parameters<Pdfjs['getDocument']>[0] & object;
 export type PdfDocument = Awaited<ReturnType<Pdfjs['getDocument']>['promise']>;
 
-/** Extra `getDocument` parameters a caller may set. The safety parameters
- *  are not among them: they always win. */
+/** Extra `getDocument` parameters a caller may set. The safety parameters and
+ *  the decoder directory are not among them: they always win. */
 export type OpenPdfOptions = Omit<
   Exclude<GetDocumentParams, string | URL | ArrayBuffer | Uint8Array>,
-  'data' | 'url' | keyof typeof SAFE_PDF_PARAMS
+  'data' | 'url' | 'wasmUrl' | keyof typeof SAFE_PDF_PARAMS
 >;
 
 export type WithPdfOptions = OpenPdfOptions & {
@@ -220,6 +237,7 @@ export async function withPdf<T>(
     ...params,
     data,
     ...SAFE_PDF_PARAMS,
+    wasmUrl: pdfjsAssetDir('wasm'),
     // Only ever lower: pdfjs reads -1 as "no limit", so anything not a
     // positive number keeps the package cap.
     maxImageSize:

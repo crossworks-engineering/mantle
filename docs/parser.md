@@ -181,7 +181,10 @@ usually turned away before it costs much:
 - PDF: a file over 256 MB is refused, an image declaring more than 75
   million pixels is not decoded, pages are rendered one at a time at most
   4096 by 4096 pixels and cleaned up after each (`packages/files/src/pdf-open.ts`,
-  `packages/files/src/rasterize.ts`);
+  `packages/files/src/rasterize.ts`). The JPX, CCITT and JBIG2 decoders are
+  WebAssembly modules of pdfjs: every open names their directory in the
+  installed package (`wasmUrl`), and they load from the disk of the image,
+  with no network;
 - images: at most 100 million pixels decoded (`packages/files/src/image-read.ts`).
 
 A refusal is answered `too_large`, marked final (`"final": true` in the
@@ -343,6 +346,53 @@ parser route, never a reader in the brain.
 file`) in the demuxers of the stored media formats (`-format_whitelist`:
   mp4/mov/m4a, matroska/webm, avi, mp3, wav, ogg, flac, aac). A recording
   whose length ffprobe cannot read is cut at the duration limit.
+
+## Scans that drew blank before the decoders
+
+Until `wasmUrl` was set (see Limits), pdfjs could not load its JPX, CCITT and
+JBIG2 decoders. It dropped such an image with no error, so the page rendered
+white. The old renderer (pdf-to-png-converter) set no `wasmUrl` either, so
+treat every scan since the OCR path began (2026-05-25) as a candidate. The fix
+does not change what is already stored. What a white page left behind:
+
+- **A document read natively** by the document worker (`data.native_pdf` is
+  `true`) is not touched: the provider read the PDF, no render ran.
+- **A blank verdict**: the vision worker answered nothing, so the node has the
+  terminal `data.extract_skipped.reason = 'no_text_layer'`, no text and no
+  embedding.
+- **A false document**: the default vision prompt asks for a description, so a
+  white page can come back as a sentence that it is blank. Past 20 characters
+  that sentence is indexed as the document (`data.ocr` is `true`), with a
+  summary, an embedding and facts. A scan of mixed pages lost only the pages in
+  these codecs.
+- **A lost picture**: a PDF with a text layer keeps its text and loses the JPX
+  pictures. The 1-bit images were never picked up as pictures (`toPngBytes`).
+
+To find them, list the candidates, then look in their bytes. Neither step
+calls a model. This SQL is read-only and prints ids:
+
+```sql
+select id, data->'extract_skipped'->>'reason' as skip, data->>'ocr' as ocr
+  from public.nodes
+ where type = 'file'
+   and (lower(coalesce(data->>'filename', title)) like '%.pdf'
+        or data->>'mimeType' = 'application/pdf')
+   and (data->'extract_skipped'->>'reason' = 'no_text_layer'
+        or data->>'ocr' = 'true');
+```
+
+For each id, read the file (`readFileById`, as `countPages` does in
+`server/web/lib/maintenance/ocr-rescan.ts`) and look for `/JPXDecode`,
+`/CCITTFaxDecode` or `/JBIG2Decode` in the raw bytes. An image's dictionary is
+plain text in the file, also in an encrypted one. A hit is a document to read
+again; a miss means the blank verdict came from something else. An inline image
+can name its filter `/CCF` inside a compressed content stream, so this scan can
+miss one.
+
+Reading a document again spends model money (a vision call a page, then a
+summary, an embedding and facts), so it needs the owner's word.
+`pnpm maintain ocr-rescan` does not list these documents: its candidates are
+another bug's.
 
 ## Running it in development
 

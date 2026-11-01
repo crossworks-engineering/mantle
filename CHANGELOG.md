@@ -4,6 +4,21 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: PDF scans in JPX, CCITT and JBIG2 draw
+
+- **Fixed:** a PDF scan whose images use JPX (JPEG 2000), CCITT or JBIG2
+  rendered as white pages, with no error. pdfjs loads those decoders from a
+  directory the caller must name (`wasmUrl`), and no open named it, so it
+  dropped each such image. OCR then read a blank page: the document was
+  skipped as `no_text_layer`, or the model's sentence that the page is blank
+  was indexed as the document. Every open now names the directory, through
+  `withPdf`, so the render and the pictures pass both draw these images. The
+  decoders load from the image's own disk, with no network. A 75 million pixel
+  JPX page stays well inside the parser's 2 GB limit.
+- **Not repaired:** documents already stored stay as they are. How to find them
+  is in `docs/parser.md` ("Scans that drew blank before the decoders"). Reading
+  them again spends model money, so it waits for the owner's word.
+
 ## Unreleased: the UI sounds save names its login
 
 - **Fixed:** `PUT /api/profile/sounds` now takes `loginId`, the login the
