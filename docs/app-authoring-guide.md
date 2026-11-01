@@ -30,6 +30,12 @@ explicitly grant it and an optional per-app SQLite database.
      locally, or
    - `app_file_write(id, path, content)`, one file at a time;
      `app_file_delete(id, path)` to remove one (can't delete the entry).
+
+   To **change** an app that exists, edit it in place with the code tools
+   (_Editing source in place_ below): read one file or a range of lines,
+   search the tree, replace exact text, and get a diff back, instead of
+   reading every file and writing whole files back.
+
 3. **Grant data access** (see _Binding to data_ below):
    - `app_tools_set(id, tool_slugs)`, the runtime allowlist of tool slugs the
      app may call. The host refuses any slug not declared here.
@@ -49,11 +55,47 @@ explicitly grant it and an optional per-app SQLite database.
    by it, and it stays until you pass a new one. Without one, a model writes
    it from the code when the app is indexed.
 
-`app_get(id, include_source?)` reads an app back; `app_list()` browses them;
+`app_get(id, include_source?)` reads an app back (with its `rev`); `app_list()` browses them;
 `app_delete(id)` removes one (irreversible, confirm first).
 
 Drafts are isolated: every edit lands in the draft; the published app is
 untouched until `app_publish`.
+
+## Editing source in place (the code tools)
+
+Six tools view and edit an app's source without moving whole files. Each
+takes a `target`: `app:<id>` (the app's id from `app_list`), the app's
+**draft** tree (else its published tree). They copy the shape of the
+Anthropic text editor tool and the MCP filesystem server's `edit_file`.
+
+| Tool                                                             | What it does                                                                                                                                                                                              |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `code_view(target, path?, start?, end?)`                         | No `path`: the file tree with sizes and line counts, the entry and the tree's `rev`. With a `path`: numbered lines, only `start`..`end` when given.                                                       |
+| `code_search(target, pattern, regex?, glob?, ignore_case?)`      | `file:line: text` hits, capped; the result says how many there were in all. A regex is stopped if it runs too long.                                                                                       |
+| `code_edit(target, path, edits[], dry_run?, base_rev?, build?)`  | Each edit is `{ old, new, replace_all? }`. `old` must match exactly once (else the call fails, says how many hits and on which lines). All edits apply or none. Returns a unified diff and the new `rev`. |
+| `code_insert(target, path, after_line, text, base_rev?, build?)` | Adds lines after a line number (0 is the top).                                                                                                                                                            |
+| `code_write(target, path, content, base_rev?, build?)`           | Creates or replaces one whole file (`app_file_write` with the revision check).                                                                                                                            |
+| `code_undo(target, path)`                                        | Puts the file back as it was before the last write that changed it; again to step further back.                                                                                                           |
+
+- **The revision (`rev`).** Every read and write returns the tree's `rev`.
+  Pass it back as `base_rev`: when another agent, the editor or a restore
+  changed the draft since, the write fails and names the current rev
+  (read again, then redo the change). `app_get` returns the `rev` too, and
+  `app_source_set` takes `base_rev`, so a push from a local copy over a
+  newer draft fails the same way.
+- **`build: true`** runs `app_build` in the same call and returns its errors
+  (file, line, column). The edit is saved either way; a failed build never
+  replaces the last good preview.
+- **Undo.** Every write through these tools, `app_file_write`,
+  `app_file_delete` and `app_source_set` first records the code as it stood
+  on the app's history line (a `pre_code_edit` entry, code only). The newest
+  20 are kept per app, and the History tab leaves them out. `code_undo` reads
+  them; for a whole earlier version use `app_snapshot_restore`.
+- **Access** is the app tools': `code_view` and `code_search` read what
+  `app_get` reads; the four writes ask what `app_file_write` asks.
+
+A typical fix: `code_search` for the text, `code_view` the lines around the
+hit, `code_edit` with `base_rev` and `build: true`, then preview and publish.
 
 ## Allowed imports (the bundler allowlist)
 
@@ -881,7 +923,8 @@ the member-only `my_app_*` tools were retired). Read `app_authoring_guide`
   names it (`landedIn`). With `workspace` (one the member moderates, from
   `workspaces_list`) it lands there. Only users of its workspace read and
   run it.
-- **The loop:** `app_create`, `app_file_write`, `app_build`, `app_publish`.
+- **The loop:** `app_create`, `app_file_write` (or the code tools to edit in
+  place), `app_build`, `app_publish`.
   `app_db_schema_set` and `app_tools_set` declare the database and the
   tools. A tool changes an app only where the member may edit it (a
   Moderator of its workspace, or a grant with Write on).

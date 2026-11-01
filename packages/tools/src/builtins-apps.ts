@@ -13,9 +13,9 @@ import {
   setAppAuthorLevel,
   getApp,
   listApps,
-  writeDraftFile,
-  deleteDraftFile,
-  saveDraftSource,
+  changeDraftSource,
+  sourceRev,
+  AppDraftRevError,
   setManifest,
   declareAppSchema,
   publishApp,
@@ -116,7 +116,7 @@ function appTrashSystem<T>(fn: () => Promise<T>): Promise<T> {
  * first; this is the handler's own check, for the MCP path that calls
  * handlers directly.
  */
-function ownerOnlyRefusal(
+export function ownerOnlyRefusal(
   ctx: Parameters<BuiltinToolDef['handler']>[1],
 ): { ok: false; error: string } | null {
   if (isOwnerSurface(ctx.surface)) return null;
@@ -128,7 +128,7 @@ function ownerOnlyRefusal(
 
 /** Who a history row names for a tool call: the owner's MCP client, or an
  *  agent in a chat or run. */
-function historyActor(ctx: Parameters<BuiltinToolDef['handler']>[1]): 'mcp' | 'agent' {
+export function historyActor(ctx: Parameters<BuiltinToolDef['handler']>[1]): 'mcp' | 'agent' {
   return ctx.surface?.kind === 'owner' && ctx.surface.via === 'mcp' ? 'mcp' : 'agent';
 }
 
@@ -153,7 +153,7 @@ const RUNTIME_HINT =
   "Who runs it: `await host.me()` gives `{ id, name, kind }` (kind admin, member, client, contact or public; per-app id, no email), for display. To RECORD who did something, write `:host_me_id`, `:host_me_name`, `:host_me_kind` in the SQL; the server fills them: `host.db.exec('INSERT INTO log (what, by_id, by_name) VALUES (?, :host_me_id, :host_me_name)', [what])`. Never send host.me() values as params. `host.db.query/exec` = the app's own SQLite; `host.tools.call(slug, input)` = only slugs declared with app_tools_set. Levels: team = members also run it and write its one shared database; client = clients too; the level limits the tools (see app_tools_set); an open share link gets no tools and only reads. Full guide: app_authoring_guide (MCP) or the app_authoring skill. ";
 
 /** The short form for the source write tools. */
-const WHO_HINT =
+export const WHO_HINT =
   'Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. ';
 
 function fileList(app: AppDetail) {
@@ -372,6 +372,7 @@ const app_get: BuiltinToolDef = {
         description: app.description,
         manifest: app.manifest,
         hasDraft: app.hasDraft,
+        rev: sourceRev(src),
         draftBuild: app.draftBuild ? { ok: app.draftBuild.ok, bytes: app.draftBuild.bytes } : null,
         publishedBuild: app.publishedBuild ? { ok: app.publishedBuild.ok } : null,
         ...fileList(app),
@@ -423,20 +424,29 @@ const app_file_write: BuiltinToolDef = {
     if (!id || !path) return { ok: false, error: 'id and path are required' };
     const content = str(input.content);
     try {
-      const next = await writeDraftFile(ctx.ownerId, id, path, content);
-      if (!next) return { ok: false, error: `app ${id} not found` };
+      // The code tools' one draft write (code_write's): its history row
+      // lets code_undo put the file back.
+      const res = await changeDraftSource(
+        ctx.ownerId,
+        id,
+        (tree) => ({ entry: tree.entry, files: { ...tree.files, [path]: content } }),
+        { actor: historyActor(ctx), note: `app_file_write ${path}` },
+      );
+      if (!res) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, path, bytes: Buffer.byteLength(content, 'utf8') });
       return {
         ok: true,
         output: {
           id,
           path,
-          file_count: Object.keys(next.files).length,
+          rev: res.rev,
+          file_count: Object.keys(res.after.files).length,
           draft_saved: true,
           hint: 'Run app_build to compile this draft and surface any errors.',
         },
       };
     } catch (err) {
+      if (err instanceof AppSourceLimitError) return { ok: false, error: err.message };
       return { ok: false, error: errorMessage(err) };
     }
   },
@@ -477,12 +487,28 @@ const app_file_delete: BuiltinToolDef = {
     const path = str(input.path).trim();
     if (!id || !path) return { ok: false, error: 'id and path are required' };
     try {
-      const next = await deleteDraftFile(ctx.ownerId, id, path);
-      if (!next) return { ok: false, error: `app ${id} not found` };
+      const res = await changeDraftSource(
+        ctx.ownerId,
+        id,
+        (tree) => {
+          if (path === tree.entry) throw new CannotDeleteEntryError();
+          const files = { ...tree.files };
+          delete files[path];
+          return { entry: tree.entry, files };
+        },
+        { actor: historyActor(ctx), note: `app_file_delete ${path}` },
+      );
+      if (!res) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, path, deleted: true });
       return {
         ok: true,
-        output: { id, path, deleted: true, file_count: Object.keys(next.files).length },
+        output: {
+          id,
+          path,
+          deleted: true,
+          rev: res.rev,
+          file_count: Object.keys(res.after.files).length,
+        },
       };
     } catch (err) {
       if (err instanceof CannotDeleteEntryError) return { ok: false, error: err.message };
@@ -527,6 +553,11 @@ const app_source_set: BuiltinToolDef = {
           'Map of file path → full file contents (TSX/TS strings). Must include the entry file. Max 50 files, 256 KB each.',
         additionalProperties: { type: 'string' },
       },
+      base_rev: {
+        type: 'string',
+        description:
+          "The tree's `rev` you last read (`app_get`, `code_view`): a draft changed since is not replaced, the call fails with the current rev.",
+      },
     },
     required: ['id', 'entry', 'files'],
   },
@@ -555,21 +586,28 @@ const app_source_set: BuiltinToolDef = {
       };
     }
     try {
-      const ok = await saveDraftSource(ctx.ownerId, id, { entry, files });
-      if (!ok) return { ok: false, error: `app ${id} not found` };
+      const res = await changeDraftSource(ctx.ownerId, id, () => ({ entry, files }), {
+        actor: historyActor(ctx),
+        note: 'app_source_set',
+        baseRev: str(input.base_rev).trim() || null,
+      });
+      if (!res) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, entry, file_count: Object.keys(files).length });
       return {
         ok: true,
         output: {
           id,
           entry,
+          rev: res.rev,
           file_count: Object.keys(files).length,
           draft_saved: true,
           hint: 'Run app_build to compile this draft and surface any errors.',
         },
       };
     } catch (err) {
-      if (err instanceof AppSourceLimitError) return { ok: false, error: err.message };
+      if (err instanceof AppSourceLimitError || err instanceof AppDraftRevError) {
+        return { ok: false, error: err.message };
+      }
       return { ok: false, error: errorMessage(err) };
     }
   },
@@ -2020,15 +2058,23 @@ async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
  * write the caller may not make (it takes a Moderator of the app's home;
  * docs/actors.md, "11. Tools").
  */
-function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
+export function withAuthorCeiling(
+  def: BuiltinToolDef,
+  /** The app the call changes, from its input: its `id` here; the code
+   *  tools read their `target`. */
+  appIdOf: (input: Record<string, unknown>) => string | null = (input) => {
+    const id = str(input.id).trim().toLowerCase();
+    return UUID_RE.test(id) ? id : null;
+  },
+): BuiltinToolDef {
   // The app tools whose change reaches what the app's code or tools do:
   // their policy says so (`outside.appCode`).
   if (def.policy.outside?.appCode !== true) return def;
   return {
     ...def,
     handler: async (input, ctx) => {
-      const target = str(input.id).trim().toLowerCase();
-      if (UUID_RE.test(target) && (await scopeOutsideAdmin())) {
+      const target = appIdOf(input);
+      if (target && (await scopeOutsideAdmin())) {
         await lowerToTeamRules(ctx.ownerId, target);
       }
       return def.handler(input, ctx);
@@ -2062,6 +2108,6 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_export,
   app_import,
   app_errors,
-].map(withAuthorCeiling);
+].map((def) => withAuthorCeiling(def));
 
 export const APP_TOOL_SLUGS: string[] = APP_TOOLS.map((t) => t.slug);

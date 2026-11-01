@@ -22,14 +22,14 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('@mantle/content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content')>();
-  return { ...actual, deleteApp: vi.fn(), deleteDraftFile: vi.fn() };
+  return { ...actual, deleteApp: vi.fn(), changeDraftSource: vi.fn() };
 });
 vi.mock('@mantle/content/app-table-exports', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content/app-table-exports')>();
   return { ...actual, removeAppTableExport: vi.fn() };
 });
 
-import { deleteApp, deleteDraftFile, CannotDeleteEntryError } from '@mantle/content';
+import { deleteApp, changeDraftSource } from '@mantle/content';
 import { removeAppTableExport } from '@mantle/content/app-table-exports';
 import { APP_TOOLS } from './builtins-apps';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -54,7 +54,17 @@ function outputOf(res: Result): Record<string, unknown> {
   return res.output as Record<string, unknown>;
 }
 
-beforeEach(() => vi.clearAllMocks());
+/** The draft as the one draft write (changeDraftSource) reads it. */
+const TREE = { entry: 'App.tsx', files: { 'App.tsx': 'x', 'util.ts': 'y', 'old.ts': 'z' } };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // The change runs over the tree; one that throws fails the write.
+  vi.mocked(changeDraftSource).mockImplementation(async (_o, _id, change) => {
+    const after = change(TREE);
+    return { before: TREE, after, beforeRev: 'r0', rev: 'r1', written: true };
+  });
+});
 
 describe('app_delete', () => {
   it('is confirm-gated — it takes the source, the builds and the app database', () => {
@@ -113,38 +123,27 @@ describe('app_delete', () => {
 describe('app_file_delete', () => {
   it('requires both id and path, and writes nothing without them', async () => {
     expect(errorOf(await fileDel.handler({ id: APP_ID }, ctx))).toMatch(/id and path are required/);
-    expect(deleteDraftFile).not.toHaveBeenCalled();
+    expect(changeDraftSource).not.toHaveBeenCalled();
   });
 
   it('surfaces the entry-file refusal with its reason intact', async () => {
     // Deleting the entry leaves an app that cannot build, so the caller has to
     // learn it was the ENTRY and not a bad path.
     //
-    // Scope note, found by mutation: the handler's dedicated
-    // `err instanceof CannotDeleteEntryError` branch is currently REDUNDANT —
-    // deleting it changes nothing, because the generic fallback runs
-    // `errorMessage(err)` and produces the identical string. So this case pins
-    // the OUTCOME (the reason reaches the caller) and cannot pin the typed
-    // branch. It would start earning its keep the moment the generic arm
-    // stopped echoing err.message — which is exactly when it would matter.
-    // The class carries its own message ('writeDraftFile: cannot delete the
-    // entry file') and takes no constructor argument — passing one typechecks
-    // as an error, which the vitest run alone did not catch.
-    vi.mocked(deleteDraftFile).mockRejectedValue(new CannotDeleteEntryError());
+    // The change itself throws CannotDeleteEntryError (its own message), so
+    // nothing is written; this pins the OUTCOME (the reason reaches the
+    // caller).
     expect(errorOf(await fileDel.handler({ id: APP_ID, path: 'App.tsx' }, ctx))).toMatch(
       /entry file/,
     );
   });
 
   it('reports a missing app rather than a silent no-op', async () => {
-    vi.mocked(deleteDraftFile).mockResolvedValue(null as never);
+    vi.mocked(changeDraftSource).mockResolvedValue(null as never);
     expect(errorOf(await fileDel.handler({ id: APP_ID, path: 'x.tsx' }, ctx))).toMatch(/not found/);
   });
 
   it('deletes a non-entry file and reports the remaining file count', async () => {
-    vi.mocked(deleteDraftFile).mockResolvedValue({
-      files: { 'App.tsx': 'x', 'util.ts': 'y' },
-    } as never);
     const out = outputOf(await fileDel.handler({ id: APP_ID, path: 'old.ts' }, ctx));
     expect(out).toMatchObject({ id: APP_ID, path: 'old.ts', deleted: true });
     // The count is how the caller confirms the draft still holds an app.

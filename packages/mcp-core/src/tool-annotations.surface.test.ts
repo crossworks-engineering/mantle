@@ -165,6 +165,7 @@ describe('MCP tool hints on the surface', () => {
       'app_source_set',
       'app_table_export_set',
       'app_tools_set',
+      'code_write',
       'file_create',
       'file_upload',
       'messenger_mark_read',

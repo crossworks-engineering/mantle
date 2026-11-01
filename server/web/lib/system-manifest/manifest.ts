@@ -31,6 +31,7 @@ import {
   BUILTIN_TOOLS,
   PAGE_TOOL_SLUGS,
   APP_TOOL_SLUGS,
+  CODE_TOOL_SLUGS,
   TABLE_TOOL_SLUGS,
   CONTACT_AUTO_GRANT_SLUGS,
   JOURNAL_AUTO_GRANT_SLUGS,
@@ -227,8 +228,13 @@ const APP_ADMIN_TOOL_SLUGS = [
   'app_snapshot_delete',
 ];
 /** App authoring set for the `apps` group: every other app tool (taking and
- *  listing snapshots included). No overlap between `apps` and `app-admin`. */
-const APP_AUTHORING_TOOL_SLUGS = APP_TOOL_SLUGS.filter((s) => !APP_ADMIN_TOOL_SLUGS.includes(s));
+ *  listing snapshots included), and the code tools that view, search and
+ *  edit an app's draft source in place (code/tools.ts; their only target
+ *  today is an app). No overlap between `apps` and `app-admin`. */
+const APP_AUTHORING_TOOL_SLUGS = [
+  ...APP_TOOL_SLUGS.filter((s) => !APP_ADMIN_TOOL_SLUGS.includes(s)),
+  ...CODE_TOOL_SLUGS,
+];
 
 // ── Skills ───────────────────────────────────────────────────────────────────
 
@@ -780,7 +786,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'apps',
     name: 'Apps toolkit',
     description:
-      'Author + build mini apps: source files, esbuild, declared api_tools + sqlite schema (authoring subset; excludes whole-app delete + publish).',
+      'Author + build mini apps: source files (whole or edited in place with the code tools), esbuild, declared api_tools + sqlite schema (authoring subset; excludes whole-app delete + publish).',
     toolSlugs: [
       // The kind's folders (builtins-tree.ts; one set for every row-only kind).
       'tree_folders',

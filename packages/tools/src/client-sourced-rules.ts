@@ -30,6 +30,7 @@ import { db, wsArraySql } from '@mantle/db';
 import type { ClientSourcedRule, ClientSourcedWriteRule } from './client-sourced-rule';
 import { builtinPolicy, policyLowers, policyMayLower, type ToolPolicy } from './tool-policy';
 import { UUID_RE } from '@mantle/std';
+import { appIdOfCodeTarget } from './code/target-ref';
 
 type Input = Record<string, unknown>;
 
@@ -184,7 +185,12 @@ export async function writeVerdict(
 ): Promise<GateVerdict> {
   if (rule.alwaysWhen?.(input)) return wait('its target is named by path, not by id');
   const nodeIds = stringsOf([...valuesOf(input, rule.nodes), ...(rule.extraNodes?.(input) ?? [])]);
-  const appIds = stringsOf(valuesOf(input, rule.apps));
+  // A code target (`app:<id>`) names its app; one that names none stays
+  // as it came, and waits below.
+  const appIds = stringsOf([
+    ...valuesOf(input, rule.apps),
+    ...valuesOf(input, rule.appTargets).map((v) => appIdOfCodeTarget(v) ?? v),
+  ]);
   // An item named by anything but an id cannot be checked: it waits.
   if (!nodeIds || !appIds || [...nodeIds, ...appIds].some((id) => !UUID_RE.test(id))) {
     return wait('its target is not named by id');

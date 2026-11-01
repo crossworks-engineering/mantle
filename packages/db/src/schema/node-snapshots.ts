@@ -49,7 +49,9 @@ export const nodeSnapshots = pgTable(
     /** 1, 2, 3 … per node. */
     seq: integer('seq').notNull(),
     /** 'publish' | 'commit' (a table) | 'manual' | 'pre_restore' |
-     *  'pre_schema' | 'pre_delete' | 'pre_import' | 'nightly'. */
+     *  'pre_schema' | 'pre_delete' | 'pre_import' | 'nightly' |
+     *  'pre_mcp_write' | 'pre_code_edit' (0350: the code tools' undo
+     *  stack, code only, left out of the History list). */
     trigger: text('trigger').notNull(),
     note: text('note'),
     /** Who the row names: HISTORY_ACTORS (@mantle/client-types/role-names). */

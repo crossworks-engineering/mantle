@@ -35,6 +35,7 @@ import { PAGE_TOOLS } from './builtins-pages';
 import { DRAW_TOOLS } from './builtins-draws';
 import { SHARE_TOOLS } from './builtins-share';
 import { APP_TOOLS, APP_DATA_TOOLS } from './builtins-apps';
+import { CODE_TOOLS } from './code/tools';
 import { APP_GUIDE_TOOLS } from './builtins-app-guide';
 import { TABLE_TOOLS } from './builtins-tables';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
@@ -204,6 +205,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // declares the api_tools/sqlite they use. app_delete + app_publish are the
   // admin subset; the broker enforces the per-app tool allowlist at runtime.
   ...APP_TOOLS,
+  // Code: view, search and edit a source tree in place (an app's draft;
+  // code/tools.ts), the text editor tool's verbs over MCP and in the brain.
+  ...CODE_TOOLS,
   // App-data reads for the responder — query a mini app's SQLite (read-only).
   ...APP_DATA_TOOLS,
   // Tables — author + operate typed database grids (CRUD + row/column/cell

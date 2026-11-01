@@ -40,6 +40,7 @@ import {
   DRAW_TOOLS,
   APP_TOOLS,
   APP_GUIDE_TOOLS,
+  CODE_TOOLS,
   DIAGRAM_TOOLS,
   CIRCUIT_TOOLS,
   DIAGRAM_RENDER_TOOLS,
@@ -317,6 +318,12 @@ export function registerMantleTools(
   // tool descriptions and could not learn host.me(), the :host_me_* SQL
   // parameters or the level rules. mcpOnly, read-only.
   registerBuiltinTools(APP_GUIDE_TOOLS);
+  // Edit an app's source in place (code_view / _search / _edit / _insert /
+  // _write / _undo): one file, a range of lines, an exact-match edit with a
+  // diff and a revision check, instead of app_get(include_source) and a whole
+  // file back. Same access as the app tools: the reads app_get's, the writes
+  // app_file_write's.
+  registerBuiltinTools(CODE_TOOLS);
 
   // ─── CLI sandboxes ────────────────────────────────────────────────────────────
   // Isolated Ubuntu containers the client can work in: clone a repo and explain

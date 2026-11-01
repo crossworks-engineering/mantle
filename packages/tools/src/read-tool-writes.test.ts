@@ -160,6 +160,9 @@ const NO_WRITE_FOUND: readonly string[] = [
   'calculate',
   'canvas_library',
   'circuit_trace',
+  // getApp and the match (a worker thread for a regex): no write.
+  'code_search',
+  'code_view',
   'contact_find',
   'contact_get',
   'contact_list',

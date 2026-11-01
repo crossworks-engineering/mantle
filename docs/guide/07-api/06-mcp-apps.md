@@ -16,15 +16,19 @@ Tell Claude what you want, for example:
 
 Claude then works through these tools:
 
-| Tool | What it does |
-| --- | --- |
-| `app_authoring_guide` | Reads the rules: allowed imports, styling, the `@host` bridge, data access |
-| `app_create` | Makes the app and returns its id |
-| `app_source_set` or `app_file_write` | Uploads the source, whole or one file at a time |
-| `app_tools_set` | Lists the tools the app may call, for example `task_list` |
-| `app_build`, then `app_publish` | Compiles the draft (every error comes back with file and line), then makes the green build live |
+| Tool                                                  | What it does                                                                                                      |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `app_authoring_guide`                                 | Reads the rules: allowed imports, styling, the `@host` bridge, data access                                        |
+| `app_create`                                          | Makes the app and returns its id                                                                                  |
+| `app_source_set` or `app_file_write`                  | Uploads the source, whole or one file at a time                                                                   |
+| `code_view`, `code_search`                            | Reads one file (or some of its lines) and finds text across the files                                             |
+| `code_edit`, `code_insert`, `code_write`, `code_undo` | Changes a file in place: replaces exact text, adds lines, writes a file, or puts a file back. Each returns a diff |
+| `app_tools_set`                                       | Lists the tools the app may call, for example `task_list`                                                         |
+| `app_build`, then `app_publish`                       | Compiles the draft (every error comes back with file and line), then makes the green build live                   |
 
 Every edit lands in the draft. The published app does not change until `app_publish`.
+
+To change an app you already have, ask Claude to fix or change it. It finds the place with `code_search`, reads the lines with `code_view`, and replaces only those lines with `code_edit`. If you or another agent changed the draft in the meantime, the edit fails and Claude reads the file again, so no change is lost.
 
 ## Check it worked
 

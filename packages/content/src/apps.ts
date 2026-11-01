@@ -51,7 +51,8 @@ import {
 } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
 import { notifyAppNavChanged } from './app-nav';
-import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
+import { codeHash, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
+import { lockAppHistory } from './app-history-lock';
 import type { AppRow, AppDetail, AppTint, HistoryActor } from '@mantle/client-types';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { asKindRootRepair } from './kind-root';
@@ -842,6 +843,228 @@ export async function writeDraftFile(
       .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
       .where(eq(apps.nodeId, id));
     return next;
+  });
+}
+
+// ── The code tools' draft writes (packages/tools/src/code/) ─────────────────
+
+/** The `node_snapshots.trigger` of the row a code-tool write records first
+ *  (0350): the code as it stood, code only. code_undo reads them back. */
+export const CODE_EDIT_TRIGGER = 'pre_code_edit';
+/** The `pre_code_edit` rows kept per app, on their own line. */
+export const APP_CODE_EDIT_KEEP = 20;
+
+/**
+ * The revision of a working tree (the draft, else the published tree): a
+ * short hash of its entry and its files in path order (jsonb keeps its own
+ * key order, so the object's order is never hashed). The code tools hand it
+ * out and take it back as `base_rev`: a write over a tree that changed since
+ * the caller read it is refused, not merged over.
+ */
+export function sourceRev(source: AppSource): string {
+  const files = Object.keys(source.files)
+    .sort()
+    .map((p) => [p, source.files[p]]);
+  return codeHash({ entry: source.entry, files }).slice(0, 16);
+}
+
+/** The tree changed since the `base_rev` the caller read. */
+export class AppDraftRevError extends Error {
+  constructor(
+    readonly baseRev: string,
+    readonly currentRev: string,
+  ) {
+    super(
+      `the app's code changed since rev ${baseRev}: it is rev ${currentRev} now (another agent, the editor or a restore wrote it). Read the file again with code_view, then make the change on the current text with base_rev ${currentRev}`,
+    );
+    this.name = 'AppDraftRevError';
+  }
+}
+
+defineDomainError(AppDraftRevError, {
+  reason: 'the code changed since the revision the caller read; the message says the current one',
+  status: 409,
+  body: (e) => ({ error: e.message, reason: 'conflict' }),
+});
+
+/** code_undo found no earlier text of the file. */
+export class AppUndoEmptyError extends Error {
+  constructor(path: string) {
+    super(
+      `no earlier text of '${path}' is kept: the code tools keep the last ${APP_CODE_EDIT_KEEP} edits of an app, and this file was not changed by them since. Put back a whole version with app_snapshot_restore (mode 'code') instead`,
+    );
+    this.name = 'AppUndoEmptyError';
+  }
+}
+
+defineDomainError(AppUndoEmptyError, {
+  reason: 'there is no earlier text of the file to put back; the message says what to use',
+  status: 409,
+});
+
+/** What a draft change did. */
+export type DraftChange = {
+  /** The working tree before, and after (the same tree on a dry run). */
+  before: AppSource;
+  after: AppSource;
+  beforeRev: string;
+  /** The tree's revision now (after a dry run: what it would be). */
+  rev: string;
+  /** Whether the draft was written (false: a dry run, or nothing changed). */
+  written: boolean;
+};
+
+type CodeEditOpts = {
+  actor: AppHistoryActor;
+  actorLoginId?: string | null;
+  /** On the history row: what the write was, e.g. 'code_edit App.tsx'. */
+  note?: string;
+};
+
+/** Record the code as it stands on the app's history line (a
+ *  `pre_code_edit` row), inside the write's transaction, after its row
+ *  lock, as a publish appends its version. */
+async function recordCodeEdit(
+  tx: DbTx,
+  ownerId: string,
+  id: string,
+  app: NonNullable<Awaited<ReturnType<typeof lockAppRow>>>,
+  opts: CodeEditOpts,
+): Promise<void> {
+  await insertNodeSnapshot(tx, {
+    ownerId,
+    nodeId: id,
+    nodeKind: 'app',
+    trigger: CODE_EDIT_TRIGGER,
+    note: opts.note?.slice(0, 500) || null,
+    actor: opts.actor,
+    actorLoginId: opts.actorLoginId ?? null,
+    code: {
+      source: app.source,
+      draft: app.draft,
+      manifest: app.manifest,
+      publishedBuild: app.publishedBuild,
+    },
+    sourceHash: codeHash(app.source),
+  });
+}
+
+/** Keep the newest APP_CODE_EDIT_KEEP `pre_code_edit` rows of the app,
+ *  under its history lock (one statement: a row taken meanwhile stays). */
+async function pruneCodeEdits(id: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    await lockAppHistory(tx, id);
+    await pruneHistoryRows(
+      id,
+      [CODE_EDIT_TRIGGER],
+      APP_CODE_EDIT_KEEP,
+      Number.MAX_SAFE_INTEGER,
+      tx,
+    );
+  });
+}
+
+/**
+ * Change the draft through `change` (the working tree in, the new tree
+ * out), under the row lock: the one write of the code tools, app_file_write
+ * and app_source_set. With `baseRev`, a tree whose revision is another
+ * throws AppDraftRevError and nothing is written. `change` may throw: its
+ * error is the call's, and nothing is written. Before a real write the code
+ * as it stood goes on the history line (`pre_code_edit`), so code_undo can
+ * put a file back. A dry run, or a change that changes nothing, writes
+ * nothing. Null when the app is missing or not this owner's.
+ */
+export async function changeDraftSource(
+  ownerId: string,
+  id: string,
+  change: (tree: AppSource) => AppSource,
+  opts: CodeEditOpts & { baseRev?: string | null; dryRun?: boolean },
+): Promise<DraftChange | null> {
+  const res = await db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    const before = app.draft ?? app.source;
+    const beforeRev = sourceRev(before);
+    if (opts.baseRev && opts.baseRev !== beforeRev) {
+      throw new AppDraftRevError(opts.baseRev, beforeRev);
+    }
+    const after = change(before);
+    assertSourceWithinLimits(after);
+    const rev = sourceRev(after);
+    if (opts.dryRun || rev === beforeRev) {
+      return { before, after, beforeRev, rev, written: false };
+    }
+    await recordCodeEdit(tx, ownerId, id, app, opts);
+    await tx
+      .update(apps)
+      .set({ draftSource: after, draftUpdatedAt: new Date(), draftBuild: null })
+      .where(eq(apps.nodeId, id));
+    return { before, after, beforeRev, rev, written: true };
+  });
+  if (res?.written) await pruneCodeEdits(id);
+  return res;
+}
+
+/**
+ * Put one file back as it was before the last code-tool write that changed
+ * it: the newest `pre_code_edit` row whose text of `path` differs from the
+ * draft's (a row an edit of another file took holds the same text, and is
+ * passed over). A file the row did not hold is removed. The undo records no
+ * row of its own, so a second undo goes one step further back. Throws
+ * AppUndoEmptyError when no row holds another text. Null when the app is
+ * missing or not this owner's.
+ */
+export async function undoDraftFile(
+  ownerId: string,
+  id: string,
+  path: string,
+): Promise<(DraftChange & { fromSeq: number }) | null> {
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    const before = app.draft ?? app.source;
+    const current = Object.hasOwn(before.files, path) ? before.files[path] : undefined;
+    // The tree each row kept: its draft, else its published tree. Only the
+    // one file's text is read, never the whole code.
+    const tree = sql`(case when jsonb_typeof(${nodeSnapshots.code}->'draft') = 'object'
+                       then ${nodeSnapshots.code}->'draft' else ${nodeSnapshots.code}->'source' end)->'files'`;
+    const rows = await tx
+      .select({
+        seq: nodeSnapshots.seq,
+        present: sql<boolean>`jsonb_exists(${tree}, ${path})`,
+        text: sql<string | null>`${tree}->>${path}`,
+      })
+      .from(nodeSnapshots)
+      .where(
+        and(
+          eq(nodeSnapshots.nodeId, id),
+          eq(nodeSnapshots.ownerId, ownerId),
+          eq(nodeSnapshots.trigger, CODE_EDIT_TRIGGER),
+        ),
+      )
+      .orderBy(desc(nodeSnapshots.seq));
+    const hit = rows.find((r) => (r.present ? (r.text ?? '') : undefined) !== current);
+    if (!hit) throw new AppUndoEmptyError(path);
+    const files = { ...before.files };
+    if (hit.present) files[path] = hit.text ?? '';
+    else {
+      if (path === before.entry) throw new CannotDeleteEntryError();
+      delete files[path];
+    }
+    const after: AppSource = { entry: before.entry, files };
+    assertSourceWithinLimits(after);
+    await tx
+      .update(apps)
+      .set({ draftSource: after, draftUpdatedAt: new Date(), draftBuild: null })
+      .where(eq(apps.nodeId, id));
+    return {
+      before,
+      after,
+      beforeRev: sourceRev(before),
+      rev: sourceRev(after),
+      written: true,
+      fromSeq: hit.seq,
+    };
   });
 }
 

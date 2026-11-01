@@ -17,6 +17,7 @@ export const TOOL_AREA_GLOSSES: Readonly<Record<string, string>> = {
   api: 'HTTP tools, their docs and usage skills, the key vault',
   app: 'mini apps: source, build, publish, snapshots, their own databases',
   circuit: 'piping circuits traced from uploaded drawings',
+  code: "a mini app's source files: view, search, edit, insert, undo",
   contact: 'people in the contacts list, also the email allowlist',
   diagram: 'diagrams and charts: types, guides, render',
   draw: 'whiteboard drawings',
