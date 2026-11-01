@@ -39,7 +39,8 @@ function sample() {
   });
   w.add({
     files: {
-      'App.tsx': "import { fmt } from './lib/fmt';\nexport default function App() {\n  return fmt(1);\n}\n",
+      'App.tsx':
+        "import { fmt } from './lib/fmt';\nexport default function App() {\n  return fmt(1);\n}\n",
       'lib/fmt.ts': 'export const fmt = (n: number) => `#${n}`;\n',
       'lib/z.ts': 'export {};\n',
       'lib-a.ts': 'export {};\n',
@@ -53,7 +54,8 @@ function sample() {
   });
   w.add({
     files: {
-      'App.tsx': "import { fmt } from './lib/fmt';\nexport default function App() {\n  return fmt(2);\n}\n",
+      'App.tsx':
+        "import { fmt } from './lib/fmt';\nexport default function App() {\n  return fmt(2);\n}\n",
       'lib/fmt.ts': 'export const fmt = (n: number) => `#${n}`;\n',
     },
     author: 'agent',
@@ -100,7 +102,12 @@ describe('GitBundleWriter', () => {
   it('blames each line on the version that wrote it', () => {
     const blame = git(repo, 'blame', '--line-porcelain', 'App.tsx');
     const summaries = [...blame.matchAll(/^summary (.*)$/gm)].map((m) => m[1]);
-    expect(summaries).toEqual(['v3 publish: add fmt', 'v1 publish: first cut', 'v4 publish', 'v1 publish: first cut']);
+    expect(summaries).toEqual([
+      'v3 publish: add fmt',
+      'v1 publish: first cut',
+      'v4 publish',
+      'v1 publish: first cut',
+    ]);
   });
 
   it('nests folders, plain-names old keys, and leaves out what git may not hold', () => {

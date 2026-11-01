@@ -68,7 +68,9 @@ async function readSide(
   ref: Ref,
 ): Promise<Side | Fail> {
   if (ref.kind === 'draft') {
-    return app.draft ? { ref: 'draft', tree: app.draft } : { ref: 'draft', tree: app.source, noDraft: true };
+    return app.draft
+      ? { ref: 'draft', tree: app.draft }
+      : { ref: 'draft', tree: app.source, noDraft: true };
   }
   if (ref.kind === 'live') return { ref: 'live', tree: app.source };
   const entry = await appHistorySource(ownerId, id, ref.seq);
@@ -169,7 +171,9 @@ const code_diff: BuiltinToolDef = {
         const inB = codeFileKey(b.tree.files, input.path);
         const key = Object.hasOwn(b.tree.files, inB) ? inB : inA;
         if (!Object.hasOwn(a.tree.files, key) && !Object.hasOwn(b.tree.files, key)) {
-          const all = [...new Set([...Object.keys(a.tree.files), ...Object.keys(b.tree.files)])].sort();
+          const all = [
+            ...new Set([...Object.keys(a.tree.files), ...Object.keys(b.tree.files)]),
+          ].sort();
           return {
             ok: false,
             error: `no file '${asked}' in ${a.ref} or ${b.ref}. Its files: ${all.slice(0, 20).join(', ')}${all.length > 20 ? ', …' : ''}`,
@@ -213,7 +217,9 @@ const code_diff: BuiltinToolDef = {
         notes.push('There is no draft you can see, so the draft side is the live code.');
       }
       if (omitted) {
-        notes.push(`${omitted} changed file(s) are listed without a diff (the answer's limit): pass path for one.`);
+        notes.push(
+          `${omitted} changed file(s) are listed without a diff (the answer's limit): pass path for one.`,
+        );
       }
       if (files.length === 0) notes.push(`No change between ${a.ref} and ${b.ref}.`);
       return {

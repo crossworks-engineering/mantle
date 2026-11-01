@@ -64,10 +64,7 @@ export class GitBundleWriter {
 
   /** Store an object once; its id. */
   private put(type: ObjType, body: Buffer): string {
-    const id = createHash('sha1')
-      .update(`${type} ${body.length}\0`)
-      .update(body)
-      .digest('hex');
+    const id = createHash('sha1').update(`${type} ${body.length}\0`).update(body).digest('hex');
     if (!this.objects.has(id)) {
       this.objects.set(id, packEntry(type, body));
       this.order.push(id);
@@ -146,7 +143,10 @@ export class GitBundleWriter {
     }
     const tree = this.tree(root);
     const who = `${oneLine(c.author)} <> ${Math.max(0, Math.floor(c.time))} +0000`;
-    const message = c.message.replace(/\r\n?/g, '\n').replace(/\u0000/g, '').trim();
+    const message = c.message
+      .replace(/\r\n?/g, '\n')
+      .replace(/\u0000/g, '')
+      .trim();
     const body = [
       `tree ${tree}`,
       ...(this.parent ? [`parent ${this.parent}`] : []),
