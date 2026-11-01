@@ -670,7 +670,12 @@ An agent's own `params.tool_loading` always wins. With none set
 - an assistant on a Haiku model runs `'deferred'` (Haiku scored 86 vs 91 of 101
   on the map);
 - every other agent (specialists, workers) runs `'full'` until it is measured
-  on the map.
+  on the map. The team responder is role `custom`, so it stays `'full'` too.
+
+The mode is chosen once per turn from the primary model: a turn that fails
+over to its backup keeps the same tools (the cached prefix needs that).
+`responder_turn_input` (MCP) lists the tools in full and says so in its
+`differences`.
 
 To keep an assistant on the old behaviour, set `tool_loading` to `'full'` or
 `'deferred'` on it.

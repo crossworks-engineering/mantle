@@ -127,6 +127,7 @@ export const TURN_INPUT_DIFFERENCES: readonly string[] = [
   'Your tool calls run on the MCP surface, not in the brain loop. Some names and schemas differ there (the agent has `search_nodes`, MCP has `search`; page/table/file reads return other shapes). Confirm gates, /pending parking, loop guards, tool-call caps, result spill and the delegation allowlist do NOT apply.',
   'The brain adds system nudges mid-loop (tool budget spent, iteration limit, guard blocks). Your loop gets none.',
   'Like ask_responder: no open-heartbeat block, no device-location line, and digests and history recall come from the stored conversation, not your history.',
+  'Tools are listed in full here. The agent itself may load them another way (`params.tool_loading`, or by default the tool map for an assistant): a stable core in full, the rest named in a block appended to the first system message, called through `tool_call`.',
 ];
 
 /** The two role responders assemble their own turn (run-team-turn.ts: no
