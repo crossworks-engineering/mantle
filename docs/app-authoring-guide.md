@@ -757,8 +757,16 @@ older one says so. The author is the role the row names (`owner`, `member`,
 email or a person's name. The bundle holds code only: no data, no draft, no
 declared tools, no secret. It needs a read of the app (as a package export
 without data). An app with no version yet has nothing to bundle: publish it
-first. A path git may not hold (a `.git` part) is left out, and the answer
-lists it under `skipped`.
+first. A path git may not hold (a `.git` or `.gitmodules` name in any of
+its disguises, a `:`) is left out, and the answer lists it under `skipped`.
+The commits are deterministic: the same versions give the same commit ids
+on every export. One export reads at most 256 MB of code over all its
+versions and writes a bundle of at most 64 MB; a brain runs two at a time.
+Past that, compare in place with `app_log` and `code_diff`.
+
+Whoever reads an app reads every version's code this way (and with
+`code_diff`): a secret once written in the code and removed later is still
+in the history. Keep secrets in the vault, never in app code.
 
 An outside agent (Claude Code, say) takes it to its own disk with the file
 download of the HTTP API and an API key ([API keys](guide/07-api/08-api-keys.md)),
