@@ -155,6 +155,8 @@ const NO_WRITE_FOUND: readonly string[] = [
   'app_errors',
   'app_get',
   'app_list',
+  // The history rows' own fields (app-snapshots appHistoryLine): no write.
+  'app_log',
   'app_snapshot_list',
   'brain_capacity',
   'calculate',
@@ -163,6 +165,9 @@ const NO_WRITE_FOUND: readonly string[] = [
   // getApp and the match (a worker thread for a regex): no write.
   'code_search',
   'code_view',
+  // getApp and the history rows' code `source` (app-snapshots
+  // appHistorySource): no write.
+  'code_diff',
   'contact_find',
   'contact_get',
   'contact_list',

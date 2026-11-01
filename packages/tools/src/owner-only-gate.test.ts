@@ -58,6 +58,8 @@ const EXPECTED_OWNER_ONLY = [
   'app_file_delete',
   'app_file_write',
   'app_import',
+  // The history line for an audit: app_snapshot_list's gate.
+  'app_log',
   'app_publish',
   'app_snapshot_create',
   'app_snapshot_delete',
@@ -69,7 +71,9 @@ const EXPECTED_OWNER_ONLY = [
   'app_tools_set',
   'app_undelete',
   'app_update',
-  // The code tools' writes (code/tools.ts): app_file_write's gate.
+  // The code tools' writes (code/tools.ts): app_file_write's gate; and
+  // code_diff (code/history.ts), which reads the history: app_snapshot_list's.
+  'code_diff',
   'code_edit',
   'code_insert',
   'code_undo',

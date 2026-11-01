@@ -7710,6 +7710,46 @@
   }
  },
  {
+  "name": "app_log",
+  "description": "An app's history line for an audit, newest first: each entry's seq (v1, v2 …), kind (version: a publish; snapshot: code and data), trigger, note, who (actor, and the login when the row names one), when, file count and size. Reads the rows only, never the code. Page on with `before_seq`. Compare two entries' code with `code_diff` ('v3' to 'v5'); for the entry ids `app_snapshot_restore` takes use `app_snapshot_list`; for the whole line as git commits use `app_export` with format git.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The app's id (UUID) — from `app_list`."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 200,
+     "description": "Max entries to return."
+    },
+    "before_seq": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740991,
+     "description": "Only entries older than this seq: the next page, e.g. 12."
+    },
+    "versions_only": {
+     "type": "boolean",
+     "description": "Only the versions (publishes), no snapshots."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "app_log",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "app_snapshot_restore",
   "description": "Restore an app from an entry on its history (`app_snapshot_list`). `mode`: 'code' puts that code in the DRAFT (preview, then `app_publish`); 'data' replaces the live database with the snapshot's copy; 'full' does both and the code goes live. A snapshot of the current state is taken first, so the restore can itself be undone. Data and full need a snapshot (a version holds no data). Code over an unpublished draft needs `discard_draft`. Confirm with the user first: the live data is replaced.",
   "inputSchema": {
@@ -7860,7 +7900,7 @@
  },
  {
   "name": "app_export",
-  "description": "Save an app as a `.mantleapp` file, in Auto-filed / Exports when the caller may change it (the owner or an Admin Moderator), else the top of Files: its code (no draft for a member), declared tools and schema, and a copy of its data unless with_data is false. A taken name gets a `-2` suffix. Returns the file id and landedIn. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file.",
+  "description": "Save an app as a `.mantleapp` file, in Auto-filed / Exports when the caller may change it (the owner or an Admin Moderator), else the top of Files: its code (no draft for a member), declared tools and schema, and a copy of its data unless with_data is false. A taken name gets a `-2` suffix. Returns the file id and landedIn. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: whoever reads the file reads it. `format: 'git'`: a `.bundle` instead, one commit per version, code only, for `git clone` elsewhere.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7870,7 +7910,15 @@
     },
     "with_data": {
      "type": "boolean",
-     "description": "False: the code only, no copy of the app's database."
+     "description": "False: the code only, no copy of the app's database. A git bundle never holds data."
+    },
+    "format": {
+     "type": "string",
+     "enum": [
+      "mantleapp",
+      "git"
+     ],
+     "description": "'git': the versions as a git bundle; 'mantleapp': the app as a package."
     }
    },
    "required": [
@@ -8064,6 +8112,44 @@
   },
   "annotations": {
    "title": "code_search",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "code_diff",
+  "description": "Compare two states of a mini app's source as unified diffs: `from` and `to` are 'draft', 'live' (published) or a history entry by seq ('v3': a version or a snapshot's code). Defaults: live to draft, what publishing would change. All files, or one `path`. Long diffs are cut and say so. Reads only. For the list of versions and who made them use `app_log`; to put an old version back use `app_snapshot_restore`; for the whole history as git commits use `app_export` with format git.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "target": {
+     "type": "string",
+     "description": "The app: app:<id>, the app's id from `app_list`, e.g. app:3f2a…"
+    },
+    "from": {
+     "type": "string",
+     "maxLength": 40,
+     "description": "The old side: 'draft', 'live' or a seq like 'v3'."
+    },
+    "to": {
+     "type": "string",
+     "maxLength": 40,
+     "description": "The new side: 'draft', 'live' or a seq like 'v5'."
+    },
+    "path": {
+     "type": "string",
+     "description": "Only this file, e.g. 'App.tsx'."
+    }
+   },
+   "required": [
+    "target"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "code_diff",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,

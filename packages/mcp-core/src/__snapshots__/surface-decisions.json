@@ -764,6 +764,24 @@
    "peerRisky": false
   }
  },
+ "app_log": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "apps",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "apps",
+   "peerRisky": false
+  }
+ },
  "app_made_up": {
   "readOnly": false,
   "peerRisky": true,
@@ -1099,6 +1117,24 @@
    "creates": false,
    "keyArea": "tables",
    "peerRisky": true
+  }
+ },
+ "code_diff": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "apps",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "apps",
+   "peerRisky": false
   }
  },
  "code_edit": {
