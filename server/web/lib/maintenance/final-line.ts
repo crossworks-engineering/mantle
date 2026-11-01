@@ -6,7 +6,7 @@ import { constants } from 'node:os';
 
 /** The runner's last line: the result, the time, and the signal when the
  *  task was killed (SIGKILL is most often the kernel's out-of-memory killer,
- *  SIGABRT a Node heap limit). */
+ *  SIGABRT a heap limit, or memory running out on Bun). */
 export function finalLine(
   slug: string,
   live: boolean,
@@ -24,7 +24,7 @@ export function finalLine(
       signal === 'SIGKILL'
         ? ' (often out of memory: check the container memory limit)'
         : signal === 'SIGABRT'
-          ? ' (often the Node heap limit: check stderr)'
+          ? ' (often a heap limit: check stderr)'
           : '';
     return `maintain: ${slug} (${mode}) FAILED after ${took}: killed by ${signal}${why}`;
   }

@@ -40,6 +40,7 @@ import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { envDynamic, parseFlag, parseNumber } from '@mantle/config';
 import { createMigratedScratchDatabase } from '@mantle/db/test-support';
+import { selfCommand } from '@mantle/std/self-spawn';
 import {
   DATA_SOURCES,
   parseDataset,
@@ -207,7 +208,8 @@ const resultFileFor = (inputFile: string) => inputFile.replace(/\.input\.json$/,
  *  child's output passes straight through as the run's log. */
 function runChild(file: string, env: NodeJS.ProcessEnv): Promise<number | null> {
   return new Promise((done) => {
-    const child = spawn(process.execPath, [...process.execArgv, SELF, `--child=${file}`], {
+    const start = selfCommand(SELF, [`--child=${file}`]);
+    const child = spawn(start.command, start.args, {
       env,
       stdio: ['ignore', 'inherit', 'inherit'],
     });

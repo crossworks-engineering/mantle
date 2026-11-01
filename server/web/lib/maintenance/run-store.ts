@@ -17,6 +17,7 @@ import type { MaintenanceTask } from './registry';
 import type { MaintenanceRunView, RunState } from '@mantle/client-types/types/maintenance';
 import { finishRun, recordRunStart } from './history';
 import { errorMessage } from '@mantle/std';
+import { tsCommand } from '@mantle/std/self-spawn';
 
 const MAX_LINES = 2000;
 const RUN_TIMEOUT_MS = 30 * 60 * 1000;
@@ -141,7 +142,8 @@ export function startRun(
 
   let child: ChildProcess;
   try {
-    child = spawn('pnpm', ['exec', 'tsx', task.script, ...args], {
+    const { command, args: argv } = tsCommand(import.meta.url, task.script, args);
+    child = spawn(command, argv, {
       cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],

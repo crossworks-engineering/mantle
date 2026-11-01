@@ -2192,6 +2192,7 @@ check "happy: the web env reached docker through a pipe, never in argv" sh -c "
   grep -qx SECRET_KEY=topsecret '$BM/run-env' && ! grep -q topsecret '$BM/run-argv' &&
   grep -A1 -x -- --env-file '$BM/run-argv' | tail -1 | grep -q '^/dev/fd/'"
 check "happy: the heap cap is 75% of the memory" grep -qx -- 'NODE_OPTIONS=--max-old-space-size=1536' "$BM/run-argv"
+check "happy: Bun's heap target is the same cap, in bytes" grep -qx -- 'BUN_JSC_forceRAMSize=1610612736' "$BM/run-argv"
 check "happy: the owner comes from the web env" grep -qx "ALLOWED_USER_ID=$OWNER_ID" "$BM/run-argv"
 check "happy: the task and its flags pass through unchanged" sh -c "
   tail -4 '$BM/run-argv' | tr '\n' ' ' | grep -q '^chunk-windows --apply --yes --parallel=16 \$'"

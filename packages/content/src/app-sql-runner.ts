@@ -49,6 +49,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { envDynamic, envNum, envNumDefault } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { runtimeFlags } from '@mantle/std/self-spawn';
 
 /** How long one app statement may run. */
 export const APP_SQL_TIMEOUT_MS = 5_000;
@@ -413,7 +414,8 @@ const idle: Child[] = [];
 const waiting: ((c: Child) => void)[] = [];
 
 function forkChild(): Child {
-  const proc = spawn(process.execPath, ['--input-type=commonjs', '-e', CHILD_SOURCE], {
+  const argv = [...runtimeFlags(), '--input-type=commonjs', '-e', CHILD_SOURCE];
+  const proc = spawn(process.execPath, argv, {
     stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
     // Structured clone, so a BLOB comes back as bytes, as it did from a worker.
     serialization: 'advanced',
