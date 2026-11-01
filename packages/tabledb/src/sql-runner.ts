@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { openTableFile } from './sqlite';
 import { envDynamic, envNum } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { runtimeFlags } from '@mantle/std/self-spawn';
 
 /**
  * table_sql — read-only SQL over one workbook file (plan §3.4). Layered:
@@ -147,7 +148,8 @@ const idle: Child[] = [];
 const waiting: ((c: Child) => void)[] = [];
 
 function forkChild(): Child {
-  const proc = spawn(process.execPath, ['--input-type=commonjs', '-e', CHILD_SOURCE], {
+  const argv = [...runtimeFlags(), '--input-type=commonjs', '-e', CHILD_SOURCE];
+  const proc = spawn(process.execPath, argv, {
     stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
     // Structured clone, so a BLOB comes back as bytes, as it did from a worker.
     serialization: 'advanced',
@@ -156,9 +158,10 @@ function forkChild(): Child {
   const child: Child = { proc, alive: true, doomed: false };
   children.add(child);
   // An idle pool must not keep the server (or a test run) from exiting; a
-  // running statement's own timer holds the event loop while it waits.
+  // running statement's own timer holds the event loop while it waits. Bun's
+  // channel has no unref.
   proc.unref();
-  proc.channel?.unref();
+  proc.channel?.unref?.();
   proc.on('message', (m: ChildReply) => {
     const onReply = child.onReply;
     child.onReply = undefined;

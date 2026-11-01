@@ -35,10 +35,13 @@ const filesWith = (pattern: RegExp): string[] =>
     .sort();
 
 describe('settings that do nothing on Bun stay in one file', () => {
-  it('the app SQL runner, the one start outside self-spawn, keeps its env cut', () => {
-    const runner = readFileSync(join(ROOT, 'packages/content/src/app-sql-runner.ts'), 'utf8');
-    expect(runner).toMatch(/\[\.\.\.runtimeFlags\(\), '--input-type=commonjs'/);
-  });
+  it.each(['packages/content/src/app-sql-runner.ts', 'packages/tabledb/src/sql-runner.ts'])(
+    '%s, a start outside self-spawn, keeps its env cut',
+    (file) => {
+      const runner = readFileSync(join(ROOT, file), 'utf8');
+      expect(runner).toMatch(/\[\.\.\.runtimeFlags\(\), '--input-type=commonjs'/);
+    },
+  );
 
   it('a worker limit', () => {
     expect(filesWith(/\bresourceLimits\b/)).toEqual(['packages/content/src/draw-png.ts']);
@@ -48,6 +51,7 @@ describe('settings that do nothing on Bun stay in one file', () => {
     expect(filesWith(/\bprocess\.execPath\b/)).toEqual([
       'packages/content/src/app-sql-runner.ts',
       'packages/std/src/self-spawn.ts',
+      'packages/tabledb/src/sql-runner.ts',
     ]);
   });
 });
