@@ -295,6 +295,20 @@ describe("app_export's git mode", () => {
     });
   });
 
+  it('exports the same commit ids twice (the commits are deterministic)', async () => {
+    const list = () =>
+      versions([
+        version(1, { 'App.tsx': 'a\n', 'lib/x.ts': 'x\n' }),
+        version(2, { 'lib/x.ts': 'x\n', 'App.tsx': 'b\n' }, { actor: 'member', actorLoginId: 'l1' }),
+      ]);
+    vi.mocked(appVersionSources).mockReturnValueOnce(list()).mockReturnValueOnce(list());
+    const one = outputOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx));
+    const two = outputOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx));
+    expect(one.head).toBe(two.head);
+    const [a, b] = vi.mocked(saveExport).mock.calls.map((c) => c[0].bytes!);
+    expect(a!.equals(b!)).toBe(true);
+  });
+
   it('refuses an app with no version, and names what to do', async () => {
     vi.mocked(appVersionSources).mockReturnValue(versions([]));
     expect(errorOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx))).toMatch(
