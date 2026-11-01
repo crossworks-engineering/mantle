@@ -37,11 +37,11 @@ precision: 32 })` for decimal work.
 - The parser runs no JavaScript, so a person may type a formula for their
   own use. A formula SAVED by one person and run in another person's app is
   untrusted input: evaluate it with a limited instance, as math.js's
-  security notes advise. `const safe = create(all)`, keep
-  `const run = safe.evaluate`, then `safe.import({ import: off, createUnit:
-off, evaluate: off, parse: off, simplify: off, derivative: off, resolve:
-off }, { override: true })` with `off = () => { throw new Error('off') }`,
-  and refuse huge matrix sizes.
+  security notes advise. `const safe = create(all)` (set any config now),
+  keep `const run = safe.evaluate`, then `safe.import({ import: off,
+createUnit: off, evaluate: off, parse: off, simplify: off, derivative:
+off, resolve: off, reviver: off, config: off }, { override: true })` with
+  `off = () => { throw new Error('off') }`, and refuse huge matrix sizes.
 
 ## App example
 

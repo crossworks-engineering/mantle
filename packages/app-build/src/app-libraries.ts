@@ -23,7 +23,7 @@
 
 /** A library an app may import: the specifier as written in app source,
  *  the canvas_library guide that covers it, and a one-line hint of what to
- *  use it for (read as is by agents: code_view lists the imports with it). */
+ *  use it for, read as is by agents (the code tools list the imports with it). */
 export type AppLibrary = Readonly<{ specifier: string; guide: string; hint: string }>;
 
 /** An app-runtime library: also the entry it is built as (build-runtime.ts). */
@@ -53,7 +53,7 @@ export const APP_CANVAS_LIBRARIES: readonly AppLibrary[] = [
   {
     specifier: 'mathjs',
     guide: 'mathjs',
-    hint: 'units and engineering maths, formulas people type',
+    hint: 'units and engineering maths, formulas a person types',
   },
   { specifier: 'date-fns', guide: 'date-fns', hint: 'dates: format, add business days, ranges' },
   { specifier: 'zod', guide: 'zod', hint: 'form checks and the shape of rows' },
