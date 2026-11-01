@@ -230,6 +230,23 @@ describe.skipIf(!URL)('the code tools draft write on Postgres', () => {
     );
   });
 
+  it('a code-tool write after an outside change does not hide it from the undo', async () => {
+    const app = await newApp('gap');
+    await apps.changeDraftSource(owner, app.id, setFile('x.ts', 'a'), opts);
+    await apps.changeDraftSource(owner, app.id, setFile('x.ts', 'b'), opts);
+    // The person saves x.ts = c in the editor, then an agent writes y.ts.
+    const tree = (await apps.getApp(owner, app.id))!.draft!;
+    await apps.saveDraftSource(owner, app.id, { ...tree, files: { ...tree.files, 'x.ts': 'c' } });
+    await apps.changeDraftSource(owner, app.id, setFile('y.ts', 'y'), opts);
+    // Undoing x.ts goes back past the editor's save: refused without base_rev.
+    await expect(apps.undoDraftFile(owner, app.id, 'x.ts', opts)).rejects.toBeInstanceOf(
+      apps.AppUndoUntrackedError,
+    );
+    // Undoing y.ts (the newest write, after the save) is fine.
+    const u = await apps.undoDraftFile(owner, app.id, 'y.ts', opts);
+    expect(u?.after.files['x.ts']).toBe('c');
+  });
+
   it('undos keep their own line: they never push the writes out of the window', async () => {
     const app = await newApp('window');
     for (let i = 1; i <= apps.APP_CODE_EDIT_KEEP; i++) {

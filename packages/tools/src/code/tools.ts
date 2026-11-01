@@ -42,7 +42,13 @@ import { actingLoginId } from '../surface';
 import type { ToolPolicy } from '../tool-policy';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from '../types';
 import { searchFiles } from './search';
-import { appIdOfCodeTarget, APP_TARGET_PREFIX, codeFileKey, normCodePath } from './target-ref';
+import {
+  appIdOfCodeTarget,
+  APP_TARGET_PREFIX,
+  badNewPath,
+  codeFileKey,
+  normCodePath,
+} from './target-ref';
 import {
   applyEdits,
   crlfOf,
@@ -147,15 +153,6 @@ function openTarget(ctx: Ctx, raw: unknown): CodeStore | Fail {
 
 const missingApp = (store: CodeStore): Fail =>
   notFound('app', store.ref.slice(APP_TARGET_PREFIX.length), 'app_list');
-
-/** A path a write may create: relative, no `..` or empty segment. */
-function badNewPath(path: string): string | null {
-  if (!path) return 'path is required, e.g. App.tsx or lib/fmt.ts';
-  if (path.includes('\\') || path.split('/').some((s) => s === '' || s === '.' || s === '..')) {
-    return `path '${path}' must be relative inside the app, with no '..', '.' or empty part (e.g. lib/fmt.ts)`;
-  }
-  return null;
-}
 
 /** The error for a path the tree does not hold, with a near name if one. */
 function noFile(store: CodeStore, tree: CodeTree, path: string): Fail {
@@ -352,7 +349,7 @@ const code_view: BuiltinToolDef = {
       if (!Object.hasOwn(tree.files, path)) return noFile(store, tree, path);
       // A CRLF file shows (and is edited) with LF; its writes keep CRLF.
       const view = numberedView(
-        toLf(tree.files[path]!),
+        crlfOf(tree.files[path]!) ? toLf(tree.files[path]!) : tree.files[path]!,
         {
           start: typeof input.start === 'number' ? input.start : undefined,
           end: typeof input.end === 'number' ? input.end : undefined,
@@ -438,7 +435,7 @@ const code_search: BuiltinToolDef = {
       if (glob && !match) {
         return {
           ok: false,
-          error: `glob '${glob}' has too many {a,b} choices: split it into narrower globs`,
+          error: `glob '${glob}' is too large (too many {a,b} choices or too long): split it into narrower globs`,
         };
       }
       const files = match
@@ -701,8 +698,19 @@ const code_undo: BuiltinToolDef = {
     try {
       const tree = await store.read();
       if (!tree) return missingApp(store);
-      const path = codeFileKey(tree.files, input.path);
-      const res = await store.undo(path, str(input.base_rev).trim() || null);
+      // A deleted file stored under an old-style key (`./x.ts`) is in the
+      // rows by that key: try it as given first.
+      const exact = str(input.path).trim();
+      let path = codeFileKey(tree.files, input.path);
+      const baseRev = str(input.base_rev).trim() || null;
+      let res: DraftChange | null;
+      try {
+        res = await store.undo(path, baseRev);
+      } catch (err) {
+        if (!(err instanceof AppUndoEmptyError) || exact === path || !exact) throw err;
+        path = exact;
+        res = await store.undo(path, baseRev);
+      }
       if (!res) return missingApp(store);
       const removed = !Object.hasOwn(res.after.files, path);
       ctx.step?.setOutput({ target: store.ref, path, rev: res.rev, removed });

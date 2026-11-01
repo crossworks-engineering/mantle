@@ -93,13 +93,16 @@ Anthropic text editor tool and the MCP filesystem server's `edit_file`.
   History tab leaves them out. `code_undo` reads them: each call goes one
   write further back for that file. An undo is a write too: it records what
   it replaces (a `pre_code_undo` entry, on a line of its own) and takes
-  `base_rev`. When the draft changed outside the code tools since their last
-  write (the editor, an import, a restore), an undo without `base_rev` is
-  refused, so that work is never replaced unseen. Undoing to code taken while the app ran at team rules
+  `base_rev`. Each entry records the revision before and after its write,
+  so the entries form a chain; a gap is a change made outside the code
+  tools (the editor, an import, a restore). An undo that would go back
+  past such a change is refused without `base_rev`, so that work is never
+  replaced unseen. Undoing to code taken while the app ran at team rules
   puts the app back at team rules, as a snapshot restore does. For a whole
   earlier version use `app_snapshot_restore`.
-- **Line ends.** A file with CRLF line ends shows with LF in `code_view`;
-  edits and inserts match on that text and keep the file's CRLF.
+- **Line ends.** A file whose every line ends in CRLF shows with LF in
+  `code_view`; edits and inserts match on that text and keep the CRLF. A
+  file with mixed line ends shows and edits as stored.
 - **Access** is the app tools': `code_view` and `code_search` read what
   `app_get` reads; the four writes ask what `app_file_write` asks.
 
