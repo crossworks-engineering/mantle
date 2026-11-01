@@ -109,14 +109,24 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
   it('reads every server-image service of compose, web through the image CMD', () => {
     expect(byName.get('web')?.command).toBeNull();
     expect(serverImageCmd(readFileSync(join(ROOT, 'Dockerfile'), 'utf8'))).toEqual([
-      'pnpm',
+      'env',
       '-C',
       'server/web',
-      'exec',
+      'node',
+      '--import',
       'tsx',
       'server/main.ts',
     ]);
-    expect(byName.get('api')?.command).toEqual(['pnpm', '-C', 'server/api', 'start']);
+    expect(byName.get('api')?.command).toEqual([
+      'env',
+      '-C',
+      'server/api',
+      'node',
+      '--env-file-if-exists=../web/.env.local',
+      '--import',
+      'tsx',
+      'src/main.ts',
+    ]);
     expect(stepsOf(byName.get('migrate')!.command)).toBe(4);
     // Every service compose runs on the server image, by its block: a block
     // the reader missed would go unsmoked.
@@ -127,7 +137,34 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
     const workers = services.filter((s) => s.name.startsWith('worker_'));
     expect(workers.length).toBeGreaterThanOrEqual(10);
     for (const w of workers)
-      expect(w.command?.slice(0, 5), w.name).toEqual(['pnpm', '-C', 'server/web', 'exec', 'tsx']);
+      expect(w.command?.slice(0, 6), w.name).toEqual([
+        'env',
+        '-C',
+        'server/web',
+        'node',
+        '--import',
+        'tsx',
+      ]);
+  });
+
+  it('starts every long-running service as node itself, with no pnpm or tsx parent', () => {
+    // migrate is a one-shot; `env` execs node and leaves no process (Dockerfile).
+    const running = services.filter((s) => s.name !== 'migrate' && s.command);
+    expect(running.length).toBeGreaterThanOrEqual(12);
+    for (const s of running) {
+      expect(s.command?.slice(0, 2), s.name).toEqual(['env', '-C']);
+      expect(s.command?.[3], s.name).toBe('node');
+    }
+  });
+
+  it('gives every long-running service tini as PID 1', () => {
+    // As PID 1 node ignores a SIGTERM it has no handler for yet: a stop during
+    // boot would wait out the grace period for the SIGKILL.
+    const blocks = compose.split(/^ {2}(?=[a-z0-9_]+:\n)/m);
+    for (const s of services.filter((s) => s.name !== 'migrate')) {
+      const block = blocks.find((b) => b.startsWith(`${s.name}:\n`));
+      expect(block, s.name).toMatch(/^ {4}init: true$/m);
+    }
   });
 
   it('skips only services that exist, each with a reason', () => {

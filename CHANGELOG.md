@@ -4,6 +4,23 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: every Node service starts as node itself
+
+- **Changed:** the web, api, sandboxd, parser and worker services start as
+  `node --import tsx <entry>`, with no `pnpm` or `tsx` process above them.
+  Each service gives back about 96 MB at rest: 1,339 MB in all on a box
+  with all 14 (PSS 4,066 MB to 2,727 MB). `env -C <package>` sets each
+  service's folder and execs node, so the container's own folder stays
+  `/app` and every `docker exec … pnpm -C …` command works as before.
+- **Fixed:** `api` and `sandboxd` no longer stop on pnpm's terms. `pnpm
+  start` quit about 1.4 s after a SIGTERM with exit 1 and took the
+  container with it, in the middle of the API's drain. The API now ends
+  through its own shutdown handler, with exit 0.
+- **Changed:** every long-running service has `init: true`. tini is PID 1
+  and node its child, so a stop during boot ends at once, where node as
+  PID 1 would ignore it until the SIGKILL. It also reaps the processes a
+  `docker exec` leaves behind.
+
 ## Unreleased: the UI sounds save names its login
 
 - **Fixed:** `PUT /api/profile/sounds` now takes `loginId`, the login the

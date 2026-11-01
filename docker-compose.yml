@@ -822,6 +822,12 @@ services:
         MANTLE_BUILD_TIME: ${MANTLE_BUILD_TIME:-}
     container_name: mantle_web
     restart: unless-stopped
+    # tini as PID 1, as on every service here that runs for long: node is its
+    # child. As PID 1 node would ignore a SIGTERM it has no handler for yet,
+    # so a stop during boot (or on sandboxd, which has no handler) would wait
+    # out the whole grace period for the SIGKILL. tini also reaps what a
+    # `docker exec` leaves behind.
+    init: true
     logging: *default-logging
     networks: *app-networks
     # The web tier also hosts every `pnpm maintain` run (docker exec into
@@ -1088,9 +1094,20 @@ services:
   # by hand. Boxes without the profile don't run any of it.
   sandboxd:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/sandboxd', 'start']
+    command:
+      [
+        'env',
+        '-C',
+        'server/sandboxd',
+        'node',
+        '--env-file-if-exists=../web/.env.local',
+        '--import',
+        'tsx',
+        'src/main.ts',
+      ]
     container_name: mantle_sandboxd
     restart: unless-stopped
+    init: true
     logging: *default-logging
     mem_limit: 512m
     profiles: ['sandboxes']
@@ -1193,9 +1210,20 @@ services:
   # the separate `agent` service). Same image, different command.
   api:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/api', 'start']
+    command:
+      [
+        'env',
+        '-C',
+        'server/api',
+        'node',
+        '--env-file-if-exists=../web/.env.local',
+        '--import',
+        'tsx',
+        'src/main.ts',
+      ]
     container_name: mantle_api
     restart: unless-stopped
+    init: true
     # A stop waits for the API's own exit deadline (45 s: pg-boss drains its
     # in-flight jobs for up to 30 s, then DBOS stops; @mantle/std/shutdown)
     # before Docker sends SIGKILL. Docker's default is 10 s, which cut the
@@ -1243,9 +1271,10 @@ services:
 
   worker_email:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/email-sync.ts']
+    command: ['env', '-C', 'server/web', 'node', '--import', 'tsx', 'workers/email-sync.ts']
     container_name: mantle_worker_email
     restart: unless-stopped
+    init: true
     # A stop waits for the worker's exit deadline (15 s, the workers'
     # runner) before Docker sends SIGKILL; Docker's default is 10 s.
     stop_grace_period: 20s
@@ -1269,9 +1298,10 @@ services:
 
   worker_telegram:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/telegram-poll.ts']
+    command: ['env', '-C', 'server/web', 'node', '--import', 'tsx', 'workers/telegram-poll.ts']
     container_name: mantle_worker_telegram
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1297,9 +1327,10 @@ services:
   # like the email worker.
   worker_microsoft:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/microsoft-sync.ts']
+    command: ['env', '-C', 'server/web', 'node', '--import', 'tsx', 'workers/microsoft-sync.ts']
     container_name: mantle_worker_microsoft
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1324,9 +1355,10 @@ services:
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/files-watch.ts']
+    command: ['env', '-C', 'server/web', 'node', '--import', 'tsx', 'workers/files-watch.ts']
     container_name: mantle_worker_files
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1355,9 +1387,10 @@ services:
   # operator opts in at /settings/documentation.
   worker_docs:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/docs-sync.ts']
+    command: ['env', '-C', 'server/web', 'node', '--import', 'tsx', 'workers/docs-sync.ts']
     container_name: mantle_worker_docs
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1381,9 +1414,10 @@ services:
   # reminders silently never fire in prod (they work in `pnpm dev`).
   worker_events:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/events-reminders.ts']
+    command: ['env', '-C', 'server/web', 'node', '--import', 'tsx', 'workers/events-reminders.ts']
     container_name: mantle_worker_events
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1421,9 +1455,10 @@ services:
   # later) into the brain as event nodes. No volume — events live in Postgres.
   worker_calendar:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/calendar-sync.ts']
+    command: ['env', '-C', 'server/web', 'node', '--import', 'tsx', 'workers/calendar-sync.ts']
     container_name: mantle_worker_calendar
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1449,9 +1484,10 @@ services:
   # same history the CLI and the /debug/integrity Maintenance tab write.
   worker_maintenance:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/maintenance.ts']
+    command: ['env', '-C', 'server/web', 'node', '--import', 'tsx', 'workers/maintenance.ts']
     container_name: mantle_worker_maintenance
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1493,9 +1529,10 @@ services:
   # healthy with the feature off.
   worker_runs:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/runs.ts']
+    command: ['env', '-C', 'server/web', 'node', '--import', 'tsx', 'workers/runs.ts']
     container_name: mantle_worker_runs
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1518,9 +1555,10 @@ services:
   # No-op until a device Connects (push_instance/push_subscriptions empty).
   worker_push:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/push-notify.ts']
+    command: ['env', '-C', 'server/web', 'node', '--import', 'tsx', 'workers/push-notify.ts']
     container_name: mantle_worker_push
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging

@@ -71,7 +71,7 @@ export const EXTRA = [
   { name: 'mcp-stdio', command: ['pnpm', '-C', 'server/mcp', 'start'] },
   {
     name: 'parser',
-    command: ['pnpm', '-C', 'server/parser', 'exec', 'node', '--import', 'tsx', 'src/main.ts'],
+    command: ['env', '-C', 'server/parser', 'node', '--import', 'tsx', 'src/main.ts'],
   },
 ];
 
