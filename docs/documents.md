@@ -5,7 +5,9 @@ section 9 for what that one does): [Gotenberg](https://gotenberg.dev)
 (Apache 2.0), Chromium plus LibreOffice plus the PDF engines, in its own
 container. It is the optional service **Documents** (compose service
 `gotenberg`, profile `documents`, Settings > Services or
-`scripts/install.sh --documents`), off by default on every shape. The plan
+`scripts/install.sh --documents`), **on by default** on every shape since
+2026-11-01 (mini apps make their PDFs through it); see "On by default" below.
+The plan
 of record is the dev-brain page "Gotenberg beside the browser sidecar: plan
 (2026-10-23)"; the decisions there: both engines run until the render jobs
 are ported, Gotenberg is implemented in full first, the drawing SVG
@@ -132,12 +134,35 @@ service is switched off. `export_node` rasters an embedded drawing through
 Word export from an agent or MCP carries real drawings; off, the drawing
 degrades to `[drawing: alt]` as before.
 
-Mini apps: an app the Admin workspace alone holds declares the tools with
-`app_tools_set` and calls them with `host.tools.call` (the admin broker's
-rule: a declared tool runs as the admin); `app_authoring_guide` has the
-worked "Reports" example. Team apps refuse them (`TEAM_APP_TOOLS_ALLOWED`:
-a conversion writes a file). This is the flagged seam of v1: landing a
-report in the workspace that holds the app is a later decision.
+Mini apps declare the tools with `app_tools_set` and call them with
+`host.tools.call`; `app_authoring_guide` has the worked "Reports" example.
+
+- An app the Admin workspace alone holds runs them as the admin (the admin
+  broker's rule): the file lands where an admin's export lands.
+- A **team app** (team rules: another workspace holds it, or a member built
+  it) may call them too (policy `memberApp: 'documents'`,
+  `runtime-policy.ts` `memberAppRefusal`; v1 refused them). Its inputs are
+  read in the app's scope (`file_ids`, `asset_file_ids`); it prints no page
+  or drawing of the brain (`node_id` is refused: the render cookie would
+  carry the login's whole rights, not the app's); and its file lands at the
+  top of Files, **homed in the one workspace beyond Admin that holds the
+  app** (`withCreateHome`, create and private home both that workspace),
+  never in a private workspace and never in Admin. Only a user who
+  moderates that workspace saves there, in a request that writes as a login
+  that writes (`teamAppSaveRefusal` in `builtins-documents.ts`; the broker
+  enters the app's write scope for the call, as for a Table row write).
+  Anyone else gets an error that says to pass `bytes: true`.
+- **`bytes: true`** (any app, never an agent or MCP: `appBytesRefusal`)
+  saves nothing and answers `{ route, filename, mime_type, size_bytes,
+content_base64 }`, within the caps of `file_read`'s bytes (`app-bytes.ts`:
+  16 MB a call, four at a time per process). A saved file reads back with
+  `file_read({ file_id, bytes: true })`, in the same caps.
+- A shared link (open or coded) runs no built-in tool, these included
+  (`contactAppToolVerdict`).
+
+The author's warnings (`appToolWarnings`) say this for a team app that
+declares one: it saves only for a moderator of its workspace, or nowhere
+when two workspaces beyond Admin hold it.
 
 ## Pages export on the engine (stage 2, P5)
 
@@ -154,6 +179,30 @@ a footer line, page numbers) are query parameters of
 `GET /api/export/:id?format=pdf`, documented in [`pages.md`](pages.md);
 both engines honour them. Nothing on the browser service is lowered: it
 keeps the drawing SVG re-render (P6 is the post-back workaround, later).
+
+## On by default (2026-11-01)
+
+- **A new install** writes the `documents` profile (`scripts/install.sh`; a
+  fresh box with no flag, or the interactive question, default yes).
+- **An existing box** gets it at its next roll: `ensure_documents_default`
+  in `infra/updater/updater.sh`, run by the updater before its pull and sent
+  by `scripts/roll.sh` (step 3c) so the roll that brings this release, run
+  by the updater before it, already pulls and starts it. The roll log says
+  what it adds (about 700 MB to download, 2.4 GB on disk, up to 2 GB
+  memory, `mem_limit: 2g`) with the box's memory and free disk, and
+  `roll.sh` reports `mantle_gotenberg`'s health after the roll (never
+  fatal).
+- **An explicit off is kept.** `MANTLE_DOCUMENTS_OFF=1` in `.env` is "off
+  on purpose": a Settings > Services off writes it (the updater's
+  `service_off`), an on drops it, and `install.sh --no-documents` /
+  `--documents` do the same. An off from before that line existed is read
+  from the audit log: the newest accepted `service.toggle` of `documents`
+  being an off writes the line and leaves it off. An unreadable audit log,
+  or less free disk than `MANTLE_SERVICE_MIN_FREE_MB` plus 2.4 GB, switches
+  nothing on, says why, and the next roll tries again. The step never fails
+  a roll.
+- **Off works as before**: the profile is left out, the tools hide, and
+  nothing else changes.
 
 ## In dev
 

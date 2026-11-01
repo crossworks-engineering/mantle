@@ -7,13 +7,16 @@ title: Services
 This screen switches the optional parts of the box on and off. Only admins see
 it.
 
-| Service | What it does | Download | Memory |
-| --- | --- | --- | --- |
-| **Sandboxes** | Containers where the coder and app agents run code and build apps | about 430 MB | 512 MB, plus up to 1 GB per running sandbox |
-| **Local embedder** | Makes search vectors on this box, so indexed text never leaves it | about 3.9 GB | up to 2 GB |
-| **Helpers** | Makes PDF exports | about 1 GB | up to 1.5 GB |
+| Service            | What it does                                                                                            | Download     | Memory                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------- |
+| **Sandboxes**      | Containers where the coder and app agents run code and build apps                                       | about 430 MB | 512 MB, plus up to 1 GB per running sandbox |
+| **Local embedder** | Makes search vectors on this box, so indexed text never leaves it                                       | about 3.9 GB | up to 2 GB                                  |
+| **Helpers**        | Makes PDF exports                                                                                       | about 1 GB   | up to 1.5 GB                                |
+| **Documents**      | Office files to PDF, pages and HTML to PDF, the PDF tools, for agents, MCP and mini apps. On by default | about 700 MB | up to 2 GB                                  |
 
 **Helpers** show only on a small core box; a full box always runs them.
+**Documents** is on by default. An off you choose here stays off through
+updates.
 Reading files is not a switch: the parser service does it on every box.
 
 Switching a service **on** downloads it the first time and starts it, in one
@@ -42,6 +45,8 @@ sandbox. The assistant can explain the services:
 
 The switch asks the box's updater to turn that service's compose profile on or
 off and start or stop its container. The profiles are `sandboxes`,
-`local-embedder` and `helpers`. The updater backs up `.env` first and restores
+`local-embedder`, `helpers` and `documents`. An off of `documents` also writes
+`MANTLE_DOCUMENTS_OFF=1` to `.env`, so the updater does not switch it on again
+at the next update. The updater backs up `.env` first and restores
 it if the start fails. Each switch writes a `service.toggle` row to the audit
 log. More detail: [Optional services](../05-admin/04-services.md).

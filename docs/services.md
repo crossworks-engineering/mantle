@@ -37,8 +37,11 @@ ignored.
 - **Documents** (the `gotenberg` service, `packages/documents`) carries a
   basic-auth password, `GOTENBERG_PASSWORD`, where sandboxes carry a token:
   `install.sh` and every roll write it in advance, so the switch starts one
-  container. Off by default on every shape: a large page print holds about
-  0.7 GB. Off hides the documents tools from agents, MCP and apps and
+  container. **On by default** since 2026-11-01: a new install starts it,
+  and a roll switches it on unless it was switched off on purpose
+  (`MANTLE_DOCUMENTS_OFF=1`, which an off here writes; see
+  [documents.md](documents.md), "On by default"). A large page print holds
+  about 0.7 GB. Off hides the documents tools from agents, MCP and apps and
   answers 503 on `/api/v1/documents/*`; page PDF export falls back to the
   browser helper where that runs. The engine stores nothing, so off loses
   nothing. The web, api and worker containers reach it by service name;

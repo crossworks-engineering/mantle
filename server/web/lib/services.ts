@@ -104,7 +104,7 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
     title: 'Documents',
     what: 'A document engine (Gotenberg: Chromium, LibreOffice and PDF tools) in its own container. It turns Office files into PDF, prints pages and HTML to PDF with headers and page numbers, and merges, splits, stamps, encrypts and converts PDFs.',
     usedBy:
-      'The documents tools of agents and MCP (pdf_render, screenshot_render, office_to_pdf, pdf_tools), the HTTP API under /api/v1/documents, mini-app reports, and page PDF export when it is on.',
+      'The documents tools of agents and MCP (pdf_render, screenshot_render, office_to_pdf, pdf_tools), the HTTP API under /api/v1/documents, mini apps (team apps too), and page PDF export when it is on.',
     whenOff:
       'Office to PDF and the PDF tools are not offered to agents, MCP or apps. Page PDF export uses the browser helper where that runs.',
     keeps: 'Every file it made. The engine stores nothing itself.',

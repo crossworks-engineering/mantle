@@ -10,7 +10,9 @@
  * this module.
  *
  * The documents engine (profile `documents`, packages/documents) is the
- * fifth: a URL and a password, switched like sandboxes, off by default.
+ * fifth: a URL and a password, switched like sandboxes, on by default (the
+ * installer and the updater's roll add its profile unless it was switched
+ * off on purpose; docs/documents.md).
  *
  * The parser service (server/parser) is NOT here: it reads every file the
  * brain receives, so it is core, always on, with no switch.
@@ -43,7 +45,7 @@ import { env, type KnownEnvName } from './index';
 
 /** Every service Settings > Services can switch. Each name is also its
  *  compose profile. `documents` is the documents engine (Gotenberg,
- *  packages/documents): off by default on every box, its switch carries a
+ *  packages/documents): on by default on every box, its switch carries a
  *  URL and a basic-auth password the way sandboxes carry a token. */
 export const OPTIONAL_SERVICES = [
   'sandboxes',

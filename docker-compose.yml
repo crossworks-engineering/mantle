@@ -657,11 +657,13 @@ services:
       start_period: 20s
 
   # Documents engine (Gotenberg: Chromium + LibreOffice + the PDF engines), the
-  # second render sidecar. OPT-IN: it runs only with the `documents` profile
-  # (Settings > Services, or `scripts/install.sh --documents`), off by
-  # default because a large page print holds about 0.7 GB (measured
-  # 2026-10-28: 11 MiB idle, 310 MiB after the first LibreOffice job, 783 MiB
-  # peak on a 13-page print). Office files to PDF, HTML/markdown/page prints
+  # second render sidecar. It runs with the `documents` profile, ON by
+  # default since 2026-11-01: scripts/install.sh writes the profile on a new
+  # box, and the updater's roll adds it unless MANTLE_DOCUMENTS_OFF=1 (an off
+  # in Settings > Services or `install.sh --no-documents`). A large page
+  # print holds about 0.7 GB (measured 2026-10-28: 11 MiB idle, 310 MiB after
+  # the first LibreOffice job, 783 MiB peak on a 13-page print), hence the
+  # 2 GB cap. Office files to PDF, HTML/markdown/page prints
   # with headers and page numbers, merge/split/stamp/encrypt/PDF-A and the
   # rest; the agent, MCP, HTTP API and mini-app surfaces all go through
   # packages/documents. The browser service keeps its jobs.

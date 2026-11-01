@@ -230,13 +230,15 @@ sandbox base image. Nothing is installed on the host. Turn them off with
 
 ### Documents (the Gotenberg engine)
 
-Off by default on every shape. Switch it on in **Settings > Services**, or
-with `scripts/install.sh --documents` (`--no-documents` switches it off
-again; nothing it made is removed). It is the `gotenberg` compose service
+On by default on every shape: a new install starts it, and an existing box
+gets it at its next roll. Switch it off in **Settings > Services**, or with
+`scripts/install.sh --no-documents` (`--documents` switches it on again;
+nothing it made is removed). Either off writes `MANTLE_DOCUMENTS_OFF=1`, so
+later rolls keep it off. It is the `gotenberg` compose service
 behind the `documents` profile: Office files to PDF, page and HTML prints
 with headers and page numbers, and the PDF tools (merge, split, PDF/A,
 stamp, watermark, encrypt, bookmarks, metadata), for agents, MCP, the HTTP
-API (`/api/v1/documents/*`) and mini-app reports. The installer generates
+API (`/api/v1/documents/*`) and mini apps. The installer generates
 `GOTENBERG_PASSWORD` (the engine's basic-auth password) on every box,
 whether or not the engine is on, so a later switch starts one container;
 the updater does the same on a roll. Budget about 700 MB of download (2.4 GB

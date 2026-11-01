@@ -42,6 +42,29 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   is in `docs/parser.md` ("Scans that drew blank before the decoders"). Reading
   them again spends model money, so it waits for the owner's word.
 
+## Unreleased: the documents engine on by default, and in team apps
+
+- **Changed:** the documents engine (Gotenberg, Settings > Services
+  **Documents**) is on by default. A new install starts it. An existing box
+  gets it at its next roll (the updater, and `scripts/roll.sh` step 3c, so
+  the roll that brings this release already starts it), unless it was
+  switched off on purpose: `MANTLE_DOCUMENTS_OFF=1` in `.env`, which an off
+  in Settings > Services and `install.sh --no-documents` now write, or an
+  accepted Settings off in the audit log from before. The roll log says
+  what it adds: about 700 MB to download, 2.4 GB on disk, up to 2 GB
+  memory. Too little disk or an unreadable audit log switches nothing on
+  and says why. Off works as before.
+- **Added:** team apps may call `pdf_render`, `screenshot_render`,
+  `office_to_pdf` and `pdf_tools` (v1 refused them). The inputs are read in
+  the app's scope, a page print (`node_id`) is refused, and the file lands
+  at the top of Files in the workspace that holds the app, only for a user
+  who moderates it; anyone else gets an error that says to pass
+  `bytes: true`. The app's declared tools, the author ceiling and the run's
+  scope are unchanged; a shared link still calls no built-in tool.
+- **Added:** the four tools take `bytes: true` from an app's own call:
+  nothing is saved, and the PDF or picture comes back as base64 within
+  `file_read`'s caps (16 MB a call). An agent or an MCP client is refused.
+
 ## Unreleased: a drawing's picture frames the sheet, and dwg_render
 
 - **Fixed:** the picture of a DWG or DXF frames the sheet, not all of model
@@ -106,7 +129,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   sets its own (`PUT /api/profile/description`); the users area sets
   anyone's (`PATCH /api/users/:id`, listed on `GET /api/users`). It is
   open to every login and agent that may see the card: on `GET
-  /api/people`, in the messenger directory (whose search now matches it)
+/api/people`, in the messenger directory (whose search now matches it)
   and on one conversation's people. `messenger_directory` and
   `messenger_open` carry it to agents, so one asked to message "the
   developer" can find who that is. Stored as the profile key

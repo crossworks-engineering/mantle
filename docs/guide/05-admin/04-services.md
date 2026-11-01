@@ -4,11 +4,14 @@ Switch the optional parts of a box on and off in **Settings > Services**. Switch
 
 Reading uploaded files (documents, CAD drawings, the sound of a video) is not optional: the parser service does it on every box, with its own memory limit and no internet access.
 
-| Service | What it gives you | Download | Memory |
-|---|---|---|---|
-| **Sandboxes** | Isolated workspaces where agents run code, build apps and test packages. | about 430 MB | 512 MB, plus up to 1 GB per running sandbox |
-| **Local embedder** | Search vectors made on the box, so indexed text never leaves it. | about 3.9 GB | up to 2 GB |
-| **Helpers** | PDF export. Shown only on a small core box; a full box always runs it. | about 1 GB | up to 1.5 GB |
+| Service            | What it gives you                                                                                                                            | Download                      | Memory                                      |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------- |
+| **Sandboxes**      | Isolated workspaces where agents run code, build apps and test packages.                                                                     | about 430 MB                  | 512 MB, plus up to 1 GB per running sandbox |
+| **Local embedder** | Search vectors made on the box, so indexed text never leaves it.                                                                             | about 3.9 GB                  | up to 2 GB                                  |
+| **Helpers**        | PDF export. Shown only on a small core box; a full box always runs it.                                                                       | about 1 GB                    | up to 1.5 GB                                |
+| **Documents**      | Office files to PDF, pages and HTML to PDF, and the PDF tools (merge, split, stamp, PDF/A) for agents, MCP and mini apps. **On by default.** | about 700 MB (2.4 GB on disk) | up to 2 GB                                  |
+
+**Documents** is on by default: a new box starts it, and an update switches it on for a box that does not run it yet. If you switch it off here, later updates keep it off.
 
 ## Before you start
 
@@ -34,6 +37,7 @@ The service shows as on in **Settings > Services**. Its pill on the dashboard sh
 - **Sandboxes**: running sandboxes stop. Every sandbox, its files and its apps stay. Agents lose the sandbox tools until you switch it back on. Mini apps keep running.
 - **Local embedder**: if **Settings > Embedding** uses it, new content is not searchable until you switch it back on. The confirm dialog warns you. The downloaded model stays.
 - **Helpers**: PDF export stops. Every file type is still read: reading files is the parser's job, and the parser is always on.
+- **Documents**: agents, MCP and mini apps lose Office to PDF and the PDF tools. Page PDF export uses the helper where it runs. Updates keep it off until you switch it on again.
 
 ## If it fails
 

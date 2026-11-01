@@ -2,13 +2,14 @@
 
 Each optional part can be chosen at install time or changed later with the configurator, `scripts/install.sh`.
 
-| Option | Default | Change later | One-liner variable |
-|---|---|---|---|
-| Small core shape | Off (offered under 6 GB RAM) | `--core`, `--no-core` | `MANTLE_CORE=1` |
-| Doc helpers: the PDF-export browser (core only) | Off | `--helpers`, `--no-helpers` | `MANTLE_HELPERS=1` |
-| CLI sandboxes | On (off on core) | `--sandboxes`, `--no-sandboxes` | `MANTLE_SANDBOXES=0` or `1` |
-| Local embedder | Off | `--local-embedder`, `--no-local-embedder` | `MANTLE_LOCAL_EMBEDDER=1` |
-| Owner web UI | On | `--client`, `--no-client` | `MANTLE_CLIENT=0` |
+| Option                                          | Default                      | Change later                              | One-liner variable          |
+| ----------------------------------------------- | ---------------------------- | ----------------------------------------- | --------------------------- |
+| Small core shape                                | Off (offered under 6 GB RAM) | `--core`, `--no-core`                     | `MANTLE_CORE=1`             |
+| Doc helpers: the PDF-export browser (core only) | Off                          | `--helpers`, `--no-helpers`               | `MANTLE_HELPERS=1`          |
+| CLI sandboxes                                   | On (off on core)             | `--sandboxes`, `--no-sandboxes`           | `MANTLE_SANDBOXES=0` or `1` |
+| Local embedder                                  | Off                          | `--local-embedder`, `--no-local-embedder` | `MANTLE_LOCAL_EMBEDDER=1`   |
+| Documents engine (Office to PDF, the PDF tools) | On                           | `--documents`, `--no-documents`           | `MANTLE_DOCUMENTS=0`        |
+| Owner web UI                                    | On                           | `--client`, `--no-client`                 | `MANTLE_CLIENT=0`           |
 
 Run the flags from the install directory. For example: `cd mantle && bash scripts/install.sh --no-sandboxes`. The installer keeps how the brain is reached (domain, this machine only, or the network) and every component you do not name. On a running brain, **Settings > Services** switches sandboxes, the local embedder and the doc helpers without the terminal. See [Optional services](../05-admin/04-services.md).
 
@@ -23,12 +24,12 @@ MANTLE_YES=1 MANTLE_SANDBOXES=0 \
 
 Other variables the one-liner reads:
 
-| Variable | Effect |
-|---|---|
-| `MANTLE_DOMAIN` | Serve this domain with HTTPS ([details](05-domain-https.md)) |
-| `MANTLE_HOME` | Install directory (default `./mantle`) |
-| `MANTLE_CHANNEL` | Release tag to install (default: the latest release) |
-| `MANTLE_SKIP_START=1` | Write the files and `.env`, but do not start anything |
+| Variable              | Effect                                                       |
+| --------------------- | ------------------------------------------------------------ |
+| `MANTLE_DOMAIN`       | Serve this domain with HTTPS ([details](05-domain-https.md)) |
+| `MANTLE_HOME`         | Install directory (default `./mantle`)                       |
+| `MANTLE_CHANNEL`      | Release tag to install (default: the latest release)         |
+| `MANTLE_SKIP_START=1` | Write the files and `.env`, but do not start anything        |
 
 ## CLI sandboxes
 
@@ -51,13 +52,13 @@ Nothing to switch on. Transcripts of uploaded video and audio, and CAD drawings 
 
 ## Other flags
 
-| Flag | Effect |
-|---|---|
+| Flag                | Effect                                      |
+| ------------------- | ------------------------------------------- |
 | `--data-dir <path>` | Where all data is stored (default `./data`) |
-| `--image-tag <tag>` | Pin the server version |
-| `--skip-up` | Write `.env` only |
-| `--setup-code` | Print the setup code again |
-| `--check` | Run the health check only |
+| `--image-tag <tag>` | Pin the server version                      |
+| `--skip-up`         | Write `.env` only                           |
+| `--setup-code`      | Print the setup code again                  |
+| `--check`           | Run the health check only                   |
 
 `bash scripts/install.sh --help` lists every flag.
 

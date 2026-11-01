@@ -534,12 +534,12 @@ a text file. A window with nothing in it answers a `note` and no picture.
 
 ## Reports: a PDF from the app
 
-An app that holds the Admin workspace alone (an admin built it, the Admin
-workspace holds it) can make a PDF and land it in the admin's files through
-the documents engine, when the brain's **Documents** service is on
-(Settings > Services). Declare `pdf_render` (and `pdf_tools` or
-`office_to_pdf` if the app needs them) with `app_tools_set`, then call it
-with the HTML the app renders, or with a page of the brain:
+Every app can make a PDF or a picture through the documents engine. The
+brain's **Documents** service is on by default (Settings > Services); while
+an admin has it off, the four tools answer that it is off. Declare
+`pdf_render` (and `screenshot_render`, `office_to_pdf` or `pdf_tools` if the
+app needs them) with `app_tools_set`, then call it with the HTML the app
+renders:
 
 ```tsx
 async function exportReport(rows: Row[]) {
@@ -560,19 +560,43 @@ async function exportReport(rows: Row[]) {
 }
 ```
 
-`node_id` instead of `html` prints a page or a drawing of the brain; `options`
-are the engine's own fields (paper size and margins in inches or with a unit,
-`landscape`, `printBackground`, `pdfa`, `metadata`; the Gotenberg docs are
-the reference). The HTML can fetch nothing from the network: the engine
-reaches only the brain's own print pages, so inline the CSS and put images
-in `asset_file_ids`. The PDF lands where an export lands (Auto-filed /
-Exports for the admin), and `file_id` opens it with the files API.
+`options` are the engine's own fields (paper size and margins in inches or
+with a unit, `landscape`, `printBackground`, `pdfa`, `metadata`; the
+Gotenberg docs are the reference). The HTML can fetch nothing from the
+network: the engine reaches only the brain's own print pages, so inline the
+CSS and put images in `asset_file_ids`.
 
-**Team apps** (held by another workspace, or built by a member) refuse
-these tools in v1: a conversion writes a file, and a team app may only read
-and add rows to its own Tables. Landing a report in the workspace that
-holds the app is a later decision; until then a member asks the assistant,
-which has `pdf_render` of its own.
+**Get the PDF back in the app.** Pass `bytes: true` and nothing is saved:
+the answer is `{ route, filename, mime_type, size_bytes, content_base64 }`,
+which the app shows or offers as a download. The caps are those of
+`file_read`'s `bytes` (16 MB a call, a few at a time; past them the call
+says so). A saved file is read back the same way, with
+`file_read({ file_id, bytes: true })`.
+
+```tsx
+const r = await host.tools.call('pdf_render', { html, bytes: true });
+const blob = await (await fetch(`data:${r.mime_type};base64,${r.content_base64}`)).blob();
+const url = URL.createObjectURL(blob); // an <a href={url} download={r.filename}>, or an <iframe>
+```
+
+**Where the PDF lands.** Without `bytes`, the file is saved, and where
+depends on who holds the app:
+
+- An app the Admin workspace alone holds (an admin built it): where an
+  admin's export lands, Auto-filed / Exports. `node_id` instead of `html`
+  prints a page or a drawing of the brain.
+- A **team app** (another workspace holds it, or a member built it): at the
+  top of Files, homed in **the workspace that holds the app**, never in a
+  private workspace and never in Admin. Only a user who moderates that
+  workspace saves there (the rule for every new item); anyone else gets an
+  error that says to pass `bytes: true`. So a team app that every user runs
+  passes `bytes: true`, or saves only for its moderators. A team app reads
+  its inputs (`file_ids`, `asset_file_ids`) in the app's own scope, and
+  prints no page or drawing of the brain (`node_id` is refused: print the
+  HTML the app builds). An app held by two workspaces beyond Admin saves
+  nowhere (`bytes: true` still works).
+- A shared link (an open or a coded share) runs no built-in tool, these
+  included.
 
 ## Per-app SQLite
 

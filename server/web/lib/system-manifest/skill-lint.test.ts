@@ -48,6 +48,10 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'timeout_seconds', // sandbox_exec param (sandbox-work)
   'if_rev', // present_update param, the stale-save guard (canvas_authoring)
   'at_seconds', // present_render param, a later moment of an animation (canvas_authoring)
+  'header_html', // pdf_render param, printed on every page (app_authoring)
+  'footer_html', // pdf_render param, printed on every page (app_authoring)
+  'file_ids', // office_to_pdf / pdf_tools param, the files to convert (app_authoring)
+  'asset_file_ids', // pdf_render param, the images an app's HTML names (app_authoring)
   // Deliberate non-tools named in prose
   'openweather_geocode', // app_authoring's "never invent a slug like this" example
   'table_xinfo', // SQLite PRAGMA table_xinfo, allowed read-only in app SQL
