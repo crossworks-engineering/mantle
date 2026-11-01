@@ -94,6 +94,7 @@ export { callerHasArea, callerHasAreaBound } from './gateway/caller-area';
 export { appHolderHomes, assertAppRunWriteHome } from './app-holder-homes';
 export {
   appRunHolders,
+  appHeldBeyondAdmin,
   appRunWriter,
   inAppRunWrite,
   type AppRunWriter,

@@ -48,6 +48,7 @@ import {
   draftAllowed,
   draftColumn,
   liveWorkspace,
+  appHeldBeyondAdmin,
 } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
 import { notifyAppNavChanged } from './app-nav';
@@ -427,15 +428,10 @@ export async function getApp(ownerId: string, id: string): Promise<AppDetail | n
  *  workspace holds it. The tool brokers decide by it (app-tool-level.ts). */
 export type AppToolRules = 'admin' | 'team';
 
-/** A workspace other than Admin holds the app: any row of its grants
- *  beyond Admin that is not "Removed here", an archived workspace's
- *  included (admin pool). The same test as an app run's scope
- *  (gateway/viewer-scope.ts appRunHolders): an app this calls held runs
- *  team rules and reads only its live holders; one it does not (Admin
- *  alone) reads Team. */
-const heldBeyondAdmin = sql<boolean>`exists (
-  select 1 from item_grants g join workspaces w on w.id = g.workspace_id and not w.is_admin
-   where g.node_id = ${nodes.id} and not g.excluded)`;
+// Whether a workspace other than Admin holds the app is read with
+// appHeldBeyondAdmin (@mantle/db), on the admin pool: in an Admin user's
+// request scope that leaves the holder out, the grant row is not visible,
+// and read here the app would run at admin rules.
 
 /** What RUNNING an app needs: who holds it, its manifest and builds. */
 export type AppRuntime = {
@@ -463,7 +459,6 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
   const [row] = await db
     .select({
       title: nodes.title,
-      heldBeyondAdmin,
       manifest: apps.manifest,
       draftBuild: draftColumn<BuildRef>(apps.draftBuild),
       publishedBuild: apps.publishedBuild,
@@ -478,7 +473,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
   return {
     id,
     title: row.title,
-    toolRules: row.heldBeyondAdmin === true ? 'team' : 'admin',
+    toolRules: (await appHeldBeyondAdmin(id)) ? 'team' : 'admin',
     manifest: row.manifest ?? {},
     draftBuild: row.draftBuild ?? null,
     publishedBuild: row.publishedBuild ?? null,

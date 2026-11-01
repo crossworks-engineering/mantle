@@ -1577,9 +1577,7 @@ case "$1" in
 esac
 exit 0
 STUB
-# The box's coreutils timeout: run the command, no limit here.
-printf '#!/bin/sh\nshift\nexec "$@"\n' > "$RB/timeout"
-chmod +x "$RB/ssh" "$RB/docker" "$RB/df" "$RB/timeout"
+chmod +x "$RB/ssh" "$RB/docker" "$RB/df"
 
 roll_box() { # <name>: a fake box; its db-dump.sh follows FAKE_DUMP (ok, fail, lossy)
   RS="$WORK/rollbox-$1"; mkdir -p "$RS/stack/scripts" "$RS/stack/infra/updater" "$RS/sig" "$RS/tmp"
@@ -2298,8 +2296,7 @@ echo "updater.sh: the documents engine is on by default at a roll"
 # switched off on purpose (MANTLE_DOCUMENTS_OFF=1, or the newest accepted
 # Settings > Services switch in the audit log was an off), with the disk and
 # memory it adds in the log. Never fails.
-DD_STUB='timeout() { shift; "$@"; }
-docker() {
+DD_STUB='docker() {
   case "$*" in
     *service.toggle*) [ "${FAKE_DOCS_AUDIT:-none}" != fail ] || return 1; echo "${FAKE_DOCS_AUDIT:-none}" ;;
     *"--profile documents pull gotenberg"*)
@@ -2313,6 +2310,7 @@ dd_case() { # <name> <.env lines>: a stack, then the function under the stub
   printf '%b' "$2" >> "$DD/stack/.env"
   cp "$DD/stack/.env" "$DD/env.before"
   updater_run "$DD/stack" "$DD/sig" "$DD/img" "$DD_STUB
+${DD_PRE:-}
 ensure_documents_default; echo rc=\$?" > "$DD/out" 2>&1
 }
 DD_CALLS="$WORK/docs-default-calls"; : > "$DD_CALLS"; export DD_CALLS
@@ -2349,8 +2347,11 @@ check "documents default: a failed download with no profiles before leaves none"
 dd_case disk 'COMPOSE_PROFILES=sandboxes\nMANTLE_SERVICE_MIN_FREE_MB=999999999\n'
 check "documents default: too little disk switches nothing on, says so" sh -c "
   cmp -s '$DD/stack/.env' '$DD/env.before' && grep -q 'not switched on: .* MB free' '$DD/out'"
-check "documents default: a small box (memory under the floor) switches nothing on, says so" sh -c "
-  MANTLE_STACK_DIR='$DD/stack' MANTLE_SIGNAL_DIR='$DD/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; DOCUMENTS_MIN_MEM_MB=999999999; profile_active() { return 1; }; documents_switched_off() { return 1; }; free_kb() { echo 999999999; }; ensure_documents_default\" | grep -q 'MB of memory and the engine may use up to 2 GB' || ! test -r /proc/meminfo"
+if [ -r /proc/meminfo ]; then
+  DD_PRE='DOCUMENTS_MIN_MEM_MB=999999999' dd_case smallmem 'COMPOSE_PROFILES=sandboxes\nGOTENBERG_PASSWORD=keep\n'
+  check "documents default: a small box (memory under the floor) switches nothing on, says so" sh -c "
+    cmp -s '$DD/stack/.env' '$DD/env.before' && grep -q 'MB of memory and the engine may use up to 2 GB' '$DD/out'"
+fi
 check "documents default: roll.sh sends the same functions" sh -c "
   grep -q 'ensure_documents_default' '$ROOT/scripts/roll.sh' && grep -q \"/^documents_switched_off() {/,/^}/p\" '$ROOT/scripts/roll.sh'"
 

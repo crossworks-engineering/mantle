@@ -279,6 +279,23 @@ export async function appRunHolders(app: AppRunFor): Promise<string[]> {
   return row ? [...row.live] : [];
 }
 
+/** Whether a workspace other than Admin holds the app (a grant that is not
+ *  excluded): the fact that sets the rules its tools run under
+ *  (@mantle/content AppRuntime.toolRules). A structural fact, read on the
+ *  admin pool whatever the caller's scope: an Admin user's request scope that
+ *  does not include the holder cannot see the holder's grant row, and read
+ *  there it would run a team app at admin rules. An id that is not a uuid
+ *  answers true (the stricter rules). */
+export async function appHeldBeyondAdmin(appId: string): Promise<boolean> {
+  if (!UUID_RE.test(appId)) return true;
+  const [row] = (await getAdminDb().execute(
+    sqlTag`select exists (
+             select 1 from item_grants g join workspaces w on w.id = g.workspace_id and not w.is_admin
+              where g.node_id = ${appId} and not g.excluded) as held`,
+  )) as unknown as { held: boolean }[];
+  return row?.held === true;
+}
+
 /** The scope `withViewer` enters for `actsFor`, read on the admin pool. */
 export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope> {
   const admin = getAdminDb();

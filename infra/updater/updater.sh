@@ -1547,8 +1547,7 @@ ensure_documents_default() {
     echo "[updater] ⚠ documents engine not switched on: COMPOSE_PROFILES could not be written"
     return 0
   fi
-  # Bounded: a stalled registry must not hold the roll (busybox has timeout).
-  if ! edd_pull=$(timeout 900 docker compose --project-directory "$STACK" --profile documents pull gotenberg < /dev/null 2>&1); then
+  if ! edd_pull=$(docker compose --project-directory "$STACK" --profile documents pull gotenberg < /dev/null 2>&1); then
     persist_env COMPOSE_PROFILES "$edd_rest" || true
     echo "[updater] ⚠ documents engine not switched on: its image did not download ($(printf '%s' "$edd_pull" | tail -1 | cut -c1-200)); the next roll tries again"
     return 0
