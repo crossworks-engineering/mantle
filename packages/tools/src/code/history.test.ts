@@ -84,7 +84,10 @@ describe('parseDiffRef', () => {
       expect(parseDiffRef(v, 'live')).toEqual({ kind: 'entry', seq: 3 });
     }
     for (const v of ['v0', 'head', 'v-1', '3.5', 'v1234567890']) {
-      expect(parseDiffRef(v, 'live')).toMatchObject({ ok: false, error: expect.stringMatching(/must be/) });
+      expect(parseDiffRef(v, 'live')).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/must be/),
+      });
     }
   });
 });
@@ -178,7 +181,10 @@ describe('code_diff', () => {
       ...appTool('app_snapshot_list').policy,
       matrix: { action: 'read', param: 'target', kinds: ['app'] },
     });
-    const r = await codeDiff.handler({ target: TARGET }, { ownerId: 'o1', surface: { kind: 'client' } } as never);
+    const r = await codeDiff.handler({ target: TARGET }, {
+      ownerId: 'o1',
+      surface: { kind: 'client' },
+    } as never);
     expect(errorOf(r)).toBe(OWNER_ONLY_ERROR);
     expect(getApp).not.toHaveBeenCalled();
   });
@@ -241,7 +247,11 @@ describe('app_log', () => {
 
 describe("app_export's git mode", () => {
   const exp = appTool('app_export');
-  const version = (seq: number, files: Record<string, string>, more: Partial<AppVersionSource> = {}) => ({
+  const version = (
+    seq: number,
+    files: Record<string, string>,
+    more: Partial<AppVersionSource> = {},
+  ) => ({
     seq,
     note: null,
     actor: 'owner' as const,
@@ -264,7 +274,10 @@ describe("app_export's git mode", () => {
 
   it('asks the read a package without data asks, then saves one .bundle', async () => {
     vi.mocked(appVersionSources).mockReturnValue(
-      versions([version(1, { 'App.tsx': 'a\n' }), version(3, { 'App.tsx': 'b\n' }, { note: 'two' })]),
+      versions([
+        version(1, { 'App.tsx': 'a\n' }),
+        version(3, { 'App.tsx': 'b\n' }, { note: 'two' }),
+      ]),
     );
     const out = outputOf(await exp.handler({ id: APP_ID, format: 'git', with_data: true }, ctx));
     expect(assertMayCopyApp).toHaveBeenCalledWith(APP_ID, false);
@@ -297,7 +310,9 @@ describe("app_export's git mode", () => {
   });
 
   it('teaches an unknown format', async () => {
-    expect(errorOf(await exp.handler({ id: APP_ID, format: 'zip' }, ctx))).toMatch(/format must be/);
+    expect(errorOf(await exp.handler({ id: APP_ID, format: 'zip' }, ctx))).toMatch(
+      /format must be/,
+    );
   });
 
   it('names authors by role and login id, never more', () => {
