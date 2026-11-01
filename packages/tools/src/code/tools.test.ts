@@ -27,6 +27,7 @@ import {
   sourceRev,
   undoCodeEdit,
 } from '@mantle/content';
+import { APP_LIBRARIES_LEFT_OUT, APP_LIBRARY_SPECIFIERS } from '@mantle/app-build';
 import { buildAndStageApp } from '../app-build-stage';
 import { APP_TOOLS } from '../builtins-apps';
 import { idArgTargets } from '../item-args';
@@ -109,6 +110,28 @@ describe('code_view', () => {
       { path: 'App.tsx', bytes: Buffer.byteLength(APP_TSX), lines: 4 },
       { path: 'lib/fmt.ts', bytes: 20, lines: 1 },
     ]);
+  });
+
+  it('with no path, says what the app can use, read live from the build allowlist', async () => {
+    const out = outputOf(await tool('code_view').handler({ target: TARGET }, ctx));
+    const kit = out.kit as {
+      language: string;
+      entry: string;
+      imports: { specifier: string }[];
+      refused: string[];
+    };
+    expect(kit.language).toMatch(/TSX/);
+    expect(kit.entry).toBe('App.tsx must export default function App()');
+    const specs = kit.imports.map((i) => i.specifier);
+    expect(specs).toEqual(
+      expect.arrayContaining([
+        'react',
+        '@host',
+        '@/components/ui/button',
+        ...APP_LIBRARY_SPECIFIERS,
+      ]),
+    );
+    expect(kit.refused).toEqual(Object.keys(APP_LIBRARIES_LEFT_OUT));
   });
 
   it('shows numbered lines of a range', async () => {

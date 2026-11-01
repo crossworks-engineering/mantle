@@ -109,6 +109,18 @@ Anthropic text editor tool and the MCP filesystem server's `edit_file`.
 A typical fix: `code_search` for the text, `code_view` the lines around the
 hit, `code_edit` with `base_rev` and `build: true`, then preview and publish.
 
+## Languages and kits
+
+A mini app is TSX (React) that runs in the browser; the entry file exports
+`default function App()`. What it may import is the bundler's allowlist
+(below): `code_view` with a target and no path returns it live, as `kit`
+(the language, the entry rule, each allowed import with its guide, and the
+libraries refused), so it is right for this brain's version even as
+libraries are added. Read a library's guide with
+`canvas_library({ name, for: 'app' })` before using it. An import that is
+not allowed fails `app_build` (or `build: true` on a code tool), and the
+error names the allowed list.
+
 ## Allowed imports (the bundler allowlist)
 
 Only these resolve, esbuild **rejects any other bare import**:

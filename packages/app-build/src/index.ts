@@ -645,6 +645,7 @@ export {
   APP_LIBRARY_SPECIFIERS,
   APP_RUNTIME_LIBRARIES,
 } from './app-libraries';
+export { KIT_UI_IMPORTS } from './kit';
 
 export async function buildApp(
   source: AppSource,
