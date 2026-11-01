@@ -51,7 +51,7 @@ import {
 } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
 import { notifyAppNavChanged } from './app-nav';
-import { codeHash, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
+import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
 import { lockAppHistory } from './app-history-lock';
 import { log } from '@mantle/tracing';
 import type { AppRow, AppDetail, AppTint, HistoryActor } from '@mantle/client-types';
@@ -854,12 +854,13 @@ export async function writeDraftFile(
 /** The `node_snapshots.trigger` of the row a code-tool write records first
  *  (0350): the working tree as it stood, code only. code_undo reads them. */
 export const CODE_EDIT_TRIGGER = 'pre_code_edit';
-/** The row a code_undo records first: what the undo replaced. Its own line,
- *  so undos never push the writes they walk back through out of the window. */
+/** The row a code_undo records first: what the undo replaced. It does not
+ *  count toward the write rows kept, so undos never push the writes they
+ *  walk back through out of the window (pruneCodeEdits). */
 export const CODE_UNDO_TRIGGER = 'pre_code_undo';
 /** The code tools' rows: hidden from the History list and the lookups by id. */
 export const CODE_TOOL_TRIGGERS: readonly string[] = [CODE_EDIT_TRIGGER, CODE_UNDO_TRIGGER];
-/** The rows of each line kept per app. */
+/** The write rows kept per app (the undo rows among them stay too). */
 export const APP_CODE_EDIT_KEEP = 20;
 /** And of those only as many as fit in this many bytes of code (the newest
  *  always stays): a row holds one working tree, up to 50 × 256 KB. */
@@ -1004,31 +1005,36 @@ async function recordCodeEdit(
   });
 }
 
-/** Keep the newest APP_CODE_EDIT_KEEP `pre_code_edit` rows of the app, as
- *  many as fit in APP_CODE_EDIT_MAX_BYTES, under its history lock (one
- *  statement: a row taken meanwhile stays). After the write has committed,
- *  so a failure is logged, never the call's: the write stands. */
+/**
+ * Keep the app's code-tool rows as one window, the newest of them: up to
+ * APP_CODE_EDIT_KEEP write rows (`pre_code_edit`; an undo's row does not
+ * count), only undo rows newer than the oldest write row kept, and within
+ * APP_CODE_EDIT_MAX_BYTES of code in all (the newest row always stays).
+ * One statement ranked by seq over both triggers, so what stays is an
+ * unbroken run: undoDraftFile's chain never meets a hole a prune made.
+ * Under the app's history lock, after the write has committed: a failure
+ * is logged, never the call's error (the write stands).
+ */
 async function pruneCodeEdits(id: string): Promise<void> {
   try {
     await db.transaction(async (tx) => {
       await lockAppHistory(tx, id);
-      await pruneHistoryRows(
-        id,
-        [CODE_EDIT_TRIGGER],
-        APP_CODE_EDIT_KEEP,
-        APP_CODE_EDIT_MAX_BYTES,
-        tx,
-        'source',
-      );
-      // An undo's row is read for its marks, its tree only to keep what the
-      // undo replaced: a quarter of the bytes.
-      await pruneHistoryRows(
-        id,
-        [CODE_UNDO_TRIGGER],
-        APP_CODE_EDIT_KEEP,
-        APP_CODE_EDIT_MAX_BYTES / 4,
-        tx,
-        'source',
+      await tx.delete(nodeSnapshots).where(
+        sql`${nodeSnapshots.id} in (
+          select id from (
+            select id, trigger,
+                   row_number() over w as rn,
+                   sum(case when trigger = ${CODE_EDIT_TRIGGER} then 1 else 0 end) over w as edits,
+                   sum(coalesce(source_bytes, 0)) over w as cum
+              from node_snapshots
+             where node_id = ${id} and trigger in (${CODE_EDIT_TRIGGER}, ${CODE_UNDO_TRIGGER})
+            window w as (order by seq desc rows between unbounded preceding and current row)
+          ) ranked
+          where rn > 1
+            and (edits > ${APP_CODE_EDIT_KEEP}
+                 or (trigger = ${CODE_UNDO_TRIGGER} and edits >= ${APP_CODE_EDIT_KEEP})
+                 or cum > ${APP_CODE_EDIT_MAX_BYTES})
+        )`,
       );
     });
   } catch (err) {

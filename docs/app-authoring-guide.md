@@ -92,7 +92,7 @@ Anthropic text editor tool and the MCP filesystem server's `edit_file`.
   The newest 20 are kept per app (fewer when they pass 64 MB), and the
   History tab leaves them out. `code_undo` reads them: each call goes one
   write further back for that file. An undo is a write too: it records what
-  it replaces (a `pre_code_undo` entry, on a line of its own) and takes
+  it replaces (a `pre_code_undo` entry, which does not count toward the 20) and takes
   `base_rev`. Each entry records the revision before and after its write,
   so the entries form a chain; a gap is a change made outside the code
   tools (the editor, an import, a restore). An undo that would go back

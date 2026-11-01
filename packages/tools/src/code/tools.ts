@@ -619,7 +619,7 @@ const code_insert: BuiltinToolDef = {
         }
         const file = tree.files[key]!;
         const crlf = crlfOf(file);
-        const out = insertAfterLine(crlf ? toLf(file) : file, after, toLf(text));
+        const out = insertAfterLine(crlf ? toLf(file) : file, after, crlf ? toLf(text) : text);
         if ('error' in out) throw new ChangeRefused(`${out.error} (${path})`);
         const next = crlf ? toCrlf(out.text) : out.text;
         return { tree: { entry: tree.entry, files: { ...tree.files, [key]: next } }, path: key };
@@ -708,8 +708,14 @@ const code_undo: BuiltinToolDef = {
         res = await store.undo(path, baseRev);
       } catch (err) {
         if (!(err instanceof AppUndoEmptyError) || exact === path || !exact) throw err;
-        path = exact;
-        res = await store.undo(path, baseRev);
+        try {
+          res = await store.undo(exact, baseRev);
+          path = exact;
+        } catch (again) {
+          // Nothing under the key as typed either: the first answer stands.
+          if (again instanceof AppUndoEmptyError) throw err;
+          throw again;
+        }
       }
       if (!res) return missingApp(store);
       const removed = !Object.hasOwn(res.after.files, path);

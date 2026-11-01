@@ -247,6 +247,27 @@ describe.skipIf(!URL)('the code tools draft write on Postgres', () => {
     expect(u?.after.files['x.ts']).toBe('c');
   });
 
+  it('the prune keeps one unbroken window: undos between kept writes stay', async () => {
+    const app = await newApp('suffix');
+    for (let i = 1; i <= apps.APP_CODE_EDIT_KEEP + 5; i++) {
+      await apps.changeDraftSource(owner, app.id, setFile(`f${i % 3}.ts`, `v${i}`), opts);
+      if (i % 4 === 0) await apps.undoDraftFile(owner, app.id, `f${i % 3}.ts`, opts);
+    }
+    const rows = await admin`select seq, trigger from node_snapshots
+                              where node_id = ${app.id}
+                                and trigger in ('pre_code_edit', 'pre_code_undo')
+                              order by seq desc`;
+    const edits = rows.filter((r) => r.trigger === 'pre_code_edit');
+    expect(edits).toHaveLength(apps.APP_CODE_EDIT_KEEP);
+    const oldestEdit = Math.min(...edits.map((r) => r.seq as number));
+    // No undo row older than the oldest write kept, and every undo row
+    // newer than it is kept (the window has no hole).
+    expect(rows.filter((r) => (r.seq as number) < oldestEdit)).toEqual([]);
+    expect(rows.filter((r) => r.trigger === 'pre_code_undo').length).toBeGreaterThan(0);
+    // And an undo walks back without a false outside-change refusal.
+    await expect(apps.undoDraftFile(owner, app.id, 'f1.ts', opts)).resolves.toBeTruthy();
+  });
+
   it('undos keep their own line: they never push the writes out of the window', async () => {
     const app = await newApp('window');
     for (let i = 1; i <= apps.APP_CODE_EDIT_KEEP; i++) {
