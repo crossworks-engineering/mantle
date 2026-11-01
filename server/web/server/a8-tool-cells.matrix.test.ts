@@ -124,6 +124,7 @@ const INPUT: Readonly<Record<string, (c: Ctx) => Record<string, unknown>>> = {
   app_duplicate: () => ({ with_data: false }),
   app_file_write: () => ({ path: 'a8.txt', content: 'a8' }),
   app_file_delete: () => ({ path: 'a8.txt' }),
+  code_write: (c) => ({ path: 'a8.ts', content: `// ${fresh(c)}` }),
   app_source_set: () => ({
     entry: 'index.tsx',
     files: { 'index.tsx': 'export default function A() { return null; }' },
