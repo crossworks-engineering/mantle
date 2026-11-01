@@ -277,6 +277,9 @@ export function unifiedDiff(path: string, before: string, after: string, maxLine
 
 /** The most `{a,b}` alternatives a glob may expand to. */
 const GLOB_MAX_ALTERNATIVES = 32;
+/** The most tokens of all alternatives together: the match costs this
+ *  times the path length per file. */
+const GLOB_MAX_TOKENS = 2000;
 
 type GlobToken = { kind: 'char'; c: string } | { kind: '?' | '*' | '**' | '**/' };
 
@@ -362,7 +365,7 @@ function tokensMatch(tokens: readonly GlobToken[], path: string): boolean {
  * run across segments (`**` before a slash: none too), `?` one character,
  * `{a,b}` either. A glob with no `/` matches the file name in any folder.
  * Linear in the path for any glob (no regular expression), so a caller's
- * glob cannot stall the process; null when it expands past the cap.
+ * glob cannot stall the process; null when it expands past the caps.
  */
 export function globMatcher(glob: string): ((path: string) => boolean) | null {
   const alts = expandBraces(glob);
@@ -371,12 +374,17 @@ export function globMatcher(glob: string): ((path: string) => boolean) | null {
     const tokens = globTokens(g);
     return g.includes('/') ? tokens : [{ kind: '**/' } as GlobToken, ...tokens];
   });
+  if (compiled.reduce((n, t) => n + t.length, 0) > GLOB_MAX_TOKENS) return null;
   return (path) => compiled.some((tokens) => tokensMatch(tokens, path));
 }
 
-/** A text with CRLF line ends, as the tools work on it (LF), and back. */
+/** Whether every line of a text ends in CRLF: such a file is worked on as
+ *  LF (toLf) and written back with CRLF (toCrlf), exactly. A file with mixed
+ *  line ends is worked on as it is. */
 export function crlfOf(text: string): boolean {
-  return text.includes('\r\n');
+  const lf = (text.match(/\n/g) ?? []).length;
+  return lf > 0 && (text.match(/\r\n/g) ?? []).length === lf;
 }
 export const toLf = (text: string): string => text.replace(/\r\n/g, '\n');
-export const toCrlf = (text: string): string => text.replace(/\r?\n/g, '\r\n');
+/** Back to CRLF: every LF (each one came from a CRLF, or is a new line). */
+export const toCrlf = (text: string): string => text.replace(/\n/g, '\r\n');

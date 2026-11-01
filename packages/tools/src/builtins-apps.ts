@@ -92,7 +92,7 @@ import {
 import { appAuthorSummary } from './publish-summary';
 import { CS } from './client-sourced-rule';
 import { scopeOutsideAdmin } from './outside-admin';
-import { normCodePath } from './code/target-ref';
+import { codeFileKey, normCodePath } from './code/target-ref';
 
 /**
  * This file's one system door: the trash of deleted apps (their
@@ -430,7 +430,11 @@ const app_file_write: BuiltinToolDef = {
       const res = await changeDraftSource(
         ctx.ownerId,
         id,
-        (tree) => ({ entry: tree.entry, files: { ...tree.files, [path]: content } }),
+        (tree) => ({
+          entry: tree.entry,
+          // A key stored before the one path rule (`./x.ts`) is written there.
+          files: { ...tree.files, [codeFileKey(tree.files, input.path)]: content },
+        }),
         {
           actor: historyActor(ctx),
           actorLoginId: actingLoginId(ctx.surface),
@@ -497,8 +501,7 @@ const app_file_delete: BuiltinToolDef = {
         id,
         (tree) => {
           // A key written before the one path rule (`./x.ts`) still goes.
-          const raw = str(input.path).trim();
-          const key = Object.hasOwn(tree.files, raw) ? raw : path;
+          const key = codeFileKey(tree.files, input.path);
           if (key === tree.entry) throw new CannotDeleteEntryError();
           const files = { ...tree.files };
           delete files[key];

@@ -22,6 +22,7 @@ import {
   AppSourceLimitError,
   AppUndoEmptyError,
   AppUndoEntryError,
+  AppUndoUntrackedError,
   CannotDeleteEntryError,
   changeDraftSource,
   getApp,
@@ -41,7 +42,7 @@ import { actingLoginId } from '../surface';
 import type { ToolPolicy } from '../tool-policy';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from '../types';
 import { searchFiles } from './search';
-import { appIdOfCodeTarget, APP_TARGET_PREFIX, normCodePath } from './target-ref';
+import { appIdOfCodeTarget, APP_TARGET_PREFIX, codeFileKey, normCodePath } from './target-ref';
 import {
   applyEdits,
   crlfOf,
@@ -179,7 +180,8 @@ function writeError(err: unknown): Fail {
     err instanceof AppDraftRevError ||
     err instanceof AppSourceLimitError ||
     err instanceof AppUndoEmptyError ||
-    err instanceof AppUndoEntryError
+    err instanceof AppUndoEntryError ||
+    err instanceof AppUndoUntrackedError
   ) {
     return { ok: false, error: err.message };
   }
@@ -255,22 +257,30 @@ const BUILD_PROP = {
   description: 'Run `app_build` after the write and return its errors (file, line, column).',
 };
 
-/** Run a draft change that ends in one file's diff. */
+/** Run a draft change of one file (the change names the file's key in the
+ *  tree it was given) that ends in that file's diff. */
 async function writeFile(
   ctx: Ctx,
   input: Record<string, unknown>,
-  fn: (tree: AppSource, path: string) => AppSource,
-  opts: { note: string; dryRun?: boolean; path: string; newFile?: true },
+  fn: (tree: AppSource) => { tree: AppSource; path: string },
+  opts: { note: string; dryRun?: boolean },
 ): Promise<ToolHandlerResult> {
   const store = openTarget(ctx, input.target);
   if ('ok' in store) return store;
-  const { path } = opts;
+  let path = normCodePath(input.path);
   try {
-    const res = await store.change((tree) => fn(tree, path), {
-      baseRev: str(input.base_rev).trim() || null,
-      dryRun: opts.dryRun,
-      note: opts.note,
-    });
+    const res = await store.change(
+      (tree) => {
+        const out = fn(tree);
+        path = out.path;
+        return out.tree;
+      },
+      {
+        baseRev: str(input.base_rev).trim() || null,
+        dryRun: opts.dryRun,
+        note: opts.note,
+      },
+    );
     if (!res) return missingApp(store);
     const had = Object.hasOwn(res.before.files, path);
     const before = had ? res.before.files[path]! : '';
@@ -327,7 +337,7 @@ const code_view: BuiltinToolDef = {
     try {
       const tree = await store.read();
       if (!tree) return missingApp(store);
-      const path = normCodePath(input.path);
+      const path = codeFileKey(tree.files, input.path);
       if (!path) {
         const files = Object.keys(tree.files)
           .sort()
@@ -540,12 +550,13 @@ const code_edit: BuiltinToolDef = {
       ctx,
       input,
       (tree) => {
-        if (!Object.hasOwn(tree.files, path)) {
+        const key = codeFileKey(tree.files, input.path);
+        if (!Object.hasOwn(tree.files, key)) {
           throw new ChangeRefused(
             `no file '${path}' in the app: list the files with code_view, or create it with code_write`,
           );
         }
-        const file = tree.files[path]!;
+        const file = tree.files[key]!;
         const crlf = crlfOf(file);
         const out = applyEdits(
           crlf ? toLf(file) : file,
@@ -553,12 +564,10 @@ const code_edit: BuiltinToolDef = {
         );
         if ('error' in out) throw new ChangeRefused(`${out.error} (${path})`);
         replaced = out.replaced;
-        return {
-          entry: tree.entry,
-          files: { ...tree.files, [path]: crlf ? toCrlf(out.text) : out.text },
-        };
+        const text = crlf ? toCrlf(out.text) : out.text;
+        return { tree: { entry: tree.entry, files: { ...tree.files, [key]: text } }, path: key };
       },
-      { note: `code_edit ${path}`, dryRun: input.dry_run === true, path },
+      { note: `code_edit ${path}`, dryRun: input.dry_run === true },
     );
     if (res.ok) (res.output as Record<string, unknown>).replaced = replaced;
     return res;
@@ -605,21 +614,20 @@ const code_insert: BuiltinToolDef = {
       ctx,
       input,
       (tree) => {
-        if (!Object.hasOwn(tree.files, path)) {
+        const key = codeFileKey(tree.files, input.path);
+        if (!Object.hasOwn(tree.files, key)) {
           throw new ChangeRefused(
             `no file '${path}' in the app: list the files with code_view, or create it with code_write`,
           );
         }
-        const file = tree.files[path]!;
+        const file = tree.files[key]!;
         const crlf = crlfOf(file);
         const out = insertAfterLine(crlf ? toLf(file) : file, after, toLf(text));
         if ('error' in out) throw new ChangeRefused(`${out.error} (${path})`);
-        return {
-          entry: tree.entry,
-          files: { ...tree.files, [path]: crlf ? toCrlf(out.text) : out.text },
-        };
+        const next = crlf ? toCrlf(out.text) : out.text;
+        return { tree: { entry: tree.entry, files: { ...tree.files, [key]: next } }, path: key };
       },
-      { note: `code_insert ${path}`, path },
+      { note: `code_insert ${path}` },
     );
   },
 };
@@ -649,8 +657,6 @@ const code_write: BuiltinToolDef = {
     const refused = ownerOnlyRefusal(ctx);
     if (refused) return refused;
     const path = normCodePath(input.path);
-    const bad = badNewPath(path);
-    if (bad) return { ok: false, error: bad };
     if (typeof input.content !== 'string') {
       return { ok: false, error: 'content is required: the whole file text' };
     }
@@ -658,8 +664,17 @@ const code_write: BuiltinToolDef = {
     return writeFile(
       ctx,
       input,
-      (tree) => ({ entry: tree.entry, files: { ...tree.files, [path]: content } }),
-      { note: `code_write ${path}`, path },
+      (tree) => {
+        // A file the tree holds under the exact key is replaced there; a
+        // new one takes the normalised path, which must stay inside the app.
+        const key = codeFileKey(tree.files, input.path);
+        if (!Object.hasOwn(tree.files, key)) {
+          const bad = badNewPath(key);
+          if (bad) throw new ChangeRefused(bad);
+        }
+        return { tree: { entry: tree.entry, files: { ...tree.files, [key]: content } }, path: key };
+      },
+      { note: `code_write ${path}` },
     );
   },
 };
@@ -682,9 +697,11 @@ const code_undo: BuiltinToolDef = {
     if (refused) return refused;
     const store = openTarget(ctx, input.target);
     if ('ok' in store) return store;
-    const path = normCodePath(input.path);
-    if (!path) return { ok: false, error: 'path is required, e.g. App.tsx' };
+    if (!normCodePath(input.path)) return { ok: false, error: 'path is required, e.g. App.tsx' };
     try {
+      const tree = await store.read();
+      if (!tree) return missingApp(store);
+      const path = codeFileKey(tree.files, input.path);
       const res = await store.undo(path, str(input.base_rev).trim() || null);
       if (!res) return missingApp(store);
       const removed = !Object.hasOwn(res.after.files, path);

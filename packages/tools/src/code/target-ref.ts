@@ -22,3 +22,11 @@ export function appIdOfCodeTarget(value: unknown): string | null {
 export function normCodePath(raw: unknown): string {
   return (typeof raw === 'string' ? raw : '').trim().replace(/^(\.\/|\/)+/, '');
 }
+
+/** The key a path names in a tree: the path exactly as given (trimmed) when
+ *  the tree holds it (a key stored before the one rule, `./x.ts`), else the
+ *  normalised path. */
+export function codeFileKey(files: Readonly<Record<string, string>>, raw: unknown): string {
+  const exact = typeof raw === 'string' ? raw.trim() : '';
+  return exact && Object.hasOwn(files, exact) ? exact : normCodePath(raw);
+}

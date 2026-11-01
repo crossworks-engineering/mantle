@@ -879,7 +879,7 @@ To CHANGE an app that exists, don't read every file and write whole files back. 
 - Pass the \`rev\` you read as \`base_rev\`: if the user or another agent changed the draft since, the write fails with the current rev; read again and redo the change. \`build: true\` builds in the same call and returns the errors.
 
 ## Workflow
-Write files with app_file_write (a new app) or the code tools (a change) → \`app_build\` → a failed compile fails the call and lists each error with file/line/column → fix → repeat until the build succeeds. A green build only proves it compiles: re-read your logic (calculations, lookups, edge cases) against the requirement before handing over — you get no runtime error feedback from the iframe. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,
+Write files with app_file_write (a new app) or the code tools (a change) → \`app_build\` → a failed compile fails the call and lists each error with file/line/column → fix → repeat until the build succeeds. A green build only proves it compiles: re-read your logic (calculations, lookups, edge cases) against the requirement before handing over: you get no runtime error feedback from the iframe. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,
 
   'sandbox-work': `# Sandbox work — isolated environments for untrusted and project code
 
