@@ -631,6 +631,11 @@ export const RETRYABLE_STATUS: ReadonlySet<number> = new Set([
  * V8 quotes a short body in its own error, so a complete body that reads
  * "unexpected EOF" must not match.
  *
+ * A body cut inside `true`, `false` or `null` is end of input to V8. Bun says
+ * `Unexpected identifier "tru"`, and says the same for a complete `{"a":tru}`.
+ * So only the cut starts of those three words match, and on Bun that rare
+ * complete body gets its bounded retries. Any other word does not match.
+ *
  * The message strings are the engines', and V8 has changed them before. The
  * tests parse REAL malformed JSON rather than asserting hand-written strings,
  * so the next wording change fails them instead of silently narrowing this
@@ -640,7 +645,10 @@ export function isEmptyJsonBodyError(err: unknown): boolean {
   if (!(err instanceof SyntaxError)) return false;
   return (
     /^(?:JSON Parse error: )?unexpected (?:end of (?:json )?input|eof)/i.test(err.message) ||
-    /^(?:JSON Parse error: )?unterminated string/i.test(err.message)
+    /^(?:JSON Parse error: )?unterminated string/i.test(err.message) ||
+    /^JSON Parse error: Unexpected identifier "(?:t|tr|tru|f|fa|fal|fals|n|nu|nul)"$/.test(
+      err.message,
+    )
   );
 }
 

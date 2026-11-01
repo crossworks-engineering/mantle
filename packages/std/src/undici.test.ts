@@ -1,7 +1,7 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { fetchThrough, loadUndici } from './undici';
+import { fetchStubsApply, fetchThrough, loadUndici } from './undici';
 
 const isBun = !!process.versions.bun;
 
@@ -9,10 +9,26 @@ describe('a call through a dispatcher, the same on every runtime', () => {
   let srv: http.Server;
   let base = '';
   const agent = new (loadUndici()!.Agent)();
+  /** The `x-case` of each `/endless` call whose connection closed. */
+  const closes: string[] = [];
+  const closed = async (name: string) => {
+    for (let i = 0; i < 400 && !closes.includes(name); i++) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    return closes.includes(name);
+  };
 
   beforeAll(async () => {
     srv = http.createServer((q, s) => {
       if (q.url === '/hang') return;
+      if (q.url === '/endless') {
+        const beat = setInterval(() => s.write('x'.repeat(65_536)), 5);
+        s.on('close', () => {
+          clearInterval(beat);
+          closes.push(q.headers['x-case'] as string);
+        });
+        return;
+      }
       const chunks: Buffer[] = [];
       q.on('data', (c: Buffer) => chunks.push(c));
       q.on('end', () => {
@@ -79,11 +95,64 @@ describe('a call through a dispatcher, the same on every runtime', () => {
     }
   }, 30_000);
 
+  it('a cancel of the body ends the connection', async () => {
+    const headers = { 'x-case': 'cancelled' };
+    const res = await fetchThrough(agent, `${base}/endless`, { headers }, fetch);
+    await res.body!.cancel();
+    expect(await closed('cancelled')).toBe(true);
+  });
+
+  it('an abort after the headers fails the read and ends the connection', async () => {
+    const ctrl = new AbortController();
+    const init = { signal: ctrl.signal, headers: { 'x-case': 'aborted' } };
+    const res = await fetchThrough(agent, `${base}/endless`, init, fetch);
+    const read = res.text();
+    ctrl.abort();
+    await expect(read).rejects.toThrow();
+    expect(await closed('aborted')).toBe(true);
+  });
+
+  it('an abort stops a Request body that stalls', async () => {
+    const ctrl = new AbortController();
+    const stalled = new ReadableStream({ start: (c) => c.enqueue(new Uint8Array([1])) });
+    const req = new Request(`${base}/echo`, {
+      method: 'POST',
+      body: stalled,
+      signal: ctrl.signal,
+      duplex: 'half',
+    } as RequestInit);
+    const hung = fetchThrough(agent, req, {}, fetch);
+    setTimeout(() => ctrl.abort(), 20);
+    await expect(hung).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it.runIf(isBun)(
+    'on Bun, a body the caller drops unread ends the connection',
+    async () => {
+      const gc = (globalThis as unknown as { Bun: { gc: (sync: boolean) => void } }).Bun.gc;
+      const headers = { 'x-case': 'dropped' };
+      await fetchThrough(agent, `${base}/endless`, { headers }, fetch);
+      for (let i = 0; i < 200 && !closes.includes('dropped'); i++) {
+        new Uint8Array(5_000_000).fill(1);
+        gc(true);
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(closes).toContain('dropped');
+    },
+    30_000,
+  );
+
   it('calls a stub as it is, with the dispatcher', async () => {
     const stub = vi.fn(async () => new Response('stubbed'));
     const res = await fetchThrough(agent, `${base}/echo`, {}, stub as unknown as typeof fetch);
     expect(await res.text()).toBe('stubbed');
     expect(stub.mock.calls[0]).toMatchObject([`${base}/echo`, { dispatcher: agent }]);
+  });
+
+  it('a replaced fetch is a stub only in a test', () => {
+    expect(fetchStubsApply()).toBe(true);
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(fetchStubsApply()).toBe(false);
   });
 
   it.runIf(isBun)('on Bun, refuses a wrapped fetch outside a test', () => {

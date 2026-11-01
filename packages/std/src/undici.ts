@@ -35,13 +35,56 @@ export function loadUndici(): Undici | null {
   return undiciModule;
 }
 
+/** Cancels undici's stream when the caller's stream is collected unread. */
+const unread = new FinalizationRegistry<ReadableStreamDefaultReader<Uint8Array>>((reader) => {
+  void reader.cancel().catch(() => {});
+});
+
+/**
+ * undici's stream as one the caller owns. The reader takes undici's stream at
+ * once: undici cancels an unread stream when its own Response is collected, and
+ * that one is gone when undiciFetch returns. In exchange a stream the caller
+ * drops unread must be cancelled here, or its connection stays open until the
+ * idle limit.
+ */
+function callerStream(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const reader = stream.getReader();
+  const own = new ReadableStream<Uint8Array>(
+    {
+      async pull(ctrl) {
+        const { done, value } = await reader.read();
+        if (done) ctrl.close();
+        else ctrl.enqueue(value);
+      },
+      cancel: (why) => reader.cancel(why),
+    },
+    { highWaterMark: 0 },
+  );
+  unread.register(own, reader);
+  return own;
+}
+
+/** A Request's body as bytes. A body that stalls must not outlive the abort. */
+async function requestBytes(req: Request, signal?: AbortSignal | null): Promise<ArrayBuffer> {
+  if (!signal) return req.arrayBuffer();
+  signal.throwIfAborted();
+  let stop = () => {};
+  const aborted = new Promise<never>((_, reject) => {
+    stop = () => reject(signal.reason);
+    signal.addEventListener('abort', stop, { once: true });
+  });
+  try {
+    return await Promise.race([req.arrayBuffer(), aborted]);
+  } finally {
+    signal.removeEventListener('abort', stop);
+  }
+}
+
 /**
  * A call through undici's own fetch. It knows only its own Request and
  * FormData classes, so those go in as parts, and a Request's body goes in as
  * bytes, so it keeps its length. The answer comes back as the runtime's
- * Response, so a caller's `instanceof Response` holds. The pipe takes undici's
- * stream at once: undici cancels an unread stream when its own Response is
- * collected, and that one is gone when this returns.
+ * Response, so a caller's `instanceof Response` holds.
  */
 async function undiciFetch(
   undici: Undici,
@@ -52,7 +95,7 @@ async function undiciFetch(
   const req = input instanceof Request ? input : null;
   const headers = new Headers(init.headers ?? req?.headers);
   let body = init.body;
-  if (body === undefined && req?.body) body = await req.arrayBuffer();
+  if (body === undefined && req?.body) body = await requestBytes(req, init.signal ?? req.signal);
   if (body instanceof FormData) {
     const form = new Response(body);
     headers.set('content-type', form.headers.get('content-type') ?? '');
@@ -69,7 +112,7 @@ async function undiciFetch(
     dispatcher,
   } as import('undici').RequestInit);
   const stream = res.body as unknown as ReadableStream<Uint8Array> | null;
-  const out = new Response(stream?.pipeThrough(new TransformStream()), {
+  const out = new Response(stream && callerStream(stream), {
     status: res.status,
     statusText: res.statusText,
     headers: [...res.headers],
@@ -83,8 +126,7 @@ async function undiciFetch(
  * fetch is native code. One written in JavaScript is a test stub (even one set
  * before this module loaded) and is called as on Node. Outside a test it is a
  * wrapper that would hand the dispatcher to Bun's fetch and lose it, so it is
- * refused: a dropped pin must not pass in silence. A wrapper set after
- * provider-fetch.ts loaded takes fetchVia's stub path and does not reach here.
+ * refused: a dropped pin must not pass in silence.
  */
 export function fetchThrough(
   dispatcher: Dispatcher,
@@ -93,11 +135,16 @@ export function fetchThrough(
   platformFetch: typeof fetch,
 ): Promise<Response> {
   const native = Function.prototype.toString.call(platformFetch).includes('[native code]');
-  if (process.versions.bun && !native && process.env.NODE_ENV !== 'test') {
+  if (process.versions.bun && !native && !fetchStubsApply()) {
     throw new Error('fetch is wrapped: on Bun a wrapper would drop the dispatcher');
   }
   const undici = process.versions.bun && native ? loadUndici() : null;
   if (undici) return undiciFetch(undici, input, init, dispatcher);
   // The built-in RequestInit type has no `dispatcher`; the runtime accepts it.
   return platformFetch(input, { ...init, dispatcher } as RequestInit);
+}
+
+/** True in a test run: a replaced global fetch is then a stub, not a wrapper. */
+export function fetchStubsApply(): boolean {
+  return process.env.NODE_ENV === 'test';
 }

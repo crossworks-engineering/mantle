@@ -36,11 +36,11 @@
  * so it is loaded lazily (@mantle/std/undici, which also holds the Bun path).
  * Where it cannot load (a browser), the plain built-in fetch is used.
  *
- * A replaced global fetch (a test stub) still wins, untouched.
+ * In a test a replaced global fetch (a stub) still wins, untouched (fetchVia).
  */
 
 import { PROVIDER_TIMEOUTS, formatMs } from '@mantle/std';
-import { fetchThrough, loadUndici } from '@mantle/std/undici';
+import { fetchStubsApply, fetchThrough, loadUndici } from '@mantle/std/undici';
 
 type UndiciAgent = import('undici').Agent;
 type UndiciProxyAgent = import('undici').ProxyAgent;
@@ -99,8 +99,10 @@ function isEventStream(res: Response): boolean {
 /**
  * Fetch through a given undici dispatcher (fetchThrough: the built-in fetch, or
  * undici's own on Bun, with native Request/Response either way), under the
- * call's deadline. A replaced global fetch (a
- * test stub) still wins, untouched: it gets the caller's init as given.
+ * call's deadline. In a test a replaced global fetch still wins, untouched: it
+ * gets the caller's init as given. Outside a test one is a wrapper, and a route
+ * must not lose its dispatcher to it: it gets the dispatcher (Node), or it is
+ * refused (Bun, fetchThrough), so a tailnet call never goes direct in silence.
  */
 export async function fetchVia(
   dispatcher: UndiciAgent | UndiciProxyAgent | null,
@@ -108,7 +110,10 @@ export async function fetchVia(
   init?: RequestInit,
   opts?: ProviderFetchOptions,
 ): Promise<Response> {
-  if (globalThis.fetch !== NATIVE_FETCH) return globalThis.fetch(input, init);
+  const platformFetch = globalThis.fetch;
+  if (platformFetch !== NATIVE_FETCH && (!dispatcher || fetchStubsApply())) {
+    return platformFetch(input, init);
+  }
   const own = [init?.signal, input instanceof Request ? input.signal : null].filter(
     (s): s is AbortSignal => !!s,
   );
@@ -118,7 +123,7 @@ export async function fetchVia(
   const send = (signal: AbortSignal | undefined) => {
     const sent = { ...init, ...(signal ? { signal } : {}) };
     return dispatcher
-      ? fetchThrough(dispatcher, input, sent, NATIVE_FETCH)
+      ? fetchThrough(dispatcher, input, sent, platformFetch)
       : NATIVE_FETCH(input, sent);
   };
   if (ms === undefined) return send(undefined);

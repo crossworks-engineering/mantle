@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tailnetFetch, tailnetProxyConfigured, _resetTailnetProxy } from './tailnet';
 
 /**
@@ -34,6 +34,28 @@ describe('tailnetProxyConfigured', () => {
 });
 
 describe('tailnetFetch', () => {
+  it('outside a test, a wrapped fetch never takes a proxied call direct', async () => {
+    process.env.MANTLE_TAILNET_PROXY_URL = 'http://127.0.0.1:9';
+    const seen: RequestInit[] = [];
+    globalThis.fetch = (async (_u: string, init: RequestInit) => {
+      seen.push(init);
+      return new Response('wrapped');
+    }) as typeof fetch;
+    vi.stubEnv('NODE_ENV', 'production');
+    try {
+      const call = tailnetFetch('http://gpu.tailnet.test/');
+      if (process.versions.bun) {
+        await expect(call).rejects.toThrow(/wrapped/);
+        expect(seen).toEqual([]);
+      } else {
+        await call;
+        expect(seen[0]).toHaveProperty('dispatcher');
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('degrades to a DIRECT fetch when no proxy is configured', async () => {
     let calledWith: { url: string; init?: unknown } | null = null;
     globalThis.fetch = (async (url: unknown, init?: unknown) => {
