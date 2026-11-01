@@ -52,8 +52,9 @@ const TABLE_SQL_CHILD_IDLE_MS = 60_000;
  *  limit). Without it `SELECT zeroblob(943718400)` is a legal query, and its
  *  bytes reach this process. */
 export const TABLE_SQL_MAX_LENGTH = 16 * 1024 * 1024;
-/** The most a reply may hold. Four children at once stay small against the
- *  web process's limit, whatever the query. */
+/** The most a reply may hold. This keeps the bytes out of this process. It
+ *  does not bound the child: a row is built whole before it can be read, so 64
+ *  columns of the longest value peak near 2 GB there (measured 2026-11-01). */
 export const TABLE_SQL_MAX_REPLY_BYTES = 16 * 1024 * 1024;
 
 function timeoutMs(): number {

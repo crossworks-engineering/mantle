@@ -82,12 +82,15 @@ function normal(text: string): string {
   // The login emails and the box's tailnet peers (the environment, not an
   // answer; no machine name on the record) last, after the cut, as the
   // record on main was read.
-  return text
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>')
-    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?/g, '<ts>')
-    .slice(0, 300)
-    .replace(/s9af-[0-9a-f]{8}-[0-9a-f]{8}@example\.com/g, '<email>')
-    .replace(/"tailnetPeers":\[[^\]]*\]?/g, '"tailnetPeers":"<env>"');
+  return (
+    text
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>')
+      .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?/g, '<ts>')
+      // Before the cut: a box on a real tailnet has a long list of peers.
+      .replace(/"tailnetPeers":\[[^\]]*\]/g, '"tailnetPeers":"<env>"')
+      .slice(0, 300)
+      .replace(/s9af-[0-9a-f]{8}-[0-9a-f]{8}@example\.com/g, '<email>')
+  );
 }
 
 describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main', () => {

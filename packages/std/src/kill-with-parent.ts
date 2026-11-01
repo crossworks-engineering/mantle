@@ -30,13 +30,19 @@ const GUARD_NAME = 'mantle-child-guard';
  *  guard that fails to start costs the protection, never the child. */
 export function killWithParent(child: ChildProcess): void {
   if (child.pid === undefined) return;
-  const guard = spawn('/bin/sh', ['-c', 'read _; kill -9 "$1"', GUARD_NAME, String(child.pid)], {
-    stdio: ['pipe', 'ignore', 'ignore'],
-    // Builtins only, so it needs no PATH, and it gets none of the secrets.
-    env: {},
-  });
+  let guard: ChildProcess;
+  try {
+    guard = spawn('/bin/sh', ['-c', 'read _; kill -9 "$1"', GUARD_NAME, String(child.pid)], {
+      stdio: ['pipe', 'ignore', 'ignore'],
+      // Builtins only, so it needs no PATH, and it gets none of the secrets.
+      env: {},
+    });
+  } catch {
+    return;
+  }
   guard.on('error', () => {});
-  guard.stdin.on('error', () => {});
+  // Out of file descriptors, spawn returns a process with no stdin.
+  guard.stdin?.on('error', () => {});
   guard.unref();
   // By signal, not by closing the pipe: the guard must not `kill` a pid that
   // is free again.
