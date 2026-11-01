@@ -10,6 +10,11 @@
  * `git clone app.bundle` then gives the version line as commits: log, diff,
  * blame and bisect work on the outside agent's own machine. Nothing here
  * reads a database; the caller hands in the versions.
+ *
+ * Deterministic: the same versions give the same commit ids, every export.
+ * Every input to an id is fixed: paths sorted (git's order), one file mode
+ * (100644), the author and committer one name with no email, the time the
+ * caller gives in +0000, the message as given, each commit on the one before.
  */
 import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
