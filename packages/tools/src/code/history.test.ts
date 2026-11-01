@@ -319,7 +319,11 @@ describe("app_export's git mode", () => {
     const list = () =>
       versions([
         version(1, { 'App.tsx': 'a\n', 'lib/x.ts': 'x\n' }),
-        version(2, { 'lib/x.ts': 'x\n', 'App.tsx': 'b\n' }, { actor: 'member', actorLoginId: 'l1' }),
+        version(
+          2,
+          { 'lib/x.ts': 'x\n', 'App.tsx': 'b\n' },
+          { actor: 'member', actorLoginId: 'l1' },
+        ),
       ]);
     vi.mocked(appVersionSources).mockReturnValueOnce(list()).mockReturnValueOnce(list());
     const one = outputOf(await exp.handler({ id: APP_ID, format: 'git' }, ctx));
