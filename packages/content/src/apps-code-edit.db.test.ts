@@ -234,6 +234,36 @@ describe.skipIf(!URL)('the code tools draft write on Postgres', () => {
     );
   });
 
+  it('a write that moved the entry is not undone', async () => {
+    const app = await newApp('moved');
+    const tree = (await apps.getApp(owner, app.id))!.source;
+    // The entry moves to a file that existed, with no file changed.
+    await apps.changeDraftSource(owner, app.id, setFile('Main.tsx', 'm'), opts);
+    const moved = await apps.changeDraftSource(
+      owner,
+      app.id,
+      (t) => ({ entry: 'Main.tsx', files: t.files }),
+      opts,
+    );
+    expect(moved?.written).toBe(true);
+    await expect(undo(app.id, { editId: moved!.editId! })).rejects.toBeInstanceOf(
+      apps.AppUndoEntryError,
+    );
+    expect((await apps.getApp(owner, app.id))!.draft!.entry).toBe('Main.tsx');
+    expect(tree.entry).not.toBe('Main.tsx');
+  });
+
+  it('an edit_id of a snapshot or a version, or of another owner, is not found', async () => {
+    const app = await newApp('ids');
+    await apps.changeDraftSource(owner, app.id, setFile('i.ts', '1'), opts);
+    const snap = await snaps.createAppSnapshot(owner, app.id, { actor: 'owner', withData: false });
+    await expect(undo(app.id, { editId: snap!.id })).rejects.toBeInstanceOf(apps.AppUndoEmptyError);
+    const w = await apps.changeDraftSource(owner, app.id, setFile('i.ts', '2'), opts);
+    await expect(
+      apps.undoCodeEdit(randomUUID(), app.id, { ...opts, editId: w!.editId! }),
+    ).resolves.toBeNull();
+  });
+
   it('the rows are hidden from the History list and the lookups by id; 20 are kept', async () => {
     const app = await newApp('prune');
     let last = '';

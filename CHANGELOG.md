@@ -8,8 +8,9 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
 - **Added:** six plain tools that view and edit a mini app's DRAFT source
   without moving whole files, over MCP and in the brain: `code_view` (the
-  file tree, or numbered lines of one file), `code_search` (`file:line:
-text` hits, capped; a regex runs in a worker and is stopped after 3 s),
+  file tree, or numbered lines of one file), `code_search` (hits as
+  `file:line: text`, capped; a regex runs in a worker and is stopped after
+  3 s),
   `code_edit` (exact text that must match once, all edits or none, a dry
   run, a unified diff), `code_insert`, `code_write` and `code_undo` (by the
   `edit_id` each write returns). Each
@@ -18,7 +19,9 @@ text` hits, capped; a regex runs in a worker and is stopped after 3 s),
   with the current one; `build: true` runs `app_build` in the same call and
   returns its errors. Access is the app tools': the reads ask what
   `app_get` asks, the writes what `app_file_write` asks. Granted with the
-  `apps` tool group (Appsmith); a `code` line on the tool map.
+  `apps` tool group (Appsmith); a `code` line on the tool map. `code_view`
+  with no path also returns `kit`: the language, the entry rule and every
+  import the app build allows, read live from that build's allowlist.
 - **Changed:** `app_file_write`, `app_file_delete` and `app_source_set`
   write through the same draft write. `app_source_set` takes `base_rev`;
   `app_get`, `app_file_write` and `app_source_set` return the `rev`, and
@@ -50,7 +53,7 @@ text` hits, capped; a regex runs in a worker and is stopped after 3 s),
   sets its own (`PUT /api/profile/description`); the users area sets
   anyone's (`PATCH /api/users/:id`, listed on `GET /api/users`). It is
   open to every login and agent that may see the card: on `GET
-/api/people`, in the messenger directory (whose search now matches it)
+  /api/people`, in the messenger directory (whose search now matches it)
   and on one conversation's people. `messenger_directory` and
   `messenger_open` carry it to agents, so one asked to message "the
   developer" can find who that is. Stored as the profile key

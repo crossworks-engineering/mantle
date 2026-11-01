@@ -8033,6 +8033,7 @@
     "pattern": {
      "type": "string",
      "minLength": 1,
+     "maxLength": 1000,
      "description": "What to find, e.g. 'useState' or 'host\\.db\\.(query|exec)'."
     },
     "regex": {
@@ -8233,7 +8234,7 @@
  },
  {
   "name": "code_undo",
-  "description": "Take back one write to a mini app's DRAFT: `edit_id` (every write returns one), or with only `path` the newest write that changed that file. Its files go back as they were before it (a file it created is removed), only if each is still exactly as that write left it; else it fails and changes nothing, so later work is never replaced: then change the file with `code_edit` or `code_write`. The undo returns its own `edit_id` (undo that to redo), a diff and the new `rev`. Only recent writes are kept; for a whole earlier version use `app_snapshot_restore`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
+  "description": "Take back one write to a mini app's DRAFT: `edit_id` (every write returns one), or with only `path` the newest write of that file (a second such call redoes; pass `edit_id`s to go further back). Its files go back as before it (a file it created is removed), only if each is still as that write left it; else it fails and changes nothing: change the file with `code_edit` or `code_write`. Returns its own `edit_id`, a diff and the new `rev`. Only recent writes are kept; for an earlier version use `app_snapshot_restore`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
   "inputSchema": {
    "type": "object",
    "properties": {

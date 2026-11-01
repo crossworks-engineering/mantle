@@ -266,6 +266,12 @@ describe('code_edit', () => {
     expect(out.build).toEqual({ ok: true, bytes: 1234, warnings: 0 });
   });
 
+  it('more edits than the cap are refused before any write (a run item is not schema-checked)', async () => {
+    const edits = Array.from({ length: 51 }, () => ({ old: 'a', new: 'b' }));
+    expect(errorOf(await edit({ edits }))).toMatch(/edits holds 51; send at most 50/);
+    expect(changeDraftSource).not.toHaveBeenCalled();
+  });
+
   it('a file not in the tree points at code_write', async () => {
     expect(
       errorOf(

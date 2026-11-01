@@ -2090,6 +2090,11 @@ export function withAuthorCeiling(
     const id = str(input.id).trim().toLowerCase();
     return UUID_RE.test(id) ? id : null;
   },
+  /** The tool has a real dry run (`dry_run: true` writes nothing, code_edit):
+   *  only then does a dry run lower nothing. Any other tool lowers whatever
+   *  its input says, as an argument it does not declare can still reach the
+   *  handler (a run item, a validation mode that keeps unknown keys). */
+  opts: { dryRun?: true } = {},
 ): BuiltinToolDef {
   // The app tools whose change reaches what the app's code or tools do:
   // their policy says so (`outside.appCode`).
@@ -2098,8 +2103,8 @@ export function withAuthorCeiling(
     ...def,
     handler: async (input, ctx) => {
       const target = appIdOf(input);
-      // A dry run (code_edit) writes nothing, so it lowers nothing.
-      if (target && input.dry_run !== true && (await scopeOutsideAdmin())) {
+      const dryRun = opts.dryRun === true && input.dry_run === true;
+      if (target && !dryRun && (await scopeOutsideAdmin())) {
         await lowerToTeamRules(ctx.ownerId, target);
       }
       return def.handler(input, ctx);

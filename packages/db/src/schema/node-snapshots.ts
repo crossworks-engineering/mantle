@@ -103,6 +103,8 @@ export type AppSnapshotCode = {
    *  row, the edit it took back. */
   codeEdit?: {
     changed: Record<string, string | null>;
+    /** The entry before, when the write moved it (an undo refuses). */
+    entryWas?: string;
     authorLevel?: 'team';
     undoOf?: string;
   };
