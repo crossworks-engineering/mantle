@@ -4,6 +4,7 @@
   "circuit_trace",
   "circuit_verify",
   "diagram_render",
+  "dwg_render",
   "email_get",
   "email_list",
   "peer_node_get",

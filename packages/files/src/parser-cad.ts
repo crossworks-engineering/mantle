@@ -120,6 +120,21 @@ export type DwgGeometry = {
   skipped: Record<string, number>;
 };
 
+/** A window in drawing units: x0, y0, x1, y1. */
+export type DwgWindow = [number, number, number, number];
+
+/** What a drawing's picture frames (the CAD tier's dwg_frame.py). */
+export type DwgFrame = {
+  /** The whole model space. */
+  full: DwgWindow;
+  /** The window the picture shows: `full` when nothing is stray. */
+  sheet: DwgWindow;
+  /** The groups left out of `sheet`, each with its window, so a caller can
+   *  go and look. */
+  offSheet: { window: DwgWindow; entities: number }[];
+  framed: boolean;
+};
+
 export type DwgRender = {
   /** Which converter produced the DXF the registry and render came from:
    *  'none' when the upload already WAS a DXF and ezdxf read it natively. */
@@ -161,6 +176,8 @@ export type DwgRender = {
    *  dwg2dxf's DXF can parse yet miss block definitions the renderer needs,
    *  and the worker then retries the render once from ezdwg's DXF. */
   renderConverter: 'ezdwg' | null;
+  /** What `png` frames; null from an older image or an unreadable layout. */
+  frame: DwgFrame | null;
 };
 
 /** Wire ceiling: one PNG (≤48 MB raw → ~64 MB base64) plus a few MB of
@@ -397,6 +414,7 @@ export async function parserDwgRender(
       renderError:
         typeof body.render_error === 'string' && body.render_error ? body.render_error : null,
       renderConverter: body.render_converter === 'ezdwg' ? 'ezdwg' : null,
+      frame: readFrame(body.frame),
     };
   });
 }
@@ -407,8 +425,11 @@ export async function parserDwgRender(
 const DWG_CROP_WIRE_MAX_BYTES = 160 * 1024 * 1024;
 
 /** One item to crop: a spot (`point`) or a traced path (`path`), in drawing
- *  units; `marks` get a green ring. Mirrors dwg_crop.parse_spec. */
+ *  units; `marks` get a green ring. A `view` is a picture to look at: its
+ *  `window`, else the sheet, or all of model space with `full`, at a long
+ *  edge of `edge` pixels. Mirrors dwg_crop.parse_spec. */
 export type DwgCropItem =
+  | { id: string; kind: 'view'; window?: DwgWindow; full?: boolean; edge?: number }
   | { id: string; kind: 'point'; at: [number, number]; pad: number; marks?: [number, number][] }
   | {
       id: string;
@@ -431,26 +452,45 @@ export type DwgCrop = {
   part: number;
   of: number;
   /** The window in drawing units: [x0, y0, x1, y1]. */
-  window: [number, number, number, number];
+  window: DwgWindow;
   width: number;
   height: number;
   /** The smallest text in the window, in pixels (null: no text there). */
   textPx: number | null;
+  /** A view with nothing drawn in its window. */
+  blank: boolean;
   png: Buffer;
 };
 
 export type DwgCrops = {
   converter: string | null;
   crops: DwgCrop[];
-  overview: { window: [number, number, number, number]; png: Buffer } | null;
+  overview: { window: DwgWindow; png: Buffer } | null;
   /** Item ids the CAD tier did not crop (its crop cap or time budget). */
   capped: string[];
+  /** The drawing's frame, when a `view` asked for one. */
+  frame: DwgFrame | null;
 };
 
-function windowOf(v: unknown): [number, number, number, number] | null {
+function windowOf(v: unknown): DwgWindow | null {
   if (!Array.isArray(v) || v.length !== 4) return null;
   const n = v.map(finite);
-  return n.every((x) => x !== null) ? (n as [number, number, number, number]) : null;
+  return n.every((x) => x !== null) ? (n as DwgWindow) : null;
+}
+
+function readFrame(v: unknown): DwgFrame | null {
+  if (!v || typeof v !== 'object') return null;
+  const f = v as Record<string, unknown>;
+  const full = windowOf(f.full);
+  const sheet = windowOf(f.sheet);
+  if (!full || !sheet) return null;
+  const offSheet: DwgFrame['offSheet'] = [];
+  for (const raw of Array.isArray(f.off_sheet) ? f.off_sheet : []) {
+    const g = raw as Record<string, unknown>;
+    const window = windowOf(g?.window);
+    if (window) offSheet.push({ window, entities: count(g.entities) });
+  }
+  return { full, sheet, offSheet, framed: f.framed === true };
 }
 
 /**
@@ -477,6 +517,7 @@ export async function parserDwgCrop(
         width: count(o.width),
         height: count(o.height),
         textPx: finite(o.text_px),
+        blank: o.blank === true,
         png: Buffer.from(o.png_base64, 'base64'),
       });
     }
@@ -490,6 +531,7 @@ export async function parserDwgCrop(
           ? { window: ovWindow, png: Buffer.from(ov.png_base64, 'base64') }
           : null,
       capped: Array.isArray(body.capped) ? body.capped.map(text).filter(Boolean) : [],
+      frame: readFrame(body.frame),
     };
   });
 }

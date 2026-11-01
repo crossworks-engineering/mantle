@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a drawing's picture frames the sheet, and dwg_render
+
+- **Fixed:** the picture of a DWG or DXF frames the sheet, not all of model
+  space. A note parked far off the sheet no longer holds the sheet in a
+  corner. What is left out is said in the digest and in `frame.off_sheet`.
+  A drawing with nothing far off draws as before. A stored picture stays as
+  it is until its file is extracted again.
+- **Added:** `dwg_render` (group `circuits`, and MCP) draws one uploaded DWG
+  or DXF on request: the sheet, a window in drawing units, or all of model
+  space. Read only: the picture goes back to the caller and nothing is saved.
+
 ## Unreleased: the UI sounds save names its login
 
 - **Fixed:** `PUT /api/profile/sounds` now takes `loginId`, the login the
@@ -21,7 +32,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   sets its own (`PUT /api/profile/description`); the users area sets
   anyone's (`PATCH /api/users/:id`, listed on `GET /api/users`). It is
   open to every login and agent that may see the card: on `GET
-  /api/people`, in the messenger directory (whose search now matches it)
+/api/people`, in the messenger directory (whose search now matches it)
   and on one conversation's people. `messenger_directory` and
   `messenger_open` carry it to agents, so one asked to message "the
   developer" can find who that is. Stored as the profile key

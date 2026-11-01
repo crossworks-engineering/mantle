@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "7dd50d1a655b6ea4b7030dfbd9c4264ef32c06bf2c18c01f2f5ad85a35adaf0f",
+  "sha256": "a819c945a2c3f0a4333e9729e081e4fb0007535b72551446e1fdc5f824dfb9b3",
   "names": [
    "tree_list",
    "search",
@@ -182,6 +182,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -213,7 +214,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "be02bab9ef1fa0ef035885a6dfe40f06a4f1d0a2a273f756fe9f3805273bc9ed",
+  "sha256": "5f9a8164e5d03f9d86cd9a48e21b51c15c2ee4bf04d1c9d798eaeac3f81cf80f",
   "names": [
    "tree_list",
    "search",
@@ -453,6 +454,7 @@
    "diagram_guide",
    "circuit_trace",
    "circuit_verify",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -533,7 +535,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "533ca554e48294aceeab3c085ca3782d6983121db131117a2d98256c4b35f5d7",
+  "sha256": "26987757974841e784ad08906ab5756d9bc8edf6569384e89f7157052f6404c9",
   "names": [
    "tree_list",
    "search",
@@ -755,6 +757,7 @@
    "diagram_guide",
    "circuit_trace",
    "circuit_verify",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -807,7 +810,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "24fb34b8f0a85d82fb10dfacb19dae87d81ea77427ab68321349aeacbe25088a",
+  "sha256": "8aa435a5fbf14e26dfe65cc28e8fc0601bd3f3e314355350610c9ee916c5f3df",
   "names": [
    "tree_list",
    "search",
@@ -1016,6 +1019,7 @@
    "diagram_guide",
    "circuit_trace",
    "circuit_verify",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -1064,7 +1068,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "e4601b8ecdc9954c59894bd9510fe01a42bf3aef34a7bcd36efed04713a91e73",
+  "sha256": "090309682db9896e0601d2e4bbbe8c6a7eb98c0ad013c276301d4ed7e51950dc",
   "names": [
    "tree_list",
    "search",
@@ -1216,6 +1220,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -1244,7 +1249,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "37a784ccc47b10e22dc91d3f2cead9780459469d044754c37536f7bdf9bdc3d6",
+  "sha256": "76e3e2a458d66dc508c3d928a3bc3e4d2386ac1744f259095856600e45accf8d",
   "names": [
    "tree_list",
    "search",
@@ -1416,6 +1421,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -1465,7 +1471,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "73a71e8ee283ef30740d0bb085f0ac26ce82cdbd9990264b8594aa8a379190c5",
+  "sha256": "8bea3d071a317965d11fe0f4d906dc058aca4d3653259a0fb099e1d1b3b22af4",
   "names": [
    "tree_list",
    "search",
@@ -1633,6 +1639,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -1673,7 +1680,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "67c41991ac3a52255792cc1638387e96d435c74c52a739287af7c3d9cffd13f1",
+  "sha256": "a63d4998a32b34daa7f800b3efde578f89b7746776d878c43a2b318f5e382b7a",
   "names": [
    "tree_list",
    "search",
@@ -1840,6 +1847,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -2054,7 +2062,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "e4601b8ecdc9954c59894bd9510fe01a42bf3aef34a7bcd36efed04713a91e73",
+  "sha256": "090309682db9896e0601d2e4bbbe8c6a7eb98c0ad013c276301d4ed7e51950dc",
   "names": [
    "tree_list",
    "search",
@@ -2206,6 +2214,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -2234,7 +2243,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "37a784ccc47b10e22dc91d3f2cead9780459469d044754c37536f7bdf9bdc3d6",
+  "sha256": "76e3e2a458d66dc508c3d928a3bc3e4d2386ac1744f259095856600e45accf8d",
   "names": [
    "tree_list",
    "search",
@@ -2406,6 +2415,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -2455,7 +2465,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "73a71e8ee283ef30740d0bb085f0ac26ce82cdbd9990264b8594aa8a379190c5",
+  "sha256": "8bea3d071a317965d11fe0f4d906dc058aca4d3653259a0fb099e1d1b3b22af4",
   "names": [
    "tree_list",
    "search",
@@ -2623,6 +2633,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -2663,7 +2674,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "67c41991ac3a52255792cc1638387e96d435c74c52a739287af7c3d9cffd13f1",
+  "sha256": "a63d4998a32b34daa7f800b3efde578f89b7746776d878c43a2b318f5e382b7a",
   "names": [
    "tree_list",
    "search",
@@ -2830,6 +2841,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -2868,7 +2880,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "e4601b8ecdc9954c59894bd9510fe01a42bf3aef34a7bcd36efed04713a91e73",
+  "sha256": "090309682db9896e0601d2e4bbbe8c6a7eb98c0ad013c276301d4ed7e51950dc",
   "names": [
    "tree_list",
    "search",
@@ -3020,6 +3032,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3048,7 +3061,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "42adeb1277cfa66859a239f53cbca61fa72ae8eea8a7f990fc6371e4c8249f19",
+  "sha256": "450a3951c34da2dc99e25f34cd3362ca96133db4059d1dd7f2aec92c1ddbc459",
   "names": [
    "tree_list",
    "search",
@@ -3222,6 +3235,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3272,7 +3286,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "242b0e2fbcf9d200521f9cf2ae2808fb43715edad2d8e5b8f22ea34e245fcd32",
+  "sha256": "636cd0c093dbe1a8d97fd2fee021c29886e88660c0417d34743be9b516c31f0d",
   "names": [
    "tree_list",
    "search",
@@ -3440,6 +3454,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3481,7 +3496,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "4afcc7fb5b819bd8e26d2b127eee03a4924d7f83150a242cf7ec8d15f68ccab1",
+  "sha256": "be50e837526a45fc386f1dcac0f410178c5718029815f991e0766a02ba078c77",
   "names": [
    "tree_list",
    "search",
@@ -3648,6 +3663,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3687,7 +3703,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/false:": {
-  "sha256": "475d1ad34a04398cb1df7889119a46bc059a5de90f7c9107bf87a331e28357c5",
+  "sha256": "dfdc95d08be1cd11e80fc7c8d6f0c3edb76821f0a45af9adb47693c569fbbf1b",
   "names": [
    "tree_list",
    "search",
@@ -3754,6 +3770,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3772,7 +3789,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "39106c6bef775bf16ab93b97d9a2c937e6695b03745be5717016cadff5fd619e",
+  "sha256": "f0b870b12e9cb704fee98e903358cbd9621b61151015de56fe00dc931fd347ee",
   "names": [
    "tree_list",
    "search",
@@ -3860,6 +3877,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3887,7 +3905,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "cc49eb5b1485069c3ecd12c9df7cdce64729ef0baab739c569f29c1539d7d4a5",
+  "sha256": "8969e2e11b1d8db3cc8ba565353adb3fe371a87763c0cb426cdb898cfc249088",
   "names": [
    "tree_list",
    "search",
@@ -3966,6 +3984,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3986,7 +4005,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:": {
-  "sha256": "4e06febe1eb78ec9ef9150dc95eecf07b09ce545ffc4054358d92c768eff2b51",
+  "sha256": "7ea0faf1e5259762a396d90edfd30faac3bbc2e31562d5ba06959c9ed1c90598",
   "names": [
    "tree_list",
    "search",
@@ -4061,6 +4080,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4081,7 +4101,7 @@
   ]
  },
  "admin/key/ro/null/[]/false:": {
-  "sha256": "c564e0c053c77538f348b6f4013dea23f063b2514e06f92a104902ebd362bf9f",
+  "sha256": "a1546abc6830014e149173d990646b4b5dd2fed2e954ef9b81f4017bce1048b7",
   "names": [
    "tree_list",
    "search",
@@ -4147,6 +4167,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4165,7 +4186,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "1e7d25c90c4170817e203c34b4b85835b7dfc568ff4b44a498f1dca0f8c0321b",
+  "sha256": "63b6dc6a3810d25b6633fd47b31b09709d73ceab27fe2fb359b4c24d20d063f4",
   "names": [
    "tree_list",
    "search",
@@ -4241,6 +4262,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4268,7 +4290,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "3fd04f72d85c5c429ace22b66cda717d7c5f3731b0a04cf37f67965036ecc522",
+  "sha256": "304ddcc21138519b9fad75b42c09a8b84d578a8b644bc26109fcae9b7d60c816",
   "names": [
    "tree_list",
    "search",
@@ -4341,6 +4363,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4361,7 +4384,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:": {
-  "sha256": "c20fd9e96bc8e546a8b04990176fd1b3af5ffd6ba14037f5cb54d111a1876b2b",
+  "sha256": "426c9f50c339aaba27bbd5166f9a6a76476b2a128a849040cf5ffbbdb46e4ff5",
   "names": [
    "tree_list",
    "search",
@@ -4433,6 +4456,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4561,7 +4585,7 @@
   "names": []
  },
  "admin/peer/ro/null/[]/false:": {
-  "sha256": "c564e0c053c77538f348b6f4013dea23f063b2514e06f92a104902ebd362bf9f",
+  "sha256": "a1546abc6830014e149173d990646b4b5dd2fed2e954ef9b81f4017bce1048b7",
   "names": [
    "tree_list",
    "search",
@@ -4627,6 +4651,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4645,7 +4670,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "1e7d25c90c4170817e203c34b4b85835b7dfc568ff4b44a498f1dca0f8c0321b",
+  "sha256": "63b6dc6a3810d25b6633fd47b31b09709d73ceab27fe2fb359b4c24d20d063f4",
   "names": [
    "tree_list",
    "search",
@@ -4721,6 +4746,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4748,7 +4774,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "3fd04f72d85c5c429ace22b66cda717d7c5f3731b0a04cf37f67965036ecc522",
+  "sha256": "304ddcc21138519b9fad75b42c09a8b84d578a8b644bc26109fcae9b7d60c816",
   "names": [
    "tree_list",
    "search",
@@ -4821,6 +4847,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4841,7 +4868,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:": {
-  "sha256": "c20fd9e96bc8e546a8b04990176fd1b3af5ffd6ba14037f5cb54d111a1876b2b",
+  "sha256": "426c9f50c339aaba27bbd5166f9a6a76476b2a128a849040cf5ffbbdb46e4ff5",
   "names": [
    "tree_list",
    "search",
@@ -4913,6 +4940,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4933,7 +4961,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "c564e0c053c77538f348b6f4013dea23f063b2514e06f92a104902ebd362bf9f",
+  "sha256": "a1546abc6830014e149173d990646b4b5dd2fed2e954ef9b81f4017bce1048b7",
   "names": [
    "tree_list",
    "search",
@@ -4999,6 +5027,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -5017,7 +5046,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "1e7d25c90c4170817e203c34b4b85835b7dfc568ff4b44a498f1dca0f8c0321b",
+  "sha256": "63b6dc6a3810d25b6633fd47b31b09709d73ceab27fe2fb359b4c24d20d063f4",
   "names": [
    "tree_list",
    "search",
@@ -5093,6 +5122,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -5120,7 +5150,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "3fd04f72d85c5c429ace22b66cda717d7c5f3731b0a04cf37f67965036ecc522",
+  "sha256": "304ddcc21138519b9fad75b42c09a8b84d578a8b644bc26109fcae9b7d60c816",
   "names": [
    "tree_list",
    "search",
@@ -5193,6 +5223,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -5213,7 +5244,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "c20fd9e96bc8e546a8b04990176fd1b3af5ffd6ba14037f5cb54d111a1876b2b",
+  "sha256": "426c9f50c339aaba27bbd5166f9a6a76476b2a128a849040cf5ffbbdb46e4ff5",
   "names": [
    "tree_list",
    "search",
@@ -5285,6 +5316,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -5305,7 +5337,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "7dd50d1a655b6ea4b7030dfbd9c4264ef32c06bf2c18c01f2f5ad85a35adaf0f",
+  "sha256": "a819c945a2c3f0a4333e9729e081e4fb0007535b72551446e1fdc5f824dfb9b3",
   "names": [
    "tree_list",
    "search",
@@ -5487,6 +5519,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -5518,7 +5551,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "be02bab9ef1fa0ef035885a6dfe40f06a4f1d0a2a273f756fe9f3805273bc9ed",
+  "sha256": "5f9a8164e5d03f9d86cd9a48e21b51c15c2ee4bf04d1c9d798eaeac3f81cf80f",
   "names": [
    "tree_list",
    "search",
@@ -5758,6 +5791,7 @@
    "diagram_guide",
    "circuit_trace",
    "circuit_verify",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -5838,7 +5872,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "533ca554e48294aceeab3c085ca3782d6983121db131117a2d98256c4b35f5d7",
+  "sha256": "26987757974841e784ad08906ab5756d9bc8edf6569384e89f7157052f6404c9",
   "names": [
    "tree_list",
    "search",
@@ -6060,6 +6094,7 @@
    "diagram_guide",
    "circuit_trace",
    "circuit_verify",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -6112,7 +6147,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "24fb34b8f0a85d82fb10dfacb19dae87d81ea77427ab68321349aeacbe25088a",
+  "sha256": "8aa435a5fbf14e26dfe65cc28e8fc0601bd3f3e314355350610c9ee916c5f3df",
   "names": [
    "tree_list",
    "search",
@@ -6321,6 +6356,7 @@
    "diagram_guide",
    "circuit_trace",
    "circuit_verify",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -6369,7 +6405,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "e4601b8ecdc9954c59894bd9510fe01a42bf3aef34a7bcd36efed04713a91e73",
+  "sha256": "090309682db9896e0601d2e4bbbe8c6a7eb98c0ad013c276301d4ed7e51950dc",
   "names": [
    "tree_list",
    "search",
@@ -6521,6 +6557,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -6549,7 +6586,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "37a784ccc47b10e22dc91d3f2cead9780459469d044754c37536f7bdf9bdc3d6",
+  "sha256": "76e3e2a458d66dc508c3d928a3bc3e4d2386ac1744f259095856600e45accf8d",
   "names": [
    "tree_list",
    "search",
@@ -6721,6 +6758,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -6770,7 +6808,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "73a71e8ee283ef30740d0bb085f0ac26ce82cdbd9990264b8594aa8a379190c5",
+  "sha256": "8bea3d071a317965d11fe0f4d906dc058aca4d3653259a0fb099e1d1b3b22af4",
   "names": [
    "tree_list",
    "search",
@@ -6938,6 +6976,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -6978,7 +7017,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "67c41991ac3a52255792cc1638387e96d435c74c52a739287af7c3d9cffd13f1",
+  "sha256": "a63d4998a32b34daa7f800b3efde578f89b7746776d878c43a2b318f5e382b7a",
   "names": [
    "tree_list",
    "search",
@@ -7145,6 +7184,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -7359,7 +7399,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "e4601b8ecdc9954c59894bd9510fe01a42bf3aef34a7bcd36efed04713a91e73",
+  "sha256": "090309682db9896e0601d2e4bbbe8c6a7eb98c0ad013c276301d4ed7e51950dc",
   "names": [
    "tree_list",
    "search",
@@ -7511,6 +7551,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -7539,7 +7580,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "37a784ccc47b10e22dc91d3f2cead9780459469d044754c37536f7bdf9bdc3d6",
+  "sha256": "76e3e2a458d66dc508c3d928a3bc3e4d2386ac1744f259095856600e45accf8d",
   "names": [
    "tree_list",
    "search",
@@ -7711,6 +7752,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -7760,7 +7802,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "73a71e8ee283ef30740d0bb085f0ac26ce82cdbd9990264b8594aa8a379190c5",
+  "sha256": "8bea3d071a317965d11fe0f4d906dc058aca4d3653259a0fb099e1d1b3b22af4",
   "names": [
    "tree_list",
    "search",
@@ -7928,6 +7970,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -7968,7 +8011,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "67c41991ac3a52255792cc1638387e96d435c74c52a739287af7c3d9cffd13f1",
+  "sha256": "a63d4998a32b34daa7f800b3efde578f89b7746776d878c43a2b318f5e382b7a",
   "names": [
    "tree_list",
    "search",
@@ -8135,6 +8178,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8173,7 +8217,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "e4601b8ecdc9954c59894bd9510fe01a42bf3aef34a7bcd36efed04713a91e73",
+  "sha256": "090309682db9896e0601d2e4bbbe8c6a7eb98c0ad013c276301d4ed7e51950dc",
   "names": [
    "tree_list",
    "search",
@@ -8325,6 +8369,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8353,7 +8398,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "42adeb1277cfa66859a239f53cbca61fa72ae8eea8a7f990fc6371e4c8249f19",
+  "sha256": "450a3951c34da2dc99e25f34cd3362ca96133db4059d1dd7f2aec92c1ddbc459",
   "names": [
    "tree_list",
    "search",
@@ -8527,6 +8572,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8577,7 +8623,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "242b0e2fbcf9d200521f9cf2ae2808fb43715edad2d8e5b8f22ea34e245fcd32",
+  "sha256": "636cd0c093dbe1a8d97fd2fee021c29886e88660c0417d34743be9b516c31f0d",
   "names": [
    "tree_list",
    "search",
@@ -8745,6 +8791,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8786,7 +8833,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "4afcc7fb5b819bd8e26d2b127eee03a4924d7f83150a242cf7ec8d15f68ccab1",
+  "sha256": "be50e837526a45fc386f1dcac0f410178c5718029815f991e0766a02ba078c77",
   "names": [
    "tree_list",
    "search",
@@ -8953,6 +9000,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8992,7 +9040,7 @@
   ]
  },
  "member/oauth/ro/null/[]/false:": {
-  "sha256": "475d1ad34a04398cb1df7889119a46bc059a5de90f7c9107bf87a331e28357c5",
+  "sha256": "dfdc95d08be1cd11e80fc7c8d6f0c3edb76821f0a45af9adb47693c569fbbf1b",
   "names": [
    "tree_list",
    "search",
@@ -9059,6 +9107,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9077,7 +9126,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "39106c6bef775bf16ab93b97d9a2c937e6695b03745be5717016cadff5fd619e",
+  "sha256": "f0b870b12e9cb704fee98e903358cbd9621b61151015de56fe00dc931fd347ee",
   "names": [
    "tree_list",
    "search",
@@ -9165,6 +9214,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9192,7 +9242,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "cc49eb5b1485069c3ecd12c9df7cdce64729ef0baab739c569f29c1539d7d4a5",
+  "sha256": "8969e2e11b1d8db3cc8ba565353adb3fe371a87763c0cb426cdb898cfc249088",
   "names": [
    "tree_list",
    "search",
@@ -9271,6 +9321,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9291,7 +9342,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:": {
-  "sha256": "4e06febe1eb78ec9ef9150dc95eecf07b09ce545ffc4054358d92c768eff2b51",
+  "sha256": "7ea0faf1e5259762a396d90edfd30faac3bbc2e31562d5ba06959c9ed1c90598",
   "names": [
    "tree_list",
    "search",
@@ -9366,6 +9417,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9386,7 +9438,7 @@
   ]
  },
  "member/key/ro/null/[]/false:": {
-  "sha256": "c564e0c053c77538f348b6f4013dea23f063b2514e06f92a104902ebd362bf9f",
+  "sha256": "a1546abc6830014e149173d990646b4b5dd2fed2e954ef9b81f4017bce1048b7",
   "names": [
    "tree_list",
    "search",
@@ -9452,6 +9504,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9470,7 +9523,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "1e7d25c90c4170817e203c34b4b85835b7dfc568ff4b44a498f1dca0f8c0321b",
+  "sha256": "63b6dc6a3810d25b6633fd47b31b09709d73ceab27fe2fb359b4c24d20d063f4",
   "names": [
    "tree_list",
    "search",
@@ -9546,6 +9599,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9573,7 +9627,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "3fd04f72d85c5c429ace22b66cda717d7c5f3731b0a04cf37f67965036ecc522",
+  "sha256": "304ddcc21138519b9fad75b42c09a8b84d578a8b644bc26109fcae9b7d60c816",
   "names": [
    "tree_list",
    "search",
@@ -9646,6 +9700,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9666,7 +9721,7 @@
   ]
  },
  "member/key/ro/null/[]/true:": {
-  "sha256": "c20fd9e96bc8e546a8b04990176fd1b3af5ffd6ba14037f5cb54d111a1876b2b",
+  "sha256": "426c9f50c339aaba27bbd5166f9a6a76476b2a128a849040cf5ffbbdb46e4ff5",
   "names": [
    "tree_list",
    "search",
@@ -9738,6 +9793,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9866,7 +9922,7 @@
   "names": []
  },
  "member/peer/ro/null/[]/false:": {
-  "sha256": "c564e0c053c77538f348b6f4013dea23f063b2514e06f92a104902ebd362bf9f",
+  "sha256": "a1546abc6830014e149173d990646b4b5dd2fed2e954ef9b81f4017bce1048b7",
   "names": [
    "tree_list",
    "search",
@@ -9932,6 +9988,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9950,7 +10007,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "1e7d25c90c4170817e203c34b4b85835b7dfc568ff4b44a498f1dca0f8c0321b",
+  "sha256": "63b6dc6a3810d25b6633fd47b31b09709d73ceab27fe2fb359b4c24d20d063f4",
   "names": [
    "tree_list",
    "search",
@@ -10026,6 +10083,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -10053,7 +10111,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "3fd04f72d85c5c429ace22b66cda717d7c5f3731b0a04cf37f67965036ecc522",
+  "sha256": "304ddcc21138519b9fad75b42c09a8b84d578a8b644bc26109fcae9b7d60c816",
   "names": [
    "tree_list",
    "search",
@@ -10126,6 +10184,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -10146,7 +10205,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:": {
-  "sha256": "c20fd9e96bc8e546a8b04990176fd1b3af5ffd6ba14037f5cb54d111a1876b2b",
+  "sha256": "426c9f50c339aaba27bbd5166f9a6a76476b2a128a849040cf5ffbbdb46e4ff5",
   "names": [
    "tree_list",
    "search",
@@ -10218,6 +10277,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -10238,7 +10298,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "c564e0c053c77538f348b6f4013dea23f063b2514e06f92a104902ebd362bf9f",
+  "sha256": "a1546abc6830014e149173d990646b4b5dd2fed2e954ef9b81f4017bce1048b7",
   "names": [
    "tree_list",
    "search",
@@ -10304,6 +10364,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -10322,7 +10383,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "1e7d25c90c4170817e203c34b4b85835b7dfc568ff4b44a498f1dca0f8c0321b",
+  "sha256": "63b6dc6a3810d25b6633fd47b31b09709d73ceab27fe2fb359b4c24d20d063f4",
   "names": [
    "tree_list",
    "search",
@@ -10398,6 +10459,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -10425,7 +10487,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "3fd04f72d85c5c429ace22b66cda717d7c5f3731b0a04cf37f67965036ecc522",
+  "sha256": "304ddcc21138519b9fad75b42c09a8b84d578a8b644bc26109fcae9b7d60c816",
   "names": [
    "tree_list",
    "search",
@@ -10498,6 +10560,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
@@ -10518,7 +10581,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "c20fd9e96bc8e546a8b04990176fd1b3af5ffd6ba14037f5cb54d111a1876b2b",
+  "sha256": "426c9f50c339aaba27bbd5166f9a6a76476b2a128a849040cf5ffbbdb46e4ff5",
   "names": [
    "tree_list",
    "search",
@@ -10590,6 +10653,7 @@
    "diagram_types",
    "diagram_guide",
    "circuit_trace",
+   "dwg_render",
    "diagram_render",
    "present_list",
    "present_get",
