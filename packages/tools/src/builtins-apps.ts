@@ -2003,7 +2003,7 @@ const app_export: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Export a mini app as a file',
   description:
-    "Save an app as a `.mantleapp` file, in Auto-filed / Exports when the caller may change it (the owner or an Admin Moderator), else the top of Files: its code (no draft for a member), declared tools and schema, and a copy of its data unless with_data is false. A taken name gets a `-2` suffix. Returns the file id and landedIn. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file. `format: 'git'` saves a `.bundle` instead: each version (publish) one commit, code only (no data, no draft), for `git clone` and log, diff, blame, bisect on another machine.",
+    "Save an app as a `.mantleapp` file, in Auto-filed / Exports when the caller may change it (the owner or an Admin Moderator), else the top of Files: its code (no draft for a member), declared tools and schema, and a copy of its data unless with_data is false. A taken name gets a `-2` suffix. Returns the file id and landedIn. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: whoever reads the file reads it. `format: 'git'`: a `.bundle` instead, one commit per version, code only, for `git clone` elsewhere.",
   inputSchema: {
     type: 'object',
     properties: {
