@@ -4,6 +4,24 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a SQL process has a memory limit
+
+- **Fixed:** one row of many large columns could take a SQL process to several
+  GB in a web container of 3 GB, and an open-link visitor could ask for that.
+  Each value passed the size limit, and the row was built before the reply
+  limit could read it. A SQL process now runs under a kernel limit of 1 GB on
+  Linux, and it stops near 500 MB of real memory. Node needs about 575 MB of
+  that limit to start, and most of it is address space it does not touch.
+- **Changed:** a statement that meets the limit fails with a message that
+  names the way out, and its process is replaced. If the engine ends the
+  process, the message says the limit is the likely cause. A read that fails on
+  a process that served before gets one try on a new one, so its answer does
+  not depend on what ran before. A write does not.
+- **Changed:** when many SQL processes together fill a container, the kernel
+  kills one of them and not the server. A crashed process writes a small core.
+- **Known:** some very large legal work now fails: a write batch of about
+  220 MB or more, and an IN list of 2 million literals.
+
 ## Unreleased: eleven more libraries for mini apps
 
 - **Added:** a mini app may import `mathjs` (units and engineering maths),

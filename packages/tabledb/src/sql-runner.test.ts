@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { runTableSql, tableSqlChildPids } from './sql-runner';
 import { openTableFile } from './sqlite';
@@ -118,6 +118,85 @@ describe('table_sql child processes', () => {
     const big = `with recursive c(x) as (select 1 union all select x+1 from c where x < 20)
       select zeroblob(1048576) as b from c`;
     await expect(runTableSql(file, big)).rejects.toThrow(/more than 16 MB: add a LIMIT/);
+  });
+
+  const noChildren = async () => {
+    for (const pid of tableSqlChildPids()) process.kill(pid, 'SIGKILL');
+    await vi.waitFor(() => expect(tableSqlChildPids()).toEqual([]));
+  };
+
+  it.each([
+    // Each value is legal, and the row is built before the reply cap can read it.
+    ['SQLite says it: values made while the row is built', 64, ''],
+    ['the engine ends the process: values read one by one', 16, ' - n'],
+  ])('refuses one wide row at the kernel limit (Linux): %s', async (_how, width, less) => {
+    process.env.TABLE_SQL_TIMEOUT_MS = '10000';
+    await noChildren();
+    const cols = Array.from({ length: width }, (_, i) => `zeroblob(16777216${less}) AS c${i}`).join(
+      ', ',
+    );
+    const seen = new Set<number>();
+    const watch = setInterval(() => tableSqlChildPids().forEach((p) => seen.add(p)), 5);
+    await expect(runTableSql(file, `SELECT ${cols}${less ? ' FROM t' : ''}`)).rejects.toThrow(
+      process.platform === 'linux'
+        ? /more memory than a SQL process|most likely at the memory limit/
+        : /more than 16 MB/,
+    );
+    clearInterval(watch);
+    // A new child's answer is the last: the same statement would end the next.
+    expect(seen.size).toBeLessThanOrEqual(1);
+    // That child goes, and the next statement gets one whose heap is whole.
+    if (process.platform === 'linux') {
+      await vi.waitFor(() => expect(tableSqlChildPids()).toEqual([]));
+    }
+    await expect(runTableSql(file, 'SELECT 1 AS a')).resolves.toMatchObject({ rows: [[1]] });
+  });
+
+  it.runIf(process.platform === 'linux')(
+    'a read that a used child cannot hold runs on a new one',
+    async () => {
+      process.env.TABLE_SQL_TIMEOUT_MS = '20000';
+      await noChildren();
+      // A refused row leaves the child near its limit, with what it freed still
+      // counted, and this statement needs more than that. Its answer is one number.
+      const wide = Array.from({ length: 8 }, (_, i) => `zeroblob(16777216) AS c${i}`).join(', ');
+      await expect(runTableSql(file, `SELECT ${wide}`)).rejects.toThrow(/more than 16 MB|memory/);
+      // Bun's engine leaves a new child room for fewer: there the size is all this shows.
+      const names = Array.from({ length: process.versions.bun ? 8 : 20 }, (_, i) => `c${i}`);
+      const held = names.map((n) => `randomblob(16000000) AS ${n}`).join(', ');
+      const lengths = names.map((n) => `length(${n})`).join(' + ');
+      const first = tableSqlChildPids();
+      const out = await runTableSql(file, `SELECT ${lengths} AS n FROM (SELECT ${held} LIMIT 1)`);
+      expect(out.rows).toEqual([[names.length * 16_000_000]]);
+      if (!process.versions.bun) expect(tableSqlChildPids()).not.toContain(first[0]);
+    },
+  );
+
+  it('a second try gives its place back: the pool ends at its cap (Linux)', async () => {
+    process.env.TABLE_SQL_TIMEOUT_MS = '20000';
+    await noChildren();
+    await Promise.all(Array.from({ length: 4 }, () => runTableSql(file, 'SELECT 1 AS warm')));
+    const slow = `WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 4000000)
+      SELECT count(*) AS n FROM c`;
+    const all = Promise.all(Array.from({ length: 8 }, () => runTableSql(file, slow)));
+    // A crash is what a second try answers. These four have served before.
+    await vi.waitFor(() => expect(tableSqlChildPids()).toHaveLength(4));
+    for (const pid of tableSqlChildPids()) process.kill(pid, 'SIGABRT');
+    let peak = 0;
+    const watch = setInterval(() => (peak = Math.max(peak, tableSqlChildPids().length)), 1);
+    await all;
+    clearInterval(watch);
+    // One place past the cap at most: four second tries share the fifth.
+    expect(peak).toBeLessThanOrEqual(5);
+    expect(tableSqlChildPids().length).toBeLessThanOrEqual(4);
+  });
+
+  it('answers a reply just under the size limit, under the kernel limit', async () => {
+    process.env.TABLE_SQL_TIMEOUT_MS = '10000';
+    const big = `WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM c WHERE n < 15)
+      select zeroblob(1048576) as b from c`;
+    const out = await runTableSql(file, big);
+    expect(out.rowCount).toBe(15);
     expect((await runTableSql(file, 'SELECT n FROM t LIMIT 1')).rows).toEqual([[1]]);
   });
 

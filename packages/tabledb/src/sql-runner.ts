@@ -4,7 +4,7 @@ import { openTableFile } from './sqlite';
 import { envDynamic, envNum } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { killWithParent } from '@mantle/std/kill-with-parent';
-import { runtimeFlags } from '@mantle/std/self-spawn';
+import { crashedAtLimit, runtimeFlags, withMemoryLimit } from '@mantle/std/self-spawn';
 
 /**
  * table_sql — read-only SQL over one workbook file (plan §3.4). Layered:
@@ -43,8 +43,9 @@ export const SQL_ROW_CAP_DEFAULT = 200;
 export const SQL_ROW_CAP_MAX = 1000;
 
 /** The most SQL child processes alive at once. Each is a bare Node process
- *  (about 50 MB). A statement beyond it waits for a free child, for at most
- *  its own time limit. */
+ *  (about 45 MB). A statement beyond it waits for a free child, for at most
+ *  its own time limit. A second try on a new child can pass it, for at most
+ *  one time limit (see `release`). */
 const TABLE_SQL_MAX_CHILDREN = 4;
 /** An idle child exits after this long, so a quiet server holds none. */
 const TABLE_SQL_CHILD_IDLE_MS = 60_000;
@@ -52,10 +53,20 @@ const TABLE_SQL_CHILD_IDLE_MS = 60_000;
  *  limit). Without it `SELECT zeroblob(943718400)` is a legal query, and its
  *  bytes reach this process. */
 export const TABLE_SQL_MAX_LENGTH = 16 * 1024 * 1024;
-/** The most a reply may hold. This keeps the bytes out of this process. It
- *  does not bound the child: a row is built whole before it can be read, so 64
- *  columns of the longest value peak near 2 GB there (measured 2026-11-01). */
+/** The most a reply may hold. This keeps the bytes out of this process. */
 export const TABLE_SQL_MAX_REPLY_BYTES = 16 * 1024 * 1024;
+/** The kernel limit on a SQL process. A row is built whole before the reply
+ *  cap can read it, so 64 columns of the longest value reach 3 GB without it.
+ *  With it the process stops near 500 MB of real memory. Node 26 needs about
+ *  575 MB of the limit to start, nearly all of it address space it does not
+ *  touch (measured 2026-11-01). */
+export const TABLE_SQL_CHILD_MEMORY_MB = 1024;
+/** What a caller hears when a statement meets that limit: SQLite's own answer,
+ *  then a process that ended and most likely met it. */
+const OUT_OF_MEMORY =
+  'the statement needs more memory than a SQL process may use: add a LIMIT, select fewer columns or aggregate in SQL';
+const CRASHED =
+  'the statement ended its SQL process, most likely at the memory limit: add a LIMIT, select fewer columns or aggregate in SQL';
 
 function timeoutMs(): number {
   return envNum('TABLE_SQL_TIMEOUT_MS');
@@ -146,7 +157,11 @@ process.on('message', (job) => {
   try {
     reply = { ok: true, ...run(job) };
   } catch (err) {
-    reply = { ok: false, error: err && err.message ? err.message : String(err) };
+    const error = err && err.message ? err.message : String(err);
+    // SQLite's words, then the engine's own on Bun.
+    reply = /^out of memory$/i.test(error)
+      ? { ok: false, error: ${JSON.stringify(OUT_OF_MEMORY)}, spent: true }
+      : { ok: false, error };
   }
   process.send(reply);
 });
@@ -165,14 +180,17 @@ function childEnv(): NodeJS.ProcessEnv {
 
 type ChildReply =
   | { ok: true; columns: string[]; rows: unknown[][] }
-  /** `lost`: the child died on its own, so the statement may not have run. */
-  | { ok: false; error: string; lost?: boolean };
+  /** `lost`: the child died on its own, so the statement may not have run.
+   *  `spent`: it met the memory limit, so it does not serve again. */
+  | { ok: false; error: string; lost?: boolean; spent?: boolean };
 type Child = {
   proc: ChildProcess;
   /** False once the process has exited. */
   alive: boolean;
   /** Being killed: never handed out again. */
   doomed: boolean;
+  /** Has answered a statement, so what it freed still counts on its limit. */
+  used: boolean;
   /** Answers the statement it is running, if any. */
   onReply?: (r: ChildReply) => void;
   idleTimer?: ReturnType<typeof setTimeout>;
@@ -183,15 +201,18 @@ const idle: Child[] = [];
 const waiting: ((c: Child) => void)[] = [];
 
 function forkChild(): Child {
-  const argv = [...runtimeFlags(), '--input-type=commonjs', '-e', CHILD_SOURCE];
-  const proc = spawn(process.execPath, argv, {
+  const { command, args } = withMemoryLimit(TABLE_SQL_CHILD_MEMORY_MB, {
+    command: process.execPath,
+    args: [...runtimeFlags(), '--input-type=commonjs', '-e', CHILD_SOURCE],
+  });
+  const proc = spawn(command, args, {
     stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
     // Structured clone, so a BLOB comes back as bytes, as it did from a worker.
     serialization: 'advanced',
     env: childEnv(),
   });
   killWithParent(proc);
-  const child: Child = { proc, alive: true, doomed: false };
+  const child: Child = { proc, alive: true, doomed: false, used: false };
   children.add(child);
   // An idle pool must not keep the server (or a test run) from exiting; a
   // running statement's own timer holds the event loop while it waits. Bun's
@@ -203,7 +224,7 @@ function forkChild(): Child {
     child.onReply = undefined;
     onReply?.(m);
   });
-  const gone = (why: string) => {
+  const gone = (why: string, crashed = false) => {
     if (!child.alive) return;
     child.alive = false;
     children.delete(child);
@@ -212,20 +233,24 @@ function forkChild(): Child {
     clearTimeout(child.idleTimer);
     const onReply = child.onReply;
     child.onReply = undefined;
-    onReply?.({ ok: false, error: why, lost: true });
-    // A statement waiting for a free child gets the slot this one held. A
-    // fork that throws here would reach no caller: that waiter times out.
-    const next = waiting.shift();
+    onReply?.({ ok: false, error: why, ...(crashed ? { spent: true } : { lost: true }) });
+    // A statement waiting for a free child gets the slot this one held, while
+    // the pool is under its cap. A fork that throws here reaches no caller, so
+    // that waiter goes back to the front of the line.
+    const next = children.size < TABLE_SQL_MAX_CHILDREN ? waiting.shift() : undefined;
     if (next) {
       try {
         next(forkChild());
       } catch (err) {
+        if (next) waiting.unshift(next);
         console.warn(`[table_sql] no new SQL process: ${errorMessage(err)}`);
       }
     }
   };
   proc.once('exit', (code, signal) =>
-    gone(`the SQL process exited (${signal ?? `code ${code}`}) before it answered`),
+    crashedAtLimit(code, signal)
+      ? gone(CRASHED, true)
+      : gone(`the SQL process exited (${signal ?? `code ${code}`}) before it answered`),
   );
   // on, not once: a failed spawn and a failed send can each raise one, and an
   // 'error' with no listener would take the whole server down.
@@ -265,6 +290,8 @@ function acquire(waitMs: number): Promise<Child> {
 
 function release(c: Child): void {
   if (!c.alive || c.doomed) return;
+  // Second tries took places past the cap: give them back.
+  if (children.size > TABLE_SQL_MAX_CHILDREN) return void kill(c);
   const next = waiting.shift();
   if (next) return next(c);
   c.idleTimer = setTimeout(() => {
@@ -318,11 +345,26 @@ function ask(child: Child, file: string, sql: string, limitMs: number): Promise<
         maxLength: TABLE_SQL_MAX_LENGTH,
         maxReplyBytes: TABLE_SQL_MAX_REPLY_BYTES,
       });
-    } catch (err) {
-      // Bun: a child that failed to spawn has no send.
-      child.onReply?.({ ok: false, error: errorMessage(err), lost: true });
+    } catch {
+      // A child that failed to spawn has no send.
+      child.onReply?.({ ok: false, error: 'the SQL process did not start', lost: true });
     }
   });
+}
+
+/** One statement on one child, and the child back in the pool, or out of it
+ *  when it met the memory limit. */
+async function answer(
+  child: Child,
+  file: string,
+  sql: string,
+  limitMs: number,
+): Promise<ChildReply> {
+  const reply = await ask(child, file, sql, limitMs);
+  child.used = true;
+  if (!reply.ok && reply.spent) void kill(child);
+  release(child);
+  return reply;
 }
 
 /**
@@ -346,14 +388,19 @@ export async function runTableSql(
   const limitMs = timeoutMs();
 
   const child = await acquire(limitMs);
-  let reply = await ask(child, file, wrapped, limitMs);
-  release(child);
+  const used = child.used;
+  let reply = await answer(child, file, wrapped, limitMs);
   // A child can die between two statements, and nothing here can see that
-  // until it fails. The statement only reads, so it may run on a fresh one.
-  if (!reply.ok && reply.lost) {
-    const fresh = await acquire(limitMs);
-    reply = await ask(fresh, file, wrapped, limitMs);
-    release(fresh);
+  // until it fails. One that served before can also fail at the limit where a
+  // new one passes: what it freed still counts. The statement only reads, so
+  // it runs once more, always on a new child, whose answer is the last. So a
+  // statement can take two time limits, and its wait for a child.
+  if (!reply.ok && (reply.lost || (reply.spent && used))) {
+    try {
+      reply = await answer(forkChild(), file, wrapped, limitMs);
+    } catch {
+      // No new process: the first answer stands.
+    }
   }
 
   if (!reply.ok) throw new Error(`table_sql: ${reply.error}`);

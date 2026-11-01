@@ -3,7 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { runtimeFlags, selfCommand, tsCommand, withMemoryLimit } from './self-spawn';
+import {
+  crashedAtLimit,
+  runtimeFlags,
+  selfCommand,
+  tsCommand,
+  withMemoryLimit,
+} from './self-spawn';
 
 const isBun = !!process.versions.bun;
 /** A package with tsx of its own (@mantle/std has none). */
@@ -78,6 +84,26 @@ describe('a new process of this runtime', () => {
     },
     60_000,
   );
+
+  it.runIf(process.platform === 'linux')(
+    'a process under a limit is the first to go, and writes a small core',
+    () => {
+      const show = `const fs=require('node:fs');
+        console.log(fs.readFileSync('/proc/self/oom_score_adj','utf8').trim(),
+          fs.readFileSync('/proc/self/coredump_filter','utf8').trim())`;
+      const res = run(withMemoryLimit(1024, selfCommand(file('show.cjs', show))));
+      expect(res.stdout.trim().split(' ').map(Number)).toEqual([1000, 0]);
+    },
+  );
+
+  it('crashedAtLimit reads a crash, and not a stop the caller asked for', () => {
+    expect(crashedAtLimit(null, 'SIGABRT')).toBe(true);
+    expect(crashedAtLimit(null, 'SIGSEGV')).toBe(true);
+    expect(crashedAtLimit(1, null)).toBe(true);
+    expect(crashedAtLimit(null, 'SIGKILL')).toBe(false);
+    expect(crashedAtLimit(null, 'SIGTERM')).toBe(false);
+    expect(crashedAtLimit(0, null)).toBe(false);
+  });
 
   it.runIf(isBun && process.platform === 'linux')('a limit keeps the JIT on', () => {
     // 150 ms with the JIT, about 4.6 s with none.

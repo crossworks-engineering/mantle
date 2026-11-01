@@ -54,6 +54,7 @@ describe('settings that do nothing on Bun stay in one file', () => {
     expect(runner).toMatch(/killWithParent\(proc\)/);
     expect(runner).toMatch(/proc\.on\('error'/);
     expect(runner).not.toMatch(/proc\.once\('error'/);
+    expect(runner).toMatch(/withMemoryLimit\(/);
   });
 
   it('a worker limit', () => {

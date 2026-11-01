@@ -54,12 +54,21 @@ export function tsCommand(from: string, script: string, args: readonly string[] 
   return { command: process.execPath, args: [tsx, script, ...args] };
 }
 
+/** How a process under a memory limit ends when its engine cannot go on: a
+ *  crash signal, or an error nothing caught. It is the likely cause and not a
+ *  proved one, so what a caller reads should say so. */
+export function crashedAtLimit(code: number | null, signal: NodeJS.Signals | null): boolean {
+  return (
+    code === 1 ||
+    (signal !== null && ['SIGABRT', 'SIGBUS', 'SIGILL', 'SIGSEGV', 'SIGTRAP'].includes(signal))
+  );
+}
+
 /** The JIT pool of a process under a memory limit. */
 const JIT_POOL_BYTES = 128 * 1024 * 1024;
 
 /**
- * `cmd` under a hard memory limit of `mb` MB, set by the kernel, with no core
- * file. Bun ignores a worker's `resourceLimits` and a heap flag, and a thread
+ * `cmd` under a hard memory limit of `mb` MB, set by the kernel. Bun ignores a worker's `resourceLimits` and a heap flag, and a thread
  * cannot have a limit of its own, so a cap on Bun needs a process.
  *
  * The limit is RLIMIT_DATA. Measured on Bun 1.4.4 on Linux: past it the heap,
@@ -71,6 +80,13 @@ const JIT_POOL_BYTES = 128 * 1024 * 1024;
  * the engine cannot reserve it and runs with no JIT, with no error, 30 times
  * slower. So the pool is cut to a size that fits (BUN_JSC_jitMemoryReservationSize).
  *
+ * The limit holds one process. Many of them together can still fill a
+ * container, so each is the first the kernel kills then, before the server that
+ * started it (oom_score_adj). A crash writes no core file (`ulimit -c`), and
+ * where the core goes to a program, as it does on Ubuntu, `ulimit` has no effect
+ * and coredump_filter keeps that core small: a full one costs seconds, and it
+ * holds the data the process read. Those two are best effort.
+ *
  * Linux only. macOS refuses to set the limit, and no box runs macOS. On Linux a
  * limit that cannot be set stops the command: it never runs without one.
  */
@@ -80,7 +96,8 @@ export function withMemoryLimit(mb: number, cmd: Command): Command {
     command: '/bin/sh',
     args: [
       '-c',
-      'ulimit -c 0 && ulimit -d "$1" && shift && ' +
+      '{ echo 1000 >/proc/self/oom_score_adj; echo 0 >/proc/self/coredump_filter; } 2>/dev/null; ' +
+        'ulimit -c 0 && ulimit -d "$1" && shift && ' +
         `export BUN_JSC_jitMemoryReservationSize=${JIT_POOL_BYTES} && exec "$@"`,
       'sh',
       String(mb * 1024),

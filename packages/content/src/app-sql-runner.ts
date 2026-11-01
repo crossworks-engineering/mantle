@@ -51,7 +51,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { envDynamic, envNum, envNumDefault } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { killWithParent } from '@mantle/std/kill-with-parent';
-import { runtimeFlags } from '@mantle/std/self-spawn';
+import { crashedAtLimit, runtimeFlags, withMemoryLimit } from '@mantle/std/self-spawn';
 
 /** How long one app statement may run. */
 export const APP_SQL_TIMEOUT_MS = 5_000;
@@ -64,9 +64,10 @@ export const APP_SQL_MAX_LENGTH = 16 * 1024 * 1024;
  *  schema version may index a table that already holds the app's data. */
 export const APP_SCHEMA_TIMEOUT_MS = 30_000;
 /** The most SQL child processes alive at once. Each is a bare Node process
- *  (about 40 MB), inside the web container's memory limit (WEB_MEM_LIMIT, 3g
+ *  (about 45 MB), inside the web container's memory limit (WEB_MEM_LIMIT, 3g
  *  by default). A statement beyond it waits for a free child, for at most its
- *  own time limit. */
+ *  own time limit. A second try on a new child can pass it, for at most one
+ *  time limit (see `release`). */
 export const APP_SQL_MAX_CHILDREN = 4;
 /** An idle child exits after this long, so a quiet server holds none. */
 export const APP_SQL_CHILD_IDLE_MS = 60_000;
@@ -76,6 +77,18 @@ export const APP_SQL_DEFAULT_MAX_DB_MB = envNumDefault('APP_SQL_MAX_DB_MB');
  *  query fails with an "add a LIMIT" error. The rows cross into the web
  *  process and are JSON-encoded there, so this bounds its memory. */
 export const APP_SQL_MAX_REPLY_BYTES = 8 * 1024 * 1024;
+/** The kernel limit on a SQL process. A row is built whole before the reply
+ *  cap can read it, so 64 columns of the longest value reach 2 GB without it,
+ *  and an open-link visitor can ask for that. With it the process stops near
+ *  500 MB of real memory. Node 26 needs about 575 MB of the limit to start,
+ *  nearly all of it address space it does not touch (measured 2026-11-01). */
+export const APP_SQL_CHILD_MEMORY_MB = 1024;
+/** What a caller hears when a statement meets that limit: SQLite's own answer,
+ *  then a process that ended and most likely met it. */
+const OUT_OF_MEMORY =
+  'the statement needs more memory than a SQL process may use: add a LIMIT, select fewer columns or aggregate in SQL';
+const CRASHED =
+  'the statement ended its SQL process, most likely at the memory limit: add a LIMIT, select fewer columns or aggregate in SQL';
 /** How long the server's copy of one app file may take (a 256 MB file
  *  copies in a few seconds; this leaves room for a slow disk). */
 export const APP_DB_COPY_TIMEOUT_MS = 120_000;
@@ -383,7 +396,11 @@ process.on('message', (job) => {
   try {
     reply = { id: job.id, ok: true, result: run(job) };
   } catch (err) {
-    reply = { id: job.id, ok: false, error: err && err.message ? err.message : String(err) };
+    const error = err && err.message ? err.message : String(err);
+    // SQLite's words, then the engine's own on Bun.
+    reply = /^out of memory$/i.test(error)
+      ? { id: job.id, ok: false, error: ${JSON.stringify(OUT_OF_MEMORY)}, spent: true }
+      : { id: job.id, ok: false, error };
   }
   process.send(reply);
 });
@@ -400,13 +417,16 @@ function childEnv(): NodeJS.ProcessEnv {
   return out;
 }
 
-type Reply = { ok: true; result: unknown } | { ok: false; error: string };
+/** `spent`: the child met the memory limit, so it does not serve again. */
+type Reply = { ok: true; result: unknown } | { ok: false; error: string; spent?: boolean };
 type Child = {
   proc: ChildProcess;
   /** False once the process has exited. */
   alive: boolean;
   /** Being killed: never handed out again. */
   doomed: boolean;
+  /** Has answered a statement, so what it freed still counts on its limit. */
+  used: boolean;
   /** Answers the statement it is running, if any. */
   onReply?: (r: Reply & { id?: number }) => void;
   idleTimer?: ReturnType<typeof setTimeout>;
@@ -417,15 +437,18 @@ const idle: Child[] = [];
 const waiting: ((c: Child) => void)[] = [];
 
 function forkChild(): Child {
-  const argv = [...runtimeFlags(), '--input-type=commonjs', '-e', CHILD_SOURCE];
-  const proc = spawn(process.execPath, argv, {
+  const { command, args } = withMemoryLimit(APP_SQL_CHILD_MEMORY_MB, {
+    command: process.execPath,
+    args: [...runtimeFlags(), '--input-type=commonjs', '-e', CHILD_SOURCE],
+  });
+  const proc = spawn(command, args, {
     stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
     // Structured clone, so a BLOB comes back as bytes, as it did from a worker.
     serialization: 'advanced',
     env: childEnv(),
   });
   killWithParent(proc);
-  const child: Child = { proc, alive: true, doomed: false };
+  const child: Child = { proc, alive: true, doomed: false, used: false };
   children.add(child);
   // An idle pool must not keep the server (or a test run) from exiting; a
   // running statement's own timer holds the event loop while it waits. Bun's
@@ -437,7 +460,7 @@ function forkChild(): Child {
     child.onReply = undefined;
     onReply?.(m);
   });
-  const gone = (why: string) => {
+  const gone = (why: string, crashed = false) => {
     if (!child.alive) return;
     child.alive = false;
     children.delete(child);
@@ -446,20 +469,24 @@ function forkChild(): Child {
     if (child.idleTimer) clearTimeout(child.idleTimer);
     const onReply = child.onReply;
     child.onReply = undefined;
-    onReply?.({ ok: false, error: why });
-    // A statement waiting for a free child gets the slot this one held. A
-    // fork that throws here would reach no caller: that waiter times out.
-    const next = waiting.shift();
+    onReply?.({ ok: false, error: why, spent: crashed });
+    // A statement waiting for a free child gets the slot this one held, while
+    // the pool is under its cap. A fork that throws here reaches no caller, so
+    // that waiter goes back to the front of the line.
+    const next = children.size < APP_SQL_MAX_CHILDREN ? waiting.shift() : undefined;
     if (next) {
       try {
         next(forkChild());
       } catch (err) {
+        if (next) waiting.unshift(next);
         console.warn(`[app-sql] no new SQL process: ${errorMessage(err)}`);
       }
     }
   };
   proc.once('exit', (code, signal) =>
-    gone(`the SQL process exited (${signal ?? `code ${code}`}) before it answered`),
+    crashedAtLimit(code, signal)
+      ? gone(CRASHED, true)
+      : gone(`the SQL process exited (${signal ?? `code ${code}`}) before it answered`),
   );
   // on, not once: a failed spawn and a failed send can each raise one, and an
   // 'error' with no listener would take the whole server down.
@@ -501,6 +528,8 @@ function acquire(waitMs: number): Promise<Child> {
 
 function release(c: Child): void {
   if (!c.alive || c.doomed) return;
+  // Second tries took places past the cap: give them back.
+  if (children.size > APP_SQL_MAX_CHILDREN) return void kill(c);
   const next = waiting.shift();
   if (next) return next(c);
   c.idleTimer = setTimeout(() => {
@@ -678,6 +707,36 @@ export async function adoptAppDbFile(
 
 async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Promise<unknown> {
   const child = await acquire(timeoutMs);
+  const used = child.used;
+  let reply = await answer(child, file, opts, timeoutMs);
+  // A child that served before can fail at the memory limit where a new one
+  // passes: what it freed still counts. A read runs once more, always on a new
+  // child, whose answer is the last. So a read can take two time limits, and
+  // its wait for a child. A write does not run again: it may have landed.
+  if (!reply.ok && reply.spent && used && opts.mode === 'all' && opts.readOnly) {
+    try {
+      reply = await answer(forkChild(), file, opts, timeoutMs);
+    } catch {
+      // No new process: the first answer stands.
+    }
+  }
+  if (!reply.ok) {
+    if (reply.error === RESTORING_REPLY) throw new AppDbRestoringError();
+    throw new AppSqlError(reply.error);
+  }
+  return reply.result;
+}
+
+/** One job on one child, and the child back in the pool, or out of it when it
+ *  met the memory limit. */
+async function answer(
+  child: Child,
+  file: string,
+  opts: ChildJob,
+  timeoutMs: number,
+): Promise<Reply> {
+  // A spawn that failed, or a child that died before it was handed out.
+  if (!child.alive) return { ok: false, error: 'the SQL process did not start' };
   const id = ++nextId;
   const reply = await new Promise<Reply>((resolve) => {
     let settled = false;
@@ -705,30 +764,33 @@ async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Prom
       }
       resolve(r);
     };
-    child.proc.send({
-      id,
-      file,
-      sql: opts.sql,
-      params: opts.params ?? [],
-      mode: opts.mode,
-      readOnly: opts.readOnly,
-      dataOnly: opts.dataOnly === true,
-      maxRows: APP_SQL_MAX_ROWS,
-      maxLength: APP_SQL_MAX_LENGTH,
-      maxReplyBytes: APP_SQL_MAX_REPLY_BYTES,
-      maxDbBytes: opts.maxDbBytes ?? appSqlMaxDbBytes(),
-      journalLimit: APP_SQL_JOURNAL_LIMIT_BYTES,
-      userVersion: opts.mode === 'script' ? Math.max(0, Math.floor(opts.userVersion ?? 0)) : 0,
-      dest: opts.mode === 'copy' || opts.mode === 'adopt' ? opts.dest : undefined,
-      statements: opts.mode === 'batch' ? opts.statements : undefined,
-    });
+    try {
+      child.proc.send({
+        id,
+        file,
+        sql: opts.sql,
+        params: opts.params ?? [],
+        mode: opts.mode,
+        readOnly: opts.readOnly,
+        dataOnly: opts.dataOnly === true,
+        maxRows: APP_SQL_MAX_ROWS,
+        maxLength: APP_SQL_MAX_LENGTH,
+        maxReplyBytes: APP_SQL_MAX_REPLY_BYTES,
+        maxDbBytes: opts.maxDbBytes ?? appSqlMaxDbBytes(),
+        journalLimit: APP_SQL_JOURNAL_LIMIT_BYTES,
+        userVersion: opts.mode === 'script' ? Math.max(0, Math.floor(opts.userVersion ?? 0)) : 0,
+        dest: opts.mode === 'copy' || opts.mode === 'adopt' ? opts.dest : undefined,
+        statements: opts.mode === 'batch' ? opts.statements : undefined,
+      });
+    } catch {
+      // A child that failed to spawn has no send.
+      child.onReply?.({ ok: false, error: 'the SQL process did not start' });
+    }
   });
+  child.used = true;
+  if (!reply.ok && reply.spent) void kill(child);
   release(child);
-  if (!reply.ok) {
-    if (reply.error === RESTORING_REPLY) throw new AppDbRestoringError();
-    throw new AppSqlError(reply.error);
-  }
-  return reply.result;
+  return reply;
 }
 
 /** The pids of the live SQL children (tests and diagnostics). */

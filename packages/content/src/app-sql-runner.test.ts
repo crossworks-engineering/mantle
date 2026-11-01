@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   APP_SQL_DEFAULT_MAX_DB_MB,
   APP_SQL_MAX_CHILDREN,
@@ -101,6 +101,88 @@ describe('runAppSql', () => {
   it('caps the size of one string or blob', async () => {
     await expect(run('SELECT length(randomblob(20000000)) AS n', true)).rejects.toThrow(/too big/i);
   });
+
+  const noChildren = async () => {
+    for (const pid of appSqlChildPids()) process.kill(pid, 'SIGKILL');
+    await vi.waitFor(() => expect(appSqlChildPids()).toEqual([]));
+  };
+
+  it.each([
+    // Each value is legal, and the row is built before the cap can read it.
+    ['SQLite says it: values made while the row is built', 64, ''],
+    ['the engine ends the process: values read one by one', 16, ' - n'],
+  ])('refuses one wide row at the kernel limit (Linux): %s', async (_how, width, less) => {
+    await noChildren();
+    const cols = Array.from({ length: width }, (_, i) => `zeroblob(16777216${less}) AS c${i}`).join(
+      ', ',
+    );
+    const from = less ? ' FROM (SELECT 1 AS n UNION ALL SELECT 2)' : '';
+    const seen = new Set<number>();
+    const watch = setInterval(() => appSqlChildPids().forEach((p) => seen.add(p)), 5);
+    // The time limit is for a crash on a slow box: the engine prints its trace.
+    await expect(run(`SELECT ${cols}${from}`, true, 10_000)).rejects.toThrow(
+      process.platform === 'linux'
+        ? /more memory than a SQL process|most likely at the memory limit/
+        : /more than 8 MB/,
+    );
+    clearInterval(watch);
+    // A new child's answer is the last: the same statement would end the next.
+    expect(seen.size).toBeLessThanOrEqual(1);
+    // That child goes, and the next statement gets one whose heap is whole.
+    if (process.platform === 'linux') {
+      await vi.waitFor(() => expect(appSqlChildPids()).toEqual([]));
+    }
+    await expect(run('SELECT 1 AS a', true)).resolves.toEqual([{ a: 1 }]);
+  });
+
+  const slow = `WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 4000000)
+    SELECT count(*) AS n FROM c`;
+
+  it('a second try gives its place back: the pool ends at its cap', async () => {
+    await noChildren();
+    await Promise.all(Array.from({ length: 4 }, () => run('SELECT 1 AS warm', true)));
+    const all = Promise.all(Array.from({ length: 8 }, () => run(slow, true, 20_000)));
+    // A crash is what a second try answers. These four have served before.
+    await vi.waitFor(() => expect(appSqlChildPids()).toHaveLength(4));
+    for (const pid of appSqlChildPids()) process.kill(pid, 'SIGABRT');
+    let peak = 0;
+    const watch = setInterval(() => (peak = Math.max(peak, appSqlChildPids().length)), 1);
+    await all;
+    clearInterval(watch);
+    // One place past the cap at most: four second tries share the fifth.
+    expect(peak).toBeLessThanOrEqual(5);
+    expect(appSqlChildPids().length).toBeLessThanOrEqual(4);
+  });
+
+  it('a write gets no second try: it may have landed', async () => {
+    await noChildren();
+    await run('SELECT 1 AS warm', true);
+    const write = `INSERT INTO t (x) ${slow} RETURNING x`;
+    const failed = runAppSql(file, { sql: write, mode: 'all', readOnly: false, timeoutMs: 20_000 });
+    for (const pid of appSqlChildPids()) process.kill(pid, 'SIGABRT');
+    await expect(failed).rejects.toThrow(AppSqlError);
+    expect(appSqlChildPids()).toEqual([]);
+  });
+
+  it.runIf(process.platform === 'linux')(
+    'a read that a used child cannot hold runs on a new one',
+    async () => {
+      await noChildren();
+      // A refused row leaves the child near its limit, with what it freed still
+      // counted, and this statement needs more than that. Its answer is one number.
+      const wide = Array.from({ length: 8 }, (_, i) => `zeroblob(16777216) AS c${i}`).join(', ');
+      await expect(run(`SELECT ${wide}`, true)).rejects.toThrow(/more than 8 MB|memory/);
+      // Bun's engine leaves a new child room for fewer: there the size is all this shows.
+      const names = Array.from({ length: process.versions.bun ? 8 : 20 }, (_, i) => `c${i}`);
+      const held = names.map((n) => `randomblob(16000000) AS ${n}`).join(', ');
+      const lengths = names.map((n) => `length(${n})`).join(' + ');
+      const first = appSqlChildPids();
+      await expect(
+        run(`SELECT ${lengths} AS n FROM (SELECT ${held} LIMIT 1)`, true, 20_000),
+      ).resolves.toEqual([{ n: names.length * 16_000_000 }]);
+      if (!process.versions.bun) expect(appSqlChildPids()).not.toContain(first[0]);
+    },
+  );
 });
 
 /**
