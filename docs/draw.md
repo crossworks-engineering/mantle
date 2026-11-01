@@ -267,7 +267,10 @@ inline picture is kept only within a decode budget read from its own header
 thread (no file system, a 20 s timeout, a bounded queue that refuses before
 parsing), with the inlined woff2 fonts unpacked from bytes after their table
 directory is checked, plus a bundled fallback font. WebAssembly memory is not
-capped by the worker's heap limit, so these input bounds are what bound it. `acceptSceneSvg` also refuses
+capped by the worker's heap limit, so these input bounds are what bound it. On
+Bun, which ignores a worker's limit, the render runs in a process of its own
+with an empty environment, under a kernel limit that covers WebAssembly memory
+too (`DRAW_PNG_CHILD_MEMORY_MB`). `acceptSceneSvg` also refuses
 prefixed links, prefixed elements, DOCTYPE and `xml:base` at commit. What a
 reader gets (the drawing, the draft flag, the inlined images, and the words
 of those images in the text) is decided in one helper,

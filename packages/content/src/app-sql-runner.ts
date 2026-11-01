@@ -21,7 +21,8 @@
  * fresh one. A child that dies any other way (the OOM killer, an operator)
  * leaves the pool the same way. Each statement opens and closes its own
  * connection inside the child, so a reused child carries nothing from one
- * statement to the next.
+ * statement to the next. A child also dies with this process: one inside a
+ * statement cannot see this process go, so killWithParent gives each a guard.
  *
  * Inside the child, three engine-level locks hold whatever the text says
  * (a regex can be fooled; the engine cannot):
@@ -49,6 +50,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { envDynamic, envNum, envNumDefault } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { killWithParent } from '@mantle/std/kill-with-parent';
+import { runtimeFlags } from '@mantle/std/self-spawn';
 
 /** How long one app statement may run. */
 export const APP_SQL_TIMEOUT_MS = 5_000;
@@ -135,7 +138,8 @@ function restoring(file) {
   }
 }
 process.title = 'mantle-app-sql';
-// The parent is gone (exited or crashed): so is the reason to live.
+// The parent is gone (exited or crashed): so is the reason to live. An idle
+// child hears it here; in a statement it cannot, and its guard kills it.
 process.on('disconnect', () => process.exit(0));
 // About what a row costs once serialized: keys, values, a little framing.
 function valueBytes(v) {
@@ -413,18 +417,21 @@ const idle: Child[] = [];
 const waiting: ((c: Child) => void)[] = [];
 
 function forkChild(): Child {
-  const proc = spawn(process.execPath, ['--input-type=commonjs', '-e', CHILD_SOURCE], {
+  const argv = [...runtimeFlags(), '--input-type=commonjs', '-e', CHILD_SOURCE];
+  const proc = spawn(process.execPath, argv, {
     stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
     // Structured clone, so a BLOB comes back as bytes, as it did from a worker.
     serialization: 'advanced',
     env: childEnv(),
   });
+  killWithParent(proc);
   const child: Child = { proc, alive: true, doomed: false };
   children.add(child);
   // An idle pool must not keep the server (or a test run) from exiting; a
-  // running statement's own timer holds the event loop while it waits.
+  // running statement's own timer holds the event loop while it waits. Bun's
+  // channel has no unref.
   proc.unref();
-  proc.channel?.unref();
+  proc.channel?.unref?.();
   proc.on('message', (m: Reply & { id?: number }) => {
     const onReply = child.onReply;
     child.onReply = undefined;
@@ -440,14 +447,23 @@ function forkChild(): Child {
     const onReply = child.onReply;
     child.onReply = undefined;
     onReply?.({ ok: false, error: why });
-    // A statement waiting for a free child gets the slot this one held.
+    // A statement waiting for a free child gets the slot this one held. A
+    // fork that throws here would reach no caller: that waiter times out.
     const next = waiting.shift();
-    if (next) next(forkChild());
+    if (next) {
+      try {
+        next(forkChild());
+      } catch (err) {
+        console.warn(`[app-sql] no new SQL process: ${errorMessage(err)}`);
+      }
+    }
   };
   proc.once('exit', (code, signal) =>
     gone(`the SQL process exited (${signal ?? `code ${code}`}) before it answered`),
   );
-  proc.once('error', (err) => {
+  // on, not once: a failed spawn and a failed send can each raise one, and an
+  // 'error' with no listener would take the whole server down.
+  proc.on('error', (err) => {
     gone(`the SQL process failed: ${errorMessage(err)}`);
     proc.kill('SIGKILL');
   });
@@ -487,7 +503,11 @@ function release(c: Child): void {
   if (!c.alive || c.doomed) return;
   const next = waiting.shift();
   if (next) return next(c);
-  c.idleTimer = setTimeout(() => c.proc.kill(), APP_SQL_CHILD_IDLE_MS);
+  c.idleTimer = setTimeout(() => {
+    idle.splice(idle.indexOf(c), 1);
+    c.doomed = true;
+    c.proc.kill();
+  }, APP_SQL_CHILD_IDLE_MS);
   c.idleTimer.unref();
   idle.push(c);
 }

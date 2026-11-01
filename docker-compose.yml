@@ -63,6 +63,8 @@ name: mantle
 #   unauthenticated until you activate it from the UI (/settings/network with an
 #   auth key from the TS admin console). Nothing else waits on it.
 #   TS_IMAGE_TAG            (pin override for the tailscale image)
+#   TS_NO_LOGS_NO_SUPPORT   (default: true) no client logs to Tailscale. Set
+#                            false only for a tailnet that requires them.
 #   See docs/tailscale.md.
 #
 # Embedding is ONLINE by default — configured in onboarding (text-embedding-3-large,
@@ -771,6 +773,15 @@ services:
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 256m
+    # No client logs to log.tailscale.com. tailscaled starts its log upload at
+    # boot, logged in or not, so without this a sidecar that was never activated
+    # still sends Tailscale its logs. A tailnet with network flow logs on refuses
+    # such a node (it leaves the tailnet with "tailnet requires logging to be
+    # enabled"): set TS_NO_LOGS_NO_SUPPORT=false in .env on that box only.
+    # Env, not the --no-logs-no-support flag, so a box can turn it off without
+    # editing this file. See docs/tailscale.md.
+    environment:
+      TS_NO_LOGS_NO_SUPPORT: ${TS_NO_LOGS_NO_SUPPORT:-true}
     entrypoint:
       - tailscaled
       - --tun=userspace-networking

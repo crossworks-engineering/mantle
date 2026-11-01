@@ -22,7 +22,7 @@ describe('finalLine', () => {
       'killed by SIGKILL (often out of memory',
     );
     expect(finalLine('chunk-windows', true, null, 'SIGABRT', 1_000)).toContain(
-      'killed by SIGABRT (often the Node heap limit',
+      'killed by SIGABRT (often a heap limit',
     );
     // tsx reports a killed child as 128 + the signal number.
     expect(finalLine('chunk-windows', true, 137, null, 1_000)).toContain('killed by SIGKILL');

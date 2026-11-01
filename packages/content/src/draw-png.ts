@@ -12,16 +12,22 @@
  *     with every link that is not `#id` or an inline raster picture gone;
  *  2. the renderer (draw-png-render.ts) is resvg as WebAssembly in a worker
  *     thread: no file system, no network, a hard timeout, and fonts read
- *     from bytes with their unpacked size checked first.
+ *     from bytes with their unpacked size checked first. Bun ignores a
+ *     worker's memory limit, so there it runs in a process of its own
+ *     (draw-png-child.ts), with no environment, under a kernel limit.
  *
  * Callers own access: hand this only an SVG the reader may see, with the
  * images they may not see already taken out (draw-reader.ts).
  */
 // eslint-disable-next-line @typescript-eslint/triple-slash-reference -- loads the local ambient type for the untyped wawoff2 module
 /// <reference path="./wawoff2.d.ts" />
+import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
+import { selfCommand, withMemoryLimit } from '@mantle/std/self-spawn';
+import type { ChildJob, ChildReply } from './draw-png-child';
 import type { RenderJob, RenderResult } from './draw-png-render';
 import { sanitizeSceneSvg, type SvgRegion } from './svg-sanitize';
 import { SCENE_SVG_MAX_BYTES } from './scene-svg';
@@ -37,6 +43,10 @@ export const DRAW_PNG_TIMEOUT_MS = 20_000;
  *  request is refused at once rather than queued without bound. */
 const MAX_CONCURRENT = 2;
 const MAX_WAITING = 6;
+/** The kernel limit on a render process (Bun). Unlike the worker's limit, it
+ *  covers WebAssembly memory too. Flat pictures at the input bounds take about
+ *  1,400 MB of it (draw-png-child.test.ts). A job past it is refused. */
+export const DRAW_PNG_CHILD_MEMORY_MB = 1536;
 
 /** A part of the scene, as fractions of its width and height (0 to 1, from
  *  the top-left corner). `{ x: 0.5, y: 0, width: 0.5, height: 0.5 }` is the
@@ -143,6 +153,52 @@ async function renderInWorker(job: RenderJob, timeoutMs: number): Promise<Render
   });
 }
 
+/** The render child's own reason, as it said it. */
+class RenderRefused extends Error {}
+
+/** Run one job in its own process, killed at the deadline. */
+function renderInChild(job: RenderJob, timeoutMs: number): Promise<RenderResult> {
+  const child = fileURLToPath(new URL('./draw-png-child.ts', import.meta.url));
+  const { command, args } = withMemoryLimit(DRAW_PNG_CHILD_MEMORY_MB, selfCommand(child));
+  const sent: ChildJob = { ...job, fallbackFont: Buffer.from(job.fallbackFont).toString('base64') };
+  return new Promise<RenderResult>((resolve, reject) => {
+    const proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'ignore'], env: {} });
+    const out: Buffer[] = [];
+    const timer = setTimeout(() => {
+      reject(new Error(`the picture took longer than ${timeoutMs / 1000} s`));
+      proc.kill('SIGKILL');
+    }, timeoutMs);
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    proc.stdout.on('data', (chunk: Buffer) => out.push(chunk));
+    // A process that died early closes its stdin: 'close' below says so.
+    proc.stdin.on('error', () => {});
+    proc.on('close', (code, signal) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        reject(new Error(`the picture renderer stopped (${signal ?? `exit ${code}`})`));
+        return;
+      }
+      try {
+        const reply = JSON.parse(Buffer.concat(out).toString('utf8')) as ChildReply | null;
+        if (reply?.ok === false && reply.error) throw new RenderRefused(reply.error);
+        if (reply?.ok !== true || !reply.png || !reply.width || !reply.height) {
+          throw new Error('no answer');
+        }
+        const png = new Uint8Array(Buffer.from(reply.png, 'base64'));
+        resolve({ png, width: reply.width, height: reply.height });
+      } catch (err) {
+        reject(
+          err instanceof RenderRefused ? err : new Error('the picture renderer gave no answer'),
+        );
+      }
+    });
+    proc.stdin.end(JSON.stringify(sent));
+  });
+}
+
 /**
  * Render a committed snapshot to a PNG on white: the whole scene, or one
  * region of it, with the long edge at `DRAW_PNG_LONG_EDGE`. Throws when the
@@ -180,7 +236,8 @@ export async function renderDrawSvgPng(
       longEdge: opts.longEdge ?? DRAW_PNG_LONG_EDGE,
       landscape: w >= h,
     };
-    const out = await renderInWorker(job, opts.timeoutMs ?? DRAW_PNG_TIMEOUT_MS);
+    const render = process.versions.bun ? renderInChild : renderInWorker;
+    const out = await render(job, opts.timeoutMs ?? DRAW_PNG_TIMEOUT_MS);
     return {
       png: Buffer.from(out.png.buffer, out.png.byteOffset, out.png.byteLength),
       width: out.width,

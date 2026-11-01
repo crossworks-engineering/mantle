@@ -167,6 +167,8 @@ function resolveImage(page: PdfPage, name: string): Promise<PdfImageData | null>
   });
 }
 
+const bunGc = (globalThis as { Bun?: { gc: (sync: boolean) => void } }).Bun?.gc;
+
 /**
  * Every figure embedded in the PDF's pages, in page order.
  *
@@ -223,7 +225,8 @@ export async function extractPdfImages(
 
       /** Read page `p`: count its image candidates and, when `fetch`, turn
        *  them into PNGs. Cleans the page up before returning, whatever
-       *  happens. Returns the candidate count. */
+       *  happens. Returns the candidate count. On Bun a page's images are
+       *  decoded either way (see below). */
       const readPage = async (p: number, fetch: boolean): Promise<number> => {
         const page = await doc.getPage(p);
         try {
@@ -251,7 +254,15 @@ export async function extractPdfImages(
             }
             wanted.push(name);
           }
-          if (!fetch) return candidates;
+          if (!fetch) {
+            // pdfjs began to decode each image when it made the operator list,
+            // and cleanup does not stop that. On Bun those decodes pile up
+            // through a scan, so a page's images finish before the next page.
+            if (process.versions.bun) {
+              for (const name of wanted) await resolveImage(page, name);
+            }
+            return candidates;
+          }
 
           // A caption is only ever attached to a page's sole picture.
           let caption: string | undefined;
@@ -287,6 +298,10 @@ export async function extractPdfImages(
           return candidates;
         } finally {
           page.cleanup();
+          // Bun frees a decoded page late: a legal 92-page JPEG scan was killed
+          // at the parser's 2 GB limit (peak 861 MB with this, 1,830 MB in the
+          // runs that lived without it).
+          bunGc?.(true);
         }
       };
 

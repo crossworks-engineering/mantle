@@ -4,6 +4,7 @@
  * hand @mantle/content/people the authenticated login. Every rule is in
  * the content module; this file maps a request to it and serves a photo.
  */
+import { NextResponse } from '../server/http-compat';
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { getContent } from '@mantle/storage';
@@ -42,7 +43,7 @@ export async function servePersonPhoto(
   login: Login,
   loginId: string,
 ): Promise<Response> {
-  const notFound = () => new Response('Not found', { status: 404 });
+  const notFound = () => new NextResponse('Not found', { status: 404 });
   const photo = await personPhoto(peopleCallerOf(login), loginId);
   if (!photo) return notFound();
   const v = new URL(req.url).searchParams.get('v');

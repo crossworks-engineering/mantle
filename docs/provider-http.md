@@ -31,8 +31,10 @@ The `undici` package (8.10) does not have the limit. Its Agent can be the
 | Deadlines   | per call, named (see below)            | every call has one; a stream's covers its headers only                 |
 
 The tailnet route ([`tailnet.ts`](../packages/voice/src/adapters/tailnet.ts))
-uses an undici `ProxyAgent` with the same options. A replaced global fetch (a
-test stub) is used as is.
+uses an undici `ProxyAgent` with the same options. In a test a replaced global
+fetch (a stub) is used as is. Outside a test one is a wrapper: on Node it gets
+the dispatcher, and on Bun it is refused, so a route never loses its dispatcher
+in silence.
 
 `undici` is loaded through `process.getBuiltinModule('node:module')
 .createRequire`, never a bare `require`: the server runs as ESM, where
@@ -163,36 +165,36 @@ after which a stream's idle guard (120 s between chunks) bounds it.
 "undici" is no deadline of our own: undici's 300 s for the headers and
 300 s of body silence, no total.
 
-| Caller                                                                       | Main                                       | Now                                             |
-| ---------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------- |
-| Chat one-shot: Anthropic, Google, xAI, Hugging Face, DeepSeek                | 60 s exchange (`init.signal`)              | 60 s exchange (`chat`)                          |
-| Chat one-shot: Copilot, Mammouth, Foundry, custom                            | 120 s exchange                             | 120 s exchange (`chatRelay`)                    |
-| Chat one-shot: local (direct or tailnet)                                     | 300 s exchange                             | 300 s exchange (`chatLocal`)                    |
-| Chat one-shot: OpenRouter (SDK)                                              | 60 s exchange (SDK signal)                 | the same (a Request input: no default)          |
+| Caller                                                                                | Main                                       | Now                                             |
+| ------------------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------- |
+| Chat one-shot: Anthropic, Google, xAI, Hugging Face, DeepSeek                         | 60 s exchange (`init.signal`)              | 60 s exchange (`chat`)                          |
+| Chat one-shot: Copilot, Mammouth, Foundry, custom                                     | 120 s exchange                             | 120 s exchange (`chatRelay`)                    |
+| Chat one-shot: local (direct or tailnet)                                              | 300 s exchange                             | 300 s exchange (`chatLocal`)                    |
+| Chat one-shot: OpenRouter (SDK)                                                       | 60 s exchange (SDK signal)                 | the same (a Request input: no default)          |
 | Chat stream: Anthropic, Google, xAI, HF, DeepSeek, Copilot, Mammouth, Foundry, custom | 60 s headers                               | 60 s headers (`streamConnect`, scope `headers`) |
-| Chat stream: local (direct or tailnet)                                       | 300 s headers                              | 300 s headers (scope `headers`)                 |
-| Chat stream: OpenRouter (SDK)                                                | 60 s headers                               | the same (a Request input: no default)          |
-| OpenRouter research (`web_search`, `web_search_pro`, SDK)                    | undici                                     | undici (a Request input: no default)            |
-| Model lists (discover)                                                       | 15 s                                       | 15 s (`discover`)                               |
-| Catalogue lists (embedding models, local models, speech models)              | 8 s                                        | 8 s (`catalog`)                                 |
-| OpenRouter key info                                                          | 10 s                                       | 10 s (`keyInfo`)                                |
-| Copilot token exchange                                                       | 15 s                                       | 15 s (`tokenExchange`)                          |
-| Decisions judge                                                              | 1.5 s (or the caller's)                    | the same (`decision`)                           |
-| Vision (one image)                                                           | 60 s                                       | 60 s (`vision`)                                 |
-| Vision (Anthropic PDF)                                                       | 120 s                                      | 120 s (`visionDocument`)                        |
-| Vision (several images, the drawing check, OpenRouter)                       | none (new)                                 | **240 s** (`visionImages`, new)                 |
-| Image generation (OpenAI, xAI, Google, OpenRouter)                           | 120 s                                      | 120 s (`image`)                                 |
-| Image generation (Hugging Face)                                              | 180 s                                      | 180 s (`imageCold`)                             |
-| OpenAI returned-image fetch                                                  | undici                                     | **120 s** exchange (`image`, new)               |
-| Text to speech: ElevenLabs, Google, xAI                                      | 60 s                                       | 60 s (`speech`)                                 |
-| Text to speech: OpenAI, OpenRouter                                           | undici                                     | **60 s** (`speech`, new)                        |
-| Speech to text (all adapters, AssemblyAI upload and create)                  | undici                                     | **10 min** (`transcribe`, new)                  |
-| AssemblyAI status poll (a GET)                                               | undici                                     | **180 s** (`default`, new)                      |
-| Hosted embeddings (OpenAI, OpenRouter, Google, Mistral, Cohere)              | undici                                     | **120 s** (`embed`, new)                        |
-| Local embeddings (direct or tailnet)                                         | 120 s (or `MANTLE_LOCAL_EMBED_TIMEOUT_MS`) | the same (`localEmbed`)                         |
-| Local model probe (pill, sanity check, capabilities, services)               | 1.2 to 1.5 s                               | the same (`healthPill`, `localProbe`)           |
-| Push relay (egress, not the pool)                                            | 10 s                                       | 10 s (`pushRelay`)                              |
-| Tailnet route                                                                | whatever the adapter set                   | the same options, passed through                |
+| Chat stream: local (direct or tailnet)                                                | 300 s headers                              | 300 s headers (scope `headers`)                 |
+| Chat stream: OpenRouter (SDK)                                                         | 60 s headers                               | the same (a Request input: no default)          |
+| OpenRouter research (`web_search`, `web_search_pro`, SDK)                             | undici                                     | undici (a Request input: no default)            |
+| Model lists (discover)                                                                | 15 s                                       | 15 s (`discover`)                               |
+| Catalogue lists (embedding models, local models, speech models)                       | 8 s                                        | 8 s (`catalog`)                                 |
+| OpenRouter key info                                                                   | 10 s                                       | 10 s (`keyInfo`)                                |
+| Copilot token exchange                                                                | 15 s                                       | 15 s (`tokenExchange`)                          |
+| Decisions judge                                                                       | 1.5 s (or the caller's)                    | the same (`decision`)                           |
+| Vision (one image)                                                                    | 60 s                                       | 60 s (`vision`)                                 |
+| Vision (Anthropic PDF)                                                                | 120 s                                      | 120 s (`visionDocument`)                        |
+| Vision (several images, the drawing check, OpenRouter)                                | none (new)                                 | **240 s** (`visionImages`, new)                 |
+| Image generation (OpenAI, xAI, Google, OpenRouter)                                    | 120 s                                      | 120 s (`image`)                                 |
+| Image generation (Hugging Face)                                                       | 180 s                                      | 180 s (`imageCold`)                             |
+| OpenAI returned-image fetch                                                           | undici                                     | **120 s** exchange (`image`, new)               |
+| Text to speech: ElevenLabs, Google, xAI                                               | 60 s                                       | 60 s (`speech`)                                 |
+| Text to speech: OpenAI, OpenRouter                                                    | undici                                     | **60 s** (`speech`, new)                        |
+| Speech to text (all adapters, AssemblyAI upload and create)                           | undici                                     | **10 min** (`transcribe`, new)                  |
+| AssemblyAI status poll (a GET)                                                        | undici                                     | **180 s** (`default`, new)                      |
+| Hosted embeddings (OpenAI, OpenRouter, Google, Mistral, Cohere)                       | undici                                     | **120 s** (`embed`, new)                        |
+| Local embeddings (direct or tailnet)                                                  | 120 s (or `MANTLE_LOCAL_EMBED_TIMEOUT_MS`) | the same (`localEmbed`)                         |
+| Local model probe (pill, sanity check, capabilities, services)                        | 1.2 to 1.5 s                               | the same (`healthPill`, `localProbe`)           |
+| Push relay (egress, not the pool)                                                     | 10 s                                       | 10 s (`pushRelay`)                              |
+| Tailnet route                                                                         | whatever the adapter set                   | the same options, passed through                |
 
 Only the rows in bold are shorter than main, and each was a call with no
 deadline of its own (named behaviour changes below).
@@ -207,15 +209,15 @@ it; a returned value (an HTTP 429 response) retries when `isFailure` says so,
 and the last one is returned when the budget is spent. `delayMs` returning
 null gives up early (a deadline).
 
-| Loop                               | Budget             | Delay                                                                 |
-| ---------------------------------- | ------------------ | --------------------------------------------------------------------- |
-| Chat (`withChatRetry`)             | 2 retries          | full jitter over 500 ms doubling, cap 8 s; Retry-After wins, cap 30 s |
-| OpenRouter empty 2xx body          | 2 retries          | full jitter over 500 ms doubling, cap 8 s                             |
-| Embed 429 (`withRateLimitBackoff`) | 4 retries          | 2, 4, 8, 16 s plus up to a quarter                                    |
-| Microsoft Graph 429                | 4 retries          | Retry-After seconds, else 1, 2, 4, 8 s                                |
+| Loop                               | Budget       | Delay                                                                 |
+| ---------------------------------- | ------------ | --------------------------------------------------------------------- |
+| Chat (`withChatRetry`)             | 2 retries    | full jitter over 500 ms doubling, cap 8 s; Retry-After wins, cap 30 s |
+| OpenRouter empty 2xx body          | 2 retries    | full jitter over 500 ms doubling, cap 8 s                             |
+| Embed 429 (`withRateLimitBackoff`) | 4 retries    | 2, 4, 8, 16 s plus up to a quarter                                    |
+| Microsoft Graph 429                | 4 retries    | Retry-After seconds, else 1, 2, 4, 8 s                                |
 | Parser `busy` (429)                | 3 retries    | 2, 5, 10 s (`packages/files/src/parser-client.ts`)                    |
-| Telegram 429                       | 3 retries          | `retry_after` (1 s without), at most 30 s                             |
-| Extract circuit probe              | (a schedule)       | 5, 10, 20, 40, then 60 min (`backoffMs`)                              |
+| Telegram 429                       | 3 retries    | `retry_after` (1 s without), at most 30 s                             |
+| Extract circuit probe              | (a schedule) | 5, 10, 20, 40, then 60 min (`backoffMs`)                              |
 
 Each row is pinned by a test recorded against the hand loop before the fold.
 (The parser row replaced Tika's, which went with Tika; [parser.md](parser.md).)

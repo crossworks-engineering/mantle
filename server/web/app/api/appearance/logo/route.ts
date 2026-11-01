@@ -1,3 +1,4 @@
+import { NextResponse } from '@/server/http-compat';
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { resolveSingleOwnerId } from '@mantle/db';
@@ -33,13 +34,13 @@ export async function GET(req: Request) {
   const notFound = new Headers();
   try {
     const ownerId = await resolveSingleOwnerId();
-    if (!ownerId) return new Response('Not found', { status: 404, headers: notFound });
+    if (!ownerId) return new NextResponse('Not found', { status: 404, headers: notFound });
     const prefs = await loadProfilePreferences(ownerId);
     const dark = new URL(req.url).searchParams.get('variant') === 'dark';
     const key = dark ? prefs.logoDarkKey : prefs.logoKey;
     const type = dark ? prefs.logoDarkType : prefs.logoType;
     if (!key || !type) {
-      return new Response('Not found', { status: 404, headers: notFound });
+      return new NextResponse('Not found', { status: 404, headers: notFound });
     }
     const obj = await getContent(key);
     const headers = new Headers({
@@ -54,6 +55,6 @@ export async function GET(req: Request) {
     return new Response(webStream as unknown as ReadableStream, { headers });
   } catch {
     // Storage unreachable / object gone — a brand asset must never 500 a page.
-    return new Response('Not found', { status: 404, headers: notFound });
+    return new NextResponse('Not found', { status: 404, headers: notFound });
   }
 }

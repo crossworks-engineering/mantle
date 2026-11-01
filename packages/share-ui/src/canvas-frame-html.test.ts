@@ -1,4 +1,4 @@
-import { runInContext, runInNewContext } from 'node:vm';
+import { createContext, runInContext, runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
   buildCanvasEmbedCsp,
@@ -250,7 +250,9 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
       setTimeout,
       clearTimeout,
     };
-    runInNewContext(prelude, ctx);
+    // One realm: on Bun runInNewContext would give the prelude one of its own.
+    createContext(ctx);
+    runInContext(prelude, ctx);
     // What a canvas runs after the prelude, in the same realm.
     if (canvas) runInContext(canvas, ctx);
     const api = (

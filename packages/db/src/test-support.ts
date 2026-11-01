@@ -232,10 +232,17 @@ export async function createReadOnlyRole(
       select nspname from pg_namespace
        where nspname !~ '^pg_' and nspname <> 'information_schema'`;
     for (const { nspname } of schemas) {
-      await withRoleRetry(() => sql.unsafe(`grant usage on schema "${nspname}" to "${name}"`));
-      await withRoleRetry(() =>
-        sql.unsafe(`grant select on all tables in schema "${nspname}" to "${name}"`),
-      );
+      try {
+        await withRoleRetry(() => sql.unsafe(`grant usage on schema "${nspname}" to "${name}"`));
+        await withRoleRetry(() =>
+          sql.unsafe(`grant select on all tables in schema "${nspname}" to "${name}"`),
+        );
+      } catch (err) {
+        // A test's own schema may go while this runs (viewer.db.test.ts drops
+        // viewer_test): a schema that is gone has nothing to grant.
+        const [left] = await sql`select 1 from pg_namespace where nspname = ${nspname}`;
+        if (left) throw err;
+      }
     }
     // What the demo's reader is granted besides SELECT (0256): the owner's
     // app sidebar asks for the Team workspace; the chips ask each workspace's
@@ -279,7 +286,7 @@ export async function dropReadOnlyRole(_sql: Sql, name: string): Promise<void> {
   const sql = postgres(adminUrl, { max: 1, onnotice: () => {} });
   try {
     await withRoleRetry(() => sql.unsafe(`drop owned by "${name}"`));
-    await sql.unsafe(`drop role if exists "${name}"`);
+    await withRoleRetry(() => sql.unsafe(`drop role if exists "${name}"`));
   } finally {
     await sql.end();
   }
@@ -330,6 +337,17 @@ export async function superuserExec<T = Record<string, unknown>>(
 ): Promise<T[]> {
   const { sql: text, params } =
     typeof query === 'string' ? { sql: query, params: [] } : new PgDialect().sqlToQuery(query);
+  // A grant, or a function dropped while another file runs a grant, can meet
+  // "tuple concurrently updated" on a shared cluster.
+  return withRoleRetry(() => superuserStatement<T>(url, query, text, params));
+}
+
+async function superuserStatement<T>(
+  url: string,
+  query: SQL | string,
+  text: string,
+  params: unknown[],
+): Promise<T[]> {
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   if (typeof query !== 'string') {
     // As the app's drizzle pools send them (drizzle-orm/postgres-js): a

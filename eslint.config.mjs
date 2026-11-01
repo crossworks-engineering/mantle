@@ -147,13 +147,14 @@ export default tseslint.config(
     // `process.env` as a whole object (spawning a child with the inherited
     // env) is fine; member reads are not. Excepted: the config package itself,
     // packages/client-types (published to the frontend, where NEXT_PUBLIC_* is
-    // a build-time contract), server/sandboxd (standalone image, own config
+    // a build-time contract), std's undici.ts (below config), server/sandboxd (standalone image, own config
     // block), the dotenv loader and the boot file that bridges MANTLE_* into
     // the client-types names, plus tests and scripts.
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
     ignores: [
       'packages/config/**',
       'packages/client-types/**',
+      'packages/std/src/undici.ts',
       'server/sandboxd/**',
       'server/web/server/env.ts',
       'server/web/server/main.ts',

@@ -1,3 +1,4 @@
+import { NextResponse } from '@/server/http-compat';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { isAssetAllowed } from '@/lib/shares';
 import { recordShareAccess } from '@mantle/content';
@@ -21,7 +22,7 @@ export const policy = routePolicy({
  */
 
 function notFound() {
-  return new Response('Not found', {
+  return new NextResponse('Not found', {
     status: 404,
     headers: { 'Cache-Control': CACHE_CONTROL.none },
   });
@@ -71,7 +72,7 @@ export async function GET(
     if (Number.isNaN(start)) start = 0;
     if (Number.isNaN(end) || end >= total) end = total - 1;
     if (start > end || start >= total) {
-      return new Response('Range not satisfiable', {
+      return new NextResponse('Range not satisfiable', {
         status: 416,
         headers: { 'content-range': `bytes */${total}` },
       });

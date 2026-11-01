@@ -32,18 +32,16 @@
  * bounds it after that. Without a deadline a call would wait on undici's
  * defaults only (300 s for the headers, 300 s of body silence, no total).
  *
- * `undici` is Node-only (it pulls in node:net) and the `@mantle/voice` barrel
- * reaches browser bundles, so it is loaded lazily. The server runs as ESM,
- * where a bare `require` does not exist, so the loader comes from
- * `process.getBuiltinModule` (no static import for a bundler to follow).
+ * `undici` is Node-only and the `@mantle/voice` barrel reaches browser bundles,
+ * so it is loaded lazily (@mantle/std/undici, which also holds the Bun path).
  * Where it cannot load (a browser), the plain built-in fetch is used.
  *
- * A replaced global fetch (a test stub) still wins, untouched.
+ * In a test a replaced global fetch (a stub) still wins, untouched (fetchVia).
  */
 
 import { PROVIDER_TIMEOUTS, formatMs } from '@mantle/std';
+import { fetchStubsApply, fetchThrough, loadUndici } from '@mantle/std/undici';
 
-type Undici = typeof import('undici');
 type UndiciAgent = import('undici').Agent;
 type UndiciProxyAgent = import('undici').ProxyAgent;
 
@@ -52,23 +50,9 @@ export const PROVIDER_CONNECTIONS = 32;
 
 const NATIVE_FETCH = globalThis.fetch;
 
-let undiciModule: Undici | null | undefined; // undefined = not tried; null = unavailable
 let agent: UndiciAgent | null | undefined;
 let testConnect: { ca: string } | undefined;
 let defaultTimeoutMs: number = PROVIDER_TIMEOUTS.default;
-
-/** The `undici` package, or null where it cannot load (a browser bundle). */
-export function loadUndici(): Undici | null {
-  if (undiciModule !== undefined) return undiciModule;
-  try {
-    const nodeModule = process.getBuiltinModule('node:module');
-    const load = nodeModule.createRequire(import.meta.url);
-    undiciModule = load('undici') as Undici;
-  } catch {
-    undiciModule = null;
-  }
-  return undiciModule;
-}
 
 /** Agent options shared by the direct pool and the tailnet proxy pool. */
 export function providerAgentOptions(): {
@@ -113,9 +97,12 @@ function isEventStream(res: Response): boolean {
 }
 
 /**
- * Fetch through a given undici dispatcher with the built-in fetch (native
- * Request/Response), under the call's deadline. A replaced global fetch (a
- * test stub) still wins, untouched: it gets the caller's init as given.
+ * Fetch through a given undici dispatcher (fetchThrough: the built-in fetch, or
+ * undici's own on Bun, with native Request/Response either way), under the
+ * call's deadline. In a test a replaced global fetch still wins, untouched: it
+ * gets the caller's init as given. Outside a test one is a wrapper, and a route
+ * must not lose its dispatcher to it: it gets the dispatcher (Node), or it is
+ * refused (Bun, fetchThrough), so a tailnet call never goes direct in silence.
  */
 export async function fetchVia(
   dispatcher: UndiciAgent | UndiciProxyAgent | null,
@@ -123,21 +110,23 @@ export async function fetchVia(
   init?: RequestInit,
   opts?: ProviderFetchOptions,
 ): Promise<Response> {
-  if (globalThis.fetch !== NATIVE_FETCH) return globalThis.fetch(input, init);
+  const platformFetch = globalThis.fetch;
+  if (platformFetch !== NATIVE_FETCH && (!dispatcher || fetchStubsApply())) {
+    return platformFetch(input, init);
+  }
   const own = [init?.signal, input instanceof Request ? input.signal : null].filter(
     (s): s is AbortSignal => !!s,
   );
   // The caller's own signal and no named deadline: that signal IS the
   // deadline. A default here could only cut it shorter than asked.
   const ms = opts?.timeoutMs ?? (own.length ? undefined : defaultTimeoutMs);
-  // The built-in RequestInit type has no `dispatcher`; the runtime accepts it.
-  const withDispatcher = (signal: AbortSignal | undefined) =>
-    ({
-      ...init,
-      ...(signal ? { signal } : {}),
-      ...(dispatcher ? { dispatcher } : {}),
-    }) as RequestInit;
-  if (ms === undefined) return NATIVE_FETCH(input, withDispatcher(undefined));
+  const send = (signal: AbortSignal | undefined) => {
+    const sent = { ...init, ...(signal ? { signal } : {}) };
+    return dispatcher
+      ? fetchThrough(dispatcher, input, sent, platformFetch)
+      : NATIVE_FETCH(input, sent);
+  };
+  if (ms === undefined) return send(undefined);
   const scope = opts?.timeoutScope ?? 'auto';
   const deadline = new AbortController();
   const timer = setTimeout(
@@ -151,7 +140,7 @@ export async function fetchVia(
   const signal = own.length ? AbortSignal.any([...own, deadline.signal]) : deadline.signal;
   let res: Response;
   try {
-    res = await NATIVE_FETCH(input, withDispatcher(signal));
+    res = await send(signal);
   } catch (err) {
     clearTimeout(timer);
     throw err;

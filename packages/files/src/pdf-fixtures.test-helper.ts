@@ -53,8 +53,54 @@ export function assemblePdf(objs: (string | [string, Buffer])[]): Buffer {
   return Buffer.concat(parts);
 }
 
-/** An embedded RGB 8-bit image: its size and its Flate-compressed samples. */
-export type FixtureImage = { width: number; height: number; flate: Buffer };
+/** An embedded RGB 8-bit image: its size and its samples, Flate-compressed or a
+ *  whole JPEG file. */
+export type FixtureImage = { width: number; height: number } & (
+  { flate: Buffer } | { jpeg: Buffer }
+);
+
+/** An image's PDF stream object. */
+function imageObject(img: FixtureImage): [string, Buffer] {
+  const [filter, bytes] = 'jpeg' in img ? ['/DCTDecode', img.jpeg] : ['/FlateDecode', img.flate];
+  return [
+    `<< /Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height} ` +
+      `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter ${filter} /Length ${bytes.length} >>`,
+    bytes,
+  ];
+}
+
+/**
+ * A baseline JPEG of a flat gray, built by hand so a 27 MP scan page costs
+ * 300 KB to build and the full decode to read. Each Huffman table holds one
+ * symbol, whose code is a single 0 bit: "no DC change" and "end of block". So
+ * a block is two 0 bits, and the scan is that many zero bytes.
+ */
+export function flatJpeg(width: number, height: number): Buffer {
+  const u16 = (n: number) => [n >> 8, n & 0xff];
+  const segment = (marker: number, body: number[]) => [
+    0xff,
+    marker,
+    ...u16(body.length + 2),
+    ...body,
+  ];
+  const huffman = (tableId: number) => [tableId, 1, ...Array<number>(15).fill(0), 0];
+  const header = [
+    0xff,
+    0xd8, // start of image
+    ...segment(0xdb, [0, ...Array<number>(64).fill(1)]), // quantization table
+    // Baseline frame: 8 bits, three components, no subsampling, table 0.
+    ...segment(0xc0, [8, ...u16(height), ...u16(width), 3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0]),
+    ...segment(0xc4, huffman(0x00)), // DC table
+    ...segment(0xc4, huffman(0x10)), // AC table
+    ...segment(0xda, [3, 1, 0, 2, 0, 3, 0, 0, 63, 0]), // start of scan
+  ];
+  const blocks = Math.ceil(width / 8) * Math.ceil(height / 8) * 3;
+  return Buffer.concat([
+    Buffer.from(header),
+    Buffer.alloc(Math.ceil(blocks / 4)),
+    Buffer.from([0xff, 0xd9]), // end of image
+  ]);
+}
 
 /**
  * A one-page PDF of the given size (points) with a caption line in Helvetica
@@ -80,11 +126,7 @@ export function imagePagePdf(opts: {
       `/Resources << /Font << /F1 5 0 R >> /XObject << ${xobjects} >> >> /Contents 4 0 R >>`,
     `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    ...images.map((img): [string, Buffer] => [
-      `<< /Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height} ` +
-        `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${img.flate.length} >>`,
-      img.flate,
-    ]),
+    ...images.map(imageObject),
   ]);
 }
 
@@ -109,11 +151,7 @@ export function imagePagesPdf(opts: {
     '<< /Type /Catalog /Pages 2 0 R >>',
     `<< /Type /Pages /Kids [${pages.map((_, p) => `${pageObj(p)} 0 R`).join(' ')}] /Count ${pages.length} >>`,
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    ...images.map((img): [string, Buffer] => [
-      `<< /Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height} ` +
-        `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${img.flate.length} >>`,
-      img.flate,
-    ]),
+    ...images.map(imageObject),
   ];
   pages.forEach((page, p) => {
     const draws = page.draw

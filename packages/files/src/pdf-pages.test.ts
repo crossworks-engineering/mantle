@@ -4,14 +4,16 @@
  * and the pass used to hold every page until the document closed, so twenty
  * pages of 3000x3000 photos cost about 2.4 GB at once.
  *
- * Its own file, and the photo test first in it: the peak is read from
- * `process.resourceUsage().maxRSS`, the process high-water mark, which only
- * ever rises, so anything heavier earlier in the same process would hide it.
+ * The peak is the process high-water mark. On Linux `measure` resets it before
+ * each test, because maxRSS is inherited across a fork and only ever rises: a
+ * forked worker starts at its parent's peak, which hid most of a rise. Elsewhere
+ * it reads maxRSS, so the photo test stays first in this file.
  */
 
+import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { imagePagesPdf, type FixtureImage } from './pdf-fixtures.test-helper';
+import { flatJpeg, imagePagesPdf, type FixtureImage } from './pdf-fixtures.test-helper';
 import { extractPdfImages } from './pdf';
 
 /** A 3000x3000 RGB photo-sized image (27 MB decoded). All zero, so the
@@ -37,14 +39,23 @@ function figure(seed: number): FixtureImage {
   return { width, height, flate: zlib.deflateSync(raw) };
 }
 
+const linux = process.platform === 'linux';
+/** The peak resident size in KB (VmHWM, or maxRSS off Linux). */
+const peakKb = () =>
+  linux
+    ? Number(/VmHWM:\s+(\d+)/.exec(fs.readFileSync('/proc/self/status', 'utf8'))![1])
+    : process.resourceUsage().maxRSS;
+
 /** MB the process high-water mark rose by while `fn` ran, and how long it took. */
 async function measure<T>(fn: () => Promise<T>): Promise<{ value: T; riseMb: number; ms: number }> {
-  const before = process.resourceUsage().maxRSS;
+  // "5" resets VmHWM to the present size.
+  if (linux) fs.writeFileSync('/proc/self/clear_refs', '5');
+  const before = peakKb();
   const started = performance.now();
   const value = await fn();
   return {
     value,
-    riseMb: (process.resourceUsage().maxRSS - before) / 1024,
+    riseMb: (peakKb() - before) / 1024,
     ms: performance.now() - started,
   };
 }
@@ -90,9 +101,30 @@ describe('the pictures pass, page by page', () => {
       `[pdf-pages] 40-page scan: +${Math.round(run.riseMb)} MB, ${Math.round(run.ms)} ms`,
     );
     expect(run.value).toEqual([]);
-    expect(run.riseMb).toBeLessThan(500);
+    // Node decodes almost nothing here. Bun rises about 75 MB, and rose past
+    // 800 MB until a page's images finished, and were freed, before the next.
+    expect(run.riseMb).toBeLessThan(200);
     expect(run.ms).toBeLessThan(45_000);
   }, 60_000);
+
+  it('reads a 20-page JPEG scan bounded, and returns nothing for it', async () => {
+    const pages = 20;
+    // 27.5 MP, the size of the scan that was killed at the parser's limit.
+    const side = 5244;
+    const one = { width: side, height: side, jpeg: flatJpeg(side, side) };
+    const pdf = imagePagesPdf({
+      images: Array.from({ length: pages }, () => one),
+      pages: Array.from({ length: pages }, (_, p) => ({ draw: [p] })),
+    });
+    const run = await measure(() => extractPdfImages(pdf));
+    console.info(
+      `[pdf-pages] 20-page JPEG scan: +${Math.round(run.riseMb)} MB, ${Math.round(run.ms)} ms`,
+    );
+    expect(run.value).toEqual([]);
+    // Node rises about 455 MB and Bun about 330 MB. Bun rose 670 to 790 MB
+    // without the collection after each page.
+    expect(run.riseMb).toBeLessThan(600);
+  }, 180_000);
 
   it('stops once the cap holds enough real pictures', async () => {
     const pdf = imagePagesPdf({

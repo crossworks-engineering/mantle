@@ -33,12 +33,16 @@
  * is refused at the connect. TLS SNI and the certificate check keep the
  * hostname, since only the address lookup is replaced. A name that does
  * not resolve is refused in every mode.
+ *
+ * Bun ignores a `dispatcher` with no error, so its built-in fetch would drop
+ * the pin in silence. On Bun a pinned hop runs through undici's own fetch
+ * (undici.ts), with the same Agent and the same lookup.
  */
 
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
+import { fetchThrough, loadUndici } from './undici';
 
-type Undici = typeof import('undici');
 type UndiciAgent = import('undici').Agent;
 
 export type EgressOptions = {
@@ -342,21 +346,7 @@ function checkedLookup(allowLan: boolean) {
   };
 }
 
-let undiciModule: Undici | null | undefined;
 const pinnedAgents = new Map<boolean, UndiciAgent>();
-
-/** The `undici` package (as provider-fetch.ts loads it: lazily, through
- *  createRequire, so no bundler follows a static import), or null. */
-function loadUndici(): Undici | null {
-  if (undiciModule !== undefined) return undiciModule;
-  try {
-    const load = process.getBuiltinModule('node:module').createRequire(import.meta.url);
-    undiciModule = load('undici') as Undici;
-  } catch {
-    undiciModule = null;
-  }
-  return undiciModule;
-}
 
 /** The pinned Agent for this mode: its connections go only to addresses
  *  `checkedLookup` let through. One per mode, so connections pool. */
@@ -541,10 +531,9 @@ export async function egressFetch(
     }
     const pinned = !(u && opts.exempt?.(u));
     try {
-      return await fetch(
-        target,
-        pinned ? ({ ...reqInit, dispatcher: pinnedDispatcher(allowLan) } as RequestInit) : reqInit,
-      );
+      return await (pinned
+        ? fetchThrough(pinnedDispatcher(allowLan), target, reqInit, fetch)
+        : fetch(target, reqInit));
     } catch (err) {
       throw unwrapRefusal(err);
     }
@@ -555,9 +544,13 @@ export async function egressFetch(
     // The deadline covers the body read too, so it stays armed after the
     // headers arrive; unref'd, it never holds the process open, and firing
     // after a finished read aborts nothing. A plain abort, so the error reads
-    // as a caller's own timer would ("This operation was aborted").
+    // as a caller's own timer would ("This operation was aborted"), named here
+    // because Bun's default words differ.
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs);
+    const timer = setTimeout(
+      () => ctrl.abort(new DOMException('This operation was aborted', 'AbortError')),
+      opts.timeoutMs,
+    );
     (timer as { unref?: () => void }).unref?.();
     signal = signal ? AbortSignal.any([signal, ctrl.signal]) : ctrl.signal;
   }

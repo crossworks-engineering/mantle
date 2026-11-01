@@ -634,15 +634,29 @@ export const RETRYABLE_STATUS: ReadonlySet<number> = new Set([
  * body, and the message alone cannot tell them apart. Retrying a real
  * malformed payload would turn one loud bug into three silent ones.
  *
- * The message strings are V8's, and V8 has changed them before. The tests
- * parse REAL malformed JSON rather than asserting hand-written strings, so the
- * next V8 wording change fails them instead of silently narrowing this again.
+ * Bun says these two as "JSON Parse error: Unexpected EOF" and "JSON Parse
+ * error: Unterminated string". Both patterns hold to the start of the message:
+ * V8 quotes a short body in its own error, so a complete body that reads
+ * "unexpected EOF" must not match.
+ *
+ * A body cut inside `true`, `false` or `null` is end of input to V8. Bun says
+ * `Unexpected identifier "tru"`, and says the same for a complete `{"a":tru}`.
+ * So only the cut starts of those three words match, and on Bun that rare
+ * complete body gets its bounded retries. Any other word does not match.
+ *
+ * The message strings are the engines', and V8 has changed them before. The
+ * tests parse REAL malformed JSON rather than asserting hand-written strings,
+ * so the next wording change fails them instead of silently narrowing this
+ * again.
  */
 export function isEmptyJsonBodyError(err: unknown): boolean {
   if (!(err instanceof SyntaxError)) return false;
   return (
-    /unexpected end of (json )?input/i.test(err.message) ||
-    /unterminated string in json/i.test(err.message)
+    /^(?:JSON Parse error: )?unexpected (?:end of (?:json )?input|eof)/i.test(err.message) ||
+    /^(?:JSON Parse error: )?unterminated string/i.test(err.message) ||
+    /^JSON Parse error: Unexpected identifier "(?:t|tr|tru|f|fa|fal|fals|n|nu|nul)"$/.test(
+      err.message,
+    )
   );
 }
 

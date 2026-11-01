@@ -105,7 +105,9 @@ Runner behaviour:
 
 - Spawns `tsx <script>` in the task's `cwd` (env inherited from the
   runner, which loads `.env.local`), passing flags through verbatim (except the
-  generic `--apply` translation).
+  generic `--apply` translation). On Bun it runs the script directly, with no
+  tsx and with `--no-env-file` (`@mantle/std/self-spawn`), and so does the
+  Maintenance tab.
 - **Spend brake:** a live run of a `cost: llm | embedding` task requires an
   explicit `--yes` in addition to the script's own flags.
 - Retired tasks run only with `--force-retired` (they're kept for reference,
@@ -147,7 +149,9 @@ reaches Postgres and the providers exactly as the web tier does). It gets
 mantle_web's env through a pipe (`--env-file /dev/fd/N`: never in argv, never
 on disk), `ALLOWED_USER_ID` from that env or from Postgres
 (`mantle_brain_id()`), its own memory limit (default 2g, no swap) and a Node
-heap cap at 75% of it. Its output goes to `docker logs` while it runs and to
+heap cap at 75% of it. Tasks run on Node today. For a task on Bun, which ignores
+that cap, `BUN_JSC_forceRAMSize` holds its heap near the same size (a target,
+not a wall). The container limit is the hard stop on both runtimes. Its output goes to `docker logs` while it runs and to
 `~/maint-logs/maint-<task>-<time>.log` on the box (mode 600), and the
 container removes itself when the task ends (`--rm`), so the log file is
 where the final line lives. `--stop` stops it (the tasks are resumable).

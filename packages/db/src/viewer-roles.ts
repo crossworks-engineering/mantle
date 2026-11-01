@@ -380,14 +380,29 @@ export async function runRoleStatement(
 
 /** Two processes setting the same (cluster-wide) role at once make Postgres
  *  answer "tuple concurrently updated" (XX000) to one of them: parallel DB
- *  test files do exactly that. The statements are idempotent, so try again. */
-export async function withRoleRetry<T>(fn: () => Promise<T>): Promise<T> {
+ *  test files do exactly that. Two that each change many catalog rows, in a
+ *  different order (a REVOKE on all tables, a DROP OWNED), can instead answer
+ *  "deadlock detected" (40P01) to one of them, whose statement is rolled back.
+ *  One that walks every table can meet a table another process just dropped:
+ *  "cache lookup failed for relation" (or "for attribute N of relation"), or
+ *  "tuple concurrently deleted". The statements are idempotent, so try again.
+ *  A caller with a deadlock loop of its own (a live-traffic sync on a short
+ *  lock_timeout) passes `leaveDeadlocks`, or the two loops multiply. */
+const ROLE_RACE =
+  /tuple concurrently (?:updated|deleted)|cache lookup failed for (?:attribute \d+ of )?relation/;
+const DEADLOCK = /deadlock detected/;
+
+export async function withRoleRetry<T>(
+  fn: () => Promise<T>,
+  opts: { leaveDeadlocks?: boolean } = {},
+): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await fn();
     } catch (err) {
       const msg = errorMessage(err);
-      if (attempt >= 12 || !/tuple concurrently updated/.test(msg)) throw err;
+      const race = ROLE_RACE.test(msg) || (!opts.leaveDeadlocks && DEADLOCK.test(msg));
+      if (attempt >= 12 || !race) throw err;
       // Jittered: colliding callers retrying in step collide again (48
       // parallel test files hit five attempts of fixed backoff).
       await new Promise((r) => setTimeout(r, 20 + Math.random() * 60 * attempt));

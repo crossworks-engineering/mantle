@@ -57,11 +57,23 @@ export class ResponseCookies {
   }
 }
 
+/**
+ * A string body's default type, spelled as Node spells it: Bun names none in
+ * process and adds a space on the wire.
+ */
+function withTextType(body: BodyInit | null | undefined, init?: ResponseInit) {
+  if (typeof body !== 'string') return init;
+  const headers = new Headers(init?.headers);
+  if (headers.has('content-type')) return init;
+  headers.set('content-type', 'text/plain;charset=UTF-8');
+  return { ...init, headers };
+}
+
 export class NextResponse extends Response {
   readonly cookies: ResponseCookies;
 
   constructor(body?: BodyInit | null, init?: ResponseInit) {
-    super(body, init);
+    super(body, withTextType(body, init));
     this.cookies = new ResponseCookies(this.headers);
   }
 

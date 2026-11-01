@@ -391,6 +391,123 @@ function rebindingNet(host: string, answers: string[]): { asked: () => number } 
   return { asked: () => n };
 }
 
+describe('a pinned hop on the wire, the same on every runtime', () => {
+  let srv: http.Server;
+  let base = '';
+
+  beforeAll(async () => {
+    srv = http.createServer((q, s) => {
+      const chunks: Buffer[] = [];
+      q.on('data', (c: Buffer) => chunks.push(c));
+      q.on('end', () => {
+        if (q.url === '/empty') return void s.writeHead(204).end();
+        if (q.url === '/jump') return void s.writeHead(302, { location: '/landed' }).end();
+        if (q.url === '/cookies') s.setHeader('set-cookie', ['a=1', 'b=2']);
+        s.setHeader('content-type', 'application/json');
+        s.end(
+          JSON.stringify({
+            method: q.method,
+            url: q.url,
+            host: q.headers.host,
+            type: q.headers['content-type'] ?? null,
+            extra: q.headers['x-extra'] ?? null,
+            body: Buffer.concat(chunks).toString(),
+          }),
+        );
+      });
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    base = `http://wire.test:${(srv.address() as AddressInfo).port}`;
+  });
+  afterAll(() => {
+    srv.close();
+  });
+
+  type Echo = { method: string; url: string; host: string; type: string | null; body: string };
+  const lan = { allowLan: true, timeoutMs: 3000 };
+  const send = async (init: RequestInit, path = '/echo') => {
+    rebindingNet('wire.test', ['127.0.0.1']);
+    return (await (await egressFetch(`${base}${path}`, init, lan)).json()) as Echo;
+  };
+
+  it('keeps the hostname and the caller headers', async () => {
+    const got = await send({ headers: { 'x-extra': 'kept' } });
+    expect(got).toMatchObject({ method: 'GET', host: new URL(base).host, extra: 'kept' });
+  });
+
+  it('sends a string, a form and bytes as given', async () => {
+    const json = await send({
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"a":1}',
+    });
+    expect(json).toMatchObject({ type: 'application/json', body: '{"a":1}' });
+    const form = await send({ method: 'POST', body: new URLSearchParams({ a: '1' }) });
+    expect(form).toMatchObject({
+      type: 'application/x-www-form-urlencoded;charset=UTF-8',
+      body: 'a=1',
+    });
+    const bytes = await send({ method: 'PUT', body: new TextEncoder().encode('raw') });
+    expect(bytes).toMatchObject({ method: 'PUT', body: 'raw' });
+  });
+
+  it('sends a FormData as multipart, with its boundary in the type', async () => {
+    const body = new FormData();
+    body.set('field', 'value');
+    const got = await send({ method: 'POST', body });
+    const boundary = /^multipart\/form-data; ?boundary=(.+)$/.exec(got.type ?? '')?.[1];
+    expect(boundary).toBeTruthy();
+    expect(got.body).toContain(`--${boundary}`);
+    expect(got.body).toContain('name="field"');
+    expect(got.body).toContain('value');
+  });
+
+  it('sends a stream body', async () => {
+    const body = new Blob(['streamed']).stream();
+    const got = await send({ method: 'POST', body, duplex: 'half' } as RequestInit);
+    expect(got.body).toBe('streamed');
+  });
+
+  it('takes a Request as the input', async () => {
+    rebindingNet('wire.test', ['127.0.0.1']);
+    const req = new Request(`${base}/echo`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain', 'x-extra': 'from-request' },
+      body: 'in a request',
+    });
+    const res = await egressFetch(req, {}, { ...lan, redirect: 'error' });
+    expect(await res.json()).toMatchObject({
+      method: 'POST',
+      type: 'text/plain',
+      extra: 'from-request',
+      body: 'in a request',
+    });
+  });
+
+  it('answers with a Response of this runtime: url, cookies, an empty 204', async () => {
+    rebindingNet('wire.test', ['127.0.0.1']);
+    const res = await egressFetch(`${base}/cookies`, {}, lan);
+    expect(res).toBeInstanceOf(Response);
+    expect(res.url).toBe(`${base}/cookies`);
+    expect(res.headers.getSetCookie()).toEqual(['a=1', 'b=2']);
+    await res.body?.cancel();
+    const empty = await egressFetch(`${base}/empty`, {}, lan);
+    expect(empty.status).toBe(204);
+    expect(empty.body).toBeNull();
+  });
+
+  it('follows a real redirect, and checks the next hop', async () => {
+    const got = await send({}, '/jump');
+    expect(got.url).toBe('/landed');
+  });
+
+  it('holds the byte cap on a real answer', async () => {
+    rebindingNet('wire.test', ['127.0.0.1']);
+    const res = await egressFetch(`${base}/echo`, {}, { ...lan, maxBytes: 8 });
+    await expect(res.text()).rejects.toThrow();
+  });
+});
+
 describe('DNS rebinding: the connection is pinned to a checked address', () => {
   let srv: http.Server;
   let port = 0;

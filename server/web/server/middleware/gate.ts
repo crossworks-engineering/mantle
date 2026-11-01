@@ -1,3 +1,4 @@
+import { NextResponse } from '../http-compat';
 import type { MiddlewareHandler } from 'hono';
 import {
   RENDER_COOKIE_NAME,
@@ -133,7 +134,7 @@ function applyCors(headers: Headers, origin: string): void {
 /** 401 for a programmatic (API) client — a clean JSON status it can branch on,
  *  matching getOwnerOr401's body. */
 function unauthorized(): Response {
-  return Response.json(
+  return NextResponse.json(
     { error: 'unauthorized' },
     { status: 401, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
@@ -391,7 +392,7 @@ function gateHandler(): MiddlewareHandler {
         // answer first, before any guard (the switch its route file
         // declares, RouteRow.switch).
         const off = routeSwitchedOff(row);
-        if (off) return Response.json(off.body, { status: off.status });
+        if (off) return NextResponse.json(off.body, { status: off.status });
         // Step 1: the login, found once for the request, its read seeding the memo the request slot is opened with.
         const memo = new Map<string, Promise<WorkspaceScope>>();
         let login: Awaited<ReturnType<typeof resolveHttpLogin>>;
@@ -464,7 +465,7 @@ function gateHandler(): MiddlewareHandler {
         }
         if (out.ok) return out.value;
         if (!out.refusal.http) throw out.error;
-        return Response.json(out.refusal.http.body, { status: out.refusal.http.status });
+        return NextResponse.json(out.refusal.http.body, { status: out.refusal.http.status });
       });
       if (refused) return withCors(refused);
       if (origin) applyCors(c.res.headers, origin);
@@ -530,7 +531,7 @@ function gateHandler(): MiddlewareHandler {
       // details in the URL/body — operator sees the reason in stderr.
       console.error('[gate] SESSION_SECRET missing or <32 chars; refusing all requests');
       return withCors(
-        new Response('Service unavailable', {
+        new NextResponse('Service unavailable', {
           status: 500,
           headers: { 'Cache-Control': CACHE_CONTROL.none },
         }),

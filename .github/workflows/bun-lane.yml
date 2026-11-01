@@ -1,0 +1,80 @@
+# Bun lane: run the vitest suite on Node and on Bun, and report every test that
+# does worse on Bun (scripts/bun-compare.mjs, against scripts/bun-baseline.json).
+#
+# It reports and never blocks: `continue-on-error` keeps the job green, and the
+# step summary carries the list. It becomes a required gate later, when the
+# baseline is empty. About an hour by estimate (Node and Bun about 28 minutes
+# each, from the workstation times), so it runs on main, on feat/bun-** and by
+# hand, and not on every branch.
+
+name: bun-lane
+
+on:
+  push:
+    branches: ['main', 'feat/bun-**']
+  workflow_dispatch:
+
+# A newer commit on the same ref supersedes an in-flight run.
+concurrency:
+  group: bun-lane-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 130
+    continue-on-error: true
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26 # package.json engines: node >=26
+          cache: pnpm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Init + migrate the throwaway database
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          # As build-check: the suites set the check modes themselves.
+          MANTLE_CHECK_FLOOR: keep
+          MANTLE_CHECK_FLOOR_REASON: CI, the suites set the modes
+        run: |
+          pnpm -C packages/db init-scratch
+          pnpm -C packages/db migrate
+
+      # build-check gets this file from typecheck. Without it about 30 tests skip.
+      - name: Generate the route manifest
+        run: pnpm -C server/web route-manifest
+
+      - name: Compare Node and Bun
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm bun:compare --summary "$GITHUB_STEP_SUMMARY"

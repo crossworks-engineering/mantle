@@ -222,7 +222,7 @@ describe('no-bare-fetch', () => {
         },
         {
           code: "const load = createRequire(import.meta.url); const u = load('undici');",
-          filename: '/r/packages/std/src/egress.ts',
+          filename: '/r/packages/std/src/undici.ts',
         },
         { code: "import http from 'node:http';", filename: '/r/packages/tools/src/x.test.ts' },
       ],

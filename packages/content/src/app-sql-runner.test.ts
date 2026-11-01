@@ -4,9 +4,11 @@
  * clever statement nor an endless one can escape the file or freeze the
  * server. Real SQLite files in a temp dir; no Postgres.
  */
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   APP_SQL_DEFAULT_MAX_DB_MB,
@@ -486,6 +488,82 @@ describe('runAppSql child processes', () => {
     expect(appSqlChildPids()).toEqual(pids);
     expect(await count()).toBe(3);
   });
+});
+
+/**
+ * The parent dies during a statement (a crash, a `tsx watch` restart). The
+ * child sits in the native SQLite call with its event loop blocked, so its
+ * `disconnect` handler cannot run: only the guard (killWithParent) stops it.
+ */
+describe('runAppSql when the server dies', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'app-sql-parent-'));
+  const file = path.join(dir, 'app.sqlite');
+  const runner = fileURLToPath(new URL('./app-sql-runner.ts', import.meta.url));
+  const ENDLESS =
+    'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) AS n FROM c';
+  // A server in small: the first statement brings a child up, so the second
+  // reaches it at once and this script can name its pid.
+  const SERVER = `
+    const { appSqlChildPids, runAppSql } = await import(${JSON.stringify(runner)});
+    const file = ${JSON.stringify(file)};
+    await runAppSql(file, { sql: 'SELECT 1 AS one', mode: 'all', readOnly: true });
+    void runAppSql(file, {
+      sql: ${JSON.stringify(ENDLESS)},
+      mode: 'all',
+      readOnly: true,
+      timeoutMs: 120000,
+    }).catch(() => {});
+    console.log(appSqlChildPids()[0]);
+    setInterval(() => {}, 1000);
+  `;
+  /** Running: not gone, and not a zombie that nothing has reaped yet. */
+  const running = (pid: number) => {
+    try {
+      const stat = execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      return stat !== '' && !stat.startsWith('Z');
+    } catch {
+      return false;
+    }
+  };
+  beforeAll(async () => {
+    await runAppSql(file, { sql: 'CREATE TABLE t (x INTEGER)', mode: 'run', readOnly: false });
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it.each(['SIGKILL', 'SIGTERM'] as const)(
+    'a child inside an endless query is gone within seconds of a %s to the server',
+    async (signal) => {
+      const server = spawn(
+        process.execPath,
+        ['--import', 'tsx', '--input-type=module', '-e', SERVER],
+        // This package's tsx.
+        { cwd: path.dirname(runner), stdio: ['ignore', 'pipe', 'inherit'] },
+      );
+      const pid = await new Promise<number>((resolve, reject) => {
+        server.stdout.once('data', (d) => resolve(Number(String(d))));
+        server.once('exit', (code) => reject(new Error(`the server exited (${code})`)));
+      });
+      try {
+        expect(pid).toBeGreaterThan(0);
+        // In the statement now, and still running without the server's help.
+        await new Promise((r) => setTimeout(r, 300));
+        expect(running(pid)).toBe(true);
+        const died = new Promise((resolve) => server.once('exit', resolve));
+        server.kill(signal);
+        await died;
+        for (let i = 0; i < 150 && running(pid); i++) await new Promise((r) => setTimeout(r, 20));
+        expect(running(pid)).toBe(false);
+      } finally {
+        // A failed run must not leave a core busy.
+        if (running(pid)) process.kill(pid, 'SIGKILL');
+        server.kill('SIGKILL');
+      }
+    },
+    30_000,
+  );
 });
 
 /**

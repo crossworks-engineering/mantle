@@ -10,7 +10,10 @@
     "./db-watch": "./src/db-watch.ts",
     "./egress": "./src/egress.ts",
     "./egress-test-net": "./src/egress-test-net.ts",
-    "./shutdown": "./src/shutdown.ts"
+    "./kill-with-parent": "./src/kill-with-parent.ts",
+    "./self-spawn": "./src/self-spawn.ts",
+    "./shutdown": "./src/shutdown.ts",
+    "./undici": "./src/undici.ts"
   },
   "dependencies": {
     "undici": "^8.12.3"

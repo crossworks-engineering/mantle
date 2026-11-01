@@ -14,6 +14,7 @@ import { BodyTooLargeError, bodyTooLargeResponse } from '../lib/body-limit';
 import { domainErrorAnswer } from '@mantle/std';
 // Registers BadBodyError's row in the domain error table.
 import '../lib/read-body';
+import { NextResponse } from './http-compat';
 import { RedirectError } from './http-compat/redirect-error';
 import { RouteRefusal } from '../lib/auth/session';
 import { scopeRefusalResponse } from './scope-refusal';
@@ -36,13 +37,13 @@ export function answerAppError(err: Error, c: Context): Response {
   // A domain error: the one table (@mantle/std domain-errors.ts) names
   // its status and its public text, the same a tool says. A body the route cannot use (BadBodyError) is one.
   const domain = domainErrorAnswer(err);
-  if (domain) return Response.json(domain.body, { status: domain.status });
+  if (domain) return NextResponse.json(domain.body, { status: domain.status });
   // Another write held the same rows (a deadlock broken, a lock timeout):
   // "busy, try again" for a person, never the SQL.
   // A pool's wait run out (a read as well, under drizzle's wrap too) says
   // the plain text, never the folders one (busyMessage).
   if (isBusy(err)) {
-    return Response.json(
+    return NextResponse.json(
       { error: busyMessage(err, err instanceof BusyError ? err.message : BUSY_MESSAGE) },
       { status: 409 },
     );
@@ -50,7 +51,7 @@ export function answerAppError(err: Error, c: Context): Response {
   console.error(`[server] unhandled error on ${c.req.method} ${path}:`, err);
   if (path === '/api' || path.startsWith('/api/')) {
     // Body matches Next's opaque route-handler failure: no error details leak.
-    return Response.json({ error: 'internal error' }, { status: 500 });
+    return NextResponse.json({ error: 'internal error' }, { status: 500 });
   }
   return c.text('Internal server error', 500);
 }

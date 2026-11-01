@@ -110,7 +110,11 @@ describe.skipIf(!URL)('the decision trace on a real turn', () => {
         history_limit: 0,
         corpus_map_limit: 0,
         fact_limit: 3,
-        content_hit_limit: 2,
+        // The widest pool (200). The index is approximate, and every other
+        // test's row sits at distance 1 on its own axis. A pool of 50 lost the
+        // near page in about 1 of 80 index builds of that shape, the likely
+        // cause of a chance failure here. A wider pool lowers those odds.
+        content_hit_limit: 40,
         chunk_limit: 3,
       },
       personaNotes: [],

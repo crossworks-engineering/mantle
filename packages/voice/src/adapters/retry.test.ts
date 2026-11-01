@@ -137,15 +137,29 @@ describe('isEmptyJsonBodyError', () => {
     ['a body cut where a value was expected', '{"id":'],
     ['a body cut inside a string', '{"id":"ms'],
     ['a body cut inside a nested string', '{"choices":[{"content":"par'],
+    ['a body cut inside true', '{"ok":tru'],
+    ['a body cut inside false', '[fals'],
+    ['a body cut inside null', '{"ok":n'],
   ])('matches %s', (_label, body) => {
     expect(isEmptyJsonBodyError(parseError(body))).toBe(true);
   });
 
   it.each([
+    ['a complete body that quotes the words', 'unexpected EOF'],
+    ['a complete body that quotes the other words', 'unterminated string'],
+    ['the same words inside an object', '{"e":unexpected EOF}'],
     ['a complete but malformed body', '{"id":,}'],
     ['a bare token', 'nope'],
+    ['a word that is not the start of a literal', '{"ok":yes}'],
+    ['a word in the wrong case', '{"ok":Tru'],
+    ['a word longer than a cut literal', '{"ok":trux'],
   ])('does NOT match %s (a real bug, not a stall)', (_label, body) => {
     expect(isEmptyJsonBodyError(parseError(body))).toBe(false);
+  });
+
+  it('the one case the engines differ on: a complete body with a cut word', () => {
+    const body = '{"ok":tr}';
+    expect(isEmptyJsonBodyError(parseError(body))).toBe(!!process.versions.bun);
   });
 
   it('does not match non-SyntaxError failures', () => {

@@ -984,6 +984,9 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
     const answers = new Map<string, string>();
     const lines: string[] = [];
     let driven = 0;
+    // The clock stands still: a 429 answers its Retry-After, so on a slow run
+    // the same limit read 59, not 60, and a window could end mid-sweep.
+    vi.useFakeTimers({ toFake: ['Date'] });
     try {
       for (const row of rows) {
         const path = concretePath(row.pattern);
@@ -1010,6 +1013,7 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
         }
       }
     } finally {
+      vi.useRealTimers();
       quiet.mockRestore();
       warn.mockRestore();
     }

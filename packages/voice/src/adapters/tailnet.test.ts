@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tailnetFetch, tailnetProxyConfigured, _resetTailnetProxy } from './tailnet';
 
 /**
@@ -34,6 +34,28 @@ describe('tailnetProxyConfigured', () => {
 });
 
 describe('tailnetFetch', () => {
+  it('outside a test, a wrapped fetch never takes a proxied call direct', async () => {
+    process.env.MANTLE_TAILNET_PROXY_URL = 'http://127.0.0.1:9';
+    const seen: RequestInit[] = [];
+    globalThis.fetch = (async (_u: string, init: RequestInit) => {
+      seen.push(init);
+      return new Response('wrapped');
+    }) as typeof fetch;
+    vi.stubEnv('NODE_ENV', 'production');
+    try {
+      const call = tailnetFetch('http://gpu.tailnet.test/');
+      if (process.versions.bun) {
+        await expect(call).rejects.toThrow(/wrapped/);
+        expect(seen).toEqual([]);
+      } else {
+        await call;
+        expect(seen[0]).toHaveProperty('dispatcher');
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('degrades to a DIRECT fetch when no proxy is configured', async () => {
     let calledWith: { url: string; init?: unknown } | null = null;
     globalThis.fetch = (async (url: unknown, init?: unknown) => {
@@ -115,7 +137,7 @@ describe('no bare require in the voice adapters', () => {
   // The server runs as ESM, where `require` does not exist, but vitest supplies
   // one, so a bare `require('undici')` passed every test here and still threw
   // "require is not defined" in the brain the moment a tailnet proxy was set.
-  // Node-only modules load through provider-fetch.ts's loadUndici() instead.
+  // Node-only modules load through loadUndici() in @mantle/std/undici instead.
   it('has no require( call outside tests', () => {
     const dir = new URL('.', import.meta.url);
     const offenders = readdirSync(dir)

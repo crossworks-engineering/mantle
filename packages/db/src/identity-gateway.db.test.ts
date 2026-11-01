@@ -230,7 +230,8 @@ describe.skipIf(!URL)('round 13: the identity gateway (0322)', () => {
         await t.unsafe(`reset role`);
         const own = await t<{ n: number }[]>`
           select count(*)::int as n from pg_db_role_setting s join pg_roles r on r.oid = s.setrole
-           where r.rolname = 'mantle_system_narrow'`;
+           where r.rolname = 'mantle_system_narrow'
+             and s.setdatabase in (0, (select oid from pg_database where datname = current_database()))`;
         const narrowRows = await identityLeaks(t as unknown as postgres.Sql);
         await t.unsafe(`alter role mantle_runtime set role = 'none'`);
         const runtimeRows = await identityLeaks(t as unknown as postgres.Sql);

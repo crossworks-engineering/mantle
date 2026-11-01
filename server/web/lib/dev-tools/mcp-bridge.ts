@@ -22,6 +22,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { tsCommand } from '@mantle/std/self-spawn';
 
 const IDLE_SHUTDOWN_MS = 5 * 60 * 1000;
 
@@ -66,9 +67,11 @@ function resolveMcpDir(): string {
 async function spawnBridge(): Promise<Bridge> {
   const mcpDir = resolveMcpDir();
   const tsxBin = path.join(mcpDir, 'node_modules/.bin/tsx');
+  const start = process.versions.bun
+    ? tsCommand(import.meta.url, 'src/server.ts')
+    : { command: existsSync(tsxBin) ? tsxBin : 'tsx', args: ['src/server.ts'] };
   const transport = new StdioClientTransport({
-    command: existsSync(tsxBin) ? tsxBin : 'tsx',
-    args: ['src/server.ts'],
+    ...start,
     cwd: mcpDir,
     // Pass the full env: the MCP server needs DATABASE_URL etc., which the
     // web server already has loaded.

@@ -48,6 +48,7 @@ listen server/sandboxd/src/main.ts none: a network listener, no brain database
 listen server/web/lib/realtime.ts system(listen:realtime)
 listen server/web/workers/push-notify.ts system(worker:push-notify)
 process-on packages/content/src/app-sql-runner.ts none: the SQLite child's message handler, no brain database
+process-on packages/tabledb/src/sql-runner.ts none: the SQLite child's message handler, no brain database
 process-on server/api/src/main.ts none: a rejection handler that logs; its signal handlers (@mantle/std/shutdown onShutdown) stop DBOS and the runtime, no statement of their own
 process-on server/web/server/main.ts none: error handlers that log; its signal handlers (@mantle/std/shutdown onShutdown) close the server
 process-on server/web/workers/_runner.ts none: a rejection handler that logs; its signal handlers (@mantle/std/shutdown onShutdown) run the worker's teardown

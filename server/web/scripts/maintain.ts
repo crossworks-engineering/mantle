@@ -16,7 +16,6 @@
  *   - missing requiresEnv vars fail fast before the script spawns
  */
 import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import {
   MAINTENANCE_TASKS,
@@ -27,9 +26,9 @@ import {
 } from '../lib/maintenance/registry';
 import { finalLine } from '../lib/maintenance/final-line';
 import { env, envDynamic } from '@mantle/config';
+import { tsCommand } from '@mantle/std/self-spawn';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');
-const TSX_CLI = createRequire(import.meta.url).resolve('tsx/cli');
 
 const KIND_LABELS: Record<TaskKind, string> = {
   recurring: 'Recurring hygiene',
@@ -171,7 +170,8 @@ async function run(slug: string, rawArgs: string[]): Promise<void> {
   // tsx itself, not `pnpm exec tsx`: pnpm exec turns a killed task into a
   // plain exit 1, and the last line has to tell an out-of-memory kill apart
   // from a task that failed (tsx exits 128 + the signal number).
-  const res = spawnSync(process.execPath, [TSX_CLI, t.script, ...args], {
+  const task = tsCommand(import.meta.url, t.script, args);
+  const res = spawnSync(task.command, task.args, {
     cwd,
     stdio: 'inherit',
     env: process.env,

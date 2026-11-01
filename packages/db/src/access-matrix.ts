@@ -2141,7 +2141,7 @@ export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promi
   const live = POOL_ROLES.map((r) => `"${viewerRoleName(r)}"`).join(', ');
   const retired = RETIRED_POOL_ROLES.map((r) => `"${viewerRoleName(r)}"`).join(', ');
   const writer = `"${viewerRoleName('write')}"`;
-  // Retried on "tuple concurrently updated": two processes granting on the
+  // Retried on a catalog race (withRoleRetry): two processes granting on the
   // same objects at once (parallel test files do).
   await withRoleRetry(() =>
     sql.begin(async (tx) => {
@@ -2253,11 +2253,13 @@ export async function syncGapWriterRights(sql: ReturnType<typeof postgres>): Pro
     const stmt = `DROP POLICY "${r.name.replace(/"/g, '""')}" ON ${r.t}`;
     for (let attempt = 1; ; attempt++) {
       try {
-        await withRoleRetry(() =>
-          sql.begin(async (tx) => {
-            await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
-            await tx.unsafe(stmt);
-          }),
+        await withRoleRetry(
+          () =>
+            sql.begin(async (tx) => {
+              await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
+              await tx.unsafe(stmt);
+            }),
+          { leaveDeadlocks: true },
         );
         break;
       } catch (err) {
@@ -2318,12 +2320,14 @@ export async function syncWriteRoleRules(sql: ReturnType<typeof postgres>): Prom
     const rule = t ? writeRuleArg(t) : null;
     for (let attempt = 1; ; attempt++) {
       try {
-        await withRoleRetry(() =>
-          sql.begin(async (tx) => {
-            await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
-            await tx`select mantle_write_role_sync_table(${table}, ${write}, ${args}::text[], ${rule}::text)`;
-            await syncEditChecks(tx, table, t, write);
-          }),
+        await withRoleRetry(
+          () =>
+            sql.begin(async (tx) => {
+              await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
+              await tx`select mantle_write_role_sync_table(${table}, ${write}, ${args}::text[], ${rule}::text)`;
+              await syncEditChecks(tx, table, t, write);
+            }),
+          { leaveDeadlocks: true },
         );
         break;
       } catch (err) {

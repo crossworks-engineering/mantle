@@ -12,16 +12,17 @@ import { env } from '@mantle/config';
  *
  * The proxy pool is an undici `ProxyAgent` (from the `undici` package, loaded
  * the same way as the shared provider pool in provider-fetch.ts, with the same
- * connection options), handed to the built-in fetch as its `dispatcher`, so
- * calls through the tailnet run side by side too and the Response is native.
+ * connection options), handed to the fetch as its `dispatcher` (fetchThrough,
+ * @mantle/std/undici), so calls through the tailnet run side by side too and
+ * the Response is native.
  *
  * NOTE: the end-to-end proxy path can only be verified against a live tailnet.
  * The unit tests cover the SELECTION logic and a local CONNECT proxy; the
  * actual NAT traversal is validated by the operator once their tailnet is up.
  */
+import { loadUndici } from '@mantle/std/undici';
 import {
   fetchVia,
-  loadUndici,
   providerAgentOptions,
   providerFetch,
   type ProviderFetchOptions,

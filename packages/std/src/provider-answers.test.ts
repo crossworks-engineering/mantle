@@ -269,6 +269,11 @@ describe('provider answers: record, move, compare (A10 lows)', () => {
         );
         (expected as Record<string, string | null>)[c.reader] = c.now;
       }
+      // The record holds V8's parse error, and these two cells carry the
+      // engine's own text as it is. Bun's engine words it its own way.
+      if (process.versions.bun && name.startsWith('syntax error')) {
+        expected.reply = expected.thrown = (make() as Error).message;
+      }
       expect(now).toEqual(expected);
       // Never looser: a changed cell carries none of the error's own text
       // that main's cell did not.

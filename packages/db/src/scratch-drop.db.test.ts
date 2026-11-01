@@ -22,9 +22,13 @@ import {
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 /** Runs `fn` with console.warn silenced and returns what it was called with
- *  (copied before the restore: mockRestore clears the recorded calls). */
-async function warnsOf(fn: () => Promise<unknown>): Promise<unknown[][]> {
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+ *  (copied before the restore: mockRestore clears the recorded calls).
+ *  `onWarn` runs at each warning. */
+async function warnsOf(
+  fn: () => Promise<unknown>,
+  onWarn: () => void = () => {},
+): Promise<unknown[][]> {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(onWarn);
   try {
     await fn();
     return [...warn.mock.calls];
@@ -126,59 +130,87 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
   const active = async (admin: postgres.Sql, name: string) => {
     const [row] = await admin<{ n: number }[]>`
       select count(*)::int as n from pg_stat_activity
-       where datname = ${name} and state = 'active' and query like '%pg_sleep%'`;
+       where datname = ${name} and state = 'active'
+         and (query like '%pg_sleep%' or query like '%pg_advisory_lock%')`;
     return (row?.n ?? 0) > 0;
+  };
+
+  /**
+   * A query that runs until the wait has seen it: it waits on a lock this
+   * connection holds, and `release` lets it finish. A timed query cannot stay
+   * running that long under load. These tests take the longer limit for the
+   * same load: when the suites start together, CREATE DATABASE alone can take
+   * many seconds, and a test past its limit runs on and takes the next test's
+   * console.warn spy with it.
+   */
+  const LOCK = 7713;
+  const lockHolder = async (url: string) => {
+    const held = postgres(url, { max: 1, onnotice: () => {} });
+    await held`select pg_advisory_lock(${LOCK})`;
+    // Some time after the warning: a wait that stopped at its warning would
+    // force the drop and kill the query first.
+    const release = () => {
+      setTimeout(() => {
+        void held`select pg_advisory_unlock(${LOCK})`.execute().catch(() => {});
+      }, 150);
+    };
+    return { held, release };
   };
 
   it('a query running when drop() starts finishes; the idle connection goes quietly', async () => {
     const scratch = await createEmptyScratchDatabase(URL!);
     const admin = postgres(URL!, { max: 1, onnotice: () => {} });
     const sql = postgres(scratch.url, { max: 2, onnotice: () => {} });
+    const { held, release } = await lockHolder(scratch.url);
     try {
       // One connection that has run a query and sits idle, one mid query.
       await Promise.all([sql`select 1`.execute(), sql`select 2`.execute()]);
-      const running = sql<{ n: number }[]>`select pg_sleep(0.4), 7 as n`.execute();
-      await pollUntil(() => active(admin, scratch.name), { what: 'the sleep to start' });
-      const t0 = Date.now();
-      const warned = await warnsOf(() => scratch.drop());
+      const running = sql<{ n: number }[]>`select pg_advisory_lock(${LOCK}), 7 as n`.execute();
+      await pollUntil(() => active(admin, scratch.name), { what: 'the query to start' });
+      const warned = await warnsOf(() => scratch.drop(), release);
+      // The drop let it finish: it answers, it was not killed.
       const [row] = await running;
       expect(row?.n).toBe(7);
-      expect(Date.now() - t0).toBeGreaterThanOrEqual(150);
       // The leak stays visible: one warning, naming the database, the pid and
       // the start of the query it waited on.
       expect(warned).toHaveLength(1);
       const said = String(warned[0]?.[0]);
       expect(said).toContain(scratch.name);
-      expect(said).toMatch(/pid \d+: select pg_sleep\(0\.4\)/);
+      expect(said).toMatch(/pid \d+: select pg_advisory_lock\(/);
       const [gone] = await admin<{ n: number }[]>`
         select count(*)::int as n from pg_database where datname = ${scratch.name}`;
       expect(gone?.n).toBe(0);
     } finally {
+      await held.end({ timeout: 0 });
       await sql.end({ timeout: 0 });
       await admin.end();
     }
-  });
+  }, 60_000);
 
   it("the warning never prints a running query's password literal", async () => {
     const scratch = await createEmptyScratchDatabase(URL!);
     const admin = postgres(URL!, { max: 1, onnotice: () => {} });
     const sql = postgres(scratch.url, { max: 1, onnotice: () => {} });
+    const { held, release } = await lockHolder(scratch.url);
     try {
       // A comment stands in for a CREATE ROLE's literal: pg_stat_activity
       // shows the query text as sent, comments included.
-      const running = sql.unsafe("select pg_sleep(0.4) /* PASSWORD 'hunter2' */").execute();
-      await pollUntil(() => active(admin, scratch.name), { what: 'the sleep to start' });
-      const warned = await warnsOf(() => scratch.drop());
+      const running = sql
+        .unsafe(`select pg_advisory_lock(${LOCK}) /* PASSWORD 'hunter2' */`)
+        .execute();
+      await pollUntil(() => active(admin, scratch.name), { what: 'the query to start' });
+      const warned = await warnsOf(() => scratch.drop(), release);
       await running;
       expect(warned).toHaveLength(1);
       const said = String(warned[0]?.[0]);
       expect(said).not.toContain('hunter2');
       expect(said).toContain("password '***'");
     } finally {
+      await held.end({ timeout: 0 });
       await sql.end({ timeout: 0 });
       await admin.end();
     }
-  });
+  }, 60_000);
 
   it('does not wait on an idle-in-transaction session: it is not running anything', async () => {
     const scratch = await createEmptyScratchDatabase(URL!);
@@ -204,7 +236,7 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
       await sql.end({ timeout: 0 });
       await admin.end();
     }
-  });
+  }, 60_000);
 
   it('stops waiting after its limit, so a stuck query cannot hold the teardown', async () => {
     const scratch = await createEmptyScratchDatabase(URL!);
