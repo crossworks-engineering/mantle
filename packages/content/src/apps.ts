@@ -852,7 +852,7 @@ export async function writeDraftFile(
 // ── The code tools' draft writes (packages/tools/src/code/) ─────────────────
 
 /** The `node_snapshots.trigger` of the row each code-tool write records
- *  (0350): what the write changed, so code_undo can take it back. The row's
+ *  (0351): what the write changed, so code_undo can take it back. The row's
  *  id is the write's `edit_id`. */
 export const CODE_EDIT_TRIGGER = 'pre_code_edit';
 /** The rows kept per app. */

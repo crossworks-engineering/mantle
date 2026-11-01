@@ -8,7 +8,7 @@
 -- lookups by id leave them out: an undo record, not a version anyone picks.
 --
 -- Additive, no new table, no trigger, no LLM work.
--- Revert: packages/db/rollback/0350_code_edit_history.revert.sql.
+-- Revert: packages/db/rollback/0351_code_edit_history.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 ALTER TABLE "public"."node_snapshots" DROP CONSTRAINT IF EXISTS "node_snapshots_trigger_ck";

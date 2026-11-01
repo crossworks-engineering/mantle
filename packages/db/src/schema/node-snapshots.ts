@@ -50,7 +50,7 @@ export const nodeSnapshots = pgTable(
     seq: integer('seq').notNull(),
     /** 'publish' | 'commit' (a table) | 'manual' | 'pre_restore' |
      *  'pre_schema' | 'pre_delete' | 'pre_import' | 'nightly' |
-     *  'pre_mcp_write' | 'pre_code_edit' (0350: what a code-tool write
+     *  'pre_mcp_write' | 'pre_code_edit' (0351: what a code-tool write
      *  changed, for code_undo; left out of the History list). */
     trigger: text('trigger').notNull(),
     note: text('note'),
@@ -95,7 +95,7 @@ export type AppSnapshotCode = {
   draft: AppSource | null;
   manifest: AppManifest;
   publishedBuild: BuildRef | null;
-  /** On a `pre_code_edit` row (0350, a code-tool write; its id is the
+  /** On a `pre_code_edit` row (0351, a code-tool write; its id is the
    *  write's edit_id): `source.files` holds only the files the write
    *  changed, as they were before (a file it created is absent). `changed`:
    *  each file it changed with its new text's short hash (null: removed);

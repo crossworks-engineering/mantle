@@ -7349,6 +7349,10 @@
      },
      "additionalProperties": {},
      "description": "Map of file path → full file contents (TSX/TS strings). Must include the entry file. Max 50 files, 256 KB each."
+    },
+    "base_rev": {
+     "type": "string",
+     "description": "The tree's `rev` you last read (`app_get`, `code_view`): a draft changed since is not replaced, the call fails with the current rev."
     }
    },
    "required": [
@@ -7973,6 +7977,294 @@
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "code_view",
+  "description": "Read a mini app's source. With no `path`: the file tree (each file's size and line count), the tree's `rev`, and what this target can use (language, entry rule, allowed imports, each library's guide). With a `path`: that file as numbered lines, only `start`..`end` when given. Reads the DRAFT, else the published code. Pass `rev` back as `base_rev` on a write. To find text across files use `code_search`; for the manifest and build state use `app_get`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "target": {
+     "type": "string",
+     "description": "What to work on: app:<id>, the app's id from `app_list`, e.g. app:3f2a…"
+    },
+    "path": {
+     "type": "string",
+     "description": "A file in the tree, e.g. 'App.tsx' or 'lib/fmt.ts'."
+    },
+    "start": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740991,
+     "description": "First line to show (1-based)."
+    },
+    "end": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740991,
+     "description": "Last line to show (inclusive)."
+    }
+   },
+   "required": [
+    "target"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "code_view",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "code_search",
+  "description": "Find text in a mini app's source: `file:line: text` hits in path order, capped (the result says how many there were in all). A plain substring by default; `regex: true` takes a JavaScript regular expression, stopped if it runs too long. `glob` narrows the files ('*.tsx', 'lib/**'). Reads the DRAFT, else the published code. Then read around a hit with `code_view`, or change it with `code_edit`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "target": {
+     "type": "string",
+     "description": "What to work on: app:<id>, the app's id from `app_list`, e.g. app:3f2a…"
+    },
+    "pattern": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 1000,
+     "description": "What to find, e.g. 'useState' or 'host\\.db\\.(query|exec)'."
+    },
+    "regex": {
+     "type": "boolean",
+     "description": "Read pattern as a regular expression."
+    },
+    "glob": {
+     "type": "string",
+     "maxLength": 200,
+     "description": "Only files whose path matches, e.g. '*.tsx' or 'lib/**'."
+    },
+    "ignore_case": {
+     "type": "boolean",
+     "description": "Match upper and lower case alike."
+    },
+    "max_results": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 200,
+     "description": "Max hits to return."
+    }
+   },
+   "required": [
+    "target",
+    "pattern"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "code_search",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "code_edit",
+  "description": "Replace exact text in one file of a mini app's DRAFT; returns a unified diff and the new `rev`. Each edit's `old` must match exactly once (copy it from `code_view`, without line numbers) unless `replace_all`; else the call fails, says how many hits and on which lines, and changes nothing. All edits apply or none. `dry_run` returns the diff only. `build: true` runs `app_build` after. The published app is untouched until `app_publish`; `code_undo` with its `edit_id` takes it back. To add lines use `code_insert`; for a whole file use `code_write`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "target": {
+     "type": "string",
+     "description": "What to work on: app:<id>, the app's id from `app_list`, e.g. app:3f2a…"
+    },
+    "path": {
+     "type": "string",
+     "description": "A file in the tree, e.g. 'App.tsx' or 'lib/fmt.ts'."
+    },
+    "edits": {
+     "minItems": 1,
+     "maxItems": 50,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "old": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The exact text to replace, whitespace included."
+       },
+       "new": {
+        "type": "string",
+        "description": "What replaces it (empty removes it)."
+       },
+       "replace_all": {
+        "type": "boolean",
+        "description": "Replace every match, not one."
+       }
+      },
+      "required": [
+       "old",
+       "new"
+      ]
+     },
+     "description": "Applied in order, each to the text the one before left."
+    },
+    "dry_run": {
+     "type": "boolean",
+     "description": "Return the diff without writing."
+    },
+    "base_rev": {
+     "type": "string",
+     "description": "The `rev` you last read (`code_view`, a write): a tree changed since is not written, the call fails with the current rev."
+    },
+    "build": {
+     "type": "boolean",
+     "description": "Run `app_build` after the write and return its errors (file, line, column)."
+    }
+   },
+   "required": [
+    "target",
+    "path",
+    "edits"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "code_edit",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "code_insert",
+  "description": "Insert lines into one file of a mini app's DRAFT after line `after_line` (0: at the top; the file's line count: at the end); returns a diff and the new `rev`. Line numbers come from `code_view`: pass its `rev` as `base_rev`, so a draft changed since is refused rather than written at a moved line. `build: true` runs `app_build` after. For a change inside existing lines use `code_edit`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "target": {
+     "type": "string",
+     "description": "What to work on: app:<id>, the app's id from `app_list`, e.g. app:3f2a…"
+    },
+    "path": {
+     "type": "string",
+     "description": "A file in the tree, e.g. 'App.tsx' or 'lib/fmt.ts'."
+    },
+    "after_line": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "The line to insert after; 0 is the top."
+    },
+    "text": {
+     "type": "string",
+     "minLength": 1,
+     "description": "The lines to insert."
+    },
+    "base_rev": {
+     "type": "string",
+     "description": "The `rev` you last read (`code_view`, a write): a tree changed since is not written, the call fails with the current rev."
+    },
+    "build": {
+     "type": "boolean",
+     "description": "Run `app_build` after the write and return its errors (file, line, column)."
+    }
+   },
+   "required": [
+    "target",
+    "path",
+    "after_line",
+    "text"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "code_insert",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "code_write",
+  "description": "Create or replace one whole file in a mini app's DRAFT; returns the new `rev`, and a diff when it replaced a file. For a change of a few lines use `code_edit`, which sends less and leaves the rest alone. `base_rev` refuses a draft changed since you read it. `build: true` runs `app_build` after. The published app is untouched until `app_publish`; `code_undo` with its `edit_id` takes it back. `code_view` with no path lists the files and what this target can use (language, allowed imports). Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. ",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "target": {
+     "type": "string",
+     "description": "What to work on: app:<id>, the app's id from `app_list`, e.g. app:3f2a…"
+    },
+    "path": {
+     "type": "string",
+     "description": "A file in the tree, e.g. 'App.tsx' or 'lib/fmt.ts'."
+    },
+    "content": {
+     "type": "string",
+     "description": "The whole file (TSX/TS)."
+    },
+    "base_rev": {
+     "type": "string",
+     "description": "The `rev` you last read (`code_view`, a write): a tree changed since is not written, the call fails with the current rev."
+    },
+    "build": {
+     "type": "boolean",
+     "description": "Run `app_build` after the write and return its errors (file, line, column)."
+    }
+   },
+   "required": [
+    "target",
+    "path",
+    "content"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "code_write",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "code_undo",
+  "description": "Take back one write to a mini app's DRAFT: `edit_id` (every write returns one), or with only `path` the newest write of that file (a second such call redoes; pass `edit_id`s to go further back). Its files go back as before it (a file it created is removed), only if each is still as that write left it; else it fails and changes nothing: change the file with `code_edit` or `code_write`. Returns its own `edit_id`, a diff and the new `rev`. Only recent writes are kept; for an earlier version use `app_snapshot_restore`. `code_view` with no path lists the files and what this target can use (language, allowed imports).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "target": {
+     "type": "string",
+     "description": "What to work on: app:<id>, the app's id from `app_list`, e.g. app:3f2a…"
+    },
+    "edit_id": {
+     "type": "string",
+     "description": "The write to take back, from its result, e.g. 6f1c…"
+    },
+    "path": {
+     "type": "string",
+     "description": "Without edit_id: undo the newest write of this file. With it: only this file of that write. E.g. 'App.tsx'."
+    },
+    "base_rev": {
+     "type": "string",
+     "description": "The `rev` you last read (`code_view`, a write): a tree changed since is not written, the call fails with the current rev."
+    }
+   },
+   "required": [
+    "target"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "code_undo",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
    "openWorldHint": false
   }
  },

@@ -79,7 +79,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   write through the same draft write. `app_source_set` takes `base_rev`;
   `app_get`, `app_file_write` and `app_source_set` return the `rev`, and
   the three writes their `edit_id`.
-- **Migration 0350:** `node_snapshots.trigger` gains `pre_code_edit`: each
+- **Migration 0351:** `node_snapshots.trigger` gains `pre_code_edit`: each
   such write records what it changed (the files as they were, code only)
   and returns that entry's id as its `edit_id`; `code_undo` takes one write
   back by it (or the newest write of a path) only while its files are as it
@@ -87,7 +87,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   code taken at team rules puts the app back at team rules. The newest 20
   per app are kept within 64 MB, left out of the History list and the
   lookups by id. Rollback:
-  `packages/db/rollback/0350_code_edit_history.revert.sql` (optional).
+  `packages/db/rollback/0351_code_edit_history.revert.sql` (optional).
 
 ## Unreleased: the UI sounds save names its login
 
