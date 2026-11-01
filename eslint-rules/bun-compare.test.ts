@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { checkBaseline, compareRuns, readResults, silentBunExit } from '../scripts/bun-compare.mjs';
+import {
+  checkBaseline,
+  compareRuns,
+  killedRun,
+  readResults,
+  silentBunExit,
+} from '../scripts/bun-compare.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 
@@ -54,11 +60,17 @@ describe('the Bun compare (scripts/bun-compare.mjs)', () => {
   });
 
   it('names a Bun run that exits badly with no failed test', () => {
-    const clean = { bunOnly: [], notRun: [] };
-    expect(silentBunExit({ node: 0, bun: 1 }, clean)).toBe(true);
-    expect(silentBunExit({ node: 0, bun: 0 }, clean)).toBe(false);
-    expect(silentBunExit({ node: 1, bun: 1 }, clean)).toBe(false);
-    expect(silentBunExit({ node: 0, bun: 1 }, { bunOnly: ['a'], notRun: [] })).toBe(false);
+    const clean = new Map([['a > b', 'passed']]);
+    const failed = new Map([['a > b', 'failed']]);
+    expect(silentBunExit(1, clean)).toBe(true);
+    expect(silentBunExit(0, clean)).toBe(false);
+    expect(silentBunExit(1, failed)).toBe(false);
+  });
+
+  it('knows a killed run from one that vitest ended', () => {
+    expect(killedRun('SIGKILL')).toBe(true);
+    expect(killedRun(null)).toBe(true);
+    expect(killedRun(1)).toBe(false);
   });
 
   it('lets a failure win when two tests share a name', () => {

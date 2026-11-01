@@ -182,8 +182,11 @@ function renderInChild(job: RenderJob, timeoutMs: number): Promise<RenderResult>
         return;
       }
       try {
-        const reply = JSON.parse(Buffer.concat(out).toString('utf8')) as ChildReply;
-        if (!reply.ok) throw new RenderRefused(reply.error);
+        const reply = JSON.parse(Buffer.concat(out).toString('utf8')) as ChildReply | null;
+        if (reply?.ok === false && reply.error) throw new RenderRefused(reply.error);
+        if (reply?.ok !== true || !reply.png || !reply.width || !reply.height) {
+          throw new Error('no answer');
+        }
         const png = new Uint8Array(Buffer.from(reply.png, 'base64'));
         resolve({ png, width: reply.width, height: reply.height });
       } catch (err) {

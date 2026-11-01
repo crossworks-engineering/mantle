@@ -10,7 +10,8 @@
  *   pnpm bun:compare --summary <file>      also append the result to that file
  *
  * Exit 0: nothing new on Bun. Exit 1: a test does worse than the baseline
- * says. Exit 2: the compare could not run (no report, wrong Bun version).
+ * says, or Bun exited badly with no failed test to explain it. Exit 2: the
+ * compare could not run (no report, wrong Bun version, a killed run).
  *
  * Why: a green start proves little on Bun. It can ignore an option with no
  * error, as it does with undici's `dispatcher`, which turns the connect-time
@@ -25,7 +26,14 @@
  * there and passes on Linux).
  */
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -124,11 +132,16 @@ function assertBunVersion() {
 }
 
 /**
- * A Bun run that exited badly with no failure in its report: an unhandled error
- * reaches the exit code and not the JSON. Node's clean exit is the yardstick.
+ * A Bun run that exited badly with no failed test in its report: an unhandled
+ * error reaches the exit code and not the JSON.
  */
-export function silentBunExit(exits, compared) {
-  return exits.bun !== 0 && exits.node === 0 && compared.bunOnly.length === 0;
+export function silentBunExit(exit, bun) {
+  return exit !== 0 && ![...bun.values()].includes('failed');
+}
+
+/** A run that vitest did not end itself: a signal, or no exit code at all. */
+export function killedRun(exit) {
+  return typeof exit !== 'number';
 }
 
 /** vitest exits 1 on any failure, which is expected here: the report decides. */
@@ -150,8 +163,9 @@ function list(title, keys) {
   return [`${title} (${keys.length}):`, ...keys.map((key) => `  ${key}`)];
 }
 
-function summary(compared, verdict, seconds) {
+function summary(compared, verdict, seconds, silent) {
   const lines = [
+    ...(silent ? [`Bun exited ${silent} with no failed test: read its log.`] : []),
     `On Bun only: ${compared.bunOnly.length} failed, ${compared.notRun.length} not run.`,
     `Against the baseline: ${verdict.fresh.length} new, ${verdict.fixed.length} fixed.`,
   ];
@@ -181,17 +195,25 @@ function main() {
     mkdirSync(dir, { recursive: true });
     nodeFile = join(dir, 'node.json');
     bunFile = join(dir, 'bun.json');
+    // A run that writes nothing must not read as the last run's report.
+    rmSync(nodeFile, { force: true });
+    rmSync(bunFile, { force: true });
     const node = runSuite('Node', process.execPath, [], nodeFile);
     const bun = runSuite('Bun', 'bun', ['--bun'], bunFile);
     seconds = { node: node.secs, bun: bun.secs };
     exits = { node: node.exit, bun: bun.exit };
+    if (killedRun(node.exit) || killedRun(bun.exit)) {
+      console.error(`bun compare: a run was killed: Node ${node.exit}, Bun ${bun.exit}`);
+      process.exit(2);
+    }
   }
 
   const bun = readReport(bunFile);
   const compared = compareRuns(readReport(nodeFile), bun);
   const baseline = loadBaseline();
   const verdict = checkBaseline(compared, baseline.failures, bun);
-  const text = summary(compared, verdict, seconds);
+  const silent = exits && silentBunExit(exits.bun, bun) ? exits.bun : 0;
+  const text = summary(compared, verdict, seconds, silent);
   console.log(`\n${text}`);
   if (flag('--summary')) appendFileSync(value('--summary'), `\`\`\`\n${text}\n\`\`\`\n`);
 
@@ -201,11 +223,7 @@ function main() {
     console.log(`\nWrote ${failures.length} entries to scripts/bun-baseline.json`);
     return;
   }
-  if (exits && silentBunExit(exits, compared)) {
-    console.log(`\nBun exited ${exits.bun} with no failure in its report: read its log above.`);
-    process.exit(1);
-  }
-  if (verdict.fresh.length > 0) process.exit(1);
+  if (silent || verdict.fresh.length > 0) process.exit(1);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
