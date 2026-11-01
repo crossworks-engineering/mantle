@@ -74,7 +74,7 @@ catch (e) { parentPort.postMessage({ ok: false, error: String(e && e.message || 
 export async function searchFiles(
   files: Record<string, string>,
   pattern: string,
-  opts: { regex: boolean; ignoreCase: boolean; cap: number },
+  opts: { regex: boolean; ignoreCase: boolean; cap: number; caller?: string },
 ): Promise<SearchHits | { error: string }> {
   const job: Job = {
     files: Object.keys(files)
@@ -94,18 +94,34 @@ export async function searchFiles(
       error: `pattern is not a valid regular expression (${(err as Error).message}). Fix it, or search the plain text with regex false`,
     };
   }
-  if (!(await takeWorker())) {
+  // One running regex search per caller: one caller cannot take every slot.
+  const caller = opts.caller ?? '';
+  if (byCaller.has(caller)) {
     return {
       error:
-        'too many regex searches are running on this brain: try again in a few seconds, or search the plain text with regex false',
+        'a regex search of yours is still running: wait for it, or search the plain text with regex false',
     };
   }
+  byCaller.add(caller);
   try {
-    return await runInWorker(job);
+    if (!(await takeWorker())) {
+      return {
+        error:
+          'too many regex searches are running on this brain: try again in a few seconds, or search the plain text with regex false',
+      };
+    }
+    try {
+      return await runInWorker(job);
+    } finally {
+      releaseWorker();
+    }
   } finally {
-    releaseWorker();
+    byCaller.delete(caller);
   }
 }
+
+/** The callers with a regex search running or waiting. */
+const byCaller = new Set<string>();
 
 let running = 0;
 const waiting: (() => void)[] = [];
@@ -136,8 +152,9 @@ function runInWorker(job: Job): Promise<SearchHits | { error: string }> {
       workerData: job,
       resourceLimits: { maxOldGenerationSizeMb: 256 },
     });
-    const timer = setTimeout(() => {
-      void worker.terminate();
+    const timer = setTimeout(async () => {
+      // The slot is freed once the worker is gone, never before.
+      await worker.terminate().catch(() => undefined);
       resolve({
         error: `the regex ran past ${REGEX_TIMEOUT_MS / 1000}s and was stopped (a pattern like (a+)+ backtracks without end). Use a simpler pattern, narrow it with glob, or search the plain text with regex false`,
       });

@@ -2095,7 +2095,8 @@ export function withAuthorCeiling(
     ...def,
     handler: async (input, ctx) => {
       const target = appIdOf(input);
-      if (target && (await scopeOutsideAdmin())) {
+      // A dry run (code_edit) writes nothing, so it lowers nothing.
+      if (target && input.dry_run !== true && (await scopeOutsideAdmin())) {
         await lowerToTeamRules(ctx.ownerId, target);
       }
       return def.handler(input, ctx);
