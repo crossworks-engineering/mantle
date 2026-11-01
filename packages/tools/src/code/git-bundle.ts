@@ -60,6 +60,7 @@ function badGitPart(part: string): string | null {
 
 /** A one-line field of a commit (author): no control character, no `<>`. */
 function oneLine(s: string): string {
+  // eslint-disable-next-line no-control-regex -- control characters are what it removes or refuses
   return s.replace(/[\u0000-\u001f\u007f<>]/g, ' ').trim() || 'unknown';
 }
 
@@ -150,6 +151,7 @@ export class GitBundleWriter {
     const who = `${oneLine(c.author)} <> ${Math.max(0, Math.floor(c.time))} +0000`;
     const message = c.message
       .replace(/\r\n?/g, '\n')
+      // eslint-disable-next-line no-control-regex -- control characters are what it removes or refuses
       .replace(/\u0000/g, '')
       .trim();
     const body = [
