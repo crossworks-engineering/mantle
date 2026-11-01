@@ -3,7 +3,8 @@
  * file that knows it, so a new use cannot pass as a limit that holds.
  *
  *  - a worker's `resourceLimits`: Bun ignores it (a worker took 3.2 GB against
- *    a 64 MB limit). draw-png.ts uses it on Node, and a process on Bun.
+ *    a 64 MB limit). draw-png.ts and code_search (tools/src/code/search.ts)
+ *    use it on Node, and a process on Bun.
  *  - `process.execPath` with Node's arguments: @mantle/std/self-spawn knows the
  *    runtime, and that Bun must not load a .env file into a child.
  *
@@ -35,26 +36,31 @@ const filesWith = (pattern: RegExp): string[] =>
     .sort();
 
 describe('settings that do nothing on Bun stay in one file', () => {
-  it.each(['packages/content/src/app-sql-runner.ts', 'packages/tabledb/src/sql-runner.ts'])(
-    '%s, a start outside self-spawn, keeps its env cut',
-    (file) => {
-      const runner = readFileSync(join(ROOT, file), 'utf8');
-      expect(runner).toMatch(/\[\.\.\.runtimeFlags\(\), '--input-type=commonjs'/);
-    },
-  );
+  it.each([
+    'packages/content/src/app-sql-runner.ts',
+    'packages/tabledb/src/sql-runner.ts',
+    'packages/tools/src/code/search.ts',
+  ])('%s, a start outside self-spawn, keeps its env cut', (file) => {
+    const runner = readFileSync(join(ROOT, file), 'utf8');
+    expect(runner).toMatch(/\[\.\.\.runtimeFlags\(\), '--input-type=commonjs'/);
+  });
 
-  it.each(['packages/content/src/app-sql-runner.ts', 'packages/tabledb/src/sql-runner.ts'])(
-    '%s gives each child a guard, and hears every error of it',
-    (file) => {
-      const runner = readFileSync(join(ROOT, file), 'utf8');
-      expect(runner).toMatch(/killWithParent\(proc\)/);
-      expect(runner).toMatch(/proc\.on\('error'/);
-      expect(runner).not.toMatch(/proc\.once\('error'/);
-    },
-  );
+  it.each([
+    'packages/content/src/app-sql-runner.ts',
+    'packages/tabledb/src/sql-runner.ts',
+    'packages/tools/src/code/search.ts',
+  ])('%s gives each child a guard, and hears every error of it', (file) => {
+    const runner = readFileSync(join(ROOT, file), 'utf8');
+    expect(runner).toMatch(/killWithParent\(proc\)/);
+    expect(runner).toMatch(/proc\.on\('error'/);
+    expect(runner).not.toMatch(/proc\.once\('error'/);
+  });
 
   it('a worker limit', () => {
-    expect(filesWith(/\bresourceLimits\b/)).toEqual(['packages/content/src/draw-png.ts']);
+    expect(filesWith(/\bresourceLimits\b/)).toEqual([
+      'packages/content/src/draw-png.ts',
+      'packages/tools/src/code/search.ts',
+    ]);
   });
 
   it('a start of this runtime', () => {
@@ -62,6 +68,7 @@ describe('settings that do nothing on Bun stay in one file', () => {
       'packages/content/src/app-sql-runner.ts',
       'packages/std/src/self-spawn.ts',
       'packages/tabledb/src/sql-runner.ts',
+      'packages/tools/src/code/search.ts',
     ]);
   });
 });

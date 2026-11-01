@@ -3,15 +3,24 @@
  * plain pattern is a substring test on the main thread. A regex is the
  * caller's own, and a backtracking one can run for minutes on one line, so
  * it runs in a worker thread that is ended after REGEX_TIMEOUT_MS: the
- * process never waits on it.
+ * process never waits on it. Bun ignores a worker's memory limit, so there
+ * it runs in a process of its own under a kernel limit (as draw-png.ts).
  */
+import { spawn } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
+import { killWithParent } from '@mantle/std/kill-with-parent';
+import { runtimeFlags, withMemoryLimit } from '@mantle/std/self-spawn';
 
 export const REGEX_TIMEOUT_MS = 3000;
 /** Regex searches running at once in this process; more wait their turn. */
 export const REGEX_WORKERS_MAX = 2;
 /** Searches waiting for a worker; past this a search is refused. */
 const REGEX_QUEUE_MAX = 16;
+/** The JS heap of a regex worker (Node). */
+const REGEX_WORKER_HEAP_MB = 256;
+/** The kernel limit on a regex process (Bun): the worker's heap, plus the
+ *  about 300 MB Bun needs to start. */
+export const REGEX_CHILD_MEMORY_MB = 640;
 /** A hit's line is cut to this many characters. */
 export const HIT_TEXT_MAX = 200;
 
@@ -69,6 +78,20 @@ try { parentPort.postMessage({ ok: true, res: runSearch(workerData) }); }
 catch (e) { parentPort.postMessage({ ok: false, error: String(e && e.message || e) }); }
 `;
 
+/** The same matcher as a process (Bun): the job on stdin, the answer on
+ *  stdout, each one JSON text. Globals only, no require. */
+const CHILD_SRC = `
+${runSearch.toString()}
+const chunks = [];
+process.stdin.on('data', (c) => chunks.push(c));
+process.stdin.on('end', () => {
+  let out;
+  try { out = { ok: true, res: runSearch(JSON.parse(Buffer.concat(chunks).toString('utf8'))) }; }
+  catch (e) { out = { ok: false, error: String(e && e.message || e) }; }
+  process.stdout.write(JSON.stringify(out));
+});
+`;
+
 /** Search `files` (path order) for `pattern`. An invalid regex, or one that
  *  runs past the timeout, is an `{ error }` the caller can act on. */
 export async function searchFiles(
@@ -111,7 +134,7 @@ export async function searchFiles(
       };
     }
     try {
-      return await runInWorker(job);
+      return await (process.versions.bun ? runInChild : runInWorker)(job);
     } finally {
       releaseWorker();
     }
@@ -150,14 +173,12 @@ function runInWorker(job: Job): Promise<SearchHits | { error: string }> {
     const worker = new Worker(WORKER_SRC, {
       eval: true,
       workerData: job,
-      resourceLimits: { maxOldGenerationSizeMb: 256 },
+      resourceLimits: { maxOldGenerationSizeMb: REGEX_WORKER_HEAP_MB },
     });
     const timer = setTimeout(async () => {
       // The slot is freed once the worker is gone, never before.
       await worker.terminate().catch(() => undefined);
-      resolve({
-        error: `the regex ran past ${REGEX_TIMEOUT_MS / 1000}s and was stopped (a pattern like (a+)+ backtracks without end). Use a simpler pattern, narrow it with glob, or search the plain text with regex false`,
-      });
+      resolve({ error: TIMED_OUT });
     }, REGEX_TIMEOUT_MS);
     worker.once('message', (m: { ok: true; res: SearchHits } | { ok: false; error: string }) => {
       clearTimeout(timer);
@@ -169,5 +190,47 @@ function runInWorker(job: Job): Promise<SearchHits | { error: string }> {
       void worker.terminate();
       resolve({ error: `the search failed: ${err.message}` });
     });
+  });
+}
+
+const TIMED_OUT = `the regex ran past ${REGEX_TIMEOUT_MS / 1000}s and was stopped (a pattern like (a+)+ backtracks without end). Use a simpler pattern, narrow it with glob, or search the plain text with regex false`;
+
+/** One search in a fresh process (Bun), with no env and under a kernel
+ *  memory limit, killed at the timeout. Its slot is freed once it is gone. */
+function runInChild(job: Job): Promise<SearchHits | { error: string }> {
+  const { command, args } = withMemoryLimit(REGEX_CHILD_MEMORY_MB, {
+    command: process.execPath,
+    args: [...runtimeFlags(), '--input-type=commonjs', '-e', CHILD_SRC],
+  });
+  return new Promise((resolve) => {
+    let why: string | null = null;
+    const out: Buffer[] = [];
+    const proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'ignore'], env: {} });
+    killWithParent(proc);
+    const timer = setTimeout(() => {
+      why = TIMED_OUT;
+      proc.kill('SIGKILL');
+    }, REGEX_TIMEOUT_MS);
+    // on, not once: a failed spawn and a failed write can each raise one.
+    proc.on('error', (err) => {
+      why ??= `the search failed: ${err.message}`;
+      proc.kill('SIGKILL');
+    });
+    proc.stdout.on('data', (chunk: Buffer) => out.push(chunk));
+    // A process that died early closes its stdin: 'close' below says so.
+    proc.stdin.on('error', () => {});
+    proc.on('close', (code, signal) => {
+      clearTimeout(timer);
+      if (why) return resolve({ error: why });
+      if (code !== 0) return resolve({ error: `the search stopped (${signal ?? `exit ${code}`})` });
+      try {
+        const m = JSON.parse(Buffer.concat(out).toString('utf8')) as
+          { ok: true; res: SearchHits } | { ok: false; error: string };
+        resolve(m.ok ? m.res : { error: `the search failed: ${m.error}` });
+      } catch {
+        resolve({ error: 'the search gave no answer' });
+      }
+    });
+    proc.stdin.end(JSON.stringify(job));
   });
 }
