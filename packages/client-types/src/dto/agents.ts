@@ -98,7 +98,8 @@ export interface AgentParamsDTO {
   /** How granted tools reach the model. 'deferred' = a stable core in full +
    *  `tool_search` over the rest (same grant, cache-safe). 'map' = the same
    *  core + a tool map naming every other granted tool, called through
-   *  `tool_call`. Absent = 'full'. */
+   *  `tool_call`. Absent: 'map' for an assistant (role responder or
+   *  assistant; 'deferred' on a Haiku model), 'full' for any other agent. */
   tool_loading?: 'full' | 'deferred' | 'map';
 }
 

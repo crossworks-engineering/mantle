@@ -93,6 +93,8 @@ import {
   withImageNote,
 } from './tool-loop/tool-images';
 import { loadToolGroupsForCatalog } from './skills';
+// Its own entry, pure: a test that mocks @mantle/tools still runs the real rule.
+import { resolveToolLoading } from '@mantle/tools/tool-loading';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
 import { ownerSurfaceLogin, surfaceLoginId, withAgentScope } from './agent-viewer';
@@ -681,7 +683,9 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // accepted as aliases). The same toolsByName and the same dispatch below,
   // so a tool the gate refuses is refused the same way through tool_call as
   // by its own name; a name the loop does not list gets a did-you-mean.
-  const loading = args.params.tool_loading;
+  // The agent's own setting wins; with none, an assistant runs on the map
+  // (selection/loading.ts).
+  const loading = resolveToolLoading(args.params.tool_loading, args.agentRole, args.model);
   const lazyMode = (loading === 'deferred' || loading === 'map') && allToolDefs.length > 0;
   const catalogGroups = lazyMode ? await loadToolGroupsForCatalog(args.ownerId) : [];
   const toolSources = lazyMode

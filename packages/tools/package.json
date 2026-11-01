@@ -17,7 +17,8 @@
     "./canvas-render": "./src/canvas-render/sidecar.ts",
     "./canvas-frame-document": "./src/canvas-render/frame-document.ts",
     "./circuit-workflow": "./src/circuit-trace/workflow.ts",
-    "./present-checks": "./src/circuit-trace/overview.ts"
+    "./present-checks": "./src/circuit-trace/overview.ts",
+    "./tool-loading": "./src/selection/loading.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

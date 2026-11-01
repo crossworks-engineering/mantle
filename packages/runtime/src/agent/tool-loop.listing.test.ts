@@ -155,7 +155,9 @@ async function sentIn(
         adapter: adapter(),
         apiKey: 'k',
         model: 'm',
-        params: {},
+        // The gate's listing over the whole sent list: an assistant with no
+        // setting would run on the tool map (selection/loading.ts).
+        params: { tool_loading: 'full' },
         ownerId: OWNER,
         initialMessages: [{ role: 'user', content: 'hi' }],
         tools: ROWS,

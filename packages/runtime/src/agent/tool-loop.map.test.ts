@@ -134,6 +134,15 @@ vi.mock('./skills', () => ({
   }),
 }));
 
+// The agent's scope is not under test here (it reads the database): an
+// assistant's turn runs as a helper's would (invoke-agent.surface.test.ts).
+vi.mock('./agent-viewer', () => ({
+  agentTurnScoped: async () => false,
+  surfaceLoginId: () => null,
+  ownerSurfaceLogin: () => null,
+  withAgentScope: (_a: unknown, fn: () => unknown) => fn(),
+}));
+
 import { runToolLoop } from './tool-loop';
 import type { ChatDispatcher, ChatOptions, ChatResult, ChatToolCall } from '@mantle/voice';
 import type { Tool } from '@mantle/db';
@@ -473,6 +482,45 @@ describe('runToolLoop with map tool loading', () => {
     ]);
     const r = await run(adapter, 'deferred');
     expect(r.toolCalls[0]!.error).toBe("tool 'tool_help' is not in this agent's allowlist");
+  });
+
+  it('runs an assistant with no setting on the map, a Haiku one deferred, a specialist full', async () => {
+    const cases = [
+      ['responder', 'claude-sonnet-5-5', ['search_nodes', 'tool_call', 'tool_help']],
+      ['assistant', 'claude-sonnet-5-5', ['search_nodes', 'tool_call', 'tool_help']],
+      ['responder', 'claude-haiku-5-5', ['search_nodes', 'tool_search', 'use_tool']],
+      ['custom', 'claude-sonnet-5-5', ['search_nodes', 'email_send', 'contact_find']],
+      [null, 'claude-sonnet-5-5', ['search_nodes', 'email_send', 'contact_find']],
+    ] as const;
+    for (const [agentRole, model, want] of cases) {
+      const { adapter, calls } = adapterWith(['hi']);
+      await runToolLoop({
+        agentRole,
+        adapter,
+        apiKey: 'k',
+        model,
+        params: {},
+        ownerId: 'owner-1',
+        initialMessages: [{ role: 'user', content: 'hi' }],
+        tools: TOOLS,
+      });
+      expect(sentNames(calls[0]!), `${agentRole} ${model}`).toEqual(want);
+    }
+  });
+
+  it("keeps an assistant's own setting", async () => {
+    const { adapter, calls } = adapterWith(['hi']);
+    await runToolLoop({
+      agentRole: 'responder',
+      adapter,
+      apiKey: 'k',
+      model: 'claude-sonnet-5-5',
+      params: { tool_loading: 'full' },
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'hi' }],
+      tools: TOOLS,
+    });
+    expect(sentNames(calls[0]!)).toEqual(['search_nodes', 'email_send', 'contact_find']);
   });
 
   it('does not take tool_call or tool_help in deferred loading', async () => {

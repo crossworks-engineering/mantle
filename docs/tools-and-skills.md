@@ -532,9 +532,10 @@ pack the hand-off.
 ## Deferred tool loading: many tools, one stable prefix
 
 An agent's grant decides WHICH tools it may call. `params.tool_loading`
-decides HOW their definitions reach the model. Absent (or `'full'`) is the
-behaviour before this existed: every granted tool's full definition on every
-call. `'deferred'` sends:
+decides HOW their definitions reach the model. `'full'` is the behaviour
+before this existed: every granted tool's full definition on every call.
+Absent, the mode follows the agent (see "The default mode" below). `'deferred'`
+sends:
 
 - the granted tools in `CORE_TOOL_SLUGS` (the 20 tools that carry most turns
   on the fleet, plus `update_persona`, whose trigger never reads as a task) in
@@ -605,7 +606,7 @@ The MCP surface is unaffected (MCP clients do their own deferral).
 ## Map tool loading: every tool named, cheaply
 
 `params.tool_loading: 'map'` is the third mode
-(`packages/tools/src/selection/map.ts`). It sends the same core as
+(`packages/tools/src/selection/map.ts`), and the default for assistants. It sends the same core as
 `'deferred'` (same list, same order, heartbeat affordances after), then two
 meta tools:
 
@@ -656,8 +657,23 @@ map with glosses vs deferred: Sonnet 5 90 vs 90, Sonnet 5.5 88 vs 87, Grok 4.7
 90 vs 89, Haiku 5.5 88 vs 91; 22 to 39% cheaper per turn. A names-only map
 lost cases. Weak spots: Sonnet 5 sent correct arguments first time in 89% vs
 98% (the schema reply covers it), and Grok made up 8 names (the did-you-mean
-recovered them). Keep small models on `'deferred'`. The MCP surface is
+recovered them). Small models run `'deferred'` (below). The MCP surface is
 unaffected.
+
+### The default mode
+
+An agent's own `params.tool_loading` always wins. With none set
+(`resolveToolLoading`, `packages/tools/src/selection/loading.ts`):
+
+- an assistant (role `responder` or `assistant`) runs `'map'`, the class the
+  bench and the dev trial (2026-10-31, v0.400.45) measured;
+- an assistant on a Haiku model runs `'deferred'` (Haiku scored 86 vs 91 of 101
+  on the map);
+- every other agent (specialists, workers) runs `'full'` until it is measured
+  on the map.
+
+To keep an assistant on the old behaviour, set `tool_loading` to `'full'` or
+`'deferred'` on it.
 
 ## House style: the owner's prose layer (v0.214.0)
 

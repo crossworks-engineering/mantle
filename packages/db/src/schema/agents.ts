@@ -218,7 +218,10 @@ export type AgentParams = {
    *  core in full and lists the rest by name for `tool_search`; every granted
    *  tool stays callable and the cached prefix stays the same. 'map' sends
    *  the same core and names every other granted tool in a compact tool map
-   *  (one glossed line per area), called through `tool_call`. */
+   *  (one glossed line per area), called through `tool_call`. Absent: an
+   *  assistant (role responder or assistant) runs 'map' ('deferred' on a
+   *  Haiku model), every other agent 'full' (@mantle/tools
+   *  selection/loading.ts). */
   tool_loading?: 'full' | 'deferred' | 'map';
 };
 

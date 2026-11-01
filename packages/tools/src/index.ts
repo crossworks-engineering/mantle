@@ -90,6 +90,7 @@ export {
   type ToolSource,
 } from './selection/deferred';
 export { buildMapToolset, type MapToolset, type ToolHelpResult } from './selection/map';
+export { resolveToolLoading, type ToolLoading } from './selection/loading';
 export { type GroupSource as ToolGroupSource } from './selection/rank';
 export { knownFlowForGroup } from './selection/flows';
 export {
