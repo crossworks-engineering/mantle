@@ -1485,10 +1485,14 @@ ensure_service_tokens() {
 #
 # The engine: about 700 MB to download, 2.4 GB on disk, up to 2 GB memory
 # (docker-compose.yml mem_limit 2g; about 300 MB resident after the first
-# job). Too little disk (MANTLE_SERVICE_MIN_FREE_MB plus the image) or an
-# unreadable audit log switches nothing on, says why, and the next roll tries
-# again. It always returns 0: it never fails a roll.
+# job). Too little disk (MANTLE_SERVICE_MIN_FREE_MB plus the image), a box
+# with less than DOCUMENTS_MIN_MEM_MB of memory, or an unreadable audit log
+# switches nothing on and says why. Its image is fetched alone, right after
+# the profile is added: a failed download takes the profile back out (no off
+# line, so the next roll tries again), so the roll's own pull never fails on
+# it. It always returns 0: it never fails a roll.
 DOCUMENTS_IMAGE_MB=2560
+DOCUMENTS_MIN_MEM_MB=3000
 
 # documents_switched_off: 0 when the newest accepted Settings > Services
 # switch of documents was an off, 1 when it was an on or there was none, 2
@@ -1527,6 +1531,11 @@ ensure_documents_default() {
     echo "[updater] ⚠ documents engine not switched on: $((edd_free / 1024)) MB free, it needs $edd_min_mb MB (2.4 GB for its image); free space and roll again"
     return 0
   fi
+  edd_mt=$(awk '/^MemTotal:/ { print int($2 / 1024); exit }' /proc/meminfo 2>/dev/null)
+  if [ -n "$edd_mt" ] && [ "$edd_mt" -lt "$DOCUMENTS_MIN_MEM_MB" ] 2>/dev/null; then
+    echo "[updater] ⚠ documents engine not switched on: this box has $edd_mt MB of memory and the engine may use up to 2 GB; switch it on in Settings > Services if you want it"
+    return 0
+  fi
   if [ -z "$(env_val GOTENBERG_PASSWORD)" ]; then
     if ! edd_tok=$(gen_token) || ! persist_env GOTENBERG_PASSWORD "$edd_tok"; then
       echo "[updater] ⚠ documents engine not switched on: GOTENBERG_PASSWORD could not be written"
@@ -1538,7 +1547,11 @@ ensure_documents_default() {
     echo "[updater] ⚠ documents engine not switched on: COMPOSE_PROFILES could not be written"
     return 0
   fi
-  edd_mt=$(awk '/^MemTotal:/ { print int($2 / 1024); exit }' /proc/meminfo 2>/dev/null)
+  if ! edd_pull=$(docker compose --project-directory "$STACK" --profile documents pull gotenberg < /dev/null 2>&1); then
+    persist_env COMPOSE_PROFILES "$edd_rest" || true
+    echo "[updater] ⚠ documents engine not switched on: its image did not download ($(printf '%s' "$edd_pull" | tail -1 | cut -c1-200)); the next roll tries again"
+    return 0
+  fi
   edd_ma=$(awk '/^MemAvailable:/ { print int($2 / 1024); exit }' /proc/meminfo 2>/dev/null)
   edd_fmb='?'
   [ -z "$edd_free" ] || edd_fmb=$((edd_free / 1024))

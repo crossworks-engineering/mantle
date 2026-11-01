@@ -161,9 +161,11 @@ describe.skipIf(!URL)('a team app calls the documents tools', () => {
       'test',
     );
 
-  /** The files the engine made: their home and folder. */
-  const made = async (): Promise<{ id: string; home: string | null; path: string }[]> =>
-    x(sql`select id::text, home_ws::text as home, path::text from nodes
+  /** The files the engine made: their home, folder and indexing. */
+  const made = async (): Promise<
+    { id: string; home: string | null; path: string; indexing: string | null }[]
+  > =>
+    x(sql`select id::text, home_ws::text as home, path::text, data->>'indexing' as indexing from nodes
       where owner_id = ${owner} and type = 'file' and data->>'documentsRoute' is not null
       order by created_at`);
 
@@ -295,7 +297,12 @@ describe.skipIf(!URL)('a team app calls the documents tools', () => {
     expect(out.landedIn?.id).toBe(holderWs);
     const rows = await made();
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ id: out.file_id, home: holderWs, path: 'files' });
+    expect(rows[0]).toMatchObject({
+      id: out.file_id,
+      home: holderWs,
+      path: 'files',
+      indexing: 'metadata',
+    });
     // A user of the holder who is no Moderator reads it in the app's scope.
     const read = await memberCall(member, 'file_read', { file_id: out.file_id, bytes: true });
     expect(read.body.ok, JSON.stringify(read.body)).toBe(true);
@@ -368,5 +375,21 @@ describe.skipIf(!URL)('a team app calls the documents tools', () => {
     const row = (await made()).find((r) => r.id === id);
     expect(row?.home).toBe(adminWs);
     expect(row?.path).toMatch(/^files\.auto_filed\.exports/);
+  });
+
+  it('9. an admin who moderates the holder: the team rules land it in the holder, not Auto-filed', async () => {
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${holderWs}, ${owner}, true)`);
+    try {
+      const res = await ownerCall(teamApp, 'pdf_render', { html: '<h1>x</h1>' });
+      expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+      const id = (res.body.output as { file_id: string }).file_id;
+      const row = (await made()).find((r) => r.id === id);
+      expect(row).toMatchObject({ home: holderWs, path: 'files', indexing: 'metadata' });
+    } finally {
+      await su(
+        sql`delete from workspace_users where workspace_id = ${holderWs} and login_id = ${owner}`,
+      );
+    }
   });
 });

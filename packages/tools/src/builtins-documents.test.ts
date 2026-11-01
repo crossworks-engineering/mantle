@@ -13,7 +13,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const engine = vi.hoisted(() => ({ runDocuments: vi.fn() }));
-vi.mock('@mantle/documents', () => ({ runDocuments: engine.runDocuments }));
+vi.mock('@mantle/documents', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/documents')>()),
+  runDocuments: engine.runDocuments,
+}));
 const actor = vi.hoisted(() => ({ current: null as null | Record<string, unknown> }));
 const scope = vi.hoisted(() => ({
   writes: false,
@@ -279,6 +282,35 @@ describe('the four tools', () => {
       output: { file_id: 'f1' },
     });
     expect(scope.homes).toEqual([{ createWs: HOLDER, privateWs: HOLDER }]);
+    // Found by its metadata, read by no model: a loop of saves spends nothing.
+    expect(engine.runDocuments.mock.calls[0]![0]).toMatchObject({ indexing: 'metadata' });
+  });
+
+  it("a team app reads a PDF's metadata without a save, so without a moderator", async () => {
+    engine.runDocuments.mockResolvedValue({
+      kind: 'json',
+      route: 'pdfengines/metadata/read',
+      json: { 'a.pdf': {} },
+    });
+    scope.writes = false;
+    scope.ws = { ws: [HOLDER], modWs: [] };
+    expect(
+      await by.pdf_tools!.handler({ op: 'metadata_read', file_ids: ['f'] }, appCtx('team')),
+    ).toMatchObject({ ok: true, output: { result: { 'a.pdf': {} } } });
+    expect(scope.homes).toEqual([]);
+  });
+
+  it('an app call with no rules named runs at team rules (fail closed)', async () => {
+    const ctxNoRules: ToolHandlerContext = {
+      ownerId: 'o1',
+      caller: { entry: 'app', via: 'app' } as unknown as ToolCaller,
+    };
+    expect(await by.pdf_render!.handler({ node_id: 'n1' }, ctxNoRules)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("can't print a page"),
+    });
+    // An agent's call (no app rules) is no team app: it prints as before.
+    expect(await by.pdf_render!.handler({ node_id: 'n1' }, ctx)).toMatchObject({ ok: true });
   });
 
   it("a team app's save is refused, saying to take the bytes, when it may not land", async () => {
@@ -310,5 +342,6 @@ describe('the four tools', () => {
     });
     expect(scope.homes).toEqual([]);
     expect(engine.runDocuments.mock.calls[0]![2]).toBeUndefined();
+    expect(engine.runDocuments.mock.calls[0]![0]).not.toHaveProperty('indexing');
   });
 });

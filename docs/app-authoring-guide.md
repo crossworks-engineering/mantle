@@ -586,8 +586,10 @@ depends on who holds the app:
   admin's export lands, Auto-filed / Exports. `node_id` instead of `html`
   prints a page or a drawing of the brain.
 - A **team app** (another workspace holds it, or a member built it): at the
-  top of Files, homed in **the workspace that holds the app**, never in a
-  private workspace and never in Admin. Only a user who moderates that
+  top of Files, homed in **the workspace that holds the app**, never in the
+  runner's private workspace and never in Admin (an app only you hold, in
+  your private workspace, saves there). It is found by its name and
+  folder, and no model reads it. Only a user who moderates that
   workspace saves there (the rule for every new item); anyone else gets an
   error that says to pass `bytes: true`. So a team app that every user runs
   passes `bytes: true`, or saves only for its moderators. A team app reads

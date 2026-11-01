@@ -2299,6 +2299,9 @@ echo "updater.sh: the documents engine is on by default at a roll"
 DD_STUB='docker() {
   case "$*" in
     *service.toggle*) [ "${FAKE_DOCS_AUDIT:-none}" != fail ] || return 1; echo "${FAKE_DOCS_AUDIT:-none}" ;;
+    *"--profile documents pull gotenberg"*)
+      echo "pulled" >> "${DD_CALLS:-/dev/null}"
+      [ -z "${FAKE_DOCS_PULL_FAIL:-}" ] || { echo "toomanyrequests: rate limit" >&2; return 1; } ;;
   esac
   return 0
 }'
@@ -2309,8 +2312,10 @@ dd_case() { # <name> <.env lines>: a stack, then the function under the stub
   updater_run "$DD/stack" "$DD/sig" "$DD/img" "$DD_STUB
 ensure_documents_default; echo rc=\$?" > "$DD/out" 2>&1
 }
+DD_CALLS="$WORK/docs-default-calls"; : > "$DD_CALLS"; export DD_CALLS
 dd_case none 'COMPOSE_PROFILES=sandboxes\nGOTENBERG_PASSWORD=keep\n'
 check "documents default: on, appended to the profiles" grep -qx 'COMPOSE_PROFILES=sandboxes,documents' "$DD/stack/.env"
+check "documents default: its image fetched alone, before the roll's own pull" grep -qx pulled "$DD_CALLS"
 check "documents default: the password kept" grep -qx 'GOTENBERG_PASSWORD=keep' "$DD/stack/.env"
 check "documents default: the log names the disk and memory it adds" sh -c "
   grep -q 'documents engine ON by default' '$DD/out' && grep -q '2.4 GB on disk and up to 2 GB memory' '$DD/out' && grep -q 'MB disk free' '$DD/out'"
@@ -2333,9 +2338,16 @@ check "documents default: an earlier Settings on (later removed by hand) turns i
 FAKE_DOCS_AUDIT=fail dd_case auditfail 'COMPOSE_PROFILES=sandboxes\n'
 check "documents default: an unreadable audit log switches nothing on, says so" sh -c "
   cmp -s '$DD/stack/.env' '$DD/env.before' && grep -q 'audit log could not be read' '$DD/out' && grep -qx 'rc=0' '$DD/out'"
+FAKE_DOCS_PULL_FAIL=1 dd_case pullfail 'COMPOSE_PROFILES=sandboxes\nGOTENBERG_PASSWORD=keep\n'
+check "documents default: a failed download takes the profile back out, writes no off line, says why" sh -c "
+  grep -qx 'COMPOSE_PROFILES=sandboxes' '$DD/stack/.env' && ! grep -q '^MANTLE_DOCUMENTS_OFF=' '$DD/stack/.env' && grep -q 'image did not download (toomanyrequests' '$DD/out' && grep -qx 'rc=0' '$DD/out'"
+FAKE_DOCS_PULL_FAIL=1 dd_case pullfailnone 'GOTENBERG_PASSWORD=keep\n'
+check "documents default: a failed download with no profiles before leaves none" grep -qx 'COMPOSE_PROFILES=' "$DD/stack/.env"
 dd_case disk 'COMPOSE_PROFILES=sandboxes\nMANTLE_SERVICE_MIN_FREE_MB=999999999\n'
 check "documents default: too little disk switches nothing on, says so" sh -c "
   cmp -s '$DD/stack/.env' '$DD/env.before' && grep -q 'not switched on: .* MB free' '$DD/out'"
+check "documents default: a small box (memory under the floor) switches nothing on, says so" sh -c "
+  MANTLE_STACK_DIR='$DD/stack' MANTLE_SIGNAL_DIR='$DD/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; DOCUMENTS_MIN_MEM_MB=999999999; profile_active() { return 1; }; documents_switched_off() { return 1; }; free_kb() { echo 999999999; }; ensure_documents_default\" | grep -q 'MB of memory and the engine may use up to 2 GB' || ! test -r /proc/meminfo"
 check "documents default: roll.sh sends the same functions" sh -c "
   grep -q 'ensure_documents_default' '$ROOT/scripts/roll.sh' && grep -q \"/^documents_switched_off() {/,/^}/p\" '$ROOT/scripts/roll.sh'"
 

@@ -52,14 +52,18 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   in Settings > Services and `install.sh --no-documents` now write, or an
   accepted Settings off in the audit log from before. The roll log says
   what it adds: about 700 MB to download, 2.4 GB on disk, up to 2 GB
-  memory. Too little disk or an unreadable audit log switches nothing on
-  and says why. Off works as before.
+  memory. Too little disk, under 3000 MB of memory, an unreadable audit log
+  or a failed image download switches nothing on and says why; the roll
+  goes on. Off works as before.
+- **Security:** the engine refuses every folder URL (`CHROMIUM_DENY_LIST`),
+  so a caller's HTML cannot list `/tmp` or a job's folder to find another
+  job's files.
 - **Added:** team apps may call `pdf_render`, `screenshot_render`,
   `office_to_pdf` and `pdf_tools` (v1 refused them). The inputs are read in
   the app's scope, a page print (`node_id`) is refused, and the file lands
   at the top of Files in the workspace that holds the app, only for a user
-  who moderates it; anyone else gets an error that says to pass
-  `bytes: true`. The app's declared tools, the author ceiling and the run's
+  who moderates it, indexed by its metadata only (no model reads it);
+  anyone else gets an error that says to pass `bytes: true`. The app's declared tools, the author ceiling and the run's
   scope are unchanged; a shared link still calls no built-in tool.
 - **Added:** the four tools take `bytes: true` from an app's own call:
   nothing is saved, and the PDF or picture comes back as base64 within

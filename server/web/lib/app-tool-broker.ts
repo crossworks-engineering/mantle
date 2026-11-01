@@ -352,7 +352,8 @@ export async function runAppToolBroker(
     {
       ...tagged,
       ...outsideCallLogDetail(verdict, input, tableArg),
-      ...(fileSave && scope.actsFor ? { write: true, saves: 'file' } : {}),
+      // Asked for: the tool itself refuses a save it may not make.
+      ...(fileSave && scope.actsFor ? { write: true, save_asked: 'file' } : {}),
     },
     true,
   );

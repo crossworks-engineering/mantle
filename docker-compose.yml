@@ -700,6 +700,11 @@ services:
       CHROMIUM_DENY_PRIVATE_IPS: 'true'
       CHROMIUM_DENY_PUBLIC_IPS: 'true'
       CHROMIUM_ALLOW_LIST: '^http://web:3000/(print|render|share-runtime|excalidraw-assets|Inter|fonts|api/files/files|api/draws|api/presents)/|^http://web:3000/(favicon\.ico|icon\.svg|apple-icon\.png)$$|^file:///tmp/'
+      # The engine's own default (no file outside /tmp) plus no folder: a
+      # caller's HTML may load its own uploaded files by name, never list
+      # /tmp or a job's folder, so another job's files cannot be found
+      # (measured on 8.39.0, 2026-11-01: ./ listed a job's folder before).
+      CHROMIUM_DENY_LIST: '^file:(?!//\/tmp/).*|^file:.*/$$'
       LIBREOFFICE_DENY_PRIVATE_IPS: 'true'
       LIBREOFFICE_DENY_PUBLIC_IPS: 'true'
       LIBREOFFICE_MAX_QUEUE_SIZE: '10'

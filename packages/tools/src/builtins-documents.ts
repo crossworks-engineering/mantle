@@ -23,13 +23,19 @@
  * (`node_id`: the render cookie would carry the login's whole rights, not
  * the app's), and its file lands at the top of Files, homed in the one
  * workspace that holds the app, only for a user who moderates that
- * workspace (teamAppSaveRefusal: the create rule everywhere). Any app may
+ * workspace (teamAppSaveRefusal: the create rule everywhere), indexed by
+ * its metadata only (no model reads it: a loop of saves spends nothing). Any app may
  * pass `bytes: true` instead: nothing is saved, and the PDF or picture
  * comes back as base64 within the caps of file_read's bytes (app-bytes.ts).
  */
 import { registerToolService } from '@mantle/config';
 import { currentActor, currentWorkspaceScope, inAppRunWrite, withCreateHome } from '@mantle/db';
-import { runDocuments, type DocumentsCall, type DocumentsResult } from '@mantle/documents';
+import {
+  findRoute,
+  runDocuments,
+  type DocumentsCall,
+  type DocumentsResult,
+} from '@mantle/documents';
 import { errorMessage } from '@mantle/std';
 import { recordIngest } from '@mantle/tracing';
 import {
@@ -155,12 +161,9 @@ function output(result: DocumentsResult): Record<string, unknown> {
   };
 }
 
-/** A result handed back to a mini app (`bytes: true`): the bytes as base64,
- *  within file_read's cap. */
+/** A result handed back to a mini app (`bytes: true`): the bytes as base64
+ *  (the caller checked file_read's cap). */
 function bytesOutput(result: DocumentsResult & { kind: 'bytes' }): ToolHandlerResult {
-  if (result.bytes.length > APP_BYTES_MAX) {
-    return { ok: false, error: appBytesTooLarge(result.filename, result.bytes.length) };
-  }
   return {
     ok: true,
     output: {
@@ -185,27 +188,33 @@ async function run(
     if (refused) return { ok: false, error: refused };
   }
   const caller = { ownerId: ctx.ownerId, actorLoginId: actorLoginId() };
-  // A team app's run (team rules): no page print, and a file only in the
-  // workspace that holds the app (see the module comment).
-  const team = (ctx.caller ?? currentToolCaller())?.appRules === 'team';
+  // An app's run at team rules (fail closed: any app rules but admin's; a
+  // shared link runs no built-in at all): no page print, and a file only in
+  // the workspace that holds the app (see the module comment).
+  const by = ctx.caller ?? currentToolCaller();
+  const team = by?.entry === 'app' && by.appRules !== 'admin';
   if (team && typeof input.node_id === 'string' && input.node_id) {
     return { ok: false, error: TEAM_APP_NO_NODE_PRINT };
   }
+  // The two read routes (pdf_tools metadata_read, bookmarks_read) answer
+  // JSON and save nothing: no home to ask for.
+  const saves = !wantsBytes && findRoute(call.route)?.output !== 'json';
   let home: string | null = null;
-  if (team && !wantsBytes) {
+  if (team && saves) {
     const save = teamAppSaveRefusal();
     if ('refused' in save) return { ok: false, error: save.refused };
     home = save.home;
   }
   // One call of the engine: the bytes handed back (`bytes: true`), or the
-  // file landed; a team app's file is homed in the app's workspace,
-  // whatever the folder: never the runner's private workspace, never Admin.
+  // file landed. A team app's file is homed in the app's workspace whatever
+  // the folder (never the runner's private fallback, never Admin), and
+  // indexed by its metadata only: a loop of saves starts no model work.
   const convert = async (): Promise<DocumentsResult | { error: string }> => {
     try {
       if (wantsBytes) return await runDocuments(call, caller, 'bytes');
       return home
         ? await withCreateHome({ createWs: home, privateWs: home }, () =>
-            runDocuments(call, caller),
+            runDocuments({ ...call, indexing: 'metadata' }, caller),
           )
         : await runDocuments(call, caller);
     } catch (err) {
@@ -213,10 +222,15 @@ async function run(
     }
   };
   if (wantsBytes) {
+    const result = await convert();
+    if ('error' in result) return { ok: false, error: result.error };
+    if (result.kind !== 'bytes') return { ok: true, output: output(result) };
+    if (result.bytes.length > APP_BYTES_MAX) {
+      return { ok: false, error: appBytesTooLarge(result.filename, result.bytes.length) };
+    }
+    // A slot only for the base64 copy, so a slow engine job never holds
+    // one that a picture read waits for (app-bytes.ts).
     const done = await withAppBytesSlot(async (): Promise<ToolHandlerResult> => {
-      const result = await convert();
-      if ('error' in result) return { ok: false, error: result.error };
-      if (result.kind !== 'bytes') return { ok: true, output: output(result) };
       ctx.step?.setOutput({ route: result.route, bytes: result.bytes.length });
       return bytesOutput(result);
     });

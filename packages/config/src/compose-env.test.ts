@@ -129,6 +129,9 @@ describe('every app service can read the live optional-service state', () => {
     expect(svc).toMatch(
       /CHROMIUM_ALLOW_LIST: '\^http:\/\/web:3000\/\(print\|render\|share-runtime\|excalidraw-assets\|Inter\|fonts\|api\/files\/files\|api\/draws\|api\/presents\)\/\|\^http:\/\/web:3000\/\(favicon\\\.ico\|icon\\\.svg\|apple-icon\\\.png\)\$\$\|\^file:\/\/\/tmp\/'/,
     );
+    // The engine's default file rule kept, and no folder listed: a caller's
+    // HTML never finds another job's files in /tmp.
+    expect(svc).toContain("CHROMIUM_DENY_LIST: '^file:(?!//\\/tmp/).*|^file:.*/$$'");
     expect(svc).toMatch(/API_DISABLE_DOWNLOAD_FROM: 'true'/);
     expect(svc).toMatch(/WEBHOOK_DISABLE: 'true'/);
   });

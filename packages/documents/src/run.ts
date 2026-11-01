@@ -25,6 +25,10 @@ export type DocumentsCall = {
   options?: Record<string, unknown>;
   /** The output name's stem (the extension follows the output kind). */
   filename?: string;
+  /** The landed file's indexing (data.indexing, @mantle/files indexing.ts):
+   *  'metadata' keeps it findable by name and folder, and no model reads its
+   *  content (a team app's saves, which a loop can make many of). */
+  indexing?: 'metadata';
 };
 
 export type DocumentsFile = {
@@ -205,7 +209,11 @@ export async function runDocuments(
     ownerId: caller.ownerId,
     filename,
     bytes: answer.bytes,
-    data: { ...(exportOf ? { exportOf } : {}), documentsRoute: route.key },
+    data: {
+      ...(exportOf ? { exportOf } : {}),
+      documentsRoute: route.key,
+      ...(call.indexing ? { indexing: call.indexing } : {}),
+    },
   });
   return {
     kind: 'file',

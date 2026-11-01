@@ -36,6 +36,12 @@ The container policy (docker-compose.yml, `gotenberg`):
   render cookie and a caller's HTML reaches no other route of the brain,
   and `file:///tmp/`, where the engine keeps the caller's own uploaded files (without it the html and
   markdown routes answer 403 once both address classes are denied);
+- the deny list keeps the engine's own file rule (`^file:(?!//\/tmp/).*`)
+  and refuses every folder URL (`^file:.*/$`): a caller's HTML loads its
+  own uploaded files by name but cannot list `/tmp` or a job's folder, so
+  it cannot find another job's files (measured on 8.39.0, 2026-11-01: a
+  frame of `./` listed the job's folder before; `/tmp/` and `../` were
+  already refused);
 - each conversion gets its own browser context, so a render cookie never
   outlives its job;
 - two Chromium jobs at a time, ten queued; LibreOffice one at a time, ten
@@ -147,7 +153,12 @@ Mini apps declare the tools with `app_tools_set` and call them with
   carry the login's whole rights, not the app's); and its file lands at the
   top of Files, **homed in the one workspace beyond Admin that holds the
   app** (`withCreateHome`, create and private home both that workspace),
-  never in a private workspace and never in Admin. Only a user who
+  never the runner's private fallback and never Admin. (An app only its
+  author holds, in their own private workspace, saves there: that author
+  is the only one in its scope.) The file is indexed by its metadata only
+  (`data.indexing: 'metadata'`, `@mantle/files` indexing.ts): it is found
+  by name and folder, and no model reads it, so an app's loop of saves
+  starts no extraction or summary. Only a user who
   moderates that workspace saves there, in a request that writes as a login
   that writes (`teamAppSaveRefusal` in `builtins-documents.ts`; the broker
   enters the app's write scope for the call, as for a Table row write).
@@ -195,12 +206,19 @@ keeps the drawing SVG re-render (P6 is the post-back workaround, later).
 - **An explicit off is kept.** `MANTLE_DOCUMENTS_OFF=1` in `.env` is "off
   on purpose": a Settings > Services off writes it (the updater's
   `service_off`), an on drops it, and `install.sh --no-documents` /
-  `--documents` do the same. An off from before that line existed is read
-  from the audit log: the newest accepted `service.toggle` of `documents`
-  being an off writes the line and leaves it off. An unreadable audit log,
-  or less free disk than `MANTLE_SERVICE_MIN_FREE_MB` plus 2.4 GB, switches
-  nothing on, says why, and the next roll tries again. The step never fails
-  a roll.
+  `--documents` do the same. Of the offs from before that line existed,
+  only a Settings > Services off is kept: the newest accepted
+  `service.toggle` of `documents` in the audit log being an off writes the
+  line and leaves it off. An older `install.sh --no-documents` or a hand
+  edit of `COMPOSE_PROFILES` left no trace, so such a box gets the engine;
+  switch it off once more and it stays off.
+- **What switches nothing on**, says why, and leaves the next roll to try
+  again: an unreadable audit log, less free disk than
+  `MANTLE_SERVICE_MIN_FREE_MB` plus 2.4 GB, or a box with less than 3000 MB
+  of memory (`DOCUMENTS_MIN_MEM_MB`: an admin may still switch it on). The
+  engine's image is pulled alone right after the profile is added; a
+  failed download takes the profile back out (no off line), so the roll's
+  own pull never fails on it. The step never fails a roll.
 - **Off works as before**: the profile is left out, the tools hide, and
   nothing else changes.
 

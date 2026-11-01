@@ -743,7 +743,7 @@ fi
 # roll that brings the release (run by the updater before it) already pulls
 # and starts it. It prints what it adds (disk, memory) and never fails.
 EDD_FUNCS=$(sed -n -e '/^file_owner() /p' -e '/^file_mode() /p' -e '/^env_val() /p' \
-  -e '/^num_or() /p' -e '/^free_kb() /p' -e '/^profile_active() /p' -e '/^DOCUMENTS_IMAGE_MB=/p' \
+  -e '/^num_or() /p' -e '/^free_kb() /p' -e '/^profile_active() /p' -e '/^DOCUMENTS_IMAGE_MB=/p' -e '/^DOCUMENTS_MIN_MEM_MB=/p' \
   -e '/^env_rewrite() {/,/^}/p' -e '/^persist_env() {/,/^}/p' -e '/^profiles_csv() {/,/^}/p' \
   -e '/^gen_token() {/,/^}/p' -e '/^documents_switched_off() {/,/^}/p' \
   -e '/^ensure_documents_default() {/,/^}/p' \
