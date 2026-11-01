@@ -83,7 +83,9 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   pack and the bundle header; no `git` binary on the box). An outside agent
   downloads it with `GET /api/v1/files/{id}/download` and runs
   `git clone`, then log, blame and bisect (docs/app-authoring-guide.md,
-  "History: versions and snapshots").
+  "History: versions and snapshots"). The same versions give the same
+  commit ids on every export. Bounded: 256 MB of code read, a 64 MB bundle,
+  two exports at a time per process, written on disk, not in memory.
 
 ## Unreleased: a SQL process has a memory limit
 
