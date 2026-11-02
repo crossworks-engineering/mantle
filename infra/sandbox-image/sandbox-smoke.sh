@@ -218,7 +218,10 @@ check "wasm-pack build, cargo offline (wasm32)" bash -c "CARGO_NET_OFFLINE=true 
 # ── the manifest ─────────────────────────────────────────────────────────────
 check "kit manifest" python3 -c "
 import json; k = json.load(open('/etc/mantle/sandbox-kit.json'))
-assert {'node', 'bun', 'python', 'go', 'rust'} <= set(k['languages']), k['languages'].keys()"
+assert {'node', 'bun', 'python', 'go', 'rust'} == {l['name'] for l in k['languages']}
+assert all(l['version'] and isinstance(l['tools'], list) for l in k['languages'])
+assert set(k['libraries']) == {'python', 'node', 'go', 'rust'} and all(k['libraries'].values())
+assert k['image'].startswith('titanwest/mantle-sandbox:') and isinstance(k['sqlite'], list)"
 
 echo "sandbox-smoke: $PASS passed, $FAIL failed (network $net)${FAILED:+; failed:$FAILED}"
 [ "$FAIL" -eq 0 ]

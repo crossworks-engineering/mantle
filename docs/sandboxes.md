@@ -222,7 +222,25 @@ only** (no daemon, nested docker is a separate decision) and Claude Code.
 library and tool with its installed version, written at the end of the build
 from what is installed, so it cannot drift. An agent reads it with one
 `sandbox_exec` instead of trying commands; `sandbox_create`'s description
-points at it. **`sandbox-smoke`** in the image proves the kit: one SQLite file
+points at it. Its shape is a contract (code tools read it; schema 2):
+
+```json
+{
+  "schema": 2,
+  "image": "titanwest/mantle-sandbox:24.04-v4",
+  "summary": "…",
+  "languages": [{ "name": "node", "version": "26.13.0", "tools": [{ "name": "tsc", "version": "…" }], "use": "…" }],
+  "libraries": { "python": [{ "name": "pandas", "version": "…" }], "node": [], "go": [], "rust": [] },
+  "sqlite": [{ "name": "node:sqlite", "language": "node", "note": "built in" }],
+  "tools": [{ "name": "git", "version": "…" }],
+  "offline": { "npm_before": "<kit date>" },
+  "boundary": "…",
+  "smoke_test": "…"
+}
+```
+
+`languages` holds node, bun, python, go and rust (rust also has `targets`).
+Fields are only ever added; a rename or removal bumps `schema`. **`sandbox-smoke`** in the image proves the kit: one SQLite file
 read from every language, a first build in Go, Rust and WebAssembly, the Node
 kit by `require` and by an ESM project installed offline (which must stay in
 the project), `npx` of the kit's tools, every Python import, every formatter,

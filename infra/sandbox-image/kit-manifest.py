@@ -85,89 +85,106 @@ def installed_targets() -> list:
     return sorted(out.stdout.split())
 
 
+def items(d: dict) -> list:
+    return [{"name": k, "version": v} for k, v in d.items()]
+
+
+py, nd = python_kit(), node_kit()
+TAG = (KIT / "TAG").read_text().split("=", 1)[1].strip()
+
+# The shape is a contract (docs/sandboxes.md, "The kit manifest"): code tools
+# read it. Add fields; never rename or remove one without a schema bump.
 manifest = {
-    "schema": 1,
-    "image": "titanwest/mantle-sandbox",
+    "schema": 2,
+    "image": f"titanwest/mantle-sandbox:{TAG}",
     "summary": (
         "Node 26, Bun, Python 3.12, Go and Rust (with the wasm32 target) are all installed, "
         "each with the kit below. Kit libraries are pre-installed (Python, Node) or in the "
         "package cache (Go, Rust), so first builds work with no network. Anything else "
         "installs on demand (a balanced sandbox reaches the package registries only)."
     ),
-    "languages": {
-        "node": {
+    "languages": [
+        {
+            "name": "node",
             "version": ver("node", "-v"),
-            "npm": ver("npm", "-v"),
-            "npm_offline_before": NPM_BEFORE,
-            **node_kit(),
+            "tools": items({"npm": ver("npm", "-v"), **nd["tools"]}),
             "use": (
                 "require() finds every kit library from any directory (NODE_PATH). For ESM "
                 "import, install the kit libraries a project uses into it, offline: "
                 f"`npm install --offline --before={NPM_BEFORE} <packages>` (the image's npm "
-                "cache; the date makes npm pick the kit's versions). The tools (tsc, esbuild, "
-                "vitest, biome, pnpm, claude) are on PATH, npx finds them too."
+                "cache; the date makes npm pick the kit's versions). The tools are on PATH; "
+                "npx finds them too."
             ),
         },
-        "bun": {
+        {
+            "name": "bun",
             "version": ver("bun", "--version"),
-            "use": "bun runs .ts directly; bun:sqlite and bun test are built in; for the Node kit it uses a project's node_modules (the npm install above).",
+            "tools": items({"bun test": "built in"}),
+            "use": "bun runs .ts directly; for the Node kit it uses a project's node_modules (the npm install above).",
         },
-        "python": {
+        {
+            "name": "python",
             "version": ver("python3", "--version"),
-            "venv": "/opt/venv (first on PATH; pip install works inside it)",
-            **python_kit(),
+            "tools": items(py["tools"]),
+            "use": "The venv /opt/venv is first on PATH; pip install works inside it.",
         },
-        "go": {
+        {
+            "name": "go",
             "version": ver("go", "version"),
-            "libraries": go_kit(),
-            "tools": {"gofmt": "bundled", "go vet": "bundled", "staticcheck": run("staticcheck", "-version")},
+            "tools": items({"gofmt": "bundled", "go vet": "bundled", "staticcheck": ver("staticcheck", "-version")}),
             "use": (
                 "GOPROXY lists the module cache first, so `go mod tidy` resolves the kit offline "
-                "(and pins the kit's versions; ask for another version with `go get mod@vX.Y.Z`). "
+                "(and pins the kit's versions; ask for another with `go get mod@vX.Y.Z`). "
                 "GOTOOLCHAIN=local: no toolchain downloads."
             ),
         },
-        "rust": {
+        {
+            "name": "rust",
             "version": ver("rustc", "-V"),
-            "cargo": ver("cargo", "-V"),
             "targets": installed_targets(),
-            "crates": rust_kit(),
-            "tools": {
+            "tools": items({
+                "cargo": ver("cargo", "-V"),
                 "rustfmt": ver("rustfmt", "--version"),
                 "clippy": ver("cargo", "clippy", "--version"),
                 "wasm-pack": ver("wasm-pack", "--version"),
                 "wasm-bindgen": ver("wasm-bindgen", "--version"),
                 "wasm-opt": ver("wasm-opt", "--version"),
-            },
+            }),
             "use": (
                 "Kit crates are fetched, not built. With no network set CARGO_NET_OFFLINE=true (every "
-                "cargo call, wasm-pack's too, then resolves from the cache); a crate outside the kit "
-                "needs the network."
+                "cargo call, wasm-pack's too, then resolves from the cache)."
             ),
         },
+    ],
+    "libraries": {
+        "python": items(py["libraries"]),
+        "node": items(nd["libraries"]),
+        "go": items(go_kit()),
+        "rust": items(rust_kit()),
     },
-    "sqlite": {
-        "node": "node:sqlite (built in)",
-        "bun": "bun:sqlite (built in)",
-        "python": "sqlite3 (standard library) + sqlite-utils",
-        "go": "modernc.org/sqlite (pure Go)",
-        "rust": "rusqlite with the bundled feature",
-        "cli": {"sqlite3": ver("sqlite3", "--version"), "duckdb": ver("duckdb", "--version")},
-        "duckdb_extensions": ["sqlite", "excel"],
-        "boundary": (
-            "A sandbox works on a SQLite FILE inside it. It never reaches the brain's live app "
-            "databases: copy one in with sandbox_import, or use the app database tools."
-        ),
-    },
-    "tools": {
+    "sqlite": [
+        {"name": "node:sqlite", "language": "node", "note": "built in"},
+        {"name": "bun:sqlite", "language": "bun", "note": "built in"},
+        {"name": "sqlite3 + sqlite-utils", "language": "python", "note": "standard library + kit"},
+        {"name": "modernc.org/sqlite", "language": "go", "note": "pure Go"},
+        {"name": "rusqlite", "language": "rust", "note": "the bundled feature"},
+        {"name": "sqlite3", "language": "cli", "version": ver("sqlite3", "--version")},
+        {"name": "duckdb", "language": "cli", "version": ver("duckdb", "--version"), "note": "sqlite and excel extensions installed"},
+    ],
+    "tools": items({
         "git": ver("git", "--version"),
-        "docker": ver("docker", "--version") + " (CLI only, no daemon)",
+        "docker": ver("docker", "--version"),
         "claude": ver("claude", "--version"),
         "ripgrep": ver("rg", "--version"),
         "jq": ver("jq", "--version"),
         "cmake": ver("cmake", "--version"),
-        "build-essential": ver("gcc", "--version"),
-    },
+        "gcc": ver("gcc", "--version"),
+    }),
+    "offline": {"npm_before": NPM_BEFORE},
+    "boundary": (
+        "A sandbox works on a SQLite FILE inside it. It never reaches the brain's live app "
+        "databases: copy one in with sandbox_import, or use the app database tools."
+    ),
     "smoke_test": "sandbox-smoke (proves SQLite and a first build in every language; works offline)",
 }
 

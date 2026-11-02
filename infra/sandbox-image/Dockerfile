@@ -299,6 +299,7 @@ RUN git config --system safe.directory '*'
 # The smoke test and the kit manifest (written from what is installed).
 COPY sandbox-smoke.sh /usr/local/bin/sandbox-smoke
 COPY kit-manifest.py /opt/mantle-kit/kit-manifest.py
+COPY TAG /opt/mantle-kit/TAG
 RUN chmod 0755 /usr/local/bin/sandbox-smoke \
     && mkdir -p /etc/mantle \
     && python3 -I /opt/mantle-kit/kit-manifest.py > /etc/mantle/sandbox-kit.json \
