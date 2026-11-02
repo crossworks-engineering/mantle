@@ -10,7 +10,6 @@ import { NextResponse } from '@/server/http-compat';
 import { gateShare } from '@/lib/contact-share-gate';
 import { buildCanvasFrameTicket, canvasFrameNonce } from '@/lib/auth';
 import { getPresentFrame } from '@/lib/presents';
-import { CACHE_CONTROL } from '@/lib/cache-control';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -21,11 +20,10 @@ export const policy = routePolicy({
   },
 });
 
+// A POST answer is never cached, so no Cache-Control is set (as the app's
+// share frame ticket).
 function notFound() {
-  return new NextResponse('not found', {
-    status: 404,
-    headers: { 'Cache-Control': CACHE_CONTROL.none },
-  });
+  return new NextResponse('not found', { status: 404 });
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -42,8 +40,5 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   });
   // The nonce lets the parent tell the frame it asked for from a page the
   // canvas navigated to (canvas-sandbox.tsx).
-  return NextResponse.json(
-    { ticket, nonce: canvasFrameNonce(ticket) },
-    { headers: { 'Cache-Control': CACHE_CONTROL.none } },
-  );
+  return NextResponse.json({ ticket, nonce: canvasFrameNonce(ticket) });
 }
