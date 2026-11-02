@@ -169,7 +169,7 @@ describe('GET /api/auth/bootstrap-state', () => {
     expect(await (await GET()).json()).toEqual({
       firstRun: true,
       setupCodeRequired: true,
-      passwordRule: { min: 12, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true },
+      passwordRule: { min: 8, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true },
     });
   });
 
@@ -179,7 +179,7 @@ describe('GET /api/auth/bootstrap-state', () => {
     expect(await (await GET()).json()).toEqual({
       firstRun: false,
       setupCodeRequired: false,
-      passwordRule: { min: 12, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true },
+      passwordRule: { min: 8, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true },
     });
   });
 
@@ -189,7 +189,7 @@ describe('GET /api/auth/bootstrap-state', () => {
     expect(await (await GET()).json()).toEqual({
       firstRun: true,
       setupCodeRequired: false,
-      passwordRule: { min: 12, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true },
+      passwordRule: { min: 8, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true },
     });
   });
 });

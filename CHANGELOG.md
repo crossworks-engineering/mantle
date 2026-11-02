@@ -6,8 +6,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
 ## Unreleased: a stronger rule for new passwords
 
-- **Changed:** a new password has at least 12 characters (was 8) and at most
-  72 bytes (was 1024; bcrypt keeps no more). Below 20 characters it uses 3 of
+- **Changed:** a new password still has at least 8 characters, and now at
+  most 72 bytes (was 1024; bcrypt keeps no more). Below 20 characters it uses 3 of
   small letters, capitals, digits and symbols; a passphrase of 20 or more
   needs no mix. The common-password list is on for every box, not only under
   a box policy. A refused one answers `password_weak` for too few kinds.

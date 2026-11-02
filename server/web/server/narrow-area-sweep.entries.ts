@@ -262,7 +262,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'PUT /api/tools/:id/external-access': { body: { allow: true, readOnlyConfirmed: true } },
   'POST /api/updates/check': {},
   'POST /api/updates/request': {},
-  // A new login's password meets the password rule (12+ characters, 3 kinds):
+  // A new login's password meets the password rule (8+ characters, 3 kinds):
   // the snapshot's sample body (a10-body-sweep.bodies.json) is the schema's
   // minimum, which the rule refuses before any write.
   'POST /api/users': { body: { email: 'sweep@example.invalid', password: 'Sweep-pass-2026' } },

@@ -130,7 +130,7 @@ uses it until it is moved.
 ## Passwords
 
 **The new-password rule (every box, 2026-11).** A new password has at
-least 12 characters and at most 72 UTF-8 bytes (bcrypt keeps no more). Below
+least 8 characters and at most 72 UTF-8 bytes (bcrypt keeps no more). Below
 20 characters it uses 3 of the 4 kinds: small letters (and letters of a
 script with no capitals), capitals, digits, symbols (spaces count). From 20
 characters a passphrase needs no mix. It is not a common password from a
@@ -145,7 +145,7 @@ refuses one for this rule. `GET /api/auth/bootstrap-state` carries the rule
 (`passwordRule`), so a form can show it as the person types.
 
 `MANTLE_POLICY_PASSWORD_MIN=<n>` (8 to 64) raises the minimum to `n` when `n`
-is over 12, and turns on the forced change below. The forced change looks at
+is over 8, and turns on the forced change below. The forced change looks at
 the policy's minimum and the common list only: a password set before the
 72-byte cap or the mix of kinds is not held for them.
 

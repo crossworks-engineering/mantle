@@ -66,14 +66,15 @@ describe('every MANTLE_POLICY_* empty: the box as before', () => {
 
   it('passwords: the new-password rule, no forced change', async () => {
     expect(passwordRule()).toEqual({
-      min: 12,
+      min: 8,
       maxBytes: 72,
       kinds: 3,
       passphrase: 20,
       commonList: true,
     });
     expect(passwordProblem('Kettle-under-7')).toBeNull();
-    expect(passwordProblem('Kettle-un7!')?.code).toBe('password_too_short');
+    expect(passwordProblem('Ket-un7')?.code).toBe('password_too_short');
+    expect(passwordProblem('kettle77')?.code).toBe('password_weak');
     expect(signInNeedsPasswordChange('password')).toBe(false);
     // The hold reads nothing on any route, even for a stale flag.
     const login = vi.fn(async () => ({ resolved: { mustChangePassword: true } }));

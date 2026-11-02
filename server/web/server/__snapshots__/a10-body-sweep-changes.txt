@@ -6,7 +6,7 @@
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
 # trash-first (Admin act definer, 0310: the trash check is asked of the database first): 6 cells
 # ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
-# password-rule-12 (the new-password rule, 2026-11: at least 12 characters): 10 cells
+# password-rule (the new-password rule, 2026-11: 8 characters, three kinds): 10 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
 # code-first (Admin act definer, 0308: the code is made before the contact is asked): 1 cells
 # bad-json-400 (malformed, accepted as {} on main): 7 cells
@@ -275,15 +275,15 @@ POST /api/auth/device-login none malformed [bad-json-400 (malformed)]
 POST /api/auth/device-login none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
   main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
   now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
-POST /api/auth/invite/accept none valid [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+POST /api/auth/invite/accept none valid [password-rule (the new-password rule, 2026-11: 8 characters, three kinds)]
   main 400 application/json {"error":"Choose a password of at least 8 characters."}
-  now  400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}
+  now  400 application/json {"error":"Password must be at least 8 characters.","code":"password_too_short","min":8}
 POST /api/auth/invite/accept none malformed [bad-json-400 (malformed)]
   main 401 application/json {"error":"This invite is not valid. Ask for a new one."}
   now  400 application/json {"error":"invalid JSON"}
-POST /api/auth/invite/accept none nul [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+POST /api/auth/invite/accept none nul [password-rule (the new-password rule, 2026-11: 8 characters, three kinds)]
   main 400 application/json {"error":"Choose a password of at least 8 characters."}
-  now  400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}
+  now  400 application/json {"error":"Password must be at least 8 characters.","code":"password_too_short","min":8}
 POST /api/auth/invite/accept none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
   main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
   now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
@@ -1454,19 +1454,19 @@ POST /api/updates/request owner malformed [bad-json-400 (malformed)]
 POST /api/updates/request owner chunked [chunked-413]
   main 400 application/json {"error":"target or clientTarget required"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-POST /api/users owner valid [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+POST /api/users owner valid [password-rule (the new-password rule, 2026-11: 8 characters, three kinds)]
   main 500 application/json {"error":"Could not create the user."}
-  now  400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}
+  now  400 application/json {"error":"Use at least 3 of: small letters, capitals, digits, symbols. Or use a passphrase of 20 characters or more.","code":"password_weak","min":8}
 POST /api/users owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Enter a valid email and a password of at least 8 characters."}
   now  400 application/json {"error":"invalid JSON"}
-POST /api/users owner empty [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+POST /api/users owner empty [password-rule (the new-password rule, 2026-11: 8 characters, three kinds)]
   main 400 application/json {"error":"Enter a valid email and a password of at least 8 characters."}
   now  400 application/json {"error":"Enter a valid email and a password."}
-POST /api/users owner nul [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+POST /api/users owner nul [password-rule (the new-password rule, 2026-11: 8 characters, three kinds)]
   main 400 application/json {"error":"Enter a valid email and a password of at least 8 characters."}
   now  400 application/json {"error":"Enter a valid email and a password."}
-POST /api/users owner array [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+POST /api/users owner array [password-rule (the new-password rule, 2026-11: 8 characters, three kinds)]
   main 400 application/json {"error":"Enter a valid email and a password of at least 8 characters."}
   now  400 application/json {"error":"Enter a valid email and a password."}
 POST /api/users owner chunked [chunked-413]
@@ -1484,19 +1484,19 @@ PUT /api/users/:id/agent owner malformed [bad-json-400 (malformed)]
 PUT /api/users/:id/agent owner chunked [chunked-413]
   main 400 application/json {"error":"Enter a name for the assistant."}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-POST /api/users/:id/password owner valid [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+POST /api/users/:id/password owner valid [password-rule (the new-password rule, 2026-11: 8 characters, three kinds)]
   main 404 application/json {"error":"User not found."}
-  now  400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}
+  now  400 application/json {"error":"Use at least 3 of: small letters, capitals, digits, symbols. Or use a passphrase of 20 characters or more.","code":"password_weak","min":8}
 POST /api/users/:id/password owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Password must be at least 8 characters."}
   now  400 application/json {"error":"invalid JSON"}
-POST /api/users/:id/password owner empty [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+POST /api/users/:id/password owner empty [password-rule (the new-password rule, 2026-11: 8 characters, three kinds)]
   main 400 application/json {"error":"Password must be at least 8 characters."}
   now  400 application/json {"error":"Enter a new password."}
-POST /api/users/:id/password owner nul [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+POST /api/users/:id/password owner nul [password-rule (the new-password rule, 2026-11: 8 characters, three kinds)]
   main 404 application/json {"error":"User not found."}
-  now  400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}
-POST /api/users/:id/password owner array [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+  now  400 application/json {"error":"Use at least 3 of: small letters, capitals, digits, symbols. Or use a passphrase of 20 characters or more.","code":"password_weak","min":8}
+POST /api/users/:id/password owner array [password-rule (the new-password rule, 2026-11: 8 characters, three kinds)]
   main 400 application/json {"error":"Password must be at least 8 characters."}
   now  400 application/json {"error":"Enter a new password."}
 POST /api/users/:id/password owner chunked [chunked-413]

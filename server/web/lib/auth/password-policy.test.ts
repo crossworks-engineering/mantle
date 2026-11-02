@@ -2,7 +2,7 @@
  * The box password policy (docs/policy.md): the one rule every new password
  * meets, the one hash that refuses a password the rule refuses, and the
  * sign-in that sets (or clears) the forced change. With no policy a new
- * password still meets the new-password rule (12 characters, 72 bytes, three
+ * password still meets the new-password rule (8 characters, 72 bytes, three
  * kinds below a 20-character passphrase, the common list), and a sign-in
  * writes nothing.
  * The login row is stood in; bcrypt is real.
@@ -75,20 +75,25 @@ const row = (password: string, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const RULE = { min: 12, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true };
+const RULE = { min: 8, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true };
 
 describe('no policy: the new-password rule', () => {
-  it('12 characters, three kinds below a 20-character passphrase, not common', () => {
+  it('8 characters, three kinds below a 20-character passphrase, not common', () => {
     expect(passwordRule()).toEqual(RULE);
-    expect(passwordProblem('Kettle-un7!')?.code).toBe('password_too_short');
+    expect(passwordProblem('Ket-un7')?.code).toBe('password_too_short');
+    expect(passwordProblem('Ket-und7')).toBeNull();
     expect(passwordProblem('Kettle-under-7')).toBeNull();
+    // Eight characters still need three kinds.
+    expect(passwordProblem('kettle77')?.code).toBe('password_weak');
     // Two kinds: small letters and digits, or small letters and spaces.
     expect(passwordProblem('kettleunder7')?.code).toBe('password_weak');
     expect(passwordProblem('kettle under stairs')?.code).toBe('password_weak');
     // A passphrase of 20 characters or more needs no mix.
     expect(passwordProblem('kettle under the stairs')).toBeNull();
     expect(passwordProblem('Password1234')?.code).toBe('password_common');
-    expect(passwordProblem('password')?.code).toBe('password_too_short');
+    expect(passwordProblem('passwor')?.code).toBe('password_too_short');
+    expect(passwordProblem('password')?.code).toBe('password_weak');
+    expect(passwordProblem('Password1')?.code).toBe('password_common');
     expect(signInNeedsPasswordChange('password')).toBe(false);
   });
 
@@ -152,12 +157,12 @@ describe('a new password records the rule it was set under', () => {
 });
 
 describe('a policy minimum', () => {
-  it('raises the minimum, never lowers it under 12', () => {
+  it('raises the minimum, never lowers it under 8', () => {
     policyMin('16');
     expect(passwordRule().min).toBe(16);
     expect(passwordProblem('Kettle-under-7')?.code).toBe('password_too_short');
-    policyMin('10');
-    expect(passwordRule().min).toBe(12);
+    policyMin('6');
+    expect(passwordRule().min).toBe(8);
   });
 
   it('a sign-in asks for a change on the policy minimum and the list only', () => {
@@ -174,7 +179,7 @@ describe('MANTLE_POLICY_PASSWORD_MIN=12', () => {
   beforeEach(() => policyMin('12'));
 
   it('length, then the common list', () => {
-    expect(passwordRule()).toEqual(RULE);
+    expect(passwordRule()).toEqual({ ...RULE, min: 12 });
     expect(passwordProblem('abcdefghijk')?.code).toBe('password_too_short');
     expect(passwordProblem('Password1234')?.code).toBe('password_common');
     expect(passwordProblem('Welcome2026!!')?.code).toBe('password_common');
