@@ -2328,13 +2328,28 @@ const app_source_from_bundle: BuiltinToolDef = {
     if (!fileId) return { ok: false, error: 'file_id is required' };
     const branch = str(input.branch).trim() || undefined;
     const entryIn = str(input.entry).trim();
+    const baseRev = str(input.base_rev).trim() || null;
     try {
       await assertItemRight(fileId, 'read');
       const app = await getApp(ctx.ownerId, id);
       if (!app) return notFound('app', id, 'app_list');
       const tooBig = await versionsTooBig(ctx.ownerId, id);
       if (tooBig) return { ok: false, error: tooBig };
-      const live = await liveVersionCommit(ctx.ownerId, id);
+      // The live commit's id reads every version, as a git export does:
+      // counted with the exports (GIT_EXPORT_MAX_PARALLEL).
+      if (gitExportsRunning >= GIT_EXPORT_MAX_PARALLEL) {
+        return {
+          ok: false,
+          error: 'other git exports or imports are running: try again in a minute',
+        };
+      }
+      gitExportsRunning++;
+      let live: Awaited<ReturnType<typeof liveVersionCommit>>;
+      try {
+        live = await liveVersionCommit(ctx.ownerId, id);
+      } finally {
+        gitExportsRunning--;
+      }
       if (!live)
         return {
           ok: false,
@@ -2348,7 +2363,6 @@ const app_source_from_bundle: BuiltinToolDef = {
       }
       // Work in the draft that no version holds is not in any export: it
       // is replaced only when the caller names the draft it read.
-      const baseRev = str(input.base_rev).trim() || null;
       if (app.draft && sourceRev(app.draft) !== live.rev && !baseRev) {
         return {
           ok: false,
@@ -2452,11 +2466,23 @@ const app_source_from_bundle: BuiltinToolDef = {
           ...(buildError ? { build_error: buildError } : {}),
           hint: build?.buildOk
             ? `The draft is the bundle's ${read.ref}. Review it at /apps/${id}; app_publish when approved.`
-            : 'The draft is saved but does not build: fix the files (code_edit), then app_build.',
+            : buildError
+              ? 'The draft is saved; the build could not run: run app_build again.'
+              : 'The draft is saved but does not build: fix the files (code_edit), then app_build.',
         },
       };
     } catch (err) {
+      // A draft written while the bundle was read, when the caller named no
+      // draft: run again (the draft rule then sees it), never "pass base_rev".
+      if (err instanceof AppDraftRevError && !baseRev) {
+        return {
+          ok: false,
+          error:
+            'the draft changed while the bundle was read (the editor or another agent wrote it): run the import again. Nothing changed',
+        };
+      }
       if (
+        err instanceof AppPackageError ||
         err instanceof BundleReadError ||
         err instanceof AppSourceLimitError ||
         err instanceof AppDraftRevError ||
