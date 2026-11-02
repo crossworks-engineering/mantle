@@ -83,6 +83,7 @@ export const pending_get: BuiltinToolDef = {
 export const pending_approve: BuiltinToolDef = {
   slug: 'pending_approve',
   policy: {
+    riskClass: 'send', // runs the held call now: mostly a parked send (the egress gate)
     matrix: { none: 'a pending call is not an item' },
     effect: 'write',
     spends: 'none',

@@ -222,7 +222,9 @@ const keyCallers = new WeakMap<McpCaller, { email: string; createdBy: string | n
  * padding cannot hide the tool name. A body that is not JSON is the
  * transport's to refuse. Never blocks the call. On the tool map
  * (`toolMap`) a call through a call tool (tool_write, ...) is the call of
- * the tool it names, audited as that tool.
+ * the tool it names, audited as that tool. The map may still refuse it
+ * (the wrong call tool, a mapped tool called by its own name): such a call
+ * leaves a row too, as erring toward a row is the safe side.
  */
 export async function auditMcpKeyCall(
   req: Request,

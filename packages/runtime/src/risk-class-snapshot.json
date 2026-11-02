@@ -198,7 +198,7 @@
   "peer_query": "read",
   "peer_search_chunks": "read",
   "peer_tools": "read",
-  "pending_approve": "write",
+  "pending_approve": "send",
   "pending_get": "read",
   "pending_list": "read",
   "pending_reject": "write",

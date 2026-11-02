@@ -386,7 +386,7 @@ export function registerGatedTool(
   // above decides what runs.
   const annotations = toolAnnotations(entry, policy);
   if (map) {
-    map.add({
+    return map.add({
       name,
       description,
       inputSchema,
@@ -395,7 +395,6 @@ export function registerGatedTool(
       cls: riskClassOf(entry, name, policy),
       source: entry.kind === 'connector' ? toolSourceOf(entry.row.handler) : 'builtin',
     });
-    return true;
   }
   server.registerTool(
     name,

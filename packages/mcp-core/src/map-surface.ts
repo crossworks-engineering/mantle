@@ -123,12 +123,14 @@ export class McpToolMap {
     this.named = new Set(instructions.match(/[a-z][a-z0-9]*(?:_[a-z0-9]+)*/g) ?? []);
   }
 
-  /** Take one listed tool. A second tool of the same name throws, as a
+  /** Take one listed tool; false for one named like the map's own tools,
+   *  which is not offered. A second tool of the same name throws, as a
    *  second registerTool does. */
-  add(entry: McpMapEntry): void {
-    if (META.has(entry.name)) return;
+  add(entry: McpMapEntry): boolean {
+    if (META.has(entry.name)) return false;
     if (this.entries.has(entry.name)) throw new Error(`Tool ${entry.name} is already registered`);
     this.entries.set(entry.name, entry);
+    return true;
   }
 
   /** Put the map on `server`: the direct reads, tool_help and the call

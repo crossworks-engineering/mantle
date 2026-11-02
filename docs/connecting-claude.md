@@ -246,10 +246,11 @@ For a claude.ai connector the box switch is the plainer road: a URL with
 `?tools=` is this box's own to the sign-in check, but a strict client may
 still compare it with the endpoint the box advertises (`/api/mcp`).
 
-On the map the client is listed the core reads in full (search, read a
-section or a page, list files and tables, `table_sql`) and every read the
-server instructions name (Recall's tools, `workspaces_list`), `tool_help`,
-and four call tools, one per risk class:
+On the map the client is listed the core reads in full (read a section or
+a page, list files and tables, `table_sql`, `calculate`) and every read the
+server instructions name (`search`, Recall's tools, `app_authoring_guide`,
+`workspaces_list`, `circuit_trace`), `tool_help`, and four call tools, one
+per risk class:
 
 | Call tool     | What its tools do                                                                   |
 | ------------- | ----------------------------------------------------------------------------------- |
