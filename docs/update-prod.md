@@ -757,6 +757,26 @@ Rollback: set `MANTLE_RUNTIME=node` (or remove the line), then `docker compose u
 Any other word stops the services with `MANTLE_RUNTIME must be node or bun`;
 nothing falls back on its own. Plan: dev-brain page 06966c22, sections 12 to 14.
 
+Two checks catch a wrong line before it costs a site:
+
+- **The updater** refuses a roll, with nothing changed, while `.env` holds any
+  other word. The status says `roll refused, nothing changed` and names the
+  word. It reads the line as compose does: quotes and a trailing
+  ` # comment` are fine. A target older than v0.400.62 has no
+  `run-service.sh` and runs Node whatever the line says; the update log says
+  so. The updater that decides is the one on the box, so this check works from
+  the roll after the one that brings it.
+- **`scripts/sanity.sh`** prints `runtime: bun (MANTLE_RUNTIME, 12 service(s))`
+  when every one of those containers runs what `.env` says. A container made
+  before the line changed gets a warning that names it (`docker compose up -d`
+  makes it again), and any other word is a failure.
+
+Live updates (the `/api/realtime` Server-Sent Events) work on Bun as on Node:
+in the lab, 20 open streams each got a new note's event about 26 ms after the
+write, a filtered stream got none, the heartbeat came every 25 s, streams that
+closed were dropped, and a stop with 11 streams open exited 0 after the 5 s
+shutdown deadline, as on Node.
+
 ## The narrow system route: on by default (S7b), always on (S7c)
 
 From the release that carries S7b part b3, the system work of an Admin area

@@ -55,6 +55,21 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   `--apply --before=<the day the box got v0.400.56>` reads the hits again, a
   batch at a time, and never sends a file twice.
 
+## Unreleased: a wrong MANTLE_RUNTIME is caught before a roll
+
+- **Added:** the updater refuses a roll, with nothing changed, while `.env`
+  holds a `MANTLE_RUNTIME` other than empty, `node` or `bun`. Before, the roll
+  pulled, migrated and then every app service stopped at start, so the site
+  was down until `.env` was fixed. It reads the line as compose does (quotes,
+  a trailing comment), and says in the log when `bun` meets a target older
+  than v0.400.62, which runs Node.
+- **Added:** `scripts/sanity.sh` shows the runtime of web, api and the
+  workers, warns about a container still on the old runtime after `.env`
+  changed, and fails on a word `run-service.sh` refuses.
+- **Checked:** live updates (`/api/realtime`) on Bun, in the lab: every one of
+  20 streams got each event, filters and owner isolation held, and a stop
+  with streams open exited 0, the same as on Node.
+
 ## Unreleased: switching calls on works with no restart
 
 - **Fixed:** switching Calls on in Settings > Services started LiveKit, but
