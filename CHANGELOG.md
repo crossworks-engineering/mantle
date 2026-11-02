@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: switching calls on works with no restart
+
+- **Fixed:** switching Calls on in Settings > Services started LiveKit, but
+  the brain kept an empty calls host until `web` was recreated by hand, so
+  every call answered "Calls are off on this brain". A roll now writes
+  `MANTLE_CALLS_HOST` ahead, as `install.sh` does, and a switch that writes
+  the calls host or key recreates the app containers once, as a new token
+  already did.
+
 ## Unreleased: a SQL process has a memory limit
 
 - **Fixed:** one row of many large columns could take a SQL process to several

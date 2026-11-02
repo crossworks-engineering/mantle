@@ -13,7 +13,7 @@ side of calls is `docs/messenger.md` "Calls"; the plan is the dev-brain page
 | `docker-compose.yml` service `livekit` | the container: ports, the config fill at start, the certificate mount | the release                                                       |
 | the Caddy route and log filter         | `handle_path /livekit/*` in both shapes, `access_token=` redacted     | the release (`infra/caddy/README.md`)                             |
 | `MANTLE_LIVEKIT_API_KEY` and `_SECRET` | the key pair the brain signs tokens and verifies webhooks with        | the box's `.env` (`install.sh` writes them; the updater fills in) |
-| `MANTLE_CALLS_HOST`                    | the ONE hostname TURN serves, with Caddy's certificate                | the box's `.env` (`install.sh`; the updater fills it on a switch) |
+| `MANTLE_CALLS_HOST`                    | the ONE hostname TURN serves, with Caddy's certificate                | the box's `.env` (`install.sh`; the updater on a roll or switch)  |
 | the four media ports at the cloud edge | UDP 7882, TCP 7881, TCP 5349, UDP 3478 inbound                        | the box's owner (a per-box ask, like port 80)                     |
 
 ## How the pieces fit
