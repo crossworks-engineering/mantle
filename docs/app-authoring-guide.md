@@ -686,6 +686,16 @@ Node or Bun project installs the kit packages it imports with `npm install
 makes npm pick the kit's versions from the image's cache); Go, Python and
 `require` of the Node kit need nothing extra.
 
+**WebAssembly in an app.** The app frame may compile WebAssembly (and
+nothing else is eval'd), but it has no network, so the module ships inside
+the source: base64 the `.wasm` into a `.ts` file
+(`export const WASM = '…'`), decode it with `atob` and call
+`WebAssembly.instantiate`. Keep it small: build `no_std` with a C ABI
+(`#[no_mangle] pub extern "C" fn`) and static buffers, then `wasm-opt -O3`;
+a Mandelbrot engine is about 3 KB that way, where wasm-bindgen and std
+start near 20 KB. Plain Rust runs about as fast as V8 on a tight numeric
+loop; the win comes from SIMD (`-C target-feature=+simd128`).
+
 **The boundary stays:** a sandbox works on a SQLite file inside it. It never
 reaches the brain's live app databases: copy a file in with `sandbox_import`,
 or read and write the app's data with the app database tools above.

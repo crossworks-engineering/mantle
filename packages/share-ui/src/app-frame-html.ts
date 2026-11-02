@@ -53,7 +53,11 @@ export function buildAppFrameCsp(origin: string, libraryScripts: readonly string
     // rest of /canvas-runtime/ (Alpine.js, reveal.js and the vanilla motion
     // build stay out of apps). No 'unsafe-eval', and connect-src stays
     // 'none', so a library adds no way out.
-    `script-src 'unsafe-inline' ${origin}/app-runtime/ ${origin}/share-runtime/${libraries}; ` +
+    // 'wasm-unsafe-eval' lets an app compile WebAssembly (the sandbox kit
+    // builds Rust to wasm32 for apps) and nothing else: eval and
+    // new Function stay blocked, and a wasm module has no I/O of its own,
+    // only the imports the app's own script hands it.
+    `script-src 'unsafe-inline' 'wasm-unsafe-eval' ${origin}/app-runtime/ ${origin}/share-runtime/${libraries}; ` +
     `img-src data: blob: ${origin}; ` +
     `font-src data: ${origin}/share-runtime/ ${origin}/fonts/; ` +
     "connect-src 'none'; base-uri 'none'; form-action 'none'"

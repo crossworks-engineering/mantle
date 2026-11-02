@@ -200,4 +200,10 @@ describe('buildAppFrameCsp: the library files an app may load', () => {
   it('with no list, no library file at all', () => {
     expect(buildAppFrameCsp(O)).not.toContain('/canvas-runtime/');
   });
+
+  it('compiles WebAssembly but never evals script', () => {
+    const scripts = buildAppFrameCsp(O).match(/script-src ([^;]+);/)![1]!.split(' ');
+    expect(scripts).toContain("'wasm-unsafe-eval'");
+    expect(scripts).not.toContain("'unsafe-eval'");
+  });
 });
