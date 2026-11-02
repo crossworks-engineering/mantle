@@ -88,22 +88,22 @@ missing or stale).
 
 ## 6. Who may do what
 
-| To do this                            | You need                                        |
-| ------------------------------------- | ----------------------------------------------- |
-| read an item                          | to be a user of a workspace it is granted to    |
-| edit it                               | Moderator of its home, or a grant with Write on |
-| manage it (app code, links of an app) | Moderator of its home                           |
-| delete it                             | Moderator of its home (an app: Admin users too) |
-| move it from H to T                   | Moderator of H and of T                         |
-| add a grant to T, Write on            | Moderator of its home and of T                  |
-| remove a grant, Write off             | Moderator of its home, or of T                  |
-| open or change its link               | edit (an app: manage)                           |
-| export it into your files             | read (the copy lands in your create home)       |
-| re-run its extraction                 | edit (it spends model work)                     |
-| close any link                        | an Admin user with the users area               |
-| tick or clear Moderator               | an Admin user with the users area               |
-| share it with a contact               | an Admin user (its home is not checked)         |
-| an Admin area                         | an Admin user holding that area                 |
+| To do this                                        | You need                                        |
+| ------------------------------------------------- | ----------------------------------------------- |
+| read an item                                      | to be a user of a workspace it is granted to    |
+| edit it                                           | Moderator of its home, or a grant with Write on |
+| manage it (app code, links of an app or a canvas) | Moderator of its home                           |
+| delete it                                         | Moderator of its home (an app: Admin users too) |
+| move it from H to T                               | Moderator of H and of T                         |
+| add a grant to T, Write on                        | Moderator of its home and of T                  |
+| remove a grant, Write off                         | Moderator of its home, or of T                  |
+| open or change its link                           | edit (an app or a canvas: manage)               |
+| export it into your files                         | read (the copy lands in your create home)       |
+| re-run its extraction                             | edit (it spends model work)                     |
+| close any link                                    | an Admin user with the users area               |
+| tick or clear Moderator                           | an Admin user with the users area               |
+| share it with a contact                           | an Admin user (its home is not checked)         |
+| an Admin area                                     | an Admin user holding that area                 |
 
 The database's needs (`mantle_check_row`, `mantle_check_item`): `read`, `edit`, `manage`, `admin`,
 `appdata`, `link`, `link_close` ([edit-check.md](./edit-check.md)). An item the caller does not read
@@ -199,7 +199,7 @@ request scope `asSystem(fn, reason)` takes only a reason of `AS_SYSTEM_TURN_REAS
   outside every scope, once, on a brain whose one login is the new anchor and has no workspace.
 - **`systemStep(step, { items, need }, fn)`** (`packages/db/src/system-step.ts`): bookkeeping after
   the write's item check, answering numbers, yes or no, or rows the scope reads. **`systemWork(fn,
-  reason)`**: work that never runs in a scope (it refuses one), full route; files pinned
+reason)`**: work that never runs in a scope (it refuses one), full route; files pinned
   (`eslint-rules/system-work-allowlist.mjs`).
 - **The SQL system-work allowlist** (`mantle_ws_system_work(fn)`, `WORKSPACE_SYSTEM_REASONS`): with
   no acting login, a workspace definer or `mantle_file_restamp_home` runs only for its one listed
