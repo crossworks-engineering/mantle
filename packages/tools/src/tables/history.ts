@@ -215,6 +215,7 @@ export const table_snapshot_restore: BuiltinToolDef = {
 export const table_snapshot_delete: BuiltinToolDef = {
   slug: 'table_snapshot_delete',
   policy: {
+    riskClass: 'delete', // removes a snapshot
     destructive: true, // cannot be restored after
     matrix: { action: 'edit', param: 'id', kinds: ['table'] },
     effect: 'write',

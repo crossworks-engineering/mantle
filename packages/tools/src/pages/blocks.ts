@@ -542,6 +542,7 @@ export const page_block_append: BuiltinToolDef = {
 export const page_block_delete: BuiltinToolDef = {
   slug: 'page_block_delete',
   policy: {
+    riskClass: 'delete', // removes a block
     matrix: { action: 'editDraft', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',

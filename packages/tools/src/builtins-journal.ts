@@ -391,6 +391,7 @@ const journal_resolve_gap: BuiltinToolDef = {
 const journal_delete: BuiltinToolDef = {
   slug: 'journal_delete',
   policy: {
+    riskClass: 'delete', // a hard delete with no item cell
     destructive: true, // the entry is gone
     matrix: { none: 'a Journal entry: an Admin kind, not a workspace kind' },
     effect: 'write',

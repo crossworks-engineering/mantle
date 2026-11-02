@@ -237,6 +237,11 @@ x-app-env: &app-env
   # (spawning that process already grants full owner access). =0 turns it off
   # there too. `sandbox_exec` is the contained alternative and needs none of this.
   MANTLE_MCP_TERMINAL: ${MANTLE_MCP_TERMINAL:-}
+  # MANTLE_MCP_TOOL_MAP=1 lists the tool map and four call tools by risk class
+  # (tool_read, tool_write, tool_delete, tool_send) instead of every tool, on
+  # every MCP connection of the box; one connection still picks with
+  # `?tools=map` or `?tools=full` on its URL (docs/connecting-claude.md).
+  MANTLE_MCP_TOOL_MAP: ${MANTLE_MCP_TOOL_MAP:-}
   # Workspaces arch A9 (docs/runtime-role.md): 1 = the app's pools log in as
   # mantle_runtime (not a superuser, not a table owner; its password derived
   # from MANTLE_MASTER_KEY, the role made by migrate) instead of DATABASE_URL's

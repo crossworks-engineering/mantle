@@ -204,6 +204,105 @@ function distance(a: string, b: string): number {
   return prev[b.length]!;
 }
 
+/** A tool_help card: a tool's description and schema, and with a risk map
+ *  the call tool of its class. */
+type HelpCard = ToolHelpResult['tools'][number] & { call_with?: string };
+
+/**
+ * `tool_help` and did-you-mean over `callable` (every tool a call may name),
+ * with `mapped` the ones an area lookup lists. `callWith` names the call
+ * tool of a slug (the MCP risk map, risk-map.ts): each card then says it,
+ * and the note points there instead of tool_call.
+ */
+export function mapLookups(
+  callable: readonly DeferredToolDef[],
+  mapped: readonly string[],
+  callWith?: (slug: string) => string,
+): Pick<MapToolset, 'help' | 'didYouMean'> {
+  const defBy = new Map(callable.map((d) => [d.function.name, d]));
+  const names = callable.map((d) => d.function.name).sort();
+  const didYouMean = (name: string): string[] =>
+    names
+      .map((n) => [n, distance(name, n)] as const)
+      .sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1))
+      .slice(0, DID_YOU_MEAN_COUNT)
+      .map(([n]) => n);
+  const card = (slug: string): HelpCard => {
+    const d = defBy.get(slug)!;
+    return {
+      name: slug,
+      description: summarize(d.function.description, HELP_DESCRIPTION_CHARS),
+      input_schema: d.function.parameters,
+      ...(callWith ? { call_with: callWith(slug) } : {}),
+    };
+  };
+  const callNote = callWith
+    ? 'Call each with the tool its `call_with` names.'
+    : 'Call one with tool_call.';
+  /** Cards for `slugs`, up to the count and character caps; the rest named. */
+  const cards = (slugs: readonly string[]): { tools: HelpCard[]; left: string[] } => {
+    const tools: HelpCard[] = [];
+    let chars = 0;
+    for (const [i, s] of slugs.entries()) {
+      const c = card(s);
+      const size = JSON.stringify(c).length;
+      if (i >= TOOL_HELP_AREA_LIMIT || (tools.length > 0 && chars + size > TOOL_HELP_MAX_CHARS)) {
+        return { tools, left: slugs.slice(i) };
+      }
+      tools.push(c);
+      chars += size;
+    }
+    return { tools, left: [] };
+  };
+  const leftNote = (left: readonly string[]) =>
+    `${left.length} more not shown (too many at once): call tool_help again with their names: ` +
+    `${left.join(', ')}.`;
+  const help = (q: { names?: unknown; area?: unknown }): ToolHelpResult => {
+    const list = typeof q.names === 'string' ? [q.names] : Array.isArray(q.names) ? q.names : [];
+    const asked = [
+      ...new Set(list.filter((n): n is string => typeof n === 'string').map((n) => n.trim())),
+    ].filter(Boolean);
+    if (asked.length > 0) {
+      const known = asked.filter((n) => names.includes(n));
+      const unknown = asked.filter((n) => !names.includes(n));
+      const { tools, left } = cards(known);
+      const notes = unknown
+        .slice(0, HELP_UNKNOWN_LIMIT)
+        .map((n) => `No tool named '${n}'. Did you mean: ${didYouMean(n).join(', ')}?`);
+      if (unknown.length > HELP_UNKNOWN_LIMIT) {
+        notes.push(
+          `${unknown.length - HELP_UNKNOWN_LIMIT} more names are not tools either: check them in the tool map.`,
+        );
+      }
+      if (left.length) notes.push(leftNote(left));
+      if (tools.length) notes.push(callNote);
+      return { tools, note: notes.join(' ') };
+    }
+    const area = typeof q.area === 'string' ? q.area.trim().replace(/_+$/, '') : '';
+    if (!area) {
+      return {
+        tools: [],
+        note: 'tool_help needs `names` (full tool names) or `area` (an area from the tool map).',
+      };
+    }
+    const inArea = mapped.filter((s) => areaOf(s)[0] === area || s.startsWith(`${area}_`));
+    if (inArea.length === 0) {
+      return {
+        tools: [],
+        note: `No area '${area}' in the tool map. Pick an area from the map, or pass full tool names as \`names\`.`,
+      };
+    }
+    const { tools, left } = cards(inArea);
+    return {
+      tools,
+      note: left.length
+        ? `Showing ${tools.length} of ${inArea.length} tools in '${area}'. ${leftNote(left)}`
+        : callNote,
+    };
+  };
+  return { help, didYouMean };
+}
+
 /**
  * Split a turn's full tool definitions into the sent set and the map. `defs`
  * are every tool the gate lists for the loop (buildToolsForModel), any order;
@@ -242,84 +341,7 @@ export function buildMapToolset(
         ? null
         : summarize(defBy.get(slug)!.function.description, OTHER_SUMMARY_CHARS) || null,
   );
-  const names = callable.map((d) => d.function.name).sort();
-  const didYouMean = (name: string): string[] =>
-    names
-      .map((n) => [n, distance(name, n)] as const)
-      .sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1))
-      .slice(0, DID_YOU_MEAN_COUNT)
-      .map(([n]) => n);
-  const card = (slug: string) => {
-    const d = defBy.get(slug)!;
-    return {
-      name: slug,
-      description: summarize(d.function.description, HELP_DESCRIPTION_CHARS),
-      input_schema: d.function.parameters,
-    };
-  };
-  /** Cards for `slugs`, up to the count and character caps; the rest named. */
-  const cards = (
-    slugs: readonly string[],
-  ): { tools: ReturnType<typeof card>[]; left: string[] } => {
-    const tools: ReturnType<typeof card>[] = [];
-    let chars = 0;
-    for (const [i, s] of slugs.entries()) {
-      const c = card(s);
-      const size = JSON.stringify(c).length;
-      if (i >= TOOL_HELP_AREA_LIMIT || (tools.length > 0 && chars + size > TOOL_HELP_MAX_CHARS)) {
-        return { tools, left: slugs.slice(i) };
-      }
-      tools.push(c);
-      chars += size;
-    }
-    return { tools, left: [] };
-  };
-  const leftNote = (left: readonly string[]) =>
-    `${left.length} more not shown (too many at once): call tool_help again with their names: ` +
-    `${left.join(', ')}.`;
-  const help = (q: { names?: unknown; area?: unknown }): ToolHelpResult => {
-    const list = typeof q.names === 'string' ? [q.names] : Array.isArray(q.names) ? q.names : [];
-    const asked = [
-      ...new Set(list.filter((n): n is string => typeof n === 'string').map((n) => n.trim())),
-    ].filter(Boolean);
-    if (asked.length > 0) {
-      const known = asked.filter((n) => names.includes(n));
-      const unknown = asked.filter((n) => !names.includes(n));
-      const { tools, left } = cards(known);
-      const notes = unknown
-        .slice(0, HELP_UNKNOWN_LIMIT)
-        .map((n) => `No tool named '${n}'. Did you mean: ${didYouMean(n).join(', ')}?`);
-      if (unknown.length > HELP_UNKNOWN_LIMIT) {
-        notes.push(
-          `${unknown.length - HELP_UNKNOWN_LIMIT} more names are not tools either: check them in the tool map.`,
-        );
-      }
-      if (left.length) notes.push(leftNote(left));
-      if (tools.length) notes.push('Call one with tool_call.');
-      return { tools, note: notes.join(' ') };
-    }
-    const area = typeof q.area === 'string' ? q.area.trim().replace(/_+$/, '') : '';
-    if (!area) {
-      return {
-        tools: [],
-        note: 'tool_help needs `names` (full tool names) or `area` (an area from the tool map).',
-      };
-    }
-    const inArea = mapped.filter((s) => areaOf(s)[0] === area || s.startsWith(`${area}_`));
-    if (inArea.length === 0) {
-      return {
-        tools: [],
-        note: `No area '${area}' in the tool map. Pick an area from the map, or pass full tool names as \`names\`.`,
-      };
-    }
-    const { tools, left } = cards(inArea);
-    return {
-      tools,
-      note: left.length
-        ? `Showing ${tools.length} of ${inArea.length} tools in '${area}'. ${leftNote(left)}`
-        : 'Call one with tool_call.',
-    };
-  };
+  const { help, didYouMean } = mapLookups(callable, mapped);
   return {
     sent: [...core, TOOL_CALL_DEF, TOOL_HELP_DEF],
     mapped: mappedSet,

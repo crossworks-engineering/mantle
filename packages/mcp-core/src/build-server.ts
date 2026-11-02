@@ -108,6 +108,7 @@ import { listBuiltins } from '@mantle/tools';
 import { CIRCUIT_STEPS_POINTER } from '@mantle/tools/circuit-workflow';
 import { defaultMcpGate } from './gate-policy';
 import type { McpGate } from './gated-tools';
+import { McpToolMap } from './map-surface';
 
 /** Mutating Toolsmith tools, gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON): the builtins whose definition opts in by `toolsmithWrite`
@@ -158,6 +159,9 @@ export function registerMantleTools(
     /** The connection's side of the gate: what it lists and who each call
      *  runs as (login-surface.ts builds it from the prepared connection). */
     gate?: McpGate;
+    /** The connection's tool map (map-surface.ts): every tool goes there,
+     *  and the caller puts the map on the server when all are in. */
+    map?: McpToolMap;
   } = {},
 ): void {
   const transport = opts.transport ?? 'http';
@@ -176,6 +180,7 @@ export function registerMantleTools(
     opts.mcp,
     { toolsmithWrite: toolsmithWriteEnabled },
     gate,
+    opts.map,
   );
   const { registerBuiltinTools } = ctx;
 
@@ -511,6 +516,10 @@ export function buildMantleMcpServer(ownerId: string): McpServer {
     { name: 'mantle', version: '0.0.1' },
     { instructions: MANTLE_MCP_INSTRUCTIONS },
   );
-  registerMantleTools(server, ownerId, { transport: 'stdio' });
+  // The tool map when the box asks for it (MANTLE_MCP_TOOL_MAP): a stdio
+  // client has no URL to ask with.
+  const map = feature('mcpToolMap') ? new McpToolMap() : undefined;
+  registerMantleTools(server, ownerId, { transport: 'stdio', ...(map ? { map } : {}) });
+  map?.register(server);
   return server;
 }

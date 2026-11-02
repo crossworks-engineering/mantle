@@ -30,6 +30,7 @@ import {
   preparedLists,
   prepareCallerTools,
   registerPreparedTools,
+  wantsToolMap,
 } from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { auditMcpKeyCall, resolveMcpCaller } from '@/lib/mcp-auth';
@@ -110,9 +111,14 @@ async function handler(req: Request): Promise<Response> {
   // login is told who it acts as, and a login in no workspace why it lists
   // no tools. Network transport: `run_terminal` stays off unless the
   // operator sets MANTLE_MCP_TERMINAL=1 on the box (see
-  // packages/mcp-core/src/build-server.ts).
+  // packages/mcp-core/src/build-server.ts). `?tools=map` on the URL lists
+  // the tool map instead of every tool (packages/mcp-core/src/map-surface.ts).
   const mcpHandler = mcpHttpHandler(
-    (server) => registerPreparedTools(server, prepared, { transport: 'http' }),
+    (server) =>
+      registerPreparedTools(server, prepared, {
+        transport: 'http',
+        toolMap: wantsToolMap(req.url),
+      }),
     mcpInstructionsFor(caller, prepared),
   );
   return mcpHandler.fetch(req);

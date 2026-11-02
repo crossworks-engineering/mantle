@@ -387,6 +387,7 @@ export const sandbox_stop: BuiltinToolDef = {
 export const sandbox_rm: BuiltinToolDef = {
   slug: 'sandbox_rm',
   policy: {
+    riskClass: 'delete', // removes the container and its disk
     destructive: true, // the container goes; purge_files is irreversible
     matrix: { none: 'a sandbox is not an item' },
     effect: 'write',

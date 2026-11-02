@@ -147,6 +147,7 @@ export const LINK_ITEM_ARG: readonly ToolItemArg[] = [
 const node_share: BuiltinToolDef = {
   slug: 'node_share',
   policy: {
+    riskClass: 'send', // mints a public link
     matrix: { action: 'link', param: 'id', kinds: LINK_KINDS },
     effect: 'write',
     spends: 'none',

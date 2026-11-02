@@ -28,6 +28,7 @@ import {
 } from '../gated-tools';
 import { defaultMcpGate } from '../gate-policy';
 import type { MantleMcpTransport } from '../build-server';
+import type { McpToolMap } from '../map-surface';
 
 /** The surface every bridged builtin runs under on the MCP server. */
 export const MCP_OWNER_SURFACE: ToolSurface = { kind: 'owner', via: 'mcp' };
@@ -53,6 +54,9 @@ export function makeRegisterContext(
   /** The connection's side of the gate (registerPreparedTools builds it
    *  from the prepared connection). Absent: the anchor's own. */
   gate?: McpGate,
+  /** The connection's tool map (map-surface.ts): every tool goes there
+   *  instead of straight onto the server. */
+  map?: McpToolMap,
 ) {
   const surface: ToolSurface = via === 'mcp' ? MCP_OWNER_SURFACE : { kind: 'owner', via };
   // The handlers get the connection's login with it: who deletes an app
@@ -106,7 +110,13 @@ export function makeRegisterContext(
       // MCP tool, mcp-defs.ts: its own schema and reply) is that definition's.
       if (mcpDefinition(def.slug)) continue;
       if (!optedIn(def)) continue;
-      registerGatedTool(server, callGate, ownerId, { kind: 'builtin', def, surface: callSurface });
+      registerGatedTool(
+        server,
+        callGate,
+        ownerId,
+        { kind: 'builtin', def, surface: callSurface },
+        map,
+      );
     }
   }
 
@@ -117,13 +127,13 @@ export function makeRegisterContext(
     shape: z.ZodRawShape,
     run: (args: Record<string, unknown>, extra: unknown) => Promise<unknown>,
   ) {
-    registerGatedTool(server, callGate, ownerId, {
-      kind: 'definition',
-      name,
-      description,
-      shape,
-      run,
-    });
+    registerGatedTool(
+      server,
+      callGate,
+      ownerId,
+      { kind: 'definition', name, description, shape, run },
+      map,
+    );
   }
 
   return {

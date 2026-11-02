@@ -579,6 +579,7 @@ export const table_row_delete: BuiltinToolDef = {
   slug: 'table_row_delete',
   usageTier: 2,
   policy: {
+    riskClass: 'delete', // removes a row
     matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',

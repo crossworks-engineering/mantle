@@ -487,6 +487,7 @@ const app_file_write: BuiltinToolDef = {
 const app_file_delete: BuiltinToolDef = {
   slug: 'app_file_delete',
   policy: {
+    riskClass: 'delete', // removes a file of the app
     matrix: { action: 'editDraft', param: 'id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',
@@ -1349,6 +1350,7 @@ const app_table_export_set: BuiltinToolDef = {
 const app_table_export_remove: BuiltinToolDef = {
   slug: 'app_table_export_remove',
   policy: {
+    riskClass: 'delete', // removes the export
     matrix: { action: 'editDraft', param: 'id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',
@@ -1678,6 +1680,7 @@ const app_snapshot_restore: BuiltinToolDef = {
 const app_snapshot_delete: BuiltinToolDef = {
   slug: 'app_snapshot_delete',
   policy: {
+    riskClass: 'delete', // removes a snapshot
     destructive: true, // irreversible
     // A snapshot's delete asks edit of the app, as the HTTP route does (not
     // the app's code).

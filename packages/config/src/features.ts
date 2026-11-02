@@ -96,6 +96,11 @@ export const FEATURES = {
     default: false,
     doc: 'the crash-test harness in server/api',
   },
+  mcpToolMap: {
+    env: 'MANTLE_MCP_TOOL_MAP',
+    default: false,
+    doc: 'an MCP connection lists the tool map and four call tools by risk class, not every tool (HTTP: `?tools=map` or `?tools=full` on the URL wins)',
+  },
   // Environment switch whose default the caller knows.
   mcpTerminal: {
     env: 'MANTLE_MCP_TERMINAL',

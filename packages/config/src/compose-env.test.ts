@@ -22,6 +22,7 @@ const anchor = compose.slice(
 const BOX_FLAGS = [
   'MANTLE_RUNS',
   'MANTLE_MCP_TERMINAL',
+  'MANTLE_MCP_TOOL_MAP',
   'MANTLE_DB_RUNTIME_ROLE',
   // Calls (plan page 886126b4): the agent worker's flag, the calls host and
   // the key pair the brain signs tokens with (the profile decides what runs).

@@ -339,6 +339,7 @@ const recall_card_put: BuiltinToolDef = {
 const recall_card_delete: BuiltinToolDef = {
   slug: 'recall_card_delete',
   policy: {
+    riskClass: 'delete', // removes a card
     matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',

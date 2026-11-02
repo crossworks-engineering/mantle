@@ -26,6 +26,7 @@ import { CS } from '../client-sourced-rule';
 export const page_share: BuiltinToolDef = {
   slug: 'page_share',
   policy: {
+    riskClass: 'send', // mints a public link
     matrix: { action: 'link', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',

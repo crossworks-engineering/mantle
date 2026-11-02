@@ -223,6 +223,7 @@ export const table_column_update: BuiltinToolDef = {
 export const table_column_delete: BuiltinToolDef = {
   slug: 'table_column_delete',
   policy: {
+    riskClass: 'delete', // removes a column and its cells
     matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',

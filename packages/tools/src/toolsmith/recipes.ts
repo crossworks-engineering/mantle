@@ -247,6 +247,7 @@ export const recipe_tool_test: BuiltinToolDef = {
   slug: 'recipe_tool_test',
   usageTier: 4,
   policy: {
+    riskClass: 'send', // calls the outside API
     outside: { via: 'http' }, // runs a user-defined recipe, its steps may reach out
     matrix: { none: 'a tool is not an item' },
     effect: 'write',

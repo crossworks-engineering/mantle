@@ -21,10 +21,12 @@ export {
   policyLowers,
   policyMayLower,
   policyRecipeForbidden,
+  policyRiskClass,
   policyRunItemBanned,
   policySystemWhole,
   policyUntrusted,
   toGatePolicy,
+  type RiskClass,
   type SurfaceToolDef,
   type ToolOutside,
   type ToolPolicy,
@@ -90,6 +92,12 @@ export {
   type ToolSource,
 } from './selection/deferred';
 export { buildMapToolset, type MapToolset, type ToolHelpResult } from './selection/map';
+export {
+  buildRiskMap,
+  RISK_CALL_SLUGS,
+  type RiskMap,
+  type RiskMapTool,
+} from './selection/risk-map';
 export { resolveToolLoading, type ToolLoading } from './selection/loading';
 export { type GroupSource as ToolGroupSource } from './selection/rank';
 export { knownFlowForGroup } from './selection/flows';

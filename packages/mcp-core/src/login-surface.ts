@@ -56,6 +56,7 @@ import {
 } from '@mantle/tools';
 import { NO_SCOPE_ERROR } from '@mantle/std';
 import { MANTLE_MCP_INSTRUCTIONS, registerMantleTools } from './build-server';
+import { McpToolMap } from './map-surface';
 import { keyAreasReachEmail } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
 import { keyAreasAllowTool } from './mcp-policy';
@@ -372,7 +373,11 @@ export function peerNamesNoLogin(caller: Pick<McpCaller, 'via' | 'role' | 'peerB
 export function registerPreparedTools(
   server: McpServer,
   prepared: PreparedCallerTools,
-  opts: { transport?: 'stdio' | 'http' } = {},
+  opts: {
+    transport?: 'stdio' | 'http';
+    /** List the tool map (map-surface.ts) instead of every tool. */
+    toolMap?: boolean;
+  } = {},
 ): void {
   const gateCaller = mcpGateCaller(prepared);
   const { caller } = prepared;
@@ -390,19 +395,22 @@ export function registerPreparedTools(
   });
   const channel = mcpChannel(caller, keysOff);
   const via = caller.via === 'key' ? 'api' : caller.via === 'peer' ? 'federation' : 'mcp';
+  const map = opts.toolMap ? new McpToolMap() : undefined;
   registerMantleTools(server, caller.anchorId, {
     transport: opts.transport ?? 'http',
     ...(peerNamesNoLogin(caller) ? {} : { loginId: caller.loginId }),
     mcp: channel,
     ...(via !== 'mcp' ? { via } : {}),
     gate,
+    ...(map ? { map } : {}),
   });
   // The connectors, on the same server as every other tool: in the
   // login's scope and gate, and under its create home.
   const surface: ToolSurface = { kind: 'owner', via, loginId: caller.loginId, mcp: channel };
   for (const row of prepared.connectors) {
-    registerGatedTool(server, gate, caller.anchorId, { kind: 'connector', row, surface });
+    registerGatedTool(server, gate, caller.anchorId, { kind: 'connector', row, surface }, map);
   }
+  map?.register(server);
 }
 
 /** Whether a prepared connection is a login's in no workspace on a brain

@@ -127,6 +127,7 @@ export const table_tab_rename: BuiltinToolDef = {
 export const table_tab_delete: BuiltinToolDef = {
   slug: 'table_tab_delete',
   policy: {
+    riskClass: 'delete', // removes a tab
     matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',

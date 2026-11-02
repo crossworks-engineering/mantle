@@ -232,6 +232,31 @@ tools to Always allow, and a search no longer asks. A write tool still asks
 by the client's own rule. The hints are advisory: the gate decides what
 runs, exactly as before.
 
+### The tool map (fewer tools listed)
+
+Every tool listed in full is about 330 schemas, which the client pays for
+on every turn. A connection can ask for the **tool map** instead: add
+`?tools=map` to the connector URL (for example `https://<your-brain>/api/mcp?tools=map`),
+or set `MANTLE_MCP_TOOL_MAP=1` in the box's `.env` for every connection
+(stdio too; `?tools=full` on a URL still lists everything).
+
+On the map the client is listed the core reads in full (search, read,
+Recall's three), `tool_help`, and four call tools, one per risk class:
+
+| Call tool     | What its tools do                                                               |
+| ------------- | ------------------------------------------------------------------------------- |
+| `tool_read`   | change nothing, keep data inside the brain                                      |
+| `tool_write`  | create or change data inside the brain                                          |
+| `tool_delete` | remove data                                                                     |
+| `tool_send`   | reach outside the brain: mail, Telegram, a linked brain, the web, a public link |
+
+Each call tool's description names its tools in a compact map. A call
+through the wrong one is refused with the right one named. The class is
+each tool's `policyRiskClass` (`packages/tools/src/tool-policy.ts`), pinned by
+`packages/runtime/src/risk-class-snapshot.test.ts`. Set `tool_read` to Always
+allow and reads stop asking; writes, deletes and sends still ask. The gate
+decides what runs, as for a listed tool.
+
 ### The two that are not on it
 
 - **`run_terminal`**: a shell in the brain's OWN container: postgres, the object store,

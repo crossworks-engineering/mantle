@@ -46,11 +46,15 @@ import {
 import {
   dispatchTool,
   mcpBuiltinToolRef,
+  namedToolPolicy,
+  policyRiskClass,
+  toolSourceOf,
   mcpToolCaller,
   mcpVia,
   nestedToolCaller,
   thrownToolDatabaseError,
   type BuiltinToolDef,
+  type RiskClass,
   type ToolCaller,
   type ToolSurface,
 } from '@mantle/tools';
@@ -61,6 +65,7 @@ import { refusalReply } from './refusal-reply';
 import { WORKSPACE_ARG, withLanding, withWorkspaceArg } from './create-home';
 import { toolAnnotations } from './tool-annotations';
 import { logMcpCall } from './call-log';
+import type { McpToolMap } from './map-surface';
 // The `mcp-tool` policy source the listing and the calls read.
 import './gate-policy';
 
@@ -212,6 +217,19 @@ function refOf(entry: McpToolEntry): { name: string; ref: PolicyRef } {
   return { name: entry.name, ref: Object.freeze({ kind: 'mcp-tool', name: entry.name }) };
 }
 
+/** The risk class of `entry` (@mantle/tools policyRiskClass): a builtin's
+ *  or a definition's from its policy; a connector row reaches an outside
+ *  API, so its write is a send and its read a read. */
+function riskClassOf(entry: McpToolEntry, name: string, policy: GatePolicy): RiskClass {
+  if (entry.kind === 'builtin') return policyRiskClass(entry.def.policy);
+  if (entry.kind === 'definition') {
+    const named = namedToolPolicy(name);
+    if (named) return policyRiskClass(named.policy);
+  }
+  if (policy.effect === 'read') return 'read';
+  return entry.kind === 'connector' ? 'send' : 'write';
+}
+
 /** The surface's own pre-run check of one call of `entry`. */
 function preRunOf(gate: McpGate, entry: McpToolEntry, name: string): PreRunCheck | undefined {
   if (entry.kind === 'connector') {
@@ -234,12 +252,15 @@ function preRunOf(gate: McpGate, entry: McpToolEntry, name: string): PreRunCheck
 /**
  * Register `entry` on `server` for the connection `gate` describes, when
  * the gate lists it (see the module comment). Whether it was registered.
+ * With `map` (a connection on the tool map, map-surface.ts) the tool goes
+ * to the map instead, which lists it or reaches it through a call tool.
  */
 export function registerGatedTool(
   server: McpServer,
   gate: McpGate,
   ownerId: string,
   entry: McpToolEntry,
+  map?: McpToolMap,
 ): boolean {
   const { name, ref } = refOf(entry);
   if (!gateLists(gate.lists, ref)) return false;
@@ -364,6 +385,18 @@ export function registerGatedTool(
   // The hints a client reads (tool-annotations.ts): advisory, the gate
   // above decides what runs.
   const annotations = toolAnnotations(entry, policy);
+  if (map) {
+    map.add({
+      name,
+      description,
+      inputSchema,
+      ...(annotations ? { annotations } : {}),
+      handler,
+      cls: riskClassOf(entry, name, policy),
+      source: entry.kind === 'connector' ? toolSourceOf(entry.row.handler) : 'builtin',
+    });
+    return true;
+  }
   server.registerTool(
     name,
     { description, inputSchema, ...(annotations ? { annotations } : {}) },

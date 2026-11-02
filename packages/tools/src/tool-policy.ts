@@ -137,6 +137,15 @@ type ToolEffect =
 /** A tool's policy. Required on every builtin. */
 export type ToolPolicy = ToolEffect & ToolPolicyFields;
 
+/** What a call risks, in four classes: `read` changes nothing and keeps
+ *  everything inside the brain; `write` creates or changes; `delete`
+ *  removes; `send` reaches someone or something outside the brain (mail,
+ *  Telegram, a linked brain's write, the open web, a public link). The MCP
+ *  map's call tools are split by it (@mantle/mcp-core map-surface.ts), so a
+ *  client can let reads run and ask before a send. Advisory: the gate
+ *  decides what runs, never this. */
+export type RiskClass = 'read' | 'write' | 'delete' | 'send';
+
 type ToolPolicyFields = Readonly<{
   /** What it spends, as the gate reads it: `ownerKey` on the brain owner's
    *  provider keys (only a user of the Admin workspace, on MCP), `model`
@@ -245,6 +254,13 @@ type ToolPolicyFields = Readonly<{
    *  row). Never on a write of content, sharing or access. The tools that carry
    *  it are pinned (@mantle/runtime audit-row-allowlist.test.ts). */
   auditRow?: false | Readonly<{ unlessArg: string }>;
+  /** Its risk class, set ONLY where the other fields say otherwise
+   *  (policyRiskClass derives the rest): a delete whose matrix action is
+   *  not `delete` (a row, a block, a hard delete with no item cell), a
+   *  public share, a call that hands data to an outside API, a catalog
+   *  fetch that is a write only for its gate. The full table is pinned
+   *  (@mantle/runtime risk-class-snapshot.test.ts). */
+  riskClass?: RiskClass;
 }>;
 
 /** The gate's policy of a builtin: its effect, Admin step,
@@ -430,6 +446,22 @@ export function policyRecipeForbidden(tp: ToolPolicy): boolean {
 /** Whether a run item may not call a policy's tool. */
 export function policyRunItemBanned(tp: ToolPolicy): boolean {
   return tp.recipe?.runItem === 'banned';
+}
+
+/**
+ * A policy's risk class (RiskClass): its own `riskClass` when set, else
+ * `read` for a read (a linked brain's read stays one: it hands out only
+ * the query), `delete` for an item delete, `send` for a write that sends,
+ * publishes, reaches a linked brain or is marked egress (the web search
+ * and fetch), and `write` for any other write.
+ */
+export function policyRiskClass(tp: ToolPolicy): RiskClass {
+  if (tp.riskClass) return tp.riskClass;
+  if (tp.effect === 'read') return 'read';
+  if (tp.deletesItem) return 'delete';
+  const via = tp.outside?.via;
+  if (tp.outside?.egress || via === 'send' || via === 'publish' || via === 'peer') return 'send';
+  return 'write';
 }
 
 /** Whether every result of a policy's tool is fenced as data before a

@@ -233,6 +233,7 @@ const openrouter_rankings: BuiltinToolDef = {
   slug: 'openrouter_rankings',
   usageTier: 2,
   policy: {
+    riskClass: 'read', // a public catalog fetch: a write only for its gate
     outside: { via: 'http' }, // fetches the OpenRouter dataset
     matrix: { none: 'names no item' },
     effect: 'write',
@@ -324,6 +325,7 @@ const openrouter_benchmarks: BuiltinToolDef = {
   slug: 'openrouter_benchmarks',
   usageTier: 2,
   policy: {
+    riskClass: 'read', // a public catalog fetch: a write only for its gate
     outside: { via: 'http' }, // fetches the OpenRouter dataset
     matrix: { none: 'names no item' },
     effect: 'write',
@@ -385,6 +387,7 @@ const openrouter_task_classes: BuiltinToolDef = {
   slug: 'openrouter_task_classes',
   usageTier: 2,
   policy: {
+    riskClass: 'read', // a public catalog fetch: a write only for its gate
     outside: { via: 'http' }, // fetches the OpenRouter dataset
     matrix: { none: 'names no item' },
     effect: 'write',
@@ -412,6 +415,7 @@ const model_catalog: BuiltinToolDef = {
   slug: 'model_catalog',
   usageTier: 6,
   policy: {
+    riskClass: 'read', // a public catalog fetch: a write only for its gate
     outside: { via: 'http' }, // fetches the OpenRouter catalog
     matrix: { none: 'names no item' },
     effect: 'write',
@@ -734,6 +738,7 @@ const model_pool_set: BuiltinToolDef = {
 const model_pool_remove: BuiltinToolDef = {
   slug: 'model_pool_remove',
   policy: {
+    riskClass: 'delete', // removes a pool entry
     matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
