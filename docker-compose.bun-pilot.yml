@@ -1,0 +1,16 @@
+# The Bun pilot (plan B6): the smallest two workers on Bun, on one box, with the
+# rest of the stack on Node. Rollback: leave this file out, and up again.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.bun-pilot.yml \
+#     up -d worker_push worker_events
+#
+# Bun starts itself, with no pnpm or tsx parent. --no-env-file: compose gives
+# the environment, and Bun must not read a .env beside the code.
+services:
+  worker_push:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/push-notify.ts']
+
+  worker_events:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/events-reminders.ts']
