@@ -11,8 +11,9 @@
  * does what the system pool does (reads and writes past the row rules, the
  * derivation guards' owner test, SET ROLE to the write role for the checked
  * rerun). The viewer roles cannot run the setter functions. Every table of
- * public and auth is mantle_owner's, the migrator's steps are idempotent,
- * and migrate makes a missing or changed marker again.
+ * public and auth is mantle_owner's, and migrate makes a missing or changed
+ * marker again. That the steps are idempotent and take a hand grant back is
+ * in runtime-role-hand-grant.serial.db.test.ts.
  *
  * A database of its own (createMigratedScratchDatabase, which runs the
  * migrator's steps as migrate.ts does): it changes the box modes.
@@ -803,78 +804,6 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect(marker?.owner).toBe(OWNER_ROLE);
     // The integrity row runtime_role_lock: nothing to say.
     expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
-  });
-
-  it('the migrator steps are idempotent, and a hand grant is taken back', async () => {
-    await admin.unsafe(`GRANT ${OWNER_ROLE} TO ${RUNTIME_ROLE} WITH INHERIT TRUE, SET TRUE`);
-    await admin.unsafe(`GRANT ${SYSTEM_ROLE} TO ${RUNTIME_ROLE} WITH INHERIT TRUE`);
-    await admin.unsafe(`GRANT ${NARROW_ROLE} TO ${RUNTIME_ROLE} WITH INHERIT TRUE`);
-    await admin.unsafe(`GRANT TRUNCATE ON public.nodes TO ${RUNTIME_ROLE}`);
-    await admin.unsafe(`GRANT INSERT ON public.nodes TO ${NARROW_ROLE}`);
-    await admin.unsafe(`GRANT EXECUTE ON FUNCTION mantle_role_drift() TO ${NARROW_ROLE}`);
-    await admin.unsafe(`GRANT EXECUTE ON FUNCTION mantle_ws_migrate() TO ${RUNTIME_ROLE}`);
-    await admin.unsafe(`ALTER TABLE public.actor_check_misses OWNER TO postgres`);
-    // A function the runtime role owns: the integrity row says so.
-    await admin.unsafe(`ALTER FUNCTION ${ACL_MARKER_FUNCTION} OWNER TO ${RUNTIME_ROLE}`);
-    const broken = (await admin.unsafe(RUNTIME_LOCK_SQL)) as unknown as { detail: string }[];
-    expect(broken[0]?.detail).toMatch(/owns functions/);
-    expect(broken[0]?.detail).toMatch(/holds the rights of/);
-    expect(broken[0]?.detail).toMatch(/may become mantle_owner/);
-    const [mode] = (await rt.unsafe(DB_ROLE_SQL)) as unknown as DbRoleRow[];
-    expect(dbRoleMode(mode!)).toBe('other');
-    // While migrate puts the wanted memberships right, the runtime role
-    // never stops being able to become the narrow and the system role: a
-    // wanted membership with the wrong options is set right in place, never
-    // taken back and granted again (that left a moment, cluster-wide, in
-    // which every database's SET ROLE failed 42501: the narrow write
-    // count's cascade cell met it once beside this file).
-    let migrating = true;
-    const refused: string[] = [];
-    let tries = 0;
-    const becomes = (async () => {
-      while (migrating) {
-        for (const role of [NARROW_ROLE, SYSTEM_ROLE]) {
-          tries += 1;
-          await rt
-            .begin((tx) => tx.unsafe(`select set_config('role', '${role}', true)`))
-            .catch((err: { code?: string }) => refused.push(`${role} ${err.code}`));
-        }
-      }
-    })();
-    const warned: string[] = [];
-    try {
-      expect(
-        await ensureRuntimeRoles(admin, KEY, {
-          login: true,
-          warn: (l) => warned.push(l),
-        }),
-      ).toBe('ok');
-    } finally {
-      migrating = false;
-      await becomes;
-    }
-    expect(refused).toEqual([]);
-    expect(tries).toBeGreaterThan(2);
-    expect(warned.filter((l) => l.includes(`from ${RUNTIME_ROLE} `))).toEqual([]);
-    await afterMigrations(admin, 'ok', { info: () => {}, warn: () => {} });
-    const ms = await admin<{ role: string; inherit: boolean; set: boolean }[]>`
-      select r.rolname as role, m.inherit_option as inherit, m.set_option as set
-        from pg_auth_members m
-        join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
-       where u.rolname = ${RUNTIME_ROLE} order by 1`;
-    expect(ms).toEqual([
-      { role: OWNER_ROLE, inherit: false, set: false },
-      { role: SYSTEM_ROLE, inherit: false, set: true },
-      { role: NARROW_ROLE, inherit: false, set: true },
-    ]);
-    const [t] = await admin<{ ok: boolean; ws: boolean; ni: boolean; nd: boolean }[]>`
-      select has_table_privilege(${RUNTIME_ROLE}, 'public.nodes', 'TRUNCATE') as ok,
-             has_function_privilege(${RUNTIME_ROLE}, 'mantle_ws_migrate()', 'EXECUTE') as ws,
-             has_table_privilege(${NARROW_ROLE}, 'public.nodes', 'INSERT') as ni,
-             has_function_privilege(${NARROW_ROLE}, 'mantle_role_drift()', 'EXECUTE') as nd`;
-    expect(t).toEqual({ ok: false, ws: false, ni: false, nd: false });
-    expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
-    expect((await ownTables(admin)).owned).toEqual([]);
   });
 
   it('TEMPORARY is taken from PUBLIC and the narrow role at every run; a run that leaves the narrow role holding it fails', async () => {
