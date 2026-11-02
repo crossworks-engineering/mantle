@@ -15,6 +15,10 @@ case "${GITHUB_WORKFLOW_REF:-}" in "$want_wf"*) ;; *) ok=0 ;; esac
 
 if [ "$ok" != 1 ]; then
   echo "::error::this runner takes push runs of build-check in $want_repo only (got event '${GITHUB_EVENT_NAME:-}', workflow '${GITHUB_WORKFLOW_REF:-}')"
+  # A failed hook fails the job, but the runner still runs any later step
+  # marked if: always() or failure(). So end the runner itself: no step of
+  # this job can run here. The container exits and the loop cleans up.
+  pkill -KILL -f 'Runner\.(Worker|Listener)'
   exit 1
 fi
 echo "runner guard: push run of build-check, ok"

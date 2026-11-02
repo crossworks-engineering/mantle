@@ -55,7 +55,8 @@ while :; do
   fi
   ready=0
   for _ in $(seq 1 60); do
-    docker exec "$PG" pg_isready -U postgres >/dev/null 2>&1 && { ready=1; break; }
+    # Over TCP: the unix socket also answers initdb's temporary server.
+    docker exec "$PG" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && { ready=1; break; }
     sleep 1
   done
   [ "$ready" = 1 ] || { backoff "postgres not ready in 60s"; continue; }
@@ -66,11 +67,14 @@ while :; do
   log "waiting for a job"
   started=$(date +%s)
   # No Docker, no host mounts, no capabilities, no sudo (no-new-privileges).
-  docker run --name "$RUNNER" --rm \
+  # The token goes in through the environment of the docker client (`-e
+  # RUNNER_TOKEN` with no value), not its command line, so `ps` on the host
+  # does not show it.
+  RUNNER_TOKEN="$token" docker run --name "$RUNNER" --rm \
     --network "$NET" \
     --cpus "$CPUS" --memory "$MEM" --pids-limit 8192 \
     --cap-drop ALL --security-opt no-new-privileges \
-    -e RUNNER_TOKEN="$token" -e RUNNER_REPO="$REPO" -e RUNNER_LABELS="$LABELS" -e RUNNER_NAME="ws-$SLOT-$started" \
+    -e RUNNER_TOKEN -e RUNNER_REPO="$REPO" -e RUNNER_LABELS="$LABELS" -e RUNNER_NAME="ws-$SLOT-$started" \
     "$IMAGE" bash -c '
       ./config.sh --unattended --ephemeral --disableupdate --replace \
         --url "https://github.com/$RUNNER_REPO" --token "$RUNNER_TOKEN" \
