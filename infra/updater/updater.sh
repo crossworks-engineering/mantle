@@ -1193,6 +1193,43 @@ s8b_seat_refusal() {
   return 0
 }
 
+# ── the runtime switch ───────────────────────────────────────────────────────
+# MANTLE_RUNTIME in .env picks the runtime of web, api and the workers
+# (scripts/run-service.sh): empty or node (the default), or bun. Any other
+# word stops every one of them at start ("MANTLE_RUNTIME must be node or
+# bun"), after the pull and the migrate, so the site is down until .env is
+# fixed. So a request is refused, with nothing changed, while .env holds
+# another word. A release older than RUNTIME_SINCE has no run-service.sh: it
+# runs Node whatever the line says, and the log says so.
+RUNTIME_SINCE=0.400.62
+RTR_ERR=""
+
+# runtime_value: MANTLE_RUNTIME as compose reads it from .env: a quoted
+# value is what the first pair of quotes holds; an unquoted one loses its
+# surrounding blanks and a trailing ` # comment`.
+runtime_value() {
+  env_val MANTLE_RUNTIME | sed -e 's/^[[:space:]]*//' \
+    -e '/^["'\'']/!s/[[:space:]]#.*$//' -e '/^["'\'']/!s/[[:space:]]*$//' \
+    -e 's/^"\([^"]*\)".*$/\1/' -e "s/^'\([^']*\)'.*\$/\1/"
+}
+
+# runtime_refusal <tag>: 0 with RTR_ERR set when the roll must be refused;
+# 1 when it may go ahead.
+runtime_refusal() {
+  RTR_ERR=""
+  rtr_v=$(runtime_value)
+  case "$rtr_v" in
+    '' | node) return 1 ;;
+    bun)
+      if tag_below "$1" "$RUNTIME_SINCE"; then
+        echo "[updater] runtime: MANTLE_RUNTIME=bun, and $1 is older than v$RUNTIME_SINCE: it runs Node" | tee -a "$SIG/update.log"
+      fi
+      return 1 ;;
+  esac
+  RTR_ERR="MANTLE_RUNTIME in .env is '$(printf '%s' "$rtr_v" | cut -c1-40)': it must be node, bun or empty, or every app service stops at start. Fix the line in .env, then request the update again"
+  return 0
+}
+
 # ── image prune: this product's images only ──────────────────────────────────
 # Nothing pruned images before this: each roll left a server + client pair
 # (about 3.4 GB) behind, and boxes filled at eight releases a day (dev hit 100%
@@ -2234,6 +2271,14 @@ while true; do
     if s8b_seat_refusal "$TARGET"; then
       write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $SSR_ERR"
       echo "[updater] ROLL REFUSED before any change: $SSR_ERR" | tee -a "$SIG/update.log"
+      write_stack_info
+      continue
+    fi
+
+    # A MANTLE_RUNTIME that run-service.sh would refuse at start.
+    if runtime_refusal "$TARGET"; then
+      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $RTR_ERR"
+      echo "[updater] ROLL REFUSED before any change: $RTR_ERR" | tee -a "$SIG/update.log"
       write_stack_info
       continue
     fi

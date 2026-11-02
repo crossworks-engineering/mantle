@@ -148,6 +148,43 @@ for name in ${NAMES[@]+"${NAMES[@]}"}; do
   esac
 done
 
+# ── the runtime switch ───────────────────────────────────────────────────────
+# MANTLE_RUNTIME in .env picks the runtime of web, api and the workers
+# (scripts/run-service.sh): empty or node, or bun. Any other word stops each
+# of them at start (they show as exited or restarting above). A container
+# made before the line changed keeps its old runtime until `docker compose up
+# -d` makes it again, so each one's own value is compared with .env. Not for
+# the dev project: its services run outside Docker.
+if [[ "$PROJECT" != "mantle-dev" && -f "$ENV_FILE" ]]; then
+  # As compose reads it: a quoted value is what the first pair of quotes
+  # holds; an unquoted one loses its blanks and a trailing ` # comment` (the
+  # updater's runtime_value does the same).
+  rt_want="$(envval MANTLE_RUNTIME | sed -e 's/^[[:space:]]*//' \
+    -e '/^["'\'']/!s/[[:space:]]#.*$//' -e '/^["'\'']/!s/[[:space:]]*$//' \
+    -e 's/^"\([^"]*\)".*$/\1/' -e "s/^'\([^']*\)'.*\$/\1/")"
+  rt_want="${rt_want:-node}"
+  case "$rt_want" in
+    node|bun)
+      rt_n=0; rt_drift=0
+      for name in ${NAMES[@]+"${NAMES[@]}"}; do
+        rt_info="$(docker inspect --format '{{join .Config.Cmd " "}}{{"\n"}}{{range .Config.Env}}{{println .}}{{end}}' "$name" 2>/dev/null)"
+        # Only the services run-service.sh starts (a release before v0.400.62 has none).
+        [[ "$(printf '%s\n' "$rt_info" | head -n 1)" == *scripts/run-service.sh* ]] || continue
+        rt_have="$(printf '%s\n' "$rt_info" | sed -n 's/^MANTLE_RUNTIME=//p' | head -n 1)"
+        rt_n=$((rt_n+1))
+        if [[ "${rt_have:-node}" != "$rt_want" ]]; then
+          short="${name#mantle_}"
+          warn "$short runs ${rt_have:-node}, but .env says $rt_want: docker compose up -d makes it again"
+          rt_drift=$((rt_drift+1))
+        fi
+      done
+      if [[ $rt_n -gt 0 && $rt_drift -eq 0 ]]; then ok "runtime: $rt_want ${DIM}(MANTLE_RUNTIME, $rt_n service(s))${RS}"; fi ;;
+    *)
+      bad "MANTLE_RUNTIME in .env is '$rt_want': it must be node, bun or empty; web, api and the workers refuse to start"
+      fail=$((fail+1)) ;;
+  esac
+fi
+
 # ── app reachability ─────────────────────────────────────────────────────────
 # Two rules learned the hard way:
 #
