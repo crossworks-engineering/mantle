@@ -14,11 +14,12 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   raised the words "out of memory" made every write kill and replace a SQL
   child. The limit is now read from SQLite's own code (SQLITE_NOMEM) or
   Bun's out-of-memory RangeError, never from the text.
-- **Changed:** refusals at the memory limit are paced: 4 at once, then 2 a
-  second for the whole server, for app SQL and for `table_sql` alike. Each
-  one kills a child, and the next statement forks a new one, which blocks
-  the event loop for tens of milliseconds. A caller that keeps sending
-  refused statements now waits; statements that pass never wait.
+- **Changed:** the fork that replaces a child killed at the memory limit is
+  paced: 4 at once, then 2 a second for the whole server, for app SQL and
+  for `table_sql` alike (a fork blocks the event loop for tens of
+  milliseconds). A statement that needs such a fork waits its turn, at most
+  its own time limit, then hears "busy". A statement on a free child never
+  waits.
 - **Changed:** a SQL child says when it runs. An exit before that reads as
   "did not start" (its memory limit may be too small for the runtime), not
   as a statement at the limit. A child SIGKILLed by someone else (most

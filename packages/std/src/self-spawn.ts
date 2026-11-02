@@ -92,18 +92,19 @@ export function childEnd(
  * sending refused statements is slowed, and statements that pass never wait.
  */
 export function refusalPace(burst: number, perSecond: number): () => Promise<void> {
+  // A monotonic clock: a wall clock set back would make a refusal wait for hours.
   let tokens = burst;
-  let last = Date.now();
+  let last = performance.now();
   let queue: Promise<void> = Promise.resolve();
   return () => {
     queue = queue.then(async () => {
-      const now = Date.now();
-      tokens = Math.min(burst, tokens + ((now - last) / 1000) * perSecond);
+      const now = performance.now();
+      tokens = Math.min(burst, tokens + (Math.max(0, now - last) / 1000) * perSecond);
       last = now;
       if (tokens < 1) {
         await new Promise((resolve) => setTimeout(resolve, ((1 - tokens) / perSecond) * 1000));
         tokens = 1;
-        last = Date.now();
+        last = performance.now();
       }
       tokens -= 1;
     });
