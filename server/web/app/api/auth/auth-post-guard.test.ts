@@ -104,9 +104,9 @@ describe('JSON auth POSTs refuse a cross-site form (audit B15)', () => {
       { ...json, origin: 'https://evil.example.invalid' },
       { ...json, origin: 'https://brain.example.invalid.evil.example' },
       // Look-alikes of the desktop app's origin, which is trusted by name.
-      // The match is exact: a browser lower-cases scheme and host before it
-      // sends Origin, so the upper-case forms are no real browser's, and
-      // they are refused all the same. (A trailing slash is dropped before
+      // The match is exact, so case and port count (for a non-http scheme the
+      // URL parser keeps the host's case); no browser page sends these forms,
+      // and they are refused all the same. (A trailing slash is dropped before
       // the match, as for every origin, so mantle-ui://localhost/ is the
       // desktop origin itself here; no browser sends one.)
       { ...json, origin: 'mantle-ui://localhost:1' },

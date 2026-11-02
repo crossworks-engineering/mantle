@@ -367,9 +367,9 @@ describe('gate: CORS', () => {
 
   it('gives no CORS to a look-alike of the desktop origin', async () => {
     const app = makeApp();
-    // The match is exact. A browser lower-cases the scheme and host before it
-    // sends Origin, so the upper-case forms are no real browser's; they are
-    // refused all the same.
+    // The match is exact, so case and port count. (For a non-http scheme the
+    // URL parser keeps the host's case, and its origin is "null"; no browser
+    // page sends these forms, and they are refused all the same.)
     for (const origin of [
       'mantle-ui://localhost:1',
       'MANTLE-UI://LOCALHOST',
