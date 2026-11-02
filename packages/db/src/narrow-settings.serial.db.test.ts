@@ -56,10 +56,13 @@ describe.skipIf(!URL)('settings the narrow login stores on itself (alone on the 
 
   afterAll(async () => {
     // Whatever happened above, no setting left on the cluster's role.
-    if (rr) await rr.ensureRuntimeRoles(su, KEY(), { login: true, warn: () => {} });
-    await nl?.end();
-    await su?.end();
-    await scratch?.drop();
+    try {
+      if (rr) await rr.ensureRuntimeRoles(su, KEY(), { login: true, warn: () => {} });
+    } finally {
+      await nl?.end();
+      await su?.end();
+      await scratch?.drop();
+    }
   });
 
   it('a setting the narrow login stores on itself: the pool overrides it, the boot line names it, migrate takes it back', async () => {

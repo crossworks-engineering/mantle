@@ -48,10 +48,13 @@ describe.skipIf(!URL)("a hand grant on the cluster's roles (alone on the cluster
 
   afterAll(async () => {
     // Whatever happened above, the wanted memberships again.
-    if (admin) await ensureRuntimeRoles(admin, KEY, { login: true, warn: () => {} });
-    await rt?.end();
-    await admin?.end();
-    await scratch?.drop();
+    try {
+      if (admin) await ensureRuntimeRoles(admin, KEY, { login: true, warn: () => {} });
+    } finally {
+      await rt?.end();
+      await admin?.end();
+      await scratch?.drop();
+    }
   }, 60_000);
 
   it('the migrator steps are idempotent, and a hand grant is taken back', async () => {
