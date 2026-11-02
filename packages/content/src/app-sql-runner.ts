@@ -51,7 +51,14 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { envDynamic, envNum, envNumDefault } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { killWithParent } from '@mantle/std/kill-with-parent';
-import { crashedAtLimit, runtimeFlags, withMemoryLimit } from '@mantle/std/self-spawn';
+import {
+  CHILD_READY,
+  childEnd,
+  livePlaces,
+  refusalPace,
+  runtimeFlags,
+  withMemoryLimit,
+} from '@mantle/std/self-spawn';
 
 /** How long one app statement may run. */
 export const APP_SQL_TIMEOUT_MS = 5_000;
@@ -89,6 +96,17 @@ const OUT_OF_MEMORY =
   'the statement needs more memory than a SQL process may use: add a LIMIT, select fewer columns or aggregate in SQL';
 const CRASHED =
   'the statement ended its SQL process, most likely at the memory limit: add a LIMIT, select fewer columns or aggregate in SQL';
+/** The same, for the server's own steps on a file (a schema script, a write
+ *  batch, a copy, an import): "add a LIMIT" means nothing to them. */
+const STEP_OUT_OF_MEMORY =
+  'this step needs more memory than a SQL process may use: the file or one of its values is too large for it';
+/** The jobs that are a step on the whole file, not one app statement. */
+const FILE_STEPS: ReadonlySet<string> = new Set(['script', 'batch', 'copy', 'adopt']);
+/** Refusals at the memory limit that pass at once, then the most per second
+ *  (each one kills a child, and a new one is forked: see refusalPace). */
+export const APP_SQL_REFUSAL_BURST = 4;
+export const APP_SQL_REFUSALS_PER_SECOND = 2;
+let paceRefusal = refusalPace(APP_SQL_REFUSAL_BURST, APP_SQL_REFUSALS_PER_SECOND);
 /** How long the server's copy of one app file may take (a 256 MB file
  *  copies in a few seconds; this leaves room for a slow disk). */
 export const APP_DB_COPY_TIMEOUT_MS = 120_000;
@@ -397,13 +415,18 @@ process.on('message', (job) => {
     reply = { id: job.id, ok: true, result: run(job) };
   } catch (err) {
     const error = err && err.message ? err.message : String(err);
-    // SQLite's words, then the engine's own on Bun.
-    reply = /^out of memory$/i.test(error)
+    // SQLite's own code (SQLITE_NOMEM), then the engine's own error on Bun.
+    // Never the text alone: a trigger can RAISE any text it likes.
+    const nomem = (err && typeof err.errcode === 'number' && (err.errcode & 0xff) === 7) ||
+      (err instanceof RangeError && /^out of memory$/i.test(error));
+    reply = nomem
       ? { id: job.id, ok: false, error: ${JSON.stringify(OUT_OF_MEMORY)}, spent: true }
       : { id: job.id, ok: false, error };
   }
   process.send(reply);
 });
+// It runs: an exit from here on is not a start-up failure.
+process.send(${JSON.stringify(CHILD_READY)});
 `;
 
 /** What the child sees of the environment: enough for SQLite (temp files,
@@ -423,6 +446,8 @@ type Child = {
   proc: ChildProcess;
   /** False once the process has exited. */
   alive: boolean;
+  /** Said it runs (CHILD_READY): an exit before it is a start-up failure. */
+  started: boolean;
   /** Being killed: never handed out again. */
   doomed: boolean;
   /** Has answered a statement, so what it freed still counts on its limit. */
@@ -448,14 +473,18 @@ function forkChild(): Child {
     env: childEnv(),
   });
   killWithParent(proc);
-  const child: Child = { proc, alive: true, doomed: false, used: false };
+  const child: Child = { proc, alive: true, started: false, doomed: false, used: false };
   children.add(child);
   // An idle pool must not keep the server (or a test run) from exiting; a
   // running statement's own timer holds the event loop while it waits. Bun's
   // channel has no unref.
   proc.unref();
   proc.channel?.unref?.();
-  proc.on('message', (m: Reply & { id?: number }) => {
+  proc.on('message', (m: (Reply & { id?: number }) | typeof CHILD_READY) => {
+    if (m === CHILD_READY) {
+      child.started = true;
+      return;
+    }
     const onReply = child.onReply;
     child.onReply = undefined;
     onReply?.(m);
@@ -473,7 +502,7 @@ function forkChild(): Child {
     // A statement waiting for a free child gets the slot this one held, while
     // the pool is under its cap. A fork that throws here reaches no caller, so
     // that waiter goes back to the front of the line.
-    const next = children.size < APP_SQL_MAX_CHILDREN ? waiting.shift() : undefined;
+    const next = livePlaces(children) < APP_SQL_MAX_CHILDREN ? waiting.shift() : undefined;
     if (next) {
       try {
         next(forkChild());
@@ -483,11 +512,23 @@ function forkChild(): Child {
       }
     }
   };
-  proc.once('exit', (code, signal) =>
-    crashedAtLimit(code, signal)
-      ? gone(CRASHED, true)
-      : gone(`the SQL process exited (${signal ?? `code ${code}`}) before it answered`),
-  );
+  proc.once('exit', (code, signal) => {
+    const how = signal ?? `code ${code}`;
+    switch (childEnd(code, signal, child.started, child.doomed)) {
+      case 'no-start':
+        return gone(
+          `the SQL process did not start (${how}); its memory limit may be too small for this runtime`,
+        );
+      case 'crashed':
+        return gone(CRASHED, true);
+      case 'killed':
+        return gone(
+          `the SQL process was killed (${how}) before it answered; the server may be short of memory`,
+        );
+      default:
+        return gone(`the SQL process exited (${how}) before it answered`);
+    }
+  });
   // on, not once: a failed spawn and a failed send can each raise one, and an
   // 'error' with no listener would take the whole server down.
   proc.on('error', (err) => {
@@ -528,8 +569,9 @@ function acquire(waitMs: number): Promise<Child> {
 
 function release(c: Child): void {
   if (!c.alive || c.doomed) return;
-  // Second tries took places past the cap: give them back.
-  if (children.size > APP_SQL_MAX_CHILDREN) return void kill(c);
+  // Second tries took places past the cap: give them back. A child being
+  // killed holds no place, so a refusal never costs a healthy child its own.
+  if (livePlaces(children) > APP_SQL_MAX_CHILDREN) return void kill(c);
   const next = waiting.shift();
   if (next) return next(c);
   c.idleTimer = setTimeout(() => {
@@ -790,7 +832,17 @@ async function answer(
   child.used = true;
   if (!reply.ok && reply.spent) void kill(child);
   release(child);
+  if (!reply.ok && reply.spent) {
+    // A refusal killed its child, and a new one is forked next: wait its turn.
+    await paceRefusal();
+    if (FILE_STEPS.has(opts.mode)) return { ok: false, error: STEP_OUT_OF_MEMORY, spent: true };
+  }
   return reply;
+}
+
+/** Tests only: count or change the pace of refusals. */
+export function __setRefusalPaceForTests(pace: () => Promise<void>): void {
+  paceRefusal = pace;
 }
 
 /** The pids of the live SQL children (tests and diagnostics). */

@@ -4,6 +4,29 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the SQL children read their ends right (follow-up of v0.400.55)
+
+- **Fixed:** a statement refused at the memory limit no longer costs a
+  healthy child its place. A child being killed held a place in the pool
+  count, so the pool could look past its cap and kill a child that had just
+  answered.
+- **Fixed:** an app can no longer fake the memory limit. A trigger that
+  raised the words "out of memory" made every write kill and replace a SQL
+  child. The limit is now read from SQLite's own code (SQLITE_NOMEM) or
+  Bun's out-of-memory RangeError, never from the text.
+- **Changed:** refusals at the memory limit are paced: 4 at once, then 2 a
+  second for the whole server, for app SQL and for `table_sql` alike. Each
+  one kills a child, and the next statement forks a new one, which blocks
+  the event loop for tens of milliseconds. A caller that keeps sending
+  refused statements now waits; statements that pass never wait.
+- **Changed:** a SQL child says when it runs. An exit before that reads as
+  "did not start" (its memory limit may be too small for the runtime), not
+  as a statement at the limit. A child SIGKILLed by someone else (most
+  likely the kernel, short of memory) says so, in place of a bare "exited".
+- **Changed:** the server's own steps on an app file (a schema script, a
+  write batch, a copy, an import) that meet the limit say the file or a
+  value is too large for the step, not "add a LIMIT".
+
 ## Unreleased: the code tools' undo limit is a setting
 
 - **Changed:** the undo records the code tools keep per app (the newest 20)

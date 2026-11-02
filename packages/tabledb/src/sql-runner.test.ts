@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { runTableSql, tableSqlChildPids } from './sql-runner';
+import { __setRefusalPaceForTests, runTableSql, tableSqlChildPids } from './sql-runner';
 import { openTableFile } from './sqlite';
 
 /** Counts for ever: an outer LIMIT does not stop an aggregate. */
@@ -162,13 +162,21 @@ describe('table_sql child processes', () => {
       const cols = Array.from({ length: 64 }, (_, i) => `zeroblob(16777216) AS c${i}`).join(', ');
       const seen = new Set<number>();
       const watch = setInterval(() => tableSqlChildPids().forEach((p) => seen.add(p)), 5);
-      await expect(runTableSql(file, `SELECT ${cols}`)).rejects.toThrow(
-        /more memory than a SQL process|most likely at the memory limit/,
-      );
+      let paced = 0;
+      __setRefusalPaceForTests(async () => void paced++);
+      try {
+        await expect(runTableSql(file, `SELECT ${cols}`)).rejects.toThrow(
+          /more memory than a SQL process|most likely at the memory limit/,
+        );
+      } finally {
+        __setRefusalPaceForTests(async () => {});
+      }
       clearInterval(watch);
       // The used child, then one new child, whose answer is the last.
       expect(seen).toContain(used[0]);
       expect(seen.size).toBe(2);
+      // Each kill waited its turn (refusalPace): two, one for each child.
+      expect(paced).toBe(2);
     },
   );
 

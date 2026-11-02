@@ -56,12 +56,66 @@ export function tsCommand(from: string, script: string, args: readonly string[] 
 
 /** How a process under a memory limit ends when its engine cannot go on: a
  *  crash signal, or an error nothing caught. It is the likely cause and not a
- *  proved one, so what a caller reads should say so. */
+ *  proved one, so what a caller reads should say so. Read it only for a process
+ *  that said it started: before that, exit code 1 is a start-up failure. */
 export function crashedAtLimit(code: number | null, signal: NodeJS.Signals | null): boolean {
   return (
     code === 1 ||
     (signal !== null && ['SIGABRT', 'SIGBUS', 'SIGILL', 'SIGSEGV', 'SIGTRAP'].includes(signal))
   );
+}
+
+/** What a child process sends on IPC once it runs, before any job: its exit
+ *  before this is a start-up failure, not a statement that met the limit. */
+export const CHILD_READY = 'mantle-child-ready';
+
+/** An exit of a SQL child as the caller should read it: it never started, it
+ *  crashed (most likely at its memory limit), it was SIGKILLed by someone else
+ *  (most likely the kernel, short of memory), or it ended some other way. */
+export function childEnd(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+  started: boolean,
+  killedByUs: boolean,
+): 'no-start' | 'crashed' | 'killed' | 'exited' {
+  if (!started) return 'no-start';
+  if (crashedAtLimit(code, signal)) return 'crashed';
+  if (signal === 'SIGKILL' && !killedByUs) return 'killed';
+  return 'exited';
+}
+
+/**
+ * A pace for the work a refused statement causes: each one kills its child,
+ * and the next statement forks a new one, which blocks the event loop for tens
+ * of milliseconds on Linux. `burst` refusals pass at once, then `perSecond`.
+ * Each call waits its turn (first come, first served), so a caller that keeps
+ * sending refused statements is slowed, and statements that pass never wait.
+ */
+export function refusalPace(burst: number, perSecond: number): () => Promise<void> {
+  let tokens = burst;
+  let last = Date.now();
+  let queue: Promise<void> = Promise.resolve();
+  return () => {
+    queue = queue.then(async () => {
+      const now = Date.now();
+      tokens = Math.min(burst, tokens + ((now - last) / 1000) * perSecond);
+      last = now;
+      if (tokens < 1) {
+        await new Promise((resolve) => setTimeout(resolve, ((1 - tokens) / perSecond) * 1000));
+        tokens = 1;
+        last = Date.now();
+      }
+      tokens -= 1;
+    });
+    return queue;
+  };
+}
+
+/** The live members of a pool: a child being killed holds no place. */
+export function livePlaces(children: Iterable<{ doomed: boolean }>): number {
+  let n = 0;
+  for (const c of children) if (!c.doomed) n++;
+  return n;
 }
 
 /** The JIT pool of a process under a memory limit. */
