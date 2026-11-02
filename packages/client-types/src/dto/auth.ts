@@ -3,13 +3,18 @@
  * before anyone has signed in, and the first-run signup body.
  */
 
-/** GET /api/auth/bootstrap-state. Public and boolean-only. */
+import type { PasswordRule } from './workspaces';
+
+/** GET /api/auth/bootstrap-state. Public: booleans and the password rule. */
 export type BootstrapStateDTO = {
   /** No account exists yet: the login screen shows "create your login". */
   firstRun: boolean;
   /** Signup asks for the installer's setup code (MANTLE_SETUP_CODE). Only
    *  ever true while `firstRun` is. Absent on a brain from before the field. */
   setupCodeRequired?: boolean;
+  /** The rule a new password must meet, for a form to show as the person
+   *  types. Absent on a brain from before the field. */
+  passwordRule?: PasswordRule;
 };
 
 /** POST /api/auth/signup. Open only while no account exists. */

@@ -258,14 +258,27 @@ export type AuthWhoami = {
   passwordRule?: PasswordRule;
 };
 
-/** The password rule in force (docs/policy.md): at least `min` characters,
- *  and, under a box policy, not a common password (`commonList`). */
-export type PasswordRule = { min: number; commonList: boolean };
+/** The rule a new password must meet (docs/policy.md): at least `min`
+ *  characters, at most `maxBytes` UTF-8 bytes, `kinds` of the four kinds
+ *  (small letters, capitals, digits, symbols) below `passphrase` characters,
+ *  and not a common password (`commonList`). `maxBytes`, `kinds` and
+ *  `passphrase` are absent from a server before the 2026-11 rule. */
+export type PasswordRule = {
+  min: number;
+  commonList: boolean;
+  maxBytes?: number;
+  kinds?: number;
+  passphrase?: number;
+};
 
 /** Every `code` a refused new password carries (HTTP 400 `{ error, code,
  *  min }`), and the hold's 403 code. */
 export type PasswordErrorCode =
-  'password_too_short' | 'password_too_long' | 'password_common' | 'password_change_required';
+  | 'password_too_short'
+  | 'password_too_long'
+  | 'password_weak'
+  | 'password_common'
+  | 'password_change_required';
 
 /** Every `code` a /api/workspaces refusal carries. */
 export type WorkspaceErrorCode =

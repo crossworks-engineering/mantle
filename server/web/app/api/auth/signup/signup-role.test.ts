@@ -54,7 +54,7 @@ describe('POST /api/auth/signup', () => {
       new Request('http://x/api/auth/signup', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.7' },
-        body: JSON.stringify({ email: 'first@example.invalid', password: 'long-enough-pw' }),
+        body: JSON.stringify({ email: 'first@example.invalid', password: 'Long-enough-pw7' }),
       }),
     );
     expect(res.status).toBe(200);
@@ -100,7 +100,7 @@ describe('POST /api/auth/signup', () => {
         new Request('http://x/api/auth/signup', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.8' },
-          body: JSON.stringify({ email: 'second@example.invalid', password: 'long-enough-pw' }),
+          body: JSON.stringify({ email: 'second@example.invalid', password: 'Long-enough-pw7' }),
         }),
       );
       expect(res.status).toBe(503);

@@ -94,7 +94,7 @@ function post(body: Record<string, unknown>): Request {
   });
 }
 
-const BODY = { email: 'new@example.invalid', password: 'long-enough-pw', role: 'member' };
+const BODY = { email: 'new@example.invalid', password: 'Long-enough-pw7', role: 'member' };
 
 describe('POST /api/users, the insert refused', () => {
   beforeEach(() => {

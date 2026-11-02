@@ -71,6 +71,9 @@ export function passwordChangeRequiredBody(): Record<string, unknown> {
     message: "Your password does not meet this box's password rule. Change it before you continue.",
     min: rule.min,
     commonList: rule.commonList,
+    maxBytes: rule.maxBytes,
+    kinds: rule.kinds,
+    passphrase: rule.passphrase,
   };
 }
 

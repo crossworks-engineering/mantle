@@ -4,11 +4,14 @@
  * a login's own change, the onboard script), and the one place a sign-in
  * asks whether the password it just took still meets the rule.
  *
- * With no box policy (MANTLE_POLICY_PASSWORD_MIN empty) the rule is today's,
- * exactly: at least 8 characters, at most 1024, no list, and a sign-in never
- * sets the forced change. With a policy: at least that many characters, and
- * not a common password (a bundled list, no outside call, no symbol rules;
- * plan "Corporate sign-in", section 6.4). docs/policy.md.
+ * Every new password (2026-11-02): at least 12 characters (or the box
+ * policy's minimum, if higher), at most 72 bytes (all bcrypt reads), three
+ * of the four kinds (small letters, capitals, digits, symbols) unless it is a
+ * passphrase of 20 characters or more, and not a common password (a bundled
+ * list, no outside call). A password set before keeps working: a sign-in
+ * never refuses one, and only a box policy can ask for a change at sign-in,
+ * on its own minimum and the common list (plan "Corporate sign-in", section
+ * 6.4). docs/policy.md.
  *
  * Company sign-in: a login whose password is no way in (required mode, a
  * linked login) is outside this rule. Its password is not checked at a
@@ -21,11 +24,24 @@ import { authUsers } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
 import { COMMON_PASSWORD_BASES, COMMON_PASSWORDS } from './common-passwords';
 
-/** The longest password any route takes (every body schema caps it here). */
+/** The longest password any route takes (every body schema caps it here):
+ *  a sign-in must still take a long one set before the 72-byte cap. */
 export const PASSWORD_MAX = 1024;
 
+/** The fewest characters of a new password with no box policy. */
+export const NEW_PASSWORD_MIN = 12;
+/** The most UTF-8 bytes of a new password: bcrypt reads no more, so a longer
+ *  one would promise more than the hash keeps. */
+export const NEW_PASSWORD_MAX_BYTES = 72;
+/** How many of the four kinds (small letters, capitals, digits, symbols) a
+ *  new password must use. */
+export const NEW_PASSWORD_KINDS = 3;
+/** From this many characters a passphrase needs no mix of kinds. */
+export const PASSPHRASE_MIN = 20;
+
 /** The stable codes a client reads (HTTP 400 `{ error, code }`). */
-export type PasswordProblemCode = 'password_too_short' | 'password_too_long' | 'password_common';
+export type PasswordProblemCode =
+  'password_too_short' | 'password_too_long' | 'password_weak' | 'password_common';
 
 export type PasswordProblem = Readonly<{
   code: PasswordProblemCode;
@@ -35,13 +51,37 @@ export type PasswordProblem = Readonly<{
   min: number;
 }>;
 
-/** The rule in force: the minimum length, and whether the common-password
- *  list is checked (only under a policy). */
-export function passwordRule(): Readonly<{ min: number; commonList: boolean }> {
-  const min = passwordPolicyMin();
-  return min === null
-    ? { min: DEFAULT_PASSWORD_MIN, commonList: false }
-    : { min, commonList: true };
+/** The rule a new password must meet, as a client shows it. */
+export type NewPasswordRule = Readonly<{
+  /** Fewest characters. */
+  min: number;
+  /** Most UTF-8 bytes. */
+  maxBytes: number;
+  /** Kinds of character needed, below `passphrase` characters. */
+  kinds: number;
+  /** From this many characters, any mix of kinds. */
+  passphrase: number;
+  /** A common password is refused (always). */
+  commonList: true;
+}>;
+
+/** The rule in force for a new password. */
+export function passwordRule(): NewPasswordRule {
+  return {
+    min: Math.max(NEW_PASSWORD_MIN, passwordPolicyMin() ?? DEFAULT_PASSWORD_MIN),
+    maxBytes: NEW_PASSWORD_MAX_BYTES,
+    kinds: NEW_PASSWORD_KINDS,
+    passphrase: PASSPHRASE_MIN,
+    commonList: true,
+  };
+}
+
+/** Which of the four kinds `password` uses: small letters (and letters of a
+ *  script with no capitals), capitals, digits, and anything else (symbols,
+ *  spaces, punctuation). */
+export function passwordKinds(password: string): number {
+  const kinds = [/[\p{Ll}\p{Lo}\p{Lm}]/u, /[\p{Lu}\p{Lt}]/u, /\p{N}/u, /[^\p{L}\p{N}]/u];
+  return kinds.filter((k) => k.test(password)).length;
 }
 
 /** Runs a person types without thinking: counting (round past 9), the
@@ -149,22 +189,31 @@ export function isCommonPassword(password: string): boolean {
 /** What is wrong with `password` as a new password, or null when it meets
  *  the rule in force. */
 export function passwordProblem(password: string): PasswordProblem | null {
-  const { min, commonList } = passwordRule();
-  if (password.length < min) {
+  const rule = passwordRule();
+  const { min } = rule;
+  const chars = [...password].length;
+  if (chars < min) {
     return {
       code: 'password_too_short',
       message: `Password must be at least ${min} characters.`,
       min,
     };
   }
-  if (password.length > PASSWORD_MAX) {
+  if (Buffer.byteLength(password, 'utf8') > rule.maxBytes) {
     return {
       code: 'password_too_long',
-      message: `Password must be at most ${PASSWORD_MAX} characters.`,
+      message: `Password must be at most ${rule.maxBytes} bytes (${rule.maxBytes} plain letters; accented letters and emoji take more).`,
       min,
     };
   }
-  if (commonList && isCommonPassword(password)) {
+  if (chars < rule.passphrase && passwordKinds(password) < rule.kinds) {
+    return {
+      code: 'password_weak',
+      message: `Use at least ${rule.kinds} of: small letters, capitals, digits, symbols. Or use a passphrase of ${rule.passphrase} characters or more.`,
+      min,
+    };
+  }
+  if (isCommonPassword(password)) {
     return {
       code: 'password_common',
       message: 'That password is too common. Choose a longer phrase that is not a known password.',
@@ -186,11 +235,15 @@ export function passwordProblemBody(problem: PasswordProblem): {
 
 /**
  * A sign-in took `password`: must the login change it before anything else?
- * Only under a policy (with none, never), when the password does not meet
- * the rule in force. The caller sets auth.users.must_change_password.
+ * Only under a policy (with none, never), when the password is shorter than
+ * the policy's minimum or common. The parts of the new-password rule a
+ * policy does not name (the 72-byte cap, the mix of kinds, the 12 floor)
+ * hold no login that set its password before them. The caller sets
+ * auth.users.must_change_password.
  */
 export function signInNeedsPasswordChange(password: string): boolean {
-  return passwordPolicyMin() !== null && passwordProblem(password) !== null;
+  const min = passwordPolicyMin();
+  return min !== null && ([...password].length < min || isCommonPassword(password));
 }
 
 /** A new password the rule refuses, thrown by the one hash (session.ts

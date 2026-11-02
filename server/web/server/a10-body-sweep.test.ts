@@ -336,6 +336,8 @@ const BAD_JSON = '400 application/json {"error":"invalid JSON"}';
  *    it with a text of its own;
  *  - ceiling-in-kb (A10 lows, part 2 #6): the 413 of a ceiling under 1 MB
  *    says it in KB ("at most 64 KB"), where it said "at most 0 MB";
+ *  - password-rule-12 (2026-11): a new password of the sweep's 8
+ *    characters is the rule's 400, before the database stand-in;
  *  - item-check-first (F4 fix round 2): the bulk delete's item check of
  *    its ids asks the database by @mantle/db's own client, which the
  *    stand-in does not reach (the real answers: f4-owner-flows.db.test.ts).
@@ -402,6 +404,16 @@ function changeKind(cell: string, main: string, now: string): string | null {
       '403 application/json {"error":"loginId is not the login of this session","code":"login-mismatch"}'
   ) {
     return 'desk-login (Desk saving v2 fix round: a save naming another login is a 403)';
+  }
+  // The new-password rule (2026-11-02): at least 12 characters. The sweep's
+  // valid password is 8 characters, so a route that sets a password refuses
+  // it with the rule's 400 before it reaches the database stand-in.
+  if (
+    (cell.startsWith('POST /api/users ') || cell.startsWith('POST /api/users/:id/password ')) &&
+    now ===
+      '400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}'
+  ) {
+    return 'password-rule-12 (the new-password rule, 2026-11: at least 12 characters)';
   }
   // F4 fix round 2 (item 4): a bulk delete checks every id it names first,
   // by @mantle/db's own client (itemWriteVerdicts), which the database

@@ -112,7 +112,7 @@ const preview = async (code: string, ip = '203.0.113.1') =>
     headers: { 'x-forwarded-for': ip },
   });
 
-const GOOD = { code: 'AbCdEfGhJkMnPqRs', password: 'correct horse' };
+const GOOD = { code: 'AbCdEfGhJkMnPqRs', password: 'Correct horse 7' };
 
 describe('POST /api/auth/invite/accept', () => {
   it('signs the new member in with the login session cookie', async () => {
