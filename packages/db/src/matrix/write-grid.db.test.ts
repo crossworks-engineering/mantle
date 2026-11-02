@@ -555,8 +555,11 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     // has no row for, a login's create, a contact's write that is not app
     // data, a create with forged values at the root). Present added 690
     // cells: 60 allowed, 190 denied.
-    expect(tally.allowed).toBe(790);
-    expect(tally.denied).toBe(2436);
+    // A canvas's link is its home Moderators' (0352): 8 cells moved from
+    // allowed to denied (a writeGrant login's open, close and delete of a
+    // canvas's link, an adminWriteGrant login's open; at the root and in a folder).
+    expect(tally.allowed).toBe(782);
+    expect(tally.denied).toBe(2444);
     expect(tally.na + tally.allowed + tally.denied).toBe(tally.cells);
   }, 600_000);
 });

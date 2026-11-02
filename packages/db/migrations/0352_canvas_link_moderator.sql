@@ -44,3 +44,6 @@ BEGIN
   END;
 END
 $$;
+--> statement-breakpoint
+-- As 0280 left it: no role runs it but through its callers.
+REVOKE ALL ON FUNCTION "public"."mantle_check_row"(uuid, uuid[], uuid[], text, "public"."node_type", boolean) FROM PUBLIC;
