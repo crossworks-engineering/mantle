@@ -11,7 +11,15 @@
  * create home, the guards, the reply shape and the call log are the ones a
  * listed tool has. What this adds is the class check (a call through the
  * wrong call tool is refused, naming the right one) and the argument check
- * the SDK does for a listed tool.
+ * the SDK does for a listed tool. A call the map refuses ran nothing and,
+ * like a listed tool's call the SDK refuses on its arguments, leaves no
+ * call log row; nor does tool_help.
+ *
+ * A read the gate treats as a write may sit under tool_read (its
+ * readOnlyHint) only by its policy's own `riskClass: 'read'`: a catalog
+ * fetch that sends nothing of the caller's. The map is built per server,
+ * so per HTTP request (about 13 ms over the full list's build on the
+ * 2026-11-02 measure).
  *
  * The tools listed in full are reads only: every write, delete and send
  * goes through its class's call tool, so a client's per-tool approval sees

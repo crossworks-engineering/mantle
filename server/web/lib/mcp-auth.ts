@@ -25,6 +25,7 @@ import { eq } from 'drizzle-orm';
 import { authUsers, db, resolveSingleOwnerId } from '@mantle/db';
 import { PEER_TOKEN_PREFIX, verifyInboundToken } from '@mantle/content';
 import { mcpToolPolicyOf, type McpCaller } from '@mantle/mcp-core';
+import { RISK_CALL_SLUGS } from '@mantle/tools';
 import { isLoginRole } from '@mantle/client-types/role-names';
 import { bearerFrom } from './auth/request';
 import { loadLoginRow } from './auth/login-row';
@@ -204,6 +205,10 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
   return out;
 }
 
+/** The tool map's call tools (@mantle/tools risk-map.ts): a call through
+ *  one names the tool it runs in its arguments. */
+const CALL_TOOLS: ReadonlySet<string> = new Set(Object.values(RISK_CALL_SLUGS));
+
 /** Who a key caller is, for its audit rows (the caller type stays lean). */
 const keyCallers = new WeakMap<McpCaller, { email: string; createdBy: string | null }>();
 
@@ -215,12 +220,15 @@ const keyCallers = new WeakMap<McpCaller, { email: string; createdBy: string | n
  * server refuses as an unknown tool. Reads a clone of the whole JSON-RPC
  * body (a single message or a batch; the route's body limit bounds it), so
  * padding cannot hide the tool name. A body that is not JSON is the
- * transport's to refuse. Never blocks the call.
+ * transport's to refuse. Never blocks the call. On the tool map
+ * (`toolMap`) a call through a call tool (tool_write, ...) is the call of
+ * the tool it names, audited as that tool.
  */
 export async function auditMcpKeyCall(
   req: Request,
   caller: McpCaller,
   allows: (slug: string) => boolean,
+  opts: { toolMap?: boolean } = {},
 ): Promise<void> {
   const who = keyCallers.get(caller);
   if (!caller.keyId || !who || req.method !== 'POST') return;
@@ -240,8 +248,14 @@ export async function auditMcpKeyCall(
   const messages = Array.isArray(body) ? body : [body];
   for (const m of messages) {
     if (!m || typeof m !== 'object') continue;
-    const msg = m as { method?: unknown; params?: { name?: unknown } };
-    const tool = typeof msg.params?.name === 'string' ? msg.params.name : null;
+    const msg = m as {
+      method?: unknown;
+      params?: { name?: unknown; arguments?: { name?: unknown } };
+    };
+    const called = typeof msg.params?.name === 'string' ? msg.params.name : null;
+    const viaMap = opts.toolMap && called !== null && CALL_TOOLS.has(called);
+    const named = msg.params?.arguments?.name;
+    const tool = viaMap ? (typeof named === 'string' ? named : null) : called;
     // A read (its policy's effect) leaves no write audit; a name
     // with no policy (a connector's tool) is audited as a write.
     if (msg.method !== 'tools/call' || !tool || mcpToolPolicyOf(tool)?.effect === 'read') continue;

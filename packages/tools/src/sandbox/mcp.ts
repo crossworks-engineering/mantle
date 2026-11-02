@@ -76,6 +76,7 @@ export const sandbox_mcp_tools: BuiltinToolDef = {
 export const sandbox_mcp_call: BuiltinToolDef = {
   slug: 'sandbox_mcp_call',
   policy: {
+    riskClass: 'send', // runs an MCP server's tool inside a sandbox that reaches the internet
     matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',

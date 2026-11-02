@@ -49,6 +49,7 @@ const run_terminal: BuiltinToolDef = {
   usageTier: 6,
   optIn: 'terminal',
   policy: {
+    riskClass: 'send', // a shell that reaches anything the host reaches
     destructive: true, // a free-form shell on the brain's host
     matrix: { none: 'names no item' },
     effect: 'write',

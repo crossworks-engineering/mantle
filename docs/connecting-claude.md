@@ -240,19 +240,23 @@ on every turn. A connection can ask for the **tool map** instead: add
 or set `MANTLE_MCP_TOOL_MAP=1` in the box's `.env` for every connection
 (stdio too; `?tools=full` on a URL still lists everything). A linked
 brain's connection is never on the map: its peer tools call tools by name.
+A script on an API key that calls tools by name needs `?tools=full` once
+the box switch is on.
 For a claude.ai connector the box switch is the plainer road: a URL with
 `?tools=` is this box's own to the sign-in check, but a strict client may
 still compare it with the endpoint the box advertises (`/api/mcp`).
 
-On the map the client is listed the core reads in full (search, read,
-Recall's three), `tool_help`, and four call tools, one per risk class:
+On the map the client is listed the core reads in full (search, read a
+section or a page, list files and tables, `table_sql`) and every read the
+server instructions name (Recall's tools, `workspaces_list`), `tool_help`,
+and four call tools, one per risk class:
 
-| Call tool     | What its tools do                                                                  |
-| ------------- | ---------------------------------------------------------------------------------- |
-| `tool_read`   | change nothing; nothing leaves the brain but a linked brain read's query           |
-| `tool_write`  | create or change data inside the brain                                             |
-| `tool_delete` | remove data                                                                        |
-| `tool_send`   | reach outside: mail, Telegram, the web, a public link, an outside API or connector |
+| Call tool     | What its tools do                                                                   |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `tool_read`   | change nothing; nothing leaves but a linked brain read's query and model input      |
+| `tool_write`  | create or change data, or hand work to an agent or renderer                         |
+| `tool_delete` | remove data                                                                         |
+| `tool_send`   | reach outside: mail, Telegram, the web, a shell, a public link, an API, a connector |
 
 Each call tool's description names its tools in a compact map. A call
 through the wrong one is refused with the right one named. The class is

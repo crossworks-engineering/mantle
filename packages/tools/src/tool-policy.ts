@@ -450,17 +450,18 @@ export function policyRunItemBanned(tp: ToolPolicy): boolean {
 
 /**
  * A policy's risk class (RiskClass): its own `riskClass` when set, else
- * `read` for a read (a linked brain's read stays one: it hands out only
- * the query), `delete` for an item delete, `send` for a write that sends,
- * publishes, reaches a linked brain or is marked egress (the web search
- * and fetch), and `write` for any other write.
+ * `send` for anything marked egress (the web search and fetch), `read` for
+ * any other read (a linked brain's read stays one: it hands out only the
+ * query), `delete` for an item delete, `send` for a write that sends,
+ * publishes or reaches a linked brain, and `write` for any other write.
  */
 export function policyRiskClass(tp: ToolPolicy): RiskClass {
   if (tp.riskClass) return tp.riskClass;
+  if (tp.outside?.egress) return 'send';
   if (tp.effect === 'read') return 'read';
   if (tp.deletesItem) return 'delete';
   const via = tp.outside?.via;
-  if (tp.outside?.egress || via === 'send' || via === 'publish' || via === 'peer') return 'send';
+  if (via === 'send' || via === 'publish' || via === 'peer') return 'send';
   return 'write';
 }
 

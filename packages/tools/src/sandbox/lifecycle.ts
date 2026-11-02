@@ -212,6 +212,7 @@ export const sandbox_exec: BuiltinToolDef = {
   slug: 'sandbox_exec',
   usageTier: 3,
   policy: {
+    riskClass: 'send', // a shell on a network that reaches the internet
     destructive: true, // a free-form shell in the sandbox
     matrix: { none: 'a sandbox is not an item' },
     effect: 'write',

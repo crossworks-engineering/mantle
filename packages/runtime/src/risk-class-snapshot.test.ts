@@ -99,6 +99,20 @@ describe('risk classes', () => {
     expect(wrong).toEqual([]);
   });
 
+  it('a tool that reaches out is a read only by its own riskClass (or a linked brain read)', () => {
+    // tool_read may be auto-approved: a derived read never reaches the
+    // web, an outside API or a shell. A policy that says read anyway sets
+    // it itself, with its reason beside it.
+    const wrong = everyTool()
+      .filter((t) => {
+        const o = t.policy.outside;
+        const reaches = o?.egress || (o?.via !== undefined && o.via !== 'peer' && o.via !== 'link');
+        return reaches && policyRiskClass(t.policy) === 'read' && t.policy.riskClass !== 'read';
+      })
+      .map((t) => t.slug);
+    expect(wrong).toEqual([]);
+  });
+
   it('the snapshot holds only the four classes', () => {
     const classes = new Set<RiskClass>(['read', 'write', 'delete', 'send']);
     expect(Object.values(SNAPSHOT).filter((c) => !classes.has(c as RiskClass))).toEqual([]);
