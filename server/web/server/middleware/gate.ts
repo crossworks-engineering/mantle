@@ -126,8 +126,15 @@ function applyCors(headers: Headers, origin: string): void {
   headers.set('Access-Control-Allow-Origin', origin);
   headers.append('Vary', 'Origin');
   headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-  // Idempotency-Key rides every assistant/team turn POST (replay-safe retries).
-  headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key');
+  // Idempotency-Key rides every assistant/team turn POST (replay-safe retries);
+  // Last-Event-ID rides an SSE stream's reconnect, to resume where it stopped.
+  headers.set(
+    'Access-Control-Allow-Headers',
+    'Authorization, Content-Type, Idempotency-Key, Last-Event-ID',
+  );
+  // The response headers a client reads past the CORS-safelisted ones, by
+  // name: Date, the server's clock a turn's ack bounds its safety poll in.
+  headers.set('Access-Control-Expose-Headers', 'Date');
   headers.set('Access-Control-Max-Age', '86400');
 }
 
