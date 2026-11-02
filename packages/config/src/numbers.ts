@@ -184,6 +184,12 @@ export const ENV_NUMBERS = {
     min: 1,
     doc: `app snapshots before an MCP write, ${MB}`,
   },
+  APP_CODE_EDIT_MAX_MB: {
+    default: 64,
+    int: 'floor',
+    min: 1,
+    doc: `code-tool undo records of one app, ${MB}`,
+  },
   TABLE_HISTORY_MAX_MB: {
     default: 512,
     int: 'floor',

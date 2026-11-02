@@ -278,4 +278,22 @@ describe.skipIf(!URL)('the code tools draft write on Postgres', () => {
     await snaps.createAppSnapshot(owner, app.id, { actor: 'owner', withData: false });
     expect((await snaps.listAppSnapshots(owner, app.id)).map((e) => e.trigger)).toEqual(['manual']);
   });
+
+  it('fewer are kept when they pass APP_CODE_EDIT_MAX_MB', async () => {
+    const app = await newApp('prune-mb');
+    const was = process.env.APP_CODE_EDIT_MAX_MB;
+    process.env.APP_CODE_EDIT_MAX_MB = '1';
+    try {
+      // Each row keeps the file as the write found it: 200 KB from the
+      // second write on, so 1 MB holds the newest five, not twenty.
+      for (let i = 0; i < 10; i++) {
+        const body = String(i).repeat(200 * 1000);
+        await apps.changeDraftSource(owner, app.id, setFile('big.ts', body), opts);
+      }
+      expect(await codeRows(app.id)).toBe(5);
+    } finally {
+      if (was === undefined) delete process.env.APP_CODE_EDIT_MAX_MB;
+      else process.env.APP_CODE_EDIT_MAX_MB = was;
+    }
+  });
 });
