@@ -521,6 +521,7 @@ export function buildMantleMcpServer(ownerId: string): McpServer {
   const server = new McpServer({ name: 'mantle', version: '0.0.1' }, { instructions });
   const map = onMap ? new McpToolMap(instructions) : undefined;
   registerMantleTools(server, ownerId, { transport: 'stdio', ...(map ? { map } : {}) });
+  // Last: a tool registered after the map's list is never listed.
   map?.register(server);
   return server;
 }

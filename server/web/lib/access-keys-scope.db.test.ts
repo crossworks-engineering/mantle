@@ -439,8 +439,25 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     await mcpAuth.auditMcpKeyCall(rpc('tool_send', 'email_page'), caller!, () => true, onMap);
     // A read through tool_read leaves none.
     await mcpAuth.auditMcpKeyCall(rpc('tool_read', 'page_get'), caller!, () => true, onMap);
+    // A mapped tool called by its own name (a client that cached the full
+    // list) is audited as on the full list.
+    const byName = new Request('http://localhost/api/mcp?tools=map', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'note_create', arguments: {} },
+      }),
+    });
+    await mcpAuth.auditMcpKeyCall(byName, caller!, () => true, onMap);
     const rows = await audited('api.write', key.id);
-    expect(rows.map((r) => (r.detail as Json).tool).sort()).toEqual(['email_page', 'page_delete']);
+    expect(rows.map((r) => (r.detail as Json).tool).sort()).toEqual([
+      'email_page',
+      'note_create',
+      'page_delete',
+    ]);
   });
 
   it('an admin key on MCP carries its access, risky tools and areas', async () => {

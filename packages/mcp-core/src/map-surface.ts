@@ -25,8 +25,8 @@
  * A read the gate treats as a write may sit under tool_read (its
  * readOnlyHint) only by its policy's own `riskClass: 'read'`: a catalog
  * fetch that sends nothing of the caller's. The map is built per server,
- * so per HTTP request (about 13 ms over the full list's build on the
- * 2026-11-02 measure).
+ * so per HTTP request: about 11 ms over the full list's build, with every
+ * tool registered by its own name too (2026-11-02, M2 Mac).
  *
  * The tools listed in full are reads only: a client that reads the map
  * reaches every write, delete and send through its class's call tool, so
@@ -122,10 +122,23 @@ function jsonSchemaOf(schema: InputSchema): Record<string, unknown> {
  *  JSON_SCHEMA_CONVERSION_TARGET; map-surface.test.ts pins the match). */
 const LISTED_SCHEMA_TARGET = 'draft-2020-12';
 
+/** `tool`'s input schema as the SDK's tools/list writes it: an object. */
+function listedInputSchema(tool: RegisteredTool): { type: 'object' } {
+  if (!tool.inputSchema) return { type: 'object', properties: {} } as { type: 'object' };
+  const json = tool.inputSchema['~standard'].jsonSchema.input({ target: LISTED_SCHEMA_TARGET });
+  if (json.type !== undefined && json.type !== 'object') {
+    throw new Error(`MCP tool schemas must describe objects (got type: ${String(json.type)})`);
+  }
+  return { type: 'object', ...json };
+}
+
 /** Answer tools/list on `server` with `listed` only. The SDK's own handler
  *  lists every registered tool, and a tool it does not list it does not
  *  call, so the map keeps every tool registered and replaces the list. Each
- *  definition is written as the SDK's handler writes it. */
+ *  definition is written as the SDK's handler writes it. The SDK sets its
+ *  handlers once, at the first registerTool, so a tool registered on
+ *  `server` after this is callable but never listed: the map's register is
+ *  the last registration on its server. */
 function listOnly(server: McpServer, listed: ReadonlyArray<[string, RegisteredTool]>): void {
   server.server.removeRequestHandler('tools/list');
   server.server.setRequestHandler('tools/list', () => ({
@@ -135,9 +148,14 @@ function listOnly(server: McpServer, listed: ReadonlyArray<[string, RegisteredTo
         name,
         title: tool.title,
         description: tool.description,
-        inputSchema: (tool.inputSchema?.['~standard'].jsonSchema.input({
-          target: LISTED_SCHEMA_TARGET,
-        }) ?? { type: 'object', properties: {} }) as { type: 'object' },
+        inputSchema: listedInputSchema(tool),
+        ...(tool.outputSchema
+          ? {
+              outputSchema: tool.outputSchema['~standard'].jsonSchema.output({
+                target: LISTED_SCHEMA_TARGET,
+              }) as { type: 'object' },
+            }
+          : {}),
         annotations: tool.annotations,
         icons: tool.icons,
         execution: tool.execution,
@@ -171,7 +189,8 @@ export class McpToolMap {
 
   /** Put the map on `server`: every tool registered by its own name, and
    *  tools/list answered with the direct reads, tool_help and the call
-   *  tools; every tool listed in full when nothing is left to map. */
+   *  tools; every tool listed in full when nothing is left to map. The
+   *  last registration on `server` (listOnly says why). */
   register(server: McpServer): void {
     const all = [...this.entries.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
     const isDirect = (e: McpMapEntry) =>

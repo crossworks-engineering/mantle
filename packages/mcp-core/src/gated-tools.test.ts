@@ -156,11 +156,14 @@ describe('a client that cached the full list calls a tool by its own name on the
   /** A connection with the four tools, on the map or not, whose pre-run
    *  check records each call and refuses it (nothing past the check runs,
    *  so no database). */
-  async function connection(onMap: boolean) {
+  async function connection(onMap: boolean, opts: { readOnly?: boolean } = {}) {
     const seen: CallInput[] = [];
     const base = defaultMcpGate('owner-1');
     const gate: McpGate = Object.freeze({
       ...base,
+      // A read-only credential: the gate lists no write (the read-only
+      // narrower), so a write is never handed to the registration.
+      ...(opts.readOnly ? { lists: Object.freeze({ ...base.lists, write: false }) } : {}),
       callerFor: async (policy: GatePolicy): Promise<GateCaller> => ({
         ...(await base.callerFor(policy)),
         createHome: null,
@@ -172,7 +175,10 @@ describe('a client that cached the full list calls a tool by its own name on the
     });
     const map = onMap ? new McpToolMap('') : undefined;
     const server = new McpServer({ name: 'mantle', version: '0' });
-    for (const name of Object.values(NAMES)) {
+    const names = opts.readOnly
+      ? [NAMES.read, NAMES.write, 'contact_create']
+      : Object.values(NAMES);
+    for (const name of names) {
       const listed = registerGatedTool(
         server,
         gate,
@@ -186,7 +192,7 @@ describe('a client that cached the full list calls a tool by its own name on the
         },
         map,
       );
-      expect(listed, name).toBe(true);
+      expect(listed, name).toBe(!opts.readOnly || name === NAMES.read);
     }
     map?.register(server);
     const [a, b] = InMemoryTransport.createLinkedPair();
@@ -255,6 +261,23 @@ describe('a client that cached the full list calls a tool by its own name on the
     await expect(onMap.client.callTool({ name: 'contact_create', arguments: {} })).rejects.toThrow(
       /Tool contact_create not found/,
     );
+    await onMap.client.close();
+  });
+
+  it('a tool the gate refuses the connection stays not found by its own name', async () => {
+    const onMap = await connection(true, { readOnly: true });
+    for (const name of [NAMES.write, 'contact_create']) {
+      await expect(onMap.client.callTool({ name, arguments: { id: 'x' } })).rejects.toThrow(
+        new RegExp(`Tool ${name} not found`),
+      );
+    }
+    // The read it lists runs by its own name.
+    const r = await onMap.client.callTool({ name: NAMES.read, arguments: { id: 'x' } });
+    expect(r).toEqual({
+      content: [{ type: 'text', text: 'Error: stopped by the probe' }],
+      isError: true,
+    });
+    expect(onMap.seen.map((c) => c.args)).toEqual([{ id: 'x' }]);
     await onMap.client.close();
   });
 });

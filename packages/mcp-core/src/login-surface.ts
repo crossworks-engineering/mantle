@@ -412,6 +412,7 @@ export function registerPreparedTools(
   for (const row of prepared.connectors) {
     registerGatedTool(server, gate, caller.anchorId, { kind: 'connector', row, surface }, map);
   }
+  // Last: a tool registered after the map's list is never listed.
   map?.register(server);
 }
 
