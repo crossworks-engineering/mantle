@@ -78,3 +78,10 @@ jobs:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm bun:compare --summary "$GITHUB_STEP_SUMMARY"
+
+      # Every service starts on Bun the way a box with MANTLE_RUNTIME=bun
+      # starts it (scripts/run-service.sh), up to its linked imports. After
+      # the compare, and whatever it found.
+      - name: Boot smoke on Bun
+        if: always()
+        run: pnpm boot:smoke:bun
