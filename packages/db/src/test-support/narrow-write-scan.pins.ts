@@ -816,6 +816,7 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/grants.ts mantle_ws_names': 2,
   'server/web/lib/login-update.ts mantle_ws_add_user': 1,
   'server/web/lib/login-update.ts mantle_ws_remove_user': 1,
+  'server/web/lib/maintenance/blank-scans.ts mantle_is_brain_space': 1,
   'server/web/lib/maintenance/doc-reindex.ts mantle_is_brain_space': 1,
   'server/web/lib/maintenance/dwg-reindex.ts mantle_is_brain_space': 1,
   'server/web/lib/maintenance/ocr-rescan.ts mantle_is_brain_space': 1,
