@@ -21,7 +21,7 @@ import {
   spellsPattern,
   type RouteRow,
 } from '../../lib/auth/route-policy';
-import { refuseCrossSiteAuthPost } from '../../lib/auth/preflight';
+import { corsAllowlist, refuseCrossSiteAuthPost } from '../../lib/auth/preflight';
 import { takeRouteLimits, type RateLimitScope } from '../../lib/route-limits';
 import { runWithRequestContext, type RequestContext } from '../request-context';
 import { servedRoute, type ServedRoute } from '../route-loader';
@@ -99,22 +99,15 @@ const CANVAS_FRAME_RE = /^\/api\/presents\/[^/]+\/frame$/;
 /** Old middleware matcher exclusion: bare image paths never hit the gate. */
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
 
-// ── CORS for the detached client (Electron / cross-origin dev / DB-less) ──────
-// Opt-in via MANTLE_API_CORS_ORIGINS (comma list, or '*' to reflect any).
-// Detached clients authenticate with a BEARER token, never cookies, so we
-// deliberately DO NOT emit Access-Control-Allow-Credentials. The '*' wildcard
-// is refused on the credential-minting surfaces (/api/auth*): those need an
-// explicit allowlist entry.
-function corsOrigins(): string[] {
-  return (env('MANTLE_API_CORS_ORIGINS') ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
+// ── CORS for the detached client (desktop app / cross-origin dev / DB-less) ───
+// The allowlist is corsAllowlist (lib/auth/preflight.ts): the desktop app's
+// origin always, plus MANTLE_API_CORS_ORIGINS (comma list, or '*' to reflect
+// any). Detached clients authenticate with a BEARER token, never cookies, so
+// we deliberately DO NOT emit Access-Control-Allow-Credentials. The '*'
+// wildcard is refused on the credential-minting surfaces (/api/auth*): those
+// need an explicit allowlist entry, which the desktop app's origin is.
 function corsOrigin(req: Request, path: string): string | null {
-  const allowed = corsOrigins();
-  if (allowed.length === 0) return null;
+  const allowed = corsAllowlist();
   const origin = req.headers.get('origin');
   if (!origin) return null; // same-origin / non-browser — no CORS needed
   const isAuth = path === '/api/auth' || path.startsWith('/api/auth/');
