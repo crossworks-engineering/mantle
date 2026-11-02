@@ -42,7 +42,12 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-24.04
+    # Our own pushes can run on the workstation runner (infra/ci-runner):
+    # only while the repo variable CI_SELF_HOSTED is 'on', and never for a
+    # pull_request, which runs the workflow file of the PR and so must stay
+    # on GitHub's machines. Turn it off (gh variable set CI_SELF_HOSTED
+    # --body off) when the workstation is down, or every push queues.
+    runs-on: ${{ (vars.CI_SELF_HOSTED == 'on' && github.event_name == 'push') && fromJSON('["self-hosted","linux","x64","mantle-ws"]') || 'ubuntu-24.04' }}
     permissions:
       contents: read
     services:
@@ -58,7 +63,10 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      CI_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      # The workstation runner starts services in its own Docker daemon
+      # (the dind container), so the database answers there, not on
+      # localhost. Same condition as runs-on (job env cannot read `runner`).
+      CI_DATABASE_URL: postgres://postgres:postgres@${{ (vars.CI_SELF_HOSTED == 'on' && github.event_name == 'push') && 'dind' || 'localhost' }}:5432/postgres
     steps:
       - uses: actions/checkout@v4
 

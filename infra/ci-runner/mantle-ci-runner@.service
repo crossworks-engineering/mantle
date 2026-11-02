@@ -1,0 +1,18 @@
+# systemd --user unit for the workstation CI runner (see README.md).
+#   cp infra/ci-runner/mantle-ci-runner@.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now mantle-ci-runner@1
+# Needs `loginctl enable-linger $USER` so it runs with nobody logged in.
+[Unit]
+Description=Mantle CI runner, slot %i
+After=docker.service network-online.target
+
+[Service]
+ExecStart=%h/ci-runner/runner-loop.sh %i
+Restart=always
+RestartSec=30
+KillMode=mixed
+TimeoutStopSec=60
+
+[Install]
+WantedBy=default.target
