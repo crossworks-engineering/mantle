@@ -1640,7 +1640,7 @@ check "runtime_refusal: ...and the log says it runs Node" grep -q 'MANTLE_RUNTIM
 roll_lib "$T" 'runtime_refusal latest' >/dev/null || true
 check "runtime_refusal: bun with latest says nothing" test ! -s "$T/sig/update.log"
 check "runtime_refusal: run-service.sh takes the same two words" sh -c "
-  grep -q '^  node) exec ' '$ROOT/scripts/run-service.sh' && grep -q '^  bun) cd ' '$ROOT/scripts/run-service.sh' &&
+  grep -q '^  node) cd ' '$ROOT/scripts/run-service.sh' && grep -q '^  bun) cd ' '$ROOT/scripts/run-service.sh' &&
   test \"\$(grep -cE '^  [a-z*]+\)' '$ROOT/scripts/run-service.sh')\" = 3"
 check "runtime_refusal: RUNTIME_SINCE is the first release with run-service.sh" grep -q '^RUNTIME_SINCE=0.400.62$' "$ROOT/infra/updater/updater.sh"
 check "runtime_refusal: the first refusal of a roll (it reads .env only)" sh -c "
