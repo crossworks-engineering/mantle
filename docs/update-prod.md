@@ -740,6 +740,23 @@ sets `MANTLE_DB_RUNTIME_ROLE=1` in its `.env` (only then does migrate give
 a fresh backup first: the steps, the checks and the rollback are in
 [runtime-role.md](runtime-role.md). Hand psql below stays the superuser.
 
+## Running a box on Bun
+
+The server image holds Node and Bun side by side. Web, api and the ten workers
+start through `scripts/run-service.sh`, which picks the runtime from
+`MANTLE_RUNTIME` in `.env`: empty or `node` (the default, the same tsx start as
+before) or `bun`. migrate and sandboxd stay on Node.
+
+To move a box: set `MANTLE_RUNTIME=bun` in its `.env`, then `docker compose up -d`.
+Compose sees the changed environment and recreates those twelve containers.
+Check that each one is healthy, and that `docker exec mantle_web sh -c 'tr "\0" " "
+</proc/1/cmdline'` shows `bun --no-env-file server/main.ts`. The updater keeps
+`.env`, so a roll leaves the box on Bun.
+
+Rollback: set `MANTLE_RUNTIME=node` (or remove the line), then `docker compose up -d`.
+Any other word stops the services with `MANTLE_RUNTIME must be node or bun`;
+nothing falls back on its own. Plan: dev-brain page 06966c22, sections 12 to 14.
+
 ## The narrow system route: on by default (S7b), always on (S7c)
 
 From the release that carries S7b part b3, the system work of an Admin area
