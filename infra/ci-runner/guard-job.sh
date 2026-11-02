@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: box. Inside the CI runner container (Ubuntu): bash, procps.
 # Job-started hook of the workstation runner (ACTIONS_RUNNER_HOOK_JOB_STARTED).
 # It runs before the job's first step and fails the job unless it is a push
 # run of build-check in this repository. A pull request runs its OWN workflow

@@ -64,287 +64,296 @@ const TRIGGER_0204 = readFileSync(join(MIGRATIONS, '0204_folder_sharing.sql'), '
   .map((s) => s.trim())
   .find((s) => s.includes('CREATE TRIGGER "nodes_share_refresh_after"'))!;
 
-describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for real', () => {
-  let base: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
-  const target = `mantle_restore_test_${randomUUID().slice(0, 8)}`;
-  /** Where the dumps go; made in setup, so a skipped run leaves nothing. */
-  let dir = '';
-  let targetStarted = false;
-  /** The dumped brain's id (migration 0226), read before any dump. */
-  let sourceBrainId = '';
+// The workstation CI runner (infra/ci-runner) has no Docker by design, so
+// db-restore.sh cannot run there; it says so and skips. GitHub's machines
+// still run it (the Bun lane on every push to main, the release guard when
+// it tests).
+const noDocker = process.env.MANTLE_TEST_NO_DOCKER === '1';
 
-  const inTarget = (statement: string) => {
-    const r = runCommand('docker', [
-      'exec',
-      target,
-      'psql',
-      '-U',
-      'postgres',
-      '-d',
-      'postgres',
-      '-tA',
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-c',
-      statement,
-    ]);
-    expect(r.status, r.stderr).toBe(0);
-    return r.stdout.toString().trim();
-  };
+describe.skipIf(!DB_URL || (!source && (!isCi() || noDocker)))(
+  'scripts/db-restore.sh, run for real',
+  () => {
+    let base: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
+    const target = `mantle_restore_test_${randomUUID().slice(0, 8)}`;
+    /** Where the dumps go; made in setup, so a skipped run leaves nothing. */
+    let dir = '';
+    let targetStarted = false;
+    /** The dumped brain's id (migration 0226), read before any dump. */
+    let sourceBrainId = '';
 
-  /** Restore a variant's dump into a pristine target, as an operator would. */
-  const restore = (variant: Variant, flags: string[] = []) => {
-    // The script refuses a target that holds logins: start from an empty one.
-    const reset = runCommand('docker', [
-      'exec',
-      target,
-      'psql',
-      '-U',
-      'postgres',
-      '-d',
-      'template1',
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-c',
-      'DROP DATABASE IF EXISTS postgres WITH (FORCE)',
-      '-c',
-      'CREATE DATABASE postgres',
-    ]);
-    expect(reset.status, reset.stderr).toBe(0);
-    const r = runCommand('bash', [SCRIPT, ...flags, join(dir, `mantle-${variant}.dump`)], {
-      cwd: ROOT,
-      env: { ...process.env, MANTLE_PG_CONTAINER: target, MANTLE_DATA_DIR: join(dir, 'data') },
-    });
-    const out = `${r.stdout.toString()}\n${r.stderr}`;
-    // The script keeps the pg_restore output when it ends 2 or 3.
-    const kept = out.match(/The full pg_restore output is kept in (\S+)/)?.[1];
-    return { status: r.status, out, kept };
-  };
-  const shareTrigger = () =>
-    inTarget(`select coalesce(max(pg_get_triggerdef(oid)), 'none') from pg_trigger
+    const inTarget = (statement: string) => {
+      const r = runCommand('docker', [
+        'exec',
+        target,
+        'psql',
+        '-U',
+        'postgres',
+        '-d',
+        'postgres',
+        '-tA',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-c',
+        statement,
+      ]);
+      expect(r.status, r.stderr).toBe(0);
+      return r.stdout.toString().trim();
+    };
+
+    /** Restore a variant's dump into a pristine target, as an operator would. */
+    const restore = (variant: Variant, flags: string[] = []) => {
+      // The script refuses a target that holds logins: start from an empty one.
+      const reset = runCommand('docker', [
+        'exec',
+        target,
+        'psql',
+        '-U',
+        'postgres',
+        '-d',
+        'template1',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-c',
+        'DROP DATABASE IF EXISTS postgres WITH (FORCE)',
+        '-c',
+        'CREATE DATABASE postgres',
+      ]);
+      expect(reset.status, reset.stderr).toBe(0);
+      const r = runCommand('bash', [SCRIPT, ...flags, join(dir, `mantle-${variant}.dump`)], {
+        cwd: ROOT,
+        env: { ...process.env, MANTLE_PG_CONTAINER: target, MANTLE_DATA_DIR: join(dir, 'data') },
+      });
+      const out = `${r.stdout.toString()}\n${r.stderr}`;
+      // The script keeps the pg_restore output when it ends 2 or 3.
+      const kept = out.match(/The full pg_restore output is kept in (\S+)/)?.[1];
+      return { status: r.status, out, kept };
+    };
+    const shareTrigger = () =>
+      inTarget(`select coalesce(max(pg_get_triggerdef(oid)), 'none') from pg_trigger
                where tgname = 'nodes_share_refresh_after' and tgrelid = 'public.nodes'::regclass`);
 
-  beforeAll(async () => {
-    if (!source) {
-      throw new Error(
-        'the test database does not run in a local Docker container: db-restore.sh cannot be ' +
-          'run (MANTLE_TEST_PG_CONTAINER names the container when the lookup by port fails)',
-      );
-    }
-    dir = mkdtempSync(join(tmpdir(), 'mantle-restore-test-'));
-    // One migrated brain with a login.
-    base = await createMigratedScratchDatabase(DB_URL!);
-    const seed = postgres(base.url, { max: 1, onnotice: () => {} });
-    try {
-      await ensureTestAnchor(seed);
-      // The migration ledger, as migrate.ts keeps it (the scratch helper
-      // runs the migrations without one): the script judges a dump by it.
-      await seed`create schema if not exists "drizzle"`;
-      await seed`
+    beforeAll(async () => {
+      if (!source) {
+        throw new Error(
+          'the test database does not run in a local Docker container: db-restore.sh cannot be ' +
+            'run (MANTLE_TEST_PG_CONTAINER names the container when the lookup by port fails)',
+        );
+      }
+      dir = mkdtempSync(join(tmpdir(), 'mantle-restore-test-'));
+      // One migrated brain with a login.
+      base = await createMigratedScratchDatabase(DB_URL!);
+      const seed = postgres(base.url, { max: 1, onnotice: () => {} });
+      try {
+        await ensureTestAnchor(seed);
+        // The migration ledger, as migrate.ts keeps it (the scratch helper
+        // runs the migrations without one): the script judges a dump by it.
+        await seed`create schema if not exists "drizzle"`;
+        await seed`
         create table "drizzle"."__drizzle_migrations" (
           id serial primary key, hash text not null, created_at bigint)`;
-      for (const e of journal.entries) {
-        await seed`
+        for (const e of journal.entries) {
+          await seed`
           insert into "drizzle"."__drizzle_migrations" (hash, created_at)
           values (${e.tag}, ${e.when})`;
+        }
+        const [row] = await seed`select brain_id::text as id from brain_identity`;
+        sourceBrainId = String(row!['id']);
+      } finally {
+        await seed.end();
       }
-      const [row] = await seed`select brain_id::text as id from brain_identity`;
-      sourceBrainId = String(row!['id']);
-    } finally {
-      await seed.end();
-    }
-    // The six brains are made one after the other in the same database,
-    // each dumped before the next change: no copy of the database is needed.
-    // The migrated base has no share refresh trigger (0261 dropped it).
-    const dropTrigger = 'DROP TRIGGER IF EXISTS "nodes_share_refresh_after" ON "public"."nodes"';
-    // The ledger of a brain that has not run 0212.
-    const before0212 = `DELETE FROM drizzle.__drizzle_migrations WHERE created_at >= ${WHEN_0212}`;
-    // A brain that old still has the level roles' rules (0273, W8c, dropped
-    // them from the migrated base): the restore checks them for its ledger.
-    const oldPolicies = [
-      ['nodes_viewer_read', 'nodes', 'mantle_view_team'],
-      ['agents_viewer_read', 'agents', 'mantle_view_team'],
-      ['agents_client_read', 'agents', 'mantle_view_client'],
-      ['tool_groups_viewer_read', 'tool_groups', 'mantle_view_team'],
-      ['tool_groups_client_read', 'tool_groups', 'mantle_view_client'],
-    ].map(
-      ([name, table, role]) =>
-        `CREATE POLICY "${name}" ON "public"."${table}" FOR SELECT TO "${role}" USING (false)`,
-    );
-    const steps: Array<[Variant, string[]]> = [
-      ['new', []],
-      [
-        'another',
+      // The six brains are made one after the other in the same database,
+      // each dumped before the next change: no copy of the database is needed.
+      // The migrated base has no share refresh trigger (0261 dropped it).
+      const dropTrigger = 'DROP TRIGGER IF EXISTS "nodes_share_refresh_after" ON "public"."nodes"';
+      // The ledger of a brain that has not run 0212.
+      const before0212 = `DELETE FROM drizzle.__drizzle_migrations WHERE created_at >= ${WHEN_0212}`;
+      // A brain that old still has the level roles' rules (0273, W8c, dropped
+      // them from the migrated base): the restore checks them for its ledger.
+      const oldPolicies = [
+        ['nodes_viewer_read', 'nodes', 'mantle_view_team'],
+        ['agents_viewer_read', 'agents', 'mantle_view_team'],
+        ['agents_client_read', 'agents', 'mantle_view_client'],
+        ['tool_groups_viewer_read', 'tool_groups', 'mantle_view_team'],
+        ['tool_groups_client_read', 'tool_groups', 'mantle_view_client'],
+      ].map(
+        ([name, table, role]) =>
+          `CREATE POLICY "${name}" ON "public"."${table}" FOR SELECT TO "${role}" USING (false)`,
+      );
+      const steps: Array<[Variant, string[]]> = [
+        ['new', []],
         [
-          `CREATE TRIGGER "zz_other_lost" AFTER UPDATE OF "path" ON "public"."nodes" FOR EACH ROW
+          'another',
+          [
+            `CREATE TRIGGER "zz_other_lost" AFTER UPDATE OF "path" ON "public"."nodes" FOR EACH ROW
              WHEN (OLD."path" IS DISTINCT FROM NEW."path")
              EXECUTE FUNCTION "public"."mantle_nodes_refresh_trg"()`,
+          ],
         ],
-      ],
-      [
-        'old',
         [
-          'DROP TRIGGER "zz_other_lost" ON "public"."nodes"',
-          dropTrigger,
-          TRIGGER_0204,
-          before0212,
-          ...oldPolicies,
+          'old',
+          [
+            'DROP TRIGGER "zz_other_lost" ON "public"."nodes"',
+            dropTrigger,
+            TRIGGER_0204,
+            before0212,
+            ...oldPolicies,
+          ],
         ],
-      ],
-      [
-        'mixed',
-        ['CREATE TABLE public.zz_unrestorable (p ltree, q ltree, CHECK (p IS DISTINCT FROM q))'],
-      ],
-      ['gone', ['DROP TABLE public.zz_unrestorable', dropTrigger]],
-      ['nofn', ['DROP FUNCTION "public"."mantle_nodes_refresh_trg"()']],
-    ];
-    expect(steps.map(([variant]) => variant).sort()).toEqual([...VARIANTS].sort());
-    const sql = postgres(base.url, { max: 1, onnotice: () => {} });
-    try {
-      for (const [variant, changes] of steps) {
-        for (const statement of changes) await sql.unsafe(statement);
-        const dump = tools!.run('pg_dump', base.name, ['-Fc', '--no-owner']);
-        expect(dump.status, `pg_dump of ${variant} failed: ${dump.stderr}`).toBe(0);
-        writeFileSync(join(dir, `mantle-${variant}.dump`), dump.stdout);
+        [
+          'mixed',
+          ['CREATE TABLE public.zz_unrestorable (p ltree, q ltree, CHECK (p IS DISTINCT FROM q))'],
+        ],
+        ['gone', ['DROP TABLE public.zz_unrestorable', dropTrigger]],
+        ['nofn', ['DROP FUNCTION "public"."mantle_nodes_refresh_trg"()']],
+      ];
+      expect(steps.map(([variant]) => variant).sort()).toEqual([...VARIANTS].sort());
+      const sql = postgres(base.url, { max: 1, onnotice: () => {} });
+      try {
+        for (const [variant, changes] of steps) {
+          for (const statement of changes) await sql.unsafe(statement);
+          const dump = tools!.run('pg_dump', base.name, ['-Fc', '--no-owner']);
+          expect(dump.status, `pg_dump of ${variant} failed: ${dump.stderr}`).toBe(0);
+          writeFileSync(join(dir, `mantle-${variant}.dump`), dump.stdout);
+        }
+      } finally {
+        await sql.end();
       }
-    } finally {
-      await sql.end();
-    }
 
-    // The target: a new server on the image the test server runs.
-    const image = runCommand('docker', ['inspect', '-f', '{{.Config.Image}}', source])
-      .stdout.toString()
-      .trim();
-    expect(image).toBeTruthy();
-    const started = runCommand('docker', [
-      'run',
-      '-d',
-      '--name',
-      target,
-      '-e',
-      'POSTGRES_PASSWORD=restore-test',
-      image,
-    ]);
-    expect(started.status, started.stderr).toBe(0);
-    targetStarted = true;
-    // The image's first server listens on the socket only while it sets the
-    // cluster up; the real one answers on TCP.
-    const deadline = Date.now() + 90_000;
-    for (;;) {
-      const ready = runCommand('docker', ['exec', target, 'pg_isready', '-h', '127.0.0.1']);
-      if (ready.status === 0) break;
-      if (Date.now() > deadline) throw new Error(`the target container never came up: ${target}`);
-      await new Promise((r) => setTimeout(r, 500));
-    }
-  }, 300_000);
+      // The target: a new server on the image the test server runs.
+      const image = runCommand('docker', ['inspect', '-f', '{{.Config.Image}}', source])
+        .stdout.toString()
+        .trim();
+      expect(image).toBeTruthy();
+      const started = runCommand('docker', [
+        'run',
+        '-d',
+        '--name',
+        target,
+        '-e',
+        'POSTGRES_PASSWORD=restore-test',
+        image,
+      ]);
+      expect(started.status, started.stderr).toBe(0);
+      targetStarted = true;
+      // The image's first server listens on the socket only while it sets the
+      // cluster up; the real one answers on TCP.
+      const deadline = Date.now() + 90_000;
+      for (;;) {
+        const ready = runCommand('docker', ['exec', target, 'pg_isready', '-h', '127.0.0.1']);
+        if (ready.status === 0) break;
+        if (Date.now() > deadline) throw new Error(`the target container never came up: ${target}`);
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }, 300_000);
 
-  afterAll(async () => {
-    if (targetStarted) runCommand('docker', ['rm', '-f', target]);
-    await base?.drop();
-    if (dir) rmSync(dir, { recursive: true, force: true });
-  }, 120_000);
+    afterAll(async () => {
+      if (targetStarted) runCommand('docker', ['rm', '-f', target]);
+      await base?.drop();
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    }, 120_000);
 
-  it('new: a dump at the last migration restores with no error and says "Restore complete"', () => {
-    const r = restore('new');
-    expect(r.out).not.toMatch(/pg_restore: error/);
-    expect(r.out).toMatch(/✔ Restore complete: public\.nodes has \d+ rows, auth\.users 1\./);
-    expect(r.status, r.out).toBe(0);
-    // 0261 dropped the share refresh trigger: none is made, none is required.
-    expect(shareTrigger()).toBe('none');
-  }, 120_000);
+    it('new: a dump at the last migration restores with no error and says "Restore complete"', () => {
+      const r = restore('new');
+      expect(r.out).not.toMatch(/pg_restore: error/);
+      expect(r.out).toMatch(/✔ Restore complete: public\.nodes has \d+ rows, auth\.users 1\./);
+      expect(r.status, r.out).toBe(0);
+      // 0261 dropped the share refresh trigger: none is made, none is required.
+      expect(shareTrigger()).toBe('none');
+    }, 120_000);
 
-  const restoredBrainId = () => inTarget('select brain_id::text from brain_identity');
+    const restoredBrainId = () => inTarget('select brain_id::text from brain_identity');
 
-  it('a plain restore keeps the brain id: the same brain (its backup, a roll back, a move)', () => {
-    const r = restore('new');
-    expect(r.status, r.out).toBe(0);
-    expect(sourceBrainId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(restoredBrainId()).toBe(sourceBrainId);
-    expect(r.out).toContain(`Brain id ${sourceBrainId} kept`);
-  }, 120_000);
+    it('a plain restore keeps the brain id: the same brain (its backup, a roll back, a move)', () => {
+      const r = restore('new');
+      expect(r.status, r.out).toBe(0);
+      expect(sourceBrainId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(restoredBrainId()).toBe(sourceBrainId);
+      expect(r.out).toContain(`Brain id ${sourceBrainId} kept`);
+    }, 120_000);
 
-  it("--new-brain gives a brain made from another brain's dump an id of its own, and changes nothing else", () => {
-    const r = restore('new', ['--new-brain']);
-    expect(r.status, r.out).toBe(0);
-    expect(r.out).toMatch(/✔ Restore complete: public\.nodes has \d+ rows, auth\.users 1\./);
-    const id = restoredBrainId();
-    expect(id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(id).not.toBe(sourceBrainId);
-    expect(r.out).toContain(`New brain: brain id ${id}`);
-    expect(inTarget('select count(*) from brain_identity')).toBe('1');
-    // An unknown option is refused before anything is touched.
-    const bad = runCommand('bash', [SCRIPT, '--new-brian', join(dir, 'mantle-new.dump')], {
-      cwd: ROOT,
-      env: { ...process.env, MANTLE_PG_CONTAINER: target },
-    });
-    expect(bad.status).toBe(1);
-    expect(inTarget('select brain_id::text from brain_identity')).toBe(id);
-  }, 120_000);
+    it("--new-brain gives a brain made from another brain's dump an id of its own, and changes nothing else", () => {
+      const r = restore('new', ['--new-brain']);
+      expect(r.status, r.out).toBe(0);
+      expect(r.out).toMatch(/✔ Restore complete: public\.nodes has \d+ rows, auth\.users 1\./);
+      const id = restoredBrainId();
+      expect(id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(id).not.toBe(sourceBrainId);
+      expect(r.out).toContain(`New brain: brain id ${id}`);
+      expect(inTarget('select count(*) from brain_identity')).toBe('1');
+      // An unknown option is refused before anything is touched.
+      const bad = runCommand('bash', [SCRIPT, '--new-brian', join(dir, 'mantle-new.dump')], {
+        cwd: ROOT,
+        env: { ...process.env, MANTLE_PG_CONTAINER: target },
+      });
+      expect(bad.status).toBe(1);
+      expect(inTarget('select brain_id::text from brain_identity')).toBe(id);
+    }, 120_000);
 
-  it('old: a dump from before 0212 gives the one known error; the trigger is made and the restore is complete', () => {
-    const r = restore('old');
-    expect(r.out).toMatch(/pg_restore exited 1 with 1 error\(s\)/);
-    expect(r.out).toMatch(/^Command was: CREATE TRIGGER nodes_share_refresh_after /m);
-    expect(r.out).toMatch(/Made it, as 0212 does\./);
-    expect(r.out).toMatch(
-      /✔ Restore complete: .*\(the one pg_restore error above is explained and repaired\)\./,
-    );
-    expect(r.status, r.out).toBe(0);
-    expect(shareTrigger()).toMatch(/\(old\.path\)::text IS DISTINCT FROM \(new\.path\)::text/);
-  }, 120_000);
+    it('old: a dump from before 0212 gives the one known error; the trigger is made and the restore is complete', () => {
+      const r = restore('old');
+      expect(r.out).toMatch(/pg_restore exited 1 with 1 error\(s\)/);
+      expect(r.out).toMatch(/^Command was: CREATE TRIGGER nodes_share_refresh_after /m);
+      expect(r.out).toMatch(/Made it, as 0212 does\./);
+      expect(r.out).toMatch(
+        /✔ Restore complete: .*\(the one pg_restore error above is explained and repaired\)\./,
+      );
+      expect(r.status, r.out).toBe(0);
+      expect(shareTrigger()).toMatch(/\(old\.path\)::text IS DISTINCT FROM \(new\.path\)::text/);
+    }, 120_000);
 
-  it('gone: a dump of a brain that had already lost the trigger gets it too', () => {
-    const r = restore('gone');
-    expect(r.out).not.toMatch(/pg_restore: error/);
-    expect(r.out).toMatch(/Made it, as 0212 does\./);
-    expect(r.out).toMatch(/✔ Restore complete: public\.nodes has \d+ rows, auth\.users 1\./);
-    expect(r.status, r.out).toBe(0);
-    expect(shareTrigger()).not.toBe('none');
-  }, 120_000);
+    it('gone: a dump of a brain that had already lost the trigger gets it too', () => {
+      const r = restore('gone');
+      expect(r.out).not.toMatch(/pg_restore: error/);
+      expect(r.out).toMatch(/Made it, as 0212 does\./);
+      expect(r.out).toMatch(/✔ Restore complete: public\.nodes has \d+ rows, auth\.users 1\./);
+      expect(r.status, r.out).toBe(0);
+      expect(shareTrigger()).not.toBe('none');
+    }, 120_000);
 
-  it('nofn: when the trigger cannot be made the restore fails (exit 2), with the reason, and never says complete', () => {
-    const r = restore('nofn');
-    expect(r.out).toMatch(/could not make the trigger nodes_share_refresh_after:/);
-    expect(r.out).toMatch(/function public\.mantle_nodes_refresh_trg\(\) does not exist/);
-    expect(r.out).toMatch(/✗ Restore FAILED/);
-    expect(r.out).toMatch(/the trigger nodes_share_refresh_after on public\.nodes is missing/);
-    expect(r.out).not.toMatch(/Restore complete/);
-    expect(r.status, r.out).toBe(2);
-    expect(shareTrigger()).toBe('none');
-    // The pg_restore output is kept for the operator.
-    expect(r.kept && existsSync(r.kept), r.out).toBe(true);
-    rmSync(r.kept!, { force: true });
-  }, 120_000);
+    it('nofn: when the trigger cannot be made the restore fails (exit 2), with the reason, and never says complete', () => {
+      const r = restore('nofn');
+      expect(r.out).toMatch(/could not make the trigger nodes_share_refresh_after:/);
+      expect(r.out).toMatch(/function public\.mantle_nodes_refresh_trg\(\) does not exist/);
+      expect(r.out).toMatch(/✗ Restore FAILED/);
+      expect(r.out).toMatch(/the trigger nodes_share_refresh_after on public\.nodes is missing/);
+      expect(r.out).not.toMatch(/Restore complete/);
+      expect(r.status, r.out).toBe(2);
+      expect(shareTrigger()).toBe('none');
+      // The pg_restore output is kept for the operator.
+      expect(r.kept && existsSync(r.kept), r.out).toBe(true);
+      rmSync(r.kept!, { force: true });
+    }, 120_000);
 
-  it('another: any other trigger a restore cannot make fails the restore (exit 2) by name', () => {
-    const r = restore('another');
-    expect(r.out).toMatch(/pg_restore exited 1 with 1 error\(s\)/);
-    expect(r.out).toMatch(/✗ Restore FAILED/);
-    expect(r.out).toMatch(/the trigger zz_other_lost on public\.nodes is missing/);
-    expect(r.out).not.toMatch(/Restore complete/);
-    expect(r.status, r.out).toBe(2);
-    expect(r.kept && existsSync(r.kept), r.out).toBe(true);
-    rmSync(r.kept!, { force: true });
-  }, 120_000);
+    it('another: any other trigger a restore cannot make fails the restore (exit 2) by name', () => {
+      const r = restore('another');
+      expect(r.out).toMatch(/pg_restore exited 1 with 1 error\(s\)/);
+      expect(r.out).toMatch(/✗ Restore FAILED/);
+      expect(r.out).toMatch(/the trigger zz_other_lost on public\.nodes is missing/);
+      expect(r.out).not.toMatch(/Restore complete/);
+      expect(r.status, r.out).toBe(2);
+      expect(r.kept && existsSync(r.kept), r.out).toBe(true);
+      rmSync(r.kept!, { force: true });
+    }, 120_000);
 
-  it('mixed: an error the script cannot explain ends 3 after the last step; the known one is not counted', () => {
-    const r = restore('mixed');
-    // Four errors: the known trigger, the table, the COPY into it and its
-    // grant to the runtime role (arch A9: the default privileges give every
-    // new table one).
-    expect(r.out).toMatch(/pg_restore exited 1 with 4 error\(s\)/);
-    expect(r.out).toMatch(/Made it, as 0212 does\./);
-    expect(r.out).toMatch(/pg_restore reported 3 error\(s\) this script cannot explain/);
-    expect(r.out).not.toMatch(/Restore complete/);
-    expect(r.out).not.toMatch(/Restore FAILED/);
-    // The steps after the checks still ran (the client sign-in step has
-    // nothing to do on a dump from after 0272: no code table, no warning).
-    expect(r.out).not.toMatch(/could not revoke the open client sign-in/);
-    expect(r.out).toMatch(/Brain id [0-9a-f-]{36} kept/);
-    expect(r.out).not.toMatch(/Next: {2}docker compose up/);
-    expect(r.status, r.out).toBe(3);
-    expect(shareTrigger()).not.toBe('none');
-    expect(r.kept && existsSync(r.kept), r.out).toBe(true);
-    rmSync(r.kept!, { force: true });
-  }, 120_000);
-});
+    it('mixed: an error the script cannot explain ends 3 after the last step; the known one is not counted', () => {
+      const r = restore('mixed');
+      // Four errors: the known trigger, the table, the COPY into it and its
+      // grant to the runtime role (arch A9: the default privileges give every
+      // new table one).
+      expect(r.out).toMatch(/pg_restore exited 1 with 4 error\(s\)/);
+      expect(r.out).toMatch(/Made it, as 0212 does\./);
+      expect(r.out).toMatch(/pg_restore reported 3 error\(s\) this script cannot explain/);
+      expect(r.out).not.toMatch(/Restore complete/);
+      expect(r.out).not.toMatch(/Restore FAILED/);
+      // The steps after the checks still ran (the client sign-in step has
+      // nothing to do on a dump from after 0272: no code table, no warning).
+      expect(r.out).not.toMatch(/could not revoke the open client sign-in/);
+      expect(r.out).toMatch(/Brain id [0-9a-f-]{36} kept/);
+      expect(r.out).not.toMatch(/Next: {2}docker compose up/);
+      expect(r.status, r.out).toBe(3);
+      expect(shareTrigger()).not.toBe('none');
+      expect(r.kept && existsSync(r.kept), r.out).toBe(true);
+      rmSync(r.kept!, { force: true });
+    }, 120_000);
+  },
+);
