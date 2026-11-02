@@ -310,6 +310,7 @@ describe('gate: CORS', () => {
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-origin')).toBe(ORIGIN);
     expect(res.headers.get('access-control-allow-headers')).toContain('Idempotency-Key');
+    expect(res.headers.get('access-control-allow-headers')).toContain('Last-Event-ID');
     expect(res.headers.get('access-control-allow-credentials')).toBeNull();
   });
 
@@ -319,6 +320,7 @@ describe('gate: CORS', () => {
     const ok = await app.request('/api/version', { headers: { origin: ORIGIN } });
     expect(ok.headers.get('access-control-allow-origin')).toBe(ORIGIN);
     expect(ok.headers.get('vary')).toContain('Origin');
+    expect(ok.headers.get('access-control-expose-headers')).toBe('Date');
     const unauth = await app.request('/api/notes', { headers: { origin: ORIGIN } });
     expect(unauth.status).toBe(401);
     expect(unauth.headers.get('access-control-allow-origin')).toBe(ORIGIN);
