@@ -53,7 +53,10 @@ function ownOrigins(s: OidcOn): Set<string> {
 }
 
 /** A web target's origin the brain trusts: its own, or a named cross-origin
- *  caller (never the '*' wildcard). */
+ *  caller (never the '*' wildcard). The desktop app's page origin
+ *  (mantle-ui://localhost) is among the named callers, but is never a web
+ *  target: handoffTarget takes only https, or http on loopback, so the app's
+ *  own target is APP_REDIRECT. */
 function trustedOrigins(s: OidcOn): Set<string> {
   return new Set([...ownOrigins(s), ...namedCorsOrigins()]);
 }
@@ -83,6 +86,9 @@ export function handoffTarget(s: OidcOn, raw: unknown): string | null {
   } catch {
     return null;
   }
+  // A web target is https, or http on loopback. Any other scheme is refused
+  // here, before the trusted list: the desktop app's origin is on it for
+  // CORS, and its custom scheme is no page to send a code to.
   const secure = url.protocol === 'https:';
   if (!secure && !(url.protocol === 'http:' && isLoopbackHost(url.hostname))) return null;
   if (raw !== `${url.origin}${WEB_REDIRECT_PATH}`) return null;
