@@ -25,7 +25,7 @@ These are the `.env` settings an operator sets or changes. The installer writes 
 | `MANTLE_HTTP_PORT`, `MANTLE_HTTPS_PORT` | Host ports for the built-in web server. Default 80 and 443. HTTPS certificates need the real 80 and 443.                                          |
 | `MANTLE_WEB_DEBUG_PORT`                 | Loopback-only debug port. Default 3000. Change it if something else holds 3000.                                                                   |
 | `MANTLE_TRUSTED_PROXIES`                | Proxy hops in front of MantleOS, for correct client addresses. Default 1. Raise it if you add a proxy in front of Caddy, the built-in web server. |
-| `MANTLE_API_CORS_ORIGINS`               | Extra origins allowed to call the API, comma separated. Empty means same origin only.                                                             |
+| `MANTLE_API_CORS_ORIGINS`               | Extra origins allowed to call the API, comma separated. The desktop app is always allowed.                                                        |
 
 To change the domain, run `scripts/install.sh --domain <host>` instead of editing these by hand. See [Add a domain and HTTPS](../01-install/05-domain-https.md).
 
