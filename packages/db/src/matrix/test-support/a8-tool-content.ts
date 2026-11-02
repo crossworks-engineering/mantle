@@ -49,8 +49,9 @@ export type A8ContentDeps = {
    *  no data) to `dest`. */
   writeAppPackage: (appId: string, dest: string) => Promise<void>;
   /** Write the app's versions as a git bundle (app_export's git mode, as
-   *  system) with one commit more on them, to `dest`. */
-  writeAppBundle: (appId: string, dest: string) => Promise<void>;
+   *  system) with one commit more on them, to `dest`. Only the tool
+   *  cells seed a bundle (app_source_from_bundle). */
+  writeAppBundle?: (appId: string, dest: string) => Promise<void>;
   /** Where the app's own database file goes (under APP_DB_DIR). */
   appDbFile: (appId: string) => string;
   /** Make the app's own database with its declared schema and a row
@@ -349,6 +350,7 @@ async function seedBundle(s: Parameters<Seed>[0]): Promise<string> {
   const filename = `${fx.tag}-${file.id.slice(0, 8)}.bundle`;
   const dest = path.join(diskDir(deps.filesRoot, file.parentPath), filename);
   mkdirSync(path.dirname(dest), { recursive: true });
+  if (!deps.writeAppBundle) throw new Error('a bundle seed needs deps.writeAppBundle');
   await deps.writeAppBundle(s.item.id, dest);
   const bytes = readFileSync(dest);
   const data = {
