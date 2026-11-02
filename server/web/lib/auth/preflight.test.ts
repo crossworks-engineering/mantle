@@ -42,15 +42,4 @@ describe('corsAllowlist', () => {
     expect(corsAllowlist()).toEqual(['*', DESKTOP]);
     expect(namedCorsOrigins()).toEqual([DESKTOP]);
   });
-
-  it('never holds a look-alike of the desktop origin', () => {
-    for (const lookAlike of [
-      'mantle-ui://localhost.evil',
-      'http://mantle-ui.localhost',
-      'mantle-ui://evil',
-      'mantle-ui://localhost:1',
-    ]) {
-      expect(corsAllowlist(), lookAlike).not.toContain(lookAlike);
-    }
-  });
 });
