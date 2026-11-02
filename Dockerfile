@@ -222,8 +222,22 @@ CMD ["pnpm", "-C", "server/parser", "exec", "node", "--import", "tsx", "src/main
 # compose `command:` per service. Defaults to the web server. There is no
 # compile step: server/web runs raw TypeScript under tsx, like server/api and
 # every worker always have.
+# Bun beside Node, for the pilot (plan B6): nothing starts on it unless a box
+# opts in with docker-compose.bun-pilot.yml. The baseline build: the plain one
+# needs AVX2, and it stops with SIGILL on a VM that hides it. The version is
+# .bun-version's (eslint-rules/bun-compare.test.ts).
+FROM node:26-slim AS bun-binary
+ADD --checksum=sha256:e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76 \
+    https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-x64-baseline.zip \
+    /tmp/bun.zip
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends unzip \
+    && unzip -j /tmp/bun.zip '*/bun' -d /usr/local/bin \
+    && chmod 755 /usr/local/bin/bun
+
 FROM deps AS server
 ENV NODE_ENV=production
+COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
 # The checks' floor (migration 0301): migrate raises a check below on that no
 # recorded lowering covers. A box kept below on on purpose sets keep in its
 # .env (docs/update-prod.md, "Keep one box below on, on purpose").

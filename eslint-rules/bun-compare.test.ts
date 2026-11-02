@@ -24,6 +24,12 @@ const baseline = JSON.parse(readFileSync(join(ROOT, 'scripts/bun-baseline.json')
 const run = (entries: Record<string, string>) => new Map(Object.entries(entries));
 
 describe('the Bun compare (scripts/bun-compare.mjs)', () => {
+  it('the image holds the Bun of .bun-version', () => {
+    const wanted = readFileSync(join(ROOT, '.bun-version'), 'utf8').trim();
+    const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
+    expect(dockerfile).toContain(`/bun-v${wanted}/bun-linux-x64-baseline.zip`);
+  });
+
   it('reads a report as file and test, with paths from the repo root', () => {
     const report = {
       testResults: [
