@@ -4,6 +4,13 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: only a Moderator opens a canvas's link
+
+- **Changed:** only a Moderator of a Present canvas's home workspace can make,
+  change or stop its open link, as for an app. Someone who may only edit the
+  canvas is refused, in the Access panel and by the assistant's link tools,
+  with words that name the rule. A link made before stays live.
+
 ## Unreleased: switching calls on works with no restart
 
 - **Fixed:** switching Calls on in Settings > Services started LiveKit, but

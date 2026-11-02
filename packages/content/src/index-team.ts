@@ -38,6 +38,7 @@ export {
   applyShareMode,
   revokeShareTree,
   canShareNode,
+  linkNeedsModerator,
   shareModeForLevel,
   applyLevelToShare,
   TeamLinkRetiredError,
@@ -49,7 +50,7 @@ export {
 
 export {
   LinkRefusedError,
-  LINK_APP_NO_MANAGE_MESSAGE,
+  LINK_NO_MANAGE_MESSAGE,
   LINK_NO_EDIT_MESSAGE,
   assertMayLink,
   checkServeList,

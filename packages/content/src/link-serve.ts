@@ -41,7 +41,13 @@ import {
 } from '@mantle/db';
 import { clientOwnUrl, docRefIds, noteRefIds } from './client-redact';
 import { clientRedactOrigins } from './client-origins';
-import { canShareNode, ShareInputError, shareServedIds, type ShareDb } from './shares';
+import {
+  canShareNode,
+  linkNeedsModerator,
+  ShareInputError,
+  shareServedIds,
+  type ShareDb,
+} from './shares';
 
 /** A refusal with its HTTP status: 404 for an item the caller may not read
  *  (never 403), 403 for one it reads but may not link or serve. */
@@ -65,12 +71,13 @@ defineDomainError(LinkRefusedError, {
 
 const NOT_FOUND = () => new LinkRefusedError(404, 'not_found', 'Item not found.');
 
-/** The refusal of a link to an item the caller reads but may not edit (an
- *  app: whose home it does not moderate). */
+/** The refusal of a link to an item the caller reads but may not edit, and
+ *  of one whose link only its home's Moderators open (linkNeedsModerator: an
+ *  app, a Present canvas) to a caller who does not moderate that home. */
 export const LINK_NO_EDIT_MESSAGE =
   'Only someone who may edit this item may open or close its link.';
-export const LINK_APP_NO_MANAGE_MESSAGE =
-  "Only a Moderator of the app's home workspace may open or close its link.";
+export const LINK_NO_MANAGE_MESSAGE =
+  "Only a Moderator of this item's home workspace may open, change or close its link: an app's or a Present canvas's link runs its code for anyone. Ask a Moderator of that workspace.";
 
 export type LinkRights = {
   id: string;
@@ -157,8 +164,8 @@ export async function linkRights(
 /**
  * The item if `loginId` may open or close its link, else a refusal: 404
  * when the caller cannot read it, {@link ShareInputError} when it cannot
- * carry a link, 403 when the caller may read but not edit it (an app: not
- * manage it).
+ * carry a link, 403 when the caller may read but not edit it (an app or a
+ * Present canvas, linkNeedsModerator: not manage it).
  */
 export async function assertMayLink(
   ownerId: string,
@@ -171,9 +178,8 @@ export async function assertMayLink(
   // The current workspace scope too (pre-check removal Part 3): a turn narrower than the
   // login (an assistant of one workspace) reads and edits only what that
   // workspace does. Asked only where a scope is active; the same answers.
-  const inScope = (await itemWriteVerdicts([nodeId], r.type === 'app' ? 'manage' : 'edit')).get(
-    nodeId,
-  );
+  const moderator = linkNeedsModerator(r.type);
+  const inScope = (await itemWriteVerdicts([nodeId], moderator ? 'manage' : 'edit')).get(nodeId);
   if (inScope === 'no_read') throw NOT_FOUND();
   if (!canShareNode(r)) {
     throw new ShareInputError('not-shareable', `type '${r.type}' cannot carry a link here`);
@@ -183,11 +189,11 @@ export async function assertMayLink(
   if (r.snapshotCopy) {
     throw new LinkRefusedError(403, 'forbidden', SNAPSHOT_COPY_NO_SHARE);
   }
-  if (!(r.type === 'app' ? r.manage : r.edit) || inScope === 'no_edit') {
+  if (!(moderator ? r.manage : r.edit) || inScope === 'no_edit') {
     throw new LinkRefusedError(
       403,
       'forbidden',
-      r.type === 'app' ? LINK_APP_NO_MANAGE_MESSAGE : LINK_NO_EDIT_MESSAGE,
+      moderator ? LINK_NO_MANAGE_MESSAGE : LINK_NO_EDIT_MESSAGE,
     );
   }
   return r;

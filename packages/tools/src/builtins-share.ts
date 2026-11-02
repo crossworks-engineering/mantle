@@ -14,7 +14,7 @@ import {
   checkServeList,
   createShare,
   getActiveShareForNode,
-  LINK_APP_NO_MANAGE_MESSAGE,
+  LINK_NO_MANAGE_MESSAGE,
   LINK_NO_EDIT_MESSAGE,
   LinkRefusedError,
   revokeShare,
@@ -31,11 +31,14 @@ import { isOwnerSurface, keyOrPeerVia, loginTurnSurfaceId, ownerSurfaceLoginId }
 import { errorMessage } from '@mantle/std';
 import { callerHasArea, callerScope } from './admin-gate';
 import { CS } from './client-sourced-rule';
-import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
+import { ITEM_KINDS, ITEM_KIND_NAMES, linkNeedsModerator } from '@mantle/client-types/kinds';
 
 /** The kinds an item link opens on (the registry's; a Files folder's is its
  *  own route). */
-const LINK_KINDS = ITEM_KIND_NAMES.filter((k) => ITEM_KINDS[k].publicLink === true);
+const LINK_KINDS = ITEM_KIND_NAMES.filter((k) => {
+  const link: unknown = ITEM_KINDS[k].publicLink;
+  return link === true || link === 'moderator';
+});
 
 /** The `serve` input both share tools take. */
 export const SERVE_INPUT = {
@@ -124,8 +127,8 @@ export function linkError(err: unknown): string {
 const LINK_NOT_FOUND_TEXT = 'not found (or not one you may read)';
 
 /** The item a link opens on (`id`), in the link's own words when the
- *  queue-time check refuses it (assertMayLink's: an app's link is its home
- *  Moderators'). */
+ *  queue-time check refuses it (assertMayLink's: an app's or a canvas's link
+ *  is its home Moderators'). */
 export const LINK_ITEM_ARG: readonly ToolItemArg[] = [
   {
     param: 'id',
@@ -136,7 +139,7 @@ export const LINK_ITEM_ARG: readonly ToolItemArg[] = [
         .from(nodes)
         .where(eq(nodes.id, id))
         .limit(1);
-      return row?.type === 'app' ? LINK_APP_NO_MANAGE_MESSAGE : LINK_NO_EDIT_MESSAGE;
+      return row && linkNeedsModerator(row.type) ? LINK_NO_MANAGE_MESSAGE : LINK_NO_EDIT_MESSAGE;
     },
   },
 ];
@@ -154,7 +157,7 @@ const node_share: BuiltinToolDef = {
   },
   name: 'Share an item',
   description:
-    'Create (or fetch) the public read-only link to a shareable item (note, task, event, file, app, table, drawing, Present canvas, or folder under files) and return its URL. One link per item; anyone with it can view, no login. It shows the item plus its served list (`serve`): what the item names or embeds, or a folder holds, shows only when on that list. A link is no grant: to show an item to members or clients, grant it to their workspace. Only someone who may edit the item may share it (an app: a home Moderator). For a PAGE prefer `page_share`; to turn a link off use `node_unshare`.',
+    'Create (or fetch) the public read-only link to a shareable item (note, task, event, file, app, table, drawing, Present canvas, or folder under files) and return its URL. One link per item; anyone with it can view, no login. It shows the item plus its served list (`serve`): what the item names or embeds, or a folder holds, shows only when on that list. A link is no grant: to show an item to members or clients, grant it to their workspace. Only someone who may edit the item may share it (an app or a Present canvas: only a Moderator of its home workspace). For a PAGE prefer `page_share`; to turn a link off use `node_unshare`.',
   // Publishes brain content outward-facing, so gated, same as page_share.
   requiresConfirm: true,
   inputSchema: {

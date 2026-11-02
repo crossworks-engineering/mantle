@@ -181,19 +181,19 @@ folder page asked with `ws` carries `elsewhere`.
 Open an item and use **Grant Access**. The panel lists the item's home and
 every workspace it is granted to, each with a Write switch.
 
-| To do this                       | You need                                                  |
-| -------------------------------- | --------------------------------------------------------- |
-| Read the item                    | to be a user of a workspace it is granted to              |
-| Edit its content                 | Moderator of its home, or a grant with Write on           |
-| Add a grant to workspace T       | Moderator of its home and Moderator of T                  |
-| Remove a grant from T            | Moderator of its home, or Moderator of T                  |
-| Switch Write on for T            | Moderator of its home and Moderator of T                  |
-| Switch Write off for T           | Moderator of its home, or Moderator of T                  |
-| Open, change or close its link   | to be able to edit it (an app: Moderator of its home)     |
-| Close any public link            | to be an Admin user with the users area                   |
-| Share it with one contact        | to be an Admin user (its home is not checked)             |
-| Delete it                        | Moderator of its home (an app: Admin users too, see Apps) |
-| Move it to another home (H to T) | Moderator of H and Moderator of T                         |
+| To do this                       | You need                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| Read the item                    | to be a user of a workspace it is granted to                              |
+| Edit its content                 | Moderator of its home, or a grant with Write on                           |
+| Add a grant to workspace T       | Moderator of its home and Moderator of T                                  |
+| Remove a grant from T            | Moderator of its home, or Moderator of T                                  |
+| Switch Write on for T            | Moderator of its home and Moderator of T                                  |
+| Switch Write off for T           | Moderator of its home, or Moderator of T                                  |
+| Open, change or close its link   | to be able to edit it (an app or a Present canvas: Moderator of its home) |
+| Close any public link            | to be an Admin user with the users area                                   |
+| Share it with one contact        | to be an Admin user (its home is not checked)                             |
+| Delete it                        | Moderator of its home (an app: Admin users too, see Apps)                 |
+| Move it to another home (H to T) | Moderator of H and Moderator of T                                         |
 
 - A Moderator of a workspace that is not the item's home edits the item
   only when that grant has Write on.

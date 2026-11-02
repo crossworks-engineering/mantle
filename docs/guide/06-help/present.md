@@ -23,7 +23,7 @@ The latest save is always what you see. There is no draft and no commit step.
 - The link always shows the latest save, so every change is public at once. When Presenter saves a canvas that has a link, it is told so. Stop the link in **Access**, or delete the canvas, and the link stops working at once.
 - Anyone with the link can read the whole canvas, its page source included, the way the **Source** button shows it. Keep private data out of a canvas you share.
 - A link shows the canvas only. It shows no saved data: a canvas that keeps notes or votes (`mantle.data`) runs on a link with nothing saved, and it cannot save anything.
-- Only someone who may edit the canvas can make its link.
+- Only a Moderator of the canvas's workspace can make, change or stop its link, as for an app: the link runs the canvas's code for anyone. Someone who may only edit the canvas cannot. A link made before this rule keeps working; a Moderator can stop it in **Access**.
 
 ## Assistant
 

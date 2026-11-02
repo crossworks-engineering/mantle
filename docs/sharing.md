@@ -16,7 +16,7 @@
 > served list (`shares.settings.served`, migration 0262): a picture, file,
 > drawing or mention shows on the link only when it is on that list, else it
 > is left out or reads "Private item". Anyone who may edit the item opens
-> or closes its link (for an app, a Moderator of its home). An Admin user
+> or closes its link (for an app or a Present canvas, a Moderator of its home). An Admin user
 > with the users area may also close any link of the brain (closing only
 > narrows); opening one still needs the edit right. Sharing it with
 > a contact is for Admin users only; the item's home is not checked. Where
@@ -78,9 +78,10 @@ child-src (the same); frame-ancestors 'self'`: a sandboxed frame may always
   refused. Never a render on this path; the owner frame refuses a link's
   ticket and this frame refuses a login's. Open links only: a canvas has no
   contact share. A save is live on the link at once, so `present_update` and
-  `present_restore` say so (`open_link`) when the canvas has one. Any editor
-  of the canvas may open its link (as for a page), not only a home Moderator
-  (as for an app): on a link a canvas has no network, tools or data.
+  `present_restore` say so (`open_link`) when the canvas has one. Only a
+  Moderator of the canvas's home opens, changes or closes its link, as for an
+  app (`publicLink: 'moderator'`, linkNeedsModerator): its link runs its code
+  for anyone (owner decision, 2026-11-02).
 - **Folder** (`branch`): shares **the files and subfolders under the
   folder that are on the link's served list, evaluated per request**. A
   file added later is neither listed nor served until someone ticks it; a
