@@ -21,6 +21,7 @@ The latest save is always what you see. There is no draft and no commit step.
 - **To a workspace:** open the canvas and use **Access** in its header, as for a page. Add the workspace there. Its users can then open the canvas in Present. You need to be a Moderator of the canvas's workspace and of the workspace you add.
 - **With a link:** in **Access**, make the open link and copy it. Anyone with the link sees the canvas live, full screen, with no login. A small label says it is a shared canvas, with **Replay** and **Full screen**. A deck keeps its arrow keys.
 - The link always shows the latest save, so every change is public at once. When Presenter saves a canvas that has a link, it is told so. Stop the link in **Access**, or delete the canvas, and the link stops working at once.
+- Anyone with the link can read the whole canvas, its page source included, the way the **Source** button shows it. Keep private data out of a canvas you share.
 - A link shows the canvas only. It shows no saved data: a canvas that keeps notes or votes (`mantle.data`) runs on a link with nothing saved, and it cannot save anything.
 - Only someone who may edit the canvas can make its link.
 

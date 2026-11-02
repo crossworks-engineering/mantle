@@ -73,7 +73,7 @@ child-src (the same); frame-ancestors 'self'`: a sandboxed frame may always
   document, CSP and sandbox as the owner's frame, `private, no-store` (its
   refusals `no-store`): the /api default does not reach /s, and a closed link
   leaves no cached copy. Both routes take a per-address rate limit
-  (`shareCanvasFrameTicket`, `shareCanvasFrame`). The canvas data store
+  (`shareCanvasFrameTicket`, `shareCanvasFrame`). A visitor can read the canvas's whole document (its source), as for a shared app's bundle; the page itself answers `no-store`. The canvas data store
   (`mantle.data`) is not served: the presenter answers each call itself,
   refused. Never a render on this path; the owner frame refuses a link's
   ticket and this frame refuses a login's. Open links only: a canvas has no

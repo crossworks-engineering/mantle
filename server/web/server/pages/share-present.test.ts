@@ -75,6 +75,7 @@ describe('/s/<token> of a Present canvas', () => {
       'frame-src https://brain.test/s/live-tok/canvas/frame; ' +
         "child-src https://brain.test/s/live-tok/canvas/frame; frame-ancestors 'self'",
     );
+    expect(res.headers.get('cache-control')).toBe('no-store');
     const html = await res.text();
     expect(html).toContain('data-island="canvas"');
     expect(html).toContain('Pump deck');
@@ -93,6 +94,17 @@ describe('/s/<token> of a Present canvas', () => {
     const fallback = "frame-src 'self'; child-src 'self'; frame-ancestors 'self'";
     expect(shareCanvasPageCsp('https://brain.example; frame-src *', 'tok')).toBe(fallback);
     expect(shareCanvasPageCsp('https://brain.example', 'a b;c')).toBe(fallback);
+  });
+
+  it('the frame-src names exactly the frame URL the presenter loads', async () => {
+    const { shareCanvasPageCsp } = await import('./share');
+    const { shareCanvasApiBase } = await import('@mantle/share-ui/present-presenter');
+    const frameUrl = `https://brain.example${shareCanvasApiBase('Tok_9-x')}/frame`;
+    expect(shareCanvasPageCsp('https://brain.example', 'Tok_9-x')).toContain(
+      `frame-src ${frameUrl};`,
+    );
+    // The route that answers it.
+    expect(new URL(frameUrl).pathname).toBe('/s/Tok_9-x/canvas/frame');
   });
 
   it('a page of another kind carries no CSP of its own', async () => {
