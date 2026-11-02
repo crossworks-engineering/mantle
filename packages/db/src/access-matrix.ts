@@ -995,7 +995,7 @@ export const CREDENTIAL_NAME =
  * on), manage (a Moderator of its home), admin (the scope holds the Admin
  * workspace: an Admin user), appdata (an app's data: edit, and while the app
  * is Informational an Admin scope too: docs/actors.md, "Who may do what"), link (a public
- * link: edit, an app's manage) or link_close (a link closed: link, or an
+ * link: edit, an app's or a canvas's manage, mantle_link_needs_manage) or link_close (a link closed: link, or an
  * Admin user with the users area). 'system': only the brain writes it.
  */
 export type EditNeed = 'edit' | 'manage' | 'admin' | 'appdata' | 'link' | 'link_close';
@@ -1407,7 +1407,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.messenger_calls', 'system'), user: 'all' },
   { ...none('public.messenger_call_participants', 'system'), user: 'all' },
   none('public.messenger_call_webhooks', 'system'),
-  // A public link: edit of its item, an app's manage;
+  // A public link: edit of its item, an app's or a canvas's manage;
   // closing it (revoked_at, or the row deleted) also an Admin user with the
   // users area. Its view counter is the brain's (a named read-path write).
   {
