@@ -25,6 +25,7 @@ import { DrawPresenter } from '@mantle/share-ui/draw-presenter';
 import { escapeHtml, htmlPage, islandDiv, shareShell } from './template';
 import type { PageRoute } from '../route-loader';
 import { CACHE_CONTROL } from '../../lib/cache-control';
+import { requestOrigin } from '../../lib/auth-constants';
 
 /**
  * The public /s/[token] share surface — the port of app/s/[token]/page.tsx.
@@ -46,11 +47,23 @@ import { CACHE_CONTROL } from '../../lib/cache-control';
  * the "Shared with you" menu of that contact's live shares.
  */
 
-/** The CSP of a shared canvas's page: its frame may load the brain only
- *  (the canvas frame document, from /s/<token>/canvas/frame), and no other
- *  site may frame the page (the canvas frame refuses such an ancestor
- *  anyway: this says so at the page). */
-export const SHARE_CANVAS_PAGE_CSP = "frame-src 'self'; child-src 'self'; frame-ancestors 'self'";
+const SHARE_ORIGIN_RE = /^https?:\/\/[A-Za-z0-9.:[\]-]+$/;
+const SHARE_TOKEN_RE = /^[A-Za-z0-9_-]+$/;
+
+/** The CSP of a shared canvas's page. Its frame may load the canvas frame
+ *  document of THIS link only: a canvas may always navigate its own frame,
+ *  and in a browser that ignores the iframe's `csp` attribute only this
+ *  directive keeps it off every other URL, the brain's own included. No
+ *  other site may frame the page (the canvas frame refuses such an ancestor
+ *  anyway: this says so at the page). An origin or token of any other shape
+ *  falls back to the whole origin, never to more. */
+export function shareCanvasPageCsp(origin: string, token: string): string {
+  const frame =
+    SHARE_ORIGIN_RE.test(origin) && SHARE_TOKEN_RE.test(token)
+      ? `${origin}/s/${token}/canvas/frame`
+      : "'self'";
+  return `frame-src ${frame}; child-src ${frame}; frame-ancestors 'self'`;
+}
 
 /** The page an old team link shows (410): members sign in with their own
  *  logins now, and the item, if it is still at team, is in their Library. */
@@ -301,7 +314,9 @@ async function renderShare(c: Context): Promise<Response> {
   // A canvas may navigate its own frame (a sandboxed frame always may), and
   // no frame CSP governs that: this page's frame-src does, so the frame
   // reaches only the brain (docs/proposals/canvas-files.md 5.3).
-  if (view.kind === 'present') c.header('Content-Security-Policy', SHARE_CANVAS_PAGE_CSP);
+  if (view.kind === 'present') {
+    c.header('Content-Security-Policy', shareCanvasPageCsp(requestOrigin(c.req.raw), token));
+  }
   const fullViewport = view.kind === 'app' || view.kind === 'present';
   return c.html(
     fullViewport
