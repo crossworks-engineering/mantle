@@ -9,6 +9,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Changed:** the undo records the code tools keep per app (the newest 20)
   were also held to a fixed 64 MB. That limit is now `APP_CODE_EDIT_MAX_MB`
   (default 64, so nothing changes unless it is set).
+- **Fixed:** `docker-compose.yml` now passes `APP_SNAPSHOT_MCP_MAX_MB` to
+  the app containers. Before, a value set in `.env` never reached them.
 
 ## Unreleased: switching calls on works with no restart
 
