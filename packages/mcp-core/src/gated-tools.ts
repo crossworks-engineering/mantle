@@ -391,7 +391,7 @@ export function registerGatedTool(
       description,
       inputSchema,
       ...(annotations ? { annotations } : {}),
-      handler,
+      respond: handler,
       cls: riskClassOf(entry, name, policy),
       source: entry.kind === 'connector' ? toolSourceOf(entry.row.handler) : 'builtin',
     });

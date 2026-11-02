@@ -108,7 +108,7 @@ import { listBuiltins } from '@mantle/tools';
 import { CIRCUIT_STEPS_POINTER } from '@mantle/tools/circuit-workflow';
 import { defaultMcpGate } from './gate-policy';
 import type { McpGate } from './gated-tools';
-import { McpToolMap } from './map-surface';
+import { MCP_MAP_INSTRUCTIONS, McpToolMap } from './map-surface';
 
 /** Mutating Toolsmith tools, gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON): the builtins whose definition opts in by `toolsmithWrite`
@@ -512,13 +512,14 @@ export const MANTLE_MCP_INSTRUCTIONS = [
  *  posture. The HTTP route builds its own server per request and registers
  *  onto it with `transport: 'http'` (server/web/app/api/mcp/route.ts). */
 export function buildMantleMcpServer(ownerId: string): McpServer {
-  const server = new McpServer(
-    { name: 'mantle', version: '0.0.1' },
-    { instructions: MANTLE_MCP_INSTRUCTIONS },
-  );
   // The tool map when the box asks for it (MANTLE_MCP_TOOL_MAP): a stdio
   // client has no URL to ask with.
-  const map = feature('mcpToolMap') ? new McpToolMap() : undefined;
+  const onMap = feature('mcpToolMap');
+  const instructions = onMap
+    ? `${MANTLE_MCP_INSTRUCTIONS} ${MCP_MAP_INSTRUCTIONS}`
+    : MANTLE_MCP_INSTRUCTIONS;
+  const server = new McpServer({ name: 'mantle', version: '0.0.1' }, { instructions });
+  const map = onMap ? new McpToolMap(instructions) : undefined;
   registerMantleTools(server, ownerId, { transport: 'stdio', ...(map ? { map } : {}) });
   map?.register(server);
   return server;

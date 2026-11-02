@@ -56,7 +56,7 @@ import {
 } from '@mantle/tools';
 import { NO_SCOPE_ERROR } from '@mantle/std';
 import { MANTLE_MCP_INSTRUCTIONS, registerMantleTools } from './build-server';
-import { McpToolMap } from './map-surface';
+import { MCP_MAP_INSTRUCTIONS, McpToolMap } from './map-surface';
 import { keyAreasReachEmail } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
 import { keyAreasAllowTool } from './mcp-policy';
@@ -395,7 +395,9 @@ export function registerPreparedTools(
   });
   const channel = mcpChannel(caller, keysOff);
   const via = caller.via === 'key' ? 'api' : caller.via === 'peer' ? 'federation' : 'mcp';
-  const map = opts.toolMap ? new McpToolMap() : undefined;
+  const map = opts.toolMap
+    ? new McpToolMap(mcpInstructionsFor(caller, prepared, { toolMap: true }))
+    : undefined;
   registerMantleTools(server, caller.anchorId, {
     transport: opts.transport ?? 'http',
     ...(peerNamesNoLogin(caller) ? {} : { loginId: caller.loginId }),
@@ -419,11 +421,17 @@ function inNoWorkspace(prepared: PreparedCallerTools | undefined): boolean {
   return prepared?.kind === 'owner' && !!prepared.scope && prepared.scope.ws.length === 0;
 }
 
-/** The server instructions: Recall's hook, plus where creates land; for a
+/** The server instructions: Recall's hook, plus where creates land, plus
+ *  the tool map on a connection that lists it (map-surface.ts); for a
  *  login in no workspace, why it has no tools. */
-export function mcpInstructionsFor(_caller: McpCaller, prepared?: PreparedCallerTools): string {
+export function mcpInstructionsFor(
+  _caller: McpCaller,
+  prepared?: PreparedCallerTools,
+  opts: { toolMap?: boolean } = {},
+): string {
   if (inNoWorkspace(prepared)) return MCP_NO_WORKSPACE_INSTRUCTIONS;
-  return `${MANTLE_MCP_INSTRUCTIONS} ${MCP_WORKSPACE_INSTRUCTIONS}`;
+  const base = `${MANTLE_MCP_INSTRUCTIONS} ${MCP_WORKSPACE_INSTRUCTIONS}`;
+  return opts.toolMap ? `${base} ${MCP_MAP_INSTRUCTIONS}` : base;
 }
 
 /** What every login is told about its workspaces. */

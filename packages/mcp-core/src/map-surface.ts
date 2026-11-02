@@ -32,11 +32,13 @@ import { jsonReply, refusalReply } from './gated-tools';
 import type { ToolHints } from './tool-annotations';
 import { toolInputSchema } from './register/tool-input';
 
-/** The reads listed in full besides the core's: the hand-written `search`
- *  (search_nodes's MCP name) and Recall's three, which the server
- *  instructions name. */
-const DIRECT_EXTRA: readonly string[] = ['search', 'recall_match', 'recall_index', 'recall_open'];
-const DIRECT: ReadonlySet<string> = new Set([...CORE_TOOL_SLUGS, ...DIRECT_EXTRA]);
+/** What a connection on the map is told besides the instructions every
+ *  connection gets (login-surface.ts mcpInstructionsFor). */
+export const MCP_MAP_INSTRUCTIONS =
+  'This connection lists the tool map: search and the core reads in full, and every other ' +
+  'tool through four call tools by risk class (tool_read, tool_write, tool_delete, tool_send). ' +
+  "Each call tool's description names its tools in a compact map, and tool_help gives a " +
+  "tool's arguments. A call through the wrong call tool is refused with the right one named.";
 
 /** Whether a connection to `url` is listed the map: its `?tools=map` or
  *  `?tools=full` wins, else the box's switch (MANTLE_MCP_TOOL_MAP). */
@@ -46,6 +48,8 @@ export function wantsToolMap(url: string): boolean {
   if (tools === 'full') return false;
   return feature('mcpToolMap');
 }
+
+const CORE: ReadonlySet<string> = new Set(CORE_TOOL_SLUGS);
 
 /** The names the map's own tools take: a tool named so is not offered. */
 const META: ReadonlySet<string> = new Set(['tool_help', ...Object.values(RISK_CALL_SLUGS)]);
@@ -59,7 +63,9 @@ export type McpMapEntry = {
   description: string;
   inputSchema: InputSchema;
   annotations?: ToolHints;
-  handler: (args: unknown, extra: unknown) => Promise<unknown>;
+  /** The registration's reply to one call: the gate, the tool, the reply
+   *  shape and the call log (gated-tools.ts). */
+  respond: (args: unknown, extra: unknown) => Promise<unknown>;
   cls: RiskClass;
   source: ToolSource;
 };
@@ -93,9 +99,17 @@ function jsonSchemaOf(schema: InputSchema): Record<string, unknown> {
 }
 
 /** The tools of one connection, gathered as the registration lists them,
- *  then put on the server as the map (register). */
+ *  then put on the server as the map (register). A read is listed in full
+ *  when it is in the core (@mantle/tools CORE_TOOL_SLUGS) or when the
+ *  connection's server `instructions` name it: a tool the client is told to
+ *  call (recall_match, search) is one it can call directly. */
 export class McpToolMap {
   private readonly entries = new Map<string, McpMapEntry>();
+  private readonly named: ReadonlySet<string>;
+
+  constructor(instructions: string) {
+    this.named = new Set(instructions.match(/[a-z][a-z0-9]*(?:_[a-z0-9]+)*/g) ?? []);
+  }
 
   /** Take one listed tool. A later tool of the same name replaces it, as a
    *  second registerTool would have failed: none does today. */
@@ -108,7 +122,8 @@ export class McpToolMap {
    *  tools; every tool in full when nothing is left to map. */
   register(server: McpServer): void {
     const all = [...this.entries.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
-    const isDirect = (e: McpMapEntry) => e.cls === 'read' && DIRECT.has(e.name);
+    const isDirect = (e: McpMapEntry) =>
+      e.cls === 'read' && (CORE.has(e.name) || this.named.has(e.name));
     const direct = all.filter(isDirect);
     const mapped = all.filter((e) => !isDirect(e));
     const asTool = (e: McpMapEntry): RiskMapTool => ({
@@ -131,7 +146,7 @@ export class McpToolMap {
           inputSchema: e.inputSchema,
           ...(e.annotations ? { annotations: e.annotations } : {}),
         },
-        e.handler as never,
+        e.respond as never,
       );
     }
     if (!risk) return;
@@ -198,6 +213,6 @@ export class McpToolMap {
           `input schema: ${JSON.stringify(jsonSchemaOf(entry.inputSchema))}`,
       );
     }
-    return entry.handler(checked.value, extra);
+    return entry.respond(checked.value, extra);
   }
 }

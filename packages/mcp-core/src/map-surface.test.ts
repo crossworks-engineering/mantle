@@ -12,7 +12,8 @@ import { RISK_CALL_SLUGS, policyRiskClass, namedToolPolicy } from '@mantle/tools
 
 import { registerMantleTools } from './build-server';
 import { jsonReply } from './gated-tools';
-import { McpToolMap, wantsToolMap, type McpMapEntry } from './map-surface';
+import { MCP_MAP_INSTRUCTIONS, McpToolMap, wantsToolMap, type McpMapEntry } from './map-surface';
+import { MANTLE_MCP_INSTRUCTIONS } from './build-server';
 import { toolInputSchema } from './register/tool-input';
 import { z } from 'zod';
 
@@ -31,7 +32,9 @@ async function connect(register: (server: McpServer) => void) {
 /** A client of the full surface, on the map or not. */
 function surface(onMap: boolean) {
   return connect((server) => {
-    const map = onMap ? new McpToolMap() : undefined;
+    const map = onMap
+      ? new McpToolMap(`${MANTLE_MCP_INSTRUCTIONS} ${MCP_MAP_INSTRUCTIONS}`)
+      : undefined;
     registerMantleTools(server, 'owner-1', { transport: 'stdio', ...(map ? { map } : {}) });
     map?.register(server);
   });
@@ -56,6 +59,10 @@ describe('the tool map on the full surface', () => {
     expect(direct.length).toBeGreaterThan(5);
     expect(direct.length).toBeLessThan(30);
     for (const t of direct) expect(t.annotations?.readOnlyHint, t.name).toBe(true);
+    // Named by the instructions, so listed in full.
+    for (const n of ['search', 'recall_match', 'recall_index', 'recall_open']) {
+      expect(names).toContain(n);
+    }
     expect(tools.find((t) => t.name === 'tool_read')?.annotations?.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === 'tool_send')?.annotations?.openWorldHint).toBe(true);
     expect(tools.find((t) => t.name === 'tool_delete')?.annotations?.destructiveHint).toBe(true);
@@ -133,7 +140,7 @@ describe('the call tools run the tool they name', () => {
     name,
     description: `Stand-in ${name}.`,
     inputSchema: toolInputSchema({ id: z.string() }),
-    handler: async (args) => {
+    respond: async (args) => {
       seen.push([name, args]);
       return jsonReply({ ran: name });
     },
@@ -144,7 +151,7 @@ describe('the call tools run the tool they name', () => {
   it('a call through its own class runs the handler with the checked arguments', async () => {
     const seen: unknown[] = [];
     const client = await connect((server) => {
-      const map = new McpToolMap();
+      const map = new McpToolMap('');
       map.add(entry('thing_get', 'read', seen));
       map.add(entry('thing_update', 'write', seen));
       map.add(entry('thing_delete', 'delete', seen));
@@ -164,7 +171,7 @@ describe('the call tools run the tool they name', () => {
 
   it('a class with no tool gets no call tool', async () => {
     const client = await connect((server) => {
-      const map = new McpToolMap();
+      const map = new McpToolMap('');
       map.add(entry('thing_get', 'read', []));
       map.register(server);
     });
