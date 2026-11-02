@@ -80,6 +80,9 @@ const REF_MAX_BYTES = 255;
 /** A name in a tree: git's and every file system's most bytes. */
 const NAME_MAX_BYTES = 255;
 
+/** Untrusted text for a message: cut, its control characters escaped. */
+const plain = (s: string, max = 200) => JSON.stringify(s.slice(0, max)).slice(1, -1);
+
 /** True when the text holds a C0 control character or DEL. */
 function hasControl(s: string): boolean {
   for (let i = 0; i < s.length; i++) {
@@ -102,7 +105,7 @@ export function readBundleHeader(buf: Buffer): { refs: Map<string, string>; pack
   for (const line of lines) {
     if (line.startsWith('@')) {
       if (line !== '@object-format=sha1') {
-        fail(`the bundle asks for '${line.slice(0, 60)}': only a whole SHA-1 bundle is read`);
+        fail(`the bundle asks for '${plain(line, 60)}': only a whole SHA-1 bundle is read`);
       }
       continue;
     }
@@ -164,6 +167,11 @@ export class PackReader {
     const r = new PackReader(pack, limits);
     await r.index();
     return r;
+  }
+
+  /** True when the pack holds object `id`. */
+  has(id: string): boolean {
+    return this.byId.has(id);
   }
 
   /** The object `id` (type and content), or null when the pack lacks it. */
@@ -477,15 +485,16 @@ export async function readBundleTree(
   const queue = [head];
   for (let q = 0; q < queue.length; q++) {
     const id = queue[q]!;
+    await pack.breathe();
+    const c = await pack.get(id);
+    if (!c || c.type !== 'commit') continue;
+    // Only a commit the pack holds is the base: a parent line alone is not.
     if (id === opts.base) {
       hasBase = true;
       break;
     }
-    await pack.breathe();
-    const c = await pack.get(id);
-    if (!c || c.type !== 'commit') continue;
     for (const p of parseCommit(c.body).parents) {
-      if (!seen.has(p)) {
+      if (!seen.has(p) && pack.has(p)) {
         seen.add(p);
         queue.push(p);
       }
@@ -532,8 +541,15 @@ export async function readBundleTree(
       if (++entries > limits.maxFiles * 20)
         fail('the commit has too many folders: an app holds a few files');
       const path = prefix + name;
-      const why = badNewPath(path) ?? (name.includes('/') ? 'a / in a name' : badGitPart(name));
-      if (why) fail(`the bundle has '${path.slice(0, 200)}', which may not be imported: ${why}`);
+      // A name the code tools would trim (a space at an end) names another file there.
+      const why =
+        badNewPath(path) ??
+        (name.includes('/')
+          ? 'a / in a name'
+          : name !== name.trim()
+            ? 'a space at the start or end of a name'
+            : badGitPart(name));
+      if (why) fail(`the bundle has '${plain(path)}', which may not be imported: ${why}`);
       if (names.has(name)) fail(`the bundle has '${path}' twice in one folder`);
       names.add(name);
       if (mode === '40000') {
@@ -563,7 +579,7 @@ export async function readBundleTree(
         fail(`${path} is a submodule: an app holds plain files only`);
       } else {
         fail(
-          `${path} has the file mode ${mode.slice(0, 10)}: an app holds plain files (100644) and folders only`,
+          `${path} has the file mode ${plain(mode, 10)}: an app holds plain files (100644) and folders only`,
         );
       }
     }

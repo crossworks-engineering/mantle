@@ -7989,7 +7989,7 @@
  },
  {
   "name": "app_source_from_bundle",
-  "description": "Write the newest commit of a git bundle in /files (`git bundle create app.bundle main`, uploaded with `file_upload`) into the app's DRAFT, then build it. The round trip of `app_export` format git: the bundle's history must hold the commit of the app's live version, or nothing changes (export again and merge first). The published app is untouched until `app_publish`; the draft before is kept (`code_undo` with the edit_id). Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. ",
+  "description": "Write the newest commit of a git bundle in /files (`git bundle create app.bundle main`, uploaded with `file_upload`) into the app's DRAFT, then build it. The round trip of `app_export` format git: the bundle's history must hold the commit of the app's live version, or nothing changes (export again and merge first). The published app is untouched until `app_publish`; `code_undo` with the edit_id takes the draft back while the entry stays. Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. ",
   "inputSchema": {
    "type": "object",
    "properties": {

@@ -241,6 +241,19 @@ describe('app_source_from_bundle', () => {
     expect(written!.files).toEqual({ ...V3.files, 'App.tsx': 'export default () => 4;\n' });
   });
 
+  it('refuses to replace draft work no version holds, unless base_rev names it', async () => {
+    const draft = { entry: 'App.tsx', files: { 'App.tsx': 'export default () => 7;\n' } };
+    vi.mocked(getApp).mockResolvedValue({ title: 'A', source: V2, draft } as never);
+    serve(await roundTrip(() => {}));
+    expect(errorOf(await imp.handler({ id: APP_ID, file_id: FILE_ID }, ctx))).toMatch(
+      new RegExp(`draft changes no version holds.*base_rev ${sourceRev(draft)}.*Nothing changed`),
+    );
+    expect(changeDraftSource).not.toHaveBeenCalled();
+    serve(await roundTrip(() => {}));
+    outputOf(await imp.handler({ id: APP_ID, file_id: FILE_ID, base_rev: sourceRev(draft) }, ctx));
+    expect(vi.mocked(changeDraftSource).mock.calls[0]![3].baseRev).toBe(sourceRev(draft));
+  });
+
   it('refuses an app with no version', async () => {
     vi.mocked(appVersionTotals).mockResolvedValue({ versions: 0, sourceBytes: 0 });
     expect(errorOf(await imp.handler({ id: APP_ID, file_id: FILE_ID }, ctx))).toMatch(
