@@ -455,7 +455,23 @@ describe('when the Bun path is taken', () => {
 
   it('stays on the SDK for a key Bun would send wrong', () => {
     recordClass();
-    for (const key of ['a?b', 'a#b', 'a b', 'ä']) expect(__usesBunForTests(key), key).toBe(false);
+    for (const key of [
+      'a?b',
+      'a#b',
+      'a b',
+      'ä',
+      '',
+      '/abs/x',
+      'a/b/',
+      'a//b',
+      'a/../b',
+      '../a',
+      './a',
+      '.hidden',
+    ])
+      expect(__usesBunForTests(key), key).toBe(false);
+    for (const key of ['logos/profile.png', 'm4-bench/a_b-c.d', contentKey('f'.repeat(64))])
+      expect(__usesBunForTests(key), key).toBe(true);
   });
 
   it('stays on Bun after a bucket call made the SDK client', async () => {
