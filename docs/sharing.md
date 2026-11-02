@@ -57,22 +57,28 @@ Two of these carry extra semantics:
 - **Canvas** (`present`): the link runs the canvas LIVE, full screen,
   always the latest save (docs/proposals/canvas-files.md 5.3 and 7.2). The
   page is shell-less (as an app's) with a floating "Shared canvas" pill
-  (Replay, Full screen), and it carries `Content-Security-Policy:
-frame-src 'self'`: a sandboxed frame may always navigate itself, and only
-  the host page's `frame-src` stops it reaching another site. The island
-  mints a canvas frame ticket at `POST /s/[token]/canvas/frame-ticket`
+  (Replay, Full screen; full screen takes the pill along), and it carries
+  `Content-Security-Policy: frame-src 'self'; child-src 'self';
+frame-ancestors 'self'`: a sandboxed frame may always navigate itself, and
+  only the host page's `frame-src` stops it reaching another site. The
+  island mints a canvas frame ticket at `POST /s/[token]/canvas/frame-ticket`
   (bound to the link and the canvas, no login, 30 s) and the frame loads
-  `GET /s/[token]/canvas/frame?t=`, which resolves the link again on every
-  load and renders the same document, CSP and sandbox as the owner's frame,
-  `private, no-store` (its refusals `no-store`): the /api default does not
-  reach /s, and a closed link leaves no cached copy.
-  Both routes take a per-address rate limit (`shareCanvasFrameTicket`,
-  `shareCanvasFrame`). The canvas data store (`mantle.data`) is not served:
-  the presenter answers each call itself, refused. Never a render on this
-  path; the owner frame refuses a link's ticket and this frame refuses a
-  login's. Open links only: a canvas has no contact share. A save is live on
-  the link at once, so `present_update` says so (`open_link`) when the
-  canvas has one.
+  `GET /s/[token]/canvas/frame?t=`. That route answers only the iframe of
+  the link's own page (Fetch Metadata `Sec-Fetch-Dest: iframe` and
+  `Sec-Fetch-Site: same-origin`, else 403: opened as a page of its own, a
+  canvas could navigate the whole window anywhere with no pill). It resolves
+  the link again on every load and renders the same document, CSP and
+  sandbox as the owner's frame, `private, no-store` (its refusals
+  `no-store`): the /api default does not reach /s, and a closed link leaves
+  no cached copy. Both routes take a per-address rate limit
+  (`shareCanvasFrameTicket`, `shareCanvasFrame`). The canvas data store
+  (`mantle.data`) is not served: the presenter answers each call itself,
+  refused. Never a render on this path; the owner frame refuses a link's
+  ticket and this frame refuses a login's. Open links only: a canvas has no
+  contact share. A save is live on the link at once, so `present_update` and
+  `present_restore` say so (`open_link`) when the canvas has one. Any editor
+  of the canvas may open its link (as for a page), not only a home Moderator
+  (as for an app): on a link a canvas has no network, tools or data.
 - **Folder** (`branch`): shares **the files and subfolders under the
   folder that are on the link's served list, evaluated per request**. A
   file added later is neither listed nor served until someone ticks it; a
