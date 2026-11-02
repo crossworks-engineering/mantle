@@ -802,7 +802,7 @@ echo "sanity.sh: the runtime switch (MANTLE_RUNTIME)"
 RS_CMD='scripts/run-service.sh server/web server/main.ts'
 sanity_rt() { # <.env MANTLE_RUNTIME line or -> <container's value> → output, then "rc=N"
   printf 'MANTLE_SITE_ADDRESS=brain.example.com\n' > "$T/stack/.env"
-  [ "$1" = - ] || printf 'MANTLE_RUNTIME=%s\n' "$1" >> "$T/stack/.env"
+  [ "$1" = - ] || printf 'MANTLE_RUNTIME=%b\n' "$1" >> "$T/stack/.env"
   FAKE_RT_CMD="$RS_CMD" FAKE_RT="$2" sanity_run '200 - {"firstRun":false}' down
 }
 out=$(sanity_rt bun bun)
@@ -815,9 +815,12 @@ out=$(sanity_rt bun node)
 check "bun in .env, node in the container: a warning that names the fix, rc 0" sh -c "printf '%s' \"\$1\" | grep -q 'web runs node, but .env says bun: docker compose up -d makes it again' && ! printf '%s' \"\$1\" | grep -q 'runtime: bun' && printf '%s' \"\$1\" | grep -q 'rc=0'" _ "$out"
 out=$(sanity_rt deno deno)
 check "a word run-service.sh refuses: a failure, rc 1" sh -c "printf '%s' \"\$1\" | grep -q \"MANTLE_RUNTIME in .env is 'deno': it must be node, bun or empty\" && printf '%s' \"\$1\" | grep -q 'rc=1'" _ "$out"
-printf 'MANTLE_SITE_ADDRESS=brain.example.com\n' > "$T/stack/.env"
+out=$(sanity_rt 'bun\nMANTLE_RUNTIME=node' bun)
+check "two MANTLE_RUNTIME lines: a failure, rc 1" sh -c "printf '%s' \"\$1\" | grep -q 'MANTLE_RUNTIME is set 2 times in .env, and compose takes the last one' && printf '%s' \"\$1\" | grep -q 'rc=1'" _ "$out"
+printf 'MANTLE_SITE_ADDRESS=brain.example.com\nMANTLE_RUNTIME=deno\n' > "$T/stack/.env"
 out=$(FAKE_RT_CMD='pnpm -C server/web exec tsx server/main.ts' FAKE_RT=node sanity_run '200 - {"firstRun":false}' down)
-check "a release before run-service.sh: no runtime line" sh -c "! printf '%s' \"\$1\" | grep -q 'runtime:' && printf '%s' \"\$1\" | grep -q 'rc=0'" _ "$out"
+check "a release before run-service.sh: no runtime line, and no failure over a word it ignores" sh -c "! printf '%s' \"\$1\" | grep -qE 'runtime:|MANTLE_RUNTIME' && printf '%s' \"\$1\" | grep -q 'rc=0'" _ "$out"
+printf 'MANTLE_SITE_ADDRESS=brain.example.com\n' > "$T/stack/.env"
 
 echo "db-dump.sh: strict mode and the dump dir"
 # An executable docker stub on PATH (db-dump.sh runs as its own process).
@@ -1592,10 +1595,12 @@ check "Admin seats without role admin: no backup, no compose pull, no up" sh -c 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "updater.sh: a MANTLE_RUNTIME that run-service.sh would refuse stops the roll"
 # rtr_env [<value>]: .env with that MANTLE_RUNTIME line, or none.
+# rtr_raw <lines>: .env with these lines (printf %b: \t, \n) in its place.
 rtr_env() {
-  sed -i.bak '/^MANTLE_RUNTIME=/d' "$T/stack/.env" && rm -f "$T/stack/.env.bak"
+  sed -i.bak '/MANTLE_RUNTIME/d' "$T/stack/.env" && rm -f "$T/stack/.env.bak"
   [ $# -eq 0 ] || printf 'MANTLE_RUNTIME=%s\n' "$1" >> "$T/stack/.env"
 }
+rtr_raw() { rtr_env; printf '%b\n' "$1" >> "$T/stack/.env"; }
 rtr_probe='if runtime_refusal v0.400.70; then printf "refused: %s" "$RTR_ERR"; else printf ok; fi'
 T="$WORK/rtr-lib"; fake_stack "$T"; mkdir -p "$T/state"
 for v in '' node bun '"bun"' "'bun'" 'bun # the pilot' '  bun  ' '"node"'; do
@@ -1605,7 +1610,7 @@ for v in '' node bun '"bun"' "'bun'" 'bun # the pilot' '  bun  ' '"node"'; do
 done
 rtr_env
 check "runtime_refusal: no line goes ahead" test "$(roll_lib "$T" "$rtr_probe")" = ok
-for v in Bun deno '"deno"' 'bun2' 'node bun'; do
+for v in Bun deno '"deno"' 'bun2' 'node bun' 'bun#x' '" bun"'; do
   rtr_env "$v"
   out=$(roll_lib "$T" "$rtr_probe")
   check "runtime_refusal: MANTLE_RUNTIME=$v is refused, with the fix" sh -c "printf '%s' \"\$1\" | grep -q \"^refused: MANTLE_RUNTIME in .env is '.*': it must be node, bun or empty, or every app service stops at start. Fix the line in .env\"" _ "$out"
@@ -1613,6 +1618,20 @@ done
 rtr_env '"deno" # a test'
 out=$(roll_lib "$T" "$rtr_probe")
 check "runtime_refusal: the word it read is in the reason, as compose reads it" sh -c "printf '%s' \"\$1\" | grep -q \"is 'deno'\"" _ "$out"
+rtr_raw 'MANTLE_RUNTIME=bun\t# a tab, not a space'
+check "runtime_refusal: a tab before # stays in the value, as compose keeps it: refused" sh -c "printf '%s' \"\$1\" | grep -q '^refused: MANTLE_RUNTIME in .env is .bun?# a tab'" _ "$(roll_lib "$T" "$rtr_probe")"
+rtr_raw 'MANTLE_RUNTIME=bun\nMANTLE_RUNTIME=Bun'
+check "runtime_refusal: two lines (compose takes the last): refused, with the count" sh -c "printf '%s' \"\$1\" | grep -q '^refused: MANTLE_RUNTIME is set 2 times in .env, and compose takes the last one'" _ "$(roll_lib "$T" "$rtr_probe")"
+for l in 'export MANTLE_RUNTIME=deno' 'MANTLE_RUNTIME = deno' '  MANTLE_RUNTIME=deno'; do
+  rtr_raw "$l"
+  check "runtime_refusal: '$l' (compose reads it, this script does not): refused" sh -c "printf '%s' \"\$1\" | grep -q '^refused: MANTLE_RUNTIME in .env is not a plain line'" _ "$(roll_lib "$T" "$rtr_probe")"
+done
+rtr_raw 'MANTLE_RUNTIME=b\\\t"x'
+out=$(roll_lib "$T" "$rtr_probe")
+check "runtime_refusal: a backslash, a tab or a quote never reaches the status text" sh -c "printf '%s' \"\$1\" | grep -q \"is 'b???x'\"" _ "$out"
+rtr_env deno
+out=$(roll_lib "$T" 'if runtime_refusal v0.400.61; then printf refused; else printf ok; fi')
+check "runtime_refusal: a release before run-service.sh is never refused (it runs Node)" test "$out" = ok
 rtr_env bun; : > "$T/sig/update.log"
 out=$(roll_lib "$T" 'if runtime_refusal v0.400.61; then printf refused; else printf ok; fi')
 check "runtime_refusal: bun with a release before run-service.sh goes ahead" test "$(printf '%s\n' "$out" | tail -n 1)" = ok
@@ -1624,6 +1643,10 @@ check "runtime_refusal: run-service.sh takes the same two words" sh -c "
   grep -q '^  node) exec ' '$ROOT/scripts/run-service.sh' && grep -q '^  bun) cd ' '$ROOT/scripts/run-service.sh' &&
   test \"\$(grep -cE '^  [a-z*]+\)' '$ROOT/scripts/run-service.sh')\" = 3"
 check "runtime_refusal: RUNTIME_SINCE is the first release with run-service.sh" grep -q '^RUNTIME_SINCE=0.400.62$' "$ROOT/infra/updater/updater.sh"
+check "runtime_refusal: the first refusal of a roll (it reads .env only)" sh -c "
+  a=\$(grep -n '^    if runtime_refusal \"\$TARGET\"' '$ROOT/infra/updater/updater.sh' | head -1 | cut -d: -f1)
+  b=\$(grep -n '^    if client_floor_refusal \"\$TARGET\"' '$ROOT/infra/updater/updater.sh' | head -1 | cut -d: -f1)
+  [ -n \"\$a\" ] && [ -n \"\$b\" ] && [ \"\$a\" -lt \"\$b\" ]"
 
 floor_case rtrword v9
 printf 'MANTLE_RUNTIME=deno\n' >> "$T/stack/.env"; cp "$T/stack/.env" "$T/env.before"
