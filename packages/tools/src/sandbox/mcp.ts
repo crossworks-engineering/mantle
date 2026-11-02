@@ -13,6 +13,7 @@ import { CS } from '../client-sourced-rule';
 export const sandbox_mcp_tools: BuiltinToolDef = {
   slug: 'sandbox_mcp_tools',
   policy: {
+    riskClass: 'write', // wakes a stopped sandbox, which runs its stored wake command
     effect: 'read',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true },

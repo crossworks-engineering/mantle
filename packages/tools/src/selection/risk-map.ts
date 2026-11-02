@@ -6,7 +6,9 @@
  * four call tools, one per class (tool-policy.ts RiskClass): `tool_read`,
  * `tool_write`, `tool_delete`, `tool_send`. Each call tool's description
  * holds its own class's part of the map, so the class is chosen by where a
- * name is listed, and a client can let reads run and ask before a send.
+ * name is listed, and a client can let reads run unasked. Only tool_read
+ * makes that promise (four audits checked it tool by tool): the line
+ * between a write and a send is drawn per tool, so the other three ask.
  *
  * A call through the wrong call tool is refused with the right one named;
  * the gate still decides every call that runs (the class decides nothing
@@ -48,12 +50,14 @@ const CLASS_LINES: Readonly<Record<RiskClass, string>> = {
     "linked brain read's query to that brain (the `peer` tools) and what the brain's own model " +
     'providers are given.',
   write:
-    'Run a WRITE tool from the map below: it creates or changes data inside the brain, or hands ' +
-    'work to an agent or a renderer that may use its own tools.',
+    'Run a WRITE tool from the map below: it creates, changes or overwrites data inside the ' +
+    'brain, messages people in the brain, or hands work to an agent or a renderer that may use ' +
+    'its own tools.',
   delete: 'Run a DELETE tool from the map below: it removes data from the brain.',
   send:
     'Run a SEND tool from the map below: it reaches outside the brain (mail, Telegram, a ' +
-    "linked brain's write, the open web, a public link, an outside API or connector).",
+    "linked brain's write, the open web, a public link, an outside API or connector, a shell " +
+    'or sandbox with network, a held or queued call that runs unattended).',
 };
 
 const MAP_HOW =

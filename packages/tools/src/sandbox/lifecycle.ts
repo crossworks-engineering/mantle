@@ -38,6 +38,7 @@ import { CS } from '../client-sourced-rule';
 export const sandbox_create: BuiltinToolDef = {
   slug: 'sandbox_create',
   policy: {
+    riskClass: 'send', // runs a public image's code on a network that reaches the internet
     // The inbox folder is read in the caller's scope; the sandbox is no item.
     matrix: { action: 'read', param: 'inbox_folder_id', kinds: ['branch'] },
     effect: 'write',
@@ -443,6 +444,7 @@ export const sandbox_rm: BuiltinToolDef = {
 export const sandbox_autostart: BuiltinToolDef = {
   slug: 'sandbox_autostart',
   policy: {
+    riskClass: 'send', // stores a shell command that runs, with internet, on each wake
     idempotent: true, // stores the one command
     matrix: { none: 'a sandbox is not an item' },
     effect: 'write',

@@ -630,6 +630,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   {
     slug: 'run_plan',
     policy: {
+      riskClass: 'send', // queues other tools' calls that run unattended, sends and deletes too
       matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',
@@ -761,6 +762,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   {
     slug: 'run_append',
     policy: {
+      riskClass: 'send', // queues other tools' calls that run unattended, sends and deletes too
       matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',

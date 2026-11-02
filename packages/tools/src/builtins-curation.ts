@@ -233,7 +233,6 @@ const openrouter_rankings: BuiltinToolDef = {
   slug: 'openrouter_rankings',
   usageTier: 2,
   policy: {
-    riskClass: 'send', // hands its filter text (category, modality) to OpenRouter
     outside: { via: 'http' }, // fetches the OpenRouter dataset
     matrix: { none: 'names no item' },
     effect: 'write',
@@ -325,7 +324,6 @@ const openrouter_benchmarks: BuiltinToolDef = {
   slug: 'openrouter_benchmarks',
   usageTier: 2,
   policy: {
-    riskClass: 'send', // hands its filter text (source, category) to OpenRouter
     outside: { via: 'http' }, // fetches the OpenRouter dataset
     matrix: { none: 'names no item' },
     effect: 'write',

@@ -640,7 +640,6 @@ export const api_tool_test: BuiltinToolDef = {
   slug: 'api_tool_test',
   usageTier: 2,
   policy: {
-    riskClass: 'send', // calls the outside API
     outside: { via: 'http' }, // runs a user-defined HTTP tool
     matrix: { none: 'a tool is not an item' },
     effect: 'write',

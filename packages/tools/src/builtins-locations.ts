@@ -224,7 +224,6 @@ function coord(lon: number, lat: number): string {
 const route_map: BuiltinToolDef = {
   slug: 'route_map',
   policy: {
-    riskClass: 'send', // hands the route's coordinates to Mapbox
     outside: { via: 'http' }, // fetches the map from Mapbox
     matrix: { none: 'names no item' },
     effect: 'write',

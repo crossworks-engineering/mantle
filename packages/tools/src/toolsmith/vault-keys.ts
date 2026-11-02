@@ -345,7 +345,6 @@ export const api_key_test: BuiltinToolDef = {
   slug: 'api_key_test',
   mcpOnly: true,
   policy: {
-    riskClass: 'send', // hands the secret to its provider
     outside: { via: 'http' }, // a token's provider probe
     matrix: { none: 'a vault key is not an item' },
     effect: 'write',

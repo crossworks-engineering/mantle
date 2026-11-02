@@ -142,8 +142,9 @@ export type ToolPolicy = ToolEffect & ToolPolicyFields;
  *  removes; `send` reaches someone or something outside the brain (mail,
  *  Telegram, a linked brain's write, the open web, a public link). The MCP
  *  map's call tools are split by it (@mantle/mcp-core map-surface.ts), so a
- *  client can let reads run and ask before a send. Advisory: the gate
- *  decides what runs, never this. */
+ *  client can let reads run unasked: `read` is the strict class (nothing
+ *  changes, nothing leaves but a linked brain read's query). Advisory: the
+ *  gate decides what runs, never this. */
 export type RiskClass = 'read' | 'write' | 'delete' | 'send';
 
 type ToolPolicyFields = Readonly<{
@@ -452,8 +453,9 @@ export function policyRunItemBanned(tp: ToolPolicy): boolean {
  * A policy's risk class (RiskClass): its own `riskClass` when set, else
  * `send` for anything marked egress (the web search and fetch), `read` for
  * any other read (a linked brain's read stays one: it hands out only the
- * query), `delete` for an item delete, `send` for a write that sends,
- * publishes or reaches a linked brain, and `write` for any other write.
+ * query), `delete` for an item delete, `send` for a write that reaches out
+ * by any road (a send, a publish, a linked brain, the web, an outside API,
+ * a shell or a sandbox), and `write` for any other write.
  */
 export function policyRiskClass(tp: ToolPolicy): RiskClass {
   if (tp.riskClass) return tp.riskClass;
@@ -461,7 +463,7 @@ export function policyRiskClass(tp: ToolPolicy): RiskClass {
   if (tp.effect === 'read') return 'read';
   if (tp.deletesItem) return 'delete';
   const via = tp.outside?.via;
-  if (via === 'send' || via === 'publish' || via === 'peer') return 'send';
+  if (via !== undefined && via !== 'link') return 'send';
   return 'write';
 }
 

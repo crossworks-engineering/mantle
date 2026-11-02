@@ -263,8 +263,10 @@ Each call tool's description names its tools in a compact map. A call
 through the wrong one is refused with the right one named. The class is
 each tool's `policyRiskClass` (`packages/tools/src/tool-policy.ts`), pinned by
 `packages/runtime/src/risk-class-snapshot.test.ts`. Set `tool_read` to Always
-allow and reads stop asking; writes, deletes and sends still ask. The gate
-decides what runs, as for a listed tool.
+allow and reads stop asking. Keep the other three asking: the line
+between a write and a send is drawn tool by tool, and a write may hand
+work to an agent that uses its own tools, so only `tool_read` is safe to
+let run unasked. The gate decides what runs, as for a listed tool.
 
 ### The two that are not on it
 

@@ -385,6 +385,7 @@ export const telegram_mark_processed: BuiltinToolDef = {
 export const telegram_pair: BuiltinToolDef = {
   slug: 'telegram_pair',
   policy: {
+    riskClass: 'send', // opens a standing channel to an outside Telegram chat
     matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',

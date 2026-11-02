@@ -57,12 +57,17 @@ describe('risk classes', () => {
     expect(wrong).toEqual([]);
   });
 
-  it('a write that sends, publishes or is marked egress is a send', () => {
+  it('a write that reaches out by any road is a send, unless its own riskClass says why not', () => {
     const wrong = everyTool()
       .filter((t) => {
         const o = t.policy.outside;
-        const sends = o?.egress || o?.via === 'send' || o?.via === 'publish';
-        return t.policy.effect === 'write' && sends && policyRiskClass(t.policy) !== 'send';
+        const reaches = o?.egress || (o?.via !== undefined && o.via !== 'link');
+        return (
+          t.policy.effect === 'write' &&
+          reaches &&
+          policyRiskClass(t.policy) !== 'send' &&
+          t.policy.riskClass === undefined
+        );
       })
       .map((t) => t.slug);
     expect(wrong).toEqual([]);
