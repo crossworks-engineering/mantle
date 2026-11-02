@@ -7988,6 +7988,49 @@
   }
  },
  {
+  "name": "app_source_from_bundle",
+  "description": "Write the newest commit of a git bundle in /files (`git bundle create app.bundle main`, uploaded with `file_upload`) into the app's DRAFT, then build it. The round trip of `app_export` format git: the bundle's history must hold the commit of the app's live version, or nothing changes (export again and merge first). The published app is untouched until `app_publish`; the draft before is kept (`code_undo` with the edit_id). Who runs it: `host.me()`; to record who, write `:host_me_id` / `:host_me_name` in the host.db SQL (server-filled). More: app_create, app_authoring_guide. ",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The app's id (UUID) — from `app_list`."
+    },
+    "file_id": {
+     "type": "string",
+     "description": "The .bundle file (UUID) — from `file_upload` or `file_list`."
+    },
+    "branch": {
+     "type": "string",
+     "maxLength": 200,
+     "description": "The bundle's branch to take, e.g. 'main'. Default: HEAD, else main, else its one branch."
+    },
+    "entry": {
+     "type": "string",
+     "maxLength": 256,
+     "description": "The entry file, e.g. 'App.tsx'. Default: the draft's entry."
+    },
+    "base_rev": {
+     "type": "string",
+     "description": "The draft's `rev` you last read (`app_get`, `code_view`): a draft changed since is not replaced."
+    }
+   },
+   "required": [
+    "id",
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "app_source_from_bundle",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "app_errors",
   "description": "List the errors a running app got back from the brain, newest first: failed SQL (with the statement), refused or failed tool calls, who ran it (owner, member, client, contact or public) and when. Use it when someone says an app is broken, or after a change, to see what fails for real users. Errors in the app's own JavaScript (a render crash) are not logged here: preview the app to see those. For who used the app, read its Activity tab.",
   "inputSchema": {

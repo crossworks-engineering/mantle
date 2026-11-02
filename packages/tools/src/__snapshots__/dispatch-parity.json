@@ -45,6 +45,7 @@
  "app_snapshot_delete": "a8fe598321b59064be11690bf381f8bc798d04a207886026e08efa0a9fac0b62",
  "app_snapshot_list": "4e927dc8bf9eaaf1802742a14852e21794a19e426740954e41d3d3d917073009",
  "app_snapshot_restore": "d3bd94ba48e35a41be77cc94aec6ebb73683ce143b25d8b962d1a75a6e1e70bc",
+ "app_source_from_bundle": "6b1b12d6ac5375ba0096cccf1f80dace6f73dcbe0f7b7e396b9ce91c8af499e5",
  "app_source_set": "308e2ba0da762d9a5800a17e9cff1a4c2318bcc00833633528a449a361b1c37c",
  "app_table_export_remove": "19bc24dbf70a7c73711ad0d297c8d301f64378753d71b4e91682ecb7a6e6e897",
  "app_table_export_set": "1f3799bff23db504b5b91fdd15c7bc42780aef73a625acd55314440c43156a04",
