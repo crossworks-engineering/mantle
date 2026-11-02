@@ -1619,7 +1619,7 @@ rtr_env '"deno" # a test'
 out=$(roll_lib "$T" "$rtr_probe")
 check "runtime_refusal: the word it read is in the reason, as compose reads it" sh -c "printf '%s' \"\$1\" | grep -q \"is 'deno'\"" _ "$out"
 rtr_raw 'MANTLE_RUNTIME=bun\t# a tab, not a space'
-check "runtime_refusal: a tab before # stays in the value, as compose keeps it: refused" sh -c "printf '%s' \"\$1\" | grep -q '^refused: MANTLE_RUNTIME in .env is .bun?# a tab'" _ "$(roll_lib "$T" "$rtr_probe")"
+check "runtime_refusal: a tab before # stays in the value, as compose keeps it: refused" sh -c "printf '%s' \"\$1\" | grep -qF \"refused: MANTLE_RUNTIME in .env is 'bun?# a tab, not a space':\"" _ "$(roll_lib "$T" "$rtr_probe")"
 rtr_raw 'MANTLE_RUNTIME=bun\nMANTLE_RUNTIME=Bun'
 check "runtime_refusal: two lines (compose takes the last): refused, with the count" sh -c "printf '%s' \"\$1\" | grep -q '^refused: MANTLE_RUNTIME is set 2 times in .env, and compose takes the last one'" _ "$(roll_lib "$T" "$rtr_probe")"
 for l in 'export MANTLE_RUNTIME=deno' 'MANTLE_RUNTIME = deno' '  MANTLE_RUNTIME=deno'; do
@@ -1628,7 +1628,7 @@ for l in 'export MANTLE_RUNTIME=deno' 'MANTLE_RUNTIME = deno' '  MANTLE_RUNTIME=
 done
 rtr_raw 'MANTLE_RUNTIME=b\\\t"x'
 out=$(roll_lib "$T" "$rtr_probe")
-check "runtime_refusal: a backslash, a tab or a quote never reaches the status text" sh -c "printf '%s' \"\$1\" | grep -q \"is 'b???x'\"" _ "$out"
+check "runtime_refusal: a backslash, a tab or a quote never reaches the status text" sh -c "printf '%s' \"\$1\" | grep -qF \"is 'b???x':\"" _ "$out"
 rtr_env deno
 out=$(roll_lib "$T" 'if runtime_refusal v0.400.61; then printf refused; else printf ok; fi')
 check "runtime_refusal: a release before run-service.sh is never refused (it runs Node)" test "$out" = ok
