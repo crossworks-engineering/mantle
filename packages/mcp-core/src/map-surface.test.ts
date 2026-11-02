@@ -169,6 +169,12 @@ describe('the call tools run the tool they name', () => {
     await client.close();
   });
 
+  it('a second tool of the same name throws, as a second registerTool does', () => {
+    const map = new McpToolMap('');
+    map.add(entry('thing_get', 'read', []));
+    expect(() => map.add(entry('thing_get', 'read', []))).toThrow(/already registered/);
+  });
+
   it('a class with no tool gets no call tool', async () => {
     const client = await connect((server) => {
       const map = new McpToolMap('');
@@ -185,6 +191,11 @@ describe('wantsToolMap', () => {
   it('the URL picks: map or full', () => {
     expect(wantsToolMap('https://brain.example/api/mcp?tools=map')).toBe(true);
     expect(wantsToolMap('https://brain.example/api/mcp?tools=full')).toBe(false);
+  });
+
+  it("a linked brain's connection is never on the map: its peer tools call by name", () => {
+    expect(wantsToolMap('https://brain.example/api/mcp?tools=map', 'peer')).toBe(false);
+    expect(wantsToolMap('https://brain.example/api/mcp?tools=map', 'login')).toBe(true);
   });
 
   it("without a choice, the box's switch (off by default)", () => {

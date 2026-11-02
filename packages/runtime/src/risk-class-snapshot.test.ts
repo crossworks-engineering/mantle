@@ -89,6 +89,16 @@ describe('risk classes', () => {
     expect(redundant).toEqual([]);
   });
 
+  it('a write set to read creates, destroys and deletes nothing', () => {
+    // A read call tool may be auto-approved: a write a policy calls a read
+    // must not make an item, destroy stored data or remove one.
+    const wrong = everyTool()
+      .filter((t) => t.policy.effect === 'write' && t.policy.riskClass === 'read')
+      .filter((t) => t.policy.creates || t.policy.destructive || t.policy.deletesItem)
+      .map((t) => t.slug);
+    expect(wrong).toEqual([]);
+  });
+
   it('the snapshot holds only the four classes', () => {
     const classes = new Set<RiskClass>(['read', 'write', 'delete', 'send']);
     expect(Object.values(SNAPSHOT).filter((c) => !classes.has(c as RiskClass))).toEqual([]);

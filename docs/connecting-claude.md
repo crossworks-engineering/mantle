@@ -238,17 +238,21 @@ Every tool listed in full is about 330 schemas, which the client pays for
 on every turn. A connection can ask for the **tool map** instead: add
 `?tools=map` to the connector URL (for example `https://<your-brain>/api/mcp?tools=map`),
 or set `MANTLE_MCP_TOOL_MAP=1` in the box's `.env` for every connection
-(stdio too; `?tools=full` on a URL still lists everything).
+(stdio too; `?tools=full` on a URL still lists everything). A linked
+brain's connection is never on the map: its peer tools call tools by name.
+For a claude.ai connector the box switch is the plainer road: a URL with
+`?tools=` is this box's own to the sign-in check, but a strict client may
+still compare it with the endpoint the box advertises (`/api/mcp`).
 
 On the map the client is listed the core reads in full (search, read,
 Recall's three), `tool_help`, and four call tools, one per risk class:
 
-| Call tool     | What its tools do                                                               |
-| ------------- | ------------------------------------------------------------------------------- |
-| `tool_read`   | change nothing, keep data inside the brain                                      |
-| `tool_write`  | create or change data inside the brain                                          |
-| `tool_delete` | remove data                                                                     |
-| `tool_send`   | reach outside the brain: mail, Telegram, a linked brain, the web, a public link |
+| Call tool     | What its tools do                                                                  |
+| ------------- | ---------------------------------------------------------------------------------- |
+| `tool_read`   | change nothing; nothing leaves the brain but a linked brain read's query           |
+| `tool_write`  | create or change data inside the brain                                             |
+| `tool_delete` | remove data                                                                        |
+| `tool_send`   | reach outside: mail, Telegram, the web, a public link, an outside API or connector |
 
 Each call tool's description names its tools in a compact map. A call
 through the wrong one is refused with the right one named. The class is

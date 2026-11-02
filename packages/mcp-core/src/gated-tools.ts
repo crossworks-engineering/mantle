@@ -46,7 +46,6 @@ import {
 import {
   dispatchTool,
   mcpBuiltinToolRef,
-  namedToolPolicy,
   policyRiskClass,
   toolSourceOf,
   mcpToolCaller,
@@ -66,6 +65,7 @@ import { WORKSPACE_ARG, withLanding, withWorkspaceArg } from './create-home';
 import { toolAnnotations } from './tool-annotations';
 import { logMcpCall } from './call-log';
 import type { McpToolMap } from './map-surface';
+import { mcpToolPolicyOf } from './mcp-policy';
 // The `mcp-tool` policy source the listing and the calls read.
 import './gate-policy';
 
@@ -218,16 +218,16 @@ function refOf(entry: McpToolEntry): { name: string; ref: PolicyRef } {
 }
 
 /** The risk class of `entry` (@mantle/tools policyRiskClass): a builtin's
- *  or a definition's from its policy; a connector row reaches an outside
- *  API, so its write is a send and its read a read. */
+ *  or a definition's from the policy the gate reads for it (mcpToolPolicyOf:
+ *  a definition's own wins a builtin's name). A connector row hands its
+ *  arguments to an outside server whatever it is marked, so it is a send:
+ *  a read-only mark says it changes nothing there, not that nothing leaves. */
 function riskClassOf(entry: McpToolEntry, name: string, policy: GatePolicy): RiskClass {
+  if (entry.kind === 'connector') return 'send';
   if (entry.kind === 'builtin') return policyRiskClass(entry.def.policy);
-  if (entry.kind === 'definition') {
-    const named = namedToolPolicy(name);
-    if (named) return policyRiskClass(named.policy);
-  }
-  if (policy.effect === 'read') return 'read';
-  return entry.kind === 'connector' ? 'send' : 'write';
+  const own = mcpToolPolicyOf(name);
+  if (own) return policyRiskClass(own);
+  return policy.effect === 'read' ? 'read' : 'write';
 }
 
 /** The surface's own pre-run check of one call of `entry`. */

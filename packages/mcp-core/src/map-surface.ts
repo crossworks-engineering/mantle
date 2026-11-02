@@ -31,6 +31,7 @@ import {
 import { jsonReply, refusalReply } from './gated-tools';
 import type { ToolHints } from './tool-annotations';
 import { toolInputSchema } from './register/tool-input';
+export { MCP_TOOL_LISTINGS } from './tool-listings';
 
 /** What a connection on the map is told besides the instructions every
  *  connection gets (login-surface.ts mcpInstructionsFor). */
@@ -41,8 +42,11 @@ export const MCP_MAP_INSTRUCTIONS =
   "tool's arguments. A call through the wrong call tool is refused with the right one named.";
 
 /** Whether a connection to `url` is listed the map: its `?tools=map` or
- *  `?tools=full` wins, else the box's switch (MANTLE_MCP_TOOL_MAP). */
-export function wantsToolMap(url: string): boolean {
+ *  `?tools=full` wins, else the box's switch (MANTLE_MCP_TOOL_MAP). Never a
+ *  linked brain's connection (`via` peer): its peer tools list and call the
+ *  brain's tools by name. */
+export function wantsToolMap(url: string, via?: string): boolean {
+  if (via === 'peer') return false;
   const tools = URL.canParse(url) ? new URL(url).searchParams.get('tools') : null;
   if (tools === 'map') return true;
   if (tools === 'full') return false;
@@ -111,10 +115,11 @@ export class McpToolMap {
     this.named = new Set(instructions.match(/[a-z][a-z0-9]*(?:_[a-z0-9]+)*/g) ?? []);
   }
 
-  /** Take one listed tool. A later tool of the same name replaces it, as a
-   *  second registerTool would have failed: none does today. */
+  /** Take one listed tool. A second tool of the same name throws, as a
+   *  second registerTool does. */
   add(entry: McpMapEntry): void {
     if (META.has(entry.name)) return;
+    if (this.entries.has(entry.name)) throw new Error(`Tool ${entry.name} is already registered`);
     this.entries.set(entry.name, entry);
   }
 

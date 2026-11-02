@@ -27,6 +27,9 @@ import type { CallInput, GateCaller, GatePolicy, PreRunCheck } from '@mantle/db'
 import { registerGatedTool, type McpGate } from './gated-tools';
 import { defaultMcpGate } from './gate-policy';
 import { MCP_TOOL_DEFS } from './mcp-defs';
+import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
+import { Client } from '@modelcontextprotocol/client';
+import { McpToolMap } from './map-surface';
 
 type Handler = (args: unknown, extra: unknown) => Promise<unknown>;
 
@@ -86,5 +89,53 @@ describe('a definition’s call names its ask and its owner (fix round 1, LOW-1)
       expect(def.policy.creates ?? null, def.slug).toBeNull();
       expect(def.policy.keySharedContent ?? false, def.slug).toBe(false);
     }
+  });
+});
+
+describe('a call through the tool map runs the gated path (map-surface.ts)', () => {
+  it('the pre-run checks see the call, its owner and a create’s workspace ask', async () => {
+    const seen: CallInput[] = [];
+    const base = defaultMcpGate('owner-1');
+    const gate: McpGate = Object.freeze({
+      ...base,
+      callerFor: async (policy: GatePolicy): Promise<GateCaller> => ({
+        ...(await base.callerFor(policy)),
+        createHome: null,
+        preRun: async (_c, _p, _r, call) => {
+          seen.push(call);
+          return 'stopped by the probe';
+        },
+      }),
+    });
+    const map = new McpToolMap('');
+    const server = new McpServer({ name: 'mantle', version: '0' });
+    registerGatedTool(
+      server,
+      gate,
+      'owner-1',
+      {
+        kind: 'definition',
+        name: 'page_create',
+        description: 'd',
+        shape: { title: z.string().optional() },
+        run: async () => ({ content: [] }),
+      },
+      map,
+    );
+    map.register(server);
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await server.connect(a);
+    const client = new Client({ name: 'gated-map-test', version: '0' });
+    await client.connect(b);
+    const res = (await client.callTool({
+      name: 'tool_write',
+      arguments: { name: 'page_create', arguments: { title: 't', workspace: 'Team A' } },
+    })) as { content: Array<{ text: string }> };
+    await client.close();
+    expect(res.content[0]!.text).toBe('Error: stopped by the probe');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.ask).toEqual({ from: 'argument', workspace: 'Team A' });
+    expect(seen[0]!.args).toEqual({ title: 't' });
+    expect(seen[0]!.context).toEqual({ ownerId: 'owner-1' });
   });
 });

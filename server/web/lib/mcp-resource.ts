@@ -20,6 +20,7 @@
  */
 import { publicBaseUrl } from '@mantle/content';
 import { log } from '@mantle/tracing';
+import { MCP_TOOL_LISTINGS } from '@mantle/mcp-core/tool-listings';
 
 const oauthLog = log('mcp-oauth');
 
@@ -69,7 +70,11 @@ export function resourceNamesThisBox(value: string, requestOrigin?: string): boo
     if (!origin) continue;
     const base = canonicalResource(origin);
     if (!base) continue;
-    if (asked === base || asked === `${base}${MCP_RESOURCE_PATH}`) return true;
+    const endpoint = `${base}${MCP_RESOURCE_PATH}`;
+    if (asked === base || asked === endpoint) return true;
+    // The endpoint with the listing a connection asks for (`?tools=map`,
+    // @mantle/mcp-core map-surface.ts) is the same endpoint.
+    if (MCP_TOOL_LISTINGS.some((l) => asked === `${endpoint}?tools=${l}`)) return true;
   }
   return false;
 }

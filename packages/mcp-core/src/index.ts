@@ -38,7 +38,13 @@ export {
   mcpToolPolicy,
   runMcpCall,
 } from './gate-policy';
-export { MCP_MAP_INSTRUCTIONS, McpToolMap, wantsToolMap, type McpMapEntry } from './map-surface';
+export {
+  MCP_MAP_INSTRUCTIONS,
+  MCP_TOOL_LISTINGS,
+  McpToolMap,
+  wantsToolMap,
+  type McpMapEntry,
+} from './map-surface';
 export { MCP_TOOL_DEFS, mcpDefinition, type McpToolDef, type McpToolGroup } from './mcp-defs';
 export { keyAreasAllowTool, mcpToolPolicyOf, toolKeyArea } from './mcp-policy';
 /** Boot readiness of the one gate, for the stdio MCP server (it loads

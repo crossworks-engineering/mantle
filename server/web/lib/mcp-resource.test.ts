@@ -47,6 +47,13 @@ describe('resourceNamesThisBox', () => {
       resourceNamesThisBox('https://old-name.example/api/mcp', 'https://old-name.example'),
     ).toBe(true);
   });
+  it('takes the endpoint with the tool listing a connection asks for', () => {
+    expect(resourceNamesThisBox('https://brain.example/api/mcp?tools=map')).toBe(true);
+    expect(resourceNamesThisBox('https://brain.example/api/mcp?tools=full')).toBe(true);
+    expect(resourceNamesThisBox('https://brain.example/api/mcp?tools=other')).toBe(false);
+    expect(resourceNamesThisBox('https://brain.example/api/mcp?tools=map&x=1')).toBe(false);
+    expect(resourceNamesThisBox('https://brain.example/?tools=map')).toBe(false);
+  });
   it('refuses another path, another scheme, a query and a fragment', () => {
     for (const v of [
       'https://brain.example/api/other',

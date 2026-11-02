@@ -43,12 +43,14 @@ export type RiskMapTool = DeferredToolDef & { cls: RiskClass; source: ToolSource
 
 /** What a class's call tool does, the opening of its description. */
 const CLASS_LINES: Readonly<Record<RiskClass, string>> = {
-  read: 'Run a READ tool from the map below: it changes nothing and keeps data inside the brain.',
+  read:
+    'Run a READ tool from the map below: it changes nothing, and nothing leaves the brain but a ' +
+    "linked brain read's query to that brain (the `peer` tools).",
   write: 'Run a WRITE tool from the map below: it creates or changes data inside the brain.',
   delete: 'Run a DELETE tool from the map below: it removes data from the brain.',
   send:
     'Run a SEND tool from the map below: it reaches outside the brain (mail, Telegram, a ' +
-    'linked brain, the open web, a public link, an outside API).',
+    "linked brain's write, the open web, a public link, an outside API or connector).",
 };
 
 const MAP_HOW =

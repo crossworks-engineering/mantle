@@ -113,7 +113,7 @@ async function handler(req: Request): Promise<Response> {
   // operator sets MANTLE_MCP_TERMINAL=1 on the box (see
   // packages/mcp-core/src/build-server.ts). `?tools=map` on the URL lists
   // the tool map instead of every tool (packages/mcp-core/src/map-surface.ts).
-  const toolMap = wantsToolMap(req.url);
+  const toolMap = wantsToolMap(req.url, caller.via);
   const mcpHandler = mcpHttpHandler(
     (server) => registerPreparedTools(server, prepared, { transport: 'http', toolMap }),
     mcpInstructionsFor(caller, prepared, { toolMap }),
