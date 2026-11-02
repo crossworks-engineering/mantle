@@ -98,8 +98,9 @@ Anthropic text editor tool and the MCP filesystem server's `edit_file`.
   of that file. An undo is a write too, with its own `edit_id`: undo it to
   redo. Undoing to code taken while the app ran at team rules puts the app
   back at team rules, as a snapshot restore does. The newest 20 entries are
-  kept per app (fewer when they pass `APP_CODE_EDIT_MAX_MB`, default 64), and the History tab leaves them
-  out; for a whole earlier version use `app_snapshot_restore`.
+  kept per app (fewer when they pass `APP_CODE_EDIT_MAX_MB`, default 64),
+  and the History tab leaves them out; for a whole earlier version use
+  `app_snapshot_restore`.
 - **Line ends.** A file whose every line ends in CRLF shows with LF in
   `code_view`; edits and inserts match on that text and keep the CRLF. A
   file with mixed line ends shows and edits as stored.
