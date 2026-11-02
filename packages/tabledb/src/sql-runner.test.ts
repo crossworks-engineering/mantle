@@ -175,8 +175,8 @@ describe('table_sql child processes', () => {
       // The used child, then one new child, whose answer is the last.
       expect(seen).toContain(used[0]);
       expect(seen.size).toBe(2);
-      // Each kill waited its turn (refusalPace): two, one for each child.
-      expect(paced).toBe(2);
+      // The second try's fork replaced the first refused child, after its turn.
+      expect(paced).toBe(1);
     },
   );
 
@@ -206,6 +206,24 @@ describe('table_sql child processes', () => {
     const out = await runTableSql(file, big);
     expect(out.rowCount).toBe(15);
     expect((await runTableSql(file, 'SELECT n FROM t LIMIT 1')).rows).toEqual([[1]]);
+  });
+
+  it('a child SIGKILLed mid-statement by someone else: one more try, on a new child', async () => {
+    process.env.TABLE_SQL_TIMEOUT_MS = '20000';
+    await runTableSql(file, 'SELECT 1 AS warm');
+    const first = tableSqlChildPids();
+    const slow = `WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 3000000)
+      SELECT count(*) AS n FROM c`;
+    const seen = new Set<number>();
+    const watch = setInterval(() => tableSqlChildPids().forEach((p) => seen.add(p)), 5);
+    const out = runTableSql(file, slow);
+    await sleep(50);
+    for (const pid of first) process.kill(pid, 'SIGKILL');
+    await expect(out).resolves.toMatchObject({ rows: [[3000000]] });
+    clearInterval(watch);
+    // Exactly one new child: the second try (the idle ones killed too are not
+    // replaced until a statement needs them).
+    expect([...seen].filter((p) => !first.includes(p))).toHaveLength(1);
   });
 
   it('runs a statement again when its child died between two statements', async () => {

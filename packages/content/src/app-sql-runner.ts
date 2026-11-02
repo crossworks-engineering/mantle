@@ -100,6 +100,8 @@ const CRASHED =
  *  batch, a copy, an import): "add a LIMIT" means nothing to them. */
 const STEP_OUT_OF_MEMORY =
   'this step needs more memory than a SQL process may use: the file or one of its values is too large for it';
+const STEP_CRASHED =
+  'this step ended its SQL process, most likely at the memory limit: the file or one of its values may be too large for it';
 /** The jobs that are a step on the whole file, not one app statement. */
 const FILE_STEPS: ReadonlySet<string> = new Set(['script', 'batch', 'copy', 'adopt']);
 /** Refusals at the memory limit that pass at once, then the most per second
@@ -107,6 +109,31 @@ const FILE_STEPS: ReadonlySet<string> = new Set(['script', 'batch', 'copy', 'ado
 export const APP_SQL_REFUSAL_BURST = 4;
 export const APP_SQL_REFUSALS_PER_SECOND = 2;
 let paceRefusal = refusalPace(APP_SQL_REFUSAL_BURST, APP_SQL_REFUSALS_PER_SECOND);
+/** Children killed at the memory limit and not yet replaced. Each fork that
+ *  replaces one waits its turn first (paceRefusal), so refused statements
+ *  cannot make this process fork faster than the pace. */
+let refusalDebt = 0;
+const busy = (waitMs: number) =>
+  new AppSqlBusyError(
+    `app SQL is busy: every SQL process was running a statement for ${waitMs} ms; try again`,
+  );
+
+/** The turn a fork owes for a refused child, if any, waiting at most `waitMs`. */
+async function owedPace(waitMs: number): Promise<void> {
+  if (refusalDebt === 0) return;
+  refusalDebt--;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      paceRefusal(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(busy(waitMs)), waitMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 /** How long the server's copy of one app file may take (a 256 MB file
  *  copies in a few seconds; this leaves room for a slow disk). */
 export const APP_DB_COPY_TIMEOUT_MS = 120_000;
@@ -500,16 +527,25 @@ function forkChild(): Child {
     child.onReply = undefined;
     onReply?.({ ok: false, error: why, spent: crashed });
     // A statement waiting for a free child gets the slot this one held, while
-    // the pool is under its cap. A fork that throws here reaches no caller, so
-    // that waiter goes back to the front of the line.
-    const next = livePlaces(children) < APP_SQL_MAX_CHILDREN ? waiting.shift() : undefined;
-    if (next) {
+    // the pool is under its cap: at once, or after the turn a fork owes for a
+    // refused child. A fork that throws here reaches no caller, so that waiter
+    // goes back to the front of the line.
+    const serveWaiter = () => {
+      const next = livePlaces(children) < APP_SQL_MAX_CHILDREN ? waiting.shift() : undefined;
+      if (!next) return;
       try {
         next(forkChild());
       } catch (err) {
-        if (next) waiting.unshift(next);
+        waiting.unshift(next);
         console.warn(`[app-sql] no new SQL process: ${errorMessage(err)}`);
       }
+    };
+    if (waiting.length === 0) return;
+    if (refusalDebt > 0) {
+      refusalDebt--;
+      void paceRefusal().then(serveWaiter);
+    } else {
+      serveWaiter();
     }
   };
   proc.once('exit', (code, signal) => {
@@ -538,17 +574,40 @@ function forkChild(): Child {
   return child;
 }
 
-/** A free child: an idle one, a new one while under the cap, else the next
- *  one to come free, waiting at most `waitMs`. */
-function acquire(waitMs: number): Promise<Child> {
+/** An idle child that still runs, if any. */
+function idleChild(): Child | undefined {
   for (let c = idle.pop(); c; c = idle.pop()) {
     clearTimeout(c.idleTimer);
     c.idleTimer = undefined;
     // Died while idle and its exit not yet seen: skip it.
-    if (c.proc.connected) return Promise.resolve(c);
+    if (c.proc.connected) return c;
     void kill(c);
   }
-  if (children.size < APP_SQL_MAX_CHILDREN) return Promise.resolve(forkChild());
+  return undefined;
+}
+
+/** A new child, after the turn a fork owes for a refused child (busy past
+ *  `waitMs`). */
+async function pacedFork(waitMs: number): Promise<Child> {
+  await owedPace(waitMs);
+  return forkChild();
+}
+
+/** A free child: an idle one, a new one while under the cap, else the next
+ *  one to come free, waiting at most `waitMs` in all. */
+async function acquire(waitMs: number): Promise<Child> {
+  const deadline = Date.now() + waitMs;
+  const free = idleChild();
+  if (free) return free;
+  await owedPace(waitMs);
+  // A child may have come free while this one waited its turn.
+  const freed = idleChild();
+  if (freed) return freed;
+  // children.size, not livePlaces: a child being killed still holds memory,
+  // so a new one waits until it is gone (at most kill's 2 s). Counting only
+  // live ones here would raise the most processes there can be.
+  if (children.size < APP_SQL_MAX_CHILDREN) return forkChild();
+  const left = Math.max(0, deadline - Date.now());
   return new Promise((resolve, reject) => {
     const take = (child: Child) => {
       clearTimeout(timer);
@@ -557,12 +616,8 @@ function acquire(waitMs: number): Promise<Child> {
     const timer = setTimeout(() => {
       const at = waiting.indexOf(take);
       if (at >= 0) waiting.splice(at, 1);
-      reject(
-        new AppSqlBusyError(
-          `app SQL is busy: every SQL process was running a statement for ${waitMs} ms; try again`,
-        ),
-      );
-    }, waitMs);
+      reject(busy(waitMs));
+    }, left);
     waiting.push(take);
   });
 }
@@ -757,9 +812,9 @@ async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Prom
   // its wait for a child. A write does not run again: it may have landed.
   if (!reply.ok && reply.spent && used && opts.mode === 'all' && opts.readOnly) {
     try {
-      reply = await answer(forkChild(), file, opts, timeoutMs);
+      reply = await answer(await pacedFork(timeoutMs), file, opts, timeoutMs);
     } catch {
-      // No new process: the first answer stands.
+      // No new process, or none in time: the first answer stands.
     }
   }
   if (!reply.ok) {
@@ -830,12 +885,16 @@ async function answer(
     }
   });
   child.used = true;
-  if (!reply.ok && reply.spent) void kill(child);
-  release(child);
   if (!reply.ok && reply.spent) {
-    // A refusal killed its child, and a new one is forked next: wait its turn.
-    await paceRefusal();
-    if (FILE_STEPS.has(opts.mode)) return { ok: false, error: STEP_OUT_OF_MEMORY, spent: true };
+    void kill(child);
+    // Its replacement waits its turn (owedPace).
+    refusalDebt = Math.min(refusalDebt + 1, 2 * APP_SQL_MAX_CHILDREN);
+  }
+  release(child);
+  if (!reply.ok && reply.spent && FILE_STEPS.has(opts.mode)) {
+    // A crash is the likely cause, not a proved one: the words say so.
+    const error = reply.error === CRASHED ? STEP_CRASHED : STEP_OUT_OF_MEMORY;
+    return { ok: false, error, spent: true };
   }
   return reply;
 }

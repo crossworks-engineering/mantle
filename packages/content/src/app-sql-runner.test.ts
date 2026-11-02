@@ -204,7 +204,7 @@ describe('runAppSql', () => {
   });
 
   it.runIf(process.platform === 'linux')(
-    'a refusal at the limit waits its turn: each kill is paced (two for a second try)',
+    'each fork that replaces a child killed at the limit waits its turn',
     async () => {
       await noChildren();
       await run('SELECT 1 AS warm', true);
@@ -215,12 +215,49 @@ describe('runAppSql', () => {
         await expect(run(`SELECT ${cols}`, true, 10_000)).rejects.toThrow(
           /more memory than a SQL process|most likely at the memory limit/,
         );
+        // The second try's fork replaced the first refused child.
+        expect(paced).toBe(1);
+        // The next statement's fork replaces the second one.
+        await expect(run('SELECT 1 AS a', true)).resolves.toEqual([{ a: 1 }]);
+        expect(paced).toBe(2);
+        // A statement on a child that is now free owes nothing.
+        await run('SELECT 1 AS b', true);
+        expect(paced).toBe(2);
       } finally {
         __setRefusalPaceForTests(async () => {});
       }
-      expect(paced).toBe(2);
     },
   );
+
+  it('a child that crashes mid-statement reads as the likely limit, not a failed start', async () => {
+    await noChildren();
+    await run('SELECT 1 AS warm', true);
+    const write = runAppSql(file, {
+      sql: `INSERT INTO t (x) ${slow}`,
+      mode: 'run',
+      readOnly: false,
+      timeoutMs: 20_000,
+    });
+    await vi.waitFor(() => expect(appSqlChildPids()).toHaveLength(1));
+    process.kill(appSqlChildPids()[0]!, 'SIGABRT');
+    await expect(write).rejects.toThrow(/most likely at the memory limit/);
+  });
+
+  it('a child SIGKILLed by someone else says the server may be short of memory', async () => {
+    await noChildren();
+    await run('SELECT 1 AS warm', true);
+    const write = runAppSql(file, {
+      sql: `INSERT INTO t (x) ${slow}`,
+      mode: 'run',
+      readOnly: false,
+      timeoutMs: 20_000,
+    });
+    await vi.waitFor(() => expect(appSqlChildPids()).toHaveLength(1));
+    process.kill(appSqlChildPids()[0]!, 'SIGKILL');
+    await expect(write).rejects.toThrow(
+      /was killed \(SIGKILL\) before it answered; the server may be short of memory/,
+    );
+  });
 
   it.runIf(process.platform === 'linux')(
     "a server step at the limit says so in its own words, not 'add a LIMIT'",
