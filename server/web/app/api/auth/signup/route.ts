@@ -55,10 +55,7 @@ export async function POST(req: Request) {
   const raw = (await readJson(req)) ?? {};
   const parsed = SignupBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: 'Enter a valid email and a password.' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: 'Enter a valid email and a password.' }, { status: 400 });
   }
   // The new-password rule (password-rule.ts): its coded 400, with the
   // minimum in force. The schema only asks for a password at all.
