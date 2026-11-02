@@ -17,6 +17,7 @@ import {
   APP_SQL_MAX_WAITING_PER_CALLER,
   AppSqlBusyError,
   AppSqlError,
+  __setRefusalPaceForTests,
   appSqlChildPids,
   appSqlMaxDbBytes,
   copyAppDbFile,
@@ -180,6 +181,56 @@ describe('runAppSql', () => {
       // The used child, then one new child, whose answer is the last.
       expect(seen).toContain(used[0]);
       expect(seen.size).toBe(2);
+    },
+  );
+
+  it('a trigger that RAISEs the words "out of memory" is an SQL error, not the limit', async () => {
+    await run('CREATE TABLE fake_oom (x INTEGER)');
+    await run(
+      "CREATE TRIGGER fake_oom_t BEFORE INSERT ON fake_oom BEGIN SELECT RAISE(ABORT, 'out of memory'); END",
+    );
+    await run('SELECT 1 AS warm', true);
+    const before = appSqlChildPids();
+    let paced = 0;
+    __setRefusalPaceForTests(async () => void paced++);
+    try {
+      await expect(run('INSERT INTO fake_oom VALUES (1)')).rejects.toThrow(/^out of memory$/);
+    } finally {
+      __setRefusalPaceForTests(async () => {});
+    }
+    // The child serves on: nothing was killed, and nothing was paced.
+    expect(appSqlChildPids()).toEqual(before);
+    expect(paced).toBe(0);
+  });
+
+  it.runIf(process.platform === 'linux')(
+    'a refusal at the limit waits its turn: each kill is paced (two for a second try)',
+    async () => {
+      await noChildren();
+      await run('SELECT 1 AS warm', true);
+      let paced = 0;
+      __setRefusalPaceForTests(async () => void paced++);
+      const cols = Array.from({ length: 64 }, (_, i) => `zeroblob(16777216) AS c${i}`).join(', ');
+      try {
+        await expect(run(`SELECT ${cols}`, true, 10_000)).rejects.toThrow(
+          /more memory than a SQL process|most likely at the memory limit/,
+        );
+      } finally {
+        __setRefusalPaceForTests(async () => {});
+      }
+      expect(paced).toBe(2);
+    },
+  );
+
+  it.runIf(process.platform === 'linux')(
+    "a server step at the limit says so in its own words, not 'add a LIMIT'",
+    async () => {
+      const cols = Array.from({ length: 64 }, (_, i) => `c${i}`).join(', ');
+      await run(`CREATE TABLE wide (${cols})`);
+      const blobs = Array.from({ length: 64 }, () => 'zeroblob(16777216)').join(', ');
+      const step = runAppSqlBatch(file, [{ sql: `INSERT INTO wide SELECT ${blobs}`, params: [] }]);
+      await expect(step).rejects.toThrow(/this step needs more memory than a SQL process may use/);
+      await expect(step).rejects.not.toThrow(/LIMIT/);
     },
   );
 });

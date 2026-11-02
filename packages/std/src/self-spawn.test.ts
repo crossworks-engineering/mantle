@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  childEnd,
   crashedAtLimit,
+  livePlaces,
+  refusalPace,
   runtimeFlags,
   selfCommand,
   tsCommand,
@@ -95,6 +98,37 @@ describe('a new process of this runtime', () => {
       expect(res.stdout.trim().split(' ').map(Number)).toEqual([1000, 0]);
     },
   );
+
+  it('childEnd: an exit before the ready message is a start-up failure, never the limit', () => {
+    expect(childEnd(1, null, false, false)).toBe('no-start');
+    expect(childEnd(null, 'SIGABRT', false, false)).toBe('no-start');
+    expect(childEnd(1, null, true, false)).toBe('crashed');
+    expect(childEnd(null, 'SIGSEGV', true, false)).toBe('crashed');
+    // A SIGKILL nobody here sent: the kernel, most likely short of memory.
+    expect(childEnd(null, 'SIGKILL', true, false)).toBe('killed');
+    expect(childEnd(null, 'SIGKILL', true, true)).toBe('exited');
+    expect(childEnd(0, null, true, false)).toBe('exited');
+  });
+
+  it('livePlaces: a child being killed holds no place in the pool', () => {
+    expect(livePlaces([{ doomed: false }, { doomed: true }, { doomed: false }])).toBe(2);
+    expect(livePlaces(new Set([{ doomed: true }]))).toBe(0);
+  });
+
+  it('refusalPace: a burst passes at once, then the rate holds, in order', async () => {
+    const pace = refusalPace(2, 20);
+    const t0 = Date.now();
+    const done: number[] = [];
+    await Promise.all(Array.from({ length: 5 }, (_, i) => pace().then(() => done.push(i))));
+    // Two at once, then three more at 20 a second: about 150 ms.
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(130);
+    expect(done).toEqual([0, 1, 2, 3, 4]);
+    // Quiet for a while: the burst is back.
+    await new Promise((r) => setTimeout(r, 120));
+    const t1 = Date.now();
+    await Promise.all([pace(), pace()]);
+    expect(Date.now() - t1).toBeLessThan(40);
+  });
 
   it('crashedAtLimit reads a crash, and not a stop the caller asked for', () => {
     expect(crashedAtLimit(null, 'SIGABRT')).toBe(true);
