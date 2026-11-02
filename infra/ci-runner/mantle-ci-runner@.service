@@ -5,13 +5,16 @@
 # Needs `loginctl enable-linger $USER` so it runs with nobody logged in.
 [Unit]
 Description=Mantle CI runner, slot %i
-After=docker.service network-online.target
+After=network-online.target
 
 [Service]
 ExecStart=%h/ci-runner/runner-loop.sh %i
+# The containers belong to dockerd, not to this unit: remove them on any stop.
+ExecStopPost=-/usr/bin/docker rm -f mantle-ci-%i-runner mantle-ci-%i-pg
+ExecStopPost=-/usr/bin/docker volume rm -f mantle-ci-%i-pgdata
+ExecStopPost=-/usr/bin/docker network rm mantle-ci-%i-net
 Restart=always
 RestartSec=30
-KillMode=mixed
 TimeoutStopSec=60
 
 [Install]
