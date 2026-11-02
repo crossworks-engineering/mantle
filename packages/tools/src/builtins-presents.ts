@@ -1005,7 +1005,10 @@ const present_restore: BuiltinToolDef = {
       const res = await savePresentSource(ctx.ownerId, id, { source, css });
       if (!res.ok) return notFound('canvas', id, LOOKUP);
       const seen = await lookAndPoster(ctx, res.present, css);
-      return saved(res.present, seen, { restored_from: rev });
+      return saved(res.present, seen, {
+        restored_from: rev,
+        ...(await openLinkNote(ctx.ownerId, res.present.id)),
+      });
     } catch (err) {
       return { ok: false, error: publicErrorText(err, 'present_restore') };
     }

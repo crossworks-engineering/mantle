@@ -309,13 +309,13 @@ POST /s/:token/evaluate none share-evaluate scope => other address 404
 POST /s/:token/frame-ticket none share-frame-ticket count (ip 30/60s) => first 429 at 31; #30 404; over 429 text/plain retry-after=60 cache-control=- too many requests
 POST /s/:token/frame-ticket none share-frame-ticket window => 59s: 429 text/plain retry-after=1 cache-control=- too many requests; 60s: 404
 POST /s/:token/frame-ticket none share-frame-ticket scope => other address 404
-POST /s/:token/canvas/frame-ticket none share-canvas-frame-ticket count (ip 30/60s) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /s/:token/canvas/frame-ticket none share-canvas-frame-ticket count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 POST /s/:token/canvas/frame-ticket none share-canvas-frame-ticket window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
 POST /s/:token/canvas/frame-ticket none share-canvas-frame-ticket scope => other address 404
-GET /s/:token/canvas/frame none share-canvas-frame count (ip 60/60s) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+GET /s/:token/canvas/frame none share-canvas-frame count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 GET /s/:token/canvas/frame none share-canvas-frame window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
 GET /s/:token/canvas/frame none share-canvas-frame scope => other address 404
-HEAD /s/:token/canvas/frame none share-canvas-frame count (ip 60/60s) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /s/:token/canvas/frame none share-canvas-frame count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store 
 HEAD /s/:token/canvas/frame none share-canvas-frame window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
 HEAD /s/:token/canvas/frame none share-canvas-frame scope => other address 404
 GET /api/presents/:id/frame none canvas-frame count (ip 120/60s) => first 429 at 0; #120 401; over -

@@ -11,9 +11,9 @@ export const policy = routePolicy({
 
 /**
  * The snapshot of a Present canvas EMBEDDED in a shared page or note, as a
- * PNG: the picture only. A link never opens the canvas itself (no frame,
- * no source; docs/proposals/canvas-files.md section 7.2 keeps a canvas's
- * live share for later).
+ * PNG: the picture only. A page's link never opens the canvas itself (no
+ * frame, no source); a canvas runs live only on its OWN link
+ * (/s/<token>/canvas, docs/proposals/canvas-files.md 7.2).
  *
  * Authorization mirrors `/s/:token/draw/:drawId` (isEmbeddedPresentAllowed):
  * the token must be active, the id must be placed by the shared page's own

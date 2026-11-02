@@ -47,8 +47,10 @@ import { CACHE_CONTROL } from '../../lib/cache-control';
  */
 
 /** The CSP of a shared canvas's page: its frame may load the brain only
- *  (the canvas frame document, from /s/<token>/canvas/frame). */
-export const SHARE_CANVAS_PAGE_CSP = "frame-src 'self'; child-src 'self'";
+ *  (the canvas frame document, from /s/<token>/canvas/frame), and no other
+ *  site may frame the page (the canvas frame refuses such an ancestor
+ *  anyway: this says so at the page). */
+export const SHARE_CANVAS_PAGE_CSP = "frame-src 'self'; child-src 'self'; frame-ancestors 'self'";
 
 /** The page an old team link shows (410): members sign in with their own
  *  logins now, and the item, if it is still at team, is in their Library. */

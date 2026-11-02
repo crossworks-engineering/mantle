@@ -714,6 +714,15 @@ describe('the reads and the restore', () => {
     expect((await tool('present_revisions').handler({ id: ID }, ctx)).ok).toBe(false);
   });
 
+  it('present_restore on a canvas with an open link says the restore is public at once', async () => {
+    h.getPresentRevisionSource.mockResolvedValueOnce(CANVAS);
+    h.activeShare.mockResolvedValueOnce({ id: 'share-1' });
+    const linked = await tool('present_restore').handler({ id: ID, rev: 1 }, ctx);
+    expect((linked as { output: Record<string, unknown> }).output.open_link).toBe(
+      OPEN_LINK_SAVE_NOTE,
+    );
+  });
+
   it('present_restore saves a kept version as a new save, and refuses one that is not kept or would not load', async () => {
     h.getPresentRevisionSource.mockResolvedValueOnce(CANVAS);
     const out = await tool('present_restore').handler({ id: ID, rev: 1 }, ctx);
