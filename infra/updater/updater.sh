@@ -1246,7 +1246,7 @@ runtime_refusal() {
   esac
   # Only safe characters reach the status file: it is JSON, and write_status
   # does not escape a backslash or a tab.
-  RTR_ERR="MANTLE_RUNTIME in .env is '$(printf '%s' "$rtr_v" | cut -c1-40 | tr -c 'A-Za-z0-9 ._#=-' '?')': it must be node, bun or empty, or every app service stops at start. Fix the line in .env, then request the update again"
+  RTR_ERR="MANTLE_RUNTIME in .env is '$(printf '%s' "$rtr_v" | tr -c 'A-Za-z0-9 ._#=-' '?' | cut -c1-40)': it must be node, bun or empty, or every app service stops at start. Fix the line in .env, then request the update again"
   return 0
 }
 
