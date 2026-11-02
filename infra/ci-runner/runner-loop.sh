@@ -68,8 +68,8 @@ while :; do
   log "waiting for a job"
   started=$(date +%s)
   # No Docker, no host mounts, no capabilities, no sudo (no-new-privileges).
-  # The work folder is an anonymous volume (removed with --rm), so it is a
-  # mount as on GitHub's machines: the backup route refuses a folder on a
+  # The work folder and /tmp are anonymous volumes (removed with --rm), so
+  # they are mounts as on GitHub's machines: the backup route refuses a folder on a
   # container's own overlay, and the route tests expect the VM's answer.
   # The token goes in through the environment of the docker client (`-e
   # RUNNER_TOKEN` with no value), not its command line, so `ps` on the host
@@ -80,7 +80,7 @@ while :; do
     --cap-drop ALL --security-opt no-new-privileges \
     -e RUNNER_TOKEN -e RUNNER_REPO="$REPO" -e RUNNER_LABELS="$LABELS" -e RUNNER_NAME="ws-$SLOT-$started" \
     -e MANTLE_TEST_NO_DOCKER=1 \
-    -v /home/runner/_work \
+    -v /home/runner/_work -v /tmp \
     "$IMAGE" bash -c '
       ./config.sh --unattended --ephemeral --disableupdate --replace \
         --url "https://github.com/$RUNNER_REPO" --token "$RUNNER_TOKEN" \
