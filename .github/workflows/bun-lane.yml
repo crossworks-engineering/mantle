@@ -2,14 +2,16 @@
 # does worse on Bun (scripts/bun-compare.mjs, against scripts/bun-baseline.json).
 #
 # Then the other test configs run on Bun, each once. `build-check` runs them on
-# Node. Every config runs even when one fails, and the step fails at the end.
+# Node. Every config runs even when one fails or hangs (45 minutes each at
+# most), and the step fails at the end. The steps after the compare run when
+# it fails, and not when a newer push cancels the run.
 #
-# It reports and never blocks: `continue-on-error` keeps the job green, and the
-# step summary carries the list. It becomes a required gate later, when the
-# baseline is empty and it has passed twice in a row. About an hour for the
-# compare (Node 34 minutes and Bun 27 on GitHub, 2026-11-01), and about 30
-# minutes for the other configs by estimate, so it runs on main, on feat/bun-**
-# and by hand, and not on every branch.
+# It reports and never blocks: `continue-on-error` keeps the run green (the job
+# itself still shows the failure), and the step summary carries the list. It
+# becomes a required gate later, when the baseline is empty and it has passed
+# twice in a row. About an hour for the compare (Node 34 minutes and Bun 27 on
+# GitHub, 2026-11-01), and 22 to 30 minutes for the other configs, so it runs
+# on main, on feat/bun-** and by hand, and not on every branch.
 
 name: bun-lane
 
@@ -85,20 +87,20 @@ jobs:
 
       # Every service starts on Bun the way a box with MANTLE_RUNTIME=bun
       # starts it (scripts/run-service.sh), up to its linked imports. After
-      # the compare, and whatever it found.
+      # the compare, whatever it found.
       - name: Boot smoke on Bun
-        if: always()
+        if: ${{ !cancelled() }}
         run: pnpm boot:smoke:bun
 
       - name: The other configs on Bun
-        if: always()
+        if: ${{ !cancelled() }}
         env:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: |
           failed=
           for config in actor-off actor-on edit-on matrix runtime-role; do
-            bun --bun node_modules/vitest/vitest.mjs run --config "vitest.$config.config.ts" \
+            timeout 45m bun --bun node_modules/vitest/vitest.mjs run --config "vitest.$config.config.ts" \
               || failed="$failed $config"
           done
           echo "Other configs on Bun, failed:${failed:- none}" >> "$GITHUB_STEP_SUMMARY"
