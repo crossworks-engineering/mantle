@@ -19,7 +19,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   for `table_sql` alike (a fork blocks the event loop for tens of
   milliseconds). A statement that needs such a fork waits its turn, at most
   its own time limit, then hears "busy". A statement on a free child never
-  waits.
+  waits, and a read's one second try forks at once.
 - **Changed:** a SQL child says when it runs. An exit before that reads as
   "did not start" (its memory limit may be too small for the runtime), not
   as a statement at the limit. A child SIGKILLed by someone else (most

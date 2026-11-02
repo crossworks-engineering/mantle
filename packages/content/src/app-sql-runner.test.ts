@@ -215,14 +215,14 @@ describe('runAppSql', () => {
         await expect(run(`SELECT ${cols}`, true, 10_000)).rejects.toThrow(
           /more memory than a SQL process|most likely at the memory limit/,
         );
-        // The second try's fork replaced the first refused child.
-        expect(paced).toBe(1);
-        // The next statement's fork replaces the second one.
+        // The second try forks at once.
+        expect(paced).toBe(0);
+        // The next statement's fork replaces a refused child: it waits its turn.
         await expect(run('SELECT 1 AS a', true)).resolves.toEqual([{ a: 1 }]);
-        expect(paced).toBe(2);
+        expect(paced).toBe(1);
         // A statement on a child that is now free owes nothing.
         await run('SELECT 1 AS b', true);
-        expect(paced).toBe(2);
+        expect(paced).toBe(1);
       } finally {
         __setRefusalPaceForTests(async () => {});
       }

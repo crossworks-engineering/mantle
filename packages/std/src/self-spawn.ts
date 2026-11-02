@@ -86,10 +86,10 @@ export function childEnd(
 
 /**
  * A pace for the work a refused statement causes: each one kills its child,
- * and the next statement forks a new one, which blocks the event loop for tens
- * of milliseconds on Linux. `burst` refusals pass at once, then `perSecond`.
- * Each call waits its turn (first come, first served), so a caller that keeps
- * sending refused statements is slowed, and statements that pass never wait.
+ * and a new one is forked in its place, which blocks the event loop for tens
+ * of milliseconds on Linux. `burst` turns pass at once, then `perSecond`. Each
+ * call waits its turn (first come, first served). A statement on a free child
+ * never waits; one that needs a new child after refusals may.
  */
 export function refusalPace(burst: number, perSecond: number): () => Promise<void> {
   // A monotonic clock: a wall clock set back would make a refusal wait for hours.

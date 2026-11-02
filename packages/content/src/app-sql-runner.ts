@@ -109,9 +109,12 @@ const FILE_STEPS: ReadonlySet<string> = new Set(['script', 'batch', 'copy', 'ado
 export const APP_SQL_REFUSAL_BURST = 4;
 export const APP_SQL_REFUSALS_PER_SECOND = 2;
 let paceRefusal = refusalPace(APP_SQL_REFUSAL_BURST, APP_SQL_REFUSALS_PER_SECOND);
-/** Children killed at the memory limit and not yet replaced. Each fork that
- *  replaces one waits its turn first (paceRefusal), so refused statements
- *  cannot make this process fork faster than the pace. */
+/** Children killed at the memory limit and not yet replaced. A fork for a new
+ *  statement or a waiter pays one first (a turn of paceRefusal), so refused
+ *  statements cannot make this process fork faster than the pace. A second
+ *  try forks at once: it is one fork per refused statement whose own child was
+ *  paced, and waiting would let a waiter take its place past the cap. The
+ *  count is close, not exact: a fork may pay and then find a free child. */
 let refusalDebt = 0;
 const busy = (waitMs: number) =>
   new AppSqlBusyError(
@@ -586,17 +589,10 @@ function idleChild(): Child | undefined {
   return undefined;
 }
 
-/** A new child, after the turn a fork owes for a refused child (busy past
- *  `waitMs`). */
-async function pacedFork(waitMs: number): Promise<Child> {
-  await owedPace(waitMs);
-  return forkChild();
-}
-
 /** A free child: an idle one, a new one while under the cap, else the next
  *  one to come free, waiting at most `waitMs` in all. */
 async function acquire(waitMs: number): Promise<Child> {
-  const deadline = Date.now() + waitMs;
+  const deadline = performance.now() + waitMs;
   const free = idleChild();
   if (free) return free;
   await owedPace(waitMs);
@@ -607,7 +603,7 @@ async function acquire(waitMs: number): Promise<Child> {
   // so a new one waits until it is gone (at most kill's 2 s). Counting only
   // live ones here would raise the most processes there can be.
   if (children.size < APP_SQL_MAX_CHILDREN) return forkChild();
-  const left = Math.max(0, deadline - Date.now());
+  const left = Math.max(0, deadline - performance.now());
   return new Promise((resolve, reject) => {
     const take = (child: Child) => {
       clearTimeout(timer);
@@ -812,9 +808,9 @@ async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Prom
   // its wait for a child. A write does not run again: it may have landed.
   if (!reply.ok && reply.spent && used && opts.mode === 'all' && opts.readOnly) {
     try {
-      reply = await answer(await pacedFork(timeoutMs), file, opts, timeoutMs);
+      reply = await answer(forkChild(), file, opts, timeoutMs);
     } catch {
-      // No new process, or none in time: the first answer stands.
+      // No new process: the first answer stands.
     }
   }
   if (!reply.ok) {
