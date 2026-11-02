@@ -30,6 +30,10 @@ const FILES = {
   'App.tsx': 'export default function App() {\n  return a.b;\n}\n',
 };
 
+/** Node's engine runs one such line for longer than any timeout. Bun's gives up
+ *  in about 0.5 s and calls it no match, so it takes many lines to pass 3 s. */
+const BACKTRACKS = `${'a'.repeat(40)}!\n`.repeat(20);
+
 describe('searchFiles', () => {
   it('returns file:line: text hits in path order', async () => {
     const res = await searchFiles(FILES, 'a', { regex: false, ignoreCase: false, cap: 50 });
@@ -99,7 +103,7 @@ describe('searchFiles', () => {
   it(
     'a backtracking regex is stopped at the timeout',
     async () => {
-      const files = { 'x.ts': 'a'.repeat(40) + '!' };
+      const files = { 'x.ts': BACKTRACKS };
       const started = Date.now();
       const res = await searchFiles(files, '^(a+)+$', { regex: true, ignoreCase: false, cap: 50 });
       expect(res).toEqual({ error: expect.stringMatching(/ran past 3s and was stopped/) });
@@ -140,7 +144,7 @@ describe('searchFiles on Bun', () => {
   it(
     'a backtracking regex is killed at the timeout, and its slot comes back',
     async () => {
-      const files = { 'x.ts': 'a'.repeat(40) + '!' };
+      const files = { 'x.ts': BACKTRACKS };
       const started = Date.now();
       const res = await searchFiles(files, '^(a+)+$', { regex: true, ignoreCase: false, cap: 50 });
       expect(res).toEqual({ error: expect.stringMatching(/ran past 3s and was stopped/) });
