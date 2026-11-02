@@ -7,6 +7,7 @@
  * packages capture env at module init (DATABASE_URL, S3_*, …).
  */
 import { readFileSync } from 'node:fs';
+import type { Server as HttpServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFiles } from './env';
@@ -85,6 +86,8 @@ startCallAudit({
 
 const { serve } = await import('@hono/node-server');
 const { createApp } = await import('./app');
+const { applyListenerTimeouts } = await import('./listener-timeouts');
+const { maxStreamedUploadBytes } = await import('@mantle/files');
 
 // Boot smoke (scripts/boot-smoke.mjs): the import graph above is linked; load
 // what this process would load later (the app's pages, every route module the
@@ -227,6 +230,10 @@ const hostname = env('HOST') || '0.0.0.0';
 const server = serve({ fetch: app.fetch, port, hostname, overrideGlobalObjects: false }, (info) => {
   serverLog.info(`mantle server/web (hono) listening on http://${hostname}:${info.port}`);
 });
+// A slow upload up to the streamed cap must finish: Node's 300 s
+// whole-request default cut a 451 MB upload at 309 s (listener-timeouts.ts).
+// Pinned by listener-timeouts.test.ts.
+applyListenerTimeouts(server as HttpServer, maxStreamedUploadBytes());
 
 // Compose sends SIGTERM on stop/update: close the listener, let in-flight
 // requests finish, and bail hard if something (an SSE stream) pins the process.
