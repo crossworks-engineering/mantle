@@ -66,6 +66,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
 ## Unreleased: app history for audits (compare in place, git bundle)
 
+## Unreleased: app history for audits (compare in place, git bundle and back)
+
 - **Added:** `code_diff` compares two states of a mini app's source as
   unified diffs: `draft`, `live` or a history entry by seq (`v3`); live to
   draft by default; all files or one `path`, cut and said so past the
@@ -90,6 +92,17 @@ publish`, the restore it came from, the role as author, never an email),
   downloads it with `GET /api/v1/files/{id}/download` and runs `git clone`,
   then log, blame and bisect (docs/app-authoring-guide.md, "History:
   versions and snapshots").
+- **Added:** `app_source_from_bundle` brings an outside agent's work back:
+  the newest commit of a git bundle in /files (`git bundle create
+back.bundle main`, then an upload) becomes the app's draft, and the draft
+  builds. Its history must hold the live version's commit, or nothing
+  changes (export again and merge). The live app does not change; publish
+  is its own step. Same rights as `app_source_set`, and a read of the file.
+- **Security:** the bundle is untrusted input, read by a pack reader in
+  TypeScript with limits: 64 MB, 200,000 objects, 16 MB an object, a delta
+  chain of 100, 512 MB unpacked in all, and its checksum. Plain files and
+  folders only: a symlink, a submodule, an odd file mode, a `..` or `.git`
+  name, or a file that is not UTF-8 text fails the import, naming the path.
 
 ## Unreleased: a SQL process has a memory limit
 

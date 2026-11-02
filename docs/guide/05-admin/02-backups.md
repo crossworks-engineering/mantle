@@ -4,12 +4,12 @@ Turn on scheduled backups in **Settings > Backups**, copy them off the box, and 
 
 ## What a full backup is
 
-| Part | Where it lives |
-|---|---|
-| Database dumps | `data/backups/` (scheduled), `backups/` in the stack directory (manual) |
-| Your files | `data/files/` |
-| Attachments (the object store) | `data/rustfs/` |
-| `.env` | the stack directory |
+| Part                           | Where it lives                                                          |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| Database dumps                 | `data/backups/` (scheduled), `backups/` in the stack directory (manual) |
+| Your files                     | `data/files/`                                                           |
+| Attachments (the object store) | `data/rustfs/`                                                          |
+| `.env`                         | the stack directory                                                     |
 
 `data/` is `MANTLE_DATA_DIR`, next to `docker-compose.yml` unless you moved it. Beside each dump, a backup run also saves the app databases, the table workbooks and the files that came over from members' old personal spaces.
 

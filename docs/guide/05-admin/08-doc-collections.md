@@ -29,10 +29,10 @@ A new collection's folder cannot sit inside, or contain, another collection's fo
 
 ## Brain depth
 
-| Depth | What it does | Use it for |
-|---|---|---|
-| **Retrieval-only** | The assistant can find and cite the text. Nothing is added to your facts or entities. | Reference material, manuals, other people's docs. |
-| **Full extraction** | The docs feed facts and entities like any other content. | Your own notes kept as Markdown. |
+| Depth               | What it does                                                                          | Use it for                                        |
+| ------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| **Retrieval-only**  | The assistant can find and cite the text. Nothing is added to your facts or entities. | Reference material, manuals, other people's docs. |
+| **Full extraction** | The docs feed facts and entities like any other content.                              | Your own notes kept as Markdown.                  |
 
 ## Keep it current
 

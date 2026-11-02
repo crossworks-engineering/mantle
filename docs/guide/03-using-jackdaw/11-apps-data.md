@@ -6,11 +6,11 @@ An app reaches data in only two ways: its own database, and tools you grant it. 
 
 ## Pick the simplest kind
 
-| The app needs | Use |
-|---|---|
-| Nothing stored (a calculator, a converter) | Pure code. Nothing to set up. |
-| To remember entries, or fixed reference data | Its own database. |
-| Your brain's data, or an outside service | A tool. |
+| The app needs                                | Use                           |
+| -------------------------------------------- | ----------------------------- |
+| Nothing stored (a calculator, a converter)   | Pure code. Nothing to set up. |
+| To remember entries, or fixed reference data | Its own database.             |
+| Your brain's data, or an outside service     | A tool.                       |
 
 Say which one you want when you ask Appsmith, for example "keep the entries in the app's own database".
 

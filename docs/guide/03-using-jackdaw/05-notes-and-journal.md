@@ -15,7 +15,7 @@ Or ask the assistant:
 - "Add to the supplier note: two-week lead time."
 - "What did I write down about the borehole?"
 
-Ask it to *add* to a note and it appends, so a note can work as a running log. The assistant cannot delete notes.
+Ask it to _add_ to a note and it appends, so a note can work as a running log. The assistant cannot delete notes.
 
 When a note grows into something you would hand to someone, make it a [page](06-pages.md).
 
@@ -25,11 +25,11 @@ The Journal holds short entries about you. Every agent reads them in every conve
 
 It has three views:
 
-| View | What it holds |
-|---|---|
-| **You** | What you wrote about yourself. |
+| View            | What it holds                                                |
+| --------------- | ------------------------------------------------------------ |
+| **You**         | What you wrote about yourself.                               |
 | **Agent notes** | What agents learned while working for you, grouped by agent. |
-| **Questions** | Questions the agents want you to answer. |
+| **Questions**   | Questions the agents want you to answer.                     |
 
 ### Write an entry
 

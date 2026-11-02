@@ -6,18 +6,18 @@ Point a domain at your server and MantleOS gets a free Let's Encrypt certificate
 
 Buy a domain from a registrar. Its DNS service then points a name at your server.
 
-| Registrar and DNS | Notes |
-|---|---|
-| [Contabo](https://contabo.com/en/domains/) | Our recommendation when your server is at Contabo: domain, DNS and server in one panel. |
+| Registrar and DNS                                            | Notes                                                                                                   |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| [Contabo](https://contabo.com/en/domains/)                   | Our recommendation when your server is at Contabo: domain, DNS and server in one panel.                 |
 | [Cloudflare](https://www.cloudflare.com/products/registrar/) | Registrar and DNS. Set the record to **DNS only** (grey cloud), so the installer sees your server's IP. |
-| [Namecheap](https://www.namecheap.com/) | Registrar with built-in DNS. |
-| [Porkbun](https://porkbun.com/) | Registrar with built-in DNS. |
+| [Namecheap](https://www.namecheap.com/)                      | Registrar with built-in DNS.                                                                            |
+| [Porkbun](https://porkbun.com/)                              | Registrar with built-in DNS.                                                                            |
 
 Create one record in the DNS settings:
 
-| Type | Name | Value |
-|---|---|---|
-| A | `brain` (for `brain.example.com`), or `@` for `example.com` itself | Your server's IP address |
+| Type | Name                                                               | Value                    |
+| ---- | ------------------------------------------------------------------ | ------------------------ |
+| A    | `brain` (for `brain.example.com`), or `@` for `example.com` itself | Your server's IP address |
 
 A new record can take a few minutes to reach everyone. `ping brain.example.com` shows the server's IP when it has.
 
@@ -64,6 +64,7 @@ Open `https://brain.example.com`. The certificate is issued on the first request
   ```
 
   MantleOS then serves plain HTTP on `127.0.0.1:8080` (or the next free port). Point your web server at that address, forward the `Host` header, and let it handle HTTPS. `--behind-proxy` needs `--domain`: share and email links use that name. Without it the installer asks for the domain, and a `-y` install stops.
+
 - **You want to drop the domain**: run `bash scripts/install.sh --lan -y` for HTTP on the network, or `--localhost` for this machine only.
 
 ## Next

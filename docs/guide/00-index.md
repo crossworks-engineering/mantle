@@ -13,11 +13,11 @@ MantleOS is a self-hosted AI brain. It keeps your email, files, notes, pages, ta
 
 ## The server and the app
 
-| | The server | The app |
-|---|---|---|
-| What it is | The engine: it stores, remembers and runs the agents | The window you open your brain in |
-| Where it runs | Your server | A browser, MantleOS Desktop or the phone app |
-| You install it | Once, on the server | Nothing for the web. MantleOS Desktop and the phone app connect to a brain you already run |
+|                | The server                                           | The app                                                                                    |
+| -------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| What it is     | The engine: it stores, remembers and runs the agents | The window you open your brain in                                                          |
+| Where it runs  | Your server                                          | A browser, MantleOS Desktop or the phone app                                               |
+| You install it | Once, on the server                                  | Nothing for the web. MantleOS Desktop and the phone app connect to a brain you already run |
 
 One MantleOS server is one brain. The app talks to it only over `/api`.
 
@@ -30,14 +30,14 @@ One MantleOS server is one brain. The app talks to it only over `/api`.
 
 ## The sections
 
-| Section | What it covers |
-|---|---|
-| [Install](01-install/01-choose.md) | Every way to run MantleOS, from one command on a server to a developer checkout. |
-| [First steps](02-first-steps/01-create-account.md) | Your account, the first chat, your first knowledge, email and Telegram. |
-| [Using MantleOS](03-using-jackdaw/01-menu.md) | Each part of the app: assistant, email, files, pages, tables, apps, workspaces and more. |
-| [Concepts](04-concepts/01-ways-to-control.md) | The ways in, how MantleOS remembers, agents, workspaces, sharing and how the parts fit. |
-| [Admin and self-hosting](05-admin/01-update.md) | Updates, backups, settings, models, logins, security and troubleshooting. |
-| [API reference](07-api/01-connect-claude.md) | Connect Claude and other MCP clients, the HTTP API and the tool list. |
+| Section                                            | What it covers                                                                           |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| [Install](01-install/01-choose.md)                 | Every way to run MantleOS, from one command on a server to a developer checkout.         |
+| [First steps](02-first-steps/01-create-account.md) | Your account, the first chat, your first knowledge, email and Telegram.                  |
+| [Using MantleOS](03-using-jackdaw/01-menu.md)      | Each part of the app: assistant, email, files, pages, tables, apps, workspaces and more. |
+| [Concepts](04-concepts/01-ways-to-control.md)      | The ways in, how MantleOS remembers, agents, workspaces, sharing and how the parts fit.  |
+| [Admin and self-hosting](05-admin/01-update.md)    | Updates, backups, settings, models, logins, security and troubleshooting.                |
+| [API reference](07-api/01-connect-claude.md)       | Connect Claude and other MCP clients, the HTTP API and the tool list.                    |
 
 Each screen in the app also has its own help page, under **Using MantleOS > Screen help**. The **?** button in the app opens the same text.
 

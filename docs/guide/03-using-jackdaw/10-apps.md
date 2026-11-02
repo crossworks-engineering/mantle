@@ -16,11 +16,11 @@ You can also click **New app** on the Apps screen first, then describe it to the
 
 ## Draft and live
 
-| Button | What it does |
-|---|---|
-| **Preview** | Builds the draft and refreshes the preview. The live app does not change. |
-| **Commit** | Builds the draft and makes it live. A draft that does not build never goes live. |
-| **Discard** | Throws the draft away. |
+| Button      | What it does                                                                     |
+| ----------- | -------------------------------------------------------------------------------- |
+| **Preview** | Builds the draft and refreshes the preview. The live app does not change.        |
+| **Commit**  | Builds the draft and makes it live. A draft that does not build never goes live. |
+| **Discard** | Throws the draft away.                                                           |
 
 ## Views
 

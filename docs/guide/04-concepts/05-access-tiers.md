@@ -20,10 +20,10 @@ You set who sees what in two places only: **Settings > Workspaces**, and the **A
 
 ## The workspaces you have
 
-| Workspace                  | Who is in it                           | What it is for                                                                |
-| -------------------------- | -------------------------------------- | ----------------------------------------------------------------------------- |
-| **Admin**                  | You and the other admins               | Running the brain: settings, users, workspaces, assistants, connectors, keys  |
-| **Your private workspace** | Only you                               | Your own work. Nobody else sees it, admins included                           |
+| Workspace                  | Who is in it                            | What it is for                                                               |
+| -------------------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
+| **Admin**                  | You and the other admins                | Running the brain: settings, users, workspaces, assistants, connectors, keys |
+| **Your private workspace** | Only you                                | Your own work. Nobody else sees it, admins included                          |
 | Any other                  | The people a Moderator or an admin adds | A team, a site, a project, a company you work with                           |
 
 Admin is the only workspace with rules of its own: it keeps its name, cannot be archived, and every admin is always one of its Moderators. To make someone an admin, add them to Admin. Running the brain is not reading it: an admin reads only what is shared with the workspaces they are in.

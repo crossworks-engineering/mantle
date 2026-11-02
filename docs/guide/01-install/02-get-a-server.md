@@ -6,22 +6,22 @@ A VPS (virtual private server) is a Linux machine you rent by the month from a h
 
 ## Pick a host
 
-| Host | Notes |
-|---|---|
-| [Contabo](https://contabo.com/en/) | Our recommendation. Affordable, and it also sells domains and runs DNS, so the server, the domain and its record sit in one control panel. |
-| [Hetzner](https://www.hetzner.com/cloud) | Data centres in Europe and the US. |
-| [DigitalOcean](https://www.digitalocean.com/products/droplets) | Simple control panel, many regions. |
-| [Vultr](https://www.vultr.com/products/cloud-compute/) | Many regions. |
-| [OVHcloud](https://www.ovhcloud.com/en/vps/) | Data centres in Europe, North America and Asia. |
+| Host                                                           | Notes                                                                                                                                      |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Contabo](https://contabo.com/en/)                             | Our recommendation. Affordable, and it also sells domains and runs DNS, so the server, the domain and its record sit in one control panel. |
+| [Hetzner](https://www.hetzner.com/cloud)                       | Data centres in Europe and the US.                                                                                                         |
+| [DigitalOcean](https://www.digitalocean.com/products/droplets) | Simple control panel, many regions.                                                                                                        |
+| [Vultr](https://www.vultr.com/products/cloud-compute/)         | Many regions.                                                                                                                              |
+| [OVHcloud](https://www.ovhcloud.com/en/vps/)                   | Data centres in Europe, North America and Asia.                                                                                            |
 
 Any host that gives you a Linux server with root access works.
 
 ## Choose the size
 
-| Shape | Memory | CPU | Disk |
-|---|---|---|---|
-| Full stack | 8 GB or more | 4 vCPU | 40 GB or more |
-| [Small server](06-small-server.md) | 4 GB | 2 vCPU | 40 GB |
+| Shape                              | Memory       | CPU    | Disk          |
+| ---------------------------------- | ------------ | ------ | ------------- |
+| Full stack                         | 8 GB or more | 4 vCPU | 40 GB or more |
+| [Small server](06-small-server.md) | 4 GB         | 2 vCPU | 40 GB         |
 
 Pick **Ubuntu** (the latest LTS) as the operating system.
 

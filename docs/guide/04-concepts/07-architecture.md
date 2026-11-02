@@ -19,15 +19,15 @@ MantleOS app (web, Desktop)    Claude and other MCP clients
 
 ## The parts of the server
 
-| Part | What it does |
-| --- | --- |
-| **Web** | Serves every `/api` route and the MCP endpoint at `/api/mcp` |
-| **Runner** | Runs each assistant turn, the memory work (summaries, facts, digests) and heartbeats. A turn survives a restart and carries on |
-| **Workers** | One per job, for example email sync, Telegram, files, calendars and event reminders |
-| **Postgres** | Every item, search index, meaning vector, fact and job queue |
-| **Object store** | The bytes of files and attachments (RustFS, or any S3) |
-| **Parser** | Reads every uploaded file (documents, drawings, images, the sound of a video) in its own container, with a memory limit and no internet access |
-| **Helpers** | A headless browser for PDF export |
+| Part             | What it does                                                                                                                                   |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web**          | Serves every `/api` route and the MCP endpoint at `/api/mcp`                                                                                   |
+| **Runner**       | Runs each assistant turn, the memory work (summaries, facts, digests) and heartbeats. A turn survives a restart and carries on                 |
+| **Workers**      | One per job, for example email sync, Telegram, files, calendars and event reminders                                                            |
+| **Postgres**     | Every item, search index, meaning vector, fact and job queue                                                                                   |
+| **Object store** | The bytes of files and attachments (RustFS, or any S3)                                                                                         |
+| **Parser**       | Reads every uploaded file (documents, drawings, images, the sound of a video) in its own container, with a memory limit and no internet access |
+| **Helpers**      | A headless browser for PDF export                                                                                                              |
 
 Optional services add a local embedder and code sandboxes ([Optional services](../05-admin/04-services.md)).
 

@@ -6,11 +6,11 @@ MantleOS Desktop, for Linux, macOS and Windows, opens a brain that is already in
 
 Download the installer for your system from the [MantleOS Desktop releases page](https://github.com/crossworks-engineering/mantle-client/releases):
 
-| System | File |
-|---|---|
-| Linux | `.deb` (amd64) or `.AppImage` (x86_64) |
-| macOS (Apple Silicon) | `.dmg` or `.zip` |
-| Windows | `Setup.exe` |
+| System                | File                                   |
+| --------------------- | -------------------------------------- |
+| Linux                 | `.deb` (amd64) or `.AppImage` (x86_64) |
+| macOS (Apple Silicon) | `.dmg` or `.zip`                       |
+| Windows               | `Setup.exe`                            |
 
 On macOS, drag the app to **Applications**, then open it. Finder still names it **Jackdaw**. The Mac app is signed and notarized by Apple, so it opens with no warning.
 
@@ -22,6 +22,7 @@ Mac builds up to 0.6.252 were not signed. macOS shows "Jackdaw is damaged and ca
 ```bash
 xattr -dr com.apple.quarantine /Applications/Jackdaw.app
 ```
+
 :::
 
 ## Connect to your brain

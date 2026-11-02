@@ -6,11 +6,11 @@ Let an AI assistant connect to your server over SSH and run the install for you.
 
 An assistant needs to run commands on your computer. Today these do it well from a terminal, and each shows a command before it runs it:
 
-| Assistant | Made by |
-|---|---|
+| Assistant   | Made by   |
+| ----------- | --------- |
 | Claude Code | Anthropic |
-| Codex CLI | OpenAI |
-| Grok Build | xAI |
+| Codex CLI   | OpenAI    |
+| Grok Build  | xAI       |
 
 Some assistants can also control your screen. A chat-only assistant (Claude, ChatGPT or Grok in a browser) can still guide you: it gives you each command and you paste it yourself.
 
