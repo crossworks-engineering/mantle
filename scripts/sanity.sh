@@ -153,36 +153,46 @@ done
 # (scripts/run-service.sh): empty or node, or bun. Any other word stops each
 # of them at start (they show as exited or restarting above). A container
 # made before the line changed keeps its old runtime until `docker compose up
-# -d` makes it again, so each one's own value is compared with .env. Not for
-# the dev project: its services run outside Docker.
+# -d` makes it again, so each one's own value is compared with .env. Only the
+# containers run-service.sh starts count: a release before v0.400.62 has none
+# and runs Node whatever the line says. Not for the dev project: its services
+# run outside Docker.
 if [[ "$PROJECT" != "mantle-dev" && -f "$ENV_FILE" ]]; then
-  # As compose reads it: a quoted value is what the first pair of quotes
-  # holds; an unquoted one loses its blanks and a trailing ` # comment` (the
-  # updater's runtime_value does the same).
+  # Compose takes the last of several lines, and also `export MANTLE_RUNTIME=`
+  # and blanks around the `=`; this check reads one plain line only.
+  rt_lines="$(grep -cE '^[[:space:]]*(export[[:space:]]+)?MANTLE_RUNTIME[[:space:]]*[=:]' "$ENV_FILE" 2>/dev/null)"
+  rt_plain="$(grep -c '^MANTLE_RUNTIME=' "$ENV_FILE" 2>/dev/null)"
+  # As compose reads a plain line: a quoted value is what the first pair of
+  # quotes holds; an unquoted one loses its blanks and a trailing ` # comment`
+  # (the updater's runtime_value does the same).
   rt_want="$(envval MANTLE_RUNTIME | sed -e 's/^[[:space:]]*//' \
-    -e '/^["'\'']/!s/[[:space:]]#.*$//' -e '/^["'\'']/!s/[[:space:]]*$//' \
+    -e '/^["'\'']/!s/ #.*$//' -e '/^["'\'']/!s/[[:space:]]*$//' \
     -e 's/^"\([^"]*\)".*$/\1/' -e "s/^'\([^']*\)'.*\$/\1/")"
   rt_want="${rt_want:-node}"
-  case "$rt_want" in
-    node|bun)
-      rt_n=0; rt_drift=0
-      for name in ${NAMES[@]+"${NAMES[@]}"}; do
-        rt_info="$(docker inspect --format '{{join .Config.Cmd " "}}{{"\n"}}{{range .Config.Env}}{{println .}}{{end}}' "$name" 2>/dev/null)"
-        # Only the services run-service.sh starts (a release before v0.400.62 has none).
-        [[ "$(printf '%s\n' "$rt_info" | head -n 1)" == *scripts/run-service.sh* ]] || continue
-        rt_have="$(printf '%s\n' "$rt_info" | sed -n 's/^MANTLE_RUNTIME=//p' | head -n 1)"
-        rt_n=$((rt_n+1))
-        if [[ "${rt_have:-node}" != "$rt_want" ]]; then
-          short="${name#mantle_}"
-          warn "$short runs ${rt_have:-node}, but .env says $rt_want: docker compose up -d makes it again"
-          rt_drift=$((rt_drift+1))
-        fi
-      done
-      if [[ $rt_n -gt 0 && $rt_drift -eq 0 ]]; then ok "runtime: $rt_want ${DIM}(MANTLE_RUNTIME, $rt_n service(s))${RS}"; fi ;;
-    *)
+  rt_n=0; rt_drift=()
+  for name in ${NAMES[@]+"${NAMES[@]}"}; do
+    rt_info="$(docker inspect --format '{{join .Config.Cmd " "}}{{"\n"}}{{range .Config.Env}}{{println .}}{{end}}' "$name" 2>/dev/null)"
+    [[ "$(printf '%s\n' "$rt_info" | head -n 1)" == *scripts/run-service.sh* ]] || continue
+    rt_n=$((rt_n+1))
+    rt_have="$(printf '%s\n' "$rt_info" | sed -n 's/^MANTLE_RUNTIME=//p' | head -n 1)"
+    [[ "${rt_have:-node}" == "$rt_want" ]] || rt_drift+=("${name#mantle_} runs ${rt_have:-node}")
+  done
+  if [[ $rt_n -gt 0 ]]; then
+    if [[ "${rt_lines:-0}" -gt 1 ]]; then
+      bad "MANTLE_RUNTIME is set $rt_lines times in .env, and compose takes the last one: keep one line"
+      fail=$((fail+1))
+    elif [[ "${rt_lines:-0}" -eq 1 && "${rt_plain:-0}" != 1 ]]; then
+      bad "MANTLE_RUNTIME in .env is not a plain line: write it as MANTLE_RUNTIME=node or bun at the start of the line"
+      fail=$((fail+1))
+    elif [[ "$rt_want" != node && "$rt_want" != bun ]]; then
       bad "MANTLE_RUNTIME in .env is '$rt_want': it must be node, bun or empty; web, api and the workers refuse to start"
-      fail=$((fail+1)) ;;
-  esac
+      fail=$((fail+1))
+    elif [[ ${#rt_drift[@]} -gt 0 ]]; then
+      for d in "${rt_drift[@]}"; do warn "$d, but .env says $rt_want: docker compose up -d makes it again"; done
+    else
+      ok "runtime: $rt_want ${DIM}(MANTLE_RUNTIME, $rt_n service(s))${RS}"
+    fi
+  fi
 fi
 
 # ── app reachability ─────────────────────────────────────────────────────────

@@ -757,25 +757,32 @@ Rollback: set `MANTLE_RUNTIME=node` (or remove the line), then `docker compose u
 Any other word stops the services with `MANTLE_RUNTIME must be node or bun`;
 nothing falls back on its own. Plan: dev-brain page 06966c22, sections 12 to 14.
 
-Two checks catch a wrong line before it costs a site:
+Two checks catch a wrong line: the updater before a roll, `scripts/sanity.sh`
+after one.
 
 - **The updater** refuses a roll, with nothing changed, while `.env` holds any
-  other word. The status says `roll refused, nothing changed` and names the
-  word. It reads the line as compose does: quotes and a trailing
-  ` # comment` are fine. A target older than v0.400.62 has no
-  `run-service.sh` and runs Node whatever the line says; the update log says
-  so. The updater that decides is the one on the box, so this check works from
-  the roll after the one that brings it.
-- **`scripts/sanity.sh`** prints `runtime: bun (MANTLE_RUNTIME, 12 service(s))`
-  when every one of those containers runs what `.env` says. A container made
-  before the line changed gets a warning that names it (`docker compose up -d`
-  makes it again), and any other word is a failure.
+  other word, holds the line more than once (compose takes the last one), or
+  writes it in a form other than a plain `MANTLE_RUNTIME=<word>` at the start
+  of the line. The status says `roll refused, nothing changed` and why. It
+  reads the line as compose does: quotes and a trailing ` # comment` are
+  fine. A target older than v0.400.62 has no `run-service.sh` and runs Node
+  whatever the line says, so it is never refused for this; for `bun` the
+  update log says so. The updater that decides is the one on the box, so this
+  check works from the roll after the one that brings it.
+- **`scripts/sanity.sh`** prints a `runtime: bun` line, with a count of the
+  services `run-service.sh` starts, when each runs what `.env` says. A container made before the line changed gets a warning that
+  names it (`docker compose up -d` makes it again). A word `run-service.sh`
+  refuses, a second line or a line in another form is a failure.
 
-Live updates (the `/api/realtime` Server-Sent Events) work on Bun as on Node:
-in the lab, 20 open streams each got a new note's event about 26 ms after the
-write, a filtered stream got none, the heartbeat came every 25 s, streams that
-closed were dropped, and a stop with 11 streams open exited 0 after the 5 s
-shutdown deadline, as on Node.
+### Live updates on Bun
+
+The `/api/realtime` Server-Sent Events work on Bun as on Node. In the lab
+(2026-11-02, Bun, then Node, then Bun), 20 open streams each got a new note's
+event about 26 ms after the write, a stream filtered to `?types=event` got
+none, another owner's change reached none, the heartbeat came every 25 s,
+streams that closed were dropped, and a stop with 11 streams open exited 0
+after the 5 s shutdown deadline. The web container used about 270 MB on Bun
+and 590 MB on Node.
 
 ## The narrow system route: on by default (S7b), always on (S7c)
 
