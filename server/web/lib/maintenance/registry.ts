@@ -400,6 +400,29 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Spends on --apply: the OCR pass (native PDF on the document worker, page OCR on the vision worker if that reads nothing) plus summary and embedding per file. Needs the agent (server/api) running. Start with --apply --limit=3. A batch that does not finish in time stops the run; nothing is sent twice.',
   },
   {
+    slug: 'blank-scans',
+    title: 'Read again PDF scans that drew blank (JPX, CCITT, JBIG2)',
+    description:
+      'PDF scans whose images used JPX, CCITT or JBIG2 drew as white pages before v0.400.56 (pdfjs had no decoder): page OCR read nothing (no_text_layer) or a sentence that the page is blank, indexed as the document. Dry run (default) finds the PDFs page OCR read, searches their bytes for the three filter names (no model), and prints counts per codec, pages, the workers and an estimated USD. --apply --before=<the day this box got v0.400.56> clears and re-queues the hits read before that day, a batch at a time, and stamps each one so it is never sent twice. Prints ids and counts only.',
+    kind: 'remedy',
+    status: 'live',
+    cost: 'llm',
+    schedulable: false,
+    cliOnly:
+      '--apply needs --before=<YYYY-MM-DD>, the day this box got v0.400.56, which only a terminal can pass',
+    script: 'scripts/blank-scans.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: [
+      '--before=<YYYY-MM-DD>',
+      '--limit=<n>',
+      '--batch=<n>',
+      '--batch-timeout=<minutes>',
+    ],
+    notes:
+      'Spends on --apply: the OCR pass (native PDF on the document worker, page OCR on the vision worker if that reads nothing) plus summary and embedding per file. Needs the parser service and the agent (server/api) running. Run the dry run first and read the counts; then --apply --before=<date> --limit=3. A file read after --before was read with the decoders and is left alone. A batch that does not finish in time stops the run; nothing is sent twice.',
+  },
+  {
     slug: 'dwg-reindex',
     title: 'Rebuild DWG/DXF auto-import tables in place',
     description:
