@@ -15,6 +15,13 @@ import { Maximize, RotateCcw } from 'lucide-react';
 import { CanvasSandbox } from './canvas-sandbox';
 import type { ShareViewPayload } from './view-payload';
 
+/** The API base of a canvas on an open link: the presenter mints its ticket
+ *  at `<base>/frame-ticket` and frames `<base>/frame`, and the link page's
+ *  frame-src names `<base>/frame` (share.tsx), from this one function. */
+export function shareCanvasApiBase(token: string): string {
+  return `/s/${encodeURIComponent(token)}/canvas`;
+}
+
 export function PresentPresenter({
   view,
   token,
@@ -32,7 +39,7 @@ export function PresentPresenter({
     <div ref={stage} className="relative h-dvh w-full bg-background">
       <CanvasSandbox
         presentId={view.presentId}
-        apiBase={`/s/${encodeURIComponent(token)}/canvas`}
+        apiBase={shareCanvasApiBase(token)}
         title={view.title || 'Shared canvas'}
         reloadKey={reloadKey}
         dataApi={false}

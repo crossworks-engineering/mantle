@@ -22,6 +22,7 @@ import { EventPresenter } from '@mantle/share-ui/event-presenter';
 import { FolderPresenter, loadFolderListing } from '@/components/share/folder-presenter';
 import { FormulaPresenter } from '@mantle/share-ui/formula-presenter';
 import { DrawPresenter } from '@mantle/share-ui/draw-presenter';
+import { shareCanvasApiBase } from '@mantle/share-ui/present-presenter';
 import { escapeHtml, htmlPage, islandDiv, shareShell } from './template';
 import type { PageRoute } from '../route-loader';
 import { CACHE_CONTROL } from '../../lib/cache-control';
@@ -60,7 +61,7 @@ const SHARE_TOKEN_RE = /^[A-Za-z0-9_-]+$/;
 export function shareCanvasPageCsp(origin: string, token: string): string {
   const frame =
     SHARE_ORIGIN_RE.test(origin) && SHARE_TOKEN_RE.test(token)
-      ? `${origin}/s/${token}/canvas/frame`
+      ? `${origin}${shareCanvasApiBase(token)}/frame`
       : "'self'";
   return `frame-src ${frame}; child-src ${frame}; frame-ancestors 'self'`;
 }
@@ -316,6 +317,8 @@ async function renderShare(c: Context): Promise<Response> {
   // reaches only the brain (docs/proposals/canvas-files.md 5.3).
   if (view.kind === 'present') {
     c.header('Content-Security-Policy', shareCanvasPageCsp(requestOrigin(c.req.raw), token));
+    // Built from the request's host: no cache may keep it for another.
+    c.header('Cache-Control', CACHE_CONTROL.none);
   }
   const fullViewport = view.kind === 'app' || view.kind === 'present';
   return c.html(
