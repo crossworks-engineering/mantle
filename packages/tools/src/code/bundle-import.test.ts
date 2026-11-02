@@ -44,7 +44,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
   };
 });
 
-import { changeDraftSource, getApp, sourceRev } from '@mantle/content';
+import { AppDraftRevError, changeDraftSource, getApp, sourceRev } from '@mantle/content';
 import {
   appVersionSources,
   appVersionTotals,
@@ -265,6 +265,14 @@ describe('app_source_from_bundle', () => {
     const out = outputOf(await imp.handler({ id: APP_ID, file_id: FILE_ID }, ctx));
     expect(out).toMatchObject({ edit_id: 'e1', build_ok: null });
     expect(out.build_error).toEqual(expect.any(String));
+  });
+
+  it('a draft written during the read: run again, never a base_rev that skips the draft rule', async () => {
+    serve(await roundTrip(() => {}));
+    vi.mocked(changeDraftSource).mockRejectedValue(new AppDraftRevError('r0', 'r9'));
+    const error = errorOf(await imp.handler({ id: APP_ID, file_id: FILE_ID }, ctx));
+    expect(error).toMatch(/draft changed while the bundle was read.*run the import again/);
+    expect(error).not.toMatch(/base_rev/);
   });
 
   it('refuses an app with no version', async () => {

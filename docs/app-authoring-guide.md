@@ -817,8 +817,10 @@ publishing stays its own step, with its own rights.
   entry stays the draft's unless `entry` names one.
 - **What it refuses.** Plain files and folders only: a symlink, a
   submodule, a file mode other than 100644 or 100755, a `..`, `.` or empty
-  part, a `.git`, `.gitmodules` or `.gitattributes` name, or a file that is
-  not UTF-8 text fails the whole import and names the path. The app's own
+  part, a `.git`, `.gitmodules` or `.gitattributes` name, a `:` in a name,
+  a space at the start or end of a name, a name past 255 bytes or a path
+  past 256, or a file that is not UTF-8 text fails the whole import and
+  names the path. The same names are what an export leaves out. The app's own
   limits hold (50 files, 256 KB each). An untrusted pack is read within
   limits: 50,000 objects, 1 MB an object, a delta chain of 50, and
   256 MB unpacked in all; its checksum must hold.
