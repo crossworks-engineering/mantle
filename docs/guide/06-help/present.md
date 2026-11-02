@@ -16,6 +16,14 @@ Present holds canvases. A canvas is a picture that can move: a diagram, a proces
 
 The latest save is always what you see. There is no draft and no commit step.
 
+## Sharing
+
+- **To a workspace:** open the canvas and use **Access** in its header, as for a page. Add the workspace there. Its users can then open the canvas in Present. You need to be a Moderator of the canvas's workspace and of the workspace you add.
+- **With a link:** in **Access**, make the open link and copy it. Anyone with the link sees the canvas live, full screen, with no login. A small label says it is a shared canvas, with **Replay** and **Full screen**. A deck keeps its arrow keys.
+- The link always shows the latest save. Stop the link in **Access**, or delete the canvas, and the link stops working at once.
+- A link shows the canvas only. It shows no saved data: a canvas that keeps notes or votes (`mantle.data`) runs on a link with nothing saved, and it cannot save anything.
+- Only someone who may edit the canvas can make its link.
+
 ## Assistant
 
 Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an animated explainer, and the assistant hands it to **Presenter**. You change a canvas the same way: ask for the change; the assistant makes a small change itself. There are no drawing tools.
@@ -39,5 +47,6 @@ Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an 
 - The last ten versions of each canvas are kept. Presenter can bring one back.
 - In a page a canvas is `![Title](present:<id>)`. Who may open it is the canvas's own access, never the page's: a reader of the page who may not read the canvas sees a placeholder, with no picture and nothing of the canvas.
 - Sharing works as it does for a drawing in a page. Sharing the page with a workspace does not share the canvas. The page's **Access** panel lists it under **Grant these too**; grant it there, and the workspace's users can open it. Taking the canvas out of the page ends that offer, but a grant already made stays until you remove it.
-- On a share link (`/s/...`), and in the mobile apps, a page shows the picture only, never the live canvas. A link shows a canvas's picture only when you add the canvas to the link's served items in Access; otherwise it shows a placeholder. PDF and Word exports of the page carry the picture.
+- On a page's share link (`/s/...`), and in the mobile apps, a page shows the canvas's picture only, never the live canvas. A link shows a canvas's picture only when you add the canvas to the link's served items in Access; otherwise it shows a placeholder. PDF and Word exports of the page carry the picture.
+- A canvas's own link (`/s/<token>`) runs the canvas in the same locked frame as in Present. The page that holds the frame lets the frame load the brain only, so a canvas that tries to open another site in its frame is blocked before the request leaves. The link is checked again on every load of the frame, and each frame ticket lasts 30 seconds. The link page never starts a render: no browser sidecar work is spent on a visitor.
 - The pictures need the browser sidecar (`BROWSER_WS_ENDPOINT`). Without it a canvas still saves and runs, but Presenter cannot look at its work, and nothing can be exported.

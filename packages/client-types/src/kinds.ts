@@ -785,8 +785,9 @@ export const ITEM_KINDS = {
     indexed: {},
   },
   // A Present canvas (docs/proposals/canvas-files.md): an agent-written HTML
-  // document in the `presents` sidecar. P1 is the workspace only: no public
-  // link, contact or peer share, context ref or export yet (P3 adds them).
+  // document in the `presents` sidecar. An open link shows it live, full
+  // screen (/s/<token>, section 7.2); no contact or peer share, context ref
+  // or export yet.
   // `source` re-extracts, but a save never announces it at once: the
   // quiet-period flush (@mantle/content presents) does, at most once per
   // quiet period, so ten saves in a minute are one model call.
@@ -800,7 +801,7 @@ export const ITEM_KINDS = {
       sorts: ['updated', 'name'],
       shareable: true,
     },
-    publicLink: false,
+    publicLink: true,
     contactShare: false,
     peerShare: false,
     searchable: true,

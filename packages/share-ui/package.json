@@ -12,6 +12,7 @@
   },
   "exports": {
     "./app-presenter": "./src/app-presenter.tsx",
+    "./present-presenter": "./src/present-presenter.tsx",
     "./draw-presenter": "./src/draw-presenter.tsx",
     "./event-presenter": "./src/event-presenter.tsx",
     "./file-presenter": "./src/file-presenter.tsx",

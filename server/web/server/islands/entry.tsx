@@ -12,6 +12,7 @@
  */
 import { createRoot } from 'react-dom/client';
 import { AppPresenter } from '@mantle/share-ui/app-presenter';
+import { PresentPresenter } from '@mantle/share-ui/present-presenter';
 import { TablePresenter } from '@mantle/share-ui/table-presenter';
 import { FormulaCalculator } from '@mantle/share-ui/formula-calculator';
 import { ContactCodePrompt } from '../../components/share/contact-code-prompt';
@@ -19,6 +20,8 @@ import { ContactCodePrompt } from '../../components/share/contact-code-prompt';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ISLANDS: Record<string, (props: any) => React.ReactNode> = {
   app: AppPresenter,
+  // A Present canvas (an island name, not a kind list).
+  canvas: PresentPresenter,
   table: TablePresenter,
   // Unlike the others, this island is a FRAGMENT of an otherwise static page:
   // a shared formula renders its equations, tables and warnings as HTML, and

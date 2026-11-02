@@ -638,6 +638,11 @@ UI's `/present` folder view and live view in the client repo.
 
 Where it differs from the sections above:
 
+- **The open link (2026-11-02).** Built as section 7.2 says, on its own
+  routes (`/s/<token>/canvas/frame-ticket` and `/frame`), with the share
+  page's `frame-src 'self'` of section 5.3. The link serves no canvas data
+  (`mantle.data` is refused by the presenter). Contact and peer shares,
+  link previews with the poster, and `.canvas` export are still to come.
 - **P1 turns on less of the kind.** No public link, contact or peer share,
   context ref or `.canvas` export yet (P3). The poster columns exist; the
   poster itself is P2. The last ten versions are kept, with a list route;
