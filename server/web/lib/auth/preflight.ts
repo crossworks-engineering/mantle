@@ -33,8 +33,10 @@ export function isTrustedOrigin(req: Request): boolean {
 
 /** The desktop app's page origin, trusted on every box with no setting. The
  *  app loads its UI from its own URL scheme and calls with a bearer token,
- *  never a cookie. No web page can claim a non-http origin, so naming it
- *  lets in nobody else. */
+ *  never a cookie. No browser page can claim a non-http origin, so naming it
+ *  lets in no web page. A native app's webview could register the same
+ *  scheme; that is harmless, since native code is not bound by CORS anyway
+ *  and holds its own cookie jar, never a browser's session. */
 export const DESKTOP_APP_ORIGINS: readonly string[] = ['mantle-ui://localhost'];
 
 /** Every origin the brain answers cross-origin: the box's
