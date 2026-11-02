@@ -135,9 +135,11 @@ least 8 characters and at most 72 UTF-8 bytes (bcrypt keeps no more). Below
 script with no capitals), capitals, digits, symbols (spaces count). From 20
 characters a passphrase needs no mix. It is not a common password from a
 list bundled in the image (`server/web/lib/auth/common-passwords.ts`; no
-outside call). A password that is mostly a run (`123456789012`,
-`qwertyuiop12`, `111111111111`) or has fewer than 4 different characters
-counts as common too. The 72-byte cap counts bytes, not letters: a letter
+outside call). A password that is half runs or more (`123456789012`,
+`qwertyuiop12`, `Xy7!2345678`), one short piece said again (`Ab1!Ab1!`), or
+has fewer than 4 different characters counts as common too. The list holds
+the short shapes the 8-character floor lets in (`Pass1234`, `Q1w2e3r4`,
+`Zaq1@wsx`). The 72-byte cap counts bytes, not letters: a letter
 of Cyrillic or Greek takes 2, of Chinese or Japanese 3, so a policy minimum
 of 37 or more cannot be met in Cyrillic alone, nor 25 or more in Chinese
 alone. A password set before keeps working: a sign-in never
@@ -185,7 +187,7 @@ login declares one), and the public rows that act as no login:
 
 - `POST /api/auth/change-password`
 - `GET /api/auth/whoami` (answers `mustChangePassword: true` and
-  `passwordRule: { min, commonList }`)
+  `passwordRule: { min, maxBytes, kinds, passphrase, commonList }`)
 - `POST /api/auth/logout`, `POST /api/auth/mobile-logout`
 - `POST /api/auth/token/refresh`, `POST /api/auth/sso`
 

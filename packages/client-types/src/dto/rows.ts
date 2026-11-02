@@ -706,7 +706,9 @@ export type BoxPolicyReport = {
   /** MANTLE_POLICY_MODEL_DENY patterns (lowercase) and
    *  MANTLE_POLICY_PROVIDER_ALLOW ids (null: any provider). */
   models: { deny: string[]; providerAllow: string[] | null };
-  /** MANTLE_POLICY_PASSWORD_MIN: `set` false is today's rule (8, no list). */
+  /** MANTLE_POLICY_PASSWORD_MIN: `set` false means no forced change at
+   *  sign-in. A new password meets the rule either way (8 characters, the
+   *  kinds, the common list: server/web/lib/auth/password-rule.ts). */
   passwords: { set: boolean; min: number; commonList: boolean };
   /** Every enabled assistant, worker or embedder route the model block
    *  refuses: `ref` is `agent:<slug>`, `worker:<kind>` or `embedding`. */

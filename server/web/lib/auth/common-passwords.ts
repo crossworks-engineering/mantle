@@ -3,8 +3,10 @@
  * so the check makes no outside call. Only entries of 8 or more characters:
  * a shorter one already fails the length rule. Compared lowercased; with trailing
  * digits and symbols taken off, the rest is compared to the base words below,
- * so `Password2024!` and `Welcome1` are caught. Kept short on purpose: the length rule does most of the work
- * (plan "Corporate sign-in", section 6.4: no symbol rules).
+ * so `Password2024!` and `Welcome1` are caught. At 8 characters the length
+ * rule does less, so the list carries the short shapes too: keyboard
+ * patterns (`q1w2e3r4`, `zaq1@wsx`) and the short words people decorate
+ * (`Pass1234`, `Qwer123!`, `Login123`).
  */
 const LIST = `
 password passw0rd p@ssw0rd p@ssword passwort motdepasse contrasena wachtwoord
@@ -18,6 +20,8 @@ administrator1 rootroot rootpassword superuser supervisor sysadmin
 87654321 987654321 9876543210 11223344 12341234 12121212 13131313 69696969
 11112222 22222222 33333333 44444444 55555555 66666666 77777777 147258369
 123456789a 123456789q 1q2w3e4r 1q2w3e4r5t 1q2w3e4r5t6y 1qaz2wsx 1qaz2wsx3edc
+q1w2e3r4 q1w2e3r4t5 zaq12wsx zaq1@wsx zaq!2wsx 1qaz!qaz 1qaz@wsx 2wsx3edc
+pass1234 pass12345 pass123! passw0rd1 user1234 login123 love1234
 qwertyui qwertyuiop qwerty12 qwerty123 qwerty1234 qwerty123456 qwertz123
 asdfghjk asdfghjkl asdf1234 zxcvbnm1 zxcvbnmm qazwsxedc qweasdzxc qwe123qwe
 abcd1234 abcdefgh abcdefg1 abc12345 abc123456 aa123456 a1b2c3d4 a12345678
@@ -52,6 +56,7 @@ administrator root qwerty qwertz azerty asdf zxcvbnm iloveyou monkey dragon
 master shadow sunshine princess football baseball superman batman starwars
 pokemon summer winter spring autumn company secret test guest default
 hello abc abcd abcdef trustno freedom computer internet
+pass user login love qwer zxcv mantle jackdaw
 january february march april may june july august september october
 november december monday tuesday wednesday thursday friday saturday sunday
 `;

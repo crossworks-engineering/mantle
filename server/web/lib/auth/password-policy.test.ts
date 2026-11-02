@@ -75,6 +75,11 @@ const row = (password: string, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** Long fillers with no run or repeat, so a length test reads the cap and
+ *  not the common check: plain letters (1 byte) and Cyrillic (2 bytes). */
+const LATIN = 'kettle-under-the-stairs-blue-lamp-on-a-wet-road-north-of-the-old-mill-by-'.repeat(2);
+const CYRILLIC = 'чайникподлестницейсиняялампанамокройдороге';
+
 const RULE = { min: 8, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true };
 
 describe('no policy: the new-password rule', () => {
@@ -82,6 +87,8 @@ describe('no policy: the new-password rule', () => {
     expect(passwordRule()).toEqual(RULE);
     expect(passwordProblem('Ket-un7')?.code).toBe('password_too_short');
     expect(passwordProblem('Ket-und7')).toBeNull();
+    // Exactly three kinds at 8 characters is enough.
+    expect(passwordProblem('Kettleu7')).toBeNull();
     expect(passwordProblem('Kettle-under-7')).toBeNull();
     // Eight characters still need three kinds.
     expect(passwordProblem('kettle77')?.code).toBe('password_weak');
@@ -97,12 +104,45 @@ describe('no policy: the new-password rule', () => {
     expect(signInNeedsPasswordChange('password')).toBe(false);
   });
 
+  it('the short common shapes the 8-character floor lets in', () => {
+    for (const p of [
+      'Pass1234',
+      'Pass123!',
+      'Q1w2e3r4',
+      'Zaq1@wsx',
+      '1qaz!QAZ',
+      'User1234',
+      'Login123',
+      'Love1234',
+      'Qwer123!',
+      'Zxcv123!',
+      'Ab1!Ab1!',
+      'Ab12Ab12',
+      'Mantle1!',
+      'Xy7!2345678',
+    ])
+      expect(passwordProblem(p)?.code, p).toBe('password_common');
+    // Ordinary strong ones still pass.
+    for (const p of [
+      'Ket-und7',
+      'Kettleu7',
+      'Gx9$mPq2',
+      'Hk7#vLw4z',
+      'Tr0ub4dor&3',
+      'Rainy-Day-42',
+      'Bl@ckC0ffee',
+      'Kettle1234!',
+      'blue kettle under the stairs',
+    ])
+      expect(passwordProblem(p), p).toBeNull();
+  });
+
   it('at most 72 bytes, counted in UTF-8', () => {
-    expect(passwordProblem(`Aa1!${'x'.repeat(68)}`)).toBeNull();
-    expect(passwordProblem(`Aa1!${'x'.repeat(69)}`)?.code).toBe('password_too_long');
-    // é takes two bytes: 38 characters, 74 bytes.
-    expect(passwordProblem(`Aa1!${'é'.repeat(34)}`)).toBeNull();
-    expect(passwordProblem(`Aa1!${'é'.repeat(35)}`)?.code).toBe('password_too_long');
+    expect(passwordProblem(`Aa1!${LATIN.slice(0, 68)}`)).toBeNull();
+    expect(passwordProblem(`Aa1!${LATIN.slice(0, 69)}`)?.code).toBe('password_too_long');
+    // A Cyrillic letter takes two bytes: 38 characters, 72 bytes.
+    expect(passwordProblem(`Aa1!${CYRILLIC.slice(0, 34)}`)).toBeNull();
+    expect(passwordProblem(`Aa1!${CYRILLIC.slice(0, 35)}`)?.code).toBe('password_too_long');
     // An emoji is one character to a person and two to length: counted once.
     expect(passwordProblem(`🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑`)?.code).toBe('password_weak');
   });
@@ -169,7 +209,7 @@ describe('a policy minimum', () => {
     policyMin('12');
     // Set before the new rule: two kinds, or past 72 bytes. Not held.
     expect(signInNeedsPasswordChange('kettleunder7')).toBe(false);
-    expect(signInNeedsPasswordChange(`Aa1!${'x'.repeat(80)}`)).toBe(false);
+    expect(signInNeedsPasswordChange(`Aa1!${LATIN.slice(0, 80)}`)).toBe(false);
     expect(signInNeedsPasswordChange('kettle7')).toBe(true);
     expect(signInNeedsPasswordChange('Password1234')).toBe(true);
   });
