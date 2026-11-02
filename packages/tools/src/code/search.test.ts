@@ -4,9 +4,21 @@
  * of holding the process. On Bun the regex runs in a process of its own.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { REGEX_CHILD_MEMORY_MB, REGEX_TIMEOUT_MS, searchFiles } from './search';
+import {
+  BUN_LINE_MS,
+  REGEX_CHILD_MEMORY_MB,
+  REGEX_TIMEOUT_MS,
+  runSearch,
+  searchFiles,
+  TOO_HARD,
+} from './search';
 
-const spawned = vi.hoisted(() => [] as { command: string; args: string[]; env: unknown }[]);
+const spawned = vi.hoisted(
+  () => [] as { command: string; args: string[]; env: unknown; lineMs?: number }[],
+);
+/** Set: the regex process gets this line limit in place of Bun's, so a test
+ *  meets the limit by count, not by a slow line. */
+const lineMs = vi.hoisted(() => ({ value: null as number | null }));
 vi.mock('node:child_process', async (load) => {
   const real = await load<typeof import('node:child_process')>();
   return {
@@ -15,12 +27,21 @@ vi.mock('node:child_process', async (load) => {
     // and the kernel limit's sh (the guard's sh is left as it is).
     spawn: (command: string, args: string[], opts: { env?: unknown }) => {
       if (args.at(-2) !== '-e') return real.spawn(command, args, opts as never);
-      spawned.push({ command, args, env: opts.env });
-      return real.spawn(
+      const seen: (typeof spawned)[number] = { command, args, env: opts.env };
+      spawned.push(seen);
+      const proc = real.spawn(
         process.execPath,
         ['--input-type=commonjs', '-e', args.at(-1)!],
         opts as never,
       );
+      const end = proc.stdin.end.bind(proc.stdin);
+      proc.stdin.end = ((data: string) => {
+        const job = JSON.parse(data) as { lineLimit?: { ms: number } };
+        seen.lineMs = job.lineLimit?.ms;
+        if (job.lineLimit && lineMs.value !== null) job.lineLimit.ms = lineMs.value;
+        return end(JSON.stringify(job));
+      }) as typeof proc.stdin.end;
+      return proc;
     },
   };
 });
@@ -30,12 +51,10 @@ const FILES = {
   'App.tsx': 'export default function App() {\n  return a.b;\n}\n',
 };
 
-/** Many lines that each take a moment, so the search passes the timeout on
- *  both engines: one line that took long would meet Bun's line limit first. */
-const BACKTRACKS = `${'a'.repeat(19)}!\n`.repeat(2000);
-/** One line past Bun's line limit that the regex below does match: Bun's
- *  engine gives up on the first branch and says no match. Node's runs on. */
-const HARD_LINE = `${'a'.repeat(27)}!`;
+/** A line and a pattern that backtrack past the timeout on Node and on Bun
+ *  (Bun's engine does not give up on this one), on any machine. */
+const BACKTRACKS = `${'a'.repeat(200)}!`;
+const BACKTRACKER = '^a*a*a*a*a*a*a*a*a*a*a*a*$';
 
 describe('searchFiles', () => {
   it('returns file:line: text hits in path order', async () => {
@@ -63,6 +82,20 @@ describe('searchFiles', () => {
       cap: 50,
     });
     expect(res).toMatchObject({ total: 2, files: 1 });
+  });
+
+  it('a line limit stops on a slow line with no match, and a match stands', () => {
+    const job = (text: string, pattern: string) => ({
+      files: [['x.ts', text]] as [string, string][],
+      pattern,
+      regex: true,
+      ignoreCase: false,
+      cap: 5,
+      textMax: 200,
+      lineLimit: { ms: 0, error: TOO_HARD },
+    });
+    expect(() => runSearch(job('abc\nzzz', 'b'))).toThrow(`${TOO_HARD} (at x.ts:2)`);
+    expect(runSearch(job('abc', 'b'))).toEqual({ hits: ['x.ts:1: abc'], total: 1, files: 1 });
   });
 
   it('an invalid regex is an error that says what to do', async () => {
@@ -108,7 +141,11 @@ describe('searchFiles', () => {
     async () => {
       const files = { 'x.ts': BACKTRACKS };
       const started = Date.now();
-      const res = await searchFiles(files, '^(a+)+$', { regex: true, ignoreCase: false, cap: 50 });
+      const res = await searchFiles(files, BACKTRACKER, {
+        regex: true,
+        ignoreCase: false,
+        cap: 50,
+      });
       expect(res).toEqual({ error: expect.stringMatching(/ran past 3s and was stopped/) });
       expect(Date.now() - started).toBeLessThan(REGEX_TIMEOUT_MS + 2000);
     },
@@ -144,27 +181,31 @@ describe('searchFiles on Bun', () => {
     }
   });
 
-  it(
-    'a line too hard for the engine fails the search: never a wrong no match',
-    async () => {
-      const res = await searchFiles({ 'x.ts': HARD_LINE }, '^(a+)+$|^a+!$', {
+  it('a line too hard for the engine fails the search: never a wrong no match', async () => {
+    lineMs.value = 0;
+    try {
+      const res = await searchFiles({ 'x.ts': 'abc\nzzz' }, 'q', {
         regex: true,
         ignoreCase: false,
         cap: 50,
       });
-      expect(res).toEqual({
-        error: expect.stringMatching(/too hard for this runtime|ran past 3s/),
-      });
-    },
-    REGEX_TIMEOUT_MS + 5000,
-  );
+      expect(res).toEqual({ error: `${TOO_HARD} (at x.ts:1)` });
+      expect(spawned.map((s) => s.lineMs)).toEqual([BUN_LINE_MS]);
+    } finally {
+      lineMs.value = null;
+    }
+  });
 
   it(
     'a backtracking regex is killed at the timeout, and its slot comes back',
     async () => {
       const files = { 'x.ts': BACKTRACKS };
       const started = Date.now();
-      const res = await searchFiles(files, '^(a+)+$', { regex: true, ignoreCase: false, cap: 50 });
+      const res = await searchFiles(files, BACKTRACKER, {
+        regex: true,
+        ignoreCase: false,
+        cap: 50,
+      });
       expect(res).toEqual({ error: expect.stringMatching(/ran past 3s and was stopped/) });
       expect(Date.now() - started).toBeLessThan(REGEX_TIMEOUT_MS + 2000);
       const next = await searchFiles(FILES, 'a', { regex: true, ignoreCase: false, cap: 5 });

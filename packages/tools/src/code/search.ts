@@ -21,12 +21,14 @@ const REGEX_WORKER_HEAP_MB = 256;
 /** The kernel limit on a regex process (Bun): the worker's heap, plus the
  *  about 300 MB Bun needs to start. */
 export const REGEX_CHILD_MEMORY_MB = 640;
-/** Bun's regex engine gives up on a hard pattern, in about 0.6 s on one line,
- *  and answers no match even where a match exists, with no error. So on Bun a
- *  line this slow fails the search: no answer beats a wrong one. */
-const BUN_LINE_MS = 250;
-/** What a search that hit that limit says. */
-const TOO_HARD =
+/** Bun's regex engine gives up on a hard pattern and answers no match, even
+ *  where a match exists, with no error. It gives up after a count of steps,
+ *  not a time: about 0.3 s on a fast machine, 0.6 s on a workstation. So on
+ *  Bun a line this slow that did not match fails the search: no answer beats a
+ *  wrong one. A match is never a give up, so it stands. */
+export const BUN_LINE_MS = 100;
+/** What a search that hit that limit says, before the file and line. */
+export const TOO_HARD =
   'the regex is too hard for this runtime, which gives up on it and can miss a match (a pattern like (a+)+ backtracks without end). Use a simpler pattern, narrow it with glob, or search the plain text with regex false';
 /** A hit's line is cut to this many characters. */
 export const HIT_TEXT_MAX = 200;
@@ -39,7 +41,7 @@ export type SearchHits = {
   files: number;
 };
 
-type Job = {
+export type Job = {
   files: [string, string][];
   pattern: string;
   regex: boolean;
@@ -52,7 +54,7 @@ type Job = {
 
 /** The matcher, as one function the worker also runs (its source is sent
  *  as the worker's code: no file to find under a bundler). Plain JS only. */
-function runSearch(job: Job): SearchHits {
+export function runSearch(job: Job): SearchHits {
   const re = job.regex ? new RegExp(job.pattern, job.ignoreCase ? 'i' : '') : null;
   const needle = job.ignoreCase ? job.pattern.toLowerCase() : job.pattern;
   const hits: string[] = [];
@@ -68,8 +70,8 @@ function runSearch(job: Job): SearchHits {
       const hit = re
         ? re.test(line)
         : (job.ignoreCase ? line.toLowerCase() : line).includes(needle);
-      if (job.lineLimit && performance.now() - started >= job.lineLimit.ms) {
-        throw new Error(job.lineLimit.error);
+      if (!hit && job.lineLimit && performance.now() - started >= job.lineLimit.ms) {
+        throw new Error(`${job.lineLimit.error} (at ${path}:${i + 1})`);
       }
       if (!hit) continue;
       total++;
@@ -240,7 +242,10 @@ function runInChild(job: Job): Promise<SearchHits | { error: string }> {
         const m = JSON.parse(Buffer.concat(out).toString('utf8')) as
           { ok: true; res: SearchHits } | { ok: false; error: string };
         if (m.ok) resolve(m.res);
-        else resolve({ error: m.error === TOO_HARD ? TOO_HARD : `the search failed: ${m.error}` });
+        else
+          resolve({
+            error: m.error.startsWith(TOO_HARD) ? m.error : `the search failed: ${m.error}`,
+          });
       } catch {
         resolve({ error: 'the search gave no answer' });
       }
