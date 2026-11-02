@@ -28,7 +28,10 @@ import { COMMON_PASSWORD_BASES, COMMON_PASSWORDS } from './common-passwords';
  *  a sign-in must still take a long one set before the 72-byte cap. */
 export const PASSWORD_MAX = 1024;
 
-/** The fewest characters of a new password with no box policy. */
+/** The fewest characters of a new password with no box policy. The same
+ *  as @mantle/config's DEFAULT_PASSWORD_MIN, and a policy minimum is never
+ *  under it (parsePolicy raises one below 8): kept so the rule names its own
+ *  floor, and a higher one here would raise every box. */
 export const NEW_PASSWORD_MIN = 8;
 /** The most UTF-8 bytes of a new password: bcrypt reads no more, so a longer
  *  one would promise more than the hash keeps. */
@@ -98,6 +101,7 @@ const SEQUENCES = [
   'zxcvbnm',
   '!@#$%^&*()',
   '1q2w3e4r5t6y7u8i9o0p',
+  'q1w2e3r4t5y6u7i8o9p0',
   '1qaz2wsx3edc4rfv5tgb6yhn7ujm8ik9ol0p',
   'qazwsxedcrfvtgbyhnujmikolp',
 ].flatMap((seq) => [seq, [...seq].reverse().join('')]);
@@ -174,14 +178,16 @@ function isListedWord(word: string): boolean {
  *  12 spaces); or a listed password or base word (also with digits for
  *  letters, `P@$$w0rd`) said once or more with a few digits and symbols
  *  around or between (`Welcome2026!`, `2026welcome`, `welcome welcome`,
- *  `Welcome1Welcome1`). Letters are any script's: a passphrase in Cyrillic
- *  or Greek is read as letters. */
+ *  `Welcome1Welcome1`). Also: a short unit said twice or more (`Ab1!Ab1!`),
+ *  and a password that is half runs or more (`Xy7!2345678`). Letters are
+ *  any script's: a passphrase in Cyrillic or Greek is read as letters. */
 export function isCommonPassword(password: string): boolean {
   const lower = password.trim().toLowerCase();
   if (COMMON_PASSWORDS.has(lower)) return true;
   const compact = lower.replace(/\s+/g, '');
   if (new Set(compact).size < 4) return true;
-  if (withoutRuns(lower).length < 4) return true;
+  if (/^(.{1,4})\1+$/u.test(compact)) return true;
+  if (withoutRuns(lower).length < Math.max(4, Math.ceil(compact.length / 2))) return true;
   const letters = compact.replace(/[^\p{L}]+/gu, '');
   if (compact.length - letters.length <= MAX_DECORATION && isListedWord(letters)) return true;
   const ends = compact.replace(/^[^\p{L}]+/u, '').replace(/[^\p{L}]+$/u, '');
