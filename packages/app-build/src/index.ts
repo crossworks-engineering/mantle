@@ -311,6 +311,24 @@ const DISK_READ_RE = /Cannot read (file|directory)|No loader is configured|Could
  *  `C:\\x`. Not `"/"` alone, which a plain syntax error quotes. */
 const OUTSIDE_PATH_RE = /(?:^|[\s"'(:])(?:\.\.[\\/]|\/[^\s"'/]+\/|[A-Za-z]:[\\/])/;
 const GENERIC_MSG = 'The build failed on a file that is not part of this app.';
+/** The workspace this server runs from (packages/app-build/src, three up):
+ *  any path under it is a server path. */
+const SERVER_ROOT = path.resolve(REAL_DIR, '..', '..', '..');
+/** A message located in the app that still quotes a server path: one under
+ *  node_modules, or under the workspace root. An app's own text that only
+ *  looks like a path (`"/api/v1/"`, `../lib/x`) is kept. */
+function quotesServerPath(text: string): boolean {
+  return text.includes('node_modules') || text.includes(SERVER_ROOT + path.sep);
+}
+/** One quoted or bare path that names node_modules or the workspace root. */
+const SERVER_PATH_RE = new RegExp(
+  `[^\\s"'\`()]*(?:node_modules|${(SERVER_ROOT + path.sep).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})[^\\s"'\`()]*`,
+  'g',
+);
+/** The text with each server path it quotes put as `<server file>`. */
+function scrubServerPaths(text: string): string {
+  return text.replace(SERVER_PATH_RE, '<server file>');
+}
 
 /**
  * A build message the author may see. One about the app's own code (located
@@ -325,13 +343,23 @@ function appOnlyMsg(source: AppSource, m: Message): BuildMessage {
   if (!file) {
     return OUTSIDE_PATH_RE.test(m.text) ? { text: GENERIC_MSG, location: null } : toMsg(m);
   }
-  if (file === STDIN || file.endsWith(`/${STDIN}`)) return toMsg(m);
+  // From here the message is located in the app's own source, but its text
+  // can still quote a server path: a CSS url() that names a package file
+  // gets one at `app:s.css`. That path reads `<server file>`; the rest of the
+  // message and its place in the app stay, so the author can find the line.
+  const ownMsg = (): BuildMessage => {
+    if (!quotesServerPath(m.text)) return toMsg(m);
+    const text = scrubServerPaths(m.text);
+    return quotesServerPath(text) ? { text: GENERIC_MSG, location: null } : { ...toMsg(m), text };
+  };
+  if (file === STDIN || file.endsWith(`/${STDIN}`)) return ownMsg();
   // An app file is located as `app:<key>` (its namespace). A bare path that
   // merely equals a file key is a disk file, not the app's (the M2's C2).
   if (file.startsWith(`${APP_NS}:`) && Object.hasOwn(source.files, file.slice(APP_NS.length + 1))) {
-    return toMsg(m);
+    return ownMsg();
   }
-  if (path.resolve(file).startsWith(LUCIDE_ROOT + path.sep)) return toMsg(m);
+  // A lucide-react file is the server's: the text may stay, its path not.
+  if (path.resolve(file).startsWith(LUCIDE_ROOT + path.sep)) return { ...ownMsg(), location: null };
   return { text: GENERIC_MSG, location: null };
 }
 
@@ -505,59 +533,77 @@ export function lintToolRefs(source: AppSource, declaredSlugs: string[]): BuildM
   return out;
 }
 
-/** `import <what> from "<spec>"` — captures the clause and the specifier.
- *  Covers the three ESM shapes esbuild leaves external: default, namespace,
- *  and named (including a default+named combination). */
-const IMPORT_RE = /import\s+([^'";]+?)\s+from\s*['"]([^'"]+)['"]/g;
+/** One import or re-export of a module, as the module must answer it: the
+ *  specifier, the names it must export (`default` for a default import), and
+ *  where the statement starts. */
+type ModuleImport = { spec: string; names: string[]; line: number; column: number };
 
-/** A re-export links like an import: `export { a } from 'm'`,
- *  `export type { A } from 'm'`, `export * as ns from 'm'`. Only these exact
- *  shapes (the clause runs to `from` with nothing between), so an `export`
- *  statement without a `from` never reaches over to a later import.
- *  `export * from 'm'` names nothing and is left alone. */
-const REEXPORT_RE =
-  /export\s+((?:type\s*)?\{[^}]*\}|\*\s+as\s+[A-Za-z_$][\w$]*)\s*from\s*['"]([^'"]+)['"]/g;
+type AstNode = {
+  type: string;
+  loc?: { start: { line: number; column: number } };
+  [k: string]: unknown;
+};
 
-/** `import type …` — the whole clause is type-only. Lookahead keeps
- *  `import type from 'm'` and `import type, { a } from 'm'` (a default import
- *  that happens to be NAMED `type`) as value imports. */
-const TYPE_ONLY_CLAUSE_RE = /^type(?=\s*[{*]|\s+[A-Za-z_$])/;
+/** An import's or export's name node: an identifier, or a string name
+ *  (`import { 'a-b' as c }`). */
+function nameOf(node: unknown): string | null {
+  const n = node as { type?: string; name?: string; value?: string } | undefined;
+  if (n?.type === 'Identifier') return n.name ?? null;
+  if (n?.type === 'StringLiteral') return n.value ?? null;
+  return null;
+}
 
-/** `{ type X }` / `{ type X as Y }` — one type-only specifier. `{ type }` and
- *  `{ type as t }` import a value named `type` and stay checked. */
-const TYPE_ONLY_SPECIFIER_RE = /^type\s+(?!as\b)[A-Za-z_$]/;
-
-/** Split an import clause into the names it binds FROM the module.
- *  `Foo`               → default
- *  `* as ns`           → namespace (binds nothing by name; nothing to check)
- *  `{ a, b as c }`     → a, b
- *  `Foo, { a }`        → default, a
- *  `type { A }`        → nothing (type-only)
- *  `{ type A, b }`     → b
- *  Returns the names as the MODULE must provide them, not the local aliases.
- *  Type-only imports and specifiers are skipped: the compiler erases them, so
- *  they never reach the runtime and cannot fail to link. */
-function importedNames(clause: string): { names: string[]; namespace: boolean } {
-  const names: string[] = [];
-  let namespace = false;
-  if (TYPE_ONLY_CLAUSE_RE.test(clause)) return { names, namespace };
-  const braced = clause.match(/\{([^}]*)\}/);
-  const head = clause
-    .slice(0, braced ? clause.indexOf('{') : undefined)
-    .replace(/,\s*$/, '')
-    .trim();
-  if (head) {
-    if (/^\*\s+as\s+/.test(head)) namespace = true;
-    else if (/^[A-Za-z_$][\w$]*$/.test(head)) names.push('default');
+/**
+ * The static imports and re-exports of one file, read from its parsed source
+ * (Babel, TypeScript and JSX, as written), so an escaped name or specifier
+ * (`import { \u0068ost } from '\u0040host'`) reads as what it is. Type-only
+ * imports and specifiers are left out: the compiler erases them, so they
+ * never reach the runtime and cannot fail to link. A namespace import or
+ * `export *` binds nothing by name, so there is nothing to check. Null when
+ * the file does not parse: computedImportErrors refuses that build anyway.
+ */
+function moduleImports(file: string, text: string): ModuleImport[] | null {
+  let ast: { program: { body: AstNode[] } };
+  try {
+    ast = parse(text, {
+      sourceType: 'module',
+      sourceFilename: file,
+      plugins: parserPlugins(loaderFor(file)),
+      createImportExpressions: true,
+      errorRecovery: false,
+    }) as unknown as { program: { body: AstNode[] } };
+  } catch {
+    return null;
   }
-  if (braced) {
-    for (const part of braced[1]!.split(',')) {
-      if (TYPE_ONLY_SPECIFIER_RE.test(part.trim())) continue;
-      const name = (part.split(/\s+as\s+/)[0] ?? '').trim();
-      if (name) names.push(name);
+  const out: ModuleImport[] = [];
+  for (const node of ast.program.body) {
+    const source = (node.source as { value?: string } | null | undefined)?.value;
+    if (typeof source !== 'string') continue;
+    const at = { line: node.loc?.start.line ?? 0, column: node.loc?.start.column ?? 0 };
+    if (node.type === 'ImportDeclaration') {
+      if (node.importKind === 'type') continue;
+      const names: string[] = [];
+      for (const sp of (node.specifiers as AstNode[]) ?? []) {
+        if (sp.type === 'ImportDefaultSpecifier') names.push('default');
+        else if (sp.type === 'ImportSpecifier' && sp.importKind !== 'type') {
+          const name = nameOf(sp.imported);
+          if (name) names.push(name);
+        }
+      }
+      out.push({ spec: source, names, ...at });
+    } else if (node.type === 'ExportNamedDeclaration') {
+      if (node.exportKind === 'type') continue;
+      const names: string[] = [];
+      for (const sp of (node.specifiers as AstNode[]) ?? []) {
+        if (sp.type === 'ExportSpecifier' && sp.exportKind !== 'type') {
+          const name = nameOf(sp.local);
+          if (name) names.push(name);
+        }
+      }
+      out.push({ spec: source, names, ...at });
     }
   }
-  return { names, namespace };
+  return out;
 }
 
 /** A module's export names for an error. A large surface (mathjs exports
@@ -602,31 +648,22 @@ export function lintRuntimeImports(
 ): BuildMessage[] {
   const out: BuildMessage[] = [];
   for (const [file, text] of Object.entries(source.files)) {
-    for (const re of [IMPORT_RE, REEXPORT_RE]) {
-      re.lastIndex = 0;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(text)) !== null) {
-        const spec = m[2]!;
-        if (spec.startsWith('.') || spec.startsWith('/')) continue;
-        const available = runtimeExports[spec];
-        if (!available) continue; // not a shared-runtime specifier; esbuild will rule on it
-        const { names, namespace } = importedNames(m[1]!);
-        if (namespace) continue;
-        const have = new Set(available);
-        for (const name of names) {
-          if (have.has(name)) continue;
-          const pre = text.slice(0, m.index);
-          const line = pre.length - pre.replace(/\n/g, '').length + 1; // 1-based
-          const column = m.index - (pre.lastIndexOf('\n') + 1); // 0-based within line
-          const hint =
-            name === 'default'
-              ? `'${spec}' has no default export. Use a named import, e.g. import { ${available[0]} } from '${spec}'.`
-              : `'${spec}' does not export '${name}'.`;
-          out.push({
-            text: `${hint} It exports: ${exportList(available, name)}. Left as-is the app builds but fails to load in the browser, with no error the app can catch.`,
-            location: { file, line, column },
-          });
-        }
+    if (!CODE_LOADERS.has(loaderFor(file))) continue;
+    for (const { spec, names, line, column } of moduleImports(file, text) ?? []) {
+      if (spec.startsWith('.') || spec.startsWith('/')) continue;
+      const available = runtimeExports[spec];
+      if (!available) continue; // not a shared-runtime specifier; esbuild will rule on it
+      const have = new Set(available);
+      for (const name of names) {
+        if (have.has(name)) continue;
+        const hint =
+          name === 'default'
+            ? `'${spec}' has no default export. Use a named import, e.g. import { ${available[0]} } from '${spec}'.`
+            : `'${spec}' does not export '${name}'.`;
+        out.push({
+          text: `${hint} It exports: ${exportList(available, name)}. Left as-is the app builds but fails to load in the browser, with no error the app can catch.`,
+          location: { file, line, column },
+        });
       }
     }
   }

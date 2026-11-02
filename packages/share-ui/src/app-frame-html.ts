@@ -27,11 +27,14 @@ import type { AppViewer } from '@mantle/client-types/app-viewer';
  *  attachments. The document's origin is OPAQUE (sandboxed), so CSP `'self'`
  *  is unreliable here — every source names the host origin explicitly:
  *  scripts only from `/app-runtime/` (the shared React/kit/host runtime the
- *  import map points at) and `/canvas-runtime/` (the vendored libraries the
- *  same map names), styles/fonts only from `/share-runtime/` (the
- *  self-contained stylesheet the frame links) and `/fonts/` (owner font
- *  library). */
-export function buildAppFrameCsp(origin: string): string {
+ *  import map points at) and the exact `/canvas-runtime/` files that same map
+ *  names (`libraryScripts`, appLibraryScripts), styles/fonts only from
+ *  `/share-runtime/` (the self-contained stylesheet the frame links) and
+ *  `/fonts/` (owner font library). */
+export function buildAppFrameCsp(origin: string, libraryScripts: readonly string[] = []): string {
+  const libraries = appLibraryScripts(Object.fromEntries(libraryScripts.map((u, i) => [i, u])))
+    .map((u) => ` ${origin}${u}`)
+    .join('');
   return (
     // `sandbox allow-scripts` is the load-bearing directive: it sandboxes the
     // DOCUMENT itself (opaque origin, no cookies/storage), not just the iframe
@@ -43,17 +46,29 @@ export function buildAppFrameCsp(origin: string): string {
     `default-src 'none'; style-src 'unsafe-inline' ${origin}/share-runtime/; ` +
     // share-runtime scripts joined app-runtime for the Drift backdrop
     // (share-page.js + its lazy WebGL chunk) — same-origin built assets,
-    // no new capability. canvas-runtime joined for the vendored libraries an
-    // app may import (echarts, d3, three, konva, katex, the diagram
-    // templates; app-build app-libraries.ts): the same content-hashed files
-    // a Present canvas loads, on the brain origin. No 'unsafe-eval' (the one
-    // library that needs it, Alpine.js, is left out of apps), and
-    // connect-src stays 'none', so a library adds no way out.
-    `script-src 'unsafe-inline' ${origin}/app-runtime/ ${origin}/share-runtime/ ${origin}/canvas-runtime/; ` +
+    // no new capability. The vendored libraries an app may import (echarts,
+    // d3, three, konva, katex, the diagram templates; app-build
+    // app-libraries.ts) join by exact file, as the app import map names
+    // them: the same content-hashed files a Present canvas loads, and not the
+    // rest of /canvas-runtime/ (Alpine.js, reveal.js and the vanilla motion
+    // build stay out of apps). No 'unsafe-eval', and connect-src stays
+    // 'none', so a library adds no way out.
+    `script-src 'unsafe-inline' ${origin}/app-runtime/ ${origin}/share-runtime/${libraries}; ` +
     `img-src data: blob: ${origin}; ` +
     `font-src data: ${origin}/share-runtime/ ${origin}/fonts/; ` +
     "connect-src 'none'; base-uri 'none'; form-action 'none'"
   );
+}
+
+/** The vendored library files an app import map names: its values under
+ *  /canvas-runtime/, each a plain path (a hashed file name, no query, no space
+ *  or `;` that could add a CSP source), sorted and once each. */
+export function appLibraryScripts(imports: Record<string, string>): string[] {
+  const out = new Set<string>();
+  for (const url of Object.values(imports)) {
+    if (/^\/canvas-runtime\/[\w.-]+\.js$/.test(url)) out.add(url);
+  }
+  return [...out].sort();
 }
 
 // Host-injected live-theme sync. Lives in the iframe but is NOT part of the

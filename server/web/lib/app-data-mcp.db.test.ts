@@ -19,6 +19,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { APP_BUILD_RULES } from '@mantle/db';
 import { createMigratedScratchDatabase, superuserExec } from '@mantle/db/test-support';
 import type { McpCaller } from '@mantle/mcp-core';
 
@@ -52,6 +53,7 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
     esbuildVersion: 'test',
     bytes: 1,
     ok: true,
+    rules: APP_BUILD_RULES,
   };
   const schema = {
     schemaSql: 'CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT);',

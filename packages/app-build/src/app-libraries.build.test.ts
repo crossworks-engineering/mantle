@@ -21,6 +21,7 @@ import { APP_CANVAS_LIBRARIES, APP_LIBRARY_SPECIFIERS } from './app-libraries';
 import { buildCanvasRuntime } from './canvas-runtime';
 import { buildRuntime, type RuntimeManifest } from './build-runtime';
 import { buildApp } from './index';
+import { appLibraryScripts } from '@mantle/share-ui/app-frame-html';
 import { LIBRARY_EXPORTS_FIXTURE } from './runtime-exports.fixture';
 
 const ROOT = path.resolve(__dirname, '../../..');
@@ -95,6 +96,12 @@ describe('the app libraries, against the real runtimes', () => {
       expect(fs.existsSync(path.join(tmp, dir, path.basename(url!))), url).toBe(true);
       expect(app.exports[spec]?.length, spec).toBeGreaterThan(0);
     }
+  });
+
+  it('the app frame CSP allows every library file the app import map names', () => {
+    const lib = Object.values(app.imports).filter((u) => u.startsWith('/canvas-runtime/'));
+    expect(lib.length).toBeGreaterThan(0);
+    expect(appLibraryScripts(app.imports)).toEqual([...new Set(lib)].sort());
   });
 
   it('there is a sample for every library', () => {

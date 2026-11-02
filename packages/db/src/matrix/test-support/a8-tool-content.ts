@@ -22,6 +22,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type postgres from 'postgres';
 import { ITEM_KINDS } from '@mantle/client-types/kinds';
+import { APP_BUILD_RULES } from '../../app-build-rules';
 import type { GuidePlacement } from '../guide-oracle';
 import { FIXTURE_ACTOR, makeA8Item, type A8Fixture, type A8Item } from './a8-grid';
 
@@ -698,6 +699,7 @@ export const A8_TOOL_CONTENT: Readonly<
         esbuildVersion: '0',
         bytes: 1,
         ok: true,
+        rules: APP_BUILD_RULES,
       };
       await asFixture(s.sql, s.item.id, async (tx) => {
         await tx`update apps set draft_source = ${tx.json(draft)}, draft_build = ${tx.json(build)}

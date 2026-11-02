@@ -188,6 +188,34 @@ describe('buildApp — the import allowlist (security boundary)', () => {
     }
   });
 
+  it("says nothing of the server's paths when an app's own CSS reaches a package file", async () => {
+    const res = await buildApp(
+      app({
+        'App.tsx':
+          'import \'./s.css\';\nexport default function App() { return <p className="a">x</p>; }\n',
+        's.css': '.a { background: url(lucide-react/package.json); }\n',
+      }),
+      { runtimeExports: RT },
+    );
+    const said = JSON.stringify([...res.errors, ...res.warnings]);
+    expect(said).not.toContain('node_modules');
+    expect(said).not.toMatch(/\/(?:Users|Volumes|app|home)\//);
+    // The message keeps its place in the app, with the path put as <server file>.
+    const at = res.errors.find((e) => e.location?.file.endsWith('s.css'));
+    expect(at?.text).toContain('<server file>');
+  });
+
+  it('refuses a file it cannot parse', async () => {
+    const res = await buildApp(
+      app({
+        'App.tsx': "import { nope } from '@host';\nlet = ;\nexport default function App() {}\n",
+      }),
+      { runtimeExports: RT },
+    );
+    expect(res.ok).toBe(false);
+    expect(res.errors.length).toBeGreaterThan(0);
+  });
+
   it("keeps a warning about the app's own code, even when it quotes a path-like key", async () => {
     const res = await buildApp(
       app({

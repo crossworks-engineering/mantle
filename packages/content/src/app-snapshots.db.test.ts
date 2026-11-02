@@ -15,6 +15,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { APP_BUILD_RULES } from '@mantle/db';
 import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -40,7 +41,10 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     esbuildVersion: 'test',
     bytes: 1,
     ok: true,
+    rules: APP_BUILD_RULES,
   };
+  /** A build from before the bundler's checks it would meet today. */
+  const OLD = { ...GREEN, rules: undefined };
   const schema = {
     schemaSql: 'CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT);',
     schemaVersion: 1,
@@ -98,6 +102,12 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     await apps.publishApp(owner, app.id, { note: 'first', actor: 'owner' });
     await broker.appDbExec(owner, app.id, "INSERT INTO items (name) VALUES ('a')", [], schema);
     return app.id;
+  }
+  /** The live build made before today's bundler rules: what a box holds
+   *  from before a rules bump (a publish refuses to make one now). */
+  async function ageLiveBuild(id: string) {
+    await admin`update apps set published_build = ${JSON.stringify(OLD)}::jsonb
+                 where node_id = ${id}`;
   }
   const names = async (id: string) =>
     (await broker.appDbQuery(owner, id, 'SELECT name FROM items ORDER BY id', [], schema)).map(
@@ -391,6 +401,64 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     });
   });
 
+  it("a full restore with a build from before today's app checks puts the code in the draft", async () => {
+    const app = await apps.createApp(owner, { title: `${tag} stale` });
+    await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "old";');
+    await apps.setManifest(owner, app.id, { sqlite: schema });
+    await apps.setDraftBuild(owner, app.id, GREEN);
+    await apps.publishApp(owner, app.id, { note: 'first', actor: 'owner' });
+    await ageLiveBuild(app.id);
+    await broker.appDbExec(owner, app.id, "INSERT INTO items (name) VALUES ('a')", [], schema);
+    const snap = await snaps.createAppSnapshot(owner, app.id);
+    await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "new";');
+    await apps.setDraftBuild(owner, app.id, GREEN);
+    await apps.publishApp(owner, app.id);
+    await broker.appDbExec(owner, app.id, "INSERT INTO items (name) VALUES ('b')", [], schema);
+
+    const res = await snaps.restoreAppSnapshot(owner, app.id, snap!.id, {
+      mode: 'full',
+      drainMs: 0,
+    });
+    expect(res).toMatchObject({ code: 'draft', staleBuild: true });
+    // The data is back; the live code is still today's build, the old code
+    // waits in the draft to be built again.
+    expect(await names(app.id)).toEqual(['a']);
+    const detail = await apps.getApp(owner, app.id);
+    expect(detail?.source.files['App.tsx']).toContain('"new"');
+    expect(detail?.draft?.files['App.tsx']).toContain('"old"');
+  });
+
+  it("a publish refuses a draft build from before today's app checks", async () => {
+    const app = await apps.createApp(owner, { title: `${tag} stale publish` });
+    await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "x";');
+    await apps.setDraftBuild(owner, app.id, OLD);
+    await expect(apps.publishApp(owner, app.id)).rejects.toBeInstanceOf(apps.StaleBuildError);
+    await expect(apps.publishApp(owner, app.id)).rejects.toBeInstanceOf(apps.NoGreenBuildError);
+    expect((await apps.getApp(owner, app.id))?.publishedBuild ?? null).toBeNull();
+    await apps.setDraftBuild(owner, app.id, GREEN);
+    expect(await apps.publishApp(owner, app.id)).not.toBeNull();
+  });
+
+  it("a copy of an app whose build is from before today's app checks gets its code in the draft", async () => {
+    const pkg = await import('./app-package');
+    const id = await publishedApp('stale copy');
+    await ageLiveBuild(id);
+    const copy = await pkg.duplicateApp(owner, id, { withData: false });
+    const detail = await apps.getApp(owner, copy!.id);
+    expect(detail?.publishedBuild ?? null).toBeNull();
+    expect(detail?.draft?.files['App.tsx']).toContain('"one"');
+    expect(detail?.draftBuild ?? null).toBeNull();
+    // A copy of a current build stays live; an old draft build is left out.
+    const freshId = await publishedApp('fresh copy');
+    await apps.writeDraftFile(owner, freshId, 'App.tsx', 'export default () => "two";');
+    await apps.setDraftBuild(owner, freshId, OLD);
+    const fresh = await pkg.duplicateApp(owner, freshId, { withData: false });
+    const copied = await apps.getApp(owner, fresh!.id);
+    expect(copied?.publishedBuild?.ok).toBe(true);
+    expect(copied?.draft?.files['App.tsx']).toContain('"two"');
+    expect(copied?.draftBuild ?? null).toBeNull();
+  });
+
   it('refuses a data restore from a version, and deleting a version', async () => {
     const id = await publishedApp('refusals');
     const v1 = (await snaps.listAppSnapshots(owner, id))[0]!;
@@ -590,6 +658,19 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     // The history line carries on: the restore is its newest version.
     expect((await snaps.listAppSnapshots(owner, id))[0]).toMatchObject({ kind: 'version' });
     await expect(trash.restoreDeletedApp(owner, id)).rejects.toThrow(/not deleted/);
+  });
+
+  it("a deleted app whose build is from before today's app checks comes back in the draft", async () => {
+    const trash = await import('./app-trash');
+    const id = await publishedApp('stale trash');
+    await ageLiveBuild(id);
+    await apps.deleteApp(owner, id);
+    const back = await trash.restoreDeletedApp(owner, id);
+    expect(back).toEqual({ id, title: `${tag} stale trash`, staleBuild: true });
+    const detail = await apps.getApp(owner, id);
+    expect(detail?.publishedBuild ?? null).toBeNull();
+    expect(detail?.draft?.files['App.tsx']).toContain('"one"');
+    expect(await names(id)).toEqual(['a']);
   });
 
   it('purges a deleted app for good: now on request, or after the 30 days', async () => {

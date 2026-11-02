@@ -8,7 +8,11 @@
 import { readFile } from 'node:fs/promises';
 import { NextResponse } from '@/server/http-compat';
 import { getContent } from '@mantle/storage';
-import { buildAppFrameCsp, buildAppFrameHtml } from '@mantle/share-ui/app-frame-html';
+import {
+  appLibraryScripts,
+  buildAppFrameCsp,
+  buildAppFrameHtml,
+} from '@mantle/share-ui/app-frame-html';
 import { decodeDriftSpec, encodeDriftSpec } from '@mantle/content-core/drift-spec';
 import { loadProfilePreferences } from '@mantle/content';
 import { appViewerFor, type AppViewer, type AppViewerSubject } from '@mantle/content/app-broker';
@@ -27,15 +31,20 @@ const loadText = (key: string) =>
 
 /** The shared-runtime import map, read once from the generated public/ asset
  *  (cwd is server/web in dev and in the image — same relative convention as
- *  the other on-disk reads). Cached for the process: the file only changes on
- *  deploy. */
-let importMapJsonPromise: Promise<string> | null = null;
-function loadImportMapJson(): Promise<string> {
+ *  the other on-disk reads), with the library files it names (the frame CSP
+ *  allows those and no other /canvas-runtime/ file). Cached for the process:
+ *  the file only changes on deploy. */
+type ImportMap = { json: string; libraryScripts: string[] };
+let importMapJsonPromise: Promise<ImportMap> | null = null;
+function loadImportMapJson(): Promise<ImportMap> {
   if (!importMapJsonPromise) {
     importMapJsonPromise = readFile('public/app-runtime/manifest.json', 'utf8')
       .then((raw) => {
         const m = JSON.parse(raw) as { imports: Record<string, string> };
-        return JSON.stringify({ imports: m.imports });
+        return {
+          json: JSON.stringify({ imports: m.imports }),
+          libraryScripts: appLibraryScripts(m.imports),
+        };
       })
       .catch((e: unknown) => {
         importMapJsonPromise = null; // let the next request retry
@@ -109,7 +118,7 @@ export async function renderAppFrame(
   } = {},
 ): Promise<Response> {
   const url = new URL(req.url);
-  const [bundleCode, appCss, importMapJson, neatSpec, viewer] = await Promise.all([
+  const [bundleCode, appCss, importMap, neatSpec, viewer] = await Promise.all([
     loadText(build.storageKey),
     build.css ? loadText(build.css.storageKey).catch(() => '') : Promise.resolve(''),
     loadImportMapJson(),
@@ -121,7 +130,7 @@ export async function renderAppFrame(
   const html = buildAppFrameHtml({
     bundleCode,
     appCss,
-    importMapJson,
+    importMapJson: importMap.json,
     cls: url.searchParams.get('cls') ?? '',
     colorTheme: url.searchParams.get('ct'),
     viewport: url.searchParams.get('vp') === '1',
@@ -134,7 +143,7 @@ export async function renderAppFrame(
       'content-type': 'text/html; charset=utf-8',
       // The strict sandbox policy, as a HEADER — stronger than the old
       // srcdoc <meta> tag and applied before any parsing.
-      'content-security-policy': buildAppFrameCsp(requestOrigin(req)),
+      'content-security-policy': buildAppFrameCsp(requestOrigin(req), importMap.libraryScripts),
       // The ticket in the URL is single-purpose and seconds-lived, but keep
       // the document itself out of shared caches.
       'Cache-Control': CACHE_CONTROL.privateNone,

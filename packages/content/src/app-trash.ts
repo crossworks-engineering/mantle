@@ -11,7 +11,7 @@
  */
 import * as path from 'node:path';
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
+import { buildMeetsRules, db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
 import {
   createApp,
   type CreateAppTx,
@@ -164,13 +164,15 @@ async function memberEra(appId: string): Promise<boolean> {
  * Bring a deleted app back from its last snapshot, with the same id: its
  * code (live, with the build it ran, when it had been published), its name
  * and look, and its data. Its sharing and its level do not come back: it
- * returns as an admin-only app in Unsorted.
+ * returns as an admin-only app in Unsorted. A build made before today's
+ * bundler rules (buildMeetsRules) does not go live: the code comes back in
+ * the draft, to be built again (`staleBuild`).
  */
 export async function restoreDeletedApp(
   ownerId: string,
   appId: string,
   opts: { actor?: AppHistoryActor } = {},
-): Promise<{ id: string; title: string } | null> {
+): Promise<RestoredApp | null> {
   const [row] = await deletedRows(ownerId, appId);
   if (!row) {
     const [live] = await db
@@ -194,6 +196,10 @@ export async function restoreDeletedApp(
     opts,
   );
 }
+
+/** A restored app; `staleBuild` when its build was made before today's
+ *  bundler rules, so its code came back in the draft. */
+export type RestoredApp = { id: string; title: string; staleBuild?: true };
 
 /** The newest pre_delete snapshot of a deleted app, what a restore needs:
  *  read here for the owner (restoreDeletedApp), or answered by the trash's
@@ -236,7 +242,7 @@ export async function restoreDeletedAppFrom(
   appId: string,
   row: DeletedAppSnapshot,
   opts: { actor?: AppHistoryActor } = {},
-): Promise<{ id: string; title: string } | null> {
+): Promise<RestoredApp | null> {
   const code = row.code;
   if (!code) throw new AppTrashRefusedError(`the last snapshot of app ${appId} holds no code`);
   const meta = code.meta;
@@ -265,6 +271,8 @@ export async function restoreDeletedAppFrom(
     if (err instanceof SnapshotGoneError) return null;
     throw err;
   }
+  const build = code.publishedBuild;
+  const stale = build?.ok === true && !buildMeetsRules(build);
   try {
     if (row.dbPath) {
       await restoreAppDatabaseFile(
@@ -275,8 +283,7 @@ export async function restoreDeletedAppFrom(
         { drainMs: 0 },
       );
     }
-    const build = code.publishedBuild;
-    if (build?.ok) {
+    if (build?.ok && !stale) {
       await restoreAppLive(ownerId, app.id, { ...code, publishedBuild: build }, row.seq, {
         discardDraft: true,
         actor: opts.actor ?? 'owner',
@@ -293,7 +300,7 @@ export async function restoreDeletedAppFrom(
     throw err;
   }
   void notifyAppNavChanged(ownerId);
-  return { id: app.id, title: app.title };
+  return { id: app.id, title: app.title, ...(stale ? { staleBuild: true as const } : {}) };
 }
 
 /** Remove a deleted app's history rows. Their snapshot files are the store

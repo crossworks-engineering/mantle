@@ -6,7 +6,12 @@
  * exactly what a wrong `@host` import cost in the field.
  */
 import { describe, expect, it } from 'vitest';
-import { buildAppFrameHtml, viewerScript } from './app-frame-html';
+import {
+  appLibraryScripts,
+  buildAppFrameCsp,
+  buildAppFrameHtml,
+  viewerScript,
+} from './app-frame-html';
 
 const frame = (bundleCode: string) =>
   buildAppFrameHtml({
@@ -157,5 +162,42 @@ describe('buildAppFrameHtml: host.me() (app identity)', () => {
     expect(viewerScript({ id: null, name: null, kind: 'public' })).toContain(
       '{"id":null,"name":null,"kind":"public"}',
     );
+  });
+});
+
+describe('buildAppFrameCsp: the library files an app may load', () => {
+  const O = 'https://box.example';
+  const map = {
+    react: '/app-runtime/react-AB12.js',
+    echarts: '/canvas-runtime/echarts-CD34.js',
+    d3: '/canvas-runtime/d3-EF56.js',
+    again: '/canvas-runtime/d3-EF56.js',
+    bad: '/canvas-runtime/x.js; script-src *',
+    query: '/canvas-runtime/y.js?z',
+  };
+
+  it('names each library file of the import map, once, and never the folder', () => {
+    expect(appLibraryScripts(map)).toEqual([
+      '/canvas-runtime/d3-EF56.js',
+      '/canvas-runtime/echarts-CD34.js',
+    ]);
+    const csp = buildAppFrameCsp(O, appLibraryScripts(map));
+    const scripts = csp.match(/script-src ([^;]+);/)![1]!.split(' ');
+    expect(scripts).toContain(`${O}/canvas-runtime/echarts-CD34.js`);
+    expect(scripts).toContain(`${O}/canvas-runtime/d3-EF56.js`);
+    expect(scripts).not.toContain(`${O}/canvas-runtime/`);
+  });
+
+  it('takes no source a list could smuggle in', () => {
+    const csp = buildAppFrameCsp(O, [
+      '/canvas-runtime/x.js; script-src *',
+      'https://evil.invalid/a.js',
+    ]);
+    expect(csp).not.toContain('evil.invalid');
+    expect(csp.match(/script-src/g)).toHaveLength(1);
+  });
+
+  it('with no list, no library file at all', () => {
+    expect(buildAppFrameCsp(O)).not.toContain('/canvas-runtime/');
   });
 });

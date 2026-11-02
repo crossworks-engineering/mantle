@@ -26,7 +26,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Browser, Frame, HTTPRequest } from 'puppeteer-core';
 import { buildApp, type AppSource } from '@mantle/app-build';
 import { THEME_ATTR, THEME_COLOURS, THEME_TEXT_COLOURS } from '@mantle/diagram-templates';
-import { buildAppFrameCsp, buildAppFrameHtml } from '@mantle/share-ui/app-frame-html';
+import {
+  appLibraryScripts,
+  buildAppFrameCsp,
+  buildAppFrameHtml,
+} from '@mantle/share-ui/app-frame-html';
 import { APP_GUIDE_LIBRARIES, appSpecifiers, guideFile } from '../builtins-canvas-library';
 import { RENDER_LAUNCH_ARGS } from './sidecar';
 import { findChrome } from './find-chrome';
@@ -201,7 +205,18 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
         return req.respond({
           status: 200,
           contentType: 'text/html; charset=utf-8',
-          headers: { 'content-security-policy': buildAppFrameCsp(ORIGIN) },
+          headers: {
+            'content-security-policy': buildAppFrameCsp(
+              ORIGIN,
+              appLibraryScripts(
+                (
+                  JSON.parse(readFileSync(APP_MANIFEST, 'utf8')) as {
+                    imports: Record<string, string>;
+                  }
+                ).imports,
+              ),
+            ),
+          },
           body: frameHtml,
         });
       }
@@ -596,6 +611,12 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
   });
 
   it('the frame still has no network and no eval, with the libraries loaded', async () => {
+    // A real /canvas-runtime/ file an app may not import: its library needs
+    // unsafe-eval. The frame CSP names the app's library files only.
+    const alpine = (
+      JSON.parse(readFileSync(CANVAS_MANIFEST, 'utf8')) as { imports: Record<string, string> }
+    ).imports['alpinejs'];
+    expect(alpine).toMatch(/^\/canvas-runtime\//);
     const probe = [
       "import { useEffect } from 'react';",
       "import * as echarts from 'echarts';",
@@ -617,6 +638,7 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
       "  const load = (src: string) => new Promise<string>((ok) => { const s = document.createElement('script'); s.type = 'module'; s.src = src; s.onload = () => ok('loaded'); s.onerror = () => ok('refused'); document.head.appendChild(s); });",
       "  out.cdn = await load('https://cdn.invalid/x.js');",
       "  out.missing = await load('/canvas-runtime/nope.js');",
+      `  out.alpine = await load('${alpine}');`,
       "  const img = new Image(); img.src = 'https://evil.invalid/p.png';",
       "  window.parent.postMessage({ v: 1, kind: 'probe', result: out }, '*');",
       '}',
@@ -640,10 +662,12 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
       beacon: 'true',
       cdn: 'refused',
       missing: 'refused',
+      alpine: 'refused',
     });
-    // Each try was refused by the CSP before a request left the frame; only
-    // the same-origin runtime path reached the server (a 404).
-    expect(r.refused).toEqual([`${ORIGIN}/canvas-runtime/nope.js`]);
+    // Each try was refused by the CSP before a request left the frame: the
+    // library files are named one by one, so even a runtime path on the
+    // brain's own origin never reaches the server.
+    expect(r.refused).toEqual([]);
     const csp = (r.watch ?? []).filter((w) => w.startsWith('csp '));
     for (const want of [
       /csp connect-src .*\/api\/version/,
@@ -652,6 +676,8 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
       /csp connect-src wss:\/\/evil\.invalid\/ws/,
       /csp connect-src https:\/\/evil\.invalid\/beacon/,
       /csp script-src-elem https:\/\/cdn\.invalid/,
+      /csp script-src-elem .*\/canvas-runtime\/nope\.js/,
+      /csp script-src-elem .*\/canvas-runtime\/alpine-/,
       /csp img-src https:\/\/evil\.invalid/,
     ]) {
       expect(

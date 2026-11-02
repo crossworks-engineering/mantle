@@ -23,6 +23,25 @@ describe('lintRuntimeImports', () => {
     expect(msgs[0]!.location).toEqual({ file: 'lib/store.ts', line: 1, column: 0 });
   });
 
+  it('reads an escaped name or specifier as what it is (the parsed source, not a regex)', () => {
+    // \u0068ost is host and \u0040host is @host: the browser links them so.
+    expect(
+      lintRuntimeImports(src({ 'a.ts': "import { \\u0068ost } from '\\u0040host';\n" }), RT),
+    ).toEqual([]);
+    const msgs = lintRuntimeImports(
+      src({ 'a.ts': "import { \\u006eope } from '\\u0040host';\n" }),
+      RT,
+    );
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.text).toContain("'@host' does not export 'nope'");
+  });
+
+  it('skips a file it cannot parse (the computed-import check refuses that build)', () => {
+    expect(
+      lintRuntimeImports(src({ 'a.ts': "import { nope } from '@host';\nlet = ;\n" }), RT),
+    ).toEqual([]);
+  });
+
   it('accepts the correct named import', () => {
     expect(lintRuntimeImports(src({ 'a.ts': "import { host } from '@host';\n" }), RT)).toEqual([]);
   });

@@ -1157,6 +1157,7 @@ export type BuildRef = {
   ok: boolean;
   warnings?: string[];
   css?: { storageKey: string; sha256: string; bytes: number };
+  rules?: number;
 };
 
 // ── Redacted account DTOs (hand-mirrored; jackdaw split P0) ───────────────────

@@ -99,6 +99,9 @@ export type BuildRef = {
   /** Companion per-app stylesheet (`text/css`); absent on pre-CSS builds and
    *  when the CSS compile degraded to a warning. */
   css?: { storageKey: string; sha256: string; bytes: number };
+  /** The bundler's safety rules it was made under (APP_BUILD_RULES); absent
+   *  on builds from before it was recorded (buildMeetsRules). */
+  rules?: number;
 };
 
 export type App = typeof apps.$inferSelect;

@@ -49,6 +49,7 @@ import {
   draftColumn,
   liveWorkspace,
   appHeldBeyondAdmin,
+  buildMeetsRules,
 } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
 import { notifyAppNavChanged } from './app-nav';
@@ -1379,6 +1380,18 @@ export class NoGreenBuildError extends Error {
   }
 }
 
+/** A NoGreenBuildError for a draft build made before today's bundler rules
+ *  (buildMeetsRules): it goes live only after a build under them. */
+export class StaleBuildError extends NoGreenBuildError {
+  constructor() {
+    super();
+    this.message =
+      "publishApp: the draft's build was made before the app checks it would meet " +
+      'today, so it cannot go live: run a build again, then publish';
+    this.name = 'StaleBuildError';
+  }
+}
+
 defineDomainError(NoGreenBuildError, {
   reason: 'the draft has no successful build to publish; the message says to build first',
   status: 409,
@@ -1453,6 +1466,7 @@ export async function publishApp(
     }
     if (!app.draft && !app.draftBuild) return false;
     if (!app.draftBuild?.ok) throw new NoGreenBuildError();
+    if (!buildMeetsRules(app.draftBuild)) throw new StaleBuildError();
     await promote(tx, id, app.draft, app.draftBuild);
     if (opts.summary) await writePublishedSummary(tx, id, opts.summary);
     // The version this publish makes: the code
@@ -1666,7 +1680,9 @@ export type InstallableAppCode = RestorableCode & { draftBuild: BuildRef | null 
  * the published source with the build it runs on, the draft with its preview
  * build, and the manifest. Builds are content-addressed objects in this
  * brain's store, so a pair that was valid there is valid here. A published
- * build becomes the copy's first version, noted `opts.note`.
+ * build becomes the copy's first version, noted `opts.note`. A build made
+ * before today's bundler rules (buildMeetsRules) is not carried over: a stale
+ * published build leaves the copy's code in the draft, to be built again.
  */
 export async function installAppCode(
   ownerId: string,
@@ -1674,7 +1690,11 @@ export async function installAppCode(
   code: InstallableAppCode,
   opts: { note: string; actor?: AppHistoryActor },
 ): Promise<boolean> {
-  const live = code.publishedBuild?.ok ? code.publishedBuild : null;
+  const pub = code.publishedBuild?.ok ? code.publishedBuild : null;
+  const live = pub && buildMeetsRules(pub) ? pub : null;
+  const draft = pub && !live ? (code.draft ?? code.source) : code.draft;
+  const keptDraftBuild =
+    code.draftBuild?.ok && !buildMeetsRules(code.draftBuild) ? null : code.draftBuild;
   const done = await db.transaction(async (tx) => {
     const app = await lockAppRow(tx, ownerId, id, { newApp: true });
     if (!app) return false;
@@ -1685,9 +1705,9 @@ export async function installAppCode(
         sourceText: sourceToText(code.source),
         publishedBuild: live,
         manifest: code.manifest,
-        draftSource: code.draft,
-        draftUpdatedAt: code.draft ? new Date() : null,
-        draftBuild: code.draftBuild,
+        draftSource: draft,
+        draftUpdatedAt: draft ? new Date() : null,
+        draftBuild: keptDraftBuild,
         updatedAt: new Date(),
       })
       .where(eq(apps.nodeId, id));

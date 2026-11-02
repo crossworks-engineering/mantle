@@ -18,7 +18,7 @@
  * file's with the same bytes); an unreferenced bundle costs only its bytes, and
  * the next identical build reuses it.
  */
-import { assertItemRight } from '@mantle/db';
+import { APP_BUILD_RULES, assertItemRight } from '@mantle/db';
 import { getApp, setDraftBuild, workingSource } from '@mantle/content';
 import { buildApp, loadRuntimeExports, type BuildMessage } from '@mantle/app-build';
 import { contentKey, hashBuffer } from '@mantle/storage';
@@ -78,6 +78,7 @@ export async function buildAndStageApp(
         esbuildVersion: res.esbuildVersion,
         bytes: js.length,
         ok: true,
+        rules: APP_BUILD_RULES,
         ...(res.warnings.length ? { warnings: res.warnings.map((w) => w.text) } : {}),
         ...(css && cssSha
           ? { css: { storageKey: contentKey(cssSha), sha256: cssSha, bytes: css.length } }

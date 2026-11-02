@@ -23,6 +23,30 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Tests:** the border-try cap and the inside-line rule each have a test
   that fails without them.
 
+## Unreleased: the app bundler follow-ups (the 4 LOWs of the bundler audit)
+
+- **Changed:** an app frame may load only the `/canvas-runtime/` files its
+  import map names (echarts, d3, three, konva, katex, the diagram
+  templates), not the whole folder. Alpine.js, reveal.js and the vanilla
+  motion build stay out of apps.
+- **Fixed:** a build message about the app's own code no longer quotes a
+  server path (one under `node_modules` or the server's workspace, for
+  example a CSS `url()` that names a package file). The path reads
+  `<server file>`; the message keeps its place in the app. A message
+  located in a lucide-react file no longer names that file.
+- **Fixed:** the check of an app's imports from the shared runtime reads
+  the parsed source, not a pattern. An escaped name or specifier
+  (`import { \u0068ost } from '\u0040host'`) is now checked as what it is.
+- **Changed:** a build records the bundler rules it was made under. A
+  build older than today's rules no longer goes live without a new build:
+  - `app_publish` refuses it ("run a build again, then publish");
+  - a full snapshot restore and a restore from Recently deleted put the
+    code in the draft and say so (`stale_build`); the data is restored;
+  - a copy leaves it out (an old live build puts the copy's code in the
+    draft).
+
+  Builds with no record count as current from 2026-10-27 on.
+
 ## Unreleased: the SQL children read their ends right (follow-up of v0.400.55)
 
 - **Fixed:** a statement refused at the memory limit no longer costs a

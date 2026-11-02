@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { APP_BUILD_RULES } from '@mantle/db';
 import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -36,6 +37,7 @@ describe.skipIf(!URL)('app packages and copies on Postgres', () => {
     esbuildVersion: 'test',
     bytes: 1,
     ok: true,
+    rules: APP_BUILD_RULES,
   };
   const schema = {
     schemaSql: 'CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT);',

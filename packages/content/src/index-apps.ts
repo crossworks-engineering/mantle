@@ -111,6 +111,7 @@ export {
   deleteApp,
   CannotDeleteEntryError,
   NoGreenBuildError,
+  StaleBuildError,
   AppSourceLimitError,
   assertSourceWithinLimits,
   MAX_APP_FILES,

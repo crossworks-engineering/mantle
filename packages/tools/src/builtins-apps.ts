@@ -1659,9 +1659,10 @@ const app_snapshot_restore: BuiltinToolDef = {
           code: res.code,
           undo_snapshot_id: res.undo?.id ?? null,
           ...(res.declaredTools ? { declared_tools: res.declaredTools } : {}),
+          ...(res.staleBuild ? { stale_build: true } : {}),
           hint:
             res.code === 'draft'
-              ? `The code is in the draft: build it (app_build), check the preview, then app_publish.${res.declaredTools ? ' The app keeps its current tools: that version declared declared_tools; grant them with app_tools_set only if the owner wants them.' : ''}`
+              ? `${res.staleBuild ? 'Its build was made before the app checks it would meet today, so it did not go live; the data is restored. ' : ''}The code is in the draft: build it (app_build), check the preview, then app_publish.${res.declaredTools ? ' The app keeps its current tools: that version declared declared_tools; grant them with app_tools_set only if the owner wants them.' : ''}`
               : 'Done. To undo, restore undo_snapshot_id the same way.',
         },
       };
@@ -1823,7 +1824,20 @@ const app_undelete: BuiltinToolDef = {
       }
       void notifyAppNavChanged(ctx.ownerId);
       ctx.step?.setOutput({ id, restored: true });
-      return { ok: true, output: { id: app.id, name: app.title, url: nodeUrl(app.id) } };
+      return {
+        ok: true,
+        output: {
+          id: app.id,
+          name: app.title,
+          url: nodeUrl(app.id),
+          ...(app.staleBuild
+            ? {
+                stale_build: true,
+                hint: 'Its build was made before the app checks it would meet today, so it did not go live: the code is in the draft. Build it (app_build), check the preview, then app_publish.',
+              }
+            : {}),
+        },
+      };
     } catch (err) {
       if (err instanceof AppTrashRefusedError) return { ok: false, error: err.message };
       return { ok: false, error: errorMessage(err) };

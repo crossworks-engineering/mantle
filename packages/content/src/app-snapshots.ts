@@ -25,6 +25,7 @@ import {
   appDatabases,
   apps,
   assertItemRight,
+  buildMeetsRules,
   db,
   inFlipTransaction,
   nodeSnapshots,
@@ -958,6 +959,9 @@ export type AppRestoreResult = {
    *  they differ from the app's. NOT granted (the app has one allowlist,
    *  the live app's): the owner grants them with app_tools_set. */
   declaredTools: string[] | null;
+  /** A full restore whose build predates today's bundler rules
+   *  (buildMeetsRules): its code went to the draft, to be built again. */
+  staleBuild: boolean;
 };
 
 function sameTools(a: string[] | undefined, b: string[] | undefined): boolean {
@@ -1076,6 +1080,7 @@ export async function restoreAppSnapshot(
     }
     let code: AppRestoreResult['code'] = null;
     let declaredTools: string[] | null = null;
+    let staleBuild = false;
     // The author ceiling FIRST:
     // code a member wrote, or code taken while the app ran at team rules,
     // brings the ceiling back before it can go live, so not one call runs it
@@ -1090,7 +1095,11 @@ export async function restoreAppSnapshot(
     }
     if (wantsCode && snap.code) {
       const build = snap.code.publishedBuild;
-      if (mode === 'full' && build?.ok) {
+      // Live only with a build made under today's bundler rules: an older
+      // one (from before an import check it would now fail) goes to the
+      // draft, to be built again before it runs.
+      staleBuild = mode === 'full' && build?.ok === true && !buildMeetsRules(build);
+      if (mode === 'full' && build?.ok && !staleBuild) {
         await restoreAppLive(ownerId, appId, { ...snap.code, publishedBuild: build }, snap.seq, {
           discardDraft: true,
           actor,
@@ -1109,7 +1118,7 @@ export async function restoreAppSnapshot(
         }
       }
     }
-    return { mode, restored: snap, undo, code, declaredTools };
+    return { mode, restored: snap, undo, code, declaredTools, staleBuild };
   });
   if (wantsData) scheduleAppTableExportSync(ownerId, appId);
   const { code: _code, schemaVersion: _sv, ...restored } = result.restored;
