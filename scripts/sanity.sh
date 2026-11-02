@@ -188,7 +188,7 @@ if [[ "$PROJECT" != "mantle-dev" && -f "$ENV_FILE" ]]; then
       bad "MANTLE_RUNTIME in .env is '$rt_want': it must be node, bun or empty; web, api and the workers refuse to start"
       fail=$((fail+1))
     elif [[ ${#rt_drift[@]} -gt 0 ]]; then
-      for d in "${rt_drift[@]}"; do warn "$d, but .env says $rt_want: docker compose up -d makes it again"; done
+      for d in ${rt_drift[@]+"${rt_drift[@]}"}; do warn "$d, but .env says $rt_want: docker compose up -d makes it again"; done
     else
       ok "runtime: $rt_want ${DIM}(MANTLE_RUNTIME, $rt_n service(s))${RS}"
     fi
