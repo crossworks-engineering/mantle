@@ -50,7 +50,8 @@ const CreateBody = z.object({
 /**
  * POST /api/shares { nodeId, serve? } → create (or return the existing)
  * open link, `{ share: { id, token, path, mode, served } }`. Who may: a
- * user who may edit the item (an app: a Moderator of its home), the Grant
+ * user who may edit the item (an app or a Present canvas: a Moderator of its
+ * home, linkNeedsModerator), the Grant
  * Access panel's `mayLink`. `serve` (node ids) replaces the link's served
  * list: each id must be named or embedded by the item (a folder: sit in
  * it) and editable by the caller; ids the link already serves are kept

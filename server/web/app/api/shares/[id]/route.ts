@@ -36,8 +36,8 @@ export const policy = routePolicy({
 /** DELETE /api/shares/[id] → `{ ok }`: revoke the link or the contact share
  *  (owner-scoped; `ok` false when it was already gone). Who may: an Admin
  *  user with the 'users' area, who may revoke any link of the brain
- *  (closing a link only narrows; mantle_share_close_admin); else a user who may edit the item (an app: a Moderator of
- *  its home), the Grant Access panel's `mayLink`, asked in the login's
+ *  (closing a link only narrows; mantle_share_close_admin); else a user who may edit the item (an app or a
+ *  Present canvas: a Moderator of its home, linkNeedsModerator), the Grant Access panel's `mayLink`, asked in the login's
  *  scope; else 404 `not found` or 403 `forbidden`, the item gate's answers.
  *  A link never changes a level or a grant, so removing one changes none
  *  either (the item's share dialog Remove and the contact's "Shared" tab
