@@ -690,11 +690,14 @@ makes npm pick the kit's versions from the image's cache); Go, Python and
 nothing else is eval'd), but it has no network, so the module ships inside
 the source: base64 the `.wasm` into a `.ts` file
 (`export const WASM = '…'`), decode it with `atob` and call
-`WebAssembly.instantiate`. Keep it small: build `no_std` with a C ABI
-(`#[no_mangle] pub extern "C" fn`) and static buffers, then `wasm-opt -O3`;
-a Mandelbrot engine is about 3 KB that way, where wasm-bindgen and std
-start near 20 KB. Plain Rust runs about as fast as V8 on a tight numeric
-loop; the win comes from SIMD (`-C target-feature=+simd128`).
+`WebAssembly.instantiate`. With wasm-bindgen, hand those bytes to
+`initSync({ module: bytes })`: the generated glue otherwise fetches the
+`.wasm` by URL, and the frame refuses that. Keep it small: build `no_std`
+with a C ABI (`#[no_mangle] pub extern "C" fn`) and static buffers, then
+`wasm-opt -O3`; in our test a Mandelbrot engine came to about 3 KB that
+way, against roughly 17 KB with std. In that test plain Rust ran about as
+fast as V8 on the tight numeric loop; SIMD
+(`-C target-feature=+simd128`) gave the lead.
 
 **The boundary stays:** a sandbox works on a SQLite file inside it. It never
 reaches the brain's live app databases: copy a file in with `sandbox_import`,

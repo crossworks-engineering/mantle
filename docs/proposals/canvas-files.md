@@ -212,7 +212,7 @@ tools.
   (share-ui `app-sandbox.tsx` line 496), `src` to a ticketed
   `/api/apps/<id>/frame` route on the brain origin, header CSP from
   `buildAppFrameCsp` (share-ui `app-frame-html.ts`):
-  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' <origin>/app-runtime/ <origin>/share-runtime/; ... connect-src 'none'; base-uri 'none'; form-action 'none'`.
+  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' <origin>/app-runtime/ <origin>/share-runtime/; ... connect-src 'none'; base-uri 'none'; form-action 'none'`.
   The only channel out is the postMessage bridge.
 - **Email HTML:** sanitised on the brain (`packages/email`, `sanitize-html`),
   shown in a `srcDoc` iframe with no scripts (client
