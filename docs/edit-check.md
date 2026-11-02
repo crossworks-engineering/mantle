@@ -73,7 +73,8 @@ write calls none of them.
   Moderator of the home; an Admin scope for an item with no home), `admin`
   (the scope holds the Admin workspace: an Admin user), `appdata` (edit, and
   while the app is Informational an Admin user too: D6), `link` (edit; an
-  app: manage) and `link_close` (`link`, or an Admin user with the users
+  app or a Present canvas: manage, mantle_link_needs_manage since 0352, the
+  twin of the registry's `publicLink: 'moderator'`) and `link_close` (`link`, or an Admin user with the users
   area).
 - The write check of the write role (0278, 0279) asks through
   `mantle_check_row` too. Same answers.

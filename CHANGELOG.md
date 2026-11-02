@@ -18,6 +18,9 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   change or stop its open link, as for an app. Someone who may only edit the
   canvas is refused, in the Access panel and by the assistant's link tools,
   with words that name the rule. A link made before stays live.
+- **Database:** migration 0352 makes the edit check ask the same (an app's or
+  a canvas's link needs a Moderator of its home). No row changes. Rollback:
+  `packages/db/rollback/0352_canvas_link_moderator.revert.sql`.
 
 ## Unreleased: switching calls on works with no restart
 
