@@ -4,7 +4,8 @@
  * Public presenter for a SHARED Present canvas (docs/proposals/
  * canvas-files.md 7.2): the canvas live, full screen (h-dvh, no share
  * shell), always the latest save, with a small floating pill that labels the
- * page as a shared canvas and carries Replay and Full screen. The frame
+ * page as a shared canvas and carries Replay and Full screen (the pill stays
+ * on screen in full screen). The frame
  * ticket and the frame document come from /s/<token>/canvas, which re-checks
  * the link on every load. The canvas's `mantle.data` calls are refused here:
  * a link reads or writes no saved data.
@@ -21,17 +22,18 @@ export function PresentPresenter({
   view: Extract<ShareViewPayload, { kind: 'present' }>;
   token: string;
 }) {
-  const frame = useRef<HTMLIFrameElement | null>(null);
+  // Full screen takes the whole presenter, pill included: the label that
+  // says this is a shared canvas never leaves the screen.
+  const stage = useRef<HTMLDivElement | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const button =
     'inline-flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
   return (
-    <div className="relative h-dvh w-full">
+    <div ref={stage} className="relative h-dvh w-full bg-background">
       <CanvasSandbox
         presentId={view.presentId}
         apiBase={`/s/${encodeURIComponent(token)}/canvas`}
         title={view.title || 'Shared canvas'}
-        frameRef={frame}
         reloadKey={reloadKey}
         dataApi={false}
       />
@@ -51,7 +53,7 @@ export function PresentPresenter({
           className={button}
           aria-label="Full screen"
           title="Full screen"
-          onClick={() => void frame.current?.requestFullscreen?.().catch(() => undefined)}
+          onClick={() => void stage.current?.requestFullscreen?.().catch(() => undefined)}
         >
           <Maximize className="size-3.5" aria-hidden />
         </button>

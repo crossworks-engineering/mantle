@@ -9,11 +9,10 @@
  * no network, no bridge but `ready`, `error` and `leaving`. The latest save
  * is served (latest is latest). Never a render: no sidecar work here.
  */
-import { NextResponse } from '@/server/http-compat';
 import { gateShareCookie } from '@/lib/contact-share-gate';
 import { canvasFrameNonce, verifyCanvasFrameTicket } from '@/lib/auth';
 import { getPresentFrame } from '@/lib/presents';
-import { renderCanvasFrame } from '@/lib/canvas-frame';
+import { canvasFrameRefusal, renderCanvasFrame } from '@/lib/canvas-frame';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -27,7 +26,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   const gate = await gateShareCookie(null, token);
   const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'present' || share.contactId) {
-    return new NextResponse('not found', { status: 404 });
+    return canvasFrameRefusal(404, 'not found');
   }
   const raw = new URL(req.url).searchParams.get('t') ?? '';
   const ticket = raw ? verifyCanvasFrameTicket(raw) : null;
@@ -42,9 +41,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     ticket.actorId ||
     ticket.contactId
   ) {
-    return new NextResponse('frame ticket required', { status: 401 });
+    return canvasFrameRefusal(401, 'frame ticket required');
   }
   const canvas = await getPresentFrame(share.ownerId, share.nodeId);
-  if (!canvas) return new NextResponse('not found', { status: 404 });
+  if (!canvas) return canvasFrameRefusal(404, 'not found');
   return renderCanvasFrame(req, share.ownerId, canvas, canvasFrameNonce(raw));
 }

@@ -9,6 +9,7 @@ import { buildCanvasFrameCsp } from '@mantle/share-ui/canvas-frame-html';
 import type { PresentMeta } from '@mantle/db';
 import { env } from '@mantle/config';
 import { requestOrigin } from '@/lib/auth-constants';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 import { canvasFrameDocument, loadCanvasImportMap } from '@mantle/tools/canvas-frame-document';
 
 export { canvasFrameDocument };
@@ -73,8 +74,19 @@ export async function renderCanvasFrame(
       // attribute, canvas-sandbox.tsx): this document takes it. A page the
       // canvas navigated to that does not say so is not loaded at all.
       'allow-csp-from': '*',
-      // No Cache-Control here: /api answers no-store by default.
+      // Never kept by a cache: the gate's no-store default covers /api only,
+      // and an open link's frame (/s/:token/canvas/frame) is outside it. A
+      // closed link must leave no copy of the canvas behind.
+      'cache-control': CACHE_CONTROL.privateNone,
       'referrer-policy': 'no-referrer',
     },
+  });
+}
+
+/** A canvas frame route's refusal (401, 404): plain text, never cached. */
+export function canvasFrameRefusal(status: 401 | 404, text: string): Response {
+  return new NextResponse(text, {
+    status,
+    headers: { 'cache-control': CACHE_CONTROL.none },
   });
 }

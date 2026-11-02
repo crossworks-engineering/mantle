@@ -705,6 +705,13 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     limits: [ip('share-evaluate', 60)],
   },
   { row: 'POST /s/:token/frame-ticket', cred: 'none', limits: [ip('share-frame-ticket', 30)] },
+  // The open link of a Present canvas: its ticket and its frame document.
+  {
+    row: 'POST /s/:token/canvas/frame-ticket',
+    cred: 'none',
+    limits: [ip('share-canvas-frame-ticket', 30)],
+  },
+  ...getHead('/s/:token/canvas/frame', { cred: 'none', limits: [ip('share-canvas-frame', 60)] }),
   ...getHead('/api/presents/:id/frame', { cred: 'none', limits: [ip('canvas-frame', 120)] }),
   ...getHead('/s/:token/rows', { cred: 'none', limits: [ip('share-rows', 120)] }),
   {

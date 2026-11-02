@@ -206,6 +206,12 @@ const OUTSIDE_API_SINCE: Record<string, string> = {
   // Present in Pages: a shared page's canvas snapshot, the same answer as
   // its drawing sibling (/s/:token/draw/:drawId) for a token no link has.
   'GET /s/:token/present/:presentId none': '404 text/plain cache-control=no-store',
+  // The open link of a Present canvas: the frame refuses a token no link has
+  // with no-store (canvasFrameRefusal), and the frame document itself is
+  // private, no-store (renderCanvasFrame). The frame ticket is a POST, as the
+  // app's share frame ticket, which sets none.
+  'GET /s/:token/canvas/frame none': '404 text/plain cache-control=no-store',
+  'POST /s/:token/canvas/frame-ticket none': '404 text/plain cache-control=-',
 };
 
 /** Whether a cell (`METHOD pattern cred`) is an /api one. */

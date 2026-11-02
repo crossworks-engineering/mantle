@@ -52,6 +52,8 @@ vi.mock('@/lib/presents', () => ({
   ),
 }));
 vi.mock('@/lib/canvas-frame', () => ({
+  canvasFrameRefusal: (status: number, text: string) =>
+    new Response(text, { status, headers: { 'cache-control': 'no-store' } }),
   renderCanvasFrame: vi.fn(
     async (_req: Request, owner: string, _canvas: unknown, nonce: string) => {
       h.rendered.push({ owner, nonce });
@@ -133,7 +135,13 @@ describe('GET /s/:token/canvas/frame', () => {
   it('stops at once when the link is closed or the canvas deleted, ticket or not', async () => {
     const { body } = await mint('live');
     delete h.byToken.live;
-    expect((await open('live', body!.ticket!)).status).toBe(404);
+    const closed = await frameRoute.GET(
+      new Request(`http://brain.test/s/live/canvas/frame?t=${encodeURIComponent(body!.ticket!)}`),
+      params('live'),
+    );
+    expect(closed.status).toBe(404);
+    // A refusal is never cached.
+    expect(closed.headers.get('cache-control')).toBe('no-store');
     h.byToken.live = LINK;
     h.canvasGone = true;
     expect((await open('live', body!.ticket!)).status).toBe(404);
