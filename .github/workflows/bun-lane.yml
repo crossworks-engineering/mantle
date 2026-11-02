@@ -100,8 +100,14 @@ jobs:
         run: |
           failed=
           for config in actor-off actor-on edit-on matrix runtime-role; do
-            timeout 45m bun --bun node_modules/vitest/vitest.mjs run --config "vitest.$config.config.ts" \
-              || failed="$failed $config"
+            # SIGTERM at 45 minutes, SIGKILL a minute later: a hung worker must
+            # not run on into the next config.
+            timeout -k 1m 45m bun --bun node_modules/vitest/vitest.mjs run \
+              --config "vitest.$config.config.ts" || {
+              code=$?
+              [ "$code" = 124 ] && config="$config(timeout)"
+              failed="$failed $config"
+            }
           done
           echo "Other configs on Bun, failed:${failed:- none}" >> "$GITHUB_STEP_SUMMARY"
           test -z "$failed"
