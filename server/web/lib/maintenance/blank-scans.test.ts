@@ -103,5 +103,8 @@ describe('likelyBlank', () => {
     expect(likelyBlank(c('ocr_text', 400), 2, 200)).toBe(true);
     expect(likelyBlank(c('ocr_text', 401), 2, 200)).toBe(false);
     expect(likelyBlank(c('ocr_text', 3000), 4, 200)).toBe(false);
+    // Page OCR read only the first 10 pages of a long scan: measured on those.
+    expect(likelyBlank(c('ocr_text', 2000), 100, 200)).toBe(true);
+    expect(likelyBlank(c('ocr_text', 15000), 100, 200)).toBe(false);
   });
 });
