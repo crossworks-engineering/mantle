@@ -22,6 +22,15 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   a canvas's link needs a Moderator of its home). No row changes. Rollback:
   `packages/db/rollback/0352_canvas_link_moderator.revert.sql`.
 
+## Unreleased: a tool to read again the PDF scans that drew blank
+
+- **Added:** maintenance task `blank-scans` (`pnpm -C server/web blank:scans`).
+  It finds the PDF scans that page OCR read as blank before v0.400.56 (images
+  in JPX, CCITT or JBIG2): SQL, then a search of each file's bytes, with no
+  model call. The dry run prints counts and an estimated cost.
+  `--apply --before=<the day the box got v0.400.56>` reads the hits again, a
+  batch at a time, and never sends a file twice.
+
 ## Unreleased: switching calls on works with no restart
 
 - **Fixed:** switching Calls on in Settings > Services started LiveKit, but

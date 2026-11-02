@@ -410,6 +410,14 @@ summary, an embedding and facts), so it needs the owner's word.
 `pnpm maintain ocr-rescan` does not list these documents: its candidates are
 another bug's.
 
+`pnpm -C server/web blank:scans` (maintenance task `blank-scans`) does both
+steps above and prints counts per codec, pages, the workers and an estimated
+USD, with no model call. `--apply --before=<YYYY-MM-DD>`, the day the box got
+v0.400.56 or later, clears and re-queues the hits read before that day (start
+with `--limit=3`). Each file it sends is stamped `data.blank_scan_reread` in
+the same transaction, so a second run never sends it again. A file read after
+`--before` was read with the decoders and is left alone.
+
 ## Running it in development
 
 `pnpm dev` starts the parser natively next to everything else, bound to

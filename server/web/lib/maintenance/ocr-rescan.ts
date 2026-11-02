@@ -218,9 +218,13 @@ export async function ocrWorkers(ownerId: string) {
  * byte-derived keys (`data.text` with the markers, the summary, the
  * completion marker, the terminal-skip stamp), the embedding and the chunks.
  * One transaction per node. Facts and relation edges are left for the
- * re-extract, which replaces them the normal way.
+ * re-extract, which replaces them the normal way. `stamp` keys are written in
+ * the same transaction (blank-scans marks a file it sent).
  */
-export async function clearForRescan(id: string): Promise<void> {
+export async function clearForRescan(
+  id: string,
+  stamp: Record<string, string> = {},
+): Promise<void> {
   const keys = [...BYTE_DERIVED_DATA_KEYS, 'extract_skipped'];
   // The node's head first (workspaces plan U1).
   await withDeadlockRetry(() =>
@@ -229,10 +233,10 @@ export async function clearForRescan(id: string): Promise<void> {
       const [file] = await tx
         .update(nodes)
         .set({
-          data: sql`coalesce(${nodes.data}, '{}'::jsonb) - array[${sql.join(
+          data: sql`(coalesce(${nodes.data}, '{}'::jsonb) - array[${sql.join(
             keys.map((k) => sql`${k}`),
             sql`, `,
-          )}]::text[]`,
+          )}]::text[]) || ${JSON.stringify(stamp)}::jsonb`,
           updatedAt: new Date(),
         })
         .where(and(eq(nodes.id, id), eq(nodes.type, 'file')))
