@@ -827,6 +827,11 @@ export async function ensureTestViewerRoles(url: string, masterKey: string): Pro
     // narrow route's pool logs in as mantle_system_narrow, their passwords
     // from this key.
     await ensureRuntimeRoles(sql, masterKey, { login: true });
+    // The anchor once, as the superuser: a file on the runtime role meets the
+    // role guard, which refuses an owner row where another file's member row
+    // landed first.
+    const [t] = await sql<{ t: string | null }[]>`select to_regclass('auth.users')::text as t`;
+    if (t?.t) await ensureTestAnchor(sql);
   } finally {
     await sql.end();
   }
