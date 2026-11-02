@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: Overwrite the tag even if it already exists
+        description: Overwrite the tag even if it already exists (a box that has the tag never pulls it again; bump TAG instead)
         type: boolean
         default: false
 

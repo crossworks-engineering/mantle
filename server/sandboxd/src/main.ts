@@ -269,10 +269,12 @@ async function setWakeScript(id: string, command: string): Promise<{ wake: strin
 }
 
 async function ensureImage(image: string): Promise<void> {
-  // A local image is used as it is: tags are pinned, and a create must not
-  // need the registry (or download a re-pushed tag past the disk floor).
-  if (await docker.imageExists(image)) return;
-  if (PULL_MIN_FREE_BYTES > 0) {
+  // A local image with a version tag is used as it is: tags are pinned, and a
+  // create must not need the registry. A floating one (no tag, or :latest)
+  // is pulled each time, as before, so it gets its fixes.
+  const floating = !/:[^/]+$/.test(image) || image.endsWith(':latest');
+  if (!floating && (await docker.imageExists(image))) return;
+  if (PULL_MIN_FREE_BYTES > 0 && !(await docker.imageExists(image))) {
     const fs = await statfs(SANDBOXES_DIR).catch(() => null);
     const free = fs ? fs.bavail * fs.bsize : null;
     if (free !== null && free < PULL_MIN_FREE_BYTES) {

@@ -71,8 +71,9 @@ Optional: `SANDBOX_DEFAULT_IMAGE` (pin a different base image),
 `SANDBOX_DISK_BUDGET_BYTES` (default 10 GB), `SANDBOX_EGRESS_ALLOW`
 (extra balanced-tier hosts, comma-separated), `SANDBOX_PULL_MIN_FREE_BYTES`
 (default 10 GB: sandboxd refuses to download an image that is not local
-while the disk under the sandboxes dir has less free; 0 turns it off). An
-image that is local is used as it is, with no registry call.
+while the disk under the sandboxes dir has less free; 0 turns it off). A local
+image with a version tag is used as it is, with no registry call; one with no
+tag or `:latest` is pulled on each create, as before.
 
 ## Architecture
 
@@ -233,7 +234,8 @@ nothing. An ESM project (Node, Bun, esbuild, tsc, vitest) installs the kit
 packages it imports into its own `node_modules` with `npm install --offline
 --before=<kit date> <packages>`, from the image's npm cache. The kit date is in
 `/opt/mantle-kit/node/npm-before` and the manifest; with it npm picks exactly
-the kit's versions (the build proves it for every kit library). The kit's
+the kit's versions (the build proves it for the whole kit and for each
+library alone). The kit's
 tools (tsc, esbuild, vitest, biome, pnpm, claude) are in `/usr/local/bin`, so
 `npx` finds them offline too; `npm i -g --force <tool>` replaces one. Claude
 Code does not update itself (`DISABLE_AUTOUPDATER`): the image is the pin.
@@ -268,9 +270,11 @@ images of exactly `<ns>/mantle-sandbox`, keeping the pin now, the pin before
 the roll, the last two pins it recorded (`/signal/sandbox-pins`), the two
 newest of the repository and every image a container (every sandbox, running
 or stopped) was made from. A pull runs at most `MANTLE_SANDBOX_PULL_TIMEOUT_S`
-(1200) seconds (switching sandboxes on uses the same floor and limit), and a
+(1200; 0 means the default) seconds, stopped with TERM and then KILL
+(switching sandboxes on uses the same floor and limit), and a
 pin whose pull failed is not retried at the updater's
-start for six hours (a roll always retries). `MANTLE_IMAGE_PRUNE=0` turns the
+start for six hours (a roll always retries). The pull runs in the updater's
+own loop, so a roll or switch asked for meanwhile waits for it. `MANTLE_IMAGE_PRUNE=0` turns the
 removal off. A box with sandboxes off keeps every image. Both disk checks (the
 updater's and sandboxd's) read the stack's or the sandboxes dir's disk, which
 is Docker's on a standard box; a box with Docker's data on another disk is not

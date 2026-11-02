@@ -1314,23 +1314,30 @@ prune_media() {
 # reads the stack's disk, which is Docker's on a standard box; a box with
 # Docker's data on another disk is not covered by it.
 
-# run_bounded <secs> <cmd...>: run <cmd>, stopped (TERM) after <secs>; its
-# exit status. Portable sh, no timeout(1): the harness sources this file on a
-# Mac, which has none. The watcher counts whole seconds, so it ends within a
-# second of the command. A stopped `docker pull` cancels the pull.
+# run_bounded <secs> <cmd...>: run <cmd>, stopped after <secs> (TERM, then
+# KILL ten seconds on); its exit status. 0 or no number: 1200. Portable sh,
+# no timeout(1): the harness sources this file on a Mac, which has none. The
+# watcher counts whole seconds (`command sleep`: a harness stub of sleep
+# must not end it), so it ends within a second of the command. A stopped
+# `docker pull` cancels the pull.
 run_bounded() {
   rb_s=$(num_or "$1" 1200); shift
+  [ "$rb_s" -gt 0 ] || rb_s=1200
   "$@" &
   rb_pid=$!
   (
     rb_n=$rb_s
-    while [ "$rb_n" -gt 0 ]; do sleep 1; rb_n=$((rb_n - 1)); done
-    kill "$rb_pid" 2> /dev/null
+    while [ "$rb_n" -gt 0 ]; do command sleep 1; rb_n=$((rb_n - 1)); done
+    kill "$rb_pid" 2> /dev/null || exit 0
+    rb_n=10
+    while [ "$rb_n" -gt 0 ] && kill -0 "$rb_pid" 2> /dev/null; do command sleep 1; rb_n=$((rb_n - 1)); done
+    kill -9 "$rb_pid" 2> /dev/null
   ) &
   rb_w=$!
   wait "$rb_pid"
   rb_rc=$?
   kill "$rb_w" 2> /dev/null
+  wait "$rb_w" 2> /dev/null
   return "$rb_rc"
 }
 

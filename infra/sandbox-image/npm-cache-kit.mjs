@@ -10,8 +10,9 @@
 // one's registry integrity must equal the lock's. The kit date is one second
 // after the newest locked version was published: with `--before` set to it,
 // npm resolves every range to what the lock holds, whatever the registry has
-// published since. Last, every kit library is installed that way, offline, in
-// an empty project, and every package it installs must be one the lock pins.
+// published since. Last, the whole kit and each library alone are installed
+// that way, offline, in empty projects: every package installed must be one
+// the lock pins, and nothing the lock pins may be missing.
 //
 // Usage: node npm-cache-kit.mjs <cache dir> <file to write the kit date to> <the kit's lock>
 // (run where the libraries were installed: its package.json lists them, its
@@ -71,19 +72,34 @@ if (wrong.length) {
 }
 const before = new Date(newest + 1000).toISOString();
 
-// The proof: the whole kit, offline, as of the kit date, in an empty project.
-const proj = mkdtempSync(join(tmpdir(), 'kit-offline-'));
-writeFileSync(join(proj, 'package.json'), '{"name":"kit-offline","private":true}\n');
-npm(['install', '--offline', `--before=${before}`, '--ignore-scripts', ...libs], proj);
-const got = JSON.parse(readFileSync(join(proj, 'package-lock.json'), 'utf8'));
-for (const [path, p] of Object.entries(got.packages)) {
-  if (!path || p.link) continue;
-  const spec = `${nameOf(path, p)}@${p.version}`;
-  if (kitPins.get(spec) !== p.integrity) wrong.push(`${spec}: offline install is not the lock's`);
+// The proof: the whole kit, and each library alone, offline, as of the kit
+// date, in an empty project. Every package installed must be one the kit's
+// lock pins, and the whole-kit install must hold every package the libraries
+// need on this platform (npm drops an optional one it cannot get, silently).
+const offlineInstall = (names) => {
+  const proj = mkdtempSync(join(tmpdir(), 'kit-offline-'));
+  writeFileSync(join(proj, 'package.json'), '{"name":"kit-offline","private":true}\n');
+  npm(['install', '--offline', `--before=${before}`, '--ignore-scripts', ...names], proj);
+  const got = new Set();
+  for (const [path, p] of Object.entries(JSON.parse(readFileSync(join(proj, 'package-lock.json'), 'utf8')).packages)) {
+    if (!path || p.link) continue;
+    const spec = `${nameOf(path, p)}@${p.version}`;
+    got.add(spec);
+    if (kitPins.get(spec) !== p.integrity) wrong.push(`${names.join(' ')}: ${spec} is not the lock's`);
+  }
+  return got;
+};
+for (const spec of pinned.keys()) {
+  if (!kitPins.has(spec)) wrong.push(`${spec}: in the trimmed lock but not the kit's`);
 }
+const whole = offlineInstall(libs);
+for (const spec of pinned.keys()) {
+  if (!whole.has(spec)) wrong.push(`${spec}: pinned but not installed offline`);
+}
+for (const lib of libs) offlineInstall([lib]);
 if (wrong.length) {
   console.error(`npm cache: an offline install drifts from the lock:\n  ${wrong.join('\n  ')}`);
   process.exit(1);
 }
 writeFileSync(dateFile, `${before}\n`);
-console.log(`npm cache: ${pinned.size} kit packages, each matching the lock; offline installs as of ${before} give the lock's`);
+console.log(`npm cache: ${pinned.size} kit packages, each matching the lock; offline installs (the kit, and each of its ${libs.length} libraries alone) as of ${before} give the lock's`);

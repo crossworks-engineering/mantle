@@ -41,7 +41,9 @@ new.
    workstation (never Docker on a Mac):
    - Python: `uv pip compile --universal --generate-hashes --python-version 3.12 --no-header requirements.in -o requirements.lock`
      (in `python:3.12-slim` with `pip install uv`).
-   - Node: `npm install --package-lock-only --ignore-scripts` (in the Dockerfile's Node image).
+   - Node: delete `package-lock.json` first, then `npm install --package-lock-only --ignore-scripts`
+     (in the Dockerfile's Node image). A lock refreshed in part keeps old transitive versions, and
+     the build's offline proof (`npm-cache-kit.mjs`) then refuses it.
    - Go: `go mod tidy` (in `golang:<GO_VERSION>`).
    - Rust: `cargo generate-lockfile` (in `rust:<RUST_VERSION>`).
 3. Bump `TAG`, and the default in every place that pins it (the

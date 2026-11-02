@@ -880,6 +880,7 @@ docker() {
     rm) return 0 ;;
     pull)
       [ -z "${FAKE_PULL_FAIL:-}" ] || return 1
+      [ -z "${FAKE_PULL_SLEEP:-}" ] || command sleep "$FAKE_PULL_SLEEP"
       # FAKE_PULL_ID: the pulled image lands as the newest local one.
       if [ -n "${FAKE_PULL_ID:-}" ]; then
         { echo "$FAKE_PULL_ID $2"; cat "$FAKE_STATE/images" 2>/dev/null; } > "$FAKE_STATE/images.new"
@@ -1298,6 +1299,13 @@ FAKE_PULL_FAIL=1 SYNC_PASS=startup roll_lib "$T" "$sbx_sync"
 check "startup pass: a pin whose pull failed recently is not tried again" sh -c "! grep -q 'docker pull' '$T/calls' && grep -q 'last pull failed under six hours ago' '$T/sig/update.log'"
 FAKE_PULL_ID=sha256:X4 roll_lib "$T" "$sbx_sync"
 check "a roll tries again, and a good pull clears the record" sh -c "grep -qx 'docker pull test/mantle-sandbox:24.04-v4' '$T/calls' && test ! -e '$T/sig/sandbox-pull-failed'"
+
+sbx_case slowpull
+printf 'MANTLE_SANDBOX_PULL_TIMEOUT_S=1\n' >> "$T/stack/.env"
+s0=$(date +%s)
+FAKE_PULL_SLEEP=6 FAKE_PULL_ID=sha256:X4 roll_lib "$T" "$sbx_sync"
+check "a pull past its time limit is stopped early and recorded as failed" sh -c "
+  [ \$(( \$(date +%s) - $s0 )) -lt 6 ] && grep -q '^test/mantle-sandbox:24.04-v4 [0-9]' '$T/sig/sandbox-pull-failed' && ! grep -q X4 '$T/state/images'"
 
 sbx_case inuse
 echo test/mantle-sandbox:24.04-v2 > "$T/state/in-use"
