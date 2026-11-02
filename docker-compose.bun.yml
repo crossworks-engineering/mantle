@@ -1,0 +1,63 @@
+# Every Node service of the server image on Bun (plan section 12). Rollback:
+# leave this file out, and up again; the image still holds Node.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.bun.yml up -d
+#
+# Bun starts each one itself, with no pnpm or tsx parent, so SIGTERM reaches
+# the service. --no-env-file: compose gives the environment, and Bun must not
+# read a .env beside the code. migrate stays on Node: a one-shot of four
+# package scripts, and the step a rollback leans on.
+# eslint-rules/bun-compose.test.ts keeps this list in step with
+# docker-compose.yml: a new service there fails the test until it is here.
+services:
+  web:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'server/main.ts']
+
+  api:
+    working_dir: /app/server/api
+    command: ['bun', '--no-env-file', 'src/main.ts']
+
+  sandboxd:
+    working_dir: /app/server/sandboxd
+    command: ['bun', '--no-env-file', 'src/main.ts']
+
+  worker_email:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/email-sync.ts']
+
+  worker_telegram:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/telegram-poll.ts']
+
+  worker_microsoft:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/microsoft-sync.ts']
+
+  worker_files:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/files-watch.ts']
+
+  worker_docs:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/docs-sync.ts']
+
+  worker_events:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/events-reminders.ts']
+
+  worker_calendar:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/calendar-sync.ts']
+
+  worker_maintenance:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/maintenance.ts']
+
+  worker_runs:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/runs.ts']
+
+  worker_push:
+    working_dir: /app/server/web
+    command: ['bun', '--no-env-file', 'workers/push-notify.ts']
