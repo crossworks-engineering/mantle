@@ -4,7 +4,14 @@
  * keeps a file read after the fix from being sent at all.
  */
 import { describe, expect, it } from 'vitest';
-import { blankCodecsIn, parseBefore, readBefore, type BlankCandidate } from './blank-scans';
+import {
+  applyGate,
+  blankCodecsIn,
+  likelyBlank,
+  parseBefore,
+  readBefore,
+  type BlankCandidate,
+} from './blank-scans';
 import { helveticaPdf, scanPdf } from '../../../../packages/files/src/pdf-fixtures.test-helper';
 
 describe('blankCodecsIn', () => {
@@ -44,6 +51,7 @@ describe('readBefore', () => {
     id,
     kind: 'no_text',
     readAt,
+    textChars: 0,
   });
 
   it('keeps only files read before the day, and leaves out a file with no read time', () => {
@@ -55,5 +63,45 @@ describe('readBefore', () => {
       c('bad', 'not a time'),
     ];
     expect(readBefore(list, new Date('2026-11-03T00:00:00Z')).map((x) => x.id)).toEqual(['old']);
+  });
+});
+
+describe('applyGate', () => {
+  const now = new Date('2026-11-20T10:00:00Z');
+
+  it('a dry run needs no date; --apply needs one, in the past', () => {
+    expect(applyGate(false, undefined, now)).toEqual({ ok: true, before: null });
+    expect(applyGate(true, '2026-11-03', now)).toEqual({
+      ok: true,
+      before: new Date('2026-11-03T00:00:00Z'),
+    });
+    expect(applyGate(true, undefined, now)).toMatchObject({ ok: false });
+    expect(applyGate(false, 'yesterday', now)).toMatchObject({ ok: false });
+    expect(applyGate(true, 'yesterday', now)).toMatchObject({ ok: false });
+  });
+
+  it('refuses a date after today: a typo of the month would put back files read right', () => {
+    expect(applyGate(true, '2026-12-03', now)).toMatchObject({ ok: false });
+    expect(applyGate(false, '2026-12-03', now)).toMatchObject({ ok: false });
+  });
+});
+
+describe('likelyBlank', () => {
+  const c = (kind: BlankCandidate['kind'], textChars: number): BlankCandidate => ({
+    id: 'x',
+    kind,
+    readAt: '2026-09-01T00:00:00Z',
+    textChars,
+  });
+
+  it('page OCR that read nothing is always read again', () => {
+    expect(likelyBlank(c('no_text', 0), 3, 200)).toBe(true);
+  });
+
+  it('page OCR text is read again only when it is a sentence a page or less', () => {
+    expect(likelyBlank(c('ocr_text', 60), 1, 200)).toBe(true);
+    expect(likelyBlank(c('ocr_text', 400), 2, 200)).toBe(true);
+    expect(likelyBlank(c('ocr_text', 401), 2, 200)).toBe(false);
+    expect(likelyBlank(c('ocr_text', 3000), 4, 200)).toBe(false);
   });
 });

@@ -17,7 +17,7 @@
  *
  * Output is counts, ids and model names only: safe on a client box.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import {
   contentChunks,
   db,
@@ -219,31 +219,35 @@ export async function ocrWorkers(ownerId: string) {
  * completion marker, the terminal-skip stamp), the embedding and the chunks.
  * One transaction per node. Facts and relation edges are left for the
  * re-extract, which replaces them the normal way. `stamp` keys are written in
- * the same transaction (blank-scans marks a file it sent).
+ * the same transaction (blank-scans marks a file it sent). `onlyIf` is checked
+ * by the same UPDATE: a node it no longer fits is left as it is, and the
+ * answer is false (nothing cleared, nothing announced).
  */
 export async function clearForRescan(
   id: string,
-  stamp: Record<string, string> = {},
-): Promise<void> {
+  opts: { stamp?: Record<string, string>; onlyIf?: SQL } = {},
+): Promise<boolean> {
   const keys = [...BYTE_DERIVED_DATA_KEYS, 'extract_skipped'];
   // The node's head first (workspaces plan U1).
-  await withDeadlockRetry(() =>
+  return withDeadlockRetry(() =>
     withHeads([id], 'update', async (tx) => {
-      await tx.delete(contentChunks).where(eq(contentChunks.nodeId, id));
       const [file] = await tx
         .update(nodes)
         .set({
           data: sql`(coalesce(${nodes.data}, '{}'::jsonb) - array[${sql.join(
             keys.map((k) => sql`${k}`),
             sql`, `,
-          )}]::text[]) || ${JSON.stringify(stamp)}::jsonb`,
+          )}]::text[]) || ${JSON.stringify(opts.stamp ?? {})}::jsonb`,
           updatedAt: new Date(),
         })
-        .where(and(eq(nodes.id, id), eq(nodes.type, 'file')))
+        .where(and(eq(nodes.id, id), eq(nodes.type, 'file'), opts.onlyIf))
         .returning({ id: nodes.id });
+      if (!file) return false;
+      await tx.delete(contentChunks).where(eq(contentChunks.nodeId, id));
       // As if its bytes were new: the vector goes too, announced when this
       // transaction commits (markContentChanged).
-      if (file) await markContentChanged(tx, { id, type: 'file' }, ['content']);
+      await markContentChanged(tx, { id, type: 'file' }, ['content']);
+      return true;
     }),
   );
 }
@@ -283,7 +287,12 @@ async function ranSince(ids: string[], since: Date): Promise<Set<string>> {
   return new Set(rows.map((r) => r.id));
 }
 
-export type BatchOutcome = { done: string[]; timedOut: string[] };
+export type BatchOutcome = {
+  done: string[];
+  timedOut: string[];
+  /** Nodes `prepare` left alone (it answered false): never queued. */
+  skipped: string[];
+};
 
 /**
  * Clear and re-queue one batch through the normal path (`node_ingested` →
@@ -299,22 +308,28 @@ export async function runBatch(
     sleep?: (ms: number) => Promise<void>;
     /** What to do to each node: reset it and announce it. Default:
      *  `clearForRescan` (markContentChanged announces). doc-reindex passes
-     *  `resignalNode` (its nodes have nothing stale to clear). */
-    prepare?: (id: string) => Promise<void>;
+     *  `resignalNode` (its nodes have nothing stale to clear). An answer of
+     *  false means the node was left alone: it is not waited for. */
+    prepare?: (id: string) => Promise<void | boolean>;
   },
 ): Promise<BatchOutcome> {
   const sleep = opts.sleep ?? stdSleep;
-  const prepare = opts.prepare ?? clearForRescan;
+  const prepare = opts.prepare ?? ((id: string) => clearForRescan(id));
   const started = new Date();
-  for (const id of ids) await prepare(id);
+  const sent: string[] = [];
+  const skipped: string[] = [];
+  for (const id of ids) {
+    if ((await prepare(id)) === false) skipped.push(id);
+    else sent.push(id);
+  }
   const deadline = Date.now() + opts.timeoutMs;
-  let open = [...ids];
+  let open = [...sent];
   while (open.length > 0 && Date.now() < deadline) {
     await sleep(opts.pollMs ?? 10_000);
     const [pending, ran] = await Promise.all([pendingJobs(open), ranSince(open, started)]);
     open = open.filter((id) => pending.has(id) || !ran.has(id));
   }
-  return { done: ids.filter((id) => !open.includes(id)), timedOut: open };
+  return { done: sent.filter((id) => !open.includes(id)), timedOut: open, skipped };
 }
 
 /** Of `ids`, the nodes that now carry an embedding (indexed) and those still

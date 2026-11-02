@@ -414,9 +414,13 @@ another bug's.
 steps above and prints counts per codec, pages, the workers and an estimated
 USD, with no model call. `--apply --before=<YYYY-MM-DD>`, the day the box got
 v0.400.56 or later, clears and re-queues the hits read before that day (start
-with `--limit=3`). Each file it sends is stamped `data.blank_scan_reread` in
-the same transaction, so a second run never sends it again. A file read after
-`--before` was read with the decoders and is left alone.
+with `--limit=3`); a date after today is refused. An OCR'd hit with more than
+200 characters a page (`--ocr-max-chars`) read its pages and is left alone:
+its codec is a logo or a stamp. Each file it sends is stamped
+`data.blank_scan_reread` in the same transaction, and that UPDATE checks the
+file is still a candidate, so a second run, at once or later, never sends it
+again. A file read after `--before` was read with the decoders and is left
+alone.
 
 ## Running it in development
 
