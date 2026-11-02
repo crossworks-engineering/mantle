@@ -4,7 +4,8 @@
  * folders only under the files root) and link-serve.ts who may open a link
  * and what its served list may hold; these are thin,
  * type-agnostic wrappers so the assistant can mint/revoke viewable links for
- * ANY shareable item (notes, tasks, events, files, apps, tables, folders),
+ * ANY shareable item (notes, tasks, events, files, apps, tables, drawings,
+ * canvases, folders),
  * not just pages. `page_share`/`page_unshare` remain the page-specific pair.
  * A link never changes a level or a grant.
  */
@@ -153,7 +154,7 @@ const node_share: BuiltinToolDef = {
   },
   name: 'Share an item',
   description:
-    'Create (or fetch) the public read-only link to a shareable item (note, task, event, file, app, table, drawing, or folder under files) and return its URL. One link per item; anyone with it can view, no login. It shows the item plus its served list (`serve`): what the item names or embeds, or a folder holds, shows only when on that list. A link is no grant: to show an item to members or clients, grant it to their workspace. Only someone who may edit the item may share it (an app: a home Moderator). For a PAGE prefer `page_share`; to turn a link off use `node_unshare`.',
+    'Create (or fetch) the public read-only link to a shareable item (note, task, event, file, app, table, drawing, Present canvas, or folder under files) and return its URL. One link per item; anyone with it can view, no login. It shows the item plus its served list (`serve`): what the item names or embeds, or a folder holds, shows only when on that list. A link is no grant: to show an item to members or clients, grant it to their workspace. Only someone who may edit the item may share it (an app: a home Moderator). For a PAGE prefer `page_share`; to turn a link off use `node_unshare`.',
   // Publishes brain content outward-facing, so gated, same as page_share.
   requiresConfirm: true,
   inputSchema: {

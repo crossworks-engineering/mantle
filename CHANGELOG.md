@@ -13,6 +13,21 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   the calls host or key recreates the app containers once, as a new token
   already did.
 
+## Unreleased: a Present canvas has an open link
+
+- **Added:** a Present canvas (a deck, a dashboard, a schematic) can have an
+  open link, made in its **Access** panel as for a page. The link shows the
+  canvas live, full screen, always the latest save, with a small "Shared
+  canvas" label that carries Replay and Full screen. No login is needed.
+- **Security:** the canvas runs in the same locked frame as in Present (no
+  network, no cookies, no tools). The link page lets the frame load the brain
+  only, so a canvas cannot send its frame to another site. The link is checked
+  again on every frame load, so stopping the link or deleting the canvas ends
+  it at once. Both new routes take a rate limit, and the link page never
+  starts a render.
+- **Known:** a link reads and writes no saved canvas data (`mantle.data`). A
+  canvas has no contact share yet.
+
 ## Unreleased: a SQL process has a memory limit
 
 - **Fixed:** one row of many large columns could take a SQL process to several

@@ -50,7 +50,12 @@ vi.mock('@/lib/canvas-frame', () => ({
   }),
 }));
 
-let canvasTicket: (o: { presentId?: string; actorId?: string; loginId?: string }) => string;
+let canvasTicket: (o: {
+  presentId?: string;
+  actorId?: string;
+  loginId?: string;
+  shareId?: string;
+}) => string;
 let appTicket: (o: { appId?: string; actorId?: string }) => string;
 
 beforeAll(async () => {
@@ -110,6 +115,11 @@ describe('GET /api/presents/:id/frame through the pipeline', () => {
       body: 'admin session required',
     });
     h.adminActive = true;
+    // An open link's canvas ticket opens the link's frame only.
+    expect(await frame(path, canvasTicket({ shareId: 'share-1' }))).toEqual({
+      status: 401,
+      body: 'frame ticket required',
+    });
     // An app's ticket for the same id is no canvas ticket: the caller is null.
     expect(await frame(path, appTicket({ actorId: ANCHOR }))).toEqual({
       status: 401,

@@ -40,7 +40,8 @@ export type ShareDb = typeof db | Tx;
  *  `publicLink` (@mantle/client-types/kinds). Sensitive types are excluded.
  *  A formula's link is a live calculator; a drawing's serves its COMMITTED
  *  SVG snapshot (validated by acceptSceneSvg at commit), never the scene or
- *  the draft. `branch` ('files-folder') = a FILES FOLDER only: a folder link
+ *  the draft. A Present canvas's runs the canvas live in its sandboxed frame
+ *  (/s/<token>/canvas), never with its data store. `branch` ('files-folder') = a FILES FOLDER only: a folder link
  *  serves the files and subfolders under it that are on its served list (see
  *  {@link isShareableFolderPath} and docs/sharing.md §folders). Branches
  *  outside the files tree (and the files root itself) are rejected at

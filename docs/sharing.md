@@ -1,7 +1,8 @@
 # Public sharing: read-only links to any content
 
 > **Status: BUILT.** Read-only public sharing ships for every workspace type
-> (page, note, task, event, file, app, **table**, **folder**): the `shares`
+> (page, note, task, event, file, app, **table**, **folder**, drawing,
+> Present **canvas**): the `shares`
 > table + tokens, the public `/s/[token]` route + scoped asset route, the
 > server page renderer, per-type presenters, and the owner `<ShareControl>`
 > wired into every detail surface, plus the owner's **Shared links** registry
@@ -22,7 +23,8 @@
 > the text below says "level", read the served list; client links and
 > client items are gone (W8a).
 >
-> Share any **page, note, task, event, file, app, table, or folder** with
+> Share any **page, note, task, event, file, app, table, drawing, canvas, or
+> folder** with
 > anyone who has the URL.
 > The link opens a clean, auth-free page tailored to the content, files in a
 > proper media viewer, pages in their full formatting, centered and quiet, with
@@ -37,8 +39,10 @@
 
 ## 1. Scope + decisions
 
-**Shareable** node types: `page`, `note`, `task`, `event`, `file`, `app`,
-`table`, `branch` (= a **files folder**).
+**Shareable** node types: every kind whose registry entry has `publicLink`
+(`SHAREABLE_TYPES`, packages/client-types/src/kinds.ts): `page`, `note`,
+`task`, `event`, `file`, `app`, `table`, `formula`, `draw`, `present`, and
+`branch` (= a **files folder**).
 **Never shareable:** `secret`, `email` / `email_thread`, `contact`, `journal`
 (sensitive), the share API rejects them.
 
@@ -50,6 +54,21 @@ Two of these carry extra semantics:
   passthrough, no draft switch, no distinct endpoint); legacy JSONB tables ship
   their whole doc in the share view. Formula columns aren't stored per-row, so
   they don't appear on the public surface.
+- **Canvas** (`present`): the link runs the canvas LIVE, full screen,
+  always the latest save (docs/proposals/canvas-files.md 5.3 and 7.2). The
+  page is shell-less (as an app's) with a floating "Shared canvas" pill
+  (Replay, Full screen), and it carries `Content-Security-Policy:
+frame-src 'self'`: a sandboxed frame may always navigate itself, and only
+  the host page's `frame-src` stops it reaching another site. The island
+  mints a canvas frame ticket at `POST /s/[token]/canvas/frame-ticket`
+  (bound to the link and the canvas, no login, 30 s) and the frame loads
+  `GET /s/[token]/canvas/frame?t=`, which resolves the link again on every
+  load and renders the same document, CSP and sandbox as the owner's frame.
+  Both routes take a per-address rate limit (`shareCanvasFrameTicket`,
+  `shareCanvasFrame`). The canvas data store (`mantle.data`) is not served:
+  the presenter answers each call itself, refused. Never a render on this
+  path; the owner frame refuses a link's ticket and this frame refuses a
+  login's. Open links only: a canvas has no contact share.
 - **Folder** (`branch`): shares **the files and subfolders under the
   folder that are on the link's served list, evaluated per request**. A
   file added later is neither listed nor served until someone ticks it; a

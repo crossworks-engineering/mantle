@@ -56,9 +56,23 @@ describe('kind lists derived from the registry', () => {
 
   it('SHAREABLE_TYPES and canShareNode', () => {
     expect(set(SHAREABLE_TYPES)).toEqual(
-      set(['page', 'note', 'task', 'event', 'file', 'app', 'table', 'formula', 'draw', 'branch']),
+      // `present` since the open link of a canvas (canvas-files.md 7.2).
+      set([
+        'page',
+        'note',
+        'task',
+        'event',
+        'file',
+        'app',
+        'table',
+        'formula',
+        'draw',
+        'present',
+        'branch',
+      ]),
     );
     expect(canShareNode({ type: 'page', path: 'pages' })).toBe(true);
+    expect(canShareNode({ type: 'present', path: 'present' })).toBe(true);
     expect(canShareNode({ type: 'branch', path: 'files.work' })).toBe(true);
     expect(canShareNode({ type: 'branch', path: 'files' })).toBe(false);
     expect(canShareNode({ type: 'branch', path: 'pages.work' })).toBe(false);

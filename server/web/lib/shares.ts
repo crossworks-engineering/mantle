@@ -98,6 +98,7 @@ export type ShareView =
     }
   | { kind: 'file'; fileId: string; filename: string; mimeType: string; size: number }
   | { kind: 'app'; appId: string; title: string }
+  | { kind: 'present'; presentId: string; title: string }
   | {
       kind: 'table';
       tableId: string;
@@ -479,6 +480,13 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         // owner previews apply via snapshotPlacesImage().
         hasImage: svg !== null && /<image[\s>]/i.test(svg),
       };
+    }
+    case 'present': {
+      // The canvas runs live from /s/<token>/canvas/frame (latest save); the
+      // view names it only, its source never crosses here.
+      const n = await loadNode(ownerId, nodeId);
+      if (!n) return null;
+      return { kind: 'present', presentId: nodeId, title: n.title };
     }
     case 'branch': {
       const folder = await folderById({ ownerId, folderId: nodeId });

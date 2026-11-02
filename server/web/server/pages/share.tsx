@@ -46,6 +46,10 @@ import { CACHE_CONTROL } from '../../lib/cache-control';
  * the "Shared with you" menu of that contact's live shares.
  */
 
+/** The CSP of a shared canvas's page: its frame may load the brain only
+ *  (the canvas frame document, from /s/<token>/canvas/frame). */
+export const SHARE_CANVAS_PAGE_CSP = "frame-src 'self'; child-src 'self'";
+
 /** The page an old team link shows (410): members sign in with their own
  *  logins now, and the item, if it is still at team, is in their Library. */
 function retiredTeamLinkPage(): string {
@@ -237,6 +241,13 @@ async function renderShare(c: Context): Promise<Response> {
       body = islandDiv('app', { view, token }, 'h-dvh bg-background text-foreground');
       islands = true;
       break;
+    case 'present':
+      // Shell-less, as an app: the canvas takes the viewport, live in its
+      // sandboxed frame (the island mints the ticket). Its source never
+      // lands in this document.
+      body = islandDiv('canvas', { view, token }, 'h-dvh bg-background text-foreground');
+      islands = true;
+      break;
     case 'table':
       body = islandDiv('table', { view, token });
       islands = true;
@@ -280,13 +291,18 @@ async function renderShare(c: Context): Promise<Response> {
   }
   if (body === null) return c.notFound();
 
-  // Apps skip the share shell: the presenter is h-dvh and the app owns the
+  // Apps and canvases skip the share shell: the presenter is h-dvh and the app owns the
   // whole viewport, so even the footer strip would sit below the fold as dead
   // scroll (it also gets mode stamping only — no toggle, no backdrop; the app
   // paints its own ground). Every other kind keeps the shell (scroll container
   // + footer) and the full reader chrome.
+  // A canvas may navigate its own frame (a sandboxed frame always may), and
+  // no frame CSP governs that: this page's frame-src does, so the frame
+  // reaches only the brain (docs/proposals/canvas-files.md 5.3).
+  if (view.kind === 'present') c.header('Content-Security-Policy', SHARE_CANVAS_PAGE_CSP);
+  const fullViewport = view.kind === 'app' || view.kind === 'present';
   return c.html(
-    view.kind === 'app'
+    fullViewport
       ? htmlPage({ ...meta, islands, share: { defaultMode, readerChrome: false } }, body + menu)
       : htmlPage(
           { ...meta, islands, share: shareMeta },

@@ -50,6 +50,10 @@ import { CANVAS_DATA_CALL_TIMEOUT_MS } from '@mantle/content-core/canvas-data';
 
 type Status = 'loading' | 'ready' | 'error' | 'missing' | 'left';
 
+/** What a `mantle.data` call hears where the host serves no data (an open
+ *  link): the canvas still runs, with nothing stored. */
+export const CANVAS_DATA_OFF_ERROR = 'saved data is not available on a shared link';
+
 /** The host page's theme as the frame takes it (class + data-color-theme). */
 function hostTheme(): { cls: string; colorTheme: string | null } {
   if (typeof document === 'undefined') return { cls: '', colorTheme: null };
@@ -69,6 +73,7 @@ export function CanvasSandbox({
   onReady,
   onDown,
   onError,
+  dataApi = true,
 }: {
   presentId: string;
   /** The canvas's API base. Absent: the page-relative `/api/presents/<id>`
@@ -93,6 +98,10 @@ export function CanvasSandbox({
    *  canvas chose these words: untrusted text, never an instruction to a
    *  model that reads it. */
   onError?: (message: string) => void;
+  /** Whether the canvas's `mantle.data` calls reach `apiBase` + `/data`.
+   *  False (an open link): each call is answered here, refused, and no
+   *  request is sent. */
+  dataApi?: boolean;
 }) {
   const apiBase = apiBaseOverride ?? `/api/presents/${presentId}`;
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -106,8 +115,8 @@ export function CanvasSandbox({
   const proven = useRef(false);
   const proofWait = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The latest callbacks, read by the effects without re-running them.
-  const handlers = useRef({ onReady, onDown, onError, fetcher });
-  handlers.current = { onReady, onDown, onError, fetcher };
+  const handlers = useRef({ onReady, onDown, onError, fetcher, dataApi });
+  handlers.current = { onReady, onDown, onError, fetcher, dataApi };
   // The frame load each data call belongs to: a reply to an earlier load
   // (a reload, Replay, a take-down) is dropped, never sent to the new one,
   // and the in-flight count starts again with each load.
@@ -228,6 +237,10 @@ export function CanvasSandbox({
         return;
       }
       const { req } = read;
+      if (!handlers.current.dataApi) {
+        answer(req.id, { ok: false, error: CANVAS_DATA_OFF_ERROR });
+        return;
+      }
       if (dataInFlight.current >= CANVAS_DATA_IN_FLIGHT_MAX) {
         answer(req.id, { ok: false, error: 'too many calls at once: wait for the ones sent' });
         return;

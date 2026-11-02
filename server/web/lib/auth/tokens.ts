@@ -497,16 +497,28 @@ export function verifyAppFrameTicket(
   return out;
 }
 
-/** Mint the frame ticket of a Present canvas (GET /api/presents/:id/frame):
- *  the app-frame ticket shape, bound to one present, marked as a canvas's. An
- *  Admin user's names the login (`actorId`); a member's names its login
- *  (`loginId`), and the frame re-checks it. */
+/** Mint the frame ticket of a Present canvas: the app-frame ticket shape,
+ *  bound to one present, marked as a canvas's. An Admin user's names the
+ *  login (`actorId`); a member's names its login (`loginId`), and GET
+ *  /api/presents/:id/frame re-checks it. An open link's names the share
+ *  (`shareId`) and no login: only GET /s/:token/canvas/frame accepts it, and
+ *  the owner frame refuses it. */
 export function buildCanvasFrameTicket(opts: {
   ownerId: string;
   presentId: string;
   actorId?: string;
   loginId?: string;
+  shareId?: string;
 }): string {
+  // A link's ticket names the link alone: never a login beside it.
+  if (opts.shareId) {
+    return buildAppFrameTicket({
+      ownerId: opts.ownerId,
+      appId: opts.presentId,
+      shareId: opts.shareId,
+      canvas: true,
+    });
+  }
   return buildAppFrameTicket({
     ownerId: opts.ownerId,
     appId: opts.presentId,

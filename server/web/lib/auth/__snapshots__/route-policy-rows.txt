@@ -337,6 +337,7 @@ GET /s/:token/a/:fileId class=link scope=- caller=- gone=false
 GET /s/:token/aggregate class=link scope=- caller=- gone=false
 GET /s/:token/bundle class=link scope=- caller=- gone=false
 GET /s/:token/bundle/css class=link scope=- caller=- gone=false
+GET /s/:token/canvas/frame class=link scope=- caller=- gone=false
 GET /s/:token/draw class=link scope=- caller=- gone=false
 GET /s/:token/draw/:drawId class=link scope=- caller=- gone=false
 GET /s/:token/frame class=link scope=- caller=- gone=false
@@ -614,6 +615,7 @@ HEAD /s/:token/a/:fileId class=link scope=- caller=- gone=false
 HEAD /s/:token/aggregate class=link scope=- caller=- gone=false
 HEAD /s/:token/bundle class=link scope=- caller=- gone=false
 HEAD /s/:token/bundle/css class=link scope=- caller=- gone=false
+HEAD /s/:token/canvas/frame class=link scope=- caller=- gone=false
 HEAD /s/:token/draw class=link scope=- caller=- gone=false
 HEAD /s/:token/draw/:drawId class=link scope=- caller=- gone=false
 HEAD /s/:token/frame class=link scope=- caller=- gone=false
@@ -891,6 +893,7 @@ POST /api/workspaces class=self scope=- caller=login gone=false
 POST /api/workspaces/:id/archive class=self scope=- caller=login gone=false
 POST /api/workspaces/:id/resources class=self scope=- caller=login gone=false
 POST /api/workspaces/:id/users class=self scope=- caller=login gone=false
+POST /s/:token/canvas/frame-ticket class=link scope=- caller=- gone=false
 POST /s/:token/code class=link scope=- caller=- gone=false
 POST /s/:token/db-broker class=link scope=- caller=- gone=false
 POST /s/:token/evaluate class=link scope=- caller=- gone=false

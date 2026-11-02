@@ -235,6 +235,11 @@ export const RATE_LIMITS = {
   presentChecks: perLogin('present-checks', 120),
   shareEvaluate: perIp('share-evaluate', 60),
   shareFrameTicket: perIp('share-frame-ticket', 30),
+  // A canvas on an open link (/s/:token/canvas): one ticket per frame load,
+  // and the frame document itself, per address. The canvas can read its own
+  // URL, ticket included, so a replay within the ticket's life is bounded.
+  shareCanvasFrameTicket: perIp('share-canvas-frame-ticket', 30),
+  shareCanvasFrame: perIp('share-canvas-frame', 60),
   shareRows: perIp('share-rows', 120),
   shareToolBroker: perIp('share-tool-broker', 60),
   shareView: perIp('share-view', 120),

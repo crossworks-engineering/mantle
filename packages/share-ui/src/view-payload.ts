@@ -116,4 +116,7 @@ export type ShareViewPayload =
   // Only WHETHER a committed snapshot exists. The bytes are fetched as an
   // image from /s/<token>/draw, so they never ride in this payload and never
   // become markup on the page.
-  | { kind: 'draw'; title: string; hasSvg: boolean };
+  | { kind: 'draw'; title: string; hasSvg: boolean }
+  // A Present canvas runs live in a sandboxed frame the presenter mints a
+  // ticket for (/s/<token>/canvas); its source never rides in this payload.
+  | { kind: 'present'; presentId: string; title: string };
