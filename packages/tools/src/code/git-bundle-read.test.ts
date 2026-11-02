@@ -261,6 +261,19 @@ describe('readBundleTree on hand-made packs', () => {
     await expect(readBundleTree(oneEntry(mode, name), { base: live })).rejects.toThrow(why);
   });
 
+  it('refuses a name or a path past its length before it reads it', async () => {
+    await expect(
+      readBundleTree(oneEntry('100644', 'a'.repeat(256)), { base: live }),
+    ).rejects.toThrow(/too long/);
+    const b = blob('x');
+    const deep = tree([{ mode: '100644', name: 'b'.repeat(200), id: oid(b) }]);
+    const top = tree([{ mode: '40000', name: 'a'.repeat(100), id: oid(deep) }]);
+    const c = commit(oid(top));
+    await expect(
+      readBundleTree(handBundle([b, deep, top, c], oid(c)), { base: live }),
+    ).rejects.toThrow(/at most 256 bytes/);
+  });
+
   it('refuses a name twice in one folder', async () => {
     const b = blob('x\n');
     const t = tree([
@@ -285,7 +298,7 @@ describe('readBundleTree on hand-made packs', () => {
   it('refuses an object past the size limit before it inflates', async () => {
     const b: Obj = { ...blob('x'), size: 1 << 30 };
     await expect(readBundleTree(handBundle([b], 'a'.repeat(40)), { base: live })).rejects.toThrow(
-      /object past 16 MB/,
+      /object past 1 MB/,
     );
   });
 
@@ -309,6 +322,13 @@ describe('readBundleTree on hand-made packs', () => {
     expect(() => readBundleHeader(Buffer.from('# v2 git bundle\nnot a ref\n\n'))).toThrow(
       /not a ref/,
     );
+    const id = 'a'.repeat(40);
+    expect(() =>
+      readBundleHeader(Buffer.from(`# v2 git bundle\n${id} refs/heads/${'x'.repeat(300)}\n\n`)),
+    ).toThrow(/ref name/);
+    expect(() =>
+      readBundleHeader(Buffer.from(`# v2 git bundle\n${id} refs/heads/a\tb\n\n`)),
+    ).toThrow(/ref name/);
   });
 });
 

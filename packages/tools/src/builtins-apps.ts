@@ -2259,7 +2259,7 @@ const app_import: BuiltinToolDef = {
 async function liveVersionCommit(
   ownerId: string,
   id: string,
-): Promise<{ commit: string; rev: string } | null> {
+): Promise<{ commit: string; rev: string; skipped: readonly string[] } | null> {
   const ids = new GitBundleWriter(null);
   let last: AppSource | null = null;
   for await (const v of appVersionSources(ownerId, id)) {
@@ -2267,7 +2267,9 @@ async function liveVersionCommit(
     await ids.add(versionCommit({ ...v, source: v.source }));
     last = v.source;
   }
-  return ids.head && last ? { commit: ids.head, rev: sourceRev(last) } : null;
+  return ids.head && last
+    ? { commit: ids.head, rev: sourceRev(last), skipped: ids.lastSkipped }
+    : null;
 }
 
 const app_source_from_bundle: BuiltinToolDef = {
@@ -2288,7 +2290,7 @@ const app_source_from_bundle: BuiltinToolDef = {
   preconditions: [...APP_ID_PRE, ...FILE_ID_PRE],
   name: "Set a mini app's draft from a git bundle",
   description:
-    "Write the newest commit of a git bundle in /files (`git bundle create app.bundle main`, uploaded with `file_upload`) into the app's DRAFT, then build it. The round trip of `app_export` format git: the bundle's history must hold the commit of the app's live version, or nothing changes (export again and merge first). The published app is untouched until `app_publish`; the draft before is kept (`code_undo` with the edit_id). " +
+    "Write the newest commit of a git bundle in /files (`git bundle create app.bundle main`, uploaded with `file_upload`) into the app's DRAFT, then build it. The round trip of `app_export` format git: the bundle's history must hold the commit of the app's live version, or nothing changes (export again and merge first). The published app is untouched until `app_publish`; `code_undo` with the edit_id takes the draft back while the entry stays. " +
     WHO_HINT,
   inputSchema: {
     type: 'object',
@@ -2373,17 +2375,27 @@ const app_source_from_bundle: BuiltinToolDef = {
           error: `the bundle's ${read.ref} does not hold the app's live version (commit ${live.commit.slice(0, 12)}), so it would drop work: export the app again (app_export format git), merge your commits on its main, and import that bundle. Nothing changed`,
         };
       }
+      // A live file a git export leaves out (a name git may not hold) was
+      // never in the bundle to change: it stays, and the answer says so.
+      const files: Record<string, string> = { ...read.files };
+      const kept: string[] = [];
+      for (const key of live.skipped) {
+        if (Object.hasOwn(app.source.files, key) && !Object.hasOwn(files, key)) {
+          files[key] = app.source.files[key]!;
+          kept.push(key);
+        }
+      }
       const res = await changeDraftSource(
         ctx.ownerId,
         id,
         (before) => {
           const entry = entryIn || before.entry;
-          if (!Object.hasOwn(read.files, entry)) {
+          if (!Object.hasOwn(files, entry)) {
             throw new AppSourceLimitError(
-              `the bundle has no entry file '${entry}': name one of its files with entry (${Object.keys(read.files).slice(0, 10).join(', ') || 'none'})`,
+              `the bundle has no entry file '${entry.slice(0, 256)}': name one of its files with entry (${Object.keys(files).slice(0, 10).join(', ') || 'none'})`,
             );
           }
-          return { entry, files: read.files };
+          return { entry, files };
         },
         {
           actor: historyActor(ctx),
@@ -2394,7 +2406,7 @@ const app_source_from_bundle: BuiltinToolDef = {
         },
       );
       if (!res) return notFound('app', id, 'app_list');
-      const fileCount = Object.keys(read.files).length;
+      const fileCount = Object.keys(files).length;
       ctx.step?.setOutput({ id, commit: read.head, file_count: fileCount });
       // The normal build: the import allowlist and the compile.
       const build = await buildAndStageApp(ctx.ownerId, id);
@@ -2409,6 +2421,7 @@ const app_source_from_bundle: BuiltinToolDef = {
           edit_id: res.editId,
           changed: res.written,
           file_count: fileCount,
+          ...(kept.length ? { kept_from_live: kept } : {}),
           build_ok: build?.buildOk ?? null,
           ...(build && !build.buildOk ? { build_errors: build.errors.slice(0, 10) } : {}),
           hint: build?.buildOk

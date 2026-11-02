@@ -37,8 +37,8 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   changes (export again and merge). The live app does not change; publish
   is its own step. Same rights as `app_source_set`, and a read of the file.
 - **Security:** the bundle is untrusted input, read by a pack reader in
-  TypeScript with limits: 64 MB, 200,000 objects, 16 MB an object, a delta
-  chain of 100, 512 MB unpacked in all, and its checksum. Plain files and
+  TypeScript with limits: 64 MB, 50,000 objects, 1 MB an object, a delta
+  chain of 50, 256 MB unpacked in all, and its checksum. Plain files and
   folders only: a symlink, a submodule, an odd file mode, a `..` or `.git`
   name, or a file that is not UTF-8 text fails the import, naming the path.
 
