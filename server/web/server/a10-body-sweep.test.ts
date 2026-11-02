@@ -415,12 +415,12 @@ function changeKind(cell: string, main: string, now: string): string | null {
     'POST /api/users/:id/password ',
     'POST /api/auth/invite/accept ',
   ];
-  if (
-    PASSWORD_ROUTES.some((r) => cell.startsWith(r)) &&
-    now.startsWith('400 application/json ') &&
-    now !== BAD_JSON &&
-    (main.includes('8 characters') || now.includes('"code":"password_too_short","min":12'))
-  ) {
+  const PASSWORD_400S = [
+    '400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}',
+    '400 application/json {"error":"Enter a valid email and a password."}',
+    '400 application/json {"error":"Enter a new password."}',
+  ];
+  if (PASSWORD_ROUTES.some((r) => cell.startsWith(r)) && PASSWORD_400S.includes(now)) {
     return 'password-rule-12 (the new-password rule, 2026-11: at least 12 characters)';
   }
   // F4 fix round 2 (item 4): a bulk delete checks every id it names first,
