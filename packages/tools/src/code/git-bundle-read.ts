@@ -19,8 +19,7 @@
  */
 import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { badGitPart } from './git-bundle';
-import { badNewPath } from './target-ref';
+import { badBundlePath, BUNDLE_NAME_MAX_BYTES, BUNDLE_PATH_MAX_BYTES } from './git-bundle';
 
 export type BundleReadLimits = {
   /** Objects the pack may hold. */
@@ -51,7 +50,7 @@ export const BUNDLE_READ_LIMITS: BundleReadLimits = {
   maxFiles: 50,
   maxFileBytes: 256 * 1024,
   maxTreeDepth: 32,
-  maxPathBytes: 256,
+  maxPathBytes: BUNDLE_PATH_MAX_BYTES,
 };
 
 /** A bundle that cannot be read, or that the read refuses: the message
@@ -77,8 +76,6 @@ const CACHE_BYTES = 32 * 1024 * 1024;
 const HEADER_MAX_BYTES = 1024 * 1024;
 const HEADER_MAX_REFS = 10_000;
 const REF_MAX_BYTES = 255;
-/** A name in a tree: git's and every file system's most bytes. */
-const NAME_MAX_BYTES = 255;
 
 /** Untrusted text for a message: cut, its control characters escaped. */
 const plain = (s: string, max = 200) => JSON.stringify(s.slice(0, max)).slice(1, -1);
@@ -451,7 +448,8 @@ export function pickRef(refs: Map<string, string>, want?: string): { ref: string
   );
 }
 
-const utf8 = new TextDecoder('utf-8', { fatal: true });
+// A BOM is text the file holds: kept, so an unedited file stays the same.
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /** The bundle read: the commit taken, its files, and whether `base` is in
  *  its history (the commit itself or an ancestor). */
@@ -523,7 +521,7 @@ export async function readBundleTree(
       // Sizes first: a long name is refused before it is decoded or joined.
       const nameBytes = nul - sp - 1;
       if (
-        nameBytes > NAME_MAX_BYTES ||
+        nameBytes > BUNDLE_NAME_MAX_BYTES ||
         Buffer.byteLength(prefix) + nameBytes > limits.maxPathBytes
       ) {
         fail(
@@ -541,14 +539,8 @@ export async function readBundleTree(
       if (++entries > limits.maxFiles * 20)
         fail('the commit has too many folders: an app holds a few files');
       const path = prefix + name;
-      // A name the code tools would trim (a space at an end) names another file there.
-      const why =
-        badNewPath(path) ??
-        (name.includes('/')
-          ? 'a / in a name'
-          : name !== name.trim()
-            ? 'a space at the start or end of a name'
-            : badGitPart(name));
+      // The one rule an export skips by (git-bundle.ts badBundlePath).
+      const why = name.includes('/') ? 'a / in a name' : badBundlePath(path);
       if (why) fail(`the bundle has '${plain(path)}', which may not be imported: ${why}`);
       if (names.has(name)) fail(`the bundle has '${path}' twice in one folder`);
       names.add(name);

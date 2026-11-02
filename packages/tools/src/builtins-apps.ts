@@ -2328,10 +2328,6 @@ const app_source_from_bundle: BuiltinToolDef = {
     if (!fileId) return { ok: false, error: 'file_id is required' };
     const branch = str(input.branch).trim() || undefined;
     const entryIn = str(input.entry).trim();
-    // One turn of the per-process import limit: each holds its file in memory.
-    const release = takeAppImportSlot();
-    if (!release)
-      return { ok: false, error: 'another import is running: try again when it is done' };
     try {
       await assertItemRight(fileId, 'read');
       const app = await getApp(ctx.ownerId, id);
@@ -2359,25 +2355,35 @@ const app_source_from_bundle: BuiltinToolDef = {
           error: `app ${id} has draft changes no version holds, and a bundle never carries a draft: publish them first (app_publish) and export again, or pass base_rev ${sourceRev(app.draft)} to replace them (code_undo with the edit_id takes them back). Nothing changed`,
         };
       }
-      const file = await openFileById({ ownerId: ctx.ownerId, fileId });
-      if (!file) return { ok: false, error: `file ${fileId} not found: find it with file_list` };
-      if (file.size > GIT_BUNDLE_MAX_BYTES) {
-        file.stream.destroy();
-        return {
-          ok: false,
-          error: `the file is ${MB(file.size)} MB, past the ${MB(GIT_BUNDLE_MAX_BYTES)} MB a bundle may be: bundle one branch (git bundle create app.bundle main)`,
-        };
+      // One turn of the per-process import limit while the file is in
+      // memory (the read and the parse): shared with app_import.
+      const release = takeAppImportSlot();
+      if (!release)
+        return { ok: false, error: 'another import is running: try again when it is done' };
+      let read: Awaited<ReturnType<typeof readBundleTree>>;
+      try {
+        const file = await openFileById({ ownerId: ctx.ownerId, fileId });
+        if (!file) return { ok: false, error: `file ${fileId} not found: find it with file_list` };
+        if (file.size > GIT_BUNDLE_MAX_BYTES) {
+          file.stream.destroy();
+          return {
+            ok: false,
+            error: `the file is ${MB(file.size)} MB, past the ${MB(GIT_BUNDLE_MAX_BYTES)} MB a bundle may be: bundle one branch (git bundle create app.bundle main)`,
+          };
+        }
+        const bytes = await readStreamCapped(file.stream, file.size, GIT_BUNDLE_MAX_BYTES);
+        read = await readBundleTree(bytes, {
+          base: live.commit,
+          ...(branch ? { branch } : {}),
+          limits: {
+            ...BUNDLE_READ_LIMITS,
+            maxFiles: MAX_APP_FILES,
+            maxFileBytes: MAX_APP_FILE_BYTES,
+          },
+        });
+      } finally {
+        release();
       }
-      const bytes = await readStreamCapped(file.stream, file.size, GIT_BUNDLE_MAX_BYTES);
-      const read = await readBundleTree(bytes, {
-        base: live.commit,
-        ...(branch ? { branch } : {}),
-        limits: {
-          ...BUNDLE_READ_LIMITS,
-          maxFiles: MAX_APP_FILES,
-          maxFileBytes: MAX_APP_FILE_BYTES,
-        },
-      });
       if (!read.hasBase) {
         return {
           ok: false,
@@ -2410,15 +2416,25 @@ const app_source_from_bundle: BuiltinToolDef = {
           actor: historyActor(ctx),
           actorLoginId: actingLoginId(ctx.surface),
           note: `app_source_from_bundle ${read.head.slice(0, 12)}`,
-          baseRev,
+          // The draft the checks above read, always: one written since
+          // (the editor, another agent) fails the write, nothing lost.
+          baseRev: baseRev ?? sourceRev(app.draft ?? app.source),
           liveRev: live.rev,
         },
       );
       if (!res) return notFound('app', id, 'app_list');
       const fileCount = Object.keys(files).length;
       ctx.step?.setOutput({ id, commit: read.head, file_count: fileCount });
-      // The normal build: the import allowlist and the compile.
-      const build = await buildAndStageApp(ctx.ownerId, id);
+      // The normal build: the import allowlist and the compile. The draft
+      // is written either way, so a build that throws is reported, not
+      // the call failed.
+      let build: Awaited<ReturnType<typeof buildAndStageApp>> = null;
+      let buildError: string | null = null;
+      try {
+        build = await buildAndStageApp(ctx.ownerId, id);
+      } catch (err) {
+        buildError = publicErrorText(err, 'app_build');
+      }
       return {
         ok: true,
         output: {
@@ -2433,6 +2449,7 @@ const app_source_from_bundle: BuiltinToolDef = {
           ...(kept.length ? { kept_from_live: kept } : {}),
           build_ok: build?.buildOk ?? null,
           ...(build && !build.buildOk ? { build_errors: build.errors.slice(0, 10) } : {}),
+          ...(buildError ? { build_error: buildError } : {}),
           hint: build?.buildOk
             ? `The draft is the bundle's ${read.ref}. Review it at /apps/${id}; app_publish when approved.`
             : 'The draft is saved but does not build: fix the files (code_edit), then app_build.',
@@ -2448,8 +2465,6 @@ const app_source_from_bundle: BuiltinToolDef = {
         return { ok: false, error: `${err.message}. Nothing changed` };
       }
       return { ok: false, error: publicErrorText(err, 'app_source_from_bundle') };
-    } finally {
-      release();
     }
   },
 };

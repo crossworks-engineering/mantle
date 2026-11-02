@@ -290,6 +290,14 @@ describe('readBundleTree on hand-made packs', () => {
     );
   });
 
+  it('keeps a BOM at the start of a file', async () => {
+    const b = blob('\ufeffexport {};\n');
+    const t = tree([{ mode: '100644', name: 'App.tsx', id: oid(b) }]);
+    const c = commit(oid(t));
+    const r = await readBundleTree(handBundle([b, t, c], oid(c)), { base: live });
+    expect(r.files['App.tsx']).toBe('\ufeffexport {};\n');
+  });
+
   it('refuses a name twice in one folder', async () => {
     const b = blob('x\n');
     const t = tree([

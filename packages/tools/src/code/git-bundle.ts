@@ -113,6 +113,35 @@ export function badGitPart(part: string): string | null {
   return null;
 }
 
+/** A bundle path's most bytes, and a name's (git's and file systems'). */
+export const BUNDLE_PATH_MAX_BYTES = 256;
+export const BUNDLE_NAME_MAX_BYTES = 255;
+
+/**
+ * Why a path may not travel in a bundle, either way, or null: the code
+ * tools' rule (badNewPath), the names git refuses (badGitPart), no space at
+ * the start or end of a name (the code tools would trim it to another
+ * file), and the lengths. The export leaves such a path out and the import
+ * refuses it, so the two agree: what an export skips, an import keeps from
+ * the live tree.
+ */
+export function badBundlePath(path: string): string | null {
+  const why = badNewPath(path);
+  if (why) return why;
+  if (Buffer.byteLength(path) > BUNDLE_PATH_MAX_BYTES) {
+    return `a path past ${BUNDLE_PATH_MAX_BYTES} bytes`;
+  }
+  for (const part of path.split('/')) {
+    if (part !== part.trim()) return 'a space at the start or end of a name';
+    if (Buffer.byteLength(part) > BUNDLE_NAME_MAX_BYTES) {
+      return `a name past ${BUNDLE_NAME_MAX_BYTES} bytes`;
+    }
+    const git = badGitPart(part);
+    if (git) return git;
+  }
+  return null;
+}
+
 /** A one-line field of a commit (author): no control character, no `<>`. */
 function oneLine(s: string): string {
   // eslint-disable-next-line no-control-regex -- control characters are what it removes or refuses
@@ -218,7 +247,7 @@ export class GitBundleWriter {
     for (const path of [...keyOf.keys()].sort()) {
       const raw = keyOf.get(path)!;
       const parts = path.split('/');
-      const why = badNewPath(path) ?? parts.map(badGitPart).find((w) => w !== null) ?? null;
+      const why = badBundlePath(path);
       if (why) {
         this.skip({ commit: n, path: raw, why });
         continue;

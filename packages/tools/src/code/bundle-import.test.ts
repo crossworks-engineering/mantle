@@ -172,6 +172,8 @@ describe('app_source_from_bundle', () => {
       files: { 'App.tsx': 'export default () => 3;\n', 'lib/fmt.ts': 'export const f = 1;\n' },
     });
     expect(liveRev).toBe(sourceRev(V2));
+    // The draft the checks read is always the write's base (a write since fails it).
+    expect(vi.mocked(changeDraftSource).mock.calls[0]![3].baseRev).toBe(sourceRev(V2));
     expect(out).toMatchObject({
       ref: 'refs/heads/main',
       edit_id: 'e1',
@@ -225,7 +227,10 @@ describe('app_source_from_bundle', () => {
   });
 
   it('keeps a live file the export left out (a name git may not hold), and says so', async () => {
-    const V3 = { entry: 'App.tsx', files: { ...V2.files, 'a:b.ts': 'export const ab = 1;\n' } };
+    const V3 = {
+      entry: 'App.tsx',
+      files: { ...V2.files, 'a:b.ts': 'export const ab = 1;\n', 'lib /x.ts': 'export {};\n' },
+    };
     vi.mocked(appVersionSources).mockImplementation(async function* () {
       yield version(1, V1);
       yield version(2, V3);
@@ -237,7 +242,7 @@ describe('app_source_from_bundle', () => {
     });
     serve(buf);
     const out = outputOf(await imp.handler({ id: APP_ID, file_id: FILE_ID }, ctx));
-    expect(out.kept_from_live).toEqual(['a:b.ts']);
+    expect(out.kept_from_live).toEqual(['a:b.ts', 'lib /x.ts']);
     expect(written!.files).toEqual({ ...V3.files, 'App.tsx': 'export default () => 4;\n' });
   });
 
@@ -252,6 +257,14 @@ describe('app_source_from_bundle', () => {
     serve(await roundTrip(() => {}));
     outputOf(await imp.handler({ id: APP_ID, file_id: FILE_ID, base_rev: sourceRev(draft) }, ctx));
     expect(vi.mocked(changeDraftSource).mock.calls[0]![3].baseRev).toBe(sourceRev(draft));
+  });
+
+  it('reports a build that throws after the write, with the edit_id', async () => {
+    serve(await roundTrip(() => {}));
+    vi.mocked(buildAndStageApp).mockRejectedValue(new Error('storage down'));
+    const out = outputOf(await imp.handler({ id: APP_ID, file_id: FILE_ID }, ctx));
+    expect(out).toMatchObject({ edit_id: 'e1', build_ok: null });
+    expect(out.build_error).toEqual(expect.any(String));
   });
 
   it('refuses an app with no version', async () => {
