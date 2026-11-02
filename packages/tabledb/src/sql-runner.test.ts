@@ -153,22 +153,22 @@ describe('table_sql child processes', () => {
   });
 
   it.runIf(process.platform === 'linux')(
-    'a read that a used child cannot hold runs on a new one',
+    'a read that fails at the limit on a used child gets one try on a new one',
     async () => {
-      process.env.TABLE_SQL_TIMEOUT_MS = '20000';
+      process.env.TABLE_SQL_TIMEOUT_MS = '10000';
       await noChildren();
-      // A refused row leaves the child near its limit, with what it freed still
-      // counted, and this statement needs more than that. Its answer is one number.
-      const wide = Array.from({ length: 8 }, (_, i) => `zeroblob(16777216) AS c${i}`).join(', ');
-      await expect(runTableSql(file, `SELECT ${wide}`)).rejects.toThrow(/more than 16 MB|memory/);
-      // Bun's engine leaves a new child room for fewer: there the size is all this shows.
-      const names = Array.from({ length: process.versions.bun ? 8 : 20 }, (_, i) => `c${i}`);
-      const held = names.map((n) => `randomblob(16000000) AS ${n}`).join(', ');
-      const lengths = names.map((n) => `length(${n})`).join(' + ');
-      const first = tableSqlChildPids();
-      const out = await runTableSql(file, `SELECT ${lengths} AS n FROM (SELECT ${held} LIMIT 1)`);
-      expect(out.rows).toEqual([[names.length * 16_000_000]]);
-      if (!process.versions.bun) expect(tableSqlChildPids()).not.toContain(first[0]);
+      await runTableSql(file, 'SELECT 1 AS warm');
+      const used = tableSqlChildPids();
+      const cols = Array.from({ length: 64 }, (_, i) => `zeroblob(16777216) AS c${i}`).join(', ');
+      const seen = new Set<number>();
+      const watch = setInterval(() => tableSqlChildPids().forEach((p) => seen.add(p)), 5);
+      await expect(runTableSql(file, `SELECT ${cols}`)).rejects.toThrow(
+        /more memory than a SQL process|most likely at the memory limit/,
+      );
+      clearInterval(watch);
+      // The used child, then one new child, whose answer is the last.
+      expect(seen).toContain(used[0]);
+      expect(seen.size).toBe(2);
     },
   );
 
