@@ -47,6 +47,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      # Read build-check's runs for this commit (the reuse step below).
+      actions: read
     # The DB-gated suites (packages/db schema drift, the runs engine) skipIf
     # without a database. Before v0.232.160 this job had none, so they passed
     # silently at release time while build-check ran them for real. Same
@@ -77,36 +79,89 @@ jobs:
       # runs the same hermetic gate itself: typecheck + lint + format + docs
       # paths + tests against a migrated Postgres. (The production build is
       # exercised by the Docker build below.)
+      #
+      # Reuse (2026-11-02): build-check runs every step below and more, on the
+      # same tree when its head_sha is this tag's commit. The integrator waits
+      # for build-check to go green on main before it tags, so the guard looks
+      # for a build-check run of this exact commit from a PUSH (a pull_request
+      # run tests a merge commit, not this tree):
+      #   - success: the gate steps below are skipped (about 30 minutes);
+      #   - failure: the guard fails, nothing is built;
+      #   - queued or running: it waits for the result, up to 100 minutes;
+      #   - cancelled, none, or still running at the limit: the guard runs
+      #     the gate itself, as before. Never a pass without a test run.
+      # The tag-matches-version check at the end always runs.
+      - name: Reuse a green build-check of this commit
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -u
+          q="repos/$GITHUB_REPOSITORY/actions/workflows/build-check.yml/runs?head_sha=$SHA&event=push&per_page=20"
+          deadline=$(( $(date +%s) + 100 * 60 ))
+          while :; do
+            # All push runs of this commit: one success is enough, any failure
+            # fails. A cancelled run (a newer push to the same ref) says nothing.
+            states=$(gh api "$q" --jq '[.workflow_runs[] | select(.head_sha == env.SHA) | .status + "/" + (.conclusion // "")] | join(" ")' || echo "api-error")
+            echo "build-check runs of $SHA: ${states:-none}"
+            case " $states " in
+              *" completed/failure "*|*" completed/timed_out "*)
+                echo "::error::build-check failed on $SHA. Nothing was built or published. Fix main, then tag the new release commit."
+                exit 1 ;;
+              *" completed/success "*)
+                echo "hit=true" >> "$GITHUB_OUTPUT"
+                echo "✓ build-check passed on $SHA: the gate steps are skipped"
+                exit 0 ;;
+            esac
+            case " $states " in
+              *" queued/"*|*" in_progress/"*|*" waiting/"*|*" pending/"*|*" requested/"*)
+                if [ "$(date +%s)" -lt "$deadline" ]; then sleep 60; continue; fi
+                echo "build-check still running at the limit: the guard runs the gate itself" ;;
+              *) echo "no finished build-check to reuse: the guard runs the gate itself" ;;
+            esac
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          done
+
       - uses: pnpm/action-setup@v4
+        if: steps.reuse.outputs.hit != 'true'
         with:
           version: 11.28.5
 
       - uses: actions/setup-node@v4
+        if: steps.reuse.outputs.hit != 'true'
         with:
           node-version: 26
           cache: pnpm
 
       - name: Install
+        if: steps.reuse.outputs.hit != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
+        if: steps.reuse.outputs.hit != 'true'
         run: pnpm -r typecheck
 
       - name: Lint + format
+        if: steps.reuse.outputs.hit != 'true'
         run: pnpm lint && pnpm format:check
 
       - name: Docs paths
+        if: steps.reuse.outputs.hit != 'true'
         run: pnpm docs:check
 
       # Every server process links its imports the way the image starts it
       # (scripts/boot-smoke.mjs), before a single image layer is built: the
       # v0.300.64 images crash-looped at start with every other gate green.
       - name: Boot smoke
+        if: steps.reuse.outputs.hit != 'true'
         run: pnpm boot:smoke
 
       # Replay every migration from scratch, exactly as build-check does, so
       # the drift + runs suites below run against the schema this tag ships.
       - name: Init + migrate the throwaway database
+        if: steps.reuse.outputs.hit != 'true'
         env:
           DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           # The checks' floor (0301) keeps this database's modes: the suites
@@ -120,6 +175,7 @@ jobs:
       # DATABASE_URL itself is NOT exported here, only the *_TEST_ vars, so the
       # tests that assert DB-less behaviour keep meaning what they say.
       - name: Test
+        if: steps.reuse.outputs.hit != 'true'
         env:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
