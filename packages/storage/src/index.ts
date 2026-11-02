@@ -14,11 +14,12 @@ import { env, feature } from '@mantle/config';
  *
  * Two clients. On Node every call goes through the AWS SDK. On Bun, with
  * path-style addressing (the default), the calls a request makes (head, put,
- * get, delete) go through Bun.S3Client, which is native: the SDK costs each process about 27 MB and a HEAD three times as
- * long. The bucket and admin calls (status, create, list, verify, copy) stay
- * on the SDK on both runtimes: Bun's errors do not tell a store that answered
- * from one that did not, and those calls are rare. The SDK is imported on the
- * first such call, so a Bun process that only reads and writes never loads it.
+ * get, delete) go through Bun.S3Client, which is native: the SDK costs each
+ * process about 27 MB and a HEAD three times as long. The bucket and admin
+ * calls (status, create, list, verify, copy) stay on the SDK on both
+ * runtimes: Bun's errors do not tell a store that answered from one that did
+ * not, and those calls are rare. The SDK is imported on the first such call,
+ * so a Bun process that only reads and writes never loads it.
  */
 
 /** The store settings from env, for both clients. */
@@ -103,10 +104,12 @@ let _bun: BunS3 | null | undefined;
 let _bunForTests: BunS3 | undefined;
 let _bunClass: BunS3Class | undefined;
 
-/** Keys Bun sends as they are. Bun drops a `?` or `#` from a key where the
- *  SDK encodes it, so any other key (copy-from reads keys of another store)
- *  takes the SDK. Content keys are hex and slashes. */
-const BUN_SAFE_KEY = /^[A-Za-z0-9/._-]+$/;
+/** Keys Bun sends as the SDK does: segments of letters, digits, `.`, `_` and
+ *  `-`, each starting with no dot, and no empty segment. Bun drops a `?` or
+ *  `#` from a key and a leading or trailing `/`, where the SDK keeps them, so
+ *  any other key (copy-from reads keys of another store) takes the SDK.
+ *  Content keys are hex and slashes. */
+const BUN_SAFE_KEY = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$/;
 
 /**
  * Bun.S3Client for this key on Bun, else null (Node, a test's SDK fake, or a
