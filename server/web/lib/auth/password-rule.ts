@@ -4,7 +4,7 @@
  * a login's own change, the onboard script), and the one place a sign-in
  * asks whether the password it just took still meets the rule.
  *
- * Every new password (2026-11-02): at least 12 characters (or the box
+ * Every new password (2026-11-02): at least 8 characters (or the box
  * policy's minimum, if higher), at most 72 bytes (all bcrypt reads), three
  * of the four kinds (small letters, capitals, digits, symbols) unless it is a
  * passphrase of 20 characters or more, and not a common password (a bundled
@@ -29,7 +29,7 @@ import { COMMON_PASSWORD_BASES, COMMON_PASSWORDS } from './common-passwords';
 export const PASSWORD_MAX = 1024;
 
 /** The fewest characters of a new password with no box policy. */
-export const NEW_PASSWORD_MIN = 12;
+export const NEW_PASSWORD_MIN = 8;
 /** The most UTF-8 bytes of a new password: bcrypt reads no more, so a longer
  *  one would promise more than the hash keeps. */
 export const NEW_PASSWORD_MAX_BYTES = 72;
@@ -240,7 +240,7 @@ export function passwordProblemBody(problem: PasswordProblem): {
  * A sign-in took `password`: must the login change it before anything else?
  * Only under a policy (with none, never), when the password is shorter than
  * the policy's minimum or common. The parts of the new-password rule a
- * policy does not name (the 72-byte cap, the mix of kinds, the 12 floor)
+ * policy does not name (the 72-byte cap, the mix of kinds, the 8 floor)
  * hold no login that set its password before them. The caller sets
  * auth.users.must_change_password.
  */

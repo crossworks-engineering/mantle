@@ -271,7 +271,7 @@ describe('run', () => {
     await expect(run(yes(), io({ password: 'Long-enough-7' }))).rejects.toThrow(/--email/);
     await expect(
       run(yes({ email: 'o@example.invalid' }), io({ password: 'short' })),
-    ).rejects.toThrow(/12\+ characters and at most 72 bytes/);
+    ).rejects.toThrow(/8\+ characters and at most 72 bytes/);
     expect(h.calls).toEqual([]);
   });
 

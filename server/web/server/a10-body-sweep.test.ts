@@ -336,8 +336,8 @@ const BAD_JSON = '400 application/json {"error":"invalid JSON"}';
  *    it with a text of its own;
  *  - ceiling-in-kb (A10 lows, part 2 #6): the 413 of a ceiling under 1 MB
  *    says it in KB ("at most 64 KB"), where it said "at most 0 MB";
- *  - password-rule-12 (2026-11): a new password of the sweep's 8
- *    characters is the rule's 400, before the database stand-in, and a
+ *  - password-rule (2026-11): a new password of the sweep (8 small
+ *    letters, or 5) is the rule's 400, before the database stand-in, and a
  *    schema that said "at least 8" now says what is missing;
  *  - item-check-first (F4 fix round 2): the bulk delete's item check of
  *    its ids asks the database by @mantle/db's own client, which the
@@ -406,22 +406,24 @@ function changeKind(cell: string, main: string, now: string): string | null {
   ) {
     return 'desk-login (Desk saving v2 fix round: a save naming another login is a 403)';
   }
-  // The new-password rule (2026-11-02): at least 12 characters, said by the
-  // rule's coded 400. The sweep's valid password is 8 characters, so a route
-  // that sets one refuses it before the database stand-in; and the schemas
-  // that said "at least 8" now only ask for a password at all.
+  // The new-password rule (2026-11-02): at least 8 characters and three
+  // kinds, said by the rule's coded 400. The sweep's valid password is 8
+  // small letters (one kind), or 5 on the invite, so a route that sets one
+  // refuses it before the database stand-in; and the schemas that said "at
+  // least 8" now only ask for a password at all.
   const PASSWORD_ROUTES = [
     'POST /api/users ',
     'POST /api/users/:id/password ',
     'POST /api/auth/invite/accept ',
   ];
   const PASSWORD_400S = [
-    '400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}',
+    '400 application/json {"error":"Password must be at least 8 characters.","code":"password_too_short","min":8}',
+    '400 application/json {"error":"Use at least 3 of: small letters, capitals, digits, symbols. Or use a passphrase of 20 characters or more.","code":"password_weak","min":8}',
     '400 application/json {"error":"Enter a valid email and a password."}',
     '400 application/json {"error":"Enter a new password."}',
   ];
   if (PASSWORD_ROUTES.some((r) => cell.startsWith(r)) && PASSWORD_400S.includes(now)) {
-    return 'password-rule-12 (the new-password rule, 2026-11: at least 12 characters)';
+    return 'password-rule (the new-password rule, 2026-11: 8 characters, three kinds)';
   }
   // F4 fix round 2 (item 4): a bulk delete checks every id it names first,
   // by @mantle/db's own client (itemWriteVerdicts), which the database
