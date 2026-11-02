@@ -1,9 +1,9 @@
 # Mantle CLIENT stack — the zero-secret owner UI (v0.200.0 split).
 #
-# ONE service: the client/web Next app. No database, no S3, no SESSION_SECRET —
-# every byte of data comes from the SERVER stack's origin over bearer + CORS.
-# Runtime config is plain env read per-request by /env.js, so one pulled image
-# serves any server origin.
+# ONE service: the owner UI as static files behind a small host server (Bun).
+# No database, no S3, no SESSION_SECRET; every byte of data comes from the
+# SERVER stack's origin over bearer + CORS. Runtime config is plain env read
+# per-request by /env.js, so one pulled image serves any server origin.
 #
 # Deployment shapes:
 #   Single box (the fleet default): run beside the server stack; this service
@@ -23,11 +23,16 @@ services:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-client:${MANTLE_CLIENT_IMAGE_TAG:-latest}
     container_name: mantle_client_web
     restart: unless-stopped
-    mem_limit: 768m
+    # The static host sits near 20 MB; 256m leaves room for bursts.
+    mem_limit: 256m
     environment:
       # The server stack's public origin — the ONLY config this app needs.
       # Empty ⇒ same-origin (a reverse proxy serving both apps on one host).
       MANTLE_SERVER_ORIGIN: ${MANTLE_SERVER_ORIGIN:-}
+      # Where the host itself fetches the brain's appearance (theme, brand):
+      # the server stack's web service on the shared network, not the public
+      # origin, so the fetch never leaves the box.
+      MANTLE_APPEARANCE_ORIGIN: http://web:3000
       # Mirrors the server's live-turn-streaming gate for the UI feature flag.
       MANTLE_TURN_STREAMING: ${MANTLE_TURN_STREAMING:-}
       NODE_ENV: production
