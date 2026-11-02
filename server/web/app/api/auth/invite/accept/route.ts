@@ -51,14 +51,8 @@ export async function POST(req: Request) {
     inviteFailed('accept');
     return NextResponse.json({ error: INVITE_FAILED_MESSAGE }, { status: 401 });
   }
-  if (parsed.data.password.length < 8) {
-    return NextResponse.json(
-      { error: 'Choose a password of at least 8 characters.' },
-      { status: 400 },
-    );
-  }
-  // The box password policy's rule (password-rule.ts): with none set, the
-  // 8 characters above already answered.
+  // The new-password rule (password-rule.ts): its coded 400, with the
+  // minimum in force, also for an empty password.
   const weak = passwordProblem(parsed.data.password);
   if (weak) return NextResponse.json(passwordProblemBody(weak), { status: 400 });
 

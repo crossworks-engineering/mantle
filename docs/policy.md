@@ -137,7 +137,10 @@ characters a passphrase needs no mix. It is not a common password from a
 list bundled in the image (`server/web/lib/auth/common-passwords.ts`; no
 outside call). A password that is mostly a run (`123456789012`,
 `qwertyuiop12`, `111111111111`) or has fewer than 4 different characters
-counts as common too. A password set before keeps working: a sign-in never
+counts as common too. The 72-byte cap counts bytes, not letters: a letter
+of Cyrillic or Greek takes 2, of Chinese or Japanese 3, so a policy minimum
+of 37 or more cannot be met in Cyrillic alone, nor 25 or more in Chinese
+alone. A password set before keeps working: a sign-in never
 refuses one for this rule. `GET /api/auth/bootstrap-state` carries the rule
 (`passwordRule`), so a form can show it as the person types.
 

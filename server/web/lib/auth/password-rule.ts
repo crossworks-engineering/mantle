@@ -80,7 +80,10 @@ export function passwordRule(): NewPasswordRule {
  *  script with no capitals), capitals, digits, and anything else (symbols,
  *  spaces, punctuation). */
 export function passwordKinds(password: string): number {
-  const kinds = [/[\p{Ll}\p{Lo}\p{Lm}]/u, /[\p{Lu}\p{Lt}]/u, /\p{N}/u, /[^\p{L}\p{N}]/u];
+  // Symbols: anything a person sees that is no letter or digit. A control
+  // or format character (NUL, a zero-width space) or a lone combining mark
+  // is not one: it would make a password pass while adding nothing to read.
+  const kinds = [/[\p{Ll}\p{Lo}\p{Lm}]/u, /[\p{Lu}\p{Lt}]/u, /\p{N}/u, /[^\p{L}\p{N}\p{M}\p{C}]/u];
   return kinds.filter((k) => k.test(password)).length;
 }
 
@@ -243,7 +246,9 @@ export function passwordProblemBody(problem: PasswordProblem): {
  */
 export function signInNeedsPasswordChange(password: string): boolean {
   const min = passwordPolicyMin();
-  return min !== null && ([...password].length < min || isCommonPassword(password));
+  // UTF-16 units, as the rule counted when these passwords were set: a
+  // password of emoji that met the minimum then is not held now.
+  return min !== null && (password.length < min || isCommonPassword(password));
 }
 
 /** A new password the rule refuses, thrown by the one hash (session.ts

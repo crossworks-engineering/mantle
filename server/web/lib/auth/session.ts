@@ -2445,7 +2445,7 @@ export async function loginWithPassword(email: string, password: string): Promis
 
 /** The one password hash every login is stored with (bcrypt, cost 12), and
  *  the one gate of every new password: one that fails the password rule in
- *  force (password-rule.ts; with no box policy, today's 8 characters) is
+ *  force (password-rule.ts: 12 characters, 72 bytes, a mix of kinds) is
  *  refused here (PasswordRuleError, a 400), whichever writer asked. A route
  *  checks passwordProblem first for its coded answer; this is the backstop
  *  no writer can skip. */

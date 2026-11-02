@@ -415,7 +415,7 @@ async function ensureOwner(o: Options, io: Io): Promise<{ id: string; email: str
     if (weak) {
       if (o.yes) {
         throw new Error(
-          `No owner yet: send password=... (${rule.min} to ${rule.maxBytes} characters, ${rule.kinds} kinds of character or a passphrase of ${rule.passphrase}+, not a common one) on stdin.`,
+          `No owner yet: send password=... (${rule.min}+ characters and at most ${rule.maxBytes} bytes, ${rule.kinds} kinds of character or a passphrase of ${rule.passphrase}+, not a common one) on stdin.`,
         );
       }
       bad(weak.message);

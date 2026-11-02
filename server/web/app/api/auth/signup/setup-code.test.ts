@@ -166,19 +166,31 @@ describe('POST /api/auth/signup with no setup code configured', () => {
 describe('GET /api/auth/bootstrap-state', () => {
   it('says a code is required while the brain is unclaimed', async () => {
     const { GET } = await load();
-    expect(await (await GET()).json()).toMatchObject({ firstRun: true, setupCodeRequired: true });
+    expect(await (await GET()).json()).toEqual({
+      firstRun: true,
+      setupCodeRequired: true,
+      passwordRule: { min: 12, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true },
+    });
   });
 
   it('never asks for a code once claimed', async () => {
     h.users = 1;
     const { GET } = await load();
-    expect(await (await GET()).json()).toMatchObject({ firstRun: false, setupCodeRequired: false });
+    expect(await (await GET()).json()).toEqual({
+      firstRun: false,
+      setupCodeRequired: false,
+      passwordRule: { min: 12, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true },
+    });
   });
 
   it('asks for none when no code is configured', async () => {
     delete process.env.MANTLE_SETUP_CODE;
     const { GET } = await load();
-    expect(await (await GET()).json()).toMatchObject({ firstRun: true, setupCodeRequired: false });
+    expect(await (await GET()).json()).toEqual({
+      firstRun: true,
+      setupCodeRequired: false,
+      passwordRule: { min: 12, maxBytes: 72, kinds: 3, passphrase: 20, commonList: true },
+    });
   });
 });
 

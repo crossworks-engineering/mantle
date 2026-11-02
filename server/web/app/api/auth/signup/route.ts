@@ -36,7 +36,7 @@ export const policy = routePolicy({
 
 const SignupBody = z.object({
   email: z.string().email().max(320),
-  password: z.string().min(8).max(1024),
+  password: z.string().min(1).max(1024),
   setupCode: z.string().max(200).optional(),
 });
 
@@ -56,12 +56,12 @@ export async function POST(req: Request) {
   const parsed = SignupBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: 'Enter a valid email and a password of at least 8 characters.' },
+      { error: 'Enter a valid email and a password.' },
       { status: 400 },
     );
   }
-  // The box password policy's rule (password-rule.ts): with none set, the
-  // schema's 8 characters above already answered.
+  // The new-password rule (password-rule.ts): its coded 400, with the
+  // minimum in force. The schema only asks for a password at all.
   const weak = passwordProblem(parsed.data.password);
   if (weak) return NextResponse.json(passwordProblemBody(weak), { status: 400 });
 
