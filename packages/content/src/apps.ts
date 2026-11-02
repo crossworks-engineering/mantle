@@ -895,6 +895,23 @@ defineDomainError(AppDraftRevError, {
   body: (e) => ({ error: e.message, reason: 'conflict' }),
 });
 
+/** The live code is not the tree a bundle import checked its base against
+ *  (a publish or a restore came between). */
+export class AppLiveRevError extends Error {
+  constructor() {
+    super(
+      "the app's live code changed while the bundle was read (a publish or a restore): export it again (app_export format git), merge your work on it, and import the new bundle",
+    );
+    this.name = 'AppLiveRevError';
+  }
+}
+
+defineDomainError(AppLiveRevError, {
+  reason: 'the live code changed since the import checked its base',
+  status: 409,
+  body: (e) => ({ error: e.message, reason: 'conflict' }),
+});
+
 /** code_undo found no write to take back. */
 export class AppUndoEmptyError extends Error {
   constructor(what: { editId: string } | { path: string }) {
@@ -1081,11 +1098,20 @@ export async function changeDraftSource(
   ownerId: string,
   id: string,
   change: (tree: AppSource) => AppSource,
-  opts: CodeEditOpts & { baseRev?: string | null; dryRun?: boolean },
+  opts: CodeEditOpts & {
+    baseRev?: string | null;
+    dryRun?: boolean;
+    /** The live tree's rev the caller checked against (a bundle import's
+     *  base): another live tree fails with AppLiveRevError. */
+    liveRev?: string;
+  },
 ): Promise<DraftChange | null> {
   const res = await db.transaction(async (tx) => {
     const app = await lockAppRow(tx, ownerId, id);
     if (!app) return null;
+    if (opts.liveRev !== undefined && sourceRev(app.source) !== opts.liveRev) {
+      throw new AppLiveRevError();
+    }
     const before = app.draft ?? app.source;
     const beforeRev = sourceRev(before);
     assertBaseRev(opts.baseRev, beforeRev);

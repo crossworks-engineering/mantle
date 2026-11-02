@@ -92,6 +92,7 @@ export {
   changeDraftSource,
   sourceRev,
   AppDraftRevError,
+  AppLiveRevError,
   AppUndoEmptyError,
   AppUndoEntryError,
   AppUndoStaleError,

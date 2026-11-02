@@ -251,6 +251,7 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   app_file_delete: onApp,
   app_publish: onApp,
   app_source_set: onApp,
+  app_source_from_bundle: onApp,
   app_tools_set: onApp,
   app_table_export_set: { ...onApp, creates: true },
   app_table_export_remove: onApp,

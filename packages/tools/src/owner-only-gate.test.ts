@@ -65,6 +65,7 @@ const EXPECTED_OWNER_ONLY = [
   'app_snapshot_delete',
   'app_snapshot_list',
   'app_snapshot_restore',
+  'app_source_from_bundle',
   'app_source_set',
   'app_table_export_remove',
   'app_table_export_set',

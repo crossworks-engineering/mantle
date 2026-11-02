@@ -58,6 +58,10 @@ export type BundleResult = {
   skippedCount: number;
 };
 
+/** The largest git bundle app_export writes (on disk while it is made,
+ *  then stored as a file) and app_source_from_bundle reads. */
+export const GIT_BUNDLE_MAX_BYTES = 64 * 1024 * 1024;
+
 /** The skipped paths a result lists by name. */
 export const SKIPPED_KEPT = 20;
 
@@ -84,7 +88,7 @@ const HFS_IGNORED = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
  * name, or as its 8.3 short name `git~1`; and `.gitmodules` the same ways
  * (an app has no submodule).
  */
-function badGitPart(part: string): string | null {
+export function badGitPart(part: string): string | null {
   if (part.includes(':')) return "a ':' in a name";
   const plain = part
     .replace(HFS_IGNORED, '')
@@ -131,18 +135,25 @@ export class GitBundleWriter {
   private lastTime = 0;
 
   /** `workPath`: a file of the caller's to hold the deflated objects (it
-   *  is made, and removed by `finish` or `discard`). */
-  constructor(private readonly workPath: string) {}
+   *  is made, and removed by `finish` or `discard`). Null: ids only, to
+   *  know a version's commit id (a bundle import's base); nothing is
+   *  written and `finish` refuses. */
+  constructor(private readonly workPath: string | null) {}
 
   /** The size of the pack so far (the deflated objects). */
   get packedBytes(): number {
     return this.packed;
   }
 
+  /** The last commit's id, or null before the first. */
+  get head(): string | null {
+    return this.parent;
+  }
+
   /** Store an object once; its id. */
   private async put(type: ObjType, body: Buffer): Promise<string> {
     const id = createHash('sha1').update(`${type} ${body.length}\0`).update(body).digest('hex');
-    if (!this.ids.has(id)) {
+    if (!this.ids.has(id) && this.workPath !== null) {
       this.ids.add(id);
       this.work ??= await open(this.workPath, 'w');
       const entry = Buffer.concat([entryHead(type, body.length), await deflate(body)]);
@@ -264,7 +275,9 @@ export class GitBundleWriter {
    *  commit), then the pack and its SHA-1, read back from the work file. */
   async finish(dest: string): Promise<BundleResult> {
     const head = this.parent;
-    if (!head || !this.work) throw new Error('a bundle needs at least one commit');
+    if (!head || !this.work || this.workPath === null) {
+      throw new Error('a bundle needs at least one commit and a work file');
+    }
     const notes = await this.notesCommit();
     await this.work.close();
     this.work = null;
@@ -311,7 +324,7 @@ export class GitBundleWriter {
   async discard(): Promise<void> {
     await this.work?.close();
     this.work = null;
-    await rm(this.workPath, { force: true });
+    if (this.workPath !== null) await rm(this.workPath, { force: true });
   }
 }
 
