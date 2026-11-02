@@ -175,7 +175,14 @@ describe('table_sql child processes', () => {
       // The used child, then one new child, whose answer is the last.
       expect(seen).toContain(used[0]);
       expect(seen.size).toBe(2);
-      // The second try's fork replaced the first refused child, after its turn.
+      // The second try forks at once; the next statement's fork waits its turn.
+      expect(paced).toBe(0);
+      __setRefusalPaceForTests(async () => void paced++);
+      try {
+        await expect(runTableSql(file, 'SELECT 1 AS a')).resolves.toMatchObject({ rows: [[1]] });
+      } finally {
+        __setRefusalPaceForTests(async () => {});
+      }
       expect(paced).toBe(1);
     },
   );
