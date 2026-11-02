@@ -109,14 +109,15 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
   it('reads every server-image service of compose, web through the image CMD', () => {
     expect(byName.get('web')?.command).toBeNull();
     expect(serverImageCmd(readFileSync(join(ROOT, 'Dockerfile'), 'utf8'))).toEqual([
-      'pnpm',
-      '-C',
+      'scripts/run-service.sh',
       'server/web',
-      'exec',
-      'tsx',
       'server/main.ts',
     ]);
-    expect(byName.get('api')?.command).toEqual(['pnpm', '-C', 'server/api', 'start']);
+    expect(byName.get('api')?.command).toEqual([
+      'scripts/run-service.sh',
+      'server/api',
+      'src/main.ts',
+    ]);
     expect(stepsOf(byName.get('migrate')!.command)).toBe(4);
     // Every service compose runs on the server image, by its block: a block
     // the reader missed would go unsmoked.
@@ -127,7 +128,7 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
     const workers = services.filter((s) => s.name.startsWith('worker_'));
     expect(workers.length).toBeGreaterThanOrEqual(10);
     for (const w of workers)
-      expect(w.command?.slice(0, 5), w.name).toEqual(['pnpm', '-C', 'server/web', 'exec', 'tsx']);
+      expect(w.command?.slice(0, 2), w.name).toEqual(['scripts/run-service.sh', 'server/web']);
   });
 
   it('skips only services that exist, each with a reason', () => {

@@ -27,7 +27,9 @@ describe('the Bun compare (scripts/bun-compare.mjs)', () => {
   it('the image holds the Bun of .bun-version', () => {
     const wanted = readFileSync(join(ROOT, '.bun-version'), 'utf8').trim();
     const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
-    expect(dockerfile).toContain(`/bun-v${wanted}/bun-linux-x64-baseline.zip`);
+    for (const zip of ['bun-linux-x64-baseline.zip', 'bun-linux-aarch64.zip']) {
+      expect(dockerfile).toContain(`/bun-v${wanted}/${zip}`);
+    }
   });
 
   it('reads a report as file and test, with paths from the repo root', () => {

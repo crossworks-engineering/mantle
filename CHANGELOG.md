@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a box can run its services on Bun
+
+- **Added:** the server image holds Bun 1.4.4 beside Node, for amd64 (the
+  baseline build) and arm64, each pinned by its checksum.
+- **Added:** `MANTLE_RUNTIME=bun` in `.env` starts web, api and the ten
+  workers on Bun, then `docker compose up -d`. Empty or `node` keeps the Node
+  start of before. migrate and sandboxd stay on Node. See
+  docs/update-prod.md, "Running a box on Bun".
+- **Changed:** those services start through `scripts/run-service.sh`, which
+  hands the process to the runtime, so a stop signal still reaches it.
+
 ## Unreleased: a SQL process has a memory limit
 
 - **Fixed:** one row of many large columns could take a SQL process to several

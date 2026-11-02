@@ -190,6 +190,9 @@ x-app-env: &app-env
   # with its reason (docs/update-prod.md, "Keep one box below on, on purpose").
   MANTLE_CHECK_FLOOR: ${MANTLE_CHECK_FLOOR:-raise}
   MANTLE_CHECK_FLOOR_REASON: ${MANTLE_CHECK_FLOOR_REASON:-}
+  # The runtime of web, api and the workers (scripts/run-service.sh): node,
+  # the default, or bun. migrate and sandboxd stay on Node.
+  MANTLE_RUNTIME: ${MANTLE_RUNTIME:-node}
   MANTLE_EMBEDDING_MODEL: ${MANTLE_EMBEDDING_MODEL:-}
   # Self-hosted embedder. Points at the bundled `ollama` service serving
   # EmbeddingGemma (768-dim). This is what makes local embedding work out of
@@ -1219,7 +1222,7 @@ services:
   # the separate `agent` service). Same image, different command.
   api:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/api', 'start']
+    command: ['scripts/run-service.sh', 'server/api', 'src/main.ts']
     container_name: mantle_api
     restart: unless-stopped
     # A stop waits for the API's own exit deadline (45 s: pg-boss drains its
@@ -1269,7 +1272,7 @@ services:
 
   worker_email:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/email-sync.ts']
+    command: ['scripts/run-service.sh', 'server/web', 'workers/email-sync.ts']
     container_name: mantle_worker_email
     restart: unless-stopped
     # A stop waits for the worker's exit deadline (15 s, the workers'
@@ -1295,7 +1298,7 @@ services:
 
   worker_telegram:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/telegram-poll.ts']
+    command: ['scripts/run-service.sh', 'server/web', 'workers/telegram-poll.ts']
     container_name: mantle_worker_telegram
     restart: unless-stopped
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
@@ -1323,7 +1326,7 @@ services:
   # like the email worker.
   worker_microsoft:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/microsoft-sync.ts']
+    command: ['scripts/run-service.sh', 'server/web', 'workers/microsoft-sync.ts']
     container_name: mantle_worker_microsoft
     restart: unless-stopped
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
@@ -1350,7 +1353,7 @@ services:
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/files-watch.ts']
+    command: ['scripts/run-service.sh', 'server/web', 'workers/files-watch.ts']
     container_name: mantle_worker_files
     restart: unless-stopped
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
@@ -1381,7 +1384,7 @@ services:
   # operator opts in at /settings/documentation.
   worker_docs:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/docs-sync.ts']
+    command: ['scripts/run-service.sh', 'server/web', 'workers/docs-sync.ts']
     container_name: mantle_worker_docs
     restart: unless-stopped
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
@@ -1407,7 +1410,7 @@ services:
   # reminders silently never fire in prod (they work in `pnpm dev`).
   worker_events:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/events-reminders.ts']
+    command: ['scripts/run-service.sh', 'server/web', 'workers/events-reminders.ts']
     container_name: mantle_worker_events
     restart: unless-stopped
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
@@ -1447,7 +1450,7 @@ services:
   # later) into the brain as event nodes. No volume — events live in Postgres.
   worker_calendar:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/calendar-sync.ts']
+    command: ['scripts/run-service.sh', 'server/web', 'workers/calendar-sync.ts']
     container_name: mantle_worker_calendar
     restart: unless-stopped
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
@@ -1475,7 +1478,7 @@ services:
   # same history the CLI and the /debug/integrity Maintenance tab write.
   worker_maintenance:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/maintenance.ts']
+    command: ['scripts/run-service.sh', 'server/web', 'workers/maintenance.ts']
     container_name: mantle_worker_maintenance
     restart: unless-stopped
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
@@ -1519,7 +1522,7 @@ services:
   # healthy with the feature off.
   worker_runs:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/runs.ts']
+    command: ['scripts/run-service.sh', 'server/web', 'workers/runs.ts']
     container_name: mantle_worker_runs
     restart: unless-stopped
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
@@ -1544,7 +1547,7 @@ services:
   # No-op until a device Connects (push_instance/push_subscriptions empty).
   worker_push:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/push-notify.ts']
+    command: ['scripts/run-service.sh', 'server/web', 'workers/push-notify.ts']
     container_name: mantle_worker_push
     restart: unless-stopped
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
