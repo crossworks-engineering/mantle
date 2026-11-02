@@ -9,30 +9,38 @@ import { buildCanvasFrameCsp } from '@mantle/share-ui/canvas-frame-html';
 import type { PresentMeta } from '@mantle/db';
 import { env } from '@mantle/config';
 import { requestOrigin } from '@/lib/auth-constants';
+import { DESKTOP_APP_ORIGINS, namedCorsOrigins } from '@/lib/auth/preflight';
 import { CACHE_CONTROL } from '@/lib/cache-control';
 import { canvasFrameDocument, loadCanvasImportMap } from '@mantle/tools/canvas-frame-document';
 
 export { canvasFrameDocument };
 
-/** The local owner UIs: the desktop app serves its renderer from
- *  http://127.0.0.1 on a port it picks at launch, and the detached dev
- *  frontend runs on localhost. Neither origin is ever a stranger's site, and
- *  a page there still needs the owner's credential to mint a ticket. */
+/** The local owner UIs: the detached dev frontend runs on localhost or
+ *  127.0.0.1, on whatever port it was started with. Neither origin is ever a
+ *  stranger's site, and a page there still needs the owner's credential to
+ *  mint a ticket. */
 const LOCAL_CLIENT_ANCESTORS = ['http://127.0.0.1:*', 'http://localhost:*'];
 
 const ORIGIN_RE = /^https?:\/\/[^\s;,'"*]+$/;
 
 /** The origins that may frame a canvas (CSP frame-ancestors): the brain's
- *  own, the split owner UI's, the named cross-origin clients and the local
- *  ones. A `*` in MANTLE_API_CORS_ORIGINS (any origin may call) is not
- *  carried over: a canvas is framed only by an origin named here. */
+ *  own, the split owner UI's, the named cross-origin clients, the desktop
+ *  app's and the local ones. A `*` in MANTLE_API_CORS_ORIGINS (any origin may
+ *  call) is not carried over: a canvas is framed only by an origin named
+ *  here. The env entries pass ORIGIN_RE (http or https only); the desktop
+ *  app's custom scheme is added by name from DESKTOP_APP_ORIGINS, the one
+ *  list, not through it. Whether WebKit matches a custom-scheme source in
+ *  frame-ancestors is for the app to confirm: if it does not, the frame is
+ *  refused, never opened wider. */
 function frameAncestors(): string[] {
-  const named = (env('MANTLE_API_CORS_ORIGINS') ?? '')
-    .split(',')
-    .map((s) => s.trim().replace(/\/+$/, ''))
-    .filter((s) => ORIGIN_RE.test(s));
+  const named = namedCorsOrigins().filter((s) => ORIGIN_RE.test(s));
   const client = (env('MANTLE_CLIENT_ORIGIN') ?? '').trim().replace(/\/+$/, '');
-  return [...(ORIGIN_RE.test(client) ? [client] : []), ...named, ...LOCAL_CLIENT_ANCESTORS];
+  return [
+    ...(ORIGIN_RE.test(client) ? [client] : []),
+    ...named,
+    ...DESKTOP_APP_ORIGINS,
+    ...LOCAL_CLIENT_ANCESTORS,
+  ];
 }
 
 /** The canvas runtime's import map specifiers (what a canvas may import by
