@@ -41,7 +41,21 @@ export type BlankCandidate = {
   kind: BlankKind;
   /** When the file was last read (ISO), or null when the node does not say. */
   readAt: string | null;
+  /** Characters of the text page OCR left (0 for none). */
+  textChars: number;
 };
+
+/** The most characters a page of an `ocr_text` file may carry and still be
+ *  read as a blank page: a model's sentence that a page is white is under
+ *  100. A file with more text read its pages, and a codec it names is a logo
+ *  or a stamp: it is left alone (`--ocr-max-chars` moves the line). */
+export const OCR_MAX_CHARS_PER_PAGE = 200;
+
+/** A hit worth reading again: page OCR read nothing, or no more text than a
+ *  sentence a page. Pure. */
+export function likelyBlank(c: BlankCandidate, pages: number, maxPerPage: number): boolean {
+  return c.kind === 'no_text' || c.textChars <= pages * maxPerPage;
+}
 
 /** The filters of `BLANK_CODECS` that `bytes` names. Pure. */
 export function blankCodecsIn(bytes: Buffer): BlankCodec[] {
@@ -56,6 +70,31 @@ export function parseBefore(value: string | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+export type ApplyGate = { ok: true; before: Date | null } | { ok: false; message: string };
+
+/**
+ * The run's date, checked before anything is read. A date that is not one is
+ * refused; `--apply` needs one; a date after `now` is refused, because it
+ * would put back files read with the decoders (a typo of the month). Pure.
+ */
+export function applyGate(apply: boolean, beforeArg: string | undefined, now: Date): ApplyGate {
+  const before = parseBefore(beforeArg);
+  if (beforeArg !== undefined && !before)
+    return { ok: false, message: `--before must be a date (YYYY-MM-DD), not '${beforeArg}'` };
+  if (apply && !before)
+    return {
+      ok: false,
+      message:
+        '--apply needs --before=<YYYY-MM-DD>: the day this box got v0.400.56 or later. A file read after that was read right, and is never sent again.',
+    };
+  if (before && before.getTime() > now.getTime())
+    return {
+      ok: false,
+      message: `--before ${before.toISOString().slice(0, 10)} is in the future: it must be the day this box got v0.400.56 or later, which has passed`,
+    };
+  return { ok: true, before };
+}
+
 /** Of `candidates`, those read before `before`. A file with no read time is
  *  left out: nothing says it was read before the fix. Pure. */
 export function readBefore(candidates: BlankCandidate[], before: Date): BlankCandidate[] {
@@ -67,32 +106,51 @@ export function readBefore(candidates: BlankCandidate[], before: Date): BlankCan
 }
 
 /**
- * Brain-owned PDF file nodes page OCR read, that this remedy has not sent
- * before: a terminal `no_text_layer` skip, or `data.ocr`. A native read
- * (`data.native_pdf`) ran no render and is never one, nor a metadata-only
- * file (its content stays out).
+ * A candidate, as SQL on `nodes`: a brain-owned PDF file node page OCR read
+ * (a terminal `no_text_layer` skip, or `data.ocr`) that this remedy has not
+ * sent before. A native read (`data.native_pdf`) ran no render and is never
+ * one, nor a metadata-only file (its content stays out). The finder lists by
+ * it, and the write that sends a file checks it again in its own UPDATE: a
+ * second run at the same time, or a file read again since the list, is left
+ * alone.
  */
+const IS_CANDIDATE = sql`(
+  public.mantle_is_brain_space(${nodes.ownerId})
+  and ${nodes.type} = 'file'
+  and (lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) like '%.pdf'
+       or ${nodes.data}->>'mimeType' = 'application/pdf')
+  and coalesce(${nodes.data}->>'indexing_applied', '') <> 'metadata'
+  and coalesce(${nodes.data}->>'indexing', '') <> 'metadata'
+  and coalesce(${nodes.data}->>'native_pdf', '') <> 'true'
+  and ${nodes.data}->>${REREAD_STAMP} is null
+  and (${nodes.data}->'extract_skipped'->>'reason' = 'no_text_layer'
+       or ${nodes.data}->>'ocr' = 'true')
+)`;
+
+/** Every candidate, oldest first. */
 export async function findBlankCandidates(): Promise<BlankCandidate[]> {
   const rows = (await db.execute(sql`
-    select n.id,
-           case when n.data->'extract_skipped'->>'reason' = 'no_text_layer'
+    select ${nodes.id} as id,
+           case when ${nodes.data}->'extract_skipped'->>'reason' = 'no_text_layer'
                 then 'no_text' else 'ocr_text' end as kind,
-           coalesce(n.data->>'extract_completed_at',
-                    n.data->'extract_skipped'->>'at') as read_at
-      from ${nodes} n
-     where public.mantle_is_brain_space(n.owner_id)
-       and n.type = 'file'
-       and (lower(coalesce(n.data->>'filename', n.title)) like '%.pdf'
-            or n.data->>'mimeType' = 'application/pdf')
-       and coalesce(n.data->>'indexing_applied', '') <> 'metadata'
-       and coalesce(n.data->>'indexing', '') <> 'metadata'
-       and coalesce(n.data->>'native_pdf', '') <> 'true'
-       and n.data->>${REREAD_STAMP} is null
-       and (n.data->'extract_skipped'->>'reason' = 'no_text_layer'
-            or n.data->>'ocr' = 'true')
-     order by n.created_at
-  `)) as unknown as Array<{ id: string; kind: BlankKind; read_at: string | null }>;
-  return rows.map((r) => ({ id: r.id, kind: r.kind, readAt: r.read_at }));
+           coalesce(${nodes.data}->>'extract_completed_at',
+                    ${nodes.data}->'extract_skipped'->>'at') as read_at,
+           coalesce(length(${nodes.data}->>'text'), 0)::int as text_chars
+      from ${nodes}
+     where ${IS_CANDIDATE}
+     order by ${nodes.createdAt}
+  `)) as unknown as Array<{
+    id: string;
+    kind: BlankKind;
+    read_at: string | null;
+    text_chars: number;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    readAt: r.read_at,
+    textChars: Number(r.text_chars),
+  }));
 }
 
 export type ByteScan = {
@@ -127,7 +185,8 @@ export async function scanBytes(ownerId: string, ids: string[]): Promise<ByteSca
 }
 
 /** Clear one file for the extractor and stamp it as sent, in one transaction
- *  (ocr-rescan's clearForRescan with the stamp). */
-export function prepareReread(id: string, at: Date = new Date()): Promise<void> {
-  return clearForRescan(id, { [REREAD_STAMP]: at.toISOString() });
+ *  (ocr-rescan's clearForRescan with the stamp), only while it is still a
+ *  candidate. False: it is not one any more, and nothing was written. */
+export function prepareReread(id: string, at: Date = new Date()): Promise<boolean> {
+  return clearForRescan(id, { stamp: { [REREAD_STAMP]: at.toISOString() }, onlyIf: IS_CANDIDATE });
 }

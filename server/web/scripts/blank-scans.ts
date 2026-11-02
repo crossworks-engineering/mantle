@@ -10,6 +10,7 @@
  *   pnpm blank:scans --apply --before=2026-11-03 --limit=3
  *   pnpm blank:scans --apply --before=2026-11-03   # all of them, in batches
  *     --before=<YYYY-MM-DD>  the day this box got v0.400.56 or later (required with --apply)
+ *     --ocr-max-chars=<n>    an OCR'd file with more text than n a page is left alone (default 200)
  *     --limit=<n>            at most n files
  *     --batch=<n>            files queued per batch (default 5)
  *     --batch-timeout=<m>    minutes to wait for a batch (default 30)
@@ -23,8 +24,10 @@ import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { closeDb, resolveSingleOwnerId } from '@mantle/db';
 import {
+  applyGate,
   findBlankCandidates,
-  parseBefore,
+  likelyBlank,
+  OCR_MAX_CHARS_PER_PAGE,
   prepareReread,
   readBefore,
   scanBytes,
@@ -45,23 +48,18 @@ const flag = (name: string) => argv.find((a) => a.startsWith(`--${name}=`))?.spl
 const limit = flag('limit') ? Math.max(1, Number(flag('limit'))) : null;
 const batchSize = Math.max(1, Number(flag('batch') ?? 5));
 const batchTimeoutMin = Math.max(1, Number(flag('batch-timeout') ?? 30));
-const beforeArg = flag('before');
-const before = parseBefore(beforeArg);
+const ocrMaxChars = Math.max(0, Number(flag('ocr-max-chars') ?? OCR_MAX_CHARS_PER_PAGE));
 
 const usd = (v: number | null) =>
   v === null ? 'unknown (no price for this model)' : `$${v.toFixed(2)}`;
 
 async function main(): Promise<number> {
-  if (beforeArg !== undefined && !before) {
-    console.error(`[blank-scans] --before must be a date (YYYY-MM-DD), not '${beforeArg}'`);
+  const gate = applyGate(apply, flag('before'), new Date());
+  if (!gate.ok) {
+    console.error(`[blank-scans] ${gate.message}`);
     return 2;
   }
-  if (apply && !before) {
-    console.error(
-      '[blank-scans] --apply needs --before=<YYYY-MM-DD>: the day this box got v0.400.56 or later. A file read after that was read right, and is never sent again.',
-    );
-    return 2;
-  }
+  const { before } = gate;
   const ownerId = env('ALLOWED_USER_ID') || (await resolveSingleOwnerId());
   if (!ownerId) throw new Error('no brain owner (set ALLOWED_USER_ID)');
 
@@ -74,8 +72,9 @@ async function main(): Promise<number> {
   let chosen = all;
   if (before) {
     chosen = readBefore(all, before);
+    const noTime = all.filter((c) => !c.readAt).length;
     console.log(
-      `  read before ${before.toISOString().slice(0, 10)}: ${chosen.length}; after it, or with no read time: ${all.length - chosen.length} (left alone)`,
+      `  read before ${before.toISOString().slice(0, 10)}: ${chosen.length}; after it: ${all.length - chosen.length - noTime}; no read time: ${noTime} (both left alone)`,
     );
   }
   if (limit) chosen = chosen.slice(0, limit);
@@ -90,18 +89,32 @@ async function main(): Promise<number> {
   console.log(
     `  bytes searched: ${chosen.length}; name a blank codec: ${scan.hits.size} (JPX ${byCodec('/JPXDecode')}, CCITT ${byCodec('/CCITTFaxDecode')}, JBIG2 ${byCodec('/JBIG2Decode')}); name none: ${scan.misses.length}; missing or unreadable: ${scan.unreadable.length}`,
   );
+  // An OCR'd file that holds more than a sentence a page read its pages: the
+  // codec it names is a logo or a stamp.
+  const wordy = chosen.filter((c) => {
+    const h = scan.hits.get(c.id);
+    return h !== undefined && !likelyBlank(c, h.pages, ocrMaxChars);
+  });
+  for (const c of wordy) scan.hits.delete(c.id);
+  if (wordy.length > 0) {
+    console.log(
+      `  OCR'd hits with more than ${ocrMaxChars} characters a page: ${wordy.length} (left alone: their pages were read)`,
+    );
+  }
   if (scan.hits.size === 0) {
     console.log('[blank-scans] nothing to read again on this box.');
     return 0;
   }
-  if (!before) {
-    const times = chosen
-      .filter((c) => scan.hits.has(c.id) && c.readAt)
-      .map((c) => c.readAt!.slice(0, 10))
-      .sort();
-    if (times.length > 0)
-      console.log(`  hits were read from ${times[0]} to ${times[times.length - 1]}`);
-  }
+  const hitKinds = (k: string) => chosen.filter((c) => scan.hits.has(c.id) && c.kind === k).length;
+  console.log(
+    `  to read again: ${scan.hits.size} (no_text ${hitKinds('no_text')}, ocr_text ${hitKinds('ocr_text')})`,
+  );
+  const times = chosen
+    .filter((c) => scan.hits.has(c.id) && c.readAt)
+    .map((c) => c.readAt!.slice(0, 10))
+    .sort();
+  if (times.length > 0)
+    console.log(`  they were read from ${times[0]} to ${times[times.length - 1]}`);
   const pagesPerDoc = [...scan.hits.values()].map((h) => h.pages);
   console.log(`  pages: ${pagesPerDoc.reduce((a, b) => a + b, 0)} over ${scan.hits.size} file(s)`);
 
@@ -154,6 +167,7 @@ async function main(): Promise<number> {
   const todo = [...scan.hits.keys()];
   const at = new Date();
   let done: string[] = [];
+  let skipped: string[] = [];
   for (let i = 0; i < todo.length; i += batchSize) {
     const batch = todo.slice(i, i + batchSize);
     console.log(`[blank-scans] batch ${i / batchSize + 1}: queueing ${batch.length}`);
@@ -162,6 +176,7 @@ async function main(): Promise<number> {
       prepare: (id) => prepareReread(id, at),
     });
     done = done.concat(r.done);
+    skipped = skipped.concat(r.skipped);
     if (r.timedOut.length > 0) {
       console.log(
         `[blank-scans] STOPPED: ${r.timedOut.length} file(s) not finished after ${batchTimeoutMin} min (is the agent up? a provider paused?). They are stamped and will not be sent again: ${r.timedOut.join(', ')}`,
@@ -173,6 +188,11 @@ async function main(): Promise<number> {
   console.log(
     `[blank-scans] finished ${done.length}/${todo.length}: ${result.indexed} indexed, ${result.notIndexed} still without an embedding (see their extractor_run traces)`,
   );
+  if (skipped.length > 0) {
+    console.log(
+      `[blank-scans] left alone, no longer a candidate when its turn came (sent by another run, or read again since the list): ${skipped.join(', ')}`,
+    );
+  }
   return 0;
 }
 

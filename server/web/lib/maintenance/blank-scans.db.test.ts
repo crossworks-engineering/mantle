@@ -27,6 +27,7 @@ describe.skipIf(!URL)('blank-scans', () => {
     sent: randomUUID(), // stamped by an earlier run
     textLayer: randomUUID(), // a PDF with its own text
     metadata: randomUUID(), // content indexing is off
+    applied: randomUUID(), // content indexing was turned off, as applied
     image: randomUUID(), // OCR of a picture, not a PDF
   };
 
@@ -82,6 +83,10 @@ describe.skipIf(!URL)('blank-scans', () => {
       extract_skipped: { reason: 'no_text_layer', at: '2026-09-06T00:00:00Z' },
       indexing: 'metadata',
     });
+    await file(id.applied, 'private-2.pdf', {
+      extract_skipped: { reason: 'no_text_layer', at: '2026-09-06T00:00:00Z' },
+      indexing_applied: 'metadata',
+    });
     await file(id.image, 'photo.png', {
       filename: 'photo.png',
       ocr: true,
@@ -100,20 +105,20 @@ describe.skipIf(!URL)('blank-scans', () => {
     Object.fromEntries(
       (await blank.findBlankCandidates())
         .filter((c) => (Object.values(id) as string[]).includes(c.id))
-        .map((c) => [c.id, `${c.kind} ${c.readAt}`]),
+        .map((c) => [c.id, `${c.kind} ${c.readAt} ${c.textChars}`]),
     );
 
   it('lists the PDFs page OCR read, with when, and nothing else', async () => {
     expect(await mine()).toEqual({
-      [id.noText]: 'no_text 2026-09-01T00:00:00Z',
-      [id.ocrText]: 'ocr_text 2026-09-02T00:00:00Z',
-      [id.byMime]: 'ocr_text 2026-11-05T00:00:00Z',
+      [id.noText]: 'no_text 2026-09-01T00:00:00Z 0',
+      [id.ocrText]: 'ocr_text 2026-09-02T00:00:00Z 18',
+      [id.byMime]: 'ocr_text 2026-11-05T00:00:00Z 0',
     });
   });
 
   it('clears a file and stamps it in one step, so a second run leaves it out', async () => {
     const at = new Date('2026-11-10T12:00:00Z');
-    await blank.prepareReread(id.ocrText, at);
+    expect(await blank.prepareReread(id.ocrText, at)).toBe(true);
     const [row] = await admin`select data from nodes where id = ${id.ocrText}`;
     const data = row!.data as Row;
     expect(data.text).toBeUndefined();
@@ -127,5 +132,16 @@ describe.skipIf(!URL)('blank-scans', () => {
     await admin`update nodes set data = data || '{"ocr": true, "extract_completed_at": "2026-11-10T12:05:00Z"}'::jsonb
       where id = ${id.ocrText}`;
     expect(Object.keys(await mine()).sort()).toEqual([id.noText, id.byMime].sort());
+  });
+
+  it('sends nothing when the file is no longer a candidate at its turn', async () => {
+    const before =
+      await admin`select id, data from nodes where id = any(${[id.sent, id.textLayer, id.native]}::uuid[]) order by id`;
+    // Stamped by another run, a PDF with its own text, a native read.
+    for (const nid of [id.sent, id.textLayer, id.native])
+      expect(await blank.prepareReread(nid, new Date()), nid).toBe(false);
+    const after =
+      await admin`select id, data from nodes where id = any(${[id.sent, id.textLayer, id.native]}::uuid[]) order by id`;
+    expect(after).toEqual(before);
   });
 });
