@@ -110,13 +110,18 @@ every app container ─reads (mounted read-only)─▶ /signal/services.json
    mode kept).
 3. The service's token is written when missing (64 hex characters from the
    kernel). For sandboxes, `MANTLE_SANDBOXES_HOST_DIR` is set to
-   `<data dir>/sandboxes`, host-absolute, when missing.
+   `<data dir>/sandboxes`, host-absolute, when missing. For calls, the key
+   name `MANTLE_LIVEKIT_API_KEY` and `MANTLE_CALLS_HOST` (the first of
+   `MANTLE_SITE_ADDRESS`, a hostname only) are set when missing.
 4. The profile is added to `COMPOSE_PROFILES`.
 5. Only that service's image is pulled (for sandboxes, also the sandbox base
    image; a failure there is not fatal, the first new sandbox fetches it).
-6. Only that container starts (`up -d --no-deps`). If the token was only
-   just written, the app containers are recreated once so they carry it; a
-   normal roll writes the token in advance, so this is rare.
+6. Only that container starts (`up -d --no-deps`). If step 3 just wrote a
+   value the brain reads (the token, or the calls key or host), the app
+   containers are recreated once so they carry it; a normal roll writes
+   all of them in advance, so this is rare. The brain reads those values
+   from its env, not from `services.json`: without the recreate, LiveKit ran
+   while the brain had no calls host and every call answered "off".
 7. The updater waits up to `MANTLE_SERVICE_HEALTH_TIMEOUT_S` (default 180)
    for the container to report healthy.
 

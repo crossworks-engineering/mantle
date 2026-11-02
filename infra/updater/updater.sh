@@ -1626,6 +1626,14 @@ ensure_service_tokens() {
   if [ -n "$(env_val MANTLE_LIVEKIT_API_SECRET)" ] && [ -z "$(env_val MANTLE_LIVEKIT_API_KEY)" ]; then
     ensure_livekit_key && echo "[updater] MANTLE_LIVEKIT_API_KEY provisioned beside the secret" | tee -a "$SIG/update.log"
   fi
+  # So does the calls host, as install.sh writes it: inert until the
+  # profile, and without it in the app containers' env a later switch would
+  # start LiveKit while the brain still says calls are off. A box that
+  # serves no hostname has none; its switch says why.
+  if [ -z "$(env_val MANTLE_CALLS_HOST)" ] && ensure_calls_host; then
+    echo "[updater] MANTLE_CALLS_HOST=$(env_val MANTLE_CALLS_HOST) provisioned (calls stay as they are: the profile decides)" \
+      | tee -a "$SIG/update.log"
+  fi
 }
 
 # ── the documents engine: on by default ─────────────────────────────────────
@@ -1761,7 +1769,9 @@ ensure_parser_token() {
 #   MANTLE_SERVICE_HEALTH_TIMEOUT_S=180  how long "on" waits for healthy
 SVC_ENV_BAK=""
 SVC_ERR=""
-SVC_TOKEN_NEW=""
+# The .env names an "on" wrote that the app containers read (a token, the
+# calls key or host), space-separated; set, the app containers are recreated.
+SVC_APP_ENV_NEW=""
 
 # compose_service <name>: the compose service a switch pulls, starts and
 # stops.
@@ -1887,18 +1897,26 @@ service_on() {
   svc_log ".env backed up to ${SVC_ENV_BAK#"$STACK"/}"
 
   so_tv=$(service_token_var "$1")
-  SVC_TOKEN_NEW=""
+  SVC_APP_ENV_NEW=""
   if [ -n "$so_tv" ] && [ -z "$(env_val "$so_tv")" ]; then
     so_tok=$(gen_token) || { service_on_failed "$1" "could not generate $so_tv"; return 1; }
     persist_env "$so_tv" "$so_tok" || { service_on_failed "$1" "could not write $so_tv"; return 1; }
-    SVC_TOKEN_NEW=1
+    SVC_APP_ENV_NEW="$so_tv"
     svc_log "$so_tv provisioned"
   fi
   if [ "$1" = calls ]; then
     # The key NAME beside the secret, the TURN hostname, and the config
-    # file the compose mounts (adopted from the image where missing).
+    # file the compose mounts (adopted from the image where missing). The
+    # brain reads the key and the host from its env (it mints with the
+    # one, its ICE override and signalling URL need the other), so one
+    # written now recreates the app containers like a new token. A roll
+    # writes both ahead (ensure_service_tokens), so this is rare.
+    so_had_key=$(env_val MANTLE_LIVEKIT_API_KEY)
+    so_had_host=$(env_val MANTLE_CALLS_HOST)
     ensure_livekit_key || { service_on_failed "$1" "could not write MANTLE_LIVEKIT_API_KEY"; return 1; }
     ensure_calls_host || { service_on_failed "$1" "$ECH_ERR"; return 1; }
+    [ -n "$so_had_key" ] || SVC_APP_ENV_NEW="${SVC_APP_ENV_NEW:+$SVC_APP_ENV_NEW }MANTLE_LIVEKIT_API_KEY"
+    [ -n "$so_had_host" ] || SVC_APP_ENV_NEW="${SVC_APP_ENV_NEW:+$SVC_APP_ENV_NEW }MANTLE_CALLS_HOST"
     IMG=$(compose_image) 2>/dev/null
     [ -z "$IMG" ] || refresh_livekit current
     [ -s "$STACK/$LIVEKIT_REL" ] || { service_on_failed "$1" "$LIVEKIT_REL is missing and could not be taken from the image; nothing changed"; return 1; }
@@ -1945,11 +1963,12 @@ service_on() {
   fi
 
   write_service_status starting "$1" true "$SVC_STARTED" "" null ""
-  if [ -n "$SVC_TOKEN_NEW" ]; then
-    # The app containers do not have the token yet: recreate them with it
-    # (the roll's own service list: everything but this updater and caddy).
+  if [ -n "$SVC_APP_ENV_NEW" ]; then
+    # The app containers do not have the new value yet (a token, or the
+    # calls key or host): recreate them with it (the roll's own service
+    # list: everything but this updater and caddy).
     so_list=$(docker compose --project-directory "$STACK" config --services 2>/dev/null | grep -vx updater | grep -vx caddy | tr '\n' ' ')
-    svc_log "new token: recreating the app containers so they carry it (once)"
+    svc_log "new $SVC_APP_ENV_NEW: recreating the app containers so they carry it (once)"
     # shellcheck disable=SC2086  # word-splitting the service list is intended
     svc_compose "$1" up -d $so_list || { service_on_failed "$1" "the containers did not start"; return 1; }
   else

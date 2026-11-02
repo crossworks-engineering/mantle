@@ -2545,6 +2545,22 @@ check ".env keeps mode 600" test "$(mode_of "$TK/stack/.env")" = 600
 tok1=$(sed -n 's/^SANDBOXD_TOKEN=//p' "$TK/stack/.env")
 updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
 check "a second roll keeps the provisioned token" grep -qx "SANDBOXD_TOKEN=$tok1" "$TK/stack/.env"
+TC="$WORK/tokens-calls"; fake_stack "$TC"
+printf 'services:\n  api:\n    volumes:\n      - ./data/update-signal:/signal:ro\n' > "$TC/stack/docker-compose.yml"
+printf 'MANTLE_SITE_ADDRESS=https://brain.example.com:443/x\n' >> "$TC/stack/.env"
+updater_run "$TC/stack" "$TC/sig" "$TC/img" 'ensure_service_tokens' > /dev/null
+check "a roll writes the calls host from the site address, as install.sh does" grep -qx 'MANTLE_CALLS_HOST=brain.example.com' "$TC/stack/.env"
+check "the calls key rides beside the provisioned secret" grep -qE '^MANTLE_LIVEKIT_API_KEY=mk[0-9a-f]{16}$' "$TC/stack/.env"
+check "no calls profile is added" sh -c "! grep -q '^COMPOSE_PROFILES=.*calls' '$TC/stack/.env'"
+sed -i.bak 's/^MANTLE_CALLS_HOST=.*/MANTLE_CALLS_HOST=set.by.owner/' "$TC/stack/.env"; rm -f "$TC/stack/.env.bak"
+updater_run "$TC/stack" "$TC/sig" "$TC/img" 'ensure_service_tokens' > /dev/null
+check "an existing calls host is never replaced" grep -qx 'MANTLE_CALLS_HOST=set.by.owner' "$TC/stack/.env"
+TI="$WORK/tokens-calls-ip"; fake_stack "$TI"
+cp "$TC/stack/docker-compose.yml" "$TI/stack/docker-compose.yml"
+printf 'MANTLE_SITE_ADDRESS=:80\n' >> "$TI/stack/.env"
+updater_run "$TI/stack" "$TI/sig" "$TI/img" 'ensure_service_tokens' > /dev/null
+check "a box with no hostname gets no calls host, and the roll goes on" sh -c "
+  ! grep -q '^MANTLE_CALLS_HOST=' '$TI/stack/.env' && grep -qE '^SANDBOXD_TOKEN=[0-9a-f]{64}$' '$TI/stack/.env'"
 TP="$WORK/tokens-parser"; fake_stack "$TP"
 printf 'services:\n  parser:\n    container_name: mantle_parser\n' > "$TP/stack/docker-compose.yml"
 updater_run "$TP/stack" "$TP/sig" "$TP/img" 'ensure_service_tokens' > /dev/null
@@ -2813,6 +2829,45 @@ cp "$T/stack/.env" "$T/env.before"
 svc_run
 check "helpers with the full profile on: refused, .env untouched" sh -c "
   grep -q 'the helpers always run on this box' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+
+# ── calls (LiveKit): the brain reads the key and the host from its env ──
+# 2026-11-02 on dev: a switch wrote MANTLE_CALLS_HOST, started only livekit,
+# and the brain kept an empty host, so every call answered 404 until web was
+# recreated by hand. A value the app reads that the switch writes now
+# recreates the app containers, the same rule as a new token.
+calls_case() { # <name>: the secret and key from a roll, a hostname site
+  svc_case "$1" '{"service":"calls","enable":true}'
+  mkdir -p "$T/stack/infra/livekit"; printf 'port: 7880\n' > "$T/stack/infra/livekit/livekit.yaml"
+  printf 'MANTLE_LIVEKIT_API_SECRET=sss\nMANTLE_LIVEKIT_API_KEY=mkkey\nMANTLE_SITE_ADDRESS=brain.example.com, www.brain.example.com\n' >> "$T/stack/.env"
+  cp "$T/stack/.env" "$T/env.before"
+}
+calls_case callsnohost; svc_run
+check "calls on, no host yet: status done" grep -q '"phase":"done","service":"calls","enable":true.*"ok":true' "$T/sig/service-status.json"
+check "calls on, no host yet: the host is the first site address" grep -qx 'MANTLE_CALLS_HOST=brain.example.com' "$T/stack/.env"
+check "calls on, no host yet: the app containers are recreated to carry it" grep -qE 'profile calls up -d web api worker_files$' "$T/calls"
+check "calls on, no host yet: never the updater or caddy" sh -c "! grep -E ' up -d ' '$T/calls' | grep -qE 'updater|caddy'"
+check "calls on, no host yet: the log names the new value" grep -q 'new MANTLE_CALLS_HOST: recreating the app containers' "$T/sig/service.log"
+check "calls on, no host yet: the key and secret kept" sh -c "
+  grep -qx 'MANTLE_LIVEKIT_API_KEY=mkkey' '$T/stack/.env' && grep -qx 'MANTLE_LIVEKIT_API_SECRET=sss' '$T/stack/.env'"
+calls_case callsnokey
+sed -i.bak '/^MANTLE_LIVEKIT_API_KEY=/d' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+printf 'MANTLE_CALLS_HOST=calls.example.com\n' >> "$T/stack/.env"
+svc_run
+check "calls on, no key yet: the key is written and the app containers recreated" sh -c "
+  grep -qE '^MANTLE_LIVEKIT_API_KEY=mk[0-9a-f]{16}$' '$T/stack/.env' && grep -qE 'profile calls up -d web api worker_files$' '$T/calls'"
+check "calls on, no key yet: an existing host is kept" grep -qx 'MANTLE_CALLS_HOST=calls.example.com' "$T/stack/.env"
+calls_case callsready
+printf 'MANTLE_CALLS_HOST=calls.example.com\n' >> "$T/stack/.env"
+svc_run
+check "calls on, all from a roll: starts only livekit (--no-deps)" sh -c "
+  grep -qE 'profile calls up -d --no-deps livekit$' '$T/calls' && ! grep -qE ' up -d [^-]' '$T/calls'"
+check "calls on, all from a roll: waits on mantle_livekit" grep -q 'inspect .*mantle_livekit' "$T/calls"
+calls_case callsip
+sed -i.bak 's/^MANTLE_SITE_ADDRESS=.*/MANTLE_SITE_ADDRESS=203.0.113.7/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+cp "$T/stack/.env" "$T/env.before"
+svc_run
+check "calls on, an IP site: refused with the reason, .env restored, nothing started" sh -c "
+  grep -q 'is an IP address (203.0.113.7)' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before' && ! grep -q ' up ' '$T/calls'"
 
 # ── unconfigured, and the real poll loop ──
 svc_case unconf '{"service":"sandboxes","enable":true}'
