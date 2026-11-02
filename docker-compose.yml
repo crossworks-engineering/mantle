@@ -240,7 +240,8 @@ x-app-env: &app-env
   # MANTLE_MCP_TOOL_MAP=1 lists the tool map and four call tools by risk class
   # (tool_read, tool_write, tool_delete, tool_send) instead of every tool, on
   # every MCP connection of the box but a linked brain's; one connection still picks with
-  # `?tools=map` or `?tools=full` on its URL (docs/connecting-claude.md).
+  # `?tools=map` or `?tools=full` on its URL (docs/connecting-claude.md). Every
+  # tool stays callable by its own name, so clients that cached the full list keep working.
   MANTLE_MCP_TOOL_MAP: ${MANTLE_MCP_TOOL_MAP:-}
   # Workspaces arch A9 (docs/runtime-role.md): 1 = the app's pools log in as
   # mantle_runtime (not a superuser, not a table owner; its password derived

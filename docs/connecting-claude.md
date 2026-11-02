@@ -240,8 +240,13 @@ on every turn. A connection can ask for the **tool map** instead: add
 or set `MANTLE_MCP_TOOL_MAP=1` in the box's `.env` for every connection
 (stdio too; `?tools=full` on a URL still lists everything). A linked
 brain's connection is never on the map: its peer tools call tools by name.
-A script on an API key that calls tools by name needs `?tools=full` once
-the box switch is on.
+The map lists fewer tools; it calls the same ones. Every tool the gate
+allows the connection stays callable by its own name, so a client that
+cached the full list (a connector or a session that never refreshes its
+tools) and a script on an API key that calls tools by name keep working
+when the box switch goes on. Such a call is that tool's own call, as on
+the full list: its gate, its call log, and the client's approval of it by
+its own name. A name the gate does not allow is still "not found".
 For a claude.ai connector the box switch is the plainer road: a URL with
 `?tools=` is this box's own to the sign-in check, but a strict client may
 still compare it with the endpoint the box advertises (`/api/mcp`).

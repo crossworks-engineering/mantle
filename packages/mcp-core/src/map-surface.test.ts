@@ -169,6 +169,89 @@ describe('the call tools run the tool they name', () => {
     await client.close();
   });
 
+  it('a tool on the map is still called by its own name; a name not handed over is not found', async () => {
+    const seen: unknown[] = [];
+    const client = await connect((server) => {
+      const map = new McpToolMap('');
+      map.add(entry('thing_get', 'read', seen));
+      map.add(entry('thing_post', 'send', seen));
+      map.register(server);
+    });
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).not.toContain('thing_post');
+    const r = await client.callTool({ name: 'thing_post', arguments: { id: 'x2' } });
+    expect(JSON.parse(text(r))).toEqual({ ran: 'thing_post' });
+    expect(seen).toEqual([['thing_post', { id: 'x2' }]]);
+    await expect(client.callTool({ name: 'thing_put', arguments: { id: 'x' } })).rejects.toThrow(
+      /Tool thing_put not found/,
+    );
+    await client.close();
+  });
+
+  it("the map's tools/list writes each tool as the SDK's own tools/list does", async () => {
+    const fill = (map: McpToolMap) => {
+      map.add(entry('thing_get', 'read', []));
+      map.add(entry('thing_update', 'write', []));
+      map.add(entry('thing_post', 'send', []));
+      // A plain zod schema too: written with the draft the SDK's list asks for.
+      map.add({
+        ...entry('calculate', 'read', []),
+        inputSchema: z.object({ x: z.number() }) as never,
+        annotations: {
+          title: 'calculate',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      });
+    };
+    const onMap = await connect((server) => {
+      const map = new McpToolMap('');
+      fill(map);
+      map.register(server);
+    });
+    const mapList = (await onMap.listTools()).tools;
+    await onMap.close();
+    // The same registrations with the SDK's own tools/list left in place:
+    // the map's replacement of it is not passed on.
+    const sdkOwn = await connect((server) => {
+      let replaced = false;
+      const low = new Proxy(server.server, {
+        get(target, key) {
+          if (key === 'removeRequestHandler') {
+            return (method: string) => {
+              if (method === 'tools/list') replaced = true;
+              else target.removeRequestHandler(method as never);
+            };
+          }
+          if (key === 'setRequestHandler' && replaced) return () => undefined;
+          const v = Reflect.get(target, key);
+          return typeof v === 'function' ? v.bind(target) : v;
+        },
+      });
+      const outer = new Proxy(server, {
+        get: (target, key) => (key === 'server' ? low : Reflect.get(target, key)),
+      });
+      const map = new McpToolMap('');
+      fill(map);
+      map.register(outer as McpServer);
+      expect(replaced).toBe(true);
+    });
+    const sdkList = (await sdkOwn.listTools()).tools;
+    await sdkOwn.close();
+    expect(sdkList.map((t) => t.name)).toContain('thing_post');
+    expect(mapList.map((t) => t.name)).toEqual([
+      'calculate',
+      'tool_help',
+      'tool_read',
+      'tool_write',
+      'tool_send',
+    ]);
+    const listed = new Set(mapList.map((t) => t.name));
+    expect(mapList).toEqual(sdkList.filter((t) => listed.has(t.name)));
+  });
+
   it('a second tool of the same name throws, as a second registerTool does', () => {
     const map = new McpToolMap('');
     map.add(entry('thing_get', 'read', []));

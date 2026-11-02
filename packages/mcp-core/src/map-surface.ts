@@ -5,15 +5,22 @@
  * (@mantle/tools risk-map.ts), instead of every tool (about 330 schemas,
  * which a client pays for on every turn).
  *
- * Listing still equals calling: the one registration (gated-tools.ts)
- * hands a tool here only when the gate lists it for the connection, and a
- * call tool runs it through that same tool's handler, so the gate, the
- * create home, the guards, the reply shape and the call log are the ones a
- * listed tool has. What this adds is the class check (a call through the
- * wrong call tool is refused, naming the right one) and the argument check
- * the SDK does for a listed tool. A call the map refuses ran nothing and,
- * like a listed tool's call the SDK refuses on its arguments, leaves no
- * call log row; nor does tool_help.
+ * The map lists fewer tools; it calls the same ones. The one registration
+ * (gated-tools.ts) hands a tool here only when the gate lists it for the
+ * connection, and every tool handed here is registered on the server by
+ * its own name, as on the full list: a client that cached the full list
+ * (a connector or a session that never refreshes its tools) calls a tool
+ * by its old name and gets that tool's own call (the gate, the create home,
+ * the guards, the argument check, the reply shape, the call log, and the
+ * client's approval of that tool by its own name and hints). Only tools/list
+ * is answered with the map (listOnly). A name the gate does not hand here is
+ * on no list and stays "not found".
+ *
+ * A call tool runs a tool through that same handler. What it adds is the
+ * class check (a call through the wrong call tool is refused, naming the
+ * right one) and the argument check the SDK does for a call by name. A
+ * call the map refuses ran nothing and, like a call by name the SDK
+ * refuses on its arguments, leaves no call log row; nor does tool_help.
  *
  * A read the gate treats as a write may sit under tool_read (its
  * readOnlyHint) only by its policy's own `riskClass: 'read'`: a catalog
@@ -21,11 +28,12 @@
  * so per HTTP request (about 13 ms over the full list's build on the
  * 2026-11-02 measure).
  *
- * The tools listed in full are reads only: every write, delete and send
- * goes through its class's call tool, so a client's per-tool approval sees
- * the class on every one.
+ * The tools listed in full are reads only: a client that reads the map
+ * reaches every write, delete and send through its class's call tool, so
+ * its per-tool approval sees the class on every one. A client that cached
+ * the full list approves each tool by its own name and hints, as it did.
  */
-import type { McpServer } from '@modelcontextprotocol/server';
+import type { McpServer, RegisteredTool } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { feature } from '@mantle/config';
 import {
@@ -110,6 +118,34 @@ function jsonSchemaOf(schema: InputSchema): Record<string, unknown> {
   return schema['~standard'].jsonSchema.input({ target: 'draft-07' }) as Record<string, unknown>;
 }
 
+/** The JSON Schema draft the SDK's tools/list writes (its
+ *  JSON_SCHEMA_CONVERSION_TARGET; map-surface.test.ts pins the match). */
+const LISTED_SCHEMA_TARGET = 'draft-2020-12';
+
+/** Answer tools/list on `server` with `listed` only. The SDK's own handler
+ *  lists every registered tool, and a tool it does not list it does not
+ *  call, so the map keeps every tool registered and replaces the list. Each
+ *  definition is written as the SDK's handler writes it. */
+function listOnly(server: McpServer, listed: ReadonlyArray<[string, RegisteredTool]>): void {
+  server.server.removeRequestHandler('tools/list');
+  server.server.setRequestHandler('tools/list', () => ({
+    tools: listed
+      .filter(([, tool]) => tool.enabled)
+      .map(([name, tool]) => ({
+        name,
+        title: tool.title,
+        description: tool.description,
+        inputSchema: (tool.inputSchema?.['~standard'].jsonSchema.input({
+          target: LISTED_SCHEMA_TARGET,
+        }) ?? { type: 'object', properties: {} }) as { type: 'object' },
+        annotations: tool.annotations,
+        icons: tool.icons,
+        execution: tool.execution,
+        _meta: tool._meta,
+      })),
+  }));
+}
+
 /** The tools of one connection, gathered as the registration lists them,
  *  then put on the server as the map (register). A read is listed in full
  *  when it is in the core (@mantle/tools CORE_TOOL_SLUGS) or when the
@@ -133,8 +169,9 @@ export class McpToolMap {
     return true;
   }
 
-  /** Put the map on `server`: the direct reads, tool_help and the call
-   *  tools; every tool in full when nothing is left to map. */
+  /** Put the map on `server`: every tool registered by its own name, and
+   *  tools/list answered with the direct reads, tool_help and the call
+   *  tools; every tool listed in full when nothing is left to map. */
   register(server: McpServer): void {
     const all = [...this.entries.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
     const isDirect = (e: McpMapEntry) =>
@@ -152,54 +189,66 @@ export class McpToolMap {
       source: e.source,
     });
     const risk = buildRiskMap(mapped.map(asTool), direct.map(asTool));
-    const listed = risk ? direct : all;
-    for (const e of listed) {
-      server.registerTool(
+    // Every tool by its own name, the map or not (see the module comment).
+    const own = new Map<string, RegisteredTool>();
+    for (const e of all) {
+      own.set(
         e.name,
-        {
-          description: e.description,
-          inputSchema: e.inputSchema,
-          ...(e.annotations ? { annotations: e.annotations } : {}),
-        },
-        e.respond as never,
+        server.registerTool(
+          e.name,
+          {
+            description: e.description,
+            inputSchema: e.inputSchema,
+            ...(e.annotations ? { annotations: e.annotations } : {}),
+          },
+          e.respond as never,
+        ),
       );
     }
     if (!risk) return;
 
+    const listed: Array<[string, RegisteredTool]> = direct.map((e) => [e.name, own.get(e.name)!]);
     const [help, ...calls] = risk.calls;
-    server.registerTool(
+    listed.push([
       help!.function.name,
-      {
-        description: help!.function.description,
-        inputSchema: toolInputSchema(HELP_SHAPE),
-        annotations: {
-          title: help!.function.name,
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: false,
+      server.registerTool(
+        help!.function.name,
+        {
+          description: help!.function.description,
+          inputSchema: toolInputSchema(HELP_SHAPE),
+          annotations: {
+            title: help!.function.name,
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
         },
-      },
-      (async (args: { names?: string[]; area?: string }) => jsonReply(risk.help(args))) as never,
-    );
+        (async (args: { names?: string[]; area?: string }) => jsonReply(risk.help(args))) as never,
+      ),
+    ]);
     for (const call of calls) {
       const cls = (Object.keys(RISK_CALL_SLUGS) as RiskClass[]).find(
         (c) => RISK_CALL_SLUGS[c] === call.function.name,
       )!;
-      server.registerTool(
+      listed.push([
         call.function.name,
-        {
-          description: call.function.description,
-          inputSchema: toolInputSchema(CALL_SHAPE),
-          annotations: callHints(
-            cls,
-            all.filter((e) => e.cls === cls),
-          ),
-        },
-        (async (args: { name: string; arguments?: Record<string, unknown> }, extra: unknown) =>
-          this.call(risk.route, cls, args, extra)) as never,
-      );
+        server.registerTool(
+          call.function.name,
+          {
+            description: call.function.description,
+            inputSchema: toolInputSchema(CALL_SHAPE),
+            annotations: callHints(
+              cls,
+              all.filter((e) => e.cls === cls),
+            ),
+          },
+          (async (args: { name: string; arguments?: Record<string, unknown> }, extra: unknown) =>
+            this.call(risk.route, cls, args, extra)) as never,
+        ),
+      ]);
     }
+    listOnly(server, listed);
   }
 
   /** One call through the call tool of `via`: the class check, the
