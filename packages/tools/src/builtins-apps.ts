@@ -16,6 +16,9 @@ import {
   changeDraftSource,
   sourceRev,
   AppDraftRevError,
+  AppLiveRevError,
+  MAX_APP_FILES,
+  MAX_APP_FILE_BYTES,
   setManifest,
   declareAppSchema,
   publishApp,
@@ -74,7 +77,14 @@ import {
   restoreAppSnapshot,
   type AppVersionSource,
 } from '@mantle/content/app-snapshots';
-import { GitBundleWriter, BUNDLE_BRANCH, NOTES_REF } from './code/git-bundle';
+import {
+  GitBundleWriter,
+  BUNDLE_BRANCH,
+  NOTES_REF,
+  GIT_BUNDLE_MAX_BYTES,
+  type BundleCommit,
+} from './code/git-bundle';
+import { BUNDLE_READ_LIMITS, BundleReadError, readBundleTree } from './code/git-bundle-read';
 import { recordIngest } from '@mantle/tracing';
 import { buildAndStageApp } from './app-build-stage';
 import { APP_ICON_MAX, APP_TINTS, type AppTint } from '@mantle/client-types/app-nav';
@@ -1900,9 +1910,6 @@ function exportStem(title: string): string {
   );
 }
 
-/** The largest git bundle app_export writes (on disk while it is made,
- *  then stored as a file). */
-export const GIT_BUNDLE_MAX_BYTES = 64 * 1024 * 1024;
 /** The most code (all versions' trees together, as the rows keep their
  *  sizes) one git export reads: the work, which deduplication hides from
  *  the bundle's size. */
@@ -1937,6 +1944,36 @@ export function versionGitNote(v: Pick<AppVersionSource, 'note' | 'actorLoginId'
 
 const MB = (n: number) => Math.ceil(n / 1024 / 1024);
 
+type AppSource = NonNullable<AppVersionSource['source']>;
+
+/** A version as a bundle commit: the one mapping a git export writes and
+ *  a bundle import checks its base by, so the ids agree. */
+export function versionCommit(v: AppVersionSource & { source: AppSource }): BundleCommit {
+  return {
+    files: v.source.files,
+    author: versionAuthor(v),
+    time: v.createdAt.getTime() / 1000,
+    message: versionMessage(v),
+    gitNote: versionGitNote(v),
+  };
+}
+
+/** Why the app's versions are too many or too large for one git export
+ *  or import to read, or null. */
+async function versionsTooBig(ownerId: string, id: string): Promise<string | null> {
+  const totals = await appVersionTotals(ownerId, id);
+  if (totals.versions === 0) {
+    return `app ${id} has no version yet: publish it (app_publish) first`;
+  }
+  if (totals.sourceBytes > GIT_EXPORT_MAX_SOURCE_BYTES) {
+    return `the app's ${totals.versions} versions hold ${MB(totals.sourceBytes)} MB of code in all, past the ${MB(GIT_EXPORT_MAX_SOURCE_BYTES)} MB one git export reads: compare versions in place with app_log and code_diff instead`;
+  }
+  if (totals.versions > GIT_EXPORT_MAX_VERSIONS) {
+    return `the app has ${totals.versions} versions, past the ${GIT_EXPORT_MAX_VERSIONS} one git export reads: compare versions in place with app_log and code_diff instead`;
+  }
+  return null;
+}
+
 /**
  * app_export's git mode: the app's versions (each publish) as commits of
  * one branch, oldest first, in a `.bundle` file saved where a package
@@ -1966,38 +2003,15 @@ async function exportGitBundle(
     await assertMayCopyApp(id, false);
     const app = await getApp(ctx.ownerId, id);
     if (!app) return notFound('app', id, 'app_list');
-    const totals = await appVersionTotals(ctx.ownerId, id);
-    if (totals.versions === 0) {
-      return {
-        ok: false,
-        error: `app ${id} has no version yet: a git bundle holds the published versions. Publish it (app_publish) first, or export the package (format mantleapp)`,
-      };
-    }
-    if (totals.sourceBytes > GIT_EXPORT_MAX_SOURCE_BYTES) {
-      return {
-        ok: false,
-        error: `the app's ${totals.versions} versions hold ${MB(totals.sourceBytes)} MB of code in all, past the ${MB(GIT_EXPORT_MAX_SOURCE_BYTES)} MB one git export reads: compare versions in place with app_log and code_diff instead`,
-      };
-    }
-    if (totals.versions > GIT_EXPORT_MAX_VERSIONS) {
-      return {
-        ok: false,
-        error: `the app has ${totals.versions} versions, past the ${GIT_EXPORT_MAX_VERSIONS} one git export reads: compare versions in place with app_log and code_diff instead`,
-      };
-    }
+    const tooBig = await versionsTooBig(ctx.ownerId, id);
+    if (tooBig) return { ok: false, error: tooBig };
     work = await appPackageTempPath('.gitwork');
     dest = await appPackageTempPath('.bundle');
     writer = new GitBundleWriter(work);
     let versions = 0;
     for await (const v of appVersionSources(ctx.ownerId, id)) {
       if (!v.source) continue;
-      await writer.add({
-        files: v.source.files,
-        author: versionAuthor(v),
-        time: v.createdAt.getTime() / 1000,
-        message: versionMessage(v),
-        gitNote: versionGitNote(v),
-      });
+      await writer.add(versionCommit({ ...v, source: v.source }));
       versions++;
       if (writer.packedBytes > GIT_BUNDLE_MAX_BYTES) {
         return {
@@ -2237,6 +2251,187 @@ const app_import: BuiltinToolDef = {
   },
 };
 
+/**
+ * The commit id of the app's live version, as a git export writes it (the
+ * versions up to the newest, ids only), and the live tree's rev; null with
+ * no version.
+ */
+async function liveVersionCommit(
+  ownerId: string,
+  id: string,
+): Promise<{ commit: string; rev: string } | null> {
+  const ids = new GitBundleWriter(null);
+  let last: AppSource | null = null;
+  for await (const v of appVersionSources(ownerId, id)) {
+    if (!v.source) continue;
+    await ids.add(versionCommit({ ...v, source: v.source }));
+    last = v.source;
+  }
+  return ids.head && last ? { commit: ids.head, rev: sourceRev(last) } : null;
+}
+
+const app_source_from_bundle: BuiltinToolDef = {
+  slug: 'app_source_from_bundle',
+  policy: {
+    matrix: { action: 'editDraft', param: 'id', kinds: ['app'] },
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    outside: { appCode: true },
+    itemArgs: [{ param: 'id' }, { param: 'file_id', least: 'read' }],
+    peerRisky: true,
+    // A conversion (a file in, an app's code out): an all-areas key only.
+    clientSourced: CS.onApp,
+  },
+  ownerOnly: true,
+  loginTurns: true,
+  preconditions: [...APP_ID_PRE, ...FILE_ID_PRE],
+  name: "Set a mini app's draft from a git bundle",
+  description:
+    "Write the newest commit of a git bundle in /files (`git bundle create app.bundle main`, uploaded with `file_upload`) into the app's DRAFT, then build it. The round trip of `app_export` format git: the bundle's history must hold the commit of the app's live version, or nothing changes (export again and merge first). The published app is untouched until `app_publish`; the draft before is kept (`code_undo` with the edit_id). " +
+    WHO_HINT,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      file_id: {
+        type: 'string',
+        description: 'The .bundle file (UUID) — from `file_upload` or `file_list`.',
+      },
+      branch: {
+        type: 'string',
+        maxLength: 200,
+        description:
+          "The bundle's branch to take, e.g. 'main'. Default: HEAD, else main, else its one branch.",
+      },
+      entry: {
+        type: 'string',
+        maxLength: 256,
+        description: "The entry file, e.g. 'App.tsx'. Default: the draft's entry.",
+      },
+      base_rev: {
+        type: 'string',
+        description:
+          "The draft's `rev` you last read (`app_get`, `code_view`): a draft changed since is not replaced.",
+      },
+    },
+    required: ['id', 'file_id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    const fileId = str(input.file_id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    if (!fileId) return { ok: false, error: 'file_id is required' };
+    const branch = str(input.branch).trim() || undefined;
+    const entryIn = str(input.entry).trim();
+    // One turn of the per-process import limit: each holds its file in memory.
+    const release = takeAppImportSlot();
+    if (!release)
+      return { ok: false, error: 'another import is running: try again when it is done' };
+    try {
+      await assertItemRight(fileId, 'read');
+      const app = await getApp(ctx.ownerId, id);
+      if (!app) return notFound('app', id, 'app_list');
+      const tooBig = await versionsTooBig(ctx.ownerId, id);
+      if (tooBig) return { ok: false, error: tooBig };
+      const file = await openFileById({ ownerId: ctx.ownerId, fileId });
+      if (!file) return { ok: false, error: `file ${fileId} not found: find it with file_list` };
+      if (file.size > GIT_BUNDLE_MAX_BYTES) {
+        file.stream.destroy();
+        return {
+          ok: false,
+          error: `the file is ${MB(file.size)} MB, past the ${MB(GIT_BUNDLE_MAX_BYTES)} MB a bundle may be: bundle one branch (git bundle create app.bundle main)`,
+        };
+      }
+      const bytes = await readStreamCapped(file.stream, file.size, GIT_BUNDLE_MAX_BYTES);
+      const live = await liveVersionCommit(ctx.ownerId, id);
+      if (!live)
+        return {
+          ok: false,
+          error: `app ${id} has no version with code: publish it (app_publish) first`,
+        };
+      if (live.rev !== sourceRev(app.source)) {
+        return {
+          ok: false,
+          error: `app ${id}'s live code is not its newest version: publish it (app_publish), export it again (app_export format git) and merge your work on that`,
+        };
+      }
+      const read = await readBundleTree(bytes, {
+        base: live.commit,
+        ...(branch ? { branch } : {}),
+        limits: {
+          ...BUNDLE_READ_LIMITS,
+          maxFiles: MAX_APP_FILES,
+          maxFileBytes: MAX_APP_FILE_BYTES,
+        },
+      });
+      if (!read.hasBase) {
+        return {
+          ok: false,
+          error: `the bundle's ${read.ref} does not hold the app's live version (commit ${live.commit.slice(0, 12)}), so it would drop work: export the app again (app_export format git), merge your commits on its main, and import that bundle. Nothing changed`,
+        };
+      }
+      const res = await changeDraftSource(
+        ctx.ownerId,
+        id,
+        (before) => {
+          const entry = entryIn || before.entry;
+          if (!Object.hasOwn(read.files, entry)) {
+            throw new AppSourceLimitError(
+              `the bundle has no entry file '${entry}': name one of its files with entry (${Object.keys(read.files).slice(0, 10).join(', ') || 'none'})`,
+            );
+          }
+          return { entry, files: read.files };
+        },
+        {
+          actor: historyActor(ctx),
+          actorLoginId: actingLoginId(ctx.surface),
+          note: `app_source_from_bundle ${read.head.slice(0, 12)}`,
+          baseRev: str(input.base_rev).trim() || null,
+          liveRev: live.rev,
+        },
+      );
+      if (!res) return notFound('app', id, 'app_list');
+      const fileCount = Object.keys(read.files).length;
+      ctx.step?.setOutput({ id, commit: read.head, file_count: fileCount });
+      // The normal build: the import allowlist and the compile.
+      const build = await buildAndStageApp(ctx.ownerId, id);
+      return {
+        ok: true,
+        output: {
+          id,
+          ref: read.ref,
+          commit: read.head,
+          entry: res.after.entry,
+          rev: res.rev,
+          edit_id: res.editId,
+          changed: res.written,
+          file_count: fileCount,
+          build_ok: build?.buildOk ?? null,
+          ...(build && !build.buildOk ? { build_errors: build.errors.slice(0, 10) } : {}),
+          hint: build?.buildOk
+            ? `The draft is the bundle's ${read.ref}. Review it at /apps/${id}; app_publish when approved.`
+            : 'The draft is saved but does not build: fix the files (code_edit), then app_build.',
+        },
+      };
+    } catch (err) {
+      if (
+        err instanceof BundleReadError ||
+        err instanceof AppSourceLimitError ||
+        err instanceof AppDraftRevError ||
+        err instanceof AppLiveRevError
+      ) {
+        return { ok: false, error: `${err.message}. Nothing changed` };
+      }
+      return { ok: false, error: publicErrorText(err, 'app_source_from_bundle') };
+    } finally {
+      release();
+    }
+  },
+};
+
 /** A stream's bytes in ONE buffer of the size it said (no chunk list and
  *  concat beside it), refusing past `max`. */
 async function readStreamCapped(
@@ -2410,6 +2605,7 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_duplicate,
   app_export,
   app_import,
+  app_source_from_bundle,
   app_errors,
 ].map((def) => withAuthorCeiling(def));
 

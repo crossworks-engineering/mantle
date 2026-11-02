@@ -277,6 +277,28 @@ describe.skipIf(!DB_URL)(
             writeAppPackage(fx.owner, appId, dest, { withData: false }),
           );
         },
+        writeAppBundle: async (appId, dest) => {
+          const { GitBundleWriter } = await import('../../../packages/tools/src/code/git-bundle');
+          const { versionCommit } = await import('../../../packages/tools/src/builtins-apps');
+          const { appVersionSources } = await import('@mantle/content/app-snapshots');
+          const w = new GitBundleWriter(`${dest}.work`);
+          let files: Record<string, string> = {};
+          await m.runAsSystem('test:a8-tool-content', async () => {
+            for await (const v of appVersionSources(fx.owner, appId)) {
+              if (!v.source) continue;
+              await w.add(versionCommit({ ...v, source: v.source }));
+              files = v.source.files;
+            }
+          });
+          const app = files['App.tsx'] ?? '';
+          await w.add({
+            files: { ...files, 'App.tsx': `${app}\n// a8 bundle` },
+            author: 'agent',
+            time: Date.UTC(2026, 10, 1) / 1000,
+            message: 'a8 bundle',
+          });
+          await w.finish(dest);
+        },
         appDbFile: (appId) => path.join(process.env.APP_DB_DIR!, fx.owner, `${appId}.sqlite`),
         seedAppDb: async (appId, schema) => {
           await m.runAsSystem('test:a8-tool-content', () =>

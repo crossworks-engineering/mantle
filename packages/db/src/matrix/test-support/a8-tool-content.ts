@@ -48,6 +48,9 @@ export type A8ContentDeps = {
   /** Write the app's package (@mantle/content writeAppPackage, as system,
    *  no data) to `dest`. */
   writeAppPackage: (appId: string, dest: string) => Promise<void>;
+  /** Write the app's versions as a git bundle (app_export's git mode, as
+   *  system) with one commit more on them, to `dest`. */
+  writeAppBundle: (appId: string, dest: string) => Promise<void>;
   /** Where the app's own database file goes (under APP_DB_DIR). */
   appDbFile: (appId: string) => string;
   /** Make the app's own database with its declared schema and a row
@@ -239,10 +242,13 @@ async function seedApp(s: Parameters<Seed>[0], open = false): Promise<void> {
 
 /** A version (a publish row) of the app at seq 1, its tree one line
  *  older than the app's source. */
-async function seedVersion(s: Parameters<Seed>[0]): Promise<void> {
+async function seedVersion(
+  s: Parameters<Seed>[0],
+  text = `// a8 v1\n${APP_SOURCE}`,
+): Promise<void> {
   const { sql, fx, item } = s;
   const code = {
-    source: { entry: 'App.tsx', files: { 'App.tsx': `// a8 v1\n${APP_SOURCE}` } },
+    source: { entry: 'App.tsx', files: { 'App.tsx': text } },
     draft: null,
     manifest: {},
     publishedBuild: null,
@@ -334,6 +340,29 @@ const file =
     await seedFile(s, flavour);
     return input;
   };
+
+/** A git bundle file beside the cell's app (a file the caller reads as it
+ *  reads the app): the app's versions and one commit on them. Its id. */
+async function seedBundle(s: Parameters<Seed>[0]): Promise<string> {
+  const { sql, fx, deps } = s;
+  const file = await beside(s, 'file');
+  const filename = `${fx.tag}-${file.id.slice(0, 8)}.bundle`;
+  const dest = path.join(diskDir(deps.filesRoot, file.parentPath), filename);
+  mkdirSync(path.dirname(dest), { recursive: true });
+  await deps.writeAppBundle(s.item.id, dest);
+  const bytes = readFileSync(dest);
+  const data = {
+    filename,
+    extension: 'bundle',
+    mime_type: 'application/octet-stream',
+    size_bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
+  await asFixture(sql, file.id, async (tx) => {
+    await tx`update nodes set data = data || ${tx.json(data)} where id = ${file.id}`;
+  });
+  return file.id;
+}
 
 /** A second item of the kind beside the cell's, the caller reads it as it
  *  reads the cell's (a snapshot copy's sibling at the root). */
@@ -642,6 +671,16 @@ export const A8_TOOL_CONTENT: Readonly<
   app_log: {
     needs: 'a version of the app',
     seed: async (s) => (await seedApp(s), await seedVersion(s), {}),
+  },
+  // A bundle import's base is the live version's commit: a version that
+  // holds the app's live tree, and a bundle of it with one commit more.
+  app_source_from_bundle: {
+    needs: 'a live version of the app and a git bundle on it',
+    seed: async (s) => {
+      await seedApp(s);
+      await seedVersion(s, APP_SOURCE);
+      return { file_id: await seedBundle(s) };
+    },
   },
   // A staged draft and its green build to publish (with neither, a publish
   // returns early and changes nothing).

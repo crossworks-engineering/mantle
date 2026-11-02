@@ -232,9 +232,15 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ['file_move', entry('file_id', 'manage', MOVE)],
   ['folder_move', entry('folder_id', 'manage', 'mantle_subtree_rewrite (0282), the move check')],
   ['folder_delete', entry('folder_id', 'manage', 'the delete check (0266), hidden rows (0282)')],
-  ...(['app_file_write', 'app_file_delete', 'app_source_set', 'app_tools_set'] as const).map(
-    (slug) => [slug, entry('id', 'manage', APP_CODE)] as const,
-  ),
+  ...(
+    [
+      'app_file_write',
+      'app_file_delete',
+      'app_source_set',
+      'app_source_from_bundle',
+      'app_tools_set',
+    ] as const
+  ).map((slug) => [slug, entry('id', 'manage', APP_CODE)] as const),
   // The code tools' writes name the app by their target (`app:<id>`).
   ...(['code_edit', 'code_insert', 'code_write', 'code_undo'] as const).map(
     (slug) => [slug, entry('target', 'manage', APP_CODE)] as const,
@@ -290,8 +296,9 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
 describe('the writes the database checks (the pre-check removal)', () => {
   it('each is a builtin that declares no items now, its item argument one of its own', () => {
     // 72 entries went in Part 1 (69 builtins), the last 29 in Part 3; the
-    // tree's custom order added tree_item_place; the code tools four.
-    expect(DATABASE_CHECKED.size).toBe(106);
+    // tree's custom order added tree_item_place; the code tools four;
+    // app_source_from_bundle.
+    expect(DATABASE_CHECKED.size).toBe(107);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

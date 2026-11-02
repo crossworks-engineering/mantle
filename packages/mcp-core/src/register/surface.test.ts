@@ -221,6 +221,7 @@ const HTTP_SURFACE = [
   'app_duplicate',
   'app_export',
   'app_import',
+  'app_source_from_bundle',
   'app_errors',
   'app_authoring_guide',
   'code_view',
