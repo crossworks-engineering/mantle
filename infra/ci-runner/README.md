@@ -34,7 +34,9 @@ full login.
 
 Logs: `journalctl --user -u mantle-ci-runner@1 -f`.
 Stop: `systemctl --user disable --now mantle-ci-runner@1` (the unit removes
-the containers), then switch it off.
+the containers), then switch it off. A runner stopped while it waited for a
+job stays listed as offline in the repo's runners until GitHub drops it
+(about a day); it takes no jobs.
 
 The runner is pinned (2.338.2, no self-update). GitHub stops sending jobs to
 an old runner some weeks after a new release: rebuild the image on the new
@@ -55,17 +57,22 @@ mounts the host's disk; this is why there is no Docker-in-Docker here.) It
 mounts no host folder, never sees the host's SSH keys or gh login, runs with
 no capabilities and `no-new-privileges` (so no sudo), and a process cap. The
 only secret it gets is the registration token, which can only register a
-runner and is gone from the environment before the job starts. The job's
+runner and is gone from the environment before the job starts. (On the host
+it shows in `docker inspect` of the runner container, for the docker group,
+which can do more than that anyway; not in `ps`.) The job's
 own `GITHUB_TOKEN` has `contents: read` (build-check has no secrets).
 
 Only our pushes to build-check run here, by three locks:
 
 1. `runs-on` sends every pull request to GitHub;
 2. the runner's job-started hook (`guard-job.sh`, baked into the image)
-   fails any job that is not a `push` run of `build-check.yml` in this
+   refuses any job that is not a `push` run of `build-check.yml` in this
    repository; a workflow cannot set the `GITHUB_*` values it reads. A pull
    request runs its own workflow files and could name this label; the hook
-   is what refuses it;
+   is what refuses it. A failed hook alone would still let steps marked
+   `if: always()` run, so the hook kills the runner process: no step of a
+   refused job runs here. It runs before "Initialize containers" and before
+   any step;
 3. every outside contributor's pull request waits for a maintainer's
    approval (`fork-pr-contributor-approval` = `all_external_contributors`).
    Never approve a fork pull request that changes a workflow file.
@@ -77,10 +84,12 @@ Only our pushes to build-check run here, by three locks:
   itself would need a kernel or runtime exploit.
 - The runner container can reach the network, the workstation's own open
   ports and the private networks it routes to (it sits on a Docker bridge).
-  Closing that needs root on the workstation: name the bridge
-  (`docker network create -o com.docker.network.bridge.name=mantleci1 ...`),
-  then drop its traffic to 10/8, 172.16/12, 192.168/16 and 100.64/10 in the
-  `DOCKER-USER` chain, and to the host itself in `INPUT`.
+  This is no more than the code builders already run straight on the
+  workstation, but it is open. Two ways to close it: an `--internal`
+  network for the runner and `pg` plus a small proxy container that lets
+  out only GitHub, npm, PyPI and nodejs.org (`HTTPS_PROXY` in the runner);
+  or firewall rules for the bridge (`DOCKER-USER` and `INPUT`), which is a
+  change to the workstation's own firewall.
 - One runner takes one job at a time; a second slot is
   `mantle-ci-runner@2`. Size them with `MANTLE_CI_CPUS` and `MANTLE_CI_MEM`
   (defaults 12 CPUs, 16 GB) in a unit drop-in, so builders on the
