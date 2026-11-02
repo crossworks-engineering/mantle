@@ -23,6 +23,7 @@ import {
   signStartTicket,
   verifierMatches,
 } from './handoff';
+import { namedCorsOrigins } from '@/lib/auth/preflight';
 import { bearerSessionKind, DEVICE_BEARER } from './hold';
 import type { OidcOn } from './settings';
 
@@ -61,6 +62,18 @@ describe('where a flow may end', () => {
     expect(handoffTarget(s, 'https://app.example.invalid/auth/oidc')).toBeTruthy();
     expect(handoffTarget(s, 'https://other.example.invalid/auth/oidc')).toBeTruthy();
     expect(handoffTarget(s, 'http://localhost:3001/auth/oidc')).toBeTruthy();
+  });
+
+  it('never takes the desktop app origin for a web target, though it is trusted for CORS', () => {
+    expect(namedCorsOrigins()).toContain('mantle-ui://localhost');
+    for (const raw of [
+      'mantle-ui://localhost/auth/oidc',
+      'mantle-ui://localhost/',
+      'mantle-ui://localhost',
+    ]) {
+      expect(handoffTarget(s, raw), raw).toBeNull();
+    }
+    expect(handoffTarget(s, APP_REDIRECT)).toBe(APP_REDIRECT);
   });
 
   it('never takes the wildcard for a target', () => {
