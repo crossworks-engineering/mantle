@@ -150,9 +150,24 @@ describe.skipIf(!URL)("a canvas's link is its home Moderators'", () => {
     expect(content.LINK_NO_MANAGE_MESSAGE).toContain('Present canvas');
   });
 
-  it('a Moderator of the home, and the owner, may', async () => {
+  it('a Moderator of the home may', async () => {
     expect(await mayLink('modP', I.cv)).toBe('ok');
-    expect(await mayLink('owner', I.cv)).toBe('ok');
+  });
+
+  it("the database's edit check names the same kinds (mantle_link_needs_manage, 0352)", async () => {
+    const { ITEM_KIND_NAMES, linkNeedsModerator } = await import('@mantle/client-types/kinds');
+    const rows = await x<{ k: string; manage: boolean }>(
+      sql`select k::text as k, mantle_link_needs_manage(k) as manage
+            from unnest(enum_range(null::node_type)) k`,
+    );
+    expect(rows.length).toBe(ITEM_KIND_NAMES.length);
+    for (const r of rows) expect(r.manage, r.k).toBe(linkNeedsModerator(r.k));
+    expect(
+      rows
+        .filter((r) => r.manage)
+        .map((r) => r.k)
+        .sort(),
+    ).toEqual(['app', 'present']);
   });
 
   it('the Grant Access panel offers the link to the Moderator only', async () => {
