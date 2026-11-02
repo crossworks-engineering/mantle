@@ -54,23 +54,25 @@ Two of these carry extra semantics:
   passthrough, no draft switch, no distinct endpoint); legacy JSONB tables ship
   their whole doc in the share view. Formula columns aren't stored per-row, so
   they don't appear on the public surface.
-- **Canvas** (`present`): the link runs the canvas LIVE, full screen,
-  always the latest save (docs/proposals/canvas-files.md 5.3 and 7.2). The
-  page is shell-less (as an app's) with a floating "Shared canvas" pill
-  (Replay, Full screen; full screen takes the pill along), and it carries
-  `Content-Security-Policy: frame-src 'self'; child-src 'self';
-frame-ancestors 'self'`: a sandboxed frame may always navigate itself, and
-  only the host page's `frame-src` stops it reaching another site. The
-  island mints a canvas frame ticket at `POST /s/[token]/canvas/frame-ticket`
-  (bound to the link and the canvas, no login, 30 s) and the frame loads
-  `GET /s/[token]/canvas/frame?t=`. That route answers only the iframe of
-  the link's own page (Fetch Metadata `Sec-Fetch-Dest: iframe` and
-  `Sec-Fetch-Site: same-origin`, else 403: opened as a page of its own, a
-  canvas could navigate the whole window anywhere with no pill). It resolves
-  the link again on every load and renders the same document, CSP and
-  sandbox as the owner's frame, `private, no-store` (its refusals
-  `no-store`): the /api default does not reach /s, and a closed link leaves
-  no cached copy. Both routes take a per-address rate limit
+- **Canvas** (`present`): the link runs the canvas LIVE, full screen, always
+  the latest save (docs/proposals/canvas-files.md 5.3 and 7.2). The page is
+  shell-less (as an app's) with a floating "Shared canvas" pill (Replay, Full
+  screen; full screen takes the pill along), and it carries
+  `Content-Security-Policy: frame-src <origin>/s/<token>/canvas/frame;
+child-src (the same); frame-ancestors 'self'`: a sandboxed frame may always
+  navigate itself, and only the host page's `frame-src` stops it reaching
+  another URL (Firefox and Safari ignore the iframe's `csp` attribute), so it
+  names this link's canvas frame alone, not the whole brain
+  (`shareCanvasPageCsp`). The island mints a canvas frame ticket at `POST
+/s/[token]/canvas/frame-ticket` (bound to the link and the canvas, no login,
+  30 s) and the frame loads `GET /s/[token]/canvas/frame?t=`. That route
+  answers only the iframe of the link's own page (Fetch Metadata
+  `Sec-Fetch-Dest: iframe` and `Sec-Fetch-Site: same-origin`, else 403: opened
+  as a page of its own, a canvas could navigate the whole window anywhere with
+  no pill). It resolves the link again on every load and renders the same
+  document, CSP and sandbox as the owner's frame, `private, no-store` (its
+  refusals `no-store`): the /api default does not reach /s, and a closed link
+  leaves no cached copy. Both routes take a per-address rate limit
   (`shareCanvasFrameTicket`, `shareCanvasFrame`). The canvas data store
   (`mantle.data`) is not served: the presenter answers each call itself,
   refused. Never a render on this path; the owner frame refuses a link's

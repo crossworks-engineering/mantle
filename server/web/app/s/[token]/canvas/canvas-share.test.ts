@@ -167,6 +167,17 @@ describe('GET /s/:token/canvas/frame', () => {
       tokens.buildCanvasFrameTicket({ ownerId: OWNER, presentId: CANVAS, ...o });
     expect(await open('live', own({ actorId: LOGIN }))).toEqual(refused);
     expect(await open('live', own({ loginId: LOGIN }))).toEqual(refused);
+    // A canvas ticket that names this link AND a login: a link's ticket
+    // never carries a login, so the login alone refuses it.
+    const withLogin = tokens.buildAppFrameTicket({
+      ownerId: OWNER,
+      appId: CANVAS,
+      shareId: 'share-1',
+      loginId: LOGIN,
+      canvas: true,
+    });
+    expect(tokens.verifyCanvasFrameTicket(withLogin)?.loginId).toBe(LOGIN);
+    expect(await open('live', withLogin)).toEqual(refused);
     // An app's share ticket for the same id is no canvas ticket.
     const app = tokens.buildAppFrameTicket({ ownerId: OWNER, appId: CANVAS, shareId: 'share-1' });
     expect(await open('live', app)).toEqual(refused);
