@@ -20,7 +20,7 @@
 import { sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { parserPdfPageCount, readFileById } from '@mantle/files';
-import { clearForRescan } from './ocr-rescan';
+import { clearForRescan, MAX_OCR_PAGES } from './ocr-rescan';
 
 /** The image filters pdfjs needed a WebAssembly decoder for, as they appear
  *  in a PDF: an image's dictionary is plain text in the file, also in an
@@ -52,9 +52,10 @@ export type BlankCandidate = {
 export const OCR_MAX_CHARS_PER_PAGE = 200;
 
 /** A hit worth reading again: page OCR read nothing, or no more text than a
- *  sentence a page. Pure. */
+ *  sentence a page. Page OCR reads at most MAX_OCR_PAGES pages, so a longer
+ *  file is measured on those. Pure. */
 export function likelyBlank(c: BlankCandidate, pages: number, maxPerPage: number): boolean {
-  return c.kind === 'no_text' || c.textChars <= pages * maxPerPage;
+  return c.kind === 'no_text' || c.textChars <= Math.min(pages, MAX_OCR_PAGES) * maxPerPage;
 }
 
 /** The filters of `BLANK_CODECS` that `bytes` names. Pure. */
