@@ -21,9 +21,13 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
     inputs: 18,
     sha256: 'b7cb517807e2bbd8f7fca9c4955ca46fbafc30ad8a1646c6507ec983c4b05461',
   },
+  // A canvas's link is its home Moderators', as an app's (owner decision
+  // 2026-11-02): 16 inputs moved, each allow to deny, a canvas's openLink,
+  // closeLink or deleteLink by a writeGrant or adminWriteGrant login. No
+  // other answer moved (checked with --against).
   a3a: {
     inputs: 44_160,
-    sha256: '042599d65731af8bacdd3cb86d73ca141963fe73ad0bda80a479aa2b02d9ad57',
+    sha256: '637fa64438df2a921c976d5039c5cbd466cc7661b58b4557a3c41104fa18f074',
   },
   'a3a-detail': {
     inputs: 1_472,
@@ -34,9 +38,12 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // api-v1, mcp-key and peer ways in, actor login, a note's or a page's edit
   // and a page's draft edit, at root and in the folder (homeModerator,
   // writeGrant) and homed in Admin (owner, admin). No other answer moved.
+  // The canvas link rule above: 288 inputs moved, all a canvas's link
+  // action (an allow to a deny for a non-Moderator editor, and a deny's
+  // words to "a canvas's link: Moderator of its home"). No other answer moved.
   a8: {
     inputs: 336_960,
-    sha256: 'f84b23b68d7918be15c75e5152c11fcaa1e5962ca2736587759fcb955685a7d0',
+    sha256: 'a0670d12023108b342c773cae744b695e6de3fe642eef30aa7ed10359661fc25',
   },
 };
 
