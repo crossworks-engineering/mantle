@@ -229,9 +229,11 @@ const tree = (entries: { mode: string; name: string; id: string }[]): Obj => ({
     entries.flatMap((e) => [Buffer.from(`${e.mode} ${e.name}\0`), Buffer.from(e.id, 'hex')]),
   ),
 });
-const commit = (treeId: string): Obj => ({
+const commit = (treeId: string, parent?: string): Obj => ({
   type: 'commit',
-  body: Buffer.from(`tree ${treeId}\nauthor a <> 0 +0000\ncommitter a <> 0 +0000\n\nx\n`),
+  body: Buffer.from(
+    `tree ${treeId}\n${parent ? `parent ${parent}\n` : ''}author a <> 0 +0000\ncommitter a <> 0 +0000\n\nx\n`,
+  ),
 });
 
 /** A one-file commit with the given tree entry. */
@@ -272,6 +274,20 @@ describe('readBundleTree on hand-made packs', () => {
     await expect(
       readBundleTree(handBundle([b, deep, top, c], oid(c)), { base: live }),
     ).rejects.toThrow(/at most 256 bytes/);
+  });
+
+  it('does not take a parent line for the base: the pack must hold it', async () => {
+    const b = blob('x\n');
+    const t = tree([{ mode: '100644', name: 'App.tsx', id: oid(b) }]);
+    const c = commit(oid(t), live);
+    const r = await readBundleTree(handBundle([b, t, c], oid(c)), { base: live });
+    expect(r.hasBase).toBe(false);
+  });
+
+  it.each([' App.tsx', 'App.tsx '])('refuses a name with a space at an end (%j)', async (name) => {
+    await expect(readBundleTree(oneEntry('100644', name), { base: live })).rejects.toThrow(
+      /a space at the start or end/,
+    );
   });
 
   it('refuses a name twice in one folder', async () => {

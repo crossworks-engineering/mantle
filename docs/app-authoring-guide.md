@@ -807,6 +807,10 @@ publishing stays its own step, with its own rights.
   published since, or the work started from an older export), nothing
   changes: export again, merge the work on the new `main`, and bundle that.
   The live code is checked again inside the write.
+- **The draft.** A bundle never carries a draft. When the draft holds work
+  no version has, the import refuses and names the draft's `rev`: publish
+  that work first and export again, or pass that rev as `base_rev` to
+  replace it.
 - **What it takes.** A whole branch (`git bundle create back.bundle main`;
   a range like `v3..main` is refused) of at most 64 MB. The branch is HEAD,
   else `main`, else the bundle's one branch; `branch` names another. The

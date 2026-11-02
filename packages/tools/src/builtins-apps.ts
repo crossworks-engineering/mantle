@@ -2338,16 +2338,6 @@ const app_source_from_bundle: BuiltinToolDef = {
       if (!app) return notFound('app', id, 'app_list');
       const tooBig = await versionsTooBig(ctx.ownerId, id);
       if (tooBig) return { ok: false, error: tooBig };
-      const file = await openFileById({ ownerId: ctx.ownerId, fileId });
-      if (!file) return { ok: false, error: `file ${fileId} not found: find it with file_list` };
-      if (file.size > GIT_BUNDLE_MAX_BYTES) {
-        file.stream.destroy();
-        return {
-          ok: false,
-          error: `the file is ${MB(file.size)} MB, past the ${MB(GIT_BUNDLE_MAX_BYTES)} MB a bundle may be: bundle one branch (git bundle create app.bundle main)`,
-        };
-      }
-      const bytes = await readStreamCapped(file.stream, file.size, GIT_BUNDLE_MAX_BYTES);
       const live = await liveVersionCommit(ctx.ownerId, id);
       if (!live)
         return {
@@ -2360,6 +2350,25 @@ const app_source_from_bundle: BuiltinToolDef = {
           error: `app ${id}'s live code is not its newest version: publish it (app_publish), export it again (app_export format git) and merge your work on that`,
         };
       }
+      // Work in the draft that no version holds is not in any export: it
+      // is replaced only when the caller names the draft it read.
+      const baseRev = str(input.base_rev).trim() || null;
+      if (app.draft && sourceRev(app.draft) !== live.rev && !baseRev) {
+        return {
+          ok: false,
+          error: `app ${id} has draft changes no version holds, and a bundle never carries a draft: publish them first (app_publish) and export again, or pass base_rev ${sourceRev(app.draft)} to replace them (code_undo with the edit_id takes them back). Nothing changed`,
+        };
+      }
+      const file = await openFileById({ ownerId: ctx.ownerId, fileId });
+      if (!file) return { ok: false, error: `file ${fileId} not found: find it with file_list` };
+      if (file.size > GIT_BUNDLE_MAX_BYTES) {
+        file.stream.destroy();
+        return {
+          ok: false,
+          error: `the file is ${MB(file.size)} MB, past the ${MB(GIT_BUNDLE_MAX_BYTES)} MB a bundle may be: bundle one branch (git bundle create app.bundle main)`,
+        };
+      }
+      const bytes = await readStreamCapped(file.stream, file.size, GIT_BUNDLE_MAX_BYTES);
       const read = await readBundleTree(bytes, {
         base: live.commit,
         ...(branch ? { branch } : {}),
@@ -2401,7 +2410,7 @@ const app_source_from_bundle: BuiltinToolDef = {
           actor: historyActor(ctx),
           actorLoginId: actingLoginId(ctx.surface),
           note: `app_source_from_bundle ${read.head.slice(0, 12)}`,
-          baseRev: str(input.base_rev).trim() || null,
+          baseRev,
           liveRev: live.rev,
         },
       );
