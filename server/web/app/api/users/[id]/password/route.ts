@@ -32,7 +32,7 @@ export const policy = routePolicy({
 });
 
 const IdParams = z.object({ id: z.string().uuid() });
-const Body = z.object({ newPassword: z.string().min(8).max(1024) });
+const Body = z.object({ newPassword: z.string().min(1).max(1024) });
 
 /**
  * Admin password reset — no old password required (that's what
@@ -54,10 +54,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 });
+    return NextResponse.json({ error: 'Enter a new password.' }, { status: 400 });
   }
-  // The box password policy's rule (password-rule.ts): with none set, the
-  // schema's 8 characters above already answered.
+  // The new-password rule (password-rule.ts): its coded 400, with the
+  // minimum in force. The schema only asks for a password at all.
   const weak = passwordProblem(parsed.data.newPassword);
   if (weak) return NextResponse.json(passwordProblemBody(weak), { status: 400 });
   // The schema keeps a path id's case, and Postgres matches a uuid in any

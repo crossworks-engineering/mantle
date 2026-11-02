@@ -28,7 +28,7 @@ export const policy = routePolicy({
 const ChangePasswordBody = z
   .object({
     oldPassword: z.string().min(1).max(1024),
-    newPassword: z.string().min(8).max(1024),
+    newPassword: z.string().min(1).max(1024),
   })
   .refine((d) => d.oldPassword !== d.newPassword, {
     message: 'New password must be different from the current one.',
@@ -55,8 +55,8 @@ export async function POST(req: Request) {
     const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
-  // The box password policy's rule (password-rule.ts): with none set, the
-  // schema's 8 characters above already answered.
+  // The new-password rule (password-rule.ts): its coded 400, with the
+  // minimum in force. The schema only asks for a password at all.
   const weak = passwordProblem(parsed.data.newPassword);
   if (weak) return NextResponse.json(passwordProblemBody(weak), { status: 400 });
 

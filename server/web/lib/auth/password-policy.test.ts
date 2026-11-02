@@ -110,6 +110,11 @@ describe('no policy: the new-password rule', () => {
     expect(passwordKinds('Привет7')).toBe(3);
     expect(passwordKinds('日本語のパス')).toBe(1);
     expect(passwordKinds('日本語のパス7!')).toBe(3);
+    // Invisible characters are no symbol.
+    expect(passwordKinds('kettleunder7\u0000')).toBe(2);
+    expect(passwordKinds('kettleunder7\u200b')).toBe(2);
+    expect(passwordKinds('kettleunder7\u0301')).toBe(2);
+    expect(passwordProblem('kettleunder7\u200b')?.code).toBe('password_weak');
   });
 
   it('the one hash takes a password that meets the rule, and refuses one that does not', async () => {

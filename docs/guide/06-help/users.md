@@ -23,8 +23,8 @@ logins.
 a password and becomes a member login, in no workspace but its own private
 one. Add it to workspaces on **Settings > Workspaces**.
 Select an open invite to **Revoke** it or make a **New link**. **Add
-user** takes an **Email**, a **Starting password** (at least 8
-characters) and an optional **Display name**. Steps for both:
+user** takes an **Email**, a **Starting password** (at least 12
+characters, see [the rule](../../policy.md#passwords)) and an optional **Display name**. Steps for both:
 [Add users](../05-admin/07-logins.md).
 
 Select a login to:
