@@ -853,6 +853,12 @@ services:
         MANTLE_BUILD_TIME: ${MANTLE_BUILD_TIME:-}
     container_name: mantle_web
     restart: unless-stopped
+    # tini as PID 1, as on every service here that runs for long: the runtime
+    # is its child. As PID 1 node would ignore a SIGTERM it has no handler for
+    # yet, so a stop during boot (or on sandboxd, which has no handler) would
+    # wait out the whole grace period for the SIGKILL. tini also reaps what a
+    # `docker exec` leaves behind.
+    init: true
     logging: *default-logging
     networks: *app-networks
     # The web tier also hosts every `pnpm maintain` run (docker exec into
@@ -1119,9 +1125,22 @@ services:
   # by hand. Boxes without the profile don't run any of it.
   sandboxd:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['pnpm', '-C', 'server/sandboxd', 'start']
+    # Node itself (it stays on Node), as run-service.sh starts the others:
+    # `env -C` sets the package folder and execs node, so no process stays.
+    command:
+      [
+        'env',
+        '-C',
+        'server/sandboxd',
+        'node',
+        '--env-file-if-exists=../web/.env.local',
+        '--import',
+        'tsx',
+        'src/main.ts',
+      ]
     container_name: mantle_sandboxd
     restart: unless-stopped
+    init: true
     logging: *default-logging
     mem_limit: 512m
     profiles: ['sandboxes']
@@ -1228,6 +1247,7 @@ services:
     command: ['scripts/run-service.sh', 'server/api', 'src/main.ts']
     container_name: mantle_api
     restart: unless-stopped
+    init: true
     # A stop waits for the API's own exit deadline (45 s: pg-boss drains its
     # in-flight jobs for up to 30 s, then DBOS stops; @mantle/std/shutdown)
     # before Docker sends SIGKILL. Docker's default is 10 s, which cut the
@@ -1278,6 +1298,7 @@ services:
     command: ['scripts/run-service.sh', 'server/web', 'workers/email-sync.ts']
     container_name: mantle_worker_email
     restart: unless-stopped
+    init: true
     # A stop waits for the worker's exit deadline (15 s, the workers'
     # runner) before Docker sends SIGKILL; Docker's default is 10 s.
     stop_grace_period: 20s
@@ -1304,6 +1325,7 @@ services:
     command: ['scripts/run-service.sh', 'server/web', 'workers/telegram-poll.ts']
     container_name: mantle_worker_telegram
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1332,6 +1354,7 @@ services:
     command: ['scripts/run-service.sh', 'server/web', 'workers/microsoft-sync.ts']
     container_name: mantle_worker_microsoft
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1359,6 +1382,7 @@ services:
     command: ['scripts/run-service.sh', 'server/web', 'workers/files-watch.ts']
     container_name: mantle_worker_files
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1390,6 +1414,7 @@ services:
     command: ['scripts/run-service.sh', 'server/web', 'workers/docs-sync.ts']
     container_name: mantle_worker_docs
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1416,6 +1441,7 @@ services:
     command: ['scripts/run-service.sh', 'server/web', 'workers/events-reminders.ts']
     container_name: mantle_worker_events
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1456,6 +1482,7 @@ services:
     command: ['scripts/run-service.sh', 'server/web', 'workers/calendar-sync.ts']
     container_name: mantle_worker_calendar
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1484,6 +1511,7 @@ services:
     command: ['scripts/run-service.sh', 'server/web', 'workers/maintenance.ts']
     container_name: mantle_worker_maintenance
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1528,6 +1556,7 @@ services:
     command: ['scripts/run-service.sh', 'server/web', 'workers/runs.ts']
     container_name: mantle_worker_runs
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
@@ -1553,6 +1582,7 @@ services:
     command: ['scripts/run-service.sh', 'server/web', 'workers/push-notify.ts']
     container_name: mantle_worker_push
     restart: unless-stopped
+    init: true
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging

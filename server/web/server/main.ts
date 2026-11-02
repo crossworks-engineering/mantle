@@ -237,8 +237,9 @@ applyListenerTimeouts(server as HttpServer, maxStreamedUploadBytes());
 
 // Compose sends SIGTERM on stop/update: close the listener, let in-flight
 // requests finish, and bail hard if something (an SSE stream) pins the process.
-// NOTE: signals only reach us via `pnpm exec tsx …` (the image CMD + worker
-// form); the `pnpm run` script form interposes an sh layer that swallows them.
+// NOTE: the image starts the runtime itself (scripts/run-service.sh, under
+// tini), so the signal comes straight here; a `pnpm run` script form
+// interposes an sh layer that swallows it.
 // The one shutdown helper (@mantle/std/shutdown): the listener closes, and
 // the deadline exits 0 after 5 s.
 onShutdown({

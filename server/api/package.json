@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx --watch --env-file-if-exists=../web/.env.local src/main.ts",
-    "start": "tsx --env-file-if-exists=../web/.env.local src/main.ts",
+    "start": "node --env-file-if-exists=../web/.env.local --import tsx src/main.ts",
     "provision": "tsx --env-file-if-exists=../web/.env.local src/provision.ts",
     "smoke": "tsx --env-file-if-exists=../web/.env.local src/smoke.ts",
     "bench:memory": "tsx src/bench/run.ts",

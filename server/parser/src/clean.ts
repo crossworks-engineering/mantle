@@ -7,9 +7,9 @@
  *
  * Clean means, inside the parser's container:
  *
- *  - Processes: PID 1 (Docker's init, tini), the server's launcher chain
- *    (pnpm, then this server; `strays`), the processes they keep under them
- *    (tsx's esbuild transformer, pnpm's process-group helper), and processes
+ *  - Processes: PID 1 (Docker's init, tini), this server (with any launcher
+ *    above it, such as pnpm under `pnpm dev`; `strays`), the processes they
+ *    keep under them (tsx's esbuild transformer), and processes
  *    entered from outside the container (`docker exec`: the healthcheck, an
  *    operator), whose parent is outside it. Nothing of the job: no member of its
  *    process group, and nothing that left it (setsid, a double fork): such a
@@ -74,8 +74,8 @@ export async function readProcs(): Promise<Proc[]> {
  */
 export function strays(procs: readonly Proc[], self: number, job?: number): Proc[] {
   const byPid = new Map(procs.map((p) => [p.pid, p]));
-  // The launcher: this server's oldest ancestor below PID 1 (pnpm in the
-  // image; the server itself when PID 1 started it).
+  // The launcher: this server's oldest ancestor below PID 1 (the server
+  // itself in the image, where PID 1 started it; pnpm under `pnpm dev`).
   let launcher = self;
   for (let i = 0; i < 64; i++) {
     const up = byPid.get(launcher)?.ppid;

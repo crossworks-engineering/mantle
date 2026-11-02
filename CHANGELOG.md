@@ -12,6 +12,24 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Fixed:** `docker-compose.yml` now passes `APP_SNAPSHOT_MCP_MAX_MB` to
   the app containers. Before, a value set in `.env` never reached them.
 
+## Unreleased: every Node service starts as node itself
+
+- **Changed:** on Node (the default `MANTLE_RUNTIME`), web, api and the ten
+  workers start as `node --import tsx <entry>` in their package, through
+  `scripts/run-service.sh`, with no `pnpm` or `tsx` process above them.
+  sandboxd and the parser start the same way (`env -C <package> node ...`).
+  Each service gives back about 96 MB at rest: about 1.3 GB on a box with
+  all 14 (PSS 4,066 MB to 2,727 MB, measured on the first port of this
+  change). The container's own folder stays `/app`, so every
+  `docker exec ... pnpm -C ...` command works as before.
+- **Fixed:** `sandboxd` no longer stops on pnpm's terms: `pnpm start` quit
+  about 1.4 s after a SIGTERM with exit 1, in the middle of a drain.
+- **Changed:** every long-running service on the server image has
+  `init: true`. tini is PID 1 and the runtime its child, so a stop during
+  boot ends at once, where node as PID 1 would ignore it until the SIGKILL.
+  It also reaps the processes a `docker exec` leaves behind. Bun runs under
+  tini the same way.
+
 ## Unreleased: only a Moderator opens a canvas's link
 
 - **Changed:** only a Moderator of a Present canvas's home workspace can make,

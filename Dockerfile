@@ -35,8 +35,8 @@
 FROM node:26-slim AS modules
 WORKDIR /app
 # pnpm 11 checks the installed dependencies before `pnpm run` and `pnpm
-# exec` (the CMDs below and every compose service start that way), and by
-# default INSTALLS when it finds them out of date: on a box, at container
+# exec` (the migrate service and every operator command start that way), and
+# by default INSTALLS when it finds them out of date: on a box, at container
 # start, with lifecycle scripts, from the network (or, in the parser, with
 # none). An image's dependencies are the frozen install below and nothing
 # else, so a mismatch is an image bug: `error` refuses to start with the
@@ -209,11 +209,12 @@ ENV TSX_DISABLE_CACHE=1 \
 # still holds no root and no write access to the workspace.
 USER node
 EXPOSE 8095
-# The exec form (pnpm … exec), as the server image: SIGTERM reaches the
-# server's handler. Node with tsx's loader, not the `tsx` command: that one
-# stays as a parent process and keeps an IPC socket in /tmp (tsx-<uid>),
-# which the check after every job would find.
-CMD ["pnpm", "-C", "server/parser", "exec", "node", "--import", "tsx", "src/main.ts"]
+# Node itself, as in the server image: SIGTERM reaches the server's handler.
+# `env -C` sets the package folder and execs node, so no process stays above
+# it. Tsx's loader, not the `tsx` command: that one stays as a parent process
+# and keeps an IPC socket in /tmp (tsx-<uid>), which the check after every job
+# would find.
+CMD ["env", "-C", "server/parser", "node", "--import", "tsx", "src/main.ts"]
 
 # ── 2. server: backend runtime image — workspace + generated assets ─────────
 # Carries source + node_modules + the generated runtime assets (app-runtime,
@@ -319,12 +320,12 @@ COPY scripts/onboard.sh /app/release/scripts/onboard.sh
 # (untested pairings) or sits on a hand pin forever (no UI updates).
 COPY client-pair.tag /app/release/client-tag
 EXPOSE 3000
-# `pnpm … exec` (NOT the run-script form): `pnpm run start` interposes an
-# `sh -c` layer that swallows SIGTERM, so compose stop/update would never reach
-# the server's graceful-shutdown handler and every stop would burn the full
-# grace period before SIGKILL — verified empirically in the v0.202.0 audit.
-# The exec form forwards signals through tsx to node (same as the old
-# `pnpm exec next start` CMD and every worker service).
+# scripts/run-service.sh execs the runtime itself (node with tsx's loader, or
+# bun), with no pnpm or tsx process above it. Never the run-script form:
+# `pnpm run start` interposes an `sh -c` layer that swallows SIGTERM, so a
+# stop would burn the whole grace period before SIGKILL (the v0.202.0 audit).
+# Compose gives the service `init: true`: tini is PID 1 and the runtime its
+# child.
 CMD ["scripts/run-service.sh", "server/web", "server/main.ts"]
 
 # The owner-UI (client) image moved to the mantle-client repo at the split

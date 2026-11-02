@@ -8,18 +8,18 @@ import { composeServices, serverImageCmd } from '../scripts/boot-smoke.mjs';
 
 /**
  * scripts/run-service.sh starts web, api and the workers on the runtime
- * MANTLE_RUNTIME names. Node must start exactly what it started before the
- * script, Bun the same entry by itself, and any other word must stop the
- * service, never fall back to a guess.
+ * MANTLE_RUNTIME names. Node and Bun each start the entry by themselves in
+ * its package (no pnpm or tsx process above them), and any other word must
+ * stop the service, never fall back to a guess.
  */
 const ROOT = join(import.meta.dirname, '..');
 const SCRIPT = join(ROOT, 'scripts/run-service.sh');
 
-/** Run the script with stand-ins for pnpm and bun that print their argv and
- *  working directory. */
+/** Run the script with stand-ins for node, pnpm and bun that print their argv
+ *  and working directory. */
 function run(env: Record<string, string>, args = ['server/web', 'workers/runs.ts']) {
   const bin = mkdtempSync(join(tmpdir(), 'run-service-'));
-  for (const tool of ['pnpm', 'bun']) {
+  for (const tool of ['node', 'pnpm', 'bun']) {
     const stub = join(bin, tool);
     writeFileSync(stub, `#!/bin/sh\necho "${tool} $* @ $(pwd)"\n`);
     chmodSync(stub, 0o755);
@@ -33,11 +33,11 @@ function run(env: Record<string, string>, args = ['server/web', 'workers/runs.ts
 }
 
 describe('scripts/run-service.sh', () => {
-  it('node, the default: tsx under pnpm, as before', () => {
+  it('node, the default: node itself with the tsx loader, in its package', () => {
     for (const env of [{}, { MANTLE_RUNTIME: 'node' }]) {
       expect(run(env)).toEqual({
         code: 0,
-        out: `pnpm -C server/web exec tsx workers/runs.ts @ ${ROOT}`,
+        out: `node --import tsx workers/runs.ts @ ${join(ROOT, 'server/web')}`,
         err: '',
       });
     }

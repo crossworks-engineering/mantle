@@ -131,6 +131,31 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
       expect(w.command?.slice(0, 2), w.name).toEqual(['scripts/run-service.sh', 'server/web']);
   });
 
+  it('gives every long-running service tini as PID 1', () => {
+    // As PID 1 node ignores a SIGTERM it has no handler for yet: a stop during
+    // boot would wait out the grace period for the SIGKILL.
+    const blocks = compose.split(/^ {2}(?=[a-z0-9_]+:\n)/m);
+    const running = services.filter((s) => s.name !== 'migrate');
+    expect(running.length).toBeGreaterThanOrEqual(13);
+    for (const s of running) {
+      const block = blocks.find((b) => b.startsWith(`${s.name}:\n`));
+      expect(block, s.name).toMatch(/^ {4}init: true$/m);
+    }
+  });
+
+  it('starts sandboxd as node itself, with no pnpm or tsx parent', () => {
+    expect(byName.get('sandboxd')?.command).toEqual([
+      'env',
+      '-C',
+      'server/sandboxd',
+      'node',
+      '--env-file-if-exists=../web/.env.local',
+      '--import',
+      'tsx',
+      'src/main.ts',
+    ]);
+  });
+
   it('skips only services that exist, each with a reason', () => {
     for (const [name, why] of Object.entries(SKIP as Record<string, string>)) {
       expect(byName.has(name), name).toBe(true);

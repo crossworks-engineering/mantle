@@ -59,7 +59,7 @@
     "seed:tool-groups": "tsx --env-file-if-exists=./.env.local scripts/seed-tool-groups.ts",
     "seed:toolsmith": "tsx --env-file-if-exists=./.env.local scripts/seed-agent.ts toolsmith",
     "share-runtime": "tsx scripts/build-share-runtime.ts",
-    "start": "tsx server/main.ts",
+    "start": "node --import tsx server/main.ts",
     "test:fire-heartbeat": "tsx --env-file-if-exists=./.env.local scripts/test-fire-heartbeat.ts",
     "traces:reap": "tsx --env-file-if-exists=./.env.local scripts/traces-reap.ts",
     "turns:reap": "tsx --env-file-if-exists=./.env.local scripts/turns-reap.ts",
