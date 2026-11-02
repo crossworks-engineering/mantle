@@ -60,7 +60,7 @@ async function reset() {
     new Request(`http://x/api/users/${TARGET}/password`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ newPassword: 'long-enough-pw' }),
+      body: JSON.stringify({ newPassword: 'Long-enough-pw7' }),
     }),
     { params: Promise.resolve({ id: TARGET }) },
   );

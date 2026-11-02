@@ -49,7 +49,7 @@ async function change(headers: Record<string, string> = {}) {
         'x-forwarded-for': `10.2.0.${ip}`,
         ...headers,
       },
-      body: JSON.stringify({ oldPassword: 'old-password', newPassword: 'new-password' }),
+      body: JSON.stringify({ oldPassword: 'old-password', newPassword: 'Blue-kettle-77' }),
     }),
   );
   expect(res.status).toBe(200);

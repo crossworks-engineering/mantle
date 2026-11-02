@@ -19,6 +19,7 @@
 # desk-login (Desk saving v2 fix round: a save naming another login is a 403): 1 cells
 # map-read-first (pre-check removal part 2: the owner act reads the map in the scope first): 10 cells
 # close-first (Admin act definer, 0310: the close is asked of the database first): 6 cells
+# password-rule-12 (the new-password rule, 2026-11: at least 12 characters): 3 cells
 POST /api/access-keys owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
   now  400 application/json {"error":"invalid JSON"}
@@ -1447,6 +1448,9 @@ POST /api/updates/request owner malformed [bad-json-400 (malformed)]
 POST /api/updates/request owner chunked [chunked-413]
   main 400 application/json {"error":"target or clientTarget required"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/users owner valid [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+  main 500 application/json {"error":"Could not create the user."}
+  now  400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}
 POST /api/users owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Enter a valid email and a password of at least 8 characters."}
   now  400 application/json {"error":"invalid JSON"}
@@ -1465,9 +1469,15 @@ PUT /api/users/:id/agent owner malformed [bad-json-400 (malformed)]
 PUT /api/users/:id/agent owner chunked [chunked-413]
   main 400 application/json {"error":"Enter a name for the assistant."}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/users/:id/password owner valid [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+  main 404 application/json {"error":"User not found."}
+  now  400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}
 POST /api/users/:id/password owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Password must be at least 8 characters."}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/users/:id/password owner nul [password-rule-12 (the new-password rule, 2026-11: at least 12 characters)]
+  main 404 application/json {"error":"User not found."}
+  now  400 application/json {"error":"Password must be at least 12 characters.","code":"password_too_short","min":12}
 POST /api/users/:id/password owner chunked [chunked-413]
   main 400 application/json {"error":"Password must be at least 8 characters."}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}

@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a stronger rule for new passwords
+
+- **Changed:** a new password has at least 12 characters (was 8) and at most
+  72 bytes (was 1024; bcrypt keeps no more). Below 20 characters it uses 3 of
+  small letters, capitals, digits and symbols; a passphrase of 20 or more
+  needs no mix. The common-password list is on for every box, not only under
+  a box policy. A refused one answers `password_weak` for too few kinds.
+- **Unchanged:** a password set before keeps working, and only a box policy
+  asks for a change at sign-in, on its own minimum and the common list.
+- **Added:** `GET /api/auth/bootstrap-state` carries `passwordRule`, so the
+  sign-up, invite and change forms can show the rule as the person types.
+
 ## Unreleased: a SQL process has a memory limit
 
 - **Fixed:** one row of many large columns could take a SQL process to several

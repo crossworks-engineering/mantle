@@ -410,20 +410,15 @@ async function ensureOwner(o: Options, io: Io): Promise<{ id: string; email: str
   for (;;) {
     const rule = passwordRule();
     password = await io.secret(`Password (${rule.min}+ characters, hidden):`);
-    // The one password rule (password-rule.ts): with no box policy, 8
-    // characters, as before.
+    // The one password rule (password-rule.ts).
     const weak = passwordProblem(password);
     if (weak) {
       if (o.yes) {
         throw new Error(
-          `No owner yet: send password=... (${rule.min}+ characters${rule.commonList ? ', not a common one' : ''}) on stdin.`,
+          `No owner yet: send password=... (${rule.min} to ${rule.maxBytes} characters, ${rule.kinds} kinds of character or a passphrase of ${rule.passphrase}+, not a common one) on stdin.`,
         );
       }
-      bad(
-        rule.commonList || weak.code !== 'password_too_short'
-          ? weak.message
-          : `At least ${rule.min} characters.`,
-      );
+      bad(weak.message);
       continue;
     }
     if (o.yes) break;

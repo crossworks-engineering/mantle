@@ -48,7 +48,7 @@ function signup(body: Record<string, unknown>, ip = `198.51.100.${++ipSeq}`) {
   return new Request('http://x/api/auth/signup', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
-    body: JSON.stringify({ email: 'first@example.invalid', password: 'long-enough-pw', ...body }),
+    body: JSON.stringify({ email: 'first@example.invalid', password: 'Long-enough-pw7', ...body }),
   });
 }
 
@@ -166,19 +166,19 @@ describe('POST /api/auth/signup with no setup code configured', () => {
 describe('GET /api/auth/bootstrap-state', () => {
   it('says a code is required while the brain is unclaimed', async () => {
     const { GET } = await load();
-    expect(await (await GET()).json()).toEqual({ firstRun: true, setupCodeRequired: true });
+    expect(await (await GET()).json()).toMatchObject({ firstRun: true, setupCodeRequired: true });
   });
 
   it('never asks for a code once claimed', async () => {
     h.users = 1;
     const { GET } = await load();
-    expect(await (await GET()).json()).toEqual({ firstRun: false, setupCodeRequired: false });
+    expect(await (await GET()).json()).toMatchObject({ firstRun: false, setupCodeRequired: false });
   });
 
   it('asks for none when no code is configured', async () => {
     delete process.env.MANTLE_SETUP_CODE;
     const { GET } = await load();
-    expect(await (await GET()).json()).toEqual({ firstRun: true, setupCodeRequired: false });
+    expect(await (await GET()).json()).toMatchObject({ firstRun: true, setupCodeRequired: false });
   });
 });
 

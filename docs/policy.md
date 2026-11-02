@@ -7,7 +7,7 @@ same block on every site.
 
 An empty or missing value is no rule. A box with every value empty works
 exactly as a box without this feature: the same sign-in, the same setup, the
-same agents, workers and MCP tools, the 8-character password rule, no Policy
+same agents, workers and MCP tools, the new-password rule below, no Policy
 panel and no boot check. `packages/config/src/policy.test.ts` and
 `server/web/lib/policy-empty.test.ts` pin this.
 
@@ -129,13 +129,22 @@ uses it until it is moved.
 
 ## Passwords
 
-`MANTLE_POLICY_PASSWORD_MIN=<n>` (8 to 64; bcrypt keeps a password's first
-72 bytes) sets the password rule: at least
-`n` characters, and not a common password from a list bundled in the image
-(`server/web/lib/auth/common-passwords.ts`; no outside call, no symbol
-rules). A password that is mostly a run (`123456789012`, `qwertyuiop12`,
-`111111111111`) or has fewer than 4 different characters counts as common
-too. With no value the rule is today's: 8 characters, no list.
+**The new-password rule (every box, 2026-11).** A new password has at
+least 12 characters and at most 72 UTF-8 bytes (bcrypt keeps no more). Below
+20 characters it uses 3 of the 4 kinds: small letters (and letters of a
+script with no capitals), capitals, digits, symbols (spaces count). From 20
+characters a passphrase needs no mix. It is not a common password from a
+list bundled in the image (`server/web/lib/auth/common-passwords.ts`; no
+outside call). A password that is mostly a run (`123456789012`,
+`qwertyuiop12`, `111111111111`) or has fewer than 4 different characters
+counts as common too. A password set before keeps working: a sign-in never
+refuses one for this rule. `GET /api/auth/bootstrap-state` carries the rule
+(`passwordRule`), so a form can show it as the person types.
+
+`MANTLE_POLICY_PASSWORD_MIN=<n>` (8 to 64) raises the minimum to `n` when `n`
+is over 12, and turns on the forced change below. The forced change looks at
+the policy's minimum and the common list only: a password set before the
+72-byte cap or the mix of kinds is not held for them.
 
 **One function.** Every new password goes through `passwordProblem` and the
 one hash, `hashLoginPassword`, which refuses a password the rule refuses
@@ -143,7 +152,7 @@ one hash, `hashLoginPassword`, which refuses a password the rule refuses
 Admin's new login and password reset, a login's own change, and the
 `onboard` script. A refused password answers `400 { error, code, min }`
 with `code` one of `password_too_short`, `password_too_long`,
-`password_common`.
+`password_weak` (too few kinds), `password_common`.
 
 **Checked once under the rule.** Each login records the minimum its
 password was last checked against (`auth.users.password_checked_min`,

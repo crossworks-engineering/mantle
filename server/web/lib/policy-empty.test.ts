@@ -64,10 +64,16 @@ describe('every MANTLE_POLICY_* empty: the box as before', () => {
     expect(await policyReport()).toBeNull();
   });
 
-  it('passwords: 8 characters, no list, no forced change', async () => {
-    expect(passwordRule()).toEqual({ min: 8, commonList: false });
-    expect(passwordProblem('12345678')).toBeNull();
-    expect(passwordProblem('1234567')?.code).toBe('password_too_short');
+  it('passwords: the new-password rule, no forced change', async () => {
+    expect(passwordRule()).toEqual({
+      min: 12,
+      maxBytes: 72,
+      kinds: 3,
+      passphrase: 20,
+      commonList: true,
+    });
+    expect(passwordProblem('Kettle-under-7')).toBeNull();
+    expect(passwordProblem('Kettle-un7!')?.code).toBe('password_too_short');
     expect(signInNeedsPasswordChange('password')).toBe(false);
     // The hold reads nothing on any route, even for a stale flag.
     const login = vi.fn(async () => ({ resolved: { mustChangePassword: true } }));

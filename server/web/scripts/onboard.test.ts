@@ -226,7 +226,7 @@ describe('run', () => {
   it('fresh brain, defaults plus a key: owner, every step in wizard order, onboarded', async () => {
     const code = await run(
       yes({ email: 'owner@example.invalid' }),
-      io({ password: 'long-enough', key: 'sk-or-x' }),
+      io({ password: 'Long-enough-7', key: 'sk-or-x' }),
     );
     expect(code).toBe(0);
     const names = h.calls.map((c) => c.split(':')[0]);
@@ -268,10 +268,10 @@ describe('run', () => {
   });
 
   it('never creates an owner without an email or a long enough password', async () => {
-    await expect(run(yes(), io({ password: 'long-enough' }))).rejects.toThrow(/--email/);
+    await expect(run(yes(), io({ password: 'Long-enough-7' }))).rejects.toThrow(/--email/);
     await expect(
       run(yes({ email: 'o@example.invalid' }), io({ password: 'short' })),
-    ).rejects.toThrow(/8\+/);
+    ).rejects.toThrow(/12 to 72 characters/);
     expect(h.calls).toEqual([]);
   });
 
