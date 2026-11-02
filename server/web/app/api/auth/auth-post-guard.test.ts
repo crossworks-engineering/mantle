@@ -103,6 +103,10 @@ describe('JSON auth POSTs refuse a cross-site form (audit B15)', () => {
     for (const headers of [
       { ...json, origin: 'https://evil.example.invalid' },
       { ...json, origin: 'https://brain.example.invalid.evil.example' },
+      // Look-alikes of the desktop app's origin, which is trusted by name.
+      { ...json, origin: 'mantle-ui://localhost.evil' },
+      { ...json, origin: 'http://mantle-ui.localhost' },
+      { ...json, origin: 'mantle-ui://evil' },
       { ...json, origin: 'null', 'sec-fetch-site': 'cross-site' },
       { ...json, 'sec-fetch-site': 'cross-site' },
     ]) {
@@ -173,6 +177,18 @@ describe('refuseCrossSiteAuthPost lets the real callers through', () => {
     expect(refuse(post('login', cross))).toBeNull();
     process.env.MANTLE_API_CORS_ORIGINS = '*';
     expect(refuse(post('login', cross))?.status).toBe(403);
+  });
+
+  it('the desktop app with nothing set, even under a wildcard', async () => {
+    const refuse = await guard();
+    // What WebKit sends from the app's own scheme: it cannot drop either.
+    const desktop = { ...json, origin: 'mantle-ui://localhost', 'sec-fetch-site': 'cross-site' };
+    for (const path of ['login', 'signup', 'invite/accept', 'change-password']) {
+      expect(refuse(post(path, desktop)), path).toBeNull();
+    }
+    expect(refuse(post('logout', desktop), { json: false })).toBeNull();
+    process.env.MANTLE_API_CORS_ORIGINS = '*';
+    expect(refuse(post('signup', desktop))).toBeNull();
   });
 
   it('json: false checks only the origin (logout)', async () => {

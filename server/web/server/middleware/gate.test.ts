@@ -337,6 +337,48 @@ describe('gate: CORS', () => {
     }
   });
 
+  it('answers the desktop app with nothing set, auth paths included, never with credentials', async () => {
+    const DESKTOP = 'mantle-ui://localhost';
+    const app = makeApp();
+    const pre = await app.request('/api/notes', {
+      method: 'OPTIONS',
+      headers: {
+        origin: DESKTOP,
+        'sec-fetch-site': 'cross-site',
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'authorization, last-event-id',
+      },
+    });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('access-control-allow-origin')).toBe(DESKTOP);
+    expect(pre.headers.get('access-control-allow-headers')).toContain('Last-Event-ID');
+    expect(pre.headers.get('access-control-allow-credentials')).toBeNull();
+    for (const path of ['/api/version', '/api/notes', '/api/auth/me']) {
+      const res = await app.request(path, { headers: { origin: DESKTOP } });
+      expect(res.headers.get('access-control-allow-origin'), path).toBe(DESKTOP);
+      expect(res.headers.get('access-control-expose-headers'), path).toBe('Date');
+      expect(res.headers.get('access-control-allow-credentials'), path).toBeNull();
+    }
+    // A wildcard set on the box does not take the desktop app's auth CORS away.
+    process.env.MANTLE_API_CORS_ORIGINS = '*';
+    const auth = await app.request('/api/auth/me', { headers: { origin: DESKTOP } });
+    expect(auth.headers.get('access-control-allow-origin')).toBe(DESKTOP);
+  });
+
+  it('gives no CORS to a look-alike of the desktop origin', async () => {
+    const app = makeApp();
+    for (const origin of [
+      'mantle-ui://localhost.evil',
+      'http://mantle-ui.localhost',
+      'mantle-ui://evil',
+    ]) {
+      for (const path of ['/api/version', '/api/auth/me']) {
+        const res = await app.request(path, { headers: { origin } });
+        expect(res.headers.get('access-control-allow-origin'), `${origin} ${path}`).toBeNull();
+      }
+    }
+  });
+
   it('treats the /s app brokers as CORS-eligible, other /s paths not', async () => {
     process.env.MANTLE_API_CORS_ORIGINS = ORIGIN;
     const app = makeApp();

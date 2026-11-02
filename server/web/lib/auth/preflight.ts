@@ -31,13 +31,27 @@ export function isTrustedOrigin(req: Request): boolean {
   return origin === requestOrigin(req) || origin === clientOrigin;
 }
 
-/** The origins the brain answers cross-origin by name (MANTLE_API_CORS_ORIGINS
- *  without its '*': the wildcard is refused on /api/auth anyway). */
-export function namedCorsOrigins(): string[] {
-  return (env('MANTLE_API_CORS_ORIGINS') ?? '')
+/** The desktop app's page origin, trusted on every box with no setting. The
+ *  app loads its UI from its own URL scheme and calls with a bearer token,
+ *  never a cookie. No web page can claim a non-http origin, so naming it
+ *  lets in nobody else. */
+export const DESKTOP_APP_ORIGINS: readonly string[] = ['mantle-ui://localhost'];
+
+/** Every origin the brain answers cross-origin: the box's
+ *  MANTLE_API_CORS_ORIGINS (its '*' kept, for the gate to judge) and the
+ *  desktop app's. The gate's CORS and the login-CSRF guard both read this. */
+export function corsAllowlist(): string[] {
+  const listed = (env('MANTLE_API_CORS_ORIGINS') ?? '')
     .split(',')
     .map((s) => s.trim().replace(/\/+$/, ''))
-    .filter((s) => s && s !== '*');
+    .filter(Boolean);
+  return [...new Set([...listed, ...DESKTOP_APP_ORIGINS])];
+}
+
+/** The origins the brain answers cross-origin by name (corsAllowlist
+ *  without its '*': the wildcard is refused on /api/auth anyway). */
+export function namedCorsOrigins(): string[] {
+  return corsAllowlist().filter((s) => s !== '*');
 }
 
 /** Is `Content-Type` JSON (`application/json`, any parameters)? */
@@ -58,8 +72,8 @@ function isJsonContentType(req: Request): boolean {
  *    only urlencoded, multipart or text/plain; JSON needs a CORS preflight,
  *    which /api/auth answers only for origins listed by name.
  *  - 403 for a cross-site browser request: an `Origin` must be ours (this
- *    brain's origin, MANTLE_CLIENT_ORIGIN, or a named MANTLE_API_CORS_ORIGINS
- *    entry: the split owner UI and a detached client call from there). With
+ *    brain's origin, MANTLE_CLIENT_ORIGIN, or a named corsAllowlist entry:
+ *    the split owner UI, a detached client and the desktop app). With
  *    no usable `Origin` (absent, or the opaque 'null' of a sandboxed frame),
  *    `Sec-Fetch-Site: cross-site` is refused.
  *
