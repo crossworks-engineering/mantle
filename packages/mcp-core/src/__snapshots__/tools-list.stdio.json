@@ -11460,7 +11460,7 @@
  },
  {
   "name": "node_share",
-  "description": "Create (or fetch) the public read-only link to a shareable item (note, task, event, file, app, table, drawing, Present canvas, or folder under files) and return its URL. One link per item; anyone with it can view, no login. It shows the item plus its served list (`serve`): what the item names or embeds, or a folder holds, shows only when on that list. A link is no grant: to show an item to members or clients, grant it to their workspace. Only someone who may edit the item may share it (an app: a home Moderator). For a PAGE prefer `page_share`; to turn a link off use `node_unshare`.",
+  "description": "Create (or fetch) the public read-only link to a shareable item (note, task, event, file, app, table, drawing, Present canvas, or folder under files) and return its URL. One link per item; anyone with it can view, no login. It shows the item plus its served list (`serve`): what the item names or embeds, or a folder holds, shows only when on that list. A link is no grant: to show an item to members or clients, grant it to their workspace. Only someone who may edit the item may share it (an app or a Present canvas: only a Moderator of its home workspace). For a PAGE prefer `page_share`; to turn a link off use `node_unshare`.",
   "inputSchema": {
    "type": "object",
    "properties": {

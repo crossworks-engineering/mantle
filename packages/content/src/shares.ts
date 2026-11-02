@@ -24,6 +24,7 @@ import {
 } from '@mantle/db';
 import type { AccessLevel, ShareMode } from '@mantle/client-types';
 import { kindSpecOf, kindsWhere, type PublicLinkKind } from '@mantle/client-types/kinds';
+export { linkNeedsModerator } from '@mantle/client-types/kinds';
 import { env } from '@mantle/config';
 import { defineDomainError, UUID_RE } from '@mantle/std';
 
@@ -64,7 +65,11 @@ export function isShareableFolderPath(path: string | null | undefined): boolean 
  *  only under `files`. The same checks {@link createShare} throws on. */
 export function canShareNode(node: { type: string; path: string | null }): boolean {
   const link = kindSpecOf(node.type)?.publicLink ?? false;
-  return link === true || (link === 'files-folder' && isShareableFolderPath(node.path));
+  return (
+    link === true ||
+    link === 'moderator' ||
+    (link === 'files-folder' && isShareableFolderPath(node.path))
+  );
 }
 
 // ─── Links and levels ────────────────────────────────────────────────────────

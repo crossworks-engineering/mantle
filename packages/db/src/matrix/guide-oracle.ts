@@ -367,9 +367,10 @@ export const GUIDE_RULES = {
   delete: (s: GuideStanding) => s.homeMod,
   /** "Apps": "Code. A Moderator of the app's home builds and edits it." */
   appCode: (s: GuideStanding) => s.homeMod,
-  /** "Open, change or close its link: to be able to edit it (an app:
-   *  Moderator of its home)". */
-  link: (kind: string, s: GuideStanding) => (kind === 'app' ? s.homeMod : s.edits),
+  /** "Open, change or close its link: to be able to edit it (an app or a
+   *  Present canvas: Moderator of its home)". */
+  link: (kind: string, s: GuideStanding) =>
+    kind === 'app' || kind === 'present' ? s.homeMod : s.edits,
   /** "Apps": "A user writes the app's data when they may edit the app". */
   appData: (s: GuideStanding) => s.edits,
 } as const;
@@ -599,12 +600,14 @@ function narrowedAnswer(
         ? { allow: true }
         : deny('Write on: Moderator of its home and of R');
     case 'link':
-      // "Open, change or close its link: to be able to edit it (an app:
-      // Moderator of its home)".
+      // "Open, change or close its link: to be able to edit it (an app or a
+      // Present canvas: Moderator of its home)".
       if (snapshot) return readOnlyCopy;
       if (GUIDE_RULES.link(kind, s)) return { allow: true };
       return deny(
-        kind === 'app' ? 'an app’s link: Moderator of its home' : 'may not open its link',
+        kind === 'app' || kind === 'present'
+          ? `${kind === 'app' ? 'an app’s' : 'a canvas’s'} link: Moderator of its home`
+          : 'may not open its link',
       );
     case 'appData':
       // "Apps": "A user writes the app's data when they may edit the app"

@@ -5,6 +5,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { db, mayEditSql, mayManageSql } from '@mantle/db';
+import { linkNeedsModerator } from '@mantle/client-types/kinds';
 import { READ_ONLY_COPY_MESSAGE, UUID_RE } from '@mantle/std';
 import { NextResponse } from '../../server/http-compat';
 
@@ -33,7 +34,8 @@ export function itemRefused(readOnlyCopy: boolean): NextResponse {
 /**
  * A share's link check for a write to /api/shares/:id, asked in the login's
  * scope (the request's, entered by the guard). A share is a link: changing or closing it needs edit of its
- * item, manage for an app's (assertMayLink asks it again, link-serve.ts).
+ * item, manage where only a Moderator opens it (linkNeedsModerator: an app,
+ * a Present canvas; assertMayLink asks it again, link-serve.ts).
  * A share the scope does not read (none by this id, or its item hidden:
  * the scope reads no link of an item it does not read, 0265) is the one
  * 404; an item it reads but may not change, the 403. Null: go on.
@@ -52,7 +54,7 @@ export async function shareItemRefusal(shareId: string): Promise<NextResponse | 
   }[];
   const row = rows[0];
   if (!row) return itemNotFound();
-  const need = row.type === 'app' ? 'manage' : 'edit';
+  const need = linkNeedsModerator(row.type) ? 'manage' : 'edit';
   const readOnlyCopy = row.copy === true && need === 'edit';
   if (!readOnlyCopy && (need === 'edit' ? row.edit === true : row.manage === true)) return null;
   return itemRefused(readOnlyCopy);

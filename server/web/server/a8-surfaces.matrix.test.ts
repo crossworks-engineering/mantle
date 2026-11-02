@@ -624,8 +624,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       (action === 'read' &&
         kind !== 'app' &&
         shareable.has(kind) &&
-        (ITEM_KINDS as Record<string, { publicLink: boolean | string }>)[kind]!.publicLink ===
-          true) ||
+        [true, 'moderator'].includes(
+          (ITEM_KINDS as Record<string, { publicLink: boolean | string }>)[kind]!.publicLink,
+        )) ||
       (action === 'appData' && kind === 'app'),
     run: (_role, kind, action, id) =>
       guard(async () => {
@@ -1149,8 +1150,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
           // An app's link serves its frame (a published build, which the
           // fixture's app has none of).
           kind !== 'app' &&
-          (ITEM_KINDS as Record<string, { publicLink: boolean | string }>)[kind]!.publicLink ===
-            true,
+          [true, 'moderator'].includes(
+            (ITEM_KINDS as Record<string, { publicLink: boolean | string }>)[kind]!.publicLink,
+          ),
         run: (_role, _kind, _action, id) =>
           guard(async () => {
             const [s] = await raw<{ token: string }[]>`

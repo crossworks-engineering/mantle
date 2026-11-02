@@ -61,9 +61,11 @@ describe('the A8 oracle', () => {
     expect(expectedAccess(at('root'), 'homeModerator', 'note', 'move')).toEqual(allow);
   });
 
-  it('"Open, change or close its link: to be able to edit it (an app: Moderator of its home)"', () => {
+  it('"Open, change or close its link: to be able to edit it (an app or a Present canvas: Moderator of its home)"', () => {
     expect(expectedAccess(at('root'), 'writeGrant', 'page', 'link')).toEqual(allow);
     expect(expectedAccess(at('root'), 'writeGrant', 'app', 'link')).toMatchObject(denied);
+    expect(expectedAccess(at('root'), 'writeGrant', 'present', 'link')).toMatchObject(denied);
+    expect(expectedAccess(at('root'), 'homeModerator', 'present', 'link')).toEqual(allow);
   });
 
   it('the home rule: a folder you may edit, else private; Admin users land in Admin', () => {

@@ -63,6 +63,7 @@ import type {
 import { TREE_KIND_SPECS, type TreeKind } from '@mantle/client-types/tree';
 import {
   canShareNode,
+  linkNeedsModerator,
   contactSharesForNode,
   EMBEDDING_KINDS,
   getActiveShareForNode,
@@ -529,7 +530,7 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
 
   const anchor = ctx.caller.anchorId;
   const canLink = canShareNode({ type: item.type, path: item.path });
-  const mayLink = canLink && (item.type === 'app' ? manage : mayEdit(ctx, item));
+  const mayLink = canLink && (linkNeedsModerator(item.type) ? manage : mayEdit(ctx, item));
   const share = canLink ? await getActiveShareForNode(anchor, item.id) : null;
   let contactShares: GrantContactShare[] | null = null;
   if (mayLink && ctx.adminUser && item.type !== 'branch') {

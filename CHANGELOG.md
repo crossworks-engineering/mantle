@@ -12,6 +12,13 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Fixed:** `docker-compose.yml` now passes `APP_SNAPSHOT_MCP_MAX_MB` to
   the app containers. Before, a value set in `.env` never reached them.
 
+## Unreleased: only a Moderator opens a canvas's link
+
+- **Changed:** only a Moderator of a Present canvas's home workspace can make,
+  change or stop its open link, as for an app. Someone who may only edit the
+  canvas is refused, in the Access panel and by the assistant's link tools,
+  with words that name the rule. A link made before stays live.
+
 ## Unreleased: switching calls on works with no restart
 
 - **Fixed:** switching Calls on in Settings > Services started LiveKit, but

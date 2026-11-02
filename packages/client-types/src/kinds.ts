@@ -63,8 +63,11 @@ export type KindSpec = {
   readonly class: KindClass;
   readonly tree: KindTreeSpec | null;
   /** May carry a public link (SHAREABLE_TYPES). 'files-folder': a folder,
-   *  only strictly under the `files` root (canShareNode). */
-  readonly publicLink: boolean | 'files-folder';
+   *  only strictly under the `files` root (canShareNode). 'moderator': its
+   *  link runs code for anyone (an app, a Present canvas), so only a
+   *  Moderator of its home opens, changes or closes it (linkNeedsModerator);
+   *  `true`: whoever may edit the item. */
+  readonly publicLink: boolean | 'files-folder' | 'moderator';
   /** May be shared with one contact (CONTACT_SHAREABLE_TYPES). */
   readonly contactShare: boolean;
   /** May be granted to a linked brain by category (PEER_SHAREABLE_TYPES). */
@@ -671,7 +674,7 @@ export const ITEM_KINDS = {
       sorts: ['name', 'updated'],
       shareable: true,
     },
-    publicLink: true,
+    publicLink: 'moderator',
     contactShare: true,
     peerShare: false,
     searchable: false,
@@ -801,7 +804,7 @@ export const ITEM_KINDS = {
       sorts: ['updated', 'name'],
       shareable: true,
     },
-    publicLink: true,
+    publicLink: 'moderator',
     contactShare: false,
     peerShare: false,
     searchable: true,
@@ -854,6 +857,15 @@ export function kindSpecOf(type: string): KindSpec | null {
     : null;
 }
 
+/** Whether only a Moderator of the item's home may open, change or close its
+ *  link (`publicLink: 'moderator'`: an app, a Present canvas, whose link runs
+ *  code for anyone), not whoever may edit it. THE one rule: assertMayLink,
+ *  the grants panel's mayLink, the share routes' check and the link tools'
+ *  words all read it. */
+export function linkNeedsModerator(type: string): boolean {
+  return kindSpecOf(type)?.publicLink === 'moderator';
+}
+
 /** The class of `type` (mantle_kind_class in TS); an unknown value is
  *  'admin_only', as the SQL's ELSE. */
 export function kindClassOf(type: string): KindClass {
@@ -863,7 +875,7 @@ export function kindClassOf(type: string): KindClass {
 // ── Typed selections the derived lists use ──────────────────────────────────
 
 export type WorkspaceKind = KindsWhere<{ class: 'workspace' }>;
-export type PublicLinkKind = KindsWhere<{ publicLink: true | 'files-folder' }>;
+export type PublicLinkKind = KindsWhere<{ publicLink: true | 'files-folder' | 'moderator' }>;
 export type ContactShareKind = KindsWhere<{ contactShare: true }>;
 export type PeerShareKind = KindsWhere<{ peerShare: true }>;
 export type SearchableKind = KindsWhere<{ searchable: true }>;
