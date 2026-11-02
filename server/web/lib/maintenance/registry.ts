@@ -415,12 +415,13 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     applyFlag: '--apply',
     extraFlags: [
       '--before=<YYYY-MM-DD>',
+      '--ocr-max-chars=<n>',
       '--limit=<n>',
       '--batch=<n>',
       '--batch-timeout=<minutes>',
     ],
     notes:
-      'Spends on --apply: the OCR pass (native PDF on the document worker, page OCR on the vision worker if that reads nothing) plus summary and embedding per file. Needs the parser service and the agent (server/api) running. Run the dry run first and read the counts; then --apply --before=<date> --limit=3. A file read after --before was read with the decoders and is left alone. A batch that does not finish in time stops the run; nothing is sent twice.',
+      'Spends on --apply: the OCR pass (native PDF on the document worker, page OCR on the vision worker if that reads nothing) plus summary and embedding per file. Needs the parser service and the agent (server/api) running. Run the dry run first and read the counts; then --apply --before=<date> --limit=3. A file read after --before was read with the decoders and is left alone, and so is an OCR'd file with more than --ocr-max-chars (200) characters a page. A batch that does not finish in time stops the run; nothing is sent twice.',
   },
   {
     slug: 'dwg-reindex',
