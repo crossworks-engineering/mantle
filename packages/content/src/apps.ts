@@ -52,7 +52,7 @@ import {
 } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
 import { notifyAppNavChanged } from './app-nav';
-import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
+import { codeHash, envMbBytes, insertNodeSnapshot } from './node-snapshot-rows';
 import { lockAppHistory } from './app-history-lock';
 import { log } from '@mantle/tracing';
 import type { AppRow, AppDetail, AppTint, HistoryActor } from '@mantle/client-types';
@@ -850,11 +850,9 @@ export async function writeDraftFile(
  *  (0351): what the write changed, so code_undo can take it back. The row's
  *  id is the write's `edit_id`. */
 export const CODE_EDIT_TRIGGER = 'pre_code_edit';
-/** The rows kept per app. */
+/** The rows kept per app; of those only as many as fit in
+ *  APP_CODE_EDIT_MAX_MB of kept text (default 64, the newest always stays). */
 export const APP_CODE_EDIT_KEEP = 20;
-/** And of those only as many as fit in this many bytes of kept text (the
- *  newest always stays). */
-export const APP_CODE_EDIT_MAX_BYTES = 64 * 1024 * 1024;
 
 /**
  * The revision of a working tree (the draft, else the published tree): a
@@ -1042,12 +1040,13 @@ async function recordCodeEdit(
 
 /**
  * Keep the app's newest APP_CODE_EDIT_KEEP code-tool rows, within
- * APP_CODE_EDIT_MAX_BYTES of kept text (the newest always stays), in one
+ * APP_CODE_EDIT_MAX_MB of kept text (the newest always stays), in one
  * ranked statement under the app's history lock, after the write has
  * committed: a failure is logged, never the call's error (the write stands).
  */
 async function pruneCodeEdits(id: string): Promise<void> {
   try {
+    const maxBytes = envMbBytes('APP_CODE_EDIT_MAX_MB');
     await db.transaction(async (tx) => {
       await lockAppHistory(tx, id);
       await tx.delete(nodeSnapshots).where(
@@ -1060,7 +1059,7 @@ async function pruneCodeEdits(id: string): Promise<void> {
              where node_id = ${id} and trigger = ${CODE_EDIT_TRIGGER}
             window w as (order by seq desc rows between unbounded preceding and current row)
           ) ranked
-          where rn > ${APP_CODE_EDIT_KEEP} or (rn > 1 and cum > ${APP_CODE_EDIT_MAX_BYTES})
+          where rn > ${APP_CODE_EDIT_KEEP} or (rn > 1 and cum > ${maxBytes})
         )`,
       );
     });

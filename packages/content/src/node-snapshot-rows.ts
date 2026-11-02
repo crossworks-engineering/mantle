@@ -59,6 +59,7 @@ export function envMbBytes(
     | 'APP_SNAPSHOT_MAX_MB'
     | 'APP_SNAPSHOT_AUTO_MAX_MB'
     | 'APP_SNAPSHOT_MCP_MAX_MB'
+    | 'APP_CODE_EDIT_MAX_MB'
     | 'TABLE_HISTORY_MAX_MB',
 ): number {
   return envNum(name) * 1024 * 1024;

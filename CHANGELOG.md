@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the code tools' undo limit is a setting
+
+- **Changed:** the undo records the code tools keep per app (the newest 20)
+  were also held to a fixed 64 MB. That limit is now `APP_CODE_EDIT_MAX_MB`
+  (default 64, so nothing changes unless it is set).
+
 ## Unreleased: switching calls on works with no restart
 
 - **Fixed:** switching Calls on in Settings > Services started LiveKit, but
