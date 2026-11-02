@@ -33,6 +33,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createMigratedScratchDatabase,
   ensureTestAnchor,
+  notifyBarrier,
   runWorkspacesSwitch,
 } from './test-support';
 
@@ -748,15 +749,11 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       await exitFull(() =>
         m.updateStructureItem('secret-item', brain, ids[1]!, set, ['description']),
       );
-      // The announcement: sent on both routes, the same number of times. Wait
-      // until both counts agree, then a moment more: one route's second
-      // announcement can still be on its way when the other's first lands.
+      // The announcement: sent on both routes, the same number of times. Both
+      // writes are committed, and Postgres delivers in commit order, so once
+      // the barrier is heard every announcement of theirs is in.
+      await notifyBarrier(su, 'node_ingested', { seen: (s) => heard.includes(s) });
       const count = (id: string) => heard.filter((h) => h === id).length;
-      const agree = () => count(ids[0]!) > 0 && count(ids[0]!) === count(ids[1]!);
-      for (let i = 0; i < 50 && !agree(); i++) {
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      await new Promise((r) => setTimeout(r, 300));
       for (const id of ids) {
         const [r] = await su<{ e: boolean }[]>`
           select embedding is null as e from nodes where id = ${id}`;
