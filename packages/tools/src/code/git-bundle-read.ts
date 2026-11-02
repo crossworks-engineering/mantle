@@ -37,16 +37,21 @@ export type BundleReadLimits = {
   maxFileBytes: number;
   /** Folders deep. */
   maxTreeDepth: number;
+  /** The longest path, in bytes (a name is at most 255). */
+  maxPathBytes: number;
 };
 
 export const BUNDLE_READ_LIMITS: BundleReadLimits = {
-  maxObjects: 200_000,
-  maxObjectBytes: 16 * 1024 * 1024,
-  maxWorkBytes: 512 * 1024 * 1024,
-  maxDeltaDepth: 100,
+  // An app's history: a few objects a version, git export's 5000 versions.
+  maxObjects: 50_000,
+  // An app file is at most 256 KB; a tree or commit is small.
+  maxObjectBytes: 1024 * 1024,
+  maxWorkBytes: 256 * 1024 * 1024,
+  maxDeltaDepth: 50,
   maxFiles: 50,
   maxFileBytes: 256 * 1024,
   maxTreeDepth: 32,
+  maxPathBytes: 256,
 };
 
 /** A bundle that cannot be read, or that the read refuses: the message
@@ -68,9 +73,21 @@ const OFS_DELTA = 6;
 const REF_DELTA = 7;
 /** Resolved objects kept inflated, by bytes. */
 const CACHE_BYTES = 32 * 1024 * 1024;
-/** The header's most bytes and refs. */
+/** The header's most bytes and refs, and a ref name's most bytes. */
 const HEADER_MAX_BYTES = 1024 * 1024;
 const HEADER_MAX_REFS = 10_000;
+const REF_MAX_BYTES = 255;
+/** A name in a tree: git's and every file system's most bytes. */
+const NAME_MAX_BYTES = 255;
+
+/** True when the text holds a C0 control character or DEL. */
+function hasControl(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c <= 0x1f || c === 0x7f) return true;
+  }
+  return false;
+}
 
 /** The bundle's header: its refs (name to id) and where the pack starts. */
 export function readBundleHeader(buf: Buffer): { refs: Map<string, string>; packAt: number } {
@@ -99,6 +116,10 @@ export function readBundleHeader(buf: Buffer): { refs: Map<string, string>; pack
     const name = line.slice(sp + 1);
     if (sp !== 40 || !HEX40.test(id) || !name)
       fail('the bundle header has a line that is not a ref');
+    // A ref's name reaches the caller: short and plain.
+    if (Buffer.byteLength(name) > REF_MAX_BYTES || hasControl(name)) {
+      fail('the bundle has a ref name that is too long or not plain: bundle one branch, e.g. main');
+    }
     if (refs.size >= HEADER_MAX_REFS) fail('the bundle has too many refs: bundle one branch');
     refs.set(name, id);
   }
@@ -114,6 +135,8 @@ type Entry = {
   kind: number;
   /** The inflated size of the entry's data (the delta, for a delta). */
   size: number;
+  /** Its zlib data's length, once indexed. */
+  zlen?: number;
   base?: number | string;
   /** The object's type (1-4) and id, once rebuilt. */
   type?: number;
@@ -160,8 +183,9 @@ export class PackReader {
     }
   }
 
-  /** Let the event loop run between objects. */
-  private async breathe(): Promise<void> {
+  /** Let the event loop run between objects (and between the steps of a
+   *  caller's walk). */
+  async breathe(): Promise<void> {
     if (Date.now() - this.lastYield < 10) return;
     await new Promise((r) => setImmediate(r));
     this.lastYield = Date.now();
@@ -190,6 +214,7 @@ export class PackReader {
       if (buffer.length !== e.size)
         fail('the bundle is damaged (an object is not the size it says)');
       at = e.dataAt + used;
+      e.zlen = used;
       this.entries.push(e);
       this.byAt.set(e.at, e);
       if (e.kind < OFS_DELTA) {
@@ -271,18 +296,22 @@ export class PackReader {
     return e;
   }
 
-  /** Inflate an entry's data: at most its size, and how many bytes it used. */
+  /** Inflate an entry's data: at most its size, and how many bytes it
+   *  used. Once indexed, only its own zlib bytes are read. The work counts
+   *  both sides (padding in a zlib stream is work too). */
   private inflate(e: Entry, end = this.pack.length - 20): { buffer: Buffer; used: number } {
-    this.charge(e.size);
+    let r: { buffer: Buffer; engine: { bytesWritten: number } };
     try {
-      const r = inflateSync(this.pack.subarray(e.dataAt, end), {
+      const stop = e.zlen === undefined ? end : e.dataAt + e.zlen;
+      r = inflateSync(this.pack.subarray(e.dataAt, stop), {
         info: true,
         maxOutputLength: Math.max(e.size, 1),
-      }) as unknown as { buffer: Buffer; engine: { bytesWritten: number } };
-      return { buffer: r.buffer, used: r.engine.bytesWritten };
+      }) as unknown as typeof r;
     } catch {
       return fail('the bundle is damaged (an object does not inflate to the size it says)');
     }
+    this.charge(e.size + r.engine.bytesWritten);
+    return { buffer: r.buffer, used: r.engine.bytesWritten };
   }
 
   /** Give a rebuilt object its id; the first of an id wins. */
@@ -299,13 +328,16 @@ export class PackReader {
     const hit = this.cache.get(e.at);
     if (hit) return hit;
     if (depth > this.limits.maxDeltaDepth) fail('the bundle has a delta chain that is too long');
-    const data = this.inflate(e).buffer;
-    let out = data;
+    let out: Buffer;
     if (e.kind === OFS_DELTA || e.kind === REF_DELTA) {
       const base = typeof e.base === 'number' ? this.byAt.get(e.base) : this.byId.get(e.base!);
       if (!base) fail('the bundle has a delta whose base it does not hold');
-      out = applyDelta(await this.body(base!, depth + 1), data, this.limits.maxObjectBytes);
+      // The base first: a chain holds one delta at a time, not one a level.
+      const from = await this.body(base!, depth + 1);
+      out = applyDelta(from, this.inflate(e).buffer, this.limits.maxObjectBytes);
       this.charge(out.length);
+    } else {
+      out = this.inflate(e).buffer;
     }
     this.keep(e.at, out);
     return out;
@@ -449,6 +481,7 @@ export async function readBundleTree(
       hasBase = true;
       break;
     }
+    await pack.breathe();
     const c = await pack.get(id);
     if (!c || c.type !== 'commit') continue;
     for (const p of parseCommit(c.body).parents) {
@@ -466,6 +499,7 @@ export async function readBundleTree(
   const walk = async (treeId: string, prefix: string, depth: number): Promise<void> => {
     if (depth > limits.maxTreeDepth)
       fail(`the bundle's tree is more than ${limits.maxTreeDepth} folders deep`);
+    await pack.breathe();
     const t = await pack.get(treeId);
     if (!t || t.type !== 'tree')
       fail(`the bundle lacks the folder ${prefix || '/'}: make it again`);
@@ -477,6 +511,16 @@ export async function readBundleTree(
       const nul = sp < 0 ? -1 : body.indexOf(0, sp);
       if (sp < 0 || nul < 0 || nul + 21 > body.length) fail('the bundle has a damaged folder');
       const mode = body.toString('latin1', i, sp);
+      // Sizes first: a long name is refused before it is decoded or joined.
+      const nameBytes = nul - sp - 1;
+      if (
+        nameBytes > NAME_MAX_BYTES ||
+        Buffer.byteLength(prefix) + nameBytes > limits.maxPathBytes
+      ) {
+        fail(
+          `a name in ${prefix.slice(0, 100) || 'the top folder'} is too long (a path is at most ${limits.maxPathBytes} bytes)`,
+        );
+      }
       let name: string;
       try {
         name = utf8.decode(body.subarray(sp + 1, nul));

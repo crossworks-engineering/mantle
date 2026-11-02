@@ -816,13 +816,16 @@ publishing stays its own step, with its own rights.
   part, a `.git`, `.gitmodules` or `.gitattributes` name, or a file that is
   not UTF-8 text fails the whole import and names the path. The app's own
   limits hold (50 files, 256 KB each). An untrusted pack is read within
-  limits: 200,000 objects, 16 MB an object, a delta chain of 100, and
-  512 MB unpacked in all; its checksum must hold.
+  limits: 50,000 objects, 1 MB an object, a delta chain of 50, and
+  256 MB unpacked in all; its checksum must hold.
 - **Rights.** Those of `app_source_set` (a Moderator of the app's home),
   and a read of the file. An API key needs all areas: it reads a file to
   write an app.
+- **Kept.** A live file a git export leaves out (a name git may not hold)
+  was never in the bundle to change: it stays in the draft, and the answer
+  lists it under `kept_from_live`.
 - **Undo.** The draft before is kept: `code_undo` with the answer's
-  `edit_id` brings it back. A bundle that does not build is still saved as
+  `edit_id` brings it back, when the import kept the entry. A bundle that does not build is still saved as
   the draft; the answer lists the errors.
 
 **Recently deleted.** Deleting an app takes a snapshot first (code, name,

@@ -133,6 +133,7 @@ export class GitBundleWriter {
   /** Each commit's git note, by commit id. */
   private readonly notes = new Map<string, string>();
   private lastTime = 0;
+  private skippedNow: string[] = [];
 
   /** `workPath`: a file of the caller's to hold the deflated objects (it
    *  is made, and removed by `finish` or `discard`). Null: ids only, to
@@ -143,6 +144,12 @@ export class GitBundleWriter {
   /** The size of the pack so far (the deflated objects). */
   get packedBytes(): number {
     return this.packed;
+  }
+
+  /** The raw keys the last `add` left out (a name git may not hold, a
+   *  second key of a path): a bundle import keeps them from the live tree. */
+  get lastSkipped(): readonly string[] {
+    return this.skippedNow;
   }
 
   /** The last commit's id, or null before the first. */
@@ -193,6 +200,7 @@ export class GitBundleWriter {
    */
   async add(c: BundleCommit): Promise<void> {
     const n = ++this.count;
+    this.skippedNow = [];
     // Each path's key: the plain one when the tree holds it, else the first
     // in sort order, so which text is kept does not depend on stored order.
     const keyOf = new Map<string, string>();
@@ -316,6 +324,7 @@ export class GitBundleWriter {
 
   /** List a path left out: the first SKIPPED_KEPT, and a count of all. */
   private skip(entry: BundleResult['skipped'][number]): void {
+    this.skippedNow.push(entry.path);
     this.skippedCount++;
     if (this.skipped.length < SKIPPED_KEPT) this.skipped.push(entry);
   }

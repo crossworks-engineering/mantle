@@ -224,6 +224,23 @@ describe('app_source_from_bundle', () => {
     expect(stream.destroyed).toBe(true);
   });
 
+  it('keeps a live file the export left out (a name git may not hold), and says so', async () => {
+    const V3 = { entry: 'App.tsx', files: { ...V2.files, 'a:b.ts': 'export const ab = 1;\n' } };
+    vi.mocked(appVersionSources).mockImplementation(async function* () {
+      yield version(1, V1);
+      yield version(2, V3);
+    });
+    vi.mocked(getApp).mockResolvedValue({ title: 'A', source: V3, draft: null } as never);
+    const buf = await roundTrip((repo) => {
+      writeFileSync(path.join(repo, 'App.tsx'), 'export default () => 4;\n');
+      git(repo, 'commit', '-qam', 'four');
+    });
+    serve(buf);
+    const out = outputOf(await imp.handler({ id: APP_ID, file_id: FILE_ID }, ctx));
+    expect(out.kept_from_live).toEqual(['a:b.ts']);
+    expect(written!.files).toEqual({ ...V3.files, 'App.tsx': 'export default () => 4;\n' });
+  });
+
   it('refuses an app with no version', async () => {
     vi.mocked(appVersionTotals).mockResolvedValue({ versions: 0, sourceBytes: 0 });
     expect(errorOf(await imp.handler({ id: APP_ID, file_id: FILE_ID }, ctx))).toMatch(
