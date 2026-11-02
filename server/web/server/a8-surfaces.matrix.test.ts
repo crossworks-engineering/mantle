@@ -1424,7 +1424,9 @@ const NOT_APPLICABLE: Readonly<Record<string, number>> = {
   "no snapshot copy of a branch is made (only an accepted item's kinds)": 79,
   "no snapshot copy of a event is made (only an accepted item's kinds)": 202,
   "no snapshot copy of a formula is made (only an accepted item's kinds)": 204,
-  "no snapshot copy of a present is made (only an accepted item's kinds)": 91,
+  // 92 since a canvas may carry an open link: the share-link way in reads a
+  // canvas too, and a snapshot copy of one is not made.
+  "no snapshot copy of a present is made (only an accepted item's kinds)": 92,
   "no snapshot copy of a recall is made (only an accepted item's kinds)": 91,
   "no snapshot copy of a task is made (only an accepted item's kinds)": 208,
   'no tool row: note_delete is MCP only': 144,
