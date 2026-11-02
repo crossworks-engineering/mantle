@@ -12,9 +12,9 @@ import { env, feature } from '@mantle/config';
  * bundled store change (MinIO left open source in 2026) without app changes.
  * If we ever swap object stores, this is the only file that knows.
  *
- * Two clients. On Node every call goes through the AWS SDK. On Bun the calls
- * a request makes (head, put, get, delete) go through Bun.S3Client, which is
- * native: the SDK costs each process about 27 MB and a HEAD three times as
+ * Two clients. On Node every call goes through the AWS SDK. On Bun, with
+ * path-style addressing (the default), the calls a request makes (head, put,
+ * get, delete) go through Bun.S3Client, which is native: the SDK costs each process about 27 MB and a HEAD three times as
  * long. The bucket and admin calls (status, create, list, verify, copy) stay
  * on the SDK on both runtimes: Bun's errors do not tell a store that answered
  * from one that did not, and those calls are rare. The SDK is imported on the
@@ -76,11 +76,15 @@ async function client(): Promise<S3Sender> {
   return _client;
 }
 
-/** Test seam: swap the client (pass undefined to go back to the real one).
- *  A test client also turns the Bun path off, so the SDK tests mean the
- *  same on both runtimes. */
+/** A test's SDK fake is set: the Bun path is off, so the SDK tests mean the
+ *  same on both runtimes. Kept apart from `_client`, which the first bucket
+ *  call fills on a real box and must not turn the Bun path off. */
+let _sdkFake = false;
+
+/** Test seam: swap the client (pass undefined to go back to the real one). */
 export function __setClientForTests(c: S3Sender | undefined): void {
   _client = c;
+  _sdkFake = c !== undefined;
   _bun = undefined;
 }
 
@@ -93,27 +97,37 @@ export type BunS3File = {
   delete(): Promise<void>;
 };
 export type BunS3 = { file(key: string): BunS3File };
-type BunS3Class = new (options: Record<string, unknown>) => BunS3;
+export type BunS3Class = new (options: Record<string, unknown>) => BunS3;
 
 let _bun: BunS3 | null | undefined;
 let _bunForTests: BunS3 | undefined;
+let _bunClass: BunS3Class | undefined;
 
-/** Bun.S3Client on Bun, null on Node or when a test set an SDK client. */
-function bunStore(): BunS3 | null {
+/** Keys Bun sends as they are. Bun drops a `?` or `#` from a key where the
+ *  SDK encodes it, so any other key (copy-from reads keys of another store)
+ *  takes the SDK. Content keys are hex and slashes. */
+const BUN_SAFE_KEY = /^[A-Za-z0-9/._-]+$/;
+
+/**
+ * Bun.S3Client for this key on Bun, else null (Node, a test's SDK fake, or a
+ * key Bun would send wrong). Path style only: with `virtualHostedStyle` and
+ * an endpoint, Bun drops the bucket and sends to the bare endpoint host, so a
+ * box with S3_FORCE_PATH_STYLE=false stays on the SDK.
+ */
+function bunStore(key: string): BunS3 | null {
+  if (!BUN_SAFE_KEY.test(key)) return null;
   if (_bunForTests) return _bunForTests;
-  if (_client) return null;
+  if (_sdkFake) return null;
   if (_bun !== undefined) return _bun;
-  const S3 = (globalThis as { Bun?: { S3Client?: BunS3Class } }).Bun?.S3Client;
-  if (!process.versions.bun || !S3) return (_bun = null);
+  const S3 =
+    _bunClass ??
+    (process.versions.bun
+      ? (globalThis as { Bun?: { S3Client?: BunS3Class } }).Bun?.S3Client
+      : undefined);
+  if (!S3) return (_bun = null);
   const { endpoint, region, accessKeyId, secretAccessKey, forcePathStyle } = settings();
-  _bun = new S3({
-    endpoint,
-    region,
-    accessKeyId,
-    secretAccessKey,
-    bucket: bucket(),
-    virtualHostedStyle: !forcePathStyle,
-  });
+  if (!forcePathStyle) return (_bun = null);
+  _bun = new S3({ endpoint, region, accessKeyId, secretAccessKey, bucket: bucket() });
   return _bun;
 }
 
@@ -121,6 +135,18 @@ function bunStore(): BunS3 | null {
  *  undefined to go back). */
 export function __setBunStoreForTests(s: BunS3 | undefined): void {
   _bunForTests = s;
+}
+
+/** Test seam: the class bunStore builds from, to check the options it passes
+ *  and when it builds one at all (pass undefined to go back). */
+export function __setBunClassForTests(c: BunS3Class | undefined): void {
+  _bunClass = c;
+  _bun = undefined;
+}
+
+/** Test seam: whether a call for this key would go through Bun. */
+export function __usesBunForTests(key: string): boolean {
+  return bunStore(key) !== null;
 }
 
 function bucket(): string {
@@ -140,7 +166,7 @@ export function hashBuffer(buf: Buffer): string {
 }
 
 async function exists(key: string): Promise<boolean> {
-  const b = bunStore();
+  const b = bunStore(key);
   // Bun answers false for a missing key and throws on any other failure, the
   // same as the SDK branch below.
   if (b) return b.file(key).exists();
@@ -170,7 +196,7 @@ export async function putContent(
   if (await exists(key)) {
     return { key, sha256, size, deduped: true };
   }
-  const b = bunStore();
+  const b = bunStore(key);
   if (b) {
     await b.file(key).write(buf, { type: contentType });
     return { key, sha256, size, deduped: false };
@@ -199,7 +225,7 @@ export async function getContent(key: string): Promise<{
   contentType?: string;
   contentLength?: number;
 }> {
-  const b = bunStore();
+  const b = bunStore(key);
   if (b) {
     // The stat is a HEAD, then the stream a GET: Bun's file stream carries no
     // headers. A missing key throws here (S3Error NoSuchKey), as the SDK does.
@@ -222,7 +248,7 @@ export async function getContent(key: string): Promise<{
 }
 
 export async function deleteContent(key: string): Promise<void> {
-  const b = bunStore();
+  const b = bunStore(key);
   if (b) return b.file(key).delete();
   const { DeleteObjectCommand } = await sdk();
   await (await client()).send(new DeleteObjectCommand({ Bucket: bucket(), Key: key }));

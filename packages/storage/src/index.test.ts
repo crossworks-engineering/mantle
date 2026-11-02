@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import {
+  __setBunClassForTests,
   __setBunStoreForTests,
   __setClientForTests,
+  __usesBunForTests,
+  bucketReachable,
   bucketStatus,
   clientConfig,
   contentKey,
@@ -60,6 +63,7 @@ beforeEach(() => {
 afterEach(() => {
   __setClientForTests(undefined);
   __setBunStoreForTests(undefined);
+  __setBunClassForTests(undefined);
   for (const [k, v] of Object.entries(saved)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
@@ -407,5 +411,63 @@ describe('the Bun path', () => {
     expect(await bucketStatus()).toEqual({ bucket: 'mantle', reachable: true, exists: true });
     expect(sent).toEqual(['HeadBucketCommand']);
     expect(calls).toEqual([]);
+  });
+});
+
+describe('when the Bun path is taken', () => {
+  /** A stand-in for the Bun.S3Client class that records what it is built with. */
+  function recordClass() {
+    const built: Record<string, unknown>[] = [];
+    __setBunClassForTests(
+      class {
+        constructor(options: Record<string, unknown>) {
+          built.push(options);
+        }
+        file(): never {
+          throw new Error('not called here');
+        }
+      },
+    );
+    return built;
+  }
+
+  it('builds one client, path style, with the bucket and the keys', () => {
+    const built = recordClass();
+    expect(__usesBunForTests(contentKey('a'.repeat(64)))).toBe(true);
+    expect(__usesBunForTests('logos/profile.png')).toBe(true);
+    expect(built).toEqual([
+      {
+        endpoint: 'http://objectstore:9000',
+        region: 'us-east-1',
+        accessKeyId: 'k',
+        secretAccessKey: 's',
+        bucket: 'mantle',
+      },
+    ]);
+  });
+
+  it('stays on the SDK with virtual-hosted style, where Bun would drop the bucket', () => {
+    const built = recordClass();
+    process.env.S3_FORCE_PATH_STYLE = 'false';
+    expect(__usesBunForTests(contentKey('a'.repeat(64)))).toBe(false);
+    expect(built).toEqual([]);
+  });
+
+  it('stays on the SDK for a key Bun would send wrong', () => {
+    recordClass();
+    for (const key of ['a?b', 'a#b', 'a b', 'ä']) expect(__usesBunForTests(key), key).toBe(false);
+  });
+
+  it('stays on Bun after a bucket call made the SDK client', async () => {
+    recordClass();
+    // A port that refuses at once: the call fails fast, and the SDK client exists.
+    process.env.S3_ENDPOINT = 'http://127.0.0.1:1';
+    expect(await bucketReachable()).toBe(false);
+    expect(__usesBunForTests('k')).toBe(true);
+  });
+
+  it('is off on Node, with no Bun class to build from', () => {
+    if (process.versions.bun) return;
+    expect(__usesBunForTests('k')).toBe(false);
   });
 });
