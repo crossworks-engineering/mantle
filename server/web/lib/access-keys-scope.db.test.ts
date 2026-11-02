@@ -440,7 +440,8 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     // A read through tool_read leaves none.
     await mcpAuth.auditMcpKeyCall(rpc('tool_read', 'page_get'), caller!, () => true, onMap);
     // A mapped tool called by its own name (a client that cached the full
-    // list) is audited as on the full list.
+    // list) is audited as on the full list: the audit reads the name and
+    // unwraps only the call tools, so this pins that rule for the map.
     const byName = new Request('http://localhost/api/mcp?tools=map', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

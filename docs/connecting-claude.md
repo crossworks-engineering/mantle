@@ -246,7 +246,9 @@ cached the full list (a connector or a session that never refreshes its
 tools) and a script on an API key that calls tools by name keep working
 when the box switch goes on. Such a call is that tool's own call, as on
 the full list: its gate, its call log, and the client's approval of it by
-its own name. A name the gate does not allow is still "not found".
+its own name. A name the gate does not allow is still "not found", and so
+is a connector tool named like one of the map's own (`tool_help`,
+`tool_read`, `tool_write`, `tool_delete`, `tool_send`).
 For a claude.ai connector the box switch is the plainer road: a URL with
 `?tools=` is this box's own to the sign-in check, but a strict client may
 still compare it with the endpoint the box advertises (`/api/mcp`).

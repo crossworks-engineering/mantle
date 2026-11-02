@@ -156,7 +156,7 @@ describe('a client that cached the full list calls a tool by its own name on the
   /** A connection with the four tools, on the map or not, whose pre-run
    *  check records each call and refuses it (nothing past the check runs,
    *  so no database). */
-  async function connection(onMap: boolean, opts: { readOnly?: boolean } = {}) {
+  async function connection(onMap: boolean, opts: { readOnly?: boolean; http?: boolean } = {}) {
     const seen: CallInput[] = [];
     const base = defaultMcpGate('owner-1');
     const gate: McpGate = Object.freeze({
@@ -174,7 +174,14 @@ describe('a client that cached the full list calls a tool by its own name on the
       }),
     });
     const map = onMap ? new McpToolMap('') : undefined;
-    const server = new McpServer({ name: 'mantle', version: '0' });
+    // Built as the HTTP route's handler builds it (mcp-http.ts: the tools
+    // capability up front, so the SDK sets its handlers at once), or as stdio.
+    const server = opts.http
+      ? new McpServer(
+          { name: 'mantle', version: '0' },
+          { capabilities: { tools: { listChanged: false } } },
+        )
+      : new McpServer({ name: 'mantle', version: '0' });
     const names = opts.readOnly
       ? [NAMES.read, NAMES.write, 'contact_create']
       : Object.values(NAMES);
@@ -205,44 +212,48 @@ describe('a client that cached the full list calls a tool by its own name on the
   /** The call log rows written so far, less the time each call took. */
   const logged = () => vi.mocked(logMcpCall).mock.calls.map(([row]) => ({ ...row, durationMs: 0 }));
 
-  it('a read, a write, a delete and a send run as on the full list, with the same call log', async () => {
-    vi.mocked(logMcpCall).mockClear();
-    const full = await connection(false);
-    const fullReplies = [];
-    for (const name of Object.values(NAMES)) {
-      fullReplies.push(await full.client.callTool({ name, arguments: { id: `id-${name}` } }));
-    }
-    await full.client.close();
-    const fullLog = logged();
-    expect(fullLog.map((r) => r.tool)).toEqual(Object.values(NAMES));
+  it.each(['stdio', 'http'])(
+    'a read, a write, a delete and a send run as on the full list, with the same call log (%s)',
+    async (built) => {
+      const http = built === 'http';
+      vi.mocked(logMcpCall).mockClear();
+      const full = await connection(false, { http });
+      const fullReplies = [];
+      for (const name of Object.values(NAMES)) {
+        fullReplies.push(await full.client.callTool({ name, arguments: { id: `id-${name}` } }));
+      }
+      await full.client.close();
+      const fullLog = logged();
+      expect(fullLog.map((r) => r.tool)).toEqual(Object.values(NAMES));
 
-    vi.mocked(logMcpCall).mockClear();
-    const onMap = await connection(true);
-    const listed = (await onMap.client.listTools()).tools.map((t) => t.name);
-    expect(listed.sort()).toEqual([
-      'tool_delete',
-      'tool_help',
-      'tool_read',
-      'tool_send',
-      'tool_write',
-    ]);
-    const mapReplies = [];
-    for (const name of Object.values(NAMES)) {
-      mapReplies.push(await onMap.client.callTool({ name, arguments: { id: `id-${name}` } }));
-    }
-    await onMap.client.close();
+      vi.mocked(logMcpCall).mockClear();
+      const onMap = await connection(true, { http });
+      const listed = (await onMap.client.listTools()).tools.map((t) => t.name);
+      expect(listed.sort()).toEqual([
+        'tool_delete',
+        'tool_help',
+        'tool_read',
+        'tool_send',
+        'tool_write',
+      ]);
+      const mapReplies = [];
+      for (const name of Object.values(NAMES)) {
+        mapReplies.push(await onMap.client.callTool({ name, arguments: { id: `id-${name}` } }));
+      }
+      await onMap.client.close();
 
-    expect(mapReplies).toEqual(fullReplies);
-    expect(mapReplies[0]).toEqual({
-      content: [{ type: 'text', text: 'Error: stopped by the probe' }],
-      isError: true,
-    });
-    expect(onMap.seen).toEqual(full.seen);
-    expect(onMap.seen.map((c) => c.args)).toEqual(
-      Object.values(NAMES).map((n) => ({ id: `id-${n}` })),
-    );
-    expect(logged()).toEqual(fullLog);
-  });
+      expect(mapReplies).toEqual(fullReplies);
+      expect(mapReplies[0]).toEqual({
+        content: [{ type: 'text', text: 'Error: stopped by the probe' }],
+        isError: true,
+      });
+      expect(onMap.seen).toEqual(full.seen);
+      expect(onMap.seen.map((c) => c.args)).toEqual(
+        Object.values(NAMES).map((n) => ({ id: `id-${n}` })),
+      );
+      expect(logged()).toEqual(fullLog);
+    },
+  );
 
   it('the arguments are checked as on the full list', async () => {
     const full = await connection(false);

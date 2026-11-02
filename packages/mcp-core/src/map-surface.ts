@@ -135,7 +135,8 @@ function listedInputSchema(tool: RegisteredTool): { type: 'object' } {
 /** Answer tools/list on `server` with `listed` only. The SDK's own handler
  *  lists every registered tool, and a tool it does not list it does not
  *  call, so the map keeps every tool registered and replaces the list. Each
- *  definition is written as the SDK's handler writes it. The SDK sets its
+ *  definition is written as the SDK's handler writes it (an entry's schema
+ *  without a JSON Schema already throws at register, in jsonSchemaOf). The SDK sets its
  *  handlers once, at the first registerTool, so a tool registered on
  *  `server` after this is callable but never listed: the map's register is
  *  the last registration on its server. */
@@ -148,14 +149,8 @@ function listOnly(server: McpServer, listed: ReadonlyArray<[string, RegisteredTo
         name,
         title: tool.title,
         description: tool.description,
+        // No output schema: the map registers none (McpMapEntry has none).
         inputSchema: listedInputSchema(tool),
-        ...(tool.outputSchema
-          ? {
-              outputSchema: tool.outputSchema['~standard'].jsonSchema.output({
-                target: LISTED_SCHEMA_TARGET,
-              }) as { type: 'object' },
-            }
-          : {}),
         annotations: tool.annotations,
         icons: tool.icons,
         execution: tool.execution,
