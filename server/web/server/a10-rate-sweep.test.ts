@@ -709,9 +709,9 @@ const SWEEP_CELLS: readonly SweepCell[] = [
   {
     row: 'POST /s/:token/canvas/frame-ticket',
     cred: 'none',
-    limits: [ip('share-canvas-frame-ticket', 30)],
+    limits: [ip('share-canvas-frame-ticket', 120)],
   },
-  ...getHead('/s/:token/canvas/frame', { cred: 'none', limits: [ip('share-canvas-frame', 60)] }),
+  ...getHead('/s/:token/canvas/frame', { cred: 'none', limits: [ip('share-canvas-frame', 120)] }),
   ...getHead('/api/presents/:id/frame', { cred: 'none', limits: [ip('canvas-frame', 120)] }),
   ...getHead('/s/:token/rows', { cred: 'none', limits: [ip('share-rows', 120)] }),
   {

@@ -69,7 +69,9 @@ describe('/s/<token> of a Present canvas', () => {
   it("is the presenter island alone, with frame-src 'self'", async () => {
     const res = await (await app()).request('/s/live-tok');
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-security-policy')).toBe("frame-src 'self'; child-src 'self'");
+    expect(res.headers.get('content-security-policy')).toBe(
+      "frame-src 'self'; child-src 'self'; frame-ancestors 'self'",
+    );
     const html = await res.text();
     expect(html).toContain('data-island="canvas"');
     expect(html).toContain('Pump deck');

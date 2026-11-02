@@ -96,10 +96,16 @@ const mint = async (token: string) => {
     body: res.ok ? ((await res.json()) as Record<string, string>) : null,
   };
 };
-const open = async (token: string, ticket: string | null) => {
+/** The iframe navigation of the link's own page (Fetch Metadata). */
+const FRAMED = { 'sec-fetch-dest': 'iframe', 'sec-fetch-site': 'same-origin' };
+const open = async (
+  token: string,
+  ticket: string | null,
+  headers: Record<string, string> = FRAMED,
+) => {
   const q = ticket === null ? '' : `?t=${encodeURIComponent(ticket)}`;
   const res = await frameRoute.GET(
-    new Request(`http://brain.test/s/${token}/canvas/frame${q}`),
+    new Request(`http://brain.test/s/${token}/canvas/frame${q}`, { headers }),
     params(token),
   );
   return { status: res.status, body: await res.text() };
@@ -136,7 +142,9 @@ describe('GET /s/:token/canvas/frame', () => {
     const { body } = await mint('live');
     delete h.byToken.live;
     const closed = await frameRoute.GET(
-      new Request(`http://brain.test/s/live/canvas/frame?t=${encodeURIComponent(body!.ticket!)}`),
+      new Request(`http://brain.test/s/live/canvas/frame?t=${encodeURIComponent(body!.ticket!)}`, {
+        headers: FRAMED,
+      }),
       params('live'),
     );
     expect(closed.status).toBe(404);
@@ -172,6 +180,29 @@ describe('GET /s/:token/canvas/frame', () => {
     expect(await open('live', elsewhere({ presentId: OTHER }))).toEqual(refused);
     expect(await open('live', elsewhere({ ownerId: LOGIN }))).toEqual(refused);
     expect(h.rendered).toEqual([]);
+  });
+
+  it("opens only as the frame of the link's own page, never as a page of its own", async () => {
+    const ticket = async () => (await mint('live')).body!.ticket!;
+    const refused = { status: 403, body: 'open this canvas from its shared link' };
+    // A visitor sent to the frame URL: a top-level document.
+    expect(
+      await open('live', await ticket(), {
+        'sec-fetch-dest': 'document',
+        'sec-fetch-site': 'none',
+      }),
+    ).toEqual(refused);
+    // Framed by another site, or by a canvas's own (opaque) frame.
+    expect(
+      await open('live', await ticket(), {
+        'sec-fetch-dest': 'iframe',
+        'sec-fetch-site': 'cross-site',
+      }),
+    ).toEqual(refused);
+    // No Fetch Metadata at all.
+    expect(await open('live', await ticket(), {})).toEqual(refused);
+    expect(h.rendered).toEqual([]);
+    expect((await open('live', await ticket())).status).toBe(200);
   });
 
   it('is a 404 on a link of another kind and on a contact share', async () => {

@@ -83,8 +83,8 @@ export async function renderCanvasFrame(
   });
 }
 
-/** A canvas frame route's refusal (401, 404): plain text, never cached. */
-export function canvasFrameRefusal(status: 401 | 404, text: string): Response {
+/** A canvas frame route's refusal (401, 403, 404): plain text, never cached. */
+export function canvasFrameRefusal(status: 401 | 403 | 404, text: string): Response {
   return new NextResponse(text, {
     status,
     headers: { 'cache-control': CACHE_CONTROL.none },
