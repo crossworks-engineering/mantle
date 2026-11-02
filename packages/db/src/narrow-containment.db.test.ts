@@ -748,16 +748,20 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       await exitFull(() =>
         m.updateStructureItem('secret-item', brain, ids[1]!, set, ['description']),
       );
-      for (let i = 0; i < 50 && ids.some((id) => !heard.includes(id)); i++) {
+      // The announcement: sent on both routes, the same number of times. Wait
+      // until both counts agree, then a moment more: one route's second
+      // announcement can still be on its way when the other's first lands.
+      const count = (id: string) => heard.filter((h) => h === id).length;
+      const agree = () => count(ids[0]!) > 0 && count(ids[0]!) === count(ids[1]!);
+      for (let i = 0; i < 50 && !agree(); i++) {
         await new Promise((r) => setTimeout(r, 100));
       }
+      await new Promise((r) => setTimeout(r, 300));
       for (const id of ids) {
         const [r] = await su<{ e: boolean }[]>`
           select embedding is null as e from nodes where id = ${id}`;
         expect(r!.e, id).toBe(true);
       }
-      // The announcement: sent on both routes, the same number of times.
-      const count = (id: string) => heard.filter((h) => h === id).length;
       expect(count(ids[0]!)).toBeGreaterThan(0);
       expect(count(ids[0]!)).toBe(count(ids[1]!));
     } finally {
