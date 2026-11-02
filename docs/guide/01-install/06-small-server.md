@@ -2,11 +2,11 @@
 
 The core shape runs MantleOS on a 2 vCPU / 4 GB server by leaving out the parts a small box cannot carry.
 
-| Keeps | Leaves out |
-|---|---|
-| The owner UI, the HTTP API, MCP and share pages | The email, Telegram, Microsoft, calendar and push workers |
-| File and documentation ingest, search and memory | The doc helper: the PDF-export browser |
-| Reminders, scheduled backups, nightly maintenance | CLI sandboxes (off by default, can be turned on) |
+| Keeps                                             | Leaves out                                                |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| The owner UI, the HTTP API, MCP and share pages   | The email, Telegram, Microsoft, calendar and push workers |
+| File and documentation ingest, search and memory  | The doc helper: the PDF-export browser                    |
+| Reminders, scheduled backups, nightly maintenance | CLI sandboxes (off by default, can be turned on)          |
 
 Every file type still reads without it: the parser service, which reads uploads, runs on every box. A core box uses online embeddings: the local embedder does not fit in 4 GB.
 

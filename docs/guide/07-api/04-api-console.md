@@ -4,11 +4,11 @@ The API console runs any MantleOS call in place, and turns an HTTP request to an
 
 ## What the library holds
 
-| List | What it is | How a call runs |
-| --- | --- | --- |
-| **Built-in API** | Every MantleOS `/api/` route, with example bodies | As you, in the browser |
-| **Built-in MCP** | The tools an MCP client sees, read live from the MCP server | Through the real MCP server |
-| **Agent tools** | Every tool in your tool registry | Through the same dispatcher agents use |
+| List             | What it is                                                  | How a call runs                        |
+| ---------------- | ----------------------------------------------------------- | -------------------------------------- |
+| **Built-in API** | Every MantleOS `/api/` route, with example bodies           | As you, in the browser                 |
+| **Built-in MCP** | The tools an MCP client sees, read live from the MCP server | Through the real MCP server            |
+| **Agent tools**  | Every tool in your tool registry                            | Through the same dispatcher agents use |
 
 Search matches names, paths, descriptions and parameter names. Pick a call, fill its `{param}` fields and press **Send** (or **Run** for a tool). The response shows on the right.
 

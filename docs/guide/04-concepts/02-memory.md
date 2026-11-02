@@ -15,15 +15,15 @@ Photos and scans are read too (text in an image is recognised), and so are PDFs,
 
 ## The layers it answers from
 
-| Layer | What it holds |
-| --- | --- |
-| **Persona** | Who the assistant is, and what it has learned about how you like replies |
-| **Journal** | Who you are, in your own words, carried into every conversation |
-| **Recent turns** | The last stretch of the conversation, word for word |
-| **Digests** | Older conversations, compressed into summaries |
-| **Facts** | Short, current statements about you and your world |
-| **Content index** | A summary and a meaning fingerprint for every item you own |
-| **Content** | The items themselves: emails, files, notes, pages |
+| Layer             | What it holds                                                            |
+| ----------------- | ------------------------------------------------------------------------ |
+| **Persona**       | Who the assistant is, and what it has learned about how you like replies |
+| **Journal**       | Who you are, in your own words, carried into every conversation          |
+| **Recent turns**  | The last stretch of the conversation, word for word                      |
+| **Digests**       | Older conversations, compressed into summaries                           |
+| **Facts**         | Short, current statements about you and your world                       |
+| **Content index** | A summary and a meaning fingerprint for every item you own               |
+| **Content**       | The items themselves: emails, files, notes, pages                        |
 
 When you ask something, the assistant takes the slice of each layer that fits the question and answers from it.
 

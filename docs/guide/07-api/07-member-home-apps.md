@@ -27,23 +27,23 @@ const hub = await host.hub.get();
 
 `hub` holds:
 
-| Field | What it is |
-| --- | --- |
-| `siteName` | Your brain's site name |
-| `memberName` | The signed-in user's name |
-| `sections` | The newest pages the workspace reads: `token`, `title`, `icon`, `summary`, `updatedAt` |
-| `counts` | How many items of each kind the workspace reads (`page`, `note`, `draw`, `table`, `file`) |
-| `apps` | The other apps the workspace holds that the user may run: `token`, `title`, `description` |
+| Field        | What it is                                                                                |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| `siteName`   | Your brain's site name                                                                    |
+| `memberName` | The signed-in user's name                                                                 |
+| `sections`   | The newest pages the workspace reads: `token`, `title`, `icon`, `summary`, `updatedAt`    |
+| `counts`     | How many items of each kind the workspace reads (`page`, `note`, `draw`, `table`, `file`) |
+| `apps`       | The other apps the workspace holds that the user may run: `token`, `title`, `description` |
 
 Everything is kept to what the workspace reads and to what the user may read. The built-in Desk shows the same data.
 
 The app asks the shell to open things. It never opens them itself:
 
-| Call | Opens |
-| --- | --- |
-| `host.hub.openBriefing(token)` | That page |
-| `host.hub.openApp(token)` | That app |
-| `host.hub.openChat()` | The user's chat |
+| Call                           | Opens           |
+| ------------------------------ | --------------- |
+| `host.hub.openBriefing(token)` | That page       |
+| `host.hub.openApp(token)`      | That app        |
+| `host.hub.openChat()`          | The user's chat |
 
 `host.me()` tells the app who runs it.
 
@@ -62,11 +62,11 @@ try {
 
 ## Keep it up to date
 
-| What changes | How you update it |
-| --- | --- |
-| Copy and layout in the code | Edit the source, `app_build`, `app_publish` |
-| Tiles you want to edit often | Keep them in a Table. Allow `table_rows_list` with `app_tools_set` and read the rows. Editing and committing the table updates the home, no publish needed |
-| User input (polls, read receipts) | Use the app's own SQLite (`host.db`). Write `:host_me_id` in the SQL to record who did it; the server fills it in |
+| What changes                      | How you update it                                                                                                                                          |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Copy and layout in the code       | Edit the source, `app_build`, `app_publish`                                                                                                                |
+| Tiles you want to edit often      | Keep them in a Table. Allow `table_rows_list` with `app_tools_set` and read the rows. Editing and committing the table updates the home, no publish needed |
+| User input (polls, read receipts) | Use the app's own SQLite (`host.db`). Write `:host_me_id` in the SQL to record who did it; the server fills it in                                          |
 
 Users see changes on their next page load.
 

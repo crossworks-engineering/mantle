@@ -19,19 +19,19 @@ Only the first account signs up this way. After that the same screen is the norm
 
 The wizard starts by itself. It saves each step as you go, so you can close it and come back.
 
-| Step | What you do |
-|---|---|
-| **Welcome** | Wait for **System status** to turn green. Add your name, timezone and locale. |
-| **Your key** | Paste the OpenRouter key and click **Save & test**. |
-| **Models** | Pick the assistant model and the faster worker model, or keep the defaults. |
-| **Voice** | Optional: add an xAI key for a smoother voice. Skip to keep voice on OpenRouter. |
-| **Memory** | Pick the embedding model and click **Enable memory search**. Without it, search by meaning stays off. |
-| **Set up** | Click **Set up my assistant**. It creates the assistant and its background workers. |
-| **Check** | Click **Run the checks** and look for green. |
-| **Purpose** | Say what this brain is for. Every agent reads it. |
-| **Personality** | Choose the assistant's character, name and creativity. |
-| **Telegram** | Optional. See [Connect Telegram](05-connect-telegram.md). |
-| **Done** | Click **Talk to your assistant**. |
+| Step            | What you do                                                                                           |
+| --------------- | ----------------------------------------------------------------------------------------------------- |
+| **Welcome**     | Wait for **System status** to turn green. Add your name, timezone and locale.                         |
+| **Your key**    | Paste the OpenRouter key and click **Save & test**.                                                   |
+| **Models**      | Pick the assistant model and the faster worker model, or keep the defaults.                           |
+| **Voice**       | Optional: add an xAI key for a smoother voice. Skip to keep voice on OpenRouter.                      |
+| **Memory**      | Pick the embedding model and click **Enable memory search**. Without it, search by meaning stays off. |
+| **Set up**      | Click **Set up my assistant**. It creates the assistant and its background workers.                   |
+| **Check**       | Click **Run the checks** and look for green.                                                          |
+| **Purpose**     | Say what this brain is for. Every agent reads it.                                                     |
+| **Personality** | Choose the assistant's character, name and creativity.                                                |
+| **Telegram**    | Optional. See [Connect Telegram](05-connect-telegram.md).                                             |
+| **Done**        | Click **Talk to your assistant**.                                                                     |
 
 You can change anything the wizard set later, under **Settings**.
 

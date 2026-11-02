@@ -2,11 +2,11 @@
 
 Control what each agent can do with tools and tool groups, teach it how with skills, and approve risky actions in **Pending**.
 
-| Thing | What it does | Where |
-|---|---|---|
-| **Tool** | One action, such as "send an email" or "query a table". | **Settings > Tools** |
-| **Tool group** | A bundle of tools. Granting a group is the only way an agent gets tools. | **Settings > Tool groups** |
-| **Skill** | Written instructions that teach an agent how to do something well. A skill grants no tools. | **Settings > Skills** |
+| Thing          | What it does                                                                                | Where                      |
+| -------------- | ------------------------------------------------------------------------------------------- | -------------------------- |
+| **Tool**       | One action, such as "send an email" or "query a table".                                     | **Settings > Tools**       |
+| **Tool group** | A bundle of tools. Granting a group is the only way an agent gets tools.                    | **Settings > Tool groups** |
+| **Skill**      | Written instructions that teach an agent how to do something well. A skill grants no tools. | **Settings > Skills**      |
 
 An agent can do exactly what its tool groups hold. A skill about page editing without page tools teaches it to explain, not to edit.
 

@@ -13,12 +13,12 @@ An agent is something that holds a conversation. You talk to the **Assistant**. 
 1. Open **Settings > Agents** and click an agent.
 2. Change what you need on its tabs:
 
-| Tab | What you set there |
-|---|---|
-| **General** | Name, description, avatar, role, priority, and its **Telegram bot**. |
-| **Model & routing** | Provider, API key and model; a backup route it falls back to; **Voice (TTS)**; **Thinking effort**. |
-| **Behaviour** | **System prompt**, **Tool groups**, **Skills**, **Delegates to**. |
-| **Memory** | How much past conversation and knowledge each turn carries; **Learned**, which links to its notes in the Journal. |
+| Tab                 | What you set there                                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **General**         | Name, description, avatar, role, priority, and its **Telegram bot**.                                              |
+| **Model & routing** | Provider, API key and model; a backup route it falls back to; **Voice (TTS)**; **Thinking effort**.               |
+| **Behaviour**       | **System prompt**, **Tool groups**, **Skills**, **Delegates to**.                                                 |
+| **Memory**          | How much past conversation and knowledge each turn carries; **Learned**, which links to its notes in the Journal. |
 
 3. Save.
 

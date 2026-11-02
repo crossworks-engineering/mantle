@@ -29,10 +29,10 @@ This repo is the brain only: it serves the API on `http://localhost:3000` and ha
 
 3. In `server/web/.env.local`, set three values:
 
-   | Variable | Value |
-   |---|---|
-   | `MANTLE_MASTER_KEY` | the output of `openssl rand -base64 32` |
-   | `SESSION_SECRET` | the output of `openssl rand -base64 48` |
+   | Variable                  | Value                                                       |
+   | ------------------------- | ----------------------------------------------------------- |
+   | `MANTLE_MASTER_KEY`       | the output of `openssl rand -base64 32`                     |
+   | `SESSION_SECRET`          | the output of `openssl rand -base64 48`                     |
    | `MANTLE_API_CORS_ORIGINS` | `http://localhost:3001`, so the UI below can call the brain |
 
 4. Start everything:
@@ -60,11 +60,11 @@ This repo is the brain only: it serves the API on `http://localhost:3000` and ha
 
 Run these in the mantle checkout:
 
-| Command | What it does |
-|---|---|
-| `pnpm start` | Start from cold: containers, migrations, servers |
-| `pnpm dev` | Servers only, when the containers already run |
-| `pnpm stop` | Stop the containers and keep the data |
+| Command      | What it does                                                   |
+| ------------ | -------------------------------------------------------------- |
+| `pnpm start` | Start from cold: containers, migrations, servers               |
+| `pnpm dev`   | Servers only, when the containers already run                  |
+| `pnpm stop`  | Stop the containers and keep the data                          |
 | `pnpm reset` | Wipe the dev brain and rebuild it (asks first, backs up first) |
 
 ## Next

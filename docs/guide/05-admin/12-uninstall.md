@@ -30,12 +30,12 @@ This also deletes the data directory and `.env`. That is the brain itself and `M
 
 ## Options
 
-| Option | What it does |
-|---|---|
-| `--images` | Also removes the downloaded MantleOS images (about 4 GB). |
-| `--data-dir <path>` | Use this data directory instead of the one in `.env`. |
-| `--stack-dir <path>` | Where `docker-compose.yml` lives, when you run the script from elsewhere. |
-| `-y` | Skip the confirmation. With `--purge` this deletes everything without asking. |
+| Option               | What it does                                                                  |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `--images`           | Also removes the downloaded MantleOS images (about 4 GB).                     |
+| `--data-dir <path>`  | Use this data directory instead of the one in `.env`.                         |
+| `--stack-dir <path>` | Where `docker-compose.yml` lives, when you run the script from elsewhere.     |
+| `-y`                 | Skip the confirmation. With `--purge` this deletes everything without asking. |
 
 ## Check it worked
 

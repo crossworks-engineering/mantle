@@ -63,7 +63,17 @@ Claude Desktop: merge this into `~/Library/Application Support/Claude/claude_des
   "mcpServers": {
     "mantle": {
       "command": "ssh",
-      "args": ["my-mantle", "docker", "exec", "-i", "mantle_web", "pnpm", "-C", "server/mcp", "start"]
+      "args": [
+        "my-mantle",
+        "docker",
+        "exec",
+        "-i",
+        "mantle_web",
+        "pnpm",
+        "-C",
+        "server/mcp",
+        "start"
+      ]
     }
   }
 }

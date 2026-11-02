@@ -2,17 +2,17 @@
 
 Every way to reach your brain, and what each one is for. They all reach the same brain, with the same access rules.
 
-| Way in | What it is for |
-|---|---|
-| **MantleOS on the web** | The full app in a browser, at your brain's address. Every screen and setting is here. |
-| **MantleOS Desktop** | The same app for Linux, macOS and Windows, with desktop notifications and several brains in one window. See [Desktop app](../01-install/09-desktop-app.md). |
-| **Phone app** | Chat with the assistant and get reminders on your phone. Scan the **Sign in on your phone** code on **Settings > Users**. Every other user signs in with their own login. |
-| **Telegram** | Message the assistant from Telegram by text or voice note. Each agent can have its own bot. See [Connect Telegram](../02-first-steps/05-connect-telegram.md). |
-| **Email** | Mail from your contacts comes into the brain and becomes knowledge. The assistant sends mail for you, after you approve it. See [Email and contacts](../03-using-jackdaw/03-email-and-contacts.md). |
-| **MCP, remote** | Add your brain to Claude or another MCP client by its connector URL, with sign-in. The client gets the same tools your agents use. See [Connect Claude over MCP](../07-api/01-connect-claude.md). |
-| **MCP, local** | An MCP client on a machine with SSH access starts the MCP server on your server. Nothing is opened on the network. Same page as above. |
-| **HTTP API** | The versioned public API under `/api/v1`, with an API key. For scripts. See [The HTTP API](../07-api/03-http-api.md) and [API keys](../07-api/08-api-keys.md). |
-| **On the server** | `scripts/install.sh` in the install directory changes the domain and the optional services, and runs a health check. See [Install options](../01-install/07-options.md). |
+| Way in                  | What it is for                                                                                                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **MantleOS on the web** | The full app in a browser, at your brain's address. Every screen and setting is here.                                                                                                               |
+| **MantleOS Desktop**    | The same app for Linux, macOS and Windows, with desktop notifications and several brains in one window. See [Desktop app](../01-install/09-desktop-app.md).                                         |
+| **Phone app**           | Chat with the assistant and get reminders on your phone. Scan the **Sign in on your phone** code on **Settings > Users**. Every other user signs in with their own login.                           |
+| **Telegram**            | Message the assistant from Telegram by text or voice note. Each agent can have its own bot. See [Connect Telegram](../02-first-steps/05-connect-telegram.md).                                       |
+| **Email**               | Mail from your contacts comes into the brain and becomes knowledge. The assistant sends mail for you, after you approve it. See [Email and contacts](../03-using-jackdaw/03-email-and-contacts.md). |
+| **MCP, remote**         | Add your brain to Claude or another MCP client by its connector URL, with sign-in. The client gets the same tools your agents use. See [Connect Claude over MCP](../07-api/01-connect-claude.md).   |
+| **MCP, local**          | An MCP client on a machine with SSH access starts the MCP server on your server. Nothing is opened on the network. Same page as above.                                                              |
+| **HTTP API**            | The versioned public API under `/api/v1`, with an API key. For scripts. See [The HTTP API](../07-api/03-http-api.md) and [API keys](../07-api/08-api-keys.md).                                      |
+| **On the server**       | `scripts/install.sh` in the install directory changes the domain and the optional services, and runs a health check. See [Install options](../01-install/07-options.md).                            |
 
 Both MCP and `/api/v1` are stable ways in for scripts and AI clients. The other `/api/` routes are the ones the app itself calls, and they can change with any release.
 

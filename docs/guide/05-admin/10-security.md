@@ -19,12 +19,12 @@ A MantleOS box has one way in from the network, and its secrets live in `.env`. 
 
 ## The secrets in `.env`
 
-| Secret | Why it matters |
-|---|---|
-| `MANTLE_MASTER_KEY` | Decrypts stored API keys, mail passwords and secrets. Lose it and they are gone for good, backups included. Never change it on a running brain. |
-| `SESSION_SECRET` | Signs every login session. |
-| `MANTLE_SETUP_CODE` | Claims a fresh box. It stops working once the first account exists. |
-| Database and object store passwords | Access to all data. |
+| Secret                              | Why it matters                                                                                                                                  |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MANTLE_MASTER_KEY`                 | Decrypts stored API keys, mail passwords and secrets. Lose it and they are gone for good, backups included. Never change it on a running brain. |
+| `SESSION_SECRET`                    | Signs every login session.                                                                                                                      |
+| `MANTLE_SETUP_CODE`                 | Claims a fresh box. It stops working once the first account exists.                                                                             |
+| Database and object store passwords | Access to all data.                                                                                                                             |
 
 The installer generates these, and re-running it never replaces an existing key.
 

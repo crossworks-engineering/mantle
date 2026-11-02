@@ -785,10 +785,45 @@ git blame App.tsx     # which version wrote each line
 git bisect start      # find the version that broke something
 ```
 
-`file_id` is in `app_export`'s answer (its `hint` names the route). The
-bundle is a copy to read: there is no push back. Change the app with the
-code tools (`code_edit`, `code_write`) and publish; a new export carries the
-new version.
+`file_id` is in `app_export`'s answer (its `hint` names the route).
+
+**The round trip.** There is no git server and no push. To bring work back,
+the agent commits on the clone, bundles the branch, uploads the file and
+names it to `app_source_from_bundle`:
+
+```sh
+git commit -am "Totals per site"
+git bundle create back.bundle main
+curl -sf https://example.com/api/v1/files -H "Authorization: Bearer mtlk_..." \
+  -F parentPath=files -F file=@back.bundle      # its answer has the file id
+```
+
+`app_source_from_bundle` (with `id` and `file_id`) writes the newest commit's
+files into the app's **draft** and builds it. The live app does not change:
+publishing stays its own step, with its own rights.
+
+- **Base check.** The bundle's history must hold the commit of the app's
+  live version (the id a fresh export gives it). If it does not (someone
+  published since, or the work started from an older export), nothing
+  changes: export again, merge the work on the new `main`, and bundle that.
+  The live code is checked again inside the write.
+- **What it takes.** A whole branch (`git bundle create back.bundle main`;
+  a range like `v3..main` is refused) of at most 64 MB. The branch is HEAD,
+  else `main`, else the bundle's one branch; `branch` names another. The
+  entry stays the draft's unless `entry` names one.
+- **What it refuses.** Plain files and folders only: a symlink, a
+  submodule, a file mode other than 100644 or 100755, a `..`, `.` or empty
+  part, a `.git`, `.gitmodules` or `.gitattributes` name, or a file that is
+  not UTF-8 text fails the whole import and names the path. The app's own
+  limits hold (50 files, 256 KB each). An untrusted pack is read within
+  limits: 200,000 objects, 16 MB an object, a delta chain of 100, and
+  512 MB unpacked in all; its checksum must hold.
+- **Rights.** Those of `app_source_set` (a Moderator of the app's home),
+  and a read of the file. An API key needs all areas: it reads a file to
+  write an app.
+- **Undo.** The draft before is kept: `code_undo` with the answer's
+  `edit_id` brings it back. A bundle that does not build is still saved as
+  the draft; the answer lists the errors.
 
 **Recently deleted.** Deleting an app takes a snapshot first (code, name,
 look and data), and its history stays for 30 days: `app_deleted_list` (or

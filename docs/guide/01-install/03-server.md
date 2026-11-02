@@ -32,13 +32,13 @@ A domain, for example `brain.example.com`, is the address of your brain. It poin
 
 2. Answer the questions. Press Enter to take the default.
 
-   | Question | Default |
-   |---|---|
+   | Question                            | Default                                                                      |
+   | ----------------------------------- | ---------------------------------------------------------------------------- |
    | How should people reach this brain? | 1, a domain with HTTPS. 2 is this machine only, 3 is this machine's network. |
-   | Install the small core shape? | No (yes when the server has less than 6 GB of RAM) |
-   | Enable CLI sandboxes? | Yes |
-   | Bundle the local embedder? | No |
-   | Run the owner web UI? | Yes |
+   | Install the small core shape?       | No (yes when the server has less than 6 GB of RAM)                           |
+   | Enable CLI sandboxes?               | Yes                                                                          |
+   | Bundle the local embedder?          | No                                                                           |
+   | Run the owner web UI?               | Yes                                                                          |
 
 3. Read the review and answer **Go ahead?** with Enter. The first install downloads about 2 GB.
 4. Note the address and the **setup code** printed at the end. You need both to [create your account](../02-first-steps/01-create-account.md).

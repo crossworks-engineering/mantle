@@ -26,15 +26,15 @@ Each login makes keys for itself. A key acts as its login as the login is now: i
 
 ## Areas
 
-| Area | What it opens |
-| --- | --- |
-| Search | Search across EVERY kind of item, email and journal included, and the entity tools on MCP. Give it only to a key that may read everything |
-| Pages, Notes, Tasks, Tables, Files | That kind of item |
-| Calendar | Events |
-| Contacts | Contacts |
-| Journal | Journal entries |
-| Apps | Mini apps (MCP) |
-| App data | The data of the mini apps opened to MCP (`app_data_list`, `app_data_schema`, `app_data_query`, `app_data_write`) |
+| Area                               | What it opens                                                                                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Search                             | Search across EVERY kind of item, email and journal included, and the entity tools on MCP. Give it only to a key that may read everything |
+| Pages, Notes, Tasks, Tables, Files | That kind of item                                                                                                                         |
+| Calendar                           | Events                                                                                                                                    |
+| Contacts                           | Contacts                                                                                                                                  |
+| Journal                            | Journal entries                                                                                                                           |
+| Apps                               | Mini apps (MCP)                                                                                                                           |
+| App data                           | The data of the mini apps opened to MCP (`app_data_list`, `app_data_schema`, `app_data_query`, `app_data_write`)                          |
 
 Email reaches a key only through Search. The attachments of synced mail are files, but a key without Search does not see them in Files: they are left out of the lists, one by id answers `404`, and an upload into their folder is refused (on MCP the Files tools refuse them).
 

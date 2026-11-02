@@ -30,7 +30,7 @@ Every edit lands in the draft. The published app does not change until `app_publ
 
 To change an app you already have, ask Claude to fix or change it. It finds the place with `code_search`, reads the lines with `code_view`, and replaces only those lines with `code_edit`. Claude passes the revision it read: if you or another agent changed the draft in the meantime, the edit fails and Claude reads the file again, so no change is lost.
 
-To see what changed between versions, ask Claude to compare them. `app_log` lists the versions (who published each and when) and `code_diff` shows the change between two of them, or between the live app and the draft. For a copy of the whole history, `app_export` with `format: "git"` saves a git bundle: download it with your API key (`GET /api/v1/files/{id}/download`) and run `git clone` on it. Each version is one commit, so `git log`, `git blame` and `git bisect` work. The bundle holds code only, no data.
+To see what changed between versions, ask Claude to compare them. `app_log` lists the versions (who published each and when) and `code_diff` shows the change between two of them, or between the live app and the draft. For a copy of the whole history, `app_export` with `format: "git"` saves a git bundle: download it with your API key (`GET /api/v1/files/{id}/download`) and run `git clone` on it. Each version is one commit, so `git log`, `git blame` and `git bisect` work. The bundle holds code only, no data. To bring changes back, commit on the clone, run `git bundle create back.bundle main`, upload the file, and ask Claude to use `app_source_from_bundle`: it writes the newest commit into the draft only when its history holds the live version, so no published work is lost. You publish as usual.
 
 ## Check it worked
 
