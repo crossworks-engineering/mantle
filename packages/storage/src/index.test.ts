@@ -2,13 +2,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import {
+  __setBunStoreForTests,
   __setClientForTests,
+  bucketStatus,
   clientConfig,
   contentKey,
   copyMissingFrom,
+  deleteContent,
   ensureBucket,
+  getContent,
   listKeys,
+  putContent,
   verifyObjects,
+  type BunS3,
 } from './index';
 
 /** An S3 error the way the SDK surfaces one: a name plus an HTTP status. */
@@ -53,6 +59,7 @@ beforeEach(() => {
 
 afterEach(() => {
   __setClientForTests(undefined);
+  __setBunStoreForTests(undefined);
   for (const [k, v] of Object.entries(saved)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
@@ -283,5 +290,122 @@ describe('copyMissingFrom', () => {
     expect(r.copied).toBe(1);
     expect(puts).toEqual([{ key: contentKey(sha(b)), type: 'application/pdf', bytes: b.length }]);
     expect(r.bad).toEqual([{ key: lying, problem: 'sha256 mismatch in the source; not copied' }]);
+  });
+});
+
+describe('putContent and getContent on the SDK', () => {
+  it('skips the upload when the key exists, and sends bytes and type when not', async () => {
+    const puts: { key: unknown; type: unknown }[] = [];
+    let have = false;
+    fakeClient({
+      HeadObjectCommand: () => {
+        if (have) return {};
+        throw s3Error('NotFound', 404);
+      },
+      PutObjectCommand: (input) => {
+        puts.push({ key: input.Key, type: input.ContentType });
+        return {};
+      },
+    });
+    const first = await putContent(Buffer.from('abc'), 'text/plain');
+    have = true;
+    const second = await putContent(Buffer.from('abc'), 'text/plain');
+    expect(first.deduped).toBe(false);
+    expect(second).toEqual({ ...first, deduped: true });
+    expect(puts).toEqual([{ key: first.key, type: 'text/plain' }]);
+  });
+});
+
+/** A Bun.S3Client stand-in over a map, with Bun's answers: false from exists
+ *  for a missing key, an S3Error NoSuchKey from stat. */
+function fakeBun(objects: Map<string, { bytes: Buffer; type: string }>) {
+  const calls: string[] = [];
+  const store: BunS3 = {
+    file: (key) => ({
+      exists: async () => (calls.push(`exists ${key}`), objects.has(key)),
+      write: async (data, { type }) => {
+        calls.push(`write ${key}`);
+        objects.set(key, { bytes: Buffer.from(data), type });
+        return data.length;
+      },
+      stat: async () => {
+        calls.push(`stat ${key}`);
+        const o = objects.get(key);
+        if (!o)
+          throw Object.assign(new Error('The specified key does not exist.'), {
+            code: 'NoSuchKey',
+          });
+        return { size: o.bytes.length, type: o.type };
+      },
+      stream: () => {
+        calls.push(`stream ${key}`);
+        const o = objects.get(key)!;
+        return new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(new Uint8Array(o.bytes.subarray(0, 2)));
+            c.enqueue(new Uint8Array(o.bytes.subarray(2)));
+            c.close();
+          },
+        });
+      },
+      delete: async () => {
+        calls.push(`delete ${key}`);
+        objects.delete(key);
+      },
+    }),
+  };
+  __setBunStoreForTests(store);
+  return calls;
+}
+
+describe('the Bun path', () => {
+  it('puts once, then dedups on the same bytes', async () => {
+    const objects = new Map<string, { bytes: Buffer; type: string }>();
+    const calls = fakeBun(objects);
+    const r1 = await putContent(Buffer.from('hello'), 'text/plain');
+    const r2 = await putContent(Buffer.from('hello'), 'text/plain');
+    expect(r1.deduped).toBe(false);
+    expect(r2.deduped).toBe(true);
+    expect(objects.get(r1.key)).toEqual({ bytes: Buffer.from('hello'), type: 'text/plain' });
+    expect(calls).toEqual([`exists ${r1.key}`, `write ${r1.key}`, `exists ${r1.key}`]);
+  });
+
+  it('gets the bytes as a Node stream, with type and length', async () => {
+    const objects = new Map([['k', { bytes: Buffer.from('hello world'), type: 'image/png' }]]);
+    fakeBun(objects);
+    const r = await getContent('k');
+    expect(r.body).toBeInstanceOf(Readable);
+    const chunks: Buffer[] = [];
+    for await (const c of r.body) chunks.push(Buffer.from(c as Uint8Array));
+    expect(Buffer.concat(chunks).toString()).toBe('hello world');
+    expect(r.contentType).toBe('image/png');
+    expect(r.contentLength).toBe(11);
+  });
+
+  it('reports no type when the object has none, as the SDK does', async () => {
+    fakeBun(new Map([['k', { bytes: Buffer.from('x'), type: '' }]]));
+    expect((await getContent('k')).contentType).toBeUndefined();
+  });
+
+  it('throws on a missing key, before any stream opens', async () => {
+    const calls = fakeBun(new Map());
+    await expect(getContent('gone')).rejects.toMatchObject({ code: 'NoSuchKey' });
+    expect(calls).toEqual(['stat gone']);
+  });
+
+  it('deletes through Bun', async () => {
+    const objects = new Map([['k', { bytes: Buffer.from('x'), type: 'text/plain' }]]);
+    const calls = fakeBun(objects);
+    await deleteContent('k');
+    expect(objects.has('k')).toBe(false);
+    expect(calls).toEqual(['delete k']);
+  });
+
+  it('leaves the bucket calls on the SDK', async () => {
+    const calls = fakeBun(new Map());
+    const sent = fakeClient({ HeadBucketCommand: () => ({}) });
+    expect(await bucketStatus()).toEqual({ bucket: 'mantle', reachable: true, exists: true });
+    expect(sent).toEqual(['HeadBucketCommand']);
+    expect(calls).toEqual([]);
   });
 });
