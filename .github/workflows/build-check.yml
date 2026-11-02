@@ -52,7 +52,10 @@ jobs:
       contents: read
     services:
       postgres:
-        image: pgvector/pgvector:pg18
+        # On the workstation runner the loop starts this Postgres itself (the
+        # job gets no Docker there); an empty image skips the service. ('' is
+        # falsy in expressions, so the empty case must come last.)
+        image: ${{ !(vars.CI_SELF_HOSTED == 'on' && github.event_name == 'push') && 'pgvector/pgvector:pg18' || '' }}
         env:
           POSTGRES_PASSWORD: postgres
         ports:
@@ -63,10 +66,10 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      # The workstation runner starts services in its own Docker daemon
-      # (the dind container), so the database answers there, not on
-      # localhost. Same condition as runs-on (job env cannot read `runner`).
-      CI_DATABASE_URL: postgres://postgres:postgres@${{ (vars.CI_SELF_HOSTED == 'on' && github.event_name == 'push') && 'dind' || 'localhost' }}:5432/postgres
+      # On the workstation runner the database is the loop's own container,
+      # host `pg` (infra/ci-runner). Same condition as runs-on (job env
+      # cannot read `runner`).
+      CI_DATABASE_URL: postgres://postgres:postgres@${{ (vars.CI_SELF_HOSTED == 'on' && github.event_name == 'push') && 'pg' || 'localhost' }}:5432/postgres
     steps:
       - uses: actions/checkout@v4
 

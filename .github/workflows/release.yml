@@ -103,7 +103,14 @@ jobs:
           while :; do
             # All push runs of this commit: one success is enough, any failure
             # fails. A cancelled run (a newer push to the same ref) says nothing.
-            states=$(gh api "$q" --jq '[.workflow_runs[] | select(.head_sha == env.SHA) | .status + "/" + (.conclusion // "")] | join(" ")' || echo "api-error")
+            # Three tries: one API blip should not cost the reuse.
+            states="api-error"
+            for _ in 1 2 3; do
+              if s=$(gh api "$q" --jq '[.workflow_runs[] | select(.head_sha == env.SHA) | .status + "/" + (.conclusion // "")] | join(" ")'); then
+                states=$s; break
+              fi
+              sleep 10
+            done
             echo "build-check runs of $SHA: ${states:-none}"
             case " $states " in
               *" completed/failure "*|*" completed/timed_out "*)
