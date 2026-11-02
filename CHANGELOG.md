@@ -22,13 +22,19 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   all 14 (PSS 4,066 MB to 2,727 MB, measured on the first port of this
   change). The container's own folder stays `/app`, so every
   `docker exec ... pnpm -C ...` command works as before.
-- **Fixed:** `sandboxd` no longer stops on pnpm's terms: `pnpm start` quit
-  about 1.4 s after a SIGTERM with exit 1, in the middle of a drain.
+- **Fixed:** a stop of `sandboxd` ends at once (tini passes the SIGTERM; it
+  has no handler of its own), where `pnpm start` above it exited 1 on its
+  own terms.
 - **Changed:** every long-running service on the server image has
   `init: true`. tini is PID 1 and the runtime its child, so a stop during
   boot ends at once, where node as PID 1 would ignore it until the SIGKILL.
   It also reaps the processes a `docker exec` leaves behind. Bun runs under
   tini the same way.
+- **Known:** a box whose `docker-compose.yml` has local edits keeps its old
+  compose at the roll (the updater says "SERVER COMPOSE NOT REFRESHED"). It
+  gets the new start with no tini, so a stop during boot waits for the
+  SIGKILL. Move the edits to `docker-compose.override.yml` and run
+  `scripts/compose-adopt.sh`, or add `init: true` to each service there.
 
 ## Unreleased: only a Moderator opens a canvas's link
 
