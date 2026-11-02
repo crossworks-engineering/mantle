@@ -54,8 +54,13 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   small letters, capitals, digits and symbols; a passphrase of 20 or more
   needs no mix. The common-password list is on for every box, not only under
   a box policy. A refused one answers `password_weak` for too few kinds.
+- **Changed:** the common check is stricter: it also catches short keyboard
+  and word shapes (`Pass1234`, `Q1w2e3r4`, `Qwer123!`), a short piece said
+  again (`Ab1!Ab1!`), and a password that is half runs or more.
 - **Unchanged:** a password set before keeps working, and only a box policy
-  asks for a change at sign-in, on its own minimum and the common list.
+  asks for a change at sign-in, on its own minimum and the common list. On a
+  box with `MANTLE_POLICY_PASSWORD_MIN`, a login whose password the stricter
+  common check now catches is asked to change it at its next sign-in.
 - **Added:** `GET /api/auth/bootstrap-state` carries `passwordRule`, so the
   sign-up, invite and change forms can show the rule as the person types.
 
