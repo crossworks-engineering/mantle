@@ -30,9 +30,12 @@ const FILES = {
   'App.tsx': 'export default function App() {\n  return a.b;\n}\n',
 };
 
-/** Node's engine runs one such line for longer than any timeout. Bun's gives up
- *  in about 0.5 s and calls it no match, so it takes many lines to pass 3 s. */
-const BACKTRACKS = `${'a'.repeat(40)}!\n`.repeat(20);
+/** Many lines that each take a moment, so the search passes the timeout on
+ *  both engines: one line that took long would meet Bun's line limit first. */
+const BACKTRACKS = `${'a'.repeat(19)}!\n`.repeat(2000);
+/** One line past Bun's line limit that the regex below does match: Bun's
+ *  engine gives up on the first branch and says no match. Node's runs on. */
+const HARD_LINE = `${'a'.repeat(27)}!`;
 
 describe('searchFiles', () => {
   it('returns file:line: text hits in path order', async () => {
@@ -140,6 +143,21 @@ describe('searchFiles on Bun', () => {
       expect(spawned[0]!.args).toContain(String(REGEX_CHILD_MEMORY_MB * 1024));
     }
   });
+
+  it(
+    'a line too hard for the engine fails the search: never a wrong no match',
+    async () => {
+      const res = await searchFiles({ 'x.ts': HARD_LINE }, '^(a+)+$|^a+!$', {
+        regex: true,
+        ignoreCase: false,
+        cap: 50,
+      });
+      expect(res).toEqual({
+        error: expect.stringMatching(/too hard for this runtime|ran past 3s/),
+      });
+    },
+    REGEX_TIMEOUT_MS + 5000,
+  );
 
   it(
     'a backtracking regex is killed at the timeout, and its slot comes back',

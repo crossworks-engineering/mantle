@@ -21,6 +21,13 @@ const REGEX_WORKER_HEAP_MB = 256;
 /** The kernel limit on a regex process (Bun): the worker's heap, plus the
  *  about 300 MB Bun needs to start. */
 export const REGEX_CHILD_MEMORY_MB = 640;
+/** Bun's regex engine gives up on a hard pattern, in about 0.6 s on one line,
+ *  and answers no match even where a match exists, with no error. So on Bun a
+ *  line this slow fails the search: no answer beats a wrong one. */
+const BUN_LINE_MS = 250;
+/** What a search that hit that limit says. */
+const TOO_HARD =
+  'the regex is too hard for this runtime, which gives up on it and can miss a match (a pattern like (a+)+ backtracks without end). Use a simpler pattern, narrow it with glob, or search the plain text with regex false';
 /** A hit's line is cut to this many characters. */
 export const HIT_TEXT_MAX = 200;
 
@@ -39,6 +46,8 @@ type Job = {
   ignoreCase: boolean;
   cap: number;
   textMax: number;
+  /** Bun only: the longest one line may take, and what that failure says. */
+  lineLimit?: { ms: number; error: string };
 };
 
 /** The matcher, as one function the worker also runs (its source is sent
@@ -55,9 +64,13 @@ function runSearch(job: Job): SearchHits {
     for (let i = 0; i < lines.length; i++) {
       const raw = lines[i]!;
       const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+      const started = job.lineLimit ? performance.now() : 0;
       const hit = re
         ? re.test(line)
         : (job.ignoreCase ? line.toLowerCase() : line).includes(needle);
+      if (job.lineLimit && performance.now() - started >= job.lineLimit.ms) {
+        throw new Error(job.lineLimit.error);
+      }
       if (!hit) continue;
       total++;
       inFile = true;
@@ -226,11 +239,12 @@ function runInChild(job: Job): Promise<SearchHits | { error: string }> {
       try {
         const m = JSON.parse(Buffer.concat(out).toString('utf8')) as
           { ok: true; res: SearchHits } | { ok: false; error: string };
-        resolve(m.ok ? m.res : { error: `the search failed: ${m.error}` });
+        if (m.ok) resolve(m.res);
+        else resolve({ error: m.error === TOO_HARD ? TOO_HARD : `the search failed: ${m.error}` });
       } catch {
         resolve({ error: 'the search gave no answer' });
       }
     });
-    proc.stdin.end(JSON.stringify(job));
+    proc.stdin.end(JSON.stringify({ ...job, lineLimit: { ms: BUN_LINE_MS, error: TOO_HARD } }));
   });
 }
