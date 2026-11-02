@@ -39,6 +39,14 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Changed:** those services start through `scripts/run-service.sh`, which
   hands the process to the runtime, so a stop signal still reaches it.
 
+## Unreleased: on Bun, files go through Bun's own S3 client
+
+- **Changed:** a service that runs on Bun (`MANTLE_RUNTIME=bun`) checks,
+  stores, reads and deletes files through Bun.S3Client, which is native. The
+  AWS SDK cost each such process about 27 MB, and a check took three times as
+  long. The bucket checks and the store tools (ensure, verify, copy-from) stay
+  on the SDK, and so does every service on Node.
+
 ## Unreleased: a SQL process has a memory limit
 
 - **Fixed:** one row of many large columns could take a SQL process to several

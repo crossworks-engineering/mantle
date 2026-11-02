@@ -1,15 +1,6 @@
-import {
-  CreateBucketCommand,
-  DeleteObjectCommand,
-  GetObjectCommand,
-  HeadBucketCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-  PutObjectCommand,
-  S3Client,
-  type S3ClientConfig,
-} from '@aws-sdk/client-s3';
-import type { Readable } from 'node:stream';
+import type { S3Client, S3ClientConfig } from '@aws-sdk/client-s3';
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { createHash } from 'node:crypto';
 import { env, feature } from '@mantle/config';
 
@@ -20,10 +11,18 @@ import { env, feature } from '@mantle/config';
  * calls only, no vendor admin APIs, no vendor CLI. That is what lets the
  * bundled store change (MinIO left open source in 2026) without app changes.
  * If we ever swap object stores, this is the only file that knows.
+ *
+ * Two clients. On Node every call goes through the AWS SDK. On Bun the calls
+ * a request makes (head, put, get, delete) go through Bun.S3Client, which is
+ * native: the SDK costs each process about 27 MB and a HEAD three times as
+ * long. The bucket and admin calls (status, create, list, verify, copy) stay
+ * on the SDK on both runtimes: Bun's errors do not tell a store that answered
+ * from one that did not, and those calls are rare. The SDK is imported on the
+ * first such call, so a Bun process that only reads and writes never loads it.
  */
 
-/** The S3Client settings, from env. Exported for the tests. */
-export function clientConfig(): S3ClientConfig {
+/** The store settings from env, for both clients. */
+function settings() {
   const endpoint = env('S3_ENDPOINT');
   const accessKeyId = env('S3_ACCESS_KEY');
   const secretAccessKey = env('S3_SECRET_KEY');
@@ -33,12 +32,24 @@ export function clientConfig(): S3ClientConfig {
   return {
     endpoint,
     region: env('S3_REGION') ?? 'us-east-1',
-    credentials: { accessKeyId, secretAccessKey },
+    accessKeyId,
+    secretAccessKey,
     // Path-style addressing (http://host/bucket/key) is what self-hosted
     // stores serve without DNS tricks, so it is the default. Set
     // S3_FORCE_PATH_STYLE=false for a provider that wants virtual-hosted
     // style (http://bucket.host/key).
     forcePathStyle: feature('s3ForcePathStyle'),
+  };
+}
+
+/** The S3Client settings, from env. Exported for the tests. */
+export function clientConfig(): S3ClientConfig {
+  const { endpoint, region, accessKeyId, secretAccessKey, forcePathStyle } = settings();
+  return {
+    endpoint,
+    region,
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle,
     // Since SDK 3.729 every PutObject carries a flexible checksum header
     // (x-amz-checksum-crc32) by default, and not every S3-compatible server
     // implements those. Send and check them only when an operation requires
@@ -51,16 +62,65 @@ export function clientConfig(): S3ClientConfig {
 /** The subset of S3Client this module calls, so the tests can pass a fake. */
 type S3Sender = Pick<S3Client, 'send'>;
 
+type Sdk = typeof import('@aws-sdk/client-s3');
+let _sdk: Promise<Sdk> | undefined;
+function sdk(): Promise<Sdk> {
+  return (_sdk ??= import('@aws-sdk/client-s3'));
+}
+
 let _client: S3Sender | undefined;
-function client(): S3Sender {
+async function client(): Promise<S3Sender> {
   if (_client) return _client;
-  _client = new S3Client(clientConfig());
+  const { S3Client } = await sdk();
+  _client ??= new S3Client(clientConfig());
   return _client;
 }
 
-/** Test seam: swap the client (pass undefined to go back to the real one). */
+/** Test seam: swap the client (pass undefined to go back to the real one).
+ *  A test client also turns the Bun path off, so the SDK tests mean the
+ *  same on both runtimes. */
 export function __setClientForTests(c: S3Sender | undefined): void {
   _client = c;
+  _bun = undefined;
+}
+
+/** The part of Bun.S3Client this module calls. */
+export type BunS3File = {
+  exists(): Promise<boolean>;
+  write(data: Buffer, options: { type: string }): Promise<number>;
+  stat(): Promise<{ size: number; type: string }>;
+  stream(): ReadableStream<Uint8Array>;
+  delete(): Promise<void>;
+};
+export type BunS3 = { file(key: string): BunS3File };
+type BunS3Class = new (options: Record<string, unknown>) => BunS3;
+
+let _bun: BunS3 | null | undefined;
+let _bunForTests: BunS3 | undefined;
+
+/** Bun.S3Client on Bun, null on Node or when a test set an SDK client. */
+function bunStore(): BunS3 | null {
+  if (_bunForTests) return _bunForTests;
+  if (_client) return null;
+  if (_bun !== undefined) return _bun;
+  const S3 = (globalThis as { Bun?: { S3Client?: BunS3Class } }).Bun?.S3Client;
+  if (!process.versions.bun || !S3) return (_bun = null);
+  const { endpoint, region, accessKeyId, secretAccessKey, forcePathStyle } = settings();
+  _bun = new S3({
+    endpoint,
+    region,
+    accessKeyId,
+    secretAccessKey,
+    bucket: bucket(),
+    virtualHostedStyle: !forcePathStyle,
+  });
+  return _bun;
+}
+
+/** Test seam: run the Bun path against a fake on either runtime (pass
+ *  undefined to go back). */
+export function __setBunStoreForTests(s: BunS3 | undefined): void {
+  _bunForTests = s;
 }
 
 function bucket(): string {
@@ -80,8 +140,13 @@ export function hashBuffer(buf: Buffer): string {
 }
 
 async function exists(key: string): Promise<boolean> {
+  const b = bunStore();
+  // Bun answers false for a missing key and throws on any other failure, the
+  // same as the SDK branch below.
+  if (b) return b.file(key).exists();
+  const { HeadObjectCommand } = await sdk();
   try {
-    await client().send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
+    await (await client()).send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
     return true;
   } catch (err: unknown) {
     const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
@@ -105,7 +170,15 @@ export async function putContent(
   if (await exists(key)) {
     return { key, sha256, size, deduped: true };
   }
-  await client().send(
+  const b = bunStore();
+  if (b) {
+    await b.file(key).write(buf, { type: contentType });
+    return { key, sha256, size, deduped: false };
+  }
+  const { PutObjectCommand } = await sdk();
+  await (
+    await client()
+  ).send(
     new PutObjectCommand({
       Bucket: bucket(),
       Key: key,
@@ -126,7 +199,20 @@ export async function getContent(key: string): Promise<{
   contentType?: string;
   contentLength?: number;
 }> {
-  const res = await client().send(new GetObjectCommand({ Bucket: bucket(), Key: key }));
+  const b = bunStore();
+  if (b) {
+    // The stat is a HEAD, then the stream a GET: Bun's file stream carries no
+    // headers. A missing key throws here (S3Error NoSuchKey), as the SDK does.
+    const f = b.file(key);
+    const st = await f.stat();
+    return {
+      body: Readable.fromWeb(f.stream() as WebReadableStream<Uint8Array>),
+      contentType: st.type || undefined,
+      contentLength: st.size,
+    };
+  }
+  const { GetObjectCommand } = await sdk();
+  const res = await (await client()).send(new GetObjectCommand({ Bucket: bucket(), Key: key }));
   if (!res.Body) throw new Error(`empty body for ${key}`);
   return {
     body: res.Body as Readable,
@@ -136,7 +222,10 @@ export async function getContent(key: string): Promise<{
 }
 
 export async function deleteContent(key: string): Promise<void> {
-  await client().send(new DeleteObjectCommand({ Bucket: bucket(), Key: key }));
+  const b = bunStore();
+  if (b) return b.file(key).delete();
+  const { DeleteObjectCommand } = await sdk();
+  await (await client()).send(new DeleteObjectCommand({ Bucket: bucket(), Key: key }));
 }
 
 /**
@@ -147,7 +236,8 @@ export async function deleteContent(key: string): Promise<void> {
  */
 export async function bucketReachable(): Promise<boolean> {
   try {
-    await client().send(new HeadBucketCommand({ Bucket: bucket() }));
+    const { HeadBucketCommand } = await sdk();
+    await (await client()).send(new HeadBucketCommand({ Bucket: bucket() }));
     return true;
   } catch (err: unknown) {
     const e = err as { $metadata?: { httpStatusCode?: number }; name?: string };
@@ -179,8 +269,9 @@ export type BucketStatus = {
  */
 export async function bucketStatus(): Promise<BucketStatus> {
   const name = bucket();
+  const { HeadBucketCommand } = await sdk();
   try {
-    await client().send(new HeadBucketCommand({ Bucket: name }));
+    await (await client()).send(new HeadBucketCommand({ Bucket: name }));
     return { bucket: name, reachable: true, exists: true };
   } catch (err: unknown) {
     const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
@@ -218,8 +309,9 @@ export async function ensureBucket(): Promise<{
   if (!s.reachable) throw new Error(`object store unreachable (bucket "${s.bucket}")`);
   if (s.exists === true) return { bucket: s.bucket, created: false, verified: true };
   if (s.exists === null) return { bucket: s.bucket, created: false, verified: false };
+  const { CreateBucketCommand } = await sdk();
   try {
-    await client().send(new CreateBucketCommand({ Bucket: s.bucket }));
+    await (await client()).send(new CreateBucketCommand({ Bucket: s.bucket }));
     return { bucket: s.bucket, created: true, verified: true };
   } catch (err: unknown) {
     // Another process won the race between the HEAD and the create.
@@ -234,8 +326,8 @@ export async function ensureBucket(): Promise<{
 export type StoredObject = { key: string; size: number; etag?: string };
 
 /** Every object in S3_BUCKET under `prefix`, paged through ListObjectsV2. */
-export function listKeys(prefix = ''): AsyncGenerator<StoredObject> {
-  return listKeysOf(client(), bucket(), prefix);
+export async function* listKeys(prefix = ''): AsyncGenerator<StoredObject> {
+  yield* listKeysOf(await client(), bucket(), prefix);
 }
 
 async function* listKeysOf(
@@ -243,6 +335,7 @@ async function* listKeysOf(
   bucketName: string,
   prefix = '',
 ): AsyncGenerator<StoredObject> {
+  const { ListObjectsV2Command } = await sdk();
   let token: string | undefined;
   do {
     const res = await c.send(
@@ -347,6 +440,7 @@ export async function copyMissingFrom(
     report.missing.push(o.key);
     if (!opts.apply) continue;
     try {
+      const { GetObjectCommand, PutObjectCommand } = await sdk();
       const res = await source.client.send(
         new GetObjectCommand({ Bucket: source.bucket, Key: o.key }),
       );
@@ -359,7 +453,9 @@ export async function copyMissingFrom(
         report.bad.push({ key: o.key, problem: 'sha256 mismatch in the source; not copied' });
         continue;
       }
-      await client().send(
+      await (
+        await client()
+      ).send(
         new PutObjectCommand({
           Bucket: bucket(),
           Key: o.key,
