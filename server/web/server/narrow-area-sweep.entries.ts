@@ -262,13 +262,16 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'PUT /api/tools/:id/external-access': { body: { allow: true, readOnlyConfirmed: true } },
   'POST /api/updates/check': {},
   'POST /api/updates/request': {},
-  'POST /api/users': {},
+  // A new login's password meets the password rule (12+ characters, 3 kinds):
+  // the snapshot's sample body (a10-body-sweep.bodies.json) is the schema's
+  // minimum, which the rule refuses before any write.
+  'POST /api/users': { body: { email: 'sweep@example.invalid', password: 'Sweep-pass-2026' } },
   'PATCH /api/users/:id': { body: { displayName: 'sweep', role: 'admin', signOut: true } },
   'DELETE /api/users/:id': {},
   'PUT /api/users/:id/agent': { body: { name: 'sweep', sourceAgentId: S } },
   'DELETE /api/users/:id/agent': {},
   'DELETE /api/users/:id/devices/:jti': {},
-  'POST /api/users/:id/password': {},
+  'POST /api/users/:id/password': { body: { newPassword: 'Sweep-pass-2026' } },
   // Company sign-in (lib/oidc): the sweep runs with it off, where both
   // answer 404 before any write.
   'PATCH /api/users/:id/oidc': { body: { outside: true } },
