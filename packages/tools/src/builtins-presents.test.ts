@@ -25,6 +25,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { estimateMeasurer, render, SET_NAV_HEIGHT, validate } from '@mantle/diagram-templates';
 
 const h = vi.hoisted(() => ({
+  activeShare: vi.fn(async (): Promise<unknown> => null),
   getPresent: vi.fn(),
   createPresent: vi.fn(),
   savePresentSource: vi.fn(),
@@ -55,7 +56,10 @@ vi.mock('@mantle/content/presents', async (importOriginal) => {
     getPresentRevisionSource: h.getPresentRevisionSource,
   };
 });
-vi.mock('@mantle/content', () => ({ nodeUrl: (id: string) => `/n/${id}` }));
+vi.mock('@mantle/content', () => ({
+  nodeUrl: (id: string) => `/n/${id}`,
+  getActiveShareForNode: h.activeShare,
+}));
 vi.mock('@mantle/content/canvas-data', () => ({ readCanvasDataFor: h.readCanvasDataFor }));
 vi.mock('@mantle/content/tree', () => ({ guardNewFileIn: vi.fn(async () => undefined) }));
 vi.mock('@mantle/files', () => ({
@@ -96,7 +100,7 @@ vi.mock('@mantle/app-build', () => ({
   buildCanvasCss: vi.fn(async () => ''),
 }));
 
-import { PRESENT_TOOLS, DIAGRAM_RENDER_TOOLS } from './builtins-presents';
+import { PRESENT_TOOLS, DIAGRAM_RENDER_TOOLS, OPEN_LINK_SAVE_NOTE } from './builtins-presents';
 import { readCircuitChecks } from './circuit-trace/read';
 import { registerCanvasRenderer, type CanvasRenderRequest } from './canvas-render-bridge';
 import type { ToolHandlerContext } from './types';
@@ -235,6 +239,23 @@ describe('present_update', () => {
     expect(out.ok).toBe(true);
     const saved = h.savePresentSource.mock.calls[0]![2] as { source: string };
     expect(saved.source).toContain('Pump P-2 feeds the drum');
+  });
+
+  it('says a save is public at once when the canvas has an open link', async () => {
+    h.getPresent.mockResolvedValue(detail(CANVAS));
+    const edit = { id: ID, edits: [{ find: 'P-1 feeds', replace: 'P-2 feeds' }], look: false };
+    const plain = await tool('present_update').handler(edit, ctx);
+    expect((plain as { output: Record<string, unknown> }).output.open_link).toBeUndefined();
+    h.activeShare.mockResolvedValueOnce({ id: 'share-1' });
+    const linked = await tool('present_update').handler(edit, ctx);
+    expect((linked as { output: Record<string, unknown> }).output.open_link).toBe(
+      OPEN_LINK_SAVE_NOTE,
+    );
+    // A failed read says nothing: the save stands.
+    h.activeShare.mockRejectedValueOnce(new Error('db down'));
+    const failed = await tool('present_update').handler(edit, ctx);
+    expect(failed.ok).toBe(true);
+    expect((failed as { output: Record<string, unknown> }).output.open_link).toBeUndefined();
   });
 
   it('refuses an edit whose find is missing or not unique', async () => {

@@ -702,5 +702,6 @@
   "POST /s/:token/db-broker": null,
   "POST /s/:token/evaluate": null,
   "POST /s/:token/frame-ticket": null,
+  "POST /s/:token/canvas/frame-ticket": null,
   "POST /s/:token/tool-broker": null
 }

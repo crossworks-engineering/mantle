@@ -9,7 +9,7 @@
 # 2026-10-30 (credential vault v2 part 1): POST /api/keys/import had no route on main; its cells are the branch's own answers.
 # 2026-10-30 (company sign-in, OIDC milestone 1): POST and DELETE /api/auth/oidc/link, POST /api/auth/oidc/offer, PATCH and DELETE /api/users/:id/oidc had no route on main; their cells are the branch's own answers (company sign-in off: 404 before any body read).
 # 2026-10-31 (company sign-in, OIDC milestone 2): POST /api/auth/oidc/exchange and POST /api/auth/oidc/fresh had no route on main; their cells are the branch's own answers.
-# cells: 2532
+# cells: 2538
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -2272,6 +2272,12 @@ POST /s/:token/frame-ticket none empty => 404 text/plain not found
 POST /s/:token/frame-ticket none nul => 404 text/plain not found
 POST /s/:token/frame-ticket none array => 404 text/plain not found
 POST /s/:token/frame-ticket none chunked => 404 text/plain not found
+POST /s/:token/canvas/frame-ticket none valid => 404 text/plain not found
+POST /s/:token/canvas/frame-ticket none malformed => 404 text/plain not found
+POST /s/:token/canvas/frame-ticket none empty => 404 text/plain not found
+POST /s/:token/canvas/frame-ticket none nul => 404 text/plain not found
+POST /s/:token/canvas/frame-ticket none array => 404 text/plain not found
+POST /s/:token/canvas/frame-ticket none chunked => 404 text/plain not found
 POST /s/:token/tool-broker none valid => 404 application/json {"ok":false,"error":"not found"}
 POST /s/:token/tool-broker none malformed => 404 application/json {"ok":false,"error":"not found"}
 POST /s/:token/tool-broker none empty => 404 application/json {"ok":false,"error":"not found"}

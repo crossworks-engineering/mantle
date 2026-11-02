@@ -63,12 +63,16 @@ frame-src 'self'`: a sandboxed frame may always navigate itself, and only
   mints a canvas frame ticket at `POST /s/[token]/canvas/frame-ticket`
   (bound to the link and the canvas, no login, 30 s) and the frame loads
   `GET /s/[token]/canvas/frame?t=`, which resolves the link again on every
-  load and renders the same document, CSP and sandbox as the owner's frame.
+  load and renders the same document, CSP and sandbox as the owner's frame,
+  `private, no-store` (its refusals `no-store`): the /api default does not
+  reach /s, and a closed link leaves no cached copy.
   Both routes take a per-address rate limit (`shareCanvasFrameTicket`,
   `shareCanvasFrame`). The canvas data store (`mantle.data`) is not served:
   the presenter answers each call itself, refused. Never a render on this
   path; the owner frame refuses a link's ticket and this frame refuses a
-  login's. Open links only: a canvas has no contact share.
+  login's. Open links only: a canvas has no contact share. A save is live on
+  the link at once, so `present_update` says so (`open_link`) when the
+  canvas has one.
 - **Folder** (`branch`): shares **the files and subfolders under the
   folder that are on the link's served list, evaluated per request**. A
   file added later is neither listed nor served until someone ticks it; a

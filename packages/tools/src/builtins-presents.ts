@@ -35,7 +35,7 @@ import {
   type PresentDetail,
   type PresentRow,
 } from '@mantle/content/presents';
-import { nodeUrl } from '@mantle/content';
+import { getActiveShareForNode, nodeUrl } from '@mantle/content';
 import { guardNewFileIn } from '@mantle/content/tree';
 import { readCanvasDataFor } from '@mantle/content/canvas-data';
 import {
@@ -385,6 +385,20 @@ function saved(
     },
     ...(seen?.modelImages ? { modelImages: seen.modelImages } : {}),
   };
+}
+
+/** What a save says when the canvas has an open link: the link always shows
+ *  the latest save, so this one is public as of now. Best effort: a failed
+ *  read says nothing (the save stands either way). */
+export const OPEN_LINK_SAVE_NOTE =
+  'This canvas has an open link: this save is live on it now, for anyone with the link. Keep private data out of it, or stop the link in Access.';
+
+async function openLinkNote(ownerId: string, id: string): Promise<Record<string, unknown>> {
+  try {
+    return (await getActiveShareForNode(ownerId, id)) ? { open_link: OPEN_LINK_SAVE_NOTE } : {};
+  } catch {
+    return {};
+  }
 }
 
 /** Apply find/replace edits in order; each `find` must occur exactly once. */
@@ -941,7 +955,7 @@ const present_update: BuiltinToolDef = {
         });
       }
       const seen = lookWanted(input) ? await lookAndPoster(ctx, detail, css) : null;
-      return saved(detail, seen);
+      return saved(detail, seen, await openLinkNote(ctx.ownerId, id));
     } catch (err) {
       return { ok: false, error: visibilityRefusal(err) ?? publicErrorText(err, 'present') };
     }

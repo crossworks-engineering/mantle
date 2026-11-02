@@ -969,6 +969,9 @@ GET /s/:token/bundle: disabled-cookie=a43 bumped-cookie=a43 gone-cookie=a43 rota
 HEAD /s/:token/bundle: disabled-cookie=a43 bumped-cookie=a43 gone-cookie=a43 rotated-bearer=a43 expired-bearer=a43 key-unknown=a43 key-revoked=a43
 GET /s/:token/bundle/css: disabled-cookie=a43 bumped-cookie=a43 gone-cookie=a43 rotated-bearer=a43 expired-bearer=a43 key-unknown=a43 key-revoked=a43
 HEAD /s/:token/bundle/css: disabled-cookie=a43 bumped-cookie=a43 gone-cookie=a43 rotated-bearer=a43 expired-bearer=a43 key-unknown=a43 key-revoked=a43
+GET /s/:token/canvas/frame: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
+HEAD /s/:token/canvas/frame: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
+POST /s/:token/canvas/frame-ticket: disabled-cookie=a43 bumped-cookie=a43 gone-cookie=a43 rotated-bearer=a43 expired-bearer=a43 key-unknown=a43 key-revoked=a43
 POST /s/:token/code: disabled-cookie=a44 bumped-cookie=a44 gone-cookie=a44 rotated-bearer=a44 expired-bearer=a44 key-unknown=a44 key-revoked=a44
 POST /s/:token/db-broker: disabled-cookie=a45 bumped-cookie=a45 gone-cookie=a45 rotated-bearer=a45 expired-bearer=a45 key-unknown=a45 key-revoked=a45
 GET /s/:token/draw: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9

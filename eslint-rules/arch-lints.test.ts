@@ -510,8 +510,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
-    // + the 2 rows of its second milestone.
-    expect(rows.length).toBe(930);
+    // + the 2 rows of its second milestone + the 3 public rows of a Present
+    // canvas's open link (GET and HEAD /s/:token/canvas/frame, POST
+    // /s/:token/canvas/frame-ticket: a link judges its token, no caller).
+    expect(rows.length).toBe(933);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
