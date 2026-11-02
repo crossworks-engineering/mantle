@@ -123,6 +123,8 @@ describe('dwg_render', () => {
     });
     const r = await call({ window: [0, 0, 10, 10] });
     expect(JSON.stringify(r)).toContain('model space may be empty');
+    // The frame is also missing when its entities could not be read.
+    expect(JSON.stringify(r)).toContain('could not be read');
   });
 
   it.each([

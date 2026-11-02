@@ -4,6 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: DWG pictures, the follow-ups (after v0.400.46)
+
+- **Fixed:** a closed box inside a sheet whose real border is drawn in
+  segments (each shorter than the box) is no longer taken for the border,
+  so the content around it is no longer cut. Thin strokes outside the box,
+  on one line, that together run past both of its edges now count as an
+  edge, as one long line already did.
+- **Fixed:** a border stroke drawn twice, the copy out by floating-point
+  noise, no longer makes the real border lose (a small tolerance on the
+  edge).
+- **Fixed:** the error text of a DWG picture or crop no longer carries the
+  parser container's temp paths: an OSError gives only its reason, and any
+  other error's absolute paths read `<file>`.
+- **Changed:** a blank `dwg_render` window with no sheet frame says the
+  sheet could not be found: model space may be empty, or its entities could
+  not be read (the frame is also missing when reading them failed).
+- **Tests:** the border-try cap and the inside-line rule each have a test
+  that fails without them.
+
 ## Unreleased: the SQL children read their ends right (follow-up of v0.400.55)
 
 - **Fixed:** a statement refused at the memory limit no longer costs a

@@ -98,6 +98,29 @@ def cad_page_inches(layout, frame: dict | None = None) -> tuple[float, float]:
     return (RENDER_PAGE_INCHES / ratio, RENDER_PAGE_INCHES)
 
 
+# An absolute path in an error's text: the job's own temp files, which mean
+# nothing to a caller and say where the container keeps them.
+# Not after a word, a dot, a colon or a slash, so a URL keeps its "//host/…".
+# A path with a space in it loses only its first part.
+_ABS_PATH = re.compile(r"(?<![\w.:/])/[^\s'\":,)\]]+")
+
+
+def scrub_paths(text: str) -> str:
+    """`text` with every absolute path replaced by <file>."""
+    return _ABS_PATH.sub("<file>", text)
+
+
+def error_text(err: BaseException, limit: int = 500) -> str:
+    """An error as a caller may read it: its type and its words, with no
+    absolute path in them. An OSError gives only its reason (strerror): its
+    file name is a path inside the container."""
+    if isinstance(err, OSError) and err.strerror:
+        words = err.strerror
+    else:
+        words = scrub_paths(str(err))
+    return f"{type(err).__name__}: {words}"[:limit]
+
+
 def png_is_blank(path: str) -> bool:
     """True when a saved render carries essentially no ink.
 
@@ -451,7 +474,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
                 os.unlink(png)
             except OSError:
                 pass
-            return f"{type(err).__name__}: {err}"[:500]
+            return error_text(err)
         finally:
             plt.close("all")
 
@@ -502,7 +525,7 @@ def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
         with open(spec_path, encoding="utf-8") as f:
             spec = dwg_crop.parse_spec(json.load(f))
     except (ValueError, OSError) as err:
-        sys.stderr.write(f"crop spec: {err}\n")
+        sys.stderr.write(f"crop spec: {error_text(err, 300) if isinstance(err, OSError) else scrub_paths(str(err))}\n")
         return 1
     started = time.time()
     doc, converter = open_cad(src, outdir)
@@ -515,7 +538,7 @@ def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
         return 1
     except Exception as err:
         # Stderr is the job's answer: the reason, never a traceback's paths.
-        sys.stderr.write(f"the crops could not be drawn: {type(err).__name__}: {err}"[:300] + "\n")
+        sys.stderr.write(f"the crops could not be drawn: {error_text(err, 270)}\n")
         return 1
     index["converter"] = converter
     for crop in index["crops"]:
@@ -692,9 +715,9 @@ def dwg_registry(doc, converter) -> dict:
                 raise ValueError("a number in the geometry is not finite: geometry not built")
             index.update(geo)
         except (dwg_bones.GeometryBudgetExceeded, ValueError) as err:
-            geometry_error = str(err)[:500]
+            geometry_error = scrub_paths(str(err))[:500]
         except Exception as err:
-            geometry_error = f"{type(err).__name__}: {err}"[:500]
+            geometry_error = error_text(err)
     index["geometry_error"] = geometry_error
     return index
 

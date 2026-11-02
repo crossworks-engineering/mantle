@@ -220,13 +220,98 @@ class BorderTests(unittest.TestCase):
 
     def test_a_line_inside_that_touches_both_edges_keeps_the_border(self):
         divider = [(dwg_frame.OTHER, (0.0, 100.0, 800.0, 100.0))]
-        note = [(dwg_frame.TEXT, (5000.0, 0.0, 5000.0, 0.0))]
-        self.assertTrue(dwg_frame.drawing_frame(bordered() + divider + note)["framed"])
+        # Near: only the border frames this note; the stray rule keeps it.
+        note = [(dwg_frame.TEXT, (850.0, 100.0, 850.0, 100.0))]
+        f = dwg_frame.drawing_frame(bordered() + divider + note)
+        self.assertTrue(f["framed"])
+        self.assertLess(f["sheet"][2], 830)
 
     def test_only_the_largest_closed_boxes_are_tried(self):
-        small = [(dwg_frame.CLOSED, (i * 1.0, 0.0, i + 1.0, 1.0)) for i in range(400)]
+        # Four closed boxes larger than the border, each centred on the sheet
+        # but holding too little of it: the border is the fifth to be tried.
+        decoys = [
+            (dwg_frame.CLOSED, (100.0 + i * 10, -1000.0 - i, 700.0 - i * 10, 1300.0 + i))
+            for i in range(4)
+        ]
+        drawing = decoys + bordered()
+        self.assertEqual(dwg_frame.sheet_border(drawing), (0.0, 0.0, 800.0, 500.0))
         with mock.patch.object(dwg_frame, "MAX_BORDER_TRIES", 4):
-            self.assertIsNone(dwg_frame.sheet_border(small + entities(sheet())))
+            self.assertIsNone(dwg_frame.sheet_border(drawing))
+
+    def test_a_line_on_the_edge_out_by_noise_keeps_the_border(self):
+        # A border stroke drawn twice, the copy a hair outside the edge.
+        edge = [(dwg_frame.OTHER, (0.0, -1e-9, 800.0, -1e-9))]
+        note = [(dwg_frame.TEXT, (850.0, 100.0, 850.0, 100.0))]
+        f = dwg_frame.drawing_frame(bordered() + edge + note)
+        self.assertTrue(f["framed"])
+        self.assertLess(f["sheet"][2], 830)
+        # The copy is on the sheet, not off it: only the note is reported.
+        self.assertEqual([g["entities"] for g in f["off_sheet"]], [1])
+        self.assertGreater(f["off_sheet"][0]["window"][0], 800)
+
+    def test_a_box_inside_a_border_drawn_in_segments_is_not_the_border(self):
+        # The real border is loose lines, each shorter than the inner box, and
+        # the title block is text: no single line spans the box.
+        drawing = [(dwg_frame.CLOSED, (100.0, 100.0, 500.0, 450.0))]
+        drawing += entities(sheet(x=110.0, y=110.0, w=380.0, h=330.0, n=400)[1:])
+        segments = []
+        for x in range(0, 841, 210):
+            segments += [(float(x), 0.0, min(x + 210.0, 841.0), 0.0)]
+            segments += [(float(x), 594.0, min(x + 210.0, 841.0), 594.0)]
+        for y in range(0, 594, 150):
+            segments += [(0.0, float(y), 0.0, min(y + 150.0, 594.0))]
+            segments += [(841.0, float(y), 841.0, min(y + 150.0, 594.0))]
+        drawing += entities(segments)
+        # Small enough that what stands outside stays under STRAY_SHARE: only
+        # the strokes together say the box is not the border.
+        title = sheet(x=600.0, y=20.0, w=220.0, h=100.0, n=10)[1:]
+        drawing += entities(title, dwg_frame.TEXT)
+        self.assertFalse(dwg_frame.drawing_frame(drawing)["framed"])
+
+    def segmented(self, gap: float, kind=dwg_frame.OTHER) -> list:
+        """The inner-box drawing with a border of 210-unit strokes and `gap`
+        between them (the box's long side is 400, so a stroke is thin up to
+        0.8)."""
+        drawing = [(dwg_frame.CLOSED, (100.0, 100.0, 500.0, 450.0))]
+        drawing += entities(sheet(x=110.0, y=110.0, w=380.0, h=330.0, n=400)[1:])
+        strokes = []
+        for x in range(0, 841, 210):
+            for y in (0.0, 594.0):
+                strokes.append((float(x), y, min(x + 210.0 - gap, 841.0), y))
+        for y in range(0, 594, 150):
+            for x in (0.0, 841.0):
+                strokes.append((x, float(y), x, min(y + 150.0 - gap, 594.0)))
+        drawing += entities(strokes, kind)
+        drawing += entities(sheet(x=600.0, y=20.0, w=220.0, h=100.0, n=10)[1:], dwg_frame.TEXT)
+        return drawing
+
+    def test_strokes_with_hairline_breaks_still_make_an_edge(self):
+        self.assertFalse(dwg_frame.drawing_frame(self.segmented(0.4))["framed"])
+
+    def test_strokes_with_real_breaks_are_no_edge(self):
+        self.assertTrue(dwg_frame.drawing_frame(self.segmented(2.4))["framed"])
+
+    def test_text_on_a_line_is_no_edge(self):
+        drawing = self.segmented(0.0, dwg_frame.TEXT)
+        self.assertTrue(dwg_frame.drawing_frame(drawing)["framed"])
+
+    def test_a_stroke_at_a_huge_coordinate_does_not_break_the_border(self):
+        # A 100-wide sheet: a stroke is thin up to 0.2, and 1e308 / 0.2 is
+        # past the largest float, which round() cannot take.
+        far = [(dwg_frame.OTHER, (0.0, 1e308, 10.0, 1e308))]
+        self.assertEqual(
+            dwg_frame.sheet_border(bordered(w=100.0, h=60.0, n=60) + far),
+            (0.0, 0.0, 100.0, 60.0),
+        )
+
+    def test_short_strokes_that_do_not_meet_keep_the_border(self):
+        # Dashes under the sheet with gaps between them: no edge, the border
+        # stands and frames the near note.
+        dashes = [(dwg_frame.OTHER, (x, -20.0, x + 20.0, -20.0)) for x in range(0, 800, 100)]
+        note = [(dwg_frame.TEXT, (850.0, 100.0, 850.0, 100.0))]
+        f = dwg_frame.drawing_frame(bordered() + dashes + note)
+        self.assertTrue(f["framed"])
+        self.assertLess(f["sheet"][2], 830)
 
     def test_a_smaller_tile_stays(self):
         boxes = bordered(n=300) + bordered(x=1000.0, w=400.0, h=300.0, n=60)
@@ -234,6 +319,25 @@ class BorderTests(unittest.TestCase):
 
     def test_nothing_to_read(self):
         self.assertIsNone(dwg_frame.drawing_frame([]))
+
+
+class ErrorTextTests(unittest.TestCase):
+    def test_an_os_error_gives_its_reason_and_no_path(self):
+        err = FileNotFoundError(2, "No such file or directory", "/tmp/job-1234/model.png")
+        text = cad.error_text(err)
+        self.assertEqual(text, "FileNotFoundError: No such file or directory")
+        self.assertNotIn("/tmp", text)
+
+    def test_any_error_loses_its_absolute_paths(self):
+        err = ValueError("cannot read /work/job-9/in.dxf at line 3")
+        self.assertEqual(cad.error_text(err), "ValueError: cannot read <file> at line 3")
+
+    def test_a_bracket_and_a_url_survive(self):
+        self.assertEqual(cad.scrub_paths("bad file (/tmp/a.dxf)"), "bad file (<file>)")
+        self.assertEqual(cad.scrub_paths("see https://ezdxf.mozman.at/docs"), "see https://ezdxf.mozman.at/docs")
+
+    def test_the_text_is_capped(self):
+        self.assertEqual(len(cad.error_text(ValueError("x" * 900), 50)), 50)
 
 
 class ViewSpecTests(unittest.TestCase):

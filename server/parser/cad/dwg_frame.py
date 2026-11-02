@@ -13,7 +13,8 @@ the sheet cannot move it). Everything outside it is off the sheet.
 A closed box is not always the sheet, and a wrong one cuts real content, so it
 loses to any of these: an entity whose box holds it (the real border is a
 block, and this is a battery limit inside it), an entity outside it that spans
-it from edge to edge (the real border is loose lines), a second closed box of
+it from edge to edge, or thin strokes on one line outside it that do so
+together (the real border is loose lines, maybe in segments), a second closed box of
 about its size outside it (sheets tiled in one model space), or more than
 STRAY_SHARE of all the entities outside it, text included (a title block and a
 legend are mostly text). When in doubt the stray rule decides, which keeps more.
@@ -52,6 +53,12 @@ STRAY_GAP = 0.25
 # Entities closer than this share of the whole span are one group, so the
 # white space inside a sheet does not break it into pieces.
 GROUP_GAP = 0.08
+# Floating-point noise on a border's edge, as a share of its long side: a line
+# this close outside the edge counts as on it.
+EDGE_TOLERANCE = 1e-6
+# A line no thicker than this share of the border's long side is a stroke of
+# an edge, for the pieces that together run past both of its edges.
+STROKE_SHARE = 0.002
 # The white edge kept around a framed sheet, as a share of its long side.
 FRAME_MARGIN = 0.015
 # Axis passes. Cutting a stray along x can show one along y.
@@ -126,8 +133,10 @@ def _centre(box) -> tuple:
     return ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
 
 
-def _holds(box, point) -> bool:
-    return box[0] <= point[0] <= box[2] and box[1] <= point[1] <= box[3]
+def _holds(box, point, pad: float = 0.0) -> bool:
+    return (
+        box[0] - pad <= point[0] <= box[2] + pad and box[1] - pad <= point[1] <= box[3] + pad
+    )
 
 
 def _area(box) -> float:
@@ -144,15 +153,64 @@ def _contains(outer, box) -> bool:
     )
 
 
+def _long_side(box) -> float:
+    return max(box[2] - box[0], box[3] - box[1])
+
+
+def _on(box, b) -> bool:
+    """The centre of `b` is on `box` (inside it, or out by floating-point noise
+    only): every border test reads a box this way."""
+    return _holds(box, _centre(b), _long_side(box) * EDGE_TOLERANCE)
+
+
 def _spans(outer, box) -> bool:
     """`outer`, outside `box`, runs past both of its edges on one axis. A line
     inside a sheet can touch both edges of its border; a line outside cannot
-    be longer than the sheet it is off."""
-    if _holds(box, _centre(outer)):
+    be longer than the sheet it is off. A line on the edge itself, out by
+    floating-point noise only, is not outside."""
+    if _on(box, outer):
         return False
     across = outer[0] <= box[0] and outer[2] >= box[2]
     along = outer[1] <= box[1] and outer[3] >= box[3]
     return across or along
+
+
+def _covers(pieces: list, lo: float, hi: float, gap: float) -> bool:
+    """The intervals `pieces` together cover lo..hi, with breaks of at most
+    `gap` (a border drawn in segments meets end to end)."""
+    reach = lo
+    for a, b in sorted(pieces):
+        if a > reach + gap:
+            return False
+        reach = max(reach, b)
+        if reach >= hi:
+            return True
+    return reach >= hi
+
+
+def _spans_together(entities, box) -> bool:
+    """Thin strokes outside `box`, on one line, that together run past both of
+    its edges: a border drawn in segments, each shorter than the box. The
+    strokes are bucketed by where they sit across their own axis. A stroke
+    must lie along an axis (borders are drawn square); a tilted one is not
+    thin, and is left to the other rules."""
+    thin = _long_side(box) * STROKE_SHARE
+    rows: dict = {}
+    cols: dict = {}
+    for k, b in entities:
+        if k == TEXT or _on(box, b):
+            continue
+        if b[3] - b[1] <= thin:
+            at = b[1] / thin
+            if math.isfinite(at):
+                rows.setdefault(round(at), []).append((b[0], b[2]))
+        elif b[2] - b[0] <= thin:
+            at = b[0] / thin
+            if math.isfinite(at):
+                cols.setdefault(round(at), []).append((b[1], b[3]))
+    return any(_covers(p, box[0], box[2], thin) for p in rows.values()) or any(
+        _covers(p, box[1], box[3], thin) for p in cols.values()
+    )
 
 
 def sheet_border(entities) -> tuple | None:
@@ -163,16 +221,19 @@ def sheet_border(entities) -> tuple | None:
     for box in closed[:MAX_BORDER_TRIES]:
         if _area(box) <= 0:
             return None
-        if sum(1 for c in geometry if _holds(box, c)) < BORDER_HOLDS * len(geometry):
+        pad = _long_side(box) * EDGE_TOLERANCE
+        if sum(1 for c in geometry if _holds(box, c, pad)) < BORDER_HOLDS * len(geometry):
             continue
         if any(k != TEXT and (_contains(b, box) or _spans(b, box)) for k, b in entities):
+            return None
+        if _spans_together(entities, box):
             return None
         for other in closed:
             if _area(other) < _area(box) * SECOND_SHEET_AREA:
                 break
-            if not _holds(box, _centre(other)):
+            if not _on(box, other):
                 return None
-        outside = sum(1 for _k, b in entities if not _holds(box, _centre(b)))
+        outside = sum(1 for _k, b in entities if not _on(box, b))
         return None if outside > STRAY_SHARE * len(entities) else box
     return None
 
@@ -202,7 +263,7 @@ def drawing_frame(entities) -> dict | None:
     boxes = [b for _k, b in kept]
     if border is None:
         return sheet_frame(boxes)
-    off = [b for b in boxes if not _holds(border, _centre(b))]
+    off = [b for b in boxes if not _on(border, b)]
     full = _window(boxes)
     if not off:
         return {"full": full, "sheet": full, "off_sheet": [], "framed": False}
