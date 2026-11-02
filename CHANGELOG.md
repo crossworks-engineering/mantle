@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.500.0: a major core update
+
+This release pairs with mantle-client **v0.9.0**. Together they bring, since
+v0.400.56: the MCP tool map (four call tools by risk class; only `tool_read`
+runs unasked), web, api and the workers able to run on Bun
+(`MANTLE_RUNTIME=bun`), every Node service started as `node` under tini,
+the app sandbox upgrades (app history and the code tools' undo cap,
+WebAssembly in the app frame, the bundler follow-ups), the Present public
+link with its Moderator rule, the stricter password rule, the desktop
+origin for the Tauri app, and the DWG picture follow-ups. The entries below
+give each change.
+
 ## Unreleased: DWG pictures, the follow-ups (after v0.400.46)
 
 - **Fixed:** a closed box inside a sheet whose real border is drawn in
