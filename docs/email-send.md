@@ -140,7 +140,8 @@ upload sessions if ever needed), and Graph returns no RFC message id on send
 transports: `sendEmail` and `sendViaGraph` refuse first, the send tools
 leave every agent and MCP list, and a send waiting for approval stays
 pending. Reading and syncing are not touched. Mail sent another way (a
-connector, an HTTP tool, a sandbox, a linked brain) is not covered; see
+connector, an HTTP tool, a sandbox, the terminal, a linked brain) is not
+covered; see
 [policy.md](policy.md#email-sending).
 
 ## Layers

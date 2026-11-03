@@ -107,10 +107,13 @@ is outside this switch:
 - an HTTP tool (`api_tool_create`) that calls a mail API with a stored key,
   or Microsoft Graph with client credentials of its own;
 - a sandbox (`sandbox_exec`) with network access, talking SMTP itself;
+- the terminal (`run_terminal`, Admin only), a shell on the brain's own
+  host that can talk SMTP or run the mail code directly;
 - an outgoing `peer_call` to a linked brain whose own policy allows sending.
 
 These are governed by who may add connectors, HTTP tools, sandboxes and
-linked brains (Admins), and by network egress control at the box's edge. A
+linked brains or use the terminal (Admins), and by network egress control
+at the box's edge. A
 corporate box that must send no mail at all needs both.
 
 A Microsoft account still asks for the `Mail.Send` permission when it is
