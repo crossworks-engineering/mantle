@@ -30,6 +30,7 @@ import type {
   CanvasRenderRequest,
   CanvasRenderResult,
 } from '../canvas-render-bridge';
+import { browserlessEndpoint, isBareDevtoolsEndpoint, type RenderViewport } from '../browserless';
 import { canvasFrameDocument, publicDir } from './frame-document';
 
 /** The origin the render page believes it is on. `.invalid` never resolves:
@@ -120,33 +121,18 @@ export const RENDER_LAUNCH_ARGS: readonly string[] = [
   '--dns-prefetch-disable',
 ];
 
-/** The size a render lays out at, and its pixel scale. */
-export type RenderViewport = { width: number; height: number; deviceScaleFactor: number };
-
-/** The sidecar URL with the launch flags and the render's viewport; a bare
- *  DevTools endpoint (a local Chrome) is left as it is: that browser was
- *  started by whoever runs it.
- *
- *  The viewport is the launch's `defaultViewport` because browserless drives
- *  the browser it starts with its own puppeteer, and that puppeteer gives
- *  every new page the launch's default (800x600 when none is named) at a
- *  moment of its own. It races the render's setViewport: on a busy box it
- *  often lands last, and the canvas lays out at 800x600 inside a picture of
- *  the asked size. With the render's own viewport as the default, both set
- *  the same size, in either order. */
+/** The sidecar URL with the launch flags and the render's viewport (the
+ *  launch's default, so browserless sets the same size as the render:
+ *  ../browserless.ts says why); a bare DevTools endpoint (a local Chrome) is
+ *  left as it is: that browser was started by whoever runs it. */
 export function lockedEndpoint(endpoint: string, viewport: RenderViewport): string {
-  if (endpoint.includes('/devtools/browser/')) {
+  if (isBareDevtoolsEndpoint(endpoint)) {
     log('render-canvas').warn(
       'BROWSER_WS_ENDPOINT is a bare DevTools endpoint: canvas renders run without the network lock (development only)',
     );
     return endpoint;
   }
-  const url = new URL(endpoint);
-  url.searchParams.set(
-    'launch',
-    JSON.stringify({ args: RENDER_LAUNCH_ARGS, defaultViewport: viewport }),
-  );
-  return url.toString();
+  return browserlessEndpoint(endpoint, { args: RENDER_LAUNCH_ARGS, defaultViewport: viewport });
 }
 
 /** Run before any canvas script, in every frame the page makes (a blank

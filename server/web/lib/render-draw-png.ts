@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer-core';
 import { openRenderPage, printOrigin } from './render-sandbox';
 import { DrawRendererUnavailableError } from './render-draw-svg';
 import { env } from '@mantle/config';
+import { browserlessEndpoint, type RenderViewport } from '@mantle/tools/browserless';
 
 /**
  * Rasterize a draw's committed SVG snapshot to PNG in the browser sidecar.
@@ -36,7 +37,7 @@ const PIXEL_RATIO = 2;
  *  drawing is still oversampled ~2.5× — and an Excalidraw export declares
  *  itself at 2× its own viewBox, which uncapped would raster at four times
  *  the size that buys anything. */
-const VIEWPORT = { width: 800, height: 1000 };
+const VIEWPORT: RenderViewport = { width: 800, height: 1000, deviceScaleFactor: PIXEL_RATIO };
 
 export type DrawPng = {
   bytes: Buffer;
@@ -58,7 +59,11 @@ export async function renderDrawPng(nodeId: string, renderToken: string): Promis
 
   let browser;
   try {
-    browser = await puppeteer.connect({ browserWSEndpoint: endpoint });
+    // The viewport is also the launch's default, or browserless may set its
+    // own 800x600 at 1x after ours (@mantle/tools/browserless says why).
+    browser = await puppeteer.connect({
+      browserWSEndpoint: browserlessEndpoint(endpoint, { defaultViewport: VIEWPORT }),
+    });
   } catch (e) {
     throw new DrawRendererUnavailableError(
       `could not connect to ${endpoint.replace(/token=[^&]*/, 'token=…')} (${(e as Error).message})`,
@@ -67,7 +72,7 @@ export async function renderDrawPng(nodeId: string, renderToken: string): Promis
 
   try {
     const page = await openRenderPage(browser, renderToken);
-    await page.setViewport({ ...VIEWPORT, deviceScaleFactor: PIXEL_RATIO });
+    await page.setViewport(VIEWPORT);
     const res = await page.goto(`${printOrigin()}/print/draws/${encodeURIComponent(nodeId)}`, {
       waitUntil: 'domcontentloaded',
       timeout: 30_000,
