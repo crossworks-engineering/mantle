@@ -730,9 +730,9 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect((await rowsOf(r3)).find((x) => x.is_home)!.ws).toBe(Q);
 
     // A kind the target may not hold stays in the old home (Admin).
-    const AF = await node('branch', 'AF', 'notes.af');
-    const a1 = await node('note', 'a1', 'notes.af');
-    const ac = await node('contact', 'ac', 'notes.af');
+    const AF = await node('branch', 'AF', 'notes.kaf');
+    const a1 = await node('note', 'a1', 'notes.kaf');
+    const ac = await node('contact', 'ac', 'notes.kaf');
     const toQ = { nodeIds: [AF], toWorkspaceId: Q, withContents: true, fromWorkspaceId: admin };
     expect((await call(r.movePreview.POST(req('POST', toQ)))).body.contents).toMatchObject({
       move: 1,
