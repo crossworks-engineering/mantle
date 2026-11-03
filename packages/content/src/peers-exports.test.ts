@@ -13,11 +13,12 @@ import * as peersApi from './peers';
  * test asserts that they still are, so a later reshuffle that reaches for one
  * of them across a seam has to widen the barrel deliberately.
  *
- * Runtime values only: `import *` cannot see type-only exports. The nine
+ * Runtime values only: `import *` cannot see type-only exports. The eleven
  * exported types are pinned by the compiler, via index-peers.ts.
  */
 const PUBLIC_VALUE_EXPORTS = [
   'PEERS_ROOT_LABEL',
+  'PEER_ACCESS_SCOPES',
   'PEER_SHAREABLE_TYPES',
   'PEER_TOKEN_PREFIX',
   'activePeerGrantNodeIds',
@@ -35,6 +36,7 @@ const PUBLIC_VALUE_EXPORTS = [
   'listPeers',
   'markPeerContacted',
   'mintInboundToken',
+  'peerAccessScopeOf',
   'peerShareableTypeCounts',
   'queryForPeer',
   'revokePeerShare',

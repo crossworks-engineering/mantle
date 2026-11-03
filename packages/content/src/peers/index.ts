@@ -26,6 +26,8 @@ export { hashToken, mintInboundToken, tokenMatchesHash, PEER_TOKEN_PREFIX } from
 
 export {
   PEERS_ROOT_LABEL,
+  PEER_ACCESS_SCOPES,
+  peerAccessScopeOf,
   createPeer,
   listPeers,
   getPeer,
@@ -38,6 +40,7 @@ export {
   verifyInboundToken,
   markPeerContacted,
   type PeerAccessResult,
+  type PeerAccessScope,
   type PeerRow,
   type CreatePeerInput,
 } from './registry';
