@@ -186,6 +186,12 @@ session, or the `role` setting of the per-database login and the checked
 rerun), the ids whose `read_ws && mantle_scope_ws()` is false. Through the
 gate: `warn` reports and locks them all, `on` drops them.
 
+Two definers lock what their own check allowed with the unfiltered core,
+`mantle_lock_heads_more_core`, because they rewrite rows the caller cannot
+read: a folder rename (`mantle_subtree_rewrite`, 0282 and 0305) and a
+folder's grant change (`mantle_apply_folder_change`, since 0355: it
+re-derives every item below the folder, so it takes every head below it).
+
 ## The derived keys and the presentation keys
 
 - `mantle_node_derived_keys()` lists the keys of `nodes.data` only the brain
