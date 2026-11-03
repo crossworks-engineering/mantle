@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased: the fleet monitor, parts 1 and 2 (box status and status links)
+## v0.500.10: the fleet monitor, parts 1 and 2 (box status and status links)
 
 - **Added:** `box_status`, a tool that reports this box's health as numbers
   only: build, uptime, CPU, memory, disk, Postgres, each service up or
