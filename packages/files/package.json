@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./broker": "./src/file-broker.ts",
+    "./changelog-parts": "./src/changelog-parts.ts",
     "./sheet-to-grid": "./src/sheet-to-grid.ts",
     "./embedded-images": "./src/embedded-images.ts",
     "./image-probe": "./src/image-probe.ts",

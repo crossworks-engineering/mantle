@@ -8,6 +8,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// The one CHANGELOG.md reader, shared with the in-app Changelog. A .ts file
+// with no imports: Vite loads it at build, Node strips its types for the
+// page check.
+import { changelogParts } from '../../../packages/files/src/changelog-parts.ts';
 
 export const REPO_ROOT = path.resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 export const GUIDE_ROOT = path.join(REPO_ROOT, 'docs', 'guide');
@@ -129,7 +133,9 @@ function listGuideFiles() {
   for (const { dir } of SECTIONS) {
     const abs = path.join(GUIDE_ROOT, dir);
     if (!fs.existsSync(abs)) continue;
-    for (const f of fs.readdirSync(abs).sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))) {
+    for (const f of fs
+      .readdirSync(abs)
+      .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))) {
       if (f.endsWith('.md') && !f.startsWith('_') && !f.startsWith('.')) out.push(`${dir}/${f}`);
     }
   }
@@ -160,14 +166,11 @@ export function guidePages() {
 export function changelogPages() {
   if (!fs.existsSync(CHANGELOG_FILE)) return [];
   const raw = fs.readFileSync(CHANGELOG_FILE, 'utf8');
-  const parts = raw.split(/^(?=## v?\d+\.\d+\.\d+)/m).slice(1);
   const byMinor = new Map();
-  for (const part of parts) {
-    const m = /^## v?(\d+)\.(\d+)\.(\d+)/.exec(part);
-    if (!m) continue;
-    const minor = `${m[1]}.${m[2]}`;
+  for (const { version, markdown } of changelogParts(raw)) {
+    const minor = version.split('.').slice(0, 2).join('.');
     if (!byMinor.has(minor)) byMinor.set(minor, []);
-    byMinor.get(minor).push(part.trimEnd());
+    byMinor.get(minor).push(markdown);
   }
   const pages = [...byMinor.entries()].map(([minor, entries]) => ({
     id: `changelog/v${minor.replace('.', '-')}`,
@@ -239,7 +242,8 @@ export function sidebar() {
       const childItems = itemsFor(child.dir);
       if (childItems.length) items.push({ label: child.label, collapsed: true, items: childItems });
     }
-    if (s.dir === '07-api' && mcpToolsPage()) items.push({ label: 'MCP tools', link: '/api/mcp-tools/' });
+    if (s.dir === '07-api' && mcpToolsPage())
+      items.push({ label: 'MCP tools', link: '/api/mcp-tools/' });
     if (items.length) groups.push({ label: s.label, items });
   }
   groups.push({ label: 'Changelog', link: '/changelog/' });
