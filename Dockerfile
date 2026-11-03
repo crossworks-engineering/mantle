@@ -145,15 +145,16 @@ RUN maturin build --release --interpreter python3.15 --out /wheels
 # configure's interpreter check, and 0.14's configure also requires
 # pkg-config. Built on the parser's own base (node:26-slim, Debian), so the
 # binary links against the glibc it runs on. The tarball comes from the
-# kernel.org GNU mirror, not ftp.gnu.org: the primary timed out for whole
-# release runs (v0.239.15). The checksum pins the exact bytes, so the
-# mirror cannot change what we build.
+# project's own GitHub release: the GNU primary timed out for whole release
+# runs (v0.239.15), and the kernel.org GNU mirror did the same from the
+# build runners (v0.500.12). The checksum pins the exact bytes (the same
+# file as on the GNU mirrors), so the host cannot change what we build.
 FROM node:26-slim AS libredwg-build
 RUN apt-get update \
   && apt-get install -y --no-install-recommends gcc make libc6-dev pkg-config python3 xz-utils \
   && rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:62ebb73b984f865960f20ed26619ea5f8789d5e3fd088fa40a2598384da81275 \
-  https://mirrors.kernel.org/gnu/libredwg/libredwg-0.14.tar.xz /tmp/libredwg.tar.xz
+  https://github.com/LibreDWG/libredwg/releases/download/0.14/libredwg-0.14.tar.xz /tmp/libredwg.tar.xz
 RUN mkdir /tmp/libredwg \
   && tar -xJf /tmp/libredwg.tar.xz -C /tmp/libredwg --strip-components=1
 WORKDIR /tmp/libredwg
