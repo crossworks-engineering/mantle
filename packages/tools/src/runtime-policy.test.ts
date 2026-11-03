@@ -223,7 +223,7 @@ describe('a tool an app calls: the member-app rule, as memberAppToolVerdict said
     ).toContain('starts paid model work');
     // Without the mark a write is refused, and the refusal says what is allowed.
     expect(rule(b('table_row_delete'), false, false)).toContain(TEAM_APP_TOOLS_ALLOWED);
-    expect(TEAM_APP_TOOLS_ALLOWED).toContain('homed in a workspace that holds the app');
+    expect(TEAM_APP_TOOLS_ALLOWED).toContain('where that user may write by hand');
   });
 
   it('an outside tool: its own row type', () => {

@@ -4,8 +4,8 @@
  * Whoever an app is shared with may need the site service it calls.
  *
  * Below admin, an app's run may call only read-only built-in tools (member-
- * app-tools.ts, client-app-tools.ts; and the Table row writes on a Table
- * homed in a workspace that holds the app, rule 6), and a share link none:
+ * app-tools.ts, client-app-tools.ts; and the Table row and file writes
+ * a team app makes as its runner, rules 6 and 7), and a share link none:
  * an app loop has no model in between, and the brain cannot judge what an
  * outside tool does.
  * Every site adds its own connectors (an MCP server, an http API), so the

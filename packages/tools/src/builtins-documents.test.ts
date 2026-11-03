@@ -19,14 +19,16 @@ vi.mock('@mantle/documents', async (importOriginal) => ({
 }));
 const actor = vi.hoisted(() => ({ current: null as null | Record<string, unknown> }));
 const scope = vi.hoisted(() => ({
-  writes: false,
+  /** The app write running: none, one in the app's scope (true), or one
+   *  as its runner ('runner', a Table or file write). */
+  writes: false as boolean | 'runner',
   ws: null as null | { ws: string[]; modWs: string[] },
   homes: [] as unknown[],
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/db')>()),
   currentActor: () => actor.current,
-  appRunWriteMode: () => (scope.writes ? 'app' : null),
+  appRunWriteMode: () => (scope.writes === 'runner' ? 'runner' : scope.writes ? 'app' : null),
   currentWorkspaceScope: () => scope.ws,
   withCreateHome: (home: unknown, fn: () => unknown) => {
     scope.homes.push(home);
@@ -314,9 +316,16 @@ describe('the four tools', () => {
   });
 
   it("a team app's save is refused, saying to take the bytes, when it may not land", async () => {
-    const cases: [boolean, null | { ws: string[]; modWs: string[] }, RegExp][] = [
+    const cases: [boolean | 'runner', null | { ws: string[]; modWs: string[] }, RegExp][] = [
       [
         false,
+        { ws: [HOLDER], modWs: [HOLDER] },
+        /can't save a file: a team app saves only in a request that may write/,
+      ],
+      // A write as the runner (a Table or file write's scope) never saves
+      // one, even for a Moderator of a one-workspace scope.
+      [
+        'runner',
         { ws: [HOLDER], modWs: [HOLDER] },
         /can't save a file: a team app saves only in a request that may write/,
       ],

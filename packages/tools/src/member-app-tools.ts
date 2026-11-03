@@ -44,10 +44,10 @@
  *      rule 6: the operation's own checks decide (edit of a file it writes
  *      over or renames, manage of one it moves) and edit of the folder a
  *      file is placed in, asked where the write runs (@mantle/files
- *      app-run-write.ts). The workspaces that read the folder reading the
- *      file is no change; a move that would stop a workspace reading the
- *      file is refused (the visibility guard, @mantle/content
- *      tree/visibility.ts).
+ *      app-run-write.ts). The workspaces that read the folder reading a NEW
+ *      file is no change; a move of an existing file that would make a
+ *      workspace start or stop reading it is refused (the visibility
+ *      guard, @mantle/content tree/visibility.ts).
  * An OUTSIDE tool takes another path after rule 2 (external-access.ts). A
  * CONNECTOR tool (mcp): the workspaces that hold its connector decide (the
  * runner's login's workspaces, and with `check.appId` every workspace that
@@ -170,7 +170,7 @@ function fileWriteTargetRefusal(
   if (check?.rulesOnly) return null;
   const input = check?.input ?? {};
   if (input.confirm === true) {
-    return `The tool '${slug}' was called with confirm: true, which changes who can see a file: a team app never does that. Leave confirm out; a team app writes files wherever the user running it may write by hand, and a move that would take a file away from a workspace that reads it is done by hand in Files.`;
+    return `The tool '${slug}' was called with confirm: true, which changes who can see a file: a team app never does that. Leave confirm out; a team app writes files wherever the user running it may write by hand, and a move that changes which workspaces read a file is done by hand in Files.`;
   }
   for (const [what, arg] of [
     ['file', args.file],

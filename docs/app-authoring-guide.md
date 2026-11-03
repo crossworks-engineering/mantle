@@ -1273,8 +1273,8 @@ run the green PUBLISHED build only and never edit it from there.
   `content_base64` or `content_text`). An upload is read into the brain as
   a Files upload is (a DWG imports as usual). A team app never confirms a
   change of who can see a file: `confirm: true` is refused, and so is a
-  move that would stop a workspace reading the file (do that one by hand
-  in Files). The Activity row of each call names the folder and the file,
+  move of an existing file that would make a workspace start or stop
+  reading it (do that one by hand in Files). The Activity row of each call names the folder and the file,
   never the bytes. No file or folder delete, and no folder create, rename
   or move. A read-only login writes nothing; a shared link runs none of
   them. `file_upload` runs while the system-wide **File upload for mini

@@ -163,22 +163,12 @@ async function listed(via: Via, rows: SQL): Promise<VisibilityDiff> {
   // what is gained through the folder (r.via), what is lost from the item
   // itself (r.id; none for a new item).
   const names = (col: SQL, through: SQL) => sql`mantle_ws_names(${col}, ${through})`;
-  // A team app's write as its runner (appRunWriteMode 'runner'): it places
-  // a file in a folder the runner may write in, and the workspaces that
-  // read the folder reading the file is the point of the write (owner
-  // decision 2026-11-03), so what it gains through the folder is no change.
-  // A workspace that would stop reading a file still is, and the app cannot
-  // confirm one (member-app-tools.ts rule 7).
-  const source =
-    appRunWriteMode() === 'runner'
-      ? sql`select s.id, s.title, '{}'::uuid[] as gain, s.lose, s.via from (${rows}) s`
-      : rows;
   const found = (await via.execute(sql`
     select r.id::text as id, r.title,
            ${names(sql`r.gain`, sql`r.via`)} as "alsoVisibleTo",
            ${names(sql`r.lose`, sql`(nullif(r.id::text, ''))::uuid`)} as "removedFrom",
            count(*) over () as total
-      from (${source}) r
+      from (${rows}) r
      where (cardinality(r.gain) > 0 or cardinality(r.lose) > 0)
        and (r.id::text = '' or ${scopeReadsItem(sql`(r.id::text)::uuid`)})
      order by lower(r.title), r.id
@@ -387,17 +377,25 @@ export async function newItemDiff(
   const set = newItemSet(ownerId, nodeType, destPath);
   // Empty when the brain has no Admin workspace (as the old array(select ...)).
   const admin = sql`array_remove(array[mantle_ws_admin_id(${ownerId}::uuid)], null)`;
-  // A team app's new file (as its runner): nothing existed, so nobody
-  // loses it, and what it gains through its folder is no change (listed).
-  const lose =
-    appRunWriteMode() === 'runner'
-      ? sql`'{}'::uuid[]`
-      : sql`array(select x from unnest(${admin}) as s(x) where not (x = any(${set})))`;
+  // A team app's NEW file, as its runner (appRunWriteMode 'runner'): it
+  // lands in a folder the runner may write in, and the workspaces that read
+  // the folder reading it is the point of the write (owner decision
+  // 2026-11-03), so it is no change; nothing existed, so nobody loses it.
+  // An existing file a team app moves is judged as any move (moveItemsDiff):
+  // a workspace that starts or stops reading it is a change, and the app
+  // cannot confirm one (member-app-tools.ts rule 7).
+  const appNew = appRunWriteMode() === 'runner';
+  const gain = appNew
+    ? sql`'{}'::uuid[]`
+    : sql`array(select x from unnest(${set}) as s(x) where not (x = any(${admin})))`;
+  const lose = appNew
+    ? sql`'{}'::uuid[]`
+    : sql`array(select x from unnest(${admin}) as s(x) where not (x = any(${set})))`;
   const diff = await listed(
     via,
     sql`
     select ''::text as id, ${title}::text as title,
-           array(select x from unnest(${set}) as s(x) where not (x = any(${admin}))) as gain,
+           ${gain} as gain,
            ${lose} as lose,
            mantle_parent_folder(${ownerId}::uuid, ${nodeType}::node_type, ${destPath}::ltree) as via`,
   );

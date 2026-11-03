@@ -227,8 +227,8 @@ type ToolPolicyFields = Readonly<{
   clientSourced?: ClientSourcedRule;
   /** A team app may call it (default, by its other rules), never
    *  (member-app-tools.ts memberAppRefusedName), or, for a write, `table-rows`:
-   *  a row write a team app may make to a Table homed in a workspace that holds
-   *  the app, as the running login, whose own rights the database checks
+   *  a row write a team app may make to a Table, as the running login in
+   *  that login's own scope, whose own rights the database checks
    *  (runtime-policy.ts memberAppRefusal). Only the row writes and table_commit
    *  carry it: no table create, delete or rename, no column, tab or snapshot
    *  change, no row delete. `documents`: one of the four documents tools
@@ -236,10 +236,10 @@ type ToolPolicyFields = Readonly<{
    *  in the app's scope, and its file is saved in the workspace that holds
    *  the app for a user who moderates it there, or handed back to the app
    *  (`bytes`) and saved nowhere. `files`: a file write a team app may make
-   *  in the workspace that holds it (file_upload, file_move, file_rename),
-   *  as the running login: on a file (`itemArgs`, its first) and in a folder
-   *  (`memberAppFolderArg`) homed there, with that user's own rights, and
-   *  never one that changes who reads it (member-app-tools.ts rule 7). */
+   *  (file_upload, file_move, file_rename), as the running login in that
+   *  login's own scope: on a file (`itemArgs`, its first) and in a folder
+   *  (`memberAppFolderArg`), with that user's own rights, and never a move
+   *  that changes who reads the file (member-app-tools.ts rule 7). */
   memberApp?: 'ok' | 'refused' | 'table-rows' | 'documents' | 'files';
   /** With memberApp `files`: the argument that names the folder the file
    *  lands in (an ltree path), when the write names one. */

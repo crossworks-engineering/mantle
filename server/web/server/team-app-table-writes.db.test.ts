@@ -613,22 +613,27 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
 
   it('a write as the runner reaches no Table the runner may not edit', async () => {
     const c = await import('@mantle/content');
-    const before = await hasDraft(tables.admin);
+    // readOnly: the writer reads it (the holder's) but has no Write on it.
+    const before = await hasDraft(tables.readOnly);
+    const beforeGrid = await grid(tables.readOnly);
     await expect(
       inRequest(writer, async () => {
         const w = m.appRunWriter();
+        expect(w).not.toBeNull();
         return m.asSystem(
           () =>
             m.withViewer(
               { login: writer, app: { id: teamApp } },
-              () => c.applyTableOps(owner, tables.admin, [{ op: 'row_add', cells: {} }]),
+              () => c.applyTableOps(owner, tables.readOnly, [{ op: 'row_add', cells: {} }]),
               { writes: w!, asRunner: true },
             ),
           'app-data',
         );
       }),
-    ).rejects.toThrow();
-    expect(await hasDraft(tables.admin)).toBe(before);
+    ).rejects.toThrow(/not allowed to edit/);
+    expect(await hasDraft(tables.readOnly)).toBe(before);
+    expect(await grid(tables.readOnly)).toBe(beforeGrid);
+    // A Table the writer does not read at all (Admin's): refused, nothing lands.
     const res = await memberCall(writer, 'table_row_add', {
       table_id: tables.admin,
       cells: { Name: `${tag} admin by app` },

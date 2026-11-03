@@ -463,7 +463,7 @@ Table row writes and `table_commit`, as the running user in that user's
 own workspaces, on any Table they may write by hand: member-app-tools.ts
 rule 6; and `file_upload`, `file_move` and `file_rename` wherever the same
 user may write those files by hand, never with `confirm: true` and never a
-move that stops a workspace reading the file: rule 7),
+move that changes which workspaces read the file: rule 7),
 and a link none, besides
 outside tools. An MCP CONNECTOR tool follows the workspaces
 it is attached to (`connectorToolVerdict` and `loginConnectorRule` in

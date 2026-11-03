@@ -123,7 +123,7 @@ export type AppBuiltinFacts = {
 /** What a team app may call, in one sentence: the refusal and the author's
  *  warning name it, so neither drifts from this rule. */
 export const TEAM_APP_TOOLS_ALLOWED =
-  "A team app may call read-only built-in tools; add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app and publish its draft (table_commit), as the user running it, when that user may write there; and the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename) in a folder homed in that workspace, as the user running it, where that user may do so by hand, never one that changes who can see it.";
+  "A team app may call read-only built-in tools; add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table and publish its draft (table_commit), as the user running it, where that user may write by hand; and the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file.";
 
 /** Why a member's app run may not call a built-in tool, or null (rules 2
  *  to 4 of member-app-tools.ts, on the resolved row: its slug or its
@@ -134,15 +134,13 @@ export const TEAM_APP_TOOLS_ALLOWED =
  *  them: memberAppToolVerdict and appToolPolicy both ask it.
  *
  *  A write is refused, but for a Table write the policy marks `table-rows`
- *  (table_commit too): on its
- *  own workspace's Tables a team app is held to what the running user may
- *  do there, no more. A team app's database is shared by every
- *  holder, so it changes only rows of a Table homed in a workspace that
- *  holds the app (memberAppToolVerdict asks the call's table, the app's
- *  holders as AppRunFor reads them), and it runs as the running login in
- *  the app's scope, so the database's own checks (the item's Write switch,
- *  a Moderator, the actor and edit checks) decide whether that user may. A
- *  shared link runs no built-in at all (contactAppToolVerdict).
+ *  (table_commit too) and a file write it marks `files`: a team app is
+ *  held to what the running user may do by hand, no more (owner decision
+ *  2026-11-03). It runs as the running login in that login's own scope
+ *  (withViewer `asRunner`), so the database's own checks (the item's Write
+ *  switch, a Moderator, the actor and edit checks) decide whether that user
+ *  may (memberAppToolVerdict asks that the call names its Table, file and
+ *  folder). A shared link runs no built-in at all (contactAppToolVerdict).
  *
  *  A documents tool (policy memberApp 'documents', builtins-documents.ts)
  *  is let through too: it reads its inputs in the app's scope (never a page

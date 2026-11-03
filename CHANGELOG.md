@@ -20,10 +20,14 @@ deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 - A folder or Table that other workspaces also read is no longer refused.
   A new file is read by the workspaces that read its folder.
 - An app that several workspaces hold can now write too.
+- A move of an existing file is still refused when it would make a
+  workspace start or stop reading that file. Do that move by hand in
+  Files.
+- An Admin user who runs a team app writes with their own rights too, so
+  the app can write in Admin's folders and Tables during their run.
 - **Kept:** 16 MB of file per call, one Activity row per write, DWG import
   as a Files upload, no delete and no folder changes. A team app still
-  never sends `confirm: true`, and a move that would stop a workspace
-  reading a file is refused. Shared links and read-only logins write
+  never sends `confirm: true`. Shared links and read-only logins write
   nothing. The `app-files` group switch still turns `file_upload` on and
   off.
 - **Note:** what the app writes can end up in the app's shared data, which

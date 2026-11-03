@@ -324,7 +324,7 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
         // may write by hand (rule 7).
         if (h.kind === 'builtin' && isBuiltinTeamFileWrite(h.ref)) {
           warnings.push(
-            `The tool '${slug}' runs as the user running the app, wherever that user may write by hand: a folder they may edit (a Moderator of its workspace, or its Write switch for one of theirs); a move also needs a Moderator of the file's workspace. Up to ${APP_FILE_WRITE_MAX_BYTES / (1024 * 1024)} MB a file per call. A file is read by the workspaces that read its folder; a move that would stop a workspace reading a file, or confirm: true, is refused. An upload is read into the brain as a Files upload is.`,
+            `The tool '${slug}' runs as the user running the app, wherever that user may write by hand: a folder they may edit (a Moderator of its workspace, or its Write switch for one of theirs); a move also needs a Moderator of the file's workspace. Up to ${APP_FILE_WRITE_MAX_BYTES / (1024 * 1024)} MB a file per call. A file is read by the workspaces that read its folder; a move that would make a workspace start or stop reading a file, or confirm: true, is refused. An upload is read into the brain as a Files upload is.`,
           );
         }
         // A documents tool saves only for a user who moderates the app's
