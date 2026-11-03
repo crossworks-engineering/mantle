@@ -1,9 +1,14 @@
 /**
- * Report provider outcomes to the alert store (@mantle/db provider-alerts.ts,
- * migration 0230), cheaply and without ever breaking the call that reports.
+ * THE reporter of provider outcomes to the alert store (@mantle/db
+ * provider-alerts.ts, migration 0230), cheaply and without ever breaking the
+ * call that reports. The embedder, the extractor and the decider
+ * (@mantle/decisions decide.ts, subject `decision`) all report here, so one
+ * set of throttles holds for every subject.
  *
- *  - A failure is classified (provider-error.ts). Null = says nothing about
- *    the provider (a bad input): not recorded. Otherwise ONE row write per
+ *  - A failure is classified (provider-error.ts), or the caller hands its
+ *    own class (`noteProviderFailureClass`: the decider names failures the
+ *    classifier cannot, such as an unusable answer). Null = says nothing
+ *    about the provider (a bad input): not recorded. Otherwise ONE row write per
  *    brain and subject per minute in this process, so a burst of failing
  *    jobs is a few writes, not one per call.
  *  - A success closes an open alert. Whether one is open is read at most
@@ -75,9 +80,28 @@ export function noteProviderFailure(
 ): ProviderErrorClass | null {
   const cls = classifyProviderError(err);
   if (!cls) return null;
+  noteProviderFailureClass(ownerId, subject, cls, ctx, now);
+  return cls;
+}
+
+/** A failure as the alert store keeps it: a code, permanent or not, and one
+ *  fixed sentence for an admin (never provider text). */
+export type ProviderFailureClass = Pick<ProviderErrorClass, 'permanent' | 'reason'> & {
+  code: string;
+};
+
+/** Record a failure the caller has classified itself, throttled as
+ *  `noteProviderFailure`. */
+export function noteProviderFailureClass(
+  ownerId: string,
+  subject: ProviderSubject,
+  cls: ProviderFailureClass,
+  ctx: { provider?: string | null; model?: string | null } = {},
+  now: number = Date.now(),
+): void {
   const k = key(ownerId, subject);
   const last = lastFailureWrite.get(k) ?? 0;
-  if (now - last < FAILURE_WRITE_EVERY_MS) return cls;
+  if (now - last < FAILURE_WRITE_EVERY_MS) return;
   lastFailureWrite.set(k, now);
   openKnown.set(k, { open: true, at: now });
   try {
@@ -91,7 +115,6 @@ export function noteProviderFailure(
   } catch (e) {
     warn('record failure', e);
   }
-  return cls;
 }
 
 /** A provider call worked: close an open alert for this subject. */

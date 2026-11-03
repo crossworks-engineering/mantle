@@ -13,6 +13,25 @@ const h = vi.hoisted(() => ({
   model: 'jev',
   tokensIn: 0,
   ctx: null as number | null,
+  failures: [] as Array<{ subject: string; code: string; permanent: boolean; model?: unknown }>,
+  successes: 0,
+}));
+
+// The `decision` provider alert: what the reporter hears.
+vi.mock('@mantle/embeddings/provider-outage', () => ({
+  noteProviderFailureClass: vi.fn(
+    (
+      _o: string,
+      subject: string,
+      cls: { code: string; permanent: boolean },
+      ctx: { model?: unknown },
+    ) => {
+      h.failures.push({ subject, code: cls.code, permanent: cls.permanent, model: ctx.model });
+    },
+  ),
+  noteProviderSuccess: vi.fn(() => {
+    h.successes++;
+  }),
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -106,6 +125,8 @@ beforeEach(() => {
   h.model = 'jev';
   h.tokensIn = 0;
   h.ctx = null;
+  h.failures = [];
+  h.successes = 0;
   clearDecisionCache();
   forgetResolvedDecider();
 });
@@ -319,3 +340,52 @@ describe('request limits', () => {
     expect(r?.scores.size).toBe(40);
   });
 });
+
+describe('the decision alert hears what the breaker hears', () => {
+  it('a failed decision reports one failure with the model, a working one closes it', async () => {
+    h.plan = ['fail', 'ok'];
+    expect(await single('down')).toBeNull();
+    expect(h.failures).toEqual([
+      { subject: 'decision', code: 'timeout', permanent: false, model: 'jev' },
+    ]);
+    expect(await single('up')).not.toBeNull();
+    expect(h.successes).toBe(1);
+  });
+
+  it('a fan-out with a slow tail reports one success and no failure', async () => {
+    h.plan = ['ok', 'ok', 'fail'];
+    await fanOut('tail', 3);
+    expect(h.failures).toEqual([]);
+    expect(h.successes).toBe(1);
+  });
+
+  it('a fan-out where every group fails reports ONE failure', async () => {
+    h.plan = ['fail', 'fail', 'fail'];
+    await fanOut('all', 3);
+    expect(h.failures).toHaveLength(1);
+    expect(h.successes).toBe(0);
+  });
+
+  it('a suspected cut is reported as its own code', async () => {
+    h.model = 'cloudflare/clef-flash';
+    h.tokensIn = 16_384;
+    await single('cut');
+    expect(h.failures.map((f) => f.code)).toEqual(['cut']);
+  });
+
+  it('a request above the limit is not sent and reports nothing', async () => {
+    h.model = 'some/untested-model';
+    await decide({
+      ownerId: 'o1',
+      use: 'passage_scoring',
+      state: {},
+      questions: Object.fromEntries(
+        Array.from({ length: 17 }, (_, i) => [`q${i}`, { type: 'noul', instructions: 'x' }]),
+      ) as never,
+    });
+    expect(h.sent).toBe(0);
+    expect(h.failures).toEqual([]);
+    expect(h.successes).toBe(0);
+  });
+});
+

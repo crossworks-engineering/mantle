@@ -11,7 +11,7 @@ export const providerAlerts = pgTable(
   'provider_alerts',
   {
     ownerId: uuid('owner_id').notNull(),
-    /** 'embedding' | 'extraction'. */
+    /** 'embedding' | 'extraction' | 'model_policy' | 'decision'. */
     subject: text('subject').notNull(),
     /** ProviderErrorCode from @mantle/embeddings provider-error.ts. */
     code: text('code').notNull(),

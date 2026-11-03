@@ -134,6 +134,27 @@ describe('planCuration', () => {
       .sort((a, b) => a.position - b.position)
       .map((e) => e.routes[0]!.model);
     expect(ids).toEqual(['~typesafe/jev-latest', 'perplexity/pplx-decider-v1.2']);
+    // Without the shipped default forced in, the shortlist's own order
+    // (`poolPosition`) still puts Jev first, whatever the price ranks.
+    const unforced = planCuration({
+      capturedAt: AT,
+      pools: [
+        {
+          id: 'decider',
+          label: 'Decider',
+          description: 'x',
+          group: 'workers' as const,
+          modality: { input: [], output: 'decisions' as const },
+        },
+      ],
+      catalog: [at('perplexity/pplx-decider-v1.2', 0.02), at('~typesafe/jev-latest', 0.042)],
+      benchmarks: [],
+      usage: [],
+      current: [],
+    });
+    expect(
+      [...unforced.entries].sort((a, b) => a.position - b.position).map((e) => e.routes[0]!.model),
+    ).toEqual(['~typesafe/jev-latest', 'perplexity/pplx-decider-v1.2']);
   });
 
   it('keeps one entry per family, and the alias wins its family slot', () => {

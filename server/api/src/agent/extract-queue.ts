@@ -70,6 +70,7 @@ import {
 } from './extract-heads-park';
 import {
   countDeadLetteredExtracts,
+  isProbedSubject,
   listOpenProviderAlerts,
   type ProviderSubject,
   recordProviderFailure,
@@ -161,10 +162,11 @@ function buildCircuit(ownerId: string): ProviderCircuit {
     deadLetterCount: countDeadLetteredExtracts,
     store: {
       // The circuit's subjects only: a model_policy alert (0348) is the box
-      // policy's, never probed or paused here.
+      // policy's and a decision alert (0353) the decider's, never probed or
+      // paused here.
       listOpen: async () =>
         (await listOpenProviderAlerts(ownerId))
-          .filter((r) => r.subject === 'embedding' || r.subject === 'extraction')
+          .filter((r) => isProbedSubject(r.subject))
           .map((r) => ({
             subject: r.subject as ProviderSubject,
             paused: r.paused,

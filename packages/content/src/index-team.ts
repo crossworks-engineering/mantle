@@ -143,6 +143,7 @@ export { countOpenTeamRequests, TEAM_REQUEST_TAG } from './team-requests';
 export {
   NEEDS_YOU_CHANGED_CHANNEL,
   NEEDS_YOU_REALTIME_TYPE,
+  loadDeciderLastFailure,
   loadProviderAlerts,
 } from './provider-alerts';
 

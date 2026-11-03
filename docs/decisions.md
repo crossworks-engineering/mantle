@@ -79,12 +79,13 @@ going away breaks nothing.
 | Use: passage scoring                                                                                                                                                                | `packages/decisions/src/passage-scoring.ts`                                               |
 | Request size: the model's limits, `planGroups`, the check in `decide()`; the planner that sends a use's list as requests                                                            | `packages/decisions/src/request-limits.ts`, `request-planner.ts`                          |
 | Manifest entry (optional, `enabled: true`, built uses `live`)                                                                                                                       | `server/web/lib/system-manifest/manifest.ts`                                              |
-| Test button RPC + route                                                                                                                                                             | `server/web/lib/ai-worker-rpc.ts` `testDecision`, `app/api/ai-workers/[id]/test/decision` |
+| Test button RPC + route                                                                                                                                                             | `packages/decisions/src/test-call.ts`, `server/web/lib/ai-worker-rpc.ts` `testDecision`, `app/api/ai-workers/[id]/test/decision` |
+| Failures an admin sees: the failure's plain reason, the `decision` provider alert (migration 0353), the last failure on the worker screen                                         | `packages/decisions/src/failure.ts`, `packages/embeddings/src/provider-outage.ts`, `packages/content/src/provider-alerts.ts`, `app/api/ai-workers/config` |
 | Model pool `decider` (output modality `decisions`; a chat model is rejected here and Jev is rejected in every text pool) + two template entries (Jev, then Perplexity Decider v1.2) | `packages/client-types/src/model-pools.ts`, `model-pools-data.json`                       |
 | Decision model profiles (the 2026-10-30 probe of 28 models; the pool refuses the 4 that cannot take the request)                                                                    | `packages/client-types/src/decision-models.ts`                                            |
 | Pricing fallback rows                                                                                                                                                               | `packages/tracing/src/pricing.ts`                                                         |
 
-`@mantle/decisions` depends on db, api-keys, client-types, voice, tracing. Both `@mantle/tools`
+`@mantle/decisions` depends on db, api-keys, client-types, embeddings (the alert reporter only), voice, tracing. Both `@mantle/tools`
 and `@mantle/runtime` depend on it (a tool cannot import runtime), which is why
 it is its own package.
 
@@ -132,6 +133,46 @@ of traffic.
 
 A shadow week is read from these steps: per use, how many calls, cache hits,
 what the answers were, how many were under the floor, what it cost.
+
+### Failures an admin sees
+
+What the breaker hears, the `decision` provider alert hears too
+(`provider_alerts`, subject `decision`, migration 0353; the same store and
+the same throttled reporter as embedding and extraction outages,
+`packages/embeddings/src/provider-outage.ts`). A failed decision (one call,
+or a fan-out where every request failed) records its class; a decision that
+works closes the alert. One write per brain and minute per process.
+
+- The class (`failure.ts`, `decisionFailureClass`): the provider
+  classifier's code (`auth`, `quota`, `model`, `timeout`, `server`,
+  `policy`, ...), or the decider's own: `privacy_route` (a 404 under `zdr`:
+  no zero-retention route, or no such model), `cut` (the model reported
+  exactly its token limit), `answer` (no usable decisions). The reason is a
+  fixed sentence, never the provider's text.
+- Shown to admins as the store decides: a permanent reason (refused key, no
+  credits, `privacy_route`) at once, a transient one (timeouts, unusable
+  answers) once it has lasted 10 minutes, which is about two breaker
+  cycles. It reaches the alert card, the banner and admin push. "Try again"
+  does not apply: the extract circuit never probes this subject, and a
+  decision that works closes it.
+- A request above the model's limits is never sent and is not a failure.
+- The worker screen shows the last failure (when, which model, the plain
+  reason, still failing or since fixed): the row stays after it closes.
+  `GET /api/ai-workers/config` carries it as `deciderLastFailure`.
+- Nothing retries, and nothing lowers the privacy level: an admin decides.
+
+### The Test button
+
+`POST /api/ai-workers/:id/test/decision` (`test-call.ts`,
+`testDecisionWorker`): ONE small request (three fixed questions about a
+sample message) to the worker's SAVED model, through `sendDecision`, the
+same call `decide()` makes: the worker's real privacy level, its real
+`timeout_ms`, the model's real request limits and the same cut check. It
+answers `{ ok: true, ms, costUsd, privacy, timeoutMs, answers }` or
+`{ ok: false, code, reason, detail }` (`detail` is the provider's words, for
+the owner). It works while the worker and its uses are off, and it leaves
+the breaker and the alert alone. It is the only caller of a model outside
+`decide()`, and only on a click: no cron, no trigger, no retry.
 
 ### Request size
 
@@ -558,7 +599,9 @@ Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
     adds is the part of that bound retrieval does not already cover.
   - Cost: `/api/debug/spend` splits each decision model's row by use
     (`modelSpend[].uses`: calls, failed, cost, tokens in, mean ms). Cache hits
-    make no call and leave no step. A failed call is logged under the model
+    make no call and leave no step. `failed` counts only the
+    `decision_failed` steps; a request above the model's limits
+    (`over_limit`) was never sent and is not counted at all. A failed call is logged under the model
     id the worker asked for (`~typesafe/jev-latest`), not the served one.
 - **Go live:** set `mode: 'live'` on the one use. Everything else stays shadow.
 - **Kill switch:** disable the worker. Every call site is back to today's

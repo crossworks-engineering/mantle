@@ -103,6 +103,19 @@ describe('provider outages (no credits, 2026-10-04)', () => {
       body: 'The provider account has no credits or quota left. 1 item waits.',
       deepLink: '/settings/ai-workers',
     });
+    // The decider's and the box policy's alerts name themselves, not extraction.
+    const [c] = needsYouArrivals(
+      [outage({ subject: 'decision', code: 'timeout', reason: 'Slow.', waiting: null })],
+      new Set(),
+      NOW,
+    );
+    expect(needsYouMessage(c!)).toEqual({
+      title: 'The decider is failing',
+      body: 'Slow.',
+      deepLink: '/settings/ai-workers',
+    });
+    const [d] = needsYouArrivals([outage({ subject: 'model_policy', waiting: null })], new Set(), NOW);
+    expect(needsYouMessage(d!).title).toBe('The box policy blocked a model');
   });
 
   it('the seen set stays bounded', () => {

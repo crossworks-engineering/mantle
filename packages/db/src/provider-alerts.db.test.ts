@@ -145,7 +145,29 @@ describe.skipIf(!URL)('provider alerts: store rules and the admin event', () => 
     expect(open.map((r) => r.subject).sort()).toEqual(['embedding', 'extraction']);
   });
 
-  it('a subject outside the two is refused by the table', async () => {
+  it('a decision alert (0353) is its own row, never asked to probe, and kept once closed', async () => {
+    const other = randomUUID();
+    const privacy = {
+      code: 'privacy_route',
+      permanent: true,
+      reason: 'No route for this model meets the privacy setting.',
+      provider: 'openrouter',
+      model: '~typesafe/jev-latest',
+    };
+    await m.recordProviderFailure(other, 'decision', privacy, t0);
+    expect(m.isAlertShown((await m.getProviderAlert(other, 'decision'))!)).toBe(true);
+    // "Try again" probes only what the extract circuit probes.
+    expect(await m.requestProviderProbeNow(other)).toBe(0);
+    expect((await m.getProviderAlert(other, 'decision'))!.nextProbeAt).toBeNull();
+    expect(await m.resolveProviderAlert(other, 'decision', at(5 * MIN))).toBe(true);
+    const closed = (await m.getProviderAlert(other, 'decision'))!;
+    expect(closed.resolvedAt).not.toBeNull();
+    expect(closed).toMatchObject({ code: 'privacy_route', model: '~typesafe/jev-latest' });
+    expect(await m.getProviderAlert(other, 'embedding')).toBeNull();
+    await admin`delete from provider_alerts where owner_id = ${other}`;
+  });
+
+  it('a subject outside the four is refused by the table', async () => {
     await expect(
       admin`insert into provider_alerts (owner_id, subject, code, permanent, reason)
             values (${owner}, 'chat', 'quota', true, 'x')`,
