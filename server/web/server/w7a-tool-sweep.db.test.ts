@@ -297,6 +297,10 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     rt = await import('@mantle/runtime/agent');
     const hb = await import('@mantle/runtime/heartbeats');
     hb.registerHeartbeatTools();
+    // box_status's collector, as the web process installs it at boot
+    // (server/main.ts): the sweep runs the real collection in the scope.
+    const { installBoxStatusProvider } = await import('../lib/box-status');
+    installBoxStatusProvider();
     await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Owner'),
       (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Second Admin'),

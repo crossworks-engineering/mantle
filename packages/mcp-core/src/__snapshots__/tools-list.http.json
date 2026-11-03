@@ -9680,6 +9680,22 @@
   }
  },
  {
+  "name": "box_status",
+  "description": "This box's health as numbers only (schema 1): build version, process uptime and memory, host CPU load, load average, cores, memory and disk, Postgres size, connections and cache hit, each service up or down (object store, parser with its running and queued counts, browser, documents, embedder, sandboxes, network), model spend in micro-USD over the last 24 hours, 7 and 30 days with the last day's trace, turn and error counts, corpus capacity against the split policy, the extractor's queue and dead letters, and logins by role. `degraded` names the probes that did not answer. Never a name, a title or anything a user wrote. Cached for 30 seconds. Read-only, spends nothing.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "box_status",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "brain_capacity",
   "description": "Corpus size vs the split policy: document and passage-vector counts with a zone per axis — 'green' (no action), 'watch' (run recall checks, identify the growing category), 'split' (break the dominant category into a federated breakout brain). Use for capacity/health checks and scheduled monitoring; alert the user when the zone is not green. Read-only.",
   "inputSchema": {
@@ -11566,6 +11582,28 @@
   },
   "annotations": {
    "title": "peer_search_chunks",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "peer_status",
+  "description": "Ask every watched linked brain (a peer marked to watch, paired and enabled) for its box_status, all at once, each given 10 seconds, plus this box's own (`self: true`). Pass `peer` (a name or id) to ask one linked brain only. Returns one line per box: `ok`, `ms`, and the status numbers or a short error ('timeout', 'unreachable', 'refused', 'not offered', 'failed', 'bad reply', 'not paired'; this box's own line 'unavailable' in a process that cannot collect it). Numbers only. Calls box_status and nothing else. Read-only, spends nothing.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "peer": {
+     "type": "string",
+     "maxLength": 200,
+     "description": "One linked brain's name or id (see `peer_list`); omit for every watched one."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "peer_status",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,

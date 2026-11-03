@@ -8,7 +8,10 @@
  *     dies with the login's session epoch (actorMayConnect).
  *  2. A peer token (`mtlpeer_`) whose peer is bound to a login: the peer
  *     acts as that login, as the login is now, in its workspaces, with the
- *     peer's own write switch. The login must still be usable.
+ *     peer's own write switch. The login must still be usable. A
+ *     status-only peer (access scope `status`, 0353) reaches the status
+ *     tools and nothing else, as the brain's owner, read-only; any other
+ *     scope is no caller.
  *  3. An inbound API key (`mtlk_`): `callerFromAccessKey` below.
  *
  * A static login token (`mtlmcpk_`, revoked by 0268, its table dropped by
@@ -23,7 +26,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { authUsers, db, resolveSingleOwnerId } from '@mantle/db';
-import { PEER_TOKEN_PREFIX, verifyInboundToken } from '@mantle/content';
+import { PEER_TOKEN_PREFIX, peerAccessScopeOf, verifyInboundToken } from '@mantle/content';
 import { mcpToolPolicyOf, type McpCaller } from '@mantle/mcp-core';
 import { RISK_CALL_SLUGS } from '@mantle/tools';
 import { isLoginRole } from '@mantle/client-types/role-names';
@@ -275,7 +278,12 @@ export async function auditMcpKeyCall(
 
 async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
   const peer = await verifyInboundToken(token);
-  if (!peer || !peer.actsAsLoginId) return null;
+  if (!peer) return null;
+  const scope = peerAccessScopeOf(peer.accessScope);
+  if (scope === 'status') return statusPeerCaller(peer);
+  // Fail closed: only a `full` peer acts as its login (an unknown scope, or
+  // `none`, which verifyInboundToken refuses already, is no caller).
+  if (scope !== 'full' || !peer.actsAsLoginId) return null;
   // The login row with its Admin pair (loadLoginRow: membership of Admin
   // read with the row), so what only an Admin login has asks adminLogin.
   const row = await loadLoginRow(peer.actsAsLoginId);
@@ -298,6 +306,33 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
     peerByOwner: adminLogin(row) && row.id === peer.ownerId && peer.createdBy === peer.ownerId,
     write: peer.writeEnabled,
     riskyAllowed: adminLogin(row) ? (peer.allowedRiskyTools ?? []) : [],
+  };
+}
+
+/**
+ * A status-only peer (docs/federation.md "Status links"): the surface lists
+ * and calls the status tools only (McpCaller.statusOnly: the MCP surface
+ * registers nothing else, and the gate's peer narrower refuses anything
+ * else). The tools still run as a login, so it is the brain's owner (the
+ * anchor the peer belongs to), as the owner is now: an Admin login, still
+ * usable. Read-only, no risky tools, whatever the row says about Acts as, its
+ * Write switch or its risky tools.
+ */
+async function statusPeerCaller(peer: { id: string; ownerId: string }): Promise<McpCaller | null> {
+  const row = await loadLoginRow(peer.ownerId);
+  if (!row || row.disabledAt || !row.email || !isLoginRole(row.role)) return null;
+  if (!adminLogin(row)) return null;
+  return {
+    role: 'admin',
+    anchorId: peer.ownerId,
+    loginId: row.id,
+    displayName: row.displayName,
+    via: 'peer',
+    peerId: peer.id,
+    peerByOwner: false,
+    write: false,
+    riskyAllowed: [],
+    statusOnly: true,
   };
 }
 

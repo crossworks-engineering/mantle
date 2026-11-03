@@ -97,6 +97,12 @@ export type McpCaller = {
   /** An API key's areas (`@mantle/mcp-core/key-scope`); null or absent =
    *  every area. Only a key sets it. */
   areas?: readonly string[] | null;
+  /** A status-only peer (its access scope `status`, docs/federation.md
+   *  "Status links"): the connection lists and calls the status tools
+   *  (STATUS_PEER_TOOL_SLUGS) and nothing else. It runs as the brain's
+   *  owner for its scope, read-only; the list is the whole of what it may
+   *  do. Only a peer sets it. */
+  statusOnly?: true;
 };
 
 /** Whether a caller's areas (an API key's; null or absent = all) allow
@@ -182,6 +188,11 @@ async function gateViewFor(loginId: string): Promise<AdminGateView> {
 export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCallerTools> {
   const view = await gateViewFor(caller.loginId);
   const scope = await loginScopeFor(caller.loginId);
+  // A status-only peer: its owner's scope, no create home and no
+  // connector tools (it registers the status tools only).
+  if (caller.statusOnly) {
+    return { kind: 'owner', caller, view, privateWs: null, connectors: [], scope };
+  }
   let privateWs: string | null = null;
   // The create rule's fallback for a user outside Admin (the route rule):
   // made with the login, so only once it is in a workspace.
@@ -383,6 +394,10 @@ export function registerPreparedTools(
   const { caller } = prepared;
   // Outside an Admin scope: nothing spends on the owner's keys (M-a).
   const keysOff = preparedKeysOff(prepared);
+  // A status-only peer: the status tools and nothing else, on a full list
+  // (no tool map: its call tools would name others), through the same gate,
+  // whose peer narrower refuses any other tool for it as well.
+  const statusOnly = caller.statusOnly === true;
   const gate: McpGate = Object.freeze({
     lists: gateCaller,
     // One request: each call runs as the listing read it.
@@ -397,9 +412,10 @@ export function registerPreparedTools(
   const via = caller.via === 'key' ? 'api' : caller.via === 'peer' ? 'federation' : 'mcp';
   // The map, or the full list: the connectors below go to it too, so
   // tools/list orders them with the rest (map-surface.ts LIST_ORDER).
-  const map = opts.toolMap
-    ? new McpToolMap(mcpInstructionsFor(caller, prepared, { toolMap: true }))
-    : McpToolMap.fullList();
+  const map =
+    opts.toolMap && !statusOnly
+      ? new McpToolMap(mcpInstructionsFor(caller, prepared, { toolMap: true }))
+      : McpToolMap.fullList();
   registerMantleTools(server, caller.anchorId, {
     transport: opts.transport ?? 'http',
     ...(peerNamesNoLogin(caller) ? {} : { loginId: caller.loginId }),
@@ -407,6 +423,7 @@ export function registerPreparedTools(
     ...(via !== 'mcp' ? { via } : {}),
     gate,
     map,
+    ...(statusOnly ? { statusOnly: true as const } : {}),
   });
   // The connectors, on the same server as every other tool: in the
   // login's scope and gate, and under its create home.
@@ -428,11 +445,12 @@ function inNoWorkspace(prepared: PreparedCallerTools | undefined): boolean {
  *  the tool map on a connection that lists it (map-surface.ts); for a
  *  login in no workspace, why it has no tools. */
 export function mcpInstructionsFor(
-  _caller: McpCaller,
+  caller: McpCaller,
   prepared?: PreparedCallerTools,
   opts: { toolMap?: boolean } = {},
 ): string {
   if (inNoWorkspace(prepared)) return MCP_NO_WORKSPACE_INSTRUCTIONS;
+  if (caller.statusOnly) return MCP_STATUS_ONLY_INSTRUCTIONS;
   const base = `${MANTLE_MCP_INSTRUCTIONS} ${MCP_WORKSPACE_INSTRUCTIONS}`;
   return opts.toolMap ? `${base} ${MCP_MAP_INSTRUCTIONS}` : base;
 }
@@ -440,6 +458,11 @@ export function mcpInstructionsFor(
 /** What every login is told about its workspaces. */
 export const MCP_WORKSPACE_INSTRUCTIONS =
   'You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).';
+
+/** What a status-only linked brain is told: what it may call, and nothing
+ *  about the rest of the brain. */
+export const MCP_STATUS_ONLY_INSTRUCTIONS =
+  "This connection reads this box's status only: box_status (its health as numbers) and brain_capacity.";
 
 /** What a login in no workspace is told: it lists no tools, and why: the gate's no-scope words, then what follows. */
 export const MCP_NO_WORKSPACE_INSTRUCTIONS = `${NO_SCOPE_ERROR} Until then this connection lists no tools.`;

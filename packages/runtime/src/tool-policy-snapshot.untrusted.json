@@ -10,6 +10,7 @@
   "peer_node_get",
   "peer_query",
   "peer_search_chunks",
+  "peer_status",
   "present_create",
   "present_export",
   "present_get",

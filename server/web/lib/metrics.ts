@@ -184,6 +184,23 @@ export async function trafficWindow(userId: string, hoursBack: number): Promise<
   };
 }
 
+/** How many assistant turns (`responder_turn` traces) started in the last
+ *  `hoursBack` hours: a count, no agent or model named (box_status). */
+export async function turnCount(userId: string, hoursBack: number): Promise<number> {
+  const since = new Date(Date.now() - hoursBack * 3600_000);
+  const rows = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(traces)
+    .where(
+      and(
+        eq(traces.ownerId, userId),
+        eq(traces.kind, 'responder_turn'),
+        gte(traces.startedAt, since),
+      ),
+    );
+  return rows[0]?.n ?? 0;
+}
+
 export async function spendByAgent(userId: string, daysBack: number): Promise<AgentSpend[]> {
   const since = new Date(Date.now() - daysBack * 86_400_000);
   const rows = await db

@@ -1241,14 +1241,22 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'brain-health',
     name: 'Brain health',
     description:
-      'Self-monitoring: corpus capacity vs the split policy (brain_capacity) and the scheduled retrieval-quality eval (recall_eval). Grant to the agent that runs the brain-health heartbeat.',
-    toolSlugs: ['brain_capacity', 'recall_eval'],
+      "Self-monitoring: corpus capacity vs the split policy (brain_capacity), the scheduled retrieval-quality eval (recall_eval), and this box's health as numbers (box_status). Grant to the agent that runs the brain-health heartbeat.",
+    toolSlugs: ['brain_capacity', 'recall_eval', 'box_status'],
   },
   {
     slug: 'federation',
     name: 'Federation',
-    description: "Query other people's Mantles for data they've shared (docs/federation.md).",
-    toolSlugs: ['peer_list', 'peer_query', 'peer_search_chunks', 'peer_node_get', 'peer_tools'],
+    description:
+      "Query other people's Mantles for data they've shared, and read the watched boxes' status numbers (peer_status) (docs/federation.md).",
+    toolSlugs: [
+      'peer_list',
+      'peer_query',
+      'peer_search_chunks',
+      'peer_node_get',
+      'peer_tools',
+      'peer_status',
+    ],
   },
   {
     slug: 'federation-write',

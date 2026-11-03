@@ -61,6 +61,14 @@ const { registerCanvasRenderer } = await import('@mantle/tools');
 const { renderCanvas } = await import('@mantle/tools/canvas-render');
 registerCanvasRenderer(renderCanvas);
 
+// The box status collector (box_status, peer_status's own line): the
+// dashboard's vitals, the spend, the extractor's queue, as numbers. It lives
+// here, so only this process installs it; the runner and the stdio server
+// answer that box_status is read over this box's MCP endpoint
+// (packages/tools box-status-bridge.ts).
+const { installBoxStatusProvider } = await import('../lib/box-status');
+installBoxStatusProvider();
+
 // The one gate: every narrower registered, or the process stops here at
 // boot, not at its first request (every routed request runs through the
 // gate). AWAITED like the imports above (env first). gate-boot.test.ts pins this call in every

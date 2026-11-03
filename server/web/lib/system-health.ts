@@ -15,6 +15,7 @@ import type { DiskInfo } from '@mantle/client-types';
 import { env } from '@mantle/config';
 import { NET_TIMEOUTS, TtlCache, withTimeout } from '@mantle/std';
 import { providerHealth } from '@mantle/voice';
+import { hostProcDir, readHostProc } from './host-proc';
 
 export type { DiskInfo };
 export type { SystemHealth };
@@ -27,8 +28,21 @@ export type { SystemHealth };
  * Every probe is wrapped in a timeout + allSettled so a slow host call can't
  * hang the endpoint; a failed/timed-out probe yields null and its dotted path
  * is appended to `degraded`. In a prod container CPU/RAM/disk reflect the
- * container's cgroup, not the VPS host — surfaced via `scope`.
+ * container's cgroup, not the VPS host, surfaced via `scope`. A box that
+ * mounts the host's /proc read-only (MANTLE_HOST_PROC, host-proc.ts) gets the
+ * host's load and memory instead, and `scope` says `host`.
+ *
+ * Also the core of the box_status tool (box-status.ts), which keeps only the
+ * numbers and passes `probeRemoteEmbedder: false`: a status poll never makes
+ * the paid embed the dashboard's remote probe makes.
  */
+
+export type SystemHealthOptions = {
+  /** A cloud embedder is checked with a real 1-token embed (cached, below).
+   *  false: only a cached answer is read, else the embedder is not known
+   *  (up null): nothing is spent. Default true (the dashboard). */
+  probeRemoteEmbedder?: boolean;
+};
 
 type PgStatsRow = { db_size: string; connections: number; cache_hit: number | null };
 type PgTableRow = { name: string; bytes: string };
@@ -94,7 +108,10 @@ const remoteEmbedCache = new TtlCache<string, { up: boolean; detail: string }>({
   ttlMs: REMOTE_EMBED_OK_TTL_MS,
 });
 
-async function embedderHealth(userId: string): Promise<SystemHealth['embedder']> {
+async function embedderHealth(
+  userId: string,
+  probeRemote = true,
+): Promise<SystemHealth['embedder']> {
   const cfg = await resolveEmbeddingConfig(userId);
   const provider = cfg.primary.provider;
   const model = cfg.model;
@@ -104,6 +121,8 @@ async function embedderHealth(userId: string): Promise<SystemHealth['embedder']>
     if (cached) {
       return { up: cached.up, provider, model, detail: cached.detail, scope: 'remote' };
     }
+    // No paid probe asked for: not known.
+    if (!probeRemote) return { up: null, provider, model, detail: null, scope: 'remote' };
     try {
       const t0 = Date.now();
       await probeEmbeddingRoute(userId, {
@@ -196,7 +215,10 @@ async function filesDisk(): Promise<DiskInfo> {
   };
 }
 
-export async function getSystemHealth(userId: string): Promise<SystemHealth> {
+export async function getSystemHealth(
+  userId: string,
+  opts: SystemHealthOptions = {},
+): Promise<SystemHealth> {
   const degraded: string[] = [];
   async function probe<T>(
     name: string,
@@ -211,44 +233,70 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, storeUp, parserH, browserH, docsH, emb, net, sbx] =
-    await Promise.all([
-      probe('host.cpu', () => si.currentLoad()),
-      probe('host.mem', () => si.mem()),
-      probe('host.disk', () => filesDisk()),
-      probe('postgres', () => pgHealth()),
-      probe('storage.attachments', () => attachmentBytes(userId)),
-      probe('storage.objectstore', () => bucketReachable()),
-      // parserHealth is never-throws (down ⇒ up:false); the wrapper bounds it.
-      probe('parser', () => parserHealth(1_500)),
-      // browserHealth (PDF sidecar) is likewise never-throws; wrapper bounds it.
-      probe('browser', () => browserHealth(1_500)),
-      // gotenbergHealth (the documents engine) never throws: off or unwired
-      // is up:null; the wrapper bounds it.
-      probe('documents', () => gotenbergHealth(1_500)),
-      // embedderHealth is likewise never-throws; the wrapper just bounds it. A
-      // cold remote probe is a real API round-trip, so it gets a longer leash
-      // (cached 5 min after — see remoteEmbedCache).
-      probe('embedder', () => embedderHealth(userId), 6_000),
-      // networkHealth (tailnet) also never-throws; the wrapper just bounds it.
-      probe('network', () => networkHealth()),
-      // sandboxdHealth never-throws (profile off ⇒ up:null; unreachable ⇒
-      // up:false); the wrapper bounds a hung listing.
-      probe('sandboxes', () => sandboxdHealth()),
-    ]);
+  const procDir = hostProcDir();
+  const [
+    load,
+    mem,
+    disk,
+    pg,
+    attBytes,
+    storeUp,
+    parserH,
+    browserH,
+    docsH,
+    emb,
+    net,
+    sbx,
+    hostProc,
+  ] = await Promise.all([
+    probe('host.cpu', () => si.currentLoad()),
+    probe('host.mem', () => si.mem()),
+    probe('host.disk', () => filesDisk()),
+    probe('postgres', () => pgHealth()),
+    probe('storage.attachments', () => attachmentBytes(userId)),
+    probe('storage.objectstore', () => bucketReachable()),
+    // parserHealth is never-throws (down ⇒ up:false); the wrapper bounds it.
+    probe('parser', () => parserHealth(1_500)),
+    // browserHealth (PDF sidecar) is likewise never-throws; wrapper bounds it.
+    probe('browser', () => browserHealth(1_500)),
+    // gotenbergHealth (the documents engine) never throws: off or unwired
+    // is up:null; the wrapper bounds it.
+    probe('documents', () => gotenbergHealth(1_500)),
+    // embedderHealth is likewise never-throws; the wrapper just bounds it. A
+    // cold remote probe is a real API round-trip, so it gets a longer leash
+    // (cached 5 min after: remoteEmbedCache).
+    probe('embedder', () => embedderHealth(userId, opts.probeRemoteEmbedder !== false), 6_000),
+    // networkHealth (tailnet) also never-throws; the wrapper just bounds it.
+    probe('network', () => networkHealth()),
+    // sandboxdHealth never-throws (profile off ⇒ up:null; unreachable ⇒
+    // up:false); the wrapper bounds a hung listing.
+    probe('sandboxes', () => sandboxdHealth()),
+    // The host's own load and memory, when the box mounts its /proc
+    // (MANTLE_HOST_PROC); null otherwise, and a mount that does not read
+    // is degraded.
+    procDir
+      ? probe('host.proc', async () => {
+          const v = await readHostProc(procDir);
+          if (!v) throw new Error('host /proc unreadable');
+          return v;
+        })
+      : Promise.resolve(null),
+  ]);
   const parser = parserH ?? { up: false, versions: {}, running: null, queued: null };
 
-  const memInfo = mem
-    ? {
-        usedBytes: mem.total - mem.available,
-        totalBytes: mem.total,
-        usedPct: mem.total ? ((mem.total - mem.available) / mem.total) * 100 : 0,
-      }
-    : null;
+  const memInfo = hostProc
+    ? hostProc.mem
+    : mem
+      ? {
+          usedBytes: mem.total - mem.available,
+          totalBytes: mem.total,
+          usedPct: mem.total ? ((mem.total - mem.available) / mem.total) * 100 : 0,
+        }
+      : null;
 
   return {
     ts: new Date().toISOString(),
-    scope: env('NODE_ENV') === 'production' ? 'container' : 'host',
+    scope: hostProc ? 'host' : env('NODE_ENV') === 'production' ? 'container' : 'host',
     host: {
       cpuLoadPct: load ? load.currentLoad : null,
       mem: memInfo,
@@ -256,7 +304,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       uptimeSec: process.uptime(),
       heapUsedBytes: process.memoryUsage().heapUsed,
       rssBytes: process.memoryUsage().rss,
-      loadAvg: os.loadavg(),
+      loadAvg: hostProc ? hostProc.loadAvg : os.loadavg(),
       cpuCores: os.cpus().length,
     },
     postgres: {

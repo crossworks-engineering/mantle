@@ -50,6 +50,7 @@ import { MESSENGER_TOOLS } from './builtins-messenger';
 import { CANVAS_LIBRARY_TOOLS } from './builtins-canvas-library';
 import { PEER_TOOLS } from './builtins-peers';
 import { EVAL_TOOLS } from './builtins-eval';
+import { FLEET_STATUS_TOOLS } from './builtins-box-status';
 import { RUN_TOOLS } from './builtins-runs';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
@@ -244,6 +245,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...PEER_TOOLS,
   // Retrieval-quality self-check (recall_eval) — heartbeat-driven monitoring.
   ...EVAL_TOOLS,
+  // The fleet monitor: this box's status as numbers (box_status), and the
+  // watched linked brains' (peer_status, box_status over their link only).
+  // docs/federation.md "Status links".
+  ...FLEET_STATUS_TOOLS,
   // Toolsmith — author/test/group/grant templated HTTP API tools (+ web_fetch
   // for reading API docs). Granted to the Toolsmith specialist; mirrored over
   // MCP so Claude Code can drive the same flow. http-only by design.

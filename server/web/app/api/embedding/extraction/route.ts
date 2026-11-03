@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { sql, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db, embeddingConfig, onFullSystemRoute } from '@mantle/db';
 import {
   clearEmbeddingModelCache,
@@ -9,7 +9,7 @@ import {
   resolveExtractionConcurrency,
 } from '@mantle/embeddings';
 import { ownerCaller } from '@/lib/auth';
-import { rowsOf } from '@/lib/integrity/sql-util';
+import { extractionQueueCounts } from '@/lib/extraction-queue';
 import { notifyProviderRecover } from '@/lib/embedding-config';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -23,14 +23,6 @@ export const policy = routePolicy({
   },
 });
 
-type QueueRow = {
-  running: number;
-  waiting: number;
-  retrying: number;
-  done_10m: number;
-  dead: number;
-};
-
 /** The extractor at a glance: how many workers it should run, and what its
  *  queue is doing now. The count is live: the extractor re-reads the saved
  *  value every 30s and grows or shrinks its pool, no restart. */
@@ -42,18 +34,6 @@ export async function GET() {
     .where(eq(embeddingConfig.ownerId, user.id))
     .limit(1);
   const saved = row?.saved ?? null;
-  const q = rowsOf<QueueRow>(
-    await db.execute<QueueRow>(sql`
-      SELECT
-        count(*) FILTER (WHERE name = 'mantle.extract' AND state = 'active')::int AS running,
-        count(*) FILTER (WHERE name = 'mantle.extract' AND state = 'created')::int AS waiting,
-        count(*) FILTER (WHERE name = 'mantle.extract' AND state = 'retry')::int AS retrying,
-        count(*) FILTER (WHERE name = 'mantle.extract' AND state = 'completed'
-                           AND completed_on > now() - interval '10 minutes')::int AS done_10m,
-        count(*) FILTER (WHERE name = 'mantle.extract.dead' AND state = 'created')::int AS dead
-      FROM pgboss.job
-      WHERE name IN ('mantle.extract', 'mantle.extract.dead')`),
-  )[0];
   return NextResponse.json({
     concurrency: {
       saved,
@@ -61,13 +41,7 @@ export async function GET() {
       default: EXTRACTION_CONCURRENCY_DEFAULT,
       max: EXTRACTION_CONCURRENCY_MAX,
     },
-    queue: {
-      running: q?.running ?? 0,
-      waiting: q?.waiting ?? 0,
-      retrying: q?.retrying ?? 0,
-      doneLast10Min: q?.done_10m ?? 0,
-      deadLettered: q?.dead ?? 0,
-    },
+    queue: await extractionQueueCounts(),
   });
 }
 

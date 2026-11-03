@@ -223,7 +223,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "2f0e2b6143105a17b1a7239f08ff0bcf064de19b964f94a86a83356418e1602d",
+  "sha256": "7c218fbdd6e4a6e8e00a14bdd1eedbfc9f7193c6573fa3c685219be7d8d2c424",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -453,6 +453,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -509,6 +510,7 @@
    "peer_node_get",
    "peer_query",
    "peer_search_chunks",
+   "peer_status",
    "peer_tools",
    "pending_get",
    "pending_list",
@@ -553,7 +555,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "3915108e49db37327cc837c566d0ee72a4d387e03d8eb45c47715b41049b8899",
+  "sha256": "d18c68a4ab90c5b3ef584f1b5b97054415447f8f15e7569fbcde5873c3a89431",
   "names": [
    "access_set",
    "app_build",
@@ -748,6 +750,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -798,6 +801,7 @@
    "page_blocks_list",
    "page_get",
    "page_list",
+   "peer_status",
    "pending_get",
    "pending_list",
    "present_get",
@@ -1289,7 +1293,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "208ed553cd4526379a83bf1ff356abb573d430adfbdbeaf5eb6ee53e8a786153",
+  "sha256": "bc35bdaa507eeb1fd1214207a3a9ff94928a86ce8aa458d4dc14ef53ec339848",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1426,6 +1430,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -1515,7 +1520,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "32935e514dc3adb93d1c884f57ae30282235382739b5802070d52af832698b90",
+  "sha256": "62ffd624470f99569b3425459c7c5c6bb8b3fe6ec25d5d12e7af28de213e42c3",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1644,6 +1649,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -2299,7 +2305,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "208ed553cd4526379a83bf1ff356abb573d430adfbdbeaf5eb6ee53e8a786153",
+  "sha256": "bc35bdaa507eeb1fd1214207a3a9ff94928a86ce8aa458d4dc14ef53ec339848",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2436,6 +2442,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -2525,7 +2532,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "32935e514dc3adb93d1c884f57ae30282235382739b5802070d52af832698b90",
+  "sha256": "62ffd624470f99569b3425459c7c5c6bb8b3fe6ec25d5d12e7af28de213e42c3",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2654,6 +2661,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -3133,7 +3141,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ce4e5259e0d056d4201616feb81bf7775300cf3332afe9ac22de00fc6923b441",
+  "sha256": "34be9d635ff085009f142afadf1fecbf7cdc806889c25a872763a02520c53a32",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3273,6 +3281,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -3362,7 +3371,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "f8e63a7e55dcf2ee9fdb990f751e51656ddb50daab675ebeeb766242959f9f14",
+  "sha256": "495cbd68c6a2152c4aac0065d1e0ed484b40462b0a0f9968993dbc4277225ecc",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3492,6 +3501,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -3877,7 +3887,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "2087439b776a3210d5cb8940c7481b957e142c4fb34bf0fb59c395cb7ab9253a",
+  "sha256": "170318304575b6601c53200990cb8cae6d862919321c592e97e40151d619845b",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -3899,6 +3909,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -3953,6 +3964,7 @@
    "peer_node_get",
    "peer_query",
    "peer_search_chunks",
+   "peer_status",
    "peer_tools",
    "pending_get",
    "pending_list",
@@ -3997,7 +4009,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "74a689a8427ff8185a29f0b05d78e22b5f299322bc29cb4651ba7011d46502b8",
+  "sha256": "510a2e9cede2f862fe3693955b1f9185bc88aa8ee8fb5c377d88d8ec8da24b8a",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4014,6 +4026,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -4062,6 +4075,7 @@
    "page_blocks_list",
    "page_get",
    "page_list",
+   "peer_status",
    "pending_get",
    "pending_list",
    "present_get",
@@ -4290,7 +4304,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "681dc53718cf75b476852b4adff7a03197847a5996721971ed47576f191f1e61",
+  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4311,6 +4325,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -4398,7 +4413,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "560a2fa4f7e5dc83f8b0e3c631a22f721d6e0cdfe20720f7c1d3afb827e9bf63",
+  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4414,6 +4429,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -4790,7 +4806,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "681dc53718cf75b476852b4adff7a03197847a5996721971ed47576f191f1e61",
+  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4811,6 +4827,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -4898,7 +4915,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "560a2fa4f7e5dc83f8b0e3c631a22f721d6e0cdfe20720f7c1d3afb827e9bf63",
+  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4914,6 +4931,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -5182,7 +5200,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "681dc53718cf75b476852b4adff7a03197847a5996721971ed47576f191f1e61",
+  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5203,6 +5221,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -5290,7 +5309,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "560a2fa4f7e5dc83f8b0e3c631a22f721d6e0cdfe20720f7c1d3afb827e9bf63",
+  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5306,6 +5325,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -5708,7 +5728,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "2f0e2b6143105a17b1a7239f08ff0bcf064de19b964f94a86a83356418e1602d",
+  "sha256": "7c218fbdd6e4a6e8e00a14bdd1eedbfc9f7193c6573fa3c685219be7d8d2c424",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -5938,6 +5958,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -5994,6 +6015,7 @@
    "peer_node_get",
    "peer_query",
    "peer_search_chunks",
+   "peer_status",
    "peer_tools",
    "pending_get",
    "pending_list",
@@ -6038,7 +6060,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "3915108e49db37327cc837c566d0ee72a4d387e03d8eb45c47715b41049b8899",
+  "sha256": "d18c68a4ab90c5b3ef584f1b5b97054415447f8f15e7569fbcde5873c3a89431",
   "names": [
    "access_set",
    "app_build",
@@ -6233,6 +6255,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -6283,6 +6306,7 @@
    "page_blocks_list",
    "page_get",
    "page_list",
+   "peer_status",
    "pending_get",
    "pending_list",
    "present_get",
@@ -6774,7 +6798,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "208ed553cd4526379a83bf1ff356abb573d430adfbdbeaf5eb6ee53e8a786153",
+  "sha256": "bc35bdaa507eeb1fd1214207a3a9ff94928a86ce8aa458d4dc14ef53ec339848",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -6911,6 +6935,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -7000,7 +7025,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "32935e514dc3adb93d1c884f57ae30282235382739b5802070d52af832698b90",
+  "sha256": "62ffd624470f99569b3425459c7c5c6bb8b3fe6ec25d5d12e7af28de213e42c3",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7129,6 +7154,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -7784,7 +7810,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "208ed553cd4526379a83bf1ff356abb573d430adfbdbeaf5eb6ee53e8a786153",
+  "sha256": "bc35bdaa507eeb1fd1214207a3a9ff94928a86ce8aa458d4dc14ef53ec339848",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7921,6 +7947,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -8010,7 +8037,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "32935e514dc3adb93d1c884f57ae30282235382739b5802070d52af832698b90",
+  "sha256": "62ffd624470f99569b3425459c7c5c6bb8b3fe6ec25d5d12e7af28de213e42c3",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8139,6 +8166,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -8618,7 +8646,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ce4e5259e0d056d4201616feb81bf7775300cf3332afe9ac22de00fc6923b441",
+  "sha256": "34be9d635ff085009f142afadf1fecbf7cdc806889c25a872763a02520c53a32",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8758,6 +8786,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -8847,7 +8876,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "f8e63a7e55dcf2ee9fdb990f751e51656ddb50daab675ebeeb766242959f9f14",
+  "sha256": "495cbd68c6a2152c4aac0065d1e0ed484b40462b0a0f9968993dbc4277225ecc",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8977,6 +9006,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -9362,7 +9392,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "2087439b776a3210d5cb8940c7481b957e142c4fb34bf0fb59c395cb7ab9253a",
+  "sha256": "170318304575b6601c53200990cb8cae6d862919321c592e97e40151d619845b",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -9384,6 +9414,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -9438,6 +9469,7 @@
    "peer_node_get",
    "peer_query",
    "peer_search_chunks",
+   "peer_status",
    "peer_tools",
    "pending_get",
    "pending_list",
@@ -9482,7 +9514,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "74a689a8427ff8185a29f0b05d78e22b5f299322bc29cb4651ba7011d46502b8",
+  "sha256": "510a2e9cede2f862fe3693955b1f9185bc88aa8ee8fb5c377d88d8ec8da24b8a",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -9499,6 +9531,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -9547,6 +9580,7 @@
    "page_blocks_list",
    "page_get",
    "page_list",
+   "peer_status",
    "pending_get",
    "pending_list",
    "present_get",
@@ -9775,7 +9809,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "681dc53718cf75b476852b4adff7a03197847a5996721971ed47576f191f1e61",
+  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -9796,6 +9830,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -9883,7 +9918,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "560a2fa4f7e5dc83f8b0e3c631a22f721d6e0cdfe20720f7c1d3afb827e9bf63",
+  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -9899,6 +9934,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -10275,7 +10311,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "681dc53718cf75b476852b4adff7a03197847a5996721971ed47576f191f1e61",
+  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10296,6 +10332,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -10383,7 +10420,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "560a2fa4f7e5dc83f8b0e3c631a22f721d6e0cdfe20720f7c1d3afb827e9bf63",
+  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10399,6 +10436,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -10667,7 +10705,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "681dc53718cf75b476852b4adff7a03197847a5996721971ed47576f191f1e61",
+  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10688,6 +10726,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
@@ -10775,7 +10814,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "560a2fa4f7e5dc83f8b0e3c631a22f721d6e0cdfe20720f7c1d3afb827e9bf63",
+  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10791,6 +10830,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "box_status",
    "brain_capacity",
    "calculate",
    "canvas_library",
