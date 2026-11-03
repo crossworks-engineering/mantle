@@ -7,11 +7,11 @@ toolGroups: [contacts, email]
 
 Contacts are the people and companies you deal with. They are also the email gate: MantleOS only takes in mail from contacts, and the assistant only sends mail to contacts.
 
-- Click **+** (Add a contact) and fill in a name, a **Company**, **Email addresses**, a **Cell number** and tags.
+- Click **+** (Add a contact) and fill in a **First name**, **Last name** or **Company**, then **Email addresses**, a **Cell number** and **Tags**.
 - Each email line is a full address (`orders@example.com`) or a whole domain (`@example.com`).
 - Use the **Description** field to tell the assistant who this is, for example "our electrician, only works Tuesdays".
 - Adding an address pulls in the last 90 days of mail from it. Removing it stops new mail.
-- On the **Shared** tab, see and revoke items you have shared with this contact. **Enable sharing** gives the contact a code to open those links.
+- Turn on **Sharing** on the **Details** tab to give the contact a code that opens the items you share with them. The **Shared** tab lists those items, each with a revoke button, and **Revoke all** takes them all back.
 
 ## Assistant
 

@@ -1,17 +1,17 @@
 # Keep a box secure
 
-A MantleOS box has one way in from the network, and its secrets live in `.env`. This page lists what is exposed, what leaves the box and what to keep safe.
+A MantleOS box has one way in from the network, and its secrets live in `.env`. Here is what is exposed, what leaves the box and what to keep safe.
 
 ## What is exposed
 
 - Only the front door (Caddy, the built-in web server) listens on the network, on ports 80 and 443.
 - The debug port (3000) listens on `127.0.0.1` only.
 - Docker's published ports bypass the host firewall. To keep a brain off the network, install with `--localhost`, which sets `MANTLE_BIND_ADDR=127.0.0.1`. A firewall rule alone does not do it.
-- Use a domain with HTTPS for any box reachable from the internet. See [Add a domain and HTTPS](../01-install/05-domain-https.md).
+- Give any box on the internet a domain with HTTPS. See [Add a domain and HTTPS](../01-install/05-domain-https.md).
 
 ## What leaves the box
 
-- Prompts and retrieved context, to the model providers you configure. Nothing, if you use only local models.
+- Prompts and retrieved context, to the model providers you set up (none, with local models only).
 - Email you send.
 - Telegram messages on a paired bot.
 - Calls to MCP or OpenAPI connectors you connect.
@@ -30,30 +30,30 @@ The installer generates these, and re-running it never replaces an existing key.
 
 ## What to keep safe
 
-1. Keep a copy of `.env` off the box, apart from your backups. A backup and the key it needs, stored together, is one theft away from fully readable.
+1. Keep a copy of `.env` off the box, apart from your backups. A backup stored with its key is readable by anyone who takes both.
 2. Keep `.env` readable by its owner only. The installer sets mode 600.
 3. Copy backups off the box. See [Back up and restore](02-backups.md).
 
 ## Logins and access
 
-- A login gives no rights by itself. Each user reads what is granted to the workspaces they are in, and the database itself enforces it. Admins manage the brain, but read only what their workspaces hold. See [Who can use a brain](../04-concepts/05-access-tiers.md).
-- Use a separate brain for groups that must not share admins.
+- A login gives no rights by itself. Each user reads what the workspaces they are in hold, and the database enforces it. Admins manage the brain but read only their workspaces. See [Who can use a brain](../04-concepts/05-access-tiers.md).
+- Groups that must not share admins need separate brains.
 - End a login's access in **Settings > Users** with **Disabled** or **Sign out everywhere**. It takes effect on the next request. See [Add users](07-logins.md).
-- Check **Settings > Audit log** when something appears that nobody remembers creating.
+- Check **Settings > Audit log** when something appears that nobody remembers making.
 
 ## Box policy
 
 A company can lock a few things for every site with a few lines in `.env` ([Environment variables](03-env-vars.md#box-policy)). The app cannot turn them off.
 
-- **Telegram off.** No bot polls or sends. The bots and chats are kept for later.
-- **Models.** Block model families and allow only some providers. A blocked model fails with a clear message and an alert. The model lists show only allowed models.
-- **Passwords.** A longer minimum than the usual 8 characters. Common passwords are refused on every box, with or without the policy. When you turn it on, everyone signs in once more; a person whose password is too weak then changes it before anything else (which also ends their API keys and connectors, as any password change does).
+- **Telegram off.** No bot polls or sends. The bots and chats are kept.
+- **Models.** Block model families or allow only some providers. A blocked model fails with a clear message and an alert, and the model lists show only allowed models.
+- **Passwords.** A longer minimum than the usual 8 characters. Common passwords are refused on every box anyway. After you turn it on, every login signs in once more, and a person whose password is too weak changes it then. That also ends their API keys and connectors, as any password change does.
 
-At start-up the log names every agent and worker on a blocked model. Fix those before you turn the policy on.
+At start-up the log names every agent and worker on a blocked model. Fix those first.
 
 ## The updater
 
-The updater container controls Docker on the host. It opens no ports and accepts only two requests from the app: update to a version, or switch an optional service. If you do not want that, stop the `updater` service and update from the command line. See [Update MantleOS](01-update.md).
+The updater container controls Docker on the host. It opens no ports and takes only two requests from the app: update to a version, or switch an optional service. If you do not want that, stop the `updater` service and update from the command line. See [Update MantleOS](01-update.md).
 
 ## Next
 

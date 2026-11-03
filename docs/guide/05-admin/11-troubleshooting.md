@@ -8,7 +8,7 @@ Start with the health check, then read the logs of the container that failed. Ru
 bash scripts/install.sh --check
 ```
 
-It lists every container in both stacks, names any service that is missing or has no network, and checks that MantleOS answers at the front door. It exits non-zero when something is wrong.
+It lists every container in both stacks, names any service that is missing or has no network, shows the runtime (`runtime: bun` or `node`) and checks that MantleOS answers at the front door. It exits non-zero when something is wrong.
 
 In MantleOS, **Debug > Sanity check** tests the configuration and shows a fix for each failure.
 
@@ -22,7 +22,7 @@ docker compose logs -f api                # follow live
 docker logs --tail 200 mantle_client_web  # the web app
 ```
 
-Other service names: `caddy`, `postgres`, `objectstore`, `worker_files`, `worker_email`, `worker_events`, `updater`.
+Other service names: `caddy`, `postgres`, `objectstore`, `parser`, `worker_files`, `worker_email`, `worker_events`, `updater`.
 
 ## Common problems
 
@@ -39,6 +39,8 @@ bash scripts/install.sh --setup-code
 **Settings > Updates says the updater is not configured.** Add `MANTLE_STACK_DIR=` with the stack directory's full path (`pwd -P` prints it) to `.env`, then run `docker compose up -d updater`.
 
 **The interface is old after an update.** The web app is a second stack. Update it as shown in [Update MantleOS](01-update.md).
+
+**Web, api and the workers stop at start with `MANTLE_RUNTIME must be node or bun`.** The `MANTLE_RUNTIME` line in `.env` holds another word. Set it to `bun` or `node` (or remove it for Node), then run `docker compose up -d`. Nothing falls back on its own.
 
 **The web container runs but cannot reach the database.** Something else holds port 3000, so Docker could not set up its network. Set `MANTLE_WEB_DEBUG_PORT=3001` in `.env` and run `docker compose up -d`.
 

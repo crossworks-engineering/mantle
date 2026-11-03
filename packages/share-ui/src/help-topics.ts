@@ -33,6 +33,12 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/formulas', 'formulas'],
   ['/apps', 'apps'],
   ['/docs', 'docs'],
+  // Messenger: direct and group chats between people and agents.
+  ['/chats', 'chats'],
+  // The in-app release notes, read from the brain.
+  ['/changelog', 'changelog'],
+  // One heartbeat's detail page (its fire history).
+  ['/heartbeats', 'heartbeats'],
 
   // ── Review ─────────────────────────────────────────────────────────────
   ['/models', 'models'],
@@ -70,6 +76,13 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/settings/updates', 'updates'],
   ['/settings/services', 'services'],
   ['/settings/users', 'users'],
+  // Security was folded into Users; the route only redirects there.
+  ['/settings/security', 'users'],
+  ['/settings/workspaces', 'workspaces'],
+  ['/settings/shared-links', 'shared-links'],
+  ['/settings/telegram', 'telegram'],
+  // The logins this device holds (the profile menu), not the brain's Users.
+  ['/settings/sessions', 'sessions'],
   ['/settings/audit', 'audit'],
 
   // ── System ─────────────────────────────────────────────────────────────

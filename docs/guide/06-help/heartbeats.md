@@ -8,12 +8,14 @@ A heartbeat makes the assistant act without being asked. It is a standing job wi
 
 1. Click **New** and give it a **Name**.
 2. Pick the **Agent** (whose voice) and the **Skill** (what to do).
-3. Set the schedule: every so many minutes, once at a set time, or manual only.
-4. Choose the surface, where the reply goes: Telegram or the web.
-5. Set the gates, when it may fire. New heartbeats start with these defaults: **Min idle** 15 minutes, quiet hours 22:00 to 07:00, **Cooldown** 30 minutes.
+3. Set the **Schedule**: every so many minutes, once at a set time, or manual only.
+4. Choose the **Surface**, where the reply goes: Telegram or the web.
+5. Set the **Gates**, when it may fire. New heartbeats start on sensible defaults: **Min idle** 15 minutes, quiet hours 22:00 to 07:00, **Cooldown** 30 minutes.
 6. Save.
 
-Use **Fire** to run it now, **Pause** or **Resume** to stop and start it, and the fire history link to see each attempt.
+Use **Fire now** to run it at once (only the person who set it up can), and **Pause** or **Resume** to stop and start it.
+
+The **fire history** link opens the heartbeat's own page. It shows the agent, skill, surface and schedule, the next and last fire, the fire count and who set it up. Below that are the **Current state** and the **Recent fires**: each one's time and outcome (such as `fired`, `completed` or a `skipped_` gate), its reply, a link to its trace, and a **state diff** of what the run changed.
 
 ## Assistant
 

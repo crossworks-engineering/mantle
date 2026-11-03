@@ -9,22 +9,33 @@ Peers are other people's MantleOS brains, and this screen sets what each one may
 from yours. Each brain stays separate; a peer can only ask yours questions
 about what you shared with it. A new peer sees nothing.
 
-To connect one:
+Two brains link with two tokens, one for each direction. To link one:
 
-1. Under **Connect another brain**, enter a **Display name** and the peer's
-   **Base URL**, then press **Add peer**.
-2. Copy **Your token for them**. It is shown once. Send it to the other owner.
-3. Paste the token they give you to finish pairing.
+1. Press **Link a brain**. Under **Their brain**, enter a **Name** (only you
+   see it) and their **Address**, then press **Add brain**. If they already
+   linked you, paste **Their token (if you have it)** too.
+2. Copy **Your token for them**. It is shown once. Send it to the other
+   owner, with this brain's address shown on the screen.
+3. When their brain shows a token for you, open the link and paste it under
+   **Their token**. Neither side has to go first.
 
-Then choose what they see. **Share whole categories** shares every item of a
-type (Pages, Notes, Files, Contacts, Tables, Drawings, Events, Tasks),
-including ones you add later. Below that you can share single items.
+Lost your token for them? Open the link and press **New token for** (their
+name). The old token stops working at once. The **Connection** switch turns a link off
+without removing it.
 
-**MCP access** is separate: with **Acts as** set, the peer can use its token on
-your MCP endpoint with that login's rights. **Write** stays off unless you turn
-it on. Even with Write on, a peer (like an API key) may not change the content
-of a page or a note others read: one granted to a workspace other than Admin,
-or with a public link or a contact share. Change those in the app.
+Then choose what they see. **Share whole categories** shares every item of a type (Pages, Notes, Files,
+Contacts, Tables, Drawings, Events, Tasks), including ones you add later.
+Below that, **Search an item to share** shares single items.
+
+**Tools (MCP)** is separate. **Acts as** is **Nobody (share only)** at
+first. Set it to **Owner (admin)** or a member login, and the peer can call
+this brain's tools with that login's rights. Choosing the owner makes a new
+token for them. **Write** stays off unless you turn it on. Even with Write
+on, a peer (like an API key) may not change the content of a page or a note
+others read: one granted to a workspace other than Admin, or with a public
+link or a contact share. Change those in the app. **Risky tools allowed**
+is only for a peer that acts as the owner, at most 64 tools, and most links
+need none.
 
 ## Assistant
 

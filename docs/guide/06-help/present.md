@@ -7,48 +7,39 @@ toolGroups: [present, present-read, present-admin]
 
 Present holds canvases. A canvas is a picture that can move: a diagram, a process schematic, an animated explainer, a chart or a slide deck. An agent writes each one as a small web page, and Present runs it.
 
-- Canvases live in folders, like drawings and apps. Use the folder rail to sort them.
-- Open a canvas to see it live. Animations play and charts respond.
-- **Maximise** hides the menus and the folders. Press Esc to bring them back.
-- **Full screen** fills the whole screen with the canvas, for presenting. In a deck, the arrow keys move between slides.
-- **Replay** starts the canvas again from the beginning.
-- **Source** shows the page the agent wrote. It is read-only.
+- Canvases live in folders. Drag them into the order you want.
+- **Maximise** hides the menus and the folders. Esc brings them back.
+- **Full screen** fills the screen, for presenting. In a deck, the arrow keys move between slides.
+- **Replay from the start** runs it again. **Source (read only)** shows the page the agent wrote.
+- A canvas traced from a drawing shows **Image checks** under it. They help, but check the drawing.
 
-The latest save is always what you see. There is no draft and no commit step.
+You always see the latest save. There is no draft and no commit step.
 
-**Sharing**
+### Share a canvas
 
-- **To a workspace:** open the canvas and use **Access** in its header, as for a page. Add the workspace there. Its users can then open the canvas in Present. You need to be a Moderator of the canvas's workspace and of the workspace you add.
-- **With a link:** in **Access**, make the open link and copy it. Anyone with the link sees the canvas live, full screen, with no login. A small label says it is a shared canvas, with **Replay** and **Full screen**. A deck keeps its arrow keys.
-- The link always shows the latest save, so every change is public at once. When Presenter saves a canvas that has a link, it is told so. Stop the link in **Access**, or delete the canvas, and the link stops working at once.
-- Anyone with the link can read the whole canvas, its page source included, the way the **Source** button shows it. Keep private data out of a canvas you share.
-- A link shows the canvas only. It shows no saved data: a canvas that keeps notes or votes (`mantle.data`) runs on a link with nothing saved, and it cannot save anything.
-- Only a Moderator of the canvas's workspace can make, change or stop its link, as for an app: the link runs the canvas's code for anyone. Someone who may only edit the canvas cannot. A link made before this rule keeps working; a Moderator can stop it in **Access**.
+Open the canvas and click **Access** in its header.
+
+- **A workspace:** use **Add workspace**. Its users can then open it. You need to be a Moderator of the canvas's workspace and of the workspace you add.
+- **An open link:** click **Make an open link**, then **Copy link**. Anyone with the link sees the canvas live and full screen, with no login. **Stop the link** ends it at once, and so does deleting the canvas.
+- Only a Moderator of the canvas's home workspace can make, change or stop its link. Edit rights are not enough: the link runs the canvas's code for anyone.
+- The link shows the latest save, so a change is public at once. Anyone with it can read the whole canvas, its source too. Keep private data out. A canvas that saves data (notes or votes) saves nothing on a link.
 
 ## Assistant
 
-Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an animated explainer, and the assistant hands it to **Presenter**. You change a canvas the same way: ask for the change; the assistant makes a small change itself. There are no drawing tools.
+Ask in chat for a schematic, a deck, a dashboard or an animated explainer, and the assistant hands it to **Presenter**. Ask for changes the same way; the assistant makes a small one itself. There are no drawing tools.
 
-- Canvases belong to workspaces, like pages and tables. Every workspace's assistant, and your own MCP client, can read and change canvases where you can: a new canvas lands in the workspace you moderate (else your private one), and you edit a canvas when you moderate its workspace or have Write on it.
-
-- Presenter looks at every canvas it saves, in a real browser, and fixes what it sees before it reports.
-- A P&ID or a process flow is drawn from data by a layout template, so the result is neat and the same every time. Draftsman uses the same path for the diagrams it puts in pages.
-- To put a canvas in a page, ask for it, or type `/canvas` in the page and pick one. The page shows the canvas's latest picture. Click it to open the live canvas over the page; **Back to page** or Esc returns. A deck keeps its arrow keys and **Full screen**.
-- The picture is the one Presenter took at its last save. If the canvas changed since, the page says that a newer version exists; open it to see.
-- For outside Mantle (an email, a file to send), ask for a copy. The assistant exports a static copy into Files, where your other exports go, and says where it landed. That copy does not follow later changes.
-- Deleting a canvas is a deliberate step: the assistant asks first.
+- A new canvas lands in a workspace you moderate, or else your private one. You can edit a canvas when you moderate its workspace or have Write on it.
+- Presenter looks at every canvas it saves, in a real browser, and fixes what it sees.
+- To put a canvas in a page, ask, or type `/canvas` there. The page shows its picture. Click it for the live canvas; **Back to page** or Esc returns.
+- Ask for a static copy to use outside the brain. It lands in Files, and it does not follow later changes.
+- The assistant asks before it deletes a canvas.
 
 ## Technical
 
-- A canvas is a `present` node with a sidecar that holds one HTML document, its text for search, and its compiled styles.
-- The canvas runs in a locked frame: it cannot fetch or send data, and it has no database, no tools and no cookies. It can only draw. A canvas that tries to open another page in its frame is stopped and taken off the screen. The desktop app also stops the request before it leaves. In a web browser that one request still goes out, and it can carry what the canvas holds: its own content and a ticket that lasts 30 seconds. For a canvas that came from someone else, the desktop app is the safer place to open it.
-- Only the brain's own pages, the web app, MantleOS Desktop and the origins listed in `MANTLE_API_CORS_ORIGINS` may hold a canvas frame. Any other site that tries to show a canvas is refused.
-- Libraries come from the brain, never from the internet: ECharts, Plotly, D3, Konva, Three.js, Motion, reveal.js, KaTeX and Alpine.js. Presenter reads a short guide for each (`canvas_library`), written for the exact version the brain serves.
-- Search reads the canvas title, description and visible text. A canvas is indexed again only after five minutes without a text change, so many quick saves cost one pass.
-- Each canvas carries a short summary of what it is and what it shows, so a drawing with few words is still found. Presenter writes it when it saves (`summary` on `present_create` and `present_update`), and it stays until Presenter passes a new one. Without one, the extractor writes it in the one pass it makes anyway: for a new canvas when it is first indexed, after that only when the canvas text changes (a change of colour or layout alone does not count). It reads the canvas text; when a vision worker is set up, that one pass goes to it and sees the canvas picture too.
-- The last ten versions of each canvas are kept. Presenter can bring one back.
-- In a page a canvas is `![Title](present:<id>)`. Who may open it is the canvas's own access, never the page's: a reader of the page who may not read the canvas sees a placeholder, with no picture and nothing of the canvas.
-- Sharing works as it does for a drawing in a page. Sharing the page with a workspace does not share the canvas. The page's **Access** panel lists it under **Grant these too**; grant it there, and the workspace's users can open it. Taking the canvas out of the page ends that offer, but a grant already made stays until you remove it.
-- On a page's share link (`/s/...`), and in the mobile apps, a page shows the canvas's picture only, never the live canvas. A link shows a canvas's picture only when you add the canvas to the link's served items in Access; otherwise it shows a placeholder. PDF and Word exports of the page carry the picture.
-- A canvas's own link (`/s/<token>`) runs the canvas in the same locked frame as in Present. The page that holds the frame lets the frame load the brain only, so a canvas that tries to open another site in its frame is blocked before the request leaves. The canvas loads only inside the link's own page, never as a page of its own, and no other site can frame the link page. The link is checked again on every load of the frame, and each frame ticket lasts 30 seconds. The link page never starts a render: no browser sidecar work is spent on a visitor.
-- The pictures need the browser sidecar (`BROWSER_WS_ENDPOINT`). Without it a canvas still saves and runs, but Presenter cannot look at its work, and nothing can be exported.
+- A canvas is a `present` node holding one HTML document. The last ten versions are kept; Presenter can bring one back.
+- It runs in a locked frame: no network, no database, no tools, no cookies. Only the brain's pages, the web app, MantleOS Desktop and the origins in `MANTLE_API_CORS_ORIGINS` may hold that frame. The desktop app is the safer place to open a canvas from someone else.
+- Libraries (ECharts, Plotly, D3, Three.js, reveal.js and more) come from the brain, never the internet. `canvas_library` has a guide for each.
+- Search reads its title, description, visible text and summary, five minutes after the last text change.
+- In a page a canvas is `![Title](present:<id>)` and keeps its own access. The page's **Access** panel lists it under **Grant these too**. A reader who may not read it sees a placeholder. Share links, the mobile apps and PDF and Word exports show its picture only.
+- A canvas's own link (`/s/<token>`) is checked on every frame load; a frame ticket lasts 30 seconds.
+- Pictures, checks and exports need the browser sidecar (`BROWSER_WS_ENDPOINT`). Without it a canvas still saves and runs.

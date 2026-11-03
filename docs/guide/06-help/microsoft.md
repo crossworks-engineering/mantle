@@ -14,6 +14,8 @@ It needs an app registration of your own in Azure AD. MantleOS ships no shared o
 3. Click **Refresh drives**, then turn on sync for the drives you want. Use **Choose content** to pick folders.
 4. Turn on **Outlook mail** to bring in mail. Only mail from your contacts is taken in.
 
+The assistant can also send from a connected address. An account connected before send permission was asked for shows a note: reconnect it to send from it.
+
 **Disconnect** removes an account.
 
 ## Assistant

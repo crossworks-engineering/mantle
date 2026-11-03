@@ -7,11 +7,12 @@ toolGroups: [files, memory-core]
 
 Files is a folder tree for your documents, scans, photos and spreadsheets. Everything in it is read into the brain unless you say otherwise.
 
-- Click **Upload**, or drag files in. Upload a whole folder with its sub-folders the same way.
+- Click **Upload**, or drag files in. **Upload a folder with its sub-folders** brings a whole folder. If a file of that name is already there, the upload panel offers **Replace**.
 - Use **New** to make a folder or a markdown, text or JSON file.
+- Drag files and folders in the tree into the order you work in, such as steps or stages. Everyone sees the same order. **Move up** and **Move down** in an item's menu do the same, and **Sort** switches to **Name** or **Last changed**.
 - Give a folder a description, for example "supplier invoices, one PDF per month". The assistant reads it.
-- Set a folder to index content, or name only if you want to store files without making them searchable.
-- Switch between details, thumbnail and two-pane views. Search from the box at the top.
+- Set a folder to **Index content**, or to **Name only** to store files without making their contents searchable.
+- Switch the view between **Details**, **Thumbnails** and **Two panes**. Search from the box at the top of the tree.
 
 ## Assistant
 

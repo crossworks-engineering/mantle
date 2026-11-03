@@ -7,8 +7,10 @@ Upload documents into a folder tree that the brain reads, then ask about what is
 ## Upload
 
 1. Open **Files** and pick a folder.
-2. Click **Upload** for files, or **Upload folder** to bring a folder with its sub-folders.
+2. Click **Upload** for files, or the **Upload a folder with its sub-folders** tool in the folder's header.
 3. Or drag files onto the screen.
+
+If a file of the same name is already in the folder, the upload panel stops and offers **Replace**, which writes the new version over the old one.
 
 The web uploader takes files up to 512 MB by default. Files you attach in chat are saved here too (up to 64 MB each).
 
@@ -28,6 +30,7 @@ A password-protected PDF opens if its password is saved in **Settings > PDF pass
 
 - **New** makes a folder or a text, markdown or JSON file. Text files edit in place.
 - **Rename**, **Move** and **Copy** work on files and folders.
+- Drag files and folders in the tree into the order you work in, such as steps or stages. Everyone sees the same order. **Move up** and **Move down** in an item's menu do the same from the keyboard. **Sort** in the tree switches to **Name** or **Last changed**.
 - Give a folder a description. The assistant reads it, so "supplier invoices, one PDF per month" tells it more than a folder name.
 
 ## Keep a folder out of search

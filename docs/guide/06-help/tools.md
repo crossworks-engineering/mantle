@@ -19,6 +19,13 @@ Two switches matter on each tool:
 template). Built-in, recipe and connector tools are read-only here apart from
 those two switches.
 
+An HTTP tool has an **External access** switch: shared apps that declare the
+tool may call it only while it is on. A connector tool has a **Read-only**
+mark instead: marked, it reaches every user of a workspace that holds the
+connector; unmarked, it counts as changing data. Turn either on only for a
+tool that reads and never changes data, because people can call it by hand
+with any input. Each tool also lists the **Tool groups** that hold it.
+
 Two policy switches sit on the same screen. **Require my approval for
 agent-built tools** holds each call of a tool an agent wrote. **Approve email &
 web during unattended heartbeats** holds sends and web fetches when a

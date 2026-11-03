@@ -84,6 +84,21 @@ describe('helpTopicForPath', () => {
     expect(helpTopicForPath('/pages')).toBe('pages');
     expect(helpTopicForPath('/pagesomething')).toBeNull();
   });
+
+  it('covers the screens the client adds to the shared nav', () => {
+    // mantle-client's nav (web-ui layout/nav-items.ts, ADDED_NAV_ITEMS) adds
+    // these to the shared list, and the profile menu opens /settings/sessions,
+    // so the shared nav test below cannot see them.
+    expect(helpTopicForPath('/chats')).toBe('chats');
+    expect(helpTopicForPath('/chats/abc-123')).toBe('chats');
+    expect(helpTopicForPath('/settings/workspaces')).toBe('workspaces');
+    expect(helpTopicForPath('/settings/shared-links')).toBe('shared-links');
+    expect(helpTopicForPath('/settings/telegram')).toBe('telegram');
+    expect(helpTopicForPath('/settings/sessions')).toBe('sessions');
+    expect(helpTopicForPath('/settings/security')).toBe('users');
+    expect(helpTopicForPath('/changelog/0.500.4')).toBe('changelog');
+    expect(helpTopicForPath('/heartbeats/abc-123')).toBe('heartbeats');
+  });
 });
 
 /**

@@ -5,13 +5,15 @@ toolGroups: [memory-core]
 
 ## The assistant panel
 
-The assistant is where you talk to your brain. It opens as a panel over any screen: click the chat bubble or press Cmd/Ctrl+I.
+The assistant is where you talk to your brain. It opens as a panel over any screen: click **Assistant** at the foot of the menu, or press Cmd/Ctrl+I.
 
-- Type and press Enter to send. Shift+Enter adds a new line. You can also dictate, or attach an image or a document.
-- **New chat** starts a fresh conversation. **Previous chats** lets you reopen an older one and **Continue from this**.
-- Use the menu to **Choose agent** or to change the panel to a side panel, a window or full screen.
+- Type and press Enter to send. Shift+Enter adds a new line. You can also dictate with **Record voice note**, or attach an image or a document.
+- If you sent too soon, type a correction while it works and press Enter. It stops and sends both.
+- The icons in the panel's header: **Previous chats** reopens an older chat, and **Continue from this** picks it up again. **New chat** starts a fresh one. **Show as a side column**, **Show as a movable window** and **Show as full display** change its shape, on a wide screen. **Minimise** (or Esc) puts it away.
+- The picker at the end of the header chooses the agent.
+- A reply keeps coming while you move to another screen.
 
-It answers from your own content: notes, pages, files, mail and everything else you have added. The same conversation continues on Telegram.
+It answers from your own content: notes, pages, files, mail and everything else you have added. The same conversation continues on Telegram, and it is listed in **Chats**.
 
 ## Assistant
 

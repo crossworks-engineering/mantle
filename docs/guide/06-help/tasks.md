@@ -9,13 +9,19 @@ Tasks are the things you need to do, each with a status, a priority and an
 optional due date. It is a plain list the assistant can read and add to while
 you talk, so a promise made in conversation is not lost.
 
-- **New task** opens the form: **Title**, **Status** (To do, In progress,
+- **New** opens the form: **Title**, **Status** (To do, In progress,
   Blocked, Done), **Priority** (low, normal, high), **Due**, **Tags** and
-  **Notes**.
-- Switch between the list and the board. The board has three columns; Blocked
-  is a flag set from the form, not a column.
-- Overdue tasks are flagged on the list. **Mark done** closes a task.
-- A task can have a checklist. Notes on progress go in the task's **Notes**.
+  **Notes**. Then **Save task**.
+- Tasks sit in folders. **New task inside** on a folder's menu makes one there.
+- Switch between the list and the board. The board has three columns: To do,
+  In progress and Done. Drag a card to change its status. A blocked task sits
+  under In progress with a badge.
+- Overdue tasks are flagged on the list. **Mark done** closes a task, and
+  **Reopen** puts it back.
+- Open a task to add a **Checklist** of steps. Notes on progress go in the
+  task's **Notes**.
+- **Archive** hides a finished task without deleting it. **Archived** shows
+  them again.
 
 ## Assistant
 

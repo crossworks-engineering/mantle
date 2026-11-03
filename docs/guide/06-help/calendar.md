@@ -11,7 +11,7 @@ Calendars subscribes to outside calendars by their iCal (.ics) link, so their ev
 2. Paste the **iCal URL**. In Google Calendar it is the "Secret address in iCal format". In Outlook, publish the calendar and copy the ICS link.
 3. Click **Subscribe**. The first sync runs within two minutes.
 
-Each row shows the event count and the last sync time. Use the sync button to pull now.
+Each row shows the event count and the last sync time. The switch turns syncing on or off. The bin button asks, then **Unsubscribe** removes the subscription and every event it synced. Events you made yourself stay.
 
 Subscriptions are read-only. Nothing is written back to the source, and an edit made in MantleOS is overwritten at the next sync. Change those events where they live.
 

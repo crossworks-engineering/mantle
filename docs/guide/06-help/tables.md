@@ -13,10 +13,12 @@ asset register, expenses, readings, a parts list.
   sort dates properly and refuse a word where a number belongs.
 - A table can have several **tabs**, like sheets in a spreadsheet. A reference
   column links to a row in another tab.
-- Start with **New table** (the plus button). **Import** loads a spreadsheet
-  file into a table.
-- Edits are saved as a draft. Press **Commit** to publish them, or **Discard**
-  to drop them.
+- Start with **New table** (the plus button). **Import a spreadsheet** loads
+  an xlsx, xls or csv file into the table, one tab per sheet.
+- Tables live in folders. Drag them into the order you want; everyone sees
+  the same order.
+- Edits are saved as a draft. Press **Commit** to publish them, or **Discard
+  the draft** to drop them.
 
 ## Assistant
 
@@ -26,7 +28,8 @@ asset register, expenses, readings, a parts list.
 - "Turn the spreadsheet I just sent into a table."
 
 The assistant answers from the data itself, so a question with an exact answer
-gets one. Rows it adds land in the draft, like yours: check them, then commit.
+gets one. It can add or change one row or many in one go ("mark these five
+done"). Rows it adds land in the draft, like yours: check them, then commit.
 
 ## Technical
 
@@ -38,14 +41,17 @@ summary, so it turns up in search.
 The assistant reads with `table_schema` (every tab's columns, types and row
 counts) and `table_sql` (a read-only SELECT, which can join tabs in one
 table). It adds and changes rows with `table_row_add` and `table_row_update`,
-and imports with `table_from_file`. Changing many rows in one call
-(`table_rows_add`, `table_rows_upsert`) is for the Ledger specialist and MCP
-clients. `table_rows_upsert` with the key `@row_id` changes many rows by their
-row id, for a table with no column that is unique. One unknown id refuses the
-whole call. Building grids is the Ledger specialist's job. Deleting a table
-needs the Table admin group, which no agent has by default.
+or many at once with `table_rows_add` and `table_rows_upsert`, and imports
+with `table_from_file`. `table_rows_upsert` with the key `["@row_id"]` changes
+many rows by their row id, for a table with no unique column. Each row
+carries its row id and is only updated, never added. An unknown, missing or
+repeated id, or a row with no cells, refuses the whole call before anything
+is written. For an MCP client that asks you to allow every write, ten row
+edits are then one approval, not ten. Building grids (columns, tabs, imports
+that need logic) is the Ledger specialist's job. Deleting a table needs a
+tool group that no agent has by default.
 
 `table_sql` runs each statement in a separate process that is stopped at its
-time limit. That process has a memory limit, and a value or a reply may hold at most
-16 MB. A statement past a limit is refused with a hint: add a
+time limit. That process has a memory limit (1 GB on Linux), and a value or a
+reply may hold at most 16 MB. A statement past a limit is refused with a hint: add a
 `LIMIT`, select fewer columns or aggregate in SQL.

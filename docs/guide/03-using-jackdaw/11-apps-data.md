@@ -19,7 +19,7 @@ Say which one you want when you ask Appsmith, for example "keep the entries in t
 Each app gets one private database. No other app can open it.
 
 - Appsmith creates the tables and can pre-load reference data, such as a price list from a spreadsheet you name.
-- Users of a workspace the app is shared with can write to it when that grant has **Writable** on, so one app can be a shared job log.
+- Users of a workspace the app is shared with can write to it when that grant has **Writable** on, so one app can be a shared job log. Turn on **Informational** in **App settings** and only Admin can change its data.
 - It is included in backups. **History > Take snapshot** keeps a copy you can restore.
 
 ## Live data through tools

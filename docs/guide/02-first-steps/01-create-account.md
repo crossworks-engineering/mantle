@@ -15,6 +15,8 @@ Open your brain's address, create the owner login, then let the setup wizard get
 
 The password needs at least 8 characters. Below 20 characters, use three of the four kinds: small letters, capitals, digits and symbols (a space counts as a symbol). From 20 characters, a passphrase needs no mix. A common password, such as `Pass1234`, is refused. The most is 72 bytes. A letter of Cyrillic or Greek takes 2 bytes and one of Chinese or Japanese takes 3, so such a password holds fewer letters. The same rule holds for every new password on the brain.
 
+As you type, a bar under the password shows how strong it is, from **Very weak** to **Strong**, and each part of the rule gets a tick when it is met. If a part is still missing, the form says which one before it sends. The bar is a guide only. The brain checks the list of common passwords when you save.
+
 Only the first account signs up this way. After that the same screen is the normal sign-in. To add people later, see [Add users](../05-admin/07-logins.md).
 
 ## Walk the setup wizard

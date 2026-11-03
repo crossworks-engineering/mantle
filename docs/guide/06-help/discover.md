@@ -7,7 +7,7 @@ toolGroups: [contacts, email]
 
 Discover senders lists people who emailed you in the last 30 days but are not in your contacts. Their mail is not being taken in.
 
-- The screen scans your connected mailboxes when it opens. Use the refresh button to scan again.
+- The screen scans your connected mailboxes when it opens. Click **Rescan** to scan again.
 - Each row shows the sender, their address, how many messages and the latest date.
 - Click **Add as contact** for anyone worth keeping. MantleOS then pulls in the last 90 days of their mail.
 

@@ -12,9 +12,13 @@ Filter the list by:
 
 - **Kind**: Responder, Heartbeat, Extractor, Summarizer, Reflector, Ingest,
   Photo, Federation or Run item.
-- **Status**: Success, Error, Running or Skipped.
-- **Time**: the last 1h, 6h, 24h, 7d or 30d.
+- **Status**: Success, Error, Running or Skipped. The list starts on Success
+  and Error.
+- **Window**: the last 1h, 6h, 24h, 7d or 30d.
 - **Sort**: Newest, Oldest, Costliest, Cheapest, Slowest or Fastest.
+
+**Reset** puts the filters back. Select a trace to see when it started, how
+long it took, its agent, tokens, cost and steps.
 
 To find out why the assistant did something, read the tool calls in order. To
 find out why something cost a lot, sort by Costliest. Sort by Slowest to find

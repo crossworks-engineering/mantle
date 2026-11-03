@@ -19,7 +19,7 @@ A competing use: offering MantleOS, or something that does substantially the sam
 - **Embedded use**: shipping MantleOS's code, APIs or database schema inside your own paid software.
 - **Competing service**: hosting MantleOS and selling access to it.
 
-For a commercial license, email licensing@crossworks.engineering.
+For a commercial license, use the contact address in `LICENSING.md`.
 
 ## Each version becomes MIT after two years
 

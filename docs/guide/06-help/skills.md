@@ -14,7 +14,9 @@ tools can explain page editing but cannot do it. Abilities come only from
 [tool groups](tool-groups.md).
 
 To add one, press **New** and fill in the **Name**, the **Slug** (fixed once
-created), a one-sentence description and the **Instructions (markdown)**. Attach skills to agents in Settings > Agents or in
+created), a one-sentence description and the **Instructions (markdown)**. A
+skill a heartbeat runs can also carry a **Default state**: the starting state
+new heartbeats copy. Attach skills to agents in Settings > Agents or in
 [Studio](studio.md). An edit takes effect on the agent's next message.
 
 ## Assistant
@@ -27,7 +29,8 @@ integration it built. Other skills you write here yourself.
 
 ## Technical
 
-A skill row holds a name, a description and instructions, and nothing else.
+A skill row holds a name, a description, instructions and an optional
+default state for heartbeats. It holds no tools.
 At each turn the agent's own prompt and its attached skills are put together
 in a fixed order; Studio shows the exact result. Studio also keeps each
 skill's history, with a diff and a revert.

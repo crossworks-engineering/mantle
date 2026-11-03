@@ -17,14 +17,15 @@ You can also paste a markdown document straight in. Headings, callouts, tables a
 
 ## Edit as markdown
 
-Click **Markdown** in the page header to edit the raw markdown. Click it again to return to the formatted view. Nothing is lost either way.
+Click **Edit as markdown** in the page header to edit the raw markdown. Click it again to return to the formatted view. Nothing is lost either way.
 
 ## Let the assistant edit
 
 1. Open the page.
-2. Open the assistant and ask: "Restructure this into sections", "Add a section on the generator service", "Draw a flow diagram of the approval steps".
-3. The changes land in the draft. Click **Review** to see what changed against the live page. Discard or restore single blocks from there.
-4. Click **Commit** when you are happy.
+2. Optional: turn on **Marker** and mark the sections you want changed.
+3. Open the assistant and ask: "Restructure this into sections", "Add a section on the generator service", "Draw a flow diagram of the approval steps".
+4. The changes land in the draft. Click **Review changes** to see what changed against the live page. Discard or restore single blocks from there.
+5. Click **Commit** when you are happy.
 
 From any screen you can also ask: "Write this up as a page called Site Handover."
 
@@ -32,8 +33,8 @@ From any screen you can also ask: "Write this up as a page called Site Handover.
 
 Click **Access** in the page header. Under **Who can see this**, the panel lists the page's home workspace and every workspace it is shared with.
 
-- **Share with** a workspace to let its users read the page. Turn its **Writable** switch on to let them edit it too.
-- **Open link** makes a link anyone can open without a login.
+- **Add workspace** shares the page with a workspace, so its users can read it. Turn its **Writable** switch on to let them edit it too.
+- **Make an open link** makes a link anyone can open without a login.
 
 See [Who can use a brain](../04-concepts/05-access-tiers.md).
 

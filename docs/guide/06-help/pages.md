@@ -11,14 +11,18 @@ lists, callouts and diagrams. Type `/canvas` to embed a Present canvas: the
 page shows its picture, and a click opens the live canvas over the page (see
 Present).
 
-- **New page** creates one, in a folder or at the top level.
+- **New page** creates one, in a folder or at the top level. Drag pages in
+  the tree into the order you want; everyone sees the same order.
 - Edits are saved as a **draft**. Readers keep seeing the last committed
   version until you press **Commit**.
-- **Revert** throws the whole draft away and goes back to the last commit.
+- **Review changes** shows what Commit will publish. **Revert the draft to
+  the last commit** throws the whole draft away.
+- **Marker** marks the sections you want the Pages specialist to work on.
+- **Edit as markdown** shows the page as plain markdown text.
 - **Access** lists the page's home workspace and every workspace it is
-  shared with. Share it with a workspace to let its users read it, with
-  **Writable** on to let them edit it. An open link gives a read-only link
-  anyone can open.
+  shared with. Use **Add workspace** to let a workspace's users read it,
+  with **Writable** on to let them edit it. **Make an open link** gives a
+  read-only link anyone can open.
 
 ## Assistant
 

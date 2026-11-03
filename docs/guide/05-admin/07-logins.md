@@ -7,7 +7,7 @@ A login opens nothing by itself. What the person reads and changes comes from th
 ## Invite someone
 
 1. Open **Settings > Users** and click **Invite**.
-2. Enter their email and, if you like, a name.
+2. Pick a **Contact** to use their email and name, or enter an email and, if you like, a name.
 3. Click **Create invite** and copy the **Invite link**.
 4. Send the link to the person yourself. MantleOS does not email it.
 
@@ -15,12 +15,24 @@ They open the link, set a password and are signed in. The link works once, for 7
 
 You can also make the login yourself: **Settings > Users > Add user**. Give the person the email and the **Starting password**; they can change it after they sign in.
 
+## The password rule
+
+Every new password (at sign-up, an invite, **Add user**, **Reset password** or a change) must:
+
+- have at least 8 characters, or the box policy's minimum if that is higher ([Environment variables](03-env-vars.md#box-policy));
+- use three of small letters, capitals, digits and symbols, unless it is a passphrase of 20 characters or more;
+- not be a common password, such as `Pass1234`.
+
+The form shows the rule as the person types. A password set before the rule keeps working. Only a box policy asks for a change at sign-in.
+
 ## Let people sign in with their company account
 
 Company sign-in (single sign-on) lets people use their work account instead of a password. It works with any OpenID Connect provider, the standard behind Entra ID, Okta, Keycloak and others. The operator turns it on in `.env` ([Environment variables](03-env-vars.md#company-sign-in-optional)); nobody can turn it off from the app.
 
 - **Optional**: passwords keep working, and a person may link their company account.
 - **Required**: a linked login signs in with the company account only. An unlinked login signs in with its password once, then must link. The original account keeps its password, so there is always a way in.
+
+The app has no company sign-in screens yet; they come in a later release. Until then, keep the mode `off` or `optional`.
 
 An admin may mark a login as an outside person, someone not in the company's provider. In required mode that login keeps its password. Set-up per provider: [docs/oidc-sign-in.md](../../oidc-sign-in.md) and [Entra ID](../../oidc-entra.md).
 

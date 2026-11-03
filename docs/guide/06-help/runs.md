@@ -11,7 +11,7 @@ parallel, then stops. The steps execute, and the assistant picks up again when
 they are done.
 
 The left side lists your runs. Select one to see its tree: which branch is
-slow, which step failed and what comes next. **Cancel** stops a run.
+slow, which step failed and what comes next. **Cancel run** stops a run.
 
 Two banners link to [Pending approvals](pending.md):
 
@@ -27,8 +27,8 @@ A run keeps going if you close the page.
 - "Cancel the research run."
 
 The assistant uses `run_plan`, `run_append`, `run_state`, `run_cancel` and
-`run_audit`. The Runner queues group is not given to any agent by default;
-grant it in Settings > Agents.
+`run_audit`. No agent holds these tools by default; grant their tool group
+in Settings > Agents.
 
 ## Technical
 

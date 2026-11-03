@@ -28,7 +28,7 @@ Pick a view from the **View** menu in the app header:
 
 - **Builder**: the running app.
 - **Code**: the source files. Edit by hand, **Format**, then **Save** to the draft. Save before asking Appsmith for more, because its edits replace unsaved ones.
-- **History**: every commit as a version, plus snapshots of code and data. **Take snapshot** before a risky change. Restore code to the draft, or restore the data.
+- **History**: every commit as a version, plus snapshots of code and data. **Take snapshot** before a risky change. Restore code to the draft, restore the data, or roll the whole app back to a snapshot.
 - **Activity**: who opened and used the shared app.
 
 ## Share an app
@@ -37,6 +37,7 @@ After the first commit, click **Access**:
 
 - **Share with** a workspace: its users run the app, signed in with their own logins. With **Writable** on they also write its data. An app shared beyond Admin reads only what every workspace that holds it reads. See [Who can use a brain](../04-concepts/05-access-tiers.md).
 - **Open link**: anyone with the link sees it full screen, read-only, with no access to your brain's tools.
+- **MCP access**: the users who run the app reach its data from their own MCP client. Off by default.
 
 Treat a public link as a secret. Close it in the same panel.
 
@@ -45,6 +46,10 @@ Treat a public link as a secret. Close it in the same panel.
 - Start small, then ask for one change at a time.
 - One app, one job. Two small apps work better than one large one.
 - If it needs outside data, name the service. See [App data](11-apps-data.md).
+- An app can show a picture or drawing from Files, and make a PDF report. Say which file or what the report should hold.
+- Ask what changed: "What changed in the stock app since last week?" Appsmith compares the versions in **History**.
+
+The app authoring guide ([app-authoring-guide.md](../../app-authoring-guide.md)) has the full detail: the libraries an app may use, the code tools and the history tools.
 
 ## Next
 

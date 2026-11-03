@@ -5,8 +5,9 @@ Talk to your brain in the app: type or speak, attach files, and keep or start ch
 ## Open it
 
 - Click **Assistant** at the foot of the menu, or press Cmd+I (Ctrl+I on Windows and Linux).
-- The **...** menu in the assistant's header picks the agent and the shape: **Side** (a column), **Window** (movable) or **Full**.
-- Each agent keeps its own conversation. Your web chat and your Telegram chat with the same agent are one conversation. To set up Telegram, see [Connect Telegram](../02-first-steps/05-connect-telegram.md).
+- The icons in the assistant's header name themselves when you point at them. On a wide screen three of them change the shape: **Show as a side column**, **Show as a movable window** and **Show as full display**. **Minimise** (or Esc) puts it away. The picker at the end chooses the agent.
+- Each agent keeps its own conversation. Your web chat and your Telegram chat with the same agent are one conversation, and **Chats** lists it too. To set up Telegram, see [Connect Telegram](../02-first-steps/05-connect-telegram.md).
+- A reply keeps coming while you move to another screen.
 
 ## Ask
 
@@ -16,17 +17,19 @@ Talk to your brain in the app: type or speak, attach files, and keep or start ch
    - **Pick content to attach** points it at a file, page or note you already have.
 3. Send.
 
+If you sent too soon, type a correction while it works and press Enter. It stops and sends both.
+
 Ask about content, not file names: "what did the supplier quote for the roof?" Ask it to act: "make that a task for Friday", "save this as a page".
 
 Replies can carry headings, tables, diagrams, images and short audio clips.
 
 ## Work on what is open
 
-When a page or an app is open, the assistant works on that item. On a page it hands the job to the Pages specialist; on an app, to Appsmith. Their edits land in the draft, so you review before you commit. See [Pages](06-pages.md) and [Apps](10-apps.md).
+When a page, a table or an app is open, the assistant works on that item. On a page it hands the job to the Pages specialist, on a table to Ledger, and on an app to Appsmith. Their edits land in the draft, so you review before you commit. See [Pages](06-pages.md) and [Apps](10-apps.md).
 
 ## Start a new chat
 
-1. Open **...** and choose **New chat**. On Telegram, send `/new`.
+1. Click **New chat** in the header. On Telegram, send `/new`.
 2. The old chat is saved, with a short summary, under **Previous chats**.
 
 A previous chat opens read-only. **Continue from this** starts a new chat that picks up from its summary. Everything the assistant wrote to your brain (notes, tasks, journal) stays.

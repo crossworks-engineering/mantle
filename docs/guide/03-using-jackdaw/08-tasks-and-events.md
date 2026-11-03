@@ -10,7 +10,7 @@ A task has a title, a status, a priority and an optional due date. Statuses are 
 2. Fill in **Title**, **Priority** and **Due**, then save.
 3. Open the task to add a **Checklist** of steps, and keep progress in its **Notes**.
 
-Switch between the list and the board with the view toggle. On the board, drag a card to change its status. Blocked tasks sit in the **In progress** column with a badge.
+Switch between the list and the board with the view toggle. On the board, drag a card to change its status. Blocked tasks sit in the **In progress** column with a badge. **Archive** a finished task to hide it; **Archived** shows those again.
 
 The quickest way is to let tasks come out of conversation:
 

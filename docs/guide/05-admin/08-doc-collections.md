@@ -4,7 +4,7 @@ Index a folder of Markdown files so the assistant can answer from it with citati
 
 A collection is one folder of `.md` files. Nothing is indexed until you switch a collection on. Files stay the source: the **Docs** viewer is read-only, and edits happen in the files.
 
-MantleOS ships four collections, all off. The two you are most likely to want are **User Guide** (this guide) and **System docs** (the developer documentation).
+MantleOS ships three collections, all off: **User Guide** (this guide), **System docs** (the developer documentation) and **Changelog** (the notes for each release).
 
 ## Switch a collection on
 

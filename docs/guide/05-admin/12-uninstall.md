@@ -26,7 +26,7 @@ Take a backup first if there is any chance you want the brain back. See [Back up
 bash scripts/uninstall.sh --purge
 ```
 
-This also deletes the data directory and `.env`. That is the brain itself and `MANTLE_MASTER_KEY`. Without that key, the API keys and passwords in any later restore cannot be read. There is no undo. Type `PURGE` when asked to confirm.
+This also deletes the data directory and `.env`. That is the brain itself, the database dumps in `data/backups/` and `MANTLE_MASTER_KEY`. Without that key, the API keys and passwords in any later restore cannot be read. There is no undo. Type `PURGE` when asked to confirm.
 
 ## Options
 

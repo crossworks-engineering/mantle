@@ -29,7 +29,7 @@ MantleOS joins your tailnet. Your model machine appears under **Reachable device
 ## Point a route at the model
 
 1. Open **Settings > Agents** or **Settings > AI workers** and select one.
-2. Set the route's provider to `local`.
+2. Set the route's provider to **Local (self-hosted)**.
 3. In **Base URL**, pick your machine from the list. It fills in port 1234 (LM Studio). For Ollama change it to 11434, for example `http://<machine>:11434/v1`.
 4. Switch on **Reach via Tailscale**.
 5. Pick the model and save.

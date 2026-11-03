@@ -8,11 +8,11 @@ toolGroups: [secrets]
 Secrets is an encrypted vault for passwords, PINs, licence keys, card details
 and other values you should not keep in a note.
 
-1. Press **New secret**.
+1. Press **New**.
 2. Give it a **Title**, a **Kind** (password, token, server, card, note or
    other), and optional **Tags** and a **Description**.
 3. Add the values under **Fields (encrypted)**, each with a label such as
-   "username", and an optional **Note (encrypted)**.
+   "username". **Add field** adds another. Add an optional **Note (encrypted)**.
 4. Press **Save secret**.
 
 Open a secret and press **Reveal** to see its values. Write a good description:

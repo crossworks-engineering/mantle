@@ -11,9 +11,13 @@ One OpenRouter key covers chat, search embeddings, reading images and PDFs, voic
 3. Click **Save key**.
 4. Select the key and click **Test**. It makes a free call to check the provider accepts it.
 
-**Microsoft Foundry** (Azure OpenAI and the other models Foundry serves) is a chat provider of its own. Add a **Microsoft Foundry** key, then point the agent at provider `foundry` with the deployment name as the model. The endpoint is the route's **Base URL**, or `MANTLE_FOUNDRY_ENDPOINT` in `.env` for every route without one. Detail: [foundry.md](../../foundry.md).
+**Microsoft Foundry** (Azure AI Foundry and Azure OpenAI) is a chat provider of its own. Add a **Microsoft Foundry** key, then pick provider **Microsoft Foundry** on the agent's route, with the deployment name as the model. The endpoint is the route's **Base URL**, or `MANTLE_FOUNDRY_ENDPOINT` in `.env` for every route without one. Detail: [foundry.md](../../foundry.md).
 
 Keys are encrypted with the brain's master key. **Rotate** replaces a key's value in place, so everything that uses it keeps working.
+
+## Other kinds of key
+
+The vault (the encrypted store behind this screen) holds four kinds: a token, a password, an SSH key or a login. This screen adds tokens, the kind a provider takes. The other kinds come in over MCP (`api_key_set`) or a CSV import (`POST /api/keys/import`), and stay sealed: only a token is ever opened today. When an MCP client replaces or deletes a key, nothing changes until a person approves it on the **Pending** screen or a Telegram card.
 
 ## Pick models for agents
 

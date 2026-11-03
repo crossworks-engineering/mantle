@@ -11,9 +11,9 @@ Use a table for anything that belongs in rows and columns: an asset register, ex
 3. Click **Add row** and type into the grid.
 4. Click **Commit** to publish your edits and index the table.
 
-Edits sit in a draft until you commit. **Discard** throws the draft away.
+Edits sit in a draft until you commit. **Discard the draft** throws it away.
 
-To start from a spreadsheet, click **Import** on a table and choose an `.xlsx` or `.csv` file. Each sheet becomes a tab. A spreadsheet uploaded to **Files** also becomes a table.
+To start from a spreadsheet, click **Import a spreadsheet** on a table and choose an `.xlsx`, `.xls` or `.csv` file. Each sheet becomes a tab. A spreadsheet uploaded to **Files** also becomes a table.
 
 ## Tabs, totals and formulas
 
@@ -31,7 +31,7 @@ The assistant answers from the rows themselves, so a question with a definite an
 - "Add a row to the maintenance table: pump 3, serviced today, 2 400."
 - "Turn the spreadsheet I just sent into a table."
 
-Its row changes land in the draft like yours. Check them, then commit.
+It can change one row or many in one go: "mark these five done". Its row changes land in the draft like yours. Check them, then commit.
 
 ## Share and download
 

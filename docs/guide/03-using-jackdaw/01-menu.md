@@ -9,13 +9,14 @@ Every item in the app's menu and what it is for. Each item links to its screen h
 - **Filter menu…**: type to find any screen, whatever the scope.
 - **Favorites**: star an item to pin it to the top in every scope.
 - **Assistant**: the button at the foot of the menu, or Cmd+I (Ctrl+I). See [The assistant](02-assistant.md).
-- **?** in a screen's header opens that screen's help.
+- **About this screen** (the **?** beside **Assistant**) opens the help for the screen you are on.
 
 ## Workspace
 
 | Item                               | What it is for                                  |
 | ---------------------------------- | ----------------------------------------------- |
 | [Desk](../06-help/home.md)         | The landing page of your current workspace.     |
+| [Chats](../06-help/chats.md)       | Chats with people and agents.                   |
 | [Journal](../06-help/journal.md)   | Facts about you, and what agents learned.       |
 | [Email](../06-help/inbox.md)       | Mail from your contacts, by account and folder. |
 | [Files](../06-help/files.md)       | Your folder tree, read into the brain.          |
@@ -23,6 +24,7 @@ Every item in the app's menu and what it is for. Each item links to its screen h
 | [Pages](../06-help/pages.md)       | Rich documents with draft and commit.           |
 | [Recall](../06-help/recall.md)     | Memory maps that guide agents.                  |
 | [Draw](../06-help/draw.md)         | A whiteboard canvas per drawing.                |
+| [Present](../06-help/present.md)   | Live diagrams, charts and slide decks.          |
 | [Tables](../06-help/tables.md)     | Typed data grids with tabs.                     |
 | [Formulas](../06-help/formulas.md) | Calculations taken from published standards.    |
 | [Apps](../06-help/apps.md)         | Small programs built for you.                   |
@@ -52,7 +54,7 @@ Every item in the app's menu and what it is for. Each item links to its screen h
 | [API keys](../06-help/keys.md)                              | Provider keys: keys this brain uses to call other services.    |
 | [MCP](../06-help/mcp.md)                                    | Let an outside AI client use your brain.                       |
 | [API access](../06-help/api-access.md)                      | Your own keys for scripts and MCP clients that use this brain. |
-| [Telegram](../02-first-steps/05-connect-telegram.md)        | Pair your own Telegram chat with an assistant.                 |
+| [Telegram](../06-help/telegram.md)                          | Pair your own Telegram chat with an assistant.                 |
 | [Connectors](../06-help/connectors.md)                      | Use outside MCP servers and web APIs.                          |
 | [Agents](../06-help/agents.md)                              | The assistants and specialists.                                |
 | [AI workers](../06-help/ai-workers.md)                      | Background jobs: extract, summarise, voice, vision.            |

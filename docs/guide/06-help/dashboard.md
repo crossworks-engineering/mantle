@@ -9,12 +9,14 @@ The dashboard shows whether your brain is healthy and what it costs. It does not
 
 - **System vitals**: CPU, memory, disk and database, plus the helper services.
 - **Questions for you**: open questions the brain wants answered.
+- A warning card, only when embedding or extraction is failing. It makes the numbers below it stale.
 - **Vectors indexed** and **Brain nodes**: how much is stored and searchable.
 - **Spend (7d)**: this week's model cost against last week. Click it for the breakdown.
 - **Pending review**: tool calls waiting for your approval. Click it to handle them.
-- Below: spend and ingest over 30 days, **Brain capacity**, counts by type, and panels for email sync, Telegram, heartbeats and recent failures.
+- Below: **LLM spend** and **Ingest activity** over 30 days, **Brain capacity**, nodes by type and entities by kind, the **Memory index**, and **Build** (the interface and brain versions side by side).
+- Last: **Email sync**, **Telegram**, **Heartbeats** and **Recent failures**.
 
-The bottom panels are where a quietly broken background job shows up. **Operator view** opens the Debug screen.
+The last panels are where a quietly broken background job shows up. **Operator view** opens the Debug screen, and **Traces** opens the traces.
 
 ## Assistant
 

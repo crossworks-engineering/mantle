@@ -34,8 +34,8 @@ a card as a prompt, and delete a map.
 - "Add a card about the backup procedure to the operations map."
 
 Agents read maps with `recall_index`, `recall_open`, `recall_go` and
-`recall_match`. Writing cards needs the Recall authoring group, which no agent
-has by default. A map an agent starts stays a draft until you publish it.
+`recall_match`. Writing cards needs a tool group that no agent has by
+default. A map an agent starts stays a draft until you publish it.
 
 ## Technical
 

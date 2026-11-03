@@ -13,9 +13,9 @@ Email accounts connects your mailboxes and sets which folders MantleOS reads.
 4. Set **Scan history (days)**: how far back the first scan reaches (365 by default).
 5. Click **Test connection**, then **Connect & save**.
 
-Open an account to see its sync status. Click **Configure folders** to choose which folders to scan. Microsoft accounts also show here and are managed on the Microsoft screen.
+Open an account to see its sync status. Click **Edit account** to change its settings, or **Configure folders** to choose which folders to scan. A Microsoft 365 or Outlook.com mailbox connects on the Microsoft screen instead, because Microsoft has retired app-password IMAP for most accounts. Those accounts also show here, with **Manage Microsoft account**.
 
-Only mail from your contacts and your own addresses is taken in. A new account with no contacts brings in nothing.
+Only mail from your contacts and your own addresses is taken in. A new account with no contacts brings in nothing. Adding a contact later brings in their recent mail, about the last 90 days.
 
 ## Assistant
 

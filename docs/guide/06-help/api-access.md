@@ -8,15 +8,16 @@ An API key lets a script or an MCP client use this brain as you. You can give it
 
 1. Press **Make key**.
 2. Type a name, for example "Backup script".
-3. Pick **Read only** or **Read and write**, and when the key expires.
+3. Under **Access**, pick **Read only** or **Read and write**. Under **Expires**, pick how long it lasts. Your workspaces may set a longest time.
 4. Leave **All areas** on, or turn it off and tick the areas the key needs.
-5. Type your password (admins and members) and press **Make key**, then copy the key. It is shown once.
+5. An Admin user may also name **Risky MCP tools allowed**: tools that send, spend or publish stay blocked for a key until you name them here. Leave it empty if you are not sure.
+6. Type **Your password** and press **Make key**, then copy the key. It is shown once.
 
-The **Search** area searches every kind of item, email and journal included. Tick it only for a key that may read everything.
+The **Search** area searches every kind of item, email and journal included. Tick it only for a key that may read everything. Some routes and tools belong to no area; they need **All areas**.
 
 The list shows each key's rights, when it was last used and when it expires. Press the bin icon to revoke a key. A revoked key stops on its next request.
 
-A plain sign-out does not end an admin's or member's key; a client's keys end when the client signs out. A password change, **Sign out everywhere**, a disable or a role change ends all your keys.
+A plain sign-out does not end a key. A password change, **Sign out everywhere**, an admin's end of your sessions, or a disable ends all your keys.
 
 This is not **API keys**. That screen holds the keys this brain uses to call other services.
 

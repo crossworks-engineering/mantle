@@ -10,26 +10,24 @@ API keys holds the provider keys that agents, workers and tools use, such as Ope
 2. Pick the **Provider**, give a **Label** and paste the **Key value**.
 3. Click **Save key**. The key is shown once so you can copy it. After that only a masked form shows.
 
-An Anthropic key made outside an Anthropic workspace needs the **Anthropic workspace id** (optional field, shown for Anthropic keys). Without it every call with that key fails with "This Anthropic key is not tied to a workspace". A key made inside a workspace needs nothing. You can add or clear the id on a saved key without re-entering the key.
+An Anthropic key made outside an Anthropic workspace needs the **Anthropic workspace id**. Without it every call with that key fails. You can add or clear the id on a saved key without re-entering the key.
 
-Open a key to **Test** it (a no-cost call to the provider), **Rotate** it to a new value, or delete it.
+Open a key to **Test** it (a no-cost call to the provider), **Rotate** it to a new value, or delete it. Rotating keeps the same entry, so everything that uses the key follows at once. Deleting leaves the agents and workers that used the key with no key set. One key often powers chat, embeddings and several workers.
 
-Rotating keeps the same entry, so everything that uses the key follows at once. Deleting is the risky one: agents and workers that used the key are left with no key set. One key often powers chat, embeddings and several workers.
+**Kinds of secret.** The vault holds four kinds, each under a name that agents say (for example `printer-07`). A key added before keeps `service` or `service/label` as its name.
 
-**Kinds of secret.** The vault holds four kinds of secret, each under a **name** that agents say (for example `printer-07`). A key you added before keeps `service` or `service/label` as its name.
+| Kind       | Holds                                         |
+| ---------- | --------------------------------------------- |
+| `token`    | an API key (every older key is a token)       |
+| `password` | one password                                  |
+| `ssh_key`  | an SSH private key, its user and a passphrase |
+| `login`    | a user and a password                         |
 
-| Kind     | Holds                                                        |
-| -------- | ------------------------------------------------------------ |
-| token    | an API key (every key added before is a token)               |
-| password | one password                                                 |
-| ssh_key  | an SSH private key, the user it logs in as, and a passphrase |
-| login    | a user and a password                                        |
+A password, an SSH key or a login also has a target: the hosts or web origins it may be used on. Tags group secrets (`printers`). The approval switch is on by default for these three kinds, so each use waits for you. The tailnet flag says the target sits on a private network reached through your tailnet. Agents cannot use these kinds yet; that comes in a later release.
 
-A password, an SSH key or a login also needs a **target**: the hosts (`printer-07.lan`, `192.0.2.12:2222`) or web origins (`https://api.example.com`) it may be used on. **Tags** group secrets (`printers`). **Needs approval** is on by default for a password, an SSH key and a login: each use will wait for you. Agents cannot use these kinds yet; that comes in a later release.
+**Write-only.** You can add, replace, test and delete a secret here, from your MCP client, or with a CSV import (columns `name,kind,target,user,secret,tags`). Nothing ever shows a value again, to you or to an agent: replace it instead. Every write goes to the audit log, without the value.
 
-**Write-only.** You can add, replace, test and delete a secret from the Keys screen, from your MCP client (`api_key_set`, `api_key_test`, `api_key_delete`, `api_key_import`) or with a CSV import (`name,kind,target,user,secret,tags`). No screen, tool or API ever shows a value again, to you or to an agent: replace it instead. A test of a token calls its provider; a test of another kind only checks the stored shape. Every add, replace, test and delete is written to the audit log, without the value.
-
-**From an MCP client, a replace or a delete waits for you.** Adding a new key is instant, with one exception: a token named for a service that already has one (for example `anthropic` when you have `anthropic/work`) would become the key every call to that service uses, so it waits like a replace. Replacing a key that exists, or deleting one, goes to Pending approvals: the item shows the key's name, kind, target, masked preview and which fields change, never the value. It happens only when you approve it in the app (or on its Telegram card); an MCP client cannot approve it, so an agent a web page or a document steered cannot swap your key for its own. A CSV import adds its new keys at once and holds every row that replaces a key for one approval. Rejecting it drops the waiting value. If the key changes in the meantime, the approval does nothing and says so.
+**From an MCP client, a replace or a delete waits for you.** Adding a new key is instant. Replacing or deleting one goes to Pending approvals, which shows the key's name, kind, target and masked preview, never the value. It happens only when you approve it in the app or on its Telegram card. An MCP client cannot approve it, so an agent that a web page steered cannot swap your key for its own. An MCP import adds new keys at once and holds every row that replaces a key for one approval.
 
 ## Assistant
 
@@ -37,10 +35,11 @@ The assistant cannot see or change keys. It can list masked key references when 
 
 ## Technical
 
-- Keys are encrypted with the server's `MANTLE_MASTER_KEY` and only decrypted for a provider call. Each value is bound to its row, so it cannot be copied into another.
-- Agents, workers and the embedding setup point at a key by id. HTTP tools use a `{{secret:service/label}}` reference filled in at call time.
+- Keys are encrypted with the server's `MANTLE_MASTER_KEY` and only decrypted for a provider call. Each value is bound to its row.
 - Restore a backup without the same `MANTLE_MASTER_KEY` and every key is unreadable. Keep that key with your backups, stored apart.
-- Tools: `api_key_refs` (masked previews only); over MCP only, `api_key_set`, `api_key_test`, `api_key_delete` and `api_key_import`, which go through the one write gateway in `@mantle/api-keys` (`vault.ts`: the keys area check and the audit row).
-- A waiting MCP replace or delete is sealed on the key's own row (`held_enc`), bound to the row and to a hold id that the pending item carries instead of the value. Approving it runs the change through the same gateway again, with the keys area checked for the person who asked; any other write to the key first makes it stale.
-- Only a token is ever opened to call a provider or fill a `{{secret:...}}` reference. The other kinds are sealed with the row id and their kind, so nothing that opens a token can open them; their fields (user, passphrase, sudo password) are sealed apart. A new value clears the stored passphrase and sudo password unless they are sent again.
+- Agents, workers and the embedding setup point at a key by id. HTTP tools use a `{{secret:service/label}}` reference filled in at call time.
+- Only a token is ever opened. The other kinds stay sealed with their row id and kind.
+- Over MCP, a token named for a service that already has a key (`anthropic` beside `anthropic/work`) waits like a replace. A change that widens a key (a new target or tag, approval off, the tailnet flag moved) must send the value again.
+- CSV import: `POST /api/keys/import` with `{ "csv": "..." }`. A bad row writes nothing.
+- Tools: `api_key_refs` (masked previews only); over MCP only, `api_key_set`, `api_key_test`, `api_key_delete` and `api_key_import`, all through the one write gateway in `@mantle/api-keys`.
 - See [Models and API keys](../05-admin/05-models-and-keys.md).

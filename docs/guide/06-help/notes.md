@@ -9,8 +9,9 @@ Notes are quick markdown notes: the fastest way to get something into the brain.
 
 - Click **New**, give it a title and tags, and write in markdown.
 - Save with **Create note** or **Save note**, or press Ctrl/Cmd+S. Esc cancels.
+- Notes live in folders. Drag them into the order you want; everyone sees the same order.
 - Search notes or click a tag to filter the list.
-- Export a note to Word, or delete it from the list.
+- **Download** saves a note as Markdown, Word or PDF. **Delete note** removes it.
 
 Use a note for a phone number, a quote or a quick observation. When it grows into a document, ask the assistant to turn it into a page.
 

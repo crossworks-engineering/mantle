@@ -19,7 +19,7 @@ Turn on scheduled backups in **Settings > Backups**, copy them off the box, and 
 
 1. Open **Settings > Backups**.
 2. Switch on **Scheduled backups**.
-3. Set **Frequency** (daily, or weekly on Sundays), **At hour** (in your profile's time zone) and **Keep** (how many dumps to keep, default 7).
+3. Set **Frequency** (daily, or weekly on Sundays), **At hour** (in your profile's time zone) and **Keep** (how many dumps to keep, default 7). Leave **Folder** empty to use `data/backups/`.
 4. Click **Save backup settings**.
 5. Click **Run backup now** once to check it works. The dump appears under **On disk**.
 

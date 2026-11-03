@@ -12,27 +12,27 @@ Write the skill first. A heartbeat's skill describes the job for one firing. See
 
 ## Create a heartbeat
 
-1. Open **Settings > Heartbeats** and click **New heartbeat**.
+1. Open **Settings > Heartbeats** and click **New**.
 2. Fill in **Name**, then pick the **Agent** and the **Skill**.
 3. Under **Schedule**, choose:
    - **interval**: every so many minutes, with optional jitter (a small random shift in timing).
    - **once**: one firing at a set time.
    - **manual**: only when you click **Fire now**.
 4. Under **Surface**, choose **telegram** or **web**.
-5. Under **Gates**, choose **none**, **sensible** or **custom**:
+5. Under **Gates**, choose **none**, **sensible defaults** or **custom**:
    - **Quiet from** / **Quiet to**: no firing in these hours (your profile timezone unless you set another).
    - **Min idle**: skip if you were active in the last few minutes.
    - **Cooldown**: the least time between two firings.
 6. Optionally set **Earliest at** and **Max fires**.
 7. Save.
 
-Gates default to nothing. A heartbeat with no gates fires exactly on schedule, at night too.
+A new heartbeat starts on **sensible defaults**: 15 minutes idle, quiet from 22:00 to 07:00, and a 30 minute cooldown. With **none**, it fires exactly on schedule, at night too.
 
 ## Manage heartbeats
 
 - **Pause** and **Resume** stop and restart a heartbeat.
 - **Fire now** runs it once, straight away. Only the user who set up the heartbeat can fire it.
-- Open a heartbeat to see its state and recent firings, including the ones a gate skipped. Each run links to its trace.
+- The **fire history** link opens the heartbeat's own page: its current state and its recent fires, including the ones a gate skipped. Each fire shows its outcome and reply, links to its trace, and has a **state diff** of what it changed.
 
 When you reply to a heartbeat's message, the normal assistant answers, knowing the heartbeat is open, and updates or completes it.
 
@@ -42,7 +42,7 @@ Every firing is a model call, even when it sends nothing. A frequent heartbeat o
 
 ## Check it worked
 
-Click **Fire now**, then open the heartbeat. The firing appears in its log with a link to the trace.
+Click **Fire now**, then open the **fire history**. The firing appears under **Recent fires** with a link to the trace.
 
 ## Next
 

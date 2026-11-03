@@ -11,6 +11,7 @@ Formulas stores calculations taken from published standards and works them out f
 - Open a formula to see its spec: equations, variables with units, lookup tables and transcription notes.
 - Warnings show at the top: an equation marked **Unverified**, units that do not add up, or gaps in a lookup table.
 - Under **Evaluate**, choose a **Target**, fill in the inputs it asks for and click **Evaluate formula**.
+- **New formula** starts one from a template, and **Add examples** brings in five worked examples. **Edit formula** opens the editor, as a **Form** or as **YAML** (plain text). It lists every problem as you type, and **Save formula** keeps it.
 
 ## Assistant
 

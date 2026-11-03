@@ -7,9 +7,11 @@ toolGroups: [events]
 
 Events is your calendar: one-off or repeating entries, with an optional reminder.
 
-- Click **New** and fill in **Title**, **Starts** and, if you like, an end, a location and notes.
-- Set **Repeat** for a recurring event and **Remind** to get a message before it starts.
-- Switch between **Upcoming**, **Past** and **All**, or search.
+- Click **New** and fill in **Title**, **Starts** and, if you like, **Ends**, a **Location**, **Tags** and **Notes**.
+- Set **Repeat** (daily, weekly, monthly or yearly, with an optional **Until**) for a recurring event.
+- Set **Remind** to get a message before it starts: at start, 5 or 15 minutes, 1 hour or 1 day before.
+- Events sit in folders. Search finds events and folders by name.
+- An open event has **Add to calendar**, which downloads it as an `.ics` file.
 
 ## Assistant
 
