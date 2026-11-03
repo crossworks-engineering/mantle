@@ -21,6 +21,12 @@ export const CONFIRM_INPUT = {
 export function visibilityRefusal(err: unknown): string | null {
   if (isBusy(err)) return busyMessage(err);
   if (!(err instanceof TreeVisibilityError)) return null;
+  // A team app's write (member-app-tools.ts rule 7) never confirms one, and
+  // is told no list: the titles and workspace names are the runner's to
+  // see, not the app's (whose data every user of the app reads).
+  if (inAppRunWrite()) {
+    return 'A team app never changes who can see a file: this would make a workspace start or stop reading it. Move it by hand in Files instead, or pick a folder the same workspaces read.';
+  }
   const names = (list: Array<{ name: string }>) => list.map((w) => w.name).join(', ');
   const shown = err.diff.changes
     .slice(0, 10)
@@ -38,12 +44,10 @@ export function visibilityRefusal(err: unknown): string | null {
       return `'${c.title}' ${parts.join('; ')}${placed.length ? `: ${placed.join(' ')}` : ''}`;
     })
     .join(', ');
-  const what = `this changes which workspaces see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}). `;
-  // A team app's write (member-app-tools.ts rule 7) never confirms one.
-  if (inAppRunWrite()) {
-    return `${what}A team app never changes who can see a file: move it by hand in Files instead, or pick a folder the same workspaces read.`;
-  }
-  return `${what}Tell the user what changes; call again with confirm: true only once they agree.`;
+  return (
+    `this changes which workspaces see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}). ` +
+    'Tell the user what changes; call again with confirm: true only once they agree.'
+  );
 }
 
 /** Said by every agent tool that writes a note's or a page's content

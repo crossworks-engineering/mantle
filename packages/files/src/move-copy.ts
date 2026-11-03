@@ -27,6 +27,7 @@ import {
   carrySpaceRows,
   db,
   flipThenPlace,
+  inAppRunWrite,
   inFlipTransaction,
   type Node,
   nodes,
@@ -169,8 +170,11 @@ export async function moveFileById(args: {
       ? node
       : null);
   if (clash) {
+    // A team app is not told the name of a file it may not read.
     throw new ConflictError(
-      `moveFileById: '${filename}' already exists in '${args.destPath}' — rename one of them first (file_rename)`,
+      inAppRunWrite()
+        ? `moveFileById: a file of that name already exists in '${args.destPath}'; rename one of them first (file_rename)`
+        : `moveFileById: '${filename}' already exists in '${args.destPath}' — rename one of them first (file_rename)`,
     );
   }
 

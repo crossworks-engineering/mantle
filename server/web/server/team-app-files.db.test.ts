@@ -525,6 +525,9 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
     const out = await memberCall(moderator, 'file_move', { file_id: bothFile, dest_path: open });
     expect(out.body.ok).toBe(false);
     expect(out.body.error).toContain('A team app never changes who can see a file');
+    // Told no list: neither the file's title nor a workspace's name.
+    expect(out.body.error).not.toContain(`${tag}-both`);
+    expect(out.body.error).not.toContain(`${tag} Else`);
     expect((await found(`${tag}-both.dwg`))[0]?.path).toBe(both);
     expect(await readers(bothFile)).toContain(elseWs);
     // A workspace the runner is not in (otherWs reads the shared folder):
