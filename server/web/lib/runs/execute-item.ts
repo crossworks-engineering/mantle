@@ -237,6 +237,9 @@ async function runResolved(
       kind: 'run_item',
       subjectKind: 'run_item',
       subjectId: item.id,
+      // The row is the run's login's (the anchor's run: the owner's), as
+      // traceListedFor reads it.
+      rowLoginId: run.loginId ?? run.ownerId,
     },
     async () => {
       itemTrace = currentTrace();

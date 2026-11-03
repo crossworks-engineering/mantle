@@ -1,0 +1,16 @@
+-- Rollback of 0356_trace_row_logins: what an operator MAY run before
+-- pinning the image one release back (plan v3.2 rule 2, a one-image
+-- rollback). Not a migration: nothing runs it on its own.
+--
+-- 0356 only stamped trace rows that named no login. The older image reads
+-- a stamped row as that login's turn, which is what 0356 says it is, so the
+-- stamps stay: un-stamping them would show other logins' work as the
+-- system's again. This only takes 0356 off the ledger, so the next roll
+-- forward runs it again (it changes nothing a second time).
+--
+-- Run it while the newer image is still up, as the superuser, in one
+-- transaction:
+--   docker exec mantle_web cat /app/packages/db/rollback/0356_trace_row_logins.revert.sql \
+--     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
+-- then pin the older image straight away (docs/update-prod.md "Rollback").
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1791151260000;

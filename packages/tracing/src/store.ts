@@ -11,13 +11,13 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { eq, sql } from 'drizzle-orm';
-import { systemDb, traces, traceSteps } from '@mantle/db';
+import { eq, sql, type SQL } from 'drizzle-orm';
+import { currentActor, currentScope, systemDb, traces, traceSteps } from '@mantle/db';
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
 import { truncateJson } from './truncate';
 import { runDurableStep } from './durable';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, UUID_RE } from '@mantle/std';
 
 export type TraceKind =
   | 'responder_turn'
@@ -55,6 +55,11 @@ export type StartTraceInit = {
    *  inherited by nested traces. Unset: the parent's, else none (a row of a
    *  non-Admin workspace with no login is read in the Admin workspace only). */
   loginId?: string | null;
+  /** The login the trace ROW is stamped with (traces.login_id), when it is
+   *  not `loginId`: who lists and reads the trace. Never read by the turn
+   *  (run_plan reads `loginId`). Unset: `loginId`, else the parent's row
+   *  login, else the login the work is done for (rowLoginFor). */
+  rowLoginId?: string | null;
   /** Steps that ran before this trace opened (see createTracePrelude). They are
    *  written first, and their tokens + cost count toward this trace. Consumed:
    *  a second trace given the same prelude (an image-fallback retry) gets none. */
@@ -118,6 +123,9 @@ export type TraceContext = {
   readonly ownerId: string;
   /** The login the turn serves (StartTraceInit.loginId), inherited. */
   readonly loginId: string | null;
+  /** The login stamped on the trace row (StartTraceInit.rowLoginId),
+   *  inherited by nested traces' rows. Set once, when the row is written. */
+  rowLoginId: string | null;
   /** Live-streaming correlation id; null for un-streamed (background) traces.
    *  A delegated child inherits the parent's `turnId` (see startTrace) so its
    *  steps surface in the SAME live stream. */
@@ -720,6 +728,49 @@ function genId(): string {
   return crypto.randomUUID();
 }
 
+/** The login the current work is done for: the bound login actor (a
+ *  request's, a turn's, deferred work done for a login), else the
+ *  workspace scope's login. Null for system work. Read where a writer is
+ *  called, before any await. */
+function actingLogin(): string | null {
+  try {
+    const actor = currentActor();
+    if (actor?.kind === 'login') return actor.loginId;
+    const scope = currentScope();
+    return scope.kind !== 'system' && scope.loginId ? scope.loginId : null;
+  } catch (err) {
+    logErr('acting login', err);
+    return null;
+  }
+}
+
+/**
+ * The login a trace row is stamped with (traces.login_id), which decides who
+ * lists and reads it (traceListedFor): the one its writer named, else the
+ * login the work is done for, else, for a node, the login it is the own of
+ * (a per-login row, nodes.login_id, or the login whose private workspace is
+ * its home), so a worker's run over a user's private item is that user's:
+ * a subquery the row's own insert runs, no read of its own. Null: system
+ * work, listed to the Admin users.
+ */
+function rowLoginFor(
+  named: string | null,
+  acting: string | null,
+  ownerId: string,
+  subjectKind: string | null | undefined,
+  subjectId: string | null | undefined,
+): string | SQL | null {
+  if (named) return named;
+  if (acting) return acting;
+  if (subjectKind !== 'node' || !subjectId || !UUID_RE.test(subjectId)) return null;
+  return sql`(select coalesce(n.login_id, p.login_id)
+                from nodes n
+                left join item_grants g on g.node_id = n.id and g.is_home
+                left join private_workspaces p on p.workspace_id = g.workspace_id
+               where n.id = ${subjectId}::uuid and n.owner_id = ${ownerId}::uuid
+               limit 1)`;
+}
+
 function logErr(scope: string, err: unknown): void {
   const msg = errorMessage(err);
   console.error(`[tracing] ${scope}: ${msg}`);
@@ -763,10 +814,18 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
   // silently misattributed to the responder.
   const streamLabel = init.streamLabel ?? parent?.streamLabel ?? null;
   const loginId = init.loginId ?? parent?.loginId ?? null;
+  const rowLogin = rowLoginFor(
+    init.rowLoginId ?? init.loginId ?? parent?.rowLoginId ?? null,
+    actingLogin(),
+    init.ownerId,
+    init.subjectKind,
+    init.subjectId,
+  );
   const ctx: TraceContext = {
     id,
     ownerId: init.ownerId,
     loginId,
+    rowLoginId: typeof rowLogin === 'string' ? rowLogin : null,
     turnId,
     isStreamRoot,
     streamLabel,
@@ -799,25 +858,31 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
   // the user-visible behaviour (reply gets sent, business logic works)
   // is preserved.
   try {
-    await systemDb.insert(traces).values({
-      id,
-      ownerId: init.ownerId,
-      kind: init.kind,
-      subjectId: init.subjectId ?? null,
-      subjectKind: init.subjectKind ?? null,
-      agentId: init.agentId ?? null,
-      loginId,
-      status: 'running',
-      // `turn_id` rides in data (no schema change): it lets the Journey UI
-      // offer "Stop" on a running streamed turn (POST /turn/:id/cancel needs
-      // the id, which otherwise lives only in this process's abort registry).
-      // Inherited turnIds are stamped too, so a delegated child's journey can
-      // stop the ROOT turn.
-      data: truncateJson({
-        ...(init.data ?? {}),
-        ...(turnId ? { turn_id: turnId } : {}),
-      }) as Record<string, unknown>,
-    });
+    const [row] = await systemDb
+      .insert(traces)
+      .values({
+        id,
+        ownerId: init.ownerId,
+        kind: init.kind,
+        subjectId: init.subjectId ?? null,
+        subjectKind: init.subjectKind ?? null,
+        agentId: init.agentId ?? null,
+        loginId: rowLogin,
+        status: 'running',
+        // `turn_id` rides in data (no schema change): it lets the Journey UI
+        // offer "Stop" on a running streamed turn (POST /turn/:id/cancel needs
+        // the id, which otherwise lives only in this process's abort registry).
+        // Inherited turnIds are stamped too, so a delegated child's journey can
+        // stop the ROOT turn.
+        data: truncateJson({
+          ...(init.data ?? {}),
+          ...(turnId ? { turn_id: turnId } : {}),
+        }) as Record<string, unknown>,
+      })
+      .returning({ loginId: traces.loginId });
+    // The row's login as written (a node's owner the insert looked up, or
+    // the stamp trigger's): what the traces opened inside it inherit.
+    ctx.rowLoginId = row?.loginId ?? ctx.rowLoginId;
   } catch (err) {
     logErr('open trace', err);
   }
@@ -1073,14 +1138,19 @@ export async function recordSkippedTrace(init: {
   subjectKind?: string;
   agentId?: string | null;
   /** The login the skipped work answered (traces.login_id, as startTrace's
-   *  loginId): its trace is listed to that login only; null the anchor's. */
+   *  rowLoginId): its trace is listed to that login only. Unset: the
+   *  open trace's row login, else the login the work is done for
+   *  (rowLoginFor). */
   loginId?: string | null;
   disposition: string;
   details?: Record<string, unknown>;
 }): Promise<string | null> {
   const id = genId();
   const now = new Date();
+  const acting = actingLogin();
+  const named = init.loginId ?? currentTrace()?.rowLoginId ?? null;
   try {
+    const loginId = rowLoginFor(named, acting, init.ownerId, init.subjectKind, init.subjectId);
     await systemDb.insert(traces).values({
       id,
       ownerId: init.ownerId,
@@ -1088,7 +1158,7 @@ export async function recordSkippedTrace(init: {
       subjectId: init.subjectId ?? null,
       subjectKind: init.subjectKind ?? null,
       agentId: init.agentId ?? null,
-      loginId: init.loginId ?? null,
+      loginId,
       status: 'skipped',
       startedAt: now,
       finishedAt: now,
@@ -1140,16 +1210,25 @@ export async function recordIngest(init: {
    *  Useful for the body of a file/note — visible in the biography
    *  page's expanded step view. */
   snippet?: string;
+  /** The login whose work brought it in (traces.login_id): who lists and
+   *  reads the trace. Unset: the open trace's row login, else the login
+   *  the work is done for (rowLoginFor). */
+  loginId?: string | null;
 }): Promise<string | null> {
   const id = genId();
   const now = new Date();
+  const acting = actingLogin();
+  const named = init.loginId ?? currentTrace()?.rowLoginId ?? null;
+  const subjectKind = init.subjectKind ?? (init.nodeId ? 'node' : null);
   try {
+    const loginId = rowLoginFor(named, acting, init.ownerId, subjectKind, init.nodeId);
     await systemDb.insert(traces).values({
       id,
       ownerId: init.ownerId,
       kind: 'content_ingest',
       subjectId: init.nodeId ?? null,
-      subjectKind: init.subjectKind ?? (init.nodeId ? 'node' : null),
+      subjectKind,
+      loginId,
       status: 'success',
       startedAt: now,
       finishedAt: now,

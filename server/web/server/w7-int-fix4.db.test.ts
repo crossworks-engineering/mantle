@@ -308,7 +308,7 @@ describe.skipIf(!URL)('W7 integration fix 4', () => {
     const [trace] = await x<{ login: string | null; status: string }>(sql`
       select login_id::text as login, status from traces where id = ${fire!.trace}`);
     expect(trace).toEqual({ login: maker, status: 'skipped' });
-    // The anchor's own heartbeat: its skip names no login (the anchor's).
+    // The anchor's own heartbeat: its skip's row names the anchor.
     const own = await newHeartbeat(`${tag}-hb-skip-o`, agent.slug, null);
     await x(sql`update heartbeats set earliest_at = now() + interval '1 day' where id = ${own.id}`);
     const [ownRow] = await m.systemDb
@@ -319,7 +319,7 @@ describe.skipIf(!URL)('W7 integration fix 4', () => {
     const [ownFire] = await fires(own.id);
     const [ownTrace] = await x<{ login: string | null }>(sql`
       select login_id::text as login from traces where id = ${ownFire!.trace}`);
-    expect(ownTrace).toEqual({ login: null });
+    expect(ownTrace).toEqual({ login: owner });
   });
 
   // ── F3 ─────────────────────────────────────────────────────────────────
@@ -338,7 +338,8 @@ describe.skipIf(!URL)('W7 integration fix 4', () => {
         await x<{ l: string | null }>(sql`select login_id::text as l from traces where id = ${id}`)
       )[0]!.l;
     expect(await stamp(makersTrace)).toBe(maker);
-    expect(await stamp(anchorsTrace)).toBeNull();
+    // The anchor's fire: its row names the anchor (the turn stays of no login).
+    expect(await stamp(anchorsTrace)).toBe(owner);
 
     const ids = { own: randomUUID(), system: randomUUID(), makers: randomUUID() };
     await x(sql`insert into traces (id, owner_id, kind, status, login_id) values

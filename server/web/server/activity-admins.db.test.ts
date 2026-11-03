@@ -10,17 +10,31 @@
  *  - Another Admin user (the settings area) lists and reads the system's
  *    work and its own turns; never the anchor's turns or heartbeat fires,
  *    never another login's.
+ *  - An Admin user without the settings area lists its own turns only in
+ *    the Activity column; /traces and the journey are refused (403).
  *  - A Moderator and a member are refused the Activity column (an owner
  *    route), /traces and the journey (the settings area's): 403 each; the
  *    read rule alone gives them their own turn only.
+ *  - A member's work is the member's, whoever wrote the trace: an ingest
+ *    in the member's request, a worker's run over the member's private
+ *    note (stamped from the note), a chat attachment, a summary and a
+ *    simulated turn of the member's chat. No Admin user, the anchor
+ *    included, lists or reads it, nor the note it names.
+ *  - Rows stored before every writer stamped a login: a run's trace is its
+ *    run's login's (the anchor's run the anchor's), a heartbeat fire and
+ *    its delegated child the anchor's (with or without a fire row), and a
+ *    no-login trace over another login's private note nobody's to list.
+ *  - The anchor's fire is a turn of no login (run_plan reads it) while its
+ *    row, and its children's, name the anchor.
  *
  * Fixtures are written as the superuser on this file's own client.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/activity-admins.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { asSuperuser } from '@mantle/db/test-support';
@@ -40,6 +54,7 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
     admin: randomUUID(), // another user of Admin
     mod: randomUUID(), // a Moderator of W
     member: randomUUID(), // a plain user of W
+    adminNs: randomUUID(), // a user of Admin with the settings area off
   };
   type Who = keyof typeof L;
   /** One trace per kind of row: the system's, the anchor's heartbeat fire,
@@ -51,8 +66,15 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
     admin: randomUUID(),
     mod: randomUUID(),
     member: randomUUID(),
+    adminNs: randomUUID(),
   };
   type Row = keyof typeof T;
+  /** What the content writers and the older rows leave, with whether the
+   *  anchor and the other Admin user list and read each. */
+  const N: Record<string, { id: string; owner: boolean; admin: boolean; stamp?: string }> = {};
+  const SECRET = `${randomUUID().slice(0, 8)} private words`;
+  let adminNote = '';
+  let memberNote = '';
 
   const text = async (who: Who, url: string) => {
     const res = await runRoute(L[who], 'GET', url);
@@ -81,7 +103,7 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
 
     for (const [who, id] of Object.entries(L)) {
-      const admin = who === 'owner' || who === 'admin';
+      const admin = who === 'owner' || who === 'admin' || who === 'adminNs';
       await asSuperuser()`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
         values (${id}, ${`${tag}-${who}@example.invalid`}, 'x', ${who === 'owner'},
                 ${admin ? 'admin' : 'member'}, ${who})`;
@@ -96,6 +118,10 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
       values (${adminWs}, ${L.admin}, true)
       on conflict (workspace_id, login_id) do update set moderator = true`;
+    await raw`insert into workspace_users (workspace_id, login_id, moderator, limits)
+      values (${adminWs}, ${L.adminNs}, true, '{"areas":{"settings":false}}'::jsonb)
+      on conflict (workspace_id, login_id)
+        do update set moderator = true, limits = excluded.limits`;
     const w = (
       await raw<{ id: string }[]>`insert into workspaces (owner_id, name)
         values (${L.owner}, ${`${tag} W`}) returning id::text as id`
@@ -109,7 +135,7 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
     }
 
     // The anchor's heartbeat: its fire answers the anchor (answered_by
-    // null) and its trace carries no login, as fire.ts stamps it.
+    // null) and its trace, stored before 0356, carries no login.
     const [hb] = await raw<{ id: string }[]>`
       insert into heartbeats (owner_id, slug, name, agent_slug, skill_slug,
                               schedule_kind, schedule, surface)
@@ -122,10 +148,231 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
       (${T.owner}, ${L.owner}, 'responder_turn', 'success', ${L.owner}),
       (${T.admin}, ${L.owner}, 'responder_turn', 'success', ${L.admin}),
       (${T.mod}, ${L.owner}, 'responder_turn', 'success', ${L.mod}),
-      (${T.member}, ${L.owner}, 'responder_turn', 'success', ${L.member})`;
+      (${T.member}, ${L.owner}, 'responder_turn', 'success', ${L.member}),
+      (${T.adminNs}, ${L.owner}, 'responder_turn', 'success', ${L.adminNs})`;
     await raw`insert into heartbeat_fires (heartbeat_id, trace_id, disposition, answered_by)
       values (${hb!.id}, ${T.anchorFire}, 'fired', null)`;
+
+    // A note in Admin, and one in the member's private workspace.
+    const notes = await import('@mantle/content/notes');
+    const privateWs = (
+      await raw<{ id: string }[]>`select workspace_id::text as id from private_workspaces
+                                    where login_id = ${L.member}`
+    )[0]!.id;
+    const noteIn = async (ws: string, priv: string | null, title: string) => {
+      const row = await m.asSystem(
+        () =>
+          m.withCreateHome({ createWs: ws, privateWs: priv, quiet: true }, () =>
+            notes.createNote(L.owner, { title, content: `${title} body` }),
+          ),
+        'test',
+      );
+      const [home] = await raw<{ ws: string }[]>`select workspace_id::text as ws
+        from item_grants where node_id = ${row.id} and is_home`;
+      expect(home?.ws, `${title} is homed where it was made`).toBe(ws);
+      return row.id;
+    };
+    adminNote = await noteIn(adminWs, null, `${tag} admin note`);
+    memberNote = await noteIn(privateWs, privateWs, `${tag} ${SECRET}`);
+
+    // The content writers, as each runs.
+    const tracing = await import('@mantle/tracing');
+    const opened = (init: Parameters<typeof tracing.startTrace>[0]) =>
+      tracing.startTrace(init, async () => tracing.currentTrace()!.id);
+    const asMember = <R>(fn: () => Promise<R>) => m.runAsActor(m.loginActor(L.member), fn);
+    const asWorker = <R>(fn: () => Promise<R>) => m.asSystem(fn, 'test');
+    const subject = { subjectKind: 'node', subjectId: memberNote };
+    const add = (
+      key: string,
+      id: string | null,
+      owner: boolean,
+      admin: boolean,
+      stamp: string | null,
+    ) => {
+      expect(id, key).toBeTruthy();
+      N[key] = { id: id!, owner, admin, stamp: stamp ?? 'none' };
+    };
+    add(
+      'ingest',
+      await asMember(() =>
+        tracing.recordIngest({
+          source: 'note_create',
+          ownerId: L.owner,
+          nodeId: memberNote,
+          summary: `Note created: ${SECRET}`,
+          snippet: SECRET,
+        }),
+      ),
+      false,
+      false,
+      L.member,
+    );
+    add(
+      'extract',
+      await asWorker(() => opened({ kind: 'extractor_run', ownerId: L.owner, ...subject })),
+      false,
+      false,
+      L.member,
+    );
+    add(
+      'extractSkip',
+      await asWorker(() =>
+        tracing.recordSkippedTrace({
+          kind: 'extractor_run',
+          ownerId: L.owner,
+          ...subject,
+          disposition: 'body_too_short',
+        }),
+      ),
+      false,
+      false,
+      L.member,
+    );
+    add(
+      'attachment',
+      await asMember(() => opened({ kind: 'photo_ingest', ownerId: L.owner, ...subject })),
+      false,
+      false,
+      L.member,
+    );
+    add(
+      'summary',
+      await asWorker(() =>
+        opened({
+          kind: 'summarizer_run',
+          ownerId: L.owner,
+          subjectKind: 'chat_thread',
+          subjectId: randomUUID(),
+          rowLoginId: L.member,
+          data: { summary: SECRET },
+        }),
+      ),
+      false,
+      false,
+      L.member,
+    );
+    let simTurnLogin: string | null | undefined;
+    const sim = await asWorker(() =>
+      tracing.startTrace(
+        { kind: 'manual', ownerId: L.owner, subjectKind: 'agent', rowLoginId: L.member },
+        async () => {
+          const child = await opened({ kind: 'manual', ownerId: L.owner });
+          simTurnLogin = tracing.currentTrace()!.loginId;
+          return { id: tracing.currentTrace()!.id, child };
+        },
+      ),
+    );
+    add('sim', sim.id, false, false, L.member);
+    add('simChild', sim.child, false, false, L.member);
+    expect(simTurnLogin, 'the turn itself names no login').toBeNull();
+    let fireTurnLogin: string | null | undefined;
+    const fire = await asWorker(() =>
+      tracing.startTrace(
+        { kind: 'heartbeat_fire', ownerId: L.owner, loginId: null, rowLoginId: L.owner },
+        async () => {
+          fireTurnLogin = tracing.currentTrace()!.loginId;
+          const child = await opened({ kind: 'manual', ownerId: L.owner });
+          return { id: tracing.currentTrace()!.id, child };
+        },
+      ),
+    );
+    add('fire', fire.id, true, false, L.owner);
+    add('fireChild', fire.child, true, false, L.owner);
+    expect(fireTurnLogin, 'run_plan still reads no login on the fire').toBeNull();
+    add(
+      'system',
+      await asWorker(() =>
+        opened({
+          kind: 'extractor_run',
+          ownerId: L.owner,
+          subjectKind: 'node',
+          subjectId: adminNote,
+        }),
+      ),
+      true,
+      true,
+      null,
+    );
+
+    // Rows stored before every writer stamped a login (no login at all).
+    const runs = { member: randomUUID(), anchor: randomUUID() };
+    const items = { member: randomUUID(), anchor: randomUUID() };
+    await raw`insert into runs (id, owner_id, title, login_id) values
+      (${runs.member}, ${L.owner}, 'member run', ${L.member}),
+      (${runs.anchor}, ${L.owner}, 'anchor run', null)`;
+    await raw`insert into run_items (id, run_id, kind) values
+      (${items.member}, ${runs.member}, 'tool_call'),
+      (${items.anchor}, ${runs.anchor}, 'tool_call')`;
+    const old = {
+      oldPrivate: {
+        kind: 'extractor_run',
+        sk: 'node',
+        sid: memberNote,
+        owner: false,
+        admin: false,
+      },
+      oldRunMember: {
+        kind: 'run_item',
+        sk: 'run_item',
+        sid: items.member,
+        owner: false,
+        admin: false,
+      },
+      oldRunAnchor: {
+        kind: 'run_item',
+        sk: 'run_item',
+        sid: items.anchor,
+        owner: true,
+        admin: false,
+      },
+      oldResume: {
+        kind: 'responder_turn',
+        sk: 'run',
+        sid: runs.member,
+        owner: false,
+        admin: false,
+      },
+      oldFireNoRow: { kind: 'heartbeat_fire', sk: null, sid: null, owner: true, admin: false },
+      oldAdminNode: { kind: 'extractor_run', sk: 'node', sid: adminNote, owner: true, admin: true },
+    } as const;
+    for (const [key, o] of Object.entries(old)) {
+      const id = randomUUID();
+      await raw`insert into traces (id, owner_id, kind, status, login_id, subject_kind, subject_id, data)
+        values (${id}, ${L.owner}, ${o.kind}, 'success', null, ${o.sk}, ${o.sid},
+                ${raw.json({ summary: SECRET })})`;
+      N[key] = { id, owner: o.owner, admin: o.admin };
+    }
+    const fireChild = randomUUID();
+    await raw`insert into traces (id, owner_id, kind, status, login_id, data)
+      values (${fireChild}, ${L.owner}, 'manual', 'success', null,
+              ${raw.json({ parent_trace_id: T.anchorFire })})`;
+    N.oldFireChild = { id: fireChild, owner: true, admin: false };
+
+    // 0356 stamps the rows stored before it: run here over the older rows
+    // (the scratch database ran it before they were written), twice, as a
+    // re-run must change nothing.
+    for (let i = 0; i < 2; i++) await run0356();
+    const [child] = await raw<{ parent: string | null }[]>`
+      select data ->> 'parent_trace_id' as parent from traces where id = ${fireChild}`;
+    expect(child?.parent, 'the child names its parent').toBe(T.anchorFire);
   }, 240_000);
+
+  /** Migration 0356, as the migrator runs it: one transaction. */
+  const run0356 = async () => {
+    const file = fileURLToPath(
+      new globalThis.URL(
+        '../../../packages/db/migrations/0356_trace_row_logins.sql',
+        import.meta.url,
+      ),
+    );
+    const parts = (await readFile(file, 'utf8'))
+      .split('--> statement-breakpoint')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    await raw.begin(async (tx) => {
+      for (const part of parts) await tx.unsafe(part);
+    });
+  };
 
   afterAll(async () => {
     vi.unstubAllGlobals();
@@ -183,6 +430,55 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
         const res = await text(who, url);
         expect(res.status, `${who} ${url}: ${res.body}`).toBe(403);
       }
+    },
+  );
+
+  it('an Admin user without the settings area: its own turns in the column, the rest refused', async () => {
+    const live = await text('adminNs', '/api/activity');
+    expect(live.status, live.body).toBe(200);
+    expect(named(live.body)).toEqual(['adminNs']);
+    for (const n of Object.values(N)) expect(live.body).not.toContain(n.id);
+    for (const url of [
+      '/api/traces',
+      '/api/debug/journey',
+      `/api/traces/${T.adminNs}`,
+      `/api/debug/journey/${T.adminNs}`,
+    ]) {
+      const res = await text('adminNs', url);
+      expect(res.status, `adminNs ${url}: ${res.body}`).toBe(403);
+    }
+  });
+
+  it('each content writer stamps the login whose work it is', async () => {
+    for (const [key, n] of Object.entries(N)) {
+      if (n.stamp === undefined) continue;
+      const [row] = await raw<{ l: string | null }[]>`
+        select login_id::text as l from traces where id = ${n.id}`;
+      expect(row?.l ?? 'none', `${key} is stamped`).toBe(n.stamp);
+    }
+  });
+
+  it.each(['owner', 'admin'] as const)(
+    "%s: lists and reads the system's work and its own, never a member's",
+    async (who) => {
+      const feed = await text(who, '/api/debug/journey');
+      expect(feed.status, feed.body).toBe(200);
+      const list = await text(who, '/api/traces?status=success&status=skipped&status=error');
+      expect(list.status, list.body).toBe(200);
+      for (const [key, n] of Object.entries(N)) {
+        expect(feed.body.includes(n.id), `${who} lists ${key} in the feed`).toBe(n[who]);
+        expect(list.body.includes(n.id), `${who} lists ${key} in /traces`).toBe(n[who]);
+        const want = n[who] ? 200 : 404;
+        const one = await text(who, `/api/traces/${n.id}`);
+        expect(one.status, `${who} reads trace ${key}: ${one.body}`).toBe(want);
+        const story = await text(who, `/api/debug/journey/${n.id}`);
+        expect(story.status, `${who} reads journey ${key}: ${story.body}`).toBe(want);
+      }
+      expect(feed.body).not.toContain(SECRET);
+      expect(list.body).not.toContain(SECRET);
+      const landed = await text(who, `/api/debug/journey/${N.system!.id}`);
+      expect(landed.body).toContain(adminNote);
+      expect(landed.body).not.toContain(memberNote);
     },
   );
 

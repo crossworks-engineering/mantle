@@ -330,6 +330,8 @@ export async function summarizeChatThread(
       subjectId: thread.id,
       subjectKind: 'chat_thread',
       agentId: thread.agentId,
+      // The thread's login's: a chat is one login's (0269).
+      rowLoginId: thread.loginId ?? ownerId,
       data: {
         worker_slug: worker.slug,
         agent_id: thread.agentId,

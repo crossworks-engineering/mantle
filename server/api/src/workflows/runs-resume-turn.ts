@@ -277,6 +277,9 @@ export async function runsResumeTurnImpl(
           subjectId: runId,
           subjectKind: 'run',
           agentId: agent.id,
+          // The row is the run's login's (the anchor's run: the owner's),
+          // as traceListedFor reads it.
+          rowLoginId: runLoginId ?? run.ownerId,
           data: { surface: 'runs', run_id: runId, agent_slug: agent.slug, model: agent.model },
         },
         () =>

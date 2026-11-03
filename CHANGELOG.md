@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased: every Admin user sees the brain's activity, and only its own work
+
+The Activity column, the journey feed and /traces showed the system's work
+(extraction, ingest, workers, heartbeats) to the first owner only. Every
+other Admin user saw an empty column, or only their own chat turns for a
+while after they chatted.
+
+- **Fixed:** every Admin user with the settings area now sees the system's
+  work and their own activity. An Admin user without the settings area
+  sees their own activity in the Activity column. Moderators and members
+  are refused, as before.
+- **Changed:** activity is the activity of the user it was for. No one,
+  the first owner included, sees another user's activity: their chats,
+  their runs, their heartbeats, or the work done on an item in their
+  private workspace. Before, the first owner saw all of it.
+- **Fixed:** every trace now names the user whose work it is, also when a
+  background worker writes it (an extraction over a private note, an
+  archived chat's summary, a run's step).
+- **Migration:** 0356 names the user on the traces stored before this
+  release, from what each already records (a heartbeat fire, a run, an
+  item's private workspace, a parent trace). It changes only traces that
+  name no user. A trace over a private item that was deleted before this
+  release cannot be traced back and stays the system's.
+
 ## v0.500.15: app timers (the fleet monitor, part 3)
 
 - **Added:** app timers. A mini app can call one of its declared

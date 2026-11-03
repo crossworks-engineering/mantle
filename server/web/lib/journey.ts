@@ -11,7 +11,7 @@ import {
   traces,
   runReadPathWrite,
 } from '@mantle/db';
-import { getTrace, traceListedFor, type TraceReader } from './traces';
+import { getTrace, nodeOpenTo, readerLogin, traceListedFor, type TraceReader } from './traces';
 import { deriveAction, type ActionCategory } from '@mantle/client-types/journey-format';
 import type {
   LandedLayers,
@@ -95,6 +95,7 @@ function mapActivityRow(r: {
  *  correlated subqueries on the indexed source_node_id / target_id columns. */
 async function queryActivity(
   userId: string,
+  reader: TraceReader,
   extraConds: ReturnType<typeof eq>[],
   limit: number,
 ): Promise<ActivityItem[]> {
@@ -128,6 +129,8 @@ async function queryActivity(
         eq(traces.subjectId, nodes.id),
         eq(traces.subjectKind, sql`'node'`),
         eq(nodes.ownerId, userId),
+        // Never another login's own node, whatever trace names it.
+        nodeOpenTo(nodes.id, readerLogin(userId, reader)),
       ),
     )
     // Owner condition is defense-in-depth: every trace writer stamps agent_id
@@ -163,7 +166,7 @@ export async function listActivity(
   }
   // Over-fetch when filtering by category, which depends on the derived
   // presentation (computed in JS, not the DB).
-  const items = await queryActivity(userId, extra, opts.category ? limit * 3 : limit);
+  const items = await queryActivity(userId, reader, extra, opts.category ? limit * 3 : limit);
   const filtered = opts.category ? items.filter((i) => i.category === opts.category) : items;
   return filtered.slice(0, limit);
 }
@@ -275,10 +278,11 @@ export async function getLiveActivity(userId: string, reader: TraceReader): Prom
   await reapAbandonedTraces(userId);
   const listed = traceListedFor(userId, reader) as never;
   const [active, recent, failures] = await Promise.all([
-    queryActivity(userId, [listed, eq(traces.status, 'running') as never], 12),
-    queryActivity(userId, [listed, eq(traces.status, 'success') as never], 30),
+    queryActivity(userId, reader, [listed, eq(traces.status, 'running') as never], 12),
+    queryActivity(userId, reader, [listed, eq(traces.status, 'success') as never], 30),
     queryActivity(
       userId,
+      reader,
       [
         listed,
         eq(traces.status, 'error') as never,
@@ -301,12 +305,16 @@ export async function getJourney(
   if (!detail) return null;
   let landed: LandedLayers | null = null;
   if (detail.subjectKind === 'node' && detail.subjectId) {
-    landed = await loadLanded(userId, detail.subjectId);
+    landed = await loadLanded(userId, detail.subjectId, readerLogin(userId, reader));
   }
   return { ...detail, landed };
 }
 
-async function loadLanded(userId: string, nodeId: string): Promise<LandedLayers | null> {
+async function loadLanded(
+  userId: string,
+  nodeId: string,
+  login: string,
+): Promise<LandedLayers | null> {
   const [node] = await db
     .select({
       id: nodes.id,
@@ -317,7 +325,7 @@ async function loadLanded(userId: string, nodeId: string): Promise<LandedLayers 
       hasEmbedding: sql<boolean>`${nodes.embedding} is not null`,
     })
     .from(nodes)
-    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, userId)))
+    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, userId), nodeOpenTo(nodes.id, login)))
     .limit(1);
 
   if (!node) return null;

@@ -2486,6 +2486,13 @@
       "when": 1791064860000,
       "tag": "0355_app_timers",
       "breakpoints": true
+    },
+    {
+      "idx": 356,
+      "version": "7",
+      "when": 1791151260000,
+      "tag": "0356_trace_row_logins",
+      "breakpoints": true
     }
   ]
 }

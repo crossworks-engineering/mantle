@@ -179,6 +179,8 @@ export async function describeResponderTurnInput(
       kind: 'manual',
       prelude: prepared.prelude,
       ownerId,
+      // The login the turn input answers: its row is that login's.
+      rowLoginId: opts.loginId ?? null,
       subjectKind: 'agent',
       subjectId: agent.id,
       agentId: agent.id,

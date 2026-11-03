@@ -103,6 +103,8 @@ export async function POST(req: Request) {
   void recordIngest({
     source: 'note_create',
     ownerId: user.id,
+    // The login that made it: its ingest is that login's to list.
+    loginId: user.actor.id,
     nodeId: row.id,
     summary: `Note created: ${row.title.slice(0, 80)}`,
     payload: {
