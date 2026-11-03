@@ -44,17 +44,25 @@ Off unless set. Off, the sign-in screen and passwords stay exactly as they are. 
 
 ## Stack
 
-| Variable                         | What it does                                                                                                 |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `MANTLE_STACK_DIR`               | Full path of the stack directory. The updater needs it.                                                      |
-| `MANTLE_DATA_DIR`                | Where all state is stored. Default `./data`.                                                                 |
-| `MANTLE_IMAGE_TAG`               | Server version. `latest`, or a release tag to stay on one version.                                           |
-| `MANTLE_CLIENT_IMAGE_TAG`        | Web app version. The updater sets it.                                                                        |
-| `MANTLE_CLIENT_ENABLED`          | `0` runs no web app on the box (headless). Missing means on.                                                 |
-| `COMPOSE_PROFILES`               | Optional services: `sandboxes`, `local-embedder`, `helpers`. Prefer **Settings > Services**.                 |
-| `COMPOSE_FILE`                   | Set by `--core` for the small core shape.                                                                    |
-| `SANDBOXD_TOKEN`, `PARSER_TOKEN` | Tokens for the sandbox service and the parser. Written for you.                                              |
-| `PARSER_MEM_LIMIT`               | Memory for the parser, which reads every uploaded file (default `2g`). Raise it for very large drawing sets. |
+| Variable                         | What it does                                                                                                                                                                                                                        |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MANTLE_STACK_DIR`               | Full path of the stack directory. The updater needs it.                                                                                                                                                                             |
+| `MANTLE_DATA_DIR`                | Where all state is stored. Default `./data`.                                                                                                                                                                                        |
+| `MANTLE_IMAGE_TAG`               | Server version. `latest`, or a release tag to stay on one version.                                                                                                                                                                  |
+| `MANTLE_CLIENT_IMAGE_TAG`        | Web app version. The updater sets it.                                                                                                                                                                                               |
+| `MANTLE_CLIENT_ENABLED`          | `0` runs no web app on the box (headless). Missing means on.                                                                                                                                                                        |
+| `COMPOSE_PROFILES`               | Optional services: `sandboxes`, `local-embedder`, `helpers`, `calls`, `documents`. Prefer **Settings > Services**.                                                                                                                  |
+| `MANTLE_RUNTIME`                 | What runs web, api and the workers: `node` (empty is node) or `bun`. Any other word stops them at start, and the updater refuses to update until you fix it. See [Running a box on Bun](../../update-prod.md#running-a-box-on-bun). |
+| `COMPOSE_FILE`                   | Set by `--core` for the small core shape.                                                                                                                                                                                           |
+| `SANDBOXD_TOKEN`, `PARSER_TOKEN` | Tokens for the sandbox service and the parser. Written for you.                                                                                                                                                                     |
+| `PARSER_MEM_LIMIT`               | Memory for the parser, which reads every uploaded file (default `2g`). Raise it for very large drawing sets.                                                                                                                        |
+
+## MCP connector
+
+| Variable              | What it does                                                                                                                                                                                                                                             |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MANTLE_MCP_TOOL_MAP` | `1` lists the tool map to every MCP connection: the core reads and four call tools by risk, not every tool. A URL with `?tools=full` still gets every tool. See [Connect Claude over MCP](../07-api/01-connect-claude.md#list-fewer-tools-the-tool-map). |
+| `MANTLE_MCP_TERMINAL` | `1` offers the shell tool `run_terminal` over the network connector too, to Admin users only. `0` turns it off for the local connection as well.                                                                                                         |
 
 ## Updater
 
@@ -68,13 +76,13 @@ Off unless set. Off, the sign-in screen and passwords stay exactly as they are. 
 
 Rules for a company box. Set them in `.env` and restart. Nobody can change them from the app; **Settings** shows them read only. Empty means no rule, and the box works as it does today. See [Security](10-security.md#box-policy).
 
-| Variable                       | What it does                                                                                                                                                                 |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MANTLE_POLICY_TELEGRAM`       | `off` switches Telegram off for the box. The bots and chats are kept.                                                                                                        |
-| `MANTLE_POLICY_MODEL_DENY`     | Models no agent or worker may use, for example `deepseek/*,qwen/*`. While set, auto routers are blocked too.                                                                 |
-| `MANTLE_POLICY_PROVIDER_ALLOW` | The only providers any agent or worker may use, for example `foundry,local`.                                                                                                 |
-| `MANTLE_POLICY_ENDPOINT_ALLOW` | With a provider list: the servers a model route may name, for example `llm.example.internal:1234`. Empty: routes use the box's own endpoints only.                           |
-| `MANTLE_POLICY_PASSWORD_MIN`   | The shortest password allowed (8 to 64), and common passwords are refused. Everyone signs in once after you turn it on; a person with a weaker password must change it then. |
+| Variable                       | What it does                                                                                                                                                                                              |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MANTLE_POLICY_TELEGRAM`       | `off` switches Telegram off for the box. The bots and chats are kept.                                                                                                                                     |
+| `MANTLE_POLICY_MODEL_DENY`     | Models no agent or worker may use, for example `deepseek/*,qwen/*`. While set, auto routers are blocked too.                                                                                              |
+| `MANTLE_POLICY_PROVIDER_ALLOW` | The only providers any agent or worker may use, for example `foundry,local`.                                                                                                                              |
+| `MANTLE_POLICY_ENDPOINT_ALLOW` | With a provider list: the servers a model route may name, for example `llm.example.internal:1234`. Empty: routes use the box's own endpoints only.                                                        |
+| `MANTLE_POLICY_PASSWORD_MIN`   | The shortest password allowed (8 to 64). Common passwords are refused on every box, with or without it. Everyone signs in once after you turn it on; a person with a weaker password must change it then. |
 
 ## Next
 

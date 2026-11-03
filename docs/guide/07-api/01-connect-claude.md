@@ -89,6 +89,21 @@ Writes are real. A note or task Claude makes is the same item the app shows, and
 
 Claude asks before each tool call until you allow it. A tool that only reads (search, list, get) is marked read-only, so Claude offers **Always allow** for it. Open the connector's tool permissions in Claude, allow the read tools once, and searches stop asking. A tool that writes or sends still asks each time. That is Claude's rule, not MantleOS's.
 
+The permission screen lists the tools that change something first and the reads last.
+
+## List fewer tools (the tool map)
+
+Claude pays for every listed tool on every turn, and a brain has about 330. The tool map lists the core reads, `tool_help` (a tool's arguments) and four call tools, one per kind of risk:
+
+| Call tool     | Runs the tools that                  |
+| ------------- | ------------------------------------ |
+| `tool_read`   | change nothing                       |
+| `tool_write`  | create or change data                |
+| `tool_delete` | remove data                          |
+| `tool_send`   | reach outside: mail, the web, an API |
+
+Add `?tools=map` to the connector URL for one connection. Set `MANTLE_MCP_TOOL_MAP=1` in the box's `.env` for all of them; for claude.ai that is the safer road. Set `tool_read` to **Always allow** and keep the other three asking. The wrong call tool is refused, naming the right one. Every tool still runs by its own name too. Detail: [connecting-claude.md](../../connecting-claude.md#the-tool-map-fewer-tools-listed).
+
 ## If it fails
 
 - **The connector URL says localhost**: set `MANTLE_PUBLIC_URL` and restart MantleOS.

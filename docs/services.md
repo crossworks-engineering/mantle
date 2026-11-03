@@ -1,6 +1,6 @@
 # Optional services: start and stop from Settings
 
-Four parts of a box are optional, and an admin can switch each one on or off
+Five parts of a box are optional, and an admin can switch each one on or off
 from **Settings > Services** (`/settings/services`, admins only). The System
 vitals pills on the dashboard show each one's state and link there:
 
@@ -10,9 +10,10 @@ vitals pills on the dashboard show each one's state and link there:
 | **Local embedder** | The bundled EmbeddingGemma embedder (ollama), so indexed text never leaves the box ([embeddings.md](embeddings.md)).                                     | about 3.9 GB (the ollama image plus the model)                                                  | up to 2 GB                                                     |
 | **Helpers**        | Core boxes only: the headless browser (PDF export, drawing pictures in exports).                                                                         | about 1 GB                                                                                      | up to 1.5 GB                                                   |
 | **Documents**      | The documents engine (Gotenberg): Office files to PDF, page and HTML prints with headers and page numbers, the PDF tools ([documents.md](documents.md)). | about 700 MB (2.4 GB on disk)                                                                   | up to 2 GB (about 300 MB resident after the first job)         |
+| **Calls**          | LiveKit, the media server for voice calls between people in Messages ([messenger.md](messenger.md), "Calls"; `infra/livekit/README.md`). Off by default. | about 45 MB                                                                                     | up to 512 MB                                                   |
 
-All four are compose **profiles**, and each service name is its profile
-(`sandboxes`, `local-embedder`, `helpers`, `documents`). A switch changes the box's `.env`
+All five are compose **profiles**, and each service name is its profile
+(`sandboxes`, `local-embedder`, `helpers`, `calls`, `documents`). A switch changes the box's `.env`
 and starts or stops that service's container; the rest of the brain keeps
 running.
 

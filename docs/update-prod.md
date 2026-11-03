@@ -744,8 +744,18 @@ a fresh backup first: the steps, the checks and the rollback are in
 
 The server image holds Node and Bun side by side. Web, api and the ten workers
 start through `scripts/run-service.sh`, which picks the runtime from
-`MANTLE_RUNTIME` in `.env`: empty or `node` (the default, the same tsx start as
-before) or `bun`. migrate and sandboxd stay on Node.
+`MANTLE_RUNTIME` in `.env`: empty or `node` (the default) or `bun`. On Node the
+script runs `node --import tsx` in the package folder: Node itself with tsx's
+loader, and no pnpm or tsx process above it (each cost about 100 MB at rest).
+On Bun it runs `bun --no-env-file`. Either way the runtime takes the script's
+place, so a stop signal reaches it. Every long-running service of the server
+image has `init: true` in compose: tini is PID 1, so a stop during boot ends at
+once. migrate, sandboxd and the parser stay on Node.
+
+On Bun, file reads and writes to the object store go through `Bun.S3Client`
+when the store uses path-style addresses and the key is plain (no empty,
+leading, trailing or dot segment). The bucket calls and every other key still
+go through the AWS SDK, which loads only for them.
 
 To move a box: set `MANTLE_RUNTIME=bun` in its `.env`, then `docker compose up -d`.
 Compose sees the changed environment and recreates those twelve containers.

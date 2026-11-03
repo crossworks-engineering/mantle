@@ -108,7 +108,9 @@ curl -s https://example.com/api/v1/documents/libreoffice/convert \
 
 ## Calling from a browser on another origin
 
-A web page on another origin needs its origin listed in `MANTLE_API_CORS_ORIGINS` ([Environment variables](../05-admin/03-env-vars.md)).
+A web page on another origin needs its origin listed in `MANTLE_API_CORS_ORIGINS` ([Environment variables](../05-admin/03-env-vars.md)). MantleOS Desktop is always allowed.
+
+Such a page may send `Last-Event-ID`, the header a live event stream sends to pick up where it left off. It may also read the `Date` header of a reply.
 
 ## Next
 

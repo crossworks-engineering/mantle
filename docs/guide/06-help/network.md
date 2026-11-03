@@ -24,6 +24,7 @@ The assistant cannot change network settings. Set them here.
 - Tailscale runs in userspace inside the stack, so it needs no special host privileges. Traffic goes through a local proxy.
 - The auth key is encrypted with `MANTLE_MASTER_KEY`. You switch Tailscale on here with **Activate**, not with a setting at boot.
 - Devices are reached by name through Tailscale's DNS.
+- The Tailscale client sends no logs to Tailscale (`TS_NO_LOGS_NO_SUPPORT=true`). A tailnet with network flow logs on refuses such a device. On that box only, set `TS_NO_LOGS_NO_SUPPORT=false` in `.env` and run `docker compose up -d tailscale`.
 - **Deactivate** disconnects and keeps the key. **Remove** forgets the key but does not disconnect.
 - If the key leaks: **Deactivate**, then **Remove**, then revoke it in the Tailscale admin console.
 - See [Local models](../05-admin/06-local-models.md).

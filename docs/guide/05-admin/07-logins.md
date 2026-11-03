@@ -15,6 +15,15 @@ They open the link, set a password and are signed in. The link works once, for 7
 
 You can also make the login yourself: **Settings > Users > Add user**. Give the person the email and the **Starting password**; they can change it after they sign in.
 
+## Let people sign in with their company account
+
+Company sign-in (single sign-on) lets people use their work account instead of a password. It works with any OpenID Connect provider, the standard behind Entra ID, Okta, Keycloak and others. The operator turns it on in `.env` ([Environment variables](03-env-vars.md#company-sign-in-optional)); nobody can turn it off from the app.
+
+- **Optional**: passwords keep working, and a person may link their company account.
+- **Required**: a linked login signs in with the company account only. An unlinked login signs in with its password once, then must link. The original account keeps its password, so there is always a way in.
+
+An admin may mark a login as an outside person, someone not in the company's provider. In required mode that login keeps its password. Set-up per provider: [docs/oidc-sign-in.md](../../oidc-sign-in.md) and [Entra ID](../../oidc-entra.md).
+
 ## Give them access
 
 A new login gets only its own private workspace. Add it to the workspaces it should reach in **Settings > Workspaces** ([Workspaces and people](../03-using-jackdaw/12-team.md)).

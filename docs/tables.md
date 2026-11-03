@@ -246,7 +246,9 @@ first tab).
 Reads: `table_list`, `table_get` (advertises `tabs` + the SQL surface),
 **`table_schema`** (the data dictionary for up to 20 tables in ONE call,
 survey before fetching any rows), **`table_sql`** (read-only SELECT over the
-per-tab views, worker-thread watchdog, row caps, FTS `MATCH` with
+per-tab views, in a child process killed at its deadline, with a kernel
+memory limit of 1024 MB per child, 16 MB a value and 16 MB a reply
+(`packages/tabledb/src/sql-runner.ts`), row caps, FTS `MATCH` with
 double-quoted terms; cross-tab JOINs are just SQL, the schema chunk names the
 join edges), `table_rows_list`, `table_row_get`, `table_query` (filter-object
 lookups with parity-gated SQL pushdown; aggregates over the full matched set),

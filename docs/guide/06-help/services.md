@@ -13,11 +13,16 @@ it.
 | **Local embedder** | Makes search vectors on this box, so indexed text never leaves it                                       | about 3.9 GB | up to 2 GB                                  |
 | **Helpers**        | Makes PDF exports                                                                                       | about 1 GB   | up to 1.5 GB                                |
 | **Documents**      | Office files to PDF, pages and HTML to PDF, the PDF tools, for agents, MCP and mini apps. On by default | about 700 MB | up to 2 GB                                  |
+| **Calls**          | Voice calls between the people of this brain, from a chat or a group in Messages                        | about 45 MB  | up to 512 MB                                |
 
 **Helpers** show only on a small core box; a full box always runs them.
 **Documents** is on by default. An off you choose here stays off through
 updates.
 Reading files is not a switch: the parser service does it on every box.
+**Calls** is off by default. It needs a domain with a certificate and four ports
+open at the cloud edge of the box: UDP 7882, TCP 7881, TCP 5349 and UDP 3478.
+Until they are open, calls connect only on the local network. Off, nobody sees
+a Call button, and a running call ends within a minute.
 
 Switching a service **on** downloads it the first time and starts it, in one
 to three minutes. Switching it **off** stops it and keeps everything, including

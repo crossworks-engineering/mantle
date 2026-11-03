@@ -768,6 +768,21 @@ survive fresh worktrees.
 
 Release needs the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets.
 
+**Where build-check runs.** Pull requests always run on GitHub's machines.
+Our own pushes can run on a workstation instead, which has more cores, so the
+tests finish sooner. The repo variable `CI_SELF_HOSTED` switches it: `on`
+sends every push to main or `feat/**` to the workstation runner, `off` sends
+it back. GitHub does not fall back by itself, so switch it off while the
+workstation is down. Set-up and the runner loop: `infra/ci-runner/README.md`.
+
+**The release guard reuses a green build-check.** `release.yml` first looks
+for a build-check run of the tagged commit from a push. A pass skips its own
+gate steps (about 30 minutes). A failure stops the release before anything is
+built. A run still going is waited for, up to 100 minutes. With no finished
+run, or one cancelled, the guard runs the gate itself, so a release never
+passes without a test run. The check that the tag matches the version always
+runs.
+
 **Database tests on CI.** Every `*.db.test.ts` skips without its database
 URL (`MANTLE_TEST_DATABASE_URL`, `RUNS_TEST_DATABASE_URL`). On CI (`CI`
 set) the vitest global setup (`vitest.global-setup.ts`, via

@@ -28,6 +28,12 @@ From now on, each call waits in **Pending**. Sending email is gated this way by 
 
 The **Enabled** switch on a tool turns it off for every agent at once.
 
+## How an assistant sees its tools
+
+An assistant does not get every tool's full text on each turn. It gets a short core set of tools in full, plus a tool map: one short line per area that names every other tool it holds. When it needs one of those, it asks for that tool's details (`tool_help`) and calls it by name (`tool_call`). The map costs far less than the full list, and the gate checks each call the same way.
+
+This map is the default for assistants. An assistant on a Haiku model gets a search over its tools instead, and other agents get the full list. To change it for one agent, set its `tool_loading` to `full`, `deferred` or `map` ([tools-and-skills.md](../../tools-and-skills.md#the-default-mode)).
+
 ## Approve or reject in Pending
 
 The **Pending** menu item shows a count when something waits.

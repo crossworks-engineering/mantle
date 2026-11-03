@@ -43,4 +43,6 @@ This screen has no assistant tools. Set it up here, then talk to your brain from
 - Clients sign in with OAuth. The URL alone grants nothing.
 - Every login gets the same tools, each call in that login's workspaces. Admin tools are listed only where the login is in the Admin workspace.
 - The shell tool `run_terminal` is off over the network unless the server sets `MANTLE_MCP_TERMINAL=1`.
+- A connection can list the tool map instead of every tool: the core reads and four call tools by risk (`tool_read`, `tool_write`, `tool_delete`, `tool_send`). Add `?tools=map` to the URL, or set `MANTLE_MCP_TOOL_MAP=1` on the server. See [Connect Claude over MCP](../07-api/01-connect-claude.md#list-fewer-tools-the-tool-map).
+- Every tool call over MCP is logged, one row per call, with secrets taken out. Each login reads only its own rows (`GET /api/mcp-calls`). An admin cannot read another login's rows either. Rows are removed after 90 days.
 - A client running on the server itself can use the local stdio transport instead. See [Connect Claude over MCP](../07-api/01-connect-claude.md).

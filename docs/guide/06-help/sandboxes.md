@@ -34,7 +34,10 @@ Each sandbox is a container with no route to your data, and it holds no
 database password or master key. A brain allows three sandboxes by default
 (`SANDBOX_MAX_COUNT`). A sandbox idle for an hour is stopped
 (`SANDBOX_IDLE_STOP_MINUTES`); its files and installed packages survive, and
-the next command starts it again. The command history comes from the traces of
+the next command starts it again. The sandbox image (`24.04-v4`) carries every
+language with a short kit of libraries and tools: Node, Bun, Python, Go and
+Rust (Rust also builds WebAssembly). A first build needs no download, and the
+list is in `/etc/mantle/sandbox-kit.json` inside the sandbox. The command history comes from the traces of
 `sandbox_exec` calls, so it outlives the container.
 
 Agent tools include `sandbox_create`, `sandbox_exec`, `sandbox_list`,

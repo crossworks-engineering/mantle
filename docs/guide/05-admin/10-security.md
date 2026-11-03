@@ -47,7 +47,7 @@ A company can lock a few things for every site with a few lines in `.env` ([Envi
 
 - **Telegram off.** No bot polls or sends. The bots and chats are kept for later.
 - **Models.** Block model families and allow only some providers. A blocked model fails with a clear message and an alert. The model lists show only allowed models.
-- **Passwords.** A longer minimum and no common passwords. When you turn it on, everyone signs in once more; a person whose password is too weak then changes it before anything else (which also ends their API keys and connectors, as any password change does).
+- **Passwords.** A longer minimum than the usual 8 characters. Common passwords are refused on every box, with or without the policy. When you turn it on, everyone signs in once more; a person whose password is too weak then changes it before anything else (which also ends their API keys and connectors, as any password change does).
 
 At start-up the log names every agent and worker on a blocked model. Fix those before you turn the policy on.
 

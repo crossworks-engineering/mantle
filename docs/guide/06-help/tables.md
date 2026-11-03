@@ -40,5 +40,12 @@ counts) and `table_sql` (a read-only SELECT, which can join tabs in one
 table). It adds and changes rows with `table_row_add` and `table_row_update`,
 and imports with `table_from_file`. Changing many rows in one call
 (`table_rows_add`, `table_rows_upsert`) is for the Ledger specialist and MCP
-clients. Building grids is the Ledger specialist's job. Deleting a table
+clients. `table_rows_upsert` with the key `@row_id` changes many rows by their
+row id, for a table with no column that is unique. One unknown id refuses the
+whole call. Building grids is the Ledger specialist's job. Deleting a table
 needs the Table admin group, which no agent has by default.
+
+`table_sql` runs each statement in a separate process that is stopped at its
+time limit. That process has a memory limit, and a value or a reply may hold at most
+16 MB. A statement past a limit is refused with a hint: add a
+`LIMIT`, select fewer columns or aggregate in SQL.
