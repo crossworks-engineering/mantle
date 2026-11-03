@@ -54,8 +54,9 @@ export function makeRegisterContext(
   /** The connection's side of the gate (registerPreparedTools builds it
    *  from the prepared connection). Absent: the anchor's own. */
   gate?: McpGate,
-  /** The connection's tool map (map-surface.ts): every tool goes there
-   *  instead of straight onto the server. */
+  /** The connection's tool map or full list (map-surface.ts): every tool
+   *  goes there instead of straight onto the server, and is registered in
+   *  list order when all are in. */
   map?: McpToolMap,
 ) {
   const surface: ToolSurface = via === 'mcp' ? MCP_OWNER_SURFACE : { kind: 'owner', via };

@@ -350,6 +350,48 @@ describe('one surface for every login (W7b): what a scope lists', () => {
     expect(preparedLists(p, 'note_create')).toBe(false);
     expect(preparedLists(p, 'note_list')).toBe(true);
   });
+
+  it('the full list puts the connectors in list order too, with the sends', () => {
+    const row = (toolName: string, readOnly: boolean) => {
+      const r = {
+        slug: `mcp_crm_${toolName}`,
+        description: 'crm',
+        inputSchema: { type: 'object', properties: {} },
+        handler: { kind: 'mcp', group: 'crm', toolName } satisfies ToolHandler,
+        requiresConfirm: false,
+        externalAccess: null,
+      } as unknown as Tool;
+      if (!readOnly) return r;
+      return {
+        ...r,
+        externalAccess: {
+          confirmedReadOnlyAt: new Date(0).toISOString(),
+          by: { via: 'web' },
+          handlerSig: externalAccessToolSig(r),
+        },
+      } as Tool;
+    };
+    const out: string[] = [];
+    registerPreparedTools(
+      { registerTool: (name: string) => void out.push(name) } as never,
+      {
+        ...prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: ALL_AREAS }),
+        connectors: [row('contacts_list', true), row('contacts_update', false)],
+      } as PreparedCallerTools,
+    );
+    // Registered after every builtin, listed by class and name with them. A
+    // connector's class is send, a read-only one's too (gated-tools.ts
+    // riskClassOf): before the reads, whatever was registered first.
+    const at = (n: string) => {
+      expect(out, n).toContain(n);
+      return out.indexOf(n);
+    };
+    expect(at('note_create')).toBeLessThan(at('note_delete'));
+    expect(at('note_delete')).toBeLessThan(at('email_send'));
+    expect(at('email_send')).toBeLessThan(at('mcp_crm_contacts_list'));
+    expect(at('mcp_crm_contacts_list')).toBeLessThan(at('mcp_crm_contacts_update'));
+    expect(at('mcp_crm_contacts_update')).toBeLessThan(at('note_list'));
+  });
 });
 
 describe('a login in no workspace lists no tools (A5 step 4, owner decision A)', () => {

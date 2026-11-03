@@ -252,10 +252,11 @@ function preRunOf(gate: McpGate, entry: McpToolEntry, name: string): PreRunCheck
 /**
  * Register `entry` on `server` for the connection `gate` describes, when
  * the gate lists it (see the module comment). Whether it was registered.
- * With `map` (a connection on the tool map, map-surface.ts) the tool goes
- * to the map instead, which registers it by its own name all the same (a
- * client that cached the full list calls it as before) and lists it or
- * reaches it through a call tool.
+ * With `map` (the connection's tool map or full list, map-surface.ts) the
+ * tool goes there instead, which registers it by its own name all the same
+ * (a client that cached the full list calls it as before), in list order
+ * (the writes before the reads), and on the map lists it or reaches it
+ * through a call tool.
  */
 export function registerGatedTool(
   server: McpServer,

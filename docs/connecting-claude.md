@@ -275,6 +275,17 @@ between a write and a send is drawn tool by tool, and a write may hand
 work to an agent that uses its own tools, so only `tool_read` is safe to
 let run unasked. The gate decides what runs, as for a listed tool.
 
+### The order of the list
+
+A client's permission screen shows the tools in the order the server lists
+them, so the tools that change something come first and the long run of
+reads comes last. On the map: `tool_write`, `tool_delete`, `tool_send`,
+then `tool_read` and `tool_help`, then the reads listed in full, by name.
+On the full list: every write, then every delete, then every send, then
+every read, by name inside each (the same class as above; every connector
+tool is a send). Only the order changes: what is listed and what runs
+stay the same.
+
 ### The two that are not on it
 
 - **`run_terminal`**: a shell in the brain's OWN container: postgres, the object store,

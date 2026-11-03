@@ -159,11 +159,17 @@ export function registerMantleTools(
     /** The connection's side of the gate: what it lists and who each call
      *  runs as (login-surface.ts builds it from the prepared connection). */
     gate?: McpGate;
-    /** The connection's tool map (map-surface.ts): every tool goes there,
-     *  and the caller puts the map on the server when all are in. */
+    /** The connection's tool map (map-surface.ts), or its full list when
+     *  the caller registers more after these (the connectors): every tool
+     *  goes there, and the caller puts it on the server when all are in.
+     *  Without it the tools go to a full list of this call's own, put on
+     *  the server at its end. */
     map?: McpToolMap;
   } = {},
 ): void {
+  // Every tool through a list, so tools/list shows the writes, deletes
+  // and sends before the reads (map-surface.ts LIST_ORDER).
+  const map = opts.map ?? new McpToolMap('', { full: true });
   const transport = opts.transport ?? 'http';
   const gate =
     opts.gate ??
@@ -180,7 +186,7 @@ export function registerMantleTools(
     opts.mcp,
     { toolsmithWrite: toolsmithWriteEnabled },
     gate,
-    opts.map,
+    map,
   );
   const { registerBuiltinTools } = ctx;
 
@@ -487,6 +493,10 @@ export function registerMantleTools(
   // through the vault's one write gateway (@mantle/api-keys vault.ts: the
   // keys area gate, the audit row).
   registerBuiltinTools(VAULT_KEY_TOOLS);
+
+  // A list of this call's own goes on the server now; the caller's, when
+  // all its tools are in.
+  if (!opts.map) map.register(server);
 }
 
 /** What every connecting MCP client auto-loads alongside the tool list — the

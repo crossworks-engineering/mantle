@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
-import { RISK_CALL_SLUGS, policyRiskClass, namedToolPolicy } from '@mantle/tools';
+import { RISK_CALL_SLUGS, policyRiskClass, namedToolPolicy, type RiskClass } from '@mantle/tools';
 
 import { registerMantleTools } from './build-server';
 import { jsonReply } from './gated-tools';
@@ -66,6 +66,48 @@ describe('the tool map on the full surface', () => {
     expect(tools.find((t) => t.name === 'tool_read')?.annotations?.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === 'tool_send')?.annotations?.openWorldHint).toBe(true);
     expect(tools.find((t) => t.name === 'tool_delete')?.annotations?.destructiveHint).toBe(true);
+  });
+
+  it('lists the call tools that change something first, then tool_read and tool_help, then the direct reads', async () => {
+    client = await surface(true);
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names.slice(0, 5)).toEqual([
+      'tool_write',
+      'tool_delete',
+      'tool_send',
+      'tool_read',
+      'tool_help',
+    ]);
+    const direct = names.slice(5);
+    expect(direct).toContain('search');
+    expect(direct).toEqual([...direct].sort());
+  });
+
+  it('the full list: every write, then every delete, then every send, then the reads, by name inside each', async () => {
+    const seen: Array<[string, RiskClass]> = [];
+    class Seen extends McpToolMap {
+      override add(entry: McpMapEntry): boolean {
+        seen.push([entry.name, entry.cls]);
+        return super.add(entry);
+      }
+    }
+    client = await connect((server) => {
+      const list = new Seen('', { full: true });
+      registerMantleTools(server, 'owner-1', { transport: 'stdio', map: list });
+      list.register(server);
+    });
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    await client.close();
+    const rank = (c: RiskClass) => ['write', 'delete', 'send', 'read'].indexOf(c);
+    const expected = [...seen]
+      .sort(([a, ca], [b, cb]) => rank(ca) - rank(cb) || (a < b ? -1 : 1))
+      .map(([n]) => n);
+    expect(new Set(seen.map(([, c]) => c))).toEqual(new Set(['write', 'delete', 'send', 'read']));
+    expect(names).toEqual(expected);
+    // The same order without a list of the caller's: registerMantleTools
+    // puts its own on the server.
+    client = await surface(false);
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(expected);
   });
 
   it('every tool of the full list is reachable, through the call tool of its class', async () => {
@@ -242,20 +284,75 @@ describe('the call tools run the tool they name', () => {
     await sdkOwn.close();
     expect(sdkList.map((t) => t.name)).toContain('thing_post');
     expect(mapList.map((t) => t.name)).toEqual([
-      'calculate',
-      'tool_help',
-      'tool_read',
       'tool_write',
       'tool_send',
+      'tool_read',
+      'tool_help',
+      'calculate',
     ]);
+    // Each definition as the SDK writes it (the order is the map's own).
+    const byName = (l: typeof mapList) => [...l].sort((a, b) => (a.name < b.name ? -1 : 1));
     const listed = new Set(mapList.map((t) => t.name));
-    expect(mapList).toEqual(sdkList.filter((t) => listed.has(t.name)));
+    expect(byName(mapList)).toEqual(byName(sdkList.filter((t) => listed.has(t.name))));
   });
 
   it('a second tool of the same name throws, as a second registerTool does', () => {
     const map = new McpToolMap('');
     map.add(entry('thing_get', 'read', []));
     expect(() => map.add(entry('thing_get', 'read', []))).toThrow(/already registered/);
+  });
+
+  it('the map lists in list order whatever order the tools came in', async () => {
+    const client = await connect((server) => {
+      const map = new McpToolMap('use thing_list and thing_get');
+      for (const [n, c] of [
+        ['thing_list', 'read'],
+        ['thing_post', 'send'],
+        ['thing_get', 'read'],
+        ['thing_drop', 'delete'],
+        ['thing_find', 'read'],
+        ['thing_update', 'write'],
+      ] as const) {
+        map.add(entry(n, c, []));
+      }
+      map.register(server);
+    });
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual([
+      'tool_write',
+      'tool_delete',
+      'tool_send',
+      'tool_read',
+      'tool_help',
+      'thing_get',
+      'thing_list',
+    ]);
+    await client.close();
+  });
+
+  it('the full list keeps a tool named like a map tool, and lists by class then name', async () => {
+    const client = await connect((server) => {
+      const list = new McpToolMap('', { full: true });
+      for (const [n, c] of [
+        ['thing_list', 'read'],
+        ['tool_help', 'read'],
+        ['thing_post', 'send'],
+        ['thing_drop', 'delete'],
+        ['thing_update', 'write'],
+        ['thing_add', 'write'],
+      ] as const) {
+        expect(list.add(entry(n, c, []))).toBe(true);
+      }
+      list.register(server);
+    });
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual([
+      'thing_add',
+      'thing_update',
+      'thing_drop',
+      'thing_post',
+      'thing_list',
+      'tool_help',
+    ]);
+    await client.close();
   });
 
   it('a class with no tool gets no call tool', async () => {

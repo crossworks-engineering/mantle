@@ -32,6 +32,15 @@
  * reaches every write, delete and send through its class's call tool, so
  * its per-tool approval sees the class on every one. A client that cached
  * the full list approves each tool by its own name and hints, as it did.
+ *
+ * The order of tools/list is the order a client's permission screen shows,
+ * so the tools that change something come first and the long run of reads
+ * last (LIST_ORDER): on the map tool_write, tool_delete and tool_send, then
+ * tool_read and tool_help, then the direct reads; on the full list (the
+ * same class, `full`) every write, then every delete, then every send,
+ * then the reads, by name inside each. The SDK lists tools in the order
+ * they were registered, so the order is the registration's here; on the
+ * map it is the order listOnly writes.
  */
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/server';
 import { z } from 'zod';
@@ -71,6 +80,16 @@ export function wantsToolMap(url: string, via?: string): boolean {
 
 const CORE: ReadonlySet<string> = new Set(CORE_TOOL_SLUGS);
 
+/** The order of the list by class: what changes something first, so a
+ *  long run of reads never hides a write on a permission screen. */
+const LIST_ORDER: readonly RiskClass[] = ['write', 'delete', 'send', 'read'];
+
+/** `entries` in list order: by class (LIST_ORDER), then by name. */
+function inListOrder(entries: readonly McpMapEntry[]): McpMapEntry[] {
+  const rank = (e: McpMapEntry) => LIST_ORDER.indexOf(e.cls);
+  return [...entries].sort((a, b) => rank(a) - rank(b) || (a.name < b.name ? -1 : 1));
+}
+
 /** The names the map's own tools take: a tool named so is not offered. */
 const META: ReadonlySet<string> = new Set(['tool_help', ...Object.values(RISK_CALL_SLUGS)]);
 
@@ -89,6 +108,9 @@ export type McpMapEntry = {
   cls: RiskClass;
   source: ToolSource;
 };
+
+/** The map's router: a call tool's class check (@mantle/tools risk-map.ts). */
+type Route = NonNullable<ReturnType<typeof buildRiskMap>>['route'];
 
 const CALL_SHAPE = {
   name: z.string().describe('The full tool name, e.g. "contact_get".'),
@@ -163,31 +185,39 @@ function listOnly(server: McpServer, listed: ReadonlyArray<[string, RegisteredTo
  *  then put on the server as the map (register). A read is listed in full
  *  when it is in the core (@mantle/tools CORE_TOOL_SLUGS) or when the
  *  connection's server `instructions` name it: a tool the client is told to
- *  call (recall_match, search) is one it can call directly. */
+ *  call (recall_match, search) is one it can call directly.
+ *
+ *  With `full` it is the full list instead: no map, and every tool
+ *  registered and listed by its own name, in list order (the module
+ *  comment), the SDK's own tools/list writing it. */
 export class McpToolMap {
   private readonly entries = new Map<string, McpMapEntry>();
   private readonly named: ReadonlySet<string>;
+  private readonly full: boolean;
 
-  constructor(instructions: string) {
+  constructor(instructions: string, opts: { full?: boolean } = {}) {
     this.named = new Set(instructions.match(/[a-z][a-z0-9]*(?:_[a-z0-9]+)*/g) ?? []);
+    this.full = opts.full === true;
   }
 
-  /** Take one listed tool; false for one named like the map's own tools,
-   *  which is not offered. A second tool of the same name throws, as a
-   *  second registerTool does. */
+  /** Take one listed tool; on the map false for one named like the map's
+   *  own tools, which is not offered. A second tool of the same name
+   *  throws, as a second registerTool does. */
   add(entry: McpMapEntry): boolean {
-    if (META.has(entry.name)) return false;
+    if (!this.full && META.has(entry.name)) return false;
     if (this.entries.has(entry.name)) throw new Error(`Tool ${entry.name} is already registered`);
     this.entries.set(entry.name, entry);
     return true;
   }
 
   /** Put the map on `server`: every tool registered by its own name, and
-   *  tools/list answered with the direct reads, tool_help and the call
-   *  tools; every tool listed in full when nothing is left to map. The
-   *  last registration on `server` (listOnly says why). */
+   *  tools/list answered with the call tools that change something, then
+   *  tool_read and tool_help, then the direct reads; every tool listed in
+   *  full when nothing is left to map, or on the full list. The last
+   *  registration on `server` (listOnly says why; on the full list a later
+   *  tool is listed, but after the reads). */
   register(server: McpServer): void {
-    const all = [...this.entries.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
+    const all = inListOrder([...this.entries.values()]);
     const isDirect = (e: McpMapEntry) =>
       e.cls === 'read' && (CORE.has(e.name) || this.named.has(e.name));
     const direct = all.filter(isDirect);
@@ -202,7 +232,7 @@ export class McpToolMap {
       cls: e.cls,
       source: e.source,
     });
-    const risk = buildRiskMap(mapped.map(asTool), direct.map(asTool));
+    const risk = this.full ? null : buildRiskMap(mapped.map(asTool), direct.map(asTool));
     // Every tool by its own name, the map or not (see the module comment).
     const own = new Map<string, RegisteredTool>();
     for (const e of all) {
@@ -221,8 +251,15 @@ export class McpToolMap {
     }
     if (!risk) return;
 
-    const listed: Array<[string, RegisteredTool]> = direct.map((e) => [e.name, own.get(e.name)!]);
     const [help, ...calls] = risk.calls;
+    const callsOf = (classes: readonly RiskClass[]) =>
+      classes.flatMap((cls) => calls.filter((c) => c.function.name === RISK_CALL_SLUGS[cls]));
+    const listed: Array<[string, RegisteredTool]> = [];
+    // The call tools of the classes that change something, in list order.
+    for (const call of callsOf(LIST_ORDER.filter((c) => c !== 'read'))) {
+      listed.push(this.callTool(server, risk.route, call, all));
+    }
+    for (const call of callsOf(['read'])) listed.push(this.callTool(server, risk.route, call, all));
     listed.push([
       help!.function.name,
       server.registerTool(
@@ -241,34 +278,42 @@ export class McpToolMap {
         (async (args: { names?: string[]; area?: string }) => jsonReply(risk.help(args))) as never,
       ),
     ]);
-    for (const call of calls) {
-      const cls = (Object.keys(RISK_CALL_SLUGS) as RiskClass[]).find(
-        (c) => RISK_CALL_SLUGS[c] === call.function.name,
-      )!;
-      listed.push([
-        call.function.name,
-        server.registerTool(
-          call.function.name,
-          {
-            description: call.function.description,
-            inputSchema: toolInputSchema(CALL_SHAPE),
-            annotations: callHints(
-              cls,
-              all.filter((e) => e.cls === cls),
-            ),
-          },
-          (async (args: { name: string; arguments?: Record<string, unknown> }, extra: unknown) =>
-            this.call(risk.route, cls, args, extra)) as never,
-        ),
-      ]);
-    }
+    for (const e of direct) listed.push([e.name, own.get(e.name)!]);
     listOnly(server, listed);
+  }
+
+  /** Register the call tool `call` on `server`, and how it is listed. */
+  private callTool(
+    server: McpServer,
+    route: Route,
+    call: NonNullable<ReturnType<typeof buildRiskMap>>['calls'][number],
+    all: readonly McpMapEntry[],
+  ): [string, RegisteredTool] {
+    const cls = (Object.keys(RISK_CALL_SLUGS) as RiskClass[]).find(
+      (c) => RISK_CALL_SLUGS[c] === call.function.name,
+    )!;
+    return [
+      call.function.name,
+      server.registerTool(
+        call.function.name,
+        {
+          description: call.function.description,
+          inputSchema: toolInputSchema(CALL_SHAPE),
+          annotations: callHints(
+            cls,
+            all.filter((e) => e.cls === cls),
+          ),
+        },
+        (async (args: { name: string; arguments?: Record<string, unknown> }, extra: unknown) =>
+          this.call(route, cls, args, extra)) as never,
+      ),
+    ];
   }
 
   /** One call through the call tool of `via`: the class check, the
    *  argument check, then the tool's own handler. */
   private async call(
-    route: NonNullable<ReturnType<typeof buildRiskMap>>['route'],
+    route: Route,
     via: RiskClass,
     args: { name: string; arguments?: Record<string, unknown> },
     extra: unknown,

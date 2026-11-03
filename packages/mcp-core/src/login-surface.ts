@@ -395,16 +395,18 @@ export function registerPreparedTools(
   });
   const channel = mcpChannel(caller, keysOff);
   const via = caller.via === 'key' ? 'api' : caller.via === 'peer' ? 'federation' : 'mcp';
+  // The map, or the full list: the connectors below go to it too, so
+  // tools/list orders them with the rest (map-surface.ts LIST_ORDER).
   const map = opts.toolMap
     ? new McpToolMap(mcpInstructionsFor(caller, prepared, { toolMap: true }))
-    : undefined;
+    : new McpToolMap('', { full: true });
   registerMantleTools(server, caller.anchorId, {
     transport: opts.transport ?? 'http',
     ...(peerNamesNoLogin(caller) ? {} : { loginId: caller.loginId }),
     mcp: channel,
     ...(via !== 'mcp' ? { via } : {}),
     gate,
-    ...(map ? { map } : {}),
+    map,
   });
   // The connectors, on the same server as every other tool: in the
   // login's scope and gate, and under its create home.
@@ -413,7 +415,7 @@ export function registerPreparedTools(
     registerGatedTool(server, gate, caller.anchorId, { kind: 'connector', row, surface }, map);
   }
   // Last: a tool registered after the map's list is never listed.
-  map?.register(server);
+  map.register(server);
 }
 
 /** Whether a prepared connection is a login's in no workspace on a brain
