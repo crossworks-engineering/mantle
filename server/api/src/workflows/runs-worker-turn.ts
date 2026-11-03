@@ -347,6 +347,9 @@ export async function runsWorkerTurnImpl(
             subjectKind: 'run_item',
             subjectId: item.id,
             agentId: worker.id,
+            // The row is the run's login's (the anchor's run: the owner's),
+            // as traceListedFor reads it.
+            rowLoginId: run.loginId ?? run.ownerId,
             data: {
               run_id: run.id,
               worker_slug: worker.slug,

@@ -282,10 +282,10 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
         kind: 'heartbeat_fire',
         subjectKind: 'heartbeat',
         subjectId: hb.id,
-        // The login the fire answers, as a fired trace names it: the
-        // skip is listed to that login only, the anchor's (null) to the
+        // The login the fire answers, as a fired trace's row names it:
+        // the skip is listed to that login only, the anchor's to the
         // anchor (traceListedFor).
-        loginId: answeredBy,
+        loginId: answeredBy ?? hb.ownerId,
         disposition: gate.reason,
         details: {
           heartbeat_slug: hb.slug,
@@ -464,9 +464,11 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
         subjectId: hb.id,
         agentId: agent.id,
         // The login the fire answers: its trace
-        // is listed to that login only (traceListedFor), the anchor's
-        // (null) to the anchor.
+        // is listed to that login only (traceListedFor). The anchor's
+        // fire stays a turn of no login (run_plan reads it) while its row,
+        // and the rows of the traces it opens, name the anchor.
         loginId: answeredBy,
+        rowLoginId: answeredBy ?? hb.ownerId,
         data: {
           heartbeat_slug: hb.slug,
           skill_slug: hb.skillSlug,

@@ -183,6 +183,8 @@ export async function runSimulatedResponderTurn(
       kind: 'manual',
       prelude,
       ownerId,
+      // The login the simulated turn answers: its row is that login's.
+      rowLoginId: opts.loginId ?? null,
       subjectKind: 'agent',
       subjectId: agent.id,
       agentId: agent.id,

@@ -1,14 +1,17 @@
-import { and, asc, desc, eq, gte, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import {
-  agents,
-  db,
-  heartbeatFires,
-  runItems,
-  runs,
-  traceSteps,
-  traces,
-  type TraceStep,
-} from '@mantle/db';
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  or,
+  sql,
+  type SQL,
+  type SQLWrapper,
+} from 'drizzle-orm';
+import { agents, db, traceSteps, traces, type TraceStep } from '@mantle/db';
 import type {
   TraceDetail,
   TraceFilter,
@@ -37,7 +40,7 @@ export { formatMicroUsd, formatDuration } from '@mantle/client-types/traces-form
  * the brain owner), and whether it reads the system's work too (the traces
  * of no login's turn). The brain owner always does; another login when it
  * is an Admin user with the settings area (traceReaderFor). A reader never
- * reads another login's turns.
+ * reads another login's work.
  */
 export type TraceReader = { readonly login: string | null; readonly system: boolean };
 
@@ -48,21 +51,36 @@ function isOwnerLogin(ownerId: string, login: string | null): boolean {
   return !login || login.toLowerCase() === ownerId.toLowerCase();
 }
 
+/** The login `reader` reads as: the owner id for the brain owner. */
+export function readerLogin(ownerId: string, reader: TraceReader): string {
+  return (isOwnerLogin(ownerId, reader.login) ? ownerId : reader.login!).toLowerCase();
+}
+
 /**
- * The traces a list shows `reader`, traceReadable's
- * rule as a WHERE on the login a trace is stamped with: another login sees
- * the turns that answered it, and with `system` the traces of no login; the
- * brain owner its own and the system's, never another login's. A heartbeat
- * fire with no login is the brain owner's turn (traceTurnLogin), not system
- * work: another login does not list it.
+ * Whether node `nodeId` (a column) is open to `login`: not a per-login row
+ * of another login (nodes.login_id). Under the row rules a node the
+ * reader's scope does not read is not open either. (A node homed in
+ * another login's private workspace never reaches a reader here: its
+ * traces are that login's, stamped at write and by 0356.)
+ */
+export function nodeOpenTo(nodeId: SQLWrapper, login: string): SQL {
+  return sql`exists (
+    select 1 from nodes n
+     where n.id = ${nodeId} and (n.login_id is null or n.login_id = ${login}::uuid))`;
+}
+
+/**
+ * The traces `reader` lists and reads (traceReadable is the same rule for
+ * one trace), by the login the row is stamped with (traces.login_id, the
+ * login whose work it is: packages/tracing rowLoginFor, and 0356 for older
+ * rows): its own work, and with `system` the system's (no login). The brain
+ * owner reads its own and the system's; no reader reads another login's.
  */
 export function traceListedFor(ownerId: string, reader: TraceReader): SQL {
-  if (isOwnerLogin(ownerId, reader.login)) {
-    return or(isNull(traces.loginId), eq(traces.loginId, ownerId)) as SQL;
-  }
-  const own = eq(traces.loginId, reader.login!);
-  if (!reader.system) return own;
-  return or(own, and(isNull(traces.loginId), ne(traces.kind, 'heartbeat_fire'))) as SQL;
+  const own = eq(traces.loginId, readerLogin(ownerId, reader));
+  return reader.system || isOwnerLogin(ownerId, reader.login)
+    ? (or(isNull(traces.loginId), own) as SQL)
+    : own;
 }
 
 /** Shared WHERE for trace list/count queries. */
@@ -155,56 +173,22 @@ export async function countTraces(
 }
 
 /**
- * The login whose turn trace `traceId` records, or null for system work: a
- * heartbeat fire's answerer
- * (heartbeat_fires.answered_by, null the anchor), else the login the trace
- * names (traces.login_id), else the login of the run it planned or ran
- * (runs.login_id, by origin_turn_id or an item's trace_ref). The brain
- * owner's login comes back as the owner id.
- */
-async function traceTurnLogin(ownerId: string, traceId: string): Promise<string | null> {
-  const [fire] = await db
-    .select({ by: heartbeatFires.answeredBy })
-    .from(heartbeatFires)
-    .where(eq(heartbeatFires.traceId, traceId))
-    .limit(1);
-  if (fire) return fire.by ?? ownerId;
-  const [t] = await db
-    .select({ login: traces.loginId })
-    .from(traces)
-    .where(and(eq(traces.id, traceId), eq(traces.ownerId, ownerId)))
-    .limit(1);
-  if (t?.login) return t.login;
-  const [planned] = await db
-    .select({ login: runs.loginId })
-    .from(runs)
-    .where(and(eq(runs.ownerId, ownerId), eq(runs.originTurnId, traceId)))
-    .limit(1);
-  if (planned?.login) return planned.login;
-  const [ran] = await db
-    .select({ login: runs.loginId })
-    .from(runItems)
-    .innerJoin(runs, eq(runs.id, runItems.runId))
-    .where(and(eq(runs.ownerId, ownerId), eq(runItems.traceRef, traceId)))
-    .limit(1);
-  return ran?.login ?? null;
-}
-
-/**
- * Whether `reader` may read trace `traceId`: each user
- * reads only their own turns. Another login reads the traces of turns it
- * was answered in, and with `system` the system's (no login's turn); the
- * brain owner reads its own and the system's, never another login's.
+ * Whether `reader` may read trace `traceId`: the rule traceListedFor
+ * lists by, for one trace.
  */
 export async function traceReadable(
   ownerId: string,
   traceId: string,
   reader: TraceReader,
 ): Promise<boolean> {
-  const turn = await traceTurnLogin(ownerId, traceId);
-  if (turn === null) return reader.system;
-  const norm = (l: string | null) => (isOwnerLogin(ownerId, l) ? null : l!.toLowerCase());
-  return norm(turn) === norm(reader.login);
+  const [row] = await db
+    .select({ id: traces.id })
+    .from(traces)
+    .where(
+      and(eq(traces.id, traceId), eq(traces.ownerId, ownerId), traceListedFor(ownerId, reader)),
+    )
+    .limit(1);
+  return !!row;
 }
 
 /** One trace with its steps, or null when it is not the owner's or not

@@ -2479,6 +2479,13 @@
       "when": 1790978460000,
       "tag": "0354_peer_status_link",
       "breakpoints": true
+    },
+    {
+      "idx": 356,
+      "version": "7",
+      "when": 1791151260000,
+      "tag": "0356_trace_row_logins",
+      "breakpoints": true
     }
   ]
 }

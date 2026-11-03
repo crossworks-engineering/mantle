@@ -295,6 +295,8 @@ async function summarizeThread(o: {
       ownerId,
       subjectId: agentId,
       subjectKind: 'agent_conversation',
+      // The conversation's login's: its digest is that login's chat.
+      rowLoginId: loginId,
       data: {
         worker_slug: worker.slug,
         agent_id: agentId,
