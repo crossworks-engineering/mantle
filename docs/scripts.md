@@ -471,6 +471,19 @@ OpenRouter key on stdin (never argv). Other flags pass through (`--email`,
 `pnpm -C server/web onboard`. Details: [`onboarding.md`](./onboarding.md)
 section 8.
 
+### `scripts/peer-link.sh`
+
+Links this box to another from the shell, with no password and no UI: the
+fleet monitor's status link. Runs `server/web/scripts/peer-link.ts` in the
+web container. `create --name <n> --url <https://...>` with `--status-only`
+(the token reaches this box's status only), `--outbound-only` (the box takes
+no calls from that peer) and `--watch` (`peer_status` polls it) prints
+`peer_id=...` and, unless outbound-only, the token once as `token=...`;
+`accept --peer <id|name>` takes the other box's token on stdin or from
+`--token-file` (never argv); `list` and `revoke --peer` too. In a checkout:
+`pnpm -C server/web peer-link`. Details: [`federation.md`](./federation.md),
+"Status links".
+
 ### `scripts/compose-adopt.sh [--apply]`
 
 One-time adoption of the release-owned compose contract on boxes installed
