@@ -79,6 +79,23 @@ History before 2026-07-25 still carries ~1695 of these. Left deliberately:
 scrubbing them means rewriting every SHA and re-pointing 115 release tags,
 which would re-fire the tag-triggered image builds.
 
+## Runtime: Bun first
+
+Since 2026-11-03 every box runs web, api and the workers on Bun
+(`MANTLE_RUNTIME=bun` in its `.env`, started by `scripts/run-service.sh`).
+Node is the fallback only, until the review on 2026-11-10 decides whether it
+goes (plan: dev-brain page 06966c22, section 19).
+
+- New server code must run on Bun. Until Node is removed it must also keep
+  working on Node; do not add a path that works on one runtime only.
+- Prefer what Bun gives natively where the plan says so (for example
+  `Bun.S3Client` in `packages/storage`); keep the Node path beside it, not
+  instead of it, until the review.
+- Prove runtime-specific behaviour in the Bun lane (`.github/workflows/bun-lane.yml`,
+  report-only): a change that only passes on Node is not done.
+- `sandboxd`, the parser and `migrate` still run on Node on purpose; each
+  moves to Bun as its own step of the plan.
+
 ## Other guidance
 
 - **A handover heading's step code goes in the counters' list in the same
