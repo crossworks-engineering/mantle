@@ -461,7 +461,10 @@ give them to a no-write specialist (researcher pattern). Full detail:
 Below admin, an app's run may call only read-only built-ins (and the
 Table row writes and `table_commit` on a Table homed in the workspace
 that holds the app, as the running user, held to nothing beyond what that
-user may do there: member-app-tools.ts rule 6), and a link none, besides
+user may do there: member-app-tools.ts rule 6; and `file_upload`,
+`file_move` and `file_rename` on a file and a folder homed there, with the
+same user's own rights, never one that changes who reads the file: rule 7),
+and a link none, besides
 outside tools. An MCP CONNECTOR tool follows the workspaces
 it is attached to (`connectorToolVerdict` and `loginConnectorRule` in
 packages/tools/src/external-access.ts): a login's own MCP and its app runs

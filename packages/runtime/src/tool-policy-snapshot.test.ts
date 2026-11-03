@@ -285,6 +285,7 @@ const LISTS: Record<string, readonly string[]> = {
     'api_tool_test',
     'api_tool_update',
     'circuit_verify',
+    'file_upload',
     'invoke_agent',
     'recipe_tool_create',
     'recipe_tool_test',

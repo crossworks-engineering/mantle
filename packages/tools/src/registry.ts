@@ -100,6 +100,25 @@ export function isBuiltinTeamDocuments(slug: string): boolean {
   return tableBuiltin(slug)?.policy.memberApp === 'documents';
 }
 
+/** Is this builtin a file write a team app may make in the workspace that
+ *  holds it (`policy.memberApp` 'files': file_upload, file_move,
+ *  file_rename; runtime-policy.ts memberAppRefusal)? Unknown slugs answer
+ *  false. */
+export function isBuiltinTeamFileWrite(slug: string): boolean {
+  return tableBuiltin(slug)?.policy.memberApp === 'files';
+}
+
+/** The arguments a `files` write names its file in (its first item
+ *  argument: file_id) and its folder in (memberAppFolderArg: parent_path,
+ *  dest_path), each null when it names none; null for any other builtin. */
+export function teamFileWriteArgs(
+  slug: string,
+): { file: string | null; folder: string | null } | null {
+  const policy = tableBuiltin(slug)?.policy;
+  if (policy?.memberApp !== 'files') return null;
+  return { file: policy.itemArgs?.[0]?.param ?? null, folder: policy.memberAppFolderArg ?? null };
+}
+
 /** The argument a `table-rows` write names its Table in (its only item
  *  argument, policy itemArgs: `table_id` for the row writes, `id` for
  *  table_commit), or null for any other builtin. */

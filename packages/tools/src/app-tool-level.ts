@@ -39,6 +39,7 @@ import { getAppRuntime, type AppToolRules } from '@mantle/content';
 import { resolveTool } from './resolve';
 import { memberAppToolVerdict, type AppToolCheck } from './member-app-tools';
 import { TEAM_APP_TOOLS_ALLOWED } from './runtime-policy';
+import { APP_BYTES_MAX } from './app-bytes';
 import type { ToolHandlerContext } from './types';
 
 /** The rules an app's tool call runs under. */
@@ -203,7 +204,7 @@ export function appToolScope(
  * outside the brain, if at all), keeps the read-only scope.
  */
 export async function appRunWrites(verdict: AppToolVerdict): Promise<boolean> {
-  return (await appRunTableWrite(verdict)) !== null;
+  return (await appRunTableWrite(verdict)) !== null || (await appRunFileWrite(verdict));
 }
 
 /** The argument an allowed call names its Table in when it is a Table
@@ -219,6 +220,39 @@ export async function appRunTableWrite(verdict: AppToolVerdict): Promise<string 
   const { teamTableWriteArg } = await import('./registry');
   return teamTableWriteArg(h.ref);
 }
+
+/** Whether an allowed call of an app run is a file write the policy marks
+ *  `files` (file_upload, file_move, file_rename), which the team rules let
+ *  through only on a file and a folder homed in the holder of the app
+ *  (member-app-tools.ts rule 7): it then runs in the app's scope as a
+ *  write, as the running login, whose own rights the database and the
+ *  Files operations check (@mantle/files app-run-write.ts). */
+export async function appRunFileWrite(verdict: AppToolVerdict): Promise<boolean> {
+  if (!verdict.ok) return false;
+  const h = verdict.tool.handler as Tool['handler'] | undefined;
+  if (h?.kind !== 'builtin') return false;
+  // Lazy: the registry imports every builtin, app_tools_set among them.
+  const { isBuiltinTeamFileWrite } = await import('./registry');
+  return isBuiltinTeamFileWrite(h.ref);
+}
+
+/** Whether `slug`, as `ownerId`'s tool rows resolve it, is a file write
+ *  the policy marks `files` (file_upload, file_move, file_rename): the only
+ *  app calls a broker reads past its JSON cap (lib/app-tool-broker.ts in
+ *  server/web), before the verdict, which still judges the call. */
+export async function appCallMayCarryFile(ownerId: string, slug: string): Promise<boolean> {
+  const tool = await resolveTool(ownerId, slug);
+  const h = tool?.handler as Tool['handler'] | undefined;
+  if (h?.kind !== 'builtin') return false;
+  // Lazy: the registry imports every builtin, app_tools_set among them.
+  const { isBuiltinTeamFileWrite } = await import('./registry');
+  return isBuiltinTeamFileWrite(h.ref);
+}
+
+/** The most bytes a team app's file write puts in one file per call (the
+ *  file's decoded bytes): the cap of the bytes a mini app reads in one call
+ *  (app-bytes.ts APP_BYTES_MAX), as the owner decided (2026-11-03). */
+export const APP_FILE_WRITE_MAX_BYTES = APP_BYTES_MAX;
 
 /** Whether an allowed call of an app run is a documents tool that saves its
  *  file (policy memberApp 'documents', without `bytes: true`): at team
@@ -264,7 +298,8 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
     if (level !== 'team') return [];
     const declared = [...new Set(app.manifest.toolSlugs ?? [])];
     // Lazy: the registry imports every builtin, app_tools_set among them.
-    const { isBuiltinTeamDocuments, isBuiltinTeamTableRowWrite } = await import('./registry');
+    const { isBuiltinTeamDocuments, isBuiltinTeamFileWrite, isBuiltinTeamTableRowWrite } =
+      await import('./registry');
     const warnings: string[] = [];
     /** How many live workspaces beyond Admin hold the app, once asked. */
     let holders: number | undefined;
@@ -286,6 +321,16 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
             holders === 1
               ? `The tool '${slug}' runs here only on a Table homed in the workspace that holds this app, as the user running it, who needs Write on that Table (or to be a Moderator of its workspace): on its own workspace's Tables the app does what that user may do there. Row changes land in the Table's draft; table_commit publishes it. Any other Table is refused: an app a workspace other than Admin holds runs the team rules.`
               : `The tool '${slug}' writes no Table here: a team app's row writes run only when exactly one workspace beyond Admin holds the app (${holders} do), on a Table homed in that workspace. Keep the app in one workspace (beside Admin) for its row writes to run.`,
+          );
+        }
+        // A file write runs only in the app's own workspace, with the
+        // running user's own rights there (rule 7).
+        if (h.kind === 'builtin' && isBuiltinTeamFileWrite(h.ref)) {
+          holders ??= (await appRunHolders({ id: appId })).length;
+          warnings.push(
+            holders === 1
+              ? `The tool '${slug}' runs here only on a file and a folder homed in the workspace that holds this app, as the user running it: it may do there what that user may do by hand (a Moderator of the folder's workspace, or the folder's Write switch for theirs; a move needs a Moderator of the file's workspace). Up to ${APP_FILE_WRITE_MAX_BYTES / (1024 * 1024)} MB a file per call. It never changes who can see a file: a write that would let another workspace read it, or confirm: true, is refused. An upload is read into the brain as a Files upload is.`
+              : `The tool '${slug}' writes no file here: a team app's file writes run only when exactly one workspace beyond Admin holds the app (${holders} do), in a folder homed in that workspace. Keep the app in one workspace (beside Admin) for its file writes to run.`,
           );
         }
         // A documents tool saves only for a user who moderates the app's

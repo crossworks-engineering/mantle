@@ -62,6 +62,7 @@ const POLICIES = {
     itemArgs: [{ param: 'file_id' }],
     keyArea: 'files',
     clientSourced: { kind: 'write', nodes: ['file_id'] },
+    memberApp: 'files',
   },
   // ── pages ──
   page_list: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages', keyEmail: true },

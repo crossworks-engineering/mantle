@@ -726,9 +726,11 @@ describe.skipIf(!DB_URL)(
 
 /** The tool cells not applicable, by reason, over both check modes (162
  *  since S11a fix round 4: folder_create and file_upload, MCP only, have
- *  their create cells, 12 cells over both modes each). */
+ *  their create cells, 12 cells over both modes each; 150 since team app
+ *  file writes, 2026-11-03: file_upload has a tool row now, so its 12 cells
+ *  run through a turn too). */
 const NOT_APPLICABLE: Readonly<Record<string, number>> = {
-  'web-turn: no tool row (MCP only)': 162,
+  'web-turn: no tool row (MCP only)': 150,
 };
 
 /** The narrowed tool cells (a deny the oracle cannot see), by reason. */

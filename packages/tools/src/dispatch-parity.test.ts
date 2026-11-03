@@ -30,7 +30,9 @@
  * delegation (owner decision
  * 2026-10-26) re-recorded the 23 app tools alone: they carry `loginTurns`,
  * so the member turn (a team surface naming the login its turn scope
- * answers) runs them where the owner-only gate refused it before.
+ * answers) runs them where the owner-only gate refused it before. Team app
+ * file writes (owner decision 2026-11-03) re-recorded file_upload alone: a
+ * recipe step may not call it now that it is seeded for mini apps.
  */
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';

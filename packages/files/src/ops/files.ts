@@ -69,6 +69,7 @@ import {
   trailForCaller,
 } from '@mantle/db';
 import { getContent } from '@mantle/storage';
+import { assertAppRunFileWrite } from '../app-run-write';
 import { fileRowFromNode, rowNow, type FileRow } from './shared';
 import { isSystemScope } from '@mantle/db/viewer';
 import { ConflictError, editCheckRefusalError, InputError } from '@mantle/std';
@@ -169,6 +170,12 @@ export async function upsertFile(args: {
   data?: Record<string, unknown>;
   /** Extra tags beyond the base `file` tag. Deduped. */
   tags?: string[];
+  /** An export's save (export-home.ts saveExport): it lands by the export
+   *  rule, so a team app's save (a documents tool) is held to its
+   *  workspace by the create home it runs under (teamAppSaveRefusal in
+   *  @mantle/tools), not to a folder of it; every other write inside a team
+   *  app's write is held to its folder (app-run-write.ts). */
+  exportSave?: true;
   /** The login a new file is private to (nodes.login_id: only it reads the
    *  file, and its chunks and facts follow), for a create a channel makes on
    *  a login's behalf outside its scope: a Telegram chat's attachment. Set
@@ -269,6 +276,22 @@ export async function upsertFile(args: {
   if (!parent && !existing) {
     if (args.spooled) await discardSpooled(args.spooled);
     throw new InputError(`upsertFile: parent folder '${args.parentPath}' not found`);
+  }
+
+  // A team app's write: only in a folder homed in the app's workspace, a new
+  // file only where the running user may edit the folder, and over a file
+  // homed there too (app-run-write.ts). Before the disk.
+  try {
+    if (!args.exportSave) {
+      await assertAppRunFileWrite({
+        folderId: parent?.id ?? null,
+        place: !existing,
+        ...(existing ? { fileId: existing.id } : {}),
+      });
+    }
+  } catch (err) {
+    if (args.spooled) await discardSpooled(args.spooled);
+    throw err;
   }
 
   // The bytes are staged beside their final name, under a name the watcher
@@ -1326,6 +1349,8 @@ export async function renameFileById(args: {
   // Edit first: a caller that may not rename the file learns nothing of the folder (a name taken by a file it does
   // not read). The database's refusal stays the authority.
   await assertItemRight(node.id, 'edit');
+  // A team app's rename: only of a file homed in the app's workspace.
+  await assertAppRunFileWrite({ fileId: node.id });
   const data = (node.data ?? {}) as Record<string, unknown>;
   const oldFilename = String(data.filename ?? '');
   const ext = String(data.extension ?? extOf(oldFilename));

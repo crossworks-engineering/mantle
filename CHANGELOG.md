@@ -4,6 +4,43 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased: team apps upload, move and rename files in their own workspace
+
+A team app is an app that a workspace other than Admin holds. Its users
+could already add and change rows of their workspace's Tables. Now the app
+can also work with files there, with the rights of the user who runs it.
+This lets a document control app check a drawing out and back in.
+
+- **Added:** a team app may call `file_upload` (a new file, or a replace
+  with `overwrite: true`), `file_move` and `file_rename`. The file and the
+  folder must be homed in the one workspace beside Admin that holds the app.
+  An app that two or more workspaces hold writes no files.
+- **Added:** the write runs as the user who runs the app. It lands only
+  where that user may do it by hand: the folder's Write switch for their
+  workspace, or a Moderator of its home. A move needs a Moderator of the
+  file's home.
+- **Added:** at most 16 MB of file a call. Any file type. An upload is read
+  into the brain as a Files upload is, so a DWG imports as usual.
+- **Added:** each call writes an Activity row with the folder and the file,
+  never the bytes.
+- **Added:** `file_upload` is now a tool row, so an app can declare it. The
+  new system-wide group **File upload for mini apps** (`app-files`) holds
+  it. No agent holds that group, and no recipe step may call it. Switch it
+  off and no team app uploads; its moves and renames go through Files. An
+  app that only Admin holds may now declare `file_upload` too, and runs it
+  as an admin, like its other tools.
+- **Added:** the file's folder decides how it is indexed. A team app may
+  not pass `indexing`.
+- **Unchanged:** a team app never changes who can see a file. A folder that
+  another workspace also reads is refused, and so is a move of a file that
+  another workspace reads, or `confirm: true`. No
+  delete, and no folder create, rename or move. Shared links, read-only
+  logins, API keys and linked brains write no files.
+- **Changed:** a member's app tool call may now carry up to 24 MB, so that
+  a 16 MB file fits as base64. Every other call keeps the 8 MB limit.
+- **Changed:** the `app_tools_set` and `app_publish` warnings, the app
+  authoring guide and skill, and the tools docs say the new rule.
+
 ## v0.500.11: a box can switch email sending off
 
 A company can now stop a box from sending email, the same way it can switch

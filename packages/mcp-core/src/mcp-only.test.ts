@@ -48,7 +48,8 @@ describe('mcpOnly builtins', () => {
         'api_key_test',
         'app_authoring_guide',
         'file_delete',
-        'file_upload',
+        // file_upload is no longer here (2026-11-03): seeded so a mini app
+        // can declare it, held by the `app-files` group and no agent.
         'folder_create',
         'folder_delete',
         // The messenger (Messenger V1): every login's chats, MCP only until

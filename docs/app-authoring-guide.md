@@ -1133,7 +1133,7 @@ run the green PUBLISHED build only and never edit it from there.
   refused; so are http tools unless an admin switched "External access" on
   for them; so are built-ins that write or spend, and `my_items_list`,
   `my_item_open`, `summarize_text`, `extract_from_image`, `search_chunks`,
-  `team_request_create` and `read_result`. One kind of write is allowed:
+  `team_request_create` and `read_result`. Table writes are allowed (and file writes, below):
   the Table row writes `table_row_add`, `table_rows_add`,
   `table_rows_upsert`, `table_row_update` and `table_cell_set`, and
   `table_commit`, on a Table homed in the workspace that holds the app
@@ -1169,6 +1169,26 @@ run the green PUBLISHED build only and never edit it from there.
   workspace that holds the app, and in a workspace the runner moderates.
   `app_tools_set`, `app_publish` and a grant change list a warning for each
   declared tool these rules refuse.
+- **Files:** a team app may also upload, replace, move and rename files in
+  its own workspace: `file_upload`, `file_move` and `file_rename` (owner
+  decision 2026-11-03). The same single workspace rule holds: the file and
+  the folder must be homed in the one workspace beside Admin that holds the
+  app, and an app two workspaces hold writes no files. The write runs as
+  the user running the app and lands only where they may do it by hand: a
+  new file or a move into a folder needs its **Write** switch for their
+  workspace or a Moderator of its home; a replace (`overwrite: true`) or a
+  rename needs edit of the file; a move needs a Moderator of the file's
+  home. There is no file type allowlist. A call takes at most 16 MB of file
+  (as `content_base64` or `content_text`). An upload is read into the
+  brain as a Files upload is (a DWG imports as usual). A write never changes
+  who can see a file: a folder another workspace also reads is refused, so
+  is a move of a file another workspace reads, and so is `confirm: true`. The Activity row of each call names the folder and
+  the file, never the bytes. No file or folder delete, and no folder
+  create, rename or move. A read-only login writes nothing; a shared link
+  runs none of them. `file_upload` runs while the system-wide **File upload
+  for mini apps** group (`app-files`) is on; no agent holds it by default.
+  Check out and check in: archive the old revision with `file_move` (or
+  `file_rename`), then `file_upload` the new one into the same folder.
 - **Data:** `host.db.query` works for every runner. A member's
   `host.db.exec` works when a workspace of theirs holds the app with
   **Write** on and an admin has not marked the app informational; else the

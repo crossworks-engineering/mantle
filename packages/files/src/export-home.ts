@@ -166,6 +166,7 @@ async function replaceEarlierExport(args: {
     ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
     data: args.data,
     overwrite: true,
+    exportSave: true,
   });
   const autoFiled = folder === AUTO_FILED_PATH || folder.startsWith(`${AUTO_FILED_PATH}.`);
   return { file, autoFiled };
@@ -190,6 +191,7 @@ async function saveUnderFreeName(args: {
         filename,
         ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
         ...(args.data ? { data: args.data } : {}),
+        exportSave: true,
       });
       return { file, autoFiled: folder.autoFiled };
     } catch (err) {

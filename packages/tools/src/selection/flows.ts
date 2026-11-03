@@ -56,7 +56,7 @@ export const TOOL_FLOWS: readonly ToolFlow[] = [
     slug: 'files',
     title: 'Files and folders',
     when: 'list, read, create, move or ingest files, folders, videos',
-    groups: ['files', 'ingest', 'video-ingest', 'tables-import'],
+    groups: ['files', 'app-files', 'ingest', 'video-ingest', 'tables-import'],
   },
   {
     slug: 'tables',

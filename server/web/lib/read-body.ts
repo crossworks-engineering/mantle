@@ -69,11 +69,28 @@ export type ReadBodyOptions = {
  * the route's ceiling throws BodyTooLargeError.
  */
 export async function readJson(req: Request, opts: ReadBodyOptions = {}): Promise<unknown> {
+  return (await readJsonSized(req, opts)).value;
+}
+
+/**
+ * readJson, and the body's size in bytes as it came: for a reader whose
+ * answer depends on how large the body was (the app tool broker reads a
+ * file write past the JSON cap, and answers any other call over it the
+ * cap's 413).
+ */
+export async function readJsonSized(
+  req: Request,
+  opts: ReadBodyOptions = {},
+): Promise<{ value: unknown; bytes: number }> {
   // text() reads through the loader's cap and skips a byte order mark.
   const text =
     opts.maxBytes === undefined
       ? await req.text()
       : (await readBodyCapped(req, opts.maxBytes)).replace(/^\uFEFF/, '');
+  return { value: parseJsonText(text, opts), bytes: Buffer.byteLength(text, 'utf8') };
+}
+
+function parseJsonText(text: string, opts: ReadBodyOptions): unknown {
   if (text.trim() === '') {
     if (opts.refuseEmpty) {
       if ('invalid' in opts) return opts.invalid;

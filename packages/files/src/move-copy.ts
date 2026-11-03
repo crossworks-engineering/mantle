@@ -41,6 +41,7 @@ import {
 } from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
 import { foldedFilePath } from './space-disk';
+import { assertAppRunFileWrite } from './app-run-write';
 import {
   FILES_MAX_FOLDER_DEPTH,
   FILES_ROOT_LABEL,
@@ -157,6 +158,9 @@ export async function moveFileById(args: {
       `moveFileById: no folder at '${args.destPath}' — create it with folder_create, or find the right path with folder_list`,
     );
   }
+  // A team app's move: of a file homed in the app's workspace, into a folder
+  // homed there that the running user may edit (app-run-write.ts).
+  await assertAppRunFileWrite({ fileId: node.id, folderId: dest.id, place: true });
   const clash =
     (await fileInFolder(args.ownerId, args.destPath, filename)) ??
     ((await hiddenNameTaken(args.ownerId, args.destPath, filename, !!foldedFilePath(node)))

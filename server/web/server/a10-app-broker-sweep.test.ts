@@ -253,6 +253,9 @@ vi.mock('@mantle/tools', async (importOriginal) => {
         return verdictFor(declared, slug);
       },
     ),
+    // No stand-in tool is a file write: a call past the member's 8 MB cap
+    // answers the cap's 413, as main did (the registry is not read here).
+    appCallMayCarryFile: vi.fn(async () => false),
     contactAppToolVerdict: vi.fn(async (_owner: string, declared: string[], slug: string) => {
       push('verdict', { level: 'contact', ran: h.current });
       return verdictFor(declared, slug);

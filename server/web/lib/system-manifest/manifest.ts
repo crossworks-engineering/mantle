@@ -904,6 +904,18 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['pdf_render', 'screenshot_render', 'office_to_pdf', 'pdf_tools'],
   },
   {
+    slug: 'app-files',
+    name: 'File upload for mini apps',
+    // System-wide, not adminOnly, and held by no agent: a mini app declares
+    // file_upload, and a team app runs it only while an enabled system-wide
+    // group holds it (member-app-tools.ts rule 5), in its own workspace as
+    // the user running it (rule 7). Switch the group off and no team app
+    // uploads.
+    description:
+      'Upload a file (utf-8 text or base64 bytes, any type) into a folder, or replace one of the same name: what a mini app calls through host.tools.call. A team app uploads only into its own workspace, as the user running it. Held by no agent by default. Switching it off stops uploads only: file_move and file_rename of a team app go through the Files group.',
+    toolSlugs: ['file_upload'],
+  },
+  {
     slug: 'spreadsheets',
     name: 'Spreadsheet authoring',
     description:

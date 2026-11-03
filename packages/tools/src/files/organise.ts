@@ -32,6 +32,9 @@ export const file_move: BuiltinToolDef = {
     itemArgs: [{ param: 'file_id' }],
     keyArea: 'files',
     clientSourced: { ...CS.onNodes('file_id'), paths: ['dest_path'] },
+    // A team app's move within the workspace that holds it (rule 7).
+    memberApp: 'files',
+    memberAppFolderArg: 'dest_path',
   },
   name: 'Move a file',
   description:

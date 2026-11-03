@@ -26,6 +26,13 @@ const MB = 1024 * 1024;
 /** A JSON body's ceiling on any route not listed below. */
 export const JSON_BODY_CEILING_BYTES = 8 * MB;
 
+/** The most a member's app tool call carries (lib/app-runner.ts
+ *  memberToolBroker): a team app's file_upload of up to 16 MB
+ *  (APP_FILE_WRITE_MAX_BYTES, @mantle/tools) as base64 is 4/3 of it, plus
+ *  the JSON around it. Every other member call keeps JSON_BODY_CEILING_BYTES
+ *  (lib/app-tool-broker.ts, before the verdict). Pinned by body-ceiling.test.ts. */
+export const APP_FILE_WRITE_BODY_BYTES = 24 * MB;
+
 /** The owner surfaces that take whole documents, or a file as base64 (an MCP
  *  `file_upload` of up to 64 MB), in one JSON body. Owner only: a member or
  *  a client never reaches them. */

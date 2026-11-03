@@ -36,6 +36,19 @@
  *      login in the app's scope, so the database decides whether that user
  *      may write the Table (its Write switch, a Moderator of its home, the
  *      actor and edit checks): a user who may not writes nothing.
+ *   7. a file write the policy marks `files` (file_upload, file_move,
+ *      file_rename) names, in its file argument (`file_id`), a file homed in
+ *      the workspace that holds the app, and in its folder argument
+ *      (`parent_path`, `dest_path`) a folder homed there; a move only of a
+ *      file no workspace but the holder (and Admin) reads, as the app's
+ *      scope cannot see another workspace's grant it would take away; never
+ *      with `confirm: true` (a team app never changes who can see an item). It
+ *      runs as the running login in the app's scope: that user's own rights
+ *      decide (a Moderator of the home, or the folder's Write switch for
+ *      their workspace), asked again where the write runs (@mantle/files
+ *      app-run-write.ts), and a write that would let a workspace beyond the
+ *      app's own read the file, or stop reading it, is refused (the
+ *      visibility guard, @mantle/content tree/visibility.ts).
  * An OUTSIDE tool takes another path after rule 2 (external-access.ts). A
  * CONNECTOR tool (mcp): the workspaces that hold its connector decide (the
  * runner's login's workspaces, and with `check.appId` every workspace that
@@ -53,7 +66,9 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  appHolderAloneReads,
   appHolderHomes,
+  appHolderHomesFolder,
   db,
   registerPolicySource,
   toolGroups,
@@ -151,6 +166,53 @@ async function tableRowsTargetRefusal(
   return `The tool '${slug}' may only change a Table homed in the workspace that holds this app, and ${which}. Pass the id of a Table that lives in this app's workspace (table_list shows the Tables this app reads). On its own workspace's Tables a team app may do what the user running it may do there; a team app's data is shared by everyone who runs it, so it writes nowhere else.`;
 }
 
+/** Why a team app's file write may not change the file or the folder its
+ *  call names in `args` (registry teamFileWriteArgs), or null (rule 7). The
+ *  rules alone (an author's warning) name no call: null. No app, or an
+ *  argument the tool names that the call leaves empty: refused (fail
+ *  closed). */
+async function fileWriteTargetRefusal(
+  ownerId: string,
+  slug: string,
+  args: { file: string | null; folder: string | null },
+  check: AppToolCheck | undefined,
+): Promise<string | null> {
+  if (check?.rulesOnly) return null;
+  const input = check?.input ?? {};
+  const where =
+    "A team app's files stay in its own workspace, where it may do what the user running it may do by hand (file_list and folder_list show what this app reads).";
+  if (input.confirm === true) {
+    return `The tool '${slug}' was called with confirm: true, which changes who can see a file: a team app never does that. Leave confirm out, and keep the file in folders only this app's workspace reads.`;
+  }
+  const appId = check?.appId;
+  if (args.file) {
+    const raw = input[args.file];
+    const fileId = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+    if (!appId || !fileId || !(await appHolderHomes(ownerId, appId, fileId, 'file'))) {
+      const which = fileId
+        ? `the file '${fileId}' is not one (or does not exist)`
+        : `the call names no file in '${args.file}'`;
+      return `The tool '${slug}' may only change a file homed in the workspace that holds this app, and ${which}. ${where}`;
+    }
+    // A move takes the grants the file had from the folder it leaves: one
+    // another workspace reads would stop being read there, unasked.
+    if (args.folder && !(await appHolderAloneReads(ownerId, appId, fileId))) {
+      return `The tool '${slug}' may only move a file that only this app's workspace reads, and another workspace reads '${fileId}': moving it could change who can see it, which a team app never does. Move it by hand in Files instead.`;
+    }
+  }
+  if (args.folder) {
+    const raw = input[args.folder];
+    const path = typeof raw === 'string' ? raw : '';
+    if (!appId || !path || !(await appHolderHomesFolder(ownerId, appId, path))) {
+      const which = path
+        ? `the folder '${path.slice(0, 200)}' is not one (or does not exist)`
+        : `the call names no folder in '${args.folder}'`;
+      return `The tool '${slug}' may only put a file in a folder homed in the workspace that holds this app, and ${which}. ${where}`;
+    }
+  }
+  return null;
+}
+
 /** May a member's run of an app that declares `declared` call `slug`?
  *  `check` goes to a connector tool's rule (external-access.ts) and, with
  *  the call's input, to a row write's Table (rule 6). */
@@ -187,7 +249,9 @@ export async function memberAppToolVerdict(
     isBuiltinReadOnly,
     isBuiltinSpending,
     isBuiltinTeamDocuments,
+    isBuiltinTeamFileWrite,
     isBuiltinTeamTableRowWrite,
+    teamFileWriteArgs,
     teamTableWriteArg,
   } = await import('./registry');
   const builtin: AppBuiltinFacts = {
@@ -195,6 +259,7 @@ export async function memberAppToolVerdict(
     spends: isBuiltinSpending(tool.handler.ref),
     tableRows: isBuiltinTeamTableRowWrite(tool.handler.ref),
     documents: isBuiltinTeamDocuments(tool.handler.ref),
+    files: isBuiltinTeamFileWrite(tool.handler.ref),
   };
   // Rules 2 to 4 on the row: the app tool's policy (runtime-policy.ts), the
   // one reading of them.
@@ -208,9 +273,19 @@ export async function memberAppToolVerdict(
       reason: `The tool '${slug}' is only in Admin-only tool groups, so this app can't use it outside the Admin workspace.`,
     };
   }
+  // Rule 7: a file write changes only a file and a folder homed in the
+  // holder of the app, and never confirms a change of who reads it.
+  const fileArgs = builtin.files ? teamFileWriteArgs(tool.handler.ref) : null;
+  if (fileArgs) {
+    const target = await fileWriteTargetRefusal(ownerId, slug, fileArgs, check);
+    if (target) return { ok: false, status: 403, reason: target };
+    return { ok: true, tool };
+  }
   // Rule 6: a Table write rules 2 to 4 let through changes only a Table
   // homed in the holder of the app. A documents tool names no Table: its
-  // one write, the file, is held to the holder where it runs.
+  // one write, the file, is held to the holder where it runs. Any other
+  // write (a `files` one without its args, none should be) names no Table
+  // and is refused here (fail closed).
   if (!builtin.readOnly && !builtin.documents) {
     const arg = teamTableWriteArg(tool.handler.ref);
     const target = await tableRowsTargetRefusal(ownerId, slug, arg, check);

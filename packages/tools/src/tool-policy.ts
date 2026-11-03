@@ -235,8 +235,15 @@ type ToolPolicyFields = Readonly<{
    *  (builtins-documents.ts), which a team app may call: its inputs are read
    *  in the app's scope, and its file is saved in the workspace that holds
    *  the app for a user who moderates it there, or handed back to the app
-   *  (`bytes`) and saved nowhere. */
-  memberApp?: 'ok' | 'refused' | 'table-rows' | 'documents';
+   *  (`bytes`) and saved nowhere. `files`: a file write a team app may make
+   *  in the workspace that holds it (file_upload, file_move, file_rename),
+   *  as the running login: on a file (`itemArgs`, its first) and in a folder
+   *  (`memberAppFolderArg`) homed there, with that user's own rights, and
+   *  never one that changes who reads it (member-app-tools.ts rule 7). */
+  memberApp?: 'ok' | 'refused' | 'table-rows' | 'documents' | 'files';
+  /** With memberApp `files`: the argument that names the folder the file
+   *  lands in (an ltree path), when the write names one. */
+  memberAppFolderArg?: string;
   /** It reads the owner's PRIVATE corpus (mail, the Journal): a turn that
    *  serves a workspace user (a team turn, a workspace run or Telegram
    *  turn) is offered it only when the owner opted in (teamPrivateReads),

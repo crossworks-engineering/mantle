@@ -45,7 +45,7 @@ import {
 import { renderAppFrame } from '@/lib/app-frame';
 import { runAppToolBroker } from '@/lib/app-tool-broker';
 import { memberAppOr404, memberName } from '@/lib/member-apps';
-import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
+import { APP_FILE_WRITE_BODY_BYTES, JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
 
 /**
@@ -220,6 +220,9 @@ export async function memberToolBroker(
     ownerId: member.brainId,
     runner: { loginId: member.loginId, name: memberName(member) },
     maxBytes: JSON_BODY_CEILING_BYTES,
+    // Room for a team app's 16 MB file_upload as base64; any other call is
+    // held to the JSON ceiling.
+    fileMaxBytes: APP_FILE_WRITE_BODY_BYTES,
     app: () => memberAppOr404(member.brainId, id, member.loginId),
     // The verdict reads the tool registry, and the run enters the app's
     // scope from outside the login's: system bookkeeping, by the named door.

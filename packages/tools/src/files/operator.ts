@@ -1,6 +1,8 @@
 /**
- * Owner-operator surface (mcpOnly): create and delete folders, upload
- * and delete files. Never granted to an in-brain agent.
+ * Owner-operator surface (mcpOnly): create and delete folders, delete
+ * files. Never granted to an in-brain agent. And file_upload, seeded so a
+ * mini app can declare it: the `app-files` group holds it, no agent by
+ * default.
  */
 
 import {
@@ -15,6 +17,7 @@ import {
   setIndexingMode,
 } from '@mantle/files';
 import { deleteFileWithDerived, describeDerivedCounts } from '@mantle/content';
+import { appRunWriteHolder, withCreateHome } from '@mantle/db';
 import { guardNewFileIn } from '@mantle/content/tree';
 import { type BuiltinToolDef } from '../types';
 import { str, strOpt, boolOpt as bool } from '../coerce';
@@ -141,8 +144,14 @@ export const file_upload: BuiltinToolDef = {
     keyArea: 'files',
     createsIn: 'parent_path',
     clientSourced: { ...CS.creates(), alwaysWhen: CS.overwrites },
+    // A team app's upload in the workspace that holds it (member-app-tools.ts
+    // rule 7). Seeded for that (no longer mcpOnly), and held by the one
+    // `app-files` group, which no agent holds by default.
+    memberApp: 'files',
+    memberAppFolderArg: 'parent_path',
+    // Seeded for mini apps only: no recipe step uploads (as when mcpOnly).
+    recipe: { step: 'forbidden' },
   },
-  mcpOnly: true,
   name: 'Create or overwrite a file',
   description:
     "Create or overwrite a file in a folder. Pass either `content_text` (utf-8) or `content_base64` (binary). Filename is lowercased + sanitised. The extractor agent will pick up text files (md/txt/json/yaml) automatically. Pass `indexing: 'metadata'` to store WITHOUT content indexing (findable by name/type/tags only).",
@@ -180,14 +189,34 @@ export const file_upload: BuiltinToolDef = {
     const parentPath = str(input.parent_path);
     const filename = str(input.filename);
     if (!parentPath || !filename) return { ok: false, error: 'parent_path + filename required' };
-    const contentText = input.content_text == null ? undefined : String(input.content_text);
-    const contentBase64 = input.content_base64 == null ? undefined : String(input.content_base64);
+    // Strings only: a caller's cap counts what the call carries (the app
+    // broker's 16 MB), so nothing else is turned into one here.
+    if (
+      (input.content_text != null && typeof input.content_text !== 'string') ||
+      (input.content_base64 != null && typeof input.content_base64 !== 'string')
+    ) {
+      return { ok: false, error: 'file_upload: content_text and content_base64 are strings' };
+    }
+    const contentText = input.content_text == null ? undefined : input.content_text;
+    const contentBase64 = input.content_base64 == null ? undefined : input.content_base64;
     if (contentText == null && contentBase64 == null) {
       return { ok: false, error: 'file_upload: pass content_text or content_base64' };
     }
     const raw = strOpt(input.indexing);
     if (raw && raw !== 'full' && raw !== 'metadata') {
       return { ok: false, error: "indexing must be 'full' or 'metadata'" };
+    }
+    // A team app's upload (member-app-tools.ts rule 7) lands in the one
+    // workspace that holds the app: the folder's home, which the verdict
+    // and the Files operation hold it to; never the runner's other
+    // workspaces. It is read as a Files upload is: its folder decides the
+    // indexing, never the app.
+    const holder = appRunWriteHolder();
+    if (holder && raw) {
+      return {
+        ok: false,
+        error: "file_upload: a team app's file is indexed as its folder says; leave indexing out.",
+      };
     }
     const indexing = raw as 'full' | 'metadata' | undefined;
     const bytes =
@@ -203,7 +232,7 @@ export const file_upload: BuiltinToolDef = {
         error: `file_upload: too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB > ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)${hint}`,
       };
     }
-    try {
+    const write = async () => {
       // A shared folder makes the file readable by the team or clients: ask.
       await guardNewFileIn(ctx.ownerId, parentPath, filename, { confirm: input.confirm === true });
       const row = await upsertFile({
@@ -220,6 +249,12 @@ export const file_upload: BuiltinToolDef = {
       if (indexing) {
         await setIndexingMode({ ownerId: ctx.ownerId, nodeId: row.id, mode: indexing });
       }
+      return row;
+    };
+    try {
+      const row = holder
+        ? await withCreateHome({ createWs: holder, privateWs: holder }, write)
+        : await write();
       return { ok: true, output: indexing ? { ...row, indexing } : row };
     } catch (err) {
       const refusal = visibilityRefusal(err);
