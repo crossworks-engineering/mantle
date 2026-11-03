@@ -4,6 +4,27 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.7: you can see when the decider fails
+
+The decider is the small, fast model that picks which passages and
+memories a turn needs. When it failed before, nobody saw it: the brain
+just quietly lost that help.
+
+- **Added:** a failing decider now raises a provider alert, the same kind
+  the embedder and the extractor raise. A permanent failure (a refused key,
+  no credits, a model that is not offered under zero data retention) shows
+  at once. A short one (a timeout, an answer it cannot use) shows after 10
+  minutes. A decision that works again closes the alert.
+- **Added:** the decider worker screen shows the last failure: when, which
+  model, and why, and whether it is still failing.
+- **Changed:** the Test button sends one small real request, the same way a
+  turn does, with the real privacy level and limits. It never retries and
+  never lowers privacy. It only runs when you click it.
+- **Fixed:** an older web app no longer breaks on an alert it does not
+  know. New alert kinds go in a separate `otherAlerts` list.
+- **Database:** migration 0353 adds `decision` to the alert subjects. It
+  adds no table and no trigger.
+
 ## v0.500.6: the Changelog screen shows the newest release
 
 - **Fixed:** the Changelog screen in the app showed v0.232.35 as the
