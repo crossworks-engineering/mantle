@@ -271,6 +271,14 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
       );
     expect(await reads(admin2)).toEqual([file!.id]);
     expect(await reads(owner)).toEqual([]);
+    // Its ingest trace is the chat's login's too (the activity lists): the
+    // worker that runs it acts as no login.
+    const ingests = await x<{ login: string | null }>(sql`
+      select login_id::text as login from traces
+       where owner_id = ${owner} and subject_kind = 'telegram_message'
+         and kind in ('photo_ingest', 'content_ingest')
+       order by started_at desc limit 1`);
+    expect(ingests).toEqual([{ login: admin2 }]);
   });
 
   it('a member turn claims a slot through the ledger definers (0326, 0327); the cap refuses; an Admin user takes none', async () => {

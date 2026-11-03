@@ -30,6 +30,8 @@ export async function ingestTelegramAttachment(args: {
     {
       kind: isPhoto ? 'photo_ingest' : 'content_ingest',
       ownerId,
+      // The chat's login's: the worker that runs it acts as no login.
+      rowLoginId: loginId,
       subjectId: row.id,
       subjectKind: 'telegram_message',
       data: {

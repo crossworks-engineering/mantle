@@ -20,10 +20,17 @@
  *    note (stamped from the note), a chat attachment, a summary and a
  *    simulated turn of the member's chat. No Admin user, the anchor
  *    included, lists or reads it, nor the note it names.
- *  - Rows stored before every writer stamped a login: a run's trace is its
- *    run's login's (the anchor's run the anchor's), a heartbeat fire and
- *    its delegated child the anchor's (with or without a fire row), and a
- *    no-login trace over another login's private note nobody's to list.
+ *  - A run over an item of a shared workspace (not Admin) is its maker's
+ *    (the login its ingest names), else no one's, as is a run over a node
+ *    that is gone: never the Admin users' system work, never the anchor's.
+ *  - Rows stored before every writer stamped a login (0356): a run's trace
+ *    is its run's login's (the anchor's run the anchor's), a heartbeat fire
+ *    and its delegated child the anchor's (with or without a fire row), an
+ *    assistant message's, a pending call's and a data-named login's trace
+ *    that login's, a trace over another login's private note that login's,
+ *    an unclassified content row the anchor's alone, as before this branch,
+ *    and one over a W item of unknown maker, or a node that is gone, no
+ *    one's.
  *  - The anchor's fire is a turn of no login (run_plan reads it) while its
  *    row, and its children's, name the anchor.
  *
@@ -73,6 +80,8 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
    *  anchor and the other Admin user list and read each. */
   const N: Record<string, { id: string; owner: boolean; admin: boolean; stamp?: string }> = {};
   const SECRET = `${randomUUID().slice(0, 8)} private words`;
+  /** The stamp of work no one lists (the tracing store's NO_ONE_LOGIN). */
+  const NO_ONE = '00000000-0000-0000-0000-000000000000';
   let adminNote = '';
   let memberNote = '';
 
@@ -143,7 +152,7 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
               '{"kind":"manual"}'::jsonb, '{"kind":"web"}'::jsonb)
       returning id::text as id`;
     await raw`insert into traces (id, owner_id, kind, status, login_id) values
-      (${T.system}, ${L.owner}, 'manual', 'success', null),
+      (${T.system}, ${L.owner}, 'federation_request', 'success', null),
       (${T.anchorFire}, ${L.owner}, 'heartbeat_fire', 'success', null),
       (${T.owner}, ${L.owner}, 'responder_turn', 'success', ${L.owner}),
       (${T.admin}, ${L.owner}, 'responder_turn', 'success', ${L.admin}),
@@ -174,6 +183,11 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
     };
     adminNote = await noteIn(adminWs, null, `${tag} admin note`);
     memberNote = await noteIn(privateWs, privateWs, `${tag} ${SECRET}`);
+    // Notes of the shared workspace W: one the member made (its ingest
+    // names the member), one with no ingest, and one for an older row.
+    const teamNote = await noteIn(w, null, `${tag} team note`);
+    const teamNoIngest = await noteIn(w, null, `${tag} team note, no ingest`);
+    const teamOld = await noteIn(w, null, `${tag} team note, older row`);
 
     // The content writers, as each runs.
     const tracing = await import('@mantle/tracing');
@@ -279,6 +293,66 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
     add('fire', fire.id, true, false, L.owner);
     add('fireChild', fire.child, true, false, L.owner);
     expect(fireTurnLogin, 'run_plan still reads no login on the fire').toBeNull();
+    // A W item's run is its maker's work, never the Admin users' system work.
+    add(
+      'teamIngest',
+      await asMember(() =>
+        tracing.recordIngest({
+          source: 'note_create',
+          ownerId: L.owner,
+          nodeId: teamNote,
+          summary: `${tag} team note`,
+        }),
+      ),
+      false,
+      false,
+      L.member,
+    );
+    add(
+      'teamExtract',
+      await asWorker(() =>
+        opened({
+          kind: 'extractor_run',
+          ownerId: L.owner,
+          subjectKind: 'node',
+          subjectId: teamNote,
+        }),
+      ),
+      false,
+      false,
+      L.member,
+    );
+    add(
+      'teamNoIngest',
+      await asWorker(() =>
+        opened({
+          kind: 'extractor_run',
+          ownerId: L.owner,
+          subjectKind: 'node',
+          subjectId: teamNoIngest,
+        }),
+      ),
+      false,
+      false,
+      NO_ONE,
+    );
+    // A run over a node that is gone: whose it was cannot be told.
+    const goneNote = await noteIn(adminWs, null, `${tag} gone note`);
+    await asSuperuser()`delete from nodes where id = ${goneNote}`;
+    add(
+      'goneNode',
+      await asWorker(() =>
+        opened({
+          kind: 'extractor_run',
+          ownerId: L.owner,
+          subjectKind: 'node',
+          subjectId: goneNote,
+        }),
+      ),
+      false,
+      false,
+      NO_ONE,
+    );
     add(
       'system',
       await asWorker(() =>
@@ -342,6 +416,40 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
                 ${raw.json({ summary: SECRET })})`;
       N[key] = { id, owner: o.owner, admin: o.admin };
     }
+    // Rows that name their login only through what they point at.
+    const message = randomUUID();
+    const pendingCall = randomUUID();
+    await raw`insert into assistant_messages (id, owner_id, direction, text, login_id)
+      values (${message}, ${L.owner}, 'inbound', ${SECRET}, ${L.member})`;
+    await raw`insert into pending_tool_calls (id, owner_id, tool_slug, login_id)
+      values (${pendingCall}, ${L.owner}, 'note_create', ${L.member})`;
+    const pointed = {
+      oldMessage: { kind: 'responder_turn', sk: 'assistant_message', sid: message, data: {} },
+      oldPending: { kind: 'manual', sk: 'pending_tool_call', sid: pendingCall, data: {} },
+      oldDataLogin: { kind: 'summarizer_run', sk: null, sid: null, data: { login_id: L.member } },
+    } as const;
+    for (const [key, o] of Object.entries(pointed)) {
+      const id = randomUUID();
+      await raw`insert into traces (id, owner_id, kind, status, login_id, subject_kind, subject_id, data)
+        values (${id}, ${L.owner}, ${o.kind}, 'success', null, ${o.sk}, ${o.sid},
+                ${raw.json({ ...o.data, summary: SECRET })})`;
+      N[key] = { id, owner: false, admin: false };
+    }
+    // What 0356 cannot classify stays the anchor's, as before this branch;
+    // an older row over a W item whose maker is unknown, or over a node that
+    // is gone, is no one's.
+    for (const [key, sk, sid, owner] of [
+      ['oldUnclassified', null, null, true],
+      ['oldTeamItem', 'node', teamOld, false],
+      ['oldGoneNode', 'node', randomUUID(), false],
+    ] as const) {
+      const id = randomUUID();
+      await raw`insert into traces (id, owner_id, kind, status, login_id, subject_kind, subject_id, data)
+        values (${id}, ${L.owner}, 'extractor_run', 'success', null, ${sk}, ${sid},
+                ${raw.json({ summary: SECRET })})`;
+      N[key] = { id, owner, admin: false };
+    }
+
     const fireChild = randomUUID();
     await raw`insert into traces (id, owner_id, kind, status, login_id, data)
       values (${fireChild}, ${L.owner}, 'manual', 'success', null,
