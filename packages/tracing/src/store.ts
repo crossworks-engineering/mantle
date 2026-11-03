@@ -773,8 +773,9 @@ function rowLoginFor(
  * no login has this id, so no reader, the anchor included, lists or reads
  * the row (traceListedFor). For work whose login cannot be told (a run over
  * a shared workspace's item whose maker is unknown, or over a node that is
- * gone), Jason's rule: it is never handed to the anchor or shown to the
- * Admin users as system work. Migration 0356 stamps older rows with it too.
+ * gone), under the rule that activity is its user's: it is never handed to
+ * the anchor or shown to the Admin users as system work. Migration 0356
+ * stamps older rows with it too.
  */
 const NO_ONE_LOGIN = '00000000-0000-0000-0000-000000000000';
 
