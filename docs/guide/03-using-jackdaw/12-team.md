@@ -33,7 +33,7 @@ A **Moderator** adds people, edits the workspace and changes the items whose hom
 
 To stop sharing, click **Revoke** on that row. To move the item to another home, pick **Home** on that row; you can keep it readable in the old home.
 
-When you move a folder to another home, the dialog also offers **Also move the N items inside**, ticked. The sub-folders and files below it that have the same home move with it, at any depth. An item below it with another home stays where it is, and the dialog says how many do.
+When you move a folder to another home, the dialog also offers **Also move the N items inside**, ticked. The sub-folders and files below it that have the same home move with it, at any depth. An item below it stays where it is when it has another home, is of a kind the new home cannot hold, was **Removed here** for the new home (on it or on a folder it is in), or is in a folder you cannot open. The dialog says how many stay.
 
 A folder shares what is in it: open **Access…** from the folder's menu in the tree. Before you confirm, the dialog says how many items it will share. If a page embeds items that are not shared the same way, the panel offers **Grant these too**.
 

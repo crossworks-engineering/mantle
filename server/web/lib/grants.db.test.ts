@@ -565,6 +565,7 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     const hid = await call(r.movePreview.POST(req('POST', body)));
     expect(hid.status).toBe(404);
     expect(hid.body.contents).toBeUndefined();
+    expect((await call(r.move.POST(req('POST', { ...body, confirm: true })))).status).toBe(404);
     await as(owner);
     // withContents is a home move of one folder, from the home seen on it.
     expect(
@@ -745,6 +746,30 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     ]);
     expect((await rowsOf(a1)).find((x) => x.is_home)!.ws).toBe(Q);
     expect((await rowsOf(ac)).find((x) => x.is_home)!.ws).toBe(admin);
+
+    // An item in a folder the caller cannot open stays: HS (R, P "Removed
+    // here") holds h1 (P).
+    const HF = await node('branch', 'HF', 'notes.khf');
+    const HS = await node('branch', 'HS', 'notes.khf.hs');
+    const h1 = await node('note', 'h1', 'notes.khf.hs');
+    await homeIn(HF, P);
+    await homeIn(HS, R);
+    await homeIn(h1, P);
+    await as(mem2);
+    expect((await del(HS, P, true)).status).toBe(200);
+    await as(owner);
+    expect(await readWs(HS)).toEqual([R]);
+    const hb = { nodeIds: [HF], toWorkspaceId: Q, withContents: true, fromWorkspaceId: P };
+    expect((await call(r.movePreview.POST(req('POST', hb)))).body.contents).toMatchObject({
+      move: 0,
+      removedHere: 1,
+      otherHome: 1,
+      hidden: 1,
+    });
+    const hm = await call(r.move.POST(req('POST', { ...hb, confirm: true })));
+    expect(hm.body).toMatchObject({ moved: 1, failed: [] });
+    expect(hm.body.contents.leftAlone).toEqual([{ id: h1, title: 'h1', reason: 'hidden_folder' }]);
+    expect((await rowsOf(h1)).find((x) => x.is_home)!.ws).toBe(P);
 
     // The folder rehomed between two calls: the next call moves nothing.
     const MF = await node('branch', 'MF2', 'notes.mf2');

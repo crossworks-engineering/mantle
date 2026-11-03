@@ -12,7 +12,10 @@ deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
   folder. Now the move dialog offers "Also move the N items inside",
   ticked. Every item below the folder, at any depth, with the folder's old
   home moves too, by the same rules and the same "Keep it readable". An
-  item with another home stays where it is, and the dialog says how many.
+  item stays where it is when it has another home, is of a kind the new
+  home cannot hold, was "Removed here" for the new home (on it or on a
+  folder it is in), or is in a folder you cannot open. The dialog says how
+  many.
   A big folder moves 200 items per call, the folder itself last
   (`withContents` on `POST /api/grants/move` and its preview).
 
