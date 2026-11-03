@@ -523,6 +523,26 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(await misses()).toBe(before);
   });
 
+  it('a plain folder home move with an item inside the caller cannot open (0355)', async () => {
+    // With the edit check on, the folder change asked for the hidden item's
+    // head every round and failed with "subtree kept growing".
+    const F = await node('branch', 'PF', 'notes.kpf');
+    const a = await node('note', 'pa', 'notes.kpf');
+    const hidden = await node('note', 'ph', 'notes.kpf');
+    for (const id of [F, a]) await homeIn(id, P);
+    await homeIn(hidden, R);
+    await as(mem2);
+    expect((await del(hidden, P)).status).toBe(200);
+    expect(await readWs(hidden)).toEqual([R]);
+    await as(owner);
+    const res = await call(
+      r.move.POST(req('POST', { nodeIds: [F], toWorkspaceId: Q, confirm: true })),
+    );
+    expect(res.body).toEqual({ moved: 1, failed: [] });
+    // The hidden item takes Q from its folder like the rest.
+    expect((await readWs(hidden)).sort()).toEqual([Q, R].sort());
+  });
+
   it('move a folder home with its contents: 3 levels, mixed homes, keep readable, batches', async () => {
     // CF (P) holds n1 (P), nOther (R), nHid (R, P "Removed here": the owner
     // cannot open it), nThere (Q, the target: already there) and S1 (P);

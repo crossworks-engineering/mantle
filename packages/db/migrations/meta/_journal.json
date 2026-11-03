@@ -2479,6 +2479,13 @@
       "when": 1790978460000,
       "tag": "0354_peer_status_link",
       "breakpoints": true
+    },
+    {
+      "idx": 355,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0355_folder_change_scope_filter",
+      "breakpoints": true
     }
   ]
 }
