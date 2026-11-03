@@ -388,4 +388,3 @@ describe('the decision alert hears what the breaker hears', () => {
     expect(h.successes).toBe(0);
   });
 });
-

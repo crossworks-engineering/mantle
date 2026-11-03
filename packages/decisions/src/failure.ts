@@ -46,10 +46,7 @@ export class DecisionCutError extends Error {
  * Transient codes (timeouts, server errors, unusable answers) are shown
  * only once they have lasted 10 min; permanent ones at once.
  */
-export function decisionFailureClass(
-  err: unknown,
-  privacy: DecisionPrivacy,
-): ProviderFailureClass {
+export function decisionFailureClass(err: unknown, privacy: DecisionPrivacy): ProviderFailureClass {
   if (err instanceof DecisionCutError) {
     return { code: 'cut', permanent: false, reason: DECISION_FAILURE_REASONS.cut };
   }

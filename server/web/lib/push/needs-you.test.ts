@@ -114,7 +114,11 @@ describe('provider outages (no credits, 2026-10-04)', () => {
       body: 'Slow.',
       deepLink: '/settings/ai-workers',
     });
-    const [d] = needsYouArrivals([outage({ subject: 'model_policy', waiting: null })], new Set(), NOW);
+    const [d] = needsYouArrivals(
+      [outage({ subject: 'model_policy', waiting: null })],
+      new Set(),
+      NOW,
+    );
     expect(needsYouMessage(d!).title).toBe('The box policy blocked a model');
   });
 
