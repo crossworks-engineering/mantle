@@ -89,6 +89,10 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     return (await json(res)) as { id: string; secret: string };
   };
   const audited = async (action: string, keyId: string) => {
+    // A key call's row is written fire and forget: wait for every write in
+    // flight, or a read can land after the first row and before the rest.
+    const { auditsSettled } = await import('./audit');
+    await auditsSettled();
     for (let i = 0; i < 100; i += 1) {
       const rows = await sql<Row[]>`
         select path, detail from audit_log
