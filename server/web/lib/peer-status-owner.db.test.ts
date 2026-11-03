@@ -2,7 +2,7 @@
  * A status peer's token runs as the brain's owner (mcp-auth.ts
  * statusPeerCaller), so the HTTP changes that mint or arm it are the
  * owner's, as for a peer bound to the owner (peer-access.ts
- * peerBoundToOwner, 0353): an Admin user who is not the owner gets 403 for
+ * peerBoundToOwner, 0354): an Admin user who is not the owner gets 403 for
  * a new token (POST /api/peers/:id/rotate) and for turning it back on
  * (PATCH enabled: true), and nothing changes; turning it off stays open to
  * them. The owner may do both. A `full` peer bound to nobody is as before.
