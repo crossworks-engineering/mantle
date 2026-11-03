@@ -5,20 +5,24 @@
  * 6.1; docs/policy.md).
  *
  *   MANTLE_POLICY_TELEGRAM=off
+ *   MANTLE_POLICY_EMAIL_SEND=off
  *   MANTLE_POLICY_MODEL_DENY=deepseek/*,qwen/*
  *   MANTLE_POLICY_PROVIDER_ALLOW=foundry,local
  *   MANTLE_POLICY_PASSWORD_MIN=12
  *
  * An empty or missing value is NO rule. A box with every value empty
  * behaves exactly as a box from before this module: no Telegram switch, no
- * model block, the 8-character password rule, no Policy panel, no boot
- * check (policy.test.ts and the acceptance test pin it). A value that does
+ * email switch, no model block, the 8-character password rule, no Policy
+ * panel, no boot check (policy.test.ts and the acceptance test pin it). A value that does
  * not parse is a boot error (policyProblems, read by assertEnvShape):
  * a typo must never quietly leave a box without the rule its operator set.
  *
  * Each rule has ONE reader here and one gate where it bites:
  *   - Telegram: telegramAllowed() (the poll worker, the Bot transport, the
  *     tool lists, the Telegram routes' switch).
+ *   - Email sending: emailSendAllowed() (the two mail transports,
+ *     @mantle/email sendEmail and @mantle/microsoft sendViaGraph, the tool
+ *     lists, the approval of a queued send).
  *   - Models: modelPolicyRefusal() (the one model check, @mantle/voice
  *     model-policy.ts, which every model call path goes through).
  *   - Passwords: passwordPolicyMin() (the one password rule,
@@ -40,6 +44,8 @@ export const MAX_PASSWORD_MIN = 64;
 export type BoxPolicy = Readonly<{
   /** 'off': Telegram is switched off for the whole box. */
   telegram: 'off' | null;
+  /** 'off': nothing on the box sends an email. */
+  emailSend: 'off' | null;
   /** Model patterns no route may call (lowercase, see modelPolicyRefusal). */
   modelDeny: readonly string[] | null;
   /** The only providers any route may call (lowercase provider ids). */
@@ -53,6 +59,7 @@ export type BoxPolicy = Readonly<{
 
 const EMPTY: BoxPolicy = Object.freeze({
   telegram: null,
+  emailSend: null,
   modelDeny: null,
   providerAllow: null,
   passwordMin: null,
@@ -62,6 +69,7 @@ const EMPTY: BoxPolicy = Object.freeze({
 /** The raw values, as the box .env gives them. */
 export type PolicyEnv = Readonly<{
   telegram?: string;
+  emailSend?: string;
   modelDeny?: string;
   providerAllow?: string;
   passwordMin?: string;
@@ -92,9 +100,9 @@ const HOST_RE =
 
 /**
  * Pure: the policy from raw values, and every problem with them. A value
- * with a problem still yields the strictest reading (Telegram off, the
- * list as far as it parsed, the floor), so a worker that boots without
- * assertEnvShape never runs looser than the operator asked.
+ * with a problem still yields the strictest reading (Telegram off, email
+ * sending off, the list as far as it parsed, the floor), so a worker that
+ * boots without assertEnvShape never runs looser than the operator asked.
  */
 export function parsePolicy(raw: PolicyEnv): { policy: BoxPolicy; problems: string[] } {
   const problems: string[] = [];
@@ -105,6 +113,15 @@ export function parsePolicy(raw: PolicyEnv): { policy: BoxPolicy; problems: stri
     else if (v !== 'on') {
       problems.push('MANTLE_POLICY_TELEGRAM must be off, on or empty');
       telegram = 'off';
+    }
+  }
+  let emailSend: BoxPolicy['emailSend'] = null;
+  if (!blank(raw.emailSend)) {
+    const v = raw.emailSend!.trim().toLowerCase();
+    if (v === 'off') emailSend = 'off';
+    else if (v !== 'on') {
+      problems.push('MANTLE_POLICY_EMAIL_SEND must be off, on or empty');
+      emailSend = 'off';
     }
   }
   let modelDeny: string[] | null = null;
@@ -165,12 +182,19 @@ export function parsePolicy(raw: PolicyEnv): { policy: BoxPolicy; problems: stri
       problems.push('MANTLE_POLICY_ENDPOINT_ALLOW is read only with MANTLE_POLICY_PROVIDER_ALLOW');
     }
   }
-  if (telegram === null && modelDeny === null && providerAllow === null && passwordMin === null) {
+  if (
+    telegram === null &&
+    emailSend === null &&
+    modelDeny === null &&
+    providerAllow === null &&
+    passwordMin === null
+  ) {
     return { policy: EMPTY, problems };
   }
   return {
     policy: Object.freeze({
       telegram,
+      emailSend,
       modelDeny: modelDeny ? Object.freeze(modelDeny) : null,
       providerAllow: providerAllow ? Object.freeze(providerAllow) : null,
       passwordMin,
@@ -183,6 +207,7 @@ export function parsePolicy(raw: PolicyEnv): { policy: BoxPolicy; problems: stri
 function readEnv(): PolicyEnv {
   return {
     telegram: env('MANTLE_POLICY_TELEGRAM'),
+    emailSend: env('MANTLE_POLICY_EMAIL_SEND'),
     modelDeny: env('MANTLE_POLICY_MODEL_DENY'),
     providerAllow: env('MANTLE_POLICY_PROVIDER_ALLOW'),
     passwordMin: env('MANTLE_POLICY_PASSWORD_MIN'),
@@ -226,16 +251,41 @@ export function telegramAllowed(): boolean {
 }
 
 /** False for a tool the box policy switches off: every `telegram_*` tool
- *  while Telegram is off. The agent's tool list (@mantle/runtime
- *  effectiveToolSlugs) and the MCP list (@mantle/mcp-core build-server)
- *  leave it out; the grant stays, so it comes back with the setting. */
+ *  while Telegram is off, and the send tools (EMAIL_SEND_TOOL_SLUGS) while
+ *  email sending is off. The agent's tool list (@mantle/runtime
+ *  effectiveToolSlugs) and the MCP list (@mantle/mcp-core
+ *  registerBuiltinTools) leave it out; the grant stays, so it comes back
+ *  with the setting. */
 export function toolPolicyAllows(slug: string): boolean {
-  return telegramAllowed() || !slug.startsWith('telegram_');
+  if (!telegramAllowed() && slug.startsWith('telegram_')) return false;
+  if (!emailSendAllowed() && isEmailSendTool(slug)) return false;
+  return true;
 }
 
 /** What every Telegram refusal says. */
 export const TELEGRAM_POLICY_OFF_MESSAGE =
   "Telegram is switched off by this box's policy (MANTLE_POLICY_TELEGRAM).";
+
+// ── Email sending ───────────────────────────────────────────────────────────
+
+/** False when the policy switches email sending off for the box. Reading
+ *  and syncing mail are not touched. */
+export function emailSendAllowed(): boolean {
+  return boxPolicy().emailSend !== 'off';
+}
+
+/** The builtins that send mail (packages/tools builtins-email.ts). Reading
+ *  tools (email_list, email_get) are not on it. */
+export const EMAIL_SEND_TOOL_SLUGS: readonly string[] = Object.freeze(['email_send', 'email_page']);
+
+/** A tool that sends mail. */
+export function isEmailSendTool(slug: string): boolean {
+  return EMAIL_SEND_TOOL_SLUGS.includes(slug);
+}
+
+/** What every email sending refusal says. */
+export const EMAIL_SEND_POLICY_OFF_MESSAGE =
+  "Email sending is switched off by this box's policy (MANTLE_POLICY_EMAIL_SEND).";
 
 // ── Models ──────────────────────────────────────────────────────────────────
 

@@ -68,6 +68,7 @@ Rules for a company box. Nobody can change them from the app; **Settings** shows
 | Variable                       | What it does                                                                                        |
 | ------------------------------ | --------------------------------------------------------------------------------------------------- |
 | `MANTLE_POLICY_TELEGRAM`       | `off` switches Telegram off. The bots and chats are kept.                                           |
+| `MANTLE_POLICY_EMAIL_SEND`     | `off` stops all email sending. Reading and syncing mail still work. Nothing is deleted.             |
 | `MANTLE_POLICY_MODEL_DENY`     | Models nothing may use, for example `deepseek/*,qwen/*`. Auto routers are blocked too.              |
 | `MANTLE_POLICY_PROVIDER_ALLOW` | The only providers anything may use, for example `foundry,local`.                                   |
 | `MANTLE_POLICY_ENDPOINT_ALLOW` | With a provider list: the servers a model route may name. Empty: the box's own endpoints only.      |

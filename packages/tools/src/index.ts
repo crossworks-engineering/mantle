@@ -422,6 +422,7 @@ export {
 } from './pending';
 export {
   ApprovalRefusedError,
+  EmailSendOffApprovalError,
   ELEVATED_APPROVER_ERROR,
   ELEVATED_NO_APPROVER_ERROR,
   ELEVATED_NO_ASKER_ERROR,

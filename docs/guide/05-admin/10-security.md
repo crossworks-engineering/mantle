@@ -46,6 +46,7 @@ The installer generates these, and re-running it never replaces an existing key.
 A company can lock a few things for every site with a few lines in `.env` ([Environment variables](03-env-vars.md#box-policy)). The app cannot turn them off.
 
 - **Telegram off.** No bot polls or sends. The bots and chats are kept.
+- **Email sending off.** No agent, person or app can send an email from the box. The send tools leave every agent, and an email waiting for approval stays waiting. Reading and syncing mail still work.
 - **Models.** Block model families or allow only some providers. A blocked model fails with a clear message and an alert, and the model lists show only allowed models.
 - **Passwords.** A longer minimum than the usual 8 characters. Common passwords are refused on every box anyway. After you turn it on, every login signs in once more, and a person whose password is too weak changes it then. That also ends their API keys and connectors, as any password change does.
 

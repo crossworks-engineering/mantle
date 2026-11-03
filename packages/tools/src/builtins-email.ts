@@ -27,6 +27,7 @@ import {
   type EmailAttachment,
 } from '@mantle/email';
 import { msAccountCanSend, sendViaGraph } from '@mantle/microsoft';
+import { EMAIL_SEND_POLICY_OFF_MESSAGE, emailSendAllowed } from '@mantle/config';
 import {
   getPage,
   docToText,
@@ -189,6 +190,15 @@ function sendFromAccount(account: EmailAccount, input: SendEmailInput): Promise<
     : sendEmail(account, input);
 }
 
+/** The send tools' answer while the box policy switches email sending off
+ *  (MANTLE_POLICY_EMAIL_SEND=off, docs/policy.md). The tools also leave
+ *  every agent and MCP list then; this covers a caller that names one
+ *  anyway (an app's declared tool, a run). Both transports refuse too. */
+const EMAIL_SEND_OFF = {
+  ok: false as const,
+  error: `${EMAIL_SEND_POLICY_OFF_MESSAGE} Nothing was sent; no email can be sent from this box.`,
+};
+
 const NO_SEND_ACCOUNT_ERROR =
   'no send-enabled email account found — configure SMTP host/port on an account at ' +
   '/settings/accounts, or connect a Microsoft account at /settings/microsoft ' +
@@ -258,6 +268,7 @@ const email_send: BuiltinToolDef = {
     required: ['to', 'subject', 'body'],
   },
   handler: async (input, ctx) => {
+    if (!emailSendAllowed()) return EMAIL_SEND_OFF;
     const to = str(input.to).trim();
     const subject = str(input.subject).trim();
     const body = str(input.body);
@@ -357,6 +368,7 @@ const email_page: BuiltinToolDef = {
     required: ['pageId', 'to'],
   },
   handler: async (input, ctx) => {
+    if (!emailSendAllowed()) return EMAIL_SEND_OFF;
     const pageId = str(input.pageId).trim();
     const to = str(input.to).trim();
     if (!pageId) return { ok: false, error: 'pageId is required' };

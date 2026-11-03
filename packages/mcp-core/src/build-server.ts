@@ -259,6 +259,9 @@ export function registerMantleTools(
   // Outbound email included: email_send is gated by the contacts allowlist the
   // same way it is for the responder, so the allowlist stays the boundary on
   // every surface rather than the surface being its own second boundary.
+  // While the box policy switches email sending off (docs/policy.md) the send
+  // tools leave the list (registerBuiltinTools asks toolPolicyAllows); the
+  // reads stay.
   registerBuiltinTools(EMAIL_TOOLS);
 
   // The one exception: there is no note_delete builtin — the in-app agent

@@ -18,7 +18,7 @@
  *     run paused with nothing left to approve.
  */
 
-import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 const h = vi.hoisted(() => ({
   db: null as unknown as Record<string, unknown>,
@@ -91,8 +91,14 @@ vi.mock('./held-tools', () => ({
 // stub `h.elevated` (it throws a refusal, or gives the run).
 vi.mock('./pending-approval', () => {
   class ApprovalRefusedError extends Error {}
+  class EmailSendOffApprovalError extends ApprovalRefusedError {
+    constructor() {
+      super('email sending is off (MANTLE_POLICY_EMAIL_SEND)');
+    }
+  }
   return {
     ApprovalRefusedError,
+    EmailSendOffApprovalError,
     PENDING_NO_TOOL_ERROR: 'tool gone',
     PENDING_NOT_RECHECKED_ERROR: 'not rechecked',
     deciderOf: (ownerId: string, named?: string | null) => named ?? ownerId,
@@ -548,6 +554,81 @@ describe('a held vault change (api_key_set over MCP)', () => {
     fake.queue('pending_tool_calls', [{ ...heldRow(), status: 'rejected' }]);
     await rejectPendingCall(OWNER, ROW_ID);
     expect(held.released).toEqual([{ ownerId: OWNER, args: heldRow().args }]);
+  });
+});
+
+describe('a queued send while the box policy switches email sending off (docs/policy.md)', () => {
+  const sendRow = (extra: Record<string, unknown> = {}) => ({
+    ...askRow(),
+    status: 'pending',
+    toolSlug: 'email_send',
+    args: { to: 'friend@example.com', subject: 'Hi', body: 'Hello' },
+    ...extra,
+  });
+  const setEmailSend = async (value: string | undefined) => {
+    const { resetBoxPolicyForTests } = await import('@mantle/config');
+    if (value === undefined) delete process.env.MANTLE_POLICY_EMAIL_SEND;
+    else process.env.MANTLE_POLICY_EMAIL_SEND = value;
+    resetBoxPolicyForTests();
+  };
+  const saved = process.env.MANTLE_POLICY_EMAIL_SEND;
+  afterEach(() => setEmailSend(saved));
+
+  it('off: refused before it is judged or claimed; it stays pending, nothing ran', async () => {
+    await setEmailSend('off');
+    fake.queue('pending_tool_calls', [sendRow()]);
+    await expect(approvePendingCall(OWNER, ROW_ID, { approverLoginId: OWNER })).rejects.toThrow(
+      /MANTLE_POLICY_EMAIL_SEND/,
+    );
+    expect(h.dispatchTool).not.toHaveBeenCalled();
+    expect(h.origin).not.toHaveBeenCalled();
+    expect(pendingWrites()).toEqual([]);
+  });
+
+  it('off: email_page too, and an alias row that runs a send builtin', async () => {
+    await setEmailSend('off');
+    fake.queue('pending_tool_calls', [sendRow({ toolSlug: 'email_page' })]);
+    await expect(approvePendingCall(OWNER, ROW_ID)).rejects.toThrow(/MANTLE_POLICY_EMAIL_SEND/);
+    fake.queue('pending_tool_calls', [sendRow({ toolSlug: 'mail_alias' })]);
+    fake.queue('tools', [
+      {
+        slug: 'mail_alias',
+        ownerId: OWNER,
+        enabled: true,
+        handler: { kind: 'builtin', ref: 'email_send' },
+      },
+    ]);
+    await expect(approvePendingCall(OWNER, ROW_ID)).rejects.toThrow(/MANTLE_POLICY_EMAIL_SEND/);
+    expect(h.dispatchTool).not.toHaveBeenCalled();
+    expect(pendingWrites()).toEqual([]);
+  });
+
+  it('off: an elevated send claimed on the system pool is put back, pending', async () => {
+    await setEmailSend('off');
+    fake.queue('pending_tool_calls', []);
+    h.elevatedRow = sendRow({ elevated: { elevated: true, reason: 'r' } });
+    fake.queue('tools', [{ slug: 'email_send', ownerId: OWNER, enabled: true }]);
+    h.elevated = vi.fn(async () => ({ caller: {}, runAs: OWNER, owner: true }));
+    await expect(approvePendingCall(OWNER, ROW_ID, { approverLoginId: OWNER })).rejects.toThrow(
+      /MANTLE_POLICY_EMAIL_SEND/,
+    );
+    expect(h.dispatchTool).not.toHaveBeenCalled();
+    expect(pendingWrites().at(-1)?.values).toMatchObject({ status: 'pending', decidedAt: null });
+  });
+
+  it('on (no rule): the send is approved and runs as before', async () => {
+    await setEmailSend(undefined);
+    fake.queue('pending_tool_calls', [sendRow()]);
+    fake.queue('tools', [
+      {
+        slug: 'email_send',
+        ownerId: OWNER,
+        enabled: true,
+        handler: { kind: 'builtin', ref: 'email_send' },
+      },
+    ]);
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: OWNER });
+    expect(h.dispatchTool).toHaveBeenCalledTimes(1);
   });
 });
 

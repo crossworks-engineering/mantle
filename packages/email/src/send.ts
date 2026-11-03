@@ -10,8 +10,39 @@
  */
 
 import nodemailer from 'nodemailer';
+import { EMAIL_SEND_POLICY_OFF_MESSAGE, emailSendAllowed } from '@mantle/config';
 import type { EmailAccount } from '@mantle/db';
+import { defineDomainError } from '@mantle/std';
 import { unsealImapPassword } from './providers/imap';
+
+/** The code every email sending refusal carries (docs/policy.md). */
+export const EMAIL_SEND_POLICY_OFF_CODE = 'policy_email_send_off';
+
+/** Thrown by the mail transports while the box policy switches email
+ *  sending off (MANTLE_POLICY_EMAIL_SEND=off, docs/policy.md). */
+export class EmailSendPolicyOffError extends Error {
+  readonly code = EMAIL_SEND_POLICY_OFF_CODE;
+  constructor() {
+    super(EMAIL_SEND_POLICY_OFF_MESSAGE);
+    this.name = 'EmailSendPolicyOffError';
+  }
+}
+
+defineDomainError(EmailSendPolicyOffError, {
+  reason: "the box policy switches email sending off (the operator's .env); the message names it",
+  status: 403,
+  body: (e) => ({ error: e.message, code: e.code }),
+});
+
+/**
+ * The one gate of every outbound mail: both transports (sendEmail here,
+ * SMTP; sendViaGraph in @mantle/microsoft, Graph) call it first, so while
+ * the box policy switches email sending off nothing leaves the box by any
+ * path (a tool, an approved call, an app, a run). No row is touched.
+ */
+export function assertEmailSendAllowed(): void {
+  if (!emailSendAllowed()) throw new EmailSendPolicyOffError();
+}
 
 /** A message attachment. With a `cid` set it becomes an inline (related) part
  *  an HTML body can reference via `<img src="cid:…">`; without one it's a normal
@@ -65,11 +96,13 @@ export function accountCanSend(account: EmailAccount): boolean {
 /**
  * Send a message via the account's SMTP submission server. Throws on missing
  * config, auth failure, or a refused recipient — callers surface the message.
+ * Refuses first while the box policy switches email sending off.
  */
 export async function sendEmail(
   account: EmailAccount,
   input: SendEmailInput,
 ): Promise<SendEmailResult> {
+  assertEmailSendAllowed();
   if (!account.smtpHost || !account.smtpPort) {
     throw new Error(
       `account ${account.address} has no SMTP host/port configured — set it on the account form to enable sending`,

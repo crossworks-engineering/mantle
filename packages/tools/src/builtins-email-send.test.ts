@@ -20,7 +20,7 @@
  * the tools' own ordering and guards are real.
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 
 /**
  * Mock at the REAL seams, which are lower than they look. `resolveSendAccount`,
@@ -93,6 +93,8 @@ vi.mock('@mantle/content', async (importOriginal) => {
 });
 
 import { sendEmail, accountCanSend } from '@mantle/email';
+import { sendViaGraph } from '@mantle/microsoft';
+import { resetBoxPolicyForTests } from '@mantle/config';
 import {
   assertMayLink,
   getPage,
@@ -368,5 +370,48 @@ describe('email_page', () => {
     // whichever brain's account happened to come back first.
     await page.handler({ pageId: 'p1', to: 'friend@example.com' }, ctx);
     expect(whereArgs.map((w) => paramsOf(w))).toContainEqual(expect.arrayContaining(['o1']));
+  });
+});
+
+describe('box policy: MANTLE_POLICY_EMAIL_SEND=off (docs/policy.md)', () => {
+  const saved = process.env.MANTLE_POLICY_EMAIL_SEND;
+  beforeEach(() => {
+    process.env.MANTLE_POLICY_EMAIL_SEND = 'off';
+    resetBoxPolicyForTests();
+    vi.mocked(getPage).mockResolvedValue({ id: 'p1', title: 'Runbook', doc: {} } as never);
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env.MANTLE_POLICY_EMAIL_SEND;
+    else process.env.MANTLE_POLICY_EMAIL_SEND = saved;
+    resetBoxPolicyForTests();
+  });
+
+  it('email_send: refused before any account is read; nothing reaches a transport', async () => {
+    const res = await send.handler(OK_ARGS, ctx);
+    expect(errorOf(res)).toMatch(/MANTLE_POLICY_EMAIL_SEND/);
+    expect(errorOf(res)).toMatch(/Nothing was sent/);
+    expect(whereArgs).toEqual([]);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(sendViaGraph).not.toHaveBeenCalled();
+  });
+
+  it('email_page: refused before the page is read; nothing is sent, no link is opened', async () => {
+    const res = await page.handler(
+      { pageId: 'p1', to: 'friend@example.com', includeLink: true },
+      ctx,
+    );
+    expect(errorOf(res)).toMatch(/MANTLE_POLICY_EMAIL_SEND/);
+    expect(getPage).not.toHaveBeenCalled();
+    expect(createShare).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(sendViaGraph).not.toHaveBeenCalled();
+  });
+
+  it('the setting removed: the same send goes out', async () => {
+    delete process.env.MANTLE_POLICY_EMAIL_SEND;
+    resetBoxPolicyForTests();
+    const res = await send.handler(OK_ARGS, ctx);
+    expect(res.ok).toBe(true);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 });

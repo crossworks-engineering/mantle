@@ -31,6 +31,7 @@ import {
   RUN_BUDGET_TOOL_SLUG,
   type HumanFormAnswer,
 } from '@mantle/runs';
+import { emailSendAllowed, isEmailSendTool } from '@mantle/config';
 // Via the bridge, not './dispatch' directly: builtins-pending.ts imports this
 // module, and dispatch.ts imports the registry, which imports every builtin —
 // closing the cycle back onto builtins-pending.ts. See dispatch-bridge.ts.
@@ -39,6 +40,7 @@ import { pendingCaller } from './gate-callers';
 import {
   ApprovalRefusedError,
   deciderOf,
+  EmailSendOffApprovalError,
   elevatedApproval,
   elevatedRejection,
   isBrainOwner,
@@ -466,6 +468,17 @@ export async function approvePendingCall(
   if (opts?.viaMcp && waiting && isHeldTool(waiting.toolSlug)) {
     throw new ApprovalRefusedError(HELD_ON_MCP_ERROR);
   }
+  // A queued send while the box policy switches email sending off: refused
+  // before anything is judged or claimed, so it stays pending (kept, not
+  // sent; docs/policy.md). The check after the claim is the backstop (an
+  // elevated call, a row this approver does not decide here).
+  if (
+    waiting &&
+    (await sendsMailWhileOff(ownerId, waiting.toolSlug)) &&
+    decidesRow(ownerId, opts?.approverLoginId, waiting)
+  ) {
+    throw new EmailSendOffApprovalError();
+  }
   if (
     waiting?.origin &&
     !runnerRow(waiting.toolSlug) &&
@@ -517,6 +530,12 @@ export async function approvePendingCall(
   if (opts?.viaMcp && isHeldTool(claimed.toolSlug)) {
     await unclaimPendingCall(claimed.id);
     throw new ApprovalRefusedError(HELD_ON_MCP_ERROR);
+  }
+  // A send claimed while email sending is off (an elevated call, or one
+  // queued between the read and the claim): put back, pending, and refused.
+  if (await sendsMailWhileOff(ownerId, claimed.toolSlug)) {
+    await unclaimPendingCall(claimed.id);
+    throw new EmailSendOffApprovalError();
   }
   // Fail closed: a stamped call this approval claimed without
   // judging it (not read, or decided between the read and the claim) is put
@@ -693,6 +712,17 @@ async function approvalTool(ownerId: string, slug: string): Promise<Tool | null>
   const h = row?.handler as { kind?: string; ref?: string } | undefined;
   if (h?.kind === 'builtin' && typeof h.ref === 'string' && isHeldTool(h.ref)) return null;
   return row;
+}
+
+/** Whether a call of `slug` would send mail while the box policy switches
+ *  email sending off: a send tool by name, or a row under another name that
+ *  runs one's builtin. False, reading nothing, while sending is on. */
+async function sendsMailWhileOff(ownerId: string, slug: string): Promise<boolean> {
+  if (emailSendAllowed()) return false;
+  if (isEmailSendTool(slug)) return true;
+  const row = await enabledTool(ownerId, slug);
+  const h = row?.handler as { kind?: string; ref?: string } | undefined;
+  return h?.kind === 'builtin' && typeof h.ref === 'string' && isEmailSendTool(h.ref);
 }
 
 /** The enabled tool row named `slug`, or null. */

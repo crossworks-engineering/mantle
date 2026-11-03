@@ -3,6 +3,9 @@ import { assertEnvShape } from './index';
 import {
   boxPolicy,
   denyPatternMatches,
+  EMAIL_SEND_TOOL_SLUGS,
+  emailSendAllowed,
+  isEmailSendTool,
   isAutoRouterModel,
   modelPolicyRefusal,
   modelPolicySet,
@@ -19,6 +22,7 @@ import {
 
 const KEYS = [
   'MANTLE_POLICY_TELEGRAM',
+  'MANTLE_POLICY_EMAIL_SEND',
   'MANTLE_POLICY_MODEL_DENY',
   'MANTLE_POLICY_PROVIDER_ALLOW',
   'MANTLE_POLICY_PASSWORD_MIN',
@@ -73,6 +77,10 @@ describe('no policy: every rule off', () => {
       }
       // Every Telegram tool stays on every list.
       expect(toolPolicyAllows('telegram_send')).toBe(true);
+      // Email sends as today: the send tools stay on every list.
+      expect(emailSendAllowed()).toBe(true);
+      expect(toolPolicyAllows('email_send')).toBe(true);
+      expect(toolPolicyAllows('email_page')).toBe(true);
       // A stale flag never holds a login, nor a password never checked.
       expect(passwordHoldState(true, null)).toBeNull();
       expect(passwordHoldState(false, null)).toBeNull();
@@ -85,12 +93,19 @@ describe('no policy: every rule off', () => {
     expect(policySet()).toBe(false);
     expect(telegramAllowed()).toBe(true);
   });
+  it('`on` for email sending is no rule', () => {
+    setPolicy({ MANTLE_POLICY_EMAIL_SEND: ' ON ' });
+    expect(policySet()).toBe(false);
+    expect(emailSendAllowed()).toBe(true);
+    expect(policyProblems()).toEqual([]);
+  });
 });
 
 describe('parsePolicy', () => {
   it('reads each rule', () => {
     const { policy, problems } = parsePolicy({
       telegram: 'OFF',
+      emailSend: 'Off',
       modelDeny: 'DeepSeek/*, qwen/*,,qwen/*',
       providerAllow: 'foundry, Local',
       passwordMin: '12',
@@ -98,6 +113,7 @@ describe('parsePolicy', () => {
     expect(problems).toEqual([]);
     expect(policy).toEqual({
       telegram: 'off',
+      emailSend: 'off',
       modelDeny: ['deepseek/*', 'qwen/*'],
       providerAllow: ['foundry', 'local'],
       passwordMin: 12,
@@ -157,6 +173,44 @@ describe('Telegram off', () => {
     expect(toolPolicyAllows('telegram_send')).toBe(false);
     expect(toolPolicyAllows('telegram_pair')).toBe(false);
     expect(toolPolicyAllows('search_nodes')).toBe(true);
+  });
+});
+
+describe('email sending off', () => {
+  it('drops the send tools only; the mail reads stay', () => {
+    setPolicy({ MANTLE_POLICY_EMAIL_SEND: 'off' });
+    expect(policySet()).toBe(true);
+    expect(emailSendAllowed()).toBe(false);
+    expect(EMAIL_SEND_TOOL_SLUGS).toEqual(['email_send', 'email_page']);
+    for (const slug of EMAIL_SEND_TOOL_SLUGS) {
+      expect(isEmailSendTool(slug)).toBe(true);
+      expect(toolPolicyAllows(slug)).toBe(false);
+    }
+    expect(toolPolicyAllows('email_list')).toBe(true);
+    expect(toolPolicyAllows('email_get')).toBe(true);
+    expect(toolPolicyAllows('contact_create')).toBe(true);
+    // Telegram is its own rule.
+    expect(telegramAllowed()).toBe(true);
+    expect(toolPolicyAllows('telegram_send')).toBe(true);
+  });
+
+  it('a value it cannot read is a boot problem, read as off', () => {
+    for (const emailSend of ['of', 'no', 'false', '0', 'disabled']) {
+      const { policy, problems } = parsePolicy({ emailSend });
+      expect(problems, emailSend).toEqual(['MANTLE_POLICY_EMAIL_SEND must be off, on or empty']);
+      expect(policy.emailSend, emailSend).toBe('off');
+    }
+    setPolicy({ MANTLE_POLICY_EMAIL_SEND: 'of' });
+    expect(emailSendAllowed()).toBe(false);
+    expect(() => assertEnvShape()).toThrow(/MANTLE_POLICY_EMAIL_SEND/);
+  });
+
+  it('removing the setting restores sending (a new process reads it again)', () => {
+    setPolicy({ MANTLE_POLICY_EMAIL_SEND: 'off' });
+    expect(emailSendAllowed()).toBe(false);
+    setPolicy({});
+    expect(emailSendAllowed()).toBe(true);
+    expect(toolPolicyAllows('email_send')).toBe(true);
   });
 });
 

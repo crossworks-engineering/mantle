@@ -282,7 +282,8 @@ const MAX_EFFECTIVE_TOOL_SLUGS = 512;
  * out: the grant stays, the tool comes back the moment the service is on, and
  * meanwhile the model is never offered a tool that can only refuse. The
  * same for a tool the box policy switches off (the Telegram tools while
- * MANTLE_POLICY_TELEGRAM=off, @mantle/config toolPolicyAllows).
+ * MANTLE_POLICY_TELEGRAM=off, the send tools while
+ * MANTLE_POLICY_EMAIL_SEND=off, @mantle/config toolPolicyAllows).
  */
 export function effectiveToolSlugs(groupToolSlugs: string[]): string[] {
   const all = Array.from(new Set<string>(groupToolSlugs))

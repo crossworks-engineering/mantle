@@ -4,6 +4,40 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased
+
+### A box can switch email sending off
+
+A company can now stop a box from sending email, the same way it can switch
+Telegram off. One line in the box `.env` does it, and nobody can turn it
+back on from the app.
+
+- **Added:** `MANTLE_POLICY_EMAIL_SEND=off` closes MantleOS's own mail
+  transports: the connected mail accounts, over their SMTP server or
+  Microsoft Graph. Both refuse first, and every Mantle path to them (the
+  send tools, an approved call, a heartbeat, a run, an app, MCP) meets
+  that refusal.
+- **Added:** while it is off, `email_send` and `email_page` leave every
+  agent's tools and the MCP tool list, a tool row under another name that
+  runs one of them too. The grants stay, so the tools come back when the
+  setting is removed.
+- **Added:** an email waiting for approval stays waiting. Approving it is
+  refused with `403 { error, code: 'policy_email_send_off' }`; it can be
+  approved once sending is on again.
+- **Not covered:** mail sent some other way: an MCP connector with a
+  send-mail tool, an HTTP tool that calls a mail API with its own key, a
+  sandbox that talks SMTP, a linked brain whose own policy allows sending.
+  Who may add those is the admins' call, and network egress control at the
+  box's edge stops the rest.
+- **Unchanged:** reading and syncing mail, the email routes and every
+  account, message, contact and pending row. An empty or `on` value is no
+  rule. A value the box cannot read stops start-up with its name.
+- **Added:** the Policy panel's `GET /api/policy` answers `emailSend.off`
+  (`BoxPolicyReport` in `@mantle/client-types`, optional so a newer web app
+  reads an older box). The web app shows it once it takes the new client
+  types.
+- See [docs/policy.md](docs/policy.md#email-sending).
+
 ## v0.500.9: canvas pictures lay out at the asked size
 
 - **Fixed:** a Present picture often drew the canvas as if the window were

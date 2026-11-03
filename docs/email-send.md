@@ -134,6 +134,13 @@ Limits (v1): attachments capped ~2.5 MB total (Graph's simple-request limit;
 upload sessions if ever needed), and Graph returns no RFC message id on send
 (202, empty body), `messageId` in the result is empty for Graph sends.
 
+## The box policy can switch sending off
+
+`MANTLE_POLICY_EMAIL_SEND=off` in the box `.env` stops every send: both
+transports (`sendEmail`, `sendViaGraph`) refuse first, the send tools leave
+every agent and MCP list, and a send waiting for approval stays pending.
+Reading and syncing are not touched. See [policy.md](policy.md#email-sending).
+
 ## Layers
 
 | Concern | Where |

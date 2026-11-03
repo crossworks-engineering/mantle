@@ -13,6 +13,7 @@ panel and no boot check. `packages/config/src/policy.test.ts` and
 
 ```sh
 MANTLE_POLICY_TELEGRAM=off
+MANTLE_POLICY_EMAIL_SEND=off
 MANTLE_POLICY_MODEL_DENY=deepseek/*,qwen/*,qwq/*,moonshotai/*,kimi/*,z-ai/*,glm/*,minimax/*
 MANTLE_POLICY_PROVIDER_ALLOW=foundry,local
 MANTLE_POLICY_ENDPOINT_ALLOW=llm.example.internal:1234,corp-ai.openai.azure.com
@@ -22,8 +23,8 @@ MANTLE_POLICY_PASSWORD_MIN=12
 A value that is set but cannot be read (a typo such as `of`, a minimum of 6)
 stops the web and API processes at start-up with the name of the setting
 (`assertEnvShape`). A worker that starts anyway reads the strictest meaning
-(Telegram off, a deny list that blocks every model, the strictest password
-rule the value allows), never a looser one.
+(Telegram off, email sending off, a deny list that blocks every model, the
+strictest password rule the value allows), never a looser one.
 
 The one reader is `packages/config/src/policy.ts`. Each rule then has one
 gate, and every path goes through it.
@@ -49,6 +50,57 @@ gate, and every path goes through it.
   restart, and Telegram works as before.
 
 `on` or empty: Telegram works as configured.
+
+## Email sending
+
+`MANTLE_POLICY_EMAIL_SEND=off` switches email sending off for the whole box:
+no agent, person, app or run can send an email from it. Reading and syncing
+mail keep working (IMAP and Microsoft accounts, `email_list`, `email_get`,
+the inbox routes, new contacts' backfill).
+
+The box sends mail one way only: through a mail account a person connected,
+over its own provider (SMTP submission, or Microsoft Graph `sendMail` for a
+Microsoft account; [email-send.md](email-send.md)). Every send path reaches
+one of those two transports, and both ask one gate first.
+
+- **The gate.** `assertEmailSendAllowed` (`packages/email/src/send.ts`)
+  runs first in `sendEmail` (SMTP) and in `sendViaGraph`
+  (`packages/microsoft/src/outlook/send.ts`). While sending is off it throws
+  `EmailSendPolicyOffError` before a connection is opened or a Graph call is
+  made, so nothing leaves the box by any path: a tool call in a turn, a
+  heartbeat, a sub-agent, a run, an app's declared tool, an MCP or linked
+  brain call. It answers `403 { error, code: 'policy_email_send_off' }`
+  wherever an error reaches a route.
+- **The tools.** The send tools, `email_send` and `email_page`
+  (`EMAIL_SEND_TOOL_SLUGS`), leave every agent's tool list
+  (`effectiveToolSlugs`) and the MCP tool list (`registerBuiltinTools`). The
+  grants stay, and the `email` group keeps its reads. A send tool named
+  anyway (an app, a tool row under another name) answers that sending is
+  off and reads nothing.
+- **A queued send is kept, not sent.** A send waiting for approval (a tool
+  with `requiresConfirm`, the heartbeat egress gate) stays pending: its
+  approval, in the app, over MCP (`pending_approve`) or from a Telegram card,
+  is refused with `403 { error, code: 'policy_email_send_off' }` and the row
+  is not claimed. Once sending is on again it can be approved as before, or
+  rejected. Nothing else queues mail: reminders go to Telegram or the app,
+  and the email workers only read.
+- **No route switch.** No route of the brain sends mail itself (sending is
+  only ever a tool), so no route is switched off. The account settings
+  stay open: an account's SMTP server can still be set and tested (the test
+  signs in and sends nothing).
+- **System mail.** The box sends no mail of its own: no password reset
+  mail, no sign-in code (email-code sign-in is gone; `client-code-mail.ts`
+  only keeps old code mails out of the brain), no invite mail (an invite is
+  a link an Admin hands over). So the policy has no exception to make. A
+  later system mail must go through the same gate unless it can reach only
+  the box's own logins, and must say so here.
+- Every account, message, contact and pending row stays. Remove the setting
+  and restart, and sending works as before.
+
+A Microsoft account still asks for the `Mail.Send` permission when it is
+connected; the box cannot use it while sending is off.
+
+`on` or empty: sending works as configured.
 
 ## Models
 
@@ -234,7 +286,8 @@ sent to it (push, reminders).
 ## The Policy panel
 
 `GET /api/policy` (Admin users with the settings area) answers the policy in
-force, every blocked route and how many logins the password rule holds
+force (`telegram.off`, `emailSend.off`, the model rules, the password rule),
+every blocked route and how many logins the password rule holds
 (`BoxPolicyReport` in `@mantle/client-types`). With no policy set it answers 404, so the panel
 does not appear. It is read only: nothing in the app changes a rule.
 

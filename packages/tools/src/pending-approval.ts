@@ -53,6 +53,7 @@ import {
   type WorkspaceScope,
 } from '@mantle/db';
 import { currentWorkspaceScope, scopeLeftForSystem } from '@mantle/db/viewer';
+import { EMAIL_SEND_POLICY_OFF_MESSAGE } from '@mantle/config';
 import { defineDomainError } from '@mantle/std';
 import { scopeAdminView } from './admin-gate';
 import { CONNECTOR_WRITE_ERROR } from './connector-scope';
@@ -118,6 +119,27 @@ defineDomainError(ApprovalRefusedError, {
   reason:
     'the approver may not approve this call (its asker, or no write rights on its connector), or the call no longer passes where it was asked (A5 step 6c); the message says why',
   status: 403,
+});
+
+/** The approval of a queued send (email_send, email_page, or a row that runs
+ *  one) while the box policy switches email sending off
+ *  (MANTLE_POLICY_EMAIL_SEND=off, docs/policy.md): the call stays pending,
+ *  nothing is sent, and it can be approved once sending is on again. */
+export class EmailSendOffApprovalError extends ApprovalRefusedError {
+  readonly code = 'policy_email_send_off';
+  constructor() {
+    super(
+      `${EMAIL_SEND_POLICY_OFF_MESSAGE} The call stays pending: approve it once email sending is on again, or reject it.`,
+    );
+    this.name = 'EmailSendOffApprovalError';
+  }
+}
+
+defineDomainError(EmailSendOffApprovalError, {
+  reason:
+    "the box policy switches email sending off (the operator's .env), so a queued send is not approved; it stays pending",
+  status: 403,
+  body: (e) => ({ error: e.message, code: e.code }),
 });
 
 /**
