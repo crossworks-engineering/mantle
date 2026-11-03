@@ -458,7 +458,8 @@ export {
 export {
   registerBoxStatusProvider,
   getBoxStatusProvider,
-  numbersOnly,
+  shapeBoxStatus,
+  BOX_STATUS_PROBES,
   BOX_STATUS_UNAVAILABLE,
   type BoxStatus,
   type BoxStatusProvider,

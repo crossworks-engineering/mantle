@@ -11622,7 +11622,7 @@
  },
  {
   "name": "peer_status",
-  "description": "Ask every watched linked brain (a peer marked to watch, paired and enabled) for its box_status, all at once, each given 10 seconds, plus this box's own (`self: true`). Pass `peer` (a name or id) to ask one linked brain only. Returns one line per box: `ok`, `ms`, and the status numbers or a short error ('timeout', 'unreachable', 'refused', 'not offered', 'failed', 'bad reply', 'not paired'; this box's own line 'unavailable' in a process that cannot collect it). Numbers only. Calls box_status and nothing else. Read-only, spends nothing.",
+  "description": "Ask every watched linked brain (a peer marked to watch, paired and enabled) for its box_status, eight at a time, each given 10 seconds, plus this box's own (`self: true`). Pass `peer` (a name or id) to ask one linked brain only. Returns one line per box: `ok`, `ms`, and the status numbers or a short error ('timeout', 'unreachable', 'refused', 'not offered', 'failed', 'bad reply', 'not paired'; this box's own line 'unavailable' in a process that cannot collect it). Numbers only. Calls box_status and nothing else. Read-only, spends nothing.",
   "inputSchema": {
    "type": "object",
    "properties": {

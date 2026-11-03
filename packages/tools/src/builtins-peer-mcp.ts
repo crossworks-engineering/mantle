@@ -35,25 +35,32 @@ const COPY_MAX_BYTES = 48 * 1024 * 1024;
  *  or tailnet address. Every hop is checked, so a redirect to link-local
  *  space (the cloud metadata address) is refused, and Authorization is
  *  dropped on a hop to another origin. Up to 20 redirects, the platform's
- *  limit. Exported for the egress proof table
- *  (egress-proof.test.ts). */
-export const peerMcpFetch: typeof fetch = async (input, init) => {
-  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
-  const accept =
-    new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get(
-      'accept',
-    ) ?? '';
-  // A reply (JSON, or the SSE stream answering one POST) is capped whole;
-  // the standing GET event stream is long-lived, so each event on it is
-  // capped instead (one endless line would grow the parser's memory).
-  const isSseGet = method === 'GET' && accept.includes('text/event-stream');
-  const egress = { allowLan: true, maxRedirects: PLATFORM_MAX_REDIRECTS } as const;
-  if (isSseGet) return capEventStream(await egressFetch(input, init, egress));
-  return egressFetch(input, init, { ...egress, maxBytes: PEER_MCP_REPLY_MAX_BYTES });
-};
+ *  limit. A reply is read up to `maxBytes`. Exported for the egress proof
+ *  table (egress-proof.test.ts) and peer_status (a far lower cap). */
+export function peerMcpFetchCapped(maxBytes: number): typeof fetch {
+  return async (input, init) => {
+    const method = (
+      init?.method ?? (input instanceof Request ? input.method : 'GET')
+    ).toUpperCase();
+    const accept =
+      new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get(
+        'accept',
+      ) ?? '';
+    // A reply (JSON, or the SSE stream answering one POST) is capped whole;
+    // the standing GET event stream is long-lived, so each event on it is
+    // capped instead (one endless line would grow the parser's memory).
+    const isSseGet = method === 'GET' && accept.includes('text/event-stream');
+    const egress = { allowLan: true, maxRedirects: PLATFORM_MAX_REDIRECTS } as const;
+    if (isSseGet) return capEventStream(await egressFetch(input, init, egress));
+    return egressFetch(input, init, { ...egress, maxBytes });
+  };
+}
 
 /** The most one peer MCP reply may carry, as the federation client's cap. */
 const PEER_MCP_REPLY_MAX_BYTES = 32 * 1024 * 1024;
+
+/** The peer tools' fetch: peerMcpFetchCapped at the federation client's cap. */
+export const peerMcpFetch: typeof fetch = peerMcpFetchCapped(PEER_MCP_REPLY_MAX_BYTES);
 
 type PeerSession = { client: Client; peerName: string; close: () => Promise<void> };
 

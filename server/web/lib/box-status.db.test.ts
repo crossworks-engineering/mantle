@@ -9,6 +9,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { BOX_STATUS_PROBES, shapeBoxStatus } from '@mantle/tools';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -20,26 +21,8 @@ function leaves(v: unknown, out: unknown[] = []): unknown[] {
   return out;
 }
 
-/** Our probes' fixed names (system-health.ts and box-status.ts). */
-const PROBES = new Set([
-  'host.cpu',
-  'host.mem',
-  'host.disk',
-  'host.proc',
-  'postgres',
-  'storage.attachments',
-  'storage.objectstore',
-  'parser',
-  'browser',
-  'documents',
-  'embedder',
-  'network',
-  'sandboxes',
-  'spend',
-  'capacity',
-  'extraction',
-  'logins',
-]);
+/** Our probes' fixed names: the list the tool keeps (BOX_STATUS_PROBES). */
+const PROBES = BOX_STATUS_PROBES;
 
 describe.skipIf(!URL)('box_status: the collector', () => {
   let m: typeof import('@mantle/db');
@@ -69,6 +52,8 @@ describe.skipIf(!URL)('box_status: the collector', () => {
     expect(['green', 'watch', 'split']).toContain(s.capacity?.zone);
     expect(s.host.loadAvg).toHaveLength(3);
     for (const name of s.degraded) expect(PROBES.has(name), name).toBe(true);
+    // The tool's shape keeps the collection whole: nothing of ours is cut.
+    expect(shapeBoxStatus(s)).toEqual(s);
     for (const leaf of leaves(s)) {
       expect(
         leaf === null ||
