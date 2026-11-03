@@ -707,6 +707,20 @@ async function change<T>(
   check: Check<T>,
   apply: (tx: Exec, ctx: Ctx, item: Item, grants: Grants, checked: T) => Promise<void>,
 ): Promise<GrantsWriteResponse> {
+  const item0 = await changeOnly(caller, nodeId, opts, check, apply);
+  await refoldAfter(caller.anchorId, [item0]);
+  return after(caller, item0.id);
+}
+
+/** change() without the page refold and the panel after it (a move, whose
+ *  caller refolds what it moved once): answers the item as first read. */
+async function changeOnly<T>(
+  caller: WsCaller,
+  nodeId: string,
+  opts: Change,
+  check: Check<T>,
+  apply: (tx: Exec, ctx: Ctx, item: Item, grants: Grants, checked: T) => Promise<void>,
+): Promise<Item> {
   const ctx0 = await loadCtx(caller);
   const item0 = await loadItem(ctx0, nodeId);
   await check(db, ctx0, item0, await grantRows(db, item0.id));
@@ -748,8 +762,7 @@ async function change<T>(
   } catch (err) {
     throw dbRefusal(err) ?? err;
   }
-  await refoldAfter(caller.anchorId, [item0]);
-  return after(caller, item0.id);
+  return item0;
 }
 
 /** The one exit of the grants library: the page refold after a
@@ -784,7 +797,7 @@ async function refoldPages(
   anchorId: string,
   items: ReadonlyArray<{ id: string; type: string; path: string | null }>,
 ): Promise<void> {
-  const ids: string[] = [];
+  const ids = new Set<string>();
   for (const item of items) {
     if (item.type === 'branch' && item.path) {
       const inside = await rows<{ id: string }>(
@@ -792,13 +805,14 @@ async function refoldPages(
         sql`select id from nodes
              where owner_id = ${anchorId} and type = 'page' and path <@ ${item.path}::ltree`,
       );
-      ids.push(...inside.map((r) => r.id));
+      for (const r of inside) ids.add(r.id);
     } else {
-      ids.push(item.id);
+      ids.add(item.id);
     }
   }
-  for (let i = 0; i < ids.length; i += 200) {
-    await refoldPageTexts(anchorId, ids.slice(i, i + 200));
+  const list = [...ids];
+  for (let i = 0; i < list.length; i += 200) {
+    await refoldPageTexts(anchorId, list.slice(i, i + 200));
   }
 }
 
@@ -1197,6 +1211,7 @@ export const MoveBody = z.object({
   toFolderId: z.string().uuid().nullable().optional(),
   keepReadableIn: z.string().uuid().optional(),
   confirm: z.boolean().optional(),
+  withContents: z.boolean().optional(),
 });
 
 export type MoveInput = {
@@ -1205,7 +1220,20 @@ export type MoveInput = {
   toFolderId?: string | null;
   keepReadableIn?: string;
   confirm?: boolean;
+  /** A folder's home move takes along the items below it that share its
+   *  old home (moveWithContents). */
+  withContents?: boolean;
 };
+
+/** A home move with its contents moves at most `max` of them per call; the
+ *  caller calls again with the same body while `contents.remaining` is
+ *  above 0, and the folder itself moves in the call that moves the last of
+ *  them. An object so a test can lower it. */
+export const MOVE_CONTENTS_PER_CALL = { max: 200 };
+
+/** At most this many items left alone are named in a move's answer (all
+ *  of them are counted). */
+const LEFT_ALONE_NAMED = 200;
 
 function moveTarget(body: MoveInput): 'workspace' | 'folder' {
   const ws = body.toWorkspaceId !== undefined;
@@ -1215,6 +1243,12 @@ function moveTarget(body: MoveInput): 'workspace' | 'folder' {
   }
   if (folder && body.keepReadableIn !== undefined) {
     throw new GrantError(400, 'invalid', 'keepReadableIn goes with toWorkspaceId.');
+  }
+  if (body.withContents === true) {
+    if (folder) throw new GrantError(400, 'invalid', 'withContents goes with toWorkspaceId.');
+    if (new Set(body.nodeIds.map((id) => id.toLowerCase())).size !== 1) {
+      throw new GrantError(400, 'invalid', 'withContents moves one folder at a time.');
+    }
   }
   return ws ? 'workspace' : 'folder';
 }
@@ -1281,7 +1315,71 @@ async function planWorkspaceMove(ctx: Ctx, body: MoveInput, q: Exec) {
       if (!folderGrants(await grantRows(q, item.id), item.home)) lose.set(item.home, null);
     }
   }
-  return { gain, lose };
+  // With its contents: each item that moves gains the target too. It loses
+  // the old home exactly when the folder does (the folder passes it on
+  // until then), so the loss is the folder's.
+  const folder = items[0]!;
+  let contents: Contents | null = null;
+  if (body.withContents === true && folder.type === 'branch' && folder.path && folder.home) {
+    contents = await folderContents(q, ctx, folder, folder.home, t.wsId);
+    if (contents.move.some((c) => !c.holders.includes(t.wsId))) gain.set(t.wsId, null);
+  }
+  return { gain, lose, contents };
+}
+
+/** One item below a folder, as a home move with its contents sorts it. */
+type Content = { id: string; type: string; title: string; holders: string[] };
+
+type Contents = {
+  /** The items with the folder's old home, deepest first (a folder after
+   *  what it holds): they move with it. */
+  move: Content[];
+  /** The items that stay: another home (the target's aside: those are
+   *  there already), or a kind the target may not hold. */
+  left: Array<Content & { reason: 'other_home' | 'kind_not_allowed' }>;
+  /** The items below the folder the caller cannot open. They stay too:
+   *  a Moderator of the old home reads every item homed there, so each of
+   *  these has another home. */
+  hidden: number;
+};
+
+/** What a home move of `folder` from `from` to `to` with its contents
+ *  takes along: every item below it the caller reads, by its home. */
+async function folderContents(
+  q: Exec,
+  ctx: Ctx,
+  folder: Item,
+  from: string,
+  to: string,
+): Promise<Contents> {
+  const list = await rows<{
+    id: string;
+    type: string;
+    title: string;
+    home: string | null;
+    holders: unknown;
+    kind_ok: boolean;
+  }>(
+    q,
+    sql`select n.id, n.type::text as type, n.title, ${itemHomeSql('n')} as home,
+               ${itemHoldersSql('n')} as holders,
+               mantle_grant_kind_ok(n.type, ${to}::uuid) as kind_ok
+          from nodes n
+         where n.owner_id = ${ctx.caller.anchorId} and n.id <> ${folder.id}
+           and n.path <@ ${folder.path}::ltree
+           and ${mayReadInSql('n', mineSql(ctx))}
+         order by nlevel(n.path) desc, (n.type = 'branch'), n.path, n.id`,
+  );
+  const out: Contents = { move: [], left: [], hidden: 0 };
+  for (const n of list) {
+    const c: Content = { id: n.id, type: n.type, title: n.title, holders: idsOf(n.holders) };
+    if (n.home === to) continue;
+    if (n.home !== from) out.left.push({ ...c, reason: 'other_home' });
+    else if (n.kind_ok !== true) out.left.push({ ...c, reason: 'kind_not_allowed' });
+    else out.move.push(c);
+  }
+  out.hidden = (await grantCounts(q, ctx, folder)).hidden;
+  return out;
 }
 
 /** The workspaces a folder passes on (its rows not removed there); none at
@@ -1389,15 +1487,32 @@ export async function previewMove(
   body: MoveInput,
 ): Promise<GrantMovePreviewResponse> {
   const ctx = await loadCtx(caller);
-  const plan =
-    moveTarget(body) === 'workspace'
-      ? await planWorkspaceMove(ctx, body, db)
-      : await planFolderMove(ctx, body, db, true);
-  return { alsoVisibleTo: await nameOf(plan.gain), removedFrom: await nameOf(plan.lose) };
+  if (moveTarget(body) === 'folder') {
+    const plan = await planFolderMove(ctx, body, db, true);
+    return { alsoVisibleTo: await nameOf(plan.gain), removedFrom: await nameOf(plan.lose) };
+  }
+  const plan = await planWorkspaceMove(ctx, body, db);
+  const out: GrantMovePreviewResponse = {
+    alsoVisibleTo: await nameOf(plan.gain),
+    removedFrom: await nameOf(plan.lose),
+  };
+  const c = plan.contents;
+  if (c) {
+    out.contents = {
+      move: c.move.length,
+      apps: c.move.filter((i) => i.type === 'app').length,
+      otherHome: c.left.filter((i) => i.reason === 'other_home').length + c.hidden,
+      notAllowed: c.left.filter((i) => i.reason === 'kind_not_allowed').length,
+      hidden: c.hidden,
+      calls: Math.max(1, Math.ceil(c.move.length / MOVE_CONTENTS_PER_CALL.max)),
+    };
+  }
+  return out;
 }
 
 /** POST /api/grants/move. Each item moves on its own; one that cannot is
- *  reported in `failed`, the rest still move. */
+ *  reported in `failed`, the rest still move. A folder `withContents`
+ *  moves as moveWithContents says. */
 export async function moveItems(caller: WsCaller, body: MoveInput): Promise<GrantMoveResponse> {
   const ctx = await loadCtx(caller);
   if (moveTarget(body) === 'folder') return moveToFolder(ctx, body);
@@ -1409,51 +1524,192 @@ export async function moveItems(caller: WsCaller, body: MoveInput): Promise<Gran
       'Only a Moderator of that workspace can move items into it.',
     );
   }
+  const refusal = (err: unknown) => {
+    const e = err instanceof GrantError ? err : dbRefusal(err);
+    if (!e) throw err;
+    return e.message;
+  };
+  if (body.withContents === true) {
+    const raw = body.nodeIds[0]!;
+    try {
+      const item = await loadItem(ctx, raw);
+      if (item.type === 'branch' && item.path)
+        return await moveWithContents(ctx, item, t.wsId, body);
+    } catch (err) {
+      return { moved: 0, failed: [{ id: raw, error: refusal(err) }] };
+    }
+  }
   const result: GrantMoveResponse = { moved: 0, failed: [] };
   for (const raw of new Set(body.nodeIds)) {
     try {
-      await moveHome(ctx.caller, raw, t.wsId, body);
+      const item = await moveHome(ctx.caller, raw, t.wsId, body);
+      await refoldAfter(ctx.caller.anchorId, [item]);
       result.moved += 1;
     } catch (err) {
-      const e = err instanceof GrantError ? err : dbRefusal(err);
-      if (!e) throw err;
-      result.failed.push({ id: raw, error: e.message });
+      result.failed.push({ id: raw, error: refusal(err) });
     }
   }
   return result;
 }
 
+/**
+ * A folder's home from H to T with the items below it that share H
+ * (`withContents`). Each moves on its own by moveHome (the same rules, the
+ * same keepReadableIn), deepest first, at most MOVE_CONTENTS_PER_CALL.max
+ * of them per call; under its heads each must still be in the folder with
+ * H for its home, or it stays. The folder moves last, in the call that
+ * moves the last of them, so a call again with the same body finds H on it
+ * and goes on. An item homed elsewhere, or of a kind T may not hold, stays
+ * and is named. The folder's own rules, the size limit and the confirm come
+ * first: nothing moves when the folder may not.
+ */
+async function moveWithContents(
+  ctx: Ctx,
+  folder: Item,
+  to: string,
+  body: MoveInput,
+): Promise<GrantMoveResponse> {
+  const from = await homeMoveRules(db, ctx, folder, to, body);
+  const total = await subtreeCount(db, ctx, folder);
+  if (total > FOLDER_GRANT_LIMIT.max) {
+    throw new GrantError(
+      409,
+      'too_big',
+      `This folder holds ${total.toLocaleString('en')} items. Move its sub-folders one by one.`,
+    );
+  }
+  if (body.confirm !== true) {
+    throw new GrantError(
+      409,
+      'confirm_required',
+      `This moves the folder and what is inside it, and changes access for ${total.toLocaleString('en')} items. Confirm to go ahead.`,
+    );
+  }
+  const contents = await folderContents(db, ctx, folder, from, to);
+  const batch = contents.move.slice(0, MOVE_CONTENTS_PER_CALL.max);
+  const remaining = contents.move.length - batch.length;
+  const failed: GrantMoveResponse['failed'] = [];
+  const moved: Item[] = [];
+  const step = (err: unknown, id: string) => {
+    const e = err instanceof GrantError ? err : dbRefusal(err);
+    if (!e) throw err;
+    failed.push({ id, error: e.message });
+  };
+  let inside = 0;
+  try {
+    for (const c of batch) {
+      try {
+        moved.push(
+          await moveHome(ctx.caller, c.id, to, body, { contentsOf: { folderId: folder.id, from } }),
+        );
+        inside += 1;
+      } catch (err) {
+        step(err, c.id);
+      }
+    }
+    if (remaining === 0) {
+      try {
+        moved.push(await moveHome(ctx.caller, folder.id, to, body));
+      } catch (err) {
+        step(err, folder.id);
+      }
+    }
+  } finally {
+    await refoldAfter(ctx.caller.anchorId, moved);
+  }
+  return {
+    moved: moved.length,
+    failed,
+    contents: {
+      moved: inside,
+      remaining,
+      leftAlone: contents.left
+        .slice(0, LEFT_ALONE_NAMED)
+        .map((c) => ({ id: c.id, title: c.title, reason: c.reason })),
+      leftAloneCount: contents.left.length + contents.hidden,
+      hidden: contents.hidden,
+    },
+  };
+}
+
+/** The rules of one home move to `to`: Moderator of the item's home and of
+ *  `to`, a new home, keepReadableIn the old home only, a kind `to` may
+ *  hold. Answers the old home. */
+async function homeMoveRules(
+  q: Exec,
+  ctx: Ctx,
+  item: Item,
+  to: string,
+  body: MoveInput,
+): Promise<string> {
+  if (!mayManage(ctx, item)) {
+    throw new GrantError(403, 'forbidden', 'Only a Moderator of the item’s home can move it.');
+  }
+  if (!isMod(ctx, to)) {
+    throw new GrantError(
+      403,
+      'forbidden',
+      'Only a Moderator of that workspace can move items into it.',
+    );
+  }
+  const from = item.home!;
+  if (from === to) throw new GrantError(409, 'same_home', 'The item already lives there.');
+  if (body.keepReadableIn !== undefined && body.keepReadableIn.toLowerCase() !== from) {
+    throw new GrantError(400, 'invalid', 'keepReadableIn: only the old home can be kept.');
+  }
+  if (!(await kindOk(q, item.type, to))) {
+    throw new GrantError(
+      409,
+      'kind_not_allowed',
+      'This kind of item lives in the Admin workspace only.',
+    );
+  }
+  return from;
+}
+
+/** The item is still below the folder (a path under the folder's). */
+async function stillInside(q: Exec, ctx: Ctx, item: Item, folderId: string): Promise<boolean> {
+  if (!item.path) return false;
+  const [r] = await rows<{ ok: boolean }>(
+    q,
+    sql`select exists (select 1 from nodes f
+                        where f.id = ${folderId} and f.owner_id = ${ctx.caller.anchorId}
+                          and f.type = 'branch' and ${item.path}::ltree <@ f.path) as ok`,
+  );
+  return r?.ok === true;
+}
+
+type HomeStep = {
+  /** A step of a folder's move with its contents: the folder the item must
+   *  still be in, and the home it must still have, or it stays. */
+  contentsOf?: { folderId: string; from: string };
+};
+
 /** One item's home from H to T (18.8): T's row becomes the home (a
  *  folder-derived one stops being derived: CHECK item_grants_home_not_
  *  derived_ck, and the old folder is logged); H's row goes, unless the
  *  caller keeps it readable there (a grant set on the item, Write off) or a
- *  folder still gives H (it comes back as that folder's row). */
-async function moveHome(caller: WsCaller, nodeId: string, to: string, body: MoveInput) {
-  await change(
+ *  folder still gives H (it comes back as that folder's row). The caller
+ *  refolds the pages after it (refoldAfter). */
+async function moveHome(
+  caller: WsCaller,
+  nodeId: string,
+  to: string,
+  body: MoveInput,
+  step: HomeStep = {},
+): Promise<Item> {
+  return changeOnly(
     caller,
     nodeId,
     { folderConfirm: true, appConfirm: true, confirm: body.confirm === true },
     async (q, ctx, item, _grants) => {
-      if (!mayManage(ctx, item)) {
-        throw new GrantError(403, 'forbidden', 'Only a Moderator of the item’s home can move it.');
-      }
-      if (!isMod(ctx, to)) {
-        throw new GrantError(
-          403,
-          'forbidden',
-          'Only a Moderator of that workspace can move items into it.',
-        );
-      }
-      const from = item.home!;
-      if (from === to) throw new GrantError(409, 'same_home', 'The item already lives there.');
-      if (body.keepReadableIn !== undefined && body.keepReadableIn.toLowerCase() !== from) {
-        throw new GrantError(400, 'invalid', 'keepReadableIn: only the old home can be kept.');
-      }
-      if (!(await kindOk(q, item.type, to))) {
+      const from = await homeMoveRules(q, ctx, item, to, body);
+      const was = step.contentsOf;
+      if (was && (from !== was.from || !(await stillInside(q, ctx, item, was.folderId)))) {
         throw new GrantError(
           409,
-          'kind_not_allowed',
-          'This kind of item lives in the Admin workspace only.',
+          'changed',
+          'It changed while the folder moved (its home or its folder), so it stays where it is.',
         );
       }
       return from;
@@ -1462,6 +1718,7 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
     async (tx, ctx, item, grants, from) => {
       const keep = body.keepReadableIn !== undefined;
       const target = grants.get(to);
+      const contentsOf = step.contentsOf ? { contentsOf: step.contentsOf.folderId } : {};
       // One step (0279, mantle_grant_move_home): the old home row cleared,
       // the new one set, the old one kept with Write off or gone (a folder
       // that still gives it brings it back as its row). Never one UPDATE of
@@ -1476,12 +1733,14 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
         from,
         to,
         ...(viaFolder ? { viaFolder } : {}),
+        ...contentsOf,
       });
       await event(tx, from, ctx.caller.loginId, 'grant.move', {
         node: item.id,
         from,
         to,
         kept: keep,
+        ...contentsOf,
       });
     },
   );

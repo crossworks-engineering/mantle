@@ -242,6 +242,20 @@ the item landed (`landedIn`).
 
 - **A move** from H to T removes H's grant. The move dialog offers "Keep
   it readable in H" (a grant with Write off). Other grants stay.
+- **A folder's move with its contents.** A folder passes its grants, not
+  its home, so a home move of a folder alone leaves the items below it
+  homed in H (read in T only through the folder). The move dialog offers
+  "Also move the N items inside", ticked. Each item below the folder, at
+  any depth, whose home is H moves too, on its own and by the same rules
+  (Moderator of H and of T, a kind T may hold, the same "Keep it readable
+  in H"). An item homed elsewhere stays, and so does one of a kind T may
+  not hold; the answer names them. On the wire it is `withContents: true`
+  on `POST /api/grants/move` (one folder, `toWorkspaceId`, `confirm`). One
+  call moves at most 200 of the items, the deepest first; while
+  `contents.remaining` is above 0 the dialog calls again with the same
+  body, and the folder itself moves in the call that moves the last of
+  them, so its home still says what H was until then. An item whose home
+  or folder changed during the move stays (`changed`).
 - **A copy** (duplicate, page from notes, copy to) is a new item. Its home
   is where you make it, with no other grant. Share it again by hand.
 - **An export** (a Word or Excel copy, a built sheet, an app file) is a

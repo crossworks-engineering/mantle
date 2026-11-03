@@ -280,6 +280,8 @@ export type {
   GrantError,
   GrantErrorCode,
   GrantMoveBody,
+  GrantMoveContentsPreview,
+  GrantMoveLeftAlone,
   GrantMovePreviewResponse,
   GrantMoveResponse,
   GrantPatchBody,

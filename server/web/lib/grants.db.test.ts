@@ -523,6 +523,135 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(await misses()).toBe(before);
   });
 
+  it('move a folder home with its contents: 3 levels, mixed homes, keep readable, batches', async () => {
+    // CF (P) holds n1 (P), nOther (R), nHid (R, P "Removed here": the owner
+    // cannot open it), nThere (Q, the target: already there) and S1 (P);
+    // S1 holds n2 (P) and S2 (P); S2 holds n3 (P).
+    const F = await node('branch', 'CF', 'notes.cf');
+    const n1 = await node('note', 'n1', 'notes.cf');
+    const nOther = await node('note', 'nOther', 'notes.cf');
+    const nHid = await node('note', 'nHid', 'notes.cf');
+    const nThere = await node('note', 'nThere', 'notes.cf');
+    const S1 = await node('branch', 'S1', 'notes.cf.s1');
+    const n2 = await node('note', 'n2', 'notes.cf.s1');
+    const S2 = await node('branch', 'S2', 'notes.cf.s1.s2');
+    const n3 = await node('note', 'n3', 'notes.cf.s1.s2');
+    for (const id of [F, n1, S1, n2, S2, n3]) await homeIn(id, P);
+    await homeIn(nOther, R);
+    await homeIn(nHid, R);
+    await homeIn(nThere, Q);
+    await as(mem2);
+    expect((await del(nHid, P)).status).toBe(200);
+    expect(await readWs(nHid)).toEqual([R]);
+    const moving = [n1, S1, n2, S2, n3];
+    const body = { nodeIds: [F], toWorkspaceId: Q, withContents: true, keepReadableIn: P };
+    const before = await misses();
+
+    // mem moderates P, not Q: refused whole, nothing moves.
+    await as(mem);
+    expect((await call(r.movePreview.POST(req('POST', body)))).body.code).toBe('forbidden');
+    expect((await call(r.move.POST(req('POST', { ...body, confirm: true })))).body.code).toBe(
+      'forbidden',
+    );
+
+    await as(owner);
+    // withContents is a home move of one folder.
+    expect((await call(r.move.POST(req('POST', { ...body, nodeIds: [F, n1] })))).body.code).toBe(
+      'invalid',
+    );
+    expect(
+      (await call(r.move.POST(req('POST', { nodeIds: [F], toFolderId: null, withContents: true }))))
+        .body.code,
+    ).toBe('invalid');
+    // The preview: the five items with P move; nOther and nHid stay.
+    const pv = await call(r.movePreview.POST(req('POST', body)));
+    expect(pv.body).toEqual({
+      alsoVisibleTo: [{ wsId: Q, name: 'Quay' }],
+      removedFrom: [],
+      contents: { move: 5, apps: 0, otherHome: 2, notAllowed: 0, hidden: 1, calls: 1 },
+    });
+    // Without the keep, P goes.
+    const pv2 = await call(
+      r.movePreview.POST(req('POST', { nodeIds: [F], toWorkspaceId: Q, withContents: true })),
+    );
+    expect(pv2.body.removedFrom).toEqual([{ wsId: P, name: 'Proj' }]);
+    // Without withContents the answer is as before (no contents).
+    expect(
+      (await call(r.movePreview.POST(req('POST', { nodeIds: [F], toWorkspaceId: Q })))).body,
+    ).toEqual({
+      alsoVisibleTo: [{ wsId: Q, name: 'Quay' }],
+      removedFrom: [{ wsId: P, name: 'Proj' }],
+    });
+
+    // No confirm: nothing moves.
+    const no = await call(r.move.POST(req('POST', body)));
+    expect(no.body.moved).toBe(0);
+    expect(no.body.failed).toEqual([{ id: F, error: expect.stringContaining('Confirm') }]);
+    for (const id of [F, ...moving]) {
+      expect((await rowsOf(id)).find((x) => x.is_home)!.ws).toBe(P);
+    }
+
+    // Two per call: deepest first, the folder last.
+    g.MOVE_CONTENTS_PER_CALL.max = 2;
+    const homeOf = async (id: string) => (await rowsOf(id)).find((x) => x.is_home)!.ws;
+    try {
+      const go = () => call(r.move.POST(req('POST', { ...body, confirm: true })));
+      const a = await go();
+      expect(a.body).toMatchObject({ moved: 2, failed: [], contents: { moved: 2, remaining: 3 } });
+      expect([await homeOf(n3), await homeOf(S2), await homeOf(n2), await homeOf(F)]).toEqual([
+        Q,
+        Q,
+        P,
+        P,
+      ]);
+      const b = await go();
+      expect(b.body).toMatchObject({ moved: 2, failed: [], contents: { moved: 2, remaining: 1 } });
+      expect(await homeOf(F)).toBe(P);
+      const c = await go();
+      expect(c.body).toMatchObject({ moved: 2, failed: [], contents: { moved: 1, remaining: 0 } });
+      expect(c.body.contents.leftAlone).toEqual([
+        { id: nOther, title: 'nOther', reason: 'other_home' },
+      ]);
+      expect(c.body.contents).toMatchObject({ leftAloneCount: 2, hidden: 1 });
+      // Done: the folder lives in Q now.
+      expect((await go()).body.failed).toEqual([{ id: F, error: 'The item already lives there.' }]);
+    } finally {
+      g.MOVE_CONTENTS_PER_CALL.max = 200;
+    }
+    // Every item that had P lives in Q, and P reads it (Write off).
+    for (const id of [F, ...moving]) {
+      const rs = await rowsOf(id);
+      expect(rs.find((x) => x.is_home)!.ws).toBe(Q);
+      expect(rs.find((x) => x.ws === P)).toMatchObject({ is_home: false, write: false });
+    }
+    // The items homed elsewhere kept their homes.
+    expect(await homeOf(nOther)).toBe(R);
+    expect(await homeOf(nHid)).toBe(R);
+    expect(await homeOf(nThere)).toBe(Q);
+    expect(await readWs(nHid)).not.toContain(P);
+    // Each content move is logged with its folder.
+    const ev = await x<{ subject: Json }>(
+      sql`select subject from workspace_events
+           where workspace_id = ${Q} and action = 'grant.move' and subject->>'node' = ${n3}`,
+    );
+    expect(ev[0]!.subject).toMatchObject({ from: P, to: Q, contentsOf: F });
+
+    // Back to P without the keep: Q goes from every moved item.
+    const back = await call(
+      r.move.POST(
+        req('POST', { nodeIds: [F], toWorkspaceId: P, withContents: true, confirm: true }),
+      ),
+    );
+    // nThere (homed in Q, now the old home) moves too.
+    expect(back.body).toMatchObject({ moved: 7, failed: [], contents: { moved: 6, remaining: 0 } });
+    for (const id of [F, nThere, ...moving]) {
+      const rs = await rowsOf(id);
+      expect(rs.find((x) => x.is_home)!.ws).toBe(P);
+      expect(rs.find((x) => x.ws === Q)).toBeUndefined();
+    }
+    expect(await misses()).toBe(before);
+  });
+
   it('move into a folder: edit the folder, manage the item, confirm what it adds (S6)', async () => {
     const F = await node('branch', 'SF', 'notes.sf');
     const item = await node('note', 'placed', 'notes');

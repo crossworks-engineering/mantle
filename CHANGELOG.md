@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased
+
+- **Added:** a folder's move to another home can take what is inside it
+  along. Before, only the folder moved: the sub-folders and files below it
+  kept their old home and were read in the new workspace only through the
+  folder. Now the move dialog offers "Also move the N items inside",
+  ticked. Every item below the folder, at any depth, with the folder's old
+  home moves too, by the same rules and the same "Keep it readable". An
+  item with another home stays where it is, and the dialog says how many.
+  A big folder moves 200 items per call, the folder itself last
+  (`withContents` on `POST /api/grants/move` and its preview).
+
 ## v0.500.17: team apps write wherever their user may write
 
 ### Team apps write files and Table rows where their user may
