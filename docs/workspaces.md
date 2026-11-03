@@ -248,7 +248,7 @@ the item landed (`landedIn`).
   "Also move the N items inside", ticked. Each item below the folder, at
   any depth, whose home is H moves too, on its own and by the same rules
   (Moderator of H and of T, a kind T may hold, the same "Keep it readable
-  in H). An item stays when it is homed elsewhere, of a kind T may not
+  in H"). An item stays when it is homed elsewhere, of a kind T may not
   hold, "Removed here" for T (on it or on a folder it is in: the move
   would undo that), or in a folder you cannot open. The answer names
   them. On the wire it is `withContents: true` on `POST /api/grants/move`

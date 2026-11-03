@@ -1686,7 +1686,11 @@ async function moveWithContents(
         inside += 1;
       } catch (err) {
         step(err, c.id);
-        if (stopped) break;
+        // The item that ended the batch is still to move (remaining).
+        if (stopped) {
+          tried -= 1;
+          break;
+        }
       }
     }
     if (!stopped && tried === contents.move.length) {
@@ -1750,8 +1754,10 @@ async function homeMoveRules(
 }
 
 /** The item still moves with the folder: below it (a path under the
- *  folder's), and no "Removed here" of `to` on it or on a folder between
- *  (the caller moderates `to`, so those rows are read). */
+ *  folder's), every folder between read by the caller (its rows are read
+ *  then), and no "Removed here" of `to` on it or on a folder between (the
+ *  caller moderates `to`, so those rows are read). As folderContents
+ *  sorts it, again under the item's heads. */
 async function stillMoves(
   q: Exec,
   ctx: Ctx,
@@ -1773,7 +1779,16 @@ async function stillMoves(
                                         and ag.workspace_id = ${to}::uuid and ag.excluded
                     where a.owner_id = f.owner_id and a.type = 'branch'
                       and a.id <> f.id and a.id <> ${item.id}
-                      and a.path <@ f.path and ${item.path}::ltree <@ a.path)) as ok`,
+                      and a.path <@ f.path and ${item.path}::ltree <@ a.path)
+                 and not exists (
+                   select 1 from generate_series(
+                            nlevel(f.path) + 1,
+                            nlevel(${item.path}::ltree) - ${item.type === 'branch' ? 1 : 0}) k
+                    where not exists (
+                      select 1 from nodes b
+                       where b.owner_id = f.owner_id and b.type = 'branch'
+                         and b.path = subpath(${item.path}::ltree, 0, k)
+                         and ${mayReadInSql('b', mineSql(ctx))}))) as ok`,
   );
   return r?.ok === true;
 }
