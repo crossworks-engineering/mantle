@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased
+## v0.500.14: the brain pairs with client v0.9.5
 
 This release pairs the brain with mantle-client **v0.9.5**. A box that
 rolls to it also gets the new web app.
