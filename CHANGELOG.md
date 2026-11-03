@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased: canvas pictures lay out at the asked size
+## v0.500.9: canvas pictures lay out at the asked size
 
 - **Fixed:** a Present picture often drew the canvas as if the window were
   800x600. The picture had the right size (1600x900, or the canvas's own
