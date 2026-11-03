@@ -11,7 +11,7 @@ import {
   traces,
   runReadPathWrite,
 } from '@mantle/db';
-import { getTrace, traceListedFor } from './traces';
+import { getTrace, traceListedFor, type TraceReader } from './traces';
 import { deriveAction, type ActionCategory } from '@mantle/client-types/journey-format';
 import type {
   LandedLayers,
@@ -142,9 +142,8 @@ async function queryActivity(
 
 export async function listActivity(
   userId: string,
-  /** The signed-in login, null for the brain owner: only the traces it may
-   *  read are listed (traceListedFor). */
-  reader: string | null,
+  /** Who reads: only the traces it may read are listed (traceListedFor). */
+  reader: TraceReader,
   opts: {
     sinceHours?: number;
     limit?: number;
@@ -270,13 +269,9 @@ async function reapOnce(userId: string, cutoff: Date): Promise<number> {
 
 /** The always-on live snapshot: in-flight runs, recent successes (what entered
  *  the brain), and recent failures. Reconciles orphaned runs first so the
- *  "active" list reflects reality. `reader`: the signed-in login, null for
- *  the brain owner: only the traces it may read are listed (traceListedFor,
- *  as listActivity). */
-export async function getLiveActivity(
-  userId: string,
-  reader: string | null,
-): Promise<LiveActivity> {
+ *  "active" list reflects reality. Only the traces `reader` may read are
+ *  listed (traceListedFor, as listActivity). */
+export async function getLiveActivity(userId: string, reader: TraceReader): Promise<LiveActivity> {
   await reapAbandonedTraces(userId);
   const listed = traceListedFor(userId, reader) as never;
   const [active, recent, failures] = await Promise.all([
@@ -295,12 +290,12 @@ export async function getLiveActivity(
   return { active, recent, failures };
 }
 
-/** A single action + the brain layers it produced. `reader`: the signed-in
- *  login, null for the brain owner; only its own turns (getTrace). */
+/** A single action + the brain layers it produced, when `reader` may read
+ *  its trace (getTrace). */
 export async function getJourney(
   userId: string,
   traceId: string,
-  reader: string | null,
+  reader: TraceReader,
 ): Promise<JourneyDetail | null> {
   const detail = await getTrace(userId, traceId, reader);
   if (!detail) return null;

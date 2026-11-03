@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { listActivity } from '@/lib/journey';
-import { toolMakerFor } from '@/lib/tools';
+import { traceReaderFor } from '@/lib/trace-reader';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   );
   const processedOnly = url.searchParams.get('done') === '1';
   // Only the traces the signed-in login may read.
-  const items = await listActivity(user.id, toolMakerFor(user), {
+  const items = await listActivity(user.id, await traceReaderFor(user), {
     category,
     processedOnly,
     limit: 100,
