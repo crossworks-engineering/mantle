@@ -633,7 +633,9 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // link, the outside mark and the boot's applied mode are written at the
 // spot oidc-link only). oidc_handoff_codes none (0350: a one-time code, issued
 // and spent at the same spot).
-const NARROW_COUNTS = { all: 107, read: 43, none: 9 };
+// app_timers read (0355: a content table, written by a manager's scope on the
+// write role and by the scheduler outside every scope, never by narrow work).
+const NARROW_COUNTS = { all: 107, read: 44, none: 9 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));

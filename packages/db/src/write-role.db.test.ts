@@ -61,6 +61,10 @@ const CALLER_RIGHTS: Readonly<Record<string, string>> = {
   mantle_notify_needs_you_request: 'pg_notify only',
   mantle_notify_login_comment: 'pg_notify only (node_comments: system only)',
   mantle_notify_login_review: 'pg_notify only (space_items: system only)',
+  // app_timers (0355), the first content table with an enable switch: the
+  // narrow role's off-only rule (0324, 0325) on `enabled`.
+  mantle_narrow_one_way:
+    "compares NEW with OLD by the trigger's own rules on the narrow route; reads no table",
 };
 
 /** The tables a function body names after FROM, JOIN, INTO, UPDATE or
@@ -531,14 +535,14 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(none.map((r) => r.t)).toEqual([]);
   });
 
-  it('the matrix splits the content tables in two: 21 write tables, 9 system only', () => {
+  it('the matrix splits the content tables in two: 22 write tables, 9 system only', () => {
     expect([...WRITE_ROLE_TABLES, ...WRITE_ROLE_SYSTEM_ONLY].sort()).toEqual(
       [...contentTables].sort(),
     );
     // 12 since A2b2a; A3a moved the Recall tables, shares and node_snapshots;
     // plan v3 S3 the two gap tables (profiles, app_table_exports); Present
-    // (0332) the canvas and its kept versions.
-    expect(WRITE_ROLE_TABLES).toHaveLength(21);
+    // (0332) the canvas and its kept versions; app timers (0355).
+    expect(WRITE_ROLE_TABLES).toHaveLength(22);
     expect(WRITE_ROLE_SYSTEM_ONLY).toHaveLength(9);
   });
 
