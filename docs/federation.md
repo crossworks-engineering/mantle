@@ -233,18 +233,28 @@ asks it when no peer is named.
   error counts; corpus capacity (counts, zone, percent of split); the
   extractor's queue and dead letters; logins by role. `degraded` names the
   probes that did not answer. Never a name, a title, a host or anything a
-  user wrote: the tool holds its output to numbers (`numbersOnly`), and the
-  collector (`server/web/lib/box-status.ts`) reads only counts. It never
+  user wrote: the collector (`server/web/lib/box-status.ts`) reads only
+  counts, and the tool rebuilds its output from schema 1's shape
+  (`shapeBoxStatus`, `packages/tools/src/box-status-bridge.ts`): only the
+  known key paths, a number at each numeric path, a boolean at each flag,
+  and a string only where the shape has one and only when it fits that
+  path's pattern or list (`ts` a UTC ISO time; the build's version x.y.z,
+  sha hex and time an ISO date; `host.scope` `container` or `host`;
+  `capacity.zone` `green`, `watch` or `split`). `degraded` keeps only our
+  probes' fixed names (`BOX_STATUS_PROBES`). Everything else is dropped. It never
   makes the paid embedder probe the dashboard makes. Read, spends nothing,
   the settings area, not risky. Cached 30 seconds, one collection at a time.
 - **`peer_status`**: asks every watched, paired, enabled peer for its
-  `box_status` over the peer's `/api/mcp`, all at once, 10 seconds each, and
-  adds this box's own line (`self: true`). `peer` names one peer instead.
-  Each line is `{ peerId, name, ok, ms, status }` or, on a failure, a short
-  fixed `error` (`timeout`, `unreachable`, `refused`, `not offered`,
-  `failed`, `bad reply`, `not paired`), never the peer's reply text. A
-  peer's status passes `numbersOnly` before a model reads it, and is fenced
-  as data. It calls `box_status` and nothing else, at the peer row's own URL
+  `box_status` over the peer's `/api/mcp`, eight at a time, 10 seconds
+  each, a reply read up to 256 KB, and adds this box's own line
+  (`self: true`). `peer` names one peer instead. Each line is
+  `{ peerId, name, ok, ms, status }` or, on a failure, a short fixed
+  `error` (`timeout`, `unreachable`, `refused`, `not offered`, `failed`,
+  `bad reply`, `not paired`, and `unavailable` for this box's own line in a
+  process without the collector), never the peer's reply text. A peer's
+  status is rebuilt by the same `shapeBoxStatus` before a model reads it (a
+  reply that is not schema 1 is a `bad reply`), so a linked box can put no
+  key and no text of its own into it; it is fenced as data all the same. It calls `box_status` and nothing else, at the peer row's own URL
   (no URL is an argument). Read, spends nothing, the settings area; risky
   for a key or a peer by the `peer_` family rule (it reaches other brains on
   this brain's credentials), as every `peer_` tool is.
@@ -253,8 +263,17 @@ The collectors live in server/web, so only the web process installs them
 (`packages/tools/src/box-status-bridge.ts`). The runner (agent turns) and
 the stdio MCP server answer that `box_status` is read over the box's MCP
 endpoint; `peer_status` there reports its own line as `unavailable` and
-still asks the peers. `box_status` is in the `brain-health` tool group,
-`peer_status` in `federation`.
+still asks the peers. So `box_status` is in a group of its own,
+`fleet-status`, that no shipped agent holds (a turn in the runner would get
+the refusal); `peer_status` is in `federation`.
+
+A status peer runs as the owner login, as the owner is now. When the
+owner is disabled, or the box's password rule holds the owner (a password
+to change, or one not yet checked under the rule), the peer is no caller:
+the watching box's `peer_status` reads `refused` for it until the owner
+signs in. The same holds for an HTTP change that mints or arms one: a new
+token (rotate) and turning it back on are the owner's, as for a peer bound
+to the owner (`peerBoundToOwner` counts every scope but `full`).
 
 Host numbers: in a container the load average and memory come from the
 web container's `/proc`. A box that wants the host's own sets
@@ -278,19 +297,20 @@ box's stack directory: `install.sh` makes `./mantle` where it runs, or
 `MANTLE_HOME`; prefix `sudo` where the ssh user is not in the docker group):
 
 ```sh
-# On the watched box: a status-only peer for the admin box. Keep the token line.
-ssh watched.example.com 'cd ~/mantle && scripts/peer-link.sh create \
-    --name admin --url https://admin.example.com --status-only' > watched.out
-
-# On the admin box: an outbound-only, watched peer for it, then its token.
+# On the admin box: an outbound-only, watched peer for the watched box.
 ssh admin.example.com 'cd ~/mantle && scripts/peer-link.sh create \
     --name watched --url https://watched.example.com --outbound-only --watch'
-grep '^token=' watched.out | ssh admin.example.com \
-    'cd ~/mantle && scripts/peer-link.sh accept --peer watched'
-rm watched.out
+
+# On the watched box: a status-only peer for the admin box. Its output goes
+# straight into the admin box's accept, which takes the token= line: the
+# token is never written to a file or shown.
+ssh watched.example.com 'cd ~/mantle && scripts/peer-link.sh create \
+    --name admin --url https://admin.example.com --status-only' \
+  | ssh admin.example.com 'cd ~/mantle && scripts/peer-link.sh accept --peer watched'
 ```
 
-The watched box needs remote MCP on (Settings, MCP). `list` shows the
+The URL must be https (`--allow-http` takes plain http, for a local test
+only). The watched box needs remote MCP on (Settings, MCP). `list` shows the
 peers with no secret; `revoke --peer <id|name>` closes one, both ways.
 The admin box grants the watched box nothing: its peer row is
 outbound-only, and the watched box never accepts a token back.

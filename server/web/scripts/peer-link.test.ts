@@ -46,6 +46,20 @@ describe('peer-link arguments', () => {
     expect(scopeOf({ statusOnly: false, outboundOnly: false })).toBe('full');
   });
 
+  it('refuses a plain http URL unless --allow-http, and anything but http(s)', () => {
+    expect(() => parseArgs(['create', '--name', 'a', '--url', 'http://a.example.com'])).toThrow(
+      /plain http/,
+    );
+    expect(
+      parseArgs(['create', '--name', 'a', '--url', 'http://localhost:3000', '--allow-http'])
+        .allowHttp,
+    ).toBe(true);
+    expect(() => parseArgs(['create', '--name', 'a', '--url', 'ftp://a.example.com'])).toThrow(
+      /https/,
+    );
+    expect(() => parseArgs(['list', '--allow-http'])).toThrow(/for create/);
+  });
+
   it('the create flags are for create; accept and revoke name a peer', () => {
     expect(() => parseArgs(['list', '--watch'])).toThrow(/for create/);
     expect(() => parseArgs(['accept'])).toThrow(/--peer/);
@@ -61,6 +75,8 @@ describe("the other box's token", () => {
   it('takes the first non-empty line, and a create line as printed', () => {
     expect(tokenFromText('\n  mtlpeer_abc123  \nsecond\n')).toBe('mtlpeer_abc123');
     expect(tokenFromText('token=mtlpeer_abc123\r\n')).toBe('mtlpeer_abc123');
+    // A create's whole output piped across: its token line.
+    expect(tokenFromText('peer_id=p1\ntoken=mtlpeer_abc123\n')).toBe('mtlpeer_abc123');
   });
 
   it('refuses what is not a peer token, without repeating it', () => {
