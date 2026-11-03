@@ -26,7 +26,7 @@ const scope = vi.hoisted(() => ({
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/db')>()),
   currentActor: () => actor.current,
-  inAppRunWrite: () => scope.writes,
+  appRunWriteMode: () => (scope.writes ? 'app' : null),
   currentWorkspaceScope: () => scope.ws,
   withCreateHome: (home: unknown, fn: () => unknown) => {
     scope.homes.push(home);

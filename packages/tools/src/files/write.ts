@@ -122,8 +122,7 @@ export const file_rename: BuiltinToolDef = {
     itemArgs: [{ param: 'file_id' }],
     keyArea: 'files',
     clientSourced: CS.onNodes('file_id'),
-    // A team app's rename of a file homed in the workspace that holds it
-    // (rule 7).
+    // A team app's rename, as its runner (rule 7).
     memberApp: 'files',
   },
   name: 'Rename a file',

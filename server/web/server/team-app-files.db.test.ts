@@ -1,11 +1,13 @@
 /**
- * A team app writes files in its own workspace (owner decision 2026-11-03):
- * the member-app rule (packages/tools member-app-tools.ts rule 7) lets a team
- * app call file_upload, file_move and file_rename (policy memberApp 'files')
- * on a file and a folder homed in the one workspace that holds the app, as
- * the user running it, with that user's own rights there (a Moderator of
- * the home, or the folder's Write switch), never a write that changes who
- * reads the file, and at most 16 MB a call.
+ * A team app writes files wherever the user running it may write by hand
+ * (owner decision 2026-11-03): the member-app rule (packages/tools
+ * member-app-tools.ts rule 7) lets a team app call file_upload, file_move
+ * and file_rename (policy memberApp 'files') as the user running it, in
+ * that user's own scope, with that user's own rights (a Moderator of the
+ * home, or the folder's Write switch), never with confirm: true, and at most
+ * 16 MB a call. Another workspace reading the folder refuses nothing; a
+ * move that would stop a workspace the runner sees reading the file is
+ * refused (the app cannot confirm it).
  *
  * On a migrated scratch database, through the one app tool broker
  * (lib/app-tool-broker.ts runAppToolBroker) as its routes configure it,
@@ -13,21 +15,25 @@
  * and the edit check on. The Activity and error log rows are stood in.
  *
  *  1. a user with the folder's Write switch uploads a file: it lands in the
- *     folder, homed in the holder, indexed as a Files upload is; the
+ *     folder, homed in the folder's home, indexed as a Files upload is; the
  *     Activity row names the folder and the file, never the bytes;
  *  2. a Moderator replaces it (overwrite): the same file, the new bytes;
  *  3. a user without Write on the folder: refused, nothing lands;
- *  4. a folder homed in Admin, or the files root: refused by the verdict;
- *  5. a folder another workspace also reads: refused (who reads it would
- *     change), nothing lands; confirm: true is refused outright;
+ *  4. a folder homed in Admin, or the files root: refused where it runs;
+ *  5. a folder another workspace also reads: it lands, read there too;
+ *     confirm: true is refused outright;
  *  6. past 16 MB, content that is not a string, or an indexing of the
  *     app's own: refused before the write;
- *  7. a move by a Moderator within the holder lands; by a user who is not
- *     one, refused; into a folder another workspace reads, refused; of a
- *     file another workspace reads (it would stop reading it), refused;
- *  8. a rename of the holder's file lands; of an Admin file, refused;
- *  9. a read-only login, a shared link and an app two workspaces hold write
- *     nothing.
+ *  7. a move by a Moderator lands, into a folder another workspace reads
+ *     too; by a user who is not one, or into Admin, refused;
+ *  7b. a move that would stop a workspace the runner is in reading the
+ *     file: refused, it stays read there; between folders the same
+ *     workspaces read: it lands;
+ *  8. a rename of the runner's file lands; of an Admin file, refused;
+ *  9. a read-only login and a shared link write nothing; an app two
+ *     workspaces hold writes as its runner;
+ *  10. a folder of a workspace the runner is in but the app's holder is
+ *     not: it lands there, homed there.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/team-app-files.db.test.ts
  */
@@ -50,7 +56,7 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 
 type Answer = { status: number; body: { ok: boolean; error?: string; output?: unknown } };
 
-describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
+describe.skipIf(!URL)('a team app writes files where its runner may', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
@@ -67,6 +73,9 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
   let adminWs = '';
   let holderWs = '';
   let otherWs = '';
+  /** A workspace both runners are plain users of; the app's holder is not
+   *  it. */
+  let elseWs = '';
   let teamApp = '';
   let twoHolderApp = '';
   /** Holder folders: Write on for the holder's users, Write off, another
@@ -74,11 +83,16 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
   let open = '';
   let closed = '';
   let shared = '';
+  /** Holder folders elseWs reads too (Write on for the holder). */
+  let both = '';
+  let both2 = '';
+  /** A folder homed in elseWs, Write on there. */
+  let elsewhere = '';
   let adminFolder = '';
   let adminFile = '';
-  /** A file homed in the holder, in the shared folder: another workspace
-   *  reads it through that folder. */
-  let sharedFile = '';
+  /** A file homed in the holder, in the `both` folder: elseWs reads it
+   *  through that folder. */
+  let bothFile = '';
   const savedEnv: Record<string, string | undefined> = {};
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
@@ -216,10 +230,16 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
       await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
         values (${owner}, ${`${tag} Other`}) returning id::text`)
     )[0]!.id;
+    elseWs = (
+      await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
+        values (${owner}, ${`${tag} Else`}) returning id::text`)
+    )[0]!.id;
     await su(sql`delete from workspace_users where login_id in (${member}, ${moderator})`);
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${holderWs}, ${member}, false),
-      (${holderWs}, ${moderator}, true)`);
+      (${holderWs}, ${moderator}, true),
+      (${elseWs}, ${member}, false),
+      (${elseWs}, ${moderator}, false)`);
     await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
     // An enabled team-level group holds the tools (rule 5).
     await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled)
@@ -241,6 +261,15 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
         [holderWs, true, true],
         [otherWs, false, false],
       ]);
+      both = await folder(`${tag}-both`, [
+        [holderWs, true, true],
+        [elseWs, false, false],
+      ]);
+      both2 = await folder(`${tag}-both2`, [
+        [holderWs, true, true],
+        [elseWs, false, false],
+      ]);
+      elsewhere = await folder(`${tag}-elsewhere`, [[elseWs, true, true]]);
       adminFolder = await folder(`${tag}-admin`, [[adminWs, true, true]]);
       adminFile = (
         await m.withCreateHome({ createWs: adminWs, privateWs: null, quiet: true }, () =>
@@ -252,12 +281,12 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
           }),
         )
       ).id;
-      sharedFile = (
+      bothFile = (
         await m.withCreateHome({ createWs: holderWs, privateWs: null, quiet: true }, () =>
           files.upsertFile({
             ownerId: owner,
-            parentPath: shared,
-            filename: `${tag}-shared.dwg`,
+            parentPath: both,
+            filename: `${tag}-both.dwg`,
             bytes: Buffer.from('read by two workspaces'),
           }),
         )
@@ -297,7 +326,12 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  it('1. a user with Write on the folder uploads: homed in the holder, read as a Files upload, logged by name', async () => {
+  /** The workspaces that read the file `id` now. */
+  const readers = async (id: string) =>
+    (await x<{ ws: string[] }>(sql`select read_ws::text[] as ws from nodes where id = ${id}`))[0]!
+      .ws;
+
+  it("1. a user with Write on the folder uploads: homed in the folder's home, read as a Files upload, logged by name", async () => {
     access.mockClear();
     const name = `${tag}-iso-1.dwg`;
     const res = await memberCall(member, 'file_upload', {
@@ -354,7 +388,7 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
     expect((await found(name))[0]?.home).toBe(holderWs);
   });
 
-  it('4. a folder homed in Admin, or the files root: refused by the verdict', async () => {
+  it('4. a folder homed in Admin, or the files root: refused where it runs', async () => {
     for (const parent of [adminFolder, 'files']) {
       const name = `${tag}-iso-4.txt`;
       const res = await memberCall(moderator, 'file_upload', {
@@ -362,21 +396,13 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
         filename: name,
         content_text: 'x',
       });
-      expect(res.status).toBe(403);
-      expect(res.body.error).toContain('a folder homed in the workspace that holds this app');
+      expect(res.body.ok, JSON.stringify(res.body)).toBe(false);
       expect(await found(name)).toHaveLength(0);
     }
   });
 
-  it('5. a folder another workspace reads: refused, and confirm: true never passes', async () => {
+  it('5. a folder another workspace reads: it lands, read there too; confirm: true never passes', async () => {
     const name = `${tag}-iso-5.txt`;
-    const res = await memberCall(moderator, 'file_upload', {
-      parent_path: shared,
-      filename: name,
-      content_text: 'x',
-    });
-    expect(res.body.ok).toBe(false);
-    expect(await found(name)).toHaveLength(0);
     const confirmed = await memberCall(moderator, 'file_upload', {
       parent_path: shared,
       filename: name,
@@ -386,6 +412,15 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
     expect(confirmed.status).toBe(403);
     expect(confirmed.body.error).toContain('confirm: true');
     expect(await found(name)).toHaveLength(0);
+    const res = await memberCall(member, 'file_upload', {
+      parent_path: shared,
+      filename: name,
+      content_text: 'x',
+    });
+    expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+    const [row] = await found(name);
+    expect(row).toMatchObject({ path: shared, home: holderWs });
+    expect(await readers(row!.id)).toEqual(expect.arrayContaining([holderWs, otherWs]));
   });
 
   it('6. past 16 MB: refused before the write', async () => {
@@ -433,7 +468,7 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
     expect(await found(name)).toHaveLength(0);
   });
 
-  it('7. a move: a Moderator within the holder lands; a user who is not one, or a shared folder, is refused', async () => {
+  it('7. a move: a Moderator lands it, into a folder another workspace reads too; a user who is not one, or Admin, is refused', async () => {
     const [file] = await found(`${tag}-iso-1.dwg`);
     const byMember = await memberCall(member, 'file_move', {
       file_id: file!.id,
@@ -441,41 +476,41 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
     });
     expect(byMember.body.ok).toBe(false);
     expect((await found(`${tag}-iso-1.dwg`))[0]?.path).toBe(open);
-    const intoShared = await memberCall(moderator, 'file_move', {
-      file_id: file!.id,
-      dest_path: shared,
-    });
-    expect(intoShared.body.ok).toBe(false);
-    expect((await found(`${tag}-iso-1.dwg`))[0]?.path).toBe(open);
     const byModerator = await memberCall(moderator, 'file_move', {
       file_id: file!.id,
       dest_path: closed,
     });
     expect(byModerator.body.ok, JSON.stringify(byModerator.body)).toBe(true);
     expect((await found(`${tag}-iso-1.dwg`))[0]).toMatchObject({ path: closed, home: holderWs });
+    const intoShared = await memberCall(moderator, 'file_move', {
+      file_id: file!.id,
+      dest_path: shared,
+    });
+    expect(intoShared.body.ok, JSON.stringify(intoShared.body)).toBe(true);
+    expect((await found(`${tag}-iso-1.dwg`))[0]?.path).toBe(shared);
+    expect(await readers(file!.id)).toContain(otherWs);
     const intoAdmin = await memberCall(moderator, 'file_move', {
       file_id: file!.id,
       dest_path: adminFolder,
     });
-    expect(intoAdmin.status).toBe(403);
+    expect(intoAdmin.body.ok).toBe(false);
+    expect((await found(`${tag}-iso-1.dwg`))[0]?.path).toBe(shared);
   });
 
-  it('7b. a move of a file another workspace reads: refused, it stays read there', async () => {
-    const readers = async () =>
-      (
-        await x<{ ws: string[] }>(
-          sql`select read_ws::text[] as ws from nodes where id = ${sharedFile}`,
-        )
-      )[0]!.ws;
-    expect(await readers()).toContain(otherWs);
-    const res = await memberCall(moderator, 'file_move', { file_id: sharedFile, dest_path: open });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain("only this app's workspace reads");
-    expect((await found(`${tag}-shared.dwg`))[0]?.path).toBe(shared);
-    expect(await readers()).toContain(otherWs);
+  it('7b. a move that would stop a workspace reading the file: refused; between folders the same workspaces read: it lands', async () => {
+    expect(await readers(bothFile)).toContain(elseWs);
+    const out = await memberCall(moderator, 'file_move', { file_id: bothFile, dest_path: open });
+    expect(out.body.ok).toBe(false);
+    expect(out.body.error).toContain('A team app never changes who can see a file');
+    expect((await found(`${tag}-both.dwg`))[0]?.path).toBe(both);
+    expect(await readers(bothFile)).toContain(elseWs);
+    const along = await memberCall(moderator, 'file_move', { file_id: bothFile, dest_path: both2 });
+    expect(along.body.ok, JSON.stringify(along.body)).toBe(true);
+    expect((await found(`${tag}-both.dwg`))[0]?.path).toBe(both2);
+    expect(await readers(bothFile)).toContain(elseWs);
   });
 
-  it("8. a rename of the holder's file lands; of an Admin file, refused", async () => {
+  it("8. a rename of the runner's file lands; of an Admin file, refused", async () => {
     const [file] = await found(`${tag}-iso-1.dwg`);
     const res = await memberCall(moderator, 'file_rename', {
       file_id: file!.id,
@@ -487,19 +522,31 @@ describe.skipIf(!URL)('a team app writes files in its own workspace', () => {
       file_id: adminFile,
       new_stem: `${tag}-taken`,
     });
-    expect(admin.status).toBe(403);
-    expect(admin.body.error).toContain('a file homed in the workspace that holds this app');
+    expect(admin.body.ok).toBe(false);
+    expect(await found(`${tag}-taken.txt`)).toHaveLength(0);
   });
 
-  it('9. a read-only login, a shared link and an app two workspaces hold write nothing', async () => {
+  it('9. a read-only login and a shared link write nothing; an app two workspaces hold writes as its runner', async () => {
     const name = `${tag}-iso-9.txt`;
     const input = { parent_path: open, filename: name, content_text: 'x' };
     const ro = await memberCall(moderator, 'file_upload', input, { mode: 'ro' });
     expect(ro.body.ok).toBe(false);
     const link = await linkCall('file_upload', input);
     expect(link.status).toBe(403);
-    const two = await memberCall(moderator, 'file_upload', input, {}, twoHolderApp);
-    expect(two.body.ok).toBe(false);
     expect(await found(name)).toHaveLength(0);
+    const two = await memberCall(moderator, 'file_upload', input, {}, twoHolderApp);
+    expect(two.body.ok, JSON.stringify(two.body)).toBe(true);
+    expect((await found(name))[0]).toMatchObject({ path: open, home: holderWs });
+  });
+
+  it("10. a folder of a workspace the runner is in, not the app's holder: it lands there", async () => {
+    const name = `${tag}-iso-10.dwg`;
+    const res = await memberCall(member, 'file_upload', {
+      parent_path: elsewhere,
+      filename: name,
+      content_base64: b64('elsewhere'),
+    });
+    expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+    expect((await found(name))[0]).toMatchObject({ path: elsewhere, home: elseWs });
   });
 });

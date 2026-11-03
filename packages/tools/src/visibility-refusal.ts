@@ -6,7 +6,7 @@
  * tools (builtins-tree.ts) and the Files tools (files/*).
  */
 import { TreeVisibilityError } from '@mantle/content/tree';
-import { busyMessage, isBusy } from '@mantle/db';
+import { busyMessage, inAppRunWrite, isBusy } from '@mantle/db';
 
 /** The `confirm` input every such tool declares (an undeclared key is
  *  dropped by the MCP bridge's schema, so the tool could never go ahead). */
@@ -38,10 +38,12 @@ export function visibilityRefusal(err: unknown): string | null {
       return `'${c.title}' ${parts.join('; ')}${placed.length ? `: ${placed.join(' ')}` : ''}`;
     })
     .join(', ');
-  return (
-    `this changes which workspaces see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}). ` +
-    'Tell the user what changes; call again with confirm: true only once they agree.'
-  );
+  const what = `this changes which workspaces see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}). `;
+  // A team app's write (member-app-tools.ts rule 7) never confirms one.
+  if (inAppRunWrite()) {
+    return `${what}A team app never changes who can see a file: move it by hand in Files instead, or pick a folder the same workspaces read.`;
+  }
+  return `${what}Tell the user what changes; call again with confirm: true only once they agree.`;
 }
 
 /** Said by every agent tool that writes a note's or a page's content

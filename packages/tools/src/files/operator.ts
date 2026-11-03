@@ -17,7 +17,7 @@ import {
   setIndexingMode,
 } from '@mantle/files';
 import { deleteFileWithDerived, describeDerivedCounts } from '@mantle/content';
-import { appRunWriteHolder, withCreateHome } from '@mantle/db';
+import { inAppRunWrite } from '@mantle/db';
 import { guardNewFileIn } from '@mantle/content/tree';
 import { type BuiltinToolDef } from '../types';
 import { str, strOpt, boolOpt as bool } from '../coerce';
@@ -144,9 +144,9 @@ export const file_upload: BuiltinToolDef = {
     keyArea: 'files',
     createsIn: 'parent_path',
     clientSourced: { ...CS.creates(), alwaysWhen: CS.overwrites },
-    // A team app's upload in the workspace that holds it (member-app-tools.ts
-    // rule 7). Seeded for that (no longer mcpOnly), and held by the one
-    // `app-files` group, which no agent holds by default.
+    // A team app's upload, as its runner (member-app-tools.ts rule 7).
+    // Seeded for that (no longer mcpOnly), and held by the one `app-files`
+    // group, which no agent holds by default.
     memberApp: 'files',
     memberAppFolderArg: 'parent_path',
     // Seeded for mini apps only: no recipe step uploads (as when mcpOnly).
@@ -206,13 +206,11 @@ export const file_upload: BuiltinToolDef = {
     if (raw && raw !== 'full' && raw !== 'metadata') {
       return { ok: false, error: "indexing must be 'full' or 'metadata'" };
     }
-    // A team app's upload (member-app-tools.ts rule 7) lands in the one
-    // workspace that holds the app: the folder's home, which the verdict
-    // and the Files operation hold it to; never the runner's other
-    // workspaces. It is read as a Files upload is: its folder decides the
-    // indexing, never the app.
-    const holder = appRunWriteHolder();
-    if (holder && raw) {
+    // A team app's upload (member-app-tools.ts rule 7) runs as its runner,
+    // in a folder the runner may edit, and lands as a new item there does
+    // (the folder's home, docs/workspaces.md). It is read as a Files upload
+    // is: its folder decides the indexing, never the app.
+    if (inAppRunWrite() && raw) {
       return {
         ok: false,
         error: "file_upload: a team app's file is indexed as its folder says; leave indexing out.",
@@ -252,9 +250,7 @@ export const file_upload: BuiltinToolDef = {
       return row;
     };
     try {
-      const row = holder
-        ? await withCreateHome({ createWs: holder, privateWs: holder }, write)
-        : await write();
+      const row = await write();
       return { ok: true, output: indexing ? { ...row, indexing } : row };
     } catch (err) {
       const refusal = visibilityRefusal(err);

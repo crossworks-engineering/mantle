@@ -30,7 +30,7 @@
  * comes back as base64 within the caps of file_read's bytes (app-bytes.ts).
  */
 import { registerToolService } from '@mantle/config';
-import { currentActor, currentWorkspaceScope, inAppRunWrite, withCreateHome } from '@mantle/db';
+import { appRunWriteMode, currentActor, currentWorkspaceScope, withCreateHome } from '@mantle/db';
 import {
   findRoute,
   runDocuments,
@@ -71,13 +71,15 @@ export const TEAM_APP_NO_NODE_PRINT =
  * lands in: the one workspace beyond Admin that holds the app (the app's
  * scope, AppRunFor), for a user who moderates it (a new item lands in a
  * workspace you moderate, docs/workspaces.md), in a run that may write (the
- * broker's write scope, inAppRunWrite). Else nothing is saved, and the
- * refusal says to pass `bytes: true`. Exported for tests.
+ * broker's write in the app's scope, appRunWriteMode). Else nothing is
+ * saved, and the refusal says to pass `bytes: true`. Exported for tests.
  */
 export function teamAppSaveRefusal(): { home: string } | { refused: string } {
   const bytesInstead =
     'Pass bytes: true to get the file back in the app instead (nothing is saved).';
-  if (!inAppRunWrite()) {
+  // A save runs in the app's scope (the broker's write without
+  // `asRunner`); a write as the runner never lands one here.
+  if (appRunWriteMode() !== 'app') {
     return {
       refused: `This run can't save a file: a team app saves only in a request that may write, as a login that writes (not a read-only key). ${bytesInstead}`,
     };

@@ -43,20 +43,25 @@ import { systemPoolTxInScope } from './system-tx';
  * is refused, unless it narrows a request scope.
  *
  * `writes`: only a login running an app (`{ login, app }`), for a write its
- * app rule allowed (a team app's Table row write, @mantle/tools
- * member-app-tools.ts rule 6): the app's scope writes as that login, so the
- * database decides whether the login may (runInViewerScope), and reads the
- * drafts of the items it may edit, as the login's editor does (a second
- * write before a commit sees the first). It takes the AppRunWriter
- * appRunWriter read in the request itself, before any asSystem: the same
- * login, a mutating request, never a read-only login. Any other caller
- * asking it is refused: an assistant, a link or a login's whole union never
- * write through here.
+ * app rule allowed (@mantle/tools member-app-tools.ts rules 4, 6 and 7): it
+ * writes as that login, so the database decides whether the login may
+ * (runInViewerScope), and reads the drafts of the items it may edit, as the
+ * login's editor does (a second write before a commit sees the first). It
+ * takes the AppRunWriter appRunWriter read in the request itself, before
+ * any asSystem: the same login, a mutating request, never a read-only
+ * login. Any other caller asking it is refused: an assistant, a link or a
+ * login with no app never write through here.
+ *
+ * `asRunner`: the write runs in the runner's own scope (the union of its
+ * live workspaces, as by hand), not the app's: a team app's file write and
+ * Table row write go wherever the user running it may write by hand (owner
+ * decision 2026-11-03). Without it the write stays in the app's scope (a
+ * documents tool's save, in the workspace that holds the app).
  */
 export async function withViewer<T>(
   actsFor: ViewerFor,
   fn: () => Promise<T>,
-  opts: { writes?: AppRunWriter } = {},
+  opts: { writes?: AppRunWriter; asRunner?: boolean } = {},
 ): Promise<T> {
   if (opts.writes) {
     if (!('login' in actsFor) || !actsFor.app) {
@@ -68,8 +73,9 @@ export async function withViewer<T>(
         "withViewer: an app run writes only as its request's own login (appRunWriter)",
       );
     }
-    const scope = await memoScopeFor(actsFor);
-    return appRunWrite.run(writer, () =>
+    const asRunner = opts.asRunner === true;
+    const scope = await memoScopeFor(asRunner ? { login: actsFor.login } : actsFor);
+    return appRunWrite.run(Object.freeze({ writer, asRunner }), () =>
       runInViewerScope(scope, fn, { writes: true, drafts: true }),
     );
   }
@@ -96,8 +102,9 @@ export type AppRunWriter = Readonly<{ loginId: string }>;
 /** The writers appRunWriter made: a hand-built object is none. */
 const appRunWriters = new WeakSet<AppRunWriter>();
 
-/** The writer of the app write running now (withViewer `writes`). */
-const appRunWrite = new AsyncLocalStorage<AppRunWriter>();
+/** The app write running now (withViewer `writes`): its writer, and
+ *  whether it runs in the runner's own scope (`asRunner`). */
+const appRunWrite = new AsyncLocalStorage<Readonly<{ writer: AppRunWriter; asRunner: boolean }>>();
 
 /**
  * The writer of a team app's allowed write, read in the request itself,
@@ -119,14 +126,22 @@ export function appRunWriter(): AppRunWriter | null {
   return writer;
 }
 
-/** Whether the current code is a team app's allowed write in the app's
- *  own scope (withViewer `writes`): its login's scope, not system work
- *  inside it. applyTableOps holds such a write to its ceilings and to a
- *  Table homed in the scope (appRunWriteTarget). */
+/** Whether the current code is a team app's allowed write (withViewer
+ *  `writes`): its login's scope, not system work inside it. applyTableOps
+ *  holds such a write to its ceilings. */
 export function inAppRunWrite(): boolean {
-  const writer = appRunWrite.getStore();
+  return appRunWriteMode() !== null;
+}
+
+/** Inside a team app's allowed write (inAppRunWrite): 'runner' when it runs
+ *  in the runner's own scope (a file write, a Table row write: where the
+ *  user may write by hand), 'app' when in the app's scope (a documents
+ *  tool's save). Null anywhere else. */
+export function appRunWriteMode(): 'runner' | 'app' | null {
+  const run = appRunWrite.getStore();
   const scope = currentWorkspaceScope();
-  return !!writer && scope?.kind === 'user' && scope.loginId === writer.loginId;
+  if (!run || scope?.kind !== 'user' || scope.loginId !== run.writer.loginId) return null;
+  return run.asRunner ? 'runner' : 'app';
 }
 
 /** viewerScopeFor, once per request for the same login (and app) or agent:
@@ -263,8 +278,7 @@ export async function createHomeFallback(
  *  a brain app's holders from its grants. `{ team: true }`, an id that is
  *  not an app, and an app with no live holder beyond Admin read nothing
  *  (they read the built-in Team workspace until 0286 made it a normal one;
- *  no workspace stands in for "team rules" now). Admin pool. Also asked
- *  by appHolderHomes (app-holder-homes.ts). */
+ *  no workspace stands in for "team rules" now). Admin pool. */
 export async function appRunHolders(app: AppRunFor): Promise<string[]> {
   if (!('id' in app)) return [];
   if (!UUID_RE.test(app.id)) throw new Error('withViewer: app must be a uuid');

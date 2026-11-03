@@ -93,17 +93,9 @@ export { ACTOR_CHECK_DRIFT_SQL, EDIT_CHECK_DRIFT_SQL } from './gateway/check-mod
 export { adminOrSystemScope } from './gateway/scope-answers';
 export { callerHasArea, callerHasAreaBound } from './gateway/caller-area';
 export {
-  appHolderAloneReads,
-  appHolderHomes,
-  appHolderHomesFolder,
-  appRunWriteHolder,
-  assertAppRunWriteHolderAlone,
-  assertAppRunWriteHome,
-  type AppHolderWriteKind,
-} from './app-holder-homes';
-export {
   appRunHolders,
   appHeldBeyondAdmin,
+  appRunWriteMode,
   appRunWriter,
   inAppRunWrite,
   type AppRunWriter,

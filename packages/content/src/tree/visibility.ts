@@ -18,7 +18,7 @@
  */
 import { sql, type SQL } from 'drizzle-orm';
 import {
-  appRunWriteHolder,
+  appRunWriteMode,
   currentCreateHome,
   currentWorkspaceScope,
   db,
@@ -163,16 +163,16 @@ async function listed(via: Via, rows: SQL): Promise<VisibilityDiff> {
   // what is gained through the folder (r.via), what is lost from the item
   // itself (r.id; none for a new item).
   const names = (col: SQL, through: SQL) => sql`mantle_ws_names(${col}, ${through})`;
-  // A team app's write (appRunWriteHolder: the app's one holder): its own
-  // workspace reading the file is the point of the write, so it is no
-  // change; any other workspace gained or lost still is, and the app cannot
+  // A team app's write as its runner (appRunWriteMode 'runner'): it places
+  // a file in a folder the runner may write in, and the workspaces that
+  // read the folder reading the file is the point of the write (owner
+  // decision 2026-11-03), so what it gains through the folder is no change.
+  // A workspace that would stop reading a file still is, and the app cannot
   // confirm one (member-app-tools.ts rule 7).
-  const holder = appRunWriteHolder();
-  const source = holder
-    ? sql`select s.id, s.title, array_remove(s.gain, ${holder}::uuid) as gain,
-                 array_remove(s.lose, ${holder}::uuid) as lose, s.via
-            from (${rows}) s`
-    : rows;
+  const source =
+    appRunWriteMode() === 'runner'
+      ? sql`select s.id, s.title, '{}'::uuid[] as gain, s.lose, s.via from (${rows}) s`
+      : rows;
   const found = (await via.execute(sql`
     select r.id::text as id, r.title,
            ${names(sql`r.gain`, sql`r.via`)} as "alsoVisibleTo",
@@ -387,12 +387,12 @@ export async function newItemDiff(
   const set = newItemSet(ownerId, nodeType, destPath);
   // Empty when the brain has no Admin workspace (as the old array(select ...)).
   const admin = sql`array_remove(array[mantle_ws_admin_id(${ownerId}::uuid)], null)`;
-  // A team app's new file is judged by who reads it, not against an item
-  // at the root: nothing existed, so nobody loses it (listed drops the
-  // app's own workspace from what it gains).
-  const lose = appRunWriteHolder()
-    ? sql`'{}'::uuid[]`
-    : sql`array(select x from unnest(${admin}) as s(x) where not (x = any(${set})))`;
+  // A team app's new file (as its runner): nothing existed, so nobody
+  // loses it, and what it gains through its folder is no change (listed).
+  const lose =
+    appRunWriteMode() === 'runner'
+      ? sql`'{}'::uuid[]`
+      : sql`array(select x from unnest(${admin}) as s(x) where not (x = any(${set})))`;
   const diff = await listed(
     via,
     sql`

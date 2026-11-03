@@ -1,10 +1,11 @@
 /**
- * A team app writes rows to a Table its workspace holds (task 2178377a,
- * 2026-10-22): the member-app rule (packages/tools runtime-policy.ts
- * memberAppRefusal) lets a team app call the five row writes the policy
- * marks `table-rows`, the verdict (member-app-tools.ts rule 6) runs one only
- * on a Table homed in a workspace that holds the app, and the write runs as
- * the running login in the app's scope, so the database's checks decide.
+ * A team app writes rows to a Table (task 2178377a, 2026-10-22; owner
+ * decision 2026-11-03): the member-app rule (packages/tools
+ * runtime-policy.ts memberAppRefusal) lets a team app call the five row
+ * writes the policy marks `table-rows`, the verdict (member-app-tools.ts
+ * rule 6) asks only that the call names a Table, and the write runs as the
+ * running login in that login's own scope (withViewer `asRunner`), so the
+ * database's checks decide: wherever the user may write by hand.
  *
  * On a migrated scratch database, through the one app tool broker
  * (lib/app-tool-broker.ts runAppToolBroker) as its routes configure it,
@@ -14,9 +15,8 @@
  *  1. a user of the holder workspace with Write on the Table: rows land
  *     (table_row_add, table_rows_add, table_cell_set) in its draft;
  *     a Moderator of its home writes a Table whose Write switch is off;
- *  2. the same app, a Table homed in another workspace (with Write granted
- *     to the holder, so the database alone would allow it): refused by the
- *     verdict, nothing lands;
+ *  2. the same app, a Table homed in another workspace that grants the
+ *     holder Write: the rows land (no home rule); no Table named: refused;
  *  3. a user of the holder without Write on the Table and not a Moderator:
  *     refused by the item check, nothing lands;
  *  4. a shared link's run: refused (a link runs no built-in), nothing lands;
@@ -29,10 +29,10 @@
  * set reach a row the app added), a draft's row and byte ceilings and the
  * call's size ceiling, the Activity row names the Table and the row count,
  * a read-only login or a request that does not write writes nothing,
- * withViewer's `writes` takes only its request's own writer, the Table's
- * home is asked again where the write runs, an app two workspaces hold
- * writes nothing, and table_commit (Jason's yes) publishes the draft under
- * the same rule.
+ * withViewer's `writes` takes only its request's own writer, a write as
+ * the runner reaches no Table the runner may not edit, an app two
+ * workspaces hold writes as its runner (2026-11-03), and table_commit
+ * (Jason's yes) publishes the draft under the same rule.
  *
  * After the delta audit (MED-1): a team app's table_commit waits out a
  * model pass (none while one is pending, none that runs a whole pass within
@@ -40,9 +40,9 @@
  * held, and an Admin app's or the owner's own commit is unchanged.
  *
  * A team app's run scope only read before (withViewer); an allowed Table
- * write now enters it as a write scope (withViewer's `writes`, only for a
+ * write now enters a write scope (withViewer's `writes`, only for a
  * login running an app in its own mutating request), so the write goes
- * through the login write gateway (opened in beforeAll) with the app's
+ * through the login write gateway (opened in beforeAll) with the runner's
  * scope and the database checks it.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/team-app-table-writes.db.test.ts
@@ -83,7 +83,8 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
   let otherWs = '';
   let teamApp = '';
   let adminApp = '';
-  /** An app two workspaces beyond Admin hold: its run reads none. */
+  /** An app two workspaces beyond Admin hold: its run reads none, and
+   *  writes as its runner. */
   let twoHolderApp = '';
   /** Tables by key: homed in the holder with Write on (`own`), homed in
    *  the holder with Write off (`readOnly`), homed in another workspace
@@ -396,20 +397,17 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     expect(await grid(tables.readOnly)).toContain(`${tag} by moderator`);
   });
 
-  it('2. a Table homed in another workspace: refused by the verdict, nothing lands', async () => {
+  it('2. a Table homed in another workspace that grants the holder Write: the rows land', async () => {
+    // No Table named: refused (fail closed).
+    const none = await memberCall(writer, 'table_row_add', { cells: { Name: 'x' } });
+    expect(none.status).toBe(403);
+    expect(none.body.error).toContain('names none');
     const res = await memberCall(writer, 'table_row_add', {
       table_id: tables.elsewhere,
       cells: { Name: `${tag} elsewhere` },
     });
-    expect(res.status).toBe(403);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.error).toContain('homed in the workspace that holds this app');
-    // No Table named: refused the same way (fail closed).
-    const none = await memberCall(writer, 'table_row_add', { cells: { Name: 'x' } });
-    expect(none.status).toBe(403);
-    expect(none.body.error).toContain('names no Table');
-    expect(await hasDraft(tables.elsewhere)).toBe(false);
-    expect(await grid(tables.elsewhere)).not.toContain(`${tag} elsewhere`);
+    expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+    expect(await grid(tables.elsewhere)).toContain(`${tag} elsewhere`);
   });
 
   it('3. a user without Write on the Table, not a Moderator: refused, nothing lands', async () => {
@@ -613,9 +611,9 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     expect((await grid(tables.own)).includes(`${tag} big`)).toBe(false);
   });
 
-  it('the home is asked again where the write runs: a Table outside the app scope takes none', async () => {
+  it('a write as the runner reaches no Table the runner may not edit', async () => {
     const c = await import('@mantle/content');
-    const before = await hasDraft(tables.elsewhere);
+    const before = await hasDraft(tables.admin);
     await expect(
       inRequest(writer, async () => {
         const w = m.appRunWriter();
@@ -623,34 +621,40 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
           () =>
             m.withViewer(
               { login: writer, app: { id: teamApp } },
-              () => c.applyTableOps(owner, tables.elsewhere, [{ op: 'row_add', cells: {} }]),
-              { writes: w! },
+              () => c.applyTableOps(owner, tables.admin, [{ op: 'row_add', cells: {} }]),
+              { writes: w!, asRunner: true },
             ),
           'app-data',
         );
       }),
-    ).rejects.toThrow(/not allowed to edit/);
-    expect(await hasDraft(tables.elsewhere)).toBe(before);
+    ).rejects.toThrow();
+    expect(await hasDraft(tables.admin)).toBe(before);
+    const res = await memberCall(writer, 'table_row_add', {
+      table_id: tables.admin,
+      cells: { Name: `${tag} admin by app` },
+    });
+    expect(res.body.ok).toBe(false);
+    expect(await grid(tables.admin)).not.toContain(`${tag} admin by app`);
   });
 
-  it('an app two workspaces beyond Admin hold writes no Table', async () => {
+  it('an app two workspaces beyond Admin hold writes as its runner', async () => {
     const res = await memberCall(
       writer,
       'table_row_add',
       { table_id: tables.own, cells: { Name: `${tag} two holders` } },
       { app: twoHolderApp },
     );
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain('is not one');
-    expect(await named(tables.own, `${tag} two holders`)).toBe(0);
+    expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+    expect(await named(tables.own, `${tag} two holders`)).toBe(1);
     const warnings = await m.asSystem(() => t.appToolWarnings(owner, twoHolderApp), 'test');
-    expect(warnings.find((w) => w.includes("'table_row_add'"))).toContain('writes no Table here');
+    expect(warnings.find((w) => w.includes("'table_row_add'"))).toContain(
+      'runs as the user running the app',
+    );
   });
 
-  it('table_commit: refused elsewhere, without Write and on a link; publishes its own Table', async () => {
-    const elsewhere = await memberCall(writer, 'table_commit', { id: tables.elsewhere });
-    expect(elsewhere.status).toBe(403);
-    expect(elsewhere.body.error).toContain('homed in the workspace that holds this app');
+  it('table_commit: refused without Write and on a link; publishes a Table the runner may write', async () => {
+    const admin = await memberCall(writer, 'table_commit', { id: tables.admin });
+    expect(admin.body.ok).toBe(false);
     // The Moderator's draft on readOnly (1b): the writer may not publish it.
     expect(await hasDraft(tables.readOnly)).toBe(true);
     const noRight = await memberCall(writer, 'table_commit', { id: tables.readOnly });
@@ -671,8 +675,14 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
     expect(await hasDraft(tables.own)).toBe(false);
     const published = await grid(tables.own);
-    for (const v of ['one', 'two', 'upsert', 'app row set'])
+    for (const v of ['one', 'two', 'upsert', 'app row set', 'two holders'])
       expect(published).toContain(`${tag} ${v}`);
+    // Another workspace's Table the runner may write: published as well.
+    await setData(tables.elsewhere, { extract_completed_at: minutesAgo(60) });
+    const there = await memberCall(writer, 'table_commit', { id: tables.elsewhere });
+    expect(there.body.ok, JSON.stringify(there.body)).toBe(true);
+    expect(await hasDraft(tables.elsewhere)).toBe(false);
+    expect(await grid(tables.elsewhere)).toContain(`${tag} elsewhere`);
   });
 
   it("a team app's commit waits out a model pass (MED-1)", async () => {
@@ -759,8 +769,8 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
   it('the publish warning says where a declared row write runs, and refuses the rest', async () => {
     const warnings = await m.asSystem(() => t.appToolWarnings(owner, teamApp), 'test');
     const of = (slug: string) => warnings.filter((w) => w.includes(`'${slug}'`));
-    expect(of('table_row_add')[0]).toContain('homed in the workspace that holds this app');
-    expect(of('table_commit')[0]).toContain('homed in the workspace that holds this app');
+    expect(of('table_row_add')[0]).toContain('runs as the user running the app');
+    expect(of('table_commit')[0]).toContain('runs as the user running the app');
     expect(of('table_column_add')[0]).toContain('changes data or reaches outside the brain');
     expect(of('table_row_delete')[0]).toContain(t.TEAM_APP_TOOLS_ALLOWED);
   });

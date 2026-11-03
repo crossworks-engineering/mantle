@@ -211,7 +211,7 @@ export async function runAppToolBroker(
   if (!found) return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
   const app = found;
   const { slug, input, confirmToken } = parsed.data;
-  // Who a team app's Table write would run as: read here, in the request,
+  // Who a team app's Table or file write would run as: read here, in the request,
   // before `system` masks its scope and actor (a mutating request of this
   // login, never a read-only login; withViewer checks it again).
   const writer = config.via === 'contact' ? null : appRunWriter();
@@ -290,20 +290,23 @@ export async function runAppToolBroker(
     }
   }
 
-  // A Table write the team rules allowed (a row write or table_commit on
-  // the app's own workspace's Table): the argument naming its Table.
+  // A Table write the team rules allowed (a row write or table_commit):
+  // the argument naming its Table.
   const tableArg = await appRunTableWrite(verdict);
   // A documents tool that saves its file (no `bytes: true`).
   const fileSave = await appRunFileSave(verdict, input);
   // A file write the team rules allowed (file_upload, file_move,
-  // file_rename on the app's own workspace's file and folder).
+  // file_rename).
   const fileWrite = await appRunFileWrite(verdict);
   const scope = { actsFor: await run.actsFor() };
-  // It runs in the app's scope as a write, as the running login, only for
-  // a login that may write in this request (appRunWriter); a read keeps
-  // the read-only scope. A documents save with no writer runs read-only,
-  // and the tool answers why it saved nothing (teamAppSaveRefusal).
+  // It runs as a write, as the running login, only for a login that may
+  // write in this request (appRunWriter); a read keeps the read-only
+  // scope. A Table or file write runs in the runner's own scope, wherever
+  // that user may write by hand (`asRunner`); a documents save stays in
+  // the app's scope, and with no writer runs read-only, and the tool
+  // answers why it saved nothing (teamAppSaveRefusal).
   const writes = scope.actsFor !== null && (tableArg !== null || fileSave || fileWrite);
+  const asRunner = tableArg !== null || fileWrite;
   const writeRefusal = !(writes && (tableArg !== null || fileWrite))
     ? null
     : !writer
@@ -344,7 +347,7 @@ export async function runAppToolBroker(
   try {
     result = await system(() =>
       scope.actsFor
-        ? withViewer(scope.actsFor, dispatch, writes && writer ? { writes: writer } : {})
+        ? withViewer(scope.actsFor, dispatch, writes && writer ? { writes: writer, asRunner } : {})
         : dispatch(),
     );
   } finally {

@@ -158,7 +158,9 @@ export async function appToolRefusal(
  * through the APP, not the runner's whole login: the app's holders beyond
  * Admin met with the runner's workspaces (AppRunFor in @mantle/db). So an
  * admin's run of a Team-held app never reads an Admin-only item, and a
- * member's run never reads the member's other workspaces.
+ * member's run never reads the member's other workspaces. A Table row write
+ * and a file write (appRunWrites) are the one exception: the broker runs
+ * them as the runner, in the runner's own scope (withViewer `asRunner`).
  */
 export function appToolScope(
   level: AppToolLevel,
@@ -193,15 +195,14 @@ export function appToolScope(
 }
 
 /**
- * Whether an allowed call of an app run writes in the app's scope
- * (withViewer's `writes`): only a Table row write the policy
- * marks `table-rows` (isBuiltinTeamTableRowWrite), which the team rules let
- * through only on a Table homed in the holder of the app (member-app-tools.ts
- * rule 6). It writes as the running login in the app's scope, so the
- * database's checks decide (the item's Write switch, a Moderator of its
- * home, the actor and edit checks). Any other call, a read, another
- * built-in write an admin's run allows, or an outside tool (it writes
- * outside the brain, if at all), keeps the read-only scope.
+ * Whether an allowed call of an app run writes as its runner (withViewer's
+ * `writes` with `asRunner`): a Table row write the policy marks
+ * `table-rows` (isBuiltinTeamTableRowWrite, member-app-tools.ts rule 6) or
+ * a file write it marks `files` (rule 7). It writes as the running login in
+ * that login's own scope, so the database's checks decide (the item's Write
+ * switch, a Moderator of its home, the actor and edit checks). Any other
+ * call, a read, another built-in write an admin's run allows, or an outside
+ * tool (it writes outside the brain, if at all), keeps the read-only scope.
  */
 export async function appRunWrites(verdict: AppToolVerdict): Promise<boolean> {
   return (await appRunTableWrite(verdict)) !== null || (await appRunFileWrite(verdict));
@@ -222,11 +223,10 @@ export async function appRunTableWrite(verdict: AppToolVerdict): Promise<string 
 }
 
 /** Whether an allowed call of an app run is a file write the policy marks
- *  `files` (file_upload, file_move, file_rename), which the team rules let
- *  through only on a file and a folder homed in the holder of the app
- *  (member-app-tools.ts rule 7): it then runs in the app's scope as a
- *  write, as the running login, whose own rights the database and the
- *  Files operations check (@mantle/files app-run-write.ts). */
+ *  `files` (file_upload, file_move, file_rename, member-app-tools.ts rule
+ *  7): it then runs as a write, as the running login in that login's own
+ *  scope, whose own rights the database and the Files operations check
+ *  (@mantle/files app-run-write.ts). */
 export async function appRunFileWrite(verdict: AppToolVerdict): Promise<boolean> {
   if (!verdict.ok) return false;
   const h = verdict.tool.handler as Tool['handler'] | undefined;
@@ -312,25 +312,19 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
         appId,
       });
       if (verdict.ok) {
-        // A row write runs, but only on a Table homed in a workspace that
-        // holds the app, for a user who may write it there (rule 6).
+        // A row write runs as the user running the app, on a Table that
+        // user may write by hand (rule 6).
         const h = verdict.tool.handler;
         if (h.kind === 'builtin' && isBuiltinTeamTableRowWrite(h.ref)) {
-          holders ??= (await appRunHolders({ id: appId })).length;
           warnings.push(
-            holders === 1
-              ? `The tool '${slug}' runs here only on a Table homed in the workspace that holds this app, as the user running it, who needs Write on that Table (or to be a Moderator of its workspace): on its own workspace's Tables the app does what that user may do there. Row changes land in the Table's draft; table_commit publishes it. Any other Table is refused: an app a workspace other than Admin holds runs the team rules.`
-              : `The tool '${slug}' writes no Table here: a team app's row writes run only when exactly one workspace beyond Admin holds the app (${holders} do), on a Table homed in that workspace. Keep the app in one workspace (beside Admin) for its row writes to run.`,
+            `The tool '${slug}' runs as the user running the app, on any Table that user may write by hand: Write on that Table for one of their workspaces, or a Moderator of its workspace. Anyone else's call is refused. Row changes land in the Table's draft; table_commit publishes it. The app's data is shared by everyone who runs it, so it may copy what it writes there.`,
           );
         }
-        // A file write runs only in the app's own workspace, with the
-        // running user's own rights there (rule 7).
+        // A file write runs as the user running the app, wherever that user
+        // may write by hand (rule 7).
         if (h.kind === 'builtin' && isBuiltinTeamFileWrite(h.ref)) {
-          holders ??= (await appRunHolders({ id: appId })).length;
           warnings.push(
-            holders === 1
-              ? `The tool '${slug}' runs here only on a file and a folder homed in the workspace that holds this app, as the user running it: it may do there what that user may do by hand (a Moderator of the folder's workspace, or the folder's Write switch for theirs; a move needs a Moderator of the file's workspace). Up to ${APP_FILE_WRITE_MAX_BYTES / (1024 * 1024)} MB a file per call. It never changes who can see a file: a write that would let another workspace read it, or confirm: true, is refused. An upload is read into the brain as a Files upload is.`
-              : `The tool '${slug}' writes no file here: a team app's file writes run only when exactly one workspace beyond Admin holds the app (${holders} do), in a folder homed in that workspace. Keep the app in one workspace (beside Admin) for its file writes to run.`,
+            `The tool '${slug}' runs as the user running the app, wherever that user may write by hand: a folder they may edit (a Moderator of its workspace, or its Write switch for one of theirs); a move also needs a Moderator of the file's workspace. Up to ${APP_FILE_WRITE_MAX_BYTES / (1024 * 1024)} MB a file per call. A file is read by the workspaces that read its folder; a move that would stop a workspace reading a file, or confirm: true, is refused. An upload is read into the brain as a Files upload is.`,
           );
         }
         // A documents tool saves only for a user who moderates the app's

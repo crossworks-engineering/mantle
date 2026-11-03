@@ -278,16 +278,11 @@ export async function upsertFile(args: {
     throw new InputError(`upsertFile: parent folder '${args.parentPath}' not found`);
   }
 
-  // A team app's write: only in a folder homed in the app's workspace, a new
-  // file only where the running user may edit the folder, and over a file
-  // homed there too (app-run-write.ts). Before the disk.
+  // A team app's write: a new file only where the running user may edit
+  // the folder, as by hand (app-run-write.ts). Before the disk.
   try {
     if (!args.exportSave) {
-      await assertAppRunFileWrite({
-        folderId: parent?.id ?? null,
-        place: !existing,
-        ...(existing ? { fileId: existing.id } : {}),
-      });
+      await assertAppRunFileWrite({ folderId: parent?.id ?? null, place: !existing });
     }
   } catch (err) {
     if (args.spooled) await discardSpooled(args.spooled);
@@ -1349,8 +1344,6 @@ export async function renameFileById(args: {
   // Edit first: a caller that may not rename the file learns nothing of the folder (a name taken by a file it does
   // not read). The database's refusal stays the authority.
   await assertItemRight(node.id, 'edit');
-  // A team app's rename: only of a file homed in the app's workspace.
-  await assertAppRunFileWrite({ fileId: node.id });
   const data = (node.data ?? {}) as Record<string, unknown>;
   const oldFilename = String(data.filename ?? '');
   const ext = String(data.extension ?? extOf(oldFilename));

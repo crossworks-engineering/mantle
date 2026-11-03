@@ -14,7 +14,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { errorMessage, InputError } from '@mantle/std';
 import {
-  assertAppRunWriteHome,
   assertItemRight,
   db,
   EXTRACT_SKIPPED_KEY,
@@ -171,7 +170,6 @@ export async function tableWriteRefusal(ownerId: string, id: string): Promise<st
   try {
     await assertItemRight(id, 'edit');
     await assertTableWritable(id);
-    if (inAppRunWrite()) await assertAppRunWriteHome(id);
   } catch (err) {
     return errorMessage(err);
   }
@@ -195,11 +193,9 @@ export async function applyTableOps(
   // staged on disk, and the same refusal whether a draft is there or not.
   await assertItemRight(id, 'edit');
   await assertTableWritable(id);
-  // A team app's write (inAppRunWrite): only on a Table homed in the app's
-  // scope, asked again here where the write runs (a move since the verdict
-  // takes none), and within the app's ceilings below.
+  // A team app's write (inAppRunWrite): as its runner, on any Table the
+  // runner may edit (the checks above), within the app's ceilings below.
   const appWrite = inAppRunWrite();
-  if (appWrite) await assertAppRunWriteHome(id);
   try {
     for (let attempt = 1; ; attempt++) {
       const row = await readTableRow(id);
@@ -544,11 +540,10 @@ export async function commitTable(
   // same refusal whether a draft is there or not. An app's sync is the brain's own (the app's data door asked).
   if (!opts.appSync) await assertItemRight(id, 'edit');
   await assertTableWritable(id, opts.appSync);
-  // A team app's commit (inAppRunWrite): only a Table homed in the app's
-  // scope, asked again where the write runs (applyTableOps' rule).
+  // A team app's commit (inAppRunWrite): as its runner (applyTableOps'
+  // rule).
   const appWrite = inAppRunWrite();
   if (appWrite) {
-    await assertAppRunWriteHome(id);
     // Asked early on what is known before the staging (a pass pending, or
     // no summary: the commit is `schema`), and again in the flip on the
     // locked row with the change the commit makes.

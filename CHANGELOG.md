@@ -4,6 +4,31 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased
+
+### Team apps write files and Table rows where their user may
+
+- **Changed:** a team app now writes files and Table rows wherever the
+  user who runs it may write them by hand. This is the same rule as for
+  any other share. Before, the file or Table had to be homed in the one
+  workspace that holds the app, and no other workspace could read the
+  folder.
+- `file_upload`, `file_move`, `file_rename` and the Table row writes run
+  as the user, in all of the user's workspaces. The item's and the
+  folder's rights decide: the **Write** switch, or a Moderator of the
+  home. A move still needs a Moderator of the file's home.
+- A folder or Table that other workspaces also read is no longer refused.
+  A new file is read by the workspaces that read its folder.
+- An app that several workspaces hold can now write too.
+- **Kept:** 16 MB of file per call, one Activity row per write, DWG import
+  as a Files upload, no delete and no folder changes. A team app still
+  never sends `confirm: true`, and a move that would stop a workspace
+  reading a file is refused. Shared links and read-only logins write
+  nothing. The `app-files` group switch still turns `file_upload` on and
+  off.
+- **Note:** what the app writes can end up in the app's shared data, which
+  every user of the app reads.
+
 ## v0.500.16: every Admin user sees the brain's activity, and only its own work
 
 The Activity column, the journey feed and /traces showed the system's work
