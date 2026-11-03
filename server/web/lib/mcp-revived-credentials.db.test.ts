@@ -58,6 +58,21 @@ async function installLoginIsAdmin(q: ReturnType<typeof postgres>): Promise<void
   await q.unsafe(st);
 }
 
+/** The columns of mantle_peers the app code reads that a later migration
+ *  added (0354, the access scope and the watch mark): the scratch brain stops
+ *  before 0272, and the app runs as it is now. */
+async function installPeerScope(q: ReturnType<typeof postgres>): Promise<void> {
+  const file = fileURLToPath(
+    new globalThis.URL(
+      '../../../packages/db/migrations/0354_peer_status_link.sql',
+      import.meta.url,
+    ),
+  );
+  for (const st of readFileSync(file, 'utf8').split('--> statement-breakpoint')) {
+    if (st.trim() && !/^\s*(--[^\n]*\n\s*)*SET LOCAL/.test(st)) await q.unsafe(st);
+  }
+}
+
 type Ts = typeof import('@mantle/db/test-support');
 const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 
@@ -238,6 +253,7 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
     }
     await scratch.migrateRest(UNTIL);
     await installLoginIsAdmin(sql);
+    await installPeerScope(sql);
     // The role=admin logins are users of the brain's Admin workspace, as
     // every admin is once the workspaces switch ran: an Admin login is the
     // Admin pair (role admin AND a user of Admin). After the migrations, so
@@ -519,6 +535,7 @@ describe.skipIf(!URL)('0268: the cutoff is recorded once (W7b fix round 3)', () 
     beforePeer = await insertPeer('before');
     await scratch.migrateRest(UNTIL);
     await installLoginIsAdmin(sql);
+    await installPeerScope(sql);
   }, 300_000);
 
   afterAll(async () => {

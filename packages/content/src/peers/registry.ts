@@ -29,6 +29,23 @@ import { asKindRootRepair } from '../kind-root';
 
 export const PEERS_ROOT_LABEL = 'peers';
 
+/**
+ * What a peer's inbound token may do on this box (0354, docs/federation.md
+ * "Status links"): `full`, as every peer before (the federation read routes,
+ * and /api/mcp as its Acts as login); `status`, /api/mcp lists and calls the
+ * status tools only; `none`, it verifies nowhere (an outbound-only peer).
+ */
+export const PEER_ACCESS_SCOPES = ['full', 'status', 'none'] as const;
+export type PeerAccessScope = (typeof PEER_ACCESS_SCOPES)[number];
+
+/** A stored scope this code knows, or null: an unknown value is no access
+ *  at all (fail closed), never read as `full`. */
+export function peerAccessScopeOf(v: unknown): PeerAccessScope | null {
+  return typeof v === 'string' && (PEER_ACCESS_SCOPES as readonly string[]).includes(v)
+    ? (v as PeerAccessScope)
+    : null;
+}
+
 /** Secret-free view of a peer for lists / detail / API responses. */
 export type PeerRow = {
   id: string;
@@ -48,6 +65,11 @@ export type PeerRow = {
   writeEnabled: boolean;
   /** Risky owner tools allowed for this peer by name. */
   allowedRiskyTools: string[];
+  /** What its inbound token may do here (0354); null: a value this code
+   *  does not know, which grants nothing. */
+  accessScope: PeerAccessScope | null;
+  /** peer_status polls this peer when no peer is named (0354). */
+  watchStatus: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -67,6 +89,8 @@ function rowOf(p: MantlePeer): PeerRow {
     // An unbound peer writes nothing, whatever it kept for a rebind (0238).
     writeEnabled: p.actsAsLoginId ? p.writeEnabled : false,
     allowedRiskyTools: p.allowedRiskyTools ?? [],
+    accessScope: peerAccessScopeOf(p.accessScope),
+    watchStatus: p.watchStatus,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };
@@ -121,6 +145,10 @@ export type CreatePeerInput = {
   /** The login registering it: only a peer the
    *  owner made deletes apps as the owner. */
   createdBy?: string;
+  /** What its inbound token may do here (default `full`, as before 0354). */
+  accessScope?: PeerAccessScope;
+  /** peer_status polls it when no peer is named (default off). */
+  watchStatus?: boolean;
 };
 
 /**
@@ -174,6 +202,8 @@ export async function createPeer(
         status: outbound ? 'active' : 'pending',
         enabled: true,
         createdBy: input.createdBy ?? null,
+        accessScope: input.accessScope ?? 'full',
+        watchStatus: input.watchStatus ?? false,
       })
       .returning(),
   );
@@ -418,6 +448,11 @@ export async function deletePeer(ownerId: string, id: string): Promise<boolean> 
  * before we have theirs, and their calls must work while we wait (what they
  * can read is still governed entirely by peer_shares). The returned `ownerId`
  * is the answering owner whose data the peer may (scoped) read.
+ *
+ * Only a peer whose token may do something here verifies (0354): an
+ * outbound-only peer (`none`), or a scope this code does not know, never
+ * does. What a `status` peer may do is each caller's to narrow (the
+ * federation routes refuse it; /api/mcp lists the status tools only).
  */
 export async function verifyInboundToken(token: string): Promise<MantlePeer | null> {
   if (!token) return null;
@@ -429,6 +464,7 @@ export async function verifyInboundToken(token: string): Promise<MantlePeer | nu
         eq(mantlePeers.inboundTokenHash, hashToken(token)),
         eq(mantlePeers.enabled, true),
         inArray(mantlePeers.status, ['active', 'pending']),
+        inArray(mantlePeers.accessScope, ['full', 'status']),
       ),
     )
     .limit(1);
@@ -436,6 +472,8 @@ export async function verifyInboundToken(token: string): Promise<MantlePeer | nu
   // Defence-in-depth: confirm in constant time (the unique-hash lookup already
   // matched, but never trust a single equality on an auth path).
   if (!tokenMatchesHash(token, row.inboundTokenHash)) return null;
+  const scope = peerAccessScopeOf(row.accessScope);
+  if (scope !== 'full' && scope !== 'status') return null;
   // The token is verified by now; last-seen is a note for the peers screen.
   // On a database that refuses writes it is skipped, never a failed peer call.
   await bestEffortWrite("a peer's last-seen stamp", () =>

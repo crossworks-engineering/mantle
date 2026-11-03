@@ -14,6 +14,8 @@
 export {
   PEERS_ROOT_LABEL,
   PEER_TOKEN_PREFIX,
+  PEER_ACCESS_SCOPES,
+  peerAccessScopeOf,
   createPeer,
   listPeers,
   getPeer,
@@ -42,6 +44,7 @@ export {
   mintInboundToken,
   tokenMatchesHash,
   type PeerAccessResult,
+  type PeerAccessScope,
   type PeerRow,
   type CreatePeerInput,
   type PeerShareRow,

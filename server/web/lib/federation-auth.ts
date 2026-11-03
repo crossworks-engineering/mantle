@@ -7,8 +7,12 @@
  * This is the ONLY gate on the federation surface — `/api/federation` bypasses
  * the session-cookie middleware (see auth-constants.ts), so every handler must
  * call this first and 401 on null.
+ *
+ * Only a `full` peer reads the federation routes (0354): a status-only peer's
+ * token reaches the status tools on /api/mcp and nothing here, and an
+ * outbound-only peer's token verifies nowhere.
  */
-import { verifyInboundToken } from '@mantle/content';
+import { peerAccessScopeOf, verifyInboundToken } from '@mantle/content';
 import type { MantlePeer } from '@mantle/db';
 import { bearerFrom } from './auth/request';
 
@@ -16,5 +20,6 @@ import { bearerFrom } from './auth/request';
 export async function authenticatePeer(req: Request): Promise<MantlePeer | null> {
   const token = bearerFrom(req);
   if (!token) return null;
-  return verifyInboundToken(token);
+  const peer = await verifyInboundToken(token);
+  return peer && peerAccessScopeOf(peer.accessScope) === 'full' ? peer : null;
 }

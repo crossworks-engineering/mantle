@@ -84,6 +84,14 @@ export const mantlePeers = pgTable(
      *  app_delete through a peer bound to the owner is the owner's only when
      *  the owner made it. Null before 0267 until the owner binds it again. */
     createdBy: uuid('created_by'),
+    /** What the peer's inbound token may do here (0354): 'full' (the
+     *  federation read routes, and /api/mcp as its Acts as login), 'status'
+     *  (/api/mcp lists and calls the status tools only), 'none' (it verifies
+     *  nowhere: an outbound-only peer). Any other value is no access
+     *  (PEER_ACCESS_SCOPES, @mantle/content peers). */
+    accessScope: text('access_scope').notNull().default('full'),
+    /** peer_status polls this peer's box_status when no peer is named (0354). */
+    watchStatus: boolean('watch_status').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
