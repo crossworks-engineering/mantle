@@ -17,7 +17,7 @@ import type { DecisionPrivacy } from '@mantle/voice';
 export const DECISION_FAILURE_REASONS = {
   /** A 404 under `zdr`: most often no zero-retention route for the model. */
   privacy_route:
-    "No route for this model meets the decider's privacy setting (zero data retention), or the provider does not offer the model. An admin chooses: another model, or a lower privacy level on the decider worker. Mantle never lowers it by itself.",
+    "No route for this model meets the decider's privacy setting (zero data retention), or the provider does not offer the model. An admin chooses: another model, or a lower privacy level on the decider worker. The brain never lowers it by itself.",
   /** The model reported exactly its token limit: the request may be cut. */
   cut: 'The model reported exactly its input limit, so the request may have been cut. The answer was not used.',
   /** An answer came back, but not one the decider can use. */
