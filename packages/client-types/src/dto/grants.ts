@@ -151,13 +151,16 @@ export type GrantPreviewResponse = {
  *  folder (`toFolderId`, null = the kind's root: items only, of one tree
  *  kind). `keepReadableIn` (the old home only) keeps a read grant there.
  *
- *  `withContents` (a home move of one folder, with `confirm`): the items
- *  below the folder that share its old home move too, each on its own by
- *  the same rules and the same `keepReadableIn`. An item homed elsewhere,
- *  or of a kind the new home may not hold, stays. At most 200 of them move
- *  per call, deepest first; while `contents.remaining` is above 0, call
- *  again with the same body. The folder itself moves in the call that moves
- *  the last of them. */
+ *  `withContents` (a home move of one folder, with `confirm` and
+ *  `fromWorkspaceId`, the home the caller saw on it: 409 `changed` once the
+ *  folder has another): the items below the folder that share its old home
+ *  move too, each on its own by the same rules and the same
+ *  `keepReadableIn`. An item stays when it is homed elsewhere, of a kind the
+ *  new home may not hold, "Removed here" for the new home (on it or on a
+ *  folder it is in), or in a folder the caller cannot open. At most 200 of
+ *  them move per call, deepest first; while `contents.remaining` is above
+ *  0, call again with the same body. The folder itself moves in the call
+ *  that moves the last of them. */
 export type GrantMoveBody = {
   nodeIds: string[];
   toWorkspaceId?: string;
@@ -165,6 +168,7 @@ export type GrantMoveBody = {
   keepReadableIn?: string;
   confirm?: boolean;
   withContents?: boolean;
+  fromWorkspaceId?: string;
 };
 
 /** What a home move of a folder with its contents takes along (the
@@ -179,6 +183,10 @@ export type GrantMoveContentsPreview = {
   otherHome: number;
   /** The items with its home of a kind the target may not hold: they stay. */
   notAllowed: number;
+  /** The items with its home that the target was removed from by hand
+   *  ("Removed here", on them or on a folder they are in), or that sit in
+   *  a folder the caller cannot open: they stay. */
+  removedHere: number;
   /** Of `otherHome`, the items the caller cannot open. */
   hidden: number;
   /** How many calls the move takes (200 items per call). */
@@ -197,7 +205,7 @@ export type GrantMovePreviewResponse = {
 export type GrantMoveLeftAlone = {
   id: string;
   title: string;
-  reason: 'other_home' | 'kind_not_allowed';
+  reason: 'other_home' | 'kind_not_allowed' | 'removed_here' | 'hidden_folder';
 };
 
 export type GrantMoveResponse = {
@@ -208,8 +216,9 @@ export type GrantMoveResponse = {
   contents?: {
     /** Items below the folder moved by this call. */
     moved: number;
-    /** Items still to move: call again with the same body. The folder
-     *  itself has not moved while this is above 0. */
+    /** Items this call did not get to (200 per call, or a failure that
+     *  ended the call): call again with the same body. The folder itself
+     *  has not moved while this is above 0. */
     remaining: number;
     /** The items left where they are, the first 200 (`hidden` ones never
      *  named). */

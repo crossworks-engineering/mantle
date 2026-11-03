@@ -52,6 +52,7 @@ import type {
   GrantEmbedSkip,
   GrantErrorCode,
   GrantMovePreviewResponse,
+  GrantMoveLeftAlone,
   GrantMoveResponse,
   GrantPreviewResponse,
   GrantRow,
@@ -1212,6 +1213,7 @@ export const MoveBody = z.object({
   keepReadableIn: z.string().uuid().optional(),
   confirm: z.boolean().optional(),
   withContents: z.boolean().optional(),
+  fromWorkspaceId: z.string().uuid().optional(),
 });
 
 export type MoveInput = {
@@ -1223,6 +1225,9 @@ export type MoveInput = {
   /** A folder's home move takes along the items below it that share its
    *  old home (moveWithContents). */
   withContents?: boolean;
+  /** With `withContents`: the home the caller saw on the folder. The move
+   *  goes on only while the folder still has it. */
+  fromWorkspaceId?: string;
 };
 
 /** A home move with its contents moves at most `max` of them per call; the
@@ -1249,6 +1254,11 @@ function moveTarget(body: MoveInput): 'workspace' | 'folder' {
     if (new Set(body.nodeIds.map((id) => id.toLowerCase())).size !== 1) {
       throw new GrantError(400, 'invalid', 'withContents moves one folder at a time.');
     }
+    if (body.fromWorkspaceId === undefined) {
+      throw new GrantError(400, 'invalid', 'withContents goes with fromWorkspaceId.');
+    }
+  } else if (body.fromWorkspaceId !== undefined) {
+    throw new GrantError(400, 'invalid', 'fromWorkspaceId goes with withContents.');
   }
   return ws ? 'workspace' : 'folder';
 }
@@ -1320,12 +1330,37 @@ async function planWorkspaceMove(ctx: Ctx, body: MoveInput, q: Exec) {
   // until then), so the loss is the folder's.
   const folder = items[0]!;
   let contents: Contents | null = null;
-  if (body.withContents === true && folder.type === 'branch' && folder.path && folder.home) {
-    contents = await folderContents(q, ctx, folder, folder.home, t.wsId);
+  if (body.withContents === true && folder.type === 'branch' && folder.path) {
+    // The folder's own rules first: no counts for a move it may not make.
+    const from = await contentsFrom(q, ctx, folder, t.wsId, body);
+    const { hidden } = await grantCounts(q, ctx, folder);
+    contents = await folderContents(q, ctx, folder, from, t.wsId, hidden);
     if (contents.move.some((c) => !c.holders.includes(t.wsId))) gain.set(t.wsId, null);
   }
   return { gain, lose, contents };
 }
+
+/** The rules of a folder's home move with its contents (homeMoveRules),
+ *  and the folder still has the home the caller saw (`fromWorkspaceId`).
+ *  Answers that home. */
+async function contentsFrom(
+  q: Exec,
+  ctx: Ctx,
+  folder: Item,
+  to: string,
+  body: MoveInput,
+): Promise<string> {
+  const from = await homeMoveRules(q, ctx, folder, to, body);
+  if (body.fromWorkspaceId?.toLowerCase() !== from) throw CHANGED();
+  return from;
+}
+
+const CHANGED = () =>
+  new GrantError(
+    409,
+    'changed',
+    'It changed while the folder moved (its home or its folder), so it stays where it is.',
+  );
 
 /** One item below a folder, as a home move with its contents sorts it. */
 type Content = { id: string; type: string; title: string; holders: string[] };
@@ -1335,8 +1370,10 @@ type Contents = {
    *  what it holds): they move with it. */
   move: Content[];
   /** The items that stay: another home (the target's aside: those are
-   *  there already), or a kind the target may not hold. */
-  left: Array<Content & { reason: 'other_home' | 'kind_not_allowed' }>;
+   *  there already), a kind the target may not hold, the target "Removed
+   *  here" on it or on a folder it is in below this one, or in a folder
+   *  below this one the caller cannot open. */
+  left: Array<Content & { reason: GrantMoveLeftAlone['reason'] }>;
   /** The items below the folder the caller cannot open. They stay too:
    *  a Moderator of the old home reads every item homed there, so each of
    *  these has another home. */
@@ -1344,41 +1381,71 @@ type Contents = {
 };
 
 /** What a home move of `folder` from `from` to `to` with its contents
- *  takes along: every item below it the caller reads, by its home. */
+ *  takes along: every item below it the caller reads, by its home. A
+ *  "Removed here" of `to` (the caller moderates it, so its rows are read)
+ *  on the item or on a folder between it and `folder` keeps the item where
+ *  it is: its move would undo that removal. So does a folder between them
+ *  the caller cannot open (its rows are not read). `hidden`: the count of
+ *  the folder's subtree (mantle_grant_counts). */
 async function folderContents(
   q: Exec,
   ctx: Ctx,
   folder: Item,
   from: string,
   to: string,
+  hidden: number,
 ): Promise<Contents> {
   const list = await rows<{
     id: string;
     type: string;
     title: string;
+    path: string;
     home: string | null;
     holders: unknown;
     kind_ok: boolean;
+    removed: boolean;
   }>(
     q,
-    sql`select n.id, n.type::text as type, n.title, ${itemHomeSql('n')} as home,
-               ${itemHoldersSql('n')} as holders,
-               mantle_grant_kind_ok(n.type, ${to}::uuid) as kind_ok
+    sql`select n.id, n.type::text as type, n.title, n.path::text as path,
+               ${itemHomeSql('n')} as home, ${itemHoldersSql('n')} as holders,
+               mantle_grant_kind_ok(n.type, ${to}::uuid) as kind_ok,
+               exists (select 1 from item_grants g
+                        where g.node_id = n.id and g.workspace_id = ${to}::uuid
+                          and g.excluded) as removed
           from nodes n
          where n.owner_id = ${ctx.caller.anchorId} and n.id <> ${folder.id}
            and n.path <@ ${folder.path}::ltree
            and ${mayReadInSql('n', mineSql(ctx))}
          order by nlevel(n.path) desc, (n.type = 'branch'), n.path, n.id`,
   );
-  const out: Contents = { move: [], left: [], hidden: 0 };
+  // The folders below `folder` by path: whether `to` is removed there.
+  const folders = new Map<string, boolean>();
+  for (const n of list) {
+    if (n.type === 'branch') folders.set(n.path, (folders.get(n.path) ?? false) || n.removed);
+  }
+  const top = folder.path!.split('.').length;
+  // The folders between the item and `folder`: every path from one label
+  // below `folder` to the item's own (an item's path is its folder's; a
+  // folder's own path is itself, so it stops one short).
+  const between = (n: { path: string; type: string }) => {
+    const labels = n.path.split('.');
+    const end = n.type === 'branch' ? labels.length - 1 : labels.length;
+    const out: string[] = [];
+    for (let k = top + 1; k <= end; k++) out.push(labels.slice(0, k).join('.'));
+    return out;
+  };
+  const out: Contents = { move: [], left: [], hidden };
   for (const n of list) {
     const c: Content = { id: n.id, type: n.type, title: n.title, holders: idsOf(n.holders) };
     if (n.home === to) continue;
+    const up = between(n);
     if (n.home !== from) out.left.push({ ...c, reason: 'other_home' });
     else if (n.kind_ok !== true) out.left.push({ ...c, reason: 'kind_not_allowed' });
-    else out.move.push(c);
+    else if (up.some((p) => !folders.has(p))) out.left.push({ ...c, reason: 'hidden_folder' });
+    else if (n.removed || up.some((p) => folders.get(p) === true)) {
+      out.left.push({ ...c, reason: 'removed_here' });
+    } else out.move.push(c);
   }
-  out.hidden = (await grantCounts(q, ctx, folder)).hidden;
   return out;
 }
 
@@ -1503,6 +1570,8 @@ export async function previewMove(
       apps: c.move.filter((i) => i.type === 'app').length,
       otherHome: c.left.filter((i) => i.reason === 'other_home').length + c.hidden,
       notAllowed: c.left.filter((i) => i.reason === 'kind_not_allowed').length,
+      removedHere: c.left.filter((i) => i.reason === 'removed_here' || i.reason === 'hidden_folder')
+        .length,
       hidden: c.hidden,
       calls: Math.max(1, Math.ceil(c.move.length / MOVE_CONTENTS_PER_CALL.max)),
     };
@@ -1542,7 +1611,8 @@ export async function moveItems(caller: WsCaller, body: MoveInput): Promise<Gran
   const result: GrantMoveResponse = { moved: 0, failed: [] };
   for (const raw of new Set(body.nodeIds)) {
     try {
-      const item = await moveHome(ctx.caller, raw, t.wsId, body);
+      const from = body.fromWorkspaceId?.toLowerCase();
+      const item = await moveHome(ctx.caller, raw, t.wsId, body, from ? { from } : undefined);
       await refoldAfter(ctx.caller.anchorId, [item]);
       result.moved += 1;
     } catch (err) {
@@ -1554,14 +1624,19 @@ export async function moveItems(caller: WsCaller, body: MoveInput): Promise<Gran
 
 /**
  * A folder's home from H to T with the items below it that share H
- * (`withContents`). Each moves on its own by moveHome (the same rules, the
- * same keepReadableIn), deepest first, at most MOVE_CONTENTS_PER_CALL.max
- * of them per call; under its heads each must still be in the folder with
- * H for its home, or it stays. The folder moves last, in the call that
- * moves the last of them, so a call again with the same body finds H on it
- * and goes on. An item homed elsewhere, or of a kind T may not hold, stays
- * and is named. The folder's own rules, the size limit and the confirm come
- * first: nothing moves when the folder may not.
+ * (`withContents`, with `fromWorkspaceId` = H, the home the caller saw).
+ * Each moves on its own by moveHome (the same rules, the same
+ * keepReadableIn), deepest first, at most MOVE_CONTENTS_PER_CALL.max of
+ * them per call; under its heads each must still be in the folder, with H
+ * for its home and no "Removed here" of T on it or a folder between, or it
+ * stays. The folder moves last, in the call that moves the last of them,
+ * so a call again with the same body finds H on it and goes on; the folder
+ * too must still have H. An item homed elsewhere, of a kind T may not hold,
+ * or that folderContents keeps for a "Removed here", stays and is named.
+ * The folder's own rules, the size limit and the confirm come first:
+ * nothing moves when the folder may not. A failure that is not a refusal
+ * (a busy head, say) ends the batch: the answer says what moved and what
+ * remains.
  */
 async function moveWithContents(
   ctx: Ctx,
@@ -1569,8 +1644,9 @@ async function moveWithContents(
   to: string,
   body: MoveInput,
 ): Promise<GrantMoveResponse> {
-  const from = await homeMoveRules(db, ctx, folder, to, body);
-  const total = await subtreeCount(db, ctx, folder);
+  const from = await contentsFrom(db, ctx, folder, to, body);
+  const counts = await grantCounts(db, ctx, folder);
+  const total = counts.total;
   if (total > FOLDER_GRANT_LIMIT.max) {
     throw new GrantError(
       409,
@@ -1585,31 +1661,37 @@ async function moveWithContents(
       `This moves the folder and what is inside it, and changes access for ${total.toLocaleString('en')} items. Confirm to go ahead.`,
     );
   }
-  const contents = await folderContents(db, ctx, folder, from, to);
+  const contents = await folderContents(db, ctx, folder, from, to, counts.hidden);
   const batch = contents.move.slice(0, MOVE_CONTENTS_PER_CALL.max);
-  const remaining = contents.move.length - batch.length;
   const failed: GrantMoveResponse['failed'] = [];
   const moved: Item[] = [];
+  let tried = 0;
+  let stopped = false;
+  /** A refusal is that item's; anything else ends the batch. */
   const step = (err: unknown, id: string) => {
     const e = err instanceof GrantError ? err : dbRefusal(err);
-    if (!e) throw err;
-    failed.push({ id, error: e.message });
+    if (e) {
+      failed.push({ id, error: e.message });
+      return;
+    }
+    stopped = true;
+    failed.push({ id, error: publicErrorMessage(err, 'grants move') });
   };
   let inside = 0;
   try {
     for (const c of batch) {
+      tried += 1;
       try {
-        moved.push(
-          await moveHome(ctx.caller, c.id, to, body, { contentsOf: { folderId: folder.id, from } }),
-        );
+        moved.push(await moveHome(ctx.caller, c.id, to, body, { from, inside: folder.id }));
         inside += 1;
       } catch (err) {
         step(err, c.id);
+        if (stopped) break;
       }
     }
-    if (remaining === 0) {
+    if (!stopped && tried === contents.move.length) {
       try {
-        moved.push(await moveHome(ctx.caller, folder.id, to, body));
+        moved.push(await moveHome(ctx.caller, folder.id, to, body, { from }));
       } catch (err) {
         step(err, folder.id);
       }
@@ -1622,7 +1704,7 @@ async function moveWithContents(
     failed,
     contents: {
       moved: inside,
-      remaining,
+      remaining: contents.move.length - tried,
       leftAlone: contents.left
         .slice(0, LEFT_ALONE_NAMED)
         .map((c) => ({ id: c.id, title: c.title, reason: c.reason })),
@@ -1667,23 +1749,39 @@ async function homeMoveRules(
   return from;
 }
 
-/** The item is still below the folder (a path under the folder's). */
-async function stillInside(q: Exec, ctx: Ctx, item: Item, folderId: string): Promise<boolean> {
-  if (!item.path) return false;
+/** The item still moves with the folder: below it (a path under the
+ *  folder's), and no "Removed here" of `to` on it or on a folder between
+ *  (the caller moderates `to`, so those rows are read). */
+async function stillMoves(
+  q: Exec,
+  ctx: Ctx,
+  item: Item,
+  grants: Grants,
+  folderId: string,
+  to: string,
+): Promise<boolean> {
+  if (!item.path || grants.get(to)?.excluded) return false;
   const [r] = await rows<{ ok: boolean }>(
     q,
-    sql`select exists (select 1 from nodes f
-                        where f.id = ${folderId} and f.owner_id = ${ctx.caller.anchorId}
-                          and f.type = 'branch' and ${item.path}::ltree <@ f.path) as ok`,
+    sql`select exists (
+              select 1 from nodes f
+               where f.id = ${folderId} and f.owner_id = ${ctx.caller.anchorId}
+                 and f.type = 'branch' and ${item.path}::ltree <@ f.path
+                 and not exists (
+                   select 1 from nodes a
+                     join item_grants ag on ag.node_id = a.id
+                                        and ag.workspace_id = ${to}::uuid and ag.excluded
+                    where a.owner_id = f.owner_id and a.type = 'branch'
+                      and a.id <> f.id and a.id <> ${item.id}
+                      and a.path <@ f.path and ${item.path}::ltree <@ a.path)) as ok`,
   );
   return r?.ok === true;
 }
 
-type HomeStep = {
-  /** A step of a folder's move with its contents: the folder the item must
-   *  still be in, and the home it must still have, or it stays. */
-  contentsOf?: { folderId: string; from: string };
-};
+/** A step of a folder's move with its contents: the home the item must
+ *  still have and, for an item below the folder, the folder it must still
+ *  move with (stillMoves), or it stays. */
+type HomeStep = { from: string; inside?: string };
 
 /** One item's home from H to T (18.8): T's row becomes the home (a
  *  folder-derived one stops being derived: CHECK item_grants_home_not_
@@ -1696,21 +1794,20 @@ async function moveHome(
   nodeId: string,
   to: string,
   body: MoveInput,
-  step: HomeStep = {},
+  step?: HomeStep,
 ): Promise<Item> {
   return changeOnly(
     caller,
     nodeId,
     { folderConfirm: true, appConfirm: true, confirm: body.confirm === true },
-    async (q, ctx, item, _grants) => {
+    async (q, ctx, item, grants) => {
       const from = await homeMoveRules(q, ctx, item, to, body);
-      const was = step.contentsOf;
-      if (was && (from !== was.from || !(await stillInside(q, ctx, item, was.folderId)))) {
-        throw new GrantError(
-          409,
-          'changed',
-          'It changed while the folder moved (its home or its folder), so it stays where it is.',
-        );
+      if (
+        step &&
+        (from !== step.from ||
+          (step.inside && !(await stillMoves(q, ctx, item, grants, step.inside, to))))
+      ) {
+        throw CHANGED();
       }
       return from;
     },
@@ -1718,7 +1815,7 @@ async function moveHome(
     async (tx, ctx, item, grants, from) => {
       const keep = body.keepReadableIn !== undefined;
       const target = grants.get(to);
-      const contentsOf = step.contentsOf ? { contentsOf: step.contentsOf.folderId } : {};
+      const contentsOf = step?.inside ? { contentsOf: step.inside } : {};
       // One step (0279, mantle_grant_move_home): the old home row cleared,
       // the new one set, the old one kept with Write off or gone (a folder
       // that still gives it brings it back as its row). Never one UPDATE of
