@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased: team apps upload, move and rename files in their own workspace
+## v0.500.12: team apps upload, move and rename files in their own workspace
 
 A team app is an app that a workspace other than Admin holds. Its users
 could already add and change rows of their workspace's Tables. Now the app
