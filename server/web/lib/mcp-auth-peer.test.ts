@@ -6,7 +6,7 @@
  * role. No database: the peer check and the login row are stood in, for
  * the five logins of the adminFacts cells.
  *
- * And the access scope (0353, docs/federation.md "Status links"): a
+ * And the access scope (0354, docs/federation.md "Status links"): a
  * `status` peer is the owner, read-only, status tools only, whatever its row
  * says about Acts as, Write or risky tools; `none` and a scope this code
  * does not know are no caller (fail closed).
@@ -110,7 +110,7 @@ describe("a peer's Admin facts (callerFromPeerToken)", () => {
   });
 });
 
-describe("a peer's access scope (callerFromPeerToken, 0353)", () => {
+describe("a peer's access scope (callerFromPeerToken, 0354)", () => {
   it('a status peer is the owner, read-only, the status tools only, whatever its row says', async () => {
     h.accessScope = 'status';
     // Bound to a member with Write and a risky tool: none of it counts.

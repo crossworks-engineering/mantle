@@ -1,5 +1,5 @@
 /**
- * The status link from the shell (scripts/peer-link.ts, migration 0353;
+ * The status link from the shell (scripts/peer-link.ts, migration 0354;
  * docs/federation.md "Status links") on a real migrated Postgres:
  *
  *  - create --status-only prints the peer id and its token once; the token

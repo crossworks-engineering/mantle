@@ -9,7 +9,7 @@
  *  2. A peer token (`mtlpeer_`) whose peer is bound to a login: the peer
  *     acts as that login, as the login is now, in its workspaces, with the
  *     peer's own write switch. The login must still be usable. A
- *     status-only peer (access scope `status`, 0353) reaches the status
+ *     status-only peer (access scope `status`, 0354) reaches the status
  *     tools and nothing else, as the brain's owner, read-only; any other
  *     scope is no caller.
  *  3. An inbound API key (`mtlk_`): `callerFromAccessKey` below.

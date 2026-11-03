@@ -54,7 +54,7 @@ export function peerChangeNeedsOwner(
 }
 
 /** Whether peer `id` of this brain acts as the owner now: bound to the
- *  anchor login, or of any access scope but `full` (0353): a status peer's
+ *  anchor login, or of any access scope but `full` (0354): a status peer's
  *  token runs as the owner (mcp-auth.ts statusPeerCaller), and a scope this
  *  code does not know is read the strict way. */
 export async function peerBoundToOwner(anchorId: string, id: string): Promise<boolean> {
