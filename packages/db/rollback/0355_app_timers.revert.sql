@@ -1,0 +1,25 @@
+-- Rollback of 0355_app_timers: what an operator MAY run before pinning the
+-- image one release back (plan v3.2 rule 2, a one-image rollback). Not a
+-- migration: nothing runs it on its own.
+--
+-- Optional: the older image works with 0355 in place. It never reads or
+-- writes `app_timers` (no worker of it runs a timer), and the older
+-- migrate's grants leave a table its access matrix does not list closed to
+-- the workspace and write roles (their grants are made from the matrix,
+-- never by default). So this revert keeps the table, its rows, indexes,
+-- row rule and triggers (the timers come back as they were after the roll
+-- forward): it only takes 0355 off the ledger, so the next roll forward
+-- runs it again (every statement in 0355 is IF NOT EXISTS, OR REPLACE, or
+-- drops and makes its policy and triggers again).
+--
+-- The rows each timer wrote into its app's own database (`_timer_runs`)
+-- stay there; the older image's app SQL may then write that table too.
+--
+-- Run it while the newer image is still up, as the superuser, in one
+-- transaction:
+--   docker exec mantle_web cat /app/packages/db/rollback/0355_app_timers.revert.sql \
+--     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
+-- then pin the older image straight away (docs/update-prod.md "Rollback").
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1791064860000;

@@ -1550,6 +1550,17 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     writeCheck: { kind: 'manage', item: 'app_node_id' },
     editCheck: { item: 'table_node_id', insert: 'edit', update: 'edit' },
   },
+  // An app's timers (0355, docs/app-timers.md): read and written on the
+  // write role by a manager of the app (its row rule and the write check),
+  // as the app_timer tools ask; the scheduler's claims and outcomes are
+  // the maintenance worker's system work. The caps are the database's
+  // (mantle_app_timers_cap).
+  {
+    table: 'public.app_timers',
+    user: 'all',
+    writer: 'content',
+    writeCheck: { kind: 'manage', item: 'app_node_id' },
+  },
 
   // ── Workspaces (migrations 0241 and 0242) ───────────────────────────────
   // The workspace role reads the rows of the workspaces in its scope (and
@@ -1687,6 +1698,7 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.oidc_login_state', // 0349
   'public.oidc_mode_state', // 0349
   'public.oidc_handoff_codes', // 0350
+  'public.app_timers', // 0355
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as
