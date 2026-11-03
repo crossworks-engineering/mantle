@@ -948,7 +948,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     'POST /api/debug/maintenance/run/cancel': ['none', 'no run started here, so none to cancel'],
     'POST /api/agents/:id/test/chat': ['none', 'a provider probe (fetch throws), no write'],
     'POST /api/ai-workers/:id/test/chat': ['none', 'a provider probe, no write'],
-    'POST /api/ai-workers/:id/test/decision': ['none', 'a provider probe, no write'],
     'POST /api/ai-workers/:id/test/document': ['none', 'a provider probe, no write'],
     'POST /api/ai-workers/:id/test/image': ['none', 'a provider probe, no write'],
     'POST /api/ai-workers/:id/test/stt': ['none', 'a provider probe, no write'],
