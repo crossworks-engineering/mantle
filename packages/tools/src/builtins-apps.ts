@@ -90,6 +90,7 @@ import { buildAndStageApp } from './app-build-stage';
 import { APP_ICON_MAX, APP_TINTS, type AppTint } from '@mantle/client-types/app-nav';
 import { resolveTool } from './resolve';
 import { appToolWarnings } from './app-tool-level';
+import { APP_TIMER_TOOLS } from './builtins-app-timers';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { notFound } from './errors';
@@ -2687,6 +2688,8 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_import,
   app_source_from_bundle,
   app_errors,
+  // The app's timers (builtins-app-timers.ts, docs/app-timers.md).
+  ...APP_TIMER_TOOLS,
 ].map((def) => withAuthorCeiling(def));
 
 export const APP_TOOL_SLUGS: string[] = APP_TOOLS.map((t) => t.slug);

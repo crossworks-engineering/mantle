@@ -68,6 +68,10 @@ export const ACTOR_BINDER_PINS = {
   // login's own).
   'packages/mcp-core/src/login-surface.ts': 1,
   'packages/runtime/src/heartbeats/fire.ts': 2,
+  // An app timer's run, as the login that set the timer, read only
+  // (loginActor mode 'ro'): its manage check, then its tool call
+  // (docs/app-timers.md).
+  'packages/tools/src/app-timers/run.ts': 2,
   // The app data reads' provisioning, a named read-path write
   // (repair:app-db): one wrapper (provisionAppDb) that app_data_schema and
   // app_data_query hand the app broker.

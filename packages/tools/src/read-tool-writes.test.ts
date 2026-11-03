@@ -158,6 +158,9 @@ const NO_WRITE_FOUND: readonly string[] = [
   // The history rows' own fields (app-snapshots appHistoryLine): no write.
   'app_log',
   'app_snapshot_list',
+  // The app's timer rows, in the caller's scope (app-timers/store.ts): no
+  // write.
+  'app_timer_list',
   // The dashboard's vitals, spend and queue counts (server/web
   // lib/box-status.ts): reads only.
   'box_status',

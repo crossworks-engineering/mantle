@@ -48,7 +48,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
-import { appRunWriter, withViewer, type AppAuthorLevel, type ViewerFor } from '@mantle/db';
+import { appRunWriter, withViewer, type AppAuthorLevel } from '@mantle/db';
 import {
   recordAppAccess,
   recordAppError,
@@ -63,16 +63,12 @@ import {
   appRunFileWrite,
   appCallMayCarryFile,
   appRunTableWrite,
-  appToolLevel,
   appToolRefusal,
-  appToolScope,
-  appToolVerdict,
-  contactAppToolVerdict,
+  appToolRunPlan,
   dispatchTool,
   outsideCallLogDetail,
-  type AppCallRules,
+  type AppToolRunPlan,
   type AppToolVerdict,
-  type ToolHandlerContext,
 } from '@mantle/tools';
 import {
   buildAppToolConfirmToken,
@@ -143,67 +139,24 @@ type AppToolBrokerCommon = {
 
 type Verdict = AppToolVerdict;
 type Allowed = Extract<Verdict, { ok: true }>;
-type Surface = NonNullable<ToolHandlerContext['surface']>;
 
-/** How one call is judged and where it runs, by who runs it. */
-type Run = {
-  rules: AppCallRules;
-  verdict: () => Promise<Verdict>;
-  /** The owner's confirmation applies (admin rules). */
-  confirm: boolean;
-  surface: Surface;
-  /** The viewer scope the dispatch runs in, read once the call is
-   *  allowed; null: as is (system work). */
-  actsFor: () => Promise<ViewerFor | null>;
-};
-
+/** How one call is judged and where it runs, by who runs it: the one plan
+ *  the app timers take too (@mantle/tools app-tool-run.ts appToolRunPlan),
+ *  at admin rules in the caller's own request scope. */
 function runOf(
   config: AppToolBrokerConfig,
   app: AppToolBrokerApp,
   slug: string,
   input: Readonly<Record<string, unknown>>,
-): Run {
-  const declared = app.manifest.toolSlugs ?? [];
-  if (config.via === 'contact') {
-    const { share, served } = config;
-    return {
-      rules: 'contact',
-      verdict: () => contactAppToolVerdict(config.ownerId, declared, slug),
-      confirm: false,
-      surface: { kind: 'contact', contactId: share.contactId, shareId: share.id },
-      // A link reads no workspace, only what it serves, never a
-      // snapshot copy.
-      actsFor: async () => ({ link: { served: [...(await served())] } }),
-    };
-  }
-  // The owner's run: the rules the app's holders and its author allow (a
-  // member-built app, or one a workspace other than Admin holds, runs the
-  // team rules for an admin too). A member's run: the team rules, whatever
-  // the app's author.
-  const level =
-    config.via === 'owner'
-      ? appToolLevel('admin', app.toolRules, app.authorLevel)
-      : appToolLevel('team', 'team', 'admin');
-  // A member's login: a connector tool also needs the login's workspace
-  // rule, and every workspace that holds the app must hold the connector.
-  // The admin's own rule applies to an admin-level run; a team-level one
-  // keeps the Team rule, so the admin's own connectors never lift an
-  // author-limited app above what it runs with for its members.
-  const loginId = config.via === 'member' || level !== 'team' ? config.runner.loginId : undefined;
-  // The call's input names the Table a team app's row write changes
-  // (member-app-tools.ts rule 6: only one homed in a holder of the app).
-  const check = config.via === 'member' || level !== 'admin' ? { appId: app.id, input } : undefined;
-  const scope = level === 'none' ? null : appToolScope(level, config.runner, { id: app.id });
-  return {
-    rules: level,
-    verdict: () => appToolVerdict(level, config.ownerId, declared, slug, loginId, check),
-    confirm: config.via === 'owner' && level === 'admin',
-    // appToolVerdict refuses every call at 'none', so no scope is needed.
-    surface: scope?.surface ?? { kind: 'web' },
-    // An app the Admin workspace alone holds runs as the owner's web
-    // surface (system work); any other in the app's scope (AppRunFor).
-    actsFor: async () => (!scope || scope.viewer === 'admin' ? null : scope.actsFor),
-  };
+): AppToolRunPlan {
+  return appToolRunPlan(
+    config.via === 'contact'
+      ? { via: 'contact', ownerId: config.ownerId, share: config.share, served: config.served }
+      : { via: config.via, ownerId: config.ownerId, runner: config.runner, adminScope: 'caller' },
+    app,
+    slug,
+    input,
+  );
 }
 
 /** The log rows' caller columns: the login, or the share and its contact. */

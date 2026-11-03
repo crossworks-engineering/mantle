@@ -188,6 +188,9 @@ const BY_TITLE: Readonly<Record<string, string>> = { recall_map_create: 'folder'
 const PROBE_BLIND: Readonly<Record<string, string>> = {
   process_extraction:
     'it re-signals the extractor (pg_notify node_ingested): no row of the item changes',
+  app_timer_set: "it writes the app's timer row (app_timers), not the item",
+  app_timer_delete: "it removes the app's timer row (app_timers), not the item",
+  app_timer_run: "it makes the app's timer row due now (app_timers), not the item",
 };
 
 /** The tools the MCP surface lists for an Admin user only (a deny the

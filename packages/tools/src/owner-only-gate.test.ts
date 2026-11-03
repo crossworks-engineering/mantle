@@ -69,6 +69,10 @@ const EXPECTED_OWNER_ONLY = [
   'app_source_set',
   'app_table_export_remove',
   'app_table_export_set',
+  // The app timers' writes (builtins-app-timers.ts): app_tools_set's gate.
+  'app_timer_delete',
+  'app_timer_run',
+  'app_timer_set',
   'app_tools_set',
   'app_undelete',
   'app_update',

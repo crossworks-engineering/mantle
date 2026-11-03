@@ -165,6 +165,8 @@ describe('MCP tool hints on the surface', () => {
       'api_skill_set',
       'app_source_set',
       'app_table_export_set',
+      'app_timer_delete',
+      'app_timer_set',
       'app_tools_set',
       'code_write',
       'file_create',

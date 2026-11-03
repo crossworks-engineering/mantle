@@ -83,6 +83,10 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   page_block_delete: { reason: 'writes to DRAFT; page_discard_draft reverts it' },
   model_pool_remove: { reason: 'pool entry; model_pool_set restores it' },
   app_table_export_remove: { reason: 'dissolves a mirror link; deletes no data' },
+  app_timer_delete: {
+    reason:
+      "stops a timer; app_timer_set makes it again, and its runs stay in the app's database until a later prune",
+  },
   // Routine editing inside an authoring kit whose whole-object delete IS gated
   // (table_delete, app_delete) and lives in a deliberate *-admin group.
   table_row_delete: { reason: 'grid editing; the gated whole is table_delete' },

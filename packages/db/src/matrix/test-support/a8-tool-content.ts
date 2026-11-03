@@ -262,6 +262,23 @@ async function seedVersion(
   });
 }
 
+/** An app that declares a read a timer may call (calculate: a built-in read
+ *  that spends nothing, tools app-timers/rules.ts), and with `timer` one
+ *  timer of it, `a8` (app_timers, 0355). */
+async function seedAppTimer(s: Parameters<Seed>[0], timer: boolean): Promise<void> {
+  const { sql, fx, item } = s;
+  await seedApp(s);
+  await asFixture(sql, item.id, async (tx) => {
+    await tx`update apps set manifest = ${tx.json({ toolSlugs: ['calculate'] })}
+             where node_id = ${item.id}`;
+    if (timer) {
+      await tx`insert into app_timers (owner_id, app_node_id, name, tool_slug, args, created_by)
+               values (${fx.owner}, ${item.id}, 'a8', 'calculate',
+                       ${tx.json({ expression: '1 + 1' })}, ${fx.owner})`;
+    }
+  });
+}
+
 /** The app's own database: its manifest declares one table (a8), made with
  *  a row (content app-broker.ts: a seed's table must exist; an export reads
  *  it). */
@@ -782,6 +799,23 @@ export const A8_TOOL_CONTENT: Readonly<
   app_db_seed: {
     needs: 'the app’s own database with the a8 table',
     seed: async (s) => (await seedAppWithDb(s), {}),
+  },
+  // The app timers (0355): the timer rows are not the item, so the probe
+  // reads no change of an allowed cell (PROBE_BLIND in the cells' test).
+  app_timer_set: {
+    needs: 'an app that declares a read a timer may call',
+    seed: async (s) => (
+      await seedAppTimer(s, false),
+      { name: 'a8', tool: 'calculate', args: { expression: '1 + 1' } }
+    ),
+  },
+  app_timer_delete: {
+    needs: 'a timer of the app',
+    seed: async (s) => (await seedAppTimer(s, true), { name: 'a8' }),
+  },
+  app_timer_run: {
+    needs: 'a timer of the app',
+    seed: async (s) => (await seedAppTimer(s, true), { name: 'a8' }),
   },
   app_table_export_set: {
     needs: 'the app’s own database with the a8 table',

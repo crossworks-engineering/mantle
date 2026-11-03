@@ -86,8 +86,12 @@ vi.mock('@mantle/content', async (importOriginal) => ({
       : null,
   ),
 }));
-vi.mock('@mantle/tools', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@mantle/tools')>();
+// The verdict steps run inside @mantle/tools (app-tool-run.ts
+// appToolRunPlan, which the broker plans every call with), so they are
+// stood in for at their own module.
+vi.mock('../../../../../packages/tools/src/app-tool-level', async (importOriginal) => {
+  const real =
+    await importOriginal<typeof import('../../../../../packages/tools/src/app-tool-level')>();
   return {
     ...real,
     appToolVerdict: vi.fn(
@@ -106,6 +110,12 @@ vi.mock('@mantle/tools', async (importOriginal) => {
           : { ok: true, tool: { slug } };
       },
     ),
+  };
+});
+vi.mock('@mantle/tools', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/tools')>();
+  return {
+    ...real,
     dispatchTool: vi.fn(async (_tool: unknown, _input: unknown, ctx: Record<string, unknown>) => {
       h.dispatched.push({ ranAs: h.current ?? 'system', ctx });
       return { ok: true, output: [] };

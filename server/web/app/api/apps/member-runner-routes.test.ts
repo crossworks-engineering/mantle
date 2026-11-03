@@ -217,12 +217,14 @@ vi.mock('@mantle/content', async (importOriginal) => {
     recordAppAccess: vi.fn((e: Record<string, unknown>) => h.logged.push(e)),
   };
 });
-vi.mock('@mantle/tools', async (importOriginal) => {
+// The verdict steps run inside @mantle/tools (app-tool-run.ts
+// appToolRunPlan, which the broker plans every call with), so they are
+// stood in for at their own module.
+vi.mock('../../../../../packages/tools/src/app-tool-level', async (importOriginal) => {
+  const real =
+    await importOriginal<typeof import('../../../../../packages/tools/src/app-tool-level')>();
   return {
-    ...(await importOriginal<Record<string, unknown>>()),
-    // The rule (appToolLevel, appToolScope) is the real one; the verdict
-    // records the rules it was asked at. At none the REAL rules answer: they
-    // refuse before any lookup.
+    ...real,
     appToolVerdict: vi.fn(
       async (level: string, owner: string, declared: string[], slug: string) => {
         h.levels.push(level);
@@ -237,6 +239,14 @@ vi.mock('@mantle/tools', async (importOriginal) => {
         return h.verdict.ok ? { ok: true, tool: { slug, handler } } : h.verdict;
       },
     ),
+  };
+});
+vi.mock('@mantle/tools', async (importOriginal) => {
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    // The rule (appToolLevel, appToolScope) is the real one; the verdict
+    // records the rules it was asked at. At none the REAL rules answer: they
+    // refuse before any lookup.
     dispatchTool: vi.fn(async (_tool: unknown, _input: unknown, ctx: Record<string, unknown>) => {
       h.dispatched.push({ ranAs: h.current ?? 'system', ctx });
       return { ok: true, output: [] };

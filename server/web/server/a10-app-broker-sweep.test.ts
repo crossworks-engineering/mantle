@@ -236,8 +236,11 @@ function verdictFor(declared: readonly string[], slug: string) {
   } as const;
 }
 
-vi.mock('@mantle/tools', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@mantle/tools')>();
+// The verdict steps run inside @mantle/tools (app-tool-run.ts
+// appToolRunPlan, which the broker plans every call with), so they are
+// stood in for at their own module.
+vi.mock('../../../packages/tools/src/app-tool-level', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../packages/tools/src/app-tool-level')>();
   return {
     ...real,
     appToolVerdict: vi.fn(
@@ -253,13 +256,28 @@ vi.mock('@mantle/tools', async (importOriginal) => {
         return verdictFor(declared, slug);
       },
     ),
-    // No stand-in tool is a file write: a call past the member's 8 MB cap
-    // answers the cap's 413, as main did (the registry is not read here).
-    appCallMayCarryFile: vi.fn(async () => false),
+  };
+});
+// The verdict steps run inside @mantle/tools (app-tool-run.ts
+// appToolRunPlan, which the broker plans every call with), so they are
+// stood in for at their own module.
+vi.mock('../../../packages/tools/src/external-access', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../packages/tools/src/external-access')>();
+  return {
+    ...real,
     contactAppToolVerdict: vi.fn(async (_owner: string, declared: string[], slug: string) => {
       push('verdict', { level: 'contact', ran: h.current });
       return verdictFor(declared, slug);
     }),
+  };
+});
+vi.mock('@mantle/tools', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/tools')>();
+  return {
+    ...real,
+    // No stand-in tool is a file write: a call past the member's 8 MB cap
+    // answers the cap's 413, as main did (the registry is not read here).
+    appCallMayCarryFile: vi.fn(async () => false),
     appToolRefusal: vi.fn(
       async (rules: string, _slug: string, v: { status: number; reason: string }) => {
         push('refusal', rules);
