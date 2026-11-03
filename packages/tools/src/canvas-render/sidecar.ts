@@ -120,9 +120,21 @@ export const RENDER_LAUNCH_ARGS: readonly string[] = [
   '--dns-prefetch-disable',
 ];
 
-/** The sidecar URL with the launch flags; a bare DevTools endpoint (a local
- *  Chrome) is left as it is: that browser was started by whoever runs it. */
-export function lockedEndpoint(endpoint: string): string {
+/** The size a render lays out at, and its pixel scale. */
+export type RenderViewport = { width: number; height: number; deviceScaleFactor: number };
+
+/** The sidecar URL with the launch flags and the render's viewport; a bare
+ *  DevTools endpoint (a local Chrome) is left as it is: that browser was
+ *  started by whoever runs it.
+ *
+ *  The viewport is the launch's `defaultViewport` because browserless drives
+ *  the browser it starts with its own puppeteer, and that puppeteer gives
+ *  every new page the launch's default (800x600 when none is named) at a
+ *  moment of its own. It races the render's setViewport: on a busy box it
+ *  often lands last, and the canvas lays out at 800x600 inside a picture of
+ *  the asked size. With the render's own viewport as the default, both set
+ *  the same size, in either order. */
+export function lockedEndpoint(endpoint: string, viewport: RenderViewport): string {
   if (endpoint.includes('/devtools/browser/')) {
     log('render-canvas').warn(
       'BROWSER_WS_ENDPOINT is a bare DevTools endpoint: canvas renders run without the network lock (development only)',
@@ -130,7 +142,10 @@ export function lockedEndpoint(endpoint: string): string {
     return endpoint;
   }
   const url = new URL(endpoint);
-  url.searchParams.set('launch', JSON.stringify({ args: RENDER_LAUNCH_ARGS }));
+  url.searchParams.set(
+    'launch',
+    JSON.stringify({ args: RENDER_LAUNCH_ARGS, defaultViewport: viewport }),
+  );
   return url.toString();
 }
 
@@ -374,9 +389,17 @@ async function renderInSlot(
       cls: req.theme === 'dark' ? 'dark' : '',
       colorTheme: null,
     });
+    const view = viewportFor(req);
+    const want = req.scale === 2 ? 2 : 1;
+    const viewport: RenderViewport = {
+      ...view,
+      deviceScaleFactor: Math.min(want, Math.sqrt(MAX_PIXELS / (view.width * view.height))),
+    };
     try {
       let wait: ReturnType<typeof setTimeout> | undefined;
-      const connecting = puppeteer.connect({ browserWSEndpoint: lockedEndpoint(endpoint) });
+      const connecting = puppeteer.connect({
+        browserWSEndpoint: lockedEndpoint(endpoint, viewport),
+      });
       browser = await Promise.race([
         connecting,
         new Promise<never>((_, reject) => {
@@ -404,10 +427,7 @@ async function renderInSlot(
       throw new Error('the render ran out of time before the page opened');
     }
     await page.evaluateOnNewDocument(RENDER_INIT);
-    const view = viewportFor(req);
-    const want = req.scale === 2 ? 2 : 1;
-    const deviceScaleFactor = Math.min(want, Math.sqrt(MAX_PIXELS / (view.width * view.height)));
-    await page.setViewport({ ...view, deviceScaleFactor });
+    await page.setViewport(viewport);
     await page.setRequestInterception(true);
     page.on('request', (r) => {
       if (r.isInterceptResolutionHandled()) return;

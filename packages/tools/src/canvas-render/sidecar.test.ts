@@ -36,6 +36,8 @@ const h = vi.hoisted(() => ({
   events: [] as string[],
   /** How long a diagram set takes to mount. */
   mountMs: 0,
+  /** What the render gave setViewport. */
+  viewports: [] as unknown[],
 }));
 
 function fire(handlers: Array<(r: Req) => void>, url: string): Promise<void> {
@@ -75,7 +77,9 @@ vi.mock('puppeteer-core', () => ({
             evaluateOnNewDocument: async (src: string) => {
               h.initScripts.push(src);
             },
-            setViewport: async () => {},
+            setViewport: async (v: unknown) => {
+              h.viewports.push(v);
+            },
             setRequestInterception: async () => {},
             on: (event: string, fn: never) => {
               if (event === 'request') handlers.push(fn);
@@ -144,6 +148,7 @@ beforeEach(() => {
   h.report = null;
   h.events.length = 0;
   h.mountMs = 0;
+  h.viewports.length = 0;
 });
 
 const REQ = {
@@ -205,17 +210,52 @@ describe('renderCanvas', () => {
     expect(out.ok).toBe(true);
     const url = new URL(h.endpoints[0]!);
     expect(url.searchParams.get('token')).toBe('x');
-    const launch = JSON.parse(url.searchParams.get('launch')!) as { args: string[] };
+    const launch = JSON.parse(url.searchParams.get('launch')!) as {
+      args: string[];
+      defaultViewport: unknown;
+    };
     expect(launch.args).toEqual([...RENDER_LAUNCH_ARGS]);
     expect(launch.args.join(' ')).toMatch(/host-resolver-rules=MAP \* ~NOTFOUND/);
     expect(launch.args.join(' ')).toMatch(/proxy-bypass-list=<-loopback>/);
     expect(launch.args.join(' ')).toMatch(/disable_non_proxied_udp/);
   });
 
+  it("starts the sidecar browser with the render's viewport as its default", async () => {
+    // browserless gives each new page its launch's default viewport, racing
+    // the render's own: both must be the same size, or the canvas may lay
+    // out at 800x600 inside a picture of the asked size.
+    const { renderCanvas } = await import('./sidecar');
+    const fill = {
+      ...REQ,
+      canvas: { ...REQ.canvas, meta: { ...REQ.canvas.meta, size: 'fill' as const } },
+    };
+    for (const [req, want] of [
+      [REQ, { width: 800, height: 600, deviceScaleFactor: 1 }],
+      [
+        { ...fill, width: 1920, height: 1080 },
+        { width: 1920, height: 1080, deviceScaleFactor: 1 },
+      ],
+      [
+        { ...fill, scale: 2 as const },
+        { width: 1600, height: 900, deviceScaleFactor: 2 },
+      ],
+    ] as const) {
+      h.endpoints.length = 0;
+      h.viewports.length = 0;
+      const out = await renderCanvas(req);
+      expect(out.ok).toBe(true);
+      const launch = JSON.parse(new URL(h.endpoints[0]!).searchParams.get('launch')!) as {
+        defaultViewport: unknown;
+      };
+      expect(launch.defaultViewport).toEqual(want);
+      expect(h.viewports).toEqual([want]);
+    }
+  });
+
   it('leaves a bare DevTools endpoint as it is', async () => {
     const { lockedEndpoint } = await import('./sidecar');
     const raw = 'ws://127.0.0.1:9222/devtools/browser/abc';
-    expect(lockedEndpoint(raw)).toBe(raw);
+    expect(lockedEndpoint(raw, { width: 800, height: 600, deviceScaleFactor: 1 })).toBe(raw);
   });
 
   it('removes WebRTC in every frame before any canvas script', async () => {

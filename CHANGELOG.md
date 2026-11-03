@@ -4,6 +4,32 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased: canvas pictures lay out at the asked size
+
+- **Fixed:** a Present picture often drew the canvas as if the window were
+  800x600. The picture had the right size (1600x900, or the canvas's own
+  size), but the canvas filled only its top-left corner. This hit the look
+  a save returns, `present_render`, the poster (and so every page that
+  embeds the canvas) and the `present_export` PNG.
+- **Why:** the browser sidecar (browserless) drives the browser it starts
+  with its own copy of puppeteer, and that copy gives every new page a
+  default window of 800x600. It did so at a moment of its own, racing the
+  render's own window size. On a busy box it often came last. On the dev
+  box it lost between one render in six and four in ten.
+- **Now:** the render names its window size as the browser's default when
+  it starts the browser, so both set the same size, in whichever order.
+  On the dev box: 0 wrong in 24 renders, against 4 in 24 before.
+- A new browser test renders a canvas that reports its own window size, for
+  a `fill` canvas and a fixed one, on the first render with no `slide`
+  (`packages/tools/src/canvas-render/viewport.test.ts`). Set
+  `MANTLE_TEST_BROWSERLESS` to a browserless endpoint to run it there too.
+- **Fixed:** the picture of a drawing in a Word export had the same race.
+  When it lost, the PNG came out at half its sharpness (1x, not 2x). It now
+  names its window and scale the same way.
+- One helper (`@mantle/tools/browserless`) now writes the launch options
+  for both renders, so the next render that uses the sidecar gets it right
+  too.
+
 ## v0.500.7: you can see when the decider fails
 
 The decider is the small, fast model that picks which passages and
