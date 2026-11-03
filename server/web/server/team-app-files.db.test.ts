@@ -28,15 +28,15 @@
  *  7. a move by a Moderator lands; by a user who is not one, into a folder
  *     another workspace would start reading it through, or into Admin,
  *     refused;
- *  7b. a move that would stop a workspace the runner is in reading the
- *     file: refused, it stays read there; between folders the same
- *     workspaces read: it lands;
+ *  7b. a move that would stop a workspace reading the file, one the runner
+ *     is in or one it does not see: refused, it stays read there; between
+ *     folders the same workspaces read: it lands;
  *  8. a rename of the runner's file lands; of an Admin file, refused;
  *  9. a read-only login and a shared link write nothing; an app two
  *     workspaces hold writes as its runner;
  *  10. a folder of a workspace the runner is in but the app's holder is
  *     not: it lands there, homed there;
- *  11. by hand (no app), the same new file asks for a confirm first: only
+ *  9b. by hand (no app), the same new file asks for a confirm first: only
  *     a team app's own write treats its folder's readers as no change.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/team-app-files.db.test.ts
@@ -374,6 +374,16 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
     expect(after!.id).toBe(before!.id);
     expect(after!.sha).not.toBe(before!.sha);
     expect(after!.home).toBe(holderWs);
+    // A team app gets the file's place and kind back, never its summary,
+    // title or hash.
+    expect(Object.keys(res.body.output as object).sort()).toEqual([
+      'extension',
+      'filename',
+      'id',
+      'mimeType',
+      'parentPath',
+      'sizeBytes',
+    ]);
   });
 
   it('3. a user without Write on the folder: refused, nothing lands', async () => {
@@ -517,6 +527,21 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
     expect(out.body.error).toContain('A team app never changes who can see a file');
     expect((await found(`${tag}-both.dwg`))[0]?.path).toBe(both);
     expect(await readers(bothFile)).toContain(elseWs);
+    // A workspace the runner is not in (otherWs reads the shared folder):
+    // the runner's scoped diff cannot name it, and the move's own check,
+    // against every grant, still refuses it.
+    const [hidden] = await found(`${tag}-iso-5.txt`);
+    expect(await readers(hidden!.id)).toContain(otherWs);
+    const unseen = await memberCall(moderator, 'file_move', {
+      file_id: hidden!.id,
+      dest_path: open,
+    });
+    expect(unseen.body.ok).toBe(false);
+    expect(unseen.body.error).toContain(
+      'this move would make a workspace start or stop reading it',
+    );
+    expect((await found(`${tag}-iso-5.txt`))[0]?.path).toBe(shared);
+    expect(await readers(hidden!.id)).toContain(otherWs);
     const along = await memberCall(moderator, 'file_move', { file_id: bothFile, dest_path: both2 });
     expect(along.body.ok, JSON.stringify(along.body)).toBe(true);
     expect((await found(`${tag}-both.dwg`))[0]?.path).toBe(both2);
@@ -553,7 +578,7 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
     expect((await found(name))[0]).toMatchObject({ path: open, home: holderWs });
   });
 
-  it('11. by hand (no app), a new file in a folder another workspace reads still asks first', async () => {
+  it('9b. by hand (no app), a new file in a folder another workspace reads still asks first', async () => {
     const { guardNewFileIn, TreeVisibilityError } = await import('@mantle/content/tree');
     await expect(
       inRequest(moderator, () => guardNewFileIn(owner, shared, `${tag}-by-hand.txt`, {})),

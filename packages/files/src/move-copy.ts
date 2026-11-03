@@ -41,7 +41,7 @@ import {
 } from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
 import { foldedFilePath } from './space-disk';
-import { assertAppRunFileWrite } from './app-run-write';
+import { appRunMoveGuard, assertAppRunFileWrite } from './app-run-write';
 import {
   FILES_MAX_FOLDER_DEPTH,
   FILES_ROOT_LABEL,
@@ -158,9 +158,11 @@ export async function moveFileById(args: {
       `moveFileById: no folder at '${args.destPath}' — create it with folder_create, or find the right path with folder_list`,
     );
   }
-  // A team app's move: into a folder the running user may edit
+  // A team app's move: into a folder the running user may edit, and never
+  // one that changes who reads the file, asked again with the heads held
   // (app-run-write.ts).
   await assertAppRunFileWrite({ folderId: dest.id, place: true });
+  const appGuard = appRunMoveGuard(args.destPath);
   const clash =
     (await fileInFolder(args.ownerId, args.destPath, filename)) ??
     ((await hiddenNameTaken(args.ownerId, args.destPath, filename, !!foldedFilePath(node)))
@@ -194,6 +196,7 @@ export async function moveFileById(args: {
             inFlipTransaction(async () => {
               await takeShareReadLock(tx, args.ownerId);
               if (args.guard) await args.guard(tx, node.id);
+              if (appGuard) await appGuard(tx, node.id);
               const rows = await tx
                 .update(nodes)
                 // Filing is not editing: the file keeps its updated_at

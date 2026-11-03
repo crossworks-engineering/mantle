@@ -18,11 +18,14 @@ deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
   folder's rights decide: the **Write** switch, or a Moderator of the
   home. A move still needs a Moderator of the file's home.
 - A folder or Table that other workspaces also read is no longer refused.
-  A new file is read by the workspaces that read its folder.
+  A new file is read by the workspaces that read its folder, client
+  workspaces included, with no confirm step.
+- A file write hands the app the file's place and kind only (id, folder,
+  name, type, size), never its summary, title or hash.
 - An app that several workspaces hold can now write too.
-- A move of an existing file is still refused when it would make a
-  workspace start or stop reading that file. Do that move by hand in
-  Files.
+- A move of an existing file is still refused when it would make any
+  workspace start or stop reading that file, also one the user is not in.
+  Do that move by hand in Files.
 - An Admin user who runs a team app writes with their own rights too, so
   the app can write in Admin's folders and Tables during their run.
 - **Kept:** 16 MB of file per call, one Activity row per write, DWG import

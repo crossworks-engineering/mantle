@@ -1232,7 +1232,8 @@ run the green PUBLISHED build only and never edit it from there.
   switch for one of their workspaces, or a Moderator of its home). Another
   workspace reading the Table changes nothing, and an app several
   workspaces hold writes too. The app's data is shared by everyone who
-  runs it, so what it writes may be copied there. Row changes go to the Table's draft, and the app reads that
+  runs it, so what it writes may be copied there. Row changes go to the
+  Table's draft, and the app reads that
   draft back, so a second upsert before a commit updates the first's rows;
   `table_commit` publishes the draft. An app's commit keeps no history
   entry of the version it replaces, so the Table's history has no restore
@@ -1268,13 +1269,16 @@ run the green PUBLISHED build only and never edit it from there.
   edit of the file; a move needs a Moderator of the file's home. A new file
   is homed as one made by hand there (the folder's home). Another workspace
   reading the folder changes nothing: the file is read by the workspaces
-  that read its folder. An app several workspaces hold writes too. There
+  that read its folder, a client workspace included, with no confirm step.
+  The app gets the file's id, folder, name, type and size back, never its
+  summary. An app several workspaces hold writes too. There
   is no file type allowlist. A call takes at most 16 MB of file (as
   `content_base64` or `content_text`). An upload is read into the brain as
   a Files upload is (a DWG imports as usual). A team app never confirms a
   change of who can see a file: `confirm: true` is refused, and so is a
-  move of an existing file that would make a workspace start or stop
-  reading it (do that one by hand in Files). The Activity row of each call names the folder and the file,
+  move of an existing file that would make any workspace start or stop
+  reading it, also one the user is not in (do that one by hand in Files).
+  The Activity row of each call names the folder and the file,
   never the bytes. No file or folder delete, and no folder create, rename
   or move. A read-only login writes nothing; a shared link runs none of
   them. `file_upload` runs while the system-wide **File upload for mini

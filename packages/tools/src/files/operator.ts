@@ -24,6 +24,7 @@ import { str, strOpt, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
+import { fileWriteOutput } from './app-output';
 import { CS } from '../client-sourced-rule';
 
 export const folder_create: BuiltinToolDef = {
@@ -251,7 +252,7 @@ export const file_upload: BuiltinToolDef = {
     };
     try {
       const row = await write();
-      return { ok: true, output: indexing ? { ...row, indexing } : row };
+      return { ok: true, output: indexing ? { ...row, indexing } : fileWriteOutput(row) };
     } catch (err) {
       const refusal = visibilityRefusal(err);
       if (refusal) return { ok: false, error: refusal };

@@ -10,8 +10,8 @@
  * Anywhere else: nothing to check (a Files write by hand asks the database
  * alone).
  */
-import { assertItemRight, inAppRunWrite } from '@mantle/db';
-import { editCheckRefusalError } from '@mantle/std';
+import { appRunMoveChangesReaders, assertItemRight, inAppRunWrite } from '@mantle/db';
+import { ConflictError, editCheckRefusalError } from '@mantle/std';
 
 export async function assertAppRunFileWrite(target: {
   /** The folder the write puts the file in, or keeps it in; null: none
@@ -24,4 +24,26 @@ export async function assertAppRunFileWrite(target: {
   if (target.folderId === undefined) return;
   if (!target.folderId) throw editCheckRefusalError('no_edit');
   if (target.place) await assertItemRight(target.folderId, 'edit');
+}
+
+/** The refusal of a team app's move that would change who reads a file. */
+export const APP_MOVE_CHANGES_READERS =
+  'A team app never changes who can see a file: this move would make a workspace start or stop reading it. Move it by hand in Files instead, or pick a folder the same workspaces read.';
+
+/**
+ * Inside a team app's write (inAppRunWrite): a check for moveFileById's
+ * transaction (its MoveGuard, run with the file and both folders held)
+ * that refuses a move changing who reads the file, against every grant
+ * (appRunMoveChangesReaders). The visibility guard asked first in the
+ * runner's scope; this holds where the move runs. Anywhere else: none.
+ */
+export function appRunMoveGuard(
+  destPath: string,
+): ((tx: unknown, fileId: string) => Promise<void>) | undefined {
+  if (!inAppRunWrite()) return undefined;
+  return async (_tx, fileId) => {
+    if (await appRunMoveChangesReaders(fileId, destPath)) {
+      throw new ConflictError(APP_MOVE_CHANGES_READERS);
+    }
+  };
 }

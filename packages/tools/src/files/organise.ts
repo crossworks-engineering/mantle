@@ -7,6 +7,7 @@
  */
 
 import { moveFileById, moveFolderById, copyFileById, copyFolderById } from '@mantle/files';
+import { fileWriteOutput } from './app-output';
 import {
   guardFileCopyTo,
   guardFileTo,
@@ -64,7 +65,7 @@ export const file_move: BuiltinToolDef = {
       await guardFileTo(ctx.ownerId, fileId, destPath, { confirm: input.confirm === true });
       const row = await moveFileById({ ownerId: ctx.ownerId, fileId, destPath });
       ctx.step?.setOutput({ fileId, destPath });
-      return { ok: true, output: row };
+      return { ok: true, output: fileWriteOutput(row) };
     } catch (err) {
       return { ok: false, error: visibilityRefusal(err) ?? errorMessage(err) };
     }

@@ -377,14 +377,15 @@ export async function newItemDiff(
   const set = newItemSet(ownerId, nodeType, destPath);
   // Empty when the brain has no Admin workspace (as the old array(select ...)).
   const admin = sql`array_remove(array[mantle_ws_admin_id(${ownerId}::uuid)], null)`;
-  // A team app's NEW file, as its runner (appRunWriteMode 'runner'): it
+  // A team app's NEW file (Files only), as its runner (appRunWriteMode
+  // 'runner'): it
   // lands in a folder the runner may write in, and the workspaces that read
   // the folder reading it is the point of the write (owner decision
   // 2026-11-03), so it is no change; nothing existed, so nobody loses it.
   // An existing file a team app moves is judged as any move (moveItemsDiff):
   // a workspace that starts or stops reading it is a change, and the app
   // cannot confirm one (member-app-tools.ts rule 7).
-  const appNew = appRunWriteMode() === 'runner';
+  const appNew = kind === 'files' && appRunWriteMode() === 'runner';
   const gain = appNew
     ? sql`'{}'::uuid[]`
     : sql`array(select x from unnest(${set}) as s(x) where not (x = any(${admin})))`;

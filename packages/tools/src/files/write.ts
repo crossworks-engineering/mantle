@@ -15,6 +15,7 @@ import {
 import { recordIngest } from '@mantle/tracing';
 import { guardNewFileIn } from '@mantle/content/tree';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
+import { fileWriteOutput } from './app-output';
 import { type BuiltinToolDef } from '../types';
 import { str, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
@@ -153,7 +154,7 @@ export const file_rename: BuiltinToolDef = {
           error: 'file not found — find the right id with file_list / search_nodes, then re-issue.',
         };
       ctx.step?.setOutput({ fileId: row.id, filename: row.filename });
-      return { ok: true, output: row };
+      return { ok: true, output: fileWriteOutput(row) };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

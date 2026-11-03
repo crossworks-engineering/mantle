@@ -32,7 +32,7 @@
  * withViewer's `writes` takes only its request's own writer, a write as
  * the runner reaches no Table the runner may not edit, an app two
  * workspaces hold writes as its runner (2026-11-03), and table_commit
- * (Jason's yes) publishes the draft under the same rule.
+ * (the owner's yes) publishes the draft under the same rule.
  *
  * After the delta audit (MED-1): a team app's table_commit waits out a
  * model pass (none while one is pending, none that runs a whole pass within
