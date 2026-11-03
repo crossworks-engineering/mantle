@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased: the fleet monitor, parts 1 and 2 (box status and status links)
+
+- **Added:** `box_status`, a tool that reports this box's health as numbers
+  only: build, uptime, CPU, memory, disk, Postgres, each service up or
+  down, model spend over 24 hours, 7 and 30 days, corpus capacity, the
+  extractor's queue and dead letters, and logins by role. Never a name or
+  anything a user wrote. It spends nothing and is cached for 30 seconds.
+  On MCP and in the `brain-health` tool group.
+- **Added:** `peer_status`, which asks every watched linked brain for its
+  `box_status` at once, 10 seconds each, plus this box's own. It calls
+  nothing else, and holds each reply to numbers. In the `federation`
+  tool group.
+- **Added:** a peer's access scope (migration 0354). A `status` peer's token
+  reaches `box_status` and `brain_capacity` on MCP and nothing else, on
+  every list shape; a `none` peer's token works nowhere. Every existing peer
+  stays as it was.
+- **Added:** `scripts/peer-link.sh`, to link boxes from the shell with no
+  password and no UI (`create`, `accept`, `list`, `revoke`). Tokens never go
+  on the command line. Each change is in the audit log.
+- **Added:** `MANTLE_HOST_PROC`, an optional read-only mount of the host's
+  `/proc` load and memory files, so the numbers are the host's.
+- **Rollback:** `packages/db/rollback/0354_peer_status_link.revert.sql`
+  closes every status and outbound-only peer before the older image runs.
+
 ## v0.500.7: you can see when the decider fails
 
 The decider is the small, fast model that picks which passages and

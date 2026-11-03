@@ -180,3 +180,117 @@ a handshake/pairing flow to auto-exchange tokens, and per-peer rate limiting.
 Since 0227 a peer can also be bound to a login and call this brain's MCP
 endpoint as that login, read-only unless its Write switch is on. See
 [mcp-as-a-login.md](mcp-as-a-login.md).
+
+## Status links
+
+A status link lets one box (the admin box) watch others: every few minutes
+it reads each watched box's health as numbers, with no model call, no
+person clicking and no password. It is the fleet monitor's base; a mini app
+keeps the history and draws it.
+
+### The access scope (migration 0354)
+
+`mantle_peers.access_scope` says what a peer's inbound token may do here:
+
+| Scope    | What the token reaches                                                                                                     |
+| -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `full`   | As every peer before 0354: the federation read routes, and `/api/mcp` as its Acts as login. Every existing peer is `full`. |
+| `status` | `/api/mcp` lists and calls `box_status` and `brain_capacity`, nothing else. Never the federation routes.                  |
+| `none`   | Nothing: the token verifies nowhere. An outbound-only peer, the watching side of a link.                                   |
+
+A value this code does not know grants nothing (`peerAccessScopeOf`), and a
+CHECK refuses any value outside the three. The checks, from the outside in:
+
+- `verifyInboundToken` (`packages/content/src/peers/registry.ts`) verifies
+  only a `full` or `status` token;
+- `authenticatePeer` (`server/web/lib/federation-auth.ts`) refuses all but
+  `full`, so a status peer reads no shared item;
+- `callerFromPeerToken` (`server/web/lib/mcp-auth.ts`) makes a status peer a
+  caller with `statusOnly`: the brain's owner as the owner is now (an Admin
+  login, still usable), read-only, no risky tools, whatever the row says
+  about Acts as, its Write switch or its risky tools;
+- the MCP surface registers only the status tools for it, on the full list
+  even when the tool map is asked for (no `tool_read`, `tool_help` or other
+  call tool), and the instructions name only them
+  (`packages/mcp-core/src/login-surface.ts`);
+- the gate's peer narrower refuses any other name for it at list and call
+  time (`packages/tools/src/gate-narrowers.ts`, the list in
+  `packages/tools/src/status-surface.ts`).
+
+`mantle_peers.watch_status` marks a peer this box watches: `peer_status`
+asks it when no peer is named.
+
+### The two tools
+
+- **`box_status`** (`packages/tools/src/builtins-box-status.ts`): this box as
+  numbers, `schema: 1`. Build version, sha and time; process uptime and
+  memory; host CPU load, load average, cores, memory and disk, with `scope`
+  (`container`, or `host` when the box mounts the host's `/proc`, below);
+  Postgres up, size, connections and cache hit; each service up or down
+  (object store, parser with its running and queued jobs, browser,
+  documents, embedder, sandboxes, network); model spend in micro-USD over
+  the last 24 hours, 7 and 30 days, with the last day's trace, turn and
+  error counts; corpus capacity (counts, zone, percent of split); the
+  extractor's queue and dead letters; logins by role. `degraded` names the
+  probes that did not answer. Never a name, a title, a host or anything a
+  user wrote: the tool holds its output to numbers (`numbersOnly`), and the
+  collector (`server/web/lib/box-status.ts`) reads only counts. It never
+  makes the paid embedder probe the dashboard makes. Read, spends nothing,
+  the settings area, not risky. Cached 30 seconds, one collection at a time.
+- **`peer_status`**: asks every watched, paired, enabled peer for its
+  `box_status` over the peer's `/api/mcp`, all at once, 10 seconds each, and
+  adds this box's own line (`self: true`). `peer` names one peer instead.
+  Each line is `{ peerId, name, ok, ms, status }` or, on a failure, a short
+  fixed `error` (`timeout`, `unreachable`, `refused`, `not offered`,
+  `failed`, `bad reply`, `not paired`), never the peer's reply text. A
+  peer's status passes `numbersOnly` before a model reads it, and is fenced
+  as data. It calls `box_status` and nothing else, at the peer row's own URL
+  (no URL is an argument). Read, spends nothing, the settings area; risky
+  for a key or a peer by the `peer_` family rule (it reaches other brains on
+  this brain's credentials), as every `peer_` tool is.
+
+The collectors live in server/web, so only the web process installs them
+(`packages/tools/src/box-status-bridge.ts`). The runner (agent turns) and
+the stdio MCP server answer that `box_status` is read over the box's MCP
+endpoint; `peer_status` there reports its own line as `unavailable` and
+still asks the peers. `box_status` is in the `brain-health` tool group,
+`peer_status` in `federation`.
+
+Host numbers: in a container the load average and memory come from the
+web container's `/proc`. A box that wants the host's own sets
+`MANTLE_HOST_PROC` to a read-only mount of the host's `/proc` files
+`loadavg` and `meminfo` (for example `/host/proc`); `scope` then reads
+`host`. Mount only those two files: the whole host `/proc` shows every host
+process to the container. The shipped compose files mount nothing.
+
+### Linking from the shell
+
+`scripts/peer-link.sh` runs `server/web/scripts/peer-link.ts` in the web
+container, as `scripts/onboard.sh` does: shell access proves ownership, so
+it asks for no password, and every peer it makes is the owner's. A create
+prints `peer_id=...` and, unless `--outbound-only`, this side's new token
+once as `token=...`; the other box's token goes in on stdin or from a file
+(`--token-file`), never as an argument. Every change leaves an audit row
+(`peer.linked`, `peer.accepted`, `peer.revoked`) that names no token.
+
+A watched box and the admin box that watches it, over ssh (each `cd` is the
+box's stack directory: `install.sh` makes `./mantle` where it runs, or
+`MANTLE_HOME`; prefix `sudo` where the ssh user is not in the docker group):
+
+```sh
+# On the watched box: a status-only peer for the admin box. Keep the token line.
+ssh watched.example.com 'cd ~/mantle && scripts/peer-link.sh create \
+    --name admin --url https://admin.example.com --status-only' > watched.out
+
+# On the admin box: an outbound-only, watched peer for it, then its token.
+ssh admin.example.com 'cd ~/mantle && scripts/peer-link.sh create \
+    --name watched --url https://watched.example.com --outbound-only --watch'
+grep '^token=' watched.out | ssh admin.example.com \
+    'cd ~/mantle && scripts/peer-link.sh accept --peer watched'
+rm watched.out
+```
+
+The watched box needs remote MCP on (Settings, MCP). `list` shows the
+peers with no secret; `revoke --peer <id|name>` closes one, both ways.
+The admin box grants the watched box nothing: its peer row is
+outbound-only, and the watched box never accepts a token back.

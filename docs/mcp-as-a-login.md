@@ -260,6 +260,12 @@ also held to went in W7b.
 Rebinding a peer to another login starts closed: write off, no risky tools,
 unless the same request sets them. Each peer has its own rate budget.
 
+A peer whose access scope is `status` (migration 0354) is none of the
+above: it lists and calls `box_status` and `brain_capacity` and nothing
+else, as the brain's owner, read-only, whatever its Acts as, Write switch
+or risky tools say; one whose scope is `none` verifies nowhere. See
+[federation.md](federation.md), "Status links".
+
 The calling brain uses `peer_tools`, `peer_call` and `peer_file_copy`
 (`packages/tools/src/builtins-peer-mcp.ts`) against the peer's `/api/mcp`.
 `peer_file_copy` uses the peer's `file_upload`.
