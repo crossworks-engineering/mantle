@@ -103,7 +103,7 @@ const STEP_OUT_OF_MEMORY =
 const STEP_CRASHED =
   'this step ended its SQL process, most likely at the memory limit: the file or one of its values may be too large for it';
 /** The jobs that are a step on the whole file, not one app statement. */
-const FILE_STEPS: ReadonlySet<string> = new Set(['script', 'batch', 'copy', 'adopt']);
+const FILE_STEPS: ReadonlySet<string> = new Set(['script', 'batch', 'copy', 'adopt', 'timer']);
 /** Refusals at the memory limit that pass at once, then the most per second
  *  (each one kills a child, and a new one is forked: see refusalPace). */
 export const APP_SQL_REFUSAL_BURST = 4;
@@ -185,11 +185,26 @@ export class AppDbRestoringError extends AppSqlBusyError {
   }
 }
 
+/** The app timers' run log in an app's own database (docs/app-timers.md):
+ *  a reserved table. App SQL reads it; only the server's own timer batch
+ *  (runAppTimerRunsBatch) creates or changes it. */
+export const APP_TIMER_RUNS_TABLE = '_timer_runs';
+
+/** The reserved table names, as the child matches them (SQLite's own
+ *  unquoted name, case-insensitive as SQLite's lookup): the run log and
+ *  every name it prefixes (a virtual table's shadow tables, its index). */
+const RESERVED_TABLES_RE = /^_timer_runs($|_)/i;
+
+/** The run log's DDL as the server writes it, which the timer batch holds
+ *  the live table to (runAppTimerRunsBatch). */
+export type AppTimerRunsDdl = { table: string; index: string; indexName: string };
+
 /** The child: a plain CommonJS script passed with `-e`, so it needs no file
  *  on disk and runs the same under tsx in dev, in tests and in the image. */
 const CHILD_SOURCE = `
 const { DatabaseSync, constants: C } = require('node:sqlite');
 const fs = require('node:fs');
+const { randomBytes } = require('node:crypto');
 // A restore is swapping this file (its marker is fresh): open nothing.
 function restoring(file) {
   try {
@@ -232,6 +247,138 @@ function ifNotExistsCreate(sql) {
     }
   }
   return /^create\\s+(unique\\s+)?(table|index)\\s+if\\s+not\\s+exists\\b/i.test(s);
+}
+/** The reserved tables app text never changes (the app timers' run log):
+ *  it reads them, the server alone writes them. */
+function reservedName(name) {
+  return ${RESERVED_TABLES_RE}.test(String(name || ''));
+}
+/** Whether an authorizer action changes a reserved table: a row write, its
+ *  create (the name taken first, a virtual table too), drop, alter or
+ *  rename, a view by its name, and a trigger or index on it (or dropped
+ *  from it). A rename of another table ONTO the name is not seen here (the
+ *  authorizer names the old one): the timer batch sets such a table aside. */
+function touchesReserved(action, arg1, arg2) {
+  switch (action) {
+    case C.SQLITE_CREATE_VTABLE:
+    case C.SQLITE_DROP_VTABLE:
+    case C.SQLITE_INSERT:
+    case C.SQLITE_UPDATE:
+    case C.SQLITE_DELETE:
+    case C.SQLITE_DROP_TABLE:
+    case C.SQLITE_DROP_TEMP_TABLE:
+    case C.SQLITE_CREATE_TABLE:
+    case C.SQLITE_CREATE_TEMP_TABLE:
+    case C.SQLITE_CREATE_VIEW:
+    case C.SQLITE_CREATE_TEMP_VIEW:
+    case C.SQLITE_DROP_VIEW:
+    case C.SQLITE_DROP_TEMP_VIEW:
+      return reservedName(arg1);
+    case C.SQLITE_ALTER_TABLE:
+    case C.SQLITE_CREATE_TRIGGER:
+    case C.SQLITE_CREATE_TEMP_TRIGGER:
+    case C.SQLITE_DROP_TRIGGER:
+    case C.SQLITE_DROP_TEMP_TRIGGER:
+    case C.SQLITE_CREATE_INDEX:
+    case C.SQLITE_CREATE_TEMP_INDEX:
+    case C.SQLITE_DROP_INDEX:
+    case C.SQLITE_DROP_TEMP_INDEX:
+      return reservedName(arg2);
+    default:
+      return false;
+  }
+}
+/** A name as an SQL identifier. */
+function ident(name) {
+  return '"' + String(name).replace(/"/g, '""') + '"';
+}
+/** The run log as the server makes it: the stored SQL of its table and its
+ *  index (SQLite keeps the text, less IF NOT EXISTS). */
+function timerRunsWant(ddl) {
+  const m = new DatabaseSync(':memory:');
+  try {
+    m.exec(ddl.table);
+    m.exec(ddl.index);
+    const out = {};
+    for (const r of m.prepare('SELECT name, sql FROM sqlite_master').all()) out[r.name] = r.sql;
+    return out;
+  } finally {
+    m.close();
+  }
+}
+/**
+ * Before the server writes the run log, in the batch's own transaction and
+ * with no app text running: the reserved objects are only the server's.
+ * A trigger on the log (or named for it) and a view of its name are
+ * dropped; a table of its name that is not the server's plain table (a
+ * virtual table, another shape, one renamed onto the name, or one an
+ * imported package brought) is moved aside to timer_runs_moved_<random>,
+ * its rows kept for the app (a random name, so no object the app made
+ * beforehand can stand in the way of the move); an index on the log that is
+ * not the server's is dropped. A table in exactly the server's shape stays
+ * as the log, whoever made it: the app can only fake rows of its own log.
+ * Answers what it moved or dropped.
+ */
+function timerRunsSetRight(db, ddl) {
+  const want = timerRunsWant(ddl);
+  const T = '${APP_TIMER_RUNS_TABLE}';
+  const isT = (n) => String(n || '').toLowerCase() === T;
+  const all = () => db.prepare('SELECT type, name, tbl_name AS tbl, sql FROM main.sqlite_master').all();
+  const done = [];
+  for (const o of all()) {
+    if (o.type === 'trigger' && (reservedName(o.tbl) || reservedName(o.name))) {
+      db.exec('DROP TRIGGER ' + ident(o.name));
+      done.push('trigger');
+    } else if (o.type === 'view' && reservedName(o.name)) {
+      db.exec('DROP VIEW ' + ident(o.name));
+      done.push('view');
+    }
+  }
+  const table = all().find((o) => o.type === 'table' && isT(o.name));
+  if (table && table.sql !== want[T]) {
+    const taken = new Set(all().map((o) => String(o.name).toLowerCase()));
+    let moved;
+    do moved = 'timer_runs_moved_' + randomBytes(6).toString('hex');
+    while (taken.has(moved));
+    db.exec('ALTER TABLE ' + ident(table.name) + ' RENAME TO ' + ident(moved));
+    done.push('table');
+  }
+  for (const o of all()) {
+    if (o.type !== 'index' || !isT(o.tbl) || o.sql === null) continue;
+    if (o.name === ddl.indexName && o.sql === want[ddl.indexName]) continue;
+    db.exec('DROP INDEX ' + ident(o.name));
+    done.push('index');
+  }
+  return done;
+}
+/** The timer batch's authorizer: reads, and the run log's own create,
+ *  index, insert and delete (with the schema rows a create writes).
+ *  Nothing else, so a statement of the batch can reach no other table. */
+function timerRunsAuthorizer(action, arg1, arg2) {
+  const T = '${APP_TIMER_RUNS_TABLE}';
+  const isT = (n) => String(n || '').toLowerCase() === T;
+  const schema = /^sqlite_(master|schema)$/i.test(String(arg1 || ''));
+  switch (action) {
+    case C.SQLITE_READ:
+    case C.SQLITE_SELECT:
+    case C.SQLITE_FUNCTION:
+    case C.SQLITE_RECURSIVE:
+      return C.SQLITE_OK;
+    case C.SQLITE_INSERT:
+    case C.SQLITE_UPDATE:
+      return isT(arg1) || schema ? C.SQLITE_OK : C.SQLITE_DENY;
+    case C.SQLITE_DELETE:
+      return isT(arg1) ? C.SQLITE_OK : C.SQLITE_DENY;
+    case C.SQLITE_CREATE_TABLE:
+      return isT(arg1) ? C.SQLITE_OK : C.SQLITE_DENY;
+    case C.SQLITE_CREATE_INDEX:
+      return isT(arg2) ? C.SQLITE_OK : C.SQLITE_DENY;
+    case C.SQLITE_REINDEX:
+      // A new index of the log is built as it is made.
+      return reservedName(arg1) ? C.SQLITE_OK : C.SQLITE_DENY;
+    default:
+      return C.SQLITE_DENY;
+  }
 }
 function run(job) {
   const { file, sql, params, mode, readOnly, dataOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit, userVersion, dest } = job;
@@ -292,6 +439,48 @@ function run(job) {
       const have = Number(db.prepare('PRAGMA user_version').get().user_version);
       if (have >= userVersion) return { skipped: true, userVersion: have };
     }
+    if (mode === 'timer') {
+      // The app timers' run log (runAppTimerRunsBatch): the server's own
+      // statements, all or nothing, after the reserved objects are set
+      // right, under an authorizer that admits only the log's own writes.
+      //
+      // Two connection settings first, outside the transaction (SQLite
+      // ignores foreign_keys inside one): the app's schema must not be able
+      // to stop the server's writes. foreign_keys OFF, so an app table with
+      // a foreign key to the log (cascading or not) neither refuses the
+      // prune nor turns it into a delete in the app's own tables (which the
+      // authorizer would refuse); legacy_alter_table ON, so moving a table
+      // aside renames that table alone, without re-reading every view and
+      // trigger of the file (a broken view of the app's would fail it).
+      // This connection is the job's own and closed after it; the settings
+      // are put back all the same.
+      const changes = [];
+      let setRight;
+      db.exec('PRAGMA foreign_keys = OFF');
+      db.exec('PRAGMA legacy_alter_table = ON');
+      try {
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          setRight = timerRunsSetRight(db, job.timerDdl);
+          db.setAuthorizer(timerRunsAuthorizer);
+          for (const st of job.statements) changes.push(Number(db.prepare(st.sql).run(...st.params).changes));
+          db.setAuthorizer(null);
+          db.exec('COMMIT');
+        } catch (err) {
+          db.setAuthorizer(null);
+          try {
+            db.exec('ROLLBACK');
+          } catch {
+            // already rolled back by the failing statement
+          }
+          throw err;
+        }
+      } finally {
+        db.exec('PRAGMA legacy_alter_table = OFF');
+        db.exec('PRAGMA foreign_keys = ON');
+      }
+      return { changes, setRight };
+    }
     // Rows only, with one exception (team apps M3 re-audit, live apps on the
     // fleet): CREATE TABLE / CREATE INDEX IF NOT EXISTS on an object that
     // already EXISTS in main is answered as a no-op success and never run.
@@ -342,7 +531,13 @@ function run(job) {
         if (found) return { changes: 0, lastInsertRowid: 0 };
       }
     }
-    db.setAuthorizer((action, arg1) => {
+    db.setAuthorizer((action, arg1, arg2) => {
+      // The reserved tables (the app timers' _timer_runs and its prefix):
+      // app text and the server's other jobs read them and never change
+      // them, whatever else the job allows (the timer batch has its own
+      // authorizer, above). Before the data-only rule, so that rule's row
+      // writes do not reach them either.
+      if (touchesReserved(action, arg1, arg2)) return C.SQLITE_DENY;
       // Data only (an MCP write to an app's data): rows, never the
       // schema. An allowlist: reading, selecting, functions, a recursive
       // CTE and the three row writes. Every CREATE, DROP, ALTER, trigger,
@@ -741,11 +936,13 @@ export type AppSqlBatchStatement = { sql: string; params: unknown[] };
 /** A job for a child: an app statement, or the server's own file copy or
  *  write batch. */
 type ChildJob = Omit<Parameters<typeof runAppSql>[1], 'mode'> & {
-  mode: 'all' | 'run' | 'script' | 'copy' | 'batch' | 'adopt';
+  mode: 'all' | 'run' | 'script' | 'copy' | 'batch' | 'adopt' | 'timer';
   /** 'copy' and 'adopt' only: the file to write (must not exist). */
   dest?: string;
-  /** 'batch' only: the statements, run in one transaction. */
+  /** 'batch' and 'timer' only: the statements, run in one transaction. */
   statements?: AppSqlBatchStatement[];
+  /** 'timer' only: the run log's DDL the live table is held to. */
+  timerDdl?: AppTimerRunsDdl;
 };
 
 /**
@@ -765,6 +962,30 @@ export async function runAppSqlBatch(
     timeoutMs,
   )) as { changes: number[] };
   return res.changes;
+}
+
+/**
+ * The app timers' own write batch (packages/content app-broker.ts
+ * appTimerRecordRun), the only job that may change the reserved run log
+ * (APP_TIMER_RUNS_TABLE). In one transaction: first the reserved objects
+ * are set right (timerRunsSetRight in the child: a planted trigger or view
+ * dropped, a table of the name that is not the server's `ddl` moved aside
+ * with its rows, a foreign index dropped), then the statements run under
+ * an authorizer that admits only the log's own create, index, insert and
+ * delete. Its statements are the server's, never app text. Answers the
+ * change counts and what was set right.
+ */
+export async function runAppTimerRunsBatch(
+  file: string,
+  statements: AppSqlBatchStatement[],
+  ddl: AppTimerRunsDdl,
+  timeoutMs = APP_SCHEMA_TIMEOUT_MS,
+): Promise<{ changes: number[]; setRight: string[] }> {
+  return (await runOnChild(
+    file,
+    { sql: '', mode: 'timer', readOnly: false, statements, timerDdl: ddl },
+    timeoutMs,
+  )) as { changes: number[]; setRight: string[] };
 }
 
 /**
@@ -873,7 +1094,8 @@ async function answer(
         journalLimit: APP_SQL_JOURNAL_LIMIT_BYTES,
         userVersion: opts.mode === 'script' ? Math.max(0, Math.floor(opts.userVersion ?? 0)) : 0,
         dest: opts.mode === 'copy' || opts.mode === 'adopt' ? opts.dest : undefined,
-        statements: opts.mode === 'batch' ? opts.statements : undefined,
+        statements: opts.mode === 'batch' || opts.mode === 'timer' ? opts.statements : undefined,
+        timerDdl: opts.mode === 'timer' ? opts.timerDdl : undefined,
       });
     } catch {
       // A child that failed to spawn has no send.

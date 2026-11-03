@@ -748,7 +748,7 @@ export const STORES = {
   },
   appdb: {
     why: 'app databases (SQLite): the SQL runner writes, and APP_DB_DIR',
-    test: /import\s*\{[^}]*\b(runAppSql|runAppSqlBatch|copyAppDbFile|adoptAppDbFile)\b[^}]*\}\s*from\s*'\.\/app-sql-runner'|\bAPP_DB_DIR\b/,
+    test: /import\s*\{[^}]*\b(runAppSql|runAppSqlBatch|runAppTimerRunsBatch|copyAppDbFile|adoptAppDbFile)\b[^}]*\}\s*from\s*'\.\/app-sql-runner'|\bAPP_DB_DIR\b/,
   },
 };
 
