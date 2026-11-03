@@ -39,7 +39,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   const input = await readBody(req, PatchBody);
   const { actsAs, writeEnabled, allowedRiskyTools } = input;
-  const change = { actsAs, writeEnabled, allowedRiskyTools };
+  // Turning a peer back on is in the change: one that acts as the owner (a
+  // status peer too) is the owner's to arm.
+  const change = { actsAs, writeEnabled, allowedRiskyTools, enable: input.enabled === true };
   // Checked before anything changes: a brain that acts as the owner is the
   // owner's to bind, arm and keep armed.
   if (!user.actor.isOwner && peerChangeNeedsOwner(change, await peerBoundToOwner(user.id, id))) {
@@ -78,8 +80,21 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     touched = true;
   }
   if (input.enabled !== undefined) {
-    const ok = await setPeerEnabled(user.id, id, input.enabled);
-    if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    // Checked again in the write when a caller that is not the owner turns
+    // it on: the owner may bind it in between.
+    const enableGuard = !user.actor.isOwner && input.enabled;
+    const ok = await setPeerEnabled(
+      user.id,
+      id,
+      input.enabled,
+      enableGuard ? { unlessBoundTo: user.id } : {},
+    );
+    if (!ok) {
+      if (enableGuard && (await peerBoundToOwner(user.id, id))) {
+        return NextResponse.json({ error: PEER_OWNER_ONLY }, { status: 403 });
+      }
+      return NextResponse.json({ error: 'not found' }, { status: 404 });
+    }
     touched = true;
   }
   if (input.outboundToken !== undefined) {
