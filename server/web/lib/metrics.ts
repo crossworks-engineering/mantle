@@ -327,8 +327,11 @@ export async function spendByModel(userId: string, daysBack: number): Promise<Mo
 
 /**
  * The decider's steps (`decide_<use>`) carry `meta.use`; split their model's
- * spend by it. A failed call (no decision) is a skipped step with no cost.
- * Cache hits make no call and leave no step, so they are not counted.
+ * spend by it. A failed call (no decision) is a step skipped
+ * `decision_failed`, with no cost. A request above the model's limits is
+ * skipped `over_limit` and was never sent, so it is neither a call nor a
+ * failure. Cache hits make no call and leave no step, so they are not
+ * counted.
  */
 async function spendByDecisionUse(userId: string, since: Date) {
   const rows = await db
@@ -338,7 +341,8 @@ async function spendByDecisionUse(userId: string, since: Date) {
       costMicroUsd: sql<number>`coalesce(sum((${traceSteps.meta}->>'cost_micro_usd')::bigint), 0)::bigint`,
       tokensIn: sql<number>`coalesce(sum((${traceSteps.meta}->>'tokens_in')::int), 0)::int`,
       calls: sql<number>`count(*)::int`,
-      failed: sql<number>`count(*) filter (where ${traceSteps.status} = 'skipped')::int`,
+      failed: sql<number>`count(*) filter (where ${traceSteps.status} = 'skipped'
+        and ${traceSteps.meta}->>'skipped' = 'decision_failed')::int`,
       msSum: sql<number>`coalesce(sum((${traceSteps.meta}->>'decision_ms')::int), 0)::bigint`,
       msCount: sql<number>`count(${traceSteps.meta}->>'decision_ms')::int`,
     })
@@ -350,6 +354,7 @@ async function spendByDecisionUse(userId: string, since: Date) {
         gte(traceSteps.startedAt, since),
         sql`${traceSteps.meta} ? 'model'`,
         sql`${traceSteps.meta} ? 'use'`,
+        sql`coalesce(${traceSteps.meta}->>'skipped', '') <> 'over_limit'`,
       ),
     )
     .groupBy(sql`${traceSteps.meta}->>'model'`, sql`${traceSteps.meta}->>'use'`);

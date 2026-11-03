@@ -7,10 +7,9 @@
  * gate) and routes through the same adapter registry production uses, so a
  * passing test means the configured worker will work for real.
  */
-import { getApiKeyById, resolveProviderKey } from '@mantle/api-keys';
+import { getApiKeyById } from '@mantle/api-keys';
 import {
   getChatAdapter,
-  getDecisionAdapter,
   getEmbeddingAdapter,
   getImageGenAdapter,
   getSttAdapter,
@@ -27,8 +26,7 @@ import {
 import { embed, resolveEmbeddingModel, runReembed, type ReembedResult } from '@mantle/embeddings';
 import { chatWithFailover, resolveChatRoutes } from '@mantle/runtime/agent';
 import { getAiWorker } from '@/lib/ai-workers';
-import type { DeciderParams } from '@mantle/db';
-import { deciderPrivacy } from '@mantle/decisions';
+import { testDecisionWorker, type DecisionTestResult } from '@mantle/decisions';
 import { errorMessage, publicErrorMessage } from '@mantle/std';
 
 export type DiscoverKind = 'tts' | 'stt' | 'chat' | 'vision' | 'image_gen' | 'embedding';
@@ -439,76 +437,18 @@ export async function testChat(
 }
 
 /**
- * One sample decision through a `decider` worker's adapter — the Test button.
- * Goes straight to the adapter (not `decide()`), so it works while the worker
- * is still disabled and every use is off: the operator is checking the key,
- * the model id and the endpoint, not the switches. The sample is fixed and
- * carries nothing of the owner's; `text` lets them try their own line.
+ * The decider worker's Test button: one small request to the saved model,
+ * sent as production sends it (@mantle/decisions test-call.ts: the real
+ * privacy level, timeout and request limits). A model failure is a result
+ * (`ok: false` with the plain reason), not a throw. Only on the admin's
+ * click; it never retries and never lowers the privacy level.
  */
 export async function testDecision(
   userId: string,
   workerId: string,
   text: string,
-): Promise<{
-  ok: true;
-  model: string;
-  adapter: string;
-  ms: number;
-  tokensIn: number | null;
-  costUsd: number | null;
-  answers: Record<string, unknown>;
-}> {
+): Promise<DecisionTestResult> {
   const worker = await getAiWorker(userId, workerId);
   if (!worker) throw new Error('worker not found');
-  if (worker.kind !== 'decider') throw new Error(`worker '${worker.slug}' is not a decider`);
-  const adapter = getDecisionAdapter(worker.provider);
-  if (!adapter) throw new Error(`no decision adapter for provider '${worker.provider}'`);
-  const apiKey = (await resolveProviderKey(userId, worker.provider, worker.apiKeyId))?.apiKey;
-  if (!apiKey) throw new Error('no API key on this worker (or for its provider)');
-  const params = (worker.params ?? {}) as DeciderParams;
-  const message =
-    (text ?? '').trim() ||
-    'My checkout page shows a blank screen after I click Pay. I have tried two browsers.';
-  const t0 = Date.now();
-  const res = await adapter.decide({
-    apiKey,
-    model: worker.model,
-    state: { message },
-    questions: {
-      team: {
-        type: 'choice',
-        instructions: 'Which team should own `message`?',
-        criteria: {
-          account: 'Login, permissions, or profile issues.',
-          frontend: 'Rendering, layout, or browser compatibility issues.',
-          payments: 'Checkout, billing, or payment processing issues.',
-          other: 'Anything else.',
-        },
-      },
-      urgency: {
-        type: 'score',
-        instructions: 'How urgent is `message`?',
-        criteria: [
-          'Can wait for the next release',
-          'Should be fixed this week',
-          'Blocking right now',
-        ],
-      },
-      is_bug: {
-        type: 'noul',
-        instructions: 'Does `message` report broken or unexpected product behaviour?',
-      },
-    },
-    privacy: deciderPrivacy(params),
-    timeoutMs: Math.max(params.timeout_ms ?? 1500, 5000),
-  });
-  return {
-    ok: true,
-    model: res.model,
-    adapter: adapter.adapterName,
-    ms: Date.now() - t0,
-    tokensIn: res.tokensIn ?? null,
-    costUsd: res.reportedCostUsd ?? null,
-    answers: res.answers,
-  };
+  return testDecisionWorker(userId, worker, text);
 }

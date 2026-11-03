@@ -31,12 +31,19 @@
  *      limit is a suspected silent cut and counts as a failure. The uses
  *      that split a list go through the request planner
  *      (`request-planner.ts`), so their requests fit.
+ *   7. Seen. What the breaker hears, the `decision` provider alert hears
+ *      too (`failure.ts`, the throttled reporter in @mantle/embeddings
+ *      provider-outage.ts): a failure opens or adds to it, a decision that
+ *      works closes it. An admin sees a permanent reason at once and a
+ *      transient one after 10 min; the decider worker screen shows the last
+ *      failure. Nothing here retries, and nothing lowers the privacy level.
  *
  * Rules for call sites (from the spikes, docs/decisions.md): Jev ranks, groups
  * and flags; CODE applies dates, `superseded_by` and thresholds; Jev alone
  * never retires, merges or overwrites data.
  */
 import { resolveProviderKey } from '@mantle/api-keys';
+import { noteProviderFailureClass, noteProviderSuccess } from '@mantle/embeddings/provider-outage';
 import {
   bumpWorkerUsage,
   getDefaultWorker,
@@ -51,8 +58,11 @@ import {
   getDecisionAdapter,
   type DecisionAnswer,
   type DecisionDispatcher,
+  type DecisionPrivacy,
   type DecisionQuestion,
+  type DecisionResult,
 } from '@mantle/voice';
+import { DecisionCutError, decisionFailureClass } from './failure';
 import { deciderPrivacy } from './privacy';
 import { limitsForModel, requestOverLimit, type DecisionRequestLimits } from './request-limits';
 import { CircuitBreaker } from './breaker';
@@ -144,24 +154,35 @@ export type DecideInput = {
  * one failure only when every request that went out failed.
  */
 export class DecideBatch {
-  private workerId: string | null = null;
+  private heard: Heard | null = null;
+  private lastError: unknown = undefined;
   answered = 0;
   failed = 0;
   /** Requests the open breaker kept from going out. */
   skipped = 0;
 
-  note(workerId: string, ok: boolean): void {
-    this.workerId = workerId;
+  note(heard: Heard, ok: boolean, err?: unknown): void {
+    this.heard = heard;
     if (ok) this.answered++;
-    else this.failed++;
+    else {
+      this.failed++;
+      this.lastError = err;
+    }
   }
 
   settle(): void {
-    if (!this.workerId) return;
-    if (this.answered > 0) breakerSuccess(this.workerId);
-    else if (this.failed > 0) breakerFailure(this.workerId);
+    if (!this.heard) return;
+    if (this.answered > 0) heardSuccess(this.heard);
+    else if (this.failed > 0) heardFailure(this.heard, this.lastError);
   }
 }
+
+/** Who answered or failed: what the breaker and the alert need to know. */
+export type Heard = {
+  ownerId: string;
+  worker: Pick<AiWorker, 'id' | 'provider' | 'model'>;
+  privacy: DecisionPrivacy;
+};
 
 export type DecideOutcome = {
   answers: Record<string, DecisionAnswer>;
@@ -259,24 +280,34 @@ export function clearDecisionCache(): void {
   breaker.clear();
 }
 
-function breakerSuccess(workerId: string): void {
-  if (breaker.success(workerId)) {
-    logger.info(`decider ${workerId} answered again; breaker closed`);
+/** A decision worked: the breaker and the `decision` alert hear it. */
+function heardSuccess(h: Heard): void {
+  if (breaker.success(h.worker.id)) {
+    logger.info(`decider ${h.worker.id} answered again; breaker closed`);
   }
+  noteProviderSuccess(h.ownerId, 'decision');
 }
 
-function breakerFailure(workerId: string): boolean {
-  const opened = breaker.failure(workerId);
+/** A decision failed: the breaker counts it and the `decision` alert hears
+ *  its plain reason (throttled). True when this opened the breaker. */
+function heardFailure(h: Heard, err: unknown): boolean {
+  const opened = breaker.failure(h.worker.id);
   if (opened) {
     logger.warn(
-      `decider ${workerId} failed ${DEFAULTS.breakerFailures} times in a row; ` +
+      `decider ${h.worker.id} failed ${DEFAULTS.breakerFailures} times in a row; ` +
         `skipping decisions for ${DEFAULTS.breakerCooldownMs / 60_000} min`,
     );
   }
+  noteProviderFailureClass(h.ownerId, 'decision', decisionFailureClass(err, h.privacy), {
+    provider: h.worker.provider,
+    model: h.worker.model,
+  });
   return opened;
 }
 
-function timeoutOf(params: DeciderParams, factor = 1): number {
+/** The worker's timeout: `timeout_ms` clamped to 0.2-5 s, times `factor`
+ *  (still capped at 5 s). */
+export function timeoutOf(params: DeciderParams, factor = 1): number {
   const t = params.timeout_ms;
   const base =
     typeof t !== 'number' || !Number.isFinite(t)
@@ -284,6 +315,36 @@ function timeoutOf(params: DeciderParams, factor = 1): number {
       : Math.max(DEFAULTS.minTimeoutMs, t);
   const f = Number.isFinite(factor) && factor > 1 ? factor : 1;
   return Math.min(DEFAULTS.maxTimeoutMs, base * f);
+}
+
+/**
+ * Send one request: THE call to a decision model, for `decide()` and the
+ * worker's Test button (`test-call.ts`), so both send what production sends:
+ * the worker's privacy level and timeout, and the same cut check. Throws on
+ * any failure; the caller decides what it means.
+ */
+export async function sendDecision(input: {
+  adapter: DecisionDispatcher;
+  apiKey: string;
+  model: string;
+  params: DeciderParams;
+  state: unknown;
+  questions: Record<string, DecisionQuestion>;
+  limits: DecisionRequestLimits;
+  timeoutFactor?: number;
+}): Promise<DecisionResult> {
+  const res = await input.adapter.decide({
+    apiKey: input.apiKey,
+    model: input.model,
+    state: input.state,
+    questions: input.questions,
+    privacy: deciderPrivacy(input.params),
+    timeoutMs: timeoutOf(input.params, input.timeoutFactor),
+  });
+  if (input.limits.cutAt !== null && res.tokensIn === input.limits.cutAt) {
+    throw new DecisionCutError(input.limits.cutAt);
+  }
+  return res;
 }
 
 export async function decide(input: DecideInput): Promise<DecideOutcome | null> {
@@ -329,6 +390,7 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
     return null;
   }
 
+  const heard: Heard = { ownerId: input.ownerId, worker, privacy: deciderPrivacy(params) };
   const t0 = Date.now();
   return step(
     {
@@ -344,20 +406,16 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
     },
     async (h) => {
       try {
-        const res = await adapter.decide({
+        const res = await sendDecision({
+          adapter,
           apiKey,
           model: worker.model,
+          params,
           state: input.state,
           questions: input.questions,
-          privacy: deciderPrivacy(params),
-          timeoutMs: timeoutOf(params, input.timeoutFactor),
+          limits,
+          timeoutFactor: input.timeoutFactor,
         });
-        if (limits.cutAt !== null && res.tokensIn === limits.cutAt) {
-          throw new Error(
-            `suspected silent cut: the model reported exactly ${limits.cutAt} input tokens, ` +
-              'its limit, so the answer is not used',
-          );
-        }
         const ms = Date.now() - t0;
         h.setMeta({
           use: input.use,
@@ -368,16 +426,16 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
         });
         h.setOutput({ answered: Object.keys(res.answers).length, ms });
         cache.set(key, { answers: res.answers, model: res.model });
-        if (input.batch) input.batch.note(worker.id, true);
-        else breakerSuccess(worker.id);
+        if (input.batch) input.batch.note(heard, true);
+        else heardSuccess(heard);
         void bumpWorkerUsage(worker.id).catch(() => {});
         return { answers: res.answers, mode: use.mode, use, model: res.model, cached: false, ms };
       } catch (err) {
         // "No decision" — never an error for the caller. The step stays
         // visible (amber) so a dead alpha endpoint shows up in /traces.
         let opened = false;
-        if (input.batch) input.batch.note(worker.id, false);
-        else opened = breakerFailure(worker.id);
+        if (input.batch) input.batch.note(heard, false, err);
+        else opened = heardFailure(heard, err);
         h.setMeta({
           use: input.use,
           mode: use.mode,

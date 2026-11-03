@@ -15,6 +15,13 @@ export {
   type ResolvedUse,
 } from './decide';
 export { deciderPrivacy } from './privacy';
+export { DECISION_FAILURE_REASONS, DecisionCutError, decisionFailureClass } from './failure';
+export {
+  DECISION_TEST_QUESTIONS,
+  DECISION_TEST_SAMPLE,
+  testDecisionWorker,
+  type DecisionTestResult,
+} from './test-call';
 export {
   CHARS_PER_TOKEN,
   PLAN_HEADROOM,

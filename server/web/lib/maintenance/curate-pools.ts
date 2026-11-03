@@ -260,6 +260,12 @@ function poolAllows(pool: string, id: string, row: CatalogRow): boolean {
   return true;
 }
 
+/** A decider pool entry's place on the shortlist (`poolPosition`); an id
+ *  off the list sorts last. */
+function deciderPosition(id: string): number {
+  return decisionModelProfile(id)?.poolPosition ?? Number.MAX_SAFE_INTEGER;
+}
+
 /** Roughly: is this the strong tier or the cheap tier of the search family? */
 function searchTierFits(pool: string, id: string): boolean {
   const pro = id.includes('-pro') || id.includes('reasoning') || id.includes('deep-research');
@@ -612,6 +618,13 @@ export function planCuration(input: PlanInput): CurationPlan {
     // A default is a recommendation we have already made. It leads, the way the
     // recommended card leads the onboarding list, and the rest is ranked.
     picked.sort((a, b) => {
+      // The decider pool is the product's shortlist, in its own order
+      // (`poolPosition`): Jev first even on a run where it is not a
+      // shipped default the catalog still lists.
+      if (pool.id === 'decider') {
+        const d = deciderPosition(a.row.id) - deciderPosition(b.row.id);
+        if (d !== 0) return d;
+      }
       if (!!a.shipped !== !!b.shipped) return a.shipped ? -1 : 1;
       return score(b) - score(a);
     });

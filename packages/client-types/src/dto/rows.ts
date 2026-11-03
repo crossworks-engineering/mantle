@@ -732,8 +732,10 @@ export type BoxPolicyReport = {
  */
 export type ProviderAlert = {
   /** `model_policy`: a call the box policy (MANTLE_POLICY_MODEL_DENY,
-   *  MANTLE_POLICY_PROVIDER_ALLOW) refused; `code` is `policy`. */
-  subject: 'embedding' | 'extraction' | 'model_policy';
+   *  MANTLE_POLICY_PROVIDER_ALLOW) refused; `code` is `policy`.
+   *  `decision`: the decider fails (search and chat run without it); never
+   *  probed, a decision that works closes it. */
+  subject: 'embedding' | 'extraction' | 'model_policy' | 'decision';
   /** quota | auth | no_key | model | policy (permanent); rate_limit | server |
    *  network | timeout (transient, shown after 10 min). */
   code: string;
@@ -749,7 +751,8 @@ export type ProviderAlert = {
   /** When the brain tries one tiny call again (ISO), or null. */
   nextProbeAt: string | null;
   /** Extract jobs that wait: queued, retrying, running and dead-lettered.
-   *  Null when the queue has not started yet. */
+   *  Null when the queue has not started yet, and for a subject the queue
+   *  does not wait on (`model_policy`, `decision`). */
   waiting: number | null;
 };
 

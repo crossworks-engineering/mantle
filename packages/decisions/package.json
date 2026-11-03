@@ -15,6 +15,7 @@
     "@mantle/api-keys": "workspace:*",
     "@mantle/client-types": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/embeddings": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",

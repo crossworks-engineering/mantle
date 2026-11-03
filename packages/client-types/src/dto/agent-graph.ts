@@ -261,4 +261,57 @@ export interface AiWorkerConfig {
   nativeDocProviders: string[];
   /** Online tailnet peer MagicDNS names (route base-URL datalist). */
   tailnetPeers: string[];
+  /** The decider's last failure (the `decision` provider alert, open or
+   *  closed), or null when it never failed. Absent from a brain before
+   *  decider plan Part 3. */
+  deciderLastFailure?: DeciderLastFailure | null;
 }
+
+/**
+ * The decider's last failure, for its worker screen. `reason` is fixed text
+ * chosen by `code`, never provider text.
+ */
+export interface DeciderLastFailure {
+  /** The provider classifier's code (`quota`, `auth`, `model`, `timeout`, ...)
+   *  or the decider's own (`privacy_route`, `cut`, `answer`). */
+  code: string;
+  permanent: boolean;
+  reason: string;
+  provider: string | null;
+  model: string | null;
+  /** When this run of failures started, and the latest one (ISO). */
+  since: string;
+  lastAt: string;
+  /** Failures recorded in this run (one write a minute per process). */
+  count: number;
+  /** Admins see it as an alert now (permanent at once, else after 10 min). */
+  shown: boolean;
+  /** When a decision worked again (ISO); null while it still fails. */
+  resolvedAt: string | null;
+}
+
+/** `POST /api/ai-workers/:id/test/decision`: one small request to the saved
+ *  decider model with its real privacy level, timeout and request limits. */
+export type DecisionTestResult = {
+  model: string;
+  provider: string;
+  privacy: 'zdr' | 'no_training';
+  timeoutMs: number;
+  ms: number;
+} & (
+  | {
+      ok: true;
+      adapter: string;
+      tokensIn: number | null;
+      costUsd: number | null;
+      answers: Record<string, unknown>;
+    }
+  | {
+      ok: false;
+      code: string;
+      /** One fixed sentence for an admin. */
+      reason: string;
+      /** The provider's or the adapter's own words (owner only). */
+      detail: string | null;
+    }
+);

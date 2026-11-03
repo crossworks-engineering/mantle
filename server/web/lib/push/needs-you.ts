@@ -97,11 +97,14 @@ export function needsYouMessage(first: NeedsYouArrival): {
       ? ' 1 item waits.'
       : ` ${a.waiting} items wait.`
     : '';
-  return a.subject === 'embedding'
-    ? { title: 'Embeddings are failing', body: a.reason + waiting, deepLink: '/settings/embedding' }
-    : {
-        title: 'Extraction is failing',
-        body: a.reason + waiting,
-        deepLink: '/settings/ai-workers',
-      };
+  const { title, deepLink } = ALERT_PUSH[a.subject] ?? ALERT_PUSH.extraction;
+  return { title, body: a.reason + waiting, deepLink };
 }
+
+/** The push title and the page to fix it on, per alert subject. */
+const ALERT_PUSH: Record<ProviderAlert['subject'], { title: string; deepLink: string }> = {
+  embedding: { title: 'Embeddings are failing', deepLink: '/settings/embedding' },
+  extraction: { title: 'Extraction is failing', deepLink: '/settings/ai-workers' },
+  model_policy: { title: 'The box policy blocked a model', deepLink: '/settings/ai-workers' },
+  decision: { title: 'The decider is failing', deepLink: '/settings/ai-workers' },
+};

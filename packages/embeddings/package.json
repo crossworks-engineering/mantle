@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./provider-error": "./src/provider-error.ts"
+    "./provider-error": "./src/provider-error.ts",
+    "./provider-outage": "./src/provider-outage.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

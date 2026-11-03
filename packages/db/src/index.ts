@@ -311,11 +311,14 @@ export { onLoginHoldSpot } from './login-hold';
 export { clientHeldFromNarrow, loginHeldFromNarrow } from './gateway/scope-answers';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export {
+  PROBED_SUBJECTS,
   PROVIDER_ALERT_VISIBLE_AFTER_MS,
   PROVIDER_SUBJECTS,
   countDeadLetteredExtracts,
   countExtractBacklog,
+  getProviderAlert,
   isAlertShown,
+  isProbedSubject,
   listOpenProviderAlerts,
   listProviderAlerts,
   recordProviderFailure,

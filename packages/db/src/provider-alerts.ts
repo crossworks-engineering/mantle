@@ -10,19 +10,30 @@
  * (one per subject per minute), so a burst of failing jobs is a handful of
  * row updates, not one per call.
  */
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { systemDb } from './gateway/handles';
 import { providerAlerts, type ProviderAlertRow } from './schema/provider-alerts';
 
 /** `model_policy` (0348): a call the box policy refused (@mantle/voice
- *  model-policy.ts, docs/policy.md). The extract circuit reads only the
- *  other two. */
-export type ProviderSubject = 'embedding' | 'extraction' | 'model_policy';
+ *  model-policy.ts, docs/policy.md). `decision` (0353): the decider failing
+ *  (@mantle/decisions decide.ts, docs/decisions.md). The extract circuit
+ *  reads only the first two (`PROBED_SUBJECTS`). */
+export type ProviderSubject = 'embedding' | 'extraction' | 'model_policy' | 'decision';
 export const PROVIDER_SUBJECTS: readonly ProviderSubject[] = [
   'embedding',
   'extraction',
   'model_policy',
+  'decision',
 ];
+
+/** The subjects the extract circuit pauses on and probes. An alert of any
+ *  other subject is shown and closed by its own writer, never probed. */
+export const PROBED_SUBJECTS: readonly ProviderSubject[] = ['embedding', 'extraction'];
+
+/** True for a subject the extract circuit probes (`PROBED_SUBJECTS`). */
+export function isProbedSubject(subject: string): subject is 'embedding' | 'extraction' {
+  return (PROBED_SUBJECTS as readonly string[]).includes(subject);
+}
 
 /** A transient failure (rate limit, 5xx, network) is shown only once it has
  *  lasted this long: a blip that retries fix never reaches an admin. */
@@ -167,7 +178,9 @@ export async function recordProviderProbeFailure(
  *  paused) is left alone and not counted: the agent never probes one
  *  (retries handle it), and counting it would let a key saved during a
  *  blip send the recover NOTIFY, a probe and a dead-letter
- *  re-drive. */
+ *  re-drive. Only the probed subjects: nothing probes a `model_policy` or
+ *  `decision` row, so a probe time on one would only promise a retry that
+ *  never comes. */
 export async function requestProviderProbeNow(
   ownerId: string,
   now: Date = new Date(),
@@ -178,6 +191,7 @@ export async function requestProviderProbeNow(
     .where(
       and(
         eq(providerAlerts.ownerId, ownerId),
+        inArray(providerAlerts.subject, [...PROBED_SUBJECTS]),
         isNull(providerAlerts.resolvedAt),
         or(eq(providerAlerts.visible, true), eq(providerAlerts.paused, true)),
       ),
@@ -189,6 +203,20 @@ export async function requestProviderProbeNow(
 /** Every alert row of the brain, open or resolved. */
 export async function listProviderAlerts(ownerId: string): Promise<ProviderAlertRow[]> {
   return systemDb.select().from(providerAlerts).where(eq(providerAlerts.ownerId, ownerId));
+}
+
+/** One subject's row, open or resolved (a resolved row is the record of
+ *  the last failure), or null when it never failed. */
+export async function getProviderAlert(
+  ownerId: string,
+  subject: ProviderSubject,
+): Promise<ProviderAlertRow | null> {
+  const [row] = await systemDb
+    .select()
+    .from(providerAlerts)
+    .where(and(eq(providerAlerts.ownerId, ownerId), eq(providerAlerts.subject, subject)))
+    .limit(1);
+  return row ?? null;
 }
 
 /** The open alerts. */
