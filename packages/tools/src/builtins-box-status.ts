@@ -11,7 +11,8 @@
  * peer_status asks each watched peer for its box_status over the peer's
  * MCP endpoint, all at once, each with its own deadline, and adds this box's
  * own line. It never calls anything but box_status, never takes a URL, and
- * holds every reply to numbers (numbersOnly) before a model reads it.
+ * holds every reply to schema 1's shape (shapeBoxStatus) before a model
+ * reads it.
  *
  * A status-only peer reaches box_status and brain_capacity and nothing else
  * (status-surface.ts STATUS_PEER_TOOL_SLUGS): the gate's peer narrower
@@ -25,15 +26,25 @@ import { areaSystem } from './admin-gate';
 import {
   BOX_STATUS_UNAVAILABLE,
   getBoxStatusProvider,
-  numbersOnly,
+  shapeBoxStatus,
   type BoxStatus,
 } from './box-status-bridge';
-import { peerMcpFetch } from './builtins-peer-mcp';
+import { peerMcpFetchCapped } from './builtins-peer-mcp';
 import { strOpt } from './coerce';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 
 /** How long one peer has to answer, from connect to reply. */
 export const PEER_STATUS_TIMEOUT_MS = 10_000;
+
+/** How many peers are asked at once; the rest wait for a free place. */
+export const PEER_STATUS_CONCURRENCY = 8;
+
+/** The most one peer's box_status reply may carry (a status is a few KB). */
+export const PEER_STATUS_REPLY_MAX_BYTES = 256 * 1024;
+
+/** The fetch peer_status's transport runs on: the peer tools' egress fetch,
+ *  with the reply capped at PEER_STATUS_REPLY_MAX_BYTES. */
+const peerStatusFetch = peerMcpFetchCapped(PEER_STATUS_REPLY_MAX_BYTES);
 
 /** This box's status, collected on the system pool after the settings area
  *  check (whole-box numbers, as brain_capacity's counts), or the refusal of
@@ -54,8 +65,10 @@ export const box_status: BuiltinToolDef = {
   handler: async (_input, ctx) => {
     const status = await ownStatus(ctx.ownerId);
     if ('error' in status) return { ok: false, error: status.error };
-    ctx.step?.setMeta({ degraded: status.degraded.length });
-    return { ok: true, output: numbersOnly(status) };
+    const shaped = shapeBoxStatus(status);
+    if (!shaped) return { ok: false, error: 'This box gave no status of schema 1.' };
+    ctx.step?.setMeta({ degraded: shaped.degraded.length });
+    return { ok: true, output: shaped };
   },
 };
 
@@ -92,40 +105,61 @@ export function peerStatusErrorOf(err: unknown): PeerStatusError {
 }
 
 /**
- * Run each job with its own deadline, all at once; a job past its deadline
- * is a `timeout` whatever it does after (its signal is aborted, so it can
- * stop). Never throws: each job's answer is its value or its fixed error.
- * Exported for the timeout tests.
+ * Run each job with its own deadline, at most `concurrency` at once (the
+ * rest wait for a free place; a job's deadline starts when it starts); a
+ * job past its deadline is a `timeout` whatever it does after (its signal is
+ * aborted, so it can stop). Never throws: each job's answer is its value or
+ * its fixed error, in the jobs' order. Exported for the timeout tests.
  */
 export async function runWithDeadlines<K>(
   jobs: ReadonlyArray<{ key: K; run: (signal: AbortSignal) => Promise<unknown> }>,
   timeoutMs: number,
+  concurrency = PEER_STATUS_CONCURRENCY,
 ): Promise<
   Array<
     { key: K; ms: number } & ({ ok: true; value: unknown } | { ok: false; error: PeerStatusError })
   >
 > {
-  return Promise.all(
-    jobs.map(async ({ key, run }) => {
-      const started = Date.now();
-      const ctl = new AbortController();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const deadline = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          ctl.abort();
-          reject(new StatusError('timeout'));
-        }, timeoutMs);
-      });
-      try {
-        const value = await Promise.race([run(ctl.signal), deadline]);
-        return { key, ms: Date.now() - started, ok: true as const, value };
-      } catch (err) {
-        return { key, ms: Date.now() - started, ok: false as const, error: peerStatusErrorOf(err) };
-      } finally {
-        clearTimeout(timer);
-      }
-    }),
+  type Answer = { key: K; ms: number } & (
+    { ok: true; value: unknown } | { ok: false; error: PeerStatusError }
   );
+  const one = async ({
+    key,
+    run,
+  }: {
+    key: K;
+    run: (signal: AbortSignal) => Promise<unknown>;
+  }): Promise<Answer> => {
+    const started = Date.now();
+    const ctl = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        ctl.abort();
+        reject(new StatusError('timeout'));
+      }, timeoutMs);
+    });
+    try {
+      const value = await Promise.race([run(ctl.signal), deadline]);
+      return { key, ms: Date.now() - started, ok: true as const, value };
+    } catch (err) {
+      return { key, ms: Date.now() - started, ok: false as const, error: peerStatusErrorOf(err) };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const out: Answer[] = new Array(jobs.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < jobs.length) {
+      const i = next++;
+      out[i] = await one(jobs[i]!);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(concurrency, jobs.length)) }, worker),
+  );
+  return out;
 }
 
 /** box_status on one peer's MCP endpoint, with the token we call it with:
@@ -140,7 +174,7 @@ async function peerBoxStatus(
 ): Promise<unknown> {
   const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/api/mcp`), {
     requestInit: { headers: { Authorization: `Bearer ${token}` }, signal },
-    fetch: peerMcpFetch,
+    fetch: peerStatusFetch,
   });
   const client = new Client({ name: 'mantle-peer-status', version: '1.0.0' });
   try {
@@ -158,11 +192,15 @@ async function peerBoxStatus(
     if (res.isError) {
       throw new StatusError(/not found|unknown tool/i.test(text) ? 'not offered' : 'failed');
     }
+    let parsed: unknown;
     try {
-      return numbersOnly(JSON.parse(text));
+      parsed = JSON.parse(text);
     } catch {
       throw new StatusError('bad reply');
     }
+    const shaped = shapeBoxStatus(parsed);
+    if (!shaped) throw new StatusError('bad reply');
+    return shaped;
   } finally {
     await client.close().catch(() => {});
   }
@@ -183,7 +221,7 @@ export const peer_status: BuiltinToolDef = {
   },
   name: 'Check the status of watched boxes',
   description:
-    "Ask every watched linked brain (a peer marked to watch, paired and enabled) for its box_status, all at once, each given 10 seconds, plus this box's own (`self: true`). Pass `peer` (a name or id) to ask one linked brain only. Returns one line per box: `ok`, `ms`, and the status numbers or a short error ('timeout', 'unreachable', 'refused', 'not offered', 'failed', 'bad reply', 'not paired'; this box's own line 'unavailable' in a process that cannot collect it). Numbers only. Calls box_status and nothing else. Read-only, spends nothing.",
+    "Ask every watched linked brain (a peer marked to watch, paired and enabled) for its box_status, eight at a time, each given 10 seconds, plus this box's own (`self: true`). Pass `peer` (a name or id) to ask one linked brain only. Returns one line per box: `ok`, `ms`, and the status numbers or a short error ('timeout', 'unreachable', 'refused', 'not offered', 'failed', 'bad reply', 'not paired'; this box's own line 'unavailable' in a process that cannot collect it). Numbers only. Calls box_status and nothing else. Read-only, spends nothing.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -230,7 +268,9 @@ export const peer_status: BuiltinToolDef = {
         run: async () => {
           const own = await ownStatus(ctx.ownerId);
           if ('error' in own) throw new StatusError('unavailable');
-          return numbersOnly(own);
+          const shaped = shapeBoxStatus(own);
+          if (!shaped) throw new StatusError('bad reply');
+          return shaped;
         },
       },
       ...targets.map((t) => ({
