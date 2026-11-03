@@ -31,6 +31,7 @@ const SCRIPTS = [
   'compose-adopt.sh',
   'uninstall.sh',
   'onboard.sh',
+  'peer-link.sh',
 ];
 
 describe('release-owned operator scripts', () => {

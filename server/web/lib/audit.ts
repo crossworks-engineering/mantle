@@ -123,7 +123,14 @@ export type AuditEntry = {
     // A peer that acted as a login stopped acting as it: the login's
     // sessions ended or its MCP was switched off (access matrix L12, L13).
     // detail.peerId, detail.loginId, detail.reason.
-    | 'peer.unbound';
+    | 'peer.unbound'
+    // A status link made from the box's shell (scripts/peer-link.sh,
+    // docs/federation.md "Status links"): a peer created, its token
+    // accepted, or revoked. detail.peerId, detail.accessScope,
+    // detail.watchStatus; never a token.
+    | 'peer.linked'
+    | 'peer.accepted'
+    | 'peer.revoked';
   method?: string | null;
   path?: string | null;
   ip?: string | null;

@@ -159,7 +159,9 @@ fetch scripts/compose-adopt.sh           scripts/compose-adopt.sh
 fetch scripts/uninstall.sh               scripts/uninstall.sh
 # The terminal onboarding wizard, for a headless (--no-client) brain.
 fetch scripts/onboard.sh                 scripts/onboard.sh
-chmod +x scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh scripts/uninstall.sh scripts/onboard.sh
+# Link this box to another from the shell (the fleet monitor's status link).
+fetch scripts/peer-link.sh               scripts/peer-link.sh
+chmod +x scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh scripts/uninstall.sh scripts/onboard.sh scripts/peer-link.sh
 fi
 
 # Baselines for every release-owned file, seeded on BOTH paths: the bundle
@@ -186,7 +188,7 @@ baseline infra/caddy/shapes/split.caddy
 # did not understand (see infra/updater/updater.sh, refresh_scripts).
 # An older pinned bundle may predate a script (onboard.sh); the updater adds
 # it on the first roll that ships it.
-for s in db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh onboard.sh; do
+for s in db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh onboard.sh peer-link.sh; do
   if [ -f "scripts/$s" ]; then cp "scripts/$s" "scripts/$s.release"; fi
 done
 ok "deploy bundle fetched"

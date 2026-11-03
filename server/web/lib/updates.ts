@@ -256,6 +256,7 @@ const RELEASE_SCRIPT_NAMES = [
   'compose-adopt.sh',
   'uninstall.sh',
   'onboard.sh',
+  'peer-link.sh',
 ] as const;
 
 /** Canonical-compose hashes are constant for the life of the build. */
