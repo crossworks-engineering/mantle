@@ -4,6 +4,40 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.6: the Changelog screen shows the newest release
+
+- **Fixed:** the Changelog screen in the app showed v0.232.35 as the
+  latest release on every box. It read only the old per-release files in
+  `docs/_changelog/`, and nobody wrote those after v0.232.35.
+- The screen now reads this file, `CHANGELOG.md`. "Latest" is the top
+  release here, and "Previous versions" lists every release, newest first.
+  The old files still fill in the early releases this file does not hold.
+- The docs site and the app now split this file with one shared reader
+  (`@mantle/files/changelog-parts`), so both show the same releases.
+- **Unchanged:** the brain's Changelog doc collection still indexes only
+  the old files. That is a change of its own.
+
+## v0.500.5: every help box checked against today's screens
+
+- **Docs:** the help that opens from the `?` button was checked page by
+  page against what each screen does today. 42 help topics changed, and 16
+  were already right.
+- **Added:** 6 new help topics: Chats, Workspaces, Shared links, Telegram,
+  Sessions and Changelog. New screens, such as `/chats` and `/changelog`,
+  now open the right topic.
+- **Docs:** 27 pages of the user guide were brought up to date: first
+  steps, using the app, and admin.
+- The web app picks up the new topics once it moves to the new
+  `@crossworks/share-ui` release.
+
+## v0.500.4: the changelog and docs catch up
+
+- **Docs:** about 30 releases from v0.400.14 to v0.500.3 had no entry here.
+  Each one has an entry now.
+- Every entry names the release it shipped in. Before, 106 entries said
+  "Unreleased".
+- 20 doc pages were brought up to date with the same releases.
+
 ## v0.500.3: the MCP list shows the risky tools first
 
 - **Changed:** an MCP client's tool list now starts with the tools that
