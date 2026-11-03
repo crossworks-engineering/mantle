@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased
+
+This release pairs the brain with mantle-client **v0.9.5**. A box that
+rolls to it also gets the new web app.
+
+- **Added:** the help from the `?` button now shows the 6 new topics and the
+  42 updated ones from v0.500.5. Before, the web app still used the old
+  help.
+- **Added:** the decider worker screen shows the last failure, and the Test
+  button sends one real request (the web side of v0.500.7).
+
 ## v0.500.13: the parser image builds again
 
 - **Fixed:** the release could not build the parser image. It downloads the
