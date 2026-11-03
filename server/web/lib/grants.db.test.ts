@@ -586,6 +586,16 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(hid.status).toBe(404);
     expect(hid.body.contents).toBeUndefined();
     expect((await call(r.move.POST(req('POST', { ...body, confirm: true })))).status).toBe(404);
+    // mem2 moderates Q but does not read CF: the folder is not found, and
+    // nothing is counted or moved.
+    await as(mem2);
+    const notRead = await call(r.movePreview.POST(req('POST', body)));
+    expect(notRead.status).toBe(404);
+    expect(notRead.body.contents).toBeUndefined();
+    expect((await call(r.move.POST(req('POST', { ...body, confirm: true })))).body).toEqual({
+      moved: 0,
+      failed: [{ id: F, error: 'Item not found.' }],
+    });
     await as(owner);
     // withContents is a home move of one folder, from the home seen on it.
     expect(

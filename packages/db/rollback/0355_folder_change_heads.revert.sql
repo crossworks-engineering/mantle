@@ -1,14 +1,15 @@
--- Rollback of 0355_folder_change_scope_filter: what an operator MAY run
+-- Rollback of 0355_folder_change_heads: what an operator MAY run
 -- before pinning the image one release back (plan v3.2 rule 2, a one-image
 -- rollback). Not a migration: nothing runs it on its own.
 --
--- It puts back 0241's mantle_apply_folder_change (no scope filter) and
+-- It puts back 0241's mantle_apply_folder_change (its rounds through the
+-- filtered mantle_lock_heads_more) and
 -- takes 0355 off the ledger, so the next roll forward runs it again. No row
 -- changes.
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0355_folder_change_scope_filter.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0355_folder_change_heads.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 -- then pin the older image straight away (docs/update-prod.md "Rollback").
 SET LOCAL lock_timeout = '30s';
