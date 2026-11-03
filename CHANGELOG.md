@@ -50,9 +50,10 @@ the app sandbox upgrades (app history and the code tools' undo cap,
 WebAssembly in the app frame, the bundler follow-ups), the Present public
 link with its Moderator rule, the stricter password rule, the desktop
 origin for the Tauri app, and the DWG picture follow-ups. The entries below
-give each change.
+give the changes first shipped in v0.500.0; the releases v0.400.61 to
+v0.400.75 further down give the rest.
 
-## Unreleased: the MCP tool map (four call tools by risk class)
+### the MCP tool map (four call tools by risk class)
 
 - **Added:** an MCP connection can ask for a short tool list, the tool
   map. Add `?tools=map` to the connector URL, or set
@@ -73,7 +74,7 @@ give each change.
 - Each tool keeps its own gate, checks, reply and call log row, as on the
   full list.
 
-## Unreleased: the desktop app is always let in (CORS)
+### the desktop app is always let in (CORS)
 
 - **Added:** the desktop app (MantleOS Desktop, built on Tauri) signs in to
   any box with no setting. The app loads its screens from its own address,
@@ -92,7 +93,7 @@ give each change.
   to pick up where it stopped. The assistant dock reads `Date` to time its
   safety check by the server's clock.
 
-## Unreleased: a CI runner on the workstation, and a quicker release check
+### a CI runner on the workstation, and a quicker release check
 
 - **Added:** `infra/ci-runner/` lets build-check run on our own
   workstation instead of a GitHub machine. CI (continuous integration) is
@@ -108,7 +109,7 @@ give each change.
   build-check of the tagged commit instead of running the same tests
   again. It retries the GitHub API when a call fails.
 
-## Unreleased: a mini app may run WebAssembly
+### a mini app may run WebAssembly
 
 - **Fixed:** a mini app can load a WebAssembly module. WebAssembly (wasm)
   is compiled code, for example from Rust, that runs fast in the browser.
@@ -120,26 +121,7 @@ give each change.
 - **Docs:** the app authoring guide says how an app ships a module (base64
   in a `.ts` file, no network) and how to keep it small.
 
-## Unreleased: DWG pictures, the follow-ups (after v0.400.46)
-
-- **Fixed:** a closed box inside a sheet whose real border is drawn in
-  segments (each shorter than the box) is no longer taken for the border,
-  so the content around it is no longer cut. Thin strokes outside the box,
-  on one line, that together run past both of its edges now count as an
-  edge, as one long line already did.
-- **Fixed:** a border stroke drawn twice, the copy out by floating-point
-  noise, no longer makes the real border lose (a small tolerance on the
-  edge).
-- **Fixed:** the error text of a DWG picture or crop no longer carries the
-  parser container's temp paths: an OSError gives only its reason, and any
-  other error's absolute paths read `<file>`.
-- **Changed:** a blank `dwg_render` window with no sheet frame says the
-  sheet could not be found: model space may be empty, or its entities could
-  not be read (the frame is also missing when reading them failed).
-- **Tests:** the border-try cap and the inside-line rule each have a test
-  that fails without them.
-
-## Unreleased: the app bundler follow-ups (the 4 LOWs of the bundler audit)
+### the app bundler follow-ups (the 4 LOWs of the bundler audit)
 
 - **Changed:** an app frame may load only the `/canvas-runtime/` files its
   import map names (echarts, d3, three, konva, katex, the diagram
@@ -163,7 +145,26 @@ give each change.
 
   Builds with no record count as current from 2026-10-27 on.
 
-## Unreleased: the SQL children read their ends right (follow-up of v0.400.55)
+## v0.400.75: DWG pictures, the follow-ups (after v0.400.46)
+
+- **Fixed:** a closed box inside a sheet whose real border is drawn in
+  segments (each shorter than the box) is no longer taken for the border,
+  so the content around it is no longer cut. Thin strokes outside the box,
+  on one line, that together run past both of its edges now count as an
+  edge, as one long line already did.
+- **Fixed:** a border stroke drawn twice, the copy out by floating-point
+  noise, no longer makes the real border lose (a small tolerance on the
+  edge).
+- **Fixed:** the error text of a DWG picture or crop no longer carries the
+  parser container's temp paths: an OSError gives only its reason, and any
+  other error's absolute paths read `<file>`.
+- **Changed:** a blank `dwg_render` window with no sheet frame says the
+  sheet could not be found: model space may be empty, or its entities could
+  not be read (the frame is also missing when reading them failed).
+- **Tests:** the border-try cap and the inside-line rule each have a test
+  that fails without them.
+
+## v0.400.74: the SQL children read their ends right (follow-up of v0.400.55)
 
 - **Fixed:** a statement refused at the memory limit no longer costs a
   healthy child its place. A child being killed held a place in the pool
@@ -187,15 +188,30 @@ give each change.
   write batch, a copy, an import) that meet the limit say the file or a
   value is too large for the step, not "add a LIMIT".
 
-## Unreleased: the code tools' undo limit is a setting
+## v0.400.72
 
-- **Changed:** the undo records the code tools keep per app (the newest 20)
-  were also held to a fixed 64 MB. That limit is now `APP_CODE_EDIT_MAX_MB`
-  (default 64, so nothing changes unless it is set).
-- **Fixed:** `docker-compose.yml` now passes `APP_SNAPSHOT_MCP_MAX_MB` to
-  the app containers. Before, a value set in `.env` never reached them.
+### a wrong MANTLE_RUNTIME is caught before a roll
 
-## Unreleased: every Node service starts as node itself
+- **Added:** the updater refuses a roll, with nothing changed, while `.env`
+  holds a `MANTLE_RUNTIME` other than empty, `node` or `bun`, holds the line
+  twice, or writes it in another form (`export`, blanks around the `=`).
+  Before, the roll pulled, migrated and then every app service stopped at
+  start, so the site was down until `.env` was fixed. It reads the line as
+  compose does (quotes, a trailing comment). A target older than v0.400.62
+  runs Node and is never refused for this; for `bun` the log says so. It is
+  the first check of a roll: it reads `.env` only.
+- **Added:** `scripts/sanity.sh` shows the runtime of web, api and the
+  workers, warns about a container still on the old runtime after `.env`
+  changed, and fails on a word `run-service.sh` refuses or a doubled line.
+
+### live updates checked on Bun
+
+- **Checked:** live updates (`/api/realtime`) on Bun, in the lab: every one of
+  20 streams got each event, filters and owner isolation held, and a stop
+  with streams open exited 0, the same as on Node. See docs/update-prod.md,
+  Live updates on Bun.
+
+## v0.400.71: every Node service starts as node itself
 
 - **Changed:** on Node (the default `MANTLE_RUNTIME`), web, api and the ten
   workers start as `node --import tsx <entry>` in their package, through
@@ -219,7 +235,17 @@ give each change.
   SIGKILL. Move the edits to `docker-compose.override.yml` and run
   `scripts/compose-adopt.sh`, or add `init: true` to each service there.
 
-## Unreleased: only a Moderator opens a canvas's link
+## v0.400.70
+
+### the code tools' undo limit is a setting
+
+- **Changed:** the undo records the code tools keep per app (the newest 20)
+  were also held to a fixed 64 MB. That limit is now `APP_CODE_EDIT_MAX_MB`
+  (default 64, so nothing changes unless it is set).
+- **Fixed:** `docker-compose.yml` now passes `APP_SNAPSHOT_MCP_MAX_MB` to
+  the app containers. Before, a value set in `.env` never reached them.
+
+### only a Moderator opens a canvas's link
 
 - **Changed:** only a Moderator of a Present canvas's home workspace can make,
   change or stop its open link, as for an app. Someone who may only edit the
@@ -229,7 +255,7 @@ give each change.
   a canvas's link needs a Moderator of its home). No row changes. Rollback:
   `packages/db/rollback/0352_canvas_link_moderator.revert.sql`.
 
-## Unreleased: a tool to read again the PDF scans that drew blank
+### a tool to read again the PDF scans that drew blank
 
 - **Added:** maintenance task `blank-scans` (`pnpm -C server/web blank:scans`).
   It finds the PDF scans that page OCR read as blank before v0.400.56 (images
@@ -238,64 +264,7 @@ give each change.
   `--apply --before=<the day the box got v0.400.56>` reads the hits again, a
   batch at a time, and never sends a file twice.
 
-## Unreleased: a wrong MANTLE_RUNTIME is caught before a roll
-
-- **Added:** the updater refuses a roll, with nothing changed, while `.env`
-  holds a `MANTLE_RUNTIME` other than empty, `node` or `bun`, holds the line
-  twice, or writes it in another form (`export`, blanks around the `=`).
-  Before, the roll pulled, migrated and then every app service stopped at
-  start, so the site was down until `.env` was fixed. It reads the line as
-  compose does (quotes, a trailing comment). A target older than v0.400.62
-  runs Node and is never refused for this; for `bun` the log says so. It is
-  the first check of a roll: it reads `.env` only.
-- **Added:** `scripts/sanity.sh` shows the runtime of web, api and the
-  workers, warns about a container still on the old runtime after `.env`
-  changed, and fails on a word `run-service.sh` refuses or a doubled line.
-
-## Unreleased: live updates checked on Bun
-
-- **Checked:** live updates (`/api/realtime`) on Bun, in the lab: every one of
-  20 streams got each event, filters and owner isolation held, and a stop
-  with streams open exited 0, the same as on Node. See docs/update-prod.md,
-  Live updates on Bun.
-
-## Unreleased: a slow large upload is no longer cut at 300 seconds
-
-- **Fixed:** a large upload over a slow line now finishes. Node gave a
-  request 300 seconds to arrive in full, then answered 408. A 451 MB
-  upload at about 1.1 MB/s died at 309 seconds, and the client showed "No
-  progress for 60s".
-- The server now gives a request the time the streamed upload cap needs at
-  128 KiB/s, and never less than an hour. The default cap of 512 MB gets
-  about 68 minutes. The limit covers the request's arrival only, so live
-  streams and downloads are not cut. Slow headers still stop at 60
-  seconds.
-
-## Unreleased: switching calls on works with no restart
-
-- **Fixed:** switching Calls on in Settings > Services started LiveKit, but
-  the brain kept an empty calls host until `web` was recreated by hand, so
-  every call answered "Calls are off on this brain". A roll now writes
-  `MANTLE_CALLS_HOST` ahead, as `install.sh` does, and a switch that writes
-  the calls host or key recreates the app containers once, as a new token
-  already did.
-
-## Unreleased: a Present canvas has an open link
-
-- **Added:** a Present canvas (a deck, a dashboard, a schematic) can have an
-  open link, made in its **Access** panel as for a page. The link shows the
-  canvas live, full screen, always the latest save, with a small "Shared
-  canvas" label that carries Replay and Full screen. No login is needed.
-- **Security:** the canvas runs in the same locked frame as in Present (no
-  network, no cookies, no tools). The link page lets the frame load the brain
-  only, so a canvas cannot send its frame to another site. The link is checked
-  again on every frame load, so stopping the link or deleting the canvas ends
-  it at once. Both new routes take a rate limit, and the link page never
-  starts a render.
-- **Known:** a link reads and writes no saved canvas data (`mantle.data`). A
-  canvas has no contact share yet.
-
-## Unreleased: a box can run its services on Bun
+### a box can run its services on Bun
 
 - **Added:** the server image holds Bun 1.4.4 beside Node, for amd64 (the
   baseline build) and arm64, each pinned by its checksum.
@@ -306,7 +275,7 @@ give each change.
 - **Changed:** those services start through `scripts/run-service.sh`, which
   hands the process to the runtime, so a stop signal still reaches it.
 
-## Unreleased: on Bun, files go through Bun's own S3 client
+### on Bun, files go through Bun's own S3 client
 
 - **Changed:** a service that runs on Bun (`MANTLE_RUNTIME=bun`) checks,
   stores, reads and deletes files through Bun.S3Client, which is native. The
@@ -314,7 +283,7 @@ give each change.
   long. The bucket checks and the store tools (ensure, verify, copy-from) stay
   on the SDK, and so does every service on Node.
 
-## Unreleased: the static client host is lighter
+### the static client host is lighter
 
 - **Changed:** the `client-web` container serves the owner UI as plain
   files. It now runs on Bun and uses about 20 MB, where `next start` took
@@ -324,7 +293,7 @@ give each change.
   reach its own public address.
 - Pairs the static client v0.8.11.
 
-## Unreleased: a stronger rule for new passwords
+### a stronger rule for new passwords
 
 - **Changed:** a new password still has at least 8 characters, and now at
   most 72 bytes (was 1024; bcrypt keeps no more). Below 20 characters it uses 3 of
@@ -341,7 +310,7 @@ give each change.
 - **Added:** `GET /api/auth/bootstrap-state` carries `passwordRule`, so the
   sign-up, invite and change forms can show the rule as the person types.
 
-## Unreleased: app history for audits (compare in place, git bundle and back)
+### app history for audits (compare in place, git bundle and back)
 
 - **Added:** `code_diff` compares two states of a mini app's source as
   unified diffs: `draft`, `live` or a history entry by seq (`v3`); live to
@@ -379,7 +348,45 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   folders only: a symlink, a submodule, an odd file mode, a `..` or `.git`
   name, or a file that is not UTF-8 text fails the import, naming the path.
 
-## Unreleased: on Bun, a search pattern too hard for the engine fails out loud
+## v0.400.61
+
+### a slow large upload is no longer cut at 300 seconds
+
+- **Fixed:** a large upload over a slow line now finishes. Node gave a
+  request 300 seconds to arrive in full, then answered 408. A 451 MB
+  upload at about 1.1 MB/s died at 309 seconds, and the client showed "No
+  progress for 60s".
+- The server now gives a request the time the streamed upload cap needs at
+  128 KiB/s, and never less than an hour. The default cap of 512 MB gets
+  about 68 minutes. The limit covers the request's arrival only, so live
+  streams and downloads are not cut. Slow headers still stop at 60
+  seconds.
+
+### switching calls on works with no restart
+
+- **Fixed:** switching Calls on in Settings > Services started LiveKit, but
+  the brain kept an empty calls host until `web` was recreated by hand, so
+  every call answered "Calls are off on this brain". A roll now writes
+  `MANTLE_CALLS_HOST` ahead, as `install.sh` does, and a switch that writes
+  the calls host or key recreates the app containers once, as a new token
+  already did.
+
+### a Present canvas has an open link
+
+- **Added:** a Present canvas (a deck, a dashboard, a schematic) can have an
+  open link, made in its **Access** panel as for a page. The link shows the
+  canvas live, full screen, always the latest save, with a small "Shared
+  canvas" label that carries Replay and Full screen. No login is needed.
+- **Security:** the canvas runs in the same locked frame as in Present (no
+  network, no cookies, no tools). The link page lets the frame load the brain
+  only, so a canvas cannot send its frame to another site. The link is checked
+  again on every frame load, so stopping the link or deleting the canvas ends
+  it at once. Both new routes take a rate limit, and the link page never
+  starts a render.
+- **Known:** a link reads and writes no saved canvas data (`mantle.data`). A
+  canvas has no contact share yet.
+
+### on Bun, a search pattern too hard for the engine fails out loud
 
 - **Fixed:** `code_search` on Bun no longer says "no hits" when hits
   exist. Bun's regex engine (the part that matches search patterns) gives
@@ -387,7 +394,9 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   line that takes 250 ms now fails the search, and the message says how
   to get round it. Node does not change.
 
-## Unreleased: a SQL process has a memory limit
+## v0.400.56
+
+### a SQL process has a memory limit
 
 - **Fixed:** one row of many large columns could take a SQL process to several
   GB in a web container of 3 GB, and an open-link visitor could ask for that.
@@ -405,7 +414,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
 - **Known:** some very large legal work now fails: a write batch of about
   220 MB or more, and an IN list of 2 million literals.
 
-## Unreleased: sandbox image 24.04-v4, every language with its kit
+### sandbox image 24.04-v4, every language with its kit
 
 - **Changed:** the default sandbox image is `24.04-v4`. A sandbox is a
   closed-off computer where agents build and run code. It now holds Node
@@ -430,7 +439,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   container uses). sandboxd refuses to pull on a nearly full disk.
   `roll.sh` prints the disk and the sandbox images after a roll.
 
-## Unreleased: a team's app keeps the team's rules for an Admin user
+### a team's app keeps the team's rules for an Admin user
 
 - **Fixed:** an app held by a team ran at admin rules when an Admin user
   opened it, so every tool it declared ran with the admin's rights. The
@@ -438,7 +447,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   grant was not visible. It now reads on the admin pool, and only for the
   owner's app.
 
-## Unreleased: map is the default tool loading for assistants
+### map is the default tool loading for assistants
 
 - **Changed:** an assistant with no `tool_loading` set now runs `map`. Tool
   loading decides how an agent sees its tools on each turn. On `map` it
@@ -451,7 +460,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   own `params.tool_loading` still wins. Docs: docs/tools-and-skills.md,
   "The default mode".
 
-## Unreleased: eleven more libraries for mini apps
+### eleven more libraries for mini apps
 
 - **Added:** a mini app may import `mathjs` (units and engineering maths),
   `date-fns`, `zod` (form checks), `@tanstack/react-table` (v9) and
@@ -474,7 +483,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   of the module's names, the close ones first (mathjs exports over a
   thousand).
 
-## Unreleased: PDF scans in JPX, CCITT and JBIG2 draw
+### PDF scans in JPX, CCITT and JBIG2 draw
 
 - **Fixed:** a PDF scan whose images use JPX (JPEG 2000), CCITT or JBIG2
   rendered as white pages, with no error. pdfjs loads those decoders from a
@@ -489,7 +498,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   is in `docs/parser.md` ("Scans that drew blank before the decoders"). Reading
   them again spends model money, so it waits for the owner's word.
 
-## Unreleased: the documents engine on by default, and in team apps
+### the documents engine on by default, and in team apps
 
 - **Changed:** the documents engine (Gotenberg, Settings > Services
   **Documents**) is on by default. A new install starts it. An existing box
@@ -516,7 +525,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   nothing is saved, and the PDF or picture comes back as base64 within
   `file_read`'s caps (16 MB a call). An agent or an MCP client is refused.
 
-## Unreleased: a drawing's picture frames the sheet, and dwg_render
+### a drawing's picture frames the sheet, and dwg_render
 
 - **Fixed:** the picture of a DWG or DXF frames the sheet, not all of model
   space. A note parked far off the sheet no longer holds the sheet in a
@@ -531,21 +540,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   call), which the app turns into a data: or blob: URL. An agent or an MCP
   client gets a refusal that names what to use instead.
 
-## Unreleased: map tool loading, a third mode beside full and deferred
-
-- **Added:** `params.tool_loading: 'map'`. The agent gets the same core
-  tools as on deferred, plus `tool_call` and `tool_help`. Every other tool
-  it holds is named in a tool map at the top of its prompt: one line per
-  area, such as `area (gloss): object(verb verb) verb`. The map is the
-  same bytes every turn for the same grant, so the prompt cache keeps it.
-- A call through `tool_call` runs the same checks as a direct call.
-  `use_tool` and `tool_search` still work as other names for it. A wrong
-  name gets the three closest names back, and bad arguments get the tool's
-  schema back once per turn.
-- The MCP surface did not change here (see the MCP tool map above). Docs:
-  docs/tools-and-skills.md, "Map tool loading".
-
-## Unreleased: the server runs right on Bun (fixes B0 to B2)
+### the server runs right on Bun (fixes B0 to B2)
 
 - **Added:** a Bun compare lane. Bun can ignore an option without an
   error, so a green start proves little. `scripts/bun-compare.mjs` runs the
@@ -565,7 +560,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   on Bun waits for its images, a legal JPEG scan no longer dies at the
   parser's limit, and the `table_sql` child refuses env files.
 
-## Unreleased: table_sql runs in its own process, with size limits
+### table_sql runs in its own process, with size limits
 
 - **Fixed:** a `table_sql` query that runs too long now really stops. It
   runs in a child process, a separate program the server can kill. Before,
@@ -581,7 +576,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
 - **Fixed:** a role statement retries every catalog race, deadlocks too, so
   a cleanup no longer fails by chance on a shared database.
 
-## Unreleased: a mini app can show a picture
+### a mini app can show a picture
 
 - **Added:** `file_read` and `dwg_render` take `bytes: true` and answer the
   file as base64 (the picture's bytes written as text), at most 16 MB a
@@ -591,7 +586,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   what to use instead, since base64 in a model's answer costs the turn and
   buys nothing. It grants no new read.
 
-## Unreleased: code tools, edit a mini app's source in place
+### code tools, edit a mini app's source in place
 
 - **Added:** six plain tools that view and edit a mini app's DRAFT source
   without moving whole files, over MCP and in the brain: `code_view` (the
@@ -623,7 +618,42 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   lookups by id. Rollback:
   `packages/db/rollback/0351_code_edit_history.revert.sql` (optional).
 
-## Unreleased: company sign-in (SSO), milestones 1 and 2
+### company sign-in in the apps (SSO, milestone 2)
+
+- **Added:** the web app, the desktop app and the phone can
+  use company sign-in too. The client sends a PKCE challenge, the brain
+  sends back a one-time code, and the client trades the code for a session
+  (`POST /api/auth/oidc/exchange`). A code is 256 bits, lasts 2 minutes and
+  works once; only its hash is kept. The code goes only to `mantle://oidc`,
+  pages on the brain, `MANTLE_CLIENT_ORIGIN` and the named CORS origins.
+- **Added:** for a linked login, a fresh company sign-in takes the place
+  of the password when it makes a key or approves an MCP client
+  (`POST /api/auth/oidc/fresh`).
+- **Unchanged:** with the mode off, none of this runs. Migration 0350.
+
+### the tailscale sidecar sends no logs home
+
+- **Changed:** the tailscale sidecar no longer uploads its logs. It is
+  always up, so a box that never joined a tailnet (a private network)
+  sent about 11 KB of startup lines to `log.tailscale.com` on every start.
+  `TS_NO_LOGS_NO_SUPPORT` now defaults to true. A box on a tailnet that
+  demands flow logs can set it to false in `.env`.
+
+## v0.400.45: map tool loading, a third mode beside full and deferred
+
+- **Added:** `params.tool_loading: 'map'`. The agent gets the same core
+  tools as on deferred, plus `tool_call` and `tool_help`. Every other tool
+  it holds is named in a tool map at the top of its prompt: one line per
+  area, such as `area (gloss): object(verb verb) verb`. The map is the
+  same bytes every turn for the same grant, so the prompt cache keeps it.
+- A call through `tool_call` runs the same checks as a direct call.
+  `use_tool` and `tool_search` still work as other names for it. A wrong
+  name gets the three closest names back, and bad arguments get the tool's
+  schema back once per turn.
+- The MCP surface did not change here (see the MCP tool map above). Docs:
+  docs/tools-and-skills.md, "Map tool loading".
+
+## v0.400.44: company sign-in (SSO), milestone 1
 
 - **Added:** a person can sign in with their company account. SSO (single
   sign-on) means one company login works for many apps. The brain speaks
@@ -640,19 +670,12 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   password and is held at the link step. The original account and outside
   logins keep their passwords. SSO never creates a login or an admin. An
   SSO session lasts `MANTLE_OIDC_SESSION_HOURS` (12 by default).
-- **Added (milestone 2):** the web app, the desktop app and the phone can
-  use company sign-in too. The client sends a PKCE challenge, the brain
-  sends back a one-time code, and the client trades the code for a session
-  (`POST /api/auth/oidc/exchange`). A code is 256 bits, lasts 2 minutes and
-  works once; only its hash is kept. The code goes only to `mantle://oidc`,
-  pages on the brain, `MANTLE_CLIENT_ORIGIN` and the named CORS origins.
-- **Added:** for a linked login, a fresh company sign-in takes the place
-  of the password when it makes a key or approves an MCP client
-  (`POST /api/auth/oidc/fresh`).
 - **Unchanged:** with the mode off, none of this runs, and every answer is
-  the same as before. Migrations 0349 and 0350.
+  the same as before. Migration 0349.
 
-## Unreleased: the box policy block (corporate Phase 1)
+## v0.400.43
+
+### the box policy block (corporate Phase 1)
 
 - **Added:** four settings in the box `.env` let an operator set rules for
   the whole box. Empty means no rule, so a box with none set works exactly
@@ -672,7 +695,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
 - **Added:** `GET /api/policy` feeds the read-only Policy panel (404 when
   no policy is set). Migration 0347. Docs: docs/policy.md.
 
-## Unreleased: over MCP, replacing or deleting a key waits for a person
+### over MCP, replacing or deleting a key waits for a person
 
 - **Changed:** when an MCP client replaces or deletes a vault key, nothing
   changes at once. The change is sealed on the key's row, and a pending
@@ -688,15 +711,9 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
 - **Added:** the Assistant's tables-rows group gains `table_rows_add` and
   `table_rows_upsert`, so it writes many rows in one call.
 
-## Unreleased: the tailscale sidecar sends no logs home
+## v0.400.41
 
-- **Changed:** the tailscale sidecar no longer uploads its logs. It is
-  always up, so a box that never joined a tailnet (a private network)
-  sent about 11 KB of startup lines to `log.tailscale.com` on every start.
-  `TS_NO_LOGS_NO_SUPPORT` now defaults to true. A box on a tailnet that
-  demands flow logs can set it to false in `.env`.
-
-## Unreleased: many row edits in one call, by row id
+### many row edits in one call, by row id
 
 - **Added:** `table_rows_upsert` takes the key `["@row_id"]`. Each row
   carries its row id and is updated, never added. An unknown, missing or
@@ -709,7 +726,7 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   `app_file_delete` to `app_source_set`.
 - **Docs:** a "Using ChatGPT well" box on the MCP connector help page.
 
-## Unreleased: connect ChatGPT over MCP
+### connect ChatGPT over MCP
 
 - **Docs:** a guide page, docs/guide/07-api/09-connect-chatgpt.md, shows
   how to connect ChatGPT to the brain over MCP: who may add and publish
@@ -721,7 +738,9 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   server is shown as a warning on the consent page and logged, and the
   sign-in goes on. A Claude connector with no value works as before.
 
-## Unreleased: credential vault v2, Part 1 (secret kinds, one write door)
+## v0.400.39
+
+### credential vault v2, Part 1 (secret kinds, one write door)
 
 - **Added:** a vault key can now be a token, a password, an SSH key or a
   login. It can carry a name, a target, sealed extra fields, tags, an
@@ -737,7 +756,29 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   `api_key_refs`. Their value inputs are redacted. Widening a key over MCP
   (its target, tags, approval or tailnet flag) needs the value again.
 
-## Unreleased: the decider sizes its requests to the model
+### the decider sizes its requests to the model
+
+The decider is the model that makes the brain's small choices, such as
+which passages fit a question or which context to drop.
+
+- **Changed:** each decision request is sized for the chosen model, not a
+  fixed 32k window. A tested model takes the lowest of its profile limits
+  and the live catalog's context size. An untested model gets careful
+  limits (16 questions, 16,384 tokens). One planner spreads a long list
+  evenly over as many requests as the limits need. A request above the
+  model's limits is refused and the step is skipped. A reply that stops
+  exactly at the token limit counts as a failure, since it was most likely
+  cut. Jev's requests are unchanged.
+
+### open dependency alerts closed
+
+- **Security:** the open Dependabot alerts are closed: dompurify 3.4.17,
+  ip-address 10.7.5 and @hono/node-server 2.1.5, and in docs-site astro
+  7.4.4 and starlight 0.42.8. Minor and patch updates to the latest
+  everywhere else. zod 3 and katex 0.16 stay, because firecrawl and
+  mermaid still need them.
+
+## v0.400.35: the decider's privacy value and model profiles
 
 The decider is the model that makes the brain's small choices, such as
 which passages fit a question or which context to drop.
@@ -752,24 +793,10 @@ which passages fit a question or which context to drop.
   save and in `model_pool_set`. `perplexity/pplx-decider-v1.2` joins the
   decider template as the second choice; Jev stays the default. New
   fallback price rows.
-- **Changed:** each decision request is sized for the chosen model, not a
-  fixed 32k window. A tested model takes the lowest of its profile limits
-  and the live catalog's context size. An untested model gets careful
-  limits (16 questions, 16,384 tokens). One planner spreads a long list
-  evenly over as many requests as the limits need. A request above the
-  model's limits is refused and the step is skipped. A reply that stops
-  exactly at the token limit counts as a failure, since it was most likely
-  cut. Jev's requests are unchanged.
 
-## Unreleased: open dependency alerts closed
+## v0.400.34
 
-- **Security:** the open Dependabot alerts are closed: dompurify 3.4.17,
-  ip-address 10.7.5 and @hono/node-server 2.1.5, and in docs-site astro
-  7.4.4 and starlight 0.42.8. Minor and patch updates to the latest
-  everywhere else. zod 3 and katex 0.16 stay, because firecrawl and
-  mermaid still need them.
-
-## Unreleased: Microsoft Foundry as a chat provider
+### Microsoft Foundry as a chat provider
 
 - **Added:** provider `foundry` for Azure AI Foundry and Azure OpenAI
   deployments, on the v1 chat completions API. The model id is the
@@ -784,7 +811,7 @@ which passages fit a question or which context to drop.
   provider alert, and a content filter reads as a refused input. Docs:
   docs/foundry.md.
 
-## Unreleased: the UI sounds save names its login
+### the UI sounds save names its login
 
 - **Fixed:** `PUT /api/profile/sounds` now takes `loginId`, the login the
   choice was made as, and refuses a save for any other login (403, code
@@ -793,7 +820,9 @@ which passages fit a question or which context to drop.
   browser switched logins. The client sends it from its next release; an
   older client gets the 403 and keeps its choice in the browser only.
 
-## Unreleased: a person's description, for the team and its agents
+## v0.400.31
+
+### a person's description, for the team and its agents
 
 - **Added:** every login has a description on its person card: who it is
   to the team, a job title, a role or a relationship ("Developer",
@@ -807,7 +836,14 @@ which passages fit a question or which context to drop.
   developer" can find who that is. Stored as the profile key
   `description`; no migration (`docs/messenger.md`, "People").
 
-## Unreleased: the MCP call log (Journal v3 J8, part 1)
+### a tool that names a vault key updates again
+
+- **Fixed:** `api_tool_update` reads the key vault through the connectors
+  area, as its writes do, so a tool that names a vault key updates again.
+
+## v0.400.28
+
+### the MCP call log (Journal v3 J8, part 1)
 
 - **Added:** the brain keeps one row per MCP tool call: who called, how,
   the workspace, the tool, the arguments with secrets removed (about
@@ -823,29 +859,7 @@ which passages fit a question or which context to drop.
 - A nightly sweep removes rows older than 90 days. No model runs anywhere
   in this. Migration 0345.
 
-## Unreleased: summaries at publish (Journal v3 J9)
-
-- **Added:** `app_publish`, the publish route, `present_create` and
-  `present_update` take an optional `summary`. The brain indexes that
-  summary, so a search finds the app or canvas by what it is for.
-- Without one, an app publish or a canvas's save after a quiet spell makes
-  one summarizer call (for an app: its manifest, schema and the start of
-  its source; for a canvas: its text and its picture). It is skipped when
-  nothing changed, when the author wrote a summary, outside an assistant's
-  workspace, and on a direct MCP call outside Admin. The summary is made in
-  the extract job, never during the publish itself.
-
-## Unreleased: two fixes for rolls and connectors
-
-- **Fixed:** a box without calls can roll again. The `livekit` service
-  demanded its host and key with a compose guard, and compose checks those
-  guards on every command, so any compose command stopped on a box without
-  calls. The values now default to empty. The container still refuses an
-  empty host or key when it starts.
-- **Fixed:** `api_tool_update` reads the key vault through the connectors
-  area, as its writes do, so a tool that names a vault key updates again.
-
-## Unreleased: the member checks ask Admin membership (plan v3.2 S8e)
+### the member checks ask Admin membership (plan v3.2 S8e)
 
 - **Changed:** the last five checks that read the login's role column now
   ask Admin membership, as the session does: a member is a login that is
@@ -860,7 +874,7 @@ which passages fit a question or which context to drop.
   already does: a role=member login inside Admin is no member here, and a
   role=admin login outside Admin is one. No migration.
 
-## Unreleased: the narrow route is always on (plan v3.2 S7c)
+### the narrow route is always on (plan v3.2 S7c)
 
 - **The switch `MANTLE_NARROW_SYSTEM` is gone.** The system work of an
   Admin area exit runs as the narrow system role on every box, always. A
@@ -881,7 +895,29 @@ which passages fit a question or which context to drop.
 - **Unchanged:** the narrow role still reads the content tables. Closing
   those reads is its own step (S7d).
 
-## Unreleased: MCP tool hints
+## v0.400.24: a box without calls can roll again
+
+- **Fixed:** a box without calls can roll again. The `livekit` service
+  demanded its host and key with a compose guard, and compose checks those
+  guards on every command, so any compose command stopped on a box without
+  calls. The values now default to empty. The container still refuses an
+  empty host or key when it starts.
+
+## v0.400.23
+
+### summaries at publish (Journal v3 J9)
+
+- **Added:** `app_publish`, the publish route, `present_create` and
+  `present_update` take an optional `summary`. The brain indexes that
+  summary, so a search finds the app or canvas by what it is for.
+- Without one, an app publish or a canvas's save after a quiet spell makes
+  one summarizer call (for an app: its manifest, schema and the start of
+  its source; for a canvas: its text and its picture). It is skipped when
+  nothing changed, when the author wrote a summary, outside an assistant's
+  workspace, and on a direct MCP call outside Admin. The summary is made in
+  the extract job, never during the publish itself.
+
+### MCP tool hints
 
 - **Feature:** every tool on the MCP surface carries the MCP tool
   annotations (`title`, `readOnlyHint`, `destructiveHint`,
@@ -905,7 +941,7 @@ which passages fit a question or which context to drop.
   (`packages/mcp-core/src/__snapshots__`): the hints, no tool added or
   removed.
 
-## Unreleased: the documents engine (Gotenberg) beside the browser sidecar
+### the documents engine (Gotenberg) beside the browser sidecar
 
 - **Feature:** a second render sidecar, the documents engine
   (`gotenberg/gotenberg:8.39.0`, the `gotenberg` compose service behind the
@@ -949,7 +985,7 @@ which passages fit a question or which context to drop.
   the print surface renders its images eager, so a long page's pictures
   are in before the print.
 
-## Unreleased: faces in Messenger, and one people gate
+### faces in Messenger, and one people gate
 
 - **Added:** Messenger chats and the directory show other people's and
   agents' faces: their avatar, and for a person their photo.
@@ -963,7 +999,7 @@ which passages fit a question or which context to drop.
   presence (online or offline for now) and a status.
 - **Added:** a group chat can have an icon (one emoji) and a colour.
 
-## Unreleased: a group's info (server)
+### a group's info (server)
 
 - **New:** a group in Messages carries `info`: plain text (at most 2000
   characters) that says what the group is for and its rules, written by
@@ -981,7 +1017,7 @@ which passages fit a question or which context to drop.
   Plan page d8954876 section 24, B1; the client half (the chip and the
   info form) follows in mantle-client.
 
-## Unreleased: calls between people (server)
+### calls between people (server)
 
 - **New:** voice calls between the people of a brain, from a chat or a group
   in Messages (calls plan P1, brain side; the client ships in mantle-client).
@@ -1016,7 +1052,7 @@ url, token, expiresAt, ice}`), `/call/token`, `/call/leave`, `/call/end`,
   signalling URL like a sign-in `code=` (found by the P0 spike: the release
   logger printed the full JWT). Pinned by `caddy-layout.test.ts`.
 
-## Unreleased: HSTS at the front door
+### HSTS at the front door
 
 - **Fix:** the release Caddyfile sends `Strict-Transport-Security:
 max-age=31536000` on TLS responses from both site blocks (the main site
@@ -1027,7 +1063,7 @@ max-age=31536000` on TLS responses from both site blocks (the main site
   no header; this host only, no `includeSubDomains`, no `preload`. Pinned by
   `server/web/lib/caddy-layout.test.ts`; `infra/caddy/README.md` says why.
 
-## Unreleased: the fail-open branches refuse (plan v3.2 S4b)
+## v0.400.16: the fail-open branches refuse (plan v3.2 S4b)
 
 - **Security:** the six branches that still answered yes, or sent a write
   to the system pool, for code with no system actor bound now refuse
@@ -1053,7 +1089,9 @@ max-age=31536000` on TLS responses from both site blocks (the main site
   pin of the files that call the approval queue's and the conversation
   store's system pool helpers (`system-pool-helpers.test.ts`).
 
-## Unreleased: a custom order in the tree, the same for everyone
+## v0.400.14
+
+### a custom order in the tree, the same for everyone
 
 - **Added:** people can drag a folder's items and subfolders into the order
   they work in, such as stages or steps. Everyone sees the same order. An
@@ -1067,7 +1105,7 @@ max-age=31536000` on TLS responses from both site blocks (the main site
   takes `after` for a folder. Write on a folder lets a person order what it
   holds.
 
-## Unreleased: a canvas can save its own data (DWG phase 7a)
+### a canvas can save its own data (DWG phase 7a)
 
 - **Added:** a Present canvas can save and read data with `mantle.data` in
   its frame. Data sits in two buckets: `shared`, one value for everyone
@@ -1081,7 +1119,7 @@ max-age=31536000` on TLS responses from both site blocks (the main site
 - **Docs:** the `canvas_library` topic `data` and the canvas_authoring
   skill's "Saving data" section. Migration 0336.
 
-## Unreleased: the parser service (Tika and the media sidecar go)
+### the parser service (Tika and the media sidecar go)
 
 - **Feature:** one core container, the parser (`mantle-parser`,
   `server/parser`, [docs/parser.md](docs/parser.md)), reads every
@@ -1169,7 +1207,7 @@ config -q` on the box: an override still naming `tika:` or `media:`);
   installs at container start; `pnpm arch:check` fails when the
   Dockerfile's manifest list and the workspace differ.
 
-## Unreleased: the Desk follows the login
+### the Desk follows the login
 
 - **Feature:** the login's Desk (where each widget and desk icon sits, the
   kind widgets' counts, desk icons on or off, the clock face) is kept on its
@@ -1232,7 +1270,7 @@ config -q` on the box: an override still naming `tika:` or `media:`);
   version or with a bad one, a save naming another login, the own row
   only, API keys 401, and the 400 and 413 paths.
 
-## Unreleased: Messenger V1 Phase 1
+### Messenger V1 Phase 1
 
 - **Feature (plan decision 2026-10-27):** the messenger's core store, API
   and MCP tools (docs/messenger.md). Direct chats and groups between the
@@ -1258,7 +1296,15 @@ config -q` on the box: an override still naming `tika:` or `media:`);
   `after_seq` and `messenger_wait` page without loss (`hasMore`); the
   messenger stream takes slots apart from the member stream's.
 
-## Unreleased: workspace delegation
+### the Desk label
+
+- **Change:** the menu's landing entry is **Desk**, not **Home**
+  (`packages/share-ui` nav-items), and the docs, the help page and the
+  contract comments call the built-in landing page the Desk.
+
+## v0.400.13
+
+### workspace delegation
 
 - **Feature (owner decision 2026-10-26):** the assistant of a workspace
   other than Admin, the shipped Team responder included, delegates to
@@ -1325,13 +1371,7 @@ config -q` on the box: an override still naming `tika:` or `media:`);
   hashes of the 23 app tools, and the A8 surface cells' team-turn
   `app_delete` narrowing (now the oracle's answer).
 
-## Unreleased: the Desk label
-
-- **Change:** the menu's landing entry is **Desk**, not **Home**
-  (`packages/share-ui` nav-items), and the docs, the help page and the
-  contract comments call the built-in landing page the Desk.
-
-## Unreleased: untouched specialist prompts follow the product
+### untouched specialist prompts follow the product
 
 - **Change:** a specialist whose prompt is still, byte for byte, an
   earlier shipped default moves to the current default on upgrade
@@ -1353,7 +1393,9 @@ config -q` on the box: an override still naming `tika:` or `media:`);
   `server/web/scripts/retired-prompt-hashes.ts` prints every specialist's
   earlier defaults from git history, to check or extend the lists.
 
-## Unreleased: Present is a workspace content kind
+## v0.400.11
+
+### Present is a workspace content kind
 
 - **Feature:** every enabled workspace assistant (the team responder
   aside) reads and writes Present canvases where its user may, as it does
@@ -1397,7 +1439,7 @@ config -q` on the box: an override still naming `tika:` or `media:`);
   cases.
 - **Fix:** the chat trail names a canvas save like a page save.
 
-## Unreleased: a member's Apps and Present screens are trees
+### a member's Apps and Present screens are trees
 
 - **Fix:** apps and Present canvases join the reader tree kinds
   (`READER_TREE_KINDS`, named explicitly, not by the registry's `library`
@@ -1413,7 +1455,7 @@ config -q` on the box: an override still naming `tika:` or `media:`);
   Admin user's read. The w6a sweep reads `GET /api/tree/apps` as a member
   and pins its writes (the kind root and its own app marks).
 
-## Unreleased: the A8 matrix covers the routes
+### the A8 matrix covers the routes
 
 - **Security (tests):** every write route that names its item now runs A8
   route cells (`server/web/server/a8-route-cells.matrix.test.ts`, in
@@ -1442,7 +1484,7 @@ config -q` on the box: an override still naming `tika:` or `media:`);
   validator refuses the placeholder, and a none declaration on a workspace
   kind's item route must name its param.
 
-## Unreleased: the scoped writes that stay on the system pool, named
+### the scoped writes that stay on the system pool, named
 
 - **Security:** the access matrix names the tables whose scoped typed
   write (a login's insert, update or delete in a write scope; never an
@@ -1487,7 +1529,7 @@ config -q` on the box: an override still naming `tika:` or `media:`);
   the owner's), and a row naming another login is refused
   (`w7c-chat.db.test.ts`). No production caller hits either.
 
-## Unreleased: one login shape, the login bridge dropped (plan v3.2 S8d)
+### one login shape, the login bridge dropped (plan v3.2 S8d)
 
 - **Security:** a request's login resolves to one shape: the brain, the
   login and whether it is an Admin user now (membership of the live Admin
@@ -1502,7 +1544,9 @@ config -q` on the box: an override still naming `tika:` or `media:`);
   admin). Its revert puts 0330's body back (`docs/update-prod.md`, "Going
   up to 0334"). `mantle_role_drift()` stays as the box count.
 
-## Unreleased: the trace's guesses checked by an image model
+## v0.400.5
+
+### the trace's guesses checked by an image model
 
 - **Feature:** `circuit_verify(circuit, register?, kinds?, max_questions?,
 dry_run?, recheck?)` checks the guesses `circuit_trace` marks: each
@@ -1587,7 +1631,7 @@ dry_run?, recheck?)` checks the guesses `circuit_trace` marks: each
   it did. At the page cap a marker moved onto an unrelated line reads `CUT
 AT PAGE CAP` instead of counting that line's children.
 
-## Unreleased: a traced circuit as a linked drawing set
+### a traced circuit as a linked drawing set
 
 - **Feature:** the `pid` template takes a drawing set, a `title` and
   `pages` of `{ id, title, data }`, each page ordinary `pid` data, with the set's
@@ -1638,7 +1682,9 @@ AT PAGE CAP` instead of counting that line's children.
   deadlegs is near linear (8000 runs: 13 s to 0.15 s; a branchy sheet of
   23,000 chains: 60 s to 2.5 s); output unchanged.
 
-## Unreleased: a DWG down to the bones
+## v0.400.2
+
+### a DWG down to the bones
 
 - **Feature:** a DWG or DXF keeps its pipe geometry. The media sidecar's one
   `/dwg/render` pass (same upload, same ezdxf parse) now also returns every
@@ -1676,7 +1722,7 @@ AT PAGE CAP` instead of counting that line's children.
 - Existing DWG tables gain the new tabs through `pnpm maintain dwg-reindex`
   (below), in place.
 
-## Unreleased: trace a circuit across the drawings; rebuild old DWG tables
+### trace a circuit across the drawings; rebuild old DWG tables
 
 - **Feature:** `circuit_trace(circuit, register?)`, a read-only tool in a new
   `circuits` tool group (granted to the Draftsman and the Presenter, and on
@@ -1717,7 +1763,7 @@ AT PAGE CAP` instead of counting that line's children.
   edited version first); a table with an unsaved draft is always refused.
   It never deletes a file or a table.
 
-## Unreleased: P&ID tees and branches
+### P&ID tees and branches
 
 - **Feature:** the `pid` diagram template draws a line that leaves another
   line mid-run. `tees[]` declares a junction on a parent line (`id`, `on`,
@@ -1744,7 +1790,9 @@ AT PAGE CAP` instead of counting that line's children.
   the package README and the Draftsman and Presenter skills describe the
   new fields.
 
-## Unreleased: mini apps import the canvas libraries
+## v0.400.0
+
+### mini apps import the canvas libraries
 
 - **Feature:** a mini app may import `echarts`, `d3`, `three` (with
   `three/addons/controls/OrbitControls.js`), `konva`, `katex`,
@@ -1776,7 +1824,7 @@ AT PAGE CAP` instead of counting that line's children.
 - **Build:** server/web `generate` builds the canvas runtime before the app
   runtime, which reads its manifest.
 
-## Unreleased: the computed-import check reads the app's own source
+### the computed-import check reads the app's own source
 
 - **Security hardening:** the check that refuses a computed `import()` or
   `require()` before a mini app is built read esbuild's transform output
@@ -1793,7 +1841,7 @@ AT PAGE CAP` instead of counting that line's children.
   trusted as the app's own only when it is located in the app's `app:`
   namespace, and one that names a path outside the app gets a generic text.
 
-## Unreleased: Drift in full colour on public pages, subtle in the app
+### Drift in full colour on public pages, subtle in the app
 
 - **Change:** the saved Drift background now has two looks, picked by one
   `surface` argument to `driftOptionsFromSpec` (`@mantle/share-ui/drift`).
@@ -1804,7 +1852,7 @@ AT PAGE CAP` instead of counting that line's children.
   its content on an opaque sheet with the gradient as a frame round it,
   and the footer line on its own pill, so no text sits on full colour.
 
-## Unreleased: a mini app's computed import cannot read the server's disk
+### a mini app's computed import cannot read the server's disk
 
 - **Security fix:** an `import()` or `require()` with a computed path (a
   template string or a joined string) made esbuild read the matching files
@@ -1816,7 +1864,7 @@ AT PAGE CAP` instead of counting that line's children.
   path of it. A quoted `import('./Chart')` and text that only mentions
   `require(` build as before.
 
-## Unreleased: diagram guides become tools; a P&ID type
+### diagram guides become tools; a P&ID type
 
 - **Feature:** two read-only tools in a new `diagram` tool group,
   granted to the Draftsman and on the MCP surface. `diagram_types` lists
@@ -1852,7 +1900,7 @@ AT PAGE CAP` instead of counting that line's children.
   collection row. An existing row stays as it is (harmless; switch it off
   at /docs if it was on).
 
-## Unreleased: a DWG keeps each block's attribute tags together
+## v0.300.139: a DWG keeps each block's attribute tags together
 
 - **Fix:** the DWG/DXF indexer stored each block attribute as its own text
   row and dropped the tag name, so a line-number block's `LINENO` and
@@ -1866,7 +1914,7 @@ AT PAGE CAP` instead of counting that line's children.
   so to get the Blocks tab, delete the drawing's auto-imported table, then
   index the file again. The digest gains the block lines on any re-index.
 
-## Unreleased: the Files tree rail opens in milliseconds on a large brain
+## v0.300.120: the Files tree rail opens in milliseconds on a large brain
 
 - **Fix:** the Files tree rail (and the `folder_list` tool's whole tree)
   counted each folder's subfolders and files with two queries per folder,
@@ -1875,7 +1923,7 @@ AT PAGE CAP` instead of counting that line's children.
   alike, whatever the number of folders. The answers do not change: the same
   folders, counts and order, and nothing a reader cannot read is counted.
 
-## Unreleased: folders above what a login reads show as structure
+## v0.300.118: folders above what a login reads show as structure
 
 - A login that reads an item now sees its folder and every folder above it
   in the trees (notes, pages, files and the other kinds), in the crumbs and
@@ -1890,7 +1938,7 @@ AT PAGE CAP` instead of counting that line's children.
   cannot read, answered 400 "parent folder not found". It saves now; a new
   file in such a folder is still refused.
 
-## Unreleased: the tools' item pre-checks go (A5 step 6b, part 1)
+## v0.300.83: the tools' item pre-checks go (A5 step 6b, part 1)
 
 - **Deploy note:** roll this release only on a box whose actor check and
   edit check are both `on` (`scripts/arch-scoreboard-box.sh <alias>`). Its
@@ -1910,7 +1958,7 @@ AT PAGE CAP` instead of counting that line's children.
   writing nothing. 29 tool entries and the 27 HTTP ones stay, each named
   with its reason.
 
-## Unreleased: A7, the switch-over code goes
+## v0.300.81: A7, the switch-over code goes
 
 - **Deploy note:** a brain that is not on workspaces does not start: the
   web process logs the reason ("clients present", or a failed switch) and
@@ -1950,24 +1998,7 @@ AT PAGE CAP` instead of counting that line's children.
   `GET /api/apps/:id` with an id that is not a uuid is a 404, where it was
   a 500. Count a box's stub hits first: `scripts/arch-scoreboard-box.sh`.
 
-## Unreleased: approvals, second lows round
-
-- **Deploy note:** a call queued before the first approvals lows round
-  (v0.300.65) carries no MCP connection on its stamp, so its approval runs
-  without it, as before that round (no Write switch, no keys rule, no
-  connection ids in the app data log). Nothing to migrate: approve or reject
-  what waits, or let it expire.
-- An approved call asked on a peer's connection that named no login names
-  none either, so it opens no link as the asker its row got from its session.
-- A stamped call asked on an MCP connection by a way in the server does not
-  know is refused at approval instead of run without its connection.
-- An approved call that runs on the approval's surface (an elevated call)
-  keeps its asking connection's rule of spending nothing on the owner's
-  provider keys.
-- The app data log of an approved call names its key, peer or OAuth client;
-  an approved `app_data_write` says the approval ran with Write off.
-
-## Unreleased: provider errors say what to fix, and only for a provider (A10 lows)
+## v0.300.77: provider errors say what to fix, and only for a provider (A10 lows)
 
 - A member, the model and an MCP client hear a provider's sentence only on
   evidence of a provider failure; our own errors in work that called a
@@ -2008,7 +2039,24 @@ AT PAGE CAP` instead of counting that line's children.
   sends nothing. No model call here; bounded
   by the agent's circuit.
 
-## Unreleased: boot smoke; every package is an ES module
+## v0.300.74: approvals, second lows round
+
+- **Deploy note:** a call queued before the first approvals lows round
+  (v0.300.65) carries no MCP connection on its stamp, so its approval runs
+  without it, as before that round (no Write switch, no keys rule, no
+  connection ids in the app data log). Nothing to migrate: approve or reject
+  what waits, or let it expire.
+- An approved call asked on a peer's connection that named no login names
+  none either, so it opens no link as the asker its row got from its session.
+- A stamped call asked on an MCP connection by a way in the server does not
+  know is refused at approval instead of run without its connection.
+- An approved call that runs on the approval's surface (an elevated call)
+  keeps its asking connection's rule of spending nothing on the owner's
+  provider keys.
+- The app data log of an approved call names its key, peer or OAuth client;
+  an approved `app_data_write` says the approval ran with Write off.
+
+## v0.300.70: boot smoke; every package is an ES module
 
 - **A10 lows (HTTP answers).** An [id] that is not a uuid on the event,
   journal, contact, heartbeat, table and formula routes (and their
@@ -2049,7 +2097,7 @@ AT PAGE CAP` instead of counting that line's children.
   bearer tokens, the value after a key, token, secret or password name).
   Still no automatic rollback.
 
-## Unreleased: kind and role list lints read the code (A10 lows)
+## v0.300.66: kind and role list lints read the code (A10 lows)
 
 - **Re-mark `search` on a linked Mantle brain, maybe.** A10 #12 put the
   Mantle MCP `search` tool's `type` enum in registry order (the same 17
@@ -2068,7 +2116,7 @@ AT PAGE CAP` instead of counting that line's children.
 - `kindsWhere` lists are frozen. No behaviour change otherwise: the refold
   report's per-kind counters list their kinds in registry order.
 
-## Unreleased: Anthropic workspace id on a key; direct models show their context window
+## v0.300.64: Anthropic workspace id on a key; direct models show their context window
 
 - An Anthropic API key can carry an optional **Anthropic workspace id**
   (migration 0292, `api_keys.anthropic_workspace_id`). When set, every
@@ -2096,7 +2144,7 @@ AT PAGE CAP` instead of counting that line's children.
   use the same helper (`contextWindowFor`) over the same cached model list,
   so the agent form and the dashboard show one number.
 
-## Unreleased: direct providers list their models in the picker
+## v0.300.55: direct providers list their models in the picker
 
 - A model provider's key is looked up through one helper
   (`resolveProviderKey` in `@mantle/api-keys`): the pinned key, else the key
@@ -2109,7 +2157,7 @@ AT PAGE CAP` instead of counting that line's children.
 - Onboarding, the manifest seeder, the model combos and the embedding backup
   suggestion pin the same key an unpinned lookup would use.
 
-## Unreleased: provider HTTP deadlines, retries and errors (A10 #10)
+## v0.300.48: provider HTTP deadlines, retries and errors (A10 #10)
 
 - One timeout table (`PROVIDER_TIMEOUTS`, `NET_TIMEOUTS` in `@mantle/std`),
   one retry helper, one Retry-After reader, one provider error and one local
@@ -2127,7 +2175,7 @@ AT PAGE CAP` instead of counting that line's children.
   `contractVersion` of `/api/version` does not move: it versions the HTTP
   wire, not a package's exports; the package version carries this break.
 
-## Unreleased: Team is a normal workspace; only Admin users tick Moderator
+## v0.300.23: Team is a normal workspace; only Admin users tick Moderator
 
 - Owner decision 2026-10-13 (reverses plan Q1): the only built-in workspace
   with rules of its own is Admin. Migration 0286 clears the Team
@@ -2165,7 +2213,7 @@ AT PAGE CAP` instead of counting that line's children.
 - Roll notes and what to tell users: [update-prod.md](docs/update-prod.md),
   "Team is a normal workspace".
 
-## Unreleased: a reserved connection that dies no longer crashes the process
+## v0.300.14: a reserved connection that dies no longer crashes the process
 
 - A reserved Postgres connection that the server ended (killed, a restart,
   a dropped network) was handed back to the pool, and the next statement on
@@ -2194,7 +2242,7 @@ AT PAGE CAP` instead of counting that line's children.
   closed (every later reconnect of that slot timed out until the process
   restarted).
 
-## Unreleased: Postgres max_connections 450
+## v0.300.13: Postgres max_connections 450
 
 - The canonical compose raises Postgres `max_connections` from 200 to 450.
   The worst case of the code (every pool of every process at its max) is
@@ -2207,7 +2255,7 @@ AT PAGE CAP` instead of counting that line's children.
   from the code and the compose files and fails above 90% of
   `max_connections`, or when a pool call appears that it does not count.
 
-## Unreleased: workspaces W8 (levels, client logins and frozen tables out)
+## v0.300.0: workspaces W8 (levels, client logins and frozen tables out)
 
 - A helper agent (a specialist such as the replay agent) asked for by a
   login that is not an Admin user now refuses, on a brain on workspaces:
@@ -2219,7 +2267,7 @@ AT PAGE CAP` instead of counting that line's children.
   not deleted). The boot reconcile gives the persona's tool groups only to
   the Admin workspace's assistants on a brain on workspaces.
 
-## Unreleased: team apps hardening (access matrix Part 2)
+## v0.239.53: team apps hardening (access matrix Part 2)
 
 - An admin sees and stops members' apps: Team admin > Member apps lists the
   team-shared and submitted ones (never a private draft), with their
@@ -2256,7 +2304,9 @@ AT PAGE CAP` instead of counting that line's children.
   (`mcpReach`); the connector docs no longer say a public connector reaches
   clients; tests for the effective app level and the embed rule.
 
-## Unreleased: team apps Phase 3, members build apps
+## v0.239.49
+
+### team apps Phase 3, members build apps
 
 A team member builds mini apps like Pages (plan page b6dd688e, section A).
 
@@ -2301,7 +2351,7 @@ A team member builds mini apps like Pages (plan page b6dd688e, section A).
 - Every app list carries `dataAccess` ('read' or 'read_write') for the R
   and R/W pill, and the sidebar carries `mcpAccess`.
 
-## Unreleased: team apps Phase 2, connectors by level
+### team apps Phase 2, connectors by level
 
 An MCP connector's level now decides who may use its tools, as the level on
 an item does (plan page b6dd688e, section C).
@@ -2334,7 +2384,7 @@ an item does (plan page b6dd688e, section C).
 - Admin texts (api_tool_update, app_tools_set, app warnings) say that
   unmarking makes a connector tool a write, never closes it.
 
-## Unreleased: team apps Phase 1, MCP on app data
+## v0.239.47: team apps Phase 1, MCP on app data
 
 Members and clients reach the data of mini apps from their own MCP client
 (plan page b6dd688e). Migration 0234.
@@ -2360,7 +2410,7 @@ Members and clients reach the data of mini apps from their own MCP client
 - Members get their own view of Settings > MCP: `GET /api/member/mcp` and
   `DELETE /api/member/mcp/clients/:id` (their own grants only).
 
-## Unreleased: Apache Tika 4
+## v0.239.45: Apache Tika 4
 
 The document helper moves from `apache/tika:3.3.1.0` to `apache/tika:4.1.0-1`
 (Java 17+, process-isolated parsing). The roll needs nothing by hand: the
@@ -2385,7 +2435,7 @@ compose file carries the new image and an inline JSON config.
   slides came back shuffled (4.0.0, 4.1.0 and the 4.2.0 snapshot alike).
   Tika stays the fallback for a deck the reader cannot open.
 
-## Unreleased: the fresh-install look
+## v0.239.36: the fresh-install look
 
 A FRESH install now wears the Jackdaw colour theme, Lorelei avatars and the
 Neat background (switched on, seed 55361, tone auto, speed 2). One source,
@@ -2409,7 +2459,7 @@ the theme painted with no `data-color-theme` attribute);
 `DEFAULT_COLOR_THEME` is a deprecated alias of it with the same value, and
 `FRESH_COLOR_THEME` is the new default.
 
-## Unreleased: needle scrollbars everywhere
+## v0.239.34: needle scrollbars everywhere
 
 Every scrollbar in the share surfaces, the mini-app frame and the Jackdaw
 client is now one global needle (share-ui `app.css`): a 4px thumb in the
@@ -2421,7 +2471,7 @@ styled bar off, so Chrome drew its 11px platform bar on every
 `.scrollbar-thin` pane. Measured: 11px and 15px before, 6px after, in Chrome
 and Safari. Firefox draws its own thin bar in the theme colour.
 
-## Unreleased: API keys and the public HTTP API v1
+## v0.239.31: API keys and the public HTTP API v1
 
 Scripts and MCP clients get real API keys (migration 0232, plan page
 1e62e204). Each login makes its own keys in **Settings > API access**
