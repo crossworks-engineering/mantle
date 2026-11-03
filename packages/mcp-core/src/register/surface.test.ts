@@ -21,7 +21,8 @@ import { registerMantleTools } from '../build-server';
  * they would all still pass.
  *
  * This list was generated from the pre-split implementation and verified equal
- * to the post-split one over both transports before being written down.
+ * to the post-split one over both transports before being written down; on
+ * 2026-11-03 it was put in list order (the same tools, reordered only).
  *
  * Order is pinned because MCP clients see the tool list in registration order
  * (a permission screen shows the writes before the long run of reads). A

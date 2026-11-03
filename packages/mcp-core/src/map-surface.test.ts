@@ -5,12 +5,14 @@
  * surface (that needs the database); the routing is pinned on a map of
  * stand-in tools instead.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
 import { RISK_CALL_SLUGS, policyRiskClass, namedToolPolicy, type RiskClass } from '@mantle/tools';
 
 import { registerMantleTools } from './build-server';
+import { registerPreparedTools } from './login-surface';
+import { SCOPE_AREAS } from '@mantle/db/viewer';
 import { jsonReply } from './gated-tools';
 import { MCP_MAP_INSTRUCTIONS, McpToolMap, wantsToolMap, type McpMapEntry } from './map-surface';
 import { MANTLE_MCP_INSTRUCTIONS } from './build-server';
@@ -83,32 +85,48 @@ describe('the tool map on the full surface', () => {
     expect(direct).toEqual([...direct].sort());
   });
 
-  it('the full list: every write, then every delete, then every send, then the reads, by name inside each', async () => {
-    const seen: Array<[string, RiskClass]> = [];
-    class Seen extends McpToolMap {
-      override add(entry: McpMapEntry): boolean {
-        seen.push([entry.name, entry.cls]);
-        return super.add(entry);
+  it.each([
+    ['stdio', (s: McpServer) => registerMantleTools(s, 'owner-1', { transport: 'stdio' })],
+    ['HTTP', (s: McpServer) => registerMantleTools(s, 'owner-1', { transport: 'http' })],
+    [
+      'HTTP for a login (registerPreparedTools)',
+      (s: McpServer) =>
+        registerPreparedTools(s, {
+          kind: 'owner',
+          caller: {
+            role: 'admin',
+            anchorId: 'owner-1',
+            loginId: 'login-1',
+            via: 'oauth',
+            write: true,
+          },
+          view: { holdsAdmin: true, areas: new Set(SCOPE_AREAS) },
+          privateWs: null,
+          connectors: [],
+        }),
+    ],
+  ])(
+    'the full list (%s): every write, then every delete, then every send, then the reads, by name inside each',
+    async (_how, register) => {
+      // Each tool's class, as the one registration hands it to the list.
+      const add = vi.spyOn(McpToolMap.prototype, 'add');
+      try {
+        client = await connect(register);
+        const seen = add.mock.calls.map(([e]) => [e.name, e.cls] as [string, RiskClass]);
+        const names = (await client.listTools()).tools.map((t) => t.name);
+        const rank = (c: RiskClass) => ['write', 'delete', 'send', 'read'].indexOf(c);
+        const expected = [...seen]
+          .sort(([a, ca], [b, cb]) => rank(ca) - rank(cb) || (a < b ? -1 : 1))
+          .map(([n]) => n);
+        expect(new Set(seen.map(([, c]) => c))).toEqual(
+          new Set(['write', 'delete', 'send', 'read']),
+        );
+        expect(names).toEqual(expected);
+      } finally {
+        add.mockRestore();
       }
-    }
-    client = await connect((server) => {
-      const list = new Seen('', { full: true });
-      registerMantleTools(server, 'owner-1', { transport: 'stdio', map: list });
-      list.register(server);
-    });
-    const names = (await client.listTools()).tools.map((t) => t.name);
-    await client.close();
-    const rank = (c: RiskClass) => ['write', 'delete', 'send', 'read'].indexOf(c);
-    const expected = [...seen]
-      .sort(([a, ca], [b, cb]) => rank(ca) - rank(cb) || (a < b ? -1 : 1))
-      .map(([n]) => n);
-    expect(new Set(seen.map(([, c]) => c))).toEqual(new Set(['write', 'delete', 'send', 'read']));
-    expect(names).toEqual(expected);
-    // The same order without a list of the caller's: registerMantleTools
-    // puts its own on the server.
-    client = await surface(false);
-    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(expected);
-  });
+    },
+  );
 
   it('every tool of the full list is reachable, through the call tool of its class', async () => {
     const full = await surface(false);
@@ -331,7 +349,7 @@ describe('the call tools run the tool they name', () => {
 
   it('the full list keeps a tool named like a map tool, and lists by class then name', async () => {
     const client = await connect((server) => {
-      const list = new McpToolMap('', { full: true });
+      const list = McpToolMap.fullList();
       for (const [n, c] of [
         ['thing_list', 'read'],
         ['tool_help', 'read'],

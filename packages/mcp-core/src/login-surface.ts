@@ -399,7 +399,7 @@ export function registerPreparedTools(
   // tools/list orders them with the rest (map-surface.ts LIST_ORDER).
   const map = opts.toolMap
     ? new McpToolMap(mcpInstructionsFor(caller, prepared, { toolMap: true }))
-    : new McpToolMap('', { full: true });
+    : McpToolMap.fullList();
   registerMantleTools(server, caller.anchorId, {
     transport: opts.transport ?? 'http',
     ...(peerNamesNoLogin(caller) ? {} : { loginId: caller.loginId }),

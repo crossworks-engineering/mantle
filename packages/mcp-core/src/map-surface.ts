@@ -25,16 +25,19 @@
  * A read the gate treats as a write may sit under tool_read (its
  * readOnlyHint) only by its policy's own `riskClass: 'read'`: a catalog
  * fetch that sends nothing of the caller's. The map is built per server,
- * so per HTTP request: about 11 ms over the full list's build, with every
- * tool registered by its own name too (2026-11-02, M2 Mac).
+ * so per HTTP request: about 11 ms more than the full list, with every
+ * tool registered by its own name too (2026-11-02, M2 Mac, measured before
+ * the full list went through this class as well; the full list adds one
+ * sort of about 330 entries).
  *
  * The tools listed in full are reads only: a client that reads the map
  * reaches every write, delete and send through its class's call tool, so
  * its per-tool approval sees the class on every one. A client that cached
  * the full list approves each tool by its own name and hints, as it did.
  *
- * The order of tools/list is the order a client's permission screen shows,
- * so the tools that change something come first and the long run of reads
+ * The order of tools/list is the order most clients' permission screens
+ * show (claude.ai and Claude Code do; a client may sort on its own), so the
+ * tools that change something come first and the long run of reads
  * last (LIST_ORDER): on the map tool_write, tool_delete and tool_send, then
  * tool_read and tool_help, then the direct reads; on the full list (the
  * same class, `full`) every write, then every delete, then every send,
@@ -198,6 +201,12 @@ export class McpToolMap {
   constructor(instructions: string, opts: { full?: boolean } = {}) {
     this.named = new Set(instructions.match(/[a-z][a-z0-9]*(?:_[a-z0-9]+)*/g) ?? []);
     this.full = opts.full === true;
+  }
+
+  /** The full list: no map, every tool listed by its own name, in list
+   *  order (no instructions: nothing is listed in full by name). */
+  static fullList(): McpToolMap {
+    return new McpToolMap('', { full: true });
   }
 
   /** Take one listed tool; on the map false for one named like the map's

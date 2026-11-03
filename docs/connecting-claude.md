@@ -277,8 +277,8 @@ let run unasked. The gate decides what runs, as for a listed tool.
 
 ### The order of the list
 
-A client's permission screen shows the tools in the order the server lists
-them, so the tools that change something come first and the long run of
+Most clients' permission screens (claude.ai, Claude Code) show the tools in
+the order the server lists them, so the tools that change something come first and the long run of
 reads comes last. On the map: `tool_write`, `tool_delete`, `tool_send`,
 then `tool_read` and `tool_help`, then the reads listed in full, by name.
 On the full list: every write, then every delete, then every send, then

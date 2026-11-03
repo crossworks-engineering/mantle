@@ -399,6 +399,9 @@ export function registerGatedTool(
       source: entry.kind === 'connector' ? toolSourceOf(entry.row.handler) : 'builtin',
     });
   }
+  // No list: straight onto the server, in the order registered. Every
+  // surface passes a list (registerMantleTools keeps its own); tests of
+  // one tool's call reach this.
   server.registerTool(
     name,
     { description, inputSchema, ...(annotations ? { annotations } : {}) },

@@ -169,7 +169,7 @@ export function registerMantleTools(
 ): void {
   // Every tool through a list, so tools/list shows the writes, deletes
   // and sends before the reads (map-surface.ts LIST_ORDER).
-  const map = opts.map ?? new McpToolMap('', { full: true });
+  const map = opts.map ?? McpToolMap.fullList();
   const transport = opts.transport ?? 'http';
   const gate =
     opts.gate ??
