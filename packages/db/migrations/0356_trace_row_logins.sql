@@ -25,9 +25,10 @@
 --   7. last, what none of these classified, among the kinds that carry a
 --      login's content (content_ingest, photo_ingest, extractor_run,
 --      summarizer_run, reflector_run, manual: the simulated MCP turn, the
---      turn input and an approved call; responder_turn, run_item): the
---      anchor's, so an unclassified older row stays the anchor's alone, as
---      before this release. A trace over a node homed in Admin (or in no
+--      turn input and an approved call; responder_turn, run_item): no one.
+--      Whose work it was cannot be told, so it is listed to no one, the
+--      anchor included. The rows stay in the database; only the activity
+--      lists stop showing them. A trace over a node homed in Admin (or in no
 --      workspace) that names no login is the system's and stays so; so does
 --      a federation_request.
 -- No one (the nil uuid) is the stamp of work whose login cannot be told:
@@ -163,7 +164,7 @@ UPDATE "public"."traces" t
                     WHERE n."id" = t."subject_id" AND n."owner_id" = t."owner_id");
 --> statement-breakpoint
 UPDATE "public"."traces" t
-   SET "login_id" = t."owner_id"
+   SET "login_id" = '00000000-0000-0000-0000-000000000000'::uuid
  WHERE t."login_id" IS NULL
    AND t."kind" IN ('content_ingest', 'photo_ingest', 'extractor_run', 'summarizer_run',
                     'reflector_run', 'manual', 'responder_turn', 'run_item')

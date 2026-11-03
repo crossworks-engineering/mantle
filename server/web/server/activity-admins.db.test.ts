@@ -28,9 +28,11 @@
  *    and its delegated child the anchor's (with or without a fire row), an
  *    assistant message's, a pending call's and a data-named login's trace
  *    that login's, a trace over another login's private note that login's,
- *    an unclassified content row the anchor's alone, as before this branch,
- *    and one over a W item of unknown maker, or a node that is gone, no
- *    one's.
+ *    and one whose login cannot be told (an unclassified content row, one
+ *    over a W item of unknown maker, or over a node that is gone) no one's:
+ *    no reader lists it, the anchor included.
+ *  - The stamp trigger (0269) copies a trace's login into the pending calls
+ *    and tool results made under it.
  *  - The anchor's fire is a turn of no login (run_plan reads it) while its
  *    row, and its children's, name the anchor.
  *
@@ -435,11 +437,11 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
                 ${raw.json({ ...o.data, summary: SECRET })})`;
       N[key] = { id, owner: false, admin: false };
     }
-    // What 0356 cannot classify stays the anchor's, as before this branch;
-    // an older row over a W item whose maker is unknown, or over a node that
-    // is gone, is no one's.
+    // What 0356 cannot place is no one's: an unclassified content row, an
+    // older row over a W item whose maker is unknown, or over a node that
+    // is gone. No reader lists it, the anchor included.
     for (const [key, sk, sid, owner] of [
-      ['oldUnclassified', null, null, true],
+      ['oldUnclassified', null, null, false],
       ['oldTeamItem', 'node', teamOld, false],
       ['oldGoneNode', 'node', randomUUID(), false],
     ] as const) {
@@ -589,6 +591,29 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
       expect(landed.body).not.toContain(memberNote);
     },
   );
+
+  it("the stamp trigger copies a trace's login into its pending calls and tool results", async () => {
+    // A member's turn, the anchor's fire (its row names the anchor, its turn
+    // no login), and work no one lists.
+    for (const [key, trace, login] of [
+      ['member', T.member, L.member],
+      ['fire', N.fire!.id, L.owner],
+      ['no one', N.goneNode!.id, NO_ONE],
+    ] as const) {
+      const call = randomUUID();
+      const result = `${tag}-${randomUUID()}`;
+      await raw`insert into pending_tool_calls (id, owner_id, tool_slug, trace_id)
+        values (${call}, ${L.owner}, 'note_create', ${trace})`;
+      await raw`insert into tool_results (id, owner_id, trace_id, tool_slug, content, bytes)
+        values (${result}, ${L.owner}, ${trace}, 'note_create', 'x', 1)`;
+      const [p] = await raw<{ l: string | null }[]>`
+        select login_id::text as l from pending_tool_calls where id = ${call}`;
+      const [r] = await raw<{ l: string | null }[]>`
+        select login_id::text as l from tool_results where id = ${result}`;
+      expect(p?.l, `${key}: the pending call`).toBe(login);
+      expect(r?.l, `${key}: the tool result`).toBe(login);
+    }
+  });
 
   it('the read rule alone: a login without the system reads its own turn only', async () => {
     const { traceReadable } = await import('@/lib/traces');

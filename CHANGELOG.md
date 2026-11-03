@@ -31,10 +31,12 @@ while after they chatted.
 - **Migration:** 0356 names the user on the traces stored before this
   release, from what each already records (a heartbeat fire, a run, a chat,
   a message, a pending call, an item's workspace, a parent trace). An older
-  trace over an item that is gone, or over a shared item whose maker is not
-  known, is listed to no one. Any other older trace it cannot place is the
-  first owner's alone, as before. It changes only traces that name no
-  user.
+  trace whose user it cannot tell (over an item that is gone, over a shared
+  item whose maker is not known, or any other older activity it cannot
+  place) is listed to no one, the first owner included: before this
+  release the first owner saw it. The traces stay in the database; only
+  the activity lists stop showing them. It changes only traces that name
+  no user.
 - **Upgrade note:** 0356 runs in one transaction at boot and reads every
   trace that names no user. On a box with millions of traces it may take
   minutes. Each statement waits at most 30 seconds for a lock; on a timeout
