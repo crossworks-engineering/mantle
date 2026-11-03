@@ -29,24 +29,28 @@ export function parseFlag(
   raw: string | null | undefined,
   fallback: boolean,
   name?: string,
+  /** What a word that is neither on nor off reads as (a kill switch:
+   *  false, so a typo of `off` still stops it). Default: `fallback`. */
+  unknownAs: boolean = fallback,
 ): boolean {
   const v = raw?.trim().toLowerCase();
   if (!v) return fallback;
   if ((FLAG_ON_WORDS as readonly string[]).includes(v)) return true;
   if ((FLAG_OFF_WORDS as readonly string[]).includes(v)) return false;
-  // A word that is neither (a typo of a kill switch: `of`, `disable`): the
-  // default still holds, and the process says so once per name and word,
-  // with what it took, so a switch that did not take is seen in the log.
+  // A word that is neither (a typo: `of`, `disable`) reads as `unknownAs`:
+  // the default for most flags, off for a kill switch (so a typo of `off`
+  // still stops it). The process says so once per name and word, with what
+  // it took, so a switch that did not take as written is seen in the log.
   if (name) {
     const key = `${name}=${v}`;
     if (!warnedFlags.has(key)) {
       warnedFlags.add(key);
       console.warn(
-        `[config] ${name}: "${v}" is not an on word (${FLAG_ON_WORDS.join(', ')}) or an off word (${FLAG_OFF_WORDS.join(', ')}); taken as ${fallback ? 'on' : 'off'}, its default`,
+        `[config] ${name}: "${v}" is not an on word (${FLAG_ON_WORDS.join(', ')}) or an off word (${FLAG_OFF_WORDS.join(', ')}); taken as ${unknownAs ? 'on' : 'off'}${unknownAs === fallback ? ', its default' : ' (a kill switch fails safe)'}`,
       );
     }
   }
-  return fallback;
+  return unknownAs;
 }
 
 const warnedFlags = new Set<string>();

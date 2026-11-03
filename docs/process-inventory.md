@@ -55,7 +55,7 @@ process-on server/web/workers/_runner.ts none: a rejection handler that logs; it
 queue-work server/api/src/agent/extract-queue.ts system(queue:extract) per job
 queue-work server/web/workers/calendar-sync.ts system(worker:calendar-sync)
 queue-work server/web/workers/email-sync.ts system(worker:email-sync)
-queue-work server/web/workers/maintenance.ts system(worker:maintenance)
+queue-work server/web/workers/maintenance.ts system(worker:maintenance); each app timer's call the account that set it, as it is now, in a read-only scope (no write pool: nothing a timer runs writes; packages/tools/src/app-timers/run.ts)
 queue-work server/web/workers/microsoft-sync.ts system(worker:microsoft-sync)
 queue-work server/web/workers/runs.ts the run's login as it is now, else login(owner)
 request-slot packages/db/src/viewer.ts defines the helper: runInRequestSlot starts a request as system(http:no-login)

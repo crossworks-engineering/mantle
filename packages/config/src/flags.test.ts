@@ -139,6 +139,18 @@ describe('feature', () => {
     expect(feature('runs')).toBe(true);
   });
 
+  it('a kill switch fails safe: unset or an on word is on, any other value off', () => {
+    setEnv('MANTLE_APP_TIMERS', undefined);
+    expect(feature('appTimers')).toBe(true);
+    setEnv('MANTLE_APP_TIMERS', 'on');
+    expect(feature('appTimers')).toBe(true);
+    for (const word of ['0', 'off', 'of', 'disable', 'stop']) {
+      setEnv('MANTLE_APP_TIMERS', word);
+      expect(feature('appTimers'), word).toBe(false);
+    }
+    setEnv('MANTLE_APP_TIMERS', undefined);
+  });
+
   it('honours the legacy name of a switch when the new one is unset', () => {
     setEnv('MANTLE_TURN_STREAMING', undefined);
     setEnv('NEXT_PUBLIC_MANTLE_TURN_STREAMING', '0');

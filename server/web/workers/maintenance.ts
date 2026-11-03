@@ -16,7 +16,11 @@
  * Env loading is handled by `--env-file-if-exists=.env.local` (dev) or the
  * container env (prod).
  */
+import { feature } from '@mantle/config';
 import { waitForOwner } from '@mantle/db';
+import { errorMessage } from '@mantle/std';
+import { runDueAppTimers } from '@mantle/tools';
+import { log } from '@mantle/tracing';
 
 import { reapStaleRuns } from '../lib/maintenance/history';
 import { runScheduledSweeps } from '../lib/maintenance/sweeps';
@@ -27,6 +31,22 @@ const SWEEP_QUEUE = 'mantle.maintenance.sweep';
  *  nobody has to know that) — off-peak everywhere we care about, and nothing
  *  here is timing-sensitive. */
 const SWEEP_CRON = '30 3 * * *';
+
+/**
+ * The app timers' tick (docs/app-timers.md): every minute, the due timers
+ * of every app run, each its declared read-only tool as the login that set
+ * it (@mantle/tools app-timers). No model work: the timer rule admits only
+ * tools that read and spend nothing. pg-boss makes one job per minute for
+ * the whole box (its schedule is one row, whichever replica keeps it), and
+ * the claim (FOR UPDATE SKIP LOCKED) keeps two ticks that overlap, on one
+ * replica or two, from running one timer twice. MANTLE_APP_TIMERS=0 (the
+ * appTimers feature) is the box's kill switch: the tick runs no timer and
+ * says so once; the nightly sweeps go on.
+ */
+const TIMER_QUEUE = 'mantle.app-timers.tick';
+const TIMER_CRON = '* * * * *';
+/** Whether the switched-off tick has said so (once per process). */
+let timersOffSaid = false;
 
 runQueueWorker('maintenance', async ({ boss }) => {
   // Idles until the first account exists (fresh install), then resolves.
@@ -43,5 +63,27 @@ runQueueWorker('maintenance', async ({ boss }) => {
     await runScheduledSweeps(ownerId);
   });
 
+  await boss.createQueue(TIMER_QUEUE);
+  await boss.schedule(TIMER_QUEUE, TIMER_CRON, undefined, { tz: 'UTC' });
+  await boss.work(TIMER_QUEUE, async () => {
+    if (!feature('appTimers')) {
+      if (!timersOffSaid) {
+        timersOffSaid = true;
+        log('maintenance').warn('app timers are switched off (MANTLE_APP_TIMERS): no timer runs');
+      }
+      return;
+    }
+    try {
+      const t = await runDueAppTimers();
+      if (t.claimed) {
+        log('maintenance').info(`app timers: ${t.claimed} run, ${t.ok} ok, ${t.failed} failed`);
+      }
+    } catch (err) {
+      // The claim or the database is down: the next minute tries again.
+      log('maintenance').error(`app timers tick failed: ${errorMessage(err)}`);
+    }
+  });
+
   console.log(`[maintenance] cron '${SWEEP_CRON}' (UTC) on ${SWEEP_QUEUE}`);
+  log('maintenance').info(`app timers '${TIMER_CRON}' (UTC) on ${TIMER_QUEUE}`);
 });

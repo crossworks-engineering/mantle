@@ -243,6 +243,10 @@ x-app-env: &app-env
   # `?tools=map` or `?tools=full` on its URL (docs/connecting-claude.md). Every
   # tool stays callable by its own name, so clients that cached the full list keep working.
   MANTLE_MCP_TOOL_MAP: ${MANTLE_MCP_TOOL_MAP:-}
+  # App timers (docs/app-timers.md): =0 (or any value but an on word) stops
+  # every app timer on the box (the maintenance worker's tick runs none and
+  # logs it once); unset = on.
+  MANTLE_APP_TIMERS: ${MANTLE_APP_TIMERS:-}
   # Workspaces arch A9 (docs/runtime-role.md): 1 = the app's pools log in as
   # mantle_runtime (not a superuser, not a table owner; its password derived
   # from MANTLE_MASTER_KEY, the role made by migrate) instead of DATABASE_URL's

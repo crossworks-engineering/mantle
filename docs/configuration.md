@@ -112,6 +112,7 @@ as `env()` does) and the three profile readers in
 | `turnSuggestions` | `MANTLE_TURN_SUGGESTIONS` | on | fleet-wide kill switch for the follow-up suggestion (per agent it is opt-in) |
 | `queryEnrich` | `MANTLE_QUERY_ENRICH` | on | enrich a short retrieval query from the recent conversation |
 | `mcpToolsmithWrite` | `MANTLE_MCP_TOOLSMITH_WRITE` | on | the MCP surface offers the toolsmith write tools |
+| `appTimers` | `MANTLE_APP_TIMERS` | on | the app timers' tick in the maintenance worker (docs/app-timers.md); off: no timer runs, the worker's other work goes on. A kill switch: any value but an on word is off |
 | `s3ForcePathStyle` | `S3_FORCE_PATH_STYLE` | on | path-style object store URLs |
 | `runs` | `MANTLE_RUNS` | off | runner queues: run_plan / run_append and the runs worker (run_state, run_cancel stay live) |
 | `viewerRolesPerDatabase` | `MANTLE_VIEWER_ROLES_PER_DATABASE` | off | viewer roles named per database (several brains on one Postgres) |
