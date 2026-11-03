@@ -7,7 +7,10 @@ const http = (status: number, body = '') =>
 
 describe('decisionFailureClass', () => {
   it('a 404 under zdr names the privacy route, permanent, and never the provider text', () => {
-    const c = decisionFailureClass(http(404, 'No endpoints found matching your data policy'), 'zdr');
+    const c = decisionFailureClass(
+      http(404, 'No endpoints found matching your data policy'),
+      'zdr',
+    );
     expect(c).toEqual({
       code: 'privacy_route',
       permanent: true,
@@ -22,7 +25,10 @@ describe('decisionFailureClass', () => {
 
   it('keeps the classifier for account and transport errors', () => {
     expect(decisionFailureClass(http(401), 'zdr')).toMatchObject({ code: 'auth', permanent: true });
-    expect(decisionFailureClass(http(402), 'zdr')).toMatchObject({ code: 'quota', permanent: true });
+    expect(decisionFailureClass(http(402), 'zdr')).toMatchObject({
+      code: 'quota',
+      permanent: true,
+    });
     expect(decisionFailureClass(http(503), 'zdr')).toMatchObject({
       code: 'server',
       permanent: false,
