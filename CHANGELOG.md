@@ -18,6 +18,11 @@ deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
   many.
   A big folder moves 200 items per call, the folder itself last
   (`withContents` on `POST /api/grants/move` and its preview).
+- **Fixed:** with the edit check on, a grant change on a folder (a home
+  move, a share) by a Moderator who cannot open every item inside it
+  failed with "subtree kept growing". The folder change now locks only
+  what the caller reads, as the subtree lock already did (migration
+  0355).
 
 ## v0.500.17: team apps write wherever their user may write
 
