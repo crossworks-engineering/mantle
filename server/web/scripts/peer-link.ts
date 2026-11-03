@@ -14,12 +14,14 @@
  * Shell access to the box proves ownership, as with scripts/onboard.sh: the
  * peers it makes are the brain owner's. Commands:
  *
- *   create --name <n> --url <https://...> [--status-only | --outbound-only] [--watch]
+ *   create --name <n> --url <https://...> [--status-only | --outbound-only] [--watch] [--allow-http]
  *       A new peer. Prints `peer_id=<id>` and, unless --outbound-only, this
  *       side's new inbound token ONCE as `token=<token>` (hand it to the
  *       other box). --status-only: that token lists and calls box_status and
  *       brain_capacity and nothing else. --outbound-only: no usable inbound
  *       token at all (the watching side). --watch: peer_status polls it.
+ *       The URL must be https; --allow-http takes plain http, for a local
+ *       test only (the token would travel unencrypted).
  *   accept --peer <id|name> [--token-file <path>]
  *       Store the OTHER box's token (from the file, else stdin) and make the
  *       peer active. Never from argv.
@@ -57,6 +59,7 @@ export type Options = {
   statusOnly: boolean;
   outboundOnly: boolean;
   watch: boolean;
+  allowHttp: boolean;
   json: boolean;
   help: boolean;
 };
@@ -80,6 +83,7 @@ export function parseArgs(argv: string[]): Options {
     statusOnly: false,
     outboundOnly: false,
     watch: false,
+    allowHttp: false,
     json: false,
     help: false,
   };
@@ -98,6 +102,7 @@ export function parseArgs(argv: string[]): Options {
     else if (flag === '--status-only') o.statusOnly = true;
     else if (flag === '--outbound-only') o.outboundOnly = true;
     else if (flag === '--watch') o.watch = true;
+    else if (flag === '--allow-http') o.allowHttp = true;
     else if (flag === '--json') o.json = true;
     else if (flag in VALUE_FLAGS) {
       const value = inline ?? argv[++i];
@@ -120,8 +125,15 @@ export function parseArgs(argv: string[]): Options {
   if (o.command === 'create') {
     if (!o.name?.trim()) throw new Error('create needs --name.');
     if (!o.url?.trim()) throw new Error('create needs --url.');
-  } else if (o.statusOnly || o.outboundOnly || o.watch) {
-    throw new Error('--status-only, --outbound-only and --watch are for create.');
+    const url = o.url.trim();
+    if (/^http:\/\//i.test(url) && !o.allowHttp) {
+      throw new Error(
+        'The URL is plain http: the token would travel unencrypted. Use https, or --allow-http for a local test.',
+      );
+    }
+    if (!/^https?:\/\//i.test(url)) throw new Error('--url must start with https://.');
+  } else if (o.statusOnly || o.outboundOnly || o.watch || o.allowHttp) {
+    throw new Error('--status-only, --outbound-only, --watch and --allow-http are for create.');
   }
   if ((o.command === 'accept' || o.command === 'revoke') && !o.peer?.trim()) {
     throw new Error(`${o.command} needs --peer (an id or a name from list).`);
@@ -136,16 +148,17 @@ export function scopeOf(o: Pick<Options, 'statusOnly' | 'outboundOnly'>): PeerAc
 }
 
 /**
- * The other box's token from what was piped or read (pure): its first
- * non-empty line, trimmed; a `token=` prefix (a create's own output line)
- * is taken off. It must look like a peer token. The error never repeats
- * the input.
+ * The other box's token from what was piped or read (pure): the `token=`
+ * line of a create's output when there is one (so the whole output may be
+ * piped across), else its first non-empty line, trimmed. It must look like
+ * a peer token. The error never repeats the input.
  */
 export function tokenFromText(text: string): string {
-  const line = text
+  const lines = text
     .split('\n')
     .map((l) => l.replace(/\r$/, '').trim())
-    .find((l) => l.length > 0);
+    .filter((l) => l.length > 0);
+  const line = lines.find((l) => l.startsWith('token=')) ?? lines[0];
   if (!line) throw new Error('No token given: pipe it on stdin or name a file with --token-file.');
   const token = line.startsWith('token=') ? line.slice('token='.length).trim() : line;
   if (!token.startsWith(PEER_TOKEN_PREFIX) || /\s/.test(token) || token.length > 512) {
@@ -178,6 +191,7 @@ Commands:
          --status-only   that token reaches box_status and brain_capacity only
          --outbound-only this box takes no calls from the peer (the watching side)
          --watch         peer_status polls this peer
+         --allow-http    take a plain http URL (a local test only)
   accept --peer <id|name> [--token-file <path>]
          The other box's token, from the file or stdin (never an argument).
   list [--json]
@@ -265,7 +279,7 @@ export async function run(o: Options, io: Io): Promise<number> {
       }
       const url = o.url!.trim();
       if (/^http:\/\//i.test(url)) {
-        io.err('Note: the URL is plain http, so the token travels unencrypted. Use https.');
+        io.err('Note: --allow-http: the token travels unencrypted. For a local test only.');
       }
       const scope = scopeOf(o);
       const created = await createPeer(ownerId, {

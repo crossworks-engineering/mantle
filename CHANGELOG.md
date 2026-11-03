@@ -10,19 +10,23 @@ deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
   only: build, uptime, CPU, memory, disk, Postgres, each service up or
   down, model spend over 24 hours, 7 and 30 days, corpus capacity, the
   extractor's queue and dead letters, and logins by role. Never a name or
-  anything a user wrote. It spends nothing and is cached for 30 seconds.
-  On MCP and in the `brain-health` tool group.
+  anything a user wrote: its output is rebuilt from the status's fixed
+  shape, so only known fields, numbers and checked values leave. It spends
+  nothing and is cached for 30 seconds. On MCP, and in a tool group of its
+  own (`fleet-status`) that no agent holds by default.
 - **Added:** `peer_status`, which asks every watched linked brain for its
-  `box_status` at once, 10 seconds each, plus this box's own. It calls
-  nothing else, and holds each reply to numbers. In the `federation`
-  tool group.
+  `box_status`, eight at a time, 10 seconds each, plus this box's own. It
+  calls nothing else, reads a reply up to 256 KB, and rebuilds each one
+  from the fixed shape. In the `federation` tool group.
 - **Added:** a peer's access scope (migration 0354). A `status` peer's token
   reaches `box_status` and `brain_capacity` on MCP and nothing else, on
-  every list shape; a `none` peer's token works nowhere. Every existing peer
-  stays as it was.
+  every list shape, as the owner; a `none` peer's token works nowhere.
+  Only the owner may give a status peer a new token or turn it back on.
+  Every existing peer stays as it was.
 - **Added:** `scripts/peer-link.sh`, to link boxes from the shell with no
   password and no UI (`create`, `accept`, `list`, `revoke`). Tokens never go
-  on the command line. Each change is in the audit log.
+  on the command line, and a plain http URL needs `--allow-http`. Each
+  change is in the audit log.
 - **Added:** `MANTLE_HOST_PROC`, an optional read-only mount of the host's
   `/proc` load and memory files, so the numbers are the host's.
 - **Rollback:** `packages/db/rollback/0354_peer_status_link.revert.sql`
