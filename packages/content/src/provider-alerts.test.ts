@@ -56,7 +56,9 @@ describe('deciderAlertApplies', () => {
   it('not with no running decider, every use off, or another model', () => {
     expect(deciderAlertApplies(row('decision'), null)).toBe(false);
     expect(deciderAlertApplies(row('decision'), decider('jev', false))).toBe(false);
-    expect(deciderAlertApplies(row('decision'), { model: 'jev', params: null as never })).toBe(false);
+    expect(deciderAlertApplies(row('decision'), { model: 'jev', params: null as never })).toBe(
+      false,
+    );
     expect(deciderAlertApplies(row('decision', 'old'), decider())).toBe(false);
   });
   it('not to a closed row', () => {
