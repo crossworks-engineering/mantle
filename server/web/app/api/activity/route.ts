@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getLiveActivity } from '@/lib/journey';
-import { toolMakerFor } from '@/lib/tools';
+import { traceReaderFor } from '@/lib/trace-reader';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -15,11 +15,12 @@ export const policy = routePolicy({
  * with outcome counts. Polled client-side; owner-scoped by the owner answer
  * the pipeline gives (ownerCaller; a JSON API, so an unauthenticated or
  * expired client gets a 401 rather than a redirect).
- * Only the traces the signed-in login may read.
+ * Only the traces the signed-in login may read (traceReaderFor): every
+ * Admin user with the settings area sees the system's work.
  */
 
 export async function GET() {
   const user = ownerCaller();
-  const live = await getLiveActivity(user.id, toolMakerFor(user));
+  const live = await getLiveActivity(user.id, await traceReaderFor(user));
   return NextResponse.json(live);
 }

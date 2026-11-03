@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { countTraces, listTraces } from '@/lib/traces';
-import { toolMakerFor } from '@/lib/tools';
+import { traceReaderFor } from '@/lib/trace-reader';
 import type { TraceSort, TraceSortDir } from '@mantle/client-types/traces-format';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -37,7 +37,7 @@ export async function GET(req: Request) {
     sinceHours: hours,
   };
   // Only the traces the signed-in login may read.
-  const reader = toolMakerFor(user);
+  const reader = await traceReaderFor(user);
   const [traces, total] = await Promise.all([
     listTraces(user.id, reader, {
       ...filter,

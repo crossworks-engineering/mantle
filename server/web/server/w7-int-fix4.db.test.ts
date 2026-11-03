@@ -12,7 +12,10 @@
  *      caller: another login's patch makes the heartbeat its own and starts
  *      it from an empty state.
  *  F4. A heartbeat fire's trace is stamped with the login it answered, and
- *      the live activity lists only the traces the reader may read.
+ *      the live activity lists only the traces the reader may read. (The
+ *      stood-in session here carries no Login, so it reads as a login
+ *      without the settings area; what an Admin user reads through the
+ *      pipeline is activity-admins.db.test.ts.)
  *
  * (F1, the onboarding purpose and persona steps, is in
  * app/api/onboarding/purpose-route.test.ts; F5, 0270's repair, in

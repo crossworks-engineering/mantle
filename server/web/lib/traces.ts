@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import {
   agents,
   db,
@@ -33,19 +33,40 @@ export type {
 export { formatMicroUsd, formatDuration } from '@mantle/client-types/traces-format';
 
 /**
+ * Who reads traces: `login` the signed-in login (null or the owner id for
+ * the brain owner), and whether it reads the system's work too (the traces
+ * of no login's turn). The brain owner always does; another login when it
+ * is an Admin user with the settings area (traceReaderFor). A reader never
+ * reads another login's turns.
+ */
+export type TraceReader = { readonly login: string | null; readonly system: boolean };
+
+/** The brain owner's reader: its own turns and the system's. */
+export const OWNER_TRACE_READER: TraceReader = { login: null, system: true };
+
+function isOwnerLogin(ownerId: string, login: string | null): boolean {
+  return !login || login.toLowerCase() === ownerId.toLowerCase();
+}
+
+/**
  * The traces a list shows `reader`, traceReadable's
  * rule as a WHERE on the login a trace is stamped with: another login sees
- * the turns that answered it; the brain owner (`reader` null or the owner id)
- * its own and the system's (no login), never another login's.
+ * the turns that answered it, and with `system` the traces of no login; the
+ * brain owner its own and the system's, never another login's. A heartbeat
+ * fire with no login is the brain owner's turn (traceTurnLogin), not system
+ * work: another login does not list it.
  */
-export function traceListedFor(ownerId: string, reader: string | null): SQL {
-  return reader && reader.toLowerCase() !== ownerId.toLowerCase()
-    ? eq(traces.loginId, reader)
-    : (or(isNull(traces.loginId), eq(traces.loginId, ownerId)) as SQL);
+export function traceListedFor(ownerId: string, reader: TraceReader): SQL {
+  if (isOwnerLogin(ownerId, reader.login)) {
+    return or(isNull(traces.loginId), eq(traces.loginId, ownerId)) as SQL;
+  }
+  const own = eq(traces.loginId, reader.login!);
+  if (!reader.system) return own;
+  return or(own, and(isNull(traces.loginId), ne(traces.kind, 'heartbeat_fire'))) as SQL;
 }
 
 /** Shared WHERE for trace list/count queries. */
-function traceConds(userId: string, reader: string | null, filter: TraceFilter) {
+function traceConds(userId: string, reader: TraceReader, filter: TraceFilter) {
   const conds = [eq(traces.ownerId, userId), traceListedFor(userId, reader)];
   if (filter.kinds && filter.kinds.length > 0) {
     conds.push(inArray(traces.kind, filter.kinds as never));
@@ -60,11 +81,10 @@ function traceConds(userId: string, reader: string | null, filter: TraceFilter) 
   return conds;
 }
 
-/** A page of the traces `reader` may see (traceListedFor). `reader`: the
- *  signed-in login, null for the brain owner. */
+/** A page of the traces `reader` may see (traceListedFor). */
 export async function listTraces(
   userId: string,
-  reader: string | null,
+  reader: TraceReader,
   filter: TraceFilter = {},
 ): Promise<TraceSummary[]> {
   const limit = Math.min(filter.limit ?? 50, 500);
@@ -124,7 +144,7 @@ export async function listTraces(
 
 export async function countTraces(
   userId: string,
-  reader: string | null,
+  reader: TraceReader,
   filter: TraceFilter = {},
 ): Promise<number> {
   const [row] = await db
@@ -171,29 +191,28 @@ async function traceTurnLogin(ownerId: string, traceId: string): Promise<string 
 }
 
 /**
- * Whether `reader` (the signed-in login; null or the owner id for the brain
- * owner) may read trace `traceId`: each user
- * reads only their own turns. Another login reads only the traces of turns
- * it was answered in; the brain owner reads its own and the system's
- * (no login), never another login's.
+ * Whether `reader` may read trace `traceId`: each user
+ * reads only their own turns. Another login reads the traces of turns it
+ * was answered in, and with `system` the system's (no login's turn); the
+ * brain owner reads its own and the system's, never another login's.
  */
 export async function traceReadable(
   ownerId: string,
   traceId: string,
-  reader: string | null,
+  reader: TraceReader,
 ): Promise<boolean> {
-  const norm = (l: string | null) =>
-    l && l.toLowerCase() !== ownerId.toLowerCase() ? l.toLowerCase() : null;
-  return norm(await traceTurnLogin(ownerId, traceId)) === norm(reader);
+  const turn = await traceTurnLogin(ownerId, traceId);
+  if (turn === null) return reader.system;
+  const norm = (l: string | null) => (isOwnerLogin(ownerId, l) ? null : l!.toLowerCase());
+  return norm(turn) === norm(reader.login);
 }
 
 /** One trace with its steps, or null when it is not the owner's or not
- *  `reader`'s to read (traceReadable). `reader`: the signed-in login, null
- *  for the brain owner. */
+ *  `reader`'s to read (traceReadable). */
 export async function getTrace(
   userId: string,
   traceId: string,
-  reader: string | null,
+  reader: TraceReader,
 ): Promise<TraceDetail | null> {
   if (!(await traceReadable(userId, traceId, reader))) return null;
   const [t] = await db
