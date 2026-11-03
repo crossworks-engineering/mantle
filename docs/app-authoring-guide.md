@@ -654,6 +654,96 @@ reads it while the app writes), and it's **included in the backup**
 consistent `VACUUM INTO`). App-authored data is real data, and it's protected
 like the rest of the brain.
 
+## Timers: collect data on a clock
+
+An app runs only while someone has it open. A **timer** calls one of the
+app's declared tools on a clock with nobody there and no model: a status
+poll every 5 minutes, a price every hour, a feed every day. Each run lands
+as a row in the app's own database, so the app draws charts and history
+from it the next time someone opens it.
+
+```
+app_timer_set({ app_id, name: 'fleet', tool: 'peer_status', every_minutes: 5 })
+app_timer_list({ app_id })           // each timer: next run, last run, last error
+app_timer_run({ app_id, name })      // a test: it runs within a minute (not sooner than its floor after the last run)
+app_timer_delete({ app_id, name })
+```
+
+- **The tool**: one the app declares (`app_tools_set` first) that reads and
+  spends nothing: a built-in read (`calculate`, `box_status`, `peer_status`,
+  the list and get tools), or an HTTP tool an admin marked as only reading
+  (External access). Never a write, a send, a delete, a sandbox or shell
+  tool, a connector's or a recipe tool, a tool that runs a model, or one
+  that needs the owner's confirmation. A risky tool (every `peer_*` tool)
+  and an HTTP tool that sends a vault secret need an Admin user to set the
+  timer. Checked when you set it and again before every run.
+- **The arguments**: one JSON object (`args`, at most 8 KB), the same on
+  every run, checked against the tool's input schema when you set it (its
+  required arguments, their types, no argument it does not take).
+- **Who it runs as**: you, the login that set it, with your rights now and
+  read only: every run goes through the same plan and checks as a
+  `host.tools.call` of yours in this app. Someone else who sets it again
+  makes it theirs. If your login is removed, switched off, or no longer
+  manages the app, its runs fail.
+- **Who may set one**: a login that manages the app (a Moderator of its
+  workspace). At most 5 timers per app and 20 per login; 100 per box, of
+  which 20 only Admin users may set.
+- **How often**: every 1 to 1440 minutes (default 5), at least every 5 for
+  a login that is no Admin user and every 15 for an HTTP tool. The first
+  run comes within a minute.
+- **Failures**: a run that fails is recorded with a short reason. After 5
+  failures in a row a timer runs at most every 30 minutes, until one
+  succeeds or you change its tool or args. A new clock, a switch on or
+  `app_timer_run` never runs it sooner than its floor (or that back-off)
+  after its last run. A run has 60 seconds; an HTTP tool's own timeout is cut to that.
+
+**Where the runs land**: the table `_timer_runs` in the app's own database,
+made by the first run:
+
+| column     | what                                                     |
+| ---------- | -------------------------------------------------------- |
+| `id`       | integer, ascending                                       |
+| `timer_id` | the timer's id (`app_timer_list` gives it)               |
+| `ran_at`   | when the run started, ISO text in UTC                    |
+| `ok`       | 1 or 0                                                   |
+| `ms`       | how long it took                                         |
+| `result`   | the tool's output as JSON text (null when it failed)     |
+| `error`    | a short fixed reason when it failed, else null           |
+| `level`    | the rules it ran at: `admin` or `team` (null if refused) |
+
+```ts
+const rows = await host.db.query(
+  `SELECT ran_at, result FROM _timer_runs WHERE ok = 1 AND ran_at > ? ORDER BY id`,
+  [new Date(Date.now() - 86_400_000).toISOString()],
+);
+const points = rows.map((r) => ({ at: r.ran_at, ...JSON.parse(r.result) }));
+```
+
+Rows older than `keep_days` (default 90, at most 400) go on each run, and
+so do the rows of a timer you deleted. Rows read at admin rules
+(`level = 'admin'`) never stay where only team rules apply: when the app
+comes to be held by a workspace other than Admin (or runs at team rules
+for any other reason), the next run of any of its timers first removes
+every row of the app kept at admin rules, whether or not that run's own
+call works (until that run, they are there). Switching a timer off or
+deleting it removes its rows kept at admin rules at once. A result over 256 KB is recorded as failed (`result too large`),
+and when the database is full (256 MB) the run is recorded on the timer as
+failed and nothing is written.
+
+`_timer_runs` (and every name it begins) is **read only for the app**:
+`host.db.query` and the app data tools read it; no app statement may
+insert into it, change, delete, drop, rename or index it, make a view or a
+virtual table of its name, or put a trigger on it (the database refuses,
+in every way in). A table of that name in any shape other than the
+server's (one renamed onto the name, one an imported package brought) is
+moved aside to `timer_runs_moved_<random>` by the next run, its rows kept;
+one in exactly the server's shape stays as the log, whoever made it. So an
+app can at most fake rows in its own log, never reach another app's or the
+server's data, and what `_timer_runs` holds is only as trustworthy as the
+app's own code. Copy what you need into your own tables. The running app has no call for its timers'
+settings: it reads their runs from `_timer_runs`, and an author reads the
+settings with `app_timer_list`.
+
 ## The sandbox kit: work outside the app
 
 A mini app runs TSX in the browser. Heavy or offline work beside it (convert

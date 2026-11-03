@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased: app timers (the fleet monitor, part 3)
+
+- **Added:** app timers. A mini app can call one of its declared
+  tools on a clock (every 1 to 1440 minutes), with no model and no one
+  there: `app_timer_set`, `app_timer_list`, `app_timer_delete` and
+  `app_timer_run` (MCP and the `apps` tool group). A timer runs as the
+  login that set it, read only, through the same plan and checks as that
+  login's `host.tools.call`, and only a tool that reads and spends nothing,
+  with arguments its schema takes. A risky tool such as `peer_status`, or
+  an HTTP tool that sends a vault secret, needs an Admin user. Each run adds
+  a row to the app's own `_timer_runs` table, which the app reads and
+  cannot change; old rows go after `keep_days`. At most 5 timers per app,
+  20 per login and 100 per box (20 of them kept for Admin users); every 5
+  minutes at least for a login that is no Admin user, 15 for an HTTP tool.
+  The maintenance worker runs them every minute, each claimed right before
+  it runs; after 5 failures in a row a timer runs at most every 30
+  minutes, and `app_timer_run` and `app_timer_set` keep the same floors.
+  Rows read at admin rules leave the log once the app runs below them, or
+  when their timer is switched off or deleted. `MANTLE_APP_TIMERS=0`
+  switches them off (a kill switch: any value but an on word is off).
+  Migration 0355 (`app_timers`); docs/app-timers.md.
+- **Rollback:** `packages/db/rollback/0355_app_timers.revert.sql` takes
+  0355 off the ledger; the table stays and the older image runs no timer.
+
 ## v0.500.13: the parser image builds again
 
 - **Fixed:** the release could not build the parser image. It downloads the
