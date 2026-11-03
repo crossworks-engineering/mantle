@@ -9,18 +9,22 @@
 # to this box proves you own it, as with scripts/onboard.sh, so it asks for
 # no password: the peers it makes are the brain owner's.
 #
-#   scripts/peer-link.sh create --name admin --url https://admin.example.com --status-only
+#   # the admin box: a watched, outbound-only peer for box1
 #   scripts/peer-link.sh create --name box1 --url https://box1.example.com --outbound-only --watch
-#   scripts/peer-link.sh accept --peer box1 --token-file ./box1-token
-#   ssh box1 'cat token' | scripts/peer-link.sh accept --peer box1
+#   # box1's status-only peer for the admin box, its output piped straight
+#   # into the admin box's accept (the token never lands in a file):
+#   ssh box1.example.com 'cd ~/mantle && scripts/peer-link.sh create \
+#       --name admin --url https://admin.example.com --status-only' \
+#     | scripts/peer-link.sh accept --peer box1
 #   scripts/peer-link.sh list
 #   scripts/peer-link.sh revoke --peer box1
 #
 # A create prints `peer_id=...` and, unless --outbound-only, this side's new
-# token ONCE as `token=...` on stdout (notes go to stderr). The other box's
-# token is read from a FILE here or from stdin, and piped to the container
-# on stdin. Never as an argument: argv lands in shell history and in `ps`.
-# Delete token files afterwards.
+# token ONCE as `token=...` on stdout (notes go to stderr). accept reads the
+# other box's create output (or just its token line) on stdin, or from a
+# file with --token-file, and finds the token= line itself; it reaches the
+# container on stdin. Never as an argument: argv lands in shell history and
+# in `ps`. A token file, if you make one, is yours to delete.
 #
 # Ships in the deploy bundle and is refreshed by the updater like the other
 # operator scripts: its name is part of the fingerprint in
@@ -57,9 +61,9 @@ CLI=(pnpm -C server/web exec tsx scripts/peer-link.ts)
 
 if [[ -n "$TOKEN_FILE" ]]; then
   [[ -r "$TOKEN_FILE" ]] || die "Can't read the token file: $TOKEN_FILE"
-  # Its first line on the container's stdin: the token never appears in any
-  # process's argv.
-  head -n 1 "$TOKEN_FILE" | "${COMPOSE[@]}" exec -T web "${CLI[@]}" ${ARGS[@]+"${ARGS[@]}"}
+  # The whole file on the container's stdin (accept finds the token= line):
+  # the token never appears in any process's argv.
+  "${COMPOSE[@]}" exec -T web "${CLI[@]}" ${ARGS[@]+"${ARGS[@]}"} < "$TOKEN_FILE"
 else
   # stdin passes through (a piped token for accept); -T: no terminal is
   # needed, every line of output is machine-readable.
