@@ -703,6 +703,9 @@ export type TeamMemberActivity = {
 export type BoxPolicyReport = {
   /** MANTLE_POLICY_TELEGRAM=off. */
   telegram: { off: boolean };
+  /** MANTLE_POLICY_EMAIL_SEND=off: nothing on the box sends an email
+   *  (reading and syncing mail are not touched). */
+  emailSend: { off: boolean };
   /** MANTLE_POLICY_MODEL_DENY patterns (lowercase) and
    *  MANTLE_POLICY_PROVIDER_ALLOW ids (null: any provider). */
   models: { deny: string[]; providerAllow: string[] | null };

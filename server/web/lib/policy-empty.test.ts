@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  emailSendAllowed,
   modelPolicyRefusal,
   policySet,
   resetBoxPolicyForTests,
@@ -31,10 +32,15 @@ import { passwordHoldAnswer } from './auth/password-hold';
 import { passwordProblem, passwordRule, signInNeedsPasswordChange } from './auth/password-rule';
 import { policyReport } from './policy-check';
 import type { RequestLogins } from './auth/session';
-import { MANIFEST_AGENTS, MANIFEST_WORKERS } from './system-manifest/manifest';
+import {
+  MANIFEST_AGENTS,
+  MANIFEST_TOOL_GROUPS,
+  MANIFEST_WORKERS,
+} from './system-manifest/manifest';
 
 const KEYS = [
   'MANTLE_POLICY_TELEGRAM',
+  'MANTLE_POLICY_EMAIL_SEND',
   'MANTLE_POLICY_MODEL_DENY',
   'MANTLE_POLICY_PROVIDER_ALLOW',
   'MANTLE_POLICY_PASSWORD_MIN',
@@ -91,6 +97,17 @@ describe('every MANTLE_POLICY_* empty: the box as before', () => {
     const slugs = ['telegram_send', 'telegram_pending', 'search_nodes'];
     expect(effectiveToolSlugs(slugs)).toEqual(slugs);
     expect(slugs.every(toolPolicyAllows)).toBe(true);
+  });
+
+  it('email: sending works as today, every send tool on every list', () => {
+    expect(emailSendAllowed()).toBe(true);
+    const slugs = ['email_send', 'email_page', 'email_list', 'email_get'];
+    expect(effectiveToolSlugs(slugs)).toEqual(slugs);
+    expect(slugs.every(toolPolicyAllows)).toBe(true);
+    // The manifest's email group keeps every tool it ships.
+    const email = MANIFEST_TOOL_GROUPS.find((g) => g.slug === 'email');
+    expect(email?.toolSlugs).toEqual(['email_send', 'email_page', 'email_list', 'email_get']);
+    expect(effectiveToolSlugs([...email!.toolSlugs])).toEqual(email!.toolSlugs);
   });
 
   it('models: every shipped default stays callable, auto routers too', () => {

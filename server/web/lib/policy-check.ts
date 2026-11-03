@@ -15,6 +15,7 @@
  */
 import {
   boxPolicy,
+  emailSendAllowed,
   modelPolicyRefusal,
   modelPolicySet,
   passwordPolicyMin,
@@ -141,6 +142,7 @@ export async function blockedModelRoutes(): Promise<BlockedModelRoute[]> {
 /** The policy as the Policy panel shows it: each rule, on or not. */
 export type PolicyReport = {
   telegram: { off: boolean };
+  emailSend: { off: boolean };
   models: { deny: readonly string[]; providerAllow: readonly string[] | null };
   passwords: { set: boolean; min: number; commonList: boolean };
   /** Every enabled route the model block refuses. */
@@ -183,6 +185,7 @@ export async function policyReport(): Promise<PolicyReport | null> {
   const rule = passwordRule();
   return {
     telegram: { off: !telegramAllowed() },
+    emailSend: { off: !emailSendAllowed() },
     models: { deny: p.modelDeny ?? [], providerAllow: p.providerAllow },
     passwords: { set: p.passwordMin !== null, min: rule.min, commonList: rule.commonList },
     blocked: await blockedModelRoutes(),
@@ -205,6 +208,7 @@ export async function runPolicyBootCheck(log: {
   const p = boxPolicy();
   log.info(
     `box policy: telegram ${p.telegram === 'off' ? 'off' : 'as configured'}; ` +
+      `email sending ${p.emailSend === 'off' ? 'off' : 'as configured'}; ` +
       `model deny ${p.modelDeny ? p.modelDeny.join(',') : 'none'}; ` +
       `provider allow ${p.providerAllow ? p.providerAllow.join(',') || '(nothing)' : 'any'}; ` +
       `password min ${p.passwordMin ?? 'default'}`,

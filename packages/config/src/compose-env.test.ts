@@ -36,6 +36,7 @@ const BOX_FLAGS = [
   'MANTLE_FOUNDRY_API_VERSION',
   // The box policy (docs/policy.md): the operator's rules, host .env only.
   'MANTLE_POLICY_TELEGRAM',
+  'MANTLE_POLICY_EMAIL_SEND',
   'MANTLE_POLICY_MODEL_DENY',
   'MANTLE_POLICY_PROVIDER_ALLOW',
   'MANTLE_POLICY_PASSWORD_MIN',

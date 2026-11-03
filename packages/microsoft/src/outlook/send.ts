@@ -18,7 +18,7 @@
  * original message instead.
  */
 import type { EmailAccount } from '@mantle/db';
-import type { SendEmailInput, SendEmailResult } from '@mantle/email';
+import { assertEmailSendAllowed, type SendEmailInput, type SendEmailResult } from '@mantle/email';
 import { MAIL_SEND_SCOPE } from '../config';
 import { graphPost } from '../client';
 
@@ -52,11 +52,14 @@ function recipients(value: string | string[] | undefined): GraphRecipientOut[] {
  * body, so there's no provider message id to return — `messageId` is empty and
  * `accepted` optimistically lists every recipient (Graph reports later
  * delivery failures as bounce mail, like any provider).
+ * Refuses first while the box policy switches email sending off
+ * (assertEmailSendAllowed, docs/policy.md).
  */
 export async function sendViaGraph(
   account: EmailAccount,
   input: SendEmailInput,
 ): Promise<SendEmailResult> {
+  assertEmailSendAllowed();
   if (!account.msAccountId) {
     throw new Error(
       `email account ${account.address} (provider=microsoft) is missing ms_account_id`,

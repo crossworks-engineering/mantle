@@ -16,7 +16,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
 import type { BuiltinToolDef, LoginMcpChannel, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
-import { feature } from '@mantle/config';
+import { feature, toolPolicyAllows } from '@mantle/config';
 import { mcpDefinition } from '../mcp-defs';
 import {
   builtinCallerOn,
@@ -107,6 +107,10 @@ export function makeRegisterContext(
     for (const def of defs) {
       if (opts?.only && !opts.only.has(def.slug)) continue;
       if (opts?.skip?.(def)) continue;
+      // A tool the box policy switches off (the send tools while
+      // MANTLE_POLICY_EMAIL_SEND=off, the Telegram tools while Telegram is
+      // off; docs/policy.md) leaves the list, as it leaves the agent's.
+      if (!toolPolicyAllows(def.slug)) continue;
       // A builtin the surface defines itself under its name (a hand-written
       // MCP tool, mcp-defs.ts: its own schema and reply) is that definition's.
       if (mcpDefinition(def.slug)) continue;
