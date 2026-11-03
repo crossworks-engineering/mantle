@@ -192,14 +192,14 @@ the tour of how it is built is [docs/architecture.md](./docs/architecture.md).
 ![migrations](https://img.shields.io/badge/migrations-352-336791?logo=postgresql&logoColor=white)
 ![built-in tools](https://img.shields.io/badge/built--in%20tools-338-6b4fbb)
 ![docs](https://img.shields.io/badge/docs-121%20guides-4c8eda)
-![releases](https://img.shields.io/badge/releases-674-blue)
+![releases](https://img.shields.io/badge/releases-675-blue)
 
 Counted from this tree on every release. A fresh brain ships with 15 agents, 22 skills, 338 built-in tools and 13 background AI workers, all on one Postgres database. Test counts are cases *declared*; table-driven tests expand to more when they run.
 
-Version 0.500.3: 7,883 commits and 674 releases since 2026-05-14, about 46 commits a day.
+Version 0.500.4: 7,887 commits and 675 releases since 2026-05-14, about 46 commits a day.
 
 ```
-commits/week, last 25 weeks   ▁▃▂▂▁▁▃▂▂▂▃▂▂▂▂▁▂▁▁▄▅▅█▅▄   peak 1338
+commits/week, last 25 weeks   ▁▃▂▂▁▁▃▂▂▂▃▂▂▂▂▁▂▁▁▄▅▅█▅▄   peak 1329
 ```
 
 <!-- stats:end -->
