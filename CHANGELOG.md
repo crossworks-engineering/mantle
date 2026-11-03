@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased: the parser image builds again
+## v0.500.13: the parser image builds again
 
 - **Fixed:** the release could not build the parser image. It downloads the
   DWG converter's source (libredwg 0.14) while it builds, and the GNU
