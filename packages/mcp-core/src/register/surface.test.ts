@@ -25,7 +25,7 @@ import { registerMantleTools } from '../build-server';
  * 2026-11-03 it was put in list order (the same tools, reordered only).
  *
  * Order is pinned because MCP clients see the tool list in registration order
- * (a permission screen shows the writes before the long run of reads). A
+ * (a client that keeps that order shows the writes before the reads). A
  * duplicate slug throws (map-surface.ts add, as the SDK's registerTool).
  *
  * When you deliberately add or remove a tool, this list changes in the same

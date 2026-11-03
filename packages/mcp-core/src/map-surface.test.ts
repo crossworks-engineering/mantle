@@ -116,7 +116,7 @@ describe('the tool map on the full surface', () => {
         const names = (await client.listTools()).tools.map((t) => t.name);
         const rank = (c: RiskClass) => ['write', 'delete', 'send', 'read'].indexOf(c);
         const expected = [...seen]
-          .sort(([a, ca], [b, cb]) => rank(ca) - rank(cb) || (a < b ? -1 : 1))
+          .sort(([a, ca], [b, cb]) => rank(ca) - rank(cb) || (a < b ? -1 : a > b ? 1 : 0))
           .map(([n]) => n);
         expect(new Set(seen.map(([, c]) => c))).toEqual(
           new Set(['write', 'delete', 'send', 'read']),

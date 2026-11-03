@@ -90,7 +90,9 @@ const LIST_ORDER: readonly RiskClass[] = ['write', 'delete', 'send', 'read'];
 /** `entries` in list order: by class (LIST_ORDER), then by name. */
 function inListOrder(entries: readonly McpMapEntry[]): McpMapEntry[] {
   const rank = (e: McpMapEntry) => LIST_ORDER.indexOf(e.cls);
-  return [...entries].sort((a, b) => rank(a) - rank(b) || (a.name < b.name ? -1 : 1));
+  return [...entries].sort(
+    (a, b) => rank(a) - rank(b) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+  );
 }
 
 /** The names the map's own tools take: a tool named so is not offered. */
