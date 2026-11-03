@@ -53,37 +53,40 @@ gate, and every path goes through it.
 
 ## Email sending
 
-`MANTLE_POLICY_EMAIL_SEND=off` switches email sending off for the whole box:
-no agent, person, app or run can send an email from it. Reading and syncing
-mail keep working (IMAP and Microsoft accounts, `email_list`, `email_get`,
-the inbox routes, new contacts' backfill).
-
-The box sends mail one way only: through a mail account a person connected,
-over its own provider (SMTP submission, or Microsoft Graph `sendMail` for a
-Microsoft account; [email-send.md](email-send.md)). Every send path reaches
-one of those two transports, and both ask one gate first.
+`MANTLE_POLICY_EMAIL_SEND=off` closes MantleOS's own mail transports: the
+mail accounts people connected, sending over their SMTP server or over
+Microsoft Graph `sendMail` ([email-send.md](email-send.md)). Every Mantle
+path to those two transports meets the refusal. Reading and syncing mail
+keep working (IMAP and Microsoft accounts, `email_list`, `email_get`, the
+inbox routes, new contacts' backfill).
 
 - **The gate.** `assertEmailSendAllowed` (`packages/email/src/send.ts`)
   runs first in `sendEmail` (SMTP) and in `sendViaGraph`
   (`packages/microsoft/src/outlook/send.ts`). While sending is off it throws
   `EmailSendPolicyOffError` before a connection is opened or a Graph call is
-  made, so nothing leaves the box by any path: a tool call in a turn, a
-  heartbeat, a sub-agent, a run, an app's declared tool, an MCP or linked
-  brain call. It answers `403 { error, code: 'policy_email_send_off' }`
-  wherever an error reaches a route.
+  made, whichever Mantle path called it: a tool call in a turn, a
+  heartbeat, a sub-agent, a run, an app's declared tool, an MCP call or a
+  linked brain's call into this box. It answers
+  `403 { error, code: 'policy_email_send_off' }` wherever an error reaches
+  a route.
 - **The tools.** The send tools, `email_send` and `email_page`
   (`EMAIL_SEND_TOOL_SLUGS`), leave every agent's tool list
-  (`effectiveToolSlugs`) and the MCP tool list (`registerBuiltinTools`). The
-  grants stay, and the `email` group keeps its reads. A send tool named
-  anyway (an app, a tool row under another name) answers that sending is
-  off and reads nothing.
+  (`effectiveToolSlugs`, and `resolveAgentTools` for a tool row under
+  another name that runs one) and the MCP tool list (`registerBuiltinTools`;
+  MCP lists builtins by their own names only). The grants stay, and the
+  `email` group keeps its reads. A send tool named anyway (an app, a run)
+  answers that sending is off and reads nothing.
 - **A queued send is kept, not sent.** A send waiting for approval (a tool
   with `requiresConfirm`, the heartbeat egress gate) stays pending: its
   approval, in the app, over MCP (`pending_approve`) or from a Telegram card,
   is refused with `403 { error, code: 'policy_email_send_off' }` and the row
   is not claimed. Once sending is on again it can be approved as before, or
-  rejected. Nothing else queues mail: reminders go to Telegram or the app,
-  and the email workers only read.
+  rejected. This holds for `email_send`, `email_page` and a row under
+  another name that runs one of them. A queued call of a tool that is no
+  builtin but sends inside it (a recipe tool with a send step) is approved
+  and runs: its send is refused by the gate, so no mail leaves, but the
+  call is used up rather than kept pending. Nothing else queues mail:
+  reminders go to Telegram or the app, and the email workers only read.
 - **No route switch.** No route of the brain sends mail itself (sending is
   only ever a tool), so no route is switched off. The account settings
   stay open: an account's SMTP server can still be set and tested (the test
@@ -97,8 +100,21 @@ one of those two transports, and both ask one gate first.
 - Every account, message, contact and pending row stays. Remove the setting
   and restart, and sending works as before.
 
+**Not covered.** Mail that does not go through MantleOS's own transports
+is outside this switch:
+
+- an external MCP connector whose tools include one that sends mail;
+- an HTTP tool (`api_tool_create`) that calls a mail API with a stored key,
+  or Microsoft Graph with client credentials of its own;
+- a sandbox (`sandbox_exec`) with network access, talking SMTP itself;
+- an outgoing `peer_call` to a linked brain whose own policy allows sending.
+
+These are governed by who may add connectors, HTTP tools, sandboxes and
+linked brains (Admins), and by network egress control at the box's edge. A
+corporate box that must send no mail at all needs both.
+
 A Microsoft account still asks for the `Mail.Send` permission when it is
-connected; the box cannot use it while sending is off.
+connected; the box's own transport does not use it while sending is off.
 
 `on` or empty: sending works as configured.
 

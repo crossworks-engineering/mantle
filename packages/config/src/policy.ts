@@ -44,7 +44,7 @@ export const MAX_PASSWORD_MIN = 64;
 export type BoxPolicy = Readonly<{
   /** 'off': Telegram is switched off for the whole box. */
   telegram: 'off' | null;
-  /** 'off': nothing on the box sends an email. */
+  /** 'off': MantleOS's own mail transports refuse to send. */
   emailSend: 'off' | null;
   /** Model patterns no route may call (lowercase, see modelPolicyRefusal). */
   modelDeny: readonly string[] | null;
@@ -262,14 +262,25 @@ export function toolPolicyAllows(slug: string): boolean {
   return true;
 }
 
+/** toolPolicyAllows for a tool row: its slug, and the builtin it runs when
+ *  it is a row under another name (`handler: { kind: 'builtin', ref }`), so
+ *  an alias of a switched-off builtin leaves the agent's list too. */
+export function toolRowPolicyAllows(row: { slug: string; handler?: unknown }): boolean {
+  if (!toolPolicyAllows(row.slug)) return false;
+  const h = row.handler as { kind?: unknown; ref?: unknown } | null | undefined;
+  return !(h?.kind === 'builtin' && typeof h.ref === 'string' && !toolPolicyAllows(h.ref));
+}
+
 /** What every Telegram refusal says. */
 export const TELEGRAM_POLICY_OFF_MESSAGE =
   "Telegram is switched off by this box's policy (MANTLE_POLICY_TELEGRAM).";
 
 // ── Email sending ───────────────────────────────────────────────────────────
 
-/** False when the policy switches email sending off for the box. Reading
- *  and syncing mail are not touched. */
+/** False when the policy switches email sending off: MantleOS's own mail
+ *  transports (connected accounts over SMTP or Microsoft Graph) refuse.
+ *  Reading and syncing mail are not touched. Connectors, HTTP tools,
+ *  sandboxes and linked brains are not governed here (docs/policy.md). */
 export function emailSendAllowed(): boolean {
   return boxPolicy().emailSend !== 'off';
 }

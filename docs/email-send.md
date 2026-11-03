@@ -136,10 +136,12 @@ upload sessions if ever needed), and Graph returns no RFC message id on send
 
 ## The box policy can switch sending off
 
-`MANTLE_POLICY_EMAIL_SEND=off` in the box `.env` stops every send: both
-transports (`sendEmail`, `sendViaGraph`) refuse first, the send tools leave
-every agent and MCP list, and a send waiting for approval stays pending.
-Reading and syncing are not touched. See [policy.md](policy.md#email-sending).
+`MANTLE_POLICY_EMAIL_SEND=off` in the box `.env` closes these two
+transports: `sendEmail` and `sendViaGraph` refuse first, the send tools
+leave every agent and MCP list, and a send waiting for approval stays
+pending. Reading and syncing are not touched. Mail sent another way (a
+connector, an HTTP tool, a sandbox, a linked brain) is not covered; see
+[policy.md](policy.md#email-sending).
 
 ## Layers
 

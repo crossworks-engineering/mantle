@@ -196,7 +196,7 @@ function sendFromAccount(account: EmailAccount, input: SendEmailInput): Promise<
  *  anyway (an app's declared tool, a run). Both transports refuse too. */
 const EMAIL_SEND_OFF = {
   ok: false as const,
-  error: `${EMAIL_SEND_POLICY_OFF_MESSAGE} Nothing was sent; no email can be sent from this box.`,
+  error: `${EMAIL_SEND_POLICY_OFF_MESSAGE} Nothing was sent; this box's mail accounts send nothing while it is off.`,
 };
 
 const NO_SEND_ACCOUNT_ERROR =

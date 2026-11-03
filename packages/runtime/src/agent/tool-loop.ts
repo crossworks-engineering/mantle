@@ -95,7 +95,7 @@ import {
 import { loadToolGroupsForCatalog } from './skills';
 // Its own entry, pure: a test that mocks @mantle/tools still runs the real rule.
 import { resolveToolLoading } from '@mantle/tools/tool-loading';
-import { env } from '@mantle/config';
+import { env, toolRowPolicyAllows } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
 import { ownerSurfaceLogin, surfaceLoginId, withAgentScope } from './agent-viewer';
 
@@ -510,11 +510,13 @@ export type ToolLoopArgs = ProviderCredential & {
 /**
  * Resolve a set of slugs to enabled tool rows. Convenience for callers
  * that have slugs (from the agent's granted tool groups) but not the
- * full rows yet.
+ * full rows yet. A row the box policy switches off by the builtin it runs
+ * (an alias of `email_send` or a `telegram_*` tool, docs/policy.md) is left
+ * out, as effectiveToolSlugs leaves the builtin's own slug out.
  */
 export async function resolveAgentTools(ownerId: string, slugs: string[]): Promise<Tool[]> {
   if (slugs.length === 0) return [];
-  return resolveTools(ownerId, slugs);
+  return (await resolveTools(ownerId, slugs)).filter(toolRowPolicyAllows);
 }
 
 /**
