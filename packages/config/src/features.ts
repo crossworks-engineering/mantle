@@ -21,6 +21,9 @@ type EnvFeature = {
   default: boolean | 'context';
   /** Always off in production, whatever the variable says. */
   devOnly?: true;
+  /** A kill switch: a word that is neither on nor off reads as off (a
+   *  typo of `off` still stops it), and says so once. */
+  killSwitch?: true;
   doc: string;
 };
 type ProfileFeature = { profile: ProfileFlag; doc: string };
@@ -58,6 +61,12 @@ export const FEATURES = {
     env: 'MANTLE_MCP_TOOLSMITH_WRITE',
     default: true,
     doc: 'the MCP surface offers the toolsmith write tools',
+  },
+  appTimers: {
+    env: 'MANTLE_APP_TIMERS',
+    default: true,
+    killSwitch: true,
+    doc: "the app timers' tick in the maintenance worker (docs/app-timers.md); off: no timer runs, the worker's other work goes on. A kill switch: any value but an on word is off",
   },
   s3ForcePathStyle: {
     env: 'S3_FORCE_PATH_STYLE',
@@ -156,7 +165,7 @@ export function feature(
   if ('service' in spec) return serviceEnabled(spec.service);
   if (spec.devOnly && isProduction()) return false;
   const fallback = spec.default === 'context' ? (ctx?.default ?? false) : spec.default;
-  return parseFlag(env(spec.env), fallback, spec.env);
+  return parseFlag(env(spec.env), fallback, spec.env, spec.killSwitch ? false : fallback);
 }
 
 /** Where a feature is read from, for the docs and /debug: the variable (and
