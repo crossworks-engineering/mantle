@@ -4,9 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased
-
-### A box can switch email sending off
+## v0.500.11: a box can switch email sending off
 
 A company can now stop a box from sending email, the same way it can switch
 Telegram off. One line in the box `.env` does it, and nobody can turn it
