@@ -544,7 +544,13 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect((await del(nHid, P)).status).toBe(200);
     expect(await readWs(nHid)).toEqual([R]);
     const moving = [n1, S1, n2, S2, n3];
-    const body = { nodeIds: [F], toWorkspaceId: Q, withContents: true, keepReadableIn: P };
+    const body = {
+      nodeIds: [F],
+      toWorkspaceId: Q,
+      withContents: true,
+      fromWorkspaceId: P,
+      keepReadableIn: P,
+    };
     const before = await misses();
 
     // mem moderates P, not Q: refused whole, nothing moves.
@@ -554,8 +560,27 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
       'forbidden',
     );
 
+    // mem3 reads nothing of it: 404, no counts.
+    await as(mem3);
+    const hid = await call(r.movePreview.POST(req('POST', body)));
+    expect(hid.status).toBe(404);
+    expect(hid.body.contents).toBeUndefined();
     await as(owner);
-    // withContents is a home move of one folder.
+    // withContents is a home move of one folder, from the home seen on it.
+    expect(
+      (await call(r.move.POST(req('POST', { ...body, fromWorkspaceId: undefined })))).body.code,
+    ).toBe('invalid');
+    expect(
+      (
+        await call(
+          r.move.POST(req('POST', { nodeIds: [n1], toWorkspaceId: Q, fromWorkspaceId: P })),
+        )
+      ).body.code,
+    ).toBe('invalid');
+    expect(
+      (await call(r.move.POST(req('POST', { ...body, fromWorkspaceId: R, confirm: true })))).body
+        .failed[0].error,
+    ).toContain('changed while the folder moved');
     expect((await call(r.move.POST(req('POST', { ...body, nodeIds: [F, n1] })))).body.code).toBe(
       'invalid',
     );
@@ -568,11 +593,21 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(pv.body).toEqual({
       alsoVisibleTo: [{ wsId: Q, name: 'Quay' }],
       removedFrom: [],
-      contents: { move: 5, apps: 0, otherHome: 2, notAllowed: 0, hidden: 1, calls: 1 },
+      contents: {
+        move: 5,
+        apps: 0,
+        otherHome: 2,
+        notAllowed: 0,
+        removedHere: 0,
+        hidden: 1,
+        calls: 1,
+      },
     });
     // Without the keep, P goes.
     const pv2 = await call(
-      r.movePreview.POST(req('POST', { nodeIds: [F], toWorkspaceId: Q, withContents: true })),
+      r.movePreview.POST(
+        req('POST', { nodeIds: [F], toWorkspaceId: Q, withContents: true, fromWorkspaceId: P }),
+      ),
     );
     expect(pv2.body.removedFrom).toEqual([{ wsId: P, name: 'Proj' }]);
     // Without withContents the answer is as before (no contents).
@@ -604,6 +639,8 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
         P,
         P,
       ]);
+      // In between: P still reads the moved n3 (its kept row), Q holds it.
+      expect((await readWs(n3)).sort()).toEqual([P, Q].sort());
       const b = await go();
       expect(b.body).toMatchObject({ moved: 2, failed: [], contents: { moved: 2, remaining: 1 } });
       expect(await homeOf(F)).toBe(P);
@@ -613,7 +650,7 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
         { id: nOther, title: 'nOther', reason: 'other_home' },
       ]);
       expect(c.body.contents).toMatchObject({ leftAloneCount: 2, hidden: 1 });
-      // Done: the folder lives in Q now.
+      // Done: the folder lives in Q now, and the home seen was P.
       expect((await go()).body.failed).toEqual([{ id: F, error: 'The item already lives there.' }]);
     } finally {
       g.MOVE_CONTENTS_PER_CALL.max = 200;
@@ -639,7 +676,13 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     // Back to P without the keep: Q goes from every moved item.
     const back = await call(
       r.move.POST(
-        req('POST', { nodeIds: [F], toWorkspaceId: P, withContents: true, confirm: true }),
+        req('POST', {
+          nodeIds: [F],
+          toWorkspaceId: P,
+          withContents: true,
+          fromWorkspaceId: Q,
+          confirm: true,
+        }),
       ),
     );
     // nThere (homed in Q, now the old home) moves too.
@@ -650,6 +693,90 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
       expect(rs.find((x) => x.ws === Q)).toBeUndefined();
     }
     expect(await misses()).toBe(before);
+  });
+
+  it('a folder home move with its contents: Removed here stays, a kind stays, the home moved meanwhile', async () => {
+    // RF (P) is shared to Q. r1 has Q "Removed here"; so has the sub-folder
+    // RS, which holds r2. r3 is plain.
+    const RF = await node('branch', 'RF', 'notes.rf');
+    const r1 = await node('note', 'r1', 'notes.rf');
+    const r3 = await node('note', 'r3', 'notes.rf');
+    const RS = await node('branch', 'RS', 'notes.rf.rs');
+    const r2 = await node('note', 'r2', 'notes.rf.rs');
+    for (const id of [RF, r1, r3, RS, r2]) await homeIn(id, P);
+    await as(owner);
+    expect((await add(RF, Q, { confirm: true })).status).toBe(200);
+    expect((await del(r1, Q)).status).toBe(200);
+    expect((await del(RS, Q, true)).status).toBe(200);
+    expect(await readWs(r2)).toEqual([P]);
+    const body = {
+      nodeIds: [RF],
+      toWorkspaceId: Q,
+      withContents: true,
+      fromWorkspaceId: P,
+      confirm: true,
+    };
+    const pv = await call(r.movePreview.POST(req('POST', body)));
+    expect(pv.body.contents).toMatchObject({ move: 1, removedHere: 3, otherHome: 0 });
+    const done = await call(r.move.POST(req('POST', body)));
+    expect(done.body).toMatchObject({ moved: 2, failed: [], contents: { moved: 1, remaining: 0 } });
+    expect(done.body.contents.leftAlone.map((l: Json) => [l.title, l.reason]).sort()).toEqual([
+      ['RS', 'removed_here'],
+      ['r1', 'removed_here'],
+      ['r2', 'removed_here'],
+    ]);
+    // The removals stand: Q still does not read r1, RS or r2.
+    for (const id of [r1, RS, r2]) expect(await readWs(id)).not.toContain(Q);
+    expect((await rowsOf(r3)).find((x) => x.is_home)!.ws).toBe(Q);
+
+    // A kind the target may not hold stays in the old home (Admin).
+    const AF = await node('branch', 'AF', 'notes.af');
+    const a1 = await node('note', 'a1', 'notes.af');
+    const ac = await node('contact', 'ac', 'notes.af');
+    const toQ = { nodeIds: [AF], toWorkspaceId: Q, withContents: true, fromWorkspaceId: admin };
+    expect((await call(r.movePreview.POST(req('POST', toQ)))).body.contents).toMatchObject({
+      move: 1,
+      notAllowed: 1,
+    });
+    const k = await call(r.move.POST(req('POST', { ...toQ, confirm: true })));
+    expect(k.body).toMatchObject({ moved: 2, failed: [] });
+    expect(k.body.contents.leftAlone).toEqual([
+      { id: ac, title: 'ac', reason: 'kind_not_allowed' },
+    ]);
+    expect((await rowsOf(a1)).find((x) => x.is_home)!.ws).toBe(Q);
+    expect((await rowsOf(ac)).find((x) => x.is_home)!.ws).toBe(admin);
+
+    // The folder rehomed between two calls: the next call moves nothing.
+    const MF = await node('branch', 'MF2', 'notes.mf2');
+    const m1 = await node('note', 'm1', 'notes.mf2');
+    const m2 = await node('note', 'm2', 'notes.mf2');
+    for (const id of [MF, m1, m2]) await homeIn(id, P);
+    const mv = {
+      nodeIds: [MF],
+      toWorkspaceId: Q,
+      withContents: true,
+      fromWorkspaceId: P,
+      confirm: true,
+    };
+    g.MOVE_CONTENTS_PER_CALL.max = 1;
+    try {
+      expect((await call(r.move.POST(req('POST', mv)))).body).toMatchObject({
+        moved: 1,
+        contents: { remaining: 1 },
+      });
+      await homeIn(MF, admin);
+      const again = await call(r.move.POST(req('POST', mv)));
+      expect(again.body.moved).toBe(0);
+      expect(again.body.failed[0].error).toContain('changed while the folder moved');
+    } finally {
+      g.MOVE_CONTENTS_PER_CALL.max = 200;
+    }
+    expect(
+      [
+        (await rowsOf(m1)).find((x) => x.is_home)!.ws,
+        (await rowsOf(m2)).find((x) => x.is_home)!.ws,
+      ].filter((w) => w === P),
+    ).toHaveLength(1);
   });
 
   it('move into a folder: edit the folder, manage the item, confirm what it adds (S6)', async () => {
