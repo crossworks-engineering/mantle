@@ -261,6 +261,7 @@ describe('readComposeStatus: operator-scripts state', () => {
     'compose-adopt.sh',
     'uninstall.sh',
     'onboard.sh',
+    'peer-link.sh',
   ];
   const sha = (s: string) => createHash('sha256').update(s).digest('hex');
   /** The set fingerprint, exactly as the updater's scripts_sha_of builds it. */

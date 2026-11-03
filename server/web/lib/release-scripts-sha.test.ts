@@ -25,6 +25,7 @@ const NAMES = [
   'compose-adopt.sh',
   'uninstall.sh',
   'onboard.sh',
+  'peer-link.sh',
 ];
 
 /** Extract `sha_of` + `scripts_sha_of` from updater.sh and run them for real. */
