@@ -35,10 +35,12 @@ defineDomainError(EmailSendPolicyOffError, {
 });
 
 /**
- * The one gate of every outbound mail: both transports (sendEmail here,
+ * The one gate of MantleOS's own mail transports: both (sendEmail here,
  * SMTP; sendViaGraph in @mantle/microsoft, Graph) call it first, so while
- * the box policy switches email sending off nothing leaves the box by any
- * path (a tool, an approved call, an app, a run). No row is touched.
+ * the box policy switches email sending off no Mantle path sends through
+ * them (a tool, an approved call, an app, a run). No row is touched. Mail
+ * a connector, an HTTP tool or a sandbox sends itself is not governed here
+ * (docs/policy.md).
  */
 export function assertEmailSendAllowed(): void {
   if (!emailSendAllowed()) throw new EmailSendPolicyOffError();

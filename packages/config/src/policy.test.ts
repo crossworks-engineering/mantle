@@ -18,6 +18,7 @@ import {
   resetBoxPolicyForTests,
   telegramAllowed,
   toolPolicyAllows,
+  toolRowPolicyAllows,
 } from './policy';
 
 const KEYS = [
@@ -203,6 +204,20 @@ describe('email sending off', () => {
     setPolicy({ MANTLE_POLICY_EMAIL_SEND: 'of' });
     expect(emailSendAllowed()).toBe(false);
     expect(() => assertEnvShape()).toThrow(/MANTLE_POLICY_EMAIL_SEND/);
+  });
+
+  it('a row under another name that runs a send builtin is off too', () => {
+    setPolicy({ MANTLE_POLICY_EMAIL_SEND: 'off' });
+    const alias = (ref: string) => ({ slug: 'my_alias', handler: { kind: 'builtin', ref } });
+    expect(toolRowPolicyAllows(alias('email_send'))).toBe(false);
+    expect(toolRowPolicyAllows(alias('email_page'))).toBe(false);
+    expect(toolRowPolicyAllows(alias('email_list'))).toBe(true);
+    expect(toolRowPolicyAllows({ slug: 'email_send', handler: null })).toBe(false);
+    expect(toolRowPolicyAllows({ slug: 'crm', handler: { kind: 'mcp', ref: 'email_send' } })).toBe(
+      true,
+    );
+    setPolicy({});
+    expect(toolRowPolicyAllows(alias('email_send'))).toBe(true);
   });
 
   it('removing the setting restores sending (a new process reads it again)', () => {
