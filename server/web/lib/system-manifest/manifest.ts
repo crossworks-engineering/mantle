@@ -1241,8 +1241,19 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'brain-health',
     name: 'Brain health',
     description:
-      "Self-monitoring: corpus capacity vs the split policy (brain_capacity), the scheduled retrieval-quality eval (recall_eval), and this box's health as numbers (box_status). Grant to the agent that runs the brain-health heartbeat.",
-    toolSlugs: ['brain_capacity', 'recall_eval', 'box_status'],
+      'Self-monitoring: corpus capacity vs the split policy (brain_capacity) and the scheduled retrieval-quality eval (recall_eval). Grant to the agent that runs the brain-health heartbeat.',
+    toolSlugs: ['brain_capacity', 'recall_eval'],
+  },
+  {
+    // In no agent's grant: box_status's collector runs in the web process
+    // only (the MCP endpoint, the app broker), so an agent turn in the
+    // runner would get a tool that refuses (docs/federation.md "Status
+    // links"). Granted by hand where a turn runs in the web process.
+    slug: 'fleet-status',
+    name: 'Box status',
+    description:
+      "This box's health as numbers (box_status): build, host, Postgres, services, spend, capacity, queue and logins. Its numbers are collected by the web process, so a turn in the runner gets a refusal.",
+    toolSlugs: ['box_status'],
   },
   {
     slug: 'federation',

@@ -124,6 +124,7 @@ export const TOOL_FLOWS: readonly ToolFlow[] = [
       'access',
       'sandboxes',
       'terminal',
+      'fleet-status',
     ],
   },
 ];
