@@ -45,9 +45,12 @@ import {
   AppSqlBusyError,
   AppSqlError,
   appSqlMaxDbBytes,
+  APP_TIMER_RUNS_TABLE,
   copyAppDbFile,
   runAppSql,
   runAppSqlBatch,
+  runAppTimerRunsBatch,
+  type AppTimerRunsDdl,
 } from './app-sql-runner';
 import {
   appViewerSalt,
@@ -57,7 +60,12 @@ import {
   type AppViewerSubject,
 } from './app-viewer';
 
-export { AppDbRestoringError, AppSqlBusyError, AppSqlError } from './app-sql-runner';
+export {
+  APP_TIMER_RUNS_TABLE,
+  AppDbRestoringError,
+  AppSqlBusyError,
+  AppSqlError,
+} from './app-sql-runner';
 
 /**
  * An app's database file is gone although the app had stored something in it
@@ -672,6 +680,171 @@ export async function appDbExec(
   return res;
 }
 
+/** One app timer run, as its app's run log keeps it (docs/app-timers.md). */
+export type AppTimerRunRow = {
+  timerId: string;
+  /** ISO time the run started (UTC): text, so it orders and compares. */
+  ranAt: string;
+  ok: boolean;
+  ms: number;
+  /** The tool's output as JSON text (null on a failure). */
+  result: string | null;
+  /** A fixed short text on a failure (never a caught error's). */
+  error: string | null;
+  /** The rules the run was judged at ('admin' or 'team'), null when it
+   *  failed before it was judged. */
+  level: 'admin' | 'team' | null;
+};
+
+/** The rows one prune removes at most (per timer, and of timers gone). */
+export const APP_TIMER_PRUNE_BATCH = 1000;
+
+/** The run log's shape: id, the timer, when, ok, how long, the result JSON,
+ *  the fixed error text and the rules the run was judged at. Created by the
+ *  first run, never by app SQL; the timer batch holds the live table to it
+ *  (a table of the name that is not this one is moved aside). */
+const TIMER_RUNS_INDEX_NAME = `${APP_TIMER_RUNS_TABLE}_timer_ran`;
+const TIMER_RUNS_DDL: AppTimerRunsDdl = {
+  table: `CREATE TABLE IF NOT EXISTS "${APP_TIMER_RUNS_TABLE}" (
+  id INTEGER PRIMARY KEY,
+  timer_id TEXT NOT NULL,
+  ran_at TEXT NOT NULL,
+  ok INTEGER NOT NULL,
+  ms INTEGER NOT NULL,
+  result TEXT,
+  error TEXT,
+  level TEXT
+)`,
+  index: `CREATE INDEX IF NOT EXISTS "${TIMER_RUNS_INDEX_NAME}" ON "${APP_TIMER_RUNS_TABLE}" (timer_id, ran_at)`,
+  indexName: TIMER_RUNS_INDEX_NAME,
+};
+
+/**
+ * Append one app timer run to the app's own database, in the reserved run
+ * log (`_timer_runs`, made on the first run), and prune in the same
+ * transaction: this timer's rows older than `keepDays`, and the rows of
+ * timers no longer set (`liveTimerIds`), each at most APP_TIMER_PRUNE_BATCH
+ * a run. Through the same store broker as an app write (the registry row,
+ * the declared schema, the checked statement, the file and size caps): a
+ * write past APP_SQL_MAX_DB_MB fails with SQLITE_FULL and rolls back
+ * whole; `pruneOnly` then frees what it may without the new row. A run
+ * at team rules removes every row of the timer kept at admin rules (the
+ * app is now held beyond Admin: its members read the log). The server's
+ * own batch (runAppTimerRunsBatch), which first sets the reserved objects
+ * right: app SQL reads the log and never changes it. System work only (the
+ * scheduler), never in a scope. Answers what the batch set right (a moved
+ * table, a dropped trigger, view or index).
+ */
+export async function appTimerRecordRun(
+  ownerId: string,
+  appNodeId: string,
+  run: AppTimerRunRow,
+  opts: {
+    keepDays: number;
+    liveTimerIds: readonly string[];
+    schema?: AppDbSchema;
+    pruneOnly?: boolean;
+    /** The app runs below admin rules now (appHeldBelowAdmin): every row
+     *  of the app kept at admin rules goes, whatever timer wrote it and
+     *  whatever this run came to. */
+    purgeAdmin?: boolean;
+  },
+): Promise<string[]> {
+  const reg = await ensureAppDatabase(ownerId, appNodeId, opts.schema);
+  await checkAppDbWrite(reg.id, reg.storagePath);
+  await mkdir(path.dirname(reg.storagePath), { recursive: true });
+  const cutoff = new Date(Date.parse(run.ranAt) - opts.keepDays * 86_400_000).toISOString();
+  const statements = [
+    { sql: TIMER_RUNS_DDL.table, params: [] },
+    { sql: TIMER_RUNS_DDL.index, params: [] },
+    ...(opts.purgeAdmin
+      ? [{ sql: `DELETE FROM "${APP_TIMER_RUNS_TABLE}" WHERE level = 'admin'`, params: [] }]
+      : run.level === 'team'
+        ? [
+            {
+              sql: `DELETE FROM "${APP_TIMER_RUNS_TABLE}" WHERE timer_id = ? AND level = 'admin'`,
+              params: [run.timerId],
+            },
+          ]
+        : []),
+    {
+      sql: `DELETE FROM "${APP_TIMER_RUNS_TABLE}" WHERE id IN (SELECT id FROM "${APP_TIMER_RUNS_TABLE}" WHERE timer_id = ? AND ran_at < ? ORDER BY id LIMIT ${APP_TIMER_PRUNE_BATCH})`,
+      params: [run.timerId, cutoff],
+    },
+    {
+      sql: `DELETE FROM "${APP_TIMER_RUNS_TABLE}" WHERE id IN (SELECT id FROM "${APP_TIMER_RUNS_TABLE}" WHERE timer_id NOT IN (SELECT value FROM json_each(?)) ORDER BY id LIMIT ${APP_TIMER_PRUNE_BATCH})`,
+      params: [JSON.stringify([...new Set([run.timerId, ...opts.liveTimerIds])])],
+    },
+    ...(opts.pruneOnly
+      ? []
+      : [
+          {
+            sql: `INSERT INTO "${APP_TIMER_RUNS_TABLE}" (timer_id, ran_at, ok, ms, result, error, level) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            params: [
+              run.timerId,
+              run.ranAt,
+              run.ok ? 1 : 0,
+              Math.max(0, Math.round(run.ms)),
+              run.result,
+              run.error,
+              run.level,
+            ],
+          },
+        ]),
+  ];
+  // A failure is the runner's AppSqlError: the caller reads only whether
+  // the file was full (isAppDbFull).
+  const { setRight } = await runAppTimerRunsBatch(reg.storagePath, statements, TIMER_RUNS_DDL);
+  try {
+    const { size } = await stat(reg.storagePath);
+    await db
+      .update(appDatabases)
+      .set({ sizeBytes: size, updatedAt: new Date() })
+      .where(eq(appDatabases.id, reg.id));
+  } catch {
+    /* size tracking is best-effort */
+  }
+  return setRight;
+}
+
+/**
+ * Remove the rows one timer kept at admin rules from its app's run log: the
+ * timer was switched off or deleted (app_timer_set, app_timer_delete), so
+ * no run of it will prune them again. In the caller's scope, as an app's
+ * own write (appDbExec): the registry is read, never made, and an app with
+ * no database file has nothing to remove. Through the same timer batch as
+ * the record (the reserved objects set right first). Answers how many rows
+ * went.
+ */
+export async function appTimerPurgeAdminRows(
+  ownerId: string,
+  appNodeId: string,
+  timerId: string,
+): Promise<number> {
+  const reg = await lookupAppDatabase(ownerId, appNodeId);
+  if (!reg || !(await fileExists(reg.storagePath))) return 0;
+  await checkAppDbWrite(reg.id, reg.storagePath);
+  const { changes } = await runAppTimerRunsBatch(
+    reg.storagePath,
+    [
+      { sql: TIMER_RUNS_DDL.table, params: [] },
+      { sql: TIMER_RUNS_DDL.index, params: [] },
+      {
+        sql: `DELETE FROM "${APP_TIMER_RUNS_TABLE}" WHERE timer_id = ? AND level = 'admin'`,
+        params: [timerId],
+      },
+    ],
+    TIMER_RUNS_DDL,
+  );
+  return changes[2] ?? 0;
+}
+
+/** Whether an error from appTimerRecordRun is the database file cap
+ *  (SQLITE_FULL: "database or disk is full"). */
+export function isAppDbFull(err: unknown): boolean {
+  return /database or disk is full|SQLITE_FULL/i.test(errorMessage(err));
+}
+
 /**
  * Record that a CLIENT login wrote this app's database: set once, on the
  * first client write, and never cleared, so a Table
@@ -852,6 +1025,7 @@ async function lookupAppDatabase(
   appNodeId: string,
   q: Pick<typeof db, 'select'> = db,
 ): Promise<{
+  id: string;
   storagePath: string;
   schemaVersion: number;
   sizeBytes: number;
@@ -859,6 +1033,7 @@ async function lookupAppDatabase(
 } | null> {
   const [row] = await q
     .select({
+      id: appDatabases.id,
       storagePath: appDatabases.storagePath,
       schemaVersion: appDatabases.schemaVersion,
       sizeBytes: appDatabases.sizeBytes,
