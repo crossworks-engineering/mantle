@@ -211,12 +211,8 @@ export async function getProviderAlert(
   ownerId: string,
   subject: ProviderSubject,
 ): Promise<ProviderAlertRow | null> {
-  const [row] = await systemDb
-    .select()
-    .from(providerAlerts)
-    .where(and(eq(providerAlerts.ownerId, ownerId), eq(providerAlerts.subject, subject)))
-    .limit(1);
-  return row ?? null;
+  // At most one row per subject, so the brain's few rows are read as one.
+  return (await listProviderAlerts(ownerId)).find((r) => r.subject === subject) ?? null;
 }
 
 /** The open alerts. */
