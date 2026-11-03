@@ -341,7 +341,7 @@ What admins (owner and admin logins) see, and other logins never see:
 - the live stream: the table's trigger raises `needs_you_changed` when what an admin sees changes, and the client refetches the alerts (the "Needs you" feed, `GET /api/team-admin/needs-you`, was removed in W5c);
 - one phone push per outage to admin devices ("Embeddings are failing"), on the same toggle as other "things waiting for you".
 
-`GET /api/embedding/recover` returns the shown alerts; `GET /api/embedding` returns them with the config.
+`GET /api/embedding/recover` returns the shown alerts; `GET /api/embedding` returns them with the config. Both split them (`splitProviderAlerts` in [`provider-alerts.ts`](../packages/content/src/provider-alerts.ts)): `alerts` holds only `embedding` and `extraction`, and `model_policy` and `decision` go in `otherAlerts`, because a released client reads every row of `alerts` by its subject and fails on one it does not know. Push reads them all. A `decision` alert is listed only while it is about the decider that runs now: an enabled default decider, at least one use on, the same model as the row. Otherwise no decision is made, so none could close it.
 
 **3. The circuit and automatic recovery** ([`provider-circuit.ts`](../server/api/src/agent/provider-circuit.ts), wired in [`extract-queue.ts`](../server/api/src/agent/extract-queue.ts)).
 
