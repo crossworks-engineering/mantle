@@ -479,8 +479,9 @@ web container. `create --name <n> --url <https://...>` with `--status-only`
 (the token reaches this box's status only), `--outbound-only` (the box takes
 no calls from that peer) and `--watch` (`peer_status` polls it) prints
 `peer_id=...` and, unless outbound-only, the token once as `token=...`;
-`accept --peer <id|name>` takes the other box's token on stdin or from
-`--token-file` (never argv); `list` and `revoke --peer` too. In a checkout:
+`accept --peer <id|name>` takes the other box's create output (or its
+token line) on stdin, best piped straight over ssh, or from `--token-file`
+(never argv); `list` and `revoke --peer` too. In a checkout:
 `pnpm -C server/web peer-link`. Details: [`federation.md`](./federation.md),
 "Status links".
 

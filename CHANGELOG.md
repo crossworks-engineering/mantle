@@ -15,9 +15,10 @@ deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
   nothing and is cached for 30 seconds. On MCP, and in a tool group of its
   own (`fleet-status`) that no agent holds by default.
 - **Added:** `peer_status`, which asks every watched linked brain for its
-  `box_status`, eight at a time, 10 seconds each, plus this box's own. It
-  calls nothing else, reads a reply up to 256 KB, and rebuilds each one
-  from the fixed shape. In the `federation` tool group.
+  `box_status`, eight at a time, 10 seconds each and 45 for the whole call,
+  up to 64 boxes, plus this box's own. It calls nothing else, reads a reply
+  up to 256 KB, and rebuilds each one from the fixed shape. In the
+  `federation` tool group.
 - **Added:** a peer's access scope (migration 0354). A `status` peer's token
   reaches `box_status` and `brain_capacity` on MCP and nothing else, on
   every list shape, as the owner; a `none` peer's token works nowhere.

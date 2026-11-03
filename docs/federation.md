@@ -238,15 +238,18 @@ asks it when no peer is named.
   (`shapeBoxStatus`, `packages/tools/src/box-status-bridge.ts`): only the
   known key paths, a number at each numeric path, a boolean at each flag,
   and a string only where the shape has one and only when it fits that
-  path's pattern or list (`ts` a UTC ISO time; the build's version x.y.z,
-  sha hex and time an ISO date; `host.scope` `container` or `host`;
+  path's pattern or list (`ts` a UTC ISO time; the build's version x.y.z
+  with at most an `alpha`, `beta` or `rc` tag and its number, sha hex and
+  time an ISO date; `host.scope` `container` or `host`;
   `capacity.zone` `green`, `watch` or `split`). `degraded` keeps only our
   probes' fixed names (`BOX_STATUS_PROBES`). Everything else is dropped. It never
   makes the paid embedder probe the dashboard makes. Read, spends nothing,
   the settings area, not risky. Cached 30 seconds, one collection at a time.
 - **`peer_status`**: asks every watched, paired, enabled peer for its
-  `box_status` over the peer's `/api/mcp`, eight at a time, 10 seconds
-  each, a reply read up to 256 KB, and adds this box's own line
+  `box_status` over the peer's `/api/mcp`: the first 64 by name (the rest
+  are counted in `skipped`), eight at a time, 10 seconds each and the whole
+  call within 45 seconds (a peer not answered or not asked by then reads
+  `timeout`), a reply read up to 256 KB, and adds this box's own line
   (`self: true`). `peer` names one peer instead. Each line is
   `{ peerId, name, ok, ms, status }` or, on a failure, a short fixed
   `error` (`timeout`, `unreachable`, `refused`, `not offered`, `failed`,
@@ -288,8 +291,10 @@ process to the container. The shipped compose files mount nothing.
 container, as `scripts/onboard.sh` does: shell access proves ownership, so
 it asks for no password, and every peer it makes is the owner's. A create
 prints `peer_id=...` and, unless `--outbound-only`, this side's new token
-once as `token=...`; the other box's token goes in on stdin or from a file
-(`--token-file`), never as an argument. Every change leaves an audit row
+once as `token=...`; `accept` reads the other box's create output (or just
+its token line) on stdin, or from a file (`--token-file`, passed through
+whole), finds the `token=` line itself, and never takes the token as an
+argument. Every change leaves an audit row
 (`peer.linked`, `peer.accepted`, `peer.revoked`) that names no token.
 
 A watched box and the admin box that watches it, over ssh (each `cd` is the

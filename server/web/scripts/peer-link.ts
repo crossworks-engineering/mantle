@@ -5,7 +5,8 @@
  * Runs INSIDE the web container; on a box, use the wrapper:
  *
  *   scripts/peer-link.sh create --name admin --url https://admin.example.com --status-only
- *   scripts/peer-link.sh accept --peer box1 < their-token.txt
+ *   ssh box1.example.com '... peer-link.sh create ... --status-only' \
+ *     | scripts/peer-link.sh accept --peer box1
  *
  * Here, directly (dev, or `docker compose exec web ...`):
  *
@@ -186,21 +187,26 @@ const HELP = `Link boxes from the shell: the fleet monitor's status link.
   pnpm -C server/web peer-link <command>     in a checkout
 
 Commands:
-  create --name <n> --url <https://...> [--status-only | --outbound-only] [--watch]
+  create --name <n> --url <https://...> [--status-only | --outbound-only] [--watch] [--allow-http]
          Prints peer_id=... and, unless --outbound-only, token=... ONCE.
          --status-only   that token reaches box_status and brain_capacity only
          --outbound-only this box takes no calls from the peer (the watching side)
          --watch         peer_status polls this peer
          --allow-http    take a plain http URL (a local test only)
   accept --peer <id|name> [--token-file <path>]
-         The other box's token, from the file or stdin (never an argument).
+         The other box's token, on stdin or from a file (never an argument):
+         its create output whole, or just the token line.
   list [--json]
   revoke --peer <id|name>
 
-A watched box and the admin box that watches it:
-  watched$ scripts/peer-link.sh create --name admin --url https://admin.example.com --status-only
-  admin$   scripts/peer-link.sh create --name box1 --url https://box1.example.com --outbound-only --watch
-  admin$   scripts/peer-link.sh accept --peer box1 --token-file ./box1-token
+A watched box (box1) and the admin box that watches it: the watched box's
+create goes straight into the admin box's accept, so the token is never
+written to a file or shown.
+  ssh admin.example.com 'cd ~/mantle && scripts/peer-link.sh create \\
+      --name box1 --url https://box1.example.com --outbound-only --watch'
+  ssh box1.example.com 'cd ~/mantle && scripts/peer-link.sh create \\
+      --name admin --url https://admin.example.com --status-only' \\
+    | ssh admin.example.com 'cd ~/mantle && scripts/peer-link.sh accept --peer box1'
 `;
 
 /** Where a run writes: stdout for the machine-readable lines, stderr for
