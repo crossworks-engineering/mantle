@@ -9,6 +9,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/peer-status-owner.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
 
@@ -66,7 +67,9 @@ describe.skipIf(!URL)('a status peer is the owner’s to re-key and re-arm over 
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'peer-status-owner-db-test-secret-32-chars';
     m = await import('@mantle/db');
-    sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
+    // Fixtures go through their own superuser client, not the app pool: under
+    // the runtime-role lane the app pool logs in as mantle_runtime.
+    sql = postgres(URL!, { max: 2, prepare: false, onnotice: () => {} }) as unknown as typeof sql;
     who.anchor = await ensureTestAnchor(sql);
     await sql`insert into auth.users (id, email, password_hash, role, display_name)
               values (${admin}, ${`${tag}-admin@example.com`}, 'x', 'admin', 'Another admin')`;
@@ -84,6 +87,7 @@ describe.skipIf(!URL)('a status peer is the owner’s to re-key and re-arm over 
   afterAll(async () => {
     await sql`delete from nodes where id in ${sql(Object.values(nodes))}`;
     await sql`delete from auth.users where id = ${admin}`;
+    await (sql as unknown as { end(): Promise<void> }).end();
     await m.closeDb();
   });
 

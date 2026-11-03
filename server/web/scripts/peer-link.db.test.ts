@@ -15,6 +15,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/scripts/peer-link.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureAdminUsers, ensureTestAnchor } from '@mantle/db/test-support';
 
@@ -71,7 +72,9 @@ describe.skipIf(!URL)('peer-link: the status link from the shell', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'peer-link-db-test-secret-at-least-32-chars';
     m = await import('@mantle/db');
-    sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
+    // Fixtures go through their own superuser client, not the app pool: under
+    // the runtime-role lane the app pool logs in as mantle_runtime.
+    sql = postgres(URL!, { max: 2, prepare: false, onnotice: () => {} }) as unknown as typeof sql;
     anchor = await ensureTestAnchor(sql);
     // The owner is an Admin login (a user of the Admin workspace): what a
     // status peer runs as.
@@ -82,6 +85,7 @@ describe.skipIf(!URL)('peer-link: the status link from the shell', () => {
     if (made.length > 0) {
       await sql`delete from nodes where id in (select node_id from mantle_peers where id in ${sql(made)})`;
     }
+    await (sql as unknown as { end(): Promise<void> }).end();
     await m.closeDb();
   });
 
