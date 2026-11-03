@@ -39,6 +39,14 @@ export const PEER_STATUS_TIMEOUT_MS = 10_000;
 /** How many peers are asked at once; the rest wait for a free place. */
 export const PEER_STATUS_CONCURRENCY = 8;
 
+/** The most watched peers one call asks (by name); the rest are counted in
+ *  `skipped`. */
+export const PEER_STATUS_MAX_PEERS = 64;
+
+/** The whole call's limit: a peer not answered by then is a `timeout`, one
+ *  not yet asked too. */
+export const PEER_STATUS_OVERALL_MS = 45_000;
+
 /** The most one peer's box_status reply may carry (a status is a few KB). */
 export const PEER_STATUS_REPLY_MAX_BYTES = 256 * 1024;
 
@@ -106,15 +114,18 @@ export function peerStatusErrorOf(err: unknown): PeerStatusError {
 
 /**
  * Run each job with its own deadline, at most `concurrency` at once (the
- * rest wait for a free place; a job's deadline starts when it starts); a
- * job past its deadline is a `timeout` whatever it does after (its signal is
- * aborted, so it can stop). Never throws: each job's answer is its value or
- * its fixed error, in the jobs' order. Exported for the timeout tests.
+ * rest wait for a free place; a job's deadline starts when it starts), and
+ * all of them within `overallMs`: a job's deadline never runs past it, and a
+ * job not started by then is not started. A job past its deadline is a
+ * `timeout` whatever it does after (its signal is aborted, so it can stop).
+ * Never throws: each job's answer is its value or its fixed error, in the
+ * jobs' order. Exported for the timeout tests.
  */
 export async function runWithDeadlines<K>(
   jobs: ReadonlyArray<{ key: K; run: (signal: AbortSignal) => Promise<unknown> }>,
   timeoutMs: number,
   concurrency = PEER_STATUS_CONCURRENCY,
+  overallMs = PEER_STATUS_OVERALL_MS,
 ): Promise<
   Array<
     { key: K; ms: number } & ({ ok: true; value: unknown } | { ok: false; error: PeerStatusError })
@@ -123,6 +134,7 @@ export async function runWithDeadlines<K>(
   type Answer = { key: K; ms: number } & (
     { ok: true; value: unknown } | { ok: false; error: PeerStatusError }
   );
+  const endAt = Date.now() + overallMs;
   const one = async ({
     key,
     run,
@@ -131,13 +143,15 @@ export async function runWithDeadlines<K>(
     run: (signal: AbortSignal) => Promise<unknown>;
   }): Promise<Answer> => {
     const started = Date.now();
+    const limit = Math.min(timeoutMs, endAt - started);
+    if (limit <= 0) return { key, ms: 0, ok: false as const, error: 'timeout' };
     const ctl = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         ctl.abort();
         reject(new StatusError('timeout'));
-      }, timeoutMs);
+      }, limit);
     });
     try {
       const value = await Promise.race([run(ctl.signal), deadline]);
@@ -221,7 +235,7 @@ export const peer_status: BuiltinToolDef = {
   },
   name: 'Check the status of watched boxes',
   description:
-    "Ask every watched linked brain (a peer marked to watch, paired and enabled) for its box_status, eight at a time, each given 10 seconds, plus this box's own (`self: true`). Pass `peer` (a name or id) to ask one linked brain only. Returns one line per box: `ok`, `ms`, and the status numbers or a short error ('timeout', 'unreachable', 'refused', 'not offered', 'failed', 'bad reply', 'not paired'; this box's own line 'unavailable' in a process that cannot collect it). Numbers only. Calls box_status and nothing else. Read-only, spends nothing.",
+    "Ask every watched linked brain (a peer marked to watch, paired and enabled; the first 64 by name, the rest counted in `skipped`) for its box_status, eight at a time, each given 10 seconds and all within 45, plus this box's own (`self: true`). Pass `peer` (a name or id) to ask one linked brain only. Returns one line per box: `ok`, `ms`, and the status numbers or a short error ('timeout', 'unreachable', 'refused', 'not offered', 'failed', 'bad reply', 'not paired'; this box's own line 'unavailable' in a process that cannot collect it). Numbers only. Calls box_status and nothing else. Read-only, spends nothing.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -234,6 +248,7 @@ export const peer_status: BuiltinToolDef = {
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const ref = strOpt(input.peer)?.trim();
+    let skipped = 0;
     // The peer rows and their tokens are system tables of the connectors
     // area (as the peer tools read them).
     const targets: Target[] = await areaSystem('connectors', async () => {
@@ -244,11 +259,12 @@ export const peer_status: BuiltinToolDef = {
           { peerId: t.peer.id, name: t.peer.displayName, baseUrl: t.peer.baseUrl, token: t.token },
         ];
       }
-      const watched = (await listPeers(ctx.ownerId)).filter(
-        (p) => p.watchStatus && p.enabled && p.status === 'active' && p.hasOutboundToken,
-      );
+      const watched = (await listPeers(ctx.ownerId))
+        .filter((p) => p.watchStatus && p.enabled && p.status === 'active' && p.hasOutboundToken)
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+      skipped = Math.max(0, watched.length - PEER_STATUS_MAX_PEERS);
       return Promise.all(
-        watched.map(async (p) => ({
+        watched.slice(0, PEER_STATUS_MAX_PEERS).map(async (p) => ({
           peerId: p.id,
           name: p.displayName,
           baseUrl: p.baseUrl,
@@ -295,8 +311,12 @@ export const peer_status: BuiltinToolDef = {
         for (const id of answered) await markPeerContacted(ctx.ownerId, id);
       }).catch(() => {});
     }
-    ctx.step?.setMeta({ boxes: boxes.length, ok: boxes.filter((b) => b.ok).length });
-    return { ok: true, output: { boxes }, untrusted: true };
+    ctx.step?.setMeta({ boxes: boxes.length, ok: boxes.filter((b) => b.ok).length, skipped });
+    return {
+      ok: true,
+      output: skipped > 0 ? { boxes, skipped } : { boxes },
+      untrusted: true,
+    };
   },
 };
 

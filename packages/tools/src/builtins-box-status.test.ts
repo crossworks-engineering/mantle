@@ -23,6 +23,8 @@ import {
 } from './box-status-bridge';
 import {
   PEER_STATUS_CONCURRENCY,
+  PEER_STATUS_MAX_PEERS,
+  PEER_STATUS_OVERALL_MS,
   PEER_STATUS_REPLY_MAX_BYTES,
   box_status,
   peer_status,
@@ -155,6 +157,18 @@ describe('shapeBoxStatus', () => {
       buildTime: '2026-11-03T10:00:00Z',
     });
     expect(shapeBoxStatus({ ...STATUS, ts: '2026-11-03 10:00' })!.ts).toBe('');
+    // A pre-release tag is alpha, beta or rc and a number, never free text.
+    for (const v of ['1.0.0-run.peer.call.now', '1.0.0-rc.1.2', '1.0.0-ignore', '1.0.0-rc.1234']) {
+      expect(
+        shapeBoxStatus({ ...STATUS, build: { ...STATUS.build, version: v } })!.build.version,
+        v,
+      ).toBe('');
+    }
+    for (const v of ['1.0.0', '1.0.0-alpha', '1.0.0-beta.2', '1.0.0-rc.10']) {
+      expect(
+        shapeBoxStatus({ ...STATUS, build: { ...STATUS.build, version: v } })!.build.version,
+      ).toBe(v);
+    }
   });
 
   it('degraded holds only our probe names', () => {
@@ -265,6 +279,24 @@ describe('peer_status', () => {
     expect(out.every((o) => o.ok)).toBe(true);
     expect(PEER_STATUS_CONCURRENCY).toBe(8);
     expect(PEER_STATUS_REPLY_MAX_BYTES).toBeLessThanOrEqual(256 * 1024);
+  });
+
+  it('one overall limit: past it a running job times out and the rest are not started', async () => {
+    let started = 0;
+    const jobs = Array.from({ length: 6 }, (_, i) => ({
+      key: i,
+      run: () => {
+        started++;
+        return new Promise((resolve) => setTimeout(() => resolve(i), 2_000));
+      },
+    }));
+    const t0 = Date.now();
+    const out = await runWithDeadlines(jobs, 1_000, 2, 80);
+    expect(Date.now() - t0).toBeLessThan(800);
+    expect(started).toBe(2);
+    expect(out.every((o) => !o.ok && o.error === 'timeout')).toBe(true);
+    expect(PEER_STATUS_OVERALL_MS).toBeLessThanOrEqual(45_000);
+    expect(PEER_STATUS_MAX_PEERS).toBe(64);
   });
 
   it('a failed peer is one of the fixed words, never its reply text', () => {

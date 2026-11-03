@@ -117,8 +117,9 @@ export const BOX_STATUS_PROBES: ReadonlySet<string> = new Set([
 
 /** A UTC ISO timestamp, as the collector writes `ts`. */
 const ISO_TS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
-/** A release version: x.y.z, with an optional short pre-release tag. */
-const VERSION = /^\d{1,5}\.\d{1,5}\.\d{1,5}(-[0-9A-Za-z.]{1,20})?$/;
+/** A release version: x.y.z, with an optional alpha, beta or rc tag and
+ *  its number (nothing else: a free pre-release tag could carry words). */
+const VERSION = /^\d{1,5}\.\d{1,5}\.\d{1,5}(-(alpha|beta|rc)(\.\d{1,3})?)?$/;
 /** A git sha, short or full. */
 const GIT_SHA = /^[0-9a-f]{7,40}$/;
 /** A build time: an ISO date, with a time and a zone or not. */
