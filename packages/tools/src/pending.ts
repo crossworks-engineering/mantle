@@ -601,6 +601,9 @@ export async function approvePendingCall(
     {
       kind: 'manual',
       ownerId,
+      // The asking login's work, not the approver's (the anchor's when
+      // the call names none).
+      rowLoginId: claimed.loginId ?? ownerId,
       subjectId: claimed.id,
       subjectKind: 'pending_tool_call',
       agentId: claimed.agentId,

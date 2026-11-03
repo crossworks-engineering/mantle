@@ -747,11 +747,13 @@ function actingLogin(): string | null {
 /**
  * The login a trace row is stamped with (traces.login_id), which decides who
  * lists and reads it (traceListedFor): the one its writer named, else the
- * login the work is done for, else, for a node, the login it is the own of
- * (a per-login row, nodes.login_id, or the login whose private workspace is
- * its home), so a worker's run over a user's private item is that user's:
- * a subquery the row's own insert runs, no read of its own. Null: system
- * work, listed to the Admin users.
+ * login the work is done for, else, for a node, the login whose work an
+ * item's run is (nodeWorkLoginSql), so a worker's run over a user's item is
+ * that user's. Null: system work, listed to the Admin users.
+ *
+ * The acting login comes before the node: it is who did this work now (a
+ * request, a turn, deferred work for a login), while the node only says
+ * whose item a loginless worker ran over.
  */
 function rowLoginFor(
   named: string | null,
@@ -763,12 +765,52 @@ function rowLoginFor(
   if (named) return named;
   if (acting) return acting;
   if (subjectKind !== 'node' || !subjectId || !UUID_RE.test(subjectId)) return null;
-  return sql`(select coalesce(n.login_id, p.login_id)
+  return nodeWorkLoginSql(subjectId, ownerId);
+}
+
+/**
+ * The login a trace row is stamped with when its work is no one's to list:
+ * no login has this id, so no reader, the anchor included, lists or reads
+ * the row (traceListedFor). For work whose login cannot be told (a run over
+ * a shared workspace's item whose maker is unknown, or over a node that is
+ * gone), Jason's rule: it is never handed to the anchor or shown to the
+ * Admin users as system work. Migration 0356 stamps older rows with it too.
+ */
+const NO_ONE_LOGIN = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Whose work a run over node `nodeId` is, as a subquery the row's own insert
+ * runs (no read of its own): a per-login row's login (nodes.login_id); the
+ * login whose private workspace is its home; for an item homed in any other
+ * workspace than Admin, the login whose ingest made it (its first stamped
+ * content_ingest) while that login is still a user of the workspace, else
+ * no one (NO_ONE_LOGIN). Null (system work) for an item homed in Admin, or
+ * with no home. No one when the node is gone.
+ */
+function nodeWorkLoginSql(nodeId: string, ownerId: string): SQL {
+  return sql`(case when not exists (
+                select 1 from nodes x where x.id = ${nodeId}::uuid and x.owner_id = ${ownerId}::uuid)
+              then ${NO_ONE_LOGIN}::uuid
+              else (select coalesce(
+                n.login_id,
+                p.login_id,
+                case when not w.is_admin then coalesce(
+                  (select i.login_id from traces i
+                    where i.subject_kind = 'node' and i.subject_id = n.id
+                      and i.owner_id = n.owner_id and i.kind = 'content_ingest'
+                      and i.login_id is not null and i.login_id <> ${NO_ONE_LOGIN}::uuid
+                      and exists (select 1 from workspace_users wu
+                                   where wu.workspace_id = w.id and wu.login_id = i.login_id)
+                    order by i.started_at limit 1),
+                  ${NO_ONE_LOGIN}::uuid)
+                end)
                 from nodes n
                 left join item_grants g on g.node_id = n.id and g.is_home
                 left join private_workspaces p on p.workspace_id = g.workspace_id
-               where n.id = ${subjectId}::uuid and n.owner_id = ${ownerId}::uuid
-               limit 1)`;
+                left join workspaces w on w.id = g.workspace_id
+               where n.id = ${nodeId}::uuid and n.owner_id = ${ownerId}::uuid
+               limit 1)
+              end)`;
 }
 
 function logErr(scope: string, err: unknown): void {

@@ -348,6 +348,8 @@ async function reflectOnAgent(
     {
       kind: 'reflector_run',
       ownerId,
+      // It reads the anchor's own thread only: the anchor's work.
+      rowLoginId: ownerId,
       subjectKind: 'agent_tick',
       // The trace's agentId is the agent whose persona_notes we're editing.
       agentId: agent.id,
