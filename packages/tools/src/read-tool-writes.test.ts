@@ -85,7 +85,7 @@ const SIDE_WRITES: readonly SideWrite[] = [
   },
   {
     // Best-effort since the low round: a refused write is skipped.
-    tools: ['peer_query', 'peer_search_chunks', 'peer_node_get', 'peer_tools'],
+    tools: ['peer_query', 'peer_search_chunks', 'peer_node_get', 'peer_tools', 'peer_status'],
     table: 'mantle_peers',
     where: 'packages/content/src/peers/registry.ts (markPeerContacted)',
   },
@@ -158,6 +158,9 @@ const NO_WRITE_FOUND: readonly string[] = [
   // The history rows' own fields (app-snapshots appHistoryLine): no write.
   'app_log',
   'app_snapshot_list',
+  // The dashboard's vitals, spend and queue counts (server/web
+  // lib/box-status.ts): reads only.
+  'box_status',
   'brain_capacity',
   'calculate',
   'canvas_library',

@@ -29,6 +29,7 @@ import { registerToolCallAudit } from './call-audit';
 import { connectorScopeRefusal, type ConnectorScopeFacts } from './connector-scope';
 import { OWNER_ONLY_ERROR } from './surface';
 import { policySpendsOwnerKey } from './tool-policy';
+import { STATUS_ONLY_ERROR, STATUS_PEER_TOOL_SLUGS } from './status-surface';
 // The `tool` source (a builtin called through dispatch) and the
 // runtime rows' sources, registered with the narrowers in every process.
 import './tool-gate-policy';
@@ -114,8 +115,15 @@ const keyNarrower: Narrower = (caller, policy) => {
  * (connectorToolPolicy), so it stays hidden. The connector's own checks
  * (the marked inputs, loginConnectorRefused) and the key areas (a
  * connector has none: only an all-areas key reaches it) still apply.
+ *
+ * A status-only peer (`facts.statusOnly`, docs/federation.md "Status
+ * links") lists and calls the status tools (STATUS_PEER_TOOL_SLUGS) and
+ * nothing else, any ref kind, whatever its switches say: checked first.
  */
 const peerNarrower: Narrower = (caller, policy, ref) => {
+  if (caller.facts?.statusOnly === true && !STATUS_PEER_TOOL_SLUGS.has(ref.name)) {
+    return STATUS_ONLY_ERROR;
+  }
   if (!narrowedCaller(caller) || !toolRef(ref)) return null;
   const declared = policy.fields?.peerRisky;
   if (typeof declared !== 'boolean') return RISKY_TOOL_ERROR;

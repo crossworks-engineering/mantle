@@ -204,6 +204,12 @@ export { CRAWL_TOOLS } from './builtins-crawl';
 export { VIDEO_TOOLS } from './builtins-video';
 export { SHARE_TOOLS } from './builtins-share';
 export { EVAL_TOOLS } from './builtins-eval';
+export {
+  FLEET_STATUS_TOOLS,
+  PEER_STATUS_TIMEOUT_MS,
+  type PeerStatusLine,
+} from './builtins-box-status';
+export { STATUS_PEER_TOOL_SLUGS, STATUS_ONLY_ERROR } from './status-surface';
 // Re-exported so MCP/route layers can pin their input caps to the SAME
 // contract the plan parser validates against (they already depend on us).
 export { ASK_HUMAN_FORM_LIMITS } from '@mantle/client-types';
@@ -449,6 +455,14 @@ export {
   type InvokeAgentInput,
   type InvokeAgentResult,
 } from './agent-bridge';
+export {
+  registerBoxStatusProvider,
+  getBoxStatusProvider,
+  numbersOnly,
+  BOX_STATUS_UNAVAILABLE,
+  type BoxStatus,
+  type BoxStatusProvider,
+} from './box-status-bridge';
 export {
   registerCanvasRenderer,
   getCanvasRenderer,

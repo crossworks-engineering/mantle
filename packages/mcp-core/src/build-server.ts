@@ -93,6 +93,8 @@ import {
   RUN_TOOLS,
   TOOL_RESULT_TOOLS,
   EVAL_TOOLS,
+  FLEET_STATUS_TOOLS,
+  STATUS_PEER_TOOL_SLUGS,
   TERMINAL_TOOLS,
 } from '@mantle/tools';
 import {} from '@mantle/content';
@@ -165,6 +167,9 @@ export function registerMantleTools(
      *  Without it the tools go to a full list of this call's own, put on
      *  the server at its end. */
     map?: McpToolMap;
+    /** A status-only linked brain (login-surface.ts McpCaller.statusOnly):
+     *  the status tools only (STATUS_PEER_TOOL_SLUGS), nothing else. */
+    statusOnly?: true;
   } = {},
 ): void {
   // Every tool through a list, so tools/list shows the writes, deletes
@@ -189,6 +194,16 @@ export function registerMantleTools(
     map,
   );
   const { registerBuiltinTools } = ctx;
+
+  // A status-only linked brain: this box's numbers and nothing more, through
+  // the same gate (whose peer narrower refuses any other tool for it too).
+  if (opts.statusOnly) {
+    registerBuiltinTools([...FLEET_STATUS_TOOLS, ...NODE_READ_TOOLS], {
+      only: STATUS_PEER_TOOL_SLUGS,
+    });
+    if (!opts.map) map.register(server);
+    return;
+  }
 
   registerSearchTools(ctx);
   registerFileTools(ctx);
@@ -357,6 +372,9 @@ export function registerMantleTools(
   // Reads. node_read fetches any node by id (the typed getters cover one type
   // each); brain_capacity is the corpus-vs-split-policy self-check.
   registerBuiltinTools(NODE_READ_TOOLS);
+  // The fleet monitor: this box's numbers (box_status) and the watched
+  // linked brains' (peer_status). docs/federation.md "Status links".
+  registerBuiltinTools(FLEET_STATUS_TOOLS);
   // The search / entity / file-read / telegram groups are bridged from the
   // one tested @mantle/tools handler each. Deliberately hand-written (read-shape divergence, or a schema MCP
   // clients already depend on): tree_list, file_get/file_read/file_rename (id

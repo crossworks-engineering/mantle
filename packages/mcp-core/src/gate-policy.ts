@@ -100,6 +100,9 @@ export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller {
     facts: Object.freeze({
       keyAreas: caller.areas ?? null,
       riskyAllowed: caller.riskyAllowed ?? [],
+      // A status-only peer: the peer narrower lets the status tools
+      // through and nothing else.
+      ...(caller.statusOnly ? { statusOnly: true } : {}),
       // What a tool write's audit row names (call-audit.ts),
       // and whether the route writes the call's row itself (`byRoute`: an
       // API key's call, auditMcpKeyCall), so the gate writes none.

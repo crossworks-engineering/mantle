@@ -101,6 +101,7 @@ describe('MCP tool hints on the surface', () => {
       'peer_node_get',
       'peer_query',
       'peer_search_chunks',
+      'peer_status',
       'peer_tools',
       'recipe_tool_test',
       'route_map',
