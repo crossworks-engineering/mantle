@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // tracing step and the decision endpoint. The endpoint answers per call
 // from `h.plan`: 'ok' answers, 'fail' rejects.
 const h = vi.hoisted(() => ({
-  plan: [] as Array<'ok' | 'fail'>,
+  plan: [] as Array<'ok' | 'fail' | 'policy'>,
   sent: 0,
   states: [] as Array<{ message?: string }>,
   timeouts: [] as number[],
@@ -15,6 +15,9 @@ const h = vi.hoisted(() => ({
   ctx: null as number | null,
   failures: [] as Array<{ subject: string; code: string; permanent: boolean; model?: unknown }>,
   successes: 0,
+  noAdapter: false,
+  noKey: false,
+  usesOff: false,
 }));
 
 // The `decision` provider alert: what the reporter hears.
@@ -42,7 +45,9 @@ vi.mock('@mantle/db', () => ({
     apiKeyId: 'k1',
     params: {
       ...h.params,
-      uses: { journal_recall: { enabled: true }, passage_scoring: { enabled: true } },
+      uses: h.usesOff
+        ? { passage_scoring: { enabled: false } }
+        : { journal_recall: { enabled: true }, passage_scoring: { enabled: true } },
     },
   })),
   bumpWorkerUsage: vi.fn(async () => {}),
@@ -50,7 +55,7 @@ vi.mock('@mantle/db', () => ({
 vi.mock('@mantle/api-keys', () => ({
   getApiKeyById: vi.fn(async () => 'key'),
   getApiKey: vi.fn(async () => 'key'),
-  resolveProviderKey: vi.fn(async () => 'key'),
+  resolveProviderKey: vi.fn(async () => (h.noKey ? null : 'key')),
 }));
 vi.mock('@mantle/tracing', () => ({
   contextLimitFor: () => h.ctx,
@@ -60,32 +65,40 @@ vi.mock('@mantle/tracing', () => ({
   ),
 }));
 vi.mock('@mantle/voice', () => ({
-  getDecisionAdapter: () => ({
-    decide: vi.fn(
-      async (req: {
-        questions: Record<string, unknown>;
-        state: { message?: string };
-        timeoutMs: number;
-        privacy?: unknown;
-      }) => {
-        h.states.push(req.state);
-        h.privacies.push(req.privacy);
-        h.timeouts.push(req.timeoutMs);
-        const outcome = h.plan[h.sent++] ?? 'ok';
-        if (outcome === 'fail') throw new Error('timeout');
-        return {
-          model: 'jev',
-          tokensIn: h.tokensIn,
-          answers: Object.fromEntries(
-            Object.keys(req.questions).map((k) => [
-              k,
-              { type: 'score', score: 2, confidence: 0.9, probabilities: {} },
-            ]),
+  getDecisionAdapter: () =>
+    h.noAdapter
+      ? undefined
+      : {
+          decide: vi.fn(
+            async (req: {
+              questions: Record<string, unknown>;
+              state: { message?: string };
+              timeoutMs: number;
+              privacy?: unknown;
+            }) => {
+              h.states.push(req.state);
+              h.privacies.push(req.privacy);
+              h.timeouts.push(req.timeoutMs);
+              const outcome = h.plan[h.sent++] ?? 'ok';
+              if (outcome === 'fail') throw new Error('timeout');
+              if (outcome === 'policy') {
+                throw Object.assign(new Error('blocked by the box policy'), {
+                  name: 'ModelPolicyError',
+                });
+              }
+              return {
+                model: 'jev',
+                tokensIn: h.tokensIn,
+                answers: Object.fromEntries(
+                  Object.keys(req.questions).map((k) => [
+                    k,
+                    { type: 'score', score: 2, confidence: 0.9, probabilities: {} },
+                  ]),
+                ),
+              };
+            },
           ),
-        };
-      },
-    ),
-  }),
+        },
 }));
 
 import { clearDecisionCache, decide, forgetResolvedDecider } from './decide';
@@ -127,6 +140,9 @@ beforeEach(() => {
   h.ctx = null;
   h.failures = [];
   h.successes = 0;
+  h.noAdapter = false;
+  h.noKey = false;
+  h.usesOff = false;
   clearDecisionCache();
   forgetResolvedDecider();
 });
@@ -386,5 +402,46 @@ describe('the decision alert hears what the breaker hears', () => {
     expect(h.sent).toBe(0);
     expect(h.failures).toEqual([]);
     expect(h.successes).toBe(0);
+  });
+
+  it('a box policy refusal counts for the breaker but opens no decision alert', async () => {
+    h.plan = ['policy', 'policy', 'policy', 'ok'];
+    for (let i = 0; i < 3; i++) expect(await single(`p${i}`)).toBeNull();
+    expect(h.failures).toEqual([]);
+    // Three in a row opened the breaker: the next call is not sent.
+    expect(await single('p3')).toBeNull();
+    expect(h.sent).toBe(3);
+  });
+});
+
+describe('an enabled decider that cannot be called is reported', () => {
+  it('no adapter: no_adapter, permanent, with the model', async () => {
+    h.noAdapter = true;
+    expect(await single('x')).toBeNull();
+    expect(h.failures).toEqual([
+      { subject: 'decision', code: 'no_adapter', permanent: true, model: 'jev' },
+    ]);
+  });
+
+  it('no key: no_key, permanent, with the model', async () => {
+    h.noKey = true;
+    expect(await single('x')).toBeNull();
+    expect(h.failures).toEqual([
+      { subject: 'decision', code: 'no_key', permanent: true, model: 'jev' },
+    ]);
+  });
+
+  it('the resolve is cached, so a second decision reports nothing new', async () => {
+    h.noKey = true;
+    await single('a');
+    await single('b');
+    expect(h.failures).toHaveLength(1);
+  });
+
+  it('every use off: nothing is reported', async () => {
+    h.noKey = true;
+    h.usesOff = true;
+    expect(await single('x')).toBeNull();
+    expect(h.failures).toEqual([]);
   });
 });

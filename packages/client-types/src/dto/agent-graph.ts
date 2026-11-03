@@ -288,6 +288,10 @@ export interface DeciderLastFailure {
   shown: boolean;
   /** When a decision worked again (ISO); null while it still fails. */
   resolvedAt: string | null;
+  /** The open row is about the decider that runs now (enabled, a use on,
+   *  the same model). False once closed, and for an open row no decision
+   *  can close any more: it is not listed as an alert then. */
+  current: boolean;
 }
 
 /** `POST /api/ai-workers/:id/test/decision`: one small request to the saved
@@ -311,7 +315,7 @@ export type DecisionTestResult = {
       code: string;
       /** One fixed sentence for an admin. */
       reason: string;
-      /** The provider's or the adapter's own words (owner only). */
+      /** The provider's or the adapter's own words, for a settings admin. */
       detail: string | null;
     }
 );

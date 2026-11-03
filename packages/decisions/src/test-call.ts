@@ -78,7 +78,7 @@ export type DecisionTestResult = {
       code: string;
       /** One fixed sentence for an admin. */
       reason: string;
-      /** The provider's or the adapter's own words, for the owner only. */
+      /** The provider's or the adapter's own words, for a settings admin. */
       detail: string | null;
     }
 );

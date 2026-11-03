@@ -145,6 +145,7 @@ export {
   NEEDS_YOU_REALTIME_TYPE,
   loadDeciderLastFailure,
   loadProviderAlerts,
+  splitProviderAlerts,
 } from './provider-alerts';
 
 export { dedupeFilename } from './dedupe-filename';

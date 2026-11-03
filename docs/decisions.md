@@ -155,11 +155,31 @@ works closes the alert. One write per brain and minute per process.
   cycles. It reaches the alert card, the banner and admin push. "Try again"
   does not apply: the extract circuit never probes this subject, and a
   decision that works closes it.
+- It is listed in `otherAlerts`, not `alerts`, on `GET /api/embedding/recover`
+  and `GET /api/embedding` (a released client fails on a subject it does not
+  know; docs/embeddings.md "Provider outages"), and only while it applies to
+  the decider that runs now (`deciderAlertApplies` in
+  `packages/content/src/provider-alerts.ts`): an enabled default decider,
+  at least one use on, and the row's model. With the worker off or
+  deleted, every use off or another model chosen, no decision runs that
+  could close the row, so it is not shown (push reads the same list).
+- An enabled default decider with a use on but no adapter for its provider
+  (`no_adapter`) or no key (`no_key`) reports that too, from
+  `resolveDecider` (at most once per 30 s resolve, one write a minute), so
+  it never fails in silence.
+- A box policy refusal (`policy`) counts for the breaker but is not
+  reported here: the policy opens its own `model_policy` alert, and one
+  cause raises one alert.
 - A request above the model's limits is never sent and is not a failure.
 - The worker screen shows the last failure (when, which model, the plain
   reason, still failing or since fixed): the row stays after it closes.
-  `GET /api/ai-workers/config` carries it as `deciderLastFailure`.
-- Nothing retries, and nothing lowers the privacy level: an admin decides.
+  `GET /api/ai-workers/config` carries it as `deciderLastFailure`, with
+  `current` (the open row applies to the decider that runs now, by the
+  same helper). The screen shows it in red only while it is open, shown
+  (or permanent) and current; an open blip reads as a quiet note.
+- A failed call is not retried (the breaker lets calls through again after
+  5 minutes), and nothing lowers the privacy level: an admin decides, and
+  the Test button checks a fix.
 
 ### The Test button
 
@@ -170,7 +190,7 @@ same call `decide()` makes: the worker's real privacy level, its real
 `timeout_ms`, the model's real request limits and the same cut check. It
 answers `{ ok: true, ms, costUsd, privacy, timeoutMs, answers }` or
 `{ ok: false, code, reason, detail }` (`detail` is the provider's words, for
-the owner). It works while the worker and its uses are off, and it leaves
+a settings admin). It works while the worker and its uses are off, and it leaves
 the breaker and the alert alone. It is the only caller of a model outside
 `decide()`, and only on a click: no cron, no trigger, no retry.
 

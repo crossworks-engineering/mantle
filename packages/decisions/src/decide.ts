@@ -36,7 +36,10 @@
  *      provider-outage.ts): a failure opens or adds to it, a decision that
  *      works closes it. An admin sees a permanent reason at once and a
  *      transient one after 10 min; the decider worker screen shows the last
- *      failure. Nothing here retries, and nothing lowers the privacy level.
+ *      failure. A failed call is not retried (the breaker lets calls through
+ *      again after its cool-down), and nothing lowers the privacy level. An
+ *      enabled decider with no adapter or no key is reported too
+ *      (`resolveDecider`); a box policy refusal is not (its own alert).
  *
  * Rules for call sites (from the spikes, docs/decisions.md): Jev ranks, groups
  * and flags; CODE applies dates, `superseded_by` and thresholds; Jev alone
@@ -52,7 +55,7 @@ import {
   type DecisionUse,
   type DecisionUseConfig,
 } from '@mantle/db';
-import { errorMessage, TtlCache } from '@mantle/std';
+import { errorMessage, PROVIDER_ERROR_REASONS, TtlCache } from '@mantle/std';
 import { log, step } from '@mantle/tracing';
 import {
   getDecisionAdapter,
@@ -62,7 +65,7 @@ import {
   type DecisionQuestion,
   type DecisionResult,
 } from '@mantle/voice';
-import { DecisionCutError, decisionFailureClass } from './failure';
+import { DECISION_FAILURE_REASONS, DecisionCutError, decisionFailureClass } from './failure';
 import { deciderPrivacy } from './privacy';
 import { limitsForModel, requestOverLimit, type DecisionRequestLimits } from './request-limits';
 import { CircuitBreaker } from './breaker';
@@ -117,6 +120,13 @@ export function resolveUse(
       ? { pool: Math.floor(cfg.pool) }
       : {}),
   };
+}
+
+/** True when any use is switched on (`resolveUse(...).enabled`). */
+function anyUseEnabled(params: DeciderParams): boolean {
+  return Object.keys(params.uses ?? {}).some(
+    (use) => resolveUse(params, use as DecisionUse).enabled,
+  );
 }
 
 function clamp01(n: number): number {
@@ -208,7 +218,9 @@ const resolved = new TtlCache<string, Resolved>({ ttlMs: RESOLVE_TTL_MS });
 /** Find the owner's decider worker + adapter + key. Negative results are
  *  cached too (30 s) so a brain without the worker pays one query per half
  *  minute, not one per search. A newly enabled worker is picked up within
- *  that window. */
+ *  that window. An enabled decider with a use on but no adapter or no key
+ *  is reported to the `decision` alert (at most once per resolve, and the
+ *  reporter writes once a minute): nothing else would ever say why. */
 export async function resolveDecider(ownerId: string): Promise<Resolved> {
   const hit = resolved.get(ownerId);
   if (hit !== undefined) return hit;
@@ -216,15 +228,21 @@ export async function resolveDecider(ownerId: string): Promise<Resolved> {
   try {
     const worker = await getDefaultWorker(ownerId, 'decider');
     if (worker) {
+      const params = (worker.params ?? {}) as DeciderParams;
       const adapter = getDecisionAdapter(worker.provider);
-      const credential = await resolveProviderKey(ownerId, worker.provider, worker.apiKeyId);
+      const credential = adapter
+        ? await resolveProviderKey(ownerId, worker.provider, worker.apiKeyId)
+        : null;
       if (adapter && credential) {
-        value = {
-          worker,
-          params: (worker.params ?? {}) as DeciderParams,
-          adapter,
-          apiKey: credential.apiKey,
-        };
+        value = { worker, params, adapter, apiKey: credential.apiKey };
+      } else if (anyUseEnabled(params)) {
+        const cls = adapter
+          ? { code: 'no_key', permanent: true, reason: PROVIDER_ERROR_REASONS.no_key }
+          : { code: 'no_adapter', permanent: true, reason: DECISION_FAILURE_REASONS.no_adapter };
+        noteProviderFailureClass(ownerId, 'decision', cls, {
+          provider: worker.provider,
+          model: worker.model,
+        });
       }
     }
   } catch (err) {
@@ -289,7 +307,9 @@ function heardSuccess(h: Heard): void {
 }
 
 /** A decision failed: the breaker counts it and the `decision` alert hears
- *  its plain reason (throttled). True when this opened the breaker. */
+ *  its plain reason (throttled). A box policy refusal is not reported here:
+ *  it opens its own `model_policy` alert, and one cause is one alert. True
+ *  when this opened the breaker. */
 function heardFailure(h: Heard, err: unknown): boolean {
   const opened = breaker.failure(h.worker.id);
   if (opened) {
@@ -298,10 +318,13 @@ function heardFailure(h: Heard, err: unknown): boolean {
         `skipping decisions for ${DEFAULTS.breakerCooldownMs / 60_000} min`,
     );
   }
-  noteProviderFailureClass(h.ownerId, 'decision', decisionFailureClass(err, h.privacy), {
-    provider: h.worker.provider,
-    model: h.worker.model,
-  });
+  const cls = decisionFailureClass(err, h.privacy);
+  if (cls.code !== 'policy') {
+    noteProviderFailureClass(h.ownerId, 'decision', cls, {
+      provider: h.worker.provider,
+      model: h.worker.model,
+    });
+  }
   return opened;
 }
 

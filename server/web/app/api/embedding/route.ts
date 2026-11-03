@@ -4,7 +4,7 @@ import { findProviderKeyIds } from '@mantle/api-keys';
 import { EMBEDDING_DIMS, getEmbeddingConfig, upsertEmbeddingConfig } from '@/lib/embedding-config';
 import { suggestBackupRoute } from '@/lib/embedding-backup';
 import { EXTRACTION_CONCURRENCY_MAX } from '@mantle/embeddings';
-import { loadProviderAlerts } from '@mantle/content';
+import { loadProviderAlerts, splitProviderAlerts } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { EMBEDDING_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import { errorMessage } from '@mantle/std';
@@ -24,7 +24,8 @@ export const policy = routePolicy({
 /** The single embedder config + the vector-column dim + the owner's API keys
  *  (for the route key pickers), for /settings/embedding. Also what an admin
  *  must act on (docs/embeddings.md "Provider outages"): the open provider
- *  alerts, and a same-model backup route to add when none is set. */
+ *  alerts (`alerts` and `otherAlerts`, as GET /api/embedding/recover), and a
+ *  same-model backup route to add when none is set. */
 export async function GET() {
   const user = ownerCaller();
   const [config, keys, keyIds, alerts] = await Promise.all([
@@ -34,7 +35,7 @@ export async function GET() {
     loadProviderAlerts(user.id),
   ]);
   return NextResponse.json({
-    alerts,
+    ...splitProviderAlerts(alerts),
     suggestBackup: suggestBackupRoute(config, keyIds),
     config: config
       ? {

@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { loadProviderAlerts } from '@mantle/content';
+import { loadProviderAlerts, splitProviderAlerts } from '@mantle/content';
 import { retryProvidersNow } from '@/lib/embedding-config';
 import { ownerCaller } from '@/lib/auth';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -15,13 +15,14 @@ export const policy = routePolicy({
 
 /**
  * GET: the provider outages an admin sees (docs/embeddings.md "Provider
- * outages"), for the app-shell banner and the dashboard. Fixed reasons only,
- * never provider text. Admins only: getOwnerOr401 refuses a member or a
- * client login.
+ * outages"), for the app-shell banner and the dashboard: `alerts`
+ * (embedding, extraction) and `otherAlerts` (the rest, which a released
+ * client does not know). Fixed reasons only, never provider text. Admins
+ * only: getOwnerOr401 refuses a member or a client login.
  */
 export async function GET() {
   const user = ownerCaller();
-  return NextResponse.json({ alerts: await loadProviderAlerts(user.id) });
+  return NextResponse.json(splitProviderAlerts(await loadProviderAlerts(user.id)));
 }
 
 /**

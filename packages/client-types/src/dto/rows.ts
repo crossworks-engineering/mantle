@@ -734,7 +734,8 @@ export type ProviderAlert = {
   /** `model_policy`: a call the box policy (MANTLE_POLICY_MODEL_DENY,
    *  MANTLE_POLICY_PROVIDER_ALLOW) refused; `code` is `policy`.
    *  `decision`: the decider fails (search and chat run without it); never
-   *  probed, a decision that works closes it. */
+   *  probed, a decision that works closes it. These two come in
+   *  `otherAlerts`, never in `alerts` (`ProviderAlertsAnswer`). */
   subject: 'embedding' | 'extraction' | 'model_policy' | 'decision';
   /** quota | auth | no_key | model | policy (permanent); rate_limit | server |
    *  network | timeout (transient, shown after 10 min). */
@@ -754,6 +755,18 @@ export type ProviderAlert = {
    *  Null when the queue has not started yet, and for a subject the queue
    *  does not wait on (`model_policy`, `decision`). */
   waiting: number | null;
+};
+
+/**
+ * The outages in `GET /api/embedding/recover` and `GET /api/embedding`.
+ * `alerts` holds only `embedding` and `extraction`, the subjects a released
+ * client knows; `model_policy` and `decision` go in `otherAlerts` (absent
+ * on an older brain). A `decision` alert is listed only while it is about
+ * the decider that runs now (enabled, a use on, the same model).
+ */
+export type ProviderAlertsAnswer = {
+  alerts: ProviderAlert[];
+  otherAlerts: ProviderAlert[];
 };
 
 export type AccountFoldersResult =
