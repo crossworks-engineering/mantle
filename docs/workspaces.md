@@ -248,14 +248,17 @@ the item landed (`landedIn`).
   "Also move the N items inside", ticked. Each item below the folder, at
   any depth, whose home is H moves too, on its own and by the same rules
   (Moderator of H and of T, a kind T may hold, the same "Keep it readable
-  in H"). An item homed elsewhere stays, and so does one of a kind T may
-  not hold; the answer names them. On the wire it is `withContents: true`
-  on `POST /api/grants/move` (one folder, `toWorkspaceId`, `confirm`). One
-  call moves at most 200 of the items, the deepest first; while
-  `contents.remaining` is above 0 the dialog calls again with the same
-  body, and the folder itself moves in the call that moves the last of
-  them, so its home still says what H was until then. An item whose home
-  or folder changed during the move stays (`changed`).
+  in H). An item stays when it is homed elsewhere, of a kind T may not
+  hold, "Removed here" for T (on it or on a folder it is in: the move
+  would undo that), or in a folder you cannot open. The answer names
+  them. On the wire it is `withContents: true` on `POST /api/grants/move`
+  (one folder, `toWorkspaceId`, `confirm`, and `fromWorkspaceId` = H, the
+  home the dialog saw). One call moves at most 200 of the items, the
+  deepest first; while `contents.remaining` is above 0 the dialog calls
+  again with the same body, and the folder itself moves in the call that
+  moves the last of them, so its home still says what H was until then.
+  Once the folder has another home than `fromWorkspaceId`, or an item's
+  home or folder changed during the move, it stays (`changed`).
 - **A copy** (duplicate, page from notes, copy to) is a new item. Its home
   is where you make it, with no other grant. Share it again by hand.
 - **An export** (a Word or Excel copy, a built sheet, an app file) is a
