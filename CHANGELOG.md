@@ -2,7 +2,43 @@
 
 Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
-deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
+deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
+
+## v0.500.3: the MCP list shows the risky tools first
+
+- **Changed:** an MCP client's tool list now starts with the tools that
+  change things. An MCP client is an outside AI app, such as Claude or
+  ChatGPT, that uses the brain's tools. Many clients show their permission
+  screen in list order, and the risky tools used to sit at the bottom,
+  under a long run of reads.
+- On the tool map the order is `tool_write`, `tool_delete`, `tool_send`,
+  then `tool_read` and `tool_help`, then the direct reads by name.
+- On the full list every write comes first, then every delete, then every
+  send, then the reads. Inside each group the tools go by name. A
+  connector counts as a send.
+- **Unchanged:** only the order moves. The tools, their rules, their
+  descriptions and their replies are the same.
+
+## v0.500.2: Bun first, in the repo guide
+
+- **Docs:** the repo guide (`CLAUDE.md`) now says new server code must run
+  on Bun. Bun is a newer JavaScript runtime: the program that runs the
+  server's code. Node stays as the fallback, and new code must keep
+  working on Node too, until the review on 2026-11-10 decides whether
+  Node goes. No code changed in this release.
+
+## v0.500.1: old tool names keep working on the tool map
+
+- **Fixed:** a client that remembered the full tool list can still call a
+  tool by its old name on a tool map connection. Before, a claude.ai
+  connector or a Claude Code session that had cached the list got "Tool X
+  not found" once the box turned the map on, until it reconnected.
+- The map now registers every tool the gate allows under its own name, as
+  the full list does. Only the list itself (`tools/list`) shows the map. A
+  call by an old name is that tool's own call: the same checks, the same
+  reply and the same call log row.
+- **Unchanged:** a name the gate does not allow is still "not found". The
+  four call tools and their class check work as before.
 
 ## v0.500.0: a major core update
 
@@ -15,6 +51,74 @@ WebAssembly in the app frame, the bundler follow-ups), the Present public
 link with its Moderator rule, the stricter password rule, the desktop
 origin for the Tauri app, and the DWG picture follow-ups. The entries below
 give each change.
+
+## Unreleased: the MCP tool map (four call tools by risk class)
+
+- **Added:** an MCP connection can ask for a short tool list, the tool
+  map. Add `?tools=map` to the connector URL, or set
+  `MANTLE_MCP_TOOL_MAP=1` for the whole box (stdio too). The default stays
+  the full list. A linked brain's connection never uses the map.
+- The map lists the core reads in full, `tool_help`, and four call tools:
+  `tool_read`, `tool_write`, `tool_delete` and `tool_send`. Each call tool
+  covers one risk class, which says how much a call can change. That is 25
+  tools and about 35k characters, where the full list is 324 tools and
+  about 396k. A shorter list costs the client fewer tokens on every turn.
+- A tool's class comes from its policy: read, write, delete, or send (a
+  write that sends, publishes or reaches outside the box). A call through
+  the wrong call tool is refused, and the answer names the right one.
+- **Security:** only `tool_read` is safe to let run unasked. It changes
+  nothing, and nothing leaves the box but a linked brain read's query. Let
+  the other three ask each time. The class of every tool is pinned by a
+  test (`risk-class-snapshot.test.ts`).
+- Each tool keeps its own gate, checks, reply and call log row, as on the
+  full list.
+
+## Unreleased: the desktop app is always let in (CORS)
+
+- **Added:** the desktop app (MantleOS Desktop, built on Tauri) signs in to
+  any box with no setting. The app loads its screens from its own address,
+  `mantle-ui://localhost`, so every call it makes looks like it comes from
+  another site. CORS is the browser rule that decides which other sites
+  may call the brain. The brain now trusts the app's address by name, in
+  one list: the box's `MANTLE_API_CORS_ORIGINS` plus the desktop app.
+- Sign-in, sign-up with the setup code and the token login all answer the
+  app. No web page can claim a `mantle-ui://` address, so this lets nobody
+  else in. A `*` in the env is still refused on `/api/auth`. The desktop
+  address is never a target for a company sign-in hand-off.
+- **Added:** the desktop app may show a Present canvas in a frame, by the
+  same name. A wildcard is still never carried over.
+- **Changed:** CORS allows the `Last-Event-ID` header and shows the `Date`
+  header by name. A live stream sends `Last-Event-ID` after a reconnect,
+  to pick up where it stopped. The assistant dock reads `Date` to time its
+  safety check by the server's clock.
+
+## Unreleased: a CI runner on the workstation, and a quicker release check
+
+- **Added:** `infra/ci-runner/` lets build-check run on our own
+  workstation instead of a GitHub machine. CI (continuous integration) is
+  the set of checks that runs on every push. The workstation has more
+  cores, so the test suites finish sooner. Each job gets a fresh runner
+  container with no Docker and no extra rights; it starts its own
+  Postgres. Pull requests always stay on GitHub's machines.
+- The repo variable `CI_SELF_HOSTED` turns it on or off. While it is on,
+  every push to `main` or `feat/**` waits for the workstation, so turn it
+  off when the workstation is down. Setup and logs:
+  `infra/ci-runner/README.md`.
+- **Changed:** the release guard (`release.yml`) reuses a green
+  build-check of the tagged commit instead of running the same tests
+  again. It retries the GitHub API when a call fails.
+
+## Unreleased: a mini app may run WebAssembly
+
+- **Fixed:** a mini app can load a WebAssembly module. WebAssembly (wasm)
+  is compiled code, for example from Rust, that runs fast in the browser.
+  The sandbox kit builds Rust to wasm for apps, but the app frame's
+  security rules (its CSP) blocked it, so every such app failed.
+- The frame now allows `'wasm-unsafe-eval'`. That allows wasm compilation
+  and nothing more: `eval` and `new Function` stay blocked, and the app
+  still has no network. A wasm module can do only what the app hands it.
+- **Docs:** the app authoring guide says how an app ships a module (base64
+  in a `.ts` file, no network) and how to keep it small.
 
 ## Unreleased: DWG pictures, the follow-ups (after v0.400.46)
 
@@ -155,6 +259,18 @@ give each change.
   with streams open exited 0, the same as on Node. See docs/update-prod.md,
   Live updates on Bun.
 
+## Unreleased: a slow large upload is no longer cut at 300 seconds
+
+- **Fixed:** a large upload over a slow line now finishes. Node gave a
+  request 300 seconds to arrive in full, then answered 408. A 451 MB
+  upload at about 1.1 MB/s died at 309 seconds, and the client showed "No
+  progress for 60s".
+- The server now gives a request the time the streamed upload cap needs at
+  128 KiB/s, and never less than an hour. The default cap of 512 MB gets
+  about 68 minutes. The limit covers the request's arrival only, so live
+  streams and downloads are not cut. Slow headers still stop at 60
+  seconds.
+
 ## Unreleased: switching calls on works with no restart
 
 - **Fixed:** switching Calls on in Settings > Services started LiveKit, but
@@ -198,6 +314,16 @@ give each change.
   long. The bucket checks and the store tools (ensure, verify, copy-from) stay
   on the SDK, and so does every service on Node.
 
+## Unreleased: the static client host is lighter
+
+- **Changed:** the `client-web` container serves the owner UI as plain
+  files. It now runs on Bun and uses about 20 MB, where `next start` took
+  about 170 MB. Its memory limit drops from 768m to 256m.
+- **Fixed:** `MANTLE_APPEARANCE_ORIGIN` points the host's appearance read
+  at `web:3000` on the box's own network, so the box no longer needs to
+  reach its own public address.
+- Pairs the static client v0.8.11.
+
 ## Unreleased: a stronger rule for new passwords
 
 - **Changed:** a new password still has at least 8 characters, and now at
@@ -214,8 +340,6 @@ give each change.
   common check now catches is asked to change it at its next sign-in.
 - **Added:** `GET /api/auth/bootstrap-state` carries `passwordRule`, so the
   sign-up, invite and change forms can show the rule as the person types.
-
-## Unreleased: app history for audits (compare in place, git bundle)
 
 ## Unreleased: app history for audits (compare in place, git bundle and back)
 
@@ -255,6 +379,14 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   folders only: a symlink, a submodule, an odd file mode, a `..` or `.git`
   name, or a file that is not UTF-8 text fails the import, naming the path.
 
+## Unreleased: on Bun, a search pattern too hard for the engine fails out loud
+
+- **Fixed:** `code_search` on Bun no longer says "no hits" when hits
+  exist. Bun's regex engine (the part that matches search patterns) gives
+  up on a very hard pattern and answers "no match" with no error. On Bun a
+  line that takes 250 ms now fails the search, and the message says how
+  to get round it. Node does not change.
+
 ## Unreleased: a SQL process has a memory limit
 
 - **Fixed:** one row of many large columns could take a SQL process to several
@@ -272,6 +404,52 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   kills one of them and not the server. A crashed process writes a small core.
 - **Known:** some very large legal work now fails: a write batch of about
   220 MB or more, and an IN list of 2 million literals.
+
+## Unreleased: sandbox image 24.04-v4, every language with its kit
+
+- **Changed:** the default sandbox image is `24.04-v4`. A sandbox is a
+  closed-off computer where agents build and run code. It now holds Node
+  26, Bun, Python 3.12, Go 1.27 and Rust 1.99 (with the wasm32 target,
+  wasm-pack, wasm-bindgen and wasm-opt). Each language comes with a kit of
+  libraries, ready in the image or in its package cache, so a first build
+  works with no network. SQLite works in every language, and the `sqlite3`
+  and `duckdb` command lines are there too.
+- The image is reproducible: base images by digest, apt from a dated
+  snapshot, every binary checked against a pinned sha256, every library
+  from a hashed lockfile.
+- **Added:** `/etc/mantle/sandbox-kit.json` lists what the image holds.
+  Its shape is a contract (schema 2), described in `docs/sandboxes.md`:
+  fields are only ever added, and a rename or a removal bumps the schema.
+  The code tools read it to say what a target can use. `sandbox-smoke`
+  proves the kit works online and offline.
+- **Added:** the sandbox network allows `proxy.golang.org`,
+  `sum.golang.org` and `index.crates.io`.
+- **Changed:** images are kept disk-safe. The updater pulls the base image
+  only when there is enough free disk, and prunes old sandbox images (it
+  keeps the pin, the one before the roll, the two newest and every image a
+  container uses). sandboxd refuses to pull on a nearly full disk.
+  `roll.sh` prints the disk and the sandbox images after a roll.
+
+## Unreleased: a team's app keeps the team's rules for an Admin user
+
+- **Fixed:** an app held by a team ran at admin rules when an Admin user
+  opened it, so every tool it declared ran with the admin's rights. The
+  check read who holds the app in the caller's own view, where the team's
+  grant was not visible. It now reads on the admin pool, and only for the
+  owner's app.
+
+## Unreleased: map is the default tool loading for assistants
+
+- **Changed:** an assistant with no `tool_loading` set now runs `map`. Tool
+  loading decides how an agent sees its tools on each turn. On `map` it
+  gets its core tools plus a short map of the rest, and calls those
+  through `tool_call`. The 2026-10-31 bench and the dev trial measured
+  this mode.
+- An assistant on a Haiku model runs `deferred`, which scored better for
+  it on the bench (91 of 101, against 86 on the map). Every other agent
+  (specialists, workers) stays on `full` until it is measured. An agent's
+  own `params.tool_loading` still wins. Docs: docs/tools-and-skills.md,
+  "The default mode".
 
 ## Unreleased: eleven more libraries for mini apps
 
@@ -353,6 +531,66 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   call), which the app turns into a data: or blob: URL. An agent or an MCP
   client gets a refusal that names what to use instead.
 
+## Unreleased: map tool loading, a third mode beside full and deferred
+
+- **Added:** `params.tool_loading: 'map'`. The agent gets the same core
+  tools as on deferred, plus `tool_call` and `tool_help`. Every other tool
+  it holds is named in a tool map at the top of its prompt: one line per
+  area, such as `area (gloss): object(verb verb) verb`. The map is the
+  same bytes every turn for the same grant, so the prompt cache keeps it.
+- A call through `tool_call` runs the same checks as a direct call.
+  `use_tool` and `tool_search` still work as other names for it. A wrong
+  name gets the three closest names back, and bad arguments get the tool's
+  schema back once per turn.
+- The MCP surface did not change here (see the MCP tool map above). Docs:
+  docs/tools-and-skills.md, "Map tool loading".
+
+## Unreleased: the server runs right on Bun (fixes B0 to B2)
+
+- **Added:** a Bun compare lane. Bun can ignore an option without an
+  error, so a green start proves little. `scripts/bun-compare.mjs` runs the
+  test suite on Node and on Bun and names every test that fails, skips or
+  goes missing on Bun, against a baseline that may only get shorter.
+  `.bun-version` pins the version. `bun-lane.yml` runs it in CI; it
+  reports and never blocks.
+- **Fixed:** the DNS pin and the tailnet proxy work on Bun. Bun ignored the
+  setting that carries them, with no error, so the pin was off and a
+  proxied call went direct. On Bun the real `undici` package now makes the
+  call (`packages/std/src/undici.ts`). Node still uses its own fetch.
+- **Fixed:** three calls Bun does not have no longer throw. One of them ran
+  each time a mini app started a new SQL child.
+- **Fixed:** more Bun gaps closed: one Content-Type on every runtime, Bun's
+  parse and abort errors, an unread body, a stalled request, a wrapped
+  fetch, child processes, the render limit and the heap target. A PDF scan
+  on Bun waits for its images, a legal JPEG scan no longer dies at the
+  parser's limit, and the `table_sql` child refuses env files.
+
+## Unreleased: table_sql runs in its own process, with size limits
+
+- **Fixed:** a `table_sql` query that runs too long now really stops. It
+  runs in a child process, a separate program the server can kill. Before,
+  a query stuck inside SQLite kept one CPU core busy for ever, even after
+  the caller got its timeout.
+- **Fixed:** `table_sql` has the app pool's limits: 16 MB a value and
+  16 MB a reply. Before, one statement (`SELECT zeroblob(943718400)`) took
+  the web process to 1.87 GB on Node and 2.73 GB on Bun.
+- **Fixed:** each SQL child dies with its server. A child that dies between
+  two statements no longer costs the next one: a read runs again on a
+  fresh child. The guard also holds when the box has run out of file
+  descriptors.
+- **Fixed:** a role statement retries every catalog race, deadlocks too, so
+  a cleanup no longer fails by chance on a shared database.
+
+## Unreleased: a mini app can show a picture
+
+- **Added:** `file_read` and `dwg_render` take `bytes: true` and answer the
+  file as base64 (the picture's bytes written as text), at most 16 MB a
+  call. Before, an app could not show a stored image: it has no network,
+  and `file_read` gave a picture's text, which is nothing.
+- Only an app's own call gets the bytes. An agent or an MCP client is told
+  what to use instead, since base64 in a model's answer costs the turn and
+  buys nothing. It grants no new read.
+
 ## Unreleased: code tools, edit a mini app's source in place
 
 - **Added:** six plain tools that view and edit a mini app's DRAFT source
@@ -385,6 +623,167 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   lookups by id. Rollback:
   `packages/db/rollback/0351_code_edit_history.revert.sql` (optional).
 
+## Unreleased: company sign-in (SSO), milestones 1 and 2
+
+- **Added:** a person can sign in with their company account. SSO (single
+  sign-on) means one company login works for many apps. The brain speaks
+  generic OIDC, the open sign-in standard (authorization code with PKCE,
+  state and nonce). Nothing in the code names one provider; the docs give
+  a Microsoft Entra guide.
+- The box `.env` sets the mode: `off` (the default), `optional` or
+  `required`.
+- A person links their company account while signed in, by issuer and
+  subject only, never by email. The offer can be put off for 7 days, and
+  profile settings have it too. In optional mode a person can unlink (a
+  login with no password sets one first).
+- Required mode locks nobody out. An unlinked login signs in once with its
+  password and is held at the link step. The original account and outside
+  logins keep their passwords. SSO never creates a login or an admin. An
+  SSO session lasts `MANTLE_OIDC_SESSION_HOURS` (12 by default).
+- **Added (milestone 2):** the web app, the desktop app and the phone can
+  use company sign-in too. The client sends a PKCE challenge, the brain
+  sends back a one-time code, and the client trades the code for a session
+  (`POST /api/auth/oidc/exchange`). A code is 256 bits, lasts 2 minutes and
+  works once; only its hash is kept. The code goes only to `mantle://oidc`,
+  pages on the brain, `MANTLE_CLIENT_ORIGIN` and the named CORS origins.
+- **Added:** for a linked login, a fresh company sign-in takes the place
+  of the password when it makes a key or approves an MCP client
+  (`POST /api/auth/oidc/fresh`).
+- **Unchanged:** with the mode off, none of this runs, and every answer is
+  the same as before. Migrations 0349 and 0350.
+
+## Unreleased: the box policy block (corporate Phase 1)
+
+- **Added:** four settings in the box `.env` let an operator set rules for
+  the whole box. Empty means no rule, so a box with none set works exactly
+  as before.
+  - `MANTLE_POLICY_TELEGRAM=off`: Telegram stops. The poll worker idles,
+    the `telegram_*` tools leave the lists, and the Telegram routes
+    refuse with a 403. Rows are kept.
+  - `MANTLE_POLICY_MODEL_DENY` and `MANTLE_POLICY_PROVIDER_ALLOW`: block
+    models, or allow only some providers. One check covers every model
+    call (chat, failover, sub-agents, embeddings, vision, speech, images,
+    the decider) and web search. Auto routers are blocked while a deny
+    list is set. Pick lists hide blocked models and saves refuse them. A
+    refusal opens a `model_policy` provider alert.
+  - `MANTLE_POLICY_PASSWORD_MIN`: a minimum password length plus a list of
+    common passwords. A sign-in whose password fails the rule must change
+    it first.
+- **Added:** `GET /api/policy` feeds the read-only Policy panel (404 when
+  no policy is set). Migration 0347. Docs: docs/policy.md.
+
+## Unreleased: over MCP, replacing or deleting a key waits for a person
+
+- **Changed:** when an MCP client replaces or deletes a vault key, nothing
+  changes at once. The change is sealed on the key's row, and a pending
+  call names the key, its kind, its target and a masked preview, never the
+  value. A person approves it on the Pending screen or a Telegram card.
+  `pending_approve` over MCP refuses it.
+- The approval makes the change through the vault's one write door and its
+  checks again. Any other write to the key makes the hold stale, and a
+  rejection drops it.
+- **Unchanged:** adding a new key is still instant. An import adds at once
+  and holds its replace rows for one approval. The Keys screen is the
+  same.
+- **Added:** the Assistant's tables-rows group gains `table_rows_add` and
+  `table_rows_upsert`, so it writes many rows in one call.
+
+## Unreleased: the tailscale sidecar sends no logs home
+
+- **Changed:** the tailscale sidecar no longer uploads its logs. It is
+  always up, so a box that never joined a tailnet (a private network)
+  sent about 11 KB of startup lines to `log.tailscale.com` on every start.
+  `TS_NO_LOGS_NO_SUPPORT` now defaults to true. A box on a tailnet that
+  demands flow logs can set it to false in `.env`.
+
+## Unreleased: many row edits in one call, by row id
+
+- **Added:** `table_rows_upsert` takes the key `["@row_id"]`. Each row
+  carries its row id and is updated, never added. An unknown, missing or
+  repeated id, or a row with no cells, rejects the whole call before
+  anything is written. This helps MCP clients that ask the user to allow
+  every write (ChatGPT does): ten row edits become one approval, not ten.
+- **Changed:** the one-item write tools name their batch twin.
+  `table_row_update` and `table_cell_set` point to `table_rows_upsert`,
+  the page block tools to `page_blocks_apply`, and `app_file_write` and
+  `app_file_delete` to `app_source_set`.
+- **Docs:** a "Using ChatGPT well" box on the MCP connector help page.
+
+## Unreleased: connect ChatGPT over MCP
+
+- **Docs:** a guide page, docs/guide/07-api/09-connect-chatgpt.md, shows
+  how to connect ChatGPT to the brain over MCP: who may add and publish
+  it, the sign-in, the frozen tool list and Refresh, and how to
+  disconnect. docs/mcp-as-a-login.md says what a company must know.
+- **Changed:** the MCP sign-in (OAuth) reads the `resource` value ChatGPT
+  sends (RFC 8707). The brain's tokens work only at this box's `/api/mcp`,
+  so a token is already bound to one place. A value that names another
+  server is shown as a warning on the consent page and logged, and the
+  sign-in goes on. A Claude connector with no value works as before.
+
+## Unreleased: credential vault v2, Part 1 (secret kinds, one write door)
+
+- **Added:** a vault key can now be a token, a password, an SSH key or a
+  login. It can carry a name, a target, sealed extra fields, tags, an
+  approval switch and a tailnet flag (migration 0346). Old keys are tokens
+  and work as before.
+- **Changed:** every write to the vault goes through one gateway (set,
+  test, delete and a CSV import), behind one gate that fails closed, with
+  one audit row per write. No value appears in any reply, error or log.
+  Only a token is ever opened; the other kinds stay sealed until the next
+  parts of the plan.
+- **Added:** `POST /api/keys/import`, and the MCP tools `api_key_set`,
+  `api_key_test`, `api_key_delete` and `api_key_import` beside
+  `api_key_refs`. Their value inputs are redacted. Widening a key over MCP
+  (its target, tags, approval or tailnet flag) needs the value again.
+
+## Unreleased: the decider sizes its requests to the model
+
+The decider is the model that makes the brain's small choices, such as
+which passages fit a question or which context to drop.
+
+- **Changed:** privacy is one value: `zdr` (zero data retention, the
+  provider keeps nothing) or `no_training`. The old `params.zdr` still
+  reads (true is zdr, false is no_training), and the stricter one wins on
+  a mismatch. Every call now carries a privacy block. Nothing retries with
+  less privacy.
+- **Added:** decision profiles for the 28 models of the 2026-10-30 probe.
+  The decider pool refuses the 4 models that cannot take its request, at
+  save and in `model_pool_set`. `perplexity/pplx-decider-v1.2` joins the
+  decider template as the second choice; Jev stays the default. New
+  fallback price rows.
+- **Changed:** each decision request is sized for the chosen model, not a
+  fixed 32k window. A tested model takes the lowest of its profile limits
+  and the live catalog's context size. An untested model gets careful
+  limits (16 questions, 16,384 tokens). One planner spreads a long list
+  evenly over as many requests as the limits need. A request above the
+  model's limits is refused and the step is skipped. A reply that stops
+  exactly at the token limit counts as a failure, since it was most likely
+  cut. Jev's requests are unchanged.
+
+## Unreleased: open dependency alerts closed
+
+- **Security:** the open Dependabot alerts are closed: dompurify 3.4.17,
+  ip-address 10.7.5 and @hono/node-server 2.1.5, and in docs-site astro
+  7.4.4 and starlight 0.42.8. Minor and patch updates to the latest
+  everywhere else. zod 3 and katex 0.16 stay, because firecrawl and
+  mermaid still need them.
+
+## Unreleased: Microsoft Foundry as a chat provider
+
+- **Added:** provider `foundry` for Azure AI Foundry and Azure OpenAI
+  deployments, on the v1 chat completions API. The model id is the
+  deployment name.
+- The endpoint is the route's Base URL, else `MANTLE_FOUNDRY_ENDPOINT`
+  (https only). `MANTLE_FOUNDRY_API_VERSION` picks v1, preview or the
+  dated route. The key lives in the vault (service `foundry`).
+  `MANTLE_FOUNDRY_API_KEY` is a box fallback, sent only to the box
+  endpoint.
+- Errors work as for the other providers: a 429 is tried again after the
+  wait the provider asks for, a missing deployment fails over and opens a
+  provider alert, and a content filter reads as a refused input. Docs:
+  docs/foundry.md.
+
 ## Unreleased: the UI sounds save names its login
 
 - **Fixed:** `PUT /api/profile/sounds` now takes `loginId`, the login the
@@ -407,6 +806,44 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   `messenger_open` carry it to agents, so one asked to message "the
   developer" can find who that is. Stored as the profile key
   `description`; no migration (`docs/messenger.md`, "People").
+
+## Unreleased: the MCP call log (Journal v3 J8, part 1)
+
+- **Added:** the brain keeps one row per MCP tool call: who called, how,
+  the workspace, the tool, the arguments with secrets removed (about
+  4 KB), ok or the error, the time taken, the item ids and the reply size.
+  Never the reply itself. Every call is logged once, over HTTP and stdio,
+  for every kind of login.
+- Calls by one login less than 30 minutes apart count as one work session.
+- The log hides secrets: names run together, passwords in URLs and
+  connection strings, header pairs, tokens inside strings and the newer key
+  shapes.
+- **Added:** `GET /api/mcp-calls` reads a login's own rows only. An Admin
+  user reads only their own too: being Admin is managing, not reading.
+- A nightly sweep removes rows older than 90 days. No model runs anywhere
+  in this. Migration 0345.
+
+## Unreleased: summaries at publish (Journal v3 J9)
+
+- **Added:** `app_publish`, the publish route, `present_create` and
+  `present_update` take an optional `summary`. The brain indexes that
+  summary, so a search finds the app or canvas by what it is for.
+- Without one, an app publish or a canvas's save after a quiet spell makes
+  one summarizer call (for an app: its manifest, schema and the start of
+  its source; for a canvas: its text and its picture). It is skipped when
+  nothing changed, when the author wrote a summary, outside an assistant's
+  workspace, and on a direct MCP call outside Admin. The summary is made in
+  the extract job, never during the publish itself.
+
+## Unreleased: two fixes for rolls and connectors
+
+- **Fixed:** a box without calls can roll again. The `livekit` service
+  demanded its host and key with a compose guard, and compose checks those
+  guards on every command, so any compose command stopped on a box without
+  calls. The values now default to empty. The container still refuses an
+  empty host or key when it starts.
+- **Fixed:** `api_tool_update` reads the key vault through the connectors
+  area, as its writes do, so a tool that names a vault key updates again.
 
 ## Unreleased: the member checks ask Admin membership (plan v3.2 S8e)
 
@@ -512,6 +949,20 @@ back.bundle main`, then an upload) becomes the app's draft, and the draft
   the print surface renders its images eager, so a long page's pictures
   are in before the print.
 
+## Unreleased: faces in Messenger, and one people gate
+
+- **Added:** Messenger chats and the directory show other people's and
+  agents' faces: their avatar, and for a person their photo.
+  `GET /api/messenger/photo/:loginId` serves a photo only to a login that
+  may see that person. The MCP tools leave faces out, since a face tells a
+  model nothing. Docs: docs/messenger.md, "Faces".
+- **Added:** what a person shares with the team reaches a caller through
+  one gate (`packages/content/src/people.ts`). New routes:
+  `GET /api/people`, `/api/people/:id`, `/api/people/presence?ids=` and
+  `/api/people/:id/photo`. A person card holds the name, the face,
+  presence (online or offline for now) and a status.
+- **Added:** a group chat can have an icon (one emoji) and a colour.
+
 ## Unreleased: a group's info (server)
 
 - **New:** a group in Messages carries `info`: plain text (at most 2000
@@ -601,6 +1052,34 @@ max-age=31536000` on TLS responses from both site blocks (the main site
   database with 0340 and its rollback (`fail-closed.db.test.ts`), and a
   pin of the files that call the approval queue's and the conversation
   store's system pool helpers (`system-pool-helpers.test.ts`).
+
+## Unreleased: a custom order in the tree, the same for everyone
+
+- **Added:** people can drag a folder's items and subfolders into the order
+  they work in, such as stages or steps. Everyone sees the same order. An
+  item's place in the tree is a key of its own (`data.tree_rank`), apart
+  from a task's board order, so a board drag never moves an item in the
+  tree.
+- `custom` is now every kind's first tree sort. A folder with ranked items
+  lists by rank, then by name. A folder with none lists as before.
+- **Added:** `POST /api/tree/:kind/place` and the agents' `tree_item_place`
+  put an item after another one (null puts it first). `tree_folder_update`
+  takes `after` for a folder. Write on a folder lets a person order what it
+  holds.
+
+## Unreleased: a canvas can save its own data (DWG phase 7a)
+
+- **Added:** a Present canvas can save and read data with `mantle.data` in
+  its frame. Data sits in two buckets: `shared`, one value for everyone
+  (writing it needs Write on the canvas), and `mine`, each login's own. A
+  person with Write on the canvas can read everyone's `mine` entries. A
+  read-only copy is never written.
+- Routes: `GET`, `PUT` and `DELETE /api/presents/:id/data`, with the login
+  taken from the session only. `present_get` returns the store with the
+  user's rights (over MCP too). The size caps count every row of the
+  canvas.
+- **Docs:** the `canvas_library` topic `data` and the canvas_authoring
+  skill's "Saving data" section. Migration 0336.
 
 ## Unreleased: the parser service (Tika and the media sidecar go)
 
