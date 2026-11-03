@@ -29,8 +29,8 @@ export const PEER_OWNER_ONLY = 'Only the brain owner may link a brain that acts 
  * Whether this change to a peer needs the brain owner (the anchor login,
  * `actor.isOwner`): binding it to the owner, naming risky owner tools on it,
  * or, on a peer bound to the owner now (`boundToOwner`), its Write switch,
- * its risky tools and a new token. Each of these hands its holder the
- * owner's tools; any other Admin user gets 403.
+ * its risky tools, a new token and turning it back on (`enable`). Each of
+ * these hands its holder the owner's tools; any other Admin user gets 403.
  */
 export function peerChangeNeedsOwner(
   change: {
@@ -38,6 +38,7 @@ export function peerChangeNeedsOwner(
     writeEnabled?: boolean;
     allowedRiskyTools?: readonly string[];
     rotate?: boolean;
+    enable?: boolean;
   },
   boundToOwner = false,
 ): boolean {
@@ -45,19 +46,24 @@ export function peerChangeNeedsOwner(
   if ((change.allowedRiskyTools?.length ?? 0) > 0) return true;
   if (!boundToOwner) return false;
   return (
-    change.writeEnabled !== undefined || change.allowedRiskyTools !== undefined || !!change.rotate
+    change.writeEnabled !== undefined ||
+    change.allowedRiskyTools !== undefined ||
+    !!change.rotate ||
+    !!change.enable
   );
 }
 
-/** Whether peer `id` of this brain acts as the owner now (bound to the
- *  anchor login). */
+/** Whether peer `id` of this brain acts as the owner now: bound to the
+ *  anchor login, or of any access scope but `full` (0353): a status peer's
+ *  token runs as the owner (mcp-auth.ts statusPeerCaller), and a scope this
+ *  code does not know is read the strict way. */
 export async function peerBoundToOwner(anchorId: string, id: string): Promise<boolean> {
   const [row] = await db
-    .select({ login: mantlePeers.actsAsLoginId })
+    .select({ login: mantlePeers.actsAsLoginId, scope: mantlePeers.accessScope })
     .from(mantlePeers)
     .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, anchorId)))
     .limit(1);
-  return !!row && row.login === anchorId;
+  return !!row && (row.login === anchorId || row.scope !== 'full');
 }
 
 /** The login a peer is to act as, or an error. */

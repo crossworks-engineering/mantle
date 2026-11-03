@@ -246,8 +246,9 @@ export async function getOutboundToken(ownerId: string, id: string): Promise<str
 
 /** Rotate the inbound token; returns the new plaintext (shown once).
  *  `unlessBoundTo` (a caller that is not the owner):
- *  only while the peer is not bound to that login, in the same statement;
- *  null and nothing written otherwise. */
+ *  only while the peer is not bound to that login and is a `full` peer (a
+ *  status peer runs as the owner), in the same statement; null and nothing
+ *  written otherwise. */
 export async function rotateInboundToken(
   ownerId: string,
   id: string,
@@ -262,9 +263,7 @@ export async function rotateInboundToken(
         and(
           eq(mantlePeers.id, id),
           eq(mantlePeers.ownerId, ownerId),
-          opts.unlessBoundTo
-            ? sql`${mantlePeers.actsAsLoginId} is distinct from ${opts.unlessBoundTo}::uuid`
-            : undefined,
+          opts.unlessBoundTo ? notOwnerBound(opts.unlessBoundTo) : undefined,
         ),
       )
       .returning({ id: mantlePeers.id }),
@@ -300,10 +299,21 @@ export async function setOutboundToken(
   return !!row;
 }
 
+/** A peer that is not bound to `loginId` (the anchor, for a caller that is
+ *  not the owner) and is a `full` peer: what a change the owner alone may
+ *  make checks in its own statement. */
+function notOwnerBound(loginId: string) {
+  return sql`(${mantlePeers.actsAsLoginId} is distinct from ${loginId}::uuid and ${mantlePeers.accessScope} = 'full')`;
+}
+
+/** Turn a peer on or off. `unlessBoundTo` (a caller that is not the owner
+ *  turning one on): only while it is not bound to that login and is a
+ *  `full` peer, in the same statement; false and nothing written otherwise. */
 export async function setPeerEnabled(
   ownerId: string,
   id: string,
   enabled: boolean,
+  opts: { unlessBoundTo?: string } = {},
 ): Promise<boolean> {
   const [row] = await onFullSystemRoute('peer-access', () =>
     db
@@ -317,7 +327,13 @@ export async function setPeerEnabled(
           : 'revoked',
         updatedAt: new Date(),
       })
-      .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
+      .where(
+        and(
+          eq(mantlePeers.id, id),
+          eq(mantlePeers.ownerId, ownerId),
+          opts.unlessBoundTo ? notOwnerBound(opts.unlessBoundTo) : undefined,
+        ),
+      )
       .returning({ id: mantlePeers.id }),
   );
   return !!row;
@@ -414,9 +430,7 @@ export async function setPeerAccess(
         and(
           eq(mantlePeers.id, id),
           eq(mantlePeers.ownerId, ownerId),
-          access.unlessBoundTo
-            ? sql`${mantlePeers.actsAsLoginId} is distinct from ${access.unlessBoundTo}::uuid`
-            : undefined,
+          access.unlessBoundTo ? notOwnerBound(access.unlessBoundTo) : undefined,
         ),
       )
       .returning(),
