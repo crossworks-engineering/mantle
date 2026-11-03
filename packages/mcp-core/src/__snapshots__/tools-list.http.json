@@ -1020,6 +1020,93 @@
   }
  },
  {
+  "name": "app_timer_run",
+  "description": "Run one of the app's timers now, for a test: the scheduler runs it within a minute exactly as on its clock (as the login that set it, the same checks), and its next runs follow from then. See the outcome with app_timer_list, the result in `_timer_runs`. You need to manage the app; the timer must be switched on.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "app_id": {
+     "type": "string",
+     "description": "The app's id (UUID), from `app_list`."
+    },
+    "name": {
+     "type": "string",
+     "description": "The timer's name in the app: lower case letters, digits, `_` and `-`, at most 48."
+    }
+   },
+   "required": [
+    "app_id",
+    "name"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "app_timer_run",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "app_timer_set",
+  "description": "Create or change (by name) a timer that calls ONE of the app's declared tools on a clock, as you, with no model and no person. Each run adds a row to the app's own `_timer_runs` table (timer_id, ran_at, ok, ms, result JSON, error, level), which the app reads with host.db.query; rows past keep_days go. Only a declared tool that reads and spends nothing, with args its schema takes; a risky tool (peer_status) or an HTTP tool with a vault secret needs an Admin user. Floors: 1 minute for an Admin user, 5 for anyone else, 15 for an HTTP tool. You must manage the app. At most 5 per app, 20 per login. First run within a minute.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "app_id": {
+     "type": "string",
+     "description": "The app's id (UUID), from `app_list`."
+    },
+    "name": {
+     "type": "string",
+     "description": "The timer's name in the app: lower case letters, digits, `_` and `-`, at most 48."
+    },
+    "tool": {
+     "type": "string",
+     "description": "The tool's slug: one the app declares."
+    },
+    "args": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "The arguments of every call (one JSON object, at most 8 KB). Default {}."
+    },
+    "every_minutes": {
+     "type": "integer",
+     "minimum": -9007199254740991,
+     "maximum": 9007199254740991,
+     "description": "How often it runs, in minutes: 1 to 1440. Default 5."
+    },
+    "keep_days": {
+     "type": "integer",
+     "minimum": -9007199254740991,
+     "maximum": 9007199254740991,
+     "description": "How many days its runs stay in _timer_runs: 1 to 400. Default 90."
+    },
+    "enabled": {
+     "type": "boolean",
+     "description": "Whether it runs. Default true."
+    }
+   },
+   "required": [
+    "app_id",
+    "name",
+    "tool"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "app_timer_set",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "app_tools_set",
   "description": "Set the list of tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist: the host refuses any slug not declared here. Each slug must be an existing tool you own. Replaces the current list. Members running a team-level app get read-only built-ins from an enabled team-level group, plus the Table row writes and table_commit on a Table its workspace homes, and file_upload, file_move and file_rename on the files and folders of its workspace, as the user running it. Outside tools: a connector tool by its connector level, an http tool by External access. An open share link calls no tools. The result warns for each declared tool the app level refuses.",
   "inputSchema": {
@@ -7511,6 +7598,35 @@
   }
  },
  {
+  "name": "app_timer_delete",
+  "description": "Remove one of the app's timers by name: it stops running. Its rows in `_timer_runs` read at admin rules go at once, the rest with the app's next timer run (or stay while the app has no timer). You need to manage the app.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "app_id": {
+     "type": "string",
+     "description": "The app's id (UUID), from `app_list`."
+    },
+    "name": {
+     "type": "string",
+     "description": "The timer's name in the app: lower case letters, digits, `_` and `-`, at most 48."
+    }
+   },
+   "required": [
+    "app_id",
+    "name"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "app_timer_delete",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "contact_delete",
   "description": "Remove a contact. NOTE: this also removes them from the email allowlist — Saskia can no longer email them after deletion. Returns ok=true on success; ok=false if the contact wasn't found. Use ONLY when the user explicitly asks to save / update / remove a contact (e.g. \"add this business card as a contact\", \"save Modular as orders@example.co.za\"). Never add contacts on your own initiative just because someone's name came up in conversation.",
   "inputSchema": {
@@ -9673,6 +9789,30 @@
   },
   "annotations": {
    "title": "app_snapshot_list",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "app_timer_list",
+  "description": "The app's timers with their status: tool, args, every_minutes, keep_days, enabled, the login each runs as, the next run, the last run (ok, error, ms) and failures in a row (after 5 a timer runs at most every 30 minutes until one succeeds). Lists the timers of an app you manage. Each run's result is in the app's `_timer_runs` table (app_db_query).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "app_id": {
+     "type": "string",
+     "description": "The app's id (UUID), from `app_list`."
+    }
+   },
+   "required": [
+    "app_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "app_timer_list",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,

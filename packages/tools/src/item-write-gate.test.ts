@@ -245,6 +245,19 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ...(['code_edit', 'code_insert', 'code_write', 'code_undo'] as const).map(
     (slug) => [slug, entry('target', 'manage', APP_CODE)] as const,
   ),
+  // The app timers (0355): the handler asks manage of the app first
+  // (assertItemRight), and the write check on app_timers asks it again.
+  ...(['app_timer_set', 'app_timer_delete', 'app_timer_run'] as const).map(
+    (slug) =>
+      [
+        slug,
+        entry(
+          'app_id',
+          'manage',
+          lib('the handler, before the timer row; the write check (0278) on app_timers'),
+        ),
+      ] as const,
+  ),
   ['app_snapshot_create', entry('id', 'edit', SNAPSHOTS)],
   ['app_snapshot_delete', entry('id', 'edit', SNAPSHOTS)],
   // Part 3: the last 29. Each library asks the item first (assertItemRight,
@@ -297,8 +310,8 @@ describe('the writes the database checks (the pre-check removal)', () => {
   it('each is a builtin that declares no items now, its item argument one of its own', () => {
     // 72 entries went in Part 1 (69 builtins), the last 29 in Part 3; the
     // tree's custom order added tree_item_place; the code tools four;
-    // app_source_from_bundle.
-    expect(DATABASE_CHECKED.size).toBe(107);
+    // app_source_from_bundle; the three app timer writes.
+    expect(DATABASE_CHECKED.size).toBe(110);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

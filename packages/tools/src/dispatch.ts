@@ -934,7 +934,10 @@ async function dispatchHttp(
       const init: RequestInit = {
         method: req.method,
         headers: req.headers,
-        signal: timeoutSignal(h.timeoutMs ?? HTTP_TIMEOUT_MS_DEFAULT),
+        // An app timer's run caps it at its deadline (ctx.httpTimeoutMs).
+        signal: timeoutSignal(
+          Math.min(h.timeoutMs ?? HTTP_TIMEOUT_MS_DEFAULT, ctx.httpTimeoutMs ?? Infinity),
+        ),
       };
       if (req.body !== null) init.body = req.body;
       const res = await safeFetch(req.url, init, [...secrets.values()]);

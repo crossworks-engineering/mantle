@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "f3cc8d424199c82ab7d7e9db2e4442aada3efa7f16eeb7ab54e87f8796ba076e",
+  "sha256": "b606c4a95bbed432f1689e281d1668150d79c5c9267aeefe7083ff6edf861fc0",
   "names": [
    "app_build",
    "app_create",
@@ -17,6 +17,8 @@
    "app_source_from_bundle",
    "app_source_set",
    "app_table_export_set",
+   "app_timer_run",
+   "app_timer_set",
    "app_tools_set",
    "app_undelete",
    "app_update",
@@ -112,6 +114,7 @@
    "app_file_delete",
    "app_snapshot_delete",
    "app_table_export_remove",
+   "app_timer_delete",
    "contact_delete",
    "event_delete",
    "file_delete",
@@ -148,6 +151,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -223,7 +227,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "7da4499bcd37230a4d51ac807aa69324e71ba9814adada71b2317047c7d999ff",
+  "sha256": "0479443f45f3c3079f0800ad59935d05866e89b9519e3f5a806517d37b2d7c1f",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -249,6 +253,8 @@
    "app_source_from_bundle",
    "app_source_set",
    "app_table_export_set",
+   "app_timer_run",
+   "app_timer_set",
    "app_tools_set",
    "app_undelete",
    "app_update",
@@ -384,6 +390,7 @@
    "app_file_delete",
    "app_snapshot_delete",
    "app_table_export_remove",
+   "app_timer_delete",
    "contact_delete",
    "event_delete",
    "file_delete",
@@ -453,6 +460,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -555,7 +563,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "7222e7db98ba5d691fadb2a73faf907699947a7375738ef42f8c6ac61a743436",
+  "sha256": "6fe374dc8e958eb2aeaf37000066198e9152c2ae4f6b97219105509ca02cf16c",
   "names": [
    "access_set",
    "app_build",
@@ -573,6 +581,8 @@
    "app_source_from_bundle",
    "app_source_set",
    "app_table_export_set",
+   "app_timer_run",
+   "app_timer_set",
    "app_tools_set",
    "app_undelete",
    "app_update",
@@ -698,6 +708,7 @@
    "app_file_delete",
    "app_snapshot_delete",
    "app_table_export_remove",
+   "app_timer_delete",
    "contact_delete",
    "event_delete",
    "file_delete",
@@ -750,6 +761,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -841,7 +853,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "433044e2d649296a90686c5528c349e321a69c50f1fa7e21ba5adf53e11f707a",
+  "sha256": "3f9000b4bfbb3f5a2a458227ba253e3c69963ae52293dc7af4f886577edb6d20",
   "names": [
    "access_set",
    "app_build",
@@ -859,6 +871,8 @@
    "app_source_from_bundle",
    "app_source_set",
    "app_table_export_set",
+   "app_timer_run",
+   "app_timer_set",
    "app_tools_set",
    "app_undelete",
    "app_update",
@@ -977,6 +991,7 @@
    "app_file_delete",
    "app_snapshot_delete",
    "app_table_export_remove",
+   "app_timer_delete",
    "contact_delete",
    "event_delete",
    "file_delete",
@@ -1023,6 +1038,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -1108,7 +1124,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "2482480b3925d5f8fdb4dead02c8fe5dc5dd7d3f31cbaf8bbbc28dd2b1f8b65f",
+  "sha256": "1bc93d3b3c7e5ed837462e5d86d92a61bbb45b35b76a0275c4807a00e1208269",
   "names": [
    "app_data_write",
    "event_create",
@@ -1219,6 +1235,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -1293,7 +1310,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "bc35bdaa507eeb1fd1214207a3a9ff94928a86ce8aa458d4dc14ef53ec339848",
+  "sha256": "cdd41d271c3cdf2f2bc6e02ba6f9a7312d941438888f3f2893e4fe8d4ae029ca",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1430,6 +1447,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -1520,7 +1538,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "62ffd624470f99569b3425459c7c5c6bb8b3fe6ec25d5d12e7af28de213e42c3",
+  "sha256": "dcf198df6d11e1fab11d18c84f29c79fb395a9fbaa1330afeb844eb32a9bac16",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1649,6 +1667,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -1734,7 +1753,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "1bdc825ba0fdd0e6bebe8693f67597d27f993e584ef3fc83661714a65192c652",
+  "sha256": "e264cca609ae6bdba8f7774e5fad0c26fde5f2db71c9b2756bf82a788bf0ce79",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1862,6 +1881,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -2120,7 +2140,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "2482480b3925d5f8fdb4dead02c8fe5dc5dd7d3f31cbaf8bbbc28dd2b1f8b65f",
+  "sha256": "1bc93d3b3c7e5ed837462e5d86d92a61bbb45b35b76a0275c4807a00e1208269",
   "names": [
    "app_data_write",
    "event_create",
@@ -2231,6 +2251,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -2305,7 +2326,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "bc35bdaa507eeb1fd1214207a3a9ff94928a86ce8aa458d4dc14ef53ec339848",
+  "sha256": "cdd41d271c3cdf2f2bc6e02ba6f9a7312d941438888f3f2893e4fe8d4ae029ca",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2442,6 +2463,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -2532,7 +2554,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "62ffd624470f99569b3425459c7c5c6bb8b3fe6ec25d5d12e7af28de213e42c3",
+  "sha256": "dcf198df6d11e1fab11d18c84f29c79fb395a9fbaa1330afeb844eb32a9bac16",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2661,6 +2683,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -2746,7 +2769,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "1bdc825ba0fdd0e6bebe8693f67597d27f993e584ef3fc83661714a65192c652",
+  "sha256": "e264cca609ae6bdba8f7774e5fad0c26fde5f2db71c9b2756bf82a788bf0ce79",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2874,6 +2897,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -2956,7 +2980,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "2482480b3925d5f8fdb4dead02c8fe5dc5dd7d3f31cbaf8bbbc28dd2b1f8b65f",
+  "sha256": "1bc93d3b3c7e5ed837462e5d86d92a61bbb45b35b76a0275c4807a00e1208269",
   "names": [
    "app_data_write",
    "event_create",
@@ -3067,6 +3091,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -3141,7 +3166,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "34be9d635ff085009f142afadf1fecbf7cdc806889c25a872763a02520c53a32",
+  "sha256": "4258965184d0d24df9251e61ba00609c837f2a8fc5d98c7b46769ef47e261585",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3281,6 +3306,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -3371,7 +3397,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "495cbd68c6a2152c4aac0065d1e0ed484b40462b0a0f9968993dbc4277225ecc",
+  "sha256": "ea8e7c31da25b53adec5c6d297a106561f42126a21351900c255c5d69a2e278e",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3501,6 +3527,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -3586,7 +3613,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "ef2a20d27a8ae2f52c24f7f9657979b1b752cfacb8f2e2bc22f37a0d17f8551f",
+  "sha256": "5da7312e6e4890921be191b71b4dec1b907d9ffe8b4a24ad8aaed8673970c0e7",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3715,6 +3742,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -3797,7 +3825,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/false:": {
-  "sha256": "651d479e53dc0871945cebca47220de4c0ac6676504fff82c991817ada0a842e",
+  "sha256": "25d01c49f328274187e40826509b6e929d6d13bf0ed39cf7233bd3f257b6c723",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -3812,6 +3840,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -3887,7 +3916,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ccbefe470759a477c0e7b63a5b97639934b40f1c97f43660a1a6610929724354",
+  "sha256": "66e8a39ed94de75b574937d035f5acf4039a58eade968fe86f0dc3d68779b3a2",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -3909,6 +3938,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -4009,7 +4039,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "b9261154a5ceafa458ef1bd1abfad1d7a3d635bd928cafcd31bf25f75156dbc7",
+  "sha256": "d4d8380eb2771f9e30eb7436da256a5df94a75091b8736007630ad39c11b77bd",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4026,6 +4056,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -4115,7 +4146,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:": {
-  "sha256": "b42fc171d9e3dae5de55f5908ea412e9d4a91cf8f3d641841cfeeb62af4abebb",
+  "sha256": "0949f6d4cd239d45dc592eafc3916e1927d985f0a9527a5c65b4868725fed054",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4131,6 +4162,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -4215,7 +4247,7 @@
   ]
  },
  "admin/key/ro/null/[]/false:": {
-  "sha256": "6281f08b31c6d41eb81f65c80623829a13dfaca2c35eb6c4219fc84b30f4de1f",
+  "sha256": "dfa0fc8a4ddc9d989e996973a4a71fe1b6e9742d74025177acbbf3944c89ea1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -4230,6 +4262,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -4304,7 +4337,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
+  "sha256": "3fef32589d99d97ddd0f5876ea58c5de29f2f072508cf53c5e6f86989ac3d249",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4325,6 +4358,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -4413,7 +4447,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
+  "sha256": "c76598b0a7e5398e9c71a6ba0bf1373b37bd2f52f9d7e6ff4d107bda7021181b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4429,6 +4463,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -4512,7 +4547,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:": {
-  "sha256": "520d6a8b330c11d91f80f571d2f601c1eb61b7fca4275277e77b7c19bf31420b",
+  "sha256": "3d58b2300f8fa5a4e8a994431b4272243fabf1b603c57c5382895d3c3fa06c8b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4528,6 +4563,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -4717,7 +4753,7 @@
   "names": []
  },
  "admin/peer/ro/null/[]/false:": {
-  "sha256": "6281f08b31c6d41eb81f65c80623829a13dfaca2c35eb6c4219fc84b30f4de1f",
+  "sha256": "dfa0fc8a4ddc9d989e996973a4a71fe1b6e9742d74025177acbbf3944c89ea1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -4732,6 +4768,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -4806,7 +4843,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
+  "sha256": "3fef32589d99d97ddd0f5876ea58c5de29f2f072508cf53c5e6f86989ac3d249",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4827,6 +4864,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -4915,7 +4953,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
+  "sha256": "c76598b0a7e5398e9c71a6ba0bf1373b37bd2f52f9d7e6ff4d107bda7021181b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4931,6 +4969,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -5014,7 +5053,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:": {
-  "sha256": "520d6a8b330c11d91f80f571d2f601c1eb61b7fca4275277e77b7c19bf31420b",
+  "sha256": "3d58b2300f8fa5a4e8a994431b4272243fabf1b603c57c5382895d3c3fa06c8b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5030,6 +5069,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -5111,7 +5151,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "6281f08b31c6d41eb81f65c80623829a13dfaca2c35eb6c4219fc84b30f4de1f",
+  "sha256": "dfa0fc8a4ddc9d989e996973a4a71fe1b6e9742d74025177acbbf3944c89ea1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -5126,6 +5166,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -5200,7 +5241,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
+  "sha256": "3fef32589d99d97ddd0f5876ea58c5de29f2f072508cf53c5e6f86989ac3d249",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5221,6 +5262,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -5309,7 +5351,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
+  "sha256": "c76598b0a7e5398e9c71a6ba0bf1373b37bd2f52f9d7e6ff4d107bda7021181b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5325,6 +5367,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -5408,7 +5451,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "520d6a8b330c11d91f80f571d2f601c1eb61b7fca4275277e77b7c19bf31420b",
+  "sha256": "3d58b2300f8fa5a4e8a994431b4272243fabf1b603c57c5382895d3c3fa06c8b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5424,6 +5467,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -5505,7 +5549,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "f3cc8d424199c82ab7d7e9db2e4442aada3efa7f16eeb7ab54e87f8796ba076e",
+  "sha256": "b606c4a95bbed432f1689e281d1668150d79c5c9267aeefe7083ff6edf861fc0",
   "names": [
    "app_build",
    "app_create",
@@ -5522,6 +5566,8 @@
    "app_source_from_bundle",
    "app_source_set",
    "app_table_export_set",
+   "app_timer_run",
+   "app_timer_set",
    "app_tools_set",
    "app_undelete",
    "app_update",
@@ -5617,6 +5663,7 @@
    "app_file_delete",
    "app_snapshot_delete",
    "app_table_export_remove",
+   "app_timer_delete",
    "contact_delete",
    "event_delete",
    "file_delete",
@@ -5653,6 +5700,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -5728,7 +5776,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "7da4499bcd37230a4d51ac807aa69324e71ba9814adada71b2317047c7d999ff",
+  "sha256": "0479443f45f3c3079f0800ad59935d05866e89b9519e3f5a806517d37b2d7c1f",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -5754,6 +5802,8 @@
    "app_source_from_bundle",
    "app_source_set",
    "app_table_export_set",
+   "app_timer_run",
+   "app_timer_set",
    "app_tools_set",
    "app_undelete",
    "app_update",
@@ -5889,6 +5939,7 @@
    "app_file_delete",
    "app_snapshot_delete",
    "app_table_export_remove",
+   "app_timer_delete",
    "contact_delete",
    "event_delete",
    "file_delete",
@@ -5958,6 +6009,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -6060,7 +6112,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "7222e7db98ba5d691fadb2a73faf907699947a7375738ef42f8c6ac61a743436",
+  "sha256": "6fe374dc8e958eb2aeaf37000066198e9152c2ae4f6b97219105509ca02cf16c",
   "names": [
    "access_set",
    "app_build",
@@ -6078,6 +6130,8 @@
    "app_source_from_bundle",
    "app_source_set",
    "app_table_export_set",
+   "app_timer_run",
+   "app_timer_set",
    "app_tools_set",
    "app_undelete",
    "app_update",
@@ -6203,6 +6257,7 @@
    "app_file_delete",
    "app_snapshot_delete",
    "app_table_export_remove",
+   "app_timer_delete",
    "contact_delete",
    "event_delete",
    "file_delete",
@@ -6255,6 +6310,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -6346,7 +6402,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "433044e2d649296a90686c5528c349e321a69c50f1fa7e21ba5adf53e11f707a",
+  "sha256": "3f9000b4bfbb3f5a2a458227ba253e3c69963ae52293dc7af4f886577edb6d20",
   "names": [
    "access_set",
    "app_build",
@@ -6364,6 +6420,8 @@
    "app_source_from_bundle",
    "app_source_set",
    "app_table_export_set",
+   "app_timer_run",
+   "app_timer_set",
    "app_tools_set",
    "app_undelete",
    "app_update",
@@ -6482,6 +6540,7 @@
    "app_file_delete",
    "app_snapshot_delete",
    "app_table_export_remove",
+   "app_timer_delete",
    "contact_delete",
    "event_delete",
    "file_delete",
@@ -6528,6 +6587,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -6613,7 +6673,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "2482480b3925d5f8fdb4dead02c8fe5dc5dd7d3f31cbaf8bbbc28dd2b1f8b65f",
+  "sha256": "1bc93d3b3c7e5ed837462e5d86d92a61bbb45b35b76a0275c4807a00e1208269",
   "names": [
    "app_data_write",
    "event_create",
@@ -6724,6 +6784,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -6798,7 +6859,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "bc35bdaa507eeb1fd1214207a3a9ff94928a86ce8aa458d4dc14ef53ec339848",
+  "sha256": "cdd41d271c3cdf2f2bc6e02ba6f9a7312d941438888f3f2893e4fe8d4ae029ca",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -6935,6 +6996,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -7025,7 +7087,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "62ffd624470f99569b3425459c7c5c6bb8b3fe6ec25d5d12e7af28de213e42c3",
+  "sha256": "dcf198df6d11e1fab11d18c84f29c79fb395a9fbaa1330afeb844eb32a9bac16",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7154,6 +7216,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -7239,7 +7302,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "1bdc825ba0fdd0e6bebe8693f67597d27f993e584ef3fc83661714a65192c652",
+  "sha256": "e264cca609ae6bdba8f7774e5fad0c26fde5f2db71c9b2756bf82a788bf0ce79",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7367,6 +7430,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -7625,7 +7689,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "2482480b3925d5f8fdb4dead02c8fe5dc5dd7d3f31cbaf8bbbc28dd2b1f8b65f",
+  "sha256": "1bc93d3b3c7e5ed837462e5d86d92a61bbb45b35b76a0275c4807a00e1208269",
   "names": [
    "app_data_write",
    "event_create",
@@ -7736,6 +7800,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -7810,7 +7875,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "bc35bdaa507eeb1fd1214207a3a9ff94928a86ce8aa458d4dc14ef53ec339848",
+  "sha256": "cdd41d271c3cdf2f2bc6e02ba6f9a7312d941438888f3f2893e4fe8d4ae029ca",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7947,6 +8012,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -8037,7 +8103,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "62ffd624470f99569b3425459c7c5c6bb8b3fe6ec25d5d12e7af28de213e42c3",
+  "sha256": "dcf198df6d11e1fab11d18c84f29c79fb395a9fbaa1330afeb844eb32a9bac16",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8166,6 +8232,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -8251,7 +8318,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "1bdc825ba0fdd0e6bebe8693f67597d27f993e584ef3fc83661714a65192c652",
+  "sha256": "e264cca609ae6bdba8f7774e5fad0c26fde5f2db71c9b2756bf82a788bf0ce79",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8379,6 +8446,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -8461,7 +8529,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "2482480b3925d5f8fdb4dead02c8fe5dc5dd7d3f31cbaf8bbbc28dd2b1f8b65f",
+  "sha256": "1bc93d3b3c7e5ed837462e5d86d92a61bbb45b35b76a0275c4807a00e1208269",
   "names": [
    "app_data_write",
    "event_create",
@@ -8572,6 +8640,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -8646,7 +8715,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "34be9d635ff085009f142afadf1fecbf7cdc806889c25a872763a02520c53a32",
+  "sha256": "4258965184d0d24df9251e61ba00609c837f2a8fc5d98c7b46769ef47e261585",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8786,6 +8855,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -8876,7 +8946,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "495cbd68c6a2152c4aac0065d1e0ed484b40462b0a0f9968993dbc4277225ecc",
+  "sha256": "ea8e7c31da25b53adec5c6d297a106561f42126a21351900c255c5d69a2e278e",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9006,6 +9076,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -9091,7 +9162,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "ef2a20d27a8ae2f52c24f7f9657979b1b752cfacb8f2e2bc22f37a0d17f8551f",
+  "sha256": "5da7312e6e4890921be191b71b4dec1b907d9ffe8b4a24ad8aaed8673970c0e7",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9220,6 +9291,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -9302,7 +9374,7 @@
   ]
  },
  "member/oauth/ro/null/[]/false:": {
-  "sha256": "651d479e53dc0871945cebca47220de4c0ac6676504fff82c991817ada0a842e",
+  "sha256": "25d01c49f328274187e40826509b6e929d6d13bf0ed39cf7233bd3f257b6c723",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -9317,6 +9389,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -9392,7 +9465,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ccbefe470759a477c0e7b63a5b97639934b40f1c97f43660a1a6610929724354",
+  "sha256": "66e8a39ed94de75b574937d035f5acf4039a58eade968fe86f0dc3d68779b3a2",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -9414,6 +9487,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -9514,7 +9588,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "b9261154a5ceafa458ef1bd1abfad1d7a3d635bd928cafcd31bf25f75156dbc7",
+  "sha256": "d4d8380eb2771f9e30eb7436da256a5df94a75091b8736007630ad39c11b77bd",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -9531,6 +9605,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -9620,7 +9695,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:": {
-  "sha256": "b42fc171d9e3dae5de55f5908ea412e9d4a91cf8f3d641841cfeeb62af4abebb",
+  "sha256": "0949f6d4cd239d45dc592eafc3916e1927d985f0a9527a5c65b4868725fed054",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -9636,6 +9711,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -9720,7 +9796,7 @@
   ]
  },
  "member/key/ro/null/[]/false:": {
-  "sha256": "6281f08b31c6d41eb81f65c80623829a13dfaca2c35eb6c4219fc84b30f4de1f",
+  "sha256": "dfa0fc8a4ddc9d989e996973a4a71fe1b6e9742d74025177acbbf3944c89ea1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -9735,6 +9811,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -9809,7 +9886,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
+  "sha256": "3fef32589d99d97ddd0f5876ea58c5de29f2f072508cf53c5e6f86989ac3d249",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -9830,6 +9907,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -9918,7 +9996,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
+  "sha256": "c76598b0a7e5398e9c71a6ba0bf1373b37bd2f52f9d7e6ff4d107bda7021181b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -9934,6 +10012,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -10017,7 +10096,7 @@
   ]
  },
  "member/key/ro/null/[]/true:": {
-  "sha256": "520d6a8b330c11d91f80f571d2f601c1eb61b7fca4275277e77b7c19bf31420b",
+  "sha256": "3d58b2300f8fa5a4e8a994431b4272243fabf1b603c57c5382895d3c3fa06c8b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10033,6 +10112,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -10222,7 +10302,7 @@
   "names": []
  },
  "member/peer/ro/null/[]/false:": {
-  "sha256": "6281f08b31c6d41eb81f65c80623829a13dfaca2c35eb6c4219fc84b30f4de1f",
+  "sha256": "dfa0fc8a4ddc9d989e996973a4a71fe1b6e9742d74025177acbbf3944c89ea1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -10237,6 +10317,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -10311,7 +10392,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
+  "sha256": "3fef32589d99d97ddd0f5876ea58c5de29f2f072508cf53c5e6f86989ac3d249",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10332,6 +10413,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -10420,7 +10502,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
+  "sha256": "c76598b0a7e5398e9c71a6ba0bf1373b37bd2f52f9d7e6ff4d107bda7021181b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10436,6 +10518,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -10519,7 +10602,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:": {
-  "sha256": "520d6a8b330c11d91f80f571d2f601c1eb61b7fca4275277e77b7c19bf31420b",
+  "sha256": "3d58b2300f8fa5a4e8a994431b4272243fabf1b603c57c5382895d3c3fa06c8b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10535,6 +10618,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -10616,7 +10700,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "6281f08b31c6d41eb81f65c80623829a13dfaca2c35eb6c4219fc84b30f4de1f",
+  "sha256": "dfa0fc8a4ddc9d989e996973a4a71fe1b6e9742d74025177acbbf3944c89ea1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -10631,6 +10715,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",
@@ -10705,7 +10790,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "7f0dd7422285abca53d72d165b5a31f64346b21efadeb23e4f76359f6472cd29",
+  "sha256": "3fef32589d99d97ddd0f5876ea58c5de29f2f072508cf53c5e6f86989ac3d249",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10726,6 +10811,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -10814,7 +10900,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "74fa36338376e413c4161d49e1bd1ef2616293c37d61359ade1fc8a46928f9ec",
+  "sha256": "c76598b0a7e5398e9c71a6ba0bf1373b37bd2f52f9d7e6ff4d107bda7021181b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10830,6 +10916,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "box_status",
    "brain_capacity",
    "calculate",
@@ -10913,7 +11000,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "520d6a8b330c11d91f80f571d2f601c1eb61b7fca4275277e77b7c19bf31420b",
+  "sha256": "3d58b2300f8fa5a4e8a994431b4272243fabf1b603c57c5382895d3c3fa06c8b",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10929,6 +11016,7 @@
    "app_list",
    "app_log",
    "app_snapshot_list",
+   "app_timer_list",
    "calculate",
    "canvas_library",
    "circuit_trace",

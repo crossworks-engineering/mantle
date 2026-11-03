@@ -140,6 +140,15 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: "the owner's dev tool console, naming its signed-in login",
   },
+  'packages/tools/src/app-timers/run.ts': {
+    calls: 1,
+    // The broker's own plan's surface for the timer's login
+    // (appToolRunPlan): web at admin rules, the team surface naming the
+    // login below.
+    surface: /surface: plan\.surface/,
+    scope: 'call',
+    why: "an app timer's run is the app's tool call as the login that set the timer, as the broker runs it",
+  },
   'server/web/lib/app-tool-broker.ts': {
     calls: 1,
     // runOf: appToolScope's surface for a login's run (web for the owner's

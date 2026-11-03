@@ -18,6 +18,10 @@ export type ToolHandlerContext = {
    *  step, a tool a handler dispatches) passes it on. Absent: the caller of the
    *  dispatch the code runs in, if any; a call with none is refused. */
   caller?: ToolCaller;
+  /** A cap on an HTTP tool's own request timeout for this call, ms: an
+   *  app timer's run deadline (app-timers/run.ts), so its call never
+   *  outlives the run that waits for it. Absent: the tool's own. */
+  httpTimeoutMs?: number;
   /** Optional trace step handle — the runtime opens a step around the call;
    *  handlers can enrich its meta/output. A handler that calls a provider
    *  records nothing by hand: the adapter registry records the call's spend

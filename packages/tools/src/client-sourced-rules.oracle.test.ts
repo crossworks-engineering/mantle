@@ -257,6 +257,10 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   app_table_export_remove: onApp,
   app_snapshot_create: onApp,
   app_snapshot_restore: onApp,
+  // The app's timers (builtins-app-timers.ts): the app `app_id` names.
+  app_timer_set: { kind: 'write', apps: ['app_id'] },
+  app_timer_delete: { kind: 'write', apps: ['app_id'] },
+  app_timer_run: { kind: 'write', apps: ['app_id'] },
   // The code tools' writes (code/tools.ts): the app their target names.
   code_edit: onCodeTarget,
   code_insert: onCodeTarget,

@@ -91,8 +91,12 @@ vi.mock('@mantle/content/app-table-exports', () => ({ scheduleAppTableExportSync
 // 'site_query' stands for an outside tool an admin switched External access on
 // for; every other slug gets the real rule (an undeclared slug is refused
 // before any lookup).
-vi.mock('@mantle/tools', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@mantle/tools')>();
+// The verdict steps run inside @mantle/tools (app-tool-run.ts
+// appToolRunPlan, which the broker plans every call with), so they are
+// stood in for at their own module.
+vi.mock('../../../../packages/tools/src/external-access', async (importOriginal) => {
+  const real =
+    await importOriginal<typeof import('../../../../packages/tools/src/external-access')>();
   return {
     ...real,
     contactAppToolVerdict: vi.fn(async (owner: string, declared: string[], slug: string) =>
@@ -103,6 +107,12 @@ vi.mock('@mantle/tools', async (importOriginal) => {
           }
         : real.contactAppToolVerdict(owner, declared, slug),
     ),
+  };
+});
+vi.mock('@mantle/tools', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/tools')>();
+  return {
+    ...real,
     dispatchTool: vi.fn(async (_t: unknown, _i: unknown, ctx: Record<string, unknown>) => {
       h.dispatched.push({ scope: h.inViewer ?? 'system', ctx });
       return { ok: true, output: { rows: [] } };

@@ -133,6 +133,16 @@ export {
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
 export { DRAW_TOOLS, DRAW_TOOL_SLUGS } from './builtins-draws';
 export { APP_TOOLS, APP_TOOL_SLUGS, APP_DATA_TOOLS, APP_DATA_TOOL_SLUGS } from './builtins-apps';
+// App timers (docs/app-timers.md): the maintenance worker's tick.
+export { runDueAppTimers, type AppTimerTick } from './app-timers/tick';
+// The one plan of an app tool call: the broker's and the timers'.
+export {
+  appToolRunPlan,
+  type AppToolRunApp,
+  type AppToolRunConfig,
+  type AppToolRunLogin,
+  type AppToolRunPlan,
+} from './app-tool-run';
 export { APP_GUIDE_TOOLS } from './builtins-app-guide';
 export { CODE_TOOLS, CODE_TOOL_SLUGS } from './code/tools';
 export { appIdOfCodeTarget } from './code/target-ref';
