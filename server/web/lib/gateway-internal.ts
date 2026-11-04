@@ -22,10 +22,10 @@ export function gatewayRequestRefusal(req: Request): Response | null {
   if (req.headers.has('x-forwarded-for') || req.headers.has('forwarded')) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
+  // No token on the box: no gateway can prove itself, the same 401.
   const token = env('GATEWAY_TOKEN') ?? '';
-  if (!token) return NextResponse.json({ error: 'gateway token not set' }, { status: 503 });
   const got = req.headers.get('x-mantle-gateway-token') ?? '';
-  if (!got || !timingSafeEqual(digest(got), digest(token))) {
+  if (!token || !got || !timingSafeEqual(digest(got), digest(token))) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   return null;
