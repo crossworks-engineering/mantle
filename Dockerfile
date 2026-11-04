@@ -61,6 +61,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 # line breaks every build that has one.
 COPY patches patches
 COPY server/api/package.json server/api/package.json
+COPY server/gateway/package.json server/gateway/package.json
 COPY server/mcp/package.json server/mcp/package.json
 COPY server/parser/package.json server/parser/package.json
 COPY server/sandboxd/package.json server/sandboxd/package.json

@@ -1290,6 +1290,28 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  server/gateway:
+    dependencies:
+      '@mantle/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../../packages/std
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   server/mcp:
     dependencies:
       '@mantle/config':

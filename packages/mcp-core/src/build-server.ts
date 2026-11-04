@@ -51,6 +51,7 @@ import {
   LOGIN_APP_DATA_TOOLS,
   TOOLSMITH_TOOLS,
   VAULT_KEY_TOOLS,
+  GATEWAY_SERVICE_TOOLS,
   NOTE_TOOLS,
   TREE_TOOLS,
   TREE_OPERATOR_TOOLS,
@@ -514,6 +515,13 @@ export function registerMantleTools(
   // through the vault's one write gateway (@mantle/api-keys vault.ts: the
   // keys area gate, the audit row).
   registerBuiltinTools(VAULT_KEY_TOOLS);
+
+  // ─── The service gateway's registry ──────────────────────────────────────────
+  // gateway_service_list / gateway_service_set (docs/gateway.md): an Admin
+  // user's client registers the box services the gateway may route to.
+  // `mcpOnly` (a row decides where calls go; no agent is granted them), the
+  // connectors area.
+  registerBuiltinTools(GATEWAY_SERVICE_TOOLS);
 
   // A list of this call's own goes on the server now; the caller's, when
   // all its tools are in.

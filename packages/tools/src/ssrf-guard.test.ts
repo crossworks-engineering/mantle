@@ -1,5 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import { assertFetchableUrl, isBlockedIp } from './ssrf-guard';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { EgressRefusedError } from '@mantle/std/egress';
+import {
+  assertFetchableUrl,
+  gatewaySlug,
+  guardedFetch,
+  hopGuard,
+  isBlockedIp,
+  isGatewayUrl,
+} from './ssrf-guard';
+import { gatewayConnectorFetch, gatewayHttpBinding } from './gateway';
+import { safeFetch } from './safe-fetch';
 
 describe('isBlockedIp', () => {
   it('blocks loopback, private, link-local, CGNAT, and metadata', () => {
@@ -102,5 +114,197 @@ describe('assertFetchableUrl', () => {
 
   it('allows a public literal IP', async () => {
     await expect(assertFetchableUrl('https://1.1.1.1/')).resolves.toBeUndefined();
+  });
+});
+
+describe('the service gateway exemption (the second deliberate carve)', () => {
+  const base = 'http://gateway:8097';
+  const withGateway = async (value: string | undefined, fn: () => Promise<void>) => {
+    vi.stubEnv('GATEWAY_URL', value);
+    try {
+      await fn();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  };
+
+  it('allows /svc/<slug>/ on the exact gateway origin', async () => {
+    await withGateway(base, async () => {
+      await expect(assertFetchableUrl(`${base}/svc/pcms/query`)).resolves.toBeUndefined();
+      await expect(assertFetchableUrl(`${base}/svc/pcms`)).resolves.toBeUndefined();
+      await expect(assertFetchableUrl(`${base}/svc/pcms/mcp?x=1`)).resolves.toBeUndefined();
+    });
+  });
+
+  it('still refuses every other private host, even with /svc/ paths', async () => {
+    await withGateway(base, async () => {
+      await expect(assertFetchableUrl('http://postgres:5432/svc/pcms/x')).rejects.toThrow();
+      await expect(assertFetchableUrl('http://127.0.0.1:8097/svc/pcms/x')).rejects.toThrow();
+      await expect(assertFetchableUrl('http://10.0.0.5/svc/pcms/x')).rejects.toThrow();
+      await expect(assertFetchableUrl('http://gateway:8098/svc/pcms/x')).rejects.toThrow();
+      await expect(assertFetchableUrl('https://gateway:8097/svc/pcms/x')).rejects.toThrow();
+      // The service's own private address, called directly.
+      await expect(assertFetchableUrl('http://172.30.0.7:8080/query')).rejects.toThrow();
+    });
+  });
+
+  it('refuses the same host on any other path', async () => {
+    await withGateway(base, async () => {
+      for (const path of ['/', '/healthz', '/svc/', '/svc', '/svcx/pcms', '/api/svc/pcms']) {
+        await expect(assertFetchableUrl(`${base}${path}`), path).rejects.toThrow();
+      }
+      // A slug the gateway would never route (upper case, too long, odd).
+      await expect(assertFetchableUrl(`${base}/svc/PCMS/x`)).rejects.toThrow();
+      await expect(assertFetchableUrl(`${base}/svc/-x/y`)).rejects.toThrow();
+      await expect(assertFetchableUrl(`${base}/svc/${'a'.repeat(41)}/y`)).rejects.toThrow();
+    });
+  });
+
+  it('reads the slug from the URL as fetch sends it (dot segments resolved)', async () => {
+    await withGateway(base, async () => {
+      expect(gatewaySlug(new URL(`${base}/svc/a/../b/x`))).toBe('b');
+      expect(gatewaySlug(new URL(`${base}/svc/a/%2e%2e/b/x`))).toBe('b');
+      expect(gatewaySlug(new URL(`${base}/svc/a/../../healthz`))).toBeNull();
+      expect(isGatewayUrl(new URL(`${base}/svc/a`))).toBe(true);
+    });
+  });
+
+  it('is inert when GATEWAY_URL is unset', async () => {
+    await withGateway(undefined, async () => {
+      await expect(assertFetchableUrl(`${base}/svc/pcms/x`)).rejects.toThrow();
+      expect(isGatewayUrl(new URL(`${base}/svc/pcms/x`))).toBe(false);
+    });
+  });
+
+  describe('redirects', () => {
+    // A loopback server stands in for the gateway (GATEWAY_URL points at it,
+    // so the carve is the one way the fetch reaches it).
+    let srv: http.Server;
+    let gw = '';
+    const hits: string[] = [];
+    beforeAll(async () => {
+      srv = http.createServer((req, res) => {
+        hits.push(req.url ?? '');
+        const to: Record<string, string> = {
+          '/svc/a/out-private': 'http://127.0.0.1:1/x',
+          '/svc/a/out-public': 'http://example.invalid/x',
+          '/svc/a/other-slug': '/svc/b/x',
+          '/svc/a/off-svc': '/healthz',
+          '/svc/a/same': '/svc/a/ok',
+        };
+        const loc = to[req.url ?? ''];
+        if (loc) {
+          res.writeHead(302, { location: loc });
+          res.end();
+          return;
+        }
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end('ok');
+      });
+      await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+      gw = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+    });
+    afterAll(() => {
+      srv.closeAllConnections();
+      srv.close();
+    });
+
+    const fetches: Array<[string, (u: string) => Promise<Response>]> = [
+      ['guardedFetch', (u) => guardedFetch(u)],
+      ['safeFetch (http tools)', (u) => safeFetch(u, { method: 'GET' }, [])],
+    ];
+
+    describe.each(fetches)('%s', (_name, f) => {
+      it('follows a redirect that stays on the same service', async () => {
+        await withGateway(gw, async () => {
+          const res = await f(`${gw}/svc/a/same`);
+          expect(await res.text()).toBe('ok');
+        });
+      });
+
+      it('refuses a redirect out of the gateway (private or public)', async () => {
+        await withGateway(gw, async () => {
+          await expect(f(`${gw}/svc/a/out-private`)).rejects.toThrow(EgressRefusedError);
+          await expect(f(`${gw}/svc/a/out-public`)).rejects.toThrow(/out of gateway service 'a'/);
+        });
+      });
+
+      it('refuses a redirect to another service or off /svc/ on the gateway', async () => {
+        await withGateway(gw, async () => {
+          hits.length = 0;
+          await expect(f(`${gw}/svc/a/other-slug`)).rejects.toThrow(EgressRefusedError);
+          await expect(f(`${gw}/svc/a/off-svc`)).rejects.toThrow(EgressRefusedError);
+          expect(hits).toEqual(['/svc/a/other-slug', '/svc/a/off-svc']);
+        });
+      });
+    });
+
+    it('refuses a redirect INTO the gateway from anywhere else', async () => {
+      await withGateway(base, async () => {
+        const guard = hopGuard('https://1.1.1.1/start');
+        await expect(guard('https://1.1.1.1/start')).resolves.toBeUndefined();
+        await expect(guard(`${base}/svc/pcms/x`)).rejects.toThrow(/into the service gateway/);
+      });
+    });
+  });
+
+  describe("a call carries the token only to its tool's own service", () => {
+    it('an http tool: the slug must be literal in the URL its author wrote', async () => {
+      await withGateway(base, async () => {
+        expect(gatewayHttpBinding('https://api.example.com/{x}', 'https://api.example.com/y')).toBe(
+          null,
+        );
+        expect(gatewayHttpBinding(`${base}/svc/pcms/query`, `${base}/svc/pcms/query`)).toEqual({
+          slug: 'pcms',
+        });
+        expect(gatewayHttpBinding(`${base}/svc/pcms/{path}`, `${base}/svc/pcms/rows`)).toEqual({
+          slug: 'pcms',
+        });
+        // Two model-filled segments step to another service: refused.
+        expect(
+          gatewayHttpBinding(`${base}/svc/pcms/{a}/{b}`, `${base}/svc/pcms/../newton`),
+        ).toEqual({
+          error: expect.stringMatching(/written for gateway service 'pcms'/),
+        });
+        // A slug filled from a parameter: refused.
+        expect(gatewayHttpBinding(`${base}/svc/{slug}/q`, `${base}/svc/pcms/q`)).toEqual({
+          error: expect.stringMatching(/must be fixed/),
+        });
+        expect(gatewayHttpBinding(`${base}/svc/pc{x}/q`, `${base}/svc/pcms/q`)).toEqual({
+          error: expect.stringMatching(/must be fixed/),
+        });
+        // A tool written for a public API that a parameter points at the
+        // gateway gets no token either.
+        expect(gatewayHttpBinding('{base}/q', `${base}/svc/pcms/q`)).toEqual({
+          error: expect.stringMatching(/must be fixed/),
+        });
+      });
+    });
+
+    it('an MCP connector: requests stay on the slug of its own URL', async () => {
+      await withGateway(base, async () => {
+        vi.stubEnv('GATEWAY_TOKEN', 'tok');
+        const seen: Array<[string, Headers]> = [];
+        const inner: typeof fetch = async (input, init) => {
+          seen.push([String(input), new Headers(init?.headers)]);
+          return new Response('ok');
+        };
+        const f = gatewayConnectorFetch(`${base}/svc/pcms/mcp`, 'mcp-pcms', inner);
+        await f(`${base}/svc/pcms/mcp`, { method: 'POST', headers: { authorization: 'Bearer k' } });
+        expect(seen[0]![1].get('x-mantle-gateway-token')).toBe('tok');
+        expect(seen[0]![1].get('x-mantle-caller')).toBe('connector:mcp-pcms');
+        expect(seen[0]![1].get('authorization')).toBe('Bearer k');
+        await expect(f(`${base}/svc/newton/mcp`, { method: 'POST' })).rejects.toThrow(
+          /bound to 'pcms'/,
+        );
+        // A connector to a public server never sends the gateway headers.
+        const pub = gatewayConnectorFetch('https://mcp.example.com/mcp', 'ext', inner);
+        await expect(pub(`${base}/svc/pcms/mcp`, { method: 'POST' })).rejects.toThrow(
+          /bound to no gateway service/,
+        );
+        await pub('https://mcp.example.com/mcp', { method: 'POST' });
+        expect(seen.at(-1)![1].get('x-mantle-gateway-token')).toBeNull();
+      });
+    });
   });
 });

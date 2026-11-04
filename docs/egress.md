@@ -74,28 +74,31 @@ stay free of node builtins). On top of the platform fetch:
   the hostname (only the address lookup is replaced). A name that does not
   resolve is refused in every mode, `allowLan` included. A caller's own
   `guard` replaces only the check before a hop; the pin still applies. Only
-  an `exempt` URL (the sandbox proxy carve) skips both.
+  an `exempt` URL (the sandbox proxy and service gateway carves) skips both.
 
-The sandbox service proxy carve (`isSandboxProxyUrl`) stays in
-`packages/tools/src/ssrf-guard.ts`: it is that package's decision, passed
-in as `exempt` (through `assertFetchableUrl` for the check, and beside it
-for the pin).
+The two carves stay in `packages/tools/src/ssrf-guard.ts`: they are that
+package's decision, passed in as `exempt` (`isCarvedUrl`, through
+`assertFetchableUrl` for the check, and beside it for the pin). The sandbox
+service proxy (`isSandboxProxyUrl`): SANDBOXD_URL's origin and `/svc/`. The
+service gateway (`isGatewayUrl`, [gateway.md](./gateway.md)): GATEWAY_URL's
+origin and `/svc/<slug>`. A fetch that starts at a gateway service stays on
+that service on every hop, and no hop may enter the gateway (`hopGuard`).
 
 The pin closes the TOCTOU the old guard noted between its DNS check and
 the platform's own connect.
 
 ### The callers
 
-| Caller | File | How |
-| --- | --- | --- |
-| `web_fetch` | `packages/tools/src/toolsmith/web-fetch.ts` | `guardedFetch`, 5 MB streamed cap, `truncate` |
-| http API tools, OAuth2 token endpoint, dev console proxy | `packages/tools/src/safe-fetch.ts` | `safeFetch` over `egressFetch` with the resolved secrets |
-| OpenAPI spec fetch | `packages/tools/src/openapi-sync.ts` | `safeFetch` with a 30 s deadline (its own 5 MB reader, unchanged) |
-| MCP connector | `packages/tools/src/mcp-client.ts` | `redirect: 'error'`, the SSE headers timeout kept, a reply capped at 32 MB (the standing GET event stream: 4 MB per event, no total cap) |
-| MCP connector OAuth endpoints | `packages/tools/src/mcp-oauth.ts` | `redirect: 'error'`, 30 s, 1 MB |
-| peer MCP transport | `packages/tools/src/builtins-peer-mcp.ts` | `allowLan`, 20 redirects, a reply capped at 32 MB (the standing GET event stream: 4 MB per event, no total cap) |
-| federation client (`peer_query`, `peer_node_get`, `peer_search_chunks`) | `packages/content/src/peers-client.ts` | `allowLan`, the token as a secret, 15 s, 32 MB, 20 redirects |
-| calendar ICS feed | `packages/calendar/src/providers/ics.ts` | 30 s, 12 MB, 20 redirects |
+| Caller                                                                  | File                                        | How                                                                                                                                      |
+| ----------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `web_fetch`                                                             | `packages/tools/src/toolsmith/web-fetch.ts` | `guardedFetch`, 5 MB streamed cap, `truncate`                                                                                            |
+| http API tools, OAuth2 token endpoint, dev console proxy                | `packages/tools/src/safe-fetch.ts`          | `safeFetch` over `egressFetch` with the resolved secrets                                                                                 |
+| OpenAPI spec fetch                                                      | `packages/tools/src/openapi-sync.ts`        | `safeFetch` with a 30 s deadline (its own 5 MB reader, unchanged)                                                                        |
+| MCP connector                                                           | `packages/tools/src/mcp-client.ts`          | `redirect: 'error'`, the SSE headers timeout kept, a reply capped at 32 MB (the standing GET event stream: 4 MB per event, no total cap) |
+| MCP connector OAuth endpoints                                           | `packages/tools/src/mcp-oauth.ts`           | `redirect: 'error'`, 30 s, 1 MB                                                                                                          |
+| peer MCP transport                                                      | `packages/tools/src/builtins-peer-mcp.ts`   | `allowLan`, 20 redirects, a reply capped at 32 MB (the standing GET event stream: 4 MB per event, no total cap)                          |
+| federation client (`peer_query`, `peer_node_get`, `peer_search_chunks`) | `packages/content/src/peers-client.ts`      | `allowLan`, the token as a secret, 15 s, 32 MB, 20 redirects                                                                             |
+| calendar ICS feed                                                       | `packages/calendar/src/providers/ics.ts`    | 30 s, 12 MB, 20 redirects                                                                                                                |
 
 Not moved, and why:
 
@@ -152,24 +155,24 @@ loopback answers as before.
 
 **Named changes:**
 
-| Caller | Cell | Before | After |
-| --- | --- | --- | --- |
-| calendar ICS feed | private IP | pulled | refused |
-| calendar ICS feed | name resolving to 127.0.0.1 | pulled | refused |
-| calendar ICS feed | redirect to 169.254.169.254 | fetched the metadata, failed to parse | refused before the hop |
-| calendar ICS feed | oversized body | "feed too large" after reading 33 MB | "feed too large" at 12 MB |
-| `video_ingest` link | redirect to 169.254.169.254 | handed to the sidecar | refused |
-| `video_ingest` link | public host, cross-host redirect, oversized | handed to the sidecar | the link is reached once (no body read), then handed to the sidecar |
-| `video_ingest` link | slow server | handed to the sidecar | refused after 10 s (fix round 1: the walk fails closed, as on too many redirects) |
-| federation client | redirect to 169.254.169.254 | fetched the metadata, read as "no nodes" | refused |
-| federation client | oversized body | read 33 MB, the parse failure read as "no nodes" | refused at 32 MB |
-| peer MCP transport | redirect to 169.254.169.254 | fetched the metadata | refused |
-| `web_fetch` | oversized body | the same first 5 MB returned after reading 33 MB | the same first 5 MB, reading stops there |
-| MCP connector | oversized body | read 33 MB | refused at 32 MB (fix round 1) |
-| MCP connector OAuth endpoints | oversized body | read 33 MB | refused at 1 MB (fix round 1) |
-| MCP connector OAuth endpoints | slow server | still waiting after ten minutes | aborted after 30 s (fix round 1) |
-| OpenAPI spec fetch | slow server | still waiting after ten minutes | "fetching the spec timed out after 30 s" (fix round 1) |
-| peer MCP transport | oversized body | read 33 MB | refused at 32 MB (fix round 1) |
+| Caller                        | Cell                                        | Before                                           | After                                                                             |
+| ----------------------------- | ------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| calendar ICS feed             | private IP                                  | pulled                                           | refused                                                                           |
+| calendar ICS feed             | name resolving to 127.0.0.1                 | pulled                                           | refused                                                                           |
+| calendar ICS feed             | redirect to 169.254.169.254                 | fetched the metadata, failed to parse            | refused before the hop                                                            |
+| calendar ICS feed             | oversized body                              | "feed too large" after reading 33 MB             | "feed too large" at 12 MB                                                         |
+| `video_ingest` link           | redirect to 169.254.169.254                 | handed to the sidecar                            | refused                                                                           |
+| `video_ingest` link           | public host, cross-host redirect, oversized | handed to the sidecar                            | the link is reached once (no body read), then handed to the sidecar               |
+| `video_ingest` link           | slow server                                 | handed to the sidecar                            | refused after 10 s (fix round 1: the walk fails closed, as on too many redirects) |
+| federation client             | redirect to 169.254.169.254                 | fetched the metadata, read as "no nodes"         | refused                                                                           |
+| federation client             | oversized body                              | read 33 MB, the parse failure read as "no nodes" | refused at 32 MB                                                                  |
+| peer MCP transport            | redirect to 169.254.169.254                 | fetched the metadata                             | refused                                                                           |
+| `web_fetch`                   | oversized body                              | the same first 5 MB returned after reading 33 MB | the same first 5 MB, reading stops there                                          |
+| MCP connector                 | oversized body                              | read 33 MB                                       | refused at 32 MB (fix round 1)                                                    |
+| MCP connector OAuth endpoints | oversized body                              | read 33 MB                                       | refused at 1 MB (fix round 1)                                                     |
+| MCP connector OAuth endpoints | slow server                                 | still waiting after ten minutes                  | aborted after 30 s (fix round 1)                                                  |
+| OpenAPI spec fetch            | slow server                                 | still waiting after ten minutes                  | "fetching the spec timed out after 30 s" (fix round 1)                            |
+| peer MCP transport            | oversized body                              | read 33 MB                                       | refused at 32 MB (fix round 1)                                                    |
 
 The survey named the feed and the crawl and video redirects. The crawl
 needs none (Firecrawl fetches). The federation client, the peer MCP
@@ -184,7 +187,7 @@ over 32 MB on one federation call errors instead of reading as empty.
 ### The pins
 
 - `eslint-rules/no-bare-fetch.mjs` (`mantle-egress/no-bare-fetch`): all
-  product code under `packages/` and `server/{web,api,mcp,sandboxd}/` (not
+  product code under `packages/` and `server/{web,api,mcp,sandboxd,parser,gateway}/` (not
   tests, not scripts) uses the platform fetch only in the files the rule
   lists, its inventory (`BARE_FETCH_ALLOWED`, 32 files). Each entry names
   the kind of host it reaches (a fixed provider host, owner config,
@@ -198,9 +201,10 @@ over 32 MB on one federation call errors instead of reading as empty.
   `require`, dynamic import or `createRequire` load of `undici`,
   `node:http`, `node:https`, `http`, `https`, `axios`, `got` or
   `node-fetch` (a type-only import is not a load). Its inventory is
-  `RAW_HTTP_ALLOWED` (6 files: the egress fetch and the provider pool,
-  which load undici; the tailscaled LocalAPI client and sandboxd's Docker
-  client over local sockets; sandboxd's egress proxy and its own listener).
+  `RAW_HTTP_ALLOWED` (7 files: the undici loader of the egress fetch and
+  the provider pool; the tailscaled LocalAPI client and sandboxd's Docker
+  client over local sockets; sandboxd's egress proxy and its own listener;
+  the parser's listener; the service gateway's listener and proxy).
   `eslint-rules/no-bare-fetch.test.ts` holds both inventories to exactly the
   files that use them.
 - The Microsoft Graph client (`packages/microsoft/src/client.ts`) follows
@@ -220,14 +224,14 @@ are not on the egress fetch. Each fetches a URL the owner or an admin set,
 or one a fixed provider returned, never one a user message, a model or a
 remote document chose:
 
-| Fetch | Where | Trust |
-| --- | --- | --- |
-| custom chat, agent and AI worker base URLs | `packages/voice` (provider pool) | owner config: a local model on a LAN or tailnet address on purpose |
-| `/api/embedding/test` (`probeEmbeddingRoute`), the embedder probes | `packages/embeddings`, `server/web/lib/integrity/capabilities.ts`, `system-health.ts`, `services.ts` | owner config: the embedding base URL (a LAN or tailnet embedder on purpose) |
-| onboarding Azure probe | `server/web/lib/onboarding-steps.ts` | owner config: the Azure base URL the owner types in during onboarding |
-| IMAP and SMTP | `packages/email` (sockets, not fetch) | owner config: the mail host the owner set; not an HTTP fetch, so outside this layer |
-| Microsoft Graph download URL | `packages/microsoft/src/drives/sync.ts` | provider-returned: the pre-authenticated URL in Graph's own answer |
-| xAI returned image URL | `packages/voice/src/adapters/xai-image.ts` | moved onto the egress fetch (fix round 1): any URL in the answer, so it is checked, with 60 s and 32 MB |
+| Fetch                                                              | Where                                                                                                | Trust                                                                                                   |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| custom chat, agent and AI worker base URLs                         | `packages/voice` (provider pool)                                                                     | owner config: a local model on a LAN or tailnet address on purpose                                      |
+| `/api/embedding/test` (`probeEmbeddingRoute`), the embedder probes | `packages/embeddings`, `server/web/lib/integrity/capabilities.ts`, `system-health.ts`, `services.ts` | owner config: the embedding base URL (a LAN or tailnet embedder on purpose)                             |
+| onboarding Azure probe                                             | `server/web/lib/onboarding-steps.ts`                                                                 | owner config: the Azure base URL the owner types in during onboarding                                   |
+| IMAP and SMTP                                                      | `packages/email` (sockets, not fetch)                                                                | owner config: the mail host the owner set; not an HTTP fetch, so outside this layer                     |
+| Microsoft Graph download URL                                       | `packages/microsoft/src/drives/sync.ts`                                                              | provider-returned: the pre-authenticated URL in Graph's own answer                                      |
+| xAI returned image URL                                             | `packages/voice/src/adapters/xai-image.ts`                                                           | moved onto the egress fetch (fix round 1): any URL in the answer, so it is checked, with 60 s and 32 MB |
 
 ### Calendar feeds on the LAN
 
@@ -295,12 +299,12 @@ different second lines:
 
 The background jobs that read outside text now fence it:
 
-| Job | File | What is fenced |
-| --- | --- | --- |
-| extractor (summary, facts, entities) | `server/api/src/agent/extract/model.ts` | the node's title and body (an email's subject and text, a fetched page, an upload's filename and text); the type stays outside |
-| reflector | `server/api/src/agent/reflector.ts` | the recent transcript (the notes it already has stay outside) |
-| conversation summarizer | `server/api/src/agent/summarizer.ts` | the batch's transcript |
-| `summarize_text` | `packages/tools/src/builtins-workers.ts` | the source text (the caller's focus stays outside) |
+| Job                                  | File                                     | What is fenced                                                                                                                 |
+| ------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| extractor (summary, facts, entities) | `server/api/src/agent/extract/model.ts`  | the node's title and body (an email's subject and text, a fetched page, an upload's filename and text); the type stays outside |
+| reflector                            | `server/api/src/agent/reflector.ts`      | the recent transcript (the notes it already has stay outside)                                                                  |
+| conversation summarizer              | `server/api/src/agent/summarizer.ts`     | the batch's transcript                                                                                                         |
+| `summarize_text`                     | `packages/tools/src/builtins-workers.ts` | the source text (the caller's focus stays outside)                                                                             |
 
 Each system prompt ends with one line saying what the fence means and that
 only markers carrying the call's nonce are real (the fence's `note`, added

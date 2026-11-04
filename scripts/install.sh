@@ -895,6 +895,8 @@ ensure SANDBOXD_TOKEN      "gen_hex 32"
 ensure GOTENBERG_PASSWORD  "gen_hex 32"   # the documents engine's basic-auth password; never rotated
 # The parser service's bearer token (core, always on; docs/parser.md).
 ensure PARSER_TOKEN        "gen_hex 32"
+# The service gateway's bearer token (core, always on; docs/gateway.md).
+ensure GATEWAY_TOKEN       "gen_hex 32"
 # The calls media server's API key pair (compose profile `calls`, off until
 # Settings > Services switches it on; docs/messenger.md "Calls"). The brain
 # signs every call token and verifies every LiveKit webhook with it. Inert

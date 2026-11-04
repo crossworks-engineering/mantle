@@ -173,6 +173,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/tools/src/crud.ts': ['tool-config'],
   'packages/tools/src/external-access.ts': ['tool-config'],
   'packages/tools/src/integration.ts': ['tool-config'],
+  // A service gateway row: where the gateway sends a service's calls (0358).
+  'packages/db/src/service-gateway.ts': ['tool-config'],
   'packages/tools/src/mcp-oauth.ts': ['tool-config'],
   'packages/microsoft/src/config-store.ts': ['tool-config'],
   'server/web/lib/heartbeats.ts': ['heartbeat-maker'],

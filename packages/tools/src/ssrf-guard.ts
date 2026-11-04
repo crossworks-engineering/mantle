@@ -11,7 +11,12 @@
  * connect is refused.
  */
 
-import { assertEgressUrl, egressFetch, isBlockedIp as egressBlocked } from '@mantle/std/egress';
+import {
+  assertEgressUrl,
+  EgressRefusedError,
+  egressFetch,
+  isBlockedIp as egressBlocked,
+} from '@mantle/std/egress';
 import { env } from '@mantle/config';
 
 /** Is a literal IP in a blocked range? Unparseable → blocked (fail closed).
@@ -47,12 +52,97 @@ export function isSandboxProxyUrl(u: URL): boolean {
   }
 }
 
+/**
+ * THE SECOND DELIBERATE EXEMPTION: the service gateway (docs/gateway.md).
+ *
+ * The services of a box (a client database's query face, an MCP bridge)
+ * sit on the internal network mantle_services, publish no port and have no
+ * Caddy route; the gateway (server/gateway) is the one door to them and
+ * routes `${GATEWAY_URL}/svc/<slug>/…` only to a service the owner
+ * registered. The carve is exactly the sandboxd one, and BOTH bounds
+ * matter:
+ *   - origin must equal GATEWAY_URL's origin EXACTLY (no other private host
+ *     inherits it);
+ *   - path must start with `/svc/` and name a slug: the gateway serves
+ *     nothing else (it answers /healthz alone without its token).
+ * The gateway is itself token-gated (GATEWAY_TOKEN, which the brain sends
+ * only on an http tool's or an MCP connector's call, never on web_fetch)
+ * and refuses an unknown slug, method or path. Every hop of a call that
+ * starts here must stay on the same service, and no hop may enter it
+ * (hopGuard). Guarded by ssrf-guard.test.ts; if you widen this, you are
+ * re-deciding a security boundary — stop and take it to the owner first.
+ */
+export function isGatewayUrl(u: URL): boolean {
+  return gatewaySlug(u) !== null;
+}
+
+/** The service slug of a gateway URL (`${GATEWAY_URL}/svc/<slug>/…`), or
+ *  null for any other URL. */
+export function gatewaySlug(u: URL): string | null {
+  const base = env('GATEWAY_URL');
+  if (!base) return null;
+  try {
+    if (u.origin !== new URL(base).origin) return null;
+  } catch {
+    return null;
+  }
+  const m = /^\/svc\/([a-z0-9][a-z0-9-]{0,39})(?:\/|$)/.exec(u.pathname);
+  return m ? m[1]! : null;
+}
+
+/** The two carves: a URL either one accepts skips the address check and the
+ *  connect-time pin (@mantle/std/egress `exempt`). */
+export function isCarvedUrl(u: URL): boolean {
+  return isSandboxProxyUrl(u) || isGatewayUrl(u);
+}
+
 /** Throw if `rawUrl` is not an http(s) URL whose host resolves only to public
  *  addresses. Used before every fetch hop. The check is the egress
- *  module's (@mantle/std/egress); the sandbox proxy carve is this
- *  package's. */
+ *  module's (@mantle/std/egress); the sandbox proxy and gateway carves are
+ *  this package's. */
 export async function assertFetchableUrl(rawUrl: string): Promise<void> {
-  await assertEgressUrl(rawUrl, { exempt: isSandboxProxyUrl });
+  await assertEgressUrl(rawUrl, { exempt: isCarvedUrl });
+}
+
+function parsed(raw: string): URL | null {
+  try {
+    return new URL(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The check for each hop of one fetch that starts at `startUrl`
+ * (egressFetch calls it once per hop, in order). A call that starts at a
+ * gateway service stays on that service: a redirect out of the gateway, or
+ * to another service on it, is refused (the call carries the gateway token
+ * and the service's key). A call that starts anywhere else is checked as
+ * before, and a redirect INTO the gateway is refused: the carve is for a
+ * URL a tool was written with, never one a remote server points at.
+ */
+export function hopGuard(startUrl: string): (url: string) => Promise<void> {
+  const start = parsed(startUrl);
+  const slug = start ? gatewaySlug(start) : null;
+  let hop = 0;
+  return async (url: string) => {
+    const first = hop++ === 0;
+    const u = parsed(url);
+    if (slug !== null) {
+      if (!u || gatewaySlug(u) !== slug) {
+        throw new EgressRefusedError(
+          `refusing a redirect out of gateway service '${slug}' (to ${u ? u.origin : 'an invalid URL'}): a gateway call stays on its service`,
+        );
+      }
+      return;
+    }
+    if (!first && u && isGatewayUrl(u)) {
+      throw new EgressRefusedError(
+        'refusing a redirect into the service gateway: only a URL a tool was written with may reach it',
+      );
+    }
+    await assertFetchableUrl(url);
+  };
 }
 
 /**
@@ -69,8 +159,8 @@ export async function guardedFetch(
 ): Promise<Response> {
   return egressFetch(url, init, {
     maxRedirects,
-    guard: assertFetchableUrl,
-    exempt: isSandboxProxyUrl,
+    guard: hopGuard(url),
+    exempt: isCarvedUrl,
     ...opts,
   });
 }

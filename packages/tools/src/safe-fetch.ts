@@ -19,7 +19,7 @@
  */
 
 import { egressFetch } from '@mantle/std/egress';
-import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
+import { hopGuard, isCarvedUrl } from './ssrf-guard';
 
 /** The one egress fetch (@mantle/std/egress) with this path's
  *  secrets: every hop guarded, secret-bearing headers dropped across
@@ -31,14 +31,15 @@ export async function safeFetch(
   init: RequestInit,
   secretValues: string[],
   // Injectable ONLY so the redirect/secret-stripping tests can drive loopback
-  // servers; every production caller takes the default real egress guard.
-  guard: (u: string) => Promise<void> = assertFetchableUrl,
+  // servers; every production caller takes the default real egress guard
+  // (hopGuard: a gateway call stays on its service).
+  guard: (u: string) => Promise<void> = hopGuard(url),
   limits: { timeoutMs?: number; maxBytes?: number } = {},
 ): Promise<Response> {
   return egressFetch(url, init, {
     secrets: secretValues,
     guard,
-    exempt: isSandboxProxyUrl,
+    exempt: isCarvedUrl,
     ...limits,
   });
 }

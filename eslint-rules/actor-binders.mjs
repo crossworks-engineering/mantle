@@ -47,6 +47,10 @@ export const ACTOR_BINDER_PINS = {
   // An MCP call's log row: written as
   // system(audit:mcp-call) whatever actor the call ran as, once per row.
   'packages/db/src/mcp-call-log.ts': 1,
+  // The service gateway's call log row and its reap: written as
+  // system(audit:gateway-call) and system(maintenance:gateway-calls-reap)
+  // by the gateway process, outside every scope.
+  'packages/db/src/service-gateway.ts': 2,
   // The one ordered gate: its step 3 binds the actor the policy
   // implies, once per call.
   'packages/db/src/gate.ts': 1,
