@@ -88,6 +88,18 @@ every app container ─reads (mounted read-only)─▶ /signal/services.json
   containers, so their env would go stale; the live file is what they see
   change. The dashboard pills, `/api/sandboxes`, the sandbox tools and the
   agent tool list all read it.
+- **Every container, for the Status screen.** `services.json` also carries
+  `containers`: each long-running container of the stack by its compose
+  service name (`postgres`, `objectstore`, `gotenberg`, `api`, the
+  `worker_*` processes, `client_web` and the rest: `BOX_CONTAINERS` in
+  `infra/updater/updater.sh` and `@mantle/config`), with docker's state,
+  health, restart count and start time. One `docker inspect` writes them;
+  only fixed words, a count and a timestamp leave. The brain cannot see
+  docker and a worker's heartbeat lives in its own `/tmp`, so this is how
+  the owner UI learns that a worker went unhealthy. `GET /api/box-status`
+  (settings area, read-only) serves them beside the `box_status` numbers
+  ([federation.md](federation.md), "The two tools"); an updater before the
+  field gives `containers: null`.
 - **Tools hide when a service is off.** `effectiveToolSlugs`
   (`packages/runtime/src/agent/skills.ts`) leaves `sandbox_*` out of an
   agent's tools while the sandboxes service is off. The

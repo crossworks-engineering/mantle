@@ -92,10 +92,56 @@ export type ServiceFileEntry = {
   health: string;
 };
 
+/** The long-running containers services.json reports by compose service
+ *  name (infra/updater/updater.sh BOX_CONTAINERS, the same list): the core
+ *  sidecars, the optional ones, the app's own processes and the client
+ *  stack's web container. A name not here is dropped when read. */
+export const BOX_CONTAINERS = [
+  'postgres',
+  'objectstore',
+  'parser',
+  'browser',
+  'gotenberg',
+  'ollama',
+  'tailscale',
+  'web',
+  'caddy',
+  'updater',
+  'livekit',
+  'sandboxd',
+  'autoheal',
+  'api',
+  'worker_email',
+  'worker_telegram',
+  'worker_microsoft',
+  'worker_files',
+  'worker_docs',
+  'worker_events',
+  'worker_calendar',
+  'worker_maintenance',
+  'worker_runs',
+  'worker_push',
+  'client_web',
+] as const;
+export type BoxContainer = (typeof BOX_CONTAINERS)[number];
+
+/** One container as docker saw it: `container` is State.Status ('running',
+ *  'exited', ...) or 'absent', `health` the healthcheck status or 'none',
+ *  `restarts` docker's restart count, `startedAt` when it last started
+ *  (ISO, null when never). */
+export type ContainerFileEntry = {
+  container: string;
+  health: string;
+  restarts: number;
+  startedAt: string | null;
+};
+
 /** /signal/services.json, written by infra/updater/updater.sh. */
 export type ServicesFile = {
   profiles: string[];
   services: Partial<Record<OptionalService, ServiceFileEntry>>;
+  /** Every long-running container, or null from an updater before it. */
+  containers: Partial<Record<BoxContainer, ContainerFileEntry>> | null;
   /** Host memory from the updater's /proc/meminfo (a container sees the
    *  host's), for the small-box warning. */
   memTotalKb: number | null;
@@ -119,6 +165,33 @@ export function splitProfiles(raw: string | undefined): string[] {
 
 function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
+}
+
+/** A docker word (a status, a health): lower-case letters only, or the
+ *  fallback. */
+function word(v: unknown, fallback: string): string {
+  return typeof v === 'string' && /^[a-z]{1,20}$/.test(v) ? v : fallback;
+}
+
+const STARTED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+/** The `containers` map: known names only, each value held to its shape. */
+function parseContainers(raw: unknown): ServicesFile['containers'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const out: NonNullable<ServicesFile['containers']> = {};
+  for (const name of BOX_CONTAINERS) {
+    const c = r[name] as Record<string, unknown> | undefined;
+    if (!c || typeof c !== 'object') continue;
+    out[name] = {
+      container: word(c.container, 'absent'),
+      health: word(c.health, 'none'),
+      restarts: num(c.restarts) ?? 0,
+      startedAt:
+        typeof c.started_at === 'string' && STARTED_AT.test(c.started_at) ? c.started_at : null,
+    };
+  }
+  return out;
 }
 
 /** Pure, for tests: a services.json body, or null when it is not one. */
@@ -150,6 +223,7 @@ export function parseServicesFile(raw: string): ServicesFile | null {
   return {
     profiles,
     services,
+    containers: parseContainers(o.containers),
     memTotalKb: num(o.mem_total_kb),
     memAvailableKb: num(o.mem_available_kb),
     diskFreeKb: num(o.disk_free_kb),

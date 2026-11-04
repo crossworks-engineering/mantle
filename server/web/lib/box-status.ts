@@ -22,7 +22,9 @@ import { authUsers, db } from '@mantle/db';
 import { corpusCapacity } from '@mantle/content';
 import { NET_TIMEOUTS, TtlCache, withTimeout } from '@mantle/std';
 import { APP_VERSION, BUILD_TIME, GIT_SHA } from '@mantle/client-types/version';
-import { registerBoxStatusProvider, type BoxStatus } from '@mantle/tools';
+import { registerBoxStatusProvider, shapeBoxStatus, type BoxStatus } from '@mantle/tools';
+import { readServicesFile, type ServicesFile } from '@mantle/config';
+import type { BoxStatusView } from '@mantle/client-types';
 import { getSystemHealth } from './system-health';
 import { spendInRange, trafficWindow, turnCount } from './metrics';
 import { extractionQueueCounts } from './extraction-queue';
@@ -168,4 +170,26 @@ export function boxStatus(ownerId: string): Promise<BoxStatus> {
  *  calls it once; again is a no-op change. */
 export function installBoxStatusProvider(): void {
   registerBoxStatusProvider(boxStatus);
+}
+
+/** Pure, for tests: the containers part of the Status view, from the
+ *  updater's services.json (null when there is none). */
+export function containersView(
+  file: ServicesFile | null,
+): Pick<BoxStatusView, 'containers' | 'containersCheckedAt' | 'core'> {
+  if (!file) return { containers: null, containersCheckedAt: null, core: null };
+  return {
+    containers: file.containers ? { ...file.containers } : null,
+    containersCheckedAt: file.checkedAt,
+    core: file.core,
+  };
+}
+
+/** GET /api/box-status: the status (held to schema 1, as box_status sends
+ *  it) and the containers docker reports. Read-only; the status part is the
+ *  same 30-second collection every other caller gets. */
+export async function boxStatusView(ownerId: string): Promise<BoxStatusView> {
+  const box = shapeBoxStatus(await boxStatus(ownerId));
+  if (!box) throw new Error('box status: the collector returned no schema 1 status');
+  return { box, ...containersView(readServicesFile()) };
 }
