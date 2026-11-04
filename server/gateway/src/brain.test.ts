@@ -227,7 +227,7 @@ describe('brainFetch', () => {
       token: 't',
       fetch: brainFetch(cidrs, dns({ web: ['172.31.250.9'] }), f),
     });
-    await expect(lookup('pcms')).rejects.toThrow(/services network/);
+    await expect(lookup('billing')).rejects.toThrow(/services network/);
     expect(String(warn.mock.calls[0]?.[0])).toMatch(/services network/);
     warn.mockRestore();
   });

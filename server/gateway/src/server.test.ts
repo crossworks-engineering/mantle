@@ -340,7 +340,7 @@ describe('the gateway server', () => {
     try {
       const url = `http://127.0.0.1:${(closed.address() as AddressInfo).port}`;
       await expect(
-        fetch(`${url}/svc/pcms/mcp`, { method: 'POST', headers: auth }),
+        fetch(`${url}/svc/billing/mcp`, { method: 'POST', headers: auth }),
       ).rejects.toThrow();
       await expect(fetch(`${url}/healthz`)).rejects.toThrow();
       expect(seen).toEqual([]);
