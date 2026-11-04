@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased
+## v0.500.22: an import table takes its file's home and grants, once
 
 - **Fixed:** an import table and the images the extract worker makes from a
   file now take the file's home and grants, Write switch included. Before, they
@@ -20,6 +20,12 @@ deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 - **Added:** the `part-repair` maintenance task gives old import tables and
   images their file's home and grants. It changes only an item with the
   untouched Admin default. Dry run by default.
+
+## v0.500.21: the service gateway (Data sources 1a)
+
+- A new always-on `gateway` container is the one internal door from the brain to box services. It proxies `/svc/<slug>/<path>` only to an enabled service, over a new internal network `mantle_services`. It holds no database access: it reads the registry from the brain and posts its call rows there. See `docs/gateway.md`.
+- First roll: the updater writes `GATEWAY_TOKEN` and picks a free subnet if the default range clashes. A box whose updater predates this runs the gateway with no token (every call answers 503) until its next roll.
+- Migration 0358 adds `gateway_services` and `gateway_calls`.
 
 ## v0.500.20: the box status route for the Status screen
 
