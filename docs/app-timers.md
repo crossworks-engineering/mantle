@@ -35,6 +35,10 @@ runs land, is in [app-authoring-guide.md](./app-authoring-guide.md),
   outcome is written, the next run follows from the new setting), and
   `app_timer_run` answers "running now" instead of making it due. A
   worker killed mid-run leaves a claim that is due again after 5 minutes.
+  The worker installs the box status collector at boot, as the web process
+  does, so a timer's `peer_status` gets this box's own line and its
+  `box_status` the box's numbers, not `unavailable`
+  ([federation.md](./federation.md), "The two tools").
 - **A run on demand** (`app_timer_run`) makes a timer due now only once
   its floor has passed since its last run (the back-off of 30 minutes
   included); sooner, it is refused with the time it can run from. So a run

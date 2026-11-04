@@ -12,8 +12,10 @@
  *
  * Cached for 30 seconds, one collection at a time: many callers (an app's
  * timer, every watching box, the owner) cannot make it work harder than that.
- * Installed into the bridge at boot (installBoxStatusProvider, from
- * server/main.ts); a process without it answers that it cannot.
+ * Installed into the bridge at boot (installBoxStatusProvider) by the web
+ * process (server/main.ts) and the maintenance worker, whose app timers call
+ * peer_status and box_status (workers/maintenance.ts); a process without it
+ * answers that it cannot. Each process keeps its own cache.
  */
 import { sql } from 'drizzle-orm';
 import { authUsers, db } from '@mantle/db';

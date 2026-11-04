@@ -46,8 +46,9 @@ operating system's:
   (`mantle_parser_net`, `internal: true`): no route out (no NAT), and
   `dns: 0.0.0.0`, so Docker's resolver forwards no name outside the stack.
   The app services that send it files (web, api and the workers that run
-  turns or tools: telegram, events, runs, push) join that network as well
-  as the default one. What the parser can reach is exactly those
+  turns or tools: telegram, events, runs, push, and maintenance, which runs
+  the app timers and asks the parser for its health for `box_status`) join
+  that network as well as the default one. What the parser can reach is exactly those
   containers, on that network; not postgres, the object store or anything
   past the host. The other workers and migrate are not on it.
 
