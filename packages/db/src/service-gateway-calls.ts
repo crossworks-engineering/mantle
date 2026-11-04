@@ -8,7 +8,7 @@
  * row is counted and said at most every ten minutes, never retried, and
  * never fails the call it describes.
  */
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { and, desc, eq, gt, lt, sql } from 'drizzle-orm';
 import { UUID_RE } from '@mantle/std';
 import { runAsActor, systemActor } from './actor';
 import { systemDb } from './gateway/handles';
@@ -142,4 +142,35 @@ export async function listGatewayCalls(
     )
     .orderBy(desc(gatewayCalls.createdAt), desc(gatewayCalls.id))
     .limit(limit);
+}
+
+/** Calls counted by service, status and refusal over the last `hours`
+ *  (default 24): what a list shows by default, with no path and no caller
+ *  (a path can name a client record). */
+export async function gatewayCallCounts(
+  filter: Readonly<{ slug?: string; hours?: number }> = {},
+): Promise<
+  Array<{ slug: string; status: number; refusal: string | null; calls: number; last: Date }>
+> {
+  const hours = Math.min(Math.max(1, Math.floor(filter.hours ?? 24)), 24 * 90);
+  const since = new Date(Date.now() - hours * 3_600_000);
+  const rows = await systemDb
+    .select({
+      slug: gatewayCalls.serviceSlug,
+      status: gatewayCalls.status,
+      refusal: gatewayCalls.refusal,
+      calls: sql<number>`count(*)::int`,
+      last: sql<Date>`max(${gatewayCalls.createdAt})`,
+    })
+    .from(gatewayCalls)
+    .where(
+      and(
+        gt(gatewayCalls.createdAt, since),
+        filter.slug ? eq(gatewayCalls.serviceSlug, filter.slug) : undefined,
+      ),
+    )
+    .groupBy(gatewayCalls.serviceSlug, gatewayCalls.status, gatewayCalls.refusal)
+    .orderBy(desc(sql`count(*)`))
+    .limit(200);
+  return rows.map((r) => ({ ...r, last: new Date(r.last) }));
 }

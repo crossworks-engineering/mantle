@@ -11,7 +11,7 @@ import {
   isBlockedIp,
   isGatewayUrl,
 } from './ssrf-guard';
-import { gatewayConnectorFetch, gatewayHttpBinding } from './gateway';
+import { gatewayConnectorFetch, gatewayHttpBinding, withGatewayHeaders } from './gateway';
 import { safeFetch } from './safe-fetch';
 
 describe('isBlockedIp', () => {
@@ -290,6 +290,29 @@ describe('the service gateway exemption (the second deliberate carve)', () => {
           error: expect.stringMatching(/must be fixed/),
         });
       });
+    });
+
+    it("a tool's own gateway headers, in any letter case, never reach the log", () => {
+      vi.stubEnv('GATEWAY_TOKEN', 'tok');
+      try {
+        const out = withGatewayHeaders(
+          {
+            Authorization: 'Bearer k',
+            'X-Mantle-Caller': 'agent:forged',
+            'X-MANTLE-LOGIN': '11111111-2222-4333-8444-555555555555',
+            'x-mantle-gateway-token': 'guess',
+          },
+          { caller: 'agent:real', loginId: null },
+        );
+        expect(out).toEqual({
+          Authorization: 'Bearer k',
+          'x-mantle-gateway-token': 'tok',
+          'x-mantle-caller': 'agent:real',
+          'x-mantle-login': '',
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
 
     it('an MCP connector: requests stay on the slug of its own URL', async () => {

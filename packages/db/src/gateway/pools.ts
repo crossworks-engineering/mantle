@@ -188,6 +188,25 @@ const NARROW_STARTUP_KEYS = [
  * long-lived workers/agent exhausted Postgres within seconds. Cache always;
  * globalThis is process-global, so one pool per process is exactly right.
  */
+/** How a process's pools reach the database, when it must not trust the
+ *  host's name: a connected socket per connection (postgres.js `socket`). */
+export type PoolSocket = () => Promise<import('node:net').Socket>;
+let poolSocket: PoolSocket | null = null;
+
+/**
+ * Hold every pool of this process to one socket factory: the service
+ * gateway (server/gateway db-pin.ts) connects only to the database address
+ * it checked at start, with a SCRAM-only sign-in, since it is the one stack
+ * container a box service can reach. Set before the first query; a pool
+ * already open is refused (it would keep its own sockets).
+ */
+export function setPoolSocket(fn: PoolSocket): void {
+  if (globalThis.__mantleSql) throw new Error('setPoolSocket: a pool is already open');
+  poolSocket = fn;
+}
+
+const socketOption = () => (poolSocket ? { socket: poolSocket } : {});
+
 export function getAdminDb(): PostgresJsDatabase<typeof schema> {
   if (globalThis.__mantleDb) return globalThis.__mantleDb;
   // DATABASE_URL, or the runtime role on it (runtime-role.ts).
@@ -196,7 +215,8 @@ export function getAdminDb(): PostgresJsDatabase<typeof schema> {
   // actor as a NOTICE (0275); every other notice prints as postgres.js's
   // default does.
   const sql =
-    globalThis.__mantleSql ?? postgres(url, { max: 10, prepare: false, onnotice: onPgNotice });
+    globalThis.__mantleSql ??
+    postgres(url, { max: 10, prepare: false, onnotice: onPgNotice, ...socketOption() });
   globalThis.__mantleSql = sql;
   // The narrow route: a statement of a reason routed
   // 'narrow' runs as the narrow role.
@@ -332,6 +352,7 @@ export function newNarrowPool(url: string, system: PgSql): PgSql {
     idle_timeout: NARROW_IDLE_TIMEOUT,
     prepare: false,
     onnotice: onPgNotice,
+    ...socketOption(),
   });
   Object.assign(narrow.options.parsers, system.options.parsers);
   Object.assign(narrow.options.serializers, system.options.serializers);
@@ -394,6 +415,7 @@ export function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> 
     // the write role, 0278) arrives as a NOTICE: a miss, as on the system
     // pool. Every other notice prints as postgres.js's default does.
     onnotice: onPgNotice,
+    ...socketOption(),
   });
   const client = drizzle(sql, { schema });
   pools.set(level, { sql, db: client });

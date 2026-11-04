@@ -57,14 +57,35 @@ function parsed(raw: string): URL | null {
   }
 }
 
-/** The headers a gateway call carries: the token, the caller, its login. */
+/** The headers a gateway call carries: the token, the caller, its login
+ *  (always sent, empty when none, so a tool's own header can never stand
+ *  in for it). */
 export function gatewayRequestHeaders(who: GatewayCaller): Record<string, string> {
-  const out: Record<string, string> = {
+  return {
     [GATEWAY_TOKEN_HEADER]: env('GATEWAY_TOKEN') ?? '',
     [GATEWAY_CALLER_HEADER]: who.caller.slice(0, 200),
+    [GATEWAY_LOGIN_HEADER]: who.loginId ?? '',
   };
-  if (who.loginId) out[GATEWAY_LOGIN_HEADER] = who.loginId;
-  return out;
+}
+
+const GATEWAY_HEADERS = new Set([
+  GATEWAY_TOKEN_HEADER,
+  GATEWAY_CALLER_HEADER,
+  GATEWAY_LOGIN_HEADER,
+]);
+
+/** `headers` with the gateway's own headers set by the brain: any the tool
+ *  wrote, in any letter case, removed first (a tool may not name its caller
+ *  or login in the gateway's log). */
+export function withGatewayHeaders(
+  headers: Record<string, string>,
+  who: GatewayCaller,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    if (!GATEWAY_HEADERS.has(k.toLowerCase())) out[k] = v;
+  }
+  return { ...out, ...gatewayRequestHeaders(who) };
 }
 
 /** The gateway token, when this box has one (for the scrub). */

@@ -69,9 +69,9 @@ import { surfaceGateFacts } from './surface';
 import {
   gatewayCallerOf,
   gatewayHttpBinding,
-  gatewayRequestHeaders,
   gatewayToken,
   runAsGatewayCaller,
+  withGatewayHeaders,
 } from './gateway';
 import { runGated } from './admin-gate';
 import { builtinToolGatePolicy, builtinToolRef, mcpBuiltinToolRef } from './tool-gate-policy';
@@ -939,7 +939,7 @@ async function dispatchHttp(
       const gateway = gatewayHttpBinding(h.url, req.url);
       if (gateway && 'error' in gateway) throw new Error(gateway.error);
       if (gateway) {
-        Object.assign(req.headers, gatewayRequestHeaders(gatewayCallerOf(ctx)));
+        req.headers = withGatewayHeaders(req.headers, gatewayCallerOf(ctx));
         const token = gatewayToken();
         if (token) secrets.set('gateway/token', token);
       }

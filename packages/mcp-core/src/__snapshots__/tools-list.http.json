@@ -11103,19 +11103,29 @@
  },
  {
   "name": "gateway_service_list",
-  "description": "List the box services the service gateway may route to (slug, upstream on mantle_services, allowed paths and methods, reads-only mark, switch) with the URL an http tool or MCP connector uses for each, and the newest gateway calls (refusals included). Pass `slug` for one service's calls. To register or change one use `gateway_service_set`.",
+  "description": "List the box services the service gateway may route to (slug, upstream on mantle_services, allowed paths and methods, reads-only mark, switch) with the URL an http tool or MCP connector uses for each, and the gateway's calls of the last `hours`, counted by service, status and refusal. Paths and callers (a path can name a client record) only with `call_detail: true`. To register or change one use `gateway_service_set`.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "slug": {
      "type": "string",
-     "description": "Only this service's calls, e.g. 'pcms'."
+     "description": "Only this service, e.g. 'pcms'."
+    },
+    "hours": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 2160,
+     "description": "How far back the call counts reach."
+    },
+    "call_detail": {
+     "type": "boolean",
+     "description": "Also the newest calls one by one: path, status, caller."
     },
     "calls": {
      "type": "integer",
-     "minimum": 0,
+     "minimum": 1,
      "maximum": 200,
-     "description": "How many of the newest calls to return."
+     "description": "How many calls `call_detail` returns."
     }
    },
    "$schema": "http://json-schema.org/draft-07/schema#"

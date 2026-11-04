@@ -31,7 +31,7 @@ export const REFUSALS = {
     status: 400,
     code: 'bad_path',
     error:
-      'the path holds what the gateway refuses (a .., . or empty segment, \\, ;, or an encoded / \\ . %)',
+      'the path holds what the gateway refuses (a .., . or empty segment, \\, ;, a byte past ASCII, or an encoded / \\ . ; % or non-ASCII byte): pass such a value in the query string',
   },
   unknown: {
     status: 404,
@@ -66,10 +66,49 @@ export const REFUSALS = {
   failed: { status: 502, code: 'gateway_error', error: 'the gateway failed on this call' },
 } as const satisfies Record<string, Refusal>;
 
-/** Encoded forms that would turn into a separator or a dot segment, and a
- *  percent sign encoded again (`%252e`: a service that decodes twice reads
- *  a dot). */
-const ENCODED_TRICK = /%(2f|5c|2e|00|25)/i;
+/**
+ * The percent codes a path may carry: printable ASCII that is no separator,
+ * no dot and no percent sign. Any other `%XX` (an encoded `/`, `\\`, `.`,
+ * `;` or `%`, a control byte, any byte past ASCII: an overlong or fullwidth
+ * dot, `%u002e`) is refused, as is a raw byte outside printable ASCII. A
+ * value with such characters goes in the query string.
+ */
+const SAFE_PERCENT = new Set([
+  '20',
+  '21',
+  '22',
+  '23',
+  '24',
+  '26',
+  '27',
+  '28',
+  '29',
+  '2A',
+  '2B',
+  '2C',
+  '3A',
+  '3C',
+  '3D',
+  '3E',
+  '3F',
+  '40',
+  '5B',
+  '5D',
+  '5E',
+  '60',
+  '7B',
+  '7C',
+  '7D',
+  '7E',
+]);
+
+function unsafePath(p: string): boolean {
+  if (/[^\x21-\x7e]/.test(p) || /[\\#;]/.test(p)) return true;
+  for (let i = p.indexOf('%'); i !== -1; i = p.indexOf('%', i + 1)) {
+    if (!SAFE_PERCENT.has(p.slice(i + 1, i + 3).toUpperCase())) return true;
+  }
+  return false;
+}
 
 /** The slug and the path below it, or a refusal. */
 export function parseTarget(raw: string): Target | Refusal {
@@ -79,7 +118,7 @@ export function parseTarget(raw: string): Target | Refusal {
   const query = q === -1 ? '' : raw.slice(q);
   // `;` too: a service that strips path parameters reads `/api/..;/x` as
   // `/api/../x`.
-  if (/[\\#;]/.test(pathPart) || ENCODED_TRICK.test(pathPart)) {
+  if (unsafePath(pathPart)) {
     return REFUSALS.badPath;
   }
   const after = pathPart.slice('/svc/'.length);

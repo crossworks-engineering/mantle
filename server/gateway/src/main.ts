@@ -22,11 +22,20 @@ import {
   reapGatewayCalls,
   recordGatewayCall,
   runAsActor,
+  setPoolSocket,
   systemActor,
 } from '@mantle/db';
 import { onShutdown } from '@mantle/std/shutdown';
-import { createGateway } from './server';
-import { checkedAddress, DEFAULT_NETWORK_NAMES, fromServices, networkPlan } from './upstream';
+import { createGateway, createHealthServer, healthListenerHost } from './server';
+import { pinnedDatabase, pinnedSocket } from './db-pin';
+import {
+  checkedAddress,
+  DEFAULT_NETWORK_NAMES,
+  fromServices,
+  networkPlan,
+  resolveV4,
+} from './upstream';
+import net from 'node:net';
 
 const REAP_EVERY_MS = 60 * 60_000;
 
@@ -34,11 +43,12 @@ const REAP_EVERY_MS = 60 * 60_000;
  *  refuses a system pool statement with no actor bound). */
 const ROUTE_ACTOR = systemActor('gateway:route');
 
-function databaseHost(): string | null {
+function databaseAt(): { host: string; port: number } | null {
   const url = env('DATABASE_URL');
   if (!url) return null;
   try {
-    return new URL(url).hostname || null;
+    const u = new URL(url);
+    return u.hostname ? { host: u.hostname, port: Number(u.port || 5432) } : null;
   } catch {
     return null;
   }
@@ -49,11 +59,18 @@ async function main(): Promise<void> {
 
   const token = env('GATEWAY_TOKEN') ?? '';
   const port = envNum('GATEWAY_PORT');
-  const db = databaseHost();
+  const db = databaseAt();
   const plan = await networkPlan(env('GATEWAY_UPSTREAM_CIDRS'), [
-    ...(db ? [db] : []),
+    ...(db ? [db.host] : []),
     ...DEFAULT_NETWORK_NAMES,
   ]);
+  // The database, held to the address checked here and to a SCRAM sign-in
+  // (db-pin.ts): before the first query, or the gateway does not start.
+  if (!db) throw new Error('DATABASE_URL is not set');
+  const dbAnswers = net.isIPv4(db.host) ? [db.host] : await resolveV4(db.host).catch(() => []);
+  const pin = pinnedDatabase(dbAnswers, plan.defaults, plan.cidrs);
+  if (!pin.ok) throw new Error(`refusing to start: ${pin.error}`);
+  setPoolSocket(pinnedSocket(pin.address, db.port));
   // Its own address on the default network: nothing on mantle_services
   // can open a connection to it at all.
   const host = env('GATEWAY_HOST') ?? plan.listen ?? '0.0.0.0';
@@ -79,6 +96,13 @@ async function main(): Promise<void> {
   });
   await new Promise<void>((resolve) => server.listen(port, host, resolve));
   console.log(`[gateway] listening on ${host}:${port}`);
+  // The health check's own door (compose: 127.0.0.1:8097/healthz).
+  const healthHost = healthListenerHost(host);
+  const health = healthHost ? createHealthServer() : null;
+  if (health && healthHost) {
+    await new Promise<void>((resolve) => health.listen(port, healthHost, resolve));
+    console.log(`[gateway] health on ${healthHost}:${port} (/healthz only)`);
+  }
 
   const reap = () =>
     reapGatewayCalls().then(
@@ -95,6 +119,7 @@ async function main(): Promise<void> {
     stop: async () => {
       clearInterval(reaper);
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (health) await new Promise<void>((resolve) => health.close(() => resolve()));
       await gatewayCallsSettled();
       await closeDb();
     },
