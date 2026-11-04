@@ -69,11 +69,13 @@ export async function POST(req: Request) {
   }
   const { title, source, tags } = parsed.data;
   const css = source !== undefined ? await compileCanvasCss(source) : '';
-  const row = await createPresent(user.id, {
+  const { assetProblems, ...row } = await createPresent(user.id, {
     ...(title !== undefined ? { title } : {}),
     ...(source !== undefined ? { source } : {}),
     css,
     tags,
   });
-  return NextResponse.json({ present: row }, { status: 201 });
+  // What the save says about the files the canvas declares for mantle.media
+  // (the content layer's read check): plain sentences, empty when all is well.
+  return NextResponse.json({ present: row, assetProblems }, { status: 201 });
 }

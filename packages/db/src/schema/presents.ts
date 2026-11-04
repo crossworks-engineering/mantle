@@ -27,6 +27,10 @@ export type PresentMeta = {
   scripts: string[];
   /** `canvas:poster-at`, seconds, or null. */
   posterAt: number | null;
+  /** The Files the canvas may ask for through `mantle.media` (content-core
+   *  canvas-media.ts): the ids its source declares that the saver could
+   *  read at the save, lower case. Absent on a canvas saved before media. */
+  assets?: string[];
 };
 
 /**

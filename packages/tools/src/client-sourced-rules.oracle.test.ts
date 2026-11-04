@@ -239,6 +239,9 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   video_ingest: creates(),
   show_image: free('shows a file in this chat'),
   synthesize_speech: free('speaks in this chat'),
+  // New since the oracle (canvas media, task a265178d): mp3 files it makes,
+  // in the folder `parent_path` names when given.
+  speech_file_create: { ...creates(), paths: ['parent_path'] },
 
   // ── Apps ─────────────────────────────────────────────────────────────────
   app_create: creates(),

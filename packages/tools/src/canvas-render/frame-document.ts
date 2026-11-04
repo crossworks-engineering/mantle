@@ -82,12 +82,14 @@ export async function canvasFontCss(ownerId: string): Promise<string> {
 }
 
 /** The frame document of a canvas. `nonce` is the frame's proof for its
- *  parent page (none for a sidecar render, which has no parent). */
+ *  parent page (none for a sidecar render, which has no parent). `media`:
+ *  the parent answers `mantle.media` (its frame URL said `m=1`). */
 export async function canvasFrameDocument(
   ownerId: string,
   canvas: { source: string; css: string; meta: PresentMeta },
   theme: { cls: string; colorTheme: string | null },
   nonce?: string,
+  media?: boolean,
 ): Promise<string> {
   const [importMapJson, fontCss] = await Promise.all([
     loadCanvasImportMap(),
@@ -103,5 +105,6 @@ export async function canvasFrameDocument(
     theme: canvas.meta.theme,
     fontCss,
     ...(nonce ? { nonce } : {}),
+    ...(nonce && media ? { media: true } : {}),
   });
 }

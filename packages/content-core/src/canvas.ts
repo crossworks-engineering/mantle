@@ -10,6 +10,12 @@
  * canvas safe to run. The sandboxed frame does that (section 5.2).
  */
 
+import {
+  CANVAS_ASSETS_META,
+  canvasAssetDeclaration,
+  type CanvasAssetDeclaration,
+} from './canvas-media';
+
 /** The largest canvas source the brain stores (section 4.1). */
 export const CANVAS_MAX_BYTES = 1_000_000;
 
@@ -222,6 +228,12 @@ export function parseCanvasHead(html: string): CanvasHead {
   };
 }
 
+/** The files a canvas declares for `mantle.media` (canvas-media.ts): its
+ *  `canvas:assets` head tag, and a template canvas's data `fileId` fields. */
+export function canvasAssets(html: string): CanvasAssetDeclaration {
+  return canvasAssetDeclaration(html, metaTags(headOf(html)).get(CANVAS_ASSETS_META) ?? null);
+}
+
 /** The most text a canvas contributes to search and the extractor. */
 export const CANVAS_TEXT_MAX = 20_000;
 
@@ -360,6 +372,12 @@ export function canvasLoadProblems(html: string, modules: readonly string[]): st
       continue;
     }
     if (url.startsWith(CANVAS_RUNTIME_PREFIX) || url.startsWith('/share-runtime/')) continue;
+    if (/^\/(?:api\/files\/|s\/[^/]+\/a\/)/.test(url)) {
+      problems.push(
+        `'${url.slice(0, 120)}': a canvas loads no file by URL. Play or show a file with mantle.media.url('<file id>') and list the id in <meta name="${CANVAS_ASSETS_META}" content="id id ...">.`,
+      );
+      continue;
+    }
     problems.push(
       `'${url.slice(0, 120)}': only files under ${CANVAS_RUNTIME_PREFIX} (for example ${CANVAS_RUNTIME_PREFIX}plotly/plotly.min.js) load in a canvas. Inline anything else.`,
     );

@@ -10,6 +10,7 @@ import { NextResponse } from '@/server/http-compat';
 import { gateShare } from '@/lib/contact-share-gate';
 import { buildCanvasFrameTicket, canvasFrameNonce } from '@/lib/auth';
 import { getPresentFrame } from '@/lib/presents';
+import { shareMediaBy } from '@mantle/content';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -32,7 +33,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   if (gate.kind !== 'ok') return notFound();
   const share = gate.share;
   if (share.nodeType !== 'present' || share.contactId) return notFound();
-  if (!(await getPresentFrame(share.ownerId, share.nodeId))) return notFound();
+  const canvas = await getPresentFrame(share.ownerId, share.nodeId);
+  if (!canvas) return notFound();
   const ticket = buildCanvasFrameTicket({
     ownerId: share.ownerId,
     presentId: share.nodeId,
@@ -40,5 +42,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   });
   // The nonce lets the parent tell the frame it asked for from a page the
   // canvas navigated to (canvas-sandbox.tsx).
-  return NextResponse.json({ ticket, nonce: canvasFrameNonce(ticket) });
+  // `assets`, only while the link's media is on: the declared files the
+  // parent may ask the link's asset route for, which checks each again
+  // (isAssetAllowed). Off, none, and every media call is refused at once.
+  return NextResponse.json({
+    ticket,
+    nonce: canvasFrameNonce(ticket),
+    assets: shareMediaBy(share.settings) ? (canvas.meta.assets ?? []) : [],
+  });
 }

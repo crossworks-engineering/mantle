@@ -1108,7 +1108,7 @@
  },
  {
   "name": "app_tools_set",
-  "description": "Set the list of tool slugs this app may call through the host bridge (host.tools.call). The host refuses any slug not declared. Each slug must be a tool you own. Replaces the current list. Members running a team-level app get read-only built-ins from an enabled team-level group, and file_upload, file_move and file_rename as the user running it. file_sql reads the rows of a file. A new tool that can reach a Table is refused; one the list holds runs only on a box with no MANTLE_NO_AUTO_TABLES line. Outside tools: a connector tool by its connector level, an http tool by External access. An open share link calls no tools. The result warns for each declared tool the app level refuses.",
+  "description": "Set the list of tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist: the host refuses any slug not declared here. Each slug must be an existing tool you own. Replaces the current list. Members running a team-level app get read-only built-ins from an enabled team-level group, plus the Table row writes and table_commit on a Table its workspace homes, and file_upload, file_move and file_rename on the files and folders of its workspace, as the user running it. Outside tools: a connector tool by its connector level, an http tool by External access. An open share link calls no tools. The result warns for each declared tool the app level refuses.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1321,7 +1321,7 @@
  },
  {
   "name": "circuit_verify",
-  "description": "Ask a vision model about each guess of `circuit_trace` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers go on the drawing's file, with crops in Auto-filed; trace again to write them on the drawing. **Spends the owner's vision key**, never automatic; `dry_run` is free. Call `circuit_verify` at most once per trace in a turn, never again in the same turn for guesses it left out (not_asked, a cap, a time limit); save the drawing and say how many are unchecked. A second call within 10 minutes is refused unless `recheck`.",
+  "description": "Ask a vision model about each guess of `circuit_trace` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers and crops go to the drawing table's Checks tab; trace again to write them on the drawing. **Spends the owner's vision key**, never automatic; `dry_run` is free. Call `circuit_verify` at most once per trace in a turn, never again in the same turn for guesses it left out (not_asked, a cap, a time limit); save the drawing and say how many are unchecked. A second call within 10 minutes is refused unless `recheck`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1417,7 +1417,7 @@
     },
     "recheck": {
      "type": "boolean",
-     "description": "Ask again guesses already answered at the drawing's current revision (by default they are skipped and the next unanswered ones asked). It asks every guess up to `max_questions`: `dry_run` first shows what it would pay for."
+     "description": "Ask again guesses already answered at the drawing's current revision (by default they are skipped and the next unanswered ones asked)."
     }
    },
    "required": [
@@ -4442,7 +4442,7 @@
  },
  {
   "name": "present_create",
-  "description": "Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.",
+  "description": "Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Sound and pictures from Files: `mantle.media` (canvas_library `media`). Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -5881,6 +5881,71 @@
   }
  },
  {
+  "name": "speech_file_create",
+  "description": "Speak lines of text with the owner's default TTS worker and save each as an mp3 in Files: narration a canvas plays with `mantle.media` (canvas_library `media`). 1 to 20 lines per call; each `key` names its clip (`<prefix>-<key>.mp3`). Never over a file: a re-run makes new files, so put the new ids in the canvas. Without `parent_path` the files go where exports go. Returns each line's `fileId` and `seconds`, and landedIn.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "lines": {
+     "minItems": 1,
+     "maxItems": 20,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "key": {
+        "type": "string",
+        "description": "What the canvas looks the clip up by, e.g. 's03-l2' (letters, digits, _ . -)."
+       },
+       "text": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The words to speak."
+       }
+      },
+      "required": [
+       "key",
+       "text"
+      ]
+     },
+     "description": "The lines to speak, in order."
+    },
+    "prefix": {
+     "type": "string",
+     "description": "The start of every file name, e.g. 'tour'."
+    },
+    "voice": {
+     "type": "string",
+     "description": "A voice id; the worker's own voice when left out, e.g. 'Aoede'."
+    },
+    "parent_path": {
+     "type": "string",
+     "description": "ltree path of a folder to save in, e.g. 'files.narration'. Left out: where exports go; the reply says where (landedIn)."
+    },
+    "confirm": {
+     "type": "boolean",
+     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "required": [
+    "lines",
+    "prefix"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "speech_file_create",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "table_cell_set",
   "description": "Set a single cell — row by id, column by id or name. Writes to DRAFT. To change cells on more than one row, when you have `table_rows_upsert`, use one call of it with `key: [\"@row_id\"]`.",
   "inputSchema": {
@@ -6210,7 +6275,7 @@
  },
  {
   "name": "table_from_file",
-  "description": "Import a `.xlsx` / `.xls` / `.csv` file into ONE typed table. Bytes go server-side, never through your output, so it scales to large sheets. Column types are inferred. **One workbook per file: every non-empty sheet becomes a TAB** of the same table, joinable across tabs with `table_sql`. Very large sheets import whole up to the box's import ceiling: beyond it the import errors with guidance and nothing partial is created. The table is committed + indexed immediately. Returns the table id and its tabs. Use this when the person asks for a Table from a file. To read a file's rows, use `file_sql`: it needs no import.",
+  "description": "Import a `.xlsx` / `.xls` / `.csv` file into ONE typed table — bytes go server-side from `files` → exceljs → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One workbook per file: every non-empty sheet becomes a TAB** of the same table (like Excel), addressable by name in the row/query tools and joinable across tabs with `table_sql`. Very large sheets import whole (sqlite-native storage) up to the box's import ceiling — beyond it the import errors with guidance and nothing partial is created. The table is committed + indexed immediately. Returns the table id and its tabs. Use this whenever the user hands you a spreadsheet.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -10007,7 +10072,7 @@
    "properties": {
     "name": {
      "type": "string",
-     "description": "The library: echarts, d3, three, motion, reveal.js, konva, katex, alpinejs; or 'data' for saving what viewers add (`mantle.data`, built into the frame); for an app also diagram-templates, mathjs, date-fns, zod, tanstack-table, tanstack-virtual, dnd-kit, fuse, papaparse, pdf-lib, qrcode, markdown."
+     "description": "The library: echarts, d3, three, motion, reveal.js, konva, katex, alpinejs; or 'data' for saving what viewers add (`mantle.data`), 'media' for sound and pictures from Files (`mantle.media`), both built into the frame; for an app also diagram-templates, mathjs, date-fns, zod, tanstack-table, tanstack-virtual, dnd-kit, fuse, papaparse, pdf-lib, qrcode, markdown."
     },
     "for": {
      "type": "string",
@@ -10033,7 +10098,7 @@
  },
  {
   "name": "circuit_trace",
-  "description": "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); guesses marked GUESS on the drawing; `pid`, the drawing (a linked set past one page), with the image check's answers in plain words; and, with `register`, every difference against it. Reads only. Then `circuit_verify`, trace again, and save that `pid` with `present_create`. For one drawing's raw tabs use `file_sql`.",
+  "description": "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); guesses marked GUESS on the drawing; `pid`, the drawing (a linked set past one page), with the image check's answers in plain words; and, with `register`, every difference against it. Reads only. Then `circuit_verify`, trace again, and save that `pid` with `present_create`. For one drawing's raw tabs use `table_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -10531,7 +10596,7 @@
  },
  {
   "name": "dwg_render",
-  "description": "Draw one uploaded DWG or DXF file and return the picture with the window it shows. Saves nothing. With no `window` it draws the sheet: anything far off the sheet is left out, and the reply lists each such group with its window. Name a `window` in drawing units to read fine print or an off-sheet note, or set `full` for all of model space. For the text and its coordinates use `file_sql` on the drawing; for a piping circuit use `circuit_trace`.",
+  "description": "Draw one uploaded DWG or DXF file and return the picture with the window it shows. Saves nothing. With no `window` it draws the sheet: anything far off the sheet is left out, and the reply lists each such group with its window. Name a `window` in drawing units to read fine print or an off-sheet note, or set `full` for all of model space. For the text and its coordinates use `table_sql` on the drawing's table; for a piping circuit use `circuit_trace`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -10546,7 +10611,7 @@
      "items": {
       "type": "number"
      },
-     "description": "The part to draw, in drawing units: x0, y0, x1, y1, e.g. [1200, 400, 2400, 1100]. An earlier reply of this tool gives windows; `file_sql` on the Texts tab gives coordinates."
+     "description": "The part to draw, in drawing units: x0, y0, x1, y1, e.g. [1200, 400, 2400, 1100]. An earlier reply of this tool gives windows; the Texts tab gives coordinates."
     },
     "full": {
      "type": "boolean",
@@ -10938,40 +11003,6 @@
   },
   "annotations": {
    "title": "file_read",
-   "readOnlyHint": true,
-   "destructiveHint": false,
-   "idempotentHint": true,
-   "openWorldHint": false
-  }
- },
- {
-  "name": "file_sql",
-  "description": "Run one read-only SELECT against an uploaded file's own database and return columns + rows; with no `sql`, return its tabs, columns and description. Spreadsheets, CSVs, Microsoft Project XML and drawings (DWG, DXF, DWF) each have one, built from the file's bytes: new bytes make a new one, and nobody edits its rows. Query a tab's view with double-quoted names. **Always double-quote FTS MATCH terms.** If there are no rows, the reply says why. Saves nothing. For a Table in Tables use `table_sql`; for a file's text use `file_read`.",
-  "inputSchema": {
-   "type": "object",
-   "properties": {
-    "file_id": {
-     "type": "string",
-     "description": "The file's id, from `file_list` or `search_nodes`."
-    },
-    "sql": {
-     "type": "string",
-     "description": "One SELECT/WITH statement, e.g. SELECT \"Status\", count(*) FROM \"Circuits\" GROUP BY \"Status\". Leave it out to see the tabs and columns."
-    },
-    "max_rows": {
-     "type": "number",
-     "minimum": 1,
-     "maximum": 1000,
-     "description": "Row cap for the result."
-    }
-   },
-   "required": [
-    "file_id"
-   ],
-   "$schema": "http://json-schema.org/draft-07/schema#"
-  },
-  "annotations": {
-   "title": "file_sql",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,
@@ -12028,7 +12059,7 @@
  },
  {
   "name": "present_get",
-  "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers stored on its drawings' files (a help, not a guarantee: verify on the drawing). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
+  "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers in its drawing tables' Checks tabs (a help, not a guarantee: verify on the drawing). `assets` lists the Files it declares for `mantle.media` (a file you cannot read shows its id only). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -12046,7 +12077,7 @@
     },
     "checks": {
      "type": "boolean",
-     "description": "Also return `image_checks` for a P&ID made by `circuit_trace`: the overview of the answers stored on its drawings' files. Off by default (it reads those files)."
+     "description": "Also return `image_checks` for a P&ID made by `circuit_trace`: the overview of its drawing tables' Checks tabs. Off by default (it reads those tables)."
     }
    },
    "required": [

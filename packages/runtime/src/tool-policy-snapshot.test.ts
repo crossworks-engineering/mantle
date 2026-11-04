@@ -267,6 +267,7 @@ const LISTS: Record<string, readonly string[]> = {
     'recall_map_create',
     'screenshot_render',
     'sheet_build',
+    'speech_file_create',
     'table_create',
     'table_from_file',
     'table_from_text',

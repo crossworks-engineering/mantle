@@ -93,6 +93,27 @@ export async function fileById(args: { ownerId: string; fileId: string }): Promi
   return fileRowFromNode(row);
 }
 
+/** The files among `ids` the caller reads (its scope's row rules decide),
+ *  in no order: an id that is not a file, or one the caller cannot read, is
+ *  left out. */
+export async function filesByIds(args: {
+  ownerId: string;
+  ids: readonly string[];
+}): Promise<FileRow[]> {
+  if (!args.ids.length) return [];
+  const rows = await db
+    .select()
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, args.ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.id} = any (${`{${args.ids.join(',')}}`}::uuid[])`,
+      ),
+    );
+  return rows.map(fileRowFromNode);
+}
+
 // Suppress unused-import noise.
 void filesRoot;
 void ltreeToDash;

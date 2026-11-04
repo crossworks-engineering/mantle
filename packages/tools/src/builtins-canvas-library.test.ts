@@ -10,13 +10,19 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { APP_LIBRARY_SPECIFIERS, CANVAS_MODULE_SPECIFIERS } from '@mantle/app-build';
-import { canvasLoadProblems } from '@mantle/content-core/canvas';
+import { canvasAssets, canvasLoadProblems } from '@mantle/content-core/canvas';
 import { CANVAS_DATA_HOWTO } from '@mantle/content-core/canvas-data';
+import {
+  CANVAS_MEDIA_EXAMPLE_IDS,
+  CANVAS_MEDIA_HOWTO,
+  canvasAssetProblems,
+} from '@mantle/content-core/canvas-media';
 import {
   APP_GUIDE_LIBRARIES,
   CANVAS_FRAME_GUIDES,
   CANVAS_LIBRARIES,
   canvasDataGuide,
+  canvasMediaGuide,
   CANVAS_LIBRARY_TOOLS,
   appSpecifiers,
   guideFile,
@@ -132,7 +138,32 @@ describe("canvas_library 'data': the canvas data store", () => {
     const res = await tool.handler({ name: 'gsap' }, ctx);
     expect((res as { error: string }).error).toContain('data');
     expect(CANVAS_LIBRARIES.map((l) => l.name)).not.toContain('data');
-    expect(CANVAS_FRAME_GUIDES.map((l) => l.name)).toEqual(['data']);
+    expect(CANVAS_FRAME_GUIDES.map((l) => l.name)).toEqual(['data', 'media']);
+  });
+});
+
+describe("canvas_library 'media': sound and pictures from Files", () => {
+  it('answers the skill’s own section, with a whole example canvas that loads and declares its clips', async () => {
+    for (const name of ['media', 'mantle.media', 'Audio']) {
+      const res = await tool.handler({ name }, ctx);
+      expect(res.ok, name).toBe(true);
+      const out = (res as { output: { library: string; guide: string } }).output;
+      expect(out.library).toBe('media');
+      expect(out.guide).toBe(canvasMediaGuide());
+    }
+    const md = canvasMediaGuide();
+    expect(md).toContain(CANVAS_MEDIA_HOWTO);
+    expect(md).not.toMatch(/[\u2013\u2014]/);
+    expect(md.length).toBeLessThan(7000);
+    const example = exampleOf(md);
+    expect(example).toMatch(/name="canvas:size"/);
+    // One shared player, unlocked in the click: never a new Audio per clip.
+    expect(example.match(/new Audio\(/g)).toHaveLength(1);
+    expect(example).toContain('mantle.media.url(');
+    expect(canvasLoadProblems(example, CANVAS_MODULE_SPECIFIERS)).toEqual([]);
+    const declared = canvasAssets(example);
+    expect(declared.ids).toEqual([...CANVAS_MEDIA_EXAMPLE_IDS]);
+    expect(canvasAssetProblems(example, declared)).toEqual({ problems: [], warnings: [] });
   });
 });
 

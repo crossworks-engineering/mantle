@@ -245,6 +245,7 @@ export {
   listFiles,
   listRecentFiles,
   fileById,
+  filesByIds,
   syncFileFromDisk,
   deleteFileByPath,
   fileNameTaken,

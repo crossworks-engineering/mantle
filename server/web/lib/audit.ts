@@ -86,6 +86,8 @@ export type AuditEntry = {
     // An admin shared an item with contacts, or set "Can write" on one.
     | 'contact.share_created'
     | 'contact.share_can_write'
+    // A canvas's open link was set to serve, or stop serving, its media.
+    | 'share.media'
     | 'client.signin_sender_set'
     | 'client.signin_link_issued'
     | 'client.signin_link_revoked'

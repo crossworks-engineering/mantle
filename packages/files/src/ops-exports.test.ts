@@ -43,6 +43,7 @@ const PUBLIC = [
   'folderById',
   'folderByPath',
   'fileById',
+  'filesByIds',
   // ops/folders.ts
   'createFolder',
   'ensureExtractedImagesFolder',

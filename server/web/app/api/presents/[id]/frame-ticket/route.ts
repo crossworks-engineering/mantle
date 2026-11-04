@@ -8,6 +8,8 @@
  * not read is a 404 and gets no ticket. An Admin user's ticket names the
  * admin login, any other login's its login; the frame re-checks either (a
  * login that is not an active member is refused there, as with apps).
+ * It also names the files the canvas declared for `mantle.media`: ids only,
+ * of a canvas the caller reads (the file route checks each fetch).
  */
 import { NextResponse } from '@/server/http-compat';
 import { buildCanvasFrameTicket, canvasFrameNonce, ownerLoginCaller } from '@/lib/auth';
@@ -47,6 +49,13 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
         loginId: login.loginId,
       });
   // The nonce lets the parent tell the frame it asked for from a page the
-  // canvas navigated to (canvas-sandbox.tsx).
-  return NextResponse.json({ ticket, nonce: canvasFrameNonce(ticket), rev: present.rev });
+  // canvas navigated to (canvas-sandbox.tsx). `assets`: the files the canvas
+  // declared for mantle.media, the only ids the parent forwards a call for;
+  // each is fetched through the file route, the viewer's own read right.
+  return NextResponse.json({
+    ticket,
+    nonce: canvasFrameNonce(ticket),
+    rev: present.rev,
+    assets: present.meta?.assets ?? [],
+  });
 }

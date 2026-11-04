@@ -274,6 +274,7 @@
   "set_timezone": "write",
   "sheet_build": "write",
   "show_image": "write",
+  "speech_file_create": "write",
   "summarize_text": "read",
   "synthesize_speech": "write",
   "table_aggregate": "read",

@@ -34,6 +34,16 @@
  * and the Navigation API does not fire for an opaque frame's navigations);
  * the desktop app refuses it before it leaves (will-frame-navigate).
  *
+ * Media (task a265178d): a canvas's `mantle.media` calls arrive as `media`
+ * messages, taken on the same terms as data (own frame, proven, nonce),
+ * and only for a file the canvas declared (the `assets` its ticket
+ * returned). The bytes come from `media` (the owner side: the brain's file
+ * route, the viewer's own read right; an open link: its asset route) with
+ * the host's fetcher, and go back as a transferred ArrayBuffer
+ * (./canvas-media-bridge.ts). At most CANVAS_MEDIA_IN_FLIGHT_MAX at once.
+ * The frame URL carries `m=1` when this host answers media, so a frame of an
+ * older host refuses at once instead of waiting.
+ *
  * Replay: bump `reloadKey`; a new ticket is minted and the frame reloads, so
  * an animation starts again from its first frame. Full screen: the host
  * calls `requestFullscreen()` on the element `frameRef` hands back.
@@ -47,6 +57,17 @@ import {
   readCanvasDataMessage,
 } from './canvas-data-bridge';
 import { CANVAS_DATA_CALL_TIMEOUT_MS } from '@mantle/content-core/canvas-data';
+import {
+  CANVAS_MEDIA_IN_FLIGHT_MAX,
+  CANVAS_MEDIA_NO_ACCESS,
+  readCanvasMediaMessage,
+} from '@mantle/content-core/canvas-media';
+import {
+  fetchCanvasMedia,
+  ownerCanvasMediaSource,
+  readTicketAssets,
+  type CanvasMediaSource,
+} from './canvas-media-bridge';
 
 type Status = 'loading' | 'ready' | 'error' | 'missing' | 'left';
 
@@ -74,6 +95,7 @@ export function CanvasSandbox({
   onDown,
   onError,
   dataApi = true,
+  media,
 }: {
   presentId: string;
   /** The canvas's API base. Absent: the page-relative `/api/presents/<id>`
@@ -102,8 +124,13 @@ export function CanvasSandbox({
    *  False (an open link): each call is answered here, refused, and no
    *  request is sent. */
   dataApi?: boolean;
+  /** Where a declared file's bytes come from, by file id. Absent: the
+   *  brain's file route beside `apiBase` (ownerCanvasMediaSource); null: no
+   *  media (each call is refused, `m=1` is not sent). */
+  media?: CanvasMediaSource | null;
 }) {
   const apiBase = apiBaseOverride ?? `/api/presents/${presentId}`;
+  const mediaSource = media === undefined ? ownerCanvasMediaSource(apiBase) : media;
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [src, setSrc] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>('loading');
@@ -115,17 +142,24 @@ export function CanvasSandbox({
   const proven = useRef(false);
   const proofWait = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The latest callbacks, read by the effects without re-running them.
-  const handlers = useRef({ onReady, onDown, onError, fetcher, dataApi });
-  handlers.current = { onReady, onDown, onError, fetcher, dataApi };
+  const handlers = useRef({ onReady, onDown, onError, fetcher, dataApi, mediaSource });
+  handlers.current = { onReady, onDown, onError, fetcher, dataApi, mediaSource };
   // The frame load each data call belongs to: a reply to an earlier load
   // (a reload, Replay, a take-down) is dropped, never sent to the new one,
   // and the in-flight count starts again with each load.
   const frameLoad = useRef(0);
   const dataInFlight = useRef(0);
+  const mediaInFlight = useRef(0);
+  // The files this load's canvas declared (its ticket's `assets`): the only
+  // ids a media call may name.
+  const assets = useRef<Set<string>>(new Set());
   const nextLoad = () => {
     frameLoad.current += 1;
     dataInFlight.current = 0;
+    mediaInFlight.current = 0;
+    assets.current = new Set();
   };
+  const withMedia = mediaSource !== null;
   const apiBaseRef = useRef(apiBase);
   apiBaseRef.current = apiBase;
 
@@ -150,13 +184,19 @@ export function CanvasSandbox({
           return;
         }
         if (!res.ok) throw new Error(`frame ticket: ${res.status}`);
-        const { ticket, nonce: n } = (await res.json()) as { ticket: string; nonce?: string };
+        const {
+          ticket,
+          nonce: n,
+          assets: declared,
+        } = (await res.json()) as { ticket: string; nonce?: string; assets?: unknown };
         if (cancelled) return;
         nonce.current = typeof n === 'string' && n ? n : null;
         proven.current = false;
+        assets.current = withMedia ? readTicketAssets(declared) : new Set();
         const { cls, colorTheme } = hostTheme();
         const qs = new URLSearchParams({ t: ticket, cls });
         if (colorTheme) qs.set('ct', colorTheme);
+        if (withMedia) qs.set('m', '1');
         setSrc(`${apiBase}/frame?${qs.toString()}`);
       } catch {
         if (!cancelled) setStatus('error');
@@ -165,7 +205,7 @@ export function CanvasSandbox({
     return () => {
       cancelled = true;
     };
-  }, [apiBase, reloadKey]);
+  }, [apiBase, reloadKey, withMedia]);
 
   // Take the frame down: whatever it shows now is not the canvas.
   const takeDown = (why: string) => {
@@ -175,6 +215,8 @@ export function CanvasSandbox({
     nonce.current = null;
     frameLoad.current += 1;
     dataInFlight.current = 0;
+    mediaInFlight.current = 0;
+    assets.current = new Set();
     setSrc(null);
     setStatus('left');
     handlers.current.onDown?.();
@@ -221,6 +263,54 @@ export function CanvasSandbox({
         // window may hold a page the canvas navigated to.
         if (!acceptsDataMessage(m, { proven: proven.current, nonce: nonce.current })) return;
         void forwardData(frame, m);
+      } else if (m.kind === 'media') {
+        // The same proof as a data call, then the canvas's own declaration.
+        if (!acceptsDataMessage(m, { proven: proven.current, nonce: nonce.current })) return;
+        void forwardMedia(frame, m);
+      }
+    }
+
+    /** One `mantle.media` call: a declared file, fetched with the host's
+     *  credential from a route that checks the reader, handed over as an
+     *  ArrayBuffer. The load is checked again before every reply. */
+    async function forwardMedia(frame: HTMLIFrameElement, raw: unknown) {
+      const load = frameLoad.current;
+      const answer = (
+        id: number | null,
+        reply: Record<string, unknown>,
+        transfer: Transferable[] = [],
+      ) => {
+        if (id === null || load !== frameLoad.current || !proven.current) return;
+        frame.contentWindow?.postMessage(
+          { v: 1, kind: 'media-reply', id, ...reply },
+          '*',
+          transfer,
+        );
+      };
+      const read = readCanvasMediaMessage(raw);
+      if (!read.ok) {
+        answer(read.id, { ok: false, error: 'mantle.media takes a file id (a uuid)' });
+        return;
+      }
+      const { req } = read;
+      const source = handlers.current.mediaSource;
+      // Not declared, or no media here: the one answer for any file the
+      // canvas was not given.
+      if (!source || !assets.current.has(req.file)) {
+        answer(req.id, { ok: false, error: CANVAS_MEDIA_NO_ACCESS });
+        return;
+      }
+      if (mediaInFlight.current >= CANVAS_MEDIA_IN_FLIGHT_MAX) {
+        answer(req.id, { ok: false, error: 'too many files at once: wait for the ones asked for' });
+        return;
+      }
+      mediaInFlight.current += 1;
+      try {
+        const got = await fetchCanvasMedia(handlers.current.fetcher, source(req.file));
+        if (got.ok) answer(req.id, { ok: true, mime: got.mime, bytes: got.bytes }, [got.bytes]);
+        else answer(req.id, { ok: false, error: got.error });
+      } finally {
+        if (load === frameLoad.current) mediaInFlight.current -= 1;
       }
     }
 

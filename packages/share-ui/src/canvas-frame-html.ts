@@ -20,6 +20,7 @@
  */
 import type { CanvasSize } from '@mantle/content-core/canvas';
 import { CANVAS_DATA_CALL_TIMEOUT_MS } from '@mantle/content-core/canvas-data';
+import { CANVAS_MEDIA_CALL_TIMEOUT_MS } from '@mantle/content-core/canvas-media';
 
 /**
  * The canvas frame CSP, sent as a HEADER (section 5.2). Every source names
@@ -141,6 +142,19 @@ function styleText(css: string): string {
  *    parent binds both, and checks every field (canvas-sandbox.tsx). A
  *    canvas that never calls it sends nothing. With no parent (a render: no
  *    nonce) reads answer empty and writes refuse, at once.
+ *  - Media (task a265178d): `window.mantle.media` (url, image, release),
+ *    beside data and on the same terms (not on a canvas that names an
+ *    element mantle). `url(fileId)` asks the parent for a file's bytes,
+ *    `{v:1, kind:'media', n, id, file}`, held until `ready` like a data
+ *    call, and resolves to a blob: URL made here from the parent's
+ *    `{v:1, kind:'media-reply', id, ok, mime, bytes}` (bytes an
+ *    ArrayBuffer, transferred). One URL per file, cached until `release`
+ *    or the page goes; a refusal is not cached. `image` is the same call
+ *    (the DWG pictures' name). Only when the host asked for media (`m=1`
+ *    on the frame URL, so `media: true` here): an older host never answers
+ *    a media message, so the call refuses at once instead of waiting, and
+ *    a render (no nonce) refuses at once too. The parent decides which
+ *    files: those the canvas declared, that the viewer may read.
  *  - Leaving: `{v:1, kind:'leaving', n}` as the document unloads (pagehide,
  *    taken in the capture phase, registered before any canvas code runs),
  *    so the parent takes the frame down before a navigated-to page runs.
@@ -156,6 +170,8 @@ function preludeScript(opts: {
   nonce: string;
   /** The canvas names an element mantle (namesMantle): window.mantle stays its. */
   named: boolean;
+  /** The host answers `mantle.media` calls (it asked with `m=1`). */
+  media: boolean;
 }): string {
   const cfg = scriptJson({
     cls: opts.cls,
@@ -164,6 +180,7 @@ function preludeScript(opts: {
     size: opts.size === 'fill' ? null : opts.size,
     n: opts.nonce,
     named: opts.named,
+    m: opts.media,
   });
   // The script takes itself out of the document as it runs: the nonce lives
   // on only in this closure, out of the canvas's reach (it runs later, in the
@@ -185,16 +202,28 @@ function preludeScript(opts: {
   function theme(cls,ct){h.className=cls||'';if(ct){h.setAttribute('data-color-theme',ct);}else{h.removeAttribute('data-color-theme');}}
   theme(cfg.cls,cfg.ct);
   var waits=Object.create(null),seq=0,up=false,queue=[],qn=0,noHost=!nonce;
+  var toStr=Object.prototype.toString,BlobC=typeof Blob==='function'?Blob:null,
+    mkUrl=typeof URL==='function'&&URL.createObjectURL?URL.createObjectURL.bind(URL):null,
+    rmUrl=typeof URL==='function'&&URL.revokeObjectURL?URL.revokeObjectURL.bind(URL):null;
+  var mcache=Object.create(null),murls=Object.create(null),stray=[];
+  function revokeAll(){var all=stray;stray=[];for(var f in murls){all.push(murls[f]);}
+    murls=Object.create(null);mcache=Object.create(null);
+    for(var i=0;i<all.length;i++){try{if(rmUrl)rmUrl(all[i]);}catch(_){}}}
   window.addEventListener('pagehide',function(e){
-    if(nonce&&!kept(e)){try{P.postMessage({v:1,kind:'leaving',n:nonce},'*');}catch(_){}}},{capture:true});
+    if(kept(e))return;revokeAll();
+    if(nonce){try{P.postMessage({v:1,kind:'leaving',n:nonce},'*');}catch(_){}}},{capture:true});
   window.addEventListener('message',function(e){
     if(e.source!==P)return;var m=e.data;if(!m||m.v!==1)return;
     if(m.kind==='theme'&&cfg.follow){theme(m.cls,m.colorTheme);}
-    else if(m.kind==='data-reply'){var w=waits[m.id];if(!w)return;delete waits[m.id];clearTimeout(w.t);
+    else if(m.kind==='data-reply'){var w=waits[m.id];if(!w||w.k!=='d')return;delete waits[m.id];clearTimeout(w.t);
       if(m.ok===true){w.ok(m.result);}else{w.no(new Error(typeof m.error==='string'?m.error.slice(0,300):'the canvas data store refused'));}}
+    else if(m.kind==='media-reply'){var x=waits[m.id];if(!x||x.k!=='m')return;delete waits[m.id];clearTimeout(x.t);
+      if(m.ok===true&&toStr.call(m.bytes)==='[object ArrayBuffer]'&&typeof m.mime==='string'){x.ok(m);}
+      else{x.no(new Error(typeof m.error==='string'?m.error.slice(0,300):'the file could not be loaded'));}}
   });
-  function send(r){try{P.postMessage({v:1,kind:'data',n:nonce,id:r.id,op:r.op,bucket:r.bucket,key:r.key,json:r.json,everyone:r.everyone,by:r.by},'*');}
-    catch(_){var w=waits[r.id];if(w){delete waits[r.id];clearTimeout(w.t);w.no(new Error('the canvas data store is not available'));}}}
+  function send(r){try{if(r.f){P.postMessage({v:1,kind:'media',n:nonce,id:r.id,file:r.f},'*');}
+      else{P.postMessage({v:1,kind:'data',n:nonce,id:r.id,op:r.op,bucket:r.bucket,key:r.key,json:r.json,everyone:r.everyone,by:r.by},'*');}}
+    catch(_){var w=waits[r.id];if(w){delete waits[r.id];clearTimeout(w.t);w.no(new Error(r.f?'the file could not be asked for':'the canvas data store is not available'));}}}
   function call(op,a){return new Promise(function(ok,no){
     if(noHost){
       if(op==='get'){ok(null);}else if(op==='list'){ok([]);}
@@ -202,7 +231,7 @@ function preludeScript(opts: {
       else{no(new Error('nothing is saved here: this is a picture of the canvas'));}
       return;}
     var id=++seq;var t=setTimeout(function(){if(waits[id]){delete waits[id];no(new Error('the canvas data store did not answer'));}},${CANVAS_DATA_CALL_TIMEOUT_MS + 5_000});
-    waits[id]={ok:ok,no:no,t:t};
+    waits[id]={k:'d',ok:ok,no:no,t:t};
     var r={id:id,op:op,bucket:a.bucket,key:a.key,json:a.json,everyone:a.everyone,by:a.by};
     if(up){send(r);}else{queue[qn++]=r;}
   });}
@@ -217,7 +246,26 @@ function preludeScript(opts: {
     info:function(){return call('info',{});},
     clear:function(){return call('clear',{}).then(function(r){return r&&typeof r.removed==='number'?r.removed:0;});}
   };
-  if(!cfg.named&&!('mantle' in window)){try{window.mantle=Object.freeze({data:Object.freeze(data)});}catch(_){}}
+  function murl(f){
+    if(typeof f!=='string'||!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(f)){
+      return Promise.reject(new TypeError('mantle.media takes a file id (a uuid) listed in canvas:assets'));}
+    f=f.toLowerCase();
+    if(noHost||!cfg.m||!BlobC||!mkUrl){return Promise.reject(new Error('media is not available here'));}
+    if(mcache[f])return mcache[f];
+    var p=new Promise(function(ok,no){
+      var id=++seq;var t=setTimeout(function(){if(waits[id]){delete waits[id];no(new Error('the file did not arrive'));}},${CANVAS_MEDIA_CALL_TIMEOUT_MS + 5_000});
+      waits[id]={k:'m',t:t,no:no,ok:function(m){
+        try{var u=mkUrl(new BlobC([m.bytes],{type:m.mime}));if(mcache[f]===p){murls[f]=u;}else{stray.push(u);}ok(u);}catch(err){no(err);}}};
+      var r={id:id,f:f};if(up){send(r);}else{queue[qn++]=r;}
+    });
+    mcache[f]=p;
+    p.then(null,function(){if(mcache[f]===p){delete mcache[f];}});
+    return p;
+  }
+  function mrel(f){if(typeof f!=='string')return;f=f.toLowerCase();var u=murls[f];
+    delete murls[f];delete mcache[f];if(u){try{if(rmUrl)rmUrl(u);}catch(_){}}}
+  var media={url:murl,image:murl,release:mrel};
+  if(!cfg.named&&!('mantle' in window)){try{window.mantle=Object.freeze({data:Object.freeze(data),media:Object.freeze(media)});}catch(_){}}
   if(cfg.size){
     var fit=function(){var W=cfg.size.w,H=cfg.size.h,iw=window.innerWidth||W,ih=window.innerHeight||H;
       var s=Math.min(iw/W,ih/H);if(!(s>0))s=1;
@@ -310,6 +358,9 @@ export function buildCanvasFrameHtml(opts: {
   /** The frame's proof for its parent (canvasFrameNonce); '' for a render
    *  with no parent. */
   nonce?: string;
+  /** The host answers `mantle.media` (its frame URL said `m=1`). Never in a
+   *  render: with no nonce, media refuses whatever this says. */
+  media?: boolean;
 }): string {
   const follow = opts.theme !== 'fixed';
   // A fixed canvas wears the light baseline: no dark class, no colour theme.
@@ -325,7 +376,7 @@ export function buildCanvasFrameHtml(opts: {
     `<style>${styleText(opts.fontCss)}</style>`,
     `<style>${styleText(opts.css)}</style>`,
     `<style>${layoutCss(opts.size)}</style>`,
-    `<script>${preludeScript({ cls, colorTheme, followTheme: follow, size: opts.size, nonce: opts.nonce ?? '', named: namesMantle(source) })}</script>`,
+    `<script>${preludeScript({ cls, colorTheme, followTheme: follow, size: opts.size, nonce: opts.nonce ?? '', named: namesMantle(source), media: opts.media === true && !!opts.nonce })}</script>`,
   ].join('\n');
   return `<!doctype html>\n${prelude}\n${source}`;
 }

@@ -52,7 +52,8 @@ export async function canvasModuleNames(): Promise<string[]> {
 /**
  * Render the frame document of a canvas already authorized. Query params
  * carry PRESENTATION only (the host's theme class and data-color-theme) and
- * grant nothing.
+ * the host's `m=1` (it answers `mantle.media` calls), and grant nothing:
+ * which files a media call gets is the host's check and the file route's.
  */
 export async function renderCanvasFrame(
   req: Request,
@@ -66,6 +67,7 @@ export async function renderCanvasFrame(
     canvas,
     { cls: url.searchParams.get('cls') ?? '', colorTheme: url.searchParams.get('ct') },
     nonce,
+    url.searchParams.get('m') === '1',
   );
   return new NextResponse(html, {
     status: 200,

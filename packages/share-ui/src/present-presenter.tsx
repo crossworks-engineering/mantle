@@ -8,7 +8,10 @@
  * on screen in full screen). The frame
  * ticket and the frame document come from /s/<token>/canvas, which re-checks
  * the link on every load. The canvas's `mantle.data` calls are refused here:
- * a link reads or writes no saved data.
+ * a link reads or writes no saved data. Its `mantle.media` calls fetch from
+ * the link's asset route (/s/<token>/a/<fileId>), which serves a declared
+ * file only while the link's media switch is on (decision 7, checked there
+ * per request); with it off, every call hears "no access".
  */
 import { useRef, useState } from 'react';
 import { Maximize, RotateCcw } from 'lucide-react';
@@ -20,6 +23,12 @@ import type { ShareViewPayload } from './view-payload';
  *  frame-src names `<base>/frame` (share.tsx), from this one function. */
 export function shareCanvasApiBase(token: string): string {
   return `/s/${encodeURIComponent(token)}/canvas`;
+}
+
+/** Where a canvas on an open link gets a declared file's bytes: the link's
+ *  own asset route. */
+export function shareCanvasMediaSource(token: string): (fileId: string) => string {
+  return (fileId) => `/s/${encodeURIComponent(token)}/a/${encodeURIComponent(fileId)}`;
 }
 
 export function PresentPresenter({
@@ -43,6 +52,7 @@ export function PresentPresenter({
         title={view.title || 'Shared canvas'}
         reloadKey={reloadKey}
         dataApi={false}
+        media={shareCanvasMediaSource(token)}
       />
       <div className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-full border border-border bg-background/85 py-1 pl-3 pr-1 text-xs text-muted-foreground shadow-sm backdrop-blur">
         <span className="max-w-[40vw] truncate">Shared canvas</span>

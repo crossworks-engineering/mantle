@@ -159,6 +159,7 @@ const HTTP_SURFACE = [
   'set_timezone',
   'sheet_build',
   'show_image',
+  'speech_file_create',
   'table_cell_set',
   'table_column_add',
   'table_column_update',

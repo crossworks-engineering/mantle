@@ -32,6 +32,8 @@ export const INLINE_TIMEOUT_ALLOWED = {
     'a dependency-free CLI the operator runs from a bare checkout; it cannot import the workspace packages',
   'packages/share-ui/src/canvas-sandbox.tsx':
     'a published browser package that may depend only on client-types and content-core: the deadline of a forwarded canvas data call, named there (CANVAS_DATA_CALL_TIMEOUT_MS)',
+  'packages/share-ui/src/canvas-media-bridge.ts':
+    'the same published browser package: the deadline of one canvas media fetch, named there (CANVAS_MEDIA_CALL_TIMEOUT_MS, @mantle/content-core/canvas-media)',
 };
 
 /** @type {AllowList} */
