@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased: every Admin user sees the brain's activity, and only its own work
+## v0.500.16: every Admin user sees the brain's activity, and only its own work
 
 The Activity column, the journey feed and /traces showed the system's work
 (extraction, ingest, workers, heartbeats) to the first owner only. Every
