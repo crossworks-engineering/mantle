@@ -2713,6 +2713,40 @@ tokg=$(sed -n 's/^GATEWAY_TOKEN=//p' "$TG/stack/.env")
 updater_run "$TG/stack" "$TG/sig" "$TG/img" 'ensure_service_tokens' > /dev/null
 check "a second roll keeps the gateway token" grep -qx "GATEWAY_TOKEN=$tokg" "$TG/stack/.env"
 check "no gateway in the compose: no GATEWAY_TOKEN" sh -c "! grep -q '^GATEWAY_TOKEN=' '$TP/stack/.env'"
+
+# mantle_services' range (ensure_services_subnet): a stub docker answers the
+# networks the host already has ($NETS), and whether mantle_services exists.
+TS="$WORK/services-subnet"; fake_stack "$TS"
+printf 'networks:\n  box_services:\n    name: mantle_services\n' > "$TS/stack/docker-compose.yml"
+ssn_run() { # <taken subnets, space separated> <mantle_services exists: 1|0>
+  updater_run "$TS/stack" "$TS/sig" "$TS/img" 'NETS="'"$1"'"; HAVE='"$2"'
+docker() {
+  case "$1 $2" in
+    "network inspect")
+      if [ "$3" = mantle_services ]; then [ "$HAVE" = 1 ]; return; fi
+      [ "$3" = -f ] && i=0 && for n in $NETS; do i=$((i + 1)); [ "net$i" = "$5" ] && echo "$n"; done; return 0 ;;
+    "network ls") i=0; for n in $NETS; do i=$((i + 1)); echo "net$i"; done ;;
+  esac
+}
+if ensure_services_subnet; then echo "rc=0"; else echo "rc=1 $SSN_ERR"; fi'
+}
+out=$(ssn_run "172.17.0.0/16 172.18.0.0/16" 0 | tail -1)
+check "services range free: kept, .env untouched" sh -c "[ '$out' = 'rc=0' ] && ! grep -q '^MANTLE_SERVICES_SUBNET=' '$TS/stack/.env'"
+out=$(ssn_run "172.31.0.0/16" 0 | tail -1)
+check "services range taken: a free /24 written to .env, said in the log" sh -c "
+  [ '$out' = 'rc=0' ] && grep -qx 'MANTLE_SERVICES_SUBNET=10.250.240.0/24' '$TS/stack/.env' \
+  && grep -q 'mantle_services: 172.31.250.0/24 overlaps' '$TS/sig/update.log'"
+sed -i.bak '/^MANTLE_SERVICES_SUBNET=/d' "$TS/stack/.env"; rm -f "$TS/stack/.env.bak"
+out=$(ssn_run "172.16.0.0/12 10.0.0.0/8" 0 | tail -1)
+check "no free range: refused with a reason, .env untouched" sh -c "
+  case '$out' in 'rc=1 no free address range for the mantle_services network'*) ;; *) exit 1 ;; esac \
+  && ! grep -q '^MANTLE_SERVICES_SUBNET=' '$TS/stack/.env'"
+out=$(ssn_run "172.31.0.0/16" 1 | tail -1)
+check "the network already there: left as it is" sh -c "[ '$out' = 'rc=0' ] && ! grep -q '^MANTLE_SERVICES_SUBNET=' '$TS/stack/.env'"
+SSN_LIB="$(lift subnet_pick)"
+printf '%s\n' "$SSN_LIB" > "$TS/ssn.sh"
+check "install.sh's subnet_pick picks as the updater's does" sh -c "
+  [ \"\$(printf '172.31.0.0/16\\n' | bash -c '. \"$TS/ssn.sh\"; subnet_pick 172.31.250.0/24')\" = 10.250.240.0/24 ]"
 check "gen_token: 64 hex, two calls differ" sh -c "
   a=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")
   b=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")

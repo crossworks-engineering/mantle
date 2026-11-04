@@ -1842,6 +1842,55 @@ ensure_documents_default() {
   return 0
 }
 
+# ── mantle_services' address range ───────────────────────────────────────────
+# The service gateway's network (docs/gateway.md) has a fixed range,
+# MANTLE_SERVICES_SUBNET (compose default 172.31.250.0/24). Compose creates it
+# with that range on the first roll that brings it; a range another Docker
+# network on the host already holds makes that creation fail ("Pool
+# overlaps") and every roll after it. So before the `up`, while the network
+# does not exist yet: a range that overlaps an existing network's is swapped
+# for a free /24 (written to .env and said in the log); with none free the roll
+# stops (SSN_ERR), no container changed. A network already there is left as
+# it is (compose keeps it). The overlap test is subnet_pick (pure, awk).
+
+# subnet_pick <want>: reads the taken IPv4 subnets on stdin (one per line, any
+# other line ignored) and prints <want> when it overlaps none, else the first
+# free candidate (172.31.240-255.0/24, then 10.250.240-255.0/24), else
+# nothing.
+subnet_pick() {
+  awk -v want="$1" '
+    function n(ip,   p) { split(ip, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
+    function lo(c,   a, size) { split(c, a, "/"); size = 2 ^ (32 - a[2]); return int(n(a[1]) / size) * size }
+    function hi(c,   a) { split(c, a, "/"); return lo(c) + 2 ^ (32 - a[2]) - 1 }
+    function ok(c) { return c ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+$/ }
+    function free(c,   i) { for (i = 1; i <= k; i++) if (lo(c) <= hi(t[i]) && lo(t[i]) <= hi(c)) return 0; return 1 }
+    { for (f = 1; f <= NF; f++) if (ok($f)) t[++k] = $f }
+    END {
+      if (ok(want) && free(want)) { print want; exit }
+      for (i = 240; i <= 255; i++) { c = "172.31." i ".0/24"; if (free(c)) { print c; exit } }
+      for (i = 240; i <= 255; i++) { c = "10.250." i ".0/24"; if (free(c)) { print c; exit } }
+    }'
+}
+
+ensure_services_subnet() {
+  SSN_ERR=""
+  grep -q 'name: mantle_services' "$STACK/docker-compose.yml" 2>/dev/null || return 0
+  docker network inspect mantle_services >/dev/null 2>&1 && return 0
+  ess_want=$(env_val MANTLE_SERVICES_SUBNET)
+  [ -n "$ess_want" ] || ess_want=172.31.250.0/24
+  ess_pick=$(for ess_n in $(docker network ls -q 2>/dev/null); do
+      docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$ess_n" 2>/dev/null
+    done | subnet_pick "$ess_want")
+  if [ -z "$ess_pick" ]; then
+    SSN_ERR="no free address range for the mantle_services network ($ess_want overlaps an existing Docker network, and so does every fallback). Set MANTLE_SERVICES_SUBNET in .env to a free /24, then request the update again"
+    return 1
+  fi
+  [ "$ess_pick" = "$ess_want" ] && return 0
+  persist_env MANTLE_SERVICES_SUBNET "$ess_pick"
+  echo "[updater] mantle_services: $ess_want overlaps an existing Docker network; using $ess_pick (written to .env as MANTLE_SERVICES_SUBNET)" \
+    | tee -a "$SIG/update.log"
+}
+
 # ensure_gateway_token: the service gateway's bearer token (docs/gateway.md),
 # written once and never rotated, when the compose this roll brings runs the
 # gateway. Before the token exists the gateway answers every service call
@@ -2440,6 +2489,20 @@ while true; do
     # the scripts are run by hand — but it is what stops the next one being
     # applied by a compose-adopt three releases behind the compose it installs.
     [ "$REFRESH" = pull-failed ] || refresh_scripts "$TARGET"
+    # mantle_services' range, before anything is pulled or recreated: a
+    # range no free /24 can replace stops the roll here, as the parser check
+    # does, with the old tag back.
+    if ! ensure_services_subnet; then
+      if [ -n "$ROLL_PREV_TAG" ]; then
+        persist_env MANTLE_IMAGE_TAG "$ROLL_PREV_TAG"
+      elif [ "$TARGET" != latest ]; then
+        env_rewrite '/^MANTLE_IMAGE_TAG=/d'
+      fi
+      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, no container changed: $SSN_ERR"
+      echo "[updater] ⚠ ROLL REFUSED, no container changed: $SSN_ERR" | tee -a "$SIG/update.log"
+      write_stack_info
+      continue
+    fi
     # After the compose refresh (the check reads the compose this roll brings
     # up) and before the pull/up that recreates the app containers with it.
     ensure_service_tokens

@@ -11,10 +11,11 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 import { gatewayRequestRefusal } from '@/lib/gateway-internal';
 
 export const policy = routePolicy({
-  GET: {
-    class: 'public',
-    limits: { rateLimit: ['gatewayInternal'] },
-  },
+  // No rate limit: a limit keyed on the address would put every direct
+  // caller in one bucket, so a stranger without the token could use it up
+  // and starve the gateway. The token (256 bits) is checked first and a
+  // refusal does no work.
+  GET: { class: 'public' },
 });
 
 const READER = systemActor('gateway:route');

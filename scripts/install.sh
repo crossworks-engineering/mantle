@@ -1330,6 +1330,37 @@ client_network_ready() { # → 0 when the network the client stack joins exists;
   docker network inspect "$CLIENT_NET" >/dev/null 2>&1
 }
 
+# mantle_services' fixed range (docs/gateway.md; the updater does the same on
+# a roll, ensure_services_subnet): while the network does not exist yet, a
+# range another Docker network on this host holds is swapped for a free /24
+# (written to .env), else compose would fail creating it ("Pool overlaps").
+subnet_pick() { # WANT, taken subnets on stdin → WANT, a free fallback, or nothing
+  awk -v want="$1" '
+    function n(ip,   p) { split(ip, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
+    function lo(c,   a, size) { split(c, a, "/"); size = 2 ^ (32 - a[2]); return int(n(a[1]) / size) * size }
+    function hi(c,   a) { split(c, a, "/"); return lo(c) + 2 ^ (32 - a[2]) - 1 }
+    function ok(c) { return c ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+$/ }
+    function free(c,   i) { for (i = 1; i <= k; i++) if (lo(c) <= hi(t[i]) && lo(t[i]) <= hi(c)) return 0; return 1 }
+    { for (f = 1; f <= NF; f++) if (ok($f)) t[++k] = $f }
+    END {
+      if (ok(want) && free(want)) { print want; exit }
+      for (i = 240; i <= 255; i++) { c = "172.31." i ".0/24"; if (free(c)) { print c; exit } }
+      for (i = 240; i <= 255; i++) { c = "10.250." i ".0/24"; if (free(c)) { print c; exit } }
+    }'
+}
+if grep -q 'name: mantle_services' "$STACK_DIR/docker-compose.yml" 2>/dev/null \
+  && ! docker network inspect mantle_services >/dev/null 2>&1; then
+  SSN_WANT="$(getval MANTLE_SERVICES_SUBNET)"; SSN_WANT="${SSN_WANT:-172.31.250.0/24}"
+  SSN_PICK="$(for n in $(docker network ls -q 2>/dev/null); do
+      docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$n" 2>/dev/null
+    done | subnet_pick "$SSN_WANT")"
+  [[ -n "$SSN_PICK" ]] || die "No free address range for the mantle_services network ($SSN_WANT and every fallback overlap an existing Docker network). Set MANTLE_SERVICES_SUBNET in .env to a free /24 and run again."
+  if [[ "$SSN_PICK" != "$SSN_WANT" ]]; then
+    upsert MANTLE_SERVICES_SUBNET "$SSN_PICK"
+    ok "mantle_services: $SSN_WANT overlaps an existing Docker network; using $SSN_PICK (MANTLE_SERVICES_SUBNET in .env)"
+  fi
+fi
+
 inf "Bringing services up (waits for migrate + health)…"
 "${COMPOSE[@]}" up -d --wait --remove-orphans || warn "up --wait returned non-zero; the sanity check below will show what's wrong."
 

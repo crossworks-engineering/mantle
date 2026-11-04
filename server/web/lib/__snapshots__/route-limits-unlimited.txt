@@ -184,7 +184,7 @@ owner rows open to members (124):
   PUT /api/recall/maps/:id/cards/:card
   PUT /api/tables/:id/draft
   PUT /api/tree/items/:id/pin
-public (no credential, or its own) (20):
+public (no credential, or its own) (22):
   DELETE /api/auth/oidc/link
   GET /.well-known/oauth-authorization-server
   GET /.well-known/oauth-protected-resource
@@ -196,6 +196,7 @@ public (no credential, or its own) (20):
   GET /api/auth/pair/:id
   GET /api/auth/whoami
   GET /api/federation/node/:id
+  GET /api/gateway/registry
   GET /api/oauth/authorize
   GET /api/version
   GET /pair
@@ -204,6 +205,7 @@ public (no credential, or its own) (20):
   POST /api/auth/oidc/offer
   POST /api/federation/chunks
   POST /api/federation/query
+  POST /api/gateway/calls
   POST /api/oauth/authorize
 telegram logins (5):
   DELETE /api/telegram/my-chats/:id

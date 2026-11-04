@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { checkGatewayService, pathPrefixRefusal, upstreamRefusal } from './service-gateway';
+import { gatewayCallBatch } from './service-gateway-calls';
 
 describe('upstreamRefusal', () => {
   it("takes a service's container name and port", () => {
@@ -88,5 +89,44 @@ describe('checkGatewayService', () => {
     expect(checkGatewayService({ slug: 'pcms', upstream: 'a:1', pathPrefixes: [] })).toMatchObject({
       ok: false,
     });
+  });
+});
+
+describe('gatewayCallBatch', () => {
+  it('shapes a batch so one bad row cannot lose it', () => {
+    const [r] = gatewayCallBatch({
+      calls: [
+        {
+          serviceSlug: 'pc\u0000ms',
+          method: 'GET',
+          path: '/a\u0000b',
+          status: 70000,
+          requestBytes: -5,
+          responseBytes: 'x',
+          durationMs: 1.6,
+          caller: '\u0000',
+          loginId: 'not-a-uuid',
+          refusal: null,
+        },
+      ],
+    })!;
+    expect(r).toEqual({
+      serviceSlug: 'pcms',
+      method: 'GET',
+      path: '/ab',
+      status: 999,
+      requestBytes: 0,
+      responseBytes: 0,
+      durationMs: 2,
+      caller: null,
+      loginId: null,
+      refusal: null,
+    });
+  });
+
+  it('refuses what is no batch, or too big a one', () => {
+    expect(gatewayCallBatch(null)).toBeNull();
+    expect(gatewayCallBatch({ calls: 'x' })).toBeNull();
+    expect(gatewayCallBatch({ calls: new Array(501).fill({}) })).toBeNull();
   });
 });
