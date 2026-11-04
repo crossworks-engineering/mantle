@@ -461,7 +461,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     applyFlag: '--apply',
     extraFlags: ['--limit=<n>'],
     notes:
-      'An item in Admin loses its Admin read unless the file holds Admin: that is the point, so read the counts first. Run with --limit=1 first, then again until no item is ready. A grant someone removes by hand from a repaired item that is still homed in Admin comes back if the task runs again.',
+      'An item in Admin loses its Admin read unless the file holds Admin: that is the point, so read the counts first. An apply from the UI passes no --limit, so it changes at most 100 items a run. To try one item first, use a terminal: pnpm -C server/web part:repair --apply --limit=1. Run it again until no item is ready. A grant someone removes by hand from a repaired item that is still homed in Admin comes back if the task runs again.',
   },
   {
     slug: 'doc-reindex',
