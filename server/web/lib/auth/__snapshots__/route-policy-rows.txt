@@ -111,6 +111,7 @@ GET /api/auth/oidc/status class=self scope=self caller=publicLogin gone=false
 GET /api/auth/pair/:id class=self scope=self caller=publicLogin gone=false
 GET /api/auth/whoami class=self scope=self caller=publicLogin gone=false
 GET /api/backups class=area scope=area:settings caller=owner gone=false
+GET /api/box-status class=area scope=area:settings caller=owner gone=false
 GET /api/calendar class=area scope=area:connectors caller=owner gone=false
 GET /api/changelog class=self scope=self caller=owner gone=false
 GET /api/config class=area scope=area:settings caller=owner gone=false
@@ -389,6 +390,7 @@ HEAD /api/auth/oidc/status class=self scope=self caller=publicLogin gone=false
 HEAD /api/auth/pair/:id class=self scope=self caller=publicLogin gone=false
 HEAD /api/auth/whoami class=self scope=self caller=publicLogin gone=false
 HEAD /api/backups class=area scope=area:settings caller=owner gone=false
+HEAD /api/box-status class=area scope=area:settings caller=owner gone=false
 HEAD /api/calendar class=area scope=area:connectors caller=owner gone=false
 HEAD /api/changelog class=self scope=self caller=owner gone=false
 HEAD /api/config class=area scope=area:settings caller=owner gone=false

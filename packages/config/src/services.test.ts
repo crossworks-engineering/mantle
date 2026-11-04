@@ -78,6 +78,7 @@ describe('parseServicesFile', () => {
       services: {
         'local-embedder': { profile: true, token: false, container: 'running', health: 'healthy' },
       },
+      containers: null,
       memTotalKb: 4_000_000,
       memAvailableKb: 1000,
       diskFreeKb: 5,
@@ -86,6 +87,41 @@ describe('parseServicesFile', () => {
       checkedAt: '2026-10-05T00:00:00Z',
     });
     expect(parseServicesFile('{"profiles":["helpers"]}')?.profiles).toEqual(['helpers']);
+  });
+
+  it('reads the containers: known names only, each value held to its shape', () => {
+    const f = parseServicesFile(
+      JSON.stringify({
+        profiles: '',
+        containers: {
+          postgres: {
+            container: 'running',
+            health: 'healthy',
+            restarts: 0,
+            started_at: '2026-11-04T05:01:02Z',
+          },
+          worker_email: { container: 'running', health: 'unhealthy', restarts: 3, started_at: '' },
+          gotenberg: {
+            container: 'Running <b>',
+            health: 42,
+            restarts: 'x',
+            started_at: 'yesterday',
+          },
+          'evil-host.example': { container: 'running' },
+        },
+      }),
+    );
+    expect(f?.containers).toEqual({
+      postgres: {
+        container: 'running',
+        health: 'healthy',
+        restarts: 0,
+        startedAt: '2026-11-04T05:01:02Z',
+      },
+      worker_email: { container: 'running', health: 'unhealthy', restarts: 3, startedAt: null },
+      gotenberg: { container: 'absent', health: 'none', restarts: 0, startedAt: null },
+    });
+    expect(parseServicesFile('{"profiles":"","containers":[]}')?.containers).toBeNull();
   });
 
   it('defaults a sparse entry and rejects what is not one', () => {

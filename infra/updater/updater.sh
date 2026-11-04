@@ -1611,6 +1611,49 @@ profiles_csv() {
 # profile_active <name>: the profile is in COMPOSE_PROFILES.
 profile_active() { printf ',%s,' "$(profiles_csv)" | grep -q ",$1,"; }
 
+# Every long-running container of the stack, by compose service name, for
+# the Status screen (services.json `containers`): the brain cannot see docker,
+# and a worker's heartbeat lives in its own /tmp, so this sidecar reports
+# what docker knows. Fixed names only; the one-shot jobs (migrate,
+# objectstore_init, ollama_pull) are left out, since exited is their normal
+# end. A container the box does not run reads `absent`.
+BOX_CONTAINERS="postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web"
+
+# box_container_name <service>: its container_name in the compose files.
+box_container_name() {
+  case "$1" in
+    postgres) echo mantle_pg ;;
+    *) echo "mantle_$1" ;;
+  esac
+}
+
+# containers_json: `"<service>":{"container":..,"health":..,"restarts":N,"started_at":".."}`
+# for every BOX_CONTAINERS entry, comma separated. One docker inspect for all
+# of them; enums, a count and a timestamp only, each filtered to its own
+# alphabet, so nothing a container says about itself gets through.
+containers_json() {
+  cj_names=""
+  for cj_s in $BOX_CONTAINERS; do cj_names="$cj_names $(box_container_name "$cj_s")"; done
+  # shellcheck disable=SC2086 # the names are fixed words, split on purpose
+  cj_rows=$(docker inspect -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} {{.RestartCount}} {{.State.StartedAt}}' \
+    $cj_names 2>/dev/null)
+  cj_body=""
+  for cj_s in $BOX_CONTAINERS; do
+    cj_n=$(box_container_name "$cj_s")
+    cj_row=$(printf '%s\n' "$cj_rows" | awk -v n="/$cj_n" '$1 == n { print; exit }')
+    cj_c=$(printf '%s' "$cj_row" | awk '{ print $2 }' | tr -cd 'a-z')
+    cj_h=$(printf '%s' "$cj_row" | awk '{ print $3 }' | tr -cd 'a-z')
+    cj_r=$(printf '%s' "$cj_row" | awk '{ print $4 }')
+    cj_t=$(printf '%s' "$cj_row" | awk '{ print $5 }' | cut -c1-19 | tr -cd '0-9T:-')
+    [ -n "$cj_c" ] || cj_c=absent
+    [ -n "$cj_h" ] || cj_h=none
+    case "$cj_t" in 0001-* | '') cj_t="" ;; *) cj_t="${cj_t}Z" ;; esac
+    cj_body="$cj_body${cj_body:+,}$(printf '"%s":{"container":"%s","health":"%s","restarts":%s,"started_at":"%s"}' \
+      "$cj_s" "$cj_c" "$cj_h" "$(num_or "$cj_r" 0)" "$cj_t")"
+  done
+  printf '%s' "$cj_body"
+}
+
 # write_services_info: /signal/services.json, temp + rename so a reader never
 # sees half a file.
 write_services_info() {
@@ -1634,8 +1677,8 @@ write_services_info() {
   ws_df=$(free_kb "$STACK")
   ws_core=false
   core_shape && ws_core=true
-  printf '{"profiles":"%s","services":{%s},"mem_total_kb":%s,"mem_available_kb":%s,"disk_free_kb":%s,"core":%s,"verbs":[%s],"checked_at":"%s"}\n' \
-    "$ws_profiles" "$ws_body" "$(num_or "$ws_mt" null)" "$(num_or "$ws_ma" null)" "$(num_or "$ws_df" null)" \
+  printf '{"profiles":"%s","services":{%s},"containers":{%s},"mem_total_kb":%s,"mem_available_kb":%s,"disk_free_kb":%s,"core":%s,"verbs":[%s],"checked_at":"%s"}\n' \
+    "$ws_profiles" "$ws_body" "$(containers_json)" "$(num_or "$ws_mt" null)" "$(num_or "$ws_ma" null)" "$(num_or "$ws_df" null)" \
     "$ws_core" "$UPDATER_VERBS" "$(now)" > "$SIG/services.json.tmp" \
     && mv "$SIG/services.json.tmp" "$SIG/services.json"
 }
