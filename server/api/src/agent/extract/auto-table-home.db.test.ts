@@ -190,6 +190,7 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
   it('a workspace with no grant reads neither', async () => {
     const file = await fileIn(team, 'other.csv');
     const t = await imported(file);
+    expect(t.read).toEqual([team]);
     expect(await reads(outsider, file)).toBe(false);
     expect(await reads(outsider, t.id)).toBe(false);
   });
@@ -222,7 +223,7 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
         title: `${tag} gone.pdf`,
         path: 'files',
         data: { filename: `${tag} gone.pdf` },
-      } as typeof m.nodes.$inferSelect,
+      } as unknown as typeof m.nodes.$inferSelect,
       anchor,
     );
     const left = (await m.systemDb.execute(sqlTag`
@@ -262,6 +263,7 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     const removed = await imported(await fileIn(team, 'removed.csv'));
     const moved = await fileIn(team, 'moved.csv');
     const movedTable = await imported(moved);
+    for (const t of [handGrant, removed, movedTable]) expect(t.home).toBe(team);
     await m.withHeads([handGrant.id, removed.id, movedTable.id], 'update', async (tx) => {
       await tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, write, granted_by)
         values (${handGrant.id}, ${other}, true, ${member})`);
