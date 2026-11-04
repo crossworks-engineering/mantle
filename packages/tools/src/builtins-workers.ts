@@ -1233,7 +1233,7 @@ const speech_file_create: BuiltinToolDef = {
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const raw = Array.isArray(input.lines) ? (input.lines as unknown[]) : [];
     if (raw.length < 1 || raw.length > SPEECH_FILE_LINES_MAX) {
-      return { ok: false, error: `lines: 1 to ${SPEECH_FILE_LINES_MAX} per call.` };
+      return { ok: false, error: `lines must be 1 to ${SPEECH_FILE_LINES_MAX} per call.` };
     }
     const lines: Array<{ key: string; text: string }> = [];
     for (const l of raw) {
@@ -1243,22 +1243,22 @@ const speech_file_create: BuiltinToolDef = {
       if (!SPEECH_KEY_RE.test(key)) {
         return {
           ok: false,
-          error: `key '${key.slice(0, 40)}': letters, digits and _ . - only, up to 64.`,
+          error: `key must be letters, digits and _ . - only, up to 64 (got '${key.slice(0, 40)}').`,
         };
       }
       if (!text || text.length > SPEECH_FILE_TEXT_MAX) {
         return {
           ok: false,
-          error: `line '${key}': 1 to ${SPEECH_FILE_TEXT_MAX} characters of text.`,
+          error: `text must be 1 to ${SPEECH_FILE_TEXT_MAX} characters (line '${key}').`,
         };
       }
       if (lines.some((x) => x.key === key))
-        return { ok: false, error: `key '${key}' is given twice.` };
+        return { ok: false, error: `keys must be unique: '${key}' is given twice.` };
       lines.push({ key, text });
     }
     const prefix = str(input.prefix).trim();
     if (!SPEECH_KEY_RE.test(prefix)) {
-      return { ok: false, error: 'prefix: letters, digits and _ . - only, up to 64.' };
+      return { ok: false, error: 'prefix must be letters, digits and _ . - only, up to 64.' };
     }
 
     const resolved = await defaultWorkerOrError(ctx.ownerId, 'tts');
