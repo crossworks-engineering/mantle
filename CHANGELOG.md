@@ -4,6 +4,23 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased
+
+- **Fixed:** an import table and the images the extract worker makes from a
+  file now take the file's home and grants, Write switch included. Before, they
+  landed in Admin: a member who uploaded a file, or an app that did, could not
+  read its table, and a file Admin could not read still put a copy of its
+  content in Admin. This happens once, when the part is made. After that a part
+  is an ordinary item: unsharing, sharing or moving the file does not change it.
+  A file whose home is gone gets no part.
+- **Fixed:** a second file with the upload name of an earlier one got no
+  extracted images, and each retry logged an error. A new revision always has
+  the old file's name, so every revision hit this. Each file now has its own
+  image folder and names. Old images keep their names.
+- **Added:** the `part-repair` maintenance task gives old import tables and
+  images their file's home and grants. It changes only an item with the
+  untouched Admin default. Dry run by default.
+
 ## v0.500.20: the box status route for the Status screen
 
 - New `GET /api/box-status`, for settings-area Admins only: the box's numbers, its containers and the core state, for the new Status screen in the client.

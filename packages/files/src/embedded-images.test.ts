@@ -216,6 +216,14 @@ describe('buildSourceSlug', () => {
     expect(buildSourceSlug('90-10-02')).toBe('90-10-02');
     expect(buildSourceSlug('')).toBe('document');
   });
+
+  it('with the file id: two files of one name differ, and one file stays the same', () => {
+    const a = '0a1b2c3d-1111-4111-8111-111111111111';
+    const b = '9f8e7d6c-2222-4222-8222-222222222222';
+    expect(buildSourceSlug('Rev B.dwg', a)).toBe('rev-b-dwg-0a1b2c3d');
+    expect(buildSourceSlug('Rev B.dwg', b)).toBe('rev-b-dwg-9f8e7d6c');
+    expect(buildSourceSlug('Rev B', a)).toBe('rev-b-0a1b2c3d');
+  });
 });
 
 describe('buildImageFilename', () => {

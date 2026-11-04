@@ -603,4 +603,31 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
     expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
     expect((await found(name))[0]).toMatchObject({ path: elsewhere, home: elseWs });
   });
+
+  it("11. the import table of an app's upload: the run reads it", async () => {
+    process.env.TABLE_DB_DIR ??= dir;
+    const name = `${tag}-register.csv`;
+    const res = await memberCall(member, 'file_upload', {
+      parent_path: open,
+      filename: name,
+      content_base64: b64('tag,size\nP-101,50\n'),
+    });
+    expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+    const [file] = await found(name);
+    const [row] = await x<import('@mantle/db').Node>(
+      sql`select id, owner_id as "ownerId", type, title, path::text as path, data
+            from nodes where id = ${file!.id}`,
+    );
+    const { maybeAutoTableSpreadsheet } = await import('../../api/src/agent/extract/auto-table');
+    await maybeAutoTableSpreadsheet(row as never, owner);
+    const [table] = await x<{ id: string; home: string }>(
+      sql`select id::text, home_ws::text as home from nodes
+           where type = 'table' and data->>'sourceFileId' = ${file!.id}`,
+    );
+    expect(table?.home).toBe(holderWs);
+    const rows = await m.withViewer({ login: member, app: { id: teamApp } }, () =>
+      m.db.execute(sql`select id from nodes where id = ${table!.id}`),
+    );
+    expect((rows as unknown as unknown[]).length).toBe(1);
+  });
 });

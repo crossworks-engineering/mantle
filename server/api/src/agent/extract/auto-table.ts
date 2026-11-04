@@ -6,7 +6,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { createPartOfFile, db, nodes } from '@mantle/db';
 import { extOf, isParserError, isParserUnavailable, parserGrid } from '@mantle/files';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
 import { recordIngest, step } from '@mantle/tracing';
@@ -205,14 +205,17 @@ export async function maybeAutoTableSpreadsheet(
         h.setMeta({ created: 0, skipped });
         return [];
       }
-      const table = await createTable(ownerId, {
-        title: base.slice(0, 200),
-        tabs,
-        tags: ['auto-import'],
-        sourceFileId: node.id,
-        ...(sourceSha256 ? { sourceSha256 } : {}),
-        ...(description ? { description } : {}),
-      });
+      // A part of the file: its home and grants, once (docs/workspaces.md).
+      const table = await createPartOfFile(node.id, () =>
+        createTable(ownerId, {
+          title: base.slice(0, 200),
+          tabs,
+          tags: ['auto-import'],
+          sourceFileId: node.id,
+          ...(sourceSha256 ? { sourceSha256 } : {}),
+          ...(description ? { description } : {}),
+        }),
+      );
       void recordIngest({
         source: 'extractor',
         ownerId,

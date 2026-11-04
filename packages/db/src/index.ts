@@ -294,6 +294,7 @@ export {
   type CreateFallback,
   type CreateHomeRefusal,
 } from './create-home';
+export { copyFileRows, createPartOfFile, PartHasNoHomeError } from './part-of-file';
 
 export { draftColumn, draftAllowed } from './draft-read';
 export {
