@@ -343,9 +343,8 @@ export function buildImageTitles(images: EmbeddedImage[], sourceTitle: string): 
 }
 
 /**
- * The per-document slug that names BOTH the extracted-images folder and every
- * image filename inside it — the extractor's one source of identity for a
- * document's pictures.
+ * The per-document slug that names every image filename of a document, and its
+ * `from:` tag. (Its folder is named by the file's id: images.ts.)
  *
  * The extension is part of the slug, not stripped from it. A drawing ingested
  * as both `90-10-01.dwg` and `90-10-01.dxf` (cross-format twins are routine in
@@ -359,20 +358,13 @@ export function buildImageTitles(images: EmbeddedImage[], sourceTitle: string): 
  * extension away and re-collide. Existing folders from older extractions keep
  * their names — the extractor's `sourceFileId` dedupe means an already
  * extracted document is never renamed, only new extractions use this scheme.
- *
- * `sourceId` (the file's node id): two files may share an upload name (a new
- * revision always does), and the second's saves would hit the first's images.
- * The slug then ends in the id's first eight digits, so each file has its own
- * image names.
  */
-export function buildSourceSlug(filename: string, sourceId?: string): string {
+export function buildSourceSlug(filename: string): string {
   const ext = extOf(filename);
   const stem = ext ? filename.slice(0, -(ext.length + 1)) : filename;
   const stemSlug = slugifyFolder(stem) ?? 'document';
   const extSlug = ext ? slugifyFolder(ext) : null;
-  const id = sourceId?.replace(/-/g, '').slice(0, 8).toLowerCase();
-  const tail = [extSlug, id].filter(Boolean).join('-');
-  return tail ? `${stemSlug}-${tail}` : stemSlug;
+  return extSlug ? `${stemSlug}-${extSlug}` : stemSlug;
 }
 
 /**

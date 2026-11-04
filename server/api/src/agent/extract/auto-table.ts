@@ -10,7 +10,7 @@ import { createPartOfFile, db, nodes } from '@mantle/db';
 import { extOf, isParserError, isParserUnavailable, parserGrid } from '@mantle/files';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
 import { recordIngest, step } from '@mantle/tracing';
-import { createTable, tableDocFromGrid } from '@mantle/content';
+import { createTable, deleteTable, tableDocFromGrid } from '@mantle/content';
 import { envNum } from '@mantle/config';
 import { loadFileBytes, loadFileHead } from './file-bytes';
 
@@ -206,15 +206,18 @@ export async function maybeAutoTableSpreadsheet(
         return [];
       }
       // A part of the file: its home and grants, once (docs/workspaces.md).
-      const table = await createPartOfFile(node.id, () =>
-        createTable(ownerId, {
-          title: base.slice(0, 200),
-          tabs,
-          tags: ['auto-import'],
-          sourceFileId: node.id,
-          ...(sourceSha256 ? { sourceSha256 } : {}),
-          ...(description ? { description } : {}),
-        }),
+      const table = await createPartOfFile(
+        node.id,
+        () =>
+          createTable(ownerId, {
+            title: base.slice(0, 200),
+            tabs,
+            tags: ['auto-import'],
+            sourceFileId: node.id,
+            ...(sourceSha256 ? { sourceSha256 } : {}),
+            ...(description ? { description } : {}),
+          }),
+        (t) => deleteTable(ownerId, t.id),
       );
       void recordIngest({
         source: 'extractor',

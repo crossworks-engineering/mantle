@@ -74,6 +74,13 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     return id;
   };
 
+  const nodeRowOrNull = async (id: string) =>
+    (
+      (await m.systemDb.execute(sqlTag`select id from nodes where id = ${id}`)) as unknown as {
+        id: string;
+      }[]
+    )[0] ?? null;
+
   const nodeRow = async (id: string) =>
     (
       (await m.systemDb.execute(
@@ -426,5 +433,127 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     // The same file again: its images stay, none is added.
     await pass(fresh.id);
     expect((await images(fresh.id)).map((i) => i.id)).toEqual([newImg!.id]);
+  });
+
+  it('a part of a file private to a login is private to it too', async () => {
+    const adminB = randomUUID();
+    await m.systemDb.execute(sqlTag`insert into auth.users (id, email, password_hash, role)
+      values (${adminB}, ${`${tag}-b@example.invalid`}, 'x', 'member')`);
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${adminWs}, ${adminB}, true)`);
+    const file = await fileIn(adminWs, 'telegram.csv');
+    await m.withHeads([file], 'update', (tx) =>
+      tx.execute(sqlTag`update nodes set login_id = ${adminUser} where id = ${file}`),
+    );
+    const t = await imported(file);
+    expect(t.home).toBe(adminWs);
+    expect(await reads(adminUser, t.id)).toBe(true);
+    expect(await reads(adminB, t.id)).toBe(false);
+    await su(sqlTag`delete from workspace_users where login_id = ${adminB}`);
+  });
+
+  it('a failed copy leaves no part', async () => {
+    const file = await fileIn(team, 'failed-copy.csv');
+    const made = randomUUID();
+    let removed = false;
+    await expect(
+      m.createPartOfFile(
+        file,
+        async () => {
+          await m.withNodeInsertHeads(anchor, [{ type: 'note', path: 'notes' }], (tx) =>
+            tx.execute(sqlTag`insert into nodes (id, owner_id, type, title, path)
+              values (${made}, ${anchor}, 'note', ${`${tag} made`}, 'notes')`),
+          );
+          // The file goes while the part is made.
+          await m.withNodeDeleteHeads([file], (tx) =>
+            tx.execute(sqlTag`delete from nodes where id = ${file}`),
+          );
+          return { id: made };
+        },
+        async (p) => {
+          removed = true;
+          await m.withNodeDeleteHeads([p.id], (tx) =>
+            tx.execute(sqlTag`delete from nodes where id = ${p.id}`),
+          );
+        },
+      ),
+    ).rejects.toThrow(/live home/);
+    expect(removed).toBe(true);
+    expect(await nodeRowOrNull(made)).toBeNull();
+  });
+
+  it("the file's excluded rows stay out, and its folder's rows come as plain rows", async () => {
+    const folder = randomUUID();
+    await m.withCreateHome({ createWs: team, privateWs: null }, () =>
+      m.withNodeInsertHeads(anchor, [{ type: 'branch', path: 'files.grp' }], (tx) =>
+        tx.execute(sqlTag`insert into nodes (id, owner_id, type, title, path)
+          values (${folder}, ${anchor}, 'branch', ${`${tag} grp`}, 'files.grp')`),
+      ),
+    );
+    await m.withSubtreeHeads(folder, [], (tx) =>
+      tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, write)
+        values (${folder}, ${other}, true)`),
+    );
+    const passed = await fileIn(team, 'in-folder.csv', 'files.grp');
+    const fromFolder = await imported(passed);
+    const rowsOf = (id: string) =>
+      m.systemDb.execute(sqlTag`select workspace_id::text as ws, write, via_folder_id::text as via
+        from item_grants where node_id = ${id} and not is_home`) as unknown as Promise<
+        { ws: string; write: boolean; via: string | null }[]
+      >;
+    expect(await rowsOf(fromFolder.id)).toEqual([{ ws: other, write: true, via: null }]);
+    // Excluded on the file: not on the part.
+    const excluded = await fileIn(team, 'excluded.csv', 'files.grp');
+    await m.withHeads([excluded], 'update', (tx) =>
+      tx.execute(sqlTag`update item_grants set excluded = true, via_folder_id = null, write = false
+        where node_id = ${excluded} and workspace_id = ${other}`),
+    );
+    const t = await imported(excluded);
+    expect(t.read).toEqual([team]);
+    expect(await reads(outsider, t.id)).toBe(false);
+  });
+
+  it("the Write switch on the file's home row comes with it", async () => {
+    const file = await fileIn(team, 'home-write.csv');
+    await m.withHeads([file], 'update', (tx) =>
+      tx.execute(sqlTag`update item_grants set write = true where node_id = ${file} and is_home`),
+    );
+    const t = await imported(file);
+    const [row] = (await m.systemDb.execute(sqlTag`
+      select write from item_grants where node_id = ${t.id} and is_home`)) as unknown as {
+      write: boolean;
+    }[];
+    expect(row!.write).toBe(true);
+  });
+
+  it('an image of a file that holds Admin reads in Admin', async () => {
+    const file = await fileIn(team, 'admin-too.pdf');
+    await m.withHeads([file], 'update', (tx) =>
+      tx.execute(
+        sqlTag`insert into item_grants (node_id, workspace_id) values (${file}, ${adminWs})`,
+      ),
+    );
+    const row = await nodeRow(file);
+    await maybeExtractEmbeddedImages(
+      {
+        id: row.id,
+        ownerId: anchor,
+        type: 'file',
+        title: row.title,
+        path: 'files',
+        data: row.data,
+      } as typeof m.nodes.$inferSelect,
+      anchor,
+    );
+    const [img] = (await m.systemDb.execute(sqlTag`
+      select id, home_ws::text as home, read_ws::text[] as read from nodes
+       where type = 'file' and data->>'sourceFileId' = ${file}`)) as unknown as {
+      id: string;
+      home: string;
+      read: string[];
+    }[];
+    expect(img!.home).toBe(team);
+    expect([...img!.read].sort()).toEqual([team, adminWs].sort());
+    expect(await reads(adminUser, img!.id)).toBe(true);
   });
 });

@@ -6,7 +6,7 @@
  * and stored API docs into one folder each.
  *
  *   files/auto-filed/telegram-uploads/2026-09/photo.jpg
- *   files/auto-filed/extracted-images/<document>/figure-1.png
+ *   files/auto-filed/extracted-images/file-<file id>/figure-1.png
  *
  * Every folder here is a system folder: its name is locked and it cannot be
  * moved, because the writers find it by its path. Its contents can be moved,
@@ -200,11 +200,11 @@ export async function ensureAutoFiledFolder(
 
 /**
  * The folder a document's extracted pictures go into, made if missing:
- * `files/auto-filed/extracted-images/<source-doc>/`. One folder per document
+ * `files/auto-filed/extracted-images/file-<file id>/`. One folder per document
  * rather than one shared bucket, so a 40-image manual does not bury every
  * other document's pictures and "everything that came out of this file" is
- * answerable by browsing. The slug comes from the source document's own slug,
- * so re-ingesting it lands in the same place.
+ * answerable by browsing. The slug comes from the file's id, so re-ingesting it
+ * lands in the same place, and a new revision of the same name does not.
  */
 export async function ensureExtractedImagesFolder(args: {
   ownerId: string;
