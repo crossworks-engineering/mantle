@@ -51,8 +51,9 @@ export const ACTOR_BINDER_PINS = {
   // system(audit:gateway-call) and system(maintenance:gateway-calls-reap)
   // by the gateway process, outside every scope.
   'packages/db/src/service-gateway-calls.ts': 2,
-  // The gateway's registry read for each call: system(gateway:route).
-  'server/gateway/src/main.ts': 1,
+  // The service gateway's registry read for the gateway (its token route):
+  // system(gateway:route), a request with no login.
+  'server/web/app/api/gateway/registry/route.ts': 1,
   // The one ordered gate: its step 3 binds the actor the policy
   // implies, once per call.
   'packages/db/src/gate.ts': 1,

@@ -18,7 +18,9 @@
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
-import { pathPrefixRefusal, upstreamRefusal, type GatewayCallEntry } from '@mantle/db';
+import type { GatewayCallEntry } from '@mantle/db';
+import { pathPrefixRefusal, upstreamRefusal } from '@mantle/db/service-gateway-rules';
+import { RegistryUnavailable } from './brain';
 import { decide, isRefusal, parseTarget, REFUSALS, type Refusal, type RouteService } from './route';
 
 /** The headers the brain sends the gateway, never the service. */
@@ -66,7 +68,7 @@ export type GatewayOptions = Readonly<{
   lookup: (slug: string) => Promise<RouteService | null>;
   /** The address to connect to for an upstream host, or null (refused). */
   address: (host: string) => Promise<string | null>;
-  /** One call row (fire and forget). */
+  /** One call row (fire and forget: the shipper batches it to the brain). */
   record: (entry: GatewayCallEntry) => void;
   /** The most request body bytes one call may send. */
   maxBodyBytes: number;
@@ -175,11 +177,13 @@ export function createGateway(opts: GatewayOptions): http.Server {
         setRefusal: (code) => (refusal = code),
       });
     } catch (err) {
-      // A fault of the gateway's own (the registry unreadable): logged, and
-      // the call row says so.
-      console.error('[gateway] request failed', err);
-      refusal = REFUSALS.failed.code;
-      if (!res.headersSent) send(res, REFUSALS.failed);
+      // The brain did not hand over the registry: refused, fail closed.
+      // Any other fault of the gateway's own is logged. The call row says
+      // which.
+      const r = err instanceof RegistryUnavailable ? REFUSALS.noRegistry : REFUSALS.failed;
+      if (r === REFUSALS.failed) console.error('[gateway] request failed', err);
+      refusal = r.code;
+      if (!res.headersSent) send(res, r);
       else res.destroy();
     }
   }

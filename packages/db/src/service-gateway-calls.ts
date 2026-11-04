@@ -1,12 +1,11 @@
 /**
  * The service gateway's call log (migration 0358; docs/gateway.md): one
- * `gateway_calls` row per call the gateway answered or refused. Written and
- * reaped only by the gateway process (server/gateway), outside every scope;
- * read by the connectors area (/api/gateway-services, gateway_service_list).
- *
- * Fire and forget, bounded, as the MCP call log (mcp-call-log.ts): a lost
- * row is counted and said at most every ten minutes, never retried, and
- * never fails the call it describes.
+ * `gateway_calls` row per call the gateway answered or refused. The gateway
+ * holds no database login: it sends its rows to the brain in batches
+ * (POST /api/gateway/calls, its token), and the brain writes them here,
+ * outside every scope, and reaps rows past 90 days. A lost batch loses its
+ * rows; a call never waits on the log. Read by the connectors area
+ * (/api/gateway-services, gateway_service_list).
  */
 import { and, desc, eq, gt, lt, sql } from 'drizzle-orm';
 import { UUID_RE } from '@mantle/std';
@@ -17,10 +16,11 @@ import { gatewayCalls, type GatewayCallRow } from './schema/gateway-services';
 const uuidOrNull = (v: string | null | undefined): string | null =>
   v && UUID_RE.test(v) ? v.toLowerCase() : null;
 
-/** Rows older than this go (the gateway's own hourly reap). */
+/** Rows older than this go (reapGatewayCalls, run by the brain's call
+ *  route at most once an hour). */
 export const GATEWAY_CALLS_RETENTION_DAYS = 90;
-/** Rows in flight at once; past it a row is dropped and counted. */
-export const GATEWAY_CALL_LOG_MAX_IN_FLIGHT = 64;
+/** The most rows one batch from the gateway may carry. */
+export const GATEWAY_CALL_BATCH_MAX = 500;
 
 /** One call as the gateway saw it. */
 export type GatewayCallEntry = Readonly<{
@@ -38,78 +38,38 @@ export type GatewayCallEntry = Readonly<{
 
 const GATEWAY_CALL_ACTOR = systemActor('audit:gateway-call');
 
-const cap = (s: string, n: number) => (s.length > n ? s.slice(0, n) : s);
-const count = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0);
+const cap = (s: unknown, n: number) => String(s ?? '').slice(0, n);
+const count = (n: unknown) =>
+  typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
+const text = (s: unknown, n: number) => (typeof s === 'string' && s ? s.slice(0, n) : null);
 
-async function insertCall(e: GatewayCallEntry): Promise<void> {
-  await runAsActor(GATEWAY_CALL_ACTOR, () =>
-    systemDb.insert(gatewayCalls).values({
-      serviceSlug: cap(e.serviceSlug, 64),
-      method: cap(e.method, 16),
-      path: cap(e.path, 512),
-      status: count(e.status),
-      requestBytes: count(e.requestBytes),
-      responseBytes: count(e.responseBytes),
-      durationMs: Math.min(count(e.durationMs), 2_147_483_647),
-      caller: e.caller ? cap(e.caller, 200) : null,
-      loginId: uuidOrNull(e.loginId),
-      refusal: e.refusal ? cap(e.refusal, 64) : null,
-    }),
-  );
+/** A batch as the gateway sent it, shaped and capped: every field coerced
+ *  to its column (a batch is the gateway's, but checked as any input is),
+ *  or null when it is no batch. */
+export function gatewayCallBatch(body: unknown): GatewayCallEntry[] | null {
+  const calls = (body as { calls?: unknown } | null)?.calls;
+  if (!Array.isArray(calls) || calls.length > GATEWAY_CALL_BATCH_MAX) return null;
+  return calls
+    .filter((c): c is Record<string, unknown> => typeof c === 'object' && c !== null)
+    .map((c) => ({
+      serviceSlug: cap(c.serviceSlug, 64),
+      method: cap(c.method, 16),
+      path: cap(c.path, 512),
+      status: count(c.status),
+      requestBytes: count(c.requestBytes),
+      responseBytes: count(c.responseBytes),
+      durationMs: Math.min(count(c.durationMs), 2_147_483_647),
+      caller: text(c.caller, 200),
+      loginId: typeof c.loginId === 'string' ? uuidOrNull(c.loginId) : null,
+      refusal: text(c.refusal, 64),
+    }));
 }
 
-let writeCall: (e: GatewayCallEntry) => Promise<void> = insertCall;
-
-/** Tests: take each row instead of inserting it (null: insert again). */
-export function setGatewayCallWriter(fn: ((e: GatewayCallEntry) => Promise<void>) | null): void {
-  writeCall = fn ?? insertCall;
-}
-
-const inFlight = new Set<Promise<void>>();
-const stats = { written: 0, dropped: 0, failed: 0 };
-let lastWarnAt = 0;
-const WARN_EVERY_MS = 10 * 60_000;
-
-function lost(what: string, err?: unknown): void {
-  const now = Date.now();
-  if (now - lastWarnAt < WARN_EVERY_MS) return;
-  lastWarnAt = now;
-  console.error(
-    `[gateway-call-log] ${what} (dropped ${stats.dropped}, failed ${stats.failed} so far)`,
-    err ?? '',
-  );
-}
-
-/** Record one call: fire and forget, bounded. Never throws. */
-export function recordGatewayCall(entry: GatewayCallEntry): void {
-  if (inFlight.size >= GATEWAY_CALL_LOG_MAX_IN_FLIGHT) {
-    stats.dropped += 1;
-    lost('a call was not logged: too many rows in flight');
-    return;
-  }
-  const row = Promise.resolve()
-    .then(() => writeCall(entry))
-    .then(
-      () => {
-        stats.written += 1;
-      },
-      (err: unknown) => {
-        stats.failed += 1;
-        lost('a call was not logged: its insert failed', err);
-      },
-    );
-  inFlight.add(row);
-  void row.finally(() => inFlight.delete(row));
-}
-
-/** The counts since the process started (tests, diagnostics). */
-export function gatewayCallLogStats(): Readonly<typeof stats> {
-  return { ...stats };
-}
-
-/** Tests and shutdown: resolves once every row started has settled. */
-export async function gatewayCallsSettled(): Promise<void> {
-  while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
+/** Write one batch of call rows (one statement). */
+export async function insertGatewayCalls(entries: readonly GatewayCallEntry[]): Promise<number> {
+  if (entries.length === 0) return 0;
+  await runAsActor(GATEWAY_CALL_ACTOR, () => systemDb.insert(gatewayCalls).values([...entries]));
+  return entries.length;
 }
 
 /** Remove rows past the retention. The count removed. */

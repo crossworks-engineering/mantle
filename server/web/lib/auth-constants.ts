@@ -115,6 +115,11 @@ export const PUBLIC_PATHS = [
   // signed with the API secret and verified on the raw bytes before any
   // write. See server/web/app/api/livekit/webhook/route.ts.
   '/api/livekit/webhook',
+  // The service gateway's own two routes (docs/gateway.md): no session; the
+  // credential is the gateway token, and a request that came through the
+  // front door is refused (server/web/lib/gateway-internal.ts).
+  '/api/gateway/registry',
+  '/api/gateway/calls',
   // /team, /hub and /api/team/* (the retired team-code portal) are not listed:
   // their page URLs redirect to /login BEFORE this gate (server/pages/stubs.ts
   // mountRetiredTeamPages) and no route serves the API paths.

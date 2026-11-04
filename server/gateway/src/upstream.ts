@@ -1,20 +1,17 @@
 /**
- * Where the gateway may connect: an address on the mantle_services network
- * only. A registered upstream is a DNS name (the database refuses an IP and
- * the stack's own names), and the gateway sits on the default network too,
- * so the name is resolved here and the connection goes to a checked
- * address: one inside a services subnet, never one of the default network
- * (postgres, the object store, the app services) or anything else.
+ * Where the gateway may connect and listen. Its services subnet is fixed:
+ * GATEWAY_UPSTREAM_CIDRS, which compose sets to mantle_services' own
+ * range (MANTLE_SERVICES_SUBNET, the network's ipam subnet). Unset or
+ * unreadable: no subnet, and every upstream is refused (fail closed).
  *
- * The services subnets: GATEWAY_UPSTREAM_CIDRS when set (a test, or a box
- * that runs the gateway outside compose), else found at start from the
- * container's own interfaces: every IPv4 subnet the gateway has an address
- * on, less each one a stack name resolves into (the database host,
- * postgres, the object store, web, api, caddy: all on the default
- * network). With one interface, or when no subnet is left, every upstream
- * is refused (fail closed). The gateway also listens only on its own
- * address on the default network, and drops a connection from a services
- * subnet: a service never calls the gateway.
+ * A registered upstream is a single DNS label (the registry's rule), so it
+ * is resolved here and the connection goes to a checked address: one inside
+ * the services subnet that is not the subnet's own, its first host (the
+ * bridge, the Docker host), its broadcast or the gateway itself.
+ *
+ * The gateway listens on its one address outside the services subnet (the
+ * default network, where the brain is) and drops a connection that comes
+ * from inside it: a service never calls the gateway.
  */
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
@@ -43,100 +40,35 @@ export function parseCidr(text: string): Cidr | null {
   return { base, bits, text: `${dotted}/${bits}` };
 }
 
+/** The services subnets from GATEWAY_UPSTREAM_CIDRS (comma separated). */
+export function servicesCidrs(configured: string | undefined): Cidr[] {
+  return (configured ?? '')
+    .split(',')
+    .map((s) => parseCidr(s))
+    .filter((c): c is Cidr => c !== null);
+}
+
 export function inCidr(ip: string, c: Cidr): boolean {
   const n = ipv4ToInt(ip);
   return n !== null && (n & maskOf(c.bits)) >>> 0 === c.base;
 }
 
-/** One IPv4 interface of this host: its address and its subnet. */
-export type Iface = Readonly<{ address: string; cidr: Cidr }>;
-
-/** This host's own IPv4 interfaces, loopback left out. */
-export function interfaces(
+/** This host's own IPv4 addresses, loopback left out. */
+export function ownAddresses(
   ifaces: ReturnType<typeof os.networkInterfaces> = os.networkInterfaces(),
-): Iface[] {
-  const out: Iface[] = [];
+): string[] {
+  const out: string[] = [];
   for (const list of Object.values(ifaces)) {
-    for (const a of list ?? []) {
-      if (a.family !== 'IPv4' || a.internal || !a.cidr) continue;
-      const c = parseCidr(a.cidr);
-      if (c) out.push({ address: a.address, cidr: c });
-    }
+    for (const a of list ?? []) if (a.family === 'IPv4' && !a.internal) out.push(a.address);
   }
   return out;
 }
 
-/**
- * The stack's own names on the default network. Each one the gateway can
- * resolve marks the subnets its answers fall in as default subnets. A box
- * service that took one of these names as an alias on mantle_services would
- * mark the services subnet default too: no services subnet is left, and the
- * gateway refuses every upstream (fail closed), never the other way round.
- */
-export const DEFAULT_NETWORK_NAMES = ['postgres', 'objectstore', 'web', 'api', 'caddy'] as const;
-
-/** Where the gateway may connect and listen (see the head). */
-export type NetworkPlan = Readonly<{
-  /** The services subnets; empty: every upstream is refused. */
-  cidrs: Cidr[];
-  /** The default network's subnets (where the database must be). */
-  defaults: Cidr[];
-  /** The gateway's own address on the default network, to listen on
-   *  (null: not found; the caller listens on GATEWAY_HOST or everywhere and
-   *  drops connections from a services subnet). */
-  listen: string | null;
-  /** This host's own addresses: never an upstream. */
-  own: string[];
-  how: string;
-}>;
-
-/**
- * The plan. `configured` is GATEWAY_UPSTREAM_CIDRS; `probeHosts` the names
- * to resolve for the default network (the database host first).
- */
-export async function networkPlan(
-  configured: string | undefined,
-  probeHosts: readonly string[],
-  ifs: Iface[] = interfaces(),
-  resolve: (h: string) => Promise<string[]> = resolveV4,
-): Promise<NetworkPlan> {
-  const own = ifs.map((i) => i.address);
-  if (configured && configured.trim()) {
-    const cidrs = configured
-      .split(',')
-      .map((s) => parseCidr(s))
-      .filter((c): c is Cidr => c !== null);
-    // Outside compose: every own subnet not configured as services is the
-    // default one.
-    const defaults = [
-      ...ifs.map((i) => i.cidr).filter((c) => !cidrs.some((x) => x.base === c.base)),
-      parseCidr('127.0.0.0/8')!,
-    ];
-    return { cidrs, defaults, listen: null, own, how: 'GATEWAY_UPSTREAM_CIDRS' };
-  }
-  const none = (how: string): NetworkPlan => ({ cidrs: [], defaults: [], listen: null, own, how });
-  if (ifs.length < 2) return none('one interface: no services network found');
-  const answers: string[] = [];
-  for (const h of new Set(probeHosts)) {
-    if (net.isIPv4(h)) answers.push(h);
-    else answers.push(...(await resolve(h).catch(() => [] as string[])));
-  }
-  if (answers.length === 0) return none('no stack name resolved: no default network found');
-  const defaults = ifs.filter((i) => answers.some((a) => inCidr(a, i.cidr)));
-  if (defaults.length === 0) {
-    return none("the stack's names resolve onto none of this host's subnets");
-  }
-  const services = ifs.filter((i) => !defaults.includes(i));
-  if (services.length === 0) {
-    return none('every subnet of this host holds a stack name: no services network is left');
-  }
-  return {
-    cidrs: services.map((i) => i.cidr),
-    defaults: defaults.map((i) => i.cidr),
-    listen: defaults.length === 1 ? defaults[0]!.address : null,
-    own,
-    how: `interfaces, less the default network's ${defaults.map((i) => i.cidr.text).join(', ')}`,
-  };
+/** The address to listen on: this host's one address outside every
+ *  services subnet, or null (none, or more than one). */
+export function listenAddress(own: readonly string[], cidrs: readonly Cidr[]): string | null {
+  const outside = own.filter((a) => !cidrs.some((c) => inCidr(a, c)));
+  return outside.length === 1 ? outside[0]! : null;
 }
 
 export async function resolveV4(host: string): Promise<string[]> {

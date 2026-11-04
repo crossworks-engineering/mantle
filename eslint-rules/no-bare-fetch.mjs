@@ -85,6 +85,10 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'fetch layer',
     why: 'the model-provider HTTP pool (fetchVia): provider hosts and the owner-configured local model base URLs',
   },
+  'server/gateway/src/brain.ts': {
+    kind: 'owner config',
+    why: "the service gateway's two calls to its own brain (GATEWAY_BRAIN_URL, the stack's web service): the registry read and the call batches",
+  },
   'packages/tools/src/builtins-locations.ts': {
     kind: 'fixed provider host',
     why: 'Mapbox static images: the host is a constant (STATIC_MAP_BASE)',

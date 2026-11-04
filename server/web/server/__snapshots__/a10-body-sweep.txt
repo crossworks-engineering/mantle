@@ -10,7 +10,8 @@
 # 2026-10-30 (company sign-in, OIDC milestone 1): POST and DELETE /api/auth/oidc/link, POST /api/auth/oidc/offer, PATCH and DELETE /api/users/:id/oidc had no route on main; their cells are the branch's own answers (company sign-in off: 404 before any body read).
 # 2026-10-31 (company sign-in, OIDC milestone 2): POST /api/auth/oidc/exchange and POST /api/auth/oidc/fresh had no route on main; their cells are the branch's own answers.
 # 2026-11-04 (the service gateway, Data sources 1a): POST /api/gateway-services and PATCH /api/gateway-services/:slug had no route on main; their cells are the branch's own answers.
-# cells: 2550
+# 2026-11-04 (the service gateway's own routes): POST /api/gateway/calls had no route on main; its cells are the branch's own answers (no GATEWAY_TOKEN in the sweep: 503 before any body read).
+# cells: 2556
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -869,6 +870,12 @@ PATCH /api/gateway-services/:slug owner empty => 500 application/json {"error":"
 PATCH /api/gateway-services/:slug owner nul => 500 application/json {"error":"internal error"}
 PATCH /api/gateway-services/:slug owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
 PATCH /api/gateway-services/:slug owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/gateway/calls none valid => 503 application/json {"error":"gateway token not set"}
+POST /api/gateway/calls none malformed => 503 application/json {"error":"gateway token not set"}
+POST /api/gateway/calls none empty => 503 application/json {"error":"gateway token not set"}
+POST /api/gateway/calls none nul => 503 application/json {"error":"gateway token not set"}
+POST /api/gateway/calls none array => 503 application/json {"error":"gateway token not set"}
+POST /api/gateway/calls none chunked => 503 application/json {"error":"gateway token not set"}
 POST /api/grants/:nodeId owner valid => 404 application/json {"error":"Item not found.","code":"not_found"}
 POST /api/grants/:nodeId owner malformed => 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
 POST /api/grants/:nodeId owner empty => 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}

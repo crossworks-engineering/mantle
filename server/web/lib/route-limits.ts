@@ -213,6 +213,9 @@ export const RATE_LIMITS = {
   // LiveKit's webhooks, per address: a machine (the signature is the
   // credential; the handler refuses an unsigned body before any write).
   livekitWebhook: { ...perIp('livekit-webhook', 600), machine: true },
+  // The service gateway's own calls (its registry read, its call batches),
+  // per address: a machine (the gateway token is the credential).
+  gatewayInternal: { ...perIp('gateway-internal', 600), machine: true },
   // The /s link routes, per address: a stranger's requests.
   shareAggregate: perIp('share-aggregate', 120),
   shareBundle: perIp('share-bundle', 30),

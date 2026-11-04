@@ -62,6 +62,8 @@ const PLATFORM_READS: Record<string, string> = {
   COMPOSE_PROFILES: 'docker compose selects optional services with it',
   MANTLE_MAX_BODY_SIZE: 'expanded in infra/caddy/Caddyfile as the proxy body ceiling',
   MANTLE_SANDBOXES_HOST_DIR: 'a HOST path handed to the Docker daemon as a bind source',
+  MANTLE_SERVICES_SUBNET:
+    "docker-compose.yml: mantle_services' fixed ipam range, and the gateway's GATEWAY_UPSTREAM_CIDRS",
   MANTLE_DOCUMENTS_OFF:
     'scripts/install.sh and the updater read it: the documents engine switched off on purpose',
 };
