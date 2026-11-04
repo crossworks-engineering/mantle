@@ -170,13 +170,20 @@ approval, so a tool an assistant writes waits for a person.
 The gateway answers `GET /healthz` without a token (`{ "ok": true }`). It
 carries plain HTTP only: an upgrade (a WebSocket) is closed. It drops
 the method-override headers (`X-HTTP-Method-Override`, `X-HTTP-Method`,
-`X-Method-Override`), so a service cannot be made to run a method its row
-does not allow. It holds at
-most 256 connections, and a request must arrive whole within five minutes.
+`X-Method-Override`), so a service cannot be made to run a method by a
+header. The allowed methods are what the gateway sees: a service that
+honours a `_method` query or form field decides for itself, so do not
+allow POST to a service that does that unless its other methods are safe
+too. It holds at most 256 connections, and a request must arrive whole
+within five minutes.
 
 ## A box service
 
-A service's own compose file joins the network by its fixed name:
+A service's own compose file joins the network by its fixed name. Do not
+name the service after one of the stack's own (`web`, `api`, `postgres`
+and the rest): the name becomes its address on `mantle_services`, and a
+service named `web` makes the gateway refuse every call (it will not send
+its token to an address on the services network).
 
 ```yaml
 services:
