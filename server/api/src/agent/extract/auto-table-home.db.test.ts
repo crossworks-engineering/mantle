@@ -92,8 +92,9 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
   const adminUser = randomUUID();
   const tableRoot = mkdtempSync(path.join(tmpdir(), 'mantle-import-home-'));
 
+  let scratch: { url: string; drop: () => Promise<void> } | undefined;
   const su = async (q: ReturnType<typeof sqlTag>) =>
-    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
+    (await import('@mantle/db/test-support')).superuserExec(scratch!.url, q);
 
   /** A file homed in `home`, as an upload by a Moderator of it leaves it. */
   const fileIn = async (home: string, name: string, path = 'files') => {
@@ -156,7 +157,9 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
   };
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    // Its own database: it makes the Admin workspace and logins of a brain.
+    scratch = await (await import('@mantle/db/test-support')).createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.TABLE_DB_DIR = tableRoot;
     process.env.MANTLE_FILES_ROOT = path.join(tableRoot, 'files');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -190,22 +193,11 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
                     values (${adminWs}, ${anchor}, true), (${adminWs}, ${adminUser}, true)
                     on conflict do nothing`);
-  }, 60_000);
+  }, 180_000);
 
   afterAll(async () => {
-    if (!m) return;
-    await m.systemDb.execute(sqlTag`delete from nodes where title like ${`${tag}%`}`);
-    await su(
-      sqlTag`delete from workspace_users where login_id in (${member}, ${outsider}, ${adminUser})`,
-    );
-    await su(sqlTag`delete from workspaces where id in (${team}, ${other})`);
-    await m.systemDb.execute(
-      sqlTag`delete from spaces where login_id in (${member}, ${outsider}, ${adminUser})`,
-    );
-    await m.systemDb.execute(
-      sqlTag`delete from auth.users where id in (${member}, ${outsider}, ${adminUser})`,
-    );
-    await m.closeDb();
+    await m?.closeDb();
+    await scratch?.drop();
     rmSync(tableRoot, { recursive: true, force: true });
   });
 
