@@ -6,6 +6,8 @@ deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
 ## Unreleased
 
+This release pairs the brain with mantle-client **v0.9.6**: the move dialog offers to move a folder's contents.
+
 - **Added:** a folder's move to another home can take what is inside it
   along. Before, only the folder moved: the sub-folders and files below it
   kept their old home and were read in the new workspace only through the
