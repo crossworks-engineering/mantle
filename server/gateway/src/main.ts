@@ -40,17 +40,15 @@ async function main(): Promise<void> {
   // match its networks) it never listens everywhere: loopback only, so the
   // brain cannot reach it and every service call fails.
   const outside = env('GATEWAY_HOST') ?? listenAddress(own, cidrs);
-  if (!outside) {
-    console.error(
-      `[gateway] not serving: GATEWAY_UPSTREAM_CIDRS (${cidrs.map((c) => c.text).join(', ') || 'none'}) does not match this container's addresses (${own.join(', ')}); set MANTLE_SERVICES_SUBNET to mantle_services' subnet`,
-    );
-  }
   const host = outside ?? '127.0.0.1';
   if (!token) {
     console.warn('[gateway] GATEWAY_TOKEN is not set: every service call answers 503 until it is');
   }
+  const ranges = cidrs.map((c) => c.text).join(', ');
   console.log(
-    `[gateway] services network: ${cidrs.map((c) => c.text).join(', ') || 'none: GATEWAY_UPSTREAM_CIDRS is not set, every service is refused'}`,
+    outside
+      ? `[gateway] services network: ${ranges || 'none: GATEWAY_UPSTREAM_CIDRS is not set, every service is refused'}`
+      : `[gateway] not serving: GATEWAY_UPSTREAM_CIDRS (${ranges || 'none'}) does not match this container's addresses (${own.join(', ')}); set MANTLE_SERVICES_SUBNET to mantle_services' subnet`,
   );
 
   const toBrain = brainFetch(cidrs);
