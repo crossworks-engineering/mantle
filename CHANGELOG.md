@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased
+## v0.500.19: an app timer reads the box's own status
 
 - **Fixed:** an app timer that called `peer_status` recorded this box's
   own line as `unavailable` on every run, so a fleet monitor app had no
