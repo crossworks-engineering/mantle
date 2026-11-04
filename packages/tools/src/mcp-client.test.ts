@@ -14,7 +14,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./ssrf-guard', () => ({
   assertFetchableUrl: async () => {},
+  hopGuard: () => async () => {},
   isSandboxProxyUrl: () => false,
+  isCarvedUrl: () => false,
+  gatewaySlug: () => null,
 }));
 vi.mock('@mantle/api-keys', () => ({
   getApiKey: async (_owner: string, service: string, label: string) =>

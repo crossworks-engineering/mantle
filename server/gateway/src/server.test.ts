@@ -213,6 +213,33 @@ describe('the gateway server', () => {
     expect(res.status).toBe(413);
   });
 
+  it('answers 502 gateway_error, and logs it, when the registry cannot be read', async () => {
+    const broken = createGateway({
+      token: TOKEN,
+      lookup: async () => {
+        throw new Error('registry down');
+      },
+      address: async () => '127.0.0.1',
+      record: (e) => calls.push(e),
+      maxBodyBytes: 1024,
+      idleTimeoutMs: 5_000,
+    });
+    await new Promise<void>((r) => broken.listen(0, '127.0.0.1', r));
+    const err = console.error;
+    console.error = () => {};
+    try {
+      const url = `http://127.0.0.1:${(broken.address() as AddressInfo).port}`;
+      const res = await fetch(`${url}/svc/pcms/mcp`, { headers: auth });
+      expect(res.status).toBe(502);
+      expect(await res.json()).toMatchObject({ code: 'gateway_error' });
+      expect(await lastCall()).toMatchObject({ status: 502, refusal: 'gateway_error' });
+    } finally {
+      console.error = err;
+      broken.closeAllConnections();
+      broken.close();
+    }
+  });
+
   it('serves no service without a token on the box', async () => {
     const bare = await start('');
     try {

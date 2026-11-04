@@ -17,6 +17,8 @@ export const NARROW_SCAN_SYSTEM_FILES: Readonly<Record<string, string>> = Object
   'packages/runs/src/sweep.ts': 'the runs sweep: a worker loop (system work)',
   'packages/telegram/src/sync.ts':
     "the Telegram poller (system work; a chat's turn runs in the chat login's scope)",
+  'packages/db/src/service-gateway-calls.ts':
+    "the service gateway's call log: written and reaped by the gateway process (server/gateway), outside every scope",
   'server/api/src/bench/haystack.ts': 'the memory benchmark harness (a scratch brain, never a box)',
   'server/api/src/workflows/runs-worker-turn.ts': "the runs worker's turn (system work)",
   'server/web/lib/auth/device-token-reap.ts': 'a reaper loop (system work)',

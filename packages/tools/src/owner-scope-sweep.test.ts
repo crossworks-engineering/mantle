@@ -38,6 +38,10 @@ const OWNER_FREE: Record<string, string> = {
   location_distance: 'pure geo maths between two given points',
   web_fetch: 'fetches a public URL through the SSRF guard; no owner state',
   app_authoring_guide: 'reads one docs file baked into the image, the same for every owner',
+  gateway_service_list:
+    "the box's service gateway registry and call log: one per box, no owner column (0358); the connectors area gates it",
+  gateway_service_set:
+    "the box's service gateway registry: one per box, no owner column (0358); the connectors area gates it and the row records the acting login",
   diagram_types: 'a static list of diagram types, the same for every owner',
   canvas_library: 'a static library guide from the image, the same for every owner',
   model_catalog:
@@ -117,7 +121,9 @@ describe('the OWNER_FREE list', () => {
   });
 
   it('stays short, and every entry carries a reason', () => {
-    expect(Object.keys(OWNER_FREE).length).toBeLessThanOrEqual(8);
+    // 10 since the service gateway's two tools (0358): its registry is one
+    // per box, with no owner column.
+    expect(Object.keys(OWNER_FREE).length).toBeLessThanOrEqual(10);
     for (const [slug, why] of Object.entries(OWNER_FREE)) {
       expect(why.length, `${slug} needs a real reason, not a placeholder`).toBeGreaterThan(25);
     }

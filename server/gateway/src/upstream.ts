@@ -36,7 +36,9 @@ export function parseCidr(text: string): Cidr | null {
   const ip = ipv4ToInt(m[1]!);
   const bits = Number(m[2]);
   if (ip === null || bits < 8 || bits > 32) return null;
-  return { base: (ip & maskOf(bits)) >>> 0, bits, text: text.trim() };
+  const base = (ip & maskOf(bits)) >>> 0;
+  const dotted = [24, 16, 8, 0].map((sh) => (base >>> sh) & 0xff).join('.');
+  return { base, bits, text: `${dotted}/${bits}` };
 }
 
 export function inCidr(ip: string, c: Cidr): boolean {

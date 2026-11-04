@@ -14,6 +14,7 @@ import { listGatewayCalls, listGatewayServices, setGatewayService } from '@mantl
 import type { GatewayCallRow, GatewayServiceRow } from '@mantle/db';
 import { actingLoginId } from '../surface';
 import type { BuiltinToolDef, ToolHandlerResult } from '../types';
+import { CS } from '../client-sourced-rule';
 
 function serviceOut(r: GatewayServiceRow, gatewayUrl: string | null) {
   return {
@@ -104,6 +105,7 @@ export const gateway_service_set: BuiltinToolDef = {
     idempotent: true, // a set
     destructive: true, // an edit replaces the values it names; nothing keeps the old ones
     recipe: { step: 'forbidden' },
+    clientSourced: CS.always('changes where the service gateway sends calls'),
   },
   name: 'Register or change a gateway service',
   description:

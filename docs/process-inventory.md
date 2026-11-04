@@ -31,6 +31,7 @@ interval packages/share-ui/src/event-presenter.tsx none: browser code
 interval server/api/src/agent/extract-queue.ts system(tick:extract-reconcile); each job system(queue:extract)
 interval server/api/src/agent/telegram/helpers.ts none: a typing indicator, no database
 interval server/api/src/agent/ticker.ts system(tick:<name>) per tick: reflector, heartbeat-tick, extract-sweep, table-migration-sweep
+interval server/gateway/src/main.ts system(maintenance:gateway-calls-reap): the hourly reap of the gateway's call log
 interval server/sandboxd/src/main.ts none: the sandbox daemon has no brain database
 interval server/web/app/api/assistant/stream/route.ts the request's actor (a keepalive, no database)
 interval server/web/app/api/assistant/turn/[turnId]/stream/route.ts the request's actor (a keepalive, no database)
@@ -42,6 +43,7 @@ interval server/web/workers/telegram-poll.ts system(worker:channel-poll)
 listen packages/content/src/messenger.ts none: wakes a messenger_wait, which reads in its own caller's scope
 listen server/api/src/agent/runtime.ts system(listen:<channel>) per channel (listenAs); the turn it starts binds its own
 listen server/api/src/turn-cancel.ts none: aborts a turn in memory, no database
+listen server/gateway/src/main.ts system(gateway:route) for each call's registry read; its log row system(audit:gateway-call)
 listen server/parser/src/main.ts none: the parser service has no brain database
 listen server/sandboxd/src/egress.ts none: a network listener, no brain database
 listen server/sandboxd/src/main.ts none: a network listener, no brain database

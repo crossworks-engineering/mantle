@@ -125,6 +125,8 @@
   "formula_get": "read",
   "formula_list": "read",
   "formula_update": "write",
+  "gateway_service_list": "read",
+  "gateway_service_set": "write",
   "generate_image": "write",
   "graph_path": "read",
   "heartbeat_complete": "write",

@@ -506,14 +506,18 @@ describe('the architecture ratchets (pinned counts)', () => {
     // (public, before sign-in). Milestone 2 (+1 with a caller): POST
     // /api/auth/oidc/fresh (publicLogin). Plus 1 with none: POST
     // /api/auth/oidc/exchange (public, the code and verifier are the proof).
-    expect(rows.filter((r) => r.caller).length).toBe(864);
+    // The service gateway (+6 with a caller, docs/gateway.md): GET (+HEAD)
+    // and POST /api/gateway-services, GET (+HEAD) and PATCH
+    // /api/gateway-services/:slug (owner, the connectors area).
+    expect(rows.filter((r) => r.caller).length).toBe(870);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
     // + the 2 rows of its second milestone + the 3 public rows of a Present
     // canvas's open link (GET and HEAD /s/:token/canvas/frame, POST
-    // /s/:token/canvas/frame-ticket: a link judges its token, no caller).
-    expect(rows.length).toBe(933);
+    // /s/:token/canvas/frame-ticket: a link judges its token, no caller)
+    // + the 6 service gateway rows.
+    expect(rows.length).toBe(939);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

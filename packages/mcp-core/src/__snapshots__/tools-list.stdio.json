@@ -2536,6 +2536,88 @@
   }
  },
  {
+  "name": "gateway_service_set",
+  "description": "Register a box service with the service gateway, or change one: after this, an http tool or MCP connector reaches it at `${GATEWAY_URL}/svc/<slug>/...` (the reply's `url`), and nothing else does. A new service needs `upstream`, its own container name and port on the internal network mantle_services; the gateway refuses the stack's own services and any address off that network. Fields left out keep their value (a new service: all paths, GET only, reads-only). `enabled: false` switches it off at once. Store the service's own key in the vault and put it on the tool or connector; the gateway holds none. To see what is registered use `gateway_service_list`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "slug": {
+     "type": "string",
+     "description": "The URL segment after /svc/, e.g. 'pcms'."
+    },
+    "name": {
+     "type": "string",
+     "maxLength": 120,
+     "description": "Display name, e.g. 'PCMS snapshot'."
+    },
+    "upstream": {
+     "type": "string",
+     "maxLength": 200,
+     "description": "host:port on mantle_services, e.g. 'pcms-agent:8080'."
+    },
+    "path_prefixes": {
+     "minItems": 1,
+     "maxItems": 20,
+     "type": "array",
+     "items": {
+      "type": "string",
+      "maxLength": 200
+     },
+     "description": "The paths below the slug it may be called on; a prefix matches on a segment boundary, e.g. [\"/mcp\"] or [\"/api/\"]. Replaces the list."
+    },
+    "methods": {
+     "minItems": 1,
+     "maxItems": 7,
+     "type": "array",
+     "items": {
+      "type": "string",
+      "enum": [
+       "GET",
+       "HEAD",
+       "POST",
+       "PUT",
+       "PATCH",
+       "DELETE",
+       "OPTIONS"
+      ]
+     },
+     "description": "The methods it may be called with, e.g. [\"POST\"] for an MCP server."
+    },
+    "reads_only": {
+     "type": "boolean",
+     "description": "Your mark that the service only reads (shown; the service's own login enforces it)."
+    },
+    "enabled": {
+     "type": "boolean",
+     "description": "false switches it off; true back on."
+    },
+    "note": {
+     "anyOf": [
+      {
+       "type": "string",
+       "maxLength": 500
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "What it is, for the owner."
+    }
+   },
+   "required": [
+    "slug"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "gateway_service_set",
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "generate_image",
   "description": "Generate an image from a prompt using the owner's default image_gen worker. The image is saved under /files/auto-filed/generated-images/<month>/ AND sent inline when running on Telegram. Use when the user asks for an illustration, mockup, sketch, or visual aid. Be concrete in the prompt — vague prompts produce vague images. After calling, summarise what you sent in one sentence (don't repeat the prompt verbatim).",
   "inputSchema": {
@@ -11045,6 +11127,33 @@
   },
   "annotations": {
    "title": "formula_list",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "gateway_service_list",
+  "description": "List the box services the service gateway may route to (slug, upstream on mantle_services, allowed paths and methods, reads-only mark, switch) with the URL an http tool or MCP connector uses for each, and the newest gateway calls (refusals included). Pass `slug` for one service's calls. To register or change one use `gateway_service_set`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "slug": {
+     "type": "string",
+     "description": "Only this service's calls, e.g. 'pcms'."
+    },
+    "calls": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 200,
+     "description": "How many of the newest calls to return."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "gateway_service_list",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,

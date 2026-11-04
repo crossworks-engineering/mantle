@@ -48,13 +48,21 @@ CREATE TABLE IF NOT EXISTS "public"."gateway_services" (
     "upstream" ~ '^[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?)*:[0-9]{1,5}$'
     AND char_length("upstream") <= 200),
   CONSTRAINT "gateway_services_prefixes_ck" CHECK (cardinality("path_prefixes") BETWEEN 1 AND 20),
+  CONSTRAINT "gateway_services_methods_n_ck" CHECK (cardinality("methods") BETWEEN 1 AND 7),
   CONSTRAINT "gateway_services_methods_ck" CHECK (
-    cardinality("methods") BETWEEN 1 AND 7
-    AND "methods" <@ ARRAY['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']::text[]),
+    "methods" <@ ARRAY['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']::text[]),
   CONSTRAINT "gateway_services_note_ck" CHECK ("note" IS NULL OR char_length("note") <= 500)
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "gateway_services_slug_uq" ON "public"."gateway_services" ("slug");
+--> statement-breakpoint
+-- The enable class on the narrow role (0324, 0325): a service's switch
+-- only goes off there, on an update or an insert (the narrow role writes no
+-- row of this table anyway; the rule keeps the catalog's one shape).
+DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."gateway_services";
+--> statement-breakpoint
+CREATE TRIGGER "mantle_narrow_one_way_trg" BEFORE INSERT OR UPDATE ON "public"."gateway_services"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_one_way"('off:enabled');
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "public"."gateway_calls" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
