@@ -96,6 +96,26 @@ goes (plan: dev-brain page 06966c22, section 19).
 - `sandboxd`, the parser and `migrate` still run on Node on purpose; each
   moves to Bun as its own step of the plan.
 
+## KISS: a complex solution is not a good solution
+
+MantleOS rule (owner, 2026-11-04). If a solution is not simple, it is not done.
+Stop, and explore another solution that works better and is simpler.
+
+- Some things are complex by nature. Do not add complexity on top of them.
+- Security must not become so complicated that it compromises team work.
+- **A Write switch is the final rule.** If an item gets a Write switch for a
+  workspace, members of that workspace may write it. Do not add a second check
+  on top. Test any rights rule with one question: would the same member be
+  allowed by hand?
+
+Stop and step back when a design needs a new column, trigger, state or
+exception to explain a simple idea, or when audit rounds keep finding the same
+class of hole. Bring the simpler option to the owner, with what it costs.
+
+This does not remove the audits, the cost caps, or the strict rules for those
+outside the team: public share links, contact shares, read-only logins, API
+keys and peers.
+
 ## Other guidance
 
 - **A handover heading's step code goes in the counters' list in the same
