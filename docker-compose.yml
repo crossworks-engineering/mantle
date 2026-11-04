@@ -120,6 +120,17 @@ networks:
     name: mantle_parser_net
     driver: bridge
     internal: true
+  # The box services' network (docs/gateway.md; Data sources plan, phase
+  # 1a). `internal` = no NAT: a service here (a client database's query
+  # face, an MCP bridge) has no road out and publishes nothing. Only the
+  # gateway straddles it and the default network, and the brain reaches a
+  # service only through the gateway, as GATEWAY_URL/svc/<slug>/..., for a
+  # service the owner registered. The fixed `name:` is what a box service's
+  # own compose file joins (`networks: { mantle_services: { external: true } }`).
+  box_services:
+    name: mantle_services
+    driver: bridge
+    internal: true
 
 # Log rotation for every service — Docker's default json-file driver grows
 # unbounded, so a crash-looping worker or chatty extract run can fill the disk
@@ -266,6 +277,13 @@ x-app-env: &app-env
   # once (default 2).
   PARSER_URL: ${PARSER_URL:-http://parser:8095}
   PARSER_TOKEN: ${PARSER_TOKEN:-}
+  # The service gateway (below; docs/gateway.md): the one internal door to
+  # the box's services. The http tools and MCP connectors of a registered
+  # service call GATEWAY_URL/svc/<slug>/...; GATEWAY_TOKEN is the bearer
+  # both sides share (install.sh writes one, a roll provisions it when
+  # missing; until then the gateway answers every service call 503).
+  GATEWAY_URL: ${GATEWAY_URL:-http://gateway:8097}
+  GATEWAY_TOKEN: ${GATEWAY_TOKEN:-}
   PARSER_CLIENT_CONCURRENCY: ${PARSER_CLIENT_CONCURRENCY:-}
   # Which optional services (compose profiles: sandboxes, local-embedder) this box
   # runs, as compose resolved COMPOSE_PROFILES when it created THIS container.
@@ -642,6 +660,56 @@ services:
       interval: 15s
       timeout: 5s
       retries: 4
+      start_period: 30s
+
+  # The service gateway (server/gateway; docs/gateway.md; Data sources plan,
+  # phase 1a): the one internal door from the brain to the services of this
+  # box. On the default network (the brain reaches it at GATEWAY_URL) and on
+  # mantle_services (the box services); no published port, no Caddy route.
+  # It routes /svc/<slug>/<path> only to a service registered in
+  # gateway_services (slug, upstream on mantle_services, allowed paths and
+  # methods, enabled), connects only to an address on mantle_services, and
+  # writes one gateway_calls row per call. It holds no service secret: the
+  # brain adds the service's vault key at call time. Its env is the least it
+  # needs: the database (the registry and the call log, as the runtime role
+  # when the box runs it) and its token. Always on, no profile: tiny.
+  gateway:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
+    command: ['scripts/run-service.sh', 'server/gateway', 'src/main.ts']
+    container_name: mantle_gateway
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    mem_limit: ${GATEWAY_MEM_LIMIT:-256m}
+    cap_drop: ['ALL']
+    security_opt: ['no-new-privileges:true']
+    networks:
+      - default
+      - box_services
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?set it in .env — scripts/install.sh writes one}@postgres:5432/postgres
+      MANTLE_MASTER_KEY: ${MANTLE_MASTER_KEY:?MANTLE_MASTER_KEY is required}
+      MANTLE_DB_RUNTIME_ROLE: ${MANTLE_DB_RUNTIME_ROLE:-}
+      MANTLE_RUNTIME: ${MANTLE_RUNTIME:-node}
+      NODE_ENV: production
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:-}
+      GATEWAY_MAX_BODY_BYTES: ${GATEWAY_MAX_BODY_BYTES:-}
+      GATEWAY_UPSTREAM_IDLE_MS: ${GATEWAY_UPSTREAM_IDLE_MS:-}
+    labels: ['autoheal=true']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8097/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
       start_period: 30s
 
   # Browser sidecar (browserless/chromium), the PDF-export render engine: a

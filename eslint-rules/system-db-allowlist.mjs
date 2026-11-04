@@ -114,6 +114,10 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   // The MCP call log's row (0343), written after an MCP call in its
   // request or stdio context.
   'packages/db/src/mcp-call-log.ts': 'narrow',
+  // The service gateway's registry (0358): read in the brain's request or
+  // turn, written at the full-route spot tool-config; and its call log,
+  // written and reaped by the gateway process outside every scope.
+  'packages/db/src/service-gateway.ts': 'narrow',
   // The push worker's count of parked extractions.
   'packages/db/src/extract-parked.ts': 'full',
   // A one-off maintenance script (extract-skip-stamp.ts).

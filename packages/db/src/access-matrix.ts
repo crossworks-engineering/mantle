@@ -1307,6 +1307,12 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // Embedding / extraction outages (0230): written by the embedder and the
   // extract queue on the admin pool, read by admin routes only.
   none('public.provider_alerts', 'system'),
+  // The service gateway (0358, docs/gateway.md): its services are written by
+  // the connectors area at the full-route spot tool-config (where calls go,
+  // as a tool group's integration), its call log by the gateway process
+  // outside every scope. A narrow exit reads them only.
+  { ...none('public.gateway_services'), narrow: 'read' },
+  { ...none('public.gateway_calls', 'system'), narrow: 'read' },
   none('public.trace_steps', 'system'),
   // The per-login stores: the workspace role reads its own
   // login's rows of the workspaces in its scope.
@@ -1699,6 +1705,8 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.oidc_mode_state', // 0349
   'public.oidc_handoff_codes', // 0350
   'public.app_timers', // 0355
+  'public.gateway_services', // 0358
+  'public.gateway_calls', // 0358
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as

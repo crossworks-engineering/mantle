@@ -42,6 +42,8 @@
 #                                             are: 1 CPU, 2g (no swap past it),
 #                                             one job at a time, a 1g tmpfs
 #   worker_files, worker_docs                 file + documentation ingest
+#   gateway                                   the one door to the box's own
+#                                             services (docs/gateway.md); tiny
 #   worker_events                             reminders AND the scheduled-
 #                                             backup tick (a core still backs
 #                                             itself up)

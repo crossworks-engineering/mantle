@@ -60,7 +60,7 @@ import { deleteApiKey, getApiKey, listApiKeys, setApiKey } from '@mantle/api-key
 import { microsoftAuthority, resolveOAuthConfig } from '@mantle/microsoft';
 import { errorMessage } from '@mantle/std';
 import { egressFetch } from '@mantle/std/egress';
-import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
+import { assertFetchableUrl, isCarvedUrl } from './ssrf-guard';
 
 /** Vault labels under service = the connector's group slug. */
 export const MCP_OAUTH_SECRET_LABELS = ['oauth-client', 'oauth-tokens', 'oauth-verifier'] as const;
@@ -147,7 +147,7 @@ export const mcpOAuthFetch: typeof fetch = (input, init) =>
   egressFetch(input, init, {
     redirect: 'error',
     guard: assertFetchableUrl,
-    exempt: isSandboxProxyUrl,
+    exempt: isCarvedUrl,
     // Discovery documents, a registration and a token: small JSON the SDK
     // parses whole with res.json(), so the read is capped.
     maxBytes: MCP_OAUTH_MAX_BYTES,

@@ -66,6 +66,13 @@ import { builtinPolicy, policyUntrusted } from './tool-policy';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 import { registerToolDispatcher } from './dispatch-bridge';
 import { surfaceGateFacts } from './surface';
+import {
+  gatewayCallerOf,
+  gatewayHttpBinding,
+  gatewayRequestHeaders,
+  gatewayToken,
+  runAsGatewayCaller,
+} from './gateway';
 import { runGated } from './admin-gate';
 import { builtinToolGatePolicy, builtinToolRef, mcpBuiltinToolRef } from './tool-gate-policy';
 import {
@@ -597,9 +604,13 @@ async function dispatchMcp(
     // (external-access.ts) runs under the team role, where the token refresh
     // would fail. Nothing of the brain's content is read here: the result comes
     // from the remote server, and the call stays on the caller's surface.
-    const res = await asSystem(
-      () => mcpCallRemoteTool(ctx.ownerId, h.group, mcp, h.toolName, input),
-      'connector-call',
+    // The caller rides along for the gateway's call log, when the
+    // connector is a gateway service (gateway.ts).
+    const res = await runAsGatewayCaller(gatewayCallerOf(ctx), () =>
+      asSystem(
+        () => mcpCallRemoteTool(ctx.ownerId, h.group, mcp, h.toolName, input),
+        'connector-call',
+      ),
     );
     const scrub = (s: string) => scrubSecrets(s, res.secrets);
     let text = scrub(res.text);
@@ -923,6 +934,15 @@ async function dispatchHttp(
     // an unhandled rejection out of the dispatcher.
     const send = async (): Promise<{ res: Response; url: string; method: string }> => {
       const req = buildHttpRequest(h, input, secrets);
+      // A gateway service (docs/gateway.md) gets the gateway token and the
+      // caller, and only the service the tool's own URL names.
+      const gateway = gatewayHttpBinding(h.url, req.url);
+      if (gateway && 'error' in gateway) throw new Error(gateway.error);
+      if (gateway) {
+        Object.assign(req.headers, gatewayRequestHeaders(gatewayCallerOf(ctx)));
+        const token = gatewayToken();
+        if (token) secrets.set('gateway/token', token);
+      }
       // The token goes to the group's own API and nowhere else: a template or
       // a model-filled {param} that points the request at another origin is
       // refused before anything is sent.

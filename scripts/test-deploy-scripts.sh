@@ -2705,6 +2705,14 @@ printf 'services:\n  parser:\n    container_name: mantle_parser\n' > "$TP/stack/
 updater_run "$TP/stack" "$TP/sig" "$TP/img" 'ensure_service_tokens' > /dev/null
 check "a compose that runs the parser: PARSER_TOKEN provisioned, 64 hex" grep -qE '^PARSER_TOKEN=[0-9a-f]{64}$' "$TP/stack/.env"
 check "PARSER_TOKEN provisioned whatever the live-state mount (core, no profile)" grep -q 'PARSER_TOKEN provisioned' "$TP/sig/update.log"
+TG="$WORK/tokens-gateway"; fake_stack "$TG"
+printf 'services:\n  gateway:\n    container_name: mantle_gateway\n' > "$TG/stack/docker-compose.yml"
+updater_run "$TG/stack" "$TG/sig" "$TG/img" 'ensure_service_tokens' > /dev/null
+check "a compose that runs the gateway: GATEWAY_TOKEN provisioned, 64 hex" grep -qE '^GATEWAY_TOKEN=[0-9a-f]{64}$' "$TG/stack/.env"
+tokg=$(sed -n 's/^GATEWAY_TOKEN=//p' "$TG/stack/.env")
+updater_run "$TG/stack" "$TG/sig" "$TG/img" 'ensure_service_tokens' > /dev/null
+check "a second roll keeps the gateway token" grep -qx "GATEWAY_TOKEN=$tokg" "$TG/stack/.env"
+check "no gateway in the compose: no GATEWAY_TOKEN" sh -c "! grep -q '^GATEWAY_TOKEN=' '$TP/stack/.env'"
 check "gen_token: 64 hex, two calls differ" sh -c "
   a=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")
   b=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")

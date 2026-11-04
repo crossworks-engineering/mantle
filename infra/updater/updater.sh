@@ -1724,6 +1724,7 @@ gen_token() {
 # provisioned token would light up a service that is not running.
 ensure_service_tokens() {
   ensure_parser_token
+  ensure_gateway_token
   if ! grep -q 'update-signal:/signal:ro' "$STACK/docker-compose.yml" 2>/dev/null; then
     echo "[updater] optional-service tokens not provisioned: this box's compose predates the live service state" \
       | tee -a "$SIG/update.log"
@@ -1839,6 +1840,24 @@ ensure_documents_default() {
   [ -z "$edd_free" ] || edd_fmb=$((edd_free / 1024))
   echo "[updater] documents engine ON by default (Gotenberg: Office to PDF, page prints, the PDF tools, mini-app PDFs). It adds about 700 MB to download, 2.4 GB on disk and up to 2 GB memory (mem_limit 2g; about 300 MB after the first job). This box: $(num_or "$edd_mt" '?') MB memory, $(num_or "$edd_ma" '?') MB available, $edd_fmb MB disk free. Switch it off in Settings > Services; it then stays off."
   return 0
+}
+
+# ensure_gateway_token: the service gateway's bearer token (docs/gateway.md),
+# written once and never rotated, when the compose this roll brings runs the
+# gateway. Before the token exists the gateway answers every service call
+# 503 and nothing else breaks (no service is registered on a box that never
+# had one); the roll after the first gateway release writes it.
+GATEWAY_LINE_RE='^[[:space:]]*container_name:[[:space:]]*mantle_gateway[[:space:]]*$'
+ensure_gateway_token() {
+  grep -qE "$GATEWAY_LINE_RE" "$STACK/docker-compose.yml" 2>/dev/null || return 0
+  [ -z "$(env_val GATEWAY_TOKEN)" ] || return 0
+  if egt_tok=$(gen_token) && persist_env GATEWAY_TOKEN "$egt_tok"; then
+    echo "[updater] GATEWAY_TOKEN provisioned (the gateway and the app containers take it on this roll)" \
+      | tee -a "$SIG/update.log"
+  else
+    echo "[updater] ⚠ could not provision GATEWAY_TOKEN; the gateway answers every service call 503 until it is set" \
+      | tee -a "$SIG/update.log"
+  fi
 }
 
 # ensure_parser_token: the parser service's bearer token, written once and

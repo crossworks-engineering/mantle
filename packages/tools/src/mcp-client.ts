@@ -22,7 +22,8 @@ import {
 import type { ToolGroupMcpBinding } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
 import { capEventStream, egressFetch } from '@mantle/std/egress';
-import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
+import { assertFetchableUrl, isCarvedUrl } from './ssrf-guard';
+import { gatewayConnectorFetch, gatewayToken } from './gateway';
 import { scrubSecrets } from './http-template';
 import { dbMcpOAuthStore, loadMcpOAuthTokens, runtimeMcpOAuthProvider } from './mcp-oauth';
 import { errorMessage } from '@mantle/std';
@@ -108,7 +109,7 @@ export const mcpConnectorFetch: typeof fetch = async (input, init) => {
   const egress = {
     redirect: 'error',
     guard: assertFetchableUrl,
-    exempt: isSandboxProxyUrl,
+    exempt: isCarvedUrl,
   } as const;
   if (!isSseGet) return egressFetch(input, init, { ...egress, maxBytes: MCP_REPLY_MAX_BYTES });
 
@@ -170,9 +171,14 @@ async function spawn(ownerId: string, groupSlug: string, mcp: ToolGroupMcpBindin
   } else {
     ({ headers, secrets } = await resolveAuth(ownerId, mcp));
   }
+  // A gateway service (docs/gateway.md): its requests carry the gateway
+  // headers and stay on the connector's own service; the token is scrubbed
+  // from what comes back.
+  const token = gatewayToken();
+  if (token) secrets.set('gateway/token', token);
   const transport = new StreamableHTTPClientTransport(new URL(mcp.url), {
     requestInit: { headers },
-    fetch: mcpConnectorFetch,
+    fetch: gatewayConnectorFetch(mcp.url, groupSlug, mcpConnectorFetch),
     ...(authProvider ? { authProvider } : {}),
   });
   const client = new Client({ name: 'mantle-mcp-connector', version: '1.0.0' });

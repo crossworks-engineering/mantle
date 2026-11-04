@@ -37,6 +37,9 @@ export const BARE_FETCH_SWEPT = [
   // The parser fetches nothing (its network has no route out); swept so a
   // fetch added to it is seen.
   'server/parser/',
+  // The service gateway: its one outbound call is to a registered service's
+  // checked address on mantle_services (docs/gateway.md).
+  'server/gateway/',
 ];
 
 /** The modules that are a raw HTTP client (or the platform fetch's own
@@ -229,6 +232,10 @@ export const RAW_HTTP_ALLOWED = {
   'server/parser/src/main.ts': {
     kind: 'owner config',
     why: "the parser service's own HTTP listener on the stack's internal parser network; it makes no outbound call",
+  },
+  'server/gateway/src/server.ts': {
+    kind: 'owner config',
+    why: "the service gateway's own HTTP listener, and its proxy to a service the owner registered (gateway_services), at an address checked to lie on mantle_services (docs/gateway.md)",
   },
 };
 

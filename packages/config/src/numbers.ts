@@ -263,6 +263,25 @@ export const ENV_NUMBERS = {
   },
 
   // The parser service (server/parser) and its client (packages/files)
+  GATEWAY_PORT: {
+    default: 8097,
+    int: 'floor',
+    min: 1,
+    max: 65535,
+    doc: 'the service gateway listens here',
+  },
+  GATEWAY_MAX_BODY_BYTES: {
+    default: 64 * 1024 * 1024,
+    int: 'floor',
+    min: 1,
+    doc: 'the largest request body one gateway call may send, bytes',
+  },
+  GATEWAY_UPSTREAM_IDLE_MS: {
+    default: 120_000,
+    int: 'floor',
+    min: 1000,
+    doc: 'an upstream connection of the gateway idle this long is cut, ms',
+  },
   PARSER_PORT: { default: 8095, int: 'floor', min: 1, max: 65535, doc: 'the parser listens here' },
   PARSER_QUEUE_MAX: {
     default: 16,
