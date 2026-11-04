@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased
+## v0.500.18: a folder's home move takes its contents
 
 This release pairs the brain with mantle-client **v0.9.6**: the move dialog offers to move a folder's contents.
 
