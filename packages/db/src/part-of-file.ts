@@ -3,9 +3,10 @@
  * it (docs/workspaces.md, "Parts of a file"). It takes the file's home and
  * grants, once, when it is made. After that it is an ordinary item.
  */
-import { sql } from 'drizzle-orm';
+import { and, eq, ne, notInArray, sql } from 'drizzle-orm';
 import { db } from './gateway/handles';
 import { withHeads } from './gateway/heads';
+import { itemGrants } from './schema/index';
 import { withCreateHome } from './viewer';
 
 /** The file is gone, or its home is: no part, as it must never fall to Admin. */
@@ -18,19 +19,37 @@ export class PartHasNoHomeError extends Error {
 /** Give `part` the file's rows: its home, and each grant with its Write. A
  *  row the file does not hold (one a folder passes) is "Removed here". */
 export function copyFileRows(partId: string, fileId: string): Promise<void> {
+  const g = itemGrants;
   return withHeads([partId], 'update', async (tx) => {
-    await tx.execute(sql`delete from item_grants p using item_grants f
-      where p.node_id = ${partId} and p.is_home and f.node_id = ${fileId} and f.is_home
-        and p.workspace_id <> f.workspace_id`);
-    await tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home)
-      select ${partId}::uuid, f.workspace_id, f.write, f.is_home from item_grants f
-       where f.node_id = ${fileId} and not f.excluded
-      on conflict (node_id, workspace_id) do update
-        set write = excluded.write, is_home = excluded.is_home, via_folder_id = null`);
-    await tx.execute(sql`update item_grants p set excluded = true, write = false, via_folder_id = null
-      where p.node_id = ${partId} and not p.is_home and not exists (
-        select 1 from item_grants f where f.node_id = ${fileId}
-           and f.workspace_id = p.workspace_id and not f.excluded)`);
+    const held = await tx
+      .select({ workspaceId: g.workspaceId, write: g.write, isHome: g.isHome })
+      .from(g)
+      .where(and(eq(g.nodeId, fileId), eq(g.excluded, false)));
+    const home = held.find((r) => r.isHome)?.workspaceId;
+    if (!home) return;
+    await tx
+      .delete(g)
+      .where(and(eq(g.nodeId, partId), eq(g.isHome, true), ne(g.workspaceId, home)));
+    await tx
+      .insert(g)
+      .values(held.map((r) => ({ ...r, nodeId: partId })))
+      .onConflictDoUpdate({
+        target: [g.nodeId, g.workspaceId],
+        set: { write: sql`excluded.write`, isHome: sql`excluded.is_home`, viaFolderId: null },
+      });
+    await tx
+      .update(g)
+      .set({ excluded: true, write: false, viaFolderId: null })
+      .where(
+        and(
+          eq(g.nodeId, partId),
+          eq(g.isHome, false),
+          notInArray(
+            g.workspaceId,
+            held.map((r) => r.workspaceId),
+          ),
+        ),
+      );
   });
 }
 
