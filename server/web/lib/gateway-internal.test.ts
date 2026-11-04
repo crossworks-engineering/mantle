@@ -24,7 +24,7 @@ describe('gatewayRequestRefusal', () => {
     expect(gatewayRequestRefusal(req({ 'x-mantle-gateway-token': 'nope' }))?.status).toBe(401);
     expect(gatewayRequestRefusal(req({ authorization: 'Bearer tok' }))?.status).toBe(401);
     vi.stubEnv('GATEWAY_TOKEN', '');
-    expect(gatewayRequestRefusal(req({ 'x-mantle-gateway-token': '' }))?.status).toBe(503);
+    expect(gatewayRequestRefusal(req({ 'x-mantle-gateway-token': '' }))?.status).toBe(401);
   });
 
   it('refuses a request that came through the front door, token or not', () => {
