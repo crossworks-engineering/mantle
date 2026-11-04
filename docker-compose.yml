@@ -159,9 +159,11 @@ x-worker-healthcheck: &worker-healthcheck
 # (packages/files/src/parser-client.ts): the default one (postgres, the
 # object store, each other) and the parser's internal one. Only those whose
 # code can reach the parser client join it: web, api and the workers that
-# run turns or tools (telegram, events, runs, push). The others (email,
-# microsoft, files, docs, calendar, maintenance) and migrate parse nothing
-# and stay on the default network alone, so the parser cannot reach them.
+# run turns or tools (telegram, events, runs, push, and maintenance, whose
+# app timers run tools and whose box_status collector asks the parser for
+# its health). The others (email, microsoft, files, docs, calendar) and
+# migrate parse nothing and stay on the default network alone, so the
+# parser cannot reach them.
 x-app-networks: &app-networks
   - default
   - parser
@@ -1517,6 +1519,10 @@ services:
   # schedulable registry sweeps (docs/maintenance-runner.md; today just
   # entities-dedupe auto tier, pure SQL). Records into maintenance_runs, the
   # same history the CLI and the /debug/integrity Maintenance tab write.
+  # Also the app timers' tick (docs/app-timers.md), with the box status
+  # collector a timer's peer_status or box_status reads: on the parser's
+  # network so its parser probe is real, and /data/files (below) is the
+  # same mount the web's disk number reads.
   worker_maintenance:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ['scripts/run-service.sh', 'server/web', 'workers/maintenance.ts']
@@ -1526,6 +1532,7 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe

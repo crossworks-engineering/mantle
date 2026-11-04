@@ -3,8 +3,10 @@
  * box's numbers, and the collectors live in server/web (lib/box-status.ts:
  * the dashboard's system health, the spend, the extractor's queue), not in
  * this package. Same shape as canvas-render-bridge.ts: server/web installs
- * the provider at boot; a process that never installs one (the runner, the
- * stdio MCP server, a worker) gets a clear refusal instead of a crash.
+ * the provider at boot (the web process, and the maintenance worker that
+ * runs the app timers); a process that never installs one (the runner, the
+ * stdio MCP server, the other workers) gets a clear refusal instead of a
+ * crash.
  *
  * Numbers only, whoever reads it: the boxes belong to clients, so nothing
  * here names an item, a person, a host or anything a user wrote.

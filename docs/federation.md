@@ -262,13 +262,19 @@ asks it when no peer is named.
   for a key or a peer by the `peer_` family rule (it reaches other brains on
   this brain's credentials), as every `peer_` tool is.
 
-The collectors live in server/web, so only the web process installs them
-(`packages/tools/src/box-status-bridge.ts`). The runner (agent turns) and
-the stdio MCP server answer that `box_status` is read over the box's MCP
-endpoint; `peer_status` there reports its own line as `unavailable` and
-still asks the peers. So `box_status` is in a group of its own,
-`fleet-status`, that no shipped agent holds (a turn in the runner would get
-the refusal); `peer_status` is in `federation`.
+The collectors live in server/web, so the web process installs them
+(`packages/tools/src/box-status-bridge.ts`), and so does the maintenance
+worker, which runs the app timers (`server/web/workers/maintenance.ts`): a
+timer's `peer_status` collects this box's own line there, on the same
+narrow route after the same settings area check, with that process's own
+30 second cache. Its `process` numbers are the worker's own; its disk is
+the same `/data/files` mount; it joins the parser's network for the parser
+probe; it has no tailnet socket, so `network` reads null (not known). The
+runner (agent turns) and the stdio MCP server answer that `box_status` is
+read over the box's MCP endpoint; `peer_status` there reports its own line
+as `unavailable` and still asks the peers. So `box_status` is in a group of
+its own, `fleet-status`, that no shipped agent holds (a turn in the runner
+would get the refusal); `peer_status` is in `federation`.
 
 A status peer runs as the owner login, as the owner is now. When the
 owner is disabled, or the box's password rule holds the owner (a password
@@ -283,7 +289,9 @@ web container's `/proc`. A box that wants the host's own sets
 `MANTLE_HOST_PROC` to a read-only mount of the host's `/proc` files
 `loadavg` and `meminfo` (for example `/host/proc`); `scope` then reads
 `host`. Mount only those two files: the whole host `/proc` shows every host
-process to the container. The shipped compose files mount nothing.
+process to the container. The shipped compose files mount nothing. Give
+`worker_maintenance` the same mount and setting, or the app timers' own
+line reads the container's view.
 
 ### Linking from the shell
 

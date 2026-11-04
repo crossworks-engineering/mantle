@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased
+
+- **Fixed:** an app timer that called `peer_status` recorded this box's
+  own line as `unavailable` on every run, so a fleet monitor app had no
+  history for the box it runs on (the watched boxes recorded fine). The
+  maintenance worker, which runs the timers, now collects the box's status
+  itself, as the web process does, and a timer's `box_status` works too.
+  The worker joins the parser's network so its parser check is real. A box
+  that gives the web container the host's `/proc` (`MANTLE_HOST_PROC`)
+  should give `worker_maintenance` the same mount.
+
 ## v0.500.18: a folder's home move takes its contents
 
 This release pairs the brain with mantle-client **v0.9.6**: the move dialog offers to move a folder's contents.

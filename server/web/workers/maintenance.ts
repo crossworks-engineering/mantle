@@ -22,6 +22,7 @@ import { errorMessage } from '@mantle/std';
 import { runDueAppTimers } from '@mantle/tools';
 import { log } from '@mantle/tracing';
 
+import { installBoxStatusProvider } from '../lib/box-status';
 import { reapStaleRuns } from '../lib/maintenance/history';
 import { runScheduledSweeps } from '../lib/maintenance/sweeps';
 import { runQueueWorker } from './_runner';
@@ -47,6 +48,14 @@ const TIMER_QUEUE = 'mantle.app-timers.tick';
 const TIMER_CRON = '* * * * *';
 /** Whether the switched-off tick has said so (once per process). */
 let timersOffSaid = false;
+
+// The box status collector (box_status, peer_status's own line), as the web
+// process installs it (server/main.ts): a timer that calls peer_status or
+// box_status runs here, and without it the box's own line read
+// `unavailable`. The reads run as the web's do, on the narrow route after
+// the settings area check (builtins-box-status.ts ownStatus); this process
+// has its own 30 second cache. maintenance-box-status.db.test.ts pins it.
+installBoxStatusProvider();
 
 runQueueWorker('maintenance', async ({ boss }) => {
   // Idles until the first account exists (fresh install), then resolves.

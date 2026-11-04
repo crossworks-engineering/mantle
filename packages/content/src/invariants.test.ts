@@ -217,6 +217,19 @@ describe('brain-core override ↔ main compose', () => {
     }
   });
 
+  // The app timers' box status collector runs in worker_maintenance
+  // (docs/federation.md, "The two tools"): its parser probe needs the
+  // parser's network, and its disk number the files mount the web reads.
+  it(`worker_maintenance joins the parser's network and mounts the files folder`, () => {
+    const text = read(COMPOSE);
+    const start = text.indexOf('\n  worker_maintenance:\n');
+    expect(start).toBeGreaterThan(0);
+    const next = text.slice(start + 1).search(/\n {2}[a-z][a-z0-9_]*:\s*\n/);
+    const body = text.slice(start, next < 0 ? undefined : start + 1 + next);
+    expect(body).toContain('    networks: *app-networks\n');
+    expect(body).toContain(`\${MANTLE_DATA_DIR:-./data}/files:/data/files`);
+  });
+
   it(`${COMPOSE_CORE} gates exactly the doc helper + the six channel workers`, () => {
     // The core shape's OFF list is as load-bearing as the main file's ON list:
     // gating a data-spine service (postgres, web, migrate…) here would brick
