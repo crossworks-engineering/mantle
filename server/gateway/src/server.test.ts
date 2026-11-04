@@ -204,13 +204,28 @@ describe('the gateway server', () => {
     expect(await lastCall()).toMatchObject({ status, refusal: code });
   });
 
-  it('refuses a body over the cap', async () => {
+  it('refuses a body over the cap, declared or streamed', async () => {
     const res = await fetch(`${gw}/svc/pcms/mcp`, {
       method: 'POST',
       headers: auth,
       body: 'x'.repeat(4096),
     });
     expect(res.status).toBe(413);
+    // No content-length: the cap holds while the body streams.
+    const big = new ReadableStream<Uint8Array>({
+      start(c) {
+        for (let i = 0; i < 8; i++) c.enqueue(new Uint8Array(512).fill(120));
+        c.close();
+      },
+    });
+    const streamed = await fetch(`${gw}/svc/pcms/mcp`, {
+      method: 'POST',
+      headers: auth,
+      body: big,
+      duplex: 'half',
+    } as RequestInit);
+    expect(streamed.status).toBe(413);
+    expect(await lastCall()).toMatchObject({ refusal: 'too_large' });
   });
 
   it('answers 502 gateway_error, and logs it, when the registry cannot be read', async () => {

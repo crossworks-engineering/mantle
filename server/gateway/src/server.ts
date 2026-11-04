@@ -218,7 +218,9 @@ export function createGateway(opts: GatewayOptions): http.Server {
         timedOut = true;
         upstream.destroy(new Error('upstream idle timeout'));
       });
+      let cut = false;
       upstream.on('error', () => {
+        if (cut) return resolve();
         if (!res.headersSent) {
           count.setRefusal(timedOut ? REFUSALS.timeout.code : REFUSALS.unreachable.code);
           send(res, timedOut ? REFUSALS.timeout : REFUSALS.unreachable);
@@ -235,11 +237,13 @@ export function createGateway(opts: GatewayOptions): http.Server {
       req.on('data', (c: Buffer) => {
         sent += c.length;
         count.addRequest(c.length);
-        if (sent > opts.maxBodyBytes) {
+        if (sent > opts.maxBodyBytes && !cut) {
+          cut = true;
           count.setRefusal(REFUSALS.tooLarge.code);
-          upstream.destroy(new Error('request body too large'));
           if (!res.headersSent) send(res, REFUSALS.tooLarge);
-          req.destroy();
+          upstream.destroy(new Error('request body too large'));
+          req.unpipe(upstream);
+          req.resume();
         }
       });
       req.pipe(upstream);
