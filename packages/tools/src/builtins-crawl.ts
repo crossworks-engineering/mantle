@@ -31,7 +31,7 @@ import { createDocCollection, slugifyFolder, upsertDocFromDisk } from '@mantle/f
 import { recordIngest, step } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
-import { assertFetchableUrl } from './ssrf-guard';
+import { assertPublicUrl } from './ssrf-guard';
 import { str } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { CS } from './client-sourced-rule';
@@ -67,7 +67,7 @@ async function vetUrl(raw: string): Promise<{ ok: true; url: URL } | ToolHandler
     return { ok: false, error: `'${s}' is not a valid URL — pass e.g. https://docs.example.com` };
   }
   try {
-    await assertFetchableUrl(url.toString());
+    await assertPublicUrl(url.toString());
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }

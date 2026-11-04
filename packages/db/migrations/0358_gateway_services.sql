@@ -7,7 +7,8 @@
 -- or a path the row does not allow is refused by the gateway.
 --
 -- gateway_services, one row per service: its slug (the URL's), a name,
--- the upstream `host:port` on mantle_services, the path prefixes and the
+-- the upstream `host:port` on mantle_services (one DNS label: the
+-- service's container name), the path prefixes and the
 -- methods it allows, the reads-only mark (what the owner says of the
 -- service: shown, never relied on; the service's own login decides what
 -- it may change), the switch, a note, the login that last set it. Written
@@ -45,8 +46,7 @@ CREATE TABLE IF NOT EXISTS "public"."gateway_services" (
   CONSTRAINT "gateway_services_slug_ck" CHECK ("slug" ~ '^[a-z0-9][a-z0-9-]{0,39}$'),
   CONSTRAINT "gateway_services_name_ck" CHECK (char_length("name") BETWEEN 1 AND 120),
   CONSTRAINT "gateway_services_upstream_ck" CHECK (
-    "upstream" ~ '^[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?)*:[0-9]{1,5}$'
-    AND char_length("upstream") <= 200),
+    "upstream" ~ '^[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?:[0-9]{1,5}$'),
   CONSTRAINT "gateway_services_prefixes_ck" CHECK (cardinality("path_prefixes") BETWEEN 1 AND 20),
   CONSTRAINT "gateway_services_methods_n_ck" CHECK (cardinality("methods") BETWEEN 1 AND 7),
   CONSTRAINT "gateway_services_methods_ck" CHECK (

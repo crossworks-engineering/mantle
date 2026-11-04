@@ -25,30 +25,40 @@ address, by design.
   `x-mantle-gateway-token` header. `Authorization` stays the service's
   own: the brain puts the service's vault key there at call time, as for
   any http tool. The gateway holds no service secret.
-- **A call log.** One `gateway_calls` row per call, refusals included:
-  slug, method, path (no query string), status, bytes each way, duration,
-  the caller (an agent, a surface, a connector) and its login. The gateway
-  removes rows past 90 days itself.
+- **A call log.** One `gateway_calls` row per call that carried the token,
+  refusals included: slug, method, path (no query string), status, bytes
+  each way, duration, the caller (an agent, a surface, a connector) and its
+  login. A call without the token leaves no row (it is counted and said in
+  the gateway's log at most every ten minutes), so nothing that reaches the
+  gateway can grow the table or forge a caller. The gateway removes rows
+  past 90 days itself.
+- **Only the brain can reach it.** It listens on its own address on the
+  default network, and drops any connection from a services subnet: a
+  service never calls the gateway.
 
 ## A service row
 
 | Field           | What it holds                                                                    |
 | --------------- | -------------------------------------------------------------------------------- |
 | `slug`          | the URL segment after `/svc/`: 1 to 40 lowercase letters, digits or dashes       |
-| `upstream`      | `host:port`: the service's own DNS name on `mantle_services` and its port        |
+| `upstream`      | `host:port`: the service's container name (one label, no dots) and its port      |
 | `path_prefixes` | the paths below the slug it may be called on; a prefix matches on a segment edge |
 | `methods`       | the methods it may be called with                                                |
 | `reads_only`    | the owner's mark that it only reads: shown, never relied on                      |
 | `enabled`       | the switch: off refuses every call at once                                       |
 
-An upstream may not be an IP address, `localhost`, or one of the stack's
-own services (`postgres`, `objectstore`, `web`, `api`, the workers and the
-rest). The gateway also connects only to an address inside a
-`mantle_services` subnet: it resolves the name and refuses any answer
-outside it. It finds that subnet at start from its own interfaces (every
-subnet but the one that holds the database host), or from
-`GATEWAY_UPSTREAM_CIDRS` when it runs outside compose. With no subnet found
-it refuses every service.
+An upstream may not be an IP address, a dotted name (a public name could
+answer any address), `localhost`, or one of the stack's own services
+(`postgres`, `objectstore`, `web`, `api`, the workers and the rest). The
+gateway also connects only to an address inside a `mantle_services` subnet:
+it resolves the name and refuses any answer outside it, its own address,
+the subnet's first host (the bridge, the Docker host) and the broadcast. It
+finds that subnet at start from its own interfaces (every subnet but those
+the stack's names resolve into: the database host, `postgres`,
+`objectstore`, `web`, `api`, `caddy`), or from `GATEWAY_UPSTREAM_CIDRS`
+when it runs outside compose. A box service that took one of those names on
+`mantle_services` leaves no services subnet, so the gateway refuses every
+service (fail closed). With no subnet found it refuses every service.
 
 `reads_only` is a mark, not a rule: an MCP service reads over POST. A
 service that must not write gets a read-only login of its own.
@@ -72,7 +82,10 @@ go, as a tool group's integration does.
   for example `http://gateway:8097/svc/pcms/query`. The slug must be literal
   in the URL the author wrote. A model-filled `{param}` may fill the path
   below it but never choose the service: a request whose resolved URL names
-  another slug is refused before it is sent.
+  another slug is refused before it is sent. The URL may carry no
+  `{{secret:...}}` (the gateway logs the path): the service's key goes in a
+  header. A parameter holding `%` or `;` is refused by the gateway; pass it
+  in the query string.
 - **An MCP connector**: its URL is `http://gateway:8097/svc/<slug>/mcp`
   (whatever path the service serves). Every request of the connector must
   stay on that slug.
@@ -87,23 +100,25 @@ gateway from anywhere else.
 
 ## What the gateway refuses
 
-| Status | Code                   | When                                                            |
-| ------ | ---------------------- | --------------------------------------------------------------- |
-| 401    | `unauthorized`         | no token, or the wrong one                                      |
-| 503    | `no_token`             | the box has no `GATEWAY_TOKEN` yet                              |
-| 404    | `not_found`            | a path outside `/svc/`                                          |
-| 404    | `unknown_service`      | no service has the slug                                         |
-| 403    | `service_disabled`     | the service is off, or its row names an upstream it may not     |
-| 405    | `method_not_allowed`   | the method is not in the row                                    |
-| 403    | `path_not_allowed`     | the path is under none of the row's prefixes                    |
-| 400    | `bad_path`             | a `.`, `..` or empty segment, a `\`, an encoded `/`, `\` or `.` |
-| 502    | `upstream_refused`     | the upstream name resolves outside `mantle_services`            |
-| 502    | `upstream_unreachable` | the service did not answer                                      |
-| 504    | `upstream_timeout`     | the service went quiet past `GATEWAY_UPSTREAM_IDLE_MS`          |
-| 413    | `too_large`            | the body is over `GATEWAY_MAX_BODY_BYTES`                       |
+| Status | Code                   | When                                                                   |
+| ------ | ---------------------- | ---------------------------------------------------------------------- |
+| 401    | `unauthorized`         | no token, or the wrong one                                             |
+| 503    | `no_token`             | the box has no `GATEWAY_TOKEN` yet                                     |
+| 404    | `not_found`            | a path outside `/svc/`                                                 |
+| 404    | `unknown_service`      | no service has the slug                                                |
+| 403    | `service_disabled`     | the service is off, or its row names an upstream it may not            |
+| 405    | `method_not_allowed`   | the method is not in the row                                           |
+| 403    | `path_not_allowed`     | the path is under none of the row's prefixes                           |
+| 400    | `bad_path`             | a `.`, `..` or empty segment, a `\` or `;`, an encoded `/` `\` `.` `%` |
+| 502    | `gateway_error`        | the gateway could not read its registry                                |
+| 502    | `upstream_refused`     | the upstream name resolves outside `mantle_services`                   |
+| 502    | `upstream_unreachable` | the service did not answer                                             |
+| 504    | `upstream_timeout`     | the service went quiet past `GATEWAY_UPSTREAM_IDLE_MS`                 |
+| 413    | `too_large`            | the body is over `GATEWAY_MAX_BODY_BYTES`                              |
 
-The gateway answers `GET /healthz` without a token. It carries plain HTTP
-only: an upgrade (a WebSocket) is closed.
+The gateway answers `GET /healthz` without a token (`{ "ok": true }`). It
+carries plain HTTP only: an upgrade (a WebSocket) is closed. It holds at
+most 256 connections, and a request must arrive whole within five minutes.
 
 ## A box service
 
@@ -135,8 +150,10 @@ methods it serves.
 | `GATEWAY_MEM_LIMIT`        | `256m`                | the container's memory (compose)                       |
 
 The gateway runs on Bun or Node (`MANTLE_RUNTIME`, `scripts/run-service.sh`).
-Its environment is the least it needs: the database (the registry and the
-call log, as the runtime role on a box that runs it) and its token.
+It holds no service key. It does hold its token, the database URL and the
+master key (the runtime role's password is derived from it): the registry
+and the call log live in the database. That is why it listens on the default
+network only.
 
 ## Code
 

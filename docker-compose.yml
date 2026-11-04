@@ -669,10 +669,12 @@ services:
   # It routes /svc/<slug>/<path> only to a service registered in
   # gateway_services (slug, upstream on mantle_services, allowed paths and
   # methods, enabled), connects only to an address on mantle_services, and
-  # writes one gateway_calls row per call. It holds no service secret: the
-  # brain adds the service's vault key at call time. Its env is the least it
-  # needs: the database (the registry and the call log, as the runtime role
-  # when the box runs it) and its token. Always on, no profile: tiny.
+  # writes one gateway_calls row per call. It holds no service key: the
+  # brain adds the service's vault key at call time. It does hold the
+  # database (the registry and the call log, as the runtime role when the
+  # box runs it) and the master key that role's password derives from, so it
+  # listens on its own default-network address only and drops connections
+  # from mantle_services. Always on, no profile: tiny.
   gateway:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ['scripts/run-service.sh', 'server/gateway', 'src/main.ts']

@@ -44,6 +44,10 @@ describe('parseTarget', () => {
       '/svc/pcms/a\\b',
       '/svc/pcms/a%00b',
       '/svc/pcms/..',
+      '/svc/pcms/api/..;/admin',
+      '/svc/pcms/api;x',
+      '/svc/pcms/api/%252e%252e/admin',
+      '/svc/pcms/api/%25',
     ]) {
       expect(parseTarget(t), t).toBe(REFUSALS.badPath);
     }
