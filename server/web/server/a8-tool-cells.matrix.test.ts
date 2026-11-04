@@ -752,7 +752,9 @@ const NARROWED: Readonly<Record<string, number>> = {
  *  (sandboxd), a federated peer brain and the browser sidecar that draws a
  *  canvas (present_export). */
 const NOT_RUN: Readonly<Record<string, number>> = {
-  'an allowed call needs a model or the outside (stubbed)': 68,
+  // 68 to 76: speech_file_create's 8 cells (canvas media, task a265178d),
+  // a TTS call stubbed as every paid model call is.
+  'an allowed call needs a model or the outside (stubbed)': 76,
   'an allowed call needs a sandbox (sandboxd, outside the box)': 8,
   'an allowed call needs a federated peer brain (outside the box)': 8,
   'an allowed call needs the parser service (outside the box), and a real drawing': 20,
