@@ -2,8 +2,10 @@
 
 The production stack is `docker-compose.yml` plus `docker-compose.client.yml`:
 published images, a migrate gate, healthchecks, restart policies, the parser
-service that reads every uploaded file ([parser.md](parser.md)) and a headless
-browser for PDF export, an always-on Tailscale sidecar (idle until you
+service that reads every uploaded file ([parser.md](parser.md)), the service
+gateway that is the one door to the box's own services
+([gateway.md](gateway.md)) and a headless browser for PDF export, an
+always-on Tailscale sidecar (idle until you
 activate it from Settings → Network), and opt-in profiles for the local
 embedder (Ollama) and CLI sandboxes. This runbook covers the **build → push → deploy**
 loop and the **one-time data migration** from your dev brain.
