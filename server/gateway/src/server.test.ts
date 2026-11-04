@@ -24,16 +24,16 @@ const seen: Array<{
 const calls: GatewayCallEntry[] = [];
 
 const services: Record<string, RouteService> = {
-  pcms: {
-    slug: 'pcms',
-    upstream: 'pcms-agent:0',
+  billing: {
+    slug: 'billing',
+    upstream: 'billing-agent:0',
     pathPrefixes: ['/mcp', '/api/'],
     methods: ['GET', 'POST'],
     enabled: true,
   },
   off: {
     slug: 'off',
-    upstream: 'pcms-agent:0',
+    upstream: 'billing-agent:0',
     pathPrefixes: ['/'],
     methods: ['GET'],
     enabled: false,
@@ -61,7 +61,7 @@ function start(token: string): Promise<http.Server> {
       const row = services[slug];
       return row ? { ...row, upstream: row.upstream.replace(/:0$/, `:${upPort}`) } : null;
     },
-    address: async (host) => (host === 'pcms-agent' ? '127.0.0.1' : null),
+    address: async (host) => (host === 'billing-agent' ? '127.0.0.1' : null),
     record: (e) => calls.push(e),
     maxBodyBytes: 1024,
     idleTimeoutMs: 5_000,
@@ -117,12 +117,12 @@ describe('the gateway server', () => {
   });
 
   it('sends an allowed call on, without its own headers, and logs it', async () => {
-    const res = await fetch(`${gw}/svc/pcms/mcp?q=1`, {
+    const res = await fetch(`${gw}/svc/billing/mcp?q=1`, {
       method: 'POST',
       headers: {
         ...auth,
         authorization: 'Bearer service-key',
-        'x-mantle-caller': 'agent:pcms-analyst',
+        'x-mantle-caller': 'agent:billing-analyst',
         'x-mantle-login': '11111111-2222-4333-8444-555555555555',
         'content-type': 'application/json',
       },
@@ -137,23 +137,33 @@ describe('the gateway server', () => {
     expect(got.headers['x-mantle-gateway-token']).toBeUndefined();
     expect(got.headers['x-mantle-caller']).toBeUndefined();
     expect(got.headers['x-mantle-login']).toBeUndefined();
-    expect(got.headers.host).toBe(`pcms-agent:${upPort}`);
-    expect(got.headers['x-forwarded-prefix']).toBe('/svc/pcms');
+    expect(got.headers.host).toBe(`billing-agent:${upPort}`);
+    expect(got.headers['x-forwarded-prefix']).toBe('/svc/billing');
     expect(await lastCall()).toMatchObject({
-      serviceSlug: 'pcms',
+      serviceSlug: 'billing',
       method: 'POST',
       path: '/mcp',
       status: 200,
       requestBytes: 17,
-      caller: 'agent:pcms-analyst',
+      caller: 'agent:billing-analyst',
       loginId: '11111111-2222-4333-8444-555555555555',
       refusal: null,
     });
     expect((await lastCall()).responseBytes).toBeGreaterThan(0);
   });
 
+  it('caps the path on the call row at 512 characters', async () => {
+    const res = await fetch(`${gw}/svc/billing/api/${'a'.repeat(2_000)}`, { headers: auth });
+    expect(res.status).toBe(200);
+    await res.text();
+    expect((await lastCall()).path).toBe(`/api/${'a'.repeat(507)}`);
+  });
+
   it('passes a redirect back as it is (the brain refuses one that leaves)', async () => {
-    const res = await fetch(`${gw}/svc/pcms/api/redirect`, { headers: auth, redirect: 'manual' });
+    const res = await fetch(`${gw}/svc/billing/api/redirect`, {
+      headers: auth,
+      redirect: 'manual',
+    });
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('http://example.invalid/x');
   });
@@ -163,16 +173,22 @@ describe('the gateway server', () => {
     ['a switched-off service', '/svc/off/x', { headers: auth }, 403, 'service_disabled'],
     [
       'a method it does not allow',
-      '/svc/pcms/mcp',
+      '/svc/billing/mcp',
       { method: 'DELETE', headers: auth },
       405,
       'method_not_allowed',
     ],
-    ['a path it does not allow', '/svc/pcms/admin', { headers: auth }, 403, 'path_not_allowed'],
-    ['a prefix look-alike', '/svc/pcms/mcpx', { headers: auth }, 403, 'path_not_allowed'],
-    ['an encoded separator', '/svc/pcms/mcp%2F..%2Fadmin', { headers: auth }, 400, 'bad_path'],
-    ['a path parameter step', '/svc/pcms/api/..;/admin', { headers: auth }, 400, 'bad_path'],
-    ['a double-encoded dot', '/svc/pcms/api/%252e%252e/admin', { headers: auth }, 400, 'bad_path'],
+    ['a path it does not allow', '/svc/billing/admin', { headers: auth }, 403, 'path_not_allowed'],
+    ['a prefix look-alike', '/svc/billing/mcpx', { headers: auth }, 403, 'path_not_allowed'],
+    ['an encoded separator', '/svc/billing/mcp%2F..%2Fadmin', { headers: auth }, 400, 'bad_path'],
+    ['a path parameter step', '/svc/billing/api/..;/admin', { headers: auth }, 400, 'bad_path'],
+    [
+      'a double-encoded dot',
+      '/svc/billing/api/%252e%252e/admin',
+      { headers: auth },
+      400,
+      'bad_path',
+    ],
     ['anything off /svc/', '/admin', { headers: auth }, 404, 'not_found'],
     ['a stack service upstream', '/svc/stack/x', { headers: auth }, 403, 'service_disabled'],
     [
@@ -202,7 +218,7 @@ describe('the gateway server', () => {
         { authorization: `Bearer ${TOKEN}` },
         { 'x-mantle-caller': 'agent:forged' },
       ]) {
-        const res = await fetch(`${gw}/svc/pcms/mcp`, { headers });
+        const res = await fetch(`${gw}/svc/billing/mcp`, { headers });
         expect(res.status).toBe(401);
         expect(await res.json()).toMatchObject({ code: 'unauthorized' });
       }
@@ -215,7 +231,7 @@ describe('the gateway server', () => {
   });
 
   it('refuses a body over the cap, declared or streamed', async () => {
-    const res = await fetch(`${gw}/svc/pcms/mcp`, {
+    const res = await fetch(`${gw}/svc/billing/mcp`, {
       method: 'POST',
       headers: auth,
       body: 'x'.repeat(4096),
@@ -228,7 +244,7 @@ describe('the gateway server', () => {
         c.close();
       },
     });
-    const streamed = await fetch(`${gw}/svc/pcms/mcp`, {
+    const streamed = await fetch(`${gw}/svc/billing/mcp`, {
       method: 'POST',
       headers: auth,
       body: big,
@@ -254,7 +270,7 @@ describe('the gateway server', () => {
     console.error = () => {};
     try {
       const url = `http://127.0.0.1:${(broken.address() as AddressInfo).port}`;
-      const res = await fetch(`${url}/svc/pcms/mcp`, { headers: auth });
+      const res = await fetch(`${url}/svc/billing/mcp`, { headers: auth });
       expect(res.status).toBe(502);
       expect(await res.json()).toMatchObject({ code: 'gateway_error' });
       expect(await lastCall()).toMatchObject({ status: 502, refusal: 'gateway_error' });
@@ -279,7 +295,7 @@ describe('the gateway server', () => {
     await new Promise<void>((r) => closed.listen(0, '127.0.0.1', r));
     try {
       const url = `http://127.0.0.1:${(closed.address() as AddressInfo).port}`;
-      const res = await fetch(`${url}/svc/pcms/mcp`, { headers: auth });
+      const res = await fetch(`${url}/svc/billing/mcp`, { headers: auth });
       expect(res.status).toBe(503);
       expect(await res.json()).toMatchObject({ code: 'registry_unavailable' });
       expect(seen).toEqual([]);
@@ -296,7 +312,7 @@ describe('the gateway server', () => {
       const url = `http://127.0.0.1:${(bare.address() as AddressInfo).port}`;
       const warn = console.warn;
       console.warn = () => {};
-      const res = await fetch(`${url}/svc/pcms/mcp`, { headers: auth }).finally(() => {
+      const res = await fetch(`${url}/svc/billing/mcp`, { headers: auth }).finally(() => {
         console.warn = warn;
       });
       expect(res.status).toBe(503);

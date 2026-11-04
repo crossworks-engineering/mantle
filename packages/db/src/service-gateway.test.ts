@@ -8,14 +8,14 @@ import { gatewayCallBatch } from './service-gateway-calls';
 
 describe('upstreamRefusal', () => {
   it("takes a service's container name and port", () => {
-    for (const u of ['pcms-agent:8080', 'snapdb_agent:9000', 'a:1']) {
+    for (const u of ['billing-agent:8080', 'snapdb_agent:9000', 'a:1']) {
       expect(upstreamRefusal(u), u).toBeNull();
     }
   });
 
   it('refuses a dotted name, an IP, a stack service, loopback and odd shapes', () => {
     for (const u of [
-      'pcms.example.com:443', // a public name could answer any address
+      'billing.example.com:443', // a public name could answer any address
       '172-30-0-1.sslip.io:22',
       '10.0.0.5:80',
       '1234:80',
@@ -26,12 +26,12 @@ describe('upstreamRefusal', () => {
       'mantle_pg:5432',
       'localhost:80',
       'gateway:8097',
-      'PCMS:80',
-      'pcms',
-      'pcms:0',
-      'pcms:70000',
-      'pcms:80/x',
-      'user@pcms:80',
+      'BILLING:80',
+      'billing',
+      'billing:0',
+      'billing:70000',
+      'billing:80/x',
+      'user@billing:80',
     ]) {
       expect(upstreamRefusal(u), u).not.toBeNull();
     }
@@ -63,12 +63,12 @@ describe('pathPrefixRefusal', () => {
 
 describe('checkGatewayService', () => {
   it('fills the defaults: all paths, GET only, reads-only, on', () => {
-    expect(checkGatewayService({ slug: 'pcms', upstream: 'pcms-agent:8080' })).toEqual({
+    expect(checkGatewayService({ slug: 'billing', upstream: 'billing-agent:8080' })).toEqual({
       ok: true,
       value: {
-        slug: 'pcms',
-        name: 'pcms',
-        upstream: 'pcms-agent:8080',
+        slug: 'billing',
+        name: 'billing',
+        upstream: 'billing-agent:8080',
         pathPrefixes: ['/'],
         methods: ['GET'],
         readsOnly: true,
@@ -79,14 +79,16 @@ describe('checkGatewayService', () => {
   });
 
   it('refuses a bad slug or method, and names the fix', () => {
-    expect(checkGatewayService({ slug: 'PCMS', upstream: 'a:1' })).toMatchObject({
+    expect(checkGatewayService({ slug: 'BILLING', upstream: 'a:1' })).toMatchObject({
       ok: false,
       error: expect.stringMatching(/slug must be/),
     });
     expect(
-      checkGatewayService({ slug: 'pcms', upstream: 'a:1', methods: ['GET', 'TRACE'] }),
+      checkGatewayService({ slug: 'billing', upstream: 'a:1', methods: ['GET', 'TRACE'] }),
     ).toMatchObject({ ok: false, error: expect.stringMatching(/TRACE/) });
-    expect(checkGatewayService({ slug: 'pcms', upstream: 'a:1', pathPrefixes: [] })).toMatchObject({
+    expect(
+      checkGatewayService({ slug: 'billing', upstream: 'a:1', pathPrefixes: [] }),
+    ).toMatchObject({
       ok: false,
     });
   });
@@ -97,7 +99,7 @@ describe('gatewayCallBatch', () => {
     const [r] = gatewayCallBatch({
       calls: [
         {
-          serviceSlug: 'pc\u0000ms',
+          serviceSlug: 'bill\u0000ing',
           method: 'GET',
           path: '/a\u0000b',
           status: 70000,
@@ -111,7 +113,7 @@ describe('gatewayCallBatch', () => {
       ],
     })!;
     expect(r).toEqual({
-      serviceSlug: 'pcms',
+      serviceSlug: 'billing',
       method: 'GET',
       path: '/ab',
       status: 999,

@@ -154,7 +154,7 @@ export function createGateway(opts: GatewayOptions): http.Server {
       opts.record({
         serviceSlug: slug,
         method,
-        path,
+        path: path.slice(0, 512),
         status: res.statusCode,
         requestBytes,
         responseBytes,

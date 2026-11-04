@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { decide, isRefusal, parseTarget, REFUSALS, underPrefix } from './route';
 
 const svc = {
-  slug: 'pcms',
-  upstream: 'pcms-agent:8080',
+  slug: 'billing',
+  upstream: 'billing-agent:8080',
   pathPrefixes: ['/mcp', '/api/'],
   methods: ['GET', 'POST'],
   enabled: true,
@@ -11,19 +11,23 @@ const svc = {
 
 describe('parseTarget', () => {
   it('reads the slug, the path below it and the query', () => {
-    expect(parseTarget('/svc/pcms/mcp?x=1')).toEqual({ slug: 'pcms', path: '/mcp', query: '?x=1' });
-    expect(parseTarget('/svc/pcms')).toEqual({ slug: 'pcms', path: '/', query: '' });
-    expect(parseTarget('/svc/pcms/')).toEqual({ slug: 'pcms', path: '/', query: '' });
-    expect(parseTarget('/svc/pcms/api/rows/')).toEqual({
-      slug: 'pcms',
+    expect(parseTarget('/svc/billing/mcp?x=1')).toEqual({
+      slug: 'billing',
+      path: '/mcp',
+      query: '?x=1',
+    });
+    expect(parseTarget('/svc/billing')).toEqual({ slug: 'billing', path: '/', query: '' });
+    expect(parseTarget('/svc/billing/')).toEqual({ slug: 'billing', path: '/', query: '' });
+    expect(parseTarget('/svc/billing/api/rows/')).toEqual({
+      slug: 'billing',
       path: '/api/rows/',
       query: '',
     });
   });
 
   it('takes the safe percent codes a tool sends for plain values', () => {
-    expect(parseTarget('/svc/pcms/api/rows/a%20b%3Ac%40d?x=%2F')).toEqual({
-      slug: 'pcms',
+    expect(parseTarget('/svc/billing/api/rows/a%20b%3Ac%40d?x=%2F')).toEqual({
+      slug: 'billing',
       path: '/api/rows/a%20b%3Ac%40d',
       query: '?x=%2F',
     });
@@ -36,37 +40,37 @@ describe('parseTarget', () => {
   });
 
   it('refuses a slug the registry could never hold', () => {
-    for (const t of ['/svc//x', '/svc/PCMS/x', '/svc/-a/x', `/svc/${'a'.repeat(41)}/x`]) {
+    for (const t of ['/svc//x', '/svc/BILLING/x', '/svc/-a/x', `/svc/${'a'.repeat(41)}/x`]) {
       expect(parseTarget(t), t).toBe(REFUSALS.unknown);
     }
   });
 
   it('refuses a path the service would read differently', () => {
     for (const t of [
-      '/svc/pcms/../newton/x',
-      '/svc/pcms/./mcp',
-      '/svc/pcms/a//b',
-      '/svc/pcms/%2e%2e/newton',
-      '/svc/pcms/a%2Fb',
-      '/svc/pcms/a%5cb',
-      '/svc/pcms/a\\b',
-      '/svc/pcms/a%00b',
-      '/svc/pcms/..',
-      '/svc/pcms/api/..;/admin',
-      '/svc/pcms/api;x',
-      '/svc/pcms/api/%252e%252e/admin',
-      '/svc/pcms/api/%25',
-      '/svc/pcms/api/%c0%ae%c0%ae/admin', // overlong UTF-8 dot
-      '/svc/pcms/api/%e0%80%ae', // a longer overlong dot
-      '/svc/pcms/api/%ef%bc%8e%ef%bc%8e/admin', // fullwidth dots
-      '/svc/pcms/api/%u002e%u002e/admin', // IIS-style escape
-      '/svc/pcms/api/%3B',
-      '/svc/pcms/api/%0a',
-      '/svc/pcms/api/%7f',
-      '/svc/pcms/api/caf\u00e9', // a raw byte past ASCII
-      '/svc/pcms/api/a b',
-      '/svc/pcms/api/%',
-      '/svc/pcms/api/%2',
+      '/svc/billing/../payroll/x',
+      '/svc/billing/./mcp',
+      '/svc/billing/a//b',
+      '/svc/billing/%2e%2e/payroll',
+      '/svc/billing/a%2Fb',
+      '/svc/billing/a%5cb',
+      '/svc/billing/a\\b',
+      '/svc/billing/a%00b',
+      '/svc/billing/..',
+      '/svc/billing/api/..;/admin',
+      '/svc/billing/api;x',
+      '/svc/billing/api/%252e%252e/admin',
+      '/svc/billing/api/%25',
+      '/svc/billing/api/%c0%ae%c0%ae/admin', // overlong UTF-8 dot
+      '/svc/billing/api/%e0%80%ae', // a longer overlong dot
+      '/svc/billing/api/%ef%bc%8e%ef%bc%8e/admin', // fullwidth dots
+      '/svc/billing/api/%u002e%u002e/admin', // IIS-style escape
+      '/svc/billing/api/%3B',
+      '/svc/billing/api/%0a',
+      '/svc/billing/api/%7f',
+      '/svc/billing/api/caf\u00e9', // a raw byte past ASCII
+      '/svc/billing/api/a b',
+      '/svc/billing/api/%',
+      '/svc/billing/api/%2',
     ]) {
       expect(parseTarget(t), t).toBe(REFUSALS.badPath);
     }

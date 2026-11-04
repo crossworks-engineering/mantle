@@ -82,6 +82,11 @@ said in the log; with none free the install stops, and a roll is refused
 with no container changed. With no range the gateway refuses every
 service.
 
+The first roll to this release is not covered by that check: the box's old
+updater runs it, so `ensure_services_subnet` does not run until the next
+roll. Before that first roll, check that no Docker network or host route
+overlaps the range, and set `MANTLE_SERVICES_SUBNET` in `.env` if one does.
+
 `reads_only` is a mark, not a rule: an MCP service reads over POST. A
 service that must not write gets a read-only login of its own.
 
@@ -103,7 +108,7 @@ go, as a tool group's integration does.
 ## Calling a service
 
 - **An http tool**: its URL is `${GATEWAY_URL}/svc/<slug>/...`, written out,
-  for example `http://gateway:8097/svc/pcms/query`. The slug must be literal
+  for example `http://gateway:8097/svc/billing/query`. The slug must be literal
   in the URL the author wrote. A model-filled `{param}` may fill the path
   below it but never choose the service: a request whose resolved URL names
   another slug is refused before it is sent. The URL may carry no
@@ -165,15 +170,15 @@ A service's own compose file joins the network by its fixed name:
 
 ```yaml
 services:
-  pcms-agent:
-    image: example/pcms-agent:1.0.0
+  billing-agent:
+    image: example/billing-agent:1.0.0
     networks: [mantle_services]
 networks:
   mantle_services:
     external: true
 ```
 
-Then register it with `upstream: pcms-agent:8080` and the paths and
+Then register it with `upstream: billing-agent:8080` and the paths and
 methods it serves.
 
 ## Settings

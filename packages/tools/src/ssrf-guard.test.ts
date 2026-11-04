@@ -131,19 +131,19 @@ describe('the service gateway exemption (the second deliberate carve)', () => {
 
   it('allows /svc/<slug>/ on the exact gateway origin', async () => {
     await withGateway(base, async () => {
-      await expect(assertFetchableUrl(`${base}/svc/pcms/query`)).resolves.toBeUndefined();
-      await expect(assertFetchableUrl(`${base}/svc/pcms`)).resolves.toBeUndefined();
-      await expect(assertFetchableUrl(`${base}/svc/pcms/mcp?x=1`)).resolves.toBeUndefined();
+      await expect(assertFetchableUrl(`${base}/svc/billing/query`)).resolves.toBeUndefined();
+      await expect(assertFetchableUrl(`${base}/svc/billing`)).resolves.toBeUndefined();
+      await expect(assertFetchableUrl(`${base}/svc/billing/mcp?x=1`)).resolves.toBeUndefined();
     });
   });
 
   it('still refuses every other private host, even with /svc/ paths', async () => {
     await withGateway(base, async () => {
-      await expect(assertFetchableUrl('http://postgres:5432/svc/pcms/x')).rejects.toThrow();
-      await expect(assertFetchableUrl('http://127.0.0.1:8097/svc/pcms/x')).rejects.toThrow();
-      await expect(assertFetchableUrl('http://10.0.0.5/svc/pcms/x')).rejects.toThrow();
-      await expect(assertFetchableUrl('http://gateway:8098/svc/pcms/x')).rejects.toThrow();
-      await expect(assertFetchableUrl('https://gateway:8097/svc/pcms/x')).rejects.toThrow();
+      await expect(assertFetchableUrl('http://postgres:5432/svc/billing/x')).rejects.toThrow();
+      await expect(assertFetchableUrl('http://127.0.0.1:8097/svc/billing/x')).rejects.toThrow();
+      await expect(assertFetchableUrl('http://10.0.0.5/svc/billing/x')).rejects.toThrow();
+      await expect(assertFetchableUrl('http://gateway:8098/svc/billing/x')).rejects.toThrow();
+      await expect(assertFetchableUrl('https://gateway:8097/svc/billing/x')).rejects.toThrow();
       // The service's own private address, called directly.
       await expect(assertFetchableUrl('http://172.30.0.7:8080/query')).rejects.toThrow();
     });
@@ -151,11 +151,11 @@ describe('the service gateway exemption (the second deliberate carve)', () => {
 
   it('refuses the same host on any other path', async () => {
     await withGateway(base, async () => {
-      for (const path of ['/', '/healthz', '/svc/', '/svc', '/svcx/pcms', '/api/svc/pcms']) {
+      for (const path of ['/', '/healthz', '/svc/', '/svc', '/svcx/billing', '/api/svc/billing']) {
         await expect(assertFetchableUrl(`${base}${path}`), path).rejects.toThrow();
       }
       // A slug the gateway would never route (upper case, too long, odd).
-      await expect(assertFetchableUrl(`${base}/svc/PCMS/x`)).rejects.toThrow();
+      await expect(assertFetchableUrl(`${base}/svc/BILLING/x`)).rejects.toThrow();
       await expect(assertFetchableUrl(`${base}/svc/-x/y`)).rejects.toThrow();
       await expect(assertFetchableUrl(`${base}/svc/${'a'.repeat(41)}/y`)).rejects.toThrow();
     });
@@ -172,14 +172,14 @@ describe('the service gateway exemption (the second deliberate carve)', () => {
 
   it('assertPublicUrl (a URL for a third party) takes no carve', async () => {
     await withGateway(base, async () => {
-      await expect(assertPublicUrl(`${base}/svc/pcms/x`)).rejects.toThrow();
+      await expect(assertPublicUrl(`${base}/svc/billing/x`)).rejects.toThrow();
     });
   });
 
   it('is inert when GATEWAY_URL is unset', async () => {
     await withGateway(undefined, async () => {
-      await expect(assertFetchableUrl(`${base}/svc/pcms/x`)).rejects.toThrow();
-      expect(isGatewayUrl(new URL(`${base}/svc/pcms/x`))).toBe(false);
+      await expect(assertFetchableUrl(`${base}/svc/billing/x`)).rejects.toThrow();
+      expect(isGatewayUrl(new URL(`${base}/svc/billing/x`))).toBe(false);
     });
   });
 
@@ -250,7 +250,7 @@ describe('the service gateway exemption (the second deliberate carve)', () => {
       await withGateway(base, async () => {
         const guard = hopGuard('https://1.1.1.1/start');
         await expect(guard('https://1.1.1.1/start')).resolves.toBeUndefined();
-        await expect(guard(`${base}/svc/pcms/x`)).rejects.toThrow(/into the service gateway/);
+        await expect(guard(`${base}/svc/billing/x`)).rejects.toThrow(/into the service gateway/);
       });
     });
   });
@@ -261,32 +261,39 @@ describe('the service gateway exemption (the second deliberate carve)', () => {
         expect(gatewayHttpBinding('https://api.example.com/{x}', 'https://api.example.com/y')).toBe(
           null,
         );
-        expect(gatewayHttpBinding(`${base}/svc/pcms/query`, `${base}/svc/pcms/query`)).toEqual({
-          slug: 'pcms',
+        expect(
+          gatewayHttpBinding(`${base}/svc/billing/query`, `${base}/svc/billing/query`),
+        ).toEqual({
+          slug: 'billing',
         });
-        expect(gatewayHttpBinding(`${base}/svc/pcms/{path}`, `${base}/svc/pcms/rows`)).toEqual({
-          slug: 'pcms',
+        expect(
+          gatewayHttpBinding(`${base}/svc/billing/{path}`, `${base}/svc/billing/rows`),
+        ).toEqual({
+          slug: 'billing',
         });
         // Two model-filled segments step to another service: refused.
         expect(
-          gatewayHttpBinding(`${base}/svc/pcms/{a}/{b}`, `${base}/svc/pcms/../newton`),
+          gatewayHttpBinding(`${base}/svc/billing/{a}/{b}`, `${base}/svc/billing/../payroll`),
         ).toEqual({
-          error: expect.stringMatching(/written for gateway service 'pcms'/),
+          error: expect.stringMatching(/written for gateway service 'billing'/),
         });
         // A slug filled from a parameter: refused.
-        expect(gatewayHttpBinding(`${base}/svc/{slug}/q`, `${base}/svc/pcms/q`)).toEqual({
+        expect(gatewayHttpBinding(`${base}/svc/{slug}/q`, `${base}/svc/billing/q`)).toEqual({
           error: expect.stringMatching(/must be fixed/),
         });
-        expect(gatewayHttpBinding(`${base}/svc/pc{x}/q`, `${base}/svc/pcms/q`)).toEqual({
+        expect(gatewayHttpBinding(`${base}/svc/bi{x}/q`, `${base}/svc/billing/q`)).toEqual({
           error: expect.stringMatching(/must be fixed/),
         });
         // A secret in a gateway URL would land in the gateway's log.
         expect(
-          gatewayHttpBinding(`${base}/svc/pcms/q?k={{secret:pcms/key}}`, `${base}/svc/pcms/q?k=x`),
+          gatewayHttpBinding(
+            `${base}/svc/billing/q?k={{secret:billing/key}}`,
+            `${base}/svc/billing/q?k=x`,
+          ),
         ).toEqual({ error: expect.stringMatching(/may not carry/) });
         // A tool written for a public API that a parameter points at the
         // gateway gets no token either.
-        expect(gatewayHttpBinding('{base}/q', `${base}/svc/pcms/q`)).toEqual({
+        expect(gatewayHttpBinding('{base}/q', `${base}/svc/billing/q`)).toEqual({
           error: expect.stringMatching(/must be fixed/),
         });
       });
@@ -323,17 +330,20 @@ describe('the service gateway exemption (the second deliberate carve)', () => {
           seen.push([String(input), new Headers(init?.headers)]);
           return new Response('ok');
         };
-        const f = gatewayConnectorFetch(`${base}/svc/pcms/mcp`, 'mcp-pcms', inner);
-        await f(`${base}/svc/pcms/mcp`, { method: 'POST', headers: { authorization: 'Bearer k' } });
+        const f = gatewayConnectorFetch(`${base}/svc/billing/mcp`, 'mcp-billing', inner);
+        await f(`${base}/svc/billing/mcp`, {
+          method: 'POST',
+          headers: { authorization: 'Bearer k' },
+        });
         expect(seen[0]![1].get('x-mantle-gateway-token')).toBe('tok');
-        expect(seen[0]![1].get('x-mantle-caller')).toBe('connector:mcp-pcms');
+        expect(seen[0]![1].get('x-mantle-caller')).toBe('connector:mcp-billing');
         expect(seen[0]![1].get('authorization')).toBe('Bearer k');
-        await expect(f(`${base}/svc/newton/mcp`, { method: 'POST' })).rejects.toThrow(
-          /bound to 'pcms'/,
+        await expect(f(`${base}/svc/payroll/mcp`, { method: 'POST' })).rejects.toThrow(
+          /bound to 'billing'/,
         );
         // A connector to a public server never sends the gateway headers.
         const pub = gatewayConnectorFetch('https://mcp.example.com/mcp', 'ext', inner);
-        await expect(pub(`${base}/svc/pcms/mcp`, { method: 'POST' })).rejects.toThrow(
+        await expect(pub(`${base}/svc/billing/mcp`, { method: 'POST' })).rejects.toThrow(
           /bound to no gateway service/,
         );
         await pub('https://mcp.example.com/mcp', { method: 'POST' });

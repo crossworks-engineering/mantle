@@ -101,9 +101,12 @@ export function brainRegistry(
     const map = parseServices(await res.json().catch(() => null));
     if (!map) throw new RegistryUnavailable('the brain sent no registry');
     cache.set('registry', map);
+    failed = null;
     return map;
   }
 
+  // Once per failed read, on the shared promise: the backoff doubles per
+  // failure, not per caller waiting on it.
   function fail(err: unknown): never {
     const reason = err instanceof RegistryUnavailable ? err.message : 'the registry read failed';
     const backoff = failed ? Math.min(failed.backoff * 2, BACKOFF_MAX_MS) : BACKOFF_FIRST_MS;
@@ -121,14 +124,11 @@ export function brainRegistry(
     let map = cache.get('registry');
     if (!map) {
       if (failed && now() < failed.until) throw new RegistryUnavailable(failed.reason);
-      try {
-        map = await (loading ??= load().finally(() => {
+      map = await (loading ??= load()
+        .catch(fail)
+        .finally(() => {
           loading = null;
         }));
-        failed = null;
-      } catch (err) {
-        fail(err);
-      }
     }
     return map.get(slug) ?? null;
   };

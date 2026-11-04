@@ -71,7 +71,7 @@ export const gateway_service_list: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      slug: { type: 'string', description: "Only this service, e.g. 'pcms'." },
+      slug: { type: 'string', description: "Only this service, e.g. 'billing'." },
       hours: {
         type: 'integer',
         minimum: 1,
@@ -137,13 +137,17 @@ export const gateway_service_set: BuiltinToolDef = {
       slug: {
         type: 'string',
         pattern: '^[a-z0-9][a-z0-9-]{0,39}$',
-        description: "The URL segment after /svc/, e.g. 'pcms'.",
+        description: "The URL segment after /svc/, e.g. 'billing'.",
       },
-      name: { type: 'string', maxLength: 120, description: "Display name, e.g. 'PCMS snapshot'." },
+      name: {
+        type: 'string',
+        maxLength: 120,
+        description: "Display name, e.g. 'Billing snapshot'.",
+      },
       upstream: {
         type: 'string',
         maxLength: 200,
-        description: "host:port on mantle_services, e.g. 'pcms-agent:8080'.",
+        description: "host:port on mantle_services, e.g. 'billing-agent:8080'.",
       },
       path_prefixes: {
         type: 'array',

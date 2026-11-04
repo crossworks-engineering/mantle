@@ -111,6 +111,7 @@ export const BOX_CONTAINERS = [
   'sandboxd',
   'autoheal',
   'api',
+  'gateway',
   'worker_email',
   'worker_telegram',
   'worker_microsoft',
