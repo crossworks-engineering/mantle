@@ -73,6 +73,7 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
       libs: ['d3'],
       scripts: [],
       posterAt: null,
+      assets: [],
     });
     const [row] = await admin<{ path: string; type: string; text: string; css: string }[]>`
       select n.path::text as path, n.type::text as type, p.source_text as text, p.css

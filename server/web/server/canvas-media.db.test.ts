@@ -12,8 +12,8 @@
  *    sit outside the canvas's workspace (decisions 5 and 7);
  *  - the owner frame ticket names the declared ids; present_get names a
  *    declared file only to a caller who reads it (no file names leak);
- *  - an open link's media switch: only a Moderator of the canvas's home
- *    turns it on; off, the link serves no file; on, it serves a declared
+ *  - an open link's media switch: only an Admin user turns it on (the
+ *    link route is an Admin route); off, the link serves no file; on, it serves a declared
  *    file of the canvas's own workspace that the switch's login reads now,
  *    and nothing else (an Admin file, an undeclared file, after that login
  *    is disabled), each as the same 404; a contact share never serves one;
@@ -54,7 +54,8 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
   let dir = '';
   const tag = `cm${randomUUID().slice(0, 6)}`;
   const owner = randomUUID();
-  /** A Moderator of W. */
+  /** A Moderator of W (a member login). The owner, an Admin user, is a
+   *  Moderator of W too: the link routes are Admin routes. */
   const mod = randomUUID();
   /** A plain user of W. */
   const user = randomUUID();
@@ -70,9 +71,16 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
   /** Home `id` in `home` alone (Write for its users when `write`). */
   const homeIn = async (id: string, home: string, write = false) => {
     await m.withHeads([id], 'update', async (tx) => {
-      await tx.execute(sql`delete from item_grants where node_id = ${id}`);
+      await tx.execute(
+        sql`delete from item_grants where node_id = ${id} and via_folder_id is null`,
+      );
+      await tx.execute(sql`update item_grants set excluded = true, is_home = false, write = false
+                           where node_id = ${id} and workspace_id <> ${home}`);
       await tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home)
-        values (${id}, ${home}, ${write}, true)`);
+                           values (${id}, ${home}, ${write}, true)
+                           on conflict (node_id, workspace_id)
+                           do update set is_home = true, write = ${write}, excluded = false,
+                                         via_folder_id = null`);
     });
   };
   const fileIn = async (name: string, home: string) => {
@@ -172,13 +180,14 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
     )[0]!.id;
     await su(sql`delete from workspace_users where workspace_id = ${ws.w}`);
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
-      (${ws.w}, ${mod}, true), (${ws.w}, ${user}, false)`);
+      (${ws.w}, ${mod}, true), (${ws.w}, ${user}, false), (${ws.w}, ${owner}, true)`);
     for (const login of [mod, user]) {
       await su(
         sql`select "public"."mantle_ws_private_workspace"(set_config('mantle.scope_login', ${login}, true)::uuid)`,
       );
     }
 
+    await sys(() => f.ensureFilesRootBranch(owner));
     const folder = await sys(() =>
       f.createFolder({ ownerId: owner, parentPath: 'files', slug: tag }),
     );
@@ -292,10 +301,13 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
       expect(t.json.assets).toEqual([]);
     });
 
-    it('only a Moderator of the canvas home turns it on', async () => {
-      const refused = await route(user, 'PATCH', `/api/shares/${share.id}`, { media: true });
-      expect(refused.status).toBe(403);
-      const on = await route(mod, 'PATCH', `/api/shares/${share.id}`, { media: true });
+    it('only an Admin user may turn it on (the link route is an Admin route); a member is refused', async () => {
+      for (const login of [user, mod]) {
+        const refused = await route(login, 'PATCH', `/api/shares/${share.id}`, { media: true });
+        expect(refused.status).toBe(403);
+      }
+      expect((await asset(file.w)).status).toBe(404);
+      const on = await route(owner, 'PATCH', `/api/shares/${share.id}`, { media: true });
       expect(on.status, on.text).toBe(200);
       expect(on.json).toEqual({ ok: true, media: true });
     });
@@ -325,7 +337,7 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
         ownerId: owner,
         nodeId: cv,
         nodeType: 'present',
-        settings: { media: { by: mod } },
+        settings: { media: { by: owner } },
       } as never;
       expect(await isAssetAllowed(asShare, file.w)).toBe(true);
       expect(
@@ -334,11 +346,11 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
     });
 
     it('the switch login disabled, or the switch off: the next fetch is refused', async () => {
-      await su(sql`update auth.users set disabled_at = now() where id = ${mod}`);
+      await su(sql`update auth.users set disabled_at = now() where id = ${owner}`);
       expect((await asset(file.w)).status).toBe(404);
-      await su(sql`update auth.users set disabled_at = null where id = ${mod}`);
+      await su(sql`update auth.users set disabled_at = null where id = ${owner}`);
       expect((await asset(file.w)).status).toBe(200);
-      const off = await route(mod, 'PATCH', `/api/shares/${share.id}`, { media: false });
+      const off = await route(owner, 'PATCH', `/api/shares/${share.id}`, { media: false });
       expect(off.json).toEqual({ ok: true, media: false });
       expect((await asset(file.w)).status).toBe(404);
     });
