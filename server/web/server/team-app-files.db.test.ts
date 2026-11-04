@@ -104,7 +104,7 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
   const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
 
-  const SLUGS = ['file_upload', 'file_move', 'file_rename', 'file_list'];
+  const SLUGS = ['file_upload', 'file_move', 'file_rename', 'file_list', 'table_get'];
 
   type Req = { mode?: 'rw' | 'ro'; writes?: boolean };
 
@@ -625,9 +625,9 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
            where type = 'table' and data->>'sourceFileId' = ${file!.id}`,
     );
     expect(table?.home).toBe(holderWs);
-    const rows = await m.withViewer({ login: member, app: { id: teamApp } }, () =>
-      m.db.execute(sql`select id from nodes where id = ${table!.id}`),
-    );
-    expect((rows as unknown as unknown[]).length).toBe(1);
+    // The app reads it through the broker, as a run does.
+    const read = await memberCall(member, 'table_get', { id: table!.id });
+    expect(read.body.ok, JSON.stringify(read.body)).toBe(true);
+    expect(JSON.stringify(read.body.output)).toContain('P-101');
   });
 });

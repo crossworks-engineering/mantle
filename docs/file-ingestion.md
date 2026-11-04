@@ -219,10 +219,11 @@ than risk a silently inverted picture.
 `maybeExtractEmbeddedImages` (extractor) is shaped exactly like
 `maybeAutoTableSpreadsheet`: best-effort, isolated, deduped by
 `data.sourceFileId`, never able to block the text pass. Images are written to
-`files/auto-filed/extracted-images/<document>/` as ordinary `file` nodes, which is what
+`files/auto-filed/extracted-images/file-<file id>/` as ordinary `file` nodes, which is what
 keeps the feature small, since the extractor already indexes images (vision
 describe + OCR reads the labels _inside_ a screenshot) and Pages already embeds
-a stored image by node id.
+a stored image by node id. Each image takes the file's home and grants once,
+when it is made, as the import table does (docs/workspaces.md, "Parts of a file").
 
 Retrieval needed one addition. A vision worker looking at a cropped screenshot
 writes "a mobile settings screen with several input fields", true, and useless

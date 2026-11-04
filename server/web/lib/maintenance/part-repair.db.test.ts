@@ -88,6 +88,34 @@ describe.skipIf(!URL)('part-repair', () => {
       await tx.execute(sql`update item_grants set workspace_id = ${Q}, granted_by = ${owner}
                             where node_id = ${ids.moved} and is_home`);
     });
+    ids.second = await node('table', 'tables', source, ['auto-import']);
+    // A hand Write switch on the Admin home row.
+    ids.handWrite = await node('table', 'tables', source, ['auto-import']);
+    await m.withHeads([ids.handWrite], 'update', (tx) =>
+      tx.execute(
+        sql`update item_grants set write = true where node_id = ${ids.handWrite} and is_home`,
+      ),
+    );
+    // Placed by hand in a folder Q reads.
+    const shared = await node('branch', 'tables.shared', {});
+    await m.withSubtreeHeads(shared, [], (tx) =>
+      tx.execute(sql`insert into item_grants (node_id, workspace_id) values (${shared}, ${Q})`),
+    );
+    ids.placed = await node('table', 'tables.shared', source, ['auto-import']);
+    // A file that gives nothing but the Admin default: nothing to do, ever.
+    const adminFile = await node('file', 'files', {});
+    ids.adminOnly = await node('table', 'tables', { sourceFileId: adminFile }, ['auto-import']);
+    // A file whose home is archived.
+    const deadWs = randomUUID();
+    await su(sql`insert into workspaces (id, owner_id, name) values (${deadWs}, ${owner}, 'Gone')`);
+    const deadFile = await node('file', 'files', {});
+    await m.withHeads([deadFile], 'update', async (tx) => {
+      await tx.execute(sql`delete from item_grants where node_id = ${deadFile}`);
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
+        values (${deadFile}, ${deadWs}, true)`);
+    });
+    await su(sql`update workspaces set archived_at = now() where id = ${deadWs}`);
+    ids.noHome = await node('table', 'tables', { sourceFileId: deadFile }, ['auto-import']);
     // Its file is deleted.
     ids.orphan = await node('table', 'tables', { sourceFileId: randomUUID() }, ['auto-import']);
     // A user's copy, and a video's audio: not the worker's.
@@ -100,30 +128,48 @@ describe.skipIf(!URL)('part-repair', () => {
     await scratch?.drop();
   });
 
-  it('finds the worker-made items, sorts them, and changes nothing by reading', async () => {
+  const readyIds = async () =>
+    (await repair.findOldParts()).filter((r) => r.ready).map((r) => r.id);
+
+  it('finds the worker-made items, sorts them, and a dry run writes nothing', async () => {
     const before = await state(ids.ready!);
+    expect((await readyIds()).sort()).toEqual([ids.ready!, ids.image!, ids.second!].sort());
     const rows = await repair.findOldParts();
-    expect(
-      rows
-        .filter((r) => r.ready)
-        .map((r) => r.id)
-        .sort(),
-    ).toEqual([ids.ready!, ids.image!].sort());
     expect(rows.filter((r) => r.gone).map((r) => r.id)).toEqual([ids.orphan]);
-    for (const id of [ids.handGrant, ids.removed, ids.moved]) {
-      expect((await old(id!))?.ready).toBe(false);
+    for (const id of [
+      ids.handGrant,
+      ids.removed,
+      ids.moved,
+      ids.handWrite,
+      ids.placed,
+      ids.adminOnly,
+      ids.noHome,
+    ]) {
+      expect((await old(id!))?.ready, id).toBe(false);
     }
     expect(await old(ids.copy!)).toBeUndefined();
     expect(await old(ids.audio!)).toBeUndefined();
     expect(before.home).toBe(admin);
+    const log: string[] = [];
+    expect(await repair.runPartRepair({ apply: false, limit: 100 }, (l) => log.push(l))).toBe(true);
+    expect(log.join('\n')).toContain('DRY RUN');
     expect(await state(ids.ready!)).toEqual(before);
+    expect(log.join('\n')).not.toContain(before.read[0]!);
+  });
+
+  it('--limit changes at most that many, and each run reaches the next', async () => {
+    const ready = await readyIds();
+    const log: string[] = [];
+    expect(await repair.runPartRepair({ apply: true, limit: 1 }, (l) => log.push(l))).toBe(true);
+    expect(log.filter((l) => l.includes('  changed'))).toHaveLength(1);
+    expect(await readyIds()).toHaveLength(ready.length - 1);
+    await repair.runPartRepair({ apply: true, limit: 1 }, () => undefined);
+    expect(await readyIds()).toHaveLength(ready.length - 2);
   });
 
   it("gives a ready item the file's home and grants, and leaves the rest", async () => {
     const both = [P, Q].sort();
-    for (const r of (await repair.findOldParts()).filter((p) => p.ready)) {
-      await repair.repairOldPart(r);
-    }
+    await repair.runPartRepair({ apply: true, limit: 100 }, () => undefined);
     expect(await state(ids.ready!)).toEqual({ home: P, read: both });
     // An image out of its Admin folder's row too.
     expect(await state(ids.image!)).toEqual({ home: P, read: both });
@@ -135,7 +181,40 @@ describe.skipIf(!URL)('part-repair', () => {
     expect((await state(ids.moved!)).home).toBe(Q);
     expect((await state(ids.orphan!)).home).toBe(admin);
     expect((await state(ids.copy!)).home).toBe(admin);
-    // A second run changes nothing: the item is no longer Admin's default.
-    expect((await repair.findOldParts()).filter((p) => p.ready)).toEqual([]);
+    expect((await state(ids.handWrite!)).home).toBe(admin);
+    expect((await state(ids.placed!)).home).toBe(admin);
+    // A hand placing in a shared folder keeps its reader.
+    expect((await state(ids.placed!)).read).toContain(Q);
+    expect((await state(ids.adminOnly!)).home).toBe(admin);
+    // A second run changes nothing: no item is ready.
+    expect(await readyIds()).toEqual([]);
+  });
+
+  it('a hand edit since the read is left, and one failure does not stop the run', async () => {
+    const edited = await node('table', 'tables', { sourceFileId: ids.file }, ['auto-import']);
+    const [row] = (await repair.findOldParts()).filter((r) => r.id === edited);
+    expect(row?.ready).toBe(true);
+    await m.withHeads([edited], 'update', (tx) =>
+      tx.execute(sql`update item_grants set granted_by = ${owner}
+                      where node_id = ${edited} and is_home`),
+    );
+    expect(await repair.repairOldPart(row!)).toBe(false);
+    expect((await state(edited)).home).toBe(admin);
+    // One failure: counted, the run goes on, and it answers false.
+    const a = await node('table', 'tables', { sourceFileId: ids.file }, ['auto-import']);
+    const b = await node('table', 'tables', { sourceFileId: ids.file }, ['auto-import']);
+    const log: string[] = [];
+    const ok = await repair.runPartRepair(
+      { apply: true, limit: 100 },
+      (l) => log.push(l),
+      async (p) => {
+        if (p.id === a) throw new Error('refused');
+        return repair.repairOldPart(p);
+      },
+    );
+    expect(ok).toBe(false);
+    expect((await state(a)).home).toBe(admin);
+    expect((await state(b)).home).toBe(P);
+    expect(log.join('\n')).toContain('failed 1');
   });
 });

@@ -451,7 +451,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'part-repair',
     title: 'Give old import tables and images their file home and grants',
     description:
-      'Import tables and extracted images made before the fix sit in Admin. This gives each the home and grants of its file, once. It changes only an item with the untouched Admin default, and leaves and counts anything changed by hand or with a deleted file. Dry run (default) prints ids and counts. --apply changes at most --limit items (default 100, at most 1000). Never deletes anything. No model call.',
+      'Import tables and extracted images made before the fix sit in Admin. This gives each the home and grants of its file, once. It changes only an item with the untouched Admin default, and leaves and counts anything changed by hand, with a deleted file, or whose file gives it nothing but that default. Dry run (default) prints ids and counts. --apply changes at most --limit items (default 100, at most 1000). Never deletes anything. No model call.',
     kind: 'remedy',
     status: 'live',
     cost: 'io',
@@ -461,7 +461,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     applyFlag: '--apply',
     extraFlags: ['--limit=<n>'],
     notes:
-      'An item in Admin loses its Admin read unless the file holds Admin: that is the point, so read the counts first. Start with --limit=1. Run it once.',
+      'An item in Admin loses its Admin read unless the file holds Admin: that is the point, so read the counts first. Run with --limit=1 first, then again until no item is ready. A grant someone removes by hand from a repaired item that is still homed in Admin comes back if the task runs again.',
   },
   {
     slug: 'doc-reindex',

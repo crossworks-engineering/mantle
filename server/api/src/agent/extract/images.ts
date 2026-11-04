@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { createPartOfFile, db, nodes } from '@mantle/db';
 import {
+  deleteFileById,
   extOf,
   ensureExtractedImagesFolder,
   isParserError,
@@ -191,9 +192,7 @@ export async function maybeExtractEmbeddedImages(
 
   // Extension included (90-10-01-dwg vs 90-10-01-dxf) so cross-format twins
   // of one drawing never share a folder or an image path — see buildSourceSlug.
-  // The file's id too: a new revision has the old file's name, and must not
-  // hit the old file's images.
-  const sourceSlug = buildSourceSlug(loaded.filename, node.id);
+  const sourceSlug = buildSourceSlug(loaded.filename);
   const titles = buildImageTitles(result.images, node.title || loaded.filename);
 
   await stepInOwnTrace(
@@ -219,8 +218,9 @@ export async function maybeExtractEmbeddedImages(
       },
     },
     async (h) => {
-      // Named by the file's id only: the folder is Admin's, and a file Admin
-      // cannot read must not show its name there.
+      // One folder per file, named by its id only: a new revision has the old
+      // file's name and must not hit its images, and the folder is Admin's, so
+      // a file Admin cannot read must not show its name there.
       const fileKey = `file ${node.id.slice(0, 8)}`;
       const folderPath = await ensureExtractedImagesFolder({
         ownerId,
@@ -229,7 +229,11 @@ export async function maybeExtractEmbeddedImages(
       });
       // A part of the file: its home and grants, once (docs/workspaces.md).
       const saveImage = (args: Parameters<typeof upsertFile>[0]) =>
-        createPartOfFile(node.id, () => upsertFile(args));
+        createPartOfFile(
+          node.id,
+          () => upsertFile(args),
+          (f) => deleteFileById({ ownerId, fileId: f.id }),
+        );
       const createdIds: string[] = [];
       const saveErrors: string[] = [];
       for (const [i, img] of result.images.entries()) {

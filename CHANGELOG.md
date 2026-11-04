@@ -16,7 +16,7 @@ deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 - **Fixed:** a second file with the upload name of an earlier one got no
   extracted images, and each retry logged an error. A new revision always has
   the old file's name, so every revision hit this. Each file now has its own
-  image folder and names. Old images keep their names.
+  image folder. Old images keep their names.
 - **Added:** the `part-repair` maintenance task gives old import tables and
   images their file's home and grants. It changes only an item with the
   untouched Admin default. Dry run by default.
