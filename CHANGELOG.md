@@ -22,7 +22,7 @@ deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
   move, a share) by a Moderator who cannot open every item inside it
   failed with "subtree kept growing". The folder change now takes the
   locks of every item below the folder, read or not, as a folder rename
-  already does (migration 0355).
+  already does (migration 0357).
 
 ## v0.500.17: team apps write wherever their user may write
 

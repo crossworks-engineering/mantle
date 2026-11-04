@@ -523,7 +523,7 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(await misses()).toBe(before);
   });
 
-  it('a plain folder home move with an item inside the caller cannot open (0355)', async () => {
+  it('a plain folder home move with an item inside the caller cannot open (0357)', async () => {
     // With the edit check on, the folder change asked for the hidden item's
     // head every round and failed with "subtree kept growing".
     const F = await node('branch', 'PF', 'notes.kpf');

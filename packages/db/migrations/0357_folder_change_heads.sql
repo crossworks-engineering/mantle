@@ -19,7 +19,7 @@
 --
 -- 0241's function with that one call changed. No table, no trigger, no row
 -- changes, no LLM work. Re-runnable.
--- Revert: packages/db/rollback/0355_folder_change_heads.revert.sql.
+-- Revert: packages/db/rollback/0357_folder_change_heads.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_apply_folder_change"(folder uuid)
