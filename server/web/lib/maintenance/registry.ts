@@ -448,6 +448,22 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Keeps each table summary by default (the re-index rebuilds the vector and profile, no model pass), except a table whose old description said it has no vector geometry: its summary is rewritten (one model call each, at most --limit); --resummarize lets the commit run the extractor for every table. A table already rebuilt is skipped unless --again, so repeated runs reach the rest. Needs the parser service and the agent (server/api) running. Start with one --file. The old version stays in the table history when history is kept.',
   },
   {
+    slug: 'part-repair',
+    title: 'Give old import tables and images their file home and grants',
+    description:
+      'Import tables and extracted images made before the fix sit in Admin. This gives each the home and grants of its file, once. It changes only an item with the untouched Admin default, and leaves and counts anything changed by hand or with a deleted file. Dry run (default) prints ids and counts. --apply changes at most --limit items (default 100, at most 1000). Never deletes anything. No model call.',
+    kind: 'remedy',
+    status: 'live',
+    cost: 'io',
+    schedulable: false,
+    script: 'scripts/part-repair.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--limit=<n>'],
+    notes:
+      'An item in Admin loses its Admin read unless the file holds Admin: that is the point, so read the counts first. Start with --limit=1. Run it once.',
+  },
+  {
     slug: 'doc-reindex',
     title: 'Re-index documentation nodes with no summary or embedding',
     description:

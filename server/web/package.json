@@ -68,6 +68,7 @@
     "ocr:rescan": "tsx --env-file-if-exists=./.env.local scripts/ocr-rescan.ts",
     "blank:scans": "tsx --env-file-if-exists=./.env.local scripts/blank-scans.ts",
     "dwg:reindex": "tsx --env-file-if-exists=./.env.local scripts/dwg-reindex.ts",
+    "part:repair": "tsx --env-file-if-exists=./.env.local scripts/part-repair.ts",
     "doc:reindex": "tsx --env-file-if-exists=./.env.local scripts/doc-reindex.ts",
     "device-tokens:reap": "tsx --env-file-if-exists=./.env.local scripts/device-tokens-reap.ts",
     "app-access-log:reap": "tsx --env-file-if-exists=./.env.local scripts/app-access-log-reap.ts",

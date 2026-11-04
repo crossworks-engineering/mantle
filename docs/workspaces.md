@@ -265,8 +265,21 @@ the item landed (`landedIn`).
   new file at the top of Files, homed by the rule above, and holds only
   what you read. An Admin user's goes to Auto-filed / Exports. The reply
   says where it landed (`landedIn`).
-- **Parts of a source** (mail attachments, transcripts, image fragments, an
-  app's table export) take their source's home and grants.
+- **Parts of a file.** The extract worker makes an import table and images
+  from a file. Each takes the file's home and every grant it holds, Write
+  switch included, once, when it is made. A file whose home is gone gets no
+  part: a part never lands in Admin by default. After that a part is an ordinary
+  item. Unsharing, sharing or moving the file does not change it: change the
+  part by hand. A row its folder passes and the file does not hold is "Removed
+  here", so an image in Auto-filed does not reach Admin unless the file does.
+  Each file has its own images: their names end in the file's id, and their
+  folder is named after the id. Items made before this stay as they are until
+  the `part-repair` task runs. It changes only an item with the untouched Admin
+  default, and leaves anything changed by hand.
+- **Other items made from a source** do not do this. A copy from a file
+  (`table_from_file`, `page_from_file`, `note_from_file`), a video's audio and
+  transcript, and an app's table export are homed by the rule above, with no
+  other grant. Mail attachments sit under their mail account.
 - **Synced items with no source** (mail, Telegram, calendar, drive and disk
   sync) take their kind's default, which is Admin.
 

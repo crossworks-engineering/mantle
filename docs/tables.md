@@ -233,7 +233,10 @@ chat attachment, email, Telegram) becomes ONE table with a tab per sheet
 (`maybeAutoTableSpreadsheet` in `server/api`), published, indexed, deduped by
 `data.sourceFileId` so a re-ingest never doubles. Sheets are capped at
 `MAX_AUTO_TABLE_TABLES` (20) tabs per upload; the explicit `table_from_file`
-tool is user-initiated and uncapped (but stamps `sourceFileId` too).
+tool is user-initiated and uncapped (but stamps `sourceFileId` too). The
+imported table takes the file's home and grants once, when it is made, and is
+an ordinary item after that (docs/workspaces.md, "Parts of a file"); a
+`table_from_file` table is a copy.
 
 ---
 
