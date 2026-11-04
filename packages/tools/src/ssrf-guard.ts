@@ -70,7 +70,7 @@ export function isSandboxProxyUrl(u: URL): boolean {
  * and refuses an unknown slug, method or path. Every hop of a call that
  * starts here must stay on the same service, and no hop may enter it
  * (hopGuard). Guarded by ssrf-guard.test.ts; if you widen this, you are
- * re-deciding a security boundary — stop and take it to the owner first.
+ * re-deciding a security boundary: stop and take it to the owner first.
  */
 export function isGatewayUrl(u: URL): boolean {
   return gatewaySlug(u) !== null;
