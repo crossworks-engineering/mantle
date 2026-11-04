@@ -40,7 +40,7 @@ describe('the gateway health check', () => {
     try {
       const base = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
       expect((await fetch(`${base}/healthz`)).status).toBe(200);
-      expect((await fetch(`${base}/svc/pcms/mcp`)).status).toBe(404);
+      expect((await fetch(`${base}/svc/billing/mcp`)).status).toBe(404);
       expect((await fetch(`${base}/healthz`, { method: 'POST' })).status).toBe(404);
     } finally {
       s.closeAllConnections();

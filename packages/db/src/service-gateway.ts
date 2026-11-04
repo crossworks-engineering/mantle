@@ -90,7 +90,7 @@ export async function setGatewayService(
   if (!have && patch.upstream === undefined) {
     return {
       ok: false,
-      error: `no service '${slug.slice(0, 40)}' is registered yet, so upstream is required: its host:port on mantle_services, e.g. 'pcms-agent:8080'`,
+      error: `no service '${slug.slice(0, 40)}' is registered yet, so upstream is required: its host:port on mantle_services, e.g. 'billing-agent:8080'`,
     };
   }
   const checked = checkGatewayService({

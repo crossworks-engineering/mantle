@@ -7,8 +7,8 @@ import type { GatewayCallEntry } from '@mantle/db';
 import { brainRegistry, callShipper, RegistryUnavailable } from './brain';
 
 const svc = {
-  slug: 'pcms',
-  upstream: 'pcms-agent:8080',
+  slug: 'billing',
+  upstream: 'billing-agent:8080',
   pathPrefixes: ['/mcp'],
   methods: ['POST'],
   enabled: true,
@@ -28,7 +28,7 @@ describe('brainRegistry', () => {
       return ok({ services: [svc] });
     }) as unknown as typeof fetch;
     const lookup = brainRegistry({ url: 'http://web:3000', token: 'tok', fetch: f, ttlMs: 60_000 });
-    expect(await lookup('pcms')).toEqual(svc);
+    expect(await lookup('billing')).toEqual(svc);
     expect(await lookup('nope')).toBeNull();
     expect(seen).toEqual([['http://web:3000/api/gateway/registry', 'tok']]);
   });
@@ -40,9 +40,9 @@ describe('brainRegistry', () => {
       return ok({ services: [svc] });
     }) as unknown as typeof fetch;
     const lookup = brainRegistry({ url: 'http://web:3000', token: 't', fetch: f, ttlMs: 0 });
-    expect(await lookup('pcms')).toEqual(svc);
+    expect(await lookup('billing')).toEqual(svc);
     up = false;
-    await expect(lookup('pcms')).rejects.toBeInstanceOf(RegistryUnavailable);
+    await expect(lookup('billing')).rejects.toBeInstanceOf(RegistryUnavailable);
     for (const res of [
       new Response('no', { status: 401 }),
       ok({ nope: 1 }),
@@ -53,7 +53,7 @@ describe('brainRegistry', () => {
         token: 't',
         fetch: (async () => res) as unknown as typeof fetch,
       });
-      await expect(bad('pcms')).rejects.toBeInstanceOf(RegistryUnavailable);
+      await expect(bad('billing')).rejects.toBeInstanceOf(RegistryUnavailable);
     }
   });
 });
@@ -70,21 +70,50 @@ describe('brainRegistry backoff', () => {
       return ok({ services: [svc] });
     }) as unknown as typeof fetch;
     const lookup = brainRegistry({ url: 'u', token: 't', fetch: f, now: () => t });
-    await expect(lookup('pcms')).rejects.toBeInstanceOf(RegistryUnavailable);
+    await expect(lookup('billing')).rejects.toBeInstanceOf(RegistryUnavailable);
     for (let i = 0; i < 50; i++) {
-      await expect(lookup('pcms')).rejects.toBeInstanceOf(RegistryUnavailable);
+      await expect(lookup('billing')).rejects.toBeInstanceOf(RegistryUnavailable);
     }
     expect(asked).toBe(1);
     t = 1_000; // the first backoff is over: asked again, still down
-    await expect(lookup('pcms')).rejects.toBeInstanceOf(RegistryUnavailable);
+    await expect(lookup('billing')).rejects.toBeInstanceOf(RegistryUnavailable);
     expect(asked).toBe(2);
     t = 2_500; // the second backoff (2 s) is not over yet
-    await expect(lookup('pcms')).rejects.toBeInstanceOf(RegistryUnavailable);
+    await expect(lookup('billing')).rejects.toBeInstanceOf(RegistryUnavailable);
     expect(asked).toBe(2);
     up = true;
     t = 3_000;
-    expect(await lookup('pcms')).toEqual(svc);
+    expect(await lookup('billing')).toEqual(svc);
     expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('counts one failed read once, however many callers wait on it', async () => {
+    let t = 0;
+    let asked = 0;
+    let answer = () => {};
+    const answered = new Promise<void>((r) => (answer = r));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const f = (async () => {
+      asked += 1;
+      await answered;
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+    const lookup = brainRegistry({ url: 'u', token: 't', fetch: f, now: () => t });
+    const waiting = Array.from({ length: 6 }, () => lookup('billing'));
+    answer();
+    for (const got of await Promise.allSettled(waiting)) {
+      expect(got.status).toBe('rejected');
+      expect((got as PromiseRejectedResult).reason).toBeInstanceOf(RegistryUnavailable);
+    }
+    expect(asked).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    t = 999; // still the first backoff, 1 s
+    await expect(lookup('billing')).rejects.toBeInstanceOf(RegistryUnavailable);
+    expect(asked).toBe(1);
+    t = 1_000; // over: one failure, so one step, not one per caller
+    await expect(lookup('billing')).rejects.toBeInstanceOf(RegistryUnavailable);
+    expect(asked).toBe(2);
     warn.mockRestore();
   });
 
@@ -96,7 +125,7 @@ describe('brainRegistry backoff', () => {
       return new Response('no', { status: 401 });
     }) as unknown as typeof fetch;
     const lookup = brainRegistry({ url: 'u', token: 't', fetch: f });
-    await expect(lookup('pcms')).rejects.toThrow(/GATEWAY_TOKEN differs/);
+    await expect(lookup('billing')).rejects.toThrow(/GATEWAY_TOKEN differs/);
     expect(inits[0]!.redirect).toBe('error');
     const shipped: RequestInit[] = [];
     const s = callShipper({
@@ -115,7 +144,7 @@ describe('brainRegistry backoff', () => {
 });
 
 const row = (i: number): GatewayCallEntry => ({
-  serviceSlug: 'pcms',
+  serviceSlug: 'billing',
   method: 'POST',
   path: `/mcp/${i}`,
   status: 200,

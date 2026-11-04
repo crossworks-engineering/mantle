@@ -227,7 +227,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "001bdd7032bb7b36cd584d8be0f9dce5562ce2ffba27eb43e3a8f8ef18156c64",
+  "sha256": "316d5d6fff4a2c0240698ecf3b5d15e498bde444d94ff74f1215de9b2a90fb08",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -1312,7 +1312,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "25c855abe8673cf6f1bbf8d9056ab0211c4bdea91f7f0323ad97cd637302bb52",
+  "sha256": "00e7b915c2e7210ca99216e087b39ad6c01095f521407913e4f9f42c6db8edf5",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2329,7 +2329,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "25c855abe8673cf6f1bbf8d9056ab0211c4bdea91f7f0323ad97cd637302bb52",
+  "sha256": "00e7b915c2e7210ca99216e087b39ad6c01095f521407913e4f9f42c6db8edf5",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3170,7 +3170,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "11c6295523ea1c4091243e82923d6d6cf0ca5dd2f49f1c3b559fe5746f925a66",
+  "sha256": "0fe460be1c271532387c6aa43572caa027cedefc19315019536248875bcc43f3",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3921,7 +3921,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "914581285d76cc2ac06d4ad485f0c8658053e2f4fc7cbe67d5037733e12c888a",
+  "sha256": "75ebf0298f27ac71f220174775c57fe123866dfe5eafa498aa3e0be17888b0c0",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4343,7 +4343,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "40f72f5cffb7afd4da91dd14d57376ea10ea61cb079bfcc36b9cf0a791c3324b",
+  "sha256": "8f4c45983374ab7aaf7eba7df1abdc2354360e7e848bfa1e0f5ea7e43cfcacee",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4850,7 +4850,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "40f72f5cffb7afd4da91dd14d57376ea10ea61cb079bfcc36b9cf0a791c3324b",
+  "sha256": "8f4c45983374ab7aaf7eba7df1abdc2354360e7e848bfa1e0f5ea7e43cfcacee",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5249,7 +5249,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "40f72f5cffb7afd4da91dd14d57376ea10ea61cb079bfcc36b9cf0a791c3324b",
+  "sha256": "8f4c45983374ab7aaf7eba7df1abdc2354360e7e848bfa1e0f5ea7e43cfcacee",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5785,7 +5785,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "001bdd7032bb7b36cd584d8be0f9dce5562ce2ffba27eb43e3a8f8ef18156c64",
+  "sha256": "316d5d6fff4a2c0240698ecf3b5d15e498bde444d94ff74f1215de9b2a90fb08",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -6870,7 +6870,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "25c855abe8673cf6f1bbf8d9056ab0211c4bdea91f7f0323ad97cd637302bb52",
+  "sha256": "00e7b915c2e7210ca99216e087b39ad6c01095f521407913e4f9f42c6db8edf5",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7887,7 +7887,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "25c855abe8673cf6f1bbf8d9056ab0211c4bdea91f7f0323ad97cd637302bb52",
+  "sha256": "00e7b915c2e7210ca99216e087b39ad6c01095f521407913e4f9f42c6db8edf5",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8728,7 +8728,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "11c6295523ea1c4091243e82923d6d6cf0ca5dd2f49f1c3b559fe5746f925a66",
+  "sha256": "0fe460be1c271532387c6aa43572caa027cedefc19315019536248875bcc43f3",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9479,7 +9479,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "914581285d76cc2ac06d4ad485f0c8658053e2f4fc7cbe67d5037733e12c888a",
+  "sha256": "75ebf0298f27ac71f220174775c57fe123866dfe5eafa498aa3e0be17888b0c0",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -9901,7 +9901,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "40f72f5cffb7afd4da91dd14d57376ea10ea61cb079bfcc36b9cf0a791c3324b",
+  "sha256": "8f4c45983374ab7aaf7eba7df1abdc2354360e7e848bfa1e0f5ea7e43cfcacee",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10408,7 +10408,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "40f72f5cffb7afd4da91dd14d57376ea10ea61cb079bfcc36b9cf0a791c3324b",
+  "sha256": "8f4c45983374ab7aaf7eba7df1abdc2354360e7e848bfa1e0f5ea7e43cfcacee",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10807,7 +10807,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "40f72f5cffb7afd4da91dd14d57376ea10ea61cb079bfcc36b9cf0a791c3324b",
+  "sha256": "8f4c45983374ab7aaf7eba7df1abdc2354360e7e848bfa1e0f5ea7e43cfcacee",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",

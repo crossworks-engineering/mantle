@@ -99,7 +99,7 @@ export type GatewayServiceValues = {
  *  else why not (a teaching sentence). */
 export function upstreamRefusal(upstream: string): string | null {
   if (!UPSTREAM_RE.test(upstream) || upstream.length > 200) {
-    return `upstream must be host:port, the service's container name on the mantle_services network (one lowercase label, no dots) and a port (got '${upstream.slice(0, 80)}'), e.g. 'pcms-agent:8080'`;
+    return `upstream must be host:port, the service's container name on the mantle_services network (one lowercase label, no dots) and a port (got '${upstream.slice(0, 80)}'), e.g. 'billing-agent:8080'`;
   }
   const i = upstream.lastIndexOf(':');
   const host = upstream.slice(0, i);
@@ -134,7 +134,7 @@ export function checkGatewayService(
   if (!GATEWAY_SLUG_RE.test(slug)) {
     return {
       ok: false,
-      error: `slug must be 1 to 40 lowercase letters, digits or dashes, starting with a letter or digit (got '${slug.slice(0, 60)}'), e.g. 'pcms'`,
+      error: `slug must be 1 to 40 lowercase letters, digits or dashes, starting with a letter or digit (got '${slug.slice(0, 60)}'), e.g. 'billing'`,
     };
   }
   const upstream = String(input.upstream ?? '').trim();

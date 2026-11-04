@@ -1717,14 +1717,27 @@ life stay as they are, and the box calls no sign-in provider
 
 ## Rollback
 
+Roll back with `scripts/roll.sh`. It refreshes the compose to the old
+release's, and below migration 0358 that removes the gateway:
+
+```bash
+scripts/roll.sh <box> <old tag>
+```
+
+A hand pin of the old tag keeps the new compose. Below migration 0358 that
+leaves a crash-looping gateway, since the old image has none: stop it by hand.
+The same goes for a roll on a box whose compose has local edits, which the
+updater does not refresh.
+
 ```bash
 # (VPS) pin MANTLE_IMAGE_TAG to the previous version in .env, then:
 ssh mantle-prod 'cd ~/mantle && docker compose pull && docker compose up -d --wait --remove-orphans'
+ssh mantle-prod 'cd ~/mantle && docker compose stop gateway'
 # …and set it back to `latest` once a forward fix ships.
 ```
 
-CI publishes every release as `:vX.Y.Z` **and** `:latest`, so a rollback is just
-pinning the prior `vX.Y.Z`. **Code rolls back instantly; schema does not**: a
+CI publishes every release as `:vX.Y.Z` **and** `:latest`, so the prior
+`vX.Y.Z` is always there to roll back to. **Code rolls back instantly; schema does not**: a
 migration is forward-only, so to undo one, restore the pre-update dump into a
 fresh DB (deploy.md §3b–c). The updater's dumps are in `backups/pre-roll/`
 (newest three), restored with `scripts/db-restore.sh` like any other. It

@@ -1620,7 +1620,7 @@ profile_active() { printf ',%s,' "$(profiles_csv)" | grep -q ",$1,"; }
 # since exited is their normal end. The client stack's two (client_web and,
 # on a standalone client box, client_caddy) are here too. A container the box
 # does not run reads `absent`.
-BOX_CONTAINERS="postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy"
+BOX_CONTAINERS="postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api gateway worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy"
 
 # box_container_name <service>: its container_name in the compose files.
 box_container_name() {
@@ -1886,7 +1886,8 @@ ensure_services_subnet() {
     return 1
   fi
   [ "$ess_pick" = "$ess_want" ] && return 0
-  persist_env MANTLE_SERVICES_SUBNET "$ess_pick"
+  persist_env MANTLE_SERVICES_SUBNET "$ess_pick" \
+    || { SSN_ERR="could not write MANTLE_SERVICES_SUBNET=$ess_pick to .env ($ess_want overlaps an existing Docker network)"; return 1; }
   echo "[updater] mantle_services: $ess_want overlaps an existing Docker network; using $ess_pick (written to .env as MANTLE_SERVICES_SUBNET)" \
     | tee -a "$SIG/update.log"
 }
@@ -2490,16 +2491,18 @@ while true; do
     # applied by a compose-adopt three releases behind the compose it installs.
     [ "$REFRESH" = pull-failed ] || refresh_scripts "$TARGET"
     # mantle_services' range, before anything is pulled or recreated: a
-    # range no free /24 can replace stops the roll here, as the parser check
-    # does, with the old tag back.
+    # range no free /24 can replace stops the roll here with the old tag back.
+    # Unlike the parser check above, this runs after the compose, Caddy and
+    # script refreshes, so a refused roll leaves those new files on disk with
+    # the old tag. No container has changed.
     if ! ensure_services_subnet; then
       if [ -n "$ROLL_PREV_TAG" ]; then
         persist_env MANTLE_IMAGE_TAG "$ROLL_PREV_TAG"
       elif [ "$TARGET" != latest ]; then
         env_rewrite '/^MANTLE_IMAGE_TAG=/d'
       fi
-      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, no container changed: $SSN_ERR"
-      echo "[updater] ⚠ ROLL REFUSED, no container changed: $SSN_ERR" | tee -a "$SIG/update.log"
+      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, no container changed, but the files refreshed for this release (compose, Caddy, scripts) stay on disk with the old tag: $SSN_ERR"
+      echo "[updater] ⚠ ROLL REFUSED, no container changed, but the files refreshed for this release (compose, Caddy, scripts) stay on disk with the old tag: $SSN_ERR" | tee -a "$SIG/update.log"
       write_stack_info
       continue
     fi

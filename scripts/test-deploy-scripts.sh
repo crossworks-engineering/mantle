@@ -2588,7 +2588,7 @@ write_services_info"
 SJ="$CS/sig/services.json"
 check "containers: services.json is still valid JSON" node -e "JSON.parse(require('fs').readFileSync('$SJ','utf8'))"
 CS_WANT=$(node -e '
-const names = "postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy".split(" ");
+const names = "postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api gateway worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy".split(" ");
 const out = {};
 for (const n of names) out[n] = { container: "absent", health: "none", restarts: 0, started_at: "" };
 out.postgres = { container: "running", health: "healthy", restarts: 0, started_at: "2026-11-04T05:01:02Z" };
@@ -2718,7 +2718,7 @@ check "no gateway in the compose: no GATEWAY_TOKEN" sh -c "! grep -q '^GATEWAY_T
 # networks the host already has ($NETS), and whether mantle_services exists.
 TS="$WORK/services-subnet"; fake_stack "$TS"
 printf 'networks:\n  box_services:\n    name: mantle_services\n' > "$TS/stack/docker-compose.yml"
-ssn_run() { # <taken subnets, space separated> <mantle_services exists: 1|0>
+ssn_run() { # <taken subnets, space separated> <mantle_services exists: 1|0> [more stubs]
   updater_run "$TS/stack" "$TS/sig" "$TS/img" 'NETS="'"$1"'"; HAVE='"$2"'
 docker() {
   case "$1 $2" in
@@ -2728,6 +2728,7 @@ docker() {
     "network ls") i=0; for n in $NETS; do i=$((i + 1)); echo "net$i"; done ;;
   esac
 }
+'"${3:-}"'
 if ensure_services_subnet; then echo "rc=0"; else echo "rc=1 $SSN_ERR"; fi'
 }
 out=$(ssn_run "172.17.0.0/16 172.18.0.0/16" 0 | tail -1)
@@ -2741,6 +2742,11 @@ out=$(ssn_run "172.16.0.0/12 10.0.0.0/8" 0 | tail -1)
 check "no free range: refused with a reason, .env untouched" sh -c "
   case '$out' in 'rc=1 no free address range for the mantle_services network'*) ;; *) exit 1 ;; esac \
   && ! grep -q '^MANTLE_SERVICES_SUBNET=' '$TS/stack/.env'"
+: > "$TS/sig/update.log"
+out=$(ssn_run "172.31.0.0/16" 0 'persist_env() { return 1; }' | tail -1)
+check "services range taken, .env not written: refused, the log does not say written" sh -c "
+  case '$out' in 'rc=1 could not write MANTLE_SERVICES_SUBNET=10.250.240.0/24'*) ;; *) exit 1 ;; esac \
+  && ! grep -q 'written to .env' '$TS/sig/update.log'"
 out=$(ssn_run "172.31.0.0/16" 1 | tail -1)
 check "the network already there: left as it is" sh -c "[ '$out' = 'rc=0' ] && ! grep -q '^MANTLE_SERVICES_SUBNET=' '$TS/stack/.env'"
 SSN_LIB="$(lift subnet_pick)"

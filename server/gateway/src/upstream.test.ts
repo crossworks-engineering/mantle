@@ -46,7 +46,7 @@ describe('checkedAddress', () => {
   const cidrs: Cidr[] = [svcNet];
   const own = ['172.31.250.3'];
   const map = resolver({
-    'pcms-agent': ['172.31.250.7'],
+    'billing-agent': ['172.31.250.7'],
     'two-nets': ['172.31.250.8', '172.18.0.8'],
     'on-default': ['172.18.0.5'],
     bridge: ['172.31.250.1'],
@@ -55,7 +55,7 @@ describe('checkedAddress', () => {
   });
 
   it('answers an address on the services network', async () => {
-    expect(await checkedAddress('pcms-agent', cidrs, own, map)).toBe('172.31.250.7');
+    expect(await checkedAddress('billing-agent', cidrs, own, map)).toBe('172.31.250.7');
   });
 
   it('refuses any answer off it, an IP, a name that does not resolve, no subnet', async () => {
@@ -63,7 +63,7 @@ describe('checkedAddress', () => {
     expect(await checkedAddress('two-nets', cidrs, own, map)).toBeNull();
     expect(await checkedAddress('172.31.250.7', cidrs, own, map)).toBeNull();
     expect(await checkedAddress('nowhere', cidrs, own, map)).toBeNull();
-    expect(await checkedAddress('pcms-agent', [], own, map)).toBeNull();
+    expect(await checkedAddress('billing-agent', [], own, map)).toBeNull();
   });
 
   it("refuses the bridge's host address, the gateway itself and the broadcast", async () => {
