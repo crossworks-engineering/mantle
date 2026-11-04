@@ -18,7 +18,8 @@
     "./matrix/a8-grid": "./src/matrix/test-support/a8-grid.ts",
     "./matrix/a8-known-failures": "./src/matrix/a8-known-failures.ts",
     "./matrix/a8-tool-cells": "./src/matrix/test-support/a8-tool-cells.ts",
-    "./matrix/a8-tool-content": "./src/matrix/test-support/a8-tool-content.ts"
+    "./matrix/a8-tool-content": "./src/matrix/test-support/a8-tool-content.ts",
+    "./service-gateway-rules": "./src/service-gateway-rules.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

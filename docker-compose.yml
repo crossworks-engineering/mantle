@@ -127,10 +127,17 @@ networks:
   # service only through the gateway, as GATEWAY_URL/svc/<slug>/..., for a
   # service the owner registered. The fixed `name:` is what a box service's
   # own compose file joins (`networks: { mantle_services: { external: true } }`).
+  # Its address range is fixed (MANTLE_SERVICES_SUBNET, default
+  # 172.31.250.0/24), and the gateway is told it: the gateway connects only
+  # to an address inside it. A box whose networks already use that range
+  # sets another in .env.
   box_services:
     name: mantle_services
     driver: bridge
     internal: true
+    ipam:
+      config:
+        - subnet: ${MANTLE_SERVICES_SUBNET:-172.31.250.0/24}
 
 # Log rotation for every service — Docker's default json-file driver grows
 # unbounded, so a crash-looping worker or chatty extract run can fill the disk
@@ -664,15 +671,16 @@ services:
   # phase 1a): the one internal door from the brain to the services of this
   # box. On the default network (the brain reaches it at GATEWAY_URL) and on
   # mantle_services (the box services); no published port, no Caddy route.
-  # It routes /svc/<slug>/<path> only to a service registered in
-  # gateway_services (slug, upstream on mantle_services, allowed paths and
-  # methods, enabled), connects only to an address on mantle_services, and
-  # writes one gateway_calls row per call. It holds no service key: the
-  # brain adds the service's vault key at call time. It does hold the
-  # database (the registry and the call log, as the runtime role when the
-  # box runs it) and the master key that role's password derives from, so it
-  # listens on its own default-network address only and drops connections
-  # from mantle_services. Always on, no profile: tiny.
+  # It routes /svc/<slug>/<path> only to a service the brain's registry
+  # names (gateway_services: slug, upstream on mantle_services, allowed
+  # paths and methods, enabled), connects only to an address inside
+  # mantle_services' fixed range, and sends one call row per call back to
+  # the brain. It holds no database login and no service key: the registry
+  # and the call log are the brain's (web, over its token), and the brain
+  # adds the service's vault key at call time. Its env is its token, the
+  # brain's address and the services range. It listens on its own
+  # default-network address only (and 127.0.0.1 for the health check), and
+  # drops connections from mantle_services. Always on, no profile: tiny.
   gateway:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ['scripts/run-service.sh', 'server/gateway', 'src/main.ts']
@@ -686,16 +694,12 @@ services:
     networks:
       - default
       - box_services
-    depends_on:
-      postgres: { condition: service_healthy }
-      migrate: { condition: service_completed_successfully }
     environment:
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?set it in .env — scripts/install.sh writes one}@postgres:5432/postgres
-      MANTLE_MASTER_KEY: ${MANTLE_MASTER_KEY:?MANTLE_MASTER_KEY is required}
-      MANTLE_DB_RUNTIME_ROLE: ${MANTLE_DB_RUNTIME_ROLE:-}
       MANTLE_RUNTIME: ${MANTLE_RUNTIME:-node}
       NODE_ENV: production
       GATEWAY_TOKEN: ${GATEWAY_TOKEN:-}
+      GATEWAY_BRAIN_URL: http://web:3000
+      GATEWAY_UPSTREAM_CIDRS: ${MANTLE_SERVICES_SUBNET:-172.31.250.0/24}
       GATEWAY_MAX_BODY_BYTES: ${GATEWAY_MAX_BODY_BYTES:-}
       GATEWAY_UPSTREAM_IDLE_MS: ${GATEWAY_UPSTREAM_IDLE_MS:-}
     labels: ['autoheal=true']

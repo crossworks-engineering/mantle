@@ -9,7 +9,7 @@
  * segment, a backslash, an encoded `/`, `\` or `.`) is refused, so the
  * path checked is the path the service gets.
  */
-import { GATEWAY_SLUG_RE } from '@mantle/db';
+import { GATEWAY_SLUG_RE } from '@mantle/db/service-gateway-rules';
 
 /** The fields of a service row the decision reads. */
 export type RouteService = Readonly<{
@@ -64,6 +64,11 @@ export const REFUSALS = {
   timeout: { status: 504, code: 'upstream_timeout', error: 'the service took too long' },
   tooLarge: { status: 413, code: 'too_large', error: 'the request body is too large' },
   failed: { status: 502, code: 'gateway_error', error: 'the gateway failed on this call' },
+  noRegistry: {
+    status: 503,
+    code: 'registry_unavailable',
+    error: 'the brain did not hand the gateway its services: every call is refused until it does',
+  },
 } as const satisfies Record<string, Refusal>;
 
 /**

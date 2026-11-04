@@ -3,96 +3,61 @@
  * one internal door from the brain to the services of its box. It sits on
  * the default network (the brain reaches it at GATEWAY_URL) and on the
  * internal network mantle_services (the services), publishes no port and
- * has no Caddy route. It routes `/svc/<slug>/<path>` only to a service in
- * `gateway_services`, and writes one `gateway_calls` row per call.
+ * has no Caddy route. It routes `/svc/<slug>/<path>` only to a service the
+ * brain's registry names, and sends one call row per call back to the
+ * brain.
  *
- * It holds no service secret: the brain adds the service's vault key at
- * call time, as it does for any http tool. Its own secret is GATEWAY_TOKEN,
- * which the brain sends on every call. Without one it serves no service
- * (503) and says so, so a box that has not had a roll since the gateway
- * came keeps running.
+ * It holds no database login and no service secret: the registry and the
+ * call log are the brain's (GATEWAY_BRAIN_URL, with GATEWAY_TOKEN), and the
+ * brain adds the service's vault key at call time, as it does for any http
+ * tool. Without a token it serves no service (503) and says so, so a box
+ * that has not had a roll since the gateway came keeps running.
  *
  * Runs on Bun or Node (scripts/run-service.sh, MANTLE_RUNTIME).
  */
 import { bootSmokeExit, env, envNum, isBootSmoke } from '@mantle/config';
-import {
-  closeDb,
-  gatewayCallsSettled,
-  getGatewayService,
-  reapGatewayCalls,
-  recordGatewayCall,
-  runAsActor,
-  setPoolSocket,
-  systemActor,
-} from '@mantle/db';
 import { onShutdown } from '@mantle/std/shutdown';
+import { brainRegistry, callShipper } from './brain';
 import { createGateway, createHealthServer, healthListenerHost } from './server';
-import { pinnedDatabase, pinnedSocket } from './db-pin';
 import {
   checkedAddress,
-  DEFAULT_NETWORK_NAMES,
   fromServices,
-  networkPlan,
-  resolveV4,
+  listenAddress,
+  ownAddresses,
+  servicesCidrs,
 } from './upstream';
-import net from 'node:net';
-
-const REAP_EVERY_MS = 60 * 60_000;
-
-/** Who reads the registry for a call: the gateway itself (the actor check
- *  refuses a system pool statement with no actor bound). */
-const ROUTE_ACTOR = systemActor('gateway:route');
-
-function databaseAt(): { host: string; port: number } | null {
-  const url = env('DATABASE_URL');
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    return u.hostname ? { host: u.hostname, port: Number(u.port || 5432) } : null;
-  } catch {
-    return null;
-  }
-}
 
 async function main(): Promise<void> {
   if (isBootSmoke()) await bootSmokeExit('gateway');
 
   const token = env('GATEWAY_TOKEN') ?? '';
   const port = envNum('GATEWAY_PORT');
-  const db = databaseAt();
-  const plan = await networkPlan(env('GATEWAY_UPSTREAM_CIDRS'), [
-    ...(db ? [db.host] : []),
-    ...DEFAULT_NETWORK_NAMES,
-  ]);
-  // The database, held to the address checked here and to a SCRAM sign-in
-  // (db-pin.ts): before the first query, or the gateway does not start.
-  if (!db) throw new Error('DATABASE_URL is not set');
-  const dbAnswers = net.isIPv4(db.host) ? [db.host] : await resolveV4(db.host).catch(() => []);
-  const pin = pinnedDatabase(dbAnswers, plan.defaults, plan.cidrs);
-  if (!pin.ok) throw new Error(`refusing to start: ${pin.error}`);
-  setPoolSocket(pinnedSocket(pin.address, db.port));
-  // Its own address on the default network: nothing on mantle_services
-  // can open a connection to it at all.
-  const host = env('GATEWAY_HOST') ?? plan.listen ?? '0.0.0.0';
+  const brain = (env('GATEWAY_BRAIN_URL') ?? 'http://web:3000').replace(/\/+$/, '');
+  const cidrs = servicesCidrs(env('GATEWAY_UPSTREAM_CIDRS'));
+  const own = ownAddresses();
+  // Its one address outside mantle_services: nothing there can open a
+  // connection to it at all.
+  const host = env('GATEWAY_HOST') ?? listenAddress(own, cidrs) ?? '0.0.0.0';
   if (!token) {
     console.warn('[gateway] GATEWAY_TOKEN is not set: every service call answers 503 until it is');
   }
   console.log(
-    `[gateway] services network: ${plan.cidrs.map((c) => c.text).join(', ') || 'none'} (${plan.how})`,
+    `[gateway] services network: ${cidrs.map((c) => c.text).join(', ') || 'none: GATEWAY_UPSTREAM_CIDRS is not set, every service is refused'}`,
   );
 
+  const shipper = callShipper({ url: brain, token });
   const server = createGateway({
     token,
-    lookup: (slug) => runAsActor(ROUTE_ACTOR, () => getGatewayService(slug)),
-    address: (h) => checkedAddress(h, plan.cidrs, plan.own),
-    record: recordGatewayCall,
+    lookup: brainRegistry({ url: brain, token }),
+    address: (h) => checkedAddress(h, cidrs, own),
+    record: shipper.add,
     maxBodyBytes: envNum('GATEWAY_MAX_BODY_BYTES'),
     idleTimeoutMs: envNum('GATEWAY_UPSTREAM_IDLE_MS'),
   });
   // A service never calls the gateway: a connection from a services subnet
   // (when it listens everywhere) is dropped before a byte is read.
   server.on('connection', (socket) => {
-    if (fromServices(socket.remoteAddress, plan.cidrs)) socket.destroy();
+    if (fromServices(socket.remoteAddress, cidrs)) socket.destroy();
   });
   await new Promise<void>((resolve) => server.listen(port, host, resolve));
   console.log(`[gateway] listening on ${host}:${port}`);
@@ -104,24 +69,13 @@ async function main(): Promise<void> {
     console.log(`[gateway] health on ${healthHost}:${port} (/healthz only)`);
   }
 
-  const reap = () =>
-    reapGatewayCalls().then(
-      (n) => n > 0 && console.log(`[gateway] removed ${n} call rows past their 90 days`),
-      (err: unknown) => console.error('[gateway] call log reap failed', err),
-    );
-  const reaper = setInterval(() => void reap(), REAP_EVERY_MS);
-  reaper.unref();
-  void reap();
-
   onShutdown({
     name: 'gateway',
     deadlineMs: 10_000,
     stop: async () => {
-      clearInterval(reaper);
       await new Promise<void>((resolve) => server.close(() => resolve()));
       if (health) await new Promise<void>((resolve) => health.close(() => resolve()));
-      await gatewayCallsSettled();
-      await closeDb();
+      await shipper.flush();
     },
   });
 }

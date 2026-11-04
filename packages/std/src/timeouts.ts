@@ -77,6 +77,10 @@ export const NET_TIMEOUTS = {
   drawFile: 5_000,
   /** The onboarding wizard's reachability probe. */
   onboardingProbe: 6_000,
+  /** The service gateway's registry read from its brain. */
+  gatewayRegistry: 3_000,
+  /** One batch of the service gateway's call rows to its brain. */
+  gatewayCalls: 5_000,
   /** The onboarding wizard's test call. */
   onboardingTest: 10_000,
   /** The push relay. */

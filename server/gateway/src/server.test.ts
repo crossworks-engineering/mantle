@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { GatewayCallEntry } from '@mantle/db';
 import { createGateway } from './server';
+import { RegistryUnavailable } from './brain';
 import type { RouteService } from './route';
 
 const TOKEN = 'gw-test-token';
@@ -261,6 +262,31 @@ describe('the gateway server', () => {
       console.error = err;
       broken.closeAllConnections();
       broken.close();
+    }
+  });
+
+  it('refuses every call, 503 registry_unavailable, while the brain does not answer', async () => {
+    const closed = createGateway({
+      token: TOKEN,
+      lookup: async () => {
+        throw new RegistryUnavailable('the brain did not answer');
+      },
+      address: async () => '127.0.0.1',
+      record: (e) => calls.push(e),
+      maxBodyBytes: 1024,
+      idleTimeoutMs: 5_000,
+    });
+    await new Promise<void>((r) => closed.listen(0, '127.0.0.1', r));
+    try {
+      const url = `http://127.0.0.1:${(closed.address() as AddressInfo).port}`;
+      const res = await fetch(`${url}/svc/pcms/mcp`, { headers: auth });
+      expect(res.status).toBe(503);
+      expect(await res.json()).toMatchObject({ code: 'registry_unavailable' });
+      expect(seen).toEqual([]);
+      expect(await lastCall()).toMatchObject({ status: 503, refusal: 'registry_unavailable' });
+    } finally {
+      closed.closeAllConnections();
+      closed.close();
     }
   });
 

@@ -49,13 +49,7 @@ export {
   NotAWriteError,
   type Db,
 } from './gateway/handles';
-export {
-  closeDb,
-  systemPoolRole,
-  openLoginWritePool,
-  setPoolSocket,
-  type PoolSocket,
-} from './gateway/pools';
+export { closeDb, systemPoolRole, openLoginWritePool } from './gateway/pools';
 export {
   withSystemTx,
   NestedSystemTxError,
@@ -251,11 +245,9 @@ export {
 } from './service-gateway';
 export {
   GATEWAY_CALLS_RETENTION_DAYS,
-  GATEWAY_CALL_LOG_MAX_IN_FLIGHT,
-  recordGatewayCall,
-  setGatewayCallWriter,
-  gatewayCallLogStats,
-  gatewayCallsSettled,
+  GATEWAY_CALL_BATCH_MAX,
+  gatewayCallBatch,
+  insertGatewayCalls,
   reapGatewayCalls,
   listGatewayCalls,
   gatewayCallCounts,

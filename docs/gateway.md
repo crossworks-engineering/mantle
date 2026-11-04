@@ -20,7 +20,11 @@ address, by design.
   `GATEWAY_URL`'s exactly, and the path must be `/svc/<slug>`. Every other
   private address stays refused, the service's own address included.
 - **A registry.** The gateway routes `/svc/<slug>/<path>` only to a service
-  in `gateway_services` (migration 0358). A model never names a host.
+  in `gateway_services` (migration 0358). A model never names a host. The
+  gateway holds no database login: it reads the registry from the brain
+  (`GET /api/gateway/registry`, its token) and keeps it five seconds. When
+  the brain does not answer, every call is refused (503); an old copy is
+  never served.
 - **A token.** The brain proves itself with `GATEWAY_TOKEN` in the
   `x-mantle-gateway-token` header. `Authorization` stays the service's
   own: the brain puts the service's vault key there at call time, as for
@@ -28,21 +32,22 @@ address, by design.
 - **A call log.** One `gateway_calls` row per call that carried the token,
   refusals included: slug, method, path (no query string), status, bytes
   each way, duration, the caller (an agent, a surface, a connector) and its
-  login. A call without the token leaves no row (it is counted and said in
-  the gateway's log at most every ten minutes), so nothing that reaches the
-  gateway can grow the table or forge a caller. The gateway removes rows
-  past 90 days itself.
+  login. The gateway sends its rows to the brain in batches
+  (`POST /api/gateway/calls`, its token), in the background: a call never
+  waits on its row, and a batch the brain does not take is lost. A call
+  without the token leaves no row (it is counted and said in the gateway's
+  log at most every ten minutes), so nothing that reaches the gateway can
+  grow the table or forge a caller. The brain removes rows past 90 days.
 - **Only the brain can reach it.** It listens on its own address on the
   default network, and drops any connection from a services subnet: a
   service never calls the gateway. A second listener on the container's
   `127.0.0.1` answers `GET /healthz` and nothing else, for compose's
   health check.
-- **Its database is the real one.** At start it resolves the database host;
-  every answer must lie on the default network and none on
-  `mantle_services`, or it does not start. Every connection goes to that
-  one checked address, and its sign-in is SCRAM only: a server that asks
-  for the password in clear or as MD5 is cut before the password is sent,
-  so a service that took the name `postgres` gets nothing.
+- **The brain's two gateway routes take only the gateway.** Each needs the
+  gateway token, and a request that came through the front door (Caddy adds
+  `X-Forwarded-For` to every request it passes on) is refused before the
+  token is read. A service on `mantle_services` cannot reach the brain at
+  all: the brain is not on that network.
 
 ## A service row
 
@@ -60,13 +65,12 @@ answer any address), `localhost`, or one of the stack's own services
 (`postgres`, `objectstore`, `web`, `api`, the workers and the rest). The
 gateway also connects only to an address inside a `mantle_services` subnet:
 it resolves the name and refuses any answer outside it, its own address,
-the subnet's first host (the bridge, the Docker host) and the broadcast. It
-finds that subnet at start from its own interfaces (every subnet but those
-the stack's names resolve into: the database host, `postgres`,
-`objectstore`, `web`, `api`, `caddy`), or from `GATEWAY_UPSTREAM_CIDRS`
-when it runs outside compose. A box service that took one of those names on
-`mantle_services` leaves no services subnet, so the gateway refuses every
-service (fail closed). With no subnet found it refuses every service.
+the subnet's first host (the bridge, the Docker host) and the broadcast.
+The subnet is fixed: compose gives `mantle_services` the range
+`MANTLE_SERVICES_SUBNET` (default `172.31.250.0/24`) and hands the same
+range to the gateway as `GATEWAY_UPSTREAM_CIDRS`. A box whose networks
+already use that range sets another in `.env`. With no range the gateway
+refuses every service.
 
 `reads_only` is a mark, not a rule: an MCP service reads over POST. A
 service that must not write gets a read-only login of its own.
@@ -134,7 +138,8 @@ approval, so a tool an assistant writes waits for a person.
 | 405    | `method_not_allowed`   | the method is not in the row                                                                                    |
 | 403    | `path_not_allowed`     | the path is under none of the row's prefixes                                                                    |
 | 400    | `bad_path`             | a `.`, `..` or empty segment, a `\` or `;`, a byte past ASCII, a percent code of anything but a plain character |
-| 502    | `gateway_error`        | the gateway could not read its registry                                                                         |
+| 503    | `registry_unavailable` | the brain did not hand over the registry (stopped, or the token is wrong)                                       |
+| 502    | `gateway_error`        | any other fault of the gateway's own                                                                            |
 | 502    | `upstream_refused`     | the upstream name resolves outside `mantle_services`                                                            |
 | 502    | `upstream_unreachable` | the service did not answer                                                                                      |
 | 504    | `upstream_timeout`     | the service went quiet past `GATEWAY_UPSTREAM_IDLE_MS`                                                          |
@@ -168,23 +173,27 @@ methods it serves.
 | `GATEWAY_URL`              | `http://gateway:8097` | where the brain reaches the gateway (the carve)        |
 | `GATEWAY_TOKEN`            | none                  | the bearer; install.sh writes it, a roll provisions it |
 | `GATEWAY_PORT`             | 8097                  | where the gateway listens                              |
-| `GATEWAY_UPSTREAM_CIDRS`   | found at start        | the services subnets, outside compose                  |
+| `MANTLE_SERVICES_SUBNET`   | `172.31.250.0/24`     | `mantle_services`' fixed range (compose)               |
+| `GATEWAY_UPSTREAM_CIDRS`   | the range above       | the services range the gateway connects inside         |
+| `GATEWAY_BRAIN_URL`        | `http://web:3000`     | the brain it reads its registry from and logs to       |
 | `GATEWAY_MAX_BODY_BYTES`   | 64 MB                 | the largest request body                               |
 | `GATEWAY_UPSTREAM_IDLE_MS` | 120000                | an idle upstream connection is cut                     |
 | `GATEWAY_MEM_LIMIT`        | `256m`                | the container's memory (compose)                       |
 
 The gateway runs on Bun or Node (`MANTLE_RUNTIME`, `scripts/run-service.sh`).
-It holds no service key. It does hold its token, the database URL and the
-master key (the runtime role's password is derived from it): the registry
-and the call log live in the database. That is why it listens on the default
-network only.
+It holds no database login and no service key: its environment is its
+token, the brain's address and the services range.
 
 ## Code
 
 - `server/gateway/src/route.ts`: the decision, no I/O.
-- `server/gateway/src/upstream.ts`: the services subnet and the address check.
+- `server/gateway/src/upstream.ts`: the services range and the address check.
+- `server/gateway/src/brain.ts`: the registry read and the call batches.
 - `server/gateway/src/server.ts`: the HTTP server and the proxy.
-- `packages/db/src/service-gateway.ts`: the registry's rules, reads, writes
-  and the call log.
+- `packages/db/src/service-gateway-rules.ts`: what a service row may hold.
+- `packages/db/src/service-gateway.ts` and `service-gateway-calls.ts`: the
+  registry's reads and writes, and the call log.
+- `server/web/lib/gateway-internal.ts` and `app/api/gateway/*`: the
+  gateway's own two routes on the brain.
 - `packages/tools/src/ssrf-guard.ts`: the carve and `hopGuard`.
 - `packages/tools/src/gateway.ts`: the headers and the slug binding.
