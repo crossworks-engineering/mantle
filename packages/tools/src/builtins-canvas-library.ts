@@ -35,6 +35,11 @@ import {
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { str } from './coerce';
 import { CANVAS_DATA_HOWTO } from '@mantle/content-core/canvas-data';
+import {
+  CANVAS_ASSETS_META,
+  CANVAS_MEDIA_EXAMPLE_IDS,
+  CANVAS_MEDIA_HOWTO,
+} from '@mantle/content-core/canvas-media';
 import { ZOOMABLE_HOWTO } from '@mantle/diagram-templates/zoom-howto';
 
 export const CANVAS_LIBRARY_DIR = 'canvas-libraries';
@@ -73,7 +78,8 @@ export const CANVAS_LIBRARIES: readonly CanvasLibrary[] = [
 
 /**
  * What the frame itself gives a canvas, with no library and no import:
- * `data`, the canvas data store (`mantle.data`). Its guide is
+ * `data`, the canvas data store (`mantle.data`), and `media`, files played
+ * or shown from Files (`mantle.media`, CANVAS_MEDIA_HOWTO). The data guide is
  * the canvas_authoring skill's own section (CANVAS_DATA_HOWTO, one text for
  * the in-app agents and an MCP client), with its example set in a whole
  * canvas, which the browser test renders as it renders every guide's.
@@ -84,6 +90,12 @@ export const CANVAS_FRAME_GUIDES: readonly CanvasLibrary[] = [
     pkg: 'mantle.data',
     useFor: 'saving what viewers add: notes, suggestions, votes, marks (`mantle.data`)',
     aliases: ['mantle.data', 'store', 'save', 'storage'],
+  },
+  {
+    name: 'media',
+    pkg: 'mantle.media',
+    useFor: 'playing sound and showing pictures from Files: narration, clips (`mantle.media`)',
+    aliases: ['mantle.media', 'audio', 'sound', 'narration', 'files'],
   },
 ];
 
@@ -123,6 +135,48 @@ export function canvasDataGuide(): string {
     '',
     '```html',
     canvasDataExample(),
+    '```',
+    '',
+  ].join('\n');
+}
+
+/** The media guide's example snippet as one whole canvas, its clips
+ *  declared in the head. */
+export function canvasMediaExample(): string {
+  const m = /```html\n([\s\S]*?)\n```/.exec(CANVAS_MEDIA_HOWTO);
+  const body = (m?.[1] ?? '')
+    .split('\n')
+    .map((l) => `    ${l}`)
+    .join('\n');
+  return [
+    '<!doctype html>',
+    '<html>',
+    '  <head>',
+    '    <title>A narrated tour</title>',
+    '    <meta name="description" content="Captions and narration clips from Files, played with mantle.media." />',
+    '    <meta name="canvas:size" content="1280x720" />',
+    `    <meta name="${CANVAS_ASSETS_META}" content="${CANVAS_MEDIA_EXAMPLE_IDS.join(' ')}" />`,
+    '  </head>',
+    '  <body class="flex flex-col items-center justify-center gap-8 bg-background p-16 text-foreground">',
+    body,
+    '  </body>',
+    '</html>',
+  ].join('\n');
+}
+
+/** The media guide: the shared section, then the whole example canvas. */
+export function canvasMediaGuide(): string {
+  return [
+    '# Sound and pictures from Files (`mantle.media`)',
+    '',
+    'Built into the canvas frame: no library, no import, no version.',
+    '',
+    CANVAS_MEDIA_HOWTO,
+    '',
+    '## Example',
+    '',
+    '```html',
+    canvasMediaExample(),
     '```',
     '',
   ].join('\n');
@@ -395,7 +449,11 @@ export async function canvasLibraryHandler(
 ): Promise<ToolHandlerResult> {
   const asked = str(input.name);
   if (str(input.for) === 'app') return appLibraryHandler(asked);
-  if (find(CANVAS_FRAME_GUIDES, asked)) {
+  const frameGuide = find(CANVAS_FRAME_GUIDES, asked);
+  if (frameGuide?.name === 'media') {
+    return { ok: true, output: { library: 'media', version: null, guide: canvasMediaGuide() } };
+  }
+  if (frameGuide) {
     return { ok: true, output: { library: 'data', version: null, guide: canvasDataGuide() } };
   }
   const lib = resolveCanvasLibrary(asked);
@@ -455,7 +513,7 @@ const canvas_library: BuiltinToolDef = {
     properties: {
       name: {
         type: 'string',
-        description: `The library: ${CANVAS_LIBRARIES.map((l) => l.name).join(', ')}; or 'data' for saving what viewers add (\`mantle.data\`, built into the frame); for an app also ${[...APP_ONLY_LIBRARIES, ...APP_KIT_LIBRARIES].map((l) => l.name).join(', ')}.`,
+        description: `The library: ${CANVAS_LIBRARIES.map((l) => l.name).join(', ')}; or 'data' for saving what viewers add (\`mantle.data\`), 'media' for sound and pictures from Files (\`mantle.media\`), both built into the frame; for an app also ${[...APP_ONLY_LIBRARIES, ...APP_KIT_LIBRARIES].map((l) => l.name).join(', ')}.`,
       },
       for: {
         type: 'string',

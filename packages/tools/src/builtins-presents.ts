@@ -40,6 +40,7 @@ import { guardNewFileIn } from '@mantle/content/tree';
 import { readCanvasDataFor } from '@mantle/content/canvas-data';
 import {
   ensureFolderPath,
+  filesByIds,
   listFiles,
   sanitizeFilename,
   saveExport,
@@ -48,7 +49,8 @@ import {
 import { db, nodes, PUBLISHED_SUMMARY_MAX_CHARS } from '@mantle/db';
 import { eq } from 'drizzle-orm';
 import { CANVAS_MODULE_SPECIFIERS, buildCanvasCss } from '@mantle/app-build';
-import { canvasLoadProblems } from '@mantle/content-core/canvas';
+import { canvasAssets, canvasLoadProblems } from '@mantle/content-core/canvas';
+import { canvasAssetProblems } from '@mantle/content-core/canvas-media';
 import {
   buildCanvas,
   checkStaticSvg,
@@ -145,9 +147,14 @@ export function svgNamespaceProblems(svg: string): string[] {
   return [...new Set(problems)];
 }
 
-/** The save-time load check (section 7.3): every problem at once. */
+/** The save-time load check (section 7.3): every problem at once, with a
+ *  malformed `canvas:assets` declaration among them (content-core
+ *  canvasAssetProblems; the content layer refuses one too). */
 function loadRefusal(source: string): ToolHandlerResult | null {
-  const problems = canvasLoadProblems(source, CANVAS_MODULE_SPECIFIERS);
+  const problems = [
+    ...canvasLoadProblems(source, CANVAS_MODULE_SPECIFIERS),
+    ...canvasAssetProblems(source, canvasAssets(source)).problems,
+  ];
   if (!problems.length) return null;
   return {
     ok: false,
@@ -369,7 +376,7 @@ function pageEmbed(p: { id: string }): string {
 }
 
 function saved(
-  p: PresentDetail,
+  p: PresentDetail & { assetProblems?: string[] },
   seen: Look | null,
   extra: Record<string, unknown> = {},
 ): ToolHandlerResult {
@@ -380,6 +387,9 @@ function saved(
       ...compact(p),
       page_embed: pageEmbed(p),
       ...(tpl ? { template: tpl.template } : {}),
+      // What the save found about the files the canvas declares for
+      // mantle.media (the content layer's read check).
+      ...(p.assetProblems?.length ? { asset_problems: p.assetProblems } : {}),
       ...extra,
       render: seen ? seen.report : { rendered: false, note: 'look: false, so nothing was drawn.' },
     },
@@ -399,6 +409,30 @@ async function openLinkNote(ownerId: string, id: string): Promise<Record<string,
   } catch {
     return {};
   }
+}
+
+/** The files a canvas declares for mantle.media, as the caller sees them:
+ *  name, type and size for a file it reads (its own scope), the bare id
+ *  for any other, so a declared file's name never reaches a reader who
+ *  cannot read the file. */
+async function assetsOf(
+  ownerId: string,
+  ids: readonly string[],
+): Promise<
+  Array<
+    { id: string; filename: string; mime: string; bytes: number } | { id: string; readable: false }
+  >
+> {
+  if (!ids.length) return [];
+  const rows = new Map(
+    (await filesByIds({ ownerId, ids })).map((f) => [f.id.toLowerCase(), f] as const),
+  );
+  return ids.map((id) => {
+    const f = rows.get(id);
+    return f
+      ? { id, filename: f.filename, mime: f.mimeType, bytes: f.sizeBytes }
+      : { id, readable: false as const };
+  });
 }
 
 /** Apply find/replace edits in order; each `find` must occur exactly once. */
@@ -519,7 +553,7 @@ const present_get: BuiltinToolDef = {
   preconditions: PRESENT_ID_PRE,
   name: 'Get a canvas',
   description:
-    "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers in its drawing tables' Checks tabs (a help, not a guarantee: verify on the drawing). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
+    "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers in its drawing tables' Checks tabs (a help, not a guarantee: verify on the drawing). `assets` lists the Files it declares for `mantle.media` (a file you cannot read shows its id only). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -557,6 +591,7 @@ const present_get: BuiltinToolDef = {
       input.checks === true && tpl && traceSourceOf(tpl.data)
         ? await checksOverviewOf(ctx.ownerId, tpl.data)
         : null;
+    const assets = await assetsOf(ctx.ownerId, p.meta.assets ?? []);
     return {
       ok: true,
       output: {
@@ -566,6 +601,7 @@ const present_get: BuiltinToolDef = {
         libs: p.meta.libs,
         ...(tpl ? { template: tpl.template, data: tpl.data } : {}),
         ...(checks?.traced ? { image_checks: checks } : {}),
+        ...(assets.length ? { assets } : {}),
         // A template canvas is its data: the source is the template's own
         // runtime around it, asked for only by name.
         ...(input.source === true || (input.source !== false && !tpl) ? { source: p.source } : {}),
@@ -761,7 +797,7 @@ const present_create: BuiltinToolDef = {
   },
   name: 'Create a canvas',
   description:
-    'Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.',
+    'Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Sound and pictures from Files: `mantle.media` (canvas_library `media`). Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1149,6 +1185,11 @@ const present_export: BuiltinToolDef = {
           format: ext,
           embed: exportEmbed(p, row.id),
           next: EXPORT_NEXT,
+          // A picture: the sound and the files the canvas plays live stay
+          // with the canvas.
+          ...(p.meta.assets?.length
+            ? { media_note: 'The export is a still picture: sound and media do not travel in it.' }
+            : {}),
         },
         // No picture: the export is the canvas you already looked at, and a
         // picture would spend one of the turn's image slots for nothing.

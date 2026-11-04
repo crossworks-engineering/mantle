@@ -4442,7 +4442,7 @@
  },
  {
   "name": "present_create",
-  "description": "Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.",
+  "description": "Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Sound and pictures from Files: `mantle.media` (canvas_library `media`). Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -5874,6 +5874,71 @@
   },
   "annotations": {
    "title": "show_image",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "speech_file_create",
+  "description": "Speak lines of text with the owner's default TTS worker and save each as an mp3 in Files: narration a canvas plays with `mantle.media` (canvas_library `media`). 1 to 20 lines per call; each `key` names its clip (`<prefix>-<key>.mp3`). Never over a file: a re-run makes new files, so put the new ids in the canvas. Without `parent_path` the files go where exports go. Returns each line's `fileId` and `seconds`, and landedIn.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "lines": {
+     "minItems": 1,
+     "maxItems": 20,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "key": {
+        "type": "string",
+        "description": "What the canvas looks the clip up by, e.g. 's03-l2' (letters, digits, _ . -)."
+       },
+       "text": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The words to speak."
+       }
+      },
+      "required": [
+       "key",
+       "text"
+      ]
+     },
+     "description": "The lines to speak, in order."
+    },
+    "prefix": {
+     "type": "string",
+     "description": "The start of every file name, e.g. 'tour'."
+    },
+    "voice": {
+     "type": "string",
+     "description": "A voice id; the worker's own voice when left out, e.g. 'Aoede'."
+    },
+    "parent_path": {
+     "type": "string",
+     "description": "ltree path of a folder to save in, e.g. 'files.narration'. Left out: where exports go; the reply says where (landedIn)."
+    },
+    "confirm": {
+     "type": "boolean",
+     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "required": [
+    "lines",
+    "prefix"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "speech_file_create",
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
@@ -10007,7 +10072,7 @@
    "properties": {
     "name": {
      "type": "string",
-     "description": "The library: echarts, d3, three, motion, reveal.js, konva, katex, alpinejs; or 'data' for saving what viewers add (`mantle.data`, built into the frame); for an app also diagram-templates, mathjs, date-fns, zod, tanstack-table, tanstack-virtual, dnd-kit, fuse, papaparse, pdf-lib, qrcode, markdown."
+     "description": "The library: echarts, d3, three, motion, reveal.js, konva, katex, alpinejs; or 'data' for saving what viewers add (`mantle.data`), 'media' for sound and pictures from Files (`mantle.media`), both built into the frame; for an app also diagram-templates, mathjs, date-fns, zod, tanstack-table, tanstack-virtual, dnd-kit, fuse, papaparse, pdf-lib, qrcode, markdown."
     },
     "for": {
      "type": "string",
@@ -11994,7 +12059,7 @@
  },
  {
   "name": "present_get",
-  "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers in its drawing tables' Checks tabs (a help, not a guarantee: verify on the drawing). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
+  "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers in its drawing tables' Checks tabs (a help, not a guarantee: verify on the drawing). `assets` lists the Files it declares for `mantle.media` (a file you cannot read shows its id only). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
   "inputSchema": {
    "type": "object",
    "properties": {

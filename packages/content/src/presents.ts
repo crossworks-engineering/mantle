@@ -52,6 +52,9 @@ import {
   type PresentMeta,
   assertItemRight,
   headsOrSpace,
+  holdsAllSql,
+  itemHoldersSql,
+  itemHomeSql,
   isSnapshotCopy,
   withDeadlockRetry,
   withNodeDeleteHeads,
@@ -59,10 +62,12 @@ import {
 } from '@mantle/db';
 import {
   CANVAS_MAX_BYTES,
+  canvasAssets,
   canvasImports,
   canvasText,
   parseCanvasHead,
 } from '@mantle/content-core/canvas';
+import { CANVAS_ASSETS_META, canvasAssetProblems } from '@mantle/content-core/canvas-media';
 import { InputError } from '@mantle/std';
 import { asKindRootRepair } from './kind-root';
 import { dedupeTags } from './tags';
@@ -114,12 +119,18 @@ export type PresentDetail = PresentRow & {
   source: string;
 };
 
+/** A canvas just saved, and what its save says about the files it declares
+ *  for `mantle.media` (checkCanvasAssets): plain sentences, empty when all
+ *  is well. */
+export type SavedPresent = PresentDetail & { assetProblems: string[] };
+
 const DEFAULT_META: PresentMeta = {
   size: { w: 1600, h: 900 },
   theme: 'follow',
   libs: [],
   scripts: [],
   posterAt: null,
+  assets: [],
 };
 
 function metaOf(raw: unknown): PresentMeta {
@@ -155,7 +166,12 @@ export function readCanvas(source: string): {
   title: string;
   description: string;
   text: string;
+  /** `assets` here is every id the source declares: the save keeps those
+   *  the saver reads (checkCanvasAssets). */
   meta: PresentMeta;
+  /** What is wrong with the declaration: `problems` refuse a save,
+   *  `warnings` go with it (content-core canvasAssetProblems). */
+  assetCheck: { problems: string[]; warnings: string[] };
 } {
   if (Buffer.byteLength(source, 'utf8') > CANVAS_MAX_BYTES) {
     throw new InputError(
@@ -164,6 +180,7 @@ export function readCanvas(source: string): {
   }
   const head = parseCanvasHead(source);
   const { modules, scripts } = canvasImports(source);
+  const declared = canvasAssets(source);
   return {
     title: head.title,
     description: head.description,
@@ -174,8 +191,109 @@ export function readCanvas(source: string): {
       libs: modules,
       scripts,
       posterAt: head.posterAt,
+      assets: declared.ids,
     },
+    assetCheck: canvasAssetProblems(source, declared),
   };
+}
+
+/** Refuse a save whose declaration is malformed (a token that is not a
+ *  file id, more than the cap): a 400-shaped InputError listing each fix. */
+function assertAssetDeclaration(read: ReturnType<typeof readCanvas>): void {
+  if (read.assetCheck.problems.length) {
+    throw new InputError(
+      `The canvas's file list is not valid, so nothing was saved: ${read.assetCheck.problems.join(' ')}`,
+    );
+  }
+}
+
+/** Ids for a sentence: the first few, and how many more. */
+function idList(ids: readonly string[]): string {
+  return ids.length > 5
+    ? `${ids.slice(0, 5).join(', ')} and ${ids.length - 5} more`
+    : ids.join(', ');
+}
+
+/**
+ * The save-time read check (task a265178d, plan section 2): of the ids a
+ * canvas declares, the ones the SAVER reads as files, in the caller's own
+ * scope (the request's or the turn's: the row rules decide). The rest are
+ * left out of `meta.assets`, and the save says so plainly, also when it
+ * drops ids an earlier save declared (`previous`: an editor who cannot
+ * read a file an author added takes it out of the canvas).
+ *
+ * A moment in time, by decision 6: an author who later loses a file leaves
+ * it declared. Every play checks again, as the viewer (or the link's media
+ * switch), so a declared file is never more than a file someone may ask
+ * for.
+ */
+export async function checkCanvasAssets(
+  ownerId: string,
+  declared: readonly string[],
+  previous: readonly string[] = [],
+): Promise<{ assets: string[]; problems: string[] }> {
+  if (!declared.length) return { assets: [], problems: [] };
+  const rows = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.id} = any (${`{${declared.join(',')}}`}::uuid[])`,
+      ),
+    );
+  const readable = new Set(rows.map((r) => r.id.toLowerCase()));
+  const assets = declared.filter((id) => readable.has(id));
+  const left = declared.filter((id) => !readable.has(id));
+  const had = new Set(previous);
+  const dropped = left.filter((id) => had.has(id));
+  const unknown = left.filter((id) => !had.has(id));
+  const problems: string[] = [];
+  if (unknown.length) {
+    problems.push(
+      `${unknown.length} declared file id(s) are not files you can read, so they were left out of ${CANVAS_ASSETS_META} and the canvas cannot play or show them: ${idList(unknown)}.`,
+    );
+  }
+  if (dropped.length) {
+    problems.push(
+      `This save took out ${dropped.length} file(s) an earlier save declared, because you cannot read them: ${idList(dropped)}. Viewers no longer get them; someone who reads them can save the canvas again to put them back.`,
+    );
+  }
+  return { assets, problems };
+}
+
+/**
+ * Who will not get a declared file, after a save (decisions 5 and 7): a
+ * file some readers of the canvas cannot read (its readers' workspaces are
+ * not all the file's: they hear the speech fallback), and a file outside
+ * the canvas's own workspace (an open link never serves it). Read in the
+ * caller's scope; empty on a brain with no workspaces.
+ */
+async function assetReaderGaps(canvasId: string, assets: readonly string[]): Promise<string[]> {
+  if (!assets.length) return [];
+  const rows = (await db.execute(sql`
+    select f.id::text as id,
+           not ${holdsAllSql('f', itemHoldersSql('c'))} as narrower,
+           (${itemHomeSql('f')} is distinct from ${itemHomeSql('c')}) as elsewhere
+      from nodes c join nodes f on f.owner_id = c.owner_id
+     where c.id = ${canvasId}::uuid
+       and f.id = any (${`{${assets.join(',')}}`}::uuid[])
+  `)) as unknown as { id: string; narrower: boolean; elsewhere: boolean }[];
+  const narrower = rows.filter((r) => r.narrower).map((r) => r.id.toLowerCase());
+  const elsewhere = rows.filter((r) => r.elsewhere).map((r) => r.id.toLowerCase());
+  const out: string[] = [];
+  if (narrower.length) {
+    out.push(
+      `Some readers of this canvas cannot read ${idList(narrower)}: they get the canvas's fallback (speech or nothing) for those files.`,
+    );
+  }
+  if (elsewhere.length) {
+    out.push(
+      `${idList(elsewhere)} sit(s) outside the canvas's own workspace, so an open link never serves them.`,
+    );
+  }
+  return out;
 }
 
 /** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
@@ -339,16 +457,19 @@ async function recordRevision(tx: PresentTx, id: string, rev: number, source: st
 export async function createPresent(
   ownerId: string,
   input: CreatePresentInput,
-): Promise<PresentDetail> {
+): Promise<SavedPresent> {
   const source = input.source ?? EMPTY_CANVAS;
   const read = readCanvas(source);
+  assertAssetDeclaration(read);
+  const checked = await checkCanvasAssets(ownerId, read.meta.assets ?? []);
+  const meta: PresentMeta = { ...read.meta, assets: checked.assets };
   await ensureRoot(ownerId);
   const title = (input.title ?? '').trim().slice(0, 200) || read.title || 'Untitled canvas';
 
   // Heads first: the folder the canvas lands in. A new
   // item is indexed by the extractor's drain and sweep, as a new drawing is;
   // only later text changes wait for the quiet period.
-  return headsOrSpace<PresentDetail>(
+  const created = await headsOrSpace<PresentDetail>(
     (f) =>
       withDeadlockRetry(() =>
         withNodeInsertHeads(ownerId, [{ type: 'present', path: PRESENTS_ROOT_LABEL }], f),
@@ -370,7 +491,7 @@ export async function createPresent(
         nodeId: node.id,
         source,
         sourceText: read.text,
-        meta: read.meta,
+        meta,
         css: input.css ?? '',
         rev: 1,
       });
@@ -378,15 +499,23 @@ export async function createPresent(
       const summary = newPublishedSummary(input.summary, 'author', presentSummaryHash(source));
       if (summary) await writePublishedSummary(tx, node.id, summary);
       return {
-        ...rowOf(node, { meta: read.meta, rev: 1, posterRev: null }),
+        ...rowOf(node, { meta, rev: 1, posterRev: null }),
         source,
       };
     },
   );
+  return {
+    ...created,
+    assetProblems: [
+      ...checked.problems,
+      ...read.assetCheck.warnings,
+      ...(await assetReaderGaps(created.id, checked.assets)),
+    ],
+  };
 }
 
 export type SavePresentResult =
-  | { ok: true; present: PresentDetail }
+  | { ok: true; present: SavedPresent }
   | { ok: false; conflict: true; rev: number }
   | { ok: false; missing: true };
 
@@ -403,6 +532,7 @@ export async function savePresentSource(
   input: { source: string; css: string; ifRev?: number },
 ): Promise<SavePresentResult> {
   const read = readCanvas(input.source);
+  assertAssetDeclaration(read);
   const [node] = await db
     .select()
     .from(nodes)
@@ -412,8 +542,22 @@ export async function savePresentSource(
   // The caller's right first: a scope that reads the canvas and may not edit
   // it gets the refusal, not a conflict.
   await assertItemRight(id, 'edit');
+  // The files this saver reads, of those the source declares (plan section
+  // 2); `previous`, the ones the stored canvas holds, so a dropped one is
+  // said.
+  const [stored] = await db
+    .select({ meta: presents.meta })
+    .from(presents)
+    .where(eq(presents.nodeId, id))
+    .limit(1);
+  const checked = await checkCanvasAssets(
+    ownerId,
+    read.meta.assets ?? [],
+    metaOf(stored?.meta).assets ?? [],
+  );
+  const meta: PresentMeta = { ...read.meta, assets: checked.assets };
 
-  return db.transaction(async (tx) => {
+  const res = await db.transaction(async (tx) => {
     // The node as it is now, locked: a rename or a tag change since the read
     // above is kept, not written back over.
     const [fresh] = await tx.select().from(nodes).where(eq(nodes.id, id)).for('update').limit(1);
@@ -435,7 +579,7 @@ export async function savePresentSource(
     // The title follows the canvas <title> only when the <title> changed: a
     // name given by hand (updatePresent) is kept through saves that leave
     // the head's title as it was.
-    const headTitleChanged = read.title !== readCanvas(cur.source).title;
+    const headTitleChanged = read.title !== parseCanvasHead(cur.source).title;
     const title = headTitleChanged && read.title ? read.title : fresh.title;
     const data: Record<string, unknown> = { ...((fresh.data ?? {}) as Record<string, unknown>) };
     if (read.description) data.description = read.description;
@@ -460,7 +604,7 @@ export async function savePresentSource(
       .set({
         source: input.source,
         sourceText: read.text,
-        meta: read.meta,
+        meta,
         css: input.css,
         rev,
         ...(textChanged ? { indexDueAt: new Date(Date.now() + PRESENT_INDEX_QUIET_MS) } : {}),
@@ -470,9 +614,21 @@ export async function savePresentSource(
     if (sourceChanged) await recordRevision(tx, id, rev, input.source);
     return {
       ok: true as const,
-      present: { ...rowOf(row, { meta: read.meta, rev, posterRev: null }), source: input.source },
+      present: { ...rowOf(row, { meta, rev, posterRev: null }), source: input.source },
     };
   });
+  if (!res.ok) return res;
+  return {
+    ok: true,
+    present: {
+      ...res.present,
+      assetProblems: [
+        ...checked.problems,
+        ...read.assetCheck.warnings,
+        ...(await assetReaderGaps(id, checked.assets)),
+      ],
+    },
+  };
 }
 
 export type UpdatePresentInput = {

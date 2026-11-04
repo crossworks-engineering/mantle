@@ -1163,7 +1163,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'media-workers',
     name: 'Media workers',
     description: 'Delegate to TTS / vision / summarizer / image workers.',
-    toolSlugs: ['synthesize_speech', 'extract_from_image', 'summarize_text', 'generate_image'],
+    toolSlugs: [
+      'synthesize_speech',
+      'speech_file_create',
+      'extract_from_image',
+      'summarize_text',
+      'generate_image',
+    ],
   },
   {
     slug: 'video-ingest',

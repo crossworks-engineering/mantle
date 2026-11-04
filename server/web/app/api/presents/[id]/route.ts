@@ -60,6 +60,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { source, ifRev, ...meta } = parsed.data;
+  let assetProblems: string[] | undefined;
   if (source !== undefined) {
     const css = await compileCanvasCss(source);
     const saved = await savePresentSource(user.id, id, {
@@ -72,6 +73,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         ? NextResponse.json({ error: 'stale rev', rev: saved.rev }, { status: 409 })
         : NextResponse.json({ error: 'not found' }, { status: 404 });
     }
+    assetProblems = saved.present.assetProblems;
   }
   if (Object.keys(meta).length > 0) {
     const row = await updatePresent(user.id, id, meta);
@@ -79,7 +81,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   const row = await getPresent(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json({ present: row });
+  // A source save says what it found about the files the canvas declares
+  // for mantle.media (the content layer's read check).
+  return NextResponse.json({ present: row, ...(assetProblems ? { assetProblems } : {}) });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

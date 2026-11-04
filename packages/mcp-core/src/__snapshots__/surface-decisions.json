@@ -5060,6 +5060,24 @@
    "peerRisky": false
   }
  },
+ "speech_file_create": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": true,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "ownerKey",
+   "creates": true,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
  "summarize_text": {
   "readOnly": true,
   "peerRisky": true,

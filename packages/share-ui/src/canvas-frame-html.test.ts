@@ -200,9 +200,15 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
   function frame(
     nonce: string,
     canvas?: string,
-    o: { source?: string; win?: Record<string, unknown>; globals?: Record<string, unknown> } = {},
+    o: {
+      source?: string;
+      win?: Record<string, unknown>;
+      globals?: Record<string, unknown>;
+      media?: boolean;
+    } = {},
   ) {
     const html = buildCanvasFrameHtml({
+      media: o.media,
       source: o.source ?? '<html><body>x</body></html>',
       css: '',
       importMapJson: '{"imports":{}}',
@@ -501,6 +507,133 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     await expect(f.api.set!('k', 1)).rejects.toThrow('picture');
     await expect(f.api.clear!()).rejects.toThrow('picture');
     expect(f.toParent.filter((m) => m.kind === 'data')).toEqual([]);
+  });
+
+  describe('mantle.media (task a265178d)', () => {
+    const A = '11111111-1111-4111-8111-111111111111';
+    /** A frame whose host answers media, with stand-in Blob and URL. */
+    function mediaFrame(nonce: string, media = true) {
+      const made: string[] = [];
+      const revoked: string[] = [];
+      class Blob {
+        constructor(
+          readonly parts: unknown[],
+          readonly opts: { type: string },
+        ) {}
+      }
+      // A constructor with the two statics, as the browser's URL.
+      const URL = Object.assign(function URL() {}, {
+        createObjectURL: (b: { opts: { type: string } }) => {
+          const u = `blob:x/${made.length}-${b.opts.type}`;
+          made.push(u);
+          return u;
+        },
+        revokeObjectURL: (u: string) => revoked.push(u),
+      });
+      const f = frame(nonce, undefined, { media, globals: { Blob, URL } });
+      const api = (f.win.mantle as { media: Record<string, (id: unknown) => Promise<string>> })
+        .media;
+      return { ...f, media: api, made, revoked };
+    }
+
+    it('holds a call until ready, sends the file id with the nonce, and makes a blob URL', async () => {
+      const f = mediaFrame('m1');
+      const got = f.media.url!(A.toUpperCase());
+      expect(f.toParent).toEqual([]);
+      f.load();
+      expect(f.toParent[1]).toEqual({ v: 1, kind: 'media', n: 'm1', id: 1, file: A });
+      f.reply(f.parent, {
+        v: 1,
+        kind: 'media-reply',
+        id: 1,
+        ok: true,
+        mime: 'audio/mpeg',
+        bytes: new ArrayBuffer(3),
+      });
+      await expect(got).resolves.toBe('blob:x/0-audio/mpeg');
+      // Cached: the same URL, no second call.
+      await expect(f.media.url!(A)).resolves.toBe('blob:x/0-audio/mpeg');
+      expect(f.toParent.filter((m) => m.kind === 'media')).toHaveLength(1);
+      // image is the same call.
+      expect(f.media.image).toBe(f.media.url);
+    });
+
+    it('release revokes the URL and the next call asks again; pagehide revokes all', async () => {
+      const f = mediaFrame('m2');
+      f.load();
+      const got = f.media.url!(A);
+      f.reply(f.parent, {
+        v: 1,
+        kind: 'media-reply',
+        id: 1,
+        ok: true,
+        mime: 'audio/mpeg',
+        bytes: new ArrayBuffer(1),
+      });
+      const u = await got;
+      void f.media.release!(A);
+      expect(f.revoked).toEqual([u]);
+      void f.media.url!(A);
+      expect(f.toParent.filter((m) => m.kind === 'media')).toHaveLength(2);
+      f.reply(f.parent, {
+        v: 1,
+        kind: 'media-reply',
+        id: 2,
+        ok: true,
+        mime: 'audio/mpeg',
+        bytes: new ArrayBuffer(1),
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      f.pagehide(false);
+      expect(f.revoked).toHaveLength(2);
+    });
+
+    it('a refusal is not cached; a forged or wrong-kind reply resolves nothing', async () => {
+      const f = mediaFrame('m3');
+      f.load();
+      const first = f.media.url!(A);
+      // A data reply with the media call's id, and a reply from a stranger.
+      f.reply(f.parent, { v: 1, kind: 'data-reply', id: 1, ok: true, result: 'x' });
+      f.reply(
+        { postMessage() {} },
+        {
+          v: 1,
+          kind: 'media-reply',
+          id: 1,
+          ok: true,
+          mime: 'audio/mpeg',
+          bytes: new ArrayBuffer(1),
+        },
+      );
+      // Bytes that are not an ArrayBuffer are a refusal.
+      f.reply(f.parent, {
+        v: 1,
+        kind: 'media-reply',
+        id: 1,
+        ok: true,
+        mime: 'audio/mpeg',
+        bytes: 'x',
+      });
+      await expect(first).rejects.toThrow('could not be loaded');
+      void f.media.url!(A).catch(() => undefined);
+      expect(f.toParent.filter((m) => m.kind === 'media')).toHaveLength(2);
+    });
+
+    it('refuses a non-uuid, an older host (no media) and a render at once, sending nothing', async () => {
+      const f = mediaFrame('m4');
+      f.load();
+      await expect(f.media.url!('../x')).rejects.toThrow('uuid');
+      const old = mediaFrame('m5', false);
+      old.load();
+      await expect(old.media.url!(A)).rejects.toThrow('not available');
+      const render = mediaFrame('', true);
+      render.load();
+      await expect(render.media.url!(A)).rejects.toThrow('not available');
+      expect(
+        [...f.toParent, ...old.toParent, ...render.toParent].filter((m) => m.kind === 'media'),
+      ).toEqual([]);
+    });
   });
 });
 

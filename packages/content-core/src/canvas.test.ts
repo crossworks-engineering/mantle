@@ -142,7 +142,7 @@ describe('canvasLoadProblems', () => {
 
   it('names an unknown library, a CDN and an outside file, with the fix', () => {
     const bad = `<html><body><script src="https://cdn.example.test/x.js"></script>
-      <img src="/api/files/1"><script type="module">import gsap from 'gsap'; import x from 'https://esm.example.test/y';</script></body></html>`;
+      <img src="/img/1.png"><script type="module">import gsap from 'gsap'; import x from 'https://esm.example.test/y';</script></body></html>`;
     const p = canvasLoadProblems(bad, MODULES);
     expect(p).toHaveLength(4);
     expect(p.join('\n')).toMatch(

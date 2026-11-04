@@ -40,7 +40,14 @@ export {
   callerSeesNode,
   callerMayEditFolder,
 } from './ops/files';
-export { listRecentFiles, listFiles, folderById, folderByPath, fileById } from './ops/queries';
+export {
+  listRecentFiles,
+  listFiles,
+  folderById,
+  folderByPath,
+  fileById,
+  filesByIds,
+} from './ops/queries';
 export {
   createFolder,
   EXTRACTED_IMAGES_SLUG,

@@ -2,6 +2,7 @@
  *  and skills. The single home for these bodies; the manifest references them. */
 import { FONT_LIBRARY } from '@mantle/client-types/display-fonts';
 import { CANVAS_DATA_HOWTO } from '@mantle/content-core/canvas-data';
+import { CANVAS_MEDIA_HOWTO } from '@mantle/content-core/canvas-media';
 import { CIRCUIT_DRAWING_STEPS } from '@mantle/tools/circuit-workflow';
 import { ZOOMABLE_HOWTO } from '@mantle/diagram-templates/zoom-howto';
 
@@ -1057,6 +1058,10 @@ The frame has NO network: no fetch, no CDN, no outside images, fonts or styleshe
 ## Saving data
 
 ${CANVAS_DATA_HOWTO}
+
+## Sound and pictures from Files
+
+${CANVAS_MEDIA_HOWTO}
 
 ## Libraries: write the import, nothing else
 

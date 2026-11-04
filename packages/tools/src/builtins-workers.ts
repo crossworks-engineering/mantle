@@ -32,7 +32,18 @@ import { and, eq } from 'drizzle-orm';
 import { db, nodes, getDefaultWorker, type AiWorker, type AiWorkerKind } from '@mantle/db';
 import { resolveDefaultWorker } from '@mantle/api-keys';
 import { accountForSurface, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
-import { ensureAutoFiledFolder, fileById, readFileById, upsertFile } from '@mantle/files';
+import {
+  ensureAutoFiledFolder,
+  ensureFolderPath,
+  fileById,
+  FileNameTakenError,
+  parserExtractAudio,
+  readFileById,
+  saveExport,
+  upsertFile,
+  type FileRow,
+} from '@mantle/files';
+import { guardNewFileIn } from '@mantle/content/tree';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
 import type { ImageGenModelInfo, ImageGenParam, ProviderCredential, TtsParam } from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
@@ -42,11 +53,14 @@ import { str, strOpt, numOpt as num } from './coerce';
 import { resolveImageParams } from './image-params';
 import {
   backgroundFence,
+  ConflictError,
   errorMessage,
+  publicErrorText,
   publicProviderErrorMessage,
   withFenceNote,
 } from '@mantle/std';
 import { CS } from './client-sourced-rule';
+import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
 
 // ─── shared helpers ────────────────────────────────────────────────
 
@@ -1016,8 +1030,346 @@ registerDynamicSchema('generate_image', async (current, ctx) => {
   };
 });
 
+// ─── speech_file_create ────────────────────────────────────────────
+
+/** Lines one speech_file_create call speaks, and each line's longest text. */
+export const SPEECH_FILE_LINES_MAX = 20;
+const SPEECH_FILE_TEXT_MAX = 4000;
+/** Lines spoken at once within one call. */
+const SPEECH_FILE_CONCURRENCY = 2;
+/** A line's key: what the canvas looks the clip up by, and the file name. */
+const SPEECH_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+/** The longest clip turned to mp3, and its largest mp3. */
+const SPEECH_FILE_MAX_SECONDS = 600;
+const SPEECH_FILE_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Raw 16-bit little-endian mono PCM (what Gemini speech returns, as
+ * `audio/pcm` or `audio/L16;rate=24000`) in a WAV header, so the parser's
+ * ffmpeg can read it. The rate comes from the type (`rate=`), else 24000.
+ */
+export function pcmToWav(pcm: Buffer, mimeType: string): Buffer {
+  const m = /rate=(\d{4,6})/i.exec(mimeType);
+  const rate = m ? Number(m[1]) : 24_000;
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0, 'ascii');
+  h.writeUInt32LE(36 + pcm.length, 4);
+  h.write('WAVE', 8, 'ascii');
+  h.write('fmt ', 12, 'ascii');
+  h.writeUInt32LE(16, 16);
+  h.writeUInt16LE(1, 20); // PCM
+  h.writeUInt16LE(1, 22); // mono
+  h.writeUInt32LE(rate, 24);
+  h.writeUInt32LE(rate * 2, 28);
+  h.writeUInt16LE(2, 32);
+  h.writeUInt16LE(16, 34);
+  h.write('data', 36, 'ascii');
+  h.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([h, pcm]);
+}
+
+/** MPEG-1 and MPEG-2 layer III bitrates (kbps) by header index. */
+const MP3_KBPS = {
+  v1: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],
+  v2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
+};
+
+/** An mp3's length in seconds from its first frame's bitrate (a constant
+ *  bitrate, what speech providers send), or null when no frame is found in
+ *  the first 64 KB. */
+export function mp3Seconds(mp3: Buffer): number | null {
+  let i = 0;
+  // Past an ID3v2 tag.
+  if (mp3.length > 10 && mp3.toString('latin1', 0, 3) === 'ID3') {
+    i =
+      10 +
+      (((mp3[6]! & 0x7f) << 21) |
+        ((mp3[7]! & 0x7f) << 14) |
+        ((mp3[8]! & 0x7f) << 7) |
+        (mp3[9]! & 0x7f));
+  }
+  const end = Math.min(mp3.length - 4, i + 65_536);
+  for (; i < end; i++) {
+    if (mp3[i] !== 0xff || (mp3[i + 1]! & 0xe0) !== 0xe0) continue;
+    const version = (mp3[i + 1]! >> 3) & 3; // 3 = MPEG-1, 2 = MPEG-2, 0 = MPEG-2.5
+    const layer = (mp3[i + 1]! >> 1) & 3; // 1 = layer III
+    const kbps = (version === 3 ? MP3_KBPS.v1 : MP3_KBPS.v2)[(mp3[i + 2]! >> 4) & 0xf];
+    if (version === 1 || layer !== 1 || !kbps) continue;
+    return Math.round((((mp3.length - i) * 8) / (kbps * 1000)) * 10) / 10;
+  }
+  return null;
+}
+
+/** The speech bytes as mp3: as they came, or turned by the parser (a WAV
+ *  or raw PCM from Gemini, any other container). */
+async function asMp3(
+  bytes: Buffer,
+  mimeType: string,
+): Promise<{ ok: true; mp3: Buffer; seconds: number | null } | { ok: false; error: string }> {
+  const type = mimeType.split(';')[0]!.trim().toLowerCase();
+  if (type === 'audio/mpeg' || type === 'audio/mp3') {
+    return { ok: true, mp3: bytes, seconds: mp3Seconds(bytes) };
+  }
+  const input = type === 'audio/pcm' || type === 'audio/l16' ? pcmToWav(bytes, mimeType) : bytes;
+  const r = await parserExtractAudio(input, {
+    maxDurationSeconds: SPEECH_FILE_MAX_SECONDS,
+    maxAudioBytes: SPEECH_FILE_MAX_BYTES,
+  });
+  if (!r.ok) {
+    return {
+      ok: false,
+      error:
+        r.code === 'too_large'
+          ? `a line is longer than ${SPEECH_FILE_MAX_SECONDS / 60} minutes of speech: split it`
+          : 'the speech could not be turned into mp3 (the parser is not available)',
+    };
+  }
+  return { ok: true, mp3: r.value.bytes, seconds: r.value.durationSeconds };
+}
+
+/** Save `bytes` as `filename` in `folderPath`, never over a file: a taken
+ *  name takes `-2` and on (as an export does). */
+async function saveFreshFile(
+  ownerId: string,
+  folderPath: string,
+  filename: string,
+  bytes: Buffer,
+  data: Record<string, unknown>,
+): Promise<FileRow> {
+  const dot = filename.lastIndexOf('.');
+  const stem = filename.slice(0, dot);
+  const ext = filename.slice(dot);
+  for (let n = 1; n <= 20; n++) {
+    const name = n === 1 ? filename : `${stem}-${n}${ext}`;
+    try {
+      return await upsertFile({ ownerId, parentPath: folderPath, filename: name, bytes, data });
+    } catch (err) {
+      if (err instanceof FileNameTakenError || err instanceof ConflictError) continue;
+      throw err;
+    }
+  }
+  return upsertFile({
+    ownerId,
+    parentPath: folderPath,
+    filename: `${stem}-${Date.now().toString(36)}${ext}`,
+    bytes,
+    data,
+  });
+}
+
+/** Run `fn` over `items`, `limit` at a time, results in order. */
+async function inTurns<T, R>(items: readonly T[], limit: number, fn: (t: T) => Promise<R>) {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const lane = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
+  return out;
+}
+
+const speech_file_create: BuiltinToolDef = {
+  slug: 'speech_file_create',
+  policy: {
+    matrix: { action: 'create', param: 'parent_path', kinds: ['file'] },
+    effect: 'write',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'any',
+    creates: 'file',
+    createsIn: 'parent_path',
+    makesFolders: true,
+    peerRisky: true,
+    clientSourced: CS.creates(),
+  },
+  name: 'Make speech files',
+  description:
+    "Speak lines of text with the owner's default TTS worker and save each as an mp3 in Files: narration a canvas plays with `mantle.media` (canvas_library `media`). 1 to 20 lines per call; each `key` names its clip (`<prefix>-<key>.mp3`). Never over a file: a re-run makes new files, so put the new ids in the canvas. Without `parent_path` the files go where exports go. Returns each line's `fileId` and `seconds`, and landedIn.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      lines: {
+        type: 'array',
+        minItems: 1,
+        maxItems: SPEECH_FILE_LINES_MAX,
+        description: 'The lines to speak, in order.',
+        items: {
+          type: 'object',
+          properties: {
+            key: {
+              type: 'string',
+              description:
+                "What the canvas looks the clip up by, e.g. 's03-l2' (letters, digits, _ . -).",
+            },
+            text: { type: 'string', minLength: 1, description: 'The words to speak.' },
+          },
+          required: ['key', 'text'],
+          additionalProperties: false,
+        },
+      },
+      prefix: {
+        type: 'string',
+        description: "The start of every file name, e.g. 'tour'.",
+      },
+      voice: {
+        type: 'string',
+        description: "A voice id; the worker's own voice when left out, e.g. 'Aoede'.",
+      },
+      parent_path: {
+        type: 'string',
+        description:
+          "ltree path of a folder to save in, e.g. 'files.narration'. Left out: where exports go; the reply says where (landedIn).",
+      },
+      confirm: CONFIRM_INPUT,
+    },
+    required: ['lines', 'prefix'],
+  },
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const raw = Array.isArray(input.lines) ? (input.lines as unknown[]) : [];
+    if (raw.length < 1 || raw.length > SPEECH_FILE_LINES_MAX) {
+      return { ok: false, error: `lines: 1 to ${SPEECH_FILE_LINES_MAX} per call.` };
+    }
+    const lines: Array<{ key: string; text: string }> = [];
+    for (const l of raw) {
+      const o = (l ?? {}) as Record<string, unknown>;
+      const key = str(o.key).trim();
+      const text = str(o.text).trim();
+      if (!SPEECH_KEY_RE.test(key)) {
+        return {
+          ok: false,
+          error: `key '${key.slice(0, 40)}': letters, digits and _ . - only, up to 64.`,
+        };
+      }
+      if (!text || text.length > SPEECH_FILE_TEXT_MAX) {
+        return {
+          ok: false,
+          error: `line '${key}': 1 to ${SPEECH_FILE_TEXT_MAX} characters of text.`,
+        };
+      }
+      if (lines.some((x) => x.key === key))
+        return { ok: false, error: `key '${key}' is given twice.` };
+      lines.push({ key, text });
+    }
+    const prefix = str(input.prefix).trim();
+    if (!SPEECH_KEY_RE.test(prefix)) {
+      return { ok: false, error: 'prefix: letters, digits and _ . - only, up to 64.' };
+    }
+
+    const resolved = await defaultWorkerOrError(ctx.ownerId, 'tts');
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    const { worker, credential } = resolved;
+    const adapter = getTtsAdapter(worker.provider);
+    if (!adapter) {
+      return { ok: false, error: `No TTS adapter wired for provider '${worker.provider}'.` };
+    }
+    const params = (worker.params ?? {}) as {
+      voice?: string;
+      speed?: number;
+      instructions?: string;
+      language?: string;
+    };
+    const voiceId = strOpt(input.voice) ?? params.voice ?? 'nova';
+
+    // The folder first, before any speech is paid for: a refusal costs nothing.
+    const parentPath = strOpt(input.parent_path)?.trim();
+    let folderPath: string | null = null;
+    if (parentPath) {
+      try {
+        folderPath = await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
+        await guardNewFileIn(ctx.ownerId, folderPath, `${prefix}-${lines[0]!.key}.mp3`, {
+          confirm: input.confirm === true,
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          error: visibilityRefusal(err) ?? publicErrorText(err, 'speech_file_create'),
+        };
+      }
+    }
+
+    type Made = { key: string; fileId: string; seconds: number | null; filename: string };
+    let landedIn: unknown = null;
+    const made = await inTurns(lines, SPEECH_FILE_CONCURRENCY, async (line) => {
+      try {
+        const synth = await adapter.synthesize({
+          apiKey: credential.apiKey,
+          text: line.text,
+          voice: voiceId as unknown as never,
+          model: worker.model,
+          speed: params.speed ?? 1.0,
+          format: 'mp3',
+          instructions: params.instructions,
+          language: params.language,
+        });
+        const audio = await asMp3(synth.bytes, synth.mimeType);
+        if (!audio.ok) return { key: line.key, error: audio.error };
+        const filename = `${prefix}-${line.key}.mp3`;
+        const data = { speech: { key: line.key, voice: voiceId, model: synth.model } };
+        let file: FileRow;
+        if (folderPath) {
+          file = await saveFreshFile(ctx.ownerId, folderPath, filename, audio.mp3, data);
+        } else {
+          const saved = await saveExport({
+            ownerId: ctx.ownerId,
+            filename,
+            bytes: audio.mp3,
+            data,
+          });
+          file = saved.file;
+          landedIn ??= saved.landedIn;
+        }
+        return {
+          key: line.key,
+          fileId: file.id,
+          filename: file.filename,
+          seconds: audio.seconds,
+        } satisfies Made;
+      } catch (err) {
+        return {
+          key: line.key,
+          error: publicProviderErrorMessage(err, 'speech_file_create', ctx.step),
+        };
+      }
+    });
+    const files = made.filter((r): r is Made => 'fileId' in r);
+    const failed = made.filter((r): r is { key: string; error: string } => 'error' in r);
+    ctx.step?.setMeta({
+      adapter: adapter.adapterName,
+      worker_slug: worker.slug,
+      voice: voiceId,
+      made: files.length,
+      failed: failed.length,
+    });
+    if (!files.length) {
+      return {
+        ok: false,
+        error: `No clip was made: ${failed.map((f) => `${f.key}: ${f.error}`).join('; ')}`,
+      };
+    }
+    return {
+      ok: true,
+      output: {
+        files: files.map((f) => ({
+          key: f.key,
+          fileId: f.fileId,
+          filename: f.filename,
+          seconds: f.seconds,
+        })),
+        ...(failed.length ? { failed } : {}),
+        ...(folderPath ? { parent_path: folderPath } : landedIn ? { landedIn } : {}),
+        voice: voiceId,
+        next: 'Put each fileId in the canvas: list them in <meta name="canvas:assets" content="id id ..."> and play them with mantle.media.url(id) (canvas_library media).',
+      },
+    };
+  },
+};
+
 export const WORKER_DELEGATION_TOOLS: readonly BuiltinToolDef[] = [
   synthesize_speech,
+  speech_file_create,
   extract_from_image,
   summarize_text,
   generate_image,

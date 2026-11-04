@@ -13,8 +13,9 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { db, draws, nodes, tables, type Share } from '@mantle/db';
+import { db, draws, itemHomeSql, nodes, tables, type Share } from '@mantle/db';
 import { getPresentEmbedFacts } from '@mantle/content/presents';
+import { adminLoginActive, memberLoginActive } from '@/lib/auth';
 import {
   drawPlacedFileIds,
   getPage,
@@ -23,6 +24,8 @@ import {
   referencedDrawIds,
   referencedFileIds,
   referencedPresentIds,
+  linkRights,
+  shareMediaBy,
   shareServedIds,
   ensureTableDoc,
   emptyTableDoc,
@@ -52,6 +55,7 @@ export {
   getActiveShareForNode,
   getLiveShare,
   setShareServed,
+  setShareMedia,
   resolveActiveShareByToken,
   resolveActiveShareRowByToken,
   recordShareView,
@@ -615,8 +619,9 @@ export async function isEmbeddedDrawAllowed(share: Share, drawId: string): Promi
  *  that are served; an open folder link only a file under the folder's
  *  subtree that is on its list (evaluated per request: a file moved out is
  *  denied on its next fetch; one uploaded later is not on the list). A
- *  contact share serves what its item names. Anything else is denied. This
- *  is the asset route's authorization. */
+ *  contact share serves what its item names. A Present canvas's open link
+ *  serves only what canvasMediaServable allows. Anything else is denied.
+ *  This is the asset route's authorization. */
 export async function isAssetAllowed(share: Share, fileId: string): Promise<boolean> {
   if (share.nodeType === 'file') return share.nodeId === fileId;
   if (!isUuid(fileId)) return false;
@@ -638,7 +643,47 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
     if (!(await isFile(share.ownerId, id))) return false;
     return isServed(share, id);
   }
+  // A canvas runs on an open link only: a contact share never serves one.
+  if (share.nodeType === 'present' && !share.contactId) {
+    return canvasMediaServable(share, id);
+  }
   return false;
+}
+
+/**
+ * May a canvas's open link serve the file `id` (lower case) to its
+ * `mantle.media` (task a265178d)? Every part checked live, per request, so
+ * any change stops the next fetch:
+ *
+ *  - the link's media is on (the share dialog's switch, `settings.media`);
+ *  - the canvas declares the file (its saved `meta.assets`) and it is a file;
+ *  - the file sits in the canvas's own workspace (decision 7: a member's
+ *    canvas never hands out an Admin file on an anonymous link);
+ *  - the login that turned media on is still a live login and still reads
+ *    the file (link-serve linkRights, its workspaces now).
+ *
+ * The route answers every no with the same 404, before it reads any bytes.
+ */
+async function canvasMediaServable(share: Share, id: string): Promise<boolean> {
+  const by = shareMediaBy(share.settings);
+  if (!by) return false;
+  const rows = (await db.execute(sql`
+    select (${itemHomeSql('f')} is not distinct from ${itemHomeSql('c')}) as same_ws
+      from presents p
+      join nodes c on c.id = p.node_id
+      join nodes f on f.id = ${id}::uuid
+     where p.node_id = ${share.nodeId}::uuid
+       and c.owner_id = ${share.ownerId}::uuid
+       and c.type = 'present'
+       and f.owner_id = ${share.ownerId}::uuid
+       and f.type = 'file'
+       and coalesce(p.meta->'assets', '[]'::jsonb) ? ${id}
+     limit 1
+  `)) as unknown as { same_ws: boolean }[];
+  if (rows[0]?.same_ws !== true) return false;
+  if (!((await memberLoginActive(by)) || (await adminLoginActive(by)))) return false;
+  const rights = await linkRights(share.ownerId, by, [id]);
+  return rights.get(id)?.read === true;
 }
 
 /** Whether `id` is one of the owner's files. */
