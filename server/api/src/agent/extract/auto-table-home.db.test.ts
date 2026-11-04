@@ -494,8 +494,11 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
       e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)],
     );
-  const deleteFile = (file: string) =>
-    m.withNodeDeleteHeads([file], (tx) => tx.execute(sqlTag`delete from nodes where id = ${file}`));
+  const deleteFile = async (file: string) => {
+    await m.withNodeDeleteHeads([file], (tx) =>
+      tx.execute(sqlTag`delete from nodes where id = ${file}`),
+    );
+  };
 
   it('a failed copy leaves no table: the row and the workbook go', async () => {
     const file = await fileIn(team, 'failed-copy.csv');
