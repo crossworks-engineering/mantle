@@ -8,6 +8,7 @@ import { db } from './gateway/handles';
 import { withHeads } from './gateway/heads';
 import { itemGrants } from './schema/index';
 import { withCreateHome } from './viewer';
+import { liveWorkspaceSql } from './workspace-live';
 
 /** The file is gone, or its home is: no part, as it must never fall to Admin. */
 export class PartHasNoHomeError extends Error {
@@ -60,7 +61,7 @@ export async function createPartOfFile<T extends { id: string }>(
   create: () => Promise<T>,
 ): Promise<T> {
   const [file] = (await db.execute(sql`select w.id::text as home from nodes n
-    join workspaces w on w.id = n.home_ws and w.archived_at is null
+    join workspaces w on w.id = n.home_ws and ${liveWorkspaceSql('w')}
     where n.id = ${fileId} and n.type = 'file'`)) as unknown as { home: string }[];
   if (!file) throw new PartHasNoHomeError();
   const part = await withCreateHome({ createWs: file.home, privateWs: null }, create);

@@ -13,7 +13,7 @@
  * counts the rest. Manual, dry run by default, never deletes, no model call,
  * ids and counts only.
  */
-import { copyFileRows, db, sql } from '@mantle/db';
+import { copyFileRows, db, liveWorkspaceSql, sql } from '@mantle/db';
 
 export const PART_REPAIR_DEFAULT_LIMIT = 100;
 export const PART_REPAIR_MAX_LIMIT = 1000;
@@ -27,7 +27,7 @@ const OLD_PARTS = sql`
              and not exists (select 1 from item_grants o where o.node_id = n.id and not o.is_home
                               and o.via_folder_id is null) as ready
       from nodes n
-      join workspaces a on a.owner_id = n.owner_id and a.is_admin and a.archived_at is null
+      join workspaces a on a.owner_id = n.owner_id and a.is_admin and ${liveWorkspaceSql('a')}
       left join item_grants h on h.node_id = n.id and h.is_home
       left join nodes f on f.id::text = n.data->>'sourceFileId' and f.type = 'file'
      where (n.type = 'table' and 'auto-import' = any(n.tags) and n.data ? 'sourceFileId')
