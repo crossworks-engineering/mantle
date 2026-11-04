@@ -153,18 +153,31 @@ export async function collectBoxStatus(ownerId: string): Promise<BoxStatus> {
   };
 }
 
-/** One collection at a time, served for BOX_STATUS_TTL_MS. A failed
- *  collection is not kept. */
-const cache = new TtlCache<string, Promise<BoxStatus>>({ ttlMs: BOX_STATUS_TTL_MS });
+/** How long a FAILED collection is served: short, so a fix shows soon, but
+ *  long enough that a polling screen (or many) cannot force a full
+ *  collection on every request while something is down. */
+export const BOX_STATUS_FAIL_TTL_MS = 5_000;
 
-export function boxStatus(ownerId: string): Promise<BoxStatus> {
-  const hit = cache.get(ownerId);
-  if (hit) return hit;
-  const pending = collectBoxStatus(ownerId);
-  cache.set(ownerId, pending);
-  pending.catch(() => cache.delete(ownerId));
-  return pending;
+/** One collection at a time per owner, served for BOX_STATUS_TTL_MS, a
+ *  failed one for BOX_STATUS_FAIL_TTL_MS. `collect` and `now` are for tests. */
+export function makeBoxStatusCache(
+  collect: (ownerId: string) => Promise<BoxStatus>,
+  now?: () => number,
+): (ownerId: string) => Promise<BoxStatus> {
+  const cache = new TtlCache<string, Promise<BoxStatus>>({ ttlMs: BOX_STATUS_TTL_MS, now });
+  return (ownerId) => {
+    const hit = cache.get(ownerId);
+    if (hit) return hit;
+    const pending = collect(ownerId);
+    cache.set(ownerId, pending);
+    pending.catch(() => {
+      if (cache.get(ownerId) === pending) cache.set(ownerId, pending, BOX_STATUS_FAIL_TTL_MS);
+    });
+    return pending;
+  };
 }
+
+export const boxStatus = makeBoxStatusCache(collectBoxStatus);
 
 /** Install the collector into the box status bridge (@mantle/tools). Boot
  *  calls it once; again is a no-op change. */
@@ -187,9 +200,21 @@ export function containersView(
 
 /** GET /api/box-status: the status (held to schema 1, as box_status sends
  *  it) and the containers docker reports. Read-only; the status part is the
- *  same 30-second collection every other caller gets. */
-export async function boxStatusView(ownerId: string): Promise<BoxStatusView> {
-  const box = shapeBoxStatus(await boxStatus(ownerId));
+ *  same 30-second collection every other caller gets. `deps` is for tests. */
+export async function boxStatusView(
+  ownerId: string,
+  deps: {
+    status?: (ownerId: string) => Promise<BoxStatus>;
+    file?: () => ServicesFile | null;
+  } = {},
+): Promise<BoxStatusView> {
+  const box = shapeBoxStatus(await (deps.status ?? boxStatus)(ownerId));
   if (!box) throw new Error('box status: the collector returned no schema 1 status');
-  return { box, ...containersView(readServicesFile()) };
+  const c = containersView((deps.file ?? readServicesFile)());
+  return {
+    box,
+    containers: c.containers,
+    containersCheckedAt: c.containersCheckedAt,
+    core: c.core,
+  };
 }

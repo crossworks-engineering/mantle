@@ -122,13 +122,16 @@ export const BOX_CONTAINERS = [
   'worker_runs',
   'worker_push',
   'client_web',
+  'client_caddy',
 ] as const;
 export type BoxContainer = (typeof BOX_CONTAINERS)[number];
 
-/** One container as docker saw it: `container` is State.Status ('running',
- *  'exited', ...) or 'absent', `health` the healthcheck status or 'none',
- *  `restarts` docker's restart count, `startedAt` when it last started
- *  (ISO, null when never). */
+/** One container as docker saw it: `container` is State.Status (one of
+ *  CONTAINER_STATES) or 'absent', `health` the healthcheck status (one of
+ *  CONTAINER_HEALTHS), either 'unknown' when the file says anything else;
+ *  `restarts` docker's restart count (it does not count autoheal's
+ *  restarts, which restart the same container: `startedAt` shows those),
+ *  `startedAt` when it last started (ISO, null when never). */
 export type ContainerFileEntry = {
   container: string;
   health: string;
@@ -167,13 +170,27 @@ function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
 }
 
-/** A docker word (a status, a health): lower-case letters only, or the
- *  fallback. */
-function word(v: unknown, fallback: string): string {
-  return typeof v === 'string' && /^[a-z]{1,20}$/.test(v) ? v : fallback;
+/** docker's container states, and `absent` (the box does not run it). */
+export const CONTAINER_STATES = [
+  'created',
+  'running',
+  'paused',
+  'restarting',
+  'removing',
+  'exited',
+  'dead',
+  'absent',
+] as const;
+/** docker's healthcheck states, and `none` (no healthcheck). */
+export const CONTAINER_HEALTHS = ['healthy', 'unhealthy', 'starting', 'none'] as const;
+
+/** One of `allowed`, or `unknown`. */
+function oneOf(v: unknown, allowed: readonly string[]): string {
+  return typeof v === 'string' && allowed.includes(v) ? v : 'unknown';
 }
 
-const STARTED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+/** A UTC timestamp to the second, as the updater writes them. */
+const ISO_SECONDS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 /** The `containers` map: known names only, each value held to its shape. */
 function parseContainers(raw: unknown): ServicesFile['containers'] {
@@ -184,11 +201,14 @@ function parseContainers(raw: unknown): ServicesFile['containers'] {
     const c = r[name] as Record<string, unknown> | undefined;
     if (!c || typeof c !== 'object') continue;
     out[name] = {
-      container: word(c.container, 'absent'),
-      health: word(c.health, 'none'),
-      restarts: num(c.restarts) ?? 0,
+      container: oneOf(c.container, CONTAINER_STATES),
+      health: oneOf(c.health, CONTAINER_HEALTHS),
+      restarts:
+        Number.isSafeInteger(c.restarts) && (c.restarts as number) >= 0
+          ? (c.restarts as number)
+          : 0,
       startedAt:
-        typeof c.started_at === 'string' && STARTED_AT.test(c.started_at) ? c.started_at : null,
+        typeof c.started_at === 'string' && ISO_SECONDS.test(c.started_at) ? c.started_at : null,
     };
   }
   return out;
@@ -229,7 +249,8 @@ export function parseServicesFile(raw: string): ServicesFile | null {
     diskFreeKb: num(o.disk_free_kb),
     core: o.core === true,
     verbs: Array.isArray(o.verbs) ? o.verbs.filter((v): v is string => typeof v === 'string') : [],
-    checkedAt: typeof o.checked_at === 'string' && o.checked_at ? o.checked_at : null,
+    checkedAt:
+      typeof o.checked_at === 'string' && ISO_SECONDS.test(o.checked_at) ? o.checked_at : null,
   };
 }
 

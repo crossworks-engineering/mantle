@@ -3,9 +3,15 @@
  * updater's services.json as read, nothing added; null all round where the
  * brain has no file. The route itself is GET /api/box-status.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseServicesFile } from '@mantle/config';
-import { containersView } from './box-status';
+import type { BoxStatus } from '@mantle/tools';
+import {
+  BOX_STATUS_FAIL_TTL_MS,
+  BOX_STATUS_TTL_MS,
+  containersView,
+  makeBoxStatusCache,
+} from './box-status';
 
 describe('containersView', () => {
   it('passes the parsed containers through with the check time and the shape', () => {
@@ -57,5 +63,37 @@ describe('containersView', () => {
       containersCheckedAt: null,
       core: null,
     });
+  });
+});
+
+describe('the box status cache', () => {
+  const status = { schema: 1 } as BoxStatus;
+
+  it('serves one collection for the TTL', async () => {
+    let t = 0;
+    const collect = vi.fn(async () => status);
+    const get = makeBoxStatusCache(collect, () => t);
+    await get('o');
+    t += BOX_STATUS_TTL_MS - 1;
+    await get('o');
+    expect(collect).toHaveBeenCalledTimes(1);
+    t += 2;
+    await get('o');
+    expect(collect).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a failed collection for a few seconds, then tries again', async () => {
+    let t = 0;
+    const collect = vi.fn(async (): Promise<BoxStatus> => {
+      throw new Error('down');
+    });
+    const get = makeBoxStatusCache(collect, () => t);
+    await expect(get('o')).rejects.toThrow('down');
+    t += BOX_STATUS_FAIL_TTL_MS - 1;
+    await expect(get('o')).rejects.toThrow('down');
+    expect(collect).toHaveBeenCalledTimes(1);
+    t += 2;
+    await expect(get('o')).rejects.toThrow('down');
+    expect(collect).toHaveBeenCalledTimes(2);
   });
 });

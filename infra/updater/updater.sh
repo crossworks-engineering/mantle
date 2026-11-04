@@ -1614,10 +1614,13 @@ profile_active() { printf ',%s,' "$(profiles_csv)" | grep -q ",$1,"; }
 # Every long-running container of the stack, by compose service name, for
 # the Status screen (services.json `containers`): the brain cannot see docker,
 # and a worker's heartbeat lives in its own /tmp, so this sidecar reports
-# what docker knows. Fixed names only; the one-shot jobs (migrate,
-# objectstore_init, ollama_pull) are left out, since exited is their normal
-# end. A container the box does not run reads `absent`.
-BOX_CONTAINERS="postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web"
+# what docker knows. Fixed names only, the same list as @mantle/config
+# BOX_CONTAINERS (packages/config/src/services.test.ts holds the two equal);
+# the one-shot jobs (migrate, objectstore_init, ollama_pull) are left out,
+# since exited is their normal end. The client stack's two (client_web and,
+# on a standalone client box, client_caddy) are here too. A container the box
+# does not run reads `absent`.
+BOX_CONTAINERS="postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy"
 
 # box_container_name <service>: its container_name in the compose files.
 box_container_name() {
@@ -1628,30 +1631,43 @@ box_container_name() {
 }
 
 # containers_json: `"<service>":{"container":..,"health":..,"restarts":N,"started_at":".."}`
-# for every BOX_CONTAINERS entry, comma separated. One docker inspect for all
-# of them; enums, a count and a timestamp only, each filtered to its own
-# alphabet, so nothing a container says about itself gets through.
+# for every BOX_CONTAINERS entry, comma separated; NOTHING when docker gave
+# no row at all (it is unreachable: this updater's own container always
+# runs), so the caller writes `null` rather than every container `absent`.
+# One docker inspect for all of them. Only docker's own words leave (each
+# value outside its known set reads `unknown`), a count, and a timestamp
+# held to its shape, so nothing a container says about itself gets through.
 containers_json() {
   cj_names=""
   for cj_s in $BOX_CONTAINERS; do cj_names="$cj_names $(box_container_name "$cj_s")"; done
   # shellcheck disable=SC2086 # the names are fixed words, split on purpose
-  cj_rows=$(docker inspect -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} {{.RestartCount}} {{.State.StartedAt}}' \
+  cj_rows=$(docker inspect --type container \
+    -f '{{.Name}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} {{.RestartCount}} {{.State.StartedAt}}' \
     $cj_names 2>/dev/null)
+  [ -n "$cj_rows" ] || return 0
   cj_body=""
   for cj_s in $BOX_CONTAINERS; do
     cj_n=$(box_container_name "$cj_s")
     cj_row=$(printf '%s\n' "$cj_rows" | awk -v n="/$cj_n" '$1 == n { print; exit }')
-    cj_c=$(printf '%s' "$cj_row" | awk '{ print $2 }' | tr -cd 'a-z')
-    cj_h=$(printf '%s' "$cj_row" | awk '{ print $3 }' | tr -cd 'a-z')
-    cj_r=$(printf '%s' "$cj_row" | awk '{ print $4 }')
-    cj_t=$(printf '%s' "$cj_row" | awk '{ print $5 }' | cut -c1-19 | tr -cd '0-9T:-')
-    [ -n "$cj_c" ] || cj_c=absent
-    [ -n "$cj_h" ] || cj_h=none
-    case "$cj_t" in 0001-* | '') cj_t="" ;; *) cj_t="${cj_t}Z" ;; esac
+    if [ -z "$cj_row" ]; then
+      cj_c=absent; cj_h=none; cj_r=0; cj_t=""
+    else
+      cj_c=$(printf '%s' "$cj_row" | awk '{ print $2 }')
+      cj_h=$(printf '%s' "$cj_row" | awk '{ print $3 }')
+      cj_r=$(printf '%s' "$cj_row" | awk '{ print $4 }')
+      cj_t=$(printf '%s' "$cj_row" | awk '{ print $5 }' | cut -c1-19)
+      case "$cj_c" in created | running | paused | restarting | removing | exited | dead) : ;; *) cj_c=unknown ;; esac
+      case "$cj_h" in healthy | unhealthy | starting | none) : ;; *) cj_h=unknown ;; esac
+      case "$cj_t" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9])
+          case "$cj_t" in 0001-*) cj_t="" ;; *) cj_t="${cj_t}Z" ;; esac ;;
+        *) cj_t="" ;;
+      esac
+    fi
     cj_body="$cj_body${cj_body:+,}$(printf '"%s":{"container":"%s","health":"%s","restarts":%s,"started_at":"%s"}' \
       "$cj_s" "$cj_c" "$cj_h" "$(num_or "$cj_r" 0)" "$cj_t")"
   done
-  printf '%s' "$cj_body"
+  printf '{%s}' "$cj_body"
 }
 
 # write_services_info: /signal/services.json, temp + rename so a reader never
@@ -1677,8 +1693,10 @@ write_services_info() {
   ws_df=$(free_kb "$STACK")
   ws_core=false
   core_shape && ws_core=true
-  printf '{"profiles":"%s","services":{%s},"containers":{%s},"mem_total_kb":%s,"mem_available_kb":%s,"disk_free_kb":%s,"core":%s,"verbs":[%s],"checked_at":"%s"}\n' \
-    "$ws_profiles" "$ws_body" "$(containers_json)" "$(num_or "$ws_mt" null)" "$(num_or "$ws_ma" null)" "$(num_or "$ws_df" null)" \
+  ws_cj=$(containers_json)
+  [ -n "$ws_cj" ] || ws_cj=null
+  printf '{"profiles":"%s","services":{%s},"containers":%s,"mem_total_kb":%s,"mem_available_kb":%s,"disk_free_kb":%s,"core":%s,"verbs":[%s],"checked_at":"%s"}\n' \
+    "$ws_profiles" "$ws_body" "$ws_cj" "$(num_or "$ws_mt" null)" "$(num_or "$ws_ma" null)" "$(num_or "$ws_df" null)" \
     "$ws_core" "$UPDATER_VERBS" "$(now)" > "$SIG/services.json.tmp" \
     && mv "$SIG/services.json.tmp" "$SIG/services.json"
 }
