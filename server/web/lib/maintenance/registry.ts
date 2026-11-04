@@ -451,7 +451,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'part-repair',
     title: 'Give old import tables and images their file home and grants',
     description:
-      'Import tables and extracted images made before the fix sit in Admin. This gives each the home and grants of its file, once. It changes only an item with the untouched Admin default, and leaves and counts anything changed by hand, with a deleted file, or whose file gives it nothing but that default. Dry run (default) prints ids and counts. --apply changes at most --limit items (default 100, at most 1000). Never deletes anything. No model call.',
+      'Import tables and extracted images made before the fix sit in Admin. This gives each the home and grants of its file, once. It changes only an item with the untouched Admin default, and leaves and counts anything changed by hand, with a deleted file, or whose file gives it nothing more than that default (a file private to one login does give more). Dry run (default) prints ids and counts. --apply changes at most --limit items (default 100, at most 1000). Never deletes anything. No model call.',
     kind: 'remedy',
     status: 'live',
     cost: 'io',

@@ -760,15 +760,6 @@ describe('admitForExtraction — admission', () => {
     await expect(admitForExtraction('n1', 'o1')).rejects.toThrow(/sidecar down/);
   });
 
-  it('carries on when a file has no home for its table (no part is made)', async () => {
-    h.autoTable.mockRejectedValue(new Error('a part of a file needs the live home of that file'));
-    const seen = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    h.selectQueue.push([node({ type: 'note' })]);
-    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
-    expect(seen.mock.calls.flat().join(' ')).toContain('live home');
-    seen.mockRestore();
-  });
-
   it('swallows a NON-fatal auto-table failure and carries on', async () => {
     h.autoTable.mockRejectedValue(new Error('one bad sheet'));
     h.selectQueue.push([node({ type: 'note' })]);

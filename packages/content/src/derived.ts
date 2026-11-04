@@ -92,8 +92,8 @@ export type ReapResult = {
  * or an Admin user's cascade never deletes an item in a workspace it does
  * not manage. System work (the dangling-derived script) reaps them all.
  *
- * After the images go, the per-document `files.extracted-images.<doc-slug>`
- * folder is removed when (and only when) the reap emptied it.
+ * After the images go, the per-document folder under Auto-filed / Extracted
+ * images is removed when (and only when) the reap emptied it.
  */
 export async function reapDerivedFromFile(
   ownerId: string,
@@ -198,7 +198,7 @@ async function reapDerived(
   for (const path of imageFolderPaths) {
     try {
       const folder = await folderByPath({ ownerId, path });
-      // Its own system folder (Auto-filed / Extracted images / <document>).
+      // Its own system folder (Auto-filed / Extracted images / file-<file id>).
       if (folder) await deleteFolder({ ownerId, folderId: folder.id, allowSystem: true });
     } catch {
       // Best-effort: a leftover empty folder is cosmetic, never data loss.

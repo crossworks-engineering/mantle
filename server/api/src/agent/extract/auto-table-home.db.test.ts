@@ -7,7 +7,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/api/src/agent/extract/auto-table-home.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -15,6 +15,41 @@ import { ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
+/** Runs right after a part's create, before its copy; the created ids and the
+ *  image saves, for the tests that look at them. */
+const h = vi.hoisted(() => ({
+  afterCreate: null as null | (() => Promise<void>),
+  tables: [] as string[],
+  saves: [] as { id: string; loginId?: string | null; diskPath?: string }[],
+}));
+vi.mock('@mantle/content', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/content')>();
+  return {
+    ...actual,
+    createTable: async (...args: Parameters<typeof actual.createTable>) => {
+      const t = await actual.createTable(...args);
+      h.tables.push(t.id);
+      await h.afterCreate?.();
+      return t;
+    },
+  };
+});
+vi.mock('@mantle/files', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/files')>();
+  return {
+    ...actual,
+    upsertFile: async (...args: Parameters<typeof actual.upsertFile>) => {
+      const f = await actual.upsertFile(...args);
+      h.saves.push({
+        id: f.id,
+        loginId: args[0].loginId,
+        diskPath: actual.diskPathForFile(args[0].parentPath, args[0].filename) ?? undefined,
+      });
+      await h.afterCreate?.();
+      return f;
+    },
+  };
+});
 vi.mock('./trace', () => ({
   stepInOwnTrace: async (_o: unknown, _n: unknown, _s: unknown, fn: (h: unknown) => unknown) =>
     fn({ setMeta: () => undefined, setError: () => undefined }),
@@ -455,34 +490,105 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     await su(sqlTag`delete from workspace_users where login_id = ${adminB}`);
   });
 
-  it('a failed copy leaves no part', async () => {
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)],
+    );
+  const deleteFile = (file: string) =>
+    m.withNodeDeleteHeads([file], (tx) => tx.execute(sqlTag`delete from nodes where id = ${file}`));
+
+  it('a failed copy leaves no table: the row and the workbook go', async () => {
     const file = await fileIn(team, 'failed-copy.csv');
+    const row = await nodeRow(file);
+    h.tables.length = 0;
+    h.afterCreate = () => deleteFile(file);
+    try {
+      await expect(
+        maybeAutoTableSpreadsheet(
+          {
+            id: row.id,
+            ownerId: anchor,
+            type: 'file',
+            title: row.title,
+            path: 'files',
+            data: row.data,
+          } as typeof m.nodes.$inferSelect,
+          anchor,
+        ),
+      ).rejects.toThrow(/live home/);
+    } finally {
+      h.afterCreate = null;
+    }
+    const id = h.tables[0]!;
+    expect(id).toBeDefined();
+    expect(await nodeRowOrNull(id)).toBeNull();
+    expect(walk(tableRoot).filter((f) => f.includes(id))).toEqual([]);
+  });
+
+  it('a failed copy leaves no image: the row and the bytes go', async () => {
+    const file = await fileIn(team, 'failed-copy.pdf');
+    const row = await nodeRow(file);
+    h.saves.length = 0;
+    h.afterCreate = () => deleteFile(file);
+    try {
+      await maybeExtractEmbeddedImages(
+        {
+          id: row.id,
+          ownerId: anchor,
+          type: 'file',
+          title: row.title,
+          path: 'files',
+          data: row.data,
+        } as typeof m.nodes.$inferSelect,
+        anchor,
+      );
+    } finally {
+      h.afterCreate = null;
+    }
+    const saved = h.saves[0]!;
+    expect(saved).toBeDefined();
+    expect(await nodeRowOrNull(saved.id)).toBeNull();
+    expect(saved.diskPath).toBeTruthy();
+    expect(existsSync(saved.diskPath!)).toBe(false);
+  });
+
+  it('a first error is the one thrown when the part cannot be removed', async () => {
+    const file = await fileIn(team, 'stays.csv');
     const made = randomUUID();
-    let removed = false;
+    const seen = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await expect(
       m.createPartOfFile(
         file,
         async () => {
-          await m.withNodeInsertHeads(anchor, [{ type: 'note', path: 'notes' }], (tx) =>
-            tx.execute(sqlTag`insert into nodes (id, owner_id, type, title, path)
-              values (${made}, ${anchor}, 'note', ${`${tag} made`}, 'notes')`),
-          );
-          // The file goes while the part is made.
-          await m.withNodeDeleteHeads([file], (tx) =>
-            tx.execute(sqlTag`delete from nodes where id = ${file}`),
-          );
+          await deleteFile(file);
           return { id: made };
         },
-        async (p) => {
-          removed = true;
-          await m.withNodeDeleteHeads([p.id], (tx) =>
-            tx.execute(sqlTag`delete from nodes where id = ${p.id}`),
-          );
+        async () => {
+          throw new Error('remove failed');
         },
       ),
     ).rejects.toThrow(/live home/);
-    expect(removed).toBe(true);
-    expect(await nodeRowOrNull(made)).toBeNull();
+    expect(seen.mock.calls.flat().join(' ')).toContain(made);
+    seen.mockRestore();
+  });
+
+  it("a private file's image is private from its insert", async () => {
+    const file = await fileIn(team, 'private.pdf');
+    const row = await nodeRow(file);
+    h.saves.length = 0;
+    await maybeExtractEmbeddedImages(
+      {
+        id: row.id,
+        ownerId: anchor,
+        type: 'file',
+        title: row.title,
+        path: 'files',
+        data: row.data,
+        loginId: member,
+      } as typeof m.nodes.$inferSelect,
+      anchor,
+    );
+    expect(h.saves[0]!.loginId).toBe(member);
   });
 
   it("the file's excluded rows stay out, and its folder's rows come as plain rows", async () => {
