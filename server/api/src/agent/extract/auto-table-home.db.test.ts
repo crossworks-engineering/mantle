@@ -61,13 +61,13 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     (await import('@mantle/db/test-support')).superuserExec(URL!, q);
 
   /** A file homed in `home`, as an upload by a Moderator of it leaves it. */
-  const fileIn = async (home: string, name: string) => {
+  const fileIn = async (home: string, name: string, path = 'files') => {
     const id = randomUUID();
     await m.withCreateHome({ createWs: home, privateWs: null }, () =>
-      m.withNodeInsertHeads(anchor, [{ type: 'file', path: 'files' }], (tx) =>
+      m.withNodeInsertHeads(anchor, [{ type: 'file', path }], (tx) =>
         tx.execute(sqlTag`
           insert into nodes (id, owner_id, type, title, path, data) values
-            (${id}, ${anchor}, 'file', ${`${tag} ${name}`}, 'files',
+            (${id}, ${anchor}, 'file', ${`${tag} ${name}`}, ${path}::ltree,
              ${JSON.stringify({ filename: `${tag} ${name}` })}::jsonb)`),
       ),
     );
@@ -411,10 +411,10 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     };
     const images = async (id: string) =>
       (await m.systemDb.execute(sqlTag`
-        select id, data->>'filename' as filename, read_ws::text[] as read from nodes
+        select id, path::text as path, read_ws::text[] as read from nodes
          where type = 'file' and data->>'sourceFileId' = ${id}`)) as unknown as {
         id: string;
-        filename: string;
+        path: string;
         read: string[];
       }[];
     await pass(old.id);
@@ -423,7 +423,10 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     const [newImg, ...newMore] = await images(fresh.id);
     expect(oldMore).toEqual([]);
     expect(newMore).toEqual([]);
-    expect(oldImg!.filename).not.toBe(newImg!.filename);
+    // One name each, in a folder of its own, named by the file's id.
+    expect(oldImg!.path).not.toBe(newImg!.path);
+    expect(oldImg!.path).toContain(old.id.slice(0, 8));
+    expect(newImg!.path).toContain(fresh.id.slice(0, 8));
     expect(oldImg!.read).toEqual([other]);
     expect(newImg!.read).toEqual([team]);
     expect(await reads(member, newImg!.id)).toBe(true);

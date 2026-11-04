@@ -71,6 +71,7 @@ describe.skipIf(!URL)('part-repair', () => {
       await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
         values (${file}, ${Q}, true)`);
     });
+    ids.file = file;
     const source = { sourceFileId: file };
     ids.ready = await node('table', 'tables', source, ['auto-import']);
     ids.image = await node('file', 'files.auto_filed_old', { ...source, sourceOrdinal: 1 }, [
